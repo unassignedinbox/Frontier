@@ -9,6 +9,7 @@
 //    noise. Anything inside is "no measurable difference": the honest answer for a toggle whose cost is below what a shared software-rendering runner can resolve.
 
 export const MinimumEffect = 0.05;
+export const MarginalBands = 1.5;
 
 export function Median(Values)
 {
@@ -35,8 +36,11 @@ export function Compare(BaselineRuns, VariantRuns)
     const Relative = (Runs) => Runs.length < 2 ? 0 : (Math.max(...Runs) - Math.min(...Runs)) / Median(Runs);
     const Noise = Math.max(Relative(BaselineRuns), Relative(VariantRuns));
     const Band = Math.max(MinimumEffect, 2 * Noise);
-    const Verdict = !Number.isFinite(Ratio) ? "no data" : Ratio < 1 - Band ? "faster" : Ratio > 1 + Band ? "slower" : "no measurable difference";
-    return { BaselineMs: Baseline, VariantMs: Variant, Ratio, Noise, Band, Verdict };
+    // 📝 A result that only just leaves the band is called marginal: with two repeats per side the noise estimate is itself rough, so a ratio less than 1.5 bands out is a lead, not a finding.
+    const Margin = Math.abs(Ratio - 1) / Band;
+    const Direction = Ratio < 1 - Band ? "faster" : Ratio > 1 + Band ? "slower" : null;
+    const Verdict = !Number.isFinite(Ratio) ? "no data" : Direction ? (Margin < MarginalBands ? `${Direction} (marginal)` : Direction) : "no measurable difference";
+    return { BaselineMs: Baseline, VariantMs: Variant, Ratio, Noise, Band, Margin, Verdict };
 }
 
 // ➡️ Markdown for the CPU microbenchmarks (Tools/CpuBenchHooks.mjs): one row per measurement.

@@ -88,12 +88,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const Options = ParseArguments(process.argv.slice(2));
     let Text = Options.file && fs.existsSync(Options.file) ? fs.readFileSync(Options.file, "utf8") : "(no output file)";
     const Full = Text;
-    const Plain = Text;
     if (Options.filter === "tap") Text = FilterTap(Text);
     const Request = BuildRequest({ Raw: Options.raw, Name: Options.name, Title: Options.title || (Options.filter === "tap" ? TapTitle(Full) : ""), Summary: Options.summary, Text, Conclusion: Options.conclusion, Sha: Options.sha, Repository: Options.repository });
     if (Options.dry) { console.log(JSON.stringify(Request, null, 1)); process.exit(0); }
     // the permission-free channel first: an annotation on the job (title, then the same text the check run carries)
-    console.log(Annotation(`${Options.name}${Request.Body.output.title && Request.Body.output.title !== Options.name ? ": " + Request.Body.output.title : ""}`, Plain));
+    console.log(Annotation(`${Options.name}${Request.Body.output.title && Request.Body.output.title !== Options.name ? ": " + Request.Body.output.title : ""}`, Text));
     // 📝 Reporting must never turn a green job red: any failure to publish (no network, a missing permission) is printed and the exit status stays 0.
     try
     {

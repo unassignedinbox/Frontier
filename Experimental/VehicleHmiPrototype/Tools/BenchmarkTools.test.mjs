@@ -36,6 +36,11 @@ test("verdict: faster, slower, and — when the truth is that — no measurable 
     const Noisy = Compare([100, 120], [85, 86]);
     assert.ok(Noisy.Noise > 0.15 && Noisy.Band >= 2 * Noisy.Noise - 1e-12 && Noisy.Verdict === "no measurable difference", `noise ${Noisy.Noise}, band ${Noisy.Band}, ${Noisy.Verdict}`);
     assert.equal(Compare([100], [70]).Verdict, "faster", "a single repeat has no noise estimate: the fixed band alone decides");
+    // a result that only just leaves the band is flagged, not stated flatly (the GitHub run's IES row: -5.2 % against a 5 % band)
+    const Borderline = Compare([100, 100.5], [94.6, 94.8]);
+    assert.equal(Borderline.Verdict, "faster (marginal)", `margin ${Borderline.Margin}`);
+    assert.equal(Compare([100, 100.5], [110, 110.5]).Verdict, "slower", "ten percent over a five percent band is not marginal");
+    assert.equal(Compare([100, 100.5], [105.9, 106.0]).Verdict, "slower (marginal)");
     assert.equal(Compare([], [1]).Verdict, "no data");
     assert.equal(MinimumEffect, 0.05);
     assert.equal(Percent(1.1234), "+12.3 %"); assert.equal(Percent(0.8), "−20.0 %");

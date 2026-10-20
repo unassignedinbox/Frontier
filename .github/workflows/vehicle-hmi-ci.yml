@@ -36,7 +36,6 @@ defaults:
 
 env:
   APP: Experimental/VehicleHmiPrototype
-  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   unit:
@@ -62,6 +61,8 @@ jobs:
       - name: Report
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node PostCheckRun.mjs --name "Report: unit tests" --file "$RUNNER_TEMP/unit.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
 
@@ -103,6 +104,8 @@ jobs:
       - name: Report
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node PostCheckRun.mjs --name "Report: validate" --title "every URL mode and the validate family on the null backend" --file "$RUNNER_TEMP/validate.log" --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
 
@@ -149,6 +152,8 @@ jobs:
       - name: Report
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node PostCheckRun.mjs --name "Report: executed shader parity" --file "$RUNNER_TEMP/gpu-parity.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
           node PostCheckRun.mjs --name "Report: executed full-app frames" --file "$RUNNER_TEMP/gpu-full.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"

@@ -44,7 +44,6 @@ defaults:
 
 env:
   APP: Experimental/VehicleHmiPrototype
-  GITHUB_TOKEN: ${{ github.token }}
   FRAMES: ${{ inputs.frames || '10' }}
   ROUNDS: ${{ inputs.rounds || '2' }}
 
@@ -76,6 +75,8 @@ jobs:
       - name: Report
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node PostCheckRun.mjs --name "Bench: CPU microbenchmarks" --title "CPU-side costs on the real scene" --file "$RUNNER_TEMP/bench/cpu-table.md" --raw --conclusion neutral
       - uses: actions/upload-artifact@v7
@@ -135,6 +136,7 @@ jobs:
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           LABEL: ${{ matrix.label }}
         run: |
           node PostCheckRun.mjs --name "Bench: $LABEL" --title "$(tail -n 1 "$RUNNER_TEMP/bench-run.log" | cut -c1-240)" --file "$RUNNER_TEMP/bench-run.log" --conclusion "${{ job.status == 'success' && 'neutral' || 'failure' }}"
@@ -168,6 +170,8 @@ jobs:
       - name: Report
         if: always()
         working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           node PostCheckRun.mjs --name "Bench: summary table" --title "toggle verdicts (software rasteriser) and CPU microbenchmarks" --file "$GITHUB_WORKSPACE/bench-results/summary.md" --raw --conclusion neutral
       - uses: actions/upload-artifact@v7
