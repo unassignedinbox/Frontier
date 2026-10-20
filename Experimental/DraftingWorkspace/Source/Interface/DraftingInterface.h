@@ -100,7 +100,7 @@ void ConfigureDraftingInterface(const DraftingOptions& Options);
 void InitialiseDraftingWorkspace(DraftingWorkspaceState& State, const DraftingOptions& Options);
 
 // 💡 Builds the whole frame (between ImGui::NewFrame and ImGui::Render). ViewportTexture is the colour target of the
-//    previous viewport render. Handles every shortcut and viewport gesture; DeltaSeconds drives the autosave timer.
+//    previous viewport render. Serves every shortcut and viewport gesture; DeltaSeconds drives the autosave timer.
 void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds);
 
 // The scene the viewport must show (the staged preview during a bevel session).

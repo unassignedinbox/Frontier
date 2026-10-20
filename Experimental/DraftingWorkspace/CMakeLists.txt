@@ -88,7 +88,7 @@ endif()
 #-------------------------------------------------------------------------------------------------------------------
 
 # 📝 The SPIR-V archive is committed (Source/Viewport/Generated/DraftingShaderArchive.h) so a build needs no shader
-#    compiler. With DRAFTING_SLANG_COMPILER set, editing a .slang file regenerates it through Node + slang-loader.
+#    compiler. With DRAFTING_SLANG_COMPILER set, editing a .slang file regenerates it through Node.js + slang-loader.
 set(DRAFTING_SHADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/DraftingProjection.slang"
     "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/DraftingSurface.slang"
@@ -178,5 +178,13 @@ add_test(NAME DraftingRecoveryWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/RecoveryWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME DraftingShortcutWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Shortcut.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/ShortcutWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingWorkspaceWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP DraftingAutosave)
 set_tests_properties(DraftingRecoveryWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED DraftingAutosave)

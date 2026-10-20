@@ -110,7 +110,7 @@ Both UI versions drive the C++ kernel through the same command stream: browser �
 | 6 | Generic face ops (G6) replace `FaceEditSolver` routes one verb at a time | corpus section E: 0 refusals on HoleSlab and Can, closed forms exact |
 | 7 | Retire `BlendSolver` `fillet` and `chamfer` (aliases to `beveladd`) | BevelLab 6 / 6; corpus section D unchanged |
 | 8 | G2–G5 kernel work | corpus refusals → 0 — 🟢 `CorpusValidation` 79 / 79 (71 corpus rows A–H + 8 G4 / G5 extras), 0 refused, 19 / 19 old refusals exact |
-| 9 | `DraftingWorkspace` in `ref/new` on SketchModelViewport (Vulkan + Slang, GLFW, TOML options) | UI parity checklist against the SolidArc browser editor |
+| 9 | `DraftingWorkspace` in `ref/new` on SketchModelViewport (Vulkan + Slang, GLFW, TOML options) | UI parity checklist against the SolidArc browser editor — 🟢 portable workspace at `Experimental/DraftingWorkspace` (in this repo, not `ref/new`): parity 58 rows 🟢 48 · ⚠️ 4 · 🚧 6 (`PARITY-SolidArcBrowserEditor.md`); W1–W8 · V1–V7 · walkthroughs 131 / 131 on SwiftShader Vulkan 1.3; ctest 5 / 5 |
 
 ## 7. Fixed in phase 3
 

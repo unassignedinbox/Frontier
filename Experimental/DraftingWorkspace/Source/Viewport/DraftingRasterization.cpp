@@ -174,11 +174,11 @@ bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& 
         PoolRequest.poolSizeCount = 1;
         PoolRequest.pPoolSizes    = &PoolSize;
         Require(vkCreateDescriptorPool(Device->Device, &PoolRequest, nullptr, &DescriptorPool), "vkCreateDescriptorPool");
-        VkDescriptorSetAllocateInfo SetRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
-        SetRequest.descriptorPool     = DescriptorPool;
-        SetRequest.descriptorSetCount = 1;
-        SetRequest.pSetLayouts        = &BufferLayout;
-        Require(vkAllocateDescriptorSets(Device->Device, &SetRequest, &BufferSet), "vkAllocateDescriptorSets");
+        VkDescriptorSetAllocateInfo DescriptorRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        DescriptorRequest.descriptorPool     = DescriptorPool;
+        DescriptorRequest.descriptorSetCount = 1;
+        DescriptorRequest.pSetLayouts        = &BufferLayout;
+        Require(vkAllocateDescriptorSets(Device->Device, &DescriptorRequest, &BufferSet), "vkAllocateDescriptorSets");
 
         // ② pipeline layout: the set + one 128-byte push range
         const VkPushConstantRange Push{ VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128 };

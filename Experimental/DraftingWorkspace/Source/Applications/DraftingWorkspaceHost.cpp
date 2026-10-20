@@ -155,7 +155,11 @@ int main(int Count, char** Arguments)
 
     // ① window without a client API (Vulkan presents), instance extensions from GLFW
     glfwSetErrorCallback(ReportGlfwFailure);
-    if (!glfwInit()) return 1;
+    if (!glfwInit())
+    {
+        std::fprintf(stderr, "no windowing platform (headless build); use DraftingWorkspaceCapture for offscreen frames\n");
+        return 77;
+    }
     if (!glfwVulkanSupported())
     {
         std::fprintf(stderr, "GLFW reports no Vulkan loader on this platform\n");

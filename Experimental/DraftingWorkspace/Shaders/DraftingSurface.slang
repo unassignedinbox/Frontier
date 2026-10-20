@@ -57,8 +57,8 @@ SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
     float  Fill   = saturate(dot(View, normalize(float3(0.60, -0.10, 0.80))));
     float  Sky    = 0.5 + 0.5 * View.y;
     float  Rim    = pow(1.0 - saturate(View.z), 3.0);
-    float3 Base   = float3(0.70, 0.72, 0.76);
-    float3 Colour = Base * (0.22 + 0.18 * Sky) + Base * Key * 0.62 + float3(0.62, 0.70, 0.82) * Fill * 0.16 + Rim * 0.10;
+    float3 Albedo = float3(0.70, 0.72, 0.76);
+    float3 Colour = Albedo * (0.22 + 0.18 * Sky) + Albedo * Key * 0.62 + float3(0.62, 0.70, 0.82) * Fill * 0.16 + Rim * 0.10;
     Colour       += pow(saturate(dot(reflect(float3(0.0, 0.0, -1.0), View), normalize(float3(-0.45, 0.55, 0.70)))), 24.0) * 0.18;
 
     uint State = FaceStates[Pixel.Face];

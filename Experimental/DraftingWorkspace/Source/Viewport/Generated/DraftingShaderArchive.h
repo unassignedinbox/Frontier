@@ -7,7 +7,7 @@
 // Source:   Shaders/DraftingEdge.slang sha256 54ce06967595f792c8f39ae30dd8076b143caea96af458238bae73ac4d6c9c2b
 // Source:   Shaders/DraftingGrid.slang sha256 a03a2ce84cb83deb29ea7234c8a1c5333ce02af402040325d2597b0e986c4f30
 // Source:   Shaders/DraftingProjection.slang sha256 181c9d3afa5f0707780a61666b1ddaff2ade3a944a232a086d996d353de32266
-// Source:   Shaders/DraftingSurface.slang sha256 04cadadf140f693d3c91ccb8c626bdca967b6eccbda395d06cfb1dd3ab1738e2
+// Source:   Shaders/DraftingSurface.slang sha256 2bb13e1c4a0f0640e3beb76392c5f49f3ee0ed9f0b28b9de3e56b09bdb3b2796
 
 #pragma once
 

@@ -1,0 +1,102 @@
+# DraftingWorkspace shortcut walkthrough — the keyboard / pointer paths the main walkthrough does not drive.
+# Run: DraftingWorkspaceCapture --specimen --reset-files --recovery …/ShortcutRecovery.drafting.toml --script Scripts/ShortcutWalkthrough.txt
+# Own recovery / document files, so the main walkthrough → recovery fixture is untouched.
+
+# ① pick modes 1 / 2 and Ctrl+A outside a text field (select every edge in mode 2, every face otherwise)
+frames 2
+expect faces == 11
+expect steps == 8
+key 2
+expect pick-mode == 2
+key A Ctrl
+expect selected-edges == 24
+key 1
+expect pick-mode == 1
+key A Ctrl
+expect selected-faces == 11
+expect selected-edges == 0
+key Escape
+expect selected-faces == 0
+
+# ② B opens a fillet; moving left past zero turns the signed size into a chamfer; viewport right-click cancels
+#    (selection changes are undoable, so the undo depth stays 5 across the cancelled session)
+key 2
+move world 2.0 0.0 0.0
+frames 2
+click world 2.0 0.0 0.0
+expect selected-edges == 1
+expect undo == 5
+key B
+frames 2
+expect bevel-active == 1
+expect bevel-chamfer == 0
+move viewport 0.40 0.70
+frames 1
+move viewport 0.40 0.70 offset -300 0
+frames 2
+expect bevel-chamfer == 1
+expect bevel-pinned == 0
+capture 19BevelSignChamfer
+click viewport 0.40 0.70 offset -300 0 Right
+frames 1
+expect bevel-active == 0
+expect faces == 11
+expect steps == 8
+expect undo == 5
+
+# ③ numeric pin, then a viewport left-click applies
+key B
+frames 2
+click @BevelSize
+key A Ctrl
+type 0.3
+key Enter
+frames 2
+expect bevel-pinned == 1
+expect bevel-size ~ 0.3
+click viewport 0.40 0.70
+frames 2
+expect bevel-active == 0
+expect faces == 12
+expect steps == 9
+expect sound == 1
+
+# ④ Ctrl+Z, then Ctrl+Shift+Z redoes
+key Z Ctrl
+expect faces == 11
+expect redo == 1
+key Z Ctrl Shift
+expect faces == 12
+expect redo == 0
+
+# ⑤ Delete removes the focused feature-tree step
+click @Step:Blend#9
+expect focused-step == Blend#9
+key Delete
+frames 2
+expect steps == 8
+expect faces == 11
+expect focused-step != Blend#9
+
+# ⑥ F fits after a pan (target back to the bounds centre)
+key Escape
+drag Middle viewport 0.5 0.5 by 80 40 4
+expect camera-target-x != 2
+key F
+expect camera-target-x ~ 2
+expect camera-target-z ~ 0.875
+
+# ⑦ E extrudes the selected face in mode 3 (0.5 by default): boss r 0.5 grows by π · 0.5² · 0.5
+key 3
+move world 1.0 1.25 1.75
+frames 2
+click world 1.0 1.25 1.75
+expect selected-faces contains Extrude#4.Cap(End)
+key E
+frames 2
+expect steps == 9
+expect refused == 0
+expect sound == 1
+expect volume > 10.60
+expect volume < 10.63
+capture 20ShortcutExtrude
