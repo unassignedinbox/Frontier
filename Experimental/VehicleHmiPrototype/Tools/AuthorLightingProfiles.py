@@ -1,14 +1,18 @@
-"""Generate illustrative LM-63 Type C intensity tables for the exhibit.
+"""Generate the AUTHORED LM-63 Type C intensity tables: the three automotive beams (LowBeam, HighBeam, FogBeam).
 
-These curves are authored demonstrations, not measured/certified IES data. The
-runtime parser accepts measured TILT=NONE Type C files at these paths as well.
+These curves are authored demonstrations, not measured or certified IES data (their headers say so). Roadway, Area, RoofFlood and RoofSpot are no longer authored: they are real
+manufacturer / test-lab files copied verbatim into Profiles/ (Profiles/README.md, Profiles/PROVENANCE.json), and this script must never overwrite them.
 Angles use C-planes around each fixture's optical axis, not world coordinates.
+
+    python3 Tools/AuthorLightingProfiles.py [output directory]     (default: ../Profiles)
 """
+import sys
 from math import atan2, cos, exp, pi, sin, degrees
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent / "Profiles"
-ROOT.mkdir(exist_ok=True)
+AUTHORED = ("LowBeam", "HighBeam", "FogBeam")
+ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "Profiles"
+ROOT.mkdir(exist_ok=True, parents=True)
 
 
 def gaussian(value, width):
@@ -25,11 +29,6 @@ def sample(name, polar, azimuth):
     # road: its left verge (negative C angle) gets the low-beam upsweep.
     elevation = degrees(atan2(sin(v) * cos(h), cos(v)))
     lateral = degrees(atan2(sin(v) * sin(h), cos(v)))
-    if name == "Roadway":
-        # Downlight with wider throw away from the supporting arm.
-        return max(0.0, cos(v)) ** 0.7 * (0.65 + 0.35 * gaussian(polar - 43, 27)) * (0.78 + 0.22 * max(0.0, cos(h)))
-    if name == "Area":
-        return max(0.0, cos(v)) ** 1.4 * (0.75 + 0.25 * gaussian(polar - 22, 30))
     if name == "LowBeam":
         upsweep = 1.5 if lateral < -12 else 0.0
         return gaussian(lateral, 24) * gaussian(elevation + 3.0, 7.5) * cutoff(elevation, 0.8 + upsweep, 0.55)
@@ -37,14 +36,10 @@ def sample(name, polar, azimuth):
         return gaussian(lateral, 15) * gaussian(elevation + 1.0, 7.0)
     if name == "FogBeam":
         return gaussian(lateral, 48) * gaussian(elevation + 1.5, 4.5) * cutoff(elevation, 1.5, 0.8)
-    if name == "RoofFlood":
-        return gaussian(lateral, 32) * gaussian(elevation + 3.0, 11.0)
-    if name == "RoofSpot":
-        return gaussian(lateral, 13) * gaussian(elevation + 1.0, 7.0)
     raise ValueError(name)
 
 
-for name in ("Roadway", "Area", "LowBeam", "HighBeam", "FogBeam", "RoofFlood", "RoofSpot"):
+for name in AUTHORED:
     vertical = list(range(0, 181, 2))
     horizontal = list(range(0, 361, 10))
     # Peak candela is encoded in the file for standard readers; the exhibit
