@@ -5,6 +5,7 @@
 
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/ImplicitSurface.h"
+#include "Intersection/IntersectionCurve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -88,7 +89,25 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
 {
     CurveSurfaceOutcome    Outcome;
     std::vector<Candidate> Candidates;
-    for (const RationalSegment& Segment : ConvertToRationalSegments(Curve, Low, High))
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve))
+    {
+        // 📝 An intersection curve has no rational form: the exact signed distance is scanned at 16 samples per guide
+        //    segment (the guide turns ≤ 0.1 rad per segment, so d is near-linear between samples). Sign changes become
+        //    transversal candidates and local minima of |d| touch candidates; ③ polishes both on the exact distance.
+        const TracedIntersection& Trace = *Traced->Trace;
+        const double KnotSpan = Trace.Knots.back() - Trace.Knots.front();                    // [-] - τ per guide
+        const int    Count    = std::clamp(static_cast<int>(16.0 * static_cast<double>(Trace.Knots.size()) * (High - Low) / std::max(KnotSpan, 1.0e-300)), 64, 8192);
+        std::vector<double> Values(Count + 1);
+        for (int Index = 0; Index <= Count; ++Index) Values[Index] = ProbeDistance(Curve, Surface, Low + (High - Low) * Index / Count).Distance;
+        for (int Index = 0; Index <= Count; ++Index)
+        {
+            const double τ = Low + (High - Low) * Index / Count;
+            if (Index < Count && Values[Index] * Values[Index + 1] < 0.0) Candidates.push_back({ τ + 0.5 * (High - Low) / Count, false });
+            const bool Minimum = (Index == 0 || std::fabs(Values[Index]) <= std::fabs(Values[Index - 1])) && (Index == Count || std::fabs(Values[Index]) <= std::fabs(Values[Index + 1]));
+            if (Minimum) Candidates.push_back({ τ, true });
+        }
+    }
+    for (const RationalSegment& Segment : std::holds_alternative<IntersectionCurve>(Curve) ? std::vector<RationalSegment>{} : ConvertToRationalSegments(Curve, Low, High))
     {
         // ---- ① Composed implicit equation; an identically vanishing one means the segment lies in the surface.
         const BernsteinPolynomial Equation  = ComposeImplicitEquation(Surface, Segment);

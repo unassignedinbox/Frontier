@@ -4,8 +4,13 @@
 // 🧩 Named specimen bodies with independently derived expectations (counts, genus, analytic volume) for the gates
 
 #include "Inspection/SpecimenCatalogue.h"
+#include "Boolean/GeneralFuse.h"
+#include "Construction/BodyTransform.h"
 #include "Construction/PrimitiveConstruction.h"
+#include "Feature/PathSweep.h"
+#include "Sketch/SketchSolver.h"
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <numbers>
@@ -136,6 +141,91 @@ namespace
                 }
                 Partition.Vertices.Resolve(Corner).Position = Partition.Vertices.Resolve(Corner).Position + Vector3{ Displacement, -Displacement, Displacement } * (1.0 / std::sqrt(3.0));
                 if (Precision > 0.0) Partition.AssignVertexPrecision(Corner, Precision);
+                return Outcome;
+            } },
+            // ---- Step 8 (G2): path and transform verbs.
+            { "PipeBend", [](ModelPartition& Partition, const SpecimenParameters& Parameters)
+            {
+                SpecimenOutcome Outcome{ .Description = "Pipe along an arc = section circle revolved about the arc axis: exact partial torus, planar end caps (360°: closed torus)" };
+                const double BendRadius = Use(Outcome, Parameters, "BendRadius", 2.0);
+                const double TubeRadius = Use(Outcome, Parameters, "TubeRadius", 0.5);
+                const double Turn       = std::clamp(Use(Outcome, Parameters, "Turn", 90.0), 1.0, 360.0) * π / 180.0;   // [rad] - Arc range
+                const SweepOutcome Sweep = PipeAlongPath(Partition, CircularArc{ OrthonormalFrame{}, BendRadius }, 0.0, Turn, TubeRadius);
+                Outcome.Body = Sweep.Body;
+                Outcome.Refusal = Sweep.Refusal;
+                const bool ClosedCondition = Turn >= 2.0 * π - 1.0e-12;
+                Outcome.Expectation = ClosedCondition ? SpecimenExpectation{ 1, 2, 1, 1, 1, 1, 0.0 } : SpecimenExpectation{ 2, 3, 3, 3, 1, 0, 0.0 };
+                Outcome.Expectation.Volume = Turn * π * TubeRadius * TubeRadius * BendRadius;
+                return Outcome;
+            } },
+            { "LoftFrustum", [](ModelPartition& Partition, const SpecimenParameters& Parameters)
+            {
+                SpecimenOutcome Outcome{ .Description = "Ruled loft between coaxial circles: exact frustum (equal radii: cylinder)" };
+                const double FootRadius = Use(Outcome, Parameters, "FootRadius", 1.5);
+                const double HeadRadius = Use(Outcome, Parameters, "HeadRadius", 0.75);
+                const double Height     = Use(Outcome, Parameters, "Height", 2.0);
+                const SweepOutcome Sweep = LoftCircles(Partition, { 0.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, FootRadius, { 0.0, 0.0, Height }, { 0.0, 0.0, 1.0 }, HeadRadius);
+                Outcome.Body = Sweep.Body;
+                Outcome.Refusal = Sweep.Refusal;
+                Outcome.Expectation = { 2, 3, 3, 3, 1, 0, π * Height / 3.0 * (FootRadius * FootRadius + FootRadius * HeadRadius + HeadRadius * HeadRadius) };
+                return Outcome;
+            } },
+            { "SweptRing", [](ModelPartition& Partition, const SpecimenParameters& Parameters)
+            {
+                SpecimenOutcome Outcome{ .Description = "Annulus profile swept along its normal: two seams, holed caps, genus 1" };
+                const double Outer  = Use(Outcome, Parameters, "OuterRadius", 1.5);
+                const double Inner  = Use(Outcome, Parameters, "InnerRadius", 0.8);
+                const double Length = Use(Outcome, Parameters, "Length", 2.0);
+                SketchModel Sketch;
+                const int Centre = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+                static_cast<void>(AppendSketchCircle(Sketch, Centre, Outer, 1));
+                static_cast<void>(AppendSketchCircle(Sketch, Centre, Inner, 2));
+                const SweepOutcome Sweep = SweepProfileAlongLine(Partition, ExtractSketchProfile(Sketch), OrthonormalFrame{}, { 0.0, 0.0, Length });
+                Outcome.Body = Sweep.Body;
+                Outcome.Refusal = Sweep.Refusal;
+                Outcome.Expectation = { 4, 6, 4, 6, 1, 1, π * (Outer * Outer - Inner * Inner) * Length };
+                return Outcome;
+            } },
+            { "MirroredCross", [](ModelPartition& Partition, const SpecimenParameters& Parameters)
+            {
+                SpecimenOutcome Outcome{ .Description = "CrossUnequal union mirrored across an oblique plane: traced section edges mapped exactly (guide, surfaces, knots)" };
+                static_cast<void>(Parameters);
+                ModelPartition Scratch;                                                      // Arguments and the union stay here
+                const BodyToken Rod  = ConstructCylinder(Scratch, ConstructFrame({ -2.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }), 0.5, 4.0).Value;
+                const BodyToken Tube = ConstructCylinder(Scratch, ConstructFrame({ 0.0, -2.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }), 0.3, 4.0).Value;
+                const BooleanOutcome Cross = ComputeBoolean(Scratch, Rod, Tube, BooleanOperation::Union);
+                if (!Cross.Refusal.empty()) { Outcome.Refusal = Cross.Refusal; return Outcome; }
+                const TransformOutcome Mirrored = TransformBodyAcross(Scratch, Cross.Body, Partition, ReflectionMap({ 1.0, 0.0, 0.0 }, { 1.0, 0.5, 0.0 }));
+                Outcome.Body = Mirrored.Body;
+                Outcome.Refusal = Mirrored.Refusal;
+                Outcome.Expectation = { 6, 9, 7, 9, 1, 0, 4.003195681354056 };
+                return Outcome;
+            } },
+            { "ArrayedPins", [](ModelPartition& Partition, const SpecimenParameters& Parameters)
+            {
+                SpecimenOutcome Outcome{ .Description = "Pin arrayed along a plate and united: pin bases flush with the plate bottom merge into one maximal face (G5)" };
+                const int    Count     = std::clamp(static_cast<int>(std::lround(Use(Outcome, Parameters, "Count", 3.0))), 1, 8);
+                const double Spacing   = Use(Outcome, Parameters, "Spacing", 2.0);
+                const double PinRadius = std::min(Use(Outcome, Parameters, "PinRadius", 0.3), 0.45 * Spacing);
+                ModelPartition Scratch;
+                BodyToken Plate = ConstructBlock(Scratch, {}, { Spacing * Count, 2.0, 0.5 }).Value;
+                const BodyToken Pin = ConstructCylinder(Scratch, OrthonormalFrame{ { 0.5 * Spacing, 1.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, PinRadius, 1.0).Value;
+                std::vector<BodyToken> Pins = { Pin };
+                for (const TransformOutcome& Copy : ArrayBody(Scratch, Pin, { Spacing, 0.0, 0.0 }, Count))
+                {
+                    if (!Copy.Refusal.empty()) { Outcome.Refusal = Copy.Refusal; return Outcome; }
+                    Pins.push_back(Copy.Body);
+                }
+                for (BodyToken Each : Pins)
+                {
+                    const BooleanOutcome United = ComputeBoolean(Scratch, Plate, Each, BooleanOperation::Union);
+                    if (!United.Refusal.empty()) { Outcome.Refusal = United.Refusal; return Outcome; }
+                    Plate = United.Body;
+                }
+                const TransformOutcome Kept = TransformBodyAcross(Scratch, Plate, Partition, TranslationMap({}));
+                Outcome.Body = Kept.Body;
+                Outcome.Refusal = Kept.Refusal;
+                Outcome.Expectation = { 8 + 2 * Count, 12 + 3 * Count, 6 + 2 * Count, 6 + 3 * Count, 1, 0, Spacing * Count + Count * π * PinRadius * PinRadius * 0.5 };
                 return Outcome;
             } },
         };

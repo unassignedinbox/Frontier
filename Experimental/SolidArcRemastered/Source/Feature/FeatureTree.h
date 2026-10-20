@@ -13,6 +13,7 @@
 #include "Sketch/SketchSolver.h"
 
 #include <map>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -27,7 +28,7 @@ enum class FeatureStepKind : uint8_t
 {
     Sketch        = 0,                                                                       // Constrained 2D sketch on a plane
     Extrude       = 1,                                                                       // Sketch profile swept linearly
-    Revolve       = 2,                                                                       // Sketch profile revolved 360°
+    Revolve       = 2,                                                                       // Sketch profile revolved (360° default)
     Blend         = 3,                                                                       // Fillet / chamfer on referenced edges
     FaceOperation = 4,                                                                       // Push, offset, draft, … on referenced faces
 };
@@ -82,6 +83,7 @@ struct FeatureStep
     FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane)
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body
     int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch
+    FeatureValue                   Angle          = { 2.0 * std::numbers::pi };              // [rad] - Revolve: turn angle in (0, 2π]
     BlendProfile                   Shape          = BlendProfile::Fillet;                    // [-]   - Blend cross-section
     FeatureValue                   Size           = {};                                      // [len] - Blend radius / setback
     FaceOperationKind              Operation      = FaceOperationKind::Push;                 // [-]   - Face-operation verb

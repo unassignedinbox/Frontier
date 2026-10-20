@@ -34,6 +34,12 @@ namespace
                    { First - Overlap, DifferenceShells, DifferenceShells }, { Second - Overlap, ReversedShells, ReversedShells } } };
     }
 
+    // Frame with ZAxis along Axis (cylinder axes of the step-8 scenes).
+    [[nodiscard]] OrthonormalFrame AxisFrame(Vector3 Origin, Vector3 Axis)
+    {
+        return ConstructFrame(Origin, Axis, std::fabs(Axis.Z) > 0.9 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 0.0, 1.0 });
+    }
+
     using SceneBuilder = std::function<BooleanScene(ModelPartition&)>;
 
     [[nodiscard]] const std::vector<std::pair<std::string, SceneBuilder>>& Scenes()
@@ -193,6 +199,80 @@ namespace
                 const double Ring   = π * Height * Height * Height / 6.0;                     // [len³] - Napkin ring
                 Scene.FirstVolume = SphereVolume(1.0);  Scene.SecondVolume = π * 0.16 * 4.0;
                 Scene.Expected = FromOverlap(SphereVolume(1.0), π * 0.64, SphereVolume(1.0) - Ring, 1, 1, 1, 2);
+                return Scene;
+            } },
+            // ---- Step 8 (G3 / G4 / G5): the corpus scenes the old kernel refused or fragmented.
+            { "CrossUnequal", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "CrossUnequal", "Tube r 0.3 through rod r 0.5 at right angles: two quartic loops, traced section carriers (G3)" };
+                Scene.First  = ConstructCylinder(Partition, AxisFrame({ -2.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }), 0.5, 4.0).Value;
+                Scene.Second = ConstructCylinder(Partition, AxisFrame({ 0.0, -2.0, 0.0 }, { 0.0, 1.0, 0.0 }), 0.3, 4.0).Value;
+                Scene.FirstVolume = π;  Scene.SecondVolume = 0.36 * π;
+                Scene.Expected = FromOverlap(π, 0.36 * π, 1.36 * π - 4.003195681354056, 1, 1, 1, 2);
+                return Scene;
+            } },
+            { "CrossOffset", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "CrossOffset", "As CrossUnequal with the rod lifted 0.1: asymmetric loops (old kernel 4.009803, true 4.009989)" };
+                Scene.First  = ConstructCylinder(Partition, AxisFrame({ -2.0, 0.0, 0.1 }, { 1.0, 0.0, 0.0 }), 0.5, 4.0).Value;
+                Scene.Second = ConstructCylinder(Partition, AxisFrame({ 0.0, -2.0, 0.0 }, { 0.0, 1.0, 0.0 }), 0.3, 4.0).Value;
+                Scene.FirstVolume = π;  Scene.SecondVolume = 0.36 * π;
+                Scene.Expected = FromOverlap(π, 0.36 * π, 1.36 * π - 4.009989052758214, 1, 1, 1, 2);
+                return Scene;
+            } },
+            { "SteinmetzSolid", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "SteinmetzSolid", "Equal rods r 0.5 at right angles: two ellipses crossing at 2 singular points (G4), V(A ∩ B) = 16r³/3" };
+                Scene.First  = ConstructCylinder(Partition, AxisFrame({ -2.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }), 0.5, 4.0).Value;
+                Scene.Second = ConstructCylinder(Partition, AxisFrame({ 0.0, -2.0, 0.0 }, { 0.0, 1.0, 0.0 }), 0.5, 4.0).Value;
+                Scene.FirstVolume = Scene.SecondVolume = π;
+                Scene.Expected = FromOverlap(π, π, 16.0 / 3.0 * 0.125, 1, 1, 2, 2);
+                return Scene;
+            } },
+            { "SteinmetzOblique", [](ModelPartition& Partition)
+            {
+                const Vector3 Along{ 0.5, std::sqrt(3.0) / 2.0, 0.0 };                        // [-] - 60° to the first axis
+                BooleanScene Scene{ "SteinmetzOblique", "Equal rods r 0.5 at 60°: oblique ellipses through the singular points, V(A ∩ B) = 16r³/(3 sin θ)" };
+                Scene.First  = ConstructCylinder(Partition, AxisFrame({ -2.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }), 0.5, 4.0).Value;
+                Scene.Second = ConstructCylinder(Partition, AxisFrame(Along * -2.0, Along), 0.5, 4.0).Value;
+                Scene.FirstVolume = Scene.SecondVolume = π;
+                Scene.Expected = FromOverlap(π, π, 16.0 * 0.125 / (3.0 * Along.Y), 1, 1, 2, 2);
+                return Scene;
+            } },
+            { "BlockFlushHalf", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "BlockFlushHalf", "Corpus BoxA / BoxB: half-overlapping blocks with 4 coplanar face pairs — maximal faces give 6 faces (G5)" };
+                Scene.First  = ConstructBlock(Partition, { 0.0, 0.0, 0.0 }, { 4.0, 3.0, 2.0 }).Value;
+                Scene.Second = ConstructBlock(Partition, { 2.0, 0.0, 0.0 }, { 4.0, 3.0, 2.0 }).Value;
+                Scene.FirstVolume = Scene.SecondVolume = 24.0;
+                Scene.Expected = FromOverlap(24.0, 24.0, 12.0);
+                return Scene;
+            } },
+            { "BlockStep", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "BlockStep", "Lower block flush with the back, sides and bottom of a taller one: an L-profile of maximal faces (G5)" };
+                Scene.First  = ConstructBlock(Partition, { 0.0, 0.0, 0.0 }, { 4.0, 3.0, 2.0 }).Value;
+                Scene.Second = ConstructBlock(Partition, { 2.0, 0.0, 0.0 }, { 4.0, 3.0, 1.0 }).Value;
+                Scene.FirstVolume = 24.0;  Scene.SecondVolume = 12.0;
+                Scene.Expected = FromOverlap(24.0, 12.0, 6.0);
+                return Scene;
+            } },
+            { "BlockFlushSlot", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "BlockFlushSlot", "Slot bar flush with the top, through both sides: A − B one U-solid, B − A two stubs (G5)" };
+                Scene.First  = ConstructBlock(Partition, { 0.0, 0.0, 0.0 }, { 3.0, 3.0, 2.0 }).Value;
+                Scene.Second = ConstructBlock(Partition, { 1.0, -1.0, 1.0 }, { 1.0, 5.0, 1.0 }).Value;
+                Scene.FirstVolume = 18.0;  Scene.SecondVolume = 5.0;
+                Scene.Expected = FromOverlap(18.0, 5.0, 3.0, 1, 1, 1, 2);
+                return Scene;
+            } },
+            { "BlockFlushCorner", [](ModelPartition& Partition)
+            {
+                BooleanScene Scene{ "BlockFlushCorner", "Corner overlap with flush top and bottom: L-shaped maximal caps (G5)" };
+                Scene.First  = ConstructBlock(Partition, { 0.0, 0.0, 0.0 }, { 2.0, 2.0, 2.0 }).Value;
+                Scene.Second = ConstructBlock(Partition, { 1.0, 1.0, 0.0 }, { 2.0, 2.0, 2.0 }).Value;
+                Scene.FirstVolume = Scene.SecondVolume = 8.0;
+                Scene.Expected = FromOverlap(8.0, 8.0, 2.0);
                 return Scene;
             } },
         };

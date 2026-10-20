@@ -157,7 +157,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 if (!Axis) { Refuse("Revolve: axis line " + std::to_string(Step.AxisIdentifier) + " not in sketch " + Step.Profile); break; }
                 // The axis may close the profile loop itself (its segments sweep nothing) or be a construction line.
                 const Vector2 Start = Solved.Model.Points[Axis->Start].Position, End = Solved.Model.Points[Axis->End].Position;
-                Sweep = RevolveProfile(Partition, Profile, Solved.Plane, Start, End - Start);
+                Sweep = RevolveProfile(Partition, Profile, Solved.Plane, Start, End - Start, EvaluateFeatureValue(Tree, Step.Angle));
             }
             if (!Sweep.Refusal.empty()) { Refuse(Sweep.Refusal); break; }
             const BodyNaming ToolNaming = NameSweptBody(Partition, Sweep, Step.Label);

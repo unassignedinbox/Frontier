@@ -380,9 +380,11 @@ namespace
             Branch.EndTermination      = Branch.StartTermination;
             // 📝 Chart spacing from the chord tolerance: Δτ = 2·acos(1 − ε/r) on circles; lines need only the ends.
             int Steps = 1;                                                                   // [-] - Chart segments
-            if (const auto* Arc = std::get_if<CircularArc>(&Curve))
+            const double Bend = std::holds_alternative<CircularArc>(Curve)   ? std::get<CircularArc>(Curve).Radius
+                              : std::holds_alternative<EllipticalArc>(Curve) ? std::get<EllipticalArc>(Curve).MajorRadius : 0.0;  // [len] - Largest radius of curvature scale
+            if (Bend > 0.0)
             {
-                const double Spacing = std::min(std::numbers::pi / 24.0, 2.0 * std::acos(std::max(-1.0, 1.0 - Context.Settings.ChordTolerance / std::max(Arc->Radius, 1.0e-300))));
+                const double Spacing = std::min(std::numbers::pi / 24.0, 2.0 * std::acos(std::max(-1.0, 1.0 - Context.Settings.ChordTolerance / Bend)));
                 Steps = std::max(4, static_cast<int>(std::ceil((Interval.High - Interval.Low) / Spacing)));
             }
             Vector2 FirstReference = BoxCentre(Context.FirstBox), SecondReference = BoxCentre(Context.SecondBox);
@@ -520,6 +522,60 @@ namespace
             const Vector3 Radial = InPlane * Side;                                           // [-] - Meridian circle X axis
             RegisterAnalyticBranch(Context, CircularArc{ { Frame.Origin + Radial * Torus.MajorRadius, Radial, Frame.ZAxis, Cross(Radial, Frame.ZAxis) }, Torus.MinorRadius }, 0.0, FullTurn, false);
         }
+        return true;
+    }
+
+    // ⑤ Equal-radius cylinders whose axes meet (Monge): for X on both, ((X − C)·𝐚)² = ((X − C)·𝐛)², so the curve is the
+    //    two ellipses in the bisector planes (X − C)·(𝐚 ∓ 𝐛) = 0. Both share the minor axis ±r·𝐧 (𝐧 = 𝐚 × 𝐛 unit), where
+    //    N₁ ∥ N₂: the singular points that a marcher cannot cross reliably, registered here so the boolean splits there.
+    //    Plane ⟂ (𝐚 − 𝐛): major r / sin(θ/2) along 𝐚 + 𝐛; plane ⟂ (𝐚 + 𝐛): major r / cos(θ/2) along 𝐚 − 𝐛.
+    [[nodiscard]] bool SolveEqualCylinders(const IntersectionContext& Context)
+    {
+        const auto* First  = std::get_if<CylinderSurface>(&Context.First);
+        const auto* Second = std::get_if<CylinderSurface>(&Context.Second);
+        if (!First || !Second) return false;
+        const double Precision = Context.Settings.Precision;
+        if (std::fabs(First->Radius - Second->Radius) > Precision) return false;
+        const Vector3 AxisA = First->Frame.ZAxis, AxisB = Second->Frame.ZAxis;
+        const Vector3 Normal = Cross(AxisA, AxisB);                                          // [-]   - 𝐚 × 𝐛 (|·| = sin θ)
+        const double  Sine = Length(Normal);                                                 // [-]   - sin θ
+        if (Sine <= ParallelSine) return false;
+        const Vector3 Join = Second->Frame.Origin - First->Frame.Origin;                     // [len] - o₂ − o₁
+        if (std::fabs(Dot(Join, Normal)) / Sine > Precision) return false;                  // Skew axes: a general quartic
+        // Meeting point C = o₁ + s·𝐚 with s from the 2×2 normal equations of the closest approach.
+        const double  Cosine = Dot(AxisA, AxisB);                                            // [-]   - cos θ
+        const double  Reach  = (Dot(Join, AxisA) - Cosine * Dot(Join, AxisB)) / (Sine * Sine);  // [len] - s along 𝐚
+        const Vector3 Centre = First->Frame.Origin + AxisA * Reach;                         // [len] - C
+        const Vector3 Minor  = Normal * (1.0 / Sine);                                        // [-]   - 𝐧
+        const double  Radius = 0.5 * (First->Radius + Second->Radius);                       // [len] - r
+        // 📝 Each ellipse is registered as its two halves between the singular points (τ = ±π/2 on the minor axis), the
+        //    same contract as marching's split at singular points: four open arcs with Singular ends.
+        const size_t Before = Context.Outcome.Branches.size();                               // [-] - First new branch
+        for (const double Side : { -1.0, 1.0 })
+        {
+            const Vector3 Major = Normalize(AxisA - AxisB * Side);                            // [-]   - In-plane major direction
+            const double  Lean  = std::fabs(Dot(AxisA, Normalize(AxisA + AxisB * Side)));    // [-]   - |𝐚 · plane normal|
+            const OrthonormalFrame Frame{ Centre, Major, Minor, Cross(Major, Minor) };
+            for (const double Low : { -0.5 * std::numbers::pi, 0.5 * std::numbers::pi }) RegisterAnalyticBranch(Context, EllipticalArc{ Frame, Radius / Lean, Radius }, Low, Low + std::numbers::pi, false);
+        }
+        std::vector<Vector3> Singular;                                                       // [len] - The two crossing points
+        for (const double Side : { -1.0, 1.0 })
+        {
+            Singular.push_back(Centre + Minor * (Side * Radius));
+            RegisterSpecialPoint(Context, Singular.back(), SpecialPointCategory::Singular);
+        }
+        for (size_t Index = Before; Index < Context.Outcome.Branches.size(); ++Index)
+        {
+            IntersectionBranch& Branch = Context.Outcome.Branches[Index];
+            const auto AtSingular = [&](double τ)
+            {
+                const Vector3 End = EvaluateCurve(Branch.Curve, τ).Position;
+                return std::any_of(Singular.begin(), Singular.end(), [&](Vector3 Point) { return Distance(Point, End) <= Precision; });
+            };
+            if (AtSingular(Branch.CurveLow))  Branch.StartTermination = BranchTermination::Singular;
+            if (AtSingular(Branch.CurveHigh)) Branch.EndTermination   = BranchTermination::Singular;
+        }
+        Context.Outcome.Method = "Analytic · equal cylinders with meeting axes (Monge ellipses)";
         return true;
     }
 
@@ -979,7 +1035,12 @@ namespace
             bool EndCondition = false;                                                       // [-] - A branch ends / passes here
             for (const IntersectionBranch& Branch : Outcome.Branches)
             {
-                if (PolylineDistance(Branch.Chart, Branch.ClosedCondition, Point.Position) <= 1.0e-6 * (1.0 + Scale)) EndCondition = true;
+                // Exact branches are measured on their carrier: the chart is only a chord-tolerance polyline, which can
+                // miss a crossing by more than the acceptance when no chart point falls on it (oblique Monge ellipses).
+                const double Gap = Branch.Category == BranchCategory::Traced
+                                 ? PolylineDistance(Branch.Chart, Branch.ClosedCondition, Point.Position)
+                                 : Distance(EvaluateCurve(Branch.Curve, ProjectOntoCurve(Branch.Curve, Point.Position, Branch.CurveLow)).Position, Point.Position);
+                if (Gap <= 1.0e-6 * (1.0 + Scale)) EndCondition = true;
             }
             Point.Category = EndCondition ? SpecialPointCategory::Singular : SpecialPointCategory::Touch;
         }
@@ -1017,7 +1078,7 @@ SurfaceIntersectionOutcome IntersectSurfaces(const SurfaceGeometry& First, const
     }
     const IntersectionContext Context{ First, FirstBox, Second, SecondBox, Settings, Scale, Outcome };
 
-    if (Settings.Policy == IntersectionPolicy::Hybrid && (SolvePlanePlane(Context) || SolveCoaxial(Context) || SolveParallelCrossSection(Context) || SolvePlaneThroughAxis(Context)))
+    if (Settings.Policy == IntersectionPolicy::Hybrid && (SolvePlanePlane(Context) || SolveCoaxial(Context) || SolveParallelCrossSection(Context) || SolvePlaneThroughAxis(Context) || SolveEqualCylinders(Context)))
     {
         ClassifySpecialPoints(Outcome, Scale);
         return Outcome;

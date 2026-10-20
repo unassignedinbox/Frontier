@@ -213,6 +213,13 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
     {
         if (!std::holds_alternative<PlaneSurface>(Blueprint.Faces[Face].Surface)) return LabelToken("F", Description.Inventory.Faces[Face]) + " is not planar";
         for (const auto& Loop : Blueprint.Faces[Face].Loops) for (const BlueprintUse& Use : Loop) EdgeUsers[Use.Edge].insert(Face);
+        for (const auto& Loop : Blueprint.Faces[Face].Loops)
+        {
+            for (const BlueprintUse& Use : Loop)
+            {
+                if (std::holds_alternative<IntersectionCurve>(Blueprint.Edges[Use.Edge].Curve)) return LabelToken("F", Description.Inventory.Faces[Face]) + " is bounded by an intersection curve (🚧 ruled sides over traced edges)";
+            }
+        }
     }
     for (const auto& [Edge, Users] : EdgeUsers) if (Users.size() > 1) return "two selected faces share an edge (🚧 joint extrusion)";
 
@@ -250,6 +257,7 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
                 {
                     using Type = std::decay_t<decltype(Carrier)>;
                     if constexpr (std::is_same_v<Type, StraightLine>) Carrier.Origin = Carrier.Origin + Lift;
+                    else if constexpr (std::is_same_v<Type, IntersectionCurve>) {}                // Refused above
                     else Carrier.Frame.Origin = Carrier.Frame.Origin + Lift;
                 }, Lifted);
                 const int UpperStart = RaisedVertex(Lower.Start);                             // Issues rise edges first

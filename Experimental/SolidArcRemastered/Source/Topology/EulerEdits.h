@@ -108,6 +108,10 @@ struct EdgeRingOutcome
 // KEF — remove an edge between two different faces, merging the faces.
 [[nodiscard]] EditOutcome<bool> CollapseEdgeFace(ModelPartition& Partition, EdgeToken Edge);
 
+// KVE — remove a degree-two vertex between Kept and Absorbed: Kept now ends at Absorbed's far vertex, Absorbed and the
+// vertex are reclaimed. Topology only; the caller extends Kept's interval and re-fits its SP-curves (same carrier).
+[[nodiscard]] EditOutcome<bool> CollapseVertexJoinEdges(ModelPartition& Partition, VertexToken Vertex, EdgeToken Kept, EdgeToken Absorbed);
+
 // KVFS — remove an acorn body (one vertex, one face, no edges).
 [[nodiscard]] EditOutcome<bool> CollapseBodyFaceVertex(ModelPartition& Partition, BodyToken Body);
 

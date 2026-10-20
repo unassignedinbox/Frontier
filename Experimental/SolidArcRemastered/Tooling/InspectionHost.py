@@ -16,7 +16,7 @@ Endpoints
     GET /api/faceop?name=N&K=V    face operation of a catalogue specimen (Amount scales the last step, Source=1 shows the body before), provenance + V check
     GET /api/specimen?name=SketchName&Label=V   solve a catalogue sketch with edited dimensions (DOF, rank, conflicts, profile)
     GET /api/specimen?name=TreeName&P=V&Upto=K  regenerate a feature tree (parameters, replay up to step K): names, resolutions, V check
-    GET /api/validation?name=N    run TopologyValidation | ... | FaceOperationValidation | SketchValidation | FeatureValidation, returns markdown
+    GET /api/validation?name=N    run TopologyValidation | ... | FaceOperationValidation | SketchValidation | FeatureValidation | CorpusValidation, returns markdown
     GET /api/status               build state (Building | Ready | Failed), stale flag, build log, revision
     GET /api/events               Server-Sent Events: build state changes
 """
@@ -43,7 +43,7 @@ ViewerRoot      = ProjectRoot / "Viewer"
 WatchedRoots    = [ProjectRoot / "Source", ProjectRoot / "Validation", ProjectRoot / "CMakeLists.txt"]
 WatchInterval   = 0.5                                                                        # [s]  - Source scan period
 RequestTimeout  = 30.0                                                                       # [s]  - One specimen request
-ValidationNames = { "TopologyValidation", "PredicateValidation", "IntersectionValidation", "ContainmentValidation", "BooleanValidation", "TessellationValidation", "BlendValidation", "FaceOperationValidation", "SketchValidation", "FeatureValidation" }
+ValidationNames = { "TopologyValidation", "PredicateValidation", "IntersectionValidation", "ContainmentValidation", "BooleanValidation", "TessellationValidation", "BlendValidation", "FaceOperationValidation", "SketchValidation", "FeatureValidation", "CorpusValidation" }
 ContentKinds    = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" }
 
 #------------------------------------------------------------------------------------------------------------------------

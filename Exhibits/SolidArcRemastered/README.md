@@ -1,4 +1,13 @@
-# 🧩 SolidArcRemastered — evidence for steps 1–7
+# 🧩 SolidArcRemastered — evidence for steps 1–8
+
+**TL;DR (step 8)**: CorpusValidation passes 79/79 rows (5 gates, 6.2 s), and the plan gate is met: **0 corpus refusals**. The old kernel refused 19 of its 176 FeatureSuitability rows; all 19 now run and match the closed form.
+- **Exact:** V vs the hand-derived closed form is ≤ 3.59e-14 over 76 bodies. Every result is audit-sound with its source untouched, has 0 redundant edges, and tessellates watertight.
+- **G3, CrossUnequal (traced sections):** the union is 7 / 9 / 6 (F / E / V), V = 4.0031956814. The old kernel's CrossOffset value 4.009803 was **wrong**; the true value is 4.0099890528.
+- **G4, Steinmetz (singular points):** union 5.6165186405, ∩ 0.6666666667 = 16r³/3, − 2.4749259869, and the 60° oblique ∩ 0.7698003589 = 16r³/(3 sin θ). The 2 branch points become fuse vertices.
+- **G5, maximal faces:** BoxUnion drops from 14 faces (old kernel) to 6. StepUnion, FlushSlotDiff and CornerUnion give L- and U-shaped maximal faces.
+- **G2, exact pipe:** the corpus pipe on an arc is a partial torus, V = 0.1973920880 (old kernel: freeform, V error 2.8e-06).
+- **Corpus `rotate Block`:** the result is 3.0, versus the old 2.994292. The face rotates about its centre, and a 5° tilt about the face's centre line leaves a prism's volume unchanged.
+- **Regression:** BooleanValidation now runs 23 scenes (8 new) × 4 operations, with ΔV ≤ 6.5e-15 and 0 of 26 400 oracle points wrong. TessellationValidation covers 342 bodies and 725 172 triangles. All 11 validations pass.
 
 **TL;DR (step 7)**: SketchValidation passes 18/18 sketches (9 gates, 56 ms) and FeatureValidation passes 33/33 regenerations of 7 trees (7 gates, 3.7 s).
 - **Plan gate, sketches:** under-, well- and over-constrained sketches report the hand-counted DOF. The rank-revealing QR names the redundant constraint (`Parallel`, `Turn120`) and the conflict group ({V1, V2, Width, TopLength}). Touching circles are flagged ⚠️ singular, and a bow-tie profile is refused.
@@ -65,8 +74,10 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `IntersectionScenes.md` | 11 scenes × {Hybrid, MarchingOnly}: counts, length vs exact, residual, reference crossings, timings | 🟢 22/22 sound |
 | `IntersectionGallery/*.png` | Renders of the viewer JSON for all 11 scenes | — |
 | `ContainmentValidation.md` | H1 random points (8 specimens) · H2 ± normal offsets 1e-3…1e-7 (with and without the nearest-normal shortcut) · H3 on-boundary · H4 ray-cast parity · H5 open box vs Van Oosterom–Strackee · H6 2D holes | 🟢 PASS |
-| `BooleanValidation.md` | B1 audit · B2 closed-form volume · B3 volume identities · B4 membership oracle · B5 shell/solid counts; 15 scenes, 5 random families, open-argument negative control; per-operation table | 🟢 PASS |
-| `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices | — |
+| `BooleanValidation.md` | B1 audit · B2 closed-form volume · B3 volume identities · B4 membership oracle · B5 shell/solid counts; 23 scenes, 5 random families, open-argument negative control; per-operation table | 🟢 PASS |
+| `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices. The 8 step-8 scenes (CrossUnequal, CrossOffset, SteinmetzSolid, SteinmetzOblique, BlockFlushHalf, BlockStep, BlockFlushSlot, BlockFlushCorner) are shaded 2 × 2 sheets of ∪ ∩ − −′: faces tinted by argument (A blue, B orange), section edges gold; a merged maximal face keeps one source tint | — |
+| `CorpusValidation.md` | R1 refusals · R2 closed-form V · R3 audit, category, sources untouched · R4 redundant edges (maximal faces) · R5 tessellation; one row per FeatureSuitability corpus command with the old kernel's verdict, plus section X (G4 / G5 scenes, mirror, full-turn pipe) | 🟢 79/79, 0 refused |
+| `ModelGallery/*.png` | Shaded step-8 specimens (PipeBend, LoftFrustum, SweptRing, MirroredCross, ArrayedPins), one hue per face, with V, error, audit and tessellation verdicts | — |
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
 | `BlendValidation.md` | B1 closed-form ΔV · B2 audit, genus, face count, source untouched · B3 G1 and chamfer setback · B4 rolling-ball law · B5 tessellation · B6 winding vs clearance oracle · B7 Booleans downstream · B8 refusals · B9 determinism · B10 scale; per-specimen carriers and vertex classes | 🟢 PASS |
@@ -91,9 +102,13 @@ Experimental/SolidArcRemastered/build/BlendValidation > Exhibits/SolidArcRemaste
 Experimental/SolidArcRemastered/build/FaceOperationValidation > Exhibits/SolidArcRemastered/FaceOperationValidation.md
 Experimental/SolidArcRemastered/build/SketchValidation > Exhibits/SolidArcRemastered/SketchValidation.md
 Experimental/SolidArcRemastered/build/FeatureValidation > Exhibits/SolidArcRemastered/FeatureValidation.md
+Experimental/SolidArcRemastered/build/CorpusValidation > Exhibits/SolidArcRemastered/CorpusValidation.md
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # BlendGallery (needs Pillow + numpy)
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceOperation   # FaceOperationGallery
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Feature   # FeatureGallery
+python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Model --output Exhibits/SolidArcRemastered/ModelGallery --only PipeBend LoftFrustum SweptRing MirroredCross ArrayedPins
+python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Boolean --output Exhibits/SolidArcRemastered/BooleanGallery --only CrossUnequal CrossOffset SteinmetzSolid SteinmetzOblique BlockFlushHalf BlockStep BlockFlushSlot BlockFlushCorner
+# single corpus section: CorpusValidation --only C   (X = step-8 extensions)
 # single tree: FeatureValidation --only Boss
 # single specimen or prefix: FaceOperationValidation --only Push   (Scale selects E9)
 # single specimen or prefix: BlendValidation --only Rounded   (Scale selects B10)
@@ -173,6 +188,25 @@ python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Featu
 | `ExtrudeCurved` refusal text | A cylinder's own seam edge was counted as "two selected faces share an edge" | Planarity is checked first; shared edges count distinct faces |
 
 📝 `TessellationValidation.md` was refreshed. Rows, bodies and verdicts are unchanged, but triangle counts in the three random-Boolean rows and one digest differ from the old file. A scratch build of the previous commit reproduces today's numbers exactly, so the old file was stale from an earlier step; step 6 did not change it.
+
+🐞 Defects the gates found and fixed during step 8:
+
+| Found by | Defect | Fix |
+|---|---|---|
+| Closed-form volume, traced sections | Quadrature over an intersection curve lost digits at the guide's knots (the Newton-projected curve has a kink in its derivative there) | Volume integration splits at the knots; the acceptance was not loosened |
+| F3, SteinmetzOblique | Special points were classified against the chart polyline, which misses a crossing of an oblique ellipse by more than the acceptance | Exact branches are measured on their carrier |
+| ctest, sphere Boolean results | A sphere's pole-to-pole seam looked like a spur to slit removal | Slit removal requires chart-curve coincidence and only touches merged faces |
+| Gallery (difference panels) | Faces were tinted by token, but `specimen` and `tessellate` are separate host runs with different tokens | Faces are matched by geometry: each face's on-face anchor goes to the nearest tessellated triangle |
+
+🚧 Plan-gate gaps (step 8): these cases are refused cleanly, with a reason:
+
+| Case | Today | Planned |
+|---|---|---|
+| Pipe along a general path | Lines and arcs only (exact cylinder / torus) | Swept surface with a rotation-minimising frame |
+| Loft of non-coaxial sections, oblique sweep | Refused | Skinned surface (needs a spline carrier) |
+| Non-similar transforms of curved bodies | Refused: the carriers would leave the kinds | Spline carriers |
+| Analytic singular points | Equal crossing cylinders; other cases rely on marching, which refuses when it runs out of points | Collinear-normal point solve and branch splitting for general quadric pairs |
+| Face merge across closed loops (KEMR) | Planes only | Periodic carriers with a seam anchor |
 
 🚧 Plan-gate gaps (step 7): these cases are refused cleanly, never guessed:
 

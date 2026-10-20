@@ -4,7 +4,7 @@
 # 🧩 Before | After exhibit panels for the blend, face-operation and feature-tree catalogues, rasterised from the C++ inspection host
 
 """
-Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--kind Blend|FaceOperation|Feature] [--build-dir DIR] [--output DIR] [--only NAME ...]
+Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--kind Blend|FaceOperation|Feature|Model|Boolean] [--build-dir DIR] [--output DIR] [--only NAME ...]
 
 Before panel  the source body, shaded neutral, with the selection in amber (edges for blends, face outlines for face
               operations; hidden parts dashed).
@@ -291,11 +291,93 @@ def RenderFeature(Executable: Path, Name: str, Output: Path):
     return any(Step["Status"] == "Refused" for Step in Answers[1]["Feature"]["Steps"])
 
 
+def TriangleDistances(Triangles: np.ndarray, Point: np.ndarray) -> np.ndarray:
+    """Exact distance from Point to every triangle (N × 3 × 3): plane distance when the projection is inside, else the
+    nearest of the three sides."""
+    First, Second, Third = Triangles[:, 0], Triangles[:, 1], Triangles[:, 2]
+    Normal  = np.cross(Second - First, Third - First)
+    Area2   = np.maximum(np.einsum("ij,ij->i", Normal, Normal), 1e-300)                     # [len⁴] |N|² = (2·area)²
+    Height  = np.einsum("ij,ij->i", Point - First, Normal) / Area2
+    Foot    = Point - Normal * Height[:, None]
+    def Turning(Start, Finish): return np.einsum("ij,ij->i", np.cross(Finish - Start, Foot - Start), Normal)
+    Inside  = (Turning(First, Second) >= 0) & (Turning(Second, Third) >= 0) & (Turning(Third, First) >= 0)
+    def Segment(Start, Finish):
+        Span     = Finish - Start
+        Fraction = np.clip(np.einsum("ij,ij->i", Point - Start, Span) / np.maximum(np.einsum("ij,ij->i", Span, Span), 1e-300), 0.0, 1.0)
+        return np.linalg.norm(Point - (Start + Span * Fraction[:, None]), axis=1)
+    Sides = np.minimum(np.minimum(Segment(First, Second), Segment(Second, Third)), Segment(Third, First))
+    return np.where(Inside, np.abs(Height) * np.sqrt(Area2), Sides)
+
+
+def RenderSolid(Executable: Path, Name: str, Output: Path, Kind: str):
+    """Model specimen (one panel, faces in distinct hues) or Boolean scene (2 × 2 panels ∪ ∩ − −′: faces tinted by
+    argument, A blue / B orange, section edges gold). Returns True when any shown result was refused."""
+    Variants = [("Union", ["Operation=0"]), ("Intersection", ["Operation=1"]), ("Difference", ["Operation=2"]), ("Reversed difference", ["Operation=3"])] if Kind == "Boolean" else [("", [])]
+    Answers  = [AskHost(Executable, "specimen", Name, *Words) for _, Words in Variants]
+    Shaded   = [None if Answer.get("Refusal") else AskHost(Executable, "tessellate", Name, *Words, "SagRatio=0.0015") for Answer, (_, Words) in zip(Answers, Variants)]
+    Size, Font, Title = Supersample, ImageFont.truetype(FontPath, 13 * Supersample), ImageFont.truetype(FontPath, 16 * Supersample)
+    Camera = ViewerCamera()
+    Cloud  = np.concatenate([np.asarray(Complex["Positions"], dtype=float).reshape(-1, 3) for Complex in Shaded if Complex is not None and len(Complex["Positions"])])
+    Camera.Fit(Cloud, PanelWidth * Size, PanelHeight * Size)
+    Allowance = 0.004 * max(np.ptp(Cloud, axis=0).max(), 1e-9)
+    Pictures, Refused = [], False
+    for (Label, _), Answer, Complex in zip(Variants, Answers, Shaded):
+        if Complex is None or not len(Complex["Positions"]):
+            Refused = Refused or bool(Answer.get("Refusal"))
+            Picture = Image.new("RGB", (PanelWidth * Size, PanelHeight * Size), Background)
+            ImageDraw.Draw(Picture).text((14 * Size, 40 * Size), PlainText("refused: " + Answer.get("Refusal", "") if Answer.get("Refusal") else "empty result")[:90], fill=(255, 120, 120), font=Font)
+        else:
+            if Kind == "Boolean":
+                # ⚠️ specimen and tessellate are separate host runs: tokens differ, so faces are matched by geometry —
+                #    each specimen face's on-face anchor goes to the tessellated face whose triangles pass nearest to it.
+                Arguments = { History["Face"]: History["Argument"] for History in Answer["FaceHistories"] }
+                Triangles = np.asarray(Complex["Positions"], dtype=float).reshape(-1, 3)[np.asarray(Complex["Triangles"], dtype=int).reshape(-1, 3)]
+                Owner     = np.asarray(Complex["TriangleFaces"], dtype=int)
+                Owners    = {}
+                for Face in Answer["Faces"]:
+                    Distances = TriangleDistances(Triangles, np.asarray(Face["Normal"]["Origin"], dtype=float))
+                    Owners[Complex["Faces"][int(Owner[int(np.argmin(Distances))])]["Token"]] = Arguments.get(Face["Token"], "B")
+                Colour = lambda Token, Owners=Owners: (215, 0.45) if Owners.get(Token) == "A" else (28, 0.62)
+            else:
+                Order  = { Face["Token"]: Index for Index, Face in enumerate(Complex["Faces"]) }
+                Colour = lambda Token, Order=Order: ((200 + 137.5 * Order.get(Token, 0)) % 360, 0.50)
+            Picture, Depth = ShadeComplex(Camera, Complex, Colour)
+            Sections = { History["Edge"] for History in Answer.get("EdgeHistories", []) if History["Origin"] == "Section" }
+            DrawPolylines(Camera, Picture, Depth, [Edge["Polyline"] for Edge in Answer["Edges"] if Edge["Token"] not in Sections], (10, 12, 16), 2 * Size, Allowance)
+            DrawPolylines(Camera, Picture, Depth, [Edge["Polyline"] for Edge in Answer["Edges"] if Edge["Token"] in Sections], (255, 196, 64), 3 * Size, Allowance, (160, 120, 40))
+            Summary, Paint = Answer["Summary"], ImageDraw.Draw(Picture)
+            Faces   = Summary["Faces"] if Kind == "Boolean" else next(Count["Measured"] for Count in Summary["Counts"] if Count["Name"] == "Faces")
+            Error   = Summary.get("RelativeVolumeError", float("nan"))
+            Gates   = all(Gate["Passed"] for Gate in Complex["Gates"])
+            Line    = f"F {Faces} · V {Summary['Volume']:.10f} · rel. err {Error:.1e} · {'sound' if Answer['Audit']['Sound'] else 'UNSOUND'} · tessellation {'ok' if Gates else 'FAILED'}"
+            Paint.text((14 * Size, (PanelHeight - 26) * Size), Line, fill=(150, 160, 175), font=Font)
+        if Label: ImageDraw.Draw(Picture).text((14 * Size, 10 * Size), Label, fill=(160, 220, 230), font=Title)
+        Pictures.append(Picture)
+    Columns = 2 if len(Pictures) > 1 else 1
+    Rows    = (len(Pictures) + Columns - 1) // Columns
+    Sheet   = Image.new("RGB", (Columns * PanelWidth * Size, (Rows * PanelHeight + CaptionHeight) * Size), Background)
+    for Index, Picture in enumerate(Pictures): Sheet.paste(Picture, ((Index % Columns) * PanelWidth * Size, (Index // Columns) * PanelHeight * Size))
+    Paint = ImageDraw.Draw(Sheet)
+    for Column in range(1, Columns): Paint.line([(Column * PanelWidth * Size, 0), (Column * PanelWidth * Size, Rows * PanelHeight * Size)], fill=(50, 56, 66), width=Size)
+    for Row in range(1, Rows): Paint.line([(0, Row * PanelHeight * Size), (Columns * PanelWidth * Size, Row * PanelHeight * Size)], fill=(50, 56, 66), width=Size)
+    Paint.text((14 * Size, (Rows * PanelHeight + 12) * Size), PlainText(f"{Name}  ·  {Answers[0]['Description']}")[:170], fill=(215, 220, 228), font=Font)
+    if Kind == "Boolean":
+        Fuse = Answers[0]["Fuse"]
+        Second = f"General Fuse: {Fuse['SectionBranches']} section branches · {Fuse['InterferenceVertices']} interference vertices · {Fuse['SectionEdges']} section edges (gold) · A blue, B orange"
+    else:
+        Second = "Parameters: " + ", ".join(f"{Key} = {Value:g}" for Key, Value in Answers[0]["Parameters"].items()) + " · one hue per face, B-rep edges dark"
+    Paint.text((14 * Size, (Rows * PanelHeight + 38) * Size), PlainText(Second)[:190], fill=(150, 160, 175), font=Font)
+    Sheet = Sheet.resize((Columns * PanelWidth, Rows * PanelHeight + CaptionHeight), Image.LANCZOS).quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    Output.mkdir(parents=True, exist_ok=True)
+    Sheet.save(Output / f"{Name}.png", optimize=True)
+    return Refused
+
+
 def main():
     Root = Path(__file__).resolve().parents[1]
     Parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     Parser.add_argument("--build-dir", default=str(Root / "build"))
-    Parser.add_argument("--kind", choices=("Blend", "FaceOperation", "Feature"), default="Blend")
+    Parser.add_argument("--kind", choices=("Blend", "FaceOperation", "Feature", "Model", "Boolean"), default="Blend")
     Parser.add_argument("--output", default=None, help="default: Exhibits/SolidArcRemastered/<Kind>Gallery")
     Parser.add_argument("--only", nargs="*", default=None)
     Arguments = Parser.parse_args()
@@ -305,7 +387,9 @@ def main():
     Names      = [Entry["Name"] for Entry in Catalogue["Specimens"] if Entry.get("Kind") == Arguments.kind]
     for Name in Names:
         if Arguments.only and Name not in Arguments.only: continue
-        Refused = RenderFeature(Executable, Name, Output) if Arguments.kind == "Feature" else RenderSpecimen(Executable, Name, Output, Arguments.kind)
+        if Arguments.kind == "Feature": Refused = RenderFeature(Executable, Name, Output)
+        elif Arguments.kind in ("Model", "Boolean"): Refused = RenderSolid(Executable, Name, Output, Arguments.kind)
+        else: Refused = RenderSpecimen(Executable, Name, Output, Arguments.kind)
         print(f"{Name:28s} {'refused' if Refused else 'rendered'}")
 
 

@@ -1,6 +1,6 @@
 # Sketch validation (step 7, M)
 
-**🟢 PASS** · corpus 18/18 · chain 122 unknowns DOF 0 in 5 steps 14.3 ms (conditioning 4e-05, not singular) · 55 ms total
+**🟢 PASS** · corpus 18/18 · chain 122 unknowns DOF 0 in 5 steps 13.6 ms (conditioning 4e-05, not singular) · 54 ms total
 
 ## Gates
 
@@ -20,7 +20,7 @@
 
 | | Sketch | What it is | n | m | rank (structural) | DOF (hand) | Redundant | Conflict groups | Singular (conditioning) | Steps | max residual | position error | Profile | area rel. error | ms |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 🟢 | FreeRectangle | H, V, H, V only: position (2) + width + height free, DOF 4 | 8 | 4 | 4 (4) | 4 (4) | – | – | no (1e+00) | 1 | 5.2e-18 | – | 1 loop(s) | – | 0.02 |
+| 🟢 | FreeRectangle | H, V, H, V only: position (2) + width + height free, DOF 4 | 8 | 4 | 4 (4) | 4 (4) | – | – | no (1e+00) | 1 | 5.2e-18 | – | 1 loop(s) | – | 0.05 |
 | 🟢 | DimensionedRectangle | width and height dimensioned, position free, DOF 2 | 8 | 6 | 6 (6) | 2 (2) | – | – | no (7e-01) | 1 | 6.9e-18 | – | 1 loop(s) | 3.0e-16 | 0.01 |
 | 🟢 | FixedRectangle | dimensioned and anchored, DOF 0 | 8 | 8 | 8 (8) | 0 (0) | – | – | no (4e-01) | 1 | 6.9e-18 | 1.4e-17 | 1 loop(s) | 1.5e-16 | 0.01 |
 | 🟢 | HalfFixedRectangle | anchored with width only: bottom corners fixed, top edge free to slide up, DOF 1 | 8 | 7 | 7 (7) | 1 (1) | – | – | no (4e-01) | 1 | 6.9e-18 | – | 1 loop(s) | – | 0.01 |
@@ -28,9 +28,9 @@
 | 🟢 | ConflictingRectangle | fixed 3-wide rectangle + top length 4: conflicts with Width | 8 | 9 | 8 (8) | 0 (0) | – | {V1, V2, Width, TopLength} | no (4e-01) | 2 | 1.0e+00 | – | 1 loop(s) | – | 0.01 |
 | 🟢 | TriangleSides | sides 4, 3, 2 with A fixed and AB horizontal, DOF 0 | 6 | 6 | 6 (6) | 0 (0) | – | – | no (4e-01) | 3 | 4.4e-16 | 5.0e-16 | 1 loop(s) | 3.1e-16 | 0.01 |
 | 🟢 | Equilateral | base 2 fixed, two equal-length constraints, DOF 0 | 6 | 6 | 6 (6) | 0 (0) | – | – | no (3e-01) | 3 | 2.7e-15 | 2.9e-15 | 1 loop(s) | 1.3e-15 | 0.01 |
-| 🟢 | RedundantAngle | equilateral + exterior angle 120° (implied): redundant | 6 | 7 | 6 (6) | 0 (0) | Turn120 | – | no (2e-01) | 3 | 2.7e-15 | 2.9e-15 | 1 loop(s) | 1.3e-15 | 0.03 |
+| 🟢 | RedundantAngle | equilateral + exterior angle 120° (implied): redundant | 6 | 7 | 6 (6) | 0 (0) | Turn120 | – | no (2e-01) | 3 | 2.7e-15 | 2.9e-15 | 1 loop(s) | 1.3e-15 | 0.02 |
 | 🟢 | Slot | stadium: 2 lines tangent to 2 arcs, r and centre distance dimensioned, DOF 0 | 12 | 12 | 12 (12) | 0 (0) | – | – | no (5e-02) | 4 | 6.3e-17 | 1.1e-17 | 1 loop(s) | 9.1e-16 | 0.05 |
-| 🟢 | PlateWithHole | fixed rectangle with a dimensioned circular hole, DOF 0 | 11 | 11 | 11 (11) | 0 (0) | – | – | no (3e-01) | 1 | 6.9e-18 | 1.4e-17 | 2 loop(s) | 1.7e-16 | 0.01 |
+| 🟢 | PlateWithHole | fixed rectangle with a dimensioned circular hole, DOF 0 | 11 | 11 | 11 (11) | 0 (0) | – | – | no (3e-01) | 1 | 6.9e-18 | 1.4e-17 | 2 loop(s) | 1.7e-16 | 0.04 |
 | 🟢 | FreeCircle | circle with radius only: centre free, DOF 2 | 3 | 1 | 1 (1) | 2 (2) | – | – | no (1e+00) | 1 | 0.0e+00 | – | 1 loop(s) | 0.0e+00 | 0.00 |
 | 🟢 | TangentCircles | r 1 fixed at origin, r 0.5 tangent outside on the same level, DOF 0 | 6 | 6 | 6 (6) | 0 (0) | – | – | no (4e-01) | 2 | 3.7e-18 | 3.7e-18 | 1 loop(s) | 2.8e-16 | 0.01 |
 | 🟢 | RadiusConflict | concentric circles r 1 and r 2 declared equal radius: conflict | 6 | 7 | 6 (6) | 0 (0) | – | {R1, R2, Equal} | no (5e-01) | 2 | 1.0e+00 | – | 2 loop(s) | – | 0.01 |
@@ -45,7 +45,7 @@
 |---|---|---|---|---|---|---|---|
 | 🟢 | TriangleSides | 0.1 | 200 | 100.0 % | 100.0 % | 3.9 | 0.01 |
 | 🔍 | TriangleSides | 0.3 | 200 | 100.0 % | 93.0 % | 4.8 | 0.01 |
-| 🟢 | Slot | 0.1 | 200 | 100.0 % | 95.5 % | 5.7 | 0.05 |
+| 🟢 | Slot | 0.1 | 200 | 100.0 % | 95.5 % | 5.7 | 0.04 |
 | 🔍 | Slot | 0.3 | 200 | 100.0 % | 30.0 % | 9.0 | 0.07 |
 | 🟢 | PlateWithHole | 0.1 | 200 | 100.0 % | 100.0 % | 1.0 | 0.01 |
 | 🔍 | PlateWithHole | 0.3 | 200 | 100.0 % | 100.0 % | 1.0 | 0.01 |

@@ -8,6 +8,8 @@
 #include "Audit/EnclosedVolume.h"
 #include "Construction/BodyAssembly.h"
 #include "Intersection/CurveSurfaceIntersection.h"
+#include "Intersection/IntersectionCurve.h"
+#include "Local/RedundantTopology.h"
 
 #include <algorithm>
 #include <array>
@@ -162,6 +164,9 @@ namespace
     [[nodiscard]] std::vector<Vector3> IntersectCarriers(const CurveGeometry& First, const CurveGeometry& Second, double Precision)
     {
         std::vector<Vector3> Points;
+        // 📝 Intersection curves cross other carriers only where they cross a face of the other argument, which the
+        //    edge–face pass finds exactly (Newton on the carrier), so the edge–edge pass skips them.
+        if (std::holds_alternative<IntersectionCurve>(First) || std::holds_alternative<IntersectionCurve>(Second)) return Points;
         if (std::holds_alternative<EllipticalArc>(First) || std::holds_alternative<EllipticalArc>(Second))
         {
             return IntersectEllipticCarriers(First, Second, Precision);
@@ -483,20 +488,42 @@ namespace
                     ++Outcome.Statistics.FacePairsTested;
                     const SurfaceIntersectionOutcome Section = IntersectSurfaces(FaceA.Domain.Surface, WindowBox(FaceA.Domain), FaceB.Domain.Surface, WindowBox(FaceB.Domain), Settings.Intersection);
                     if (Section.CoincidentCondition) { ++Outcome.Statistics.CoincidentPairs; continue; }
+                    // 💡 Singular points (branches cross, N₁ ∥ N₂) become vertices, so every branch through them splits
+                    //    there and the face splitter sees the true degree-4 crossing instead of two smooth passes.
+                    for (const IntersectionSpecialPoint& Special : Section.SpecialPoints)
+                    {
+                        if (Special.Category != SpecialPointCategory::Singular) continue;
+                        if (ClassifyFacePosition(FaceA.Domain, Special.Position, Settings.Precision).Membership == PointMembership::Outside) continue;
+                        if (ClassifyFacePosition(FaceB.Domain, Special.Position, Settings.Precision).Membership == PointMembership::Outside) continue;
+                        RegisterVertex(Special.Position);
+                        ++Outcome.Statistics.SingularVertices;
+                    }
                     for (const IntersectionBranch& Branch : Section.Branches)
                     {
                         if (Branch.Category == BranchCategory::Traced)
                         {
+                            // 💡 A marched branch becomes an exact intersection-curve carrier (guide = the chart). Branches
+                            //    that never come within reach of both faces are dropped here, as exact ones are by splitting.
+                            bool Relevant = false;
                             for (const IntersectionChartPoint& Point : Branch.Chart)
                             {
                                 if (ClassifyFacePosition(FaceA.Domain, Point.Position, Settings.Precision).Membership != PointMembership::Outside
-                                    && ClassifyFacePosition(FaceB.Domain, Point.Position, Settings.Precision).Membership != PointMembership::Outside)
-                                {
-                                    Outcome.Refusal = std::string("GeneralFuse: traced section between ") + SurfaceCategoryLabel(FaceA.Domain.Surface) + " and "
-                                                    + SurfaceCategoryLabel(FaceB.Domain.Surface) + " faces (marched carriers are not supported in this step)";
-                                    return false;
-                                }
+                                    && ClassifyFacePosition(FaceB.Domain, Point.Position, Settings.Precision).Membership != PointMembership::Outside) { Relevant = true; break; }
                             }
+                            if (!Relevant || Branch.Chart.size() < 2) continue;
+                            if (Branch.StartTermination == BranchTermination::Limit || Branch.EndTermination == BranchTermination::Limit)
+                            {
+                                Outcome.Refusal = std::string("GeneralFuse: marched section between ") + SurfaceCategoryLabel(FaceA.Domain.Surface) + " and "
+                                                + SurfaceCategoryLabel(FaceB.Domain.Surface) + " faces ran out of points";
+                                return false;
+                            }
+                            std::vector<Vector3> Guide;
+                            for (const IntersectionChartPoint& Point : Branch.Chart) Guide.push_back(Point.Position);
+                            const CurveGeometry Carrier = BuildIntersectionCurve(FaceA.Domain.Surface, FaceB.Domain.Surface, Guide, Branch.ClosedCondition);
+                            const auto [Low, High] = MeasureIntersectionCurveRange(*std::get<IntersectionCurve>(Carrier).Trace);
+                            ++Outcome.Statistics.SectionBranches;
+                            ++Outcome.Statistics.TracedSections;
+                            Sections.push_back({ Carrier, Low, High, Branch.ClosedCondition, static_cast<int>(IndexA), static_cast<int>(IndexB) });
                             continue;
                         }
                         ++Outcome.Statistics.SectionBranches;
@@ -1038,7 +1065,7 @@ GeneralFuseOutcome RunGeneralFuse(const ModelPartition& Partition, BodyToken Fir
     return Builder.Run();
 }
 
-BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutcome& Fuse, BooleanOperation Operation)
+BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutcome& Fuse, BooleanOperation Operation, bool MaximalFacesEnabled)
 {
     BooleanOutcome Outcome;
     if (!Fuse.Refusal.empty()) { Outcome.Refusal = Fuse.Refusal; return Outcome; }
@@ -1085,6 +1112,21 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
     Outcome.Solids = Assembly.Solids;
     Outcome.Shells = Assembly.Shells;
     Outcome.Faces  = static_cast<int>(Kept.size());
+    if (!MaximalFacesEnabled) return Outcome;
+
+    // ③ Maximal faces: merged fragments hand their history to the surviving face (OCCT: Modified → the merged face).
+    const RedundancyOutcome Redundancy = RemoveRedundantTopology(Partition, Outcome.Body);
+    for (const auto& [Absorbed, Survivor] : Redundancy.FaceMerges)
+    {
+        for (FaceHistory& History : Outcome.FaceHistories) if (History.Result == Absorbed) History.Result = Survivor;
+    }
+    std::erase_if(Outcome.EdgeHistories, [&](const EdgeHistory& History)
+    {
+        return std::find(Redundancy.EdgesRemoved.begin(), Redundancy.EdgesRemoved.end(), History.Result) != Redundancy.EdgesRemoved.end();
+    });
+    Outcome.Faces      -= Redundancy.FacesMerged;
+    Outcome.FacesMerged = Redundancy.FacesMerged;
+    Outcome.EdgesJoined = Redundancy.EdgesJoined;
     return Outcome;
 }
 
@@ -1092,7 +1134,7 @@ BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyTo
 {
     const GeneralFuseOutcome Fuse = RunGeneralFuse(Partition, First, Second, Settings);
     if (Statistics != nullptr) *Statistics = Fuse.Statistics;
-    return AssembleBoolean(Partition, Fuse, Operation);
+    return AssembleBoolean(Partition, Fuse, Operation, Settings.MaximalFacesEnabled);
 }
 
 const char* BooleanOperationLabel(BooleanOperation Operation) noexcept

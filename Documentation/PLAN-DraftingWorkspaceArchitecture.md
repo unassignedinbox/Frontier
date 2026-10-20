@@ -91,10 +91,10 @@ Both UI versions drive the C++ kernel through the same command stream: browser �
 | # | Gap | Evidence | Fix direction |
 |---|---|---|---|
 | G1 | 🟢 Closed in step 7 (`Experimental/SolidArcRemastered` FeatureTree, FeatureValidation F1–F7). Was: bevel/boolean/face-op bodies do not regenerate | `Results/Regeneration.txt`: plain extrusion follows its sketch (3 → 6, z + 0.5); bevelled one stays 2.982806. Now announced by a ⚠️ row | feature tree (§ 3) with Bevel as the first step type: regenerate base → replay `BevelFeature` via names / `Rebind` |
-| G2 | Circle swept along an arc is fitted, not exact | BentPipe volume error 2.8e-6 (1.4e-5 relative), 1 freeform edge | `Pipe` on an arc path = `Revolve` of the circle about the arc axis |
-| G3 | Seam on an intersection point is misdiagnosed | CrossUnequal: "coincident faces along the intersection (not transversal)"; same pair shifted by 0.1 z unions fine (4.009803) | seed SSI marching off-seam; classify by surface normals, not by the trace collision |
-| G4 | Singular intersections (curves crossing) refuse | Steinmetz: "intersection runs into a surface singularity or seam corner" | branch-point detection + split at the singular point (legitimate hard case) |
-| G5 | Coplanar booleans fall back to a cell arrangement | PlusUnion 22 faces, face-contact union 34 faces (exact, but fragmented) | coplanar face overlay in the traced route, then remove the arrangement |
+| G2 | 🟢 Closed in step 8 (`Feature/PathSweep`: pipe on an arc = partial revolve, exact; partial `RevolveProfile`; `Construction/BodyTransform` for mirror / array / scale). Was: circle swept along an arc is fitted, not exact | BentPipe volume error 2.8e-6 (1.4e-5 relative), 1 freeform edge | `Pipe` on an arc path = `Revolve` of the circle about the arc axis |
+| G3 | 🟢 Closed in step 8 (`Intersection/IntersectionCurve`: traced section carrier, Newton onto both surfaces in the guide's normal plane; CrossUnequal 4.003195681354, CrossOffset 4.009989052758 — the old 4.009803 was wrong). Was: seam on an intersection point is misdiagnosed | CrossUnequal: "coincident faces along the intersection (not transversal)"; same pair shifted by 0.1 z unions fine (4.009803) | seed SSI marching off-seam; classify by surface normals, not by the trace collision |
+| G4 | 🟢 Closed in step 8 (equal-cylinder SSI emits half-ellipses ending at the 2 singular points, which become General Fuse vertices; Steinmetz ∪ / ∩ / − exact, oblique 60° too). Was: singular intersections (curves crossing) refuse | Steinmetz: "intersection runs into a surface singularity or seam corner" | branch-point detection + split at the singular point (legitimate hard case) |
+| G5 | 🟢 Closed in step 8 (`Local/RedundantTopology`: KEF across one carrier, KEV / KEMR slits, KVE joins; BoxUnion 14 → 6 faces; audit `CountRedundantEdges` = 0 on every corpus row). Was: coplanar booleans fall back to a cell arrangement | PlusUnion 22 faces, face-contact union 34 faces (exact, but fragmented) | coplanar face overlay in the traced route, then remove the arrangement |
 | G6 | Face ops are box-only | 16 refusals | generic rule: offset the selected faces' carriers → re-intersect with their neighbours (the `TweakSolver` approach) → audit. `shell` = offset all faces + boolean (as D8 now does for boxes) |
 | G7 | No persistent naming | § 4 | § 4 |
 
@@ -109,7 +109,7 @@ Both UI versions drive the C++ kernel through the same command stream: browser �
 | 5 | `FeatureTree` with Extrude, Revolve, Boolean and Bevel steps; regeneration by replay | `RegenerationProbe` with bevel: body follows the sketch |
 | 6 | Generic face ops (G6) replace `FaceEditSolver` routes one verb at a time | corpus section E: 0 refusals on HoleSlab and Can, closed forms exact |
 | 7 | Retire `BlendSolver` `fillet` and `chamfer` (aliases to `beveladd`) | BevelLab 6 / 6; corpus section D unchanged |
-| 8 | G2–G5 kernel work | corpus refusals → 0 |
+| 8 | G2–G5 kernel work | corpus refusals → 0 — 🟢 `CorpusValidation` 79 / 79 (71 corpus rows A–H + 8 G4 / G5 extras), 0 refused, 19 / 19 old refusals exact |
 | 9 | `DraftingWorkspace` in `ref/new` on SketchModelViewport (Vulkan + Slang, GLFW, TOML options) | UI parity checklist against the SolidArc browser editor |
 
 ## 7. Fixed in phase 3

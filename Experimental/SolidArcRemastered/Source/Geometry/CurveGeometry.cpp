@@ -35,6 +35,7 @@ CurveSample EvaluateCurve(const CurveGeometry& Curve, double τ) noexcept
     {
         return { Line->Origin + Line->Direction * τ, Line->Direction };
     }
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return EvaluateIntersectionCurve(*Traced->Trace, τ);
     const ConicForm Conic  = *ResolveConicForm(Curve);
     const double    Cosine = std::cos(τ);                                                    // [-] - cos τ
     const double    Sine   = std::sin(τ);                                                    // [-] - sin τ
@@ -47,6 +48,7 @@ double ProjectOntoCurve(const CurveGeometry& Curve, Vector3 Position, double Int
     {
         return Dot(Position - Line->Origin, Line->Direction);
     }
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return ProjectOntoIntersectionCurve(*Traced->Trace, Position, IntervalLow);
     const ConicForm Conic  = *ResolveConicForm(Curve);
     const Vector3   Offset = Position - Conic.Centre;                                        // [len] - From the centre
     const double    Major  = Length(Conic.CosineAxis);                                       // [len] - a
@@ -79,17 +81,20 @@ double ProjectOntoCurve(const CurveGeometry& Curve, Vector3 Position, double Int
 
 bool PeriodicCondition(const CurveGeometry& Curve) noexcept
 {
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return IntersectionCurveClosedCondition(*Traced->Trace);
     return !std::holds_alternative<StraightLine>(Curve);
 }
 
 const char* CurveCategoryLabel(const CurveGeometry& Curve) noexcept
 {
-    if (std::holds_alternative<StraightLine>(Curve)) return "Line";
+    if (std::holds_alternative<StraightLine>(Curve))      return "Line";
+    if (std::holds_alternative<IntersectionCurve>(Curve)) return "Intersection";
     return std::holds_alternative<CircularArc>(Curve) ? "Circle" : "Ellipse";
 }
 
 double MeasureCurveBulge(const CurveGeometry& Curve, double Low, double High, int Pieces) noexcept
 {
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return MeasureIntersectionCurveBulge(*Traced->Trace, Low, High, Pieces);
     const std::optional<ConicForm> Conic = ResolveConicForm(Curve);
     if (!Conic) return 0.0;
     const double Largest = std::max(Length(Conic->CosineAxis), Length(Conic->SineAxis));    // [len] - Largest semi-axis
@@ -102,8 +107,15 @@ double MeasureCurveBulge(const CurveGeometry& Curve, double Low, double High, in
 
 double MeasureParameterScale(const CurveGeometry& Curve) noexcept
 {
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return MeasureIntersectionCurveScale(*Traced->Trace);
     const std::optional<ConicForm> Conic = ResolveConicForm(Curve);
     return Conic ? std::max(Length(Conic->CosineAxis), Length(Conic->SineAxis)) : 1.0;
+}
+
+std::vector<double> CollectCurveBreakpoints(const CurveGeometry& Curve, double Low, double High)
+{
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return CollectIntersectionCurveKnots(*Traced->Trace, std::min(Low, High), std::max(Low, High));
+    return {};
 }
 
 //------------------------------------------------------------------------------------------------------------------------

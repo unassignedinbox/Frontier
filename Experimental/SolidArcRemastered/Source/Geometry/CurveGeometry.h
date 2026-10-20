@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                         CURVEGEOMETRY.H
 ====================================================================================================================================*/
-// 🧩 Analytic 3D curves (line, circle) and 2D parameter-space curves (SP-curves on faces) with exact inversion
+// 🧩 Analytic 3D curves (line, circle, ellipse), exact intersection curves and 2D parameter-space curves (SP-curves on faces) with exact inversion
 
 #pragma once
 
@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -46,7 +47,16 @@ struct EllipticalArc
     double           MinorRadius = 1.0;                                                      // [len] - b, semi-axis along YAxis
 };
 
-using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc>;
+// 📝 Exact intersection of two surfaces, evaluated by Newton onto both from a marched guide. The body lives in
+//    Intersection/IntersectionCurve.h (it needs SurfaceGeometry; this header must not). Closed curves have period 2π.
+struct TracedIntersection;
+
+struct IntersectionCurve
+{
+    std::shared_ptr<const TracedIntersection> Trace = {};                                    // [-] - Shared, immutable
+};
+
+using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc, IntersectionCurve>;
 
 // 📝 Common form of the periodic carriers: P(τ) = Centre + cos τ·CosineAxis + sin τ·SineAxis (axes orthogonal).
 struct ConicForm
@@ -80,6 +90,10 @@ struct CurveSample
 
 // Characteristic length of one unit of τ (1 for lines, the radius for circles, the major radius for ellipses).
 [[nodiscard]] double MeasureParameterScale(const CurveGeometry& Curve) noexcept;
+
+// τ values strictly inside (Low, High) where the carrier is only C¹ (guide knots of an intersection curve, repeated per
+// period); empty for analytic carriers. Quadrature splits there, so every panel integrates an analytic function.
+[[nodiscard]] std::vector<double> CollectCurveBreakpoints(const CurveGeometry& Curve, double Low, double High);
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    2D PARAMETER-SPACE CURVES
@@ -123,6 +137,18 @@ struct ParameterSample
 };
 
 [[nodiscard]] ParameterSample EvaluateParameterCurve(const ParameterCurve& Curve, double τ) noexcept;
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INTERSECTION CURVES
+//------------------------------------------------------------------------------------------------------------------------
+
+// Defined in Intersection/IntersectionCurve.cpp; CurveGeometry.cpp dispatches to them.
+[[nodiscard]] CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ) noexcept;
+[[nodiscard]] double      ProjectOntoIntersectionCurve(const TracedIntersection& Trace, Vector3 Position, double IntervalLow) noexcept;
+[[nodiscard]] bool        IntersectionCurveClosedCondition(const TracedIntersection& Trace) noexcept;
+[[nodiscard]] double      MeasureIntersectionCurveBulge(const TracedIntersection& Trace, double Low, double High, int Pieces) noexcept;
+[[nodiscard]] double      MeasureIntersectionCurveScale(const TracedIntersection& Trace) noexcept;
+[[nodiscard]] std::vector<double> CollectIntersectionCurveKnots(const TracedIntersection& Trace, double Low, double High);
 
 // Defined in Geometry/ProjectedCurve.cpp.
 [[nodiscard]] ParameterSample EvaluateProjectedParameterCurve(const ProjectedParameterCurve& Curve, double τ) noexcept;

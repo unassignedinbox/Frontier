@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                          PROFILESWEEP.H
 ====================================================================================================================================*/
-// 🧩 Solids from sketch profiles: linear extrude (planes, cylinders, holes) and full revolve (plane … torus, poles)
+// 🧩 Solids from sketch profiles: linear extrude (planes, cylinders, holes) and revolve, full or partial (plane … torus, poles)
 
 #pragma once
 
@@ -12,6 +12,7 @@
 #include "Construction/BodyAssembly.h"
 #include "Sketch/SketchProfile.h"
 
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -54,11 +55,13 @@ struct SweepOutcome
 //    its holes; multiple outer loops make multiple solid regions.
 [[nodiscard]] SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent);
 
-// 💡 Revolve 360° about the sketch line through AxisPoint along AxisDirection: segments ⟂ axis → planes (disc /
-//    annulus), ∥ axis → cylinders, oblique → cones (apex vertex on the axis), arcs centred on the axis → spheres (poles),
-//    other arcs → tori, a full circle off the axis → a closed torus. Segments on the axis vanish; the profile must not
-//    cross the axis.
-[[nodiscard]] SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection);
+// 💡 Revolve by Angle (default 360°) about the sketch line through AxisPoint along AxisDirection, turning from the sketch
+//    plane toward the side the right-hand rule about the axis gives: segments ⟂ axis → planes (disc / annulus / sector),
+//    ∥ axis → cylinders, oblique → cones (apex vertex on the axis), arcs centred on the axis → spheres (poles), other arcs
+//    → tori, a full circle off the axis → a torus. Segments on the axis vanish (partial: they bound both caps); the
+//    profile must not cross the axis. Partial turns add planar caps at 𝑢 = 0 and 𝑢 = Angle (G2: pipe on an arc).
+[[nodiscard]] SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection,
+                                          double Angle = 2.0 * std::numbers::pi);
 
 // "Side(Line7)", "Cap(Start)", "Cap(End)".
 [[nodiscard]] std::string SweepRoleName(const SweepFace& Role);

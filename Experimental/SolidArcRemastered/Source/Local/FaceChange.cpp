@@ -13,6 +13,7 @@
 #include "Containment/FaceDomain.h"
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/CurveSurfaceIntersection.h"
+#include "Intersection/IntersectionCurve.h"
 #include "Intersection/IsoParameterCurve.h"
 
 #include <algorithm>
@@ -38,6 +39,7 @@ namespace
     [[nodiscard]] CurveGeometry ReverseCurve(const CurveGeometry& Curve)
     {
         if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ Line->Origin, -Line->Direction };
+        if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return ReverseIntersectionCurve(*Traced->Trace);
         if (const auto* Circle = std::get_if<CircularArc>(&Curve))
         {
             CircularArc Reversed = *Circle;

@@ -40,21 +40,25 @@ add_library(SolidArcRemastered STATIC
     Source/Intersection/CurveSurfaceIntersection.cpp
     Source/Intersection/IsoParameterCurve.cpp
     Source/Intersection/SurfaceIntersection.cpp
+    Source/Intersection/IntersectionCurve.cpp
     Source/Topology/ModelPartition.cpp
     Source/Topology/EulerEdits.cpp
     Source/Construction/PrimitiveConstruction.cpp
     Source/Construction/BodyAssembly.cpp
+    Source/Construction/BodyTransform.cpp
     Source/Blend/RollingBallGeometry.cpp
     Source/Blend/EdgeBlend.cpp
     Source/Blend/BlendCatalogue.cpp
     Source/Local/FaceChange.cpp
     Source/Local/FaceOperations.cpp
     Source/Local/TopologyRebuild.cpp
+    Source/Local/RedundantTopology.cpp
     Source/Local/FaceOperationCatalogue.cpp
     Source/Sketch/SketchSolver.cpp
     Source/Sketch/SketchProfile.cpp
     Source/Sketch/SketchCatalogue.cpp
     Source/Feature/ProfileSweep.cpp
+    Source/Feature/PathSweep.cpp
     Source/Feature/TopologicalNaming.cpp
     Source/Feature/FeatureTree.cpp
     Source/Feature/FeatureCatalogue.cpp
@@ -110,6 +114,9 @@ target_link_libraries(FeatureValidation PRIVATE SolidArcRemastered)
 add_executable(SketchValidation Validation/SketchValidation.cpp)
 target_link_libraries(SketchValidation PRIVATE SolidArcRemastered)
 
+add_executable(CorpusValidation Validation/CorpusValidation.cpp)
+target_link_libraries(CorpusValidation PRIVATE SolidArcRemastered)
+
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
 add_test(NAME PredicateValidation COMMAND PredicateValidation)
@@ -121,3 +128,4 @@ add_test(NAME BlendValidation COMMAND BlendValidation)
 add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)
 add_test(NAME SketchValidation COMMAND SketchValidation)
 add_test(NAME FeatureValidation COMMAND FeatureValidation)
+add_test(NAME CorpusValidation COMMAND CorpusValidation)

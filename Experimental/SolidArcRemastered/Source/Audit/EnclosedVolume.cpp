@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -139,8 +140,24 @@ namespace
             });
             return Primitive * Sample.Derivative.Y;
         };
-        if (MagnitudeMode) return EstimateMagnitude(Partition.FinParameterStart(Fin), Partition.FinParameterEnd(Fin), PanelSpan, Integrand);
-        return IntegrateRefined(Partition.FinParameterStart(Fin), Partition.FinParameterEnd(Fin), PanelSpan, Integrand, Floor);
+        // 📝 Split at the carrier's breakpoints (intersection-curve knots, where it is only C¹) so every panel sees an
+        //    analytic integrand: Gauss–Legendre then converges spectrally instead of O(h²) across a kink.
+        const double Start = Partition.FinParameterStart(Fin), End = Partition.FinParameterEnd(Fin);
+        std::vector<double> Stops = { Start };
+        const EdgeProfile& Edge = Partition.Edges.Resolve(Use.Edge);
+        if (Edge.Curve.PresentCondition())
+        {
+            std::vector<double> Breakpoints = CollectCurveBreakpoints(Partition.Curves.Resolve(Edge.Curve), Start, End);
+            if (Start > End) std::reverse(Breakpoints.begin(), Breakpoints.end());
+            Stops.insert(Stops.end(), Breakpoints.begin(), Breakpoints.end());
+        }
+        Stops.push_back(End);
+        double Total = 0.0;
+        for (size_t Index = 0; Index + 1 < Stops.size(); ++Index)
+        {
+            Total += MagnitudeMode ? EstimateMagnitude(Stops[Index], Stops[Index + 1], PanelSpan, Integrand) : IntegrateRefined(Stops[Index], Stops[Index + 1], PanelSpan, Integrand, Floor);
+        }
+        return Total;
     }
 
     // Σ over a face's fins: integral (absolute acceptance floor supplied) or, in magnitude mode, Σ∫|G 𝑣′| dτ.

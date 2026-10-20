@@ -268,10 +268,11 @@ SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Prof
 //                                                    REVOLVE
 //------------------------------------------------------------------------------------------------------------------------
 
-SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection)
+SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection, double Angle)
 {
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Revolve: " + Profile.Refusal; return Refused; }
+    if (!(Angle > 1.0e-9) || Angle > FullTurn + 1.0e-12) { Refused.Refusal = "Revolve: sweep angle must lie in (0, 2π]"; return Refused; }
     const double Tolerance = 1.0e-9 * Profile.Scale;                                         // [len] - On-axis distance
     const Vector2 Along = Normalize(AxisDirection);
     Vector2 Radial = { -Along.Y, Along.X };                                                  // [-] - Sketch direction away from the axis
@@ -303,40 +304,68 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
     auto Place    = [&](Vector2 Point) { const Vector2 RZ = Meridian(Point); return Origin + AxisX * RZ.X + AxisZ * RZ.Y; };
     auto Circle   = [&](double Radius, double Elevation) { return CircularArc{ { Origin + AxisZ * Elevation, AxisX, AxisY, AxisZ }, Radius }; };
 
+    // ②b Partial revolve: rotation by the sweep angle about the axis (the u = Angle copies of the profile).
+    const bool   Partial     = Angle < FullTurn - 1.0e-12;                                   // [-] - Caps needed
+    const double TurnCosine  = std::cos(Angle), TurnSine = std::sin(Angle);                  // [-] - Rotation by Angle
+    auto TurnDirection = [&](Vector3 Direction)
+    {
+        const double X = Dot(Direction, AxisX), Y = Dot(Direction, AxisY), Z = Dot(Direction, AxisZ);
+        return AxisX * (X * TurnCosine - Y * TurnSine) + AxisY * (X * TurnSine + Y * TurnCosine) + AxisZ * Z;
+    };
+    auto TurnPoint = [&](Vector3 Point) { return Origin + TurnDirection(Point - Origin); };
+    auto TurnCurve = [&](const CurveGeometry& Curve) -> CurveGeometry
+    {
+        if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ TurnPoint(Line->Origin), TurnDirection(Line->Direction) };
+        const auto& Arc = std::get<CircularArc>(Curve);
+        return CircularArc{ { TurnPoint(Arc.Frame.Origin), TurnDirection(Arc.Frame.XAxis), TurnDirection(Arc.Frame.YAxis), TurnDirection(Arc.Frame.ZAxis) }, Arc.Radius };
+    };
+    const double TrackMiddle = Partial ? 0.5 * Angle : std::numbers::pi;                     // [rad] - 𝑢 of a track midpoint
+    const double FarSeam     = Partial ? Angle : FullTurn;                                   // [rad] - 𝑢 of the far profile copy
+
     BlueprintWriter Writer;
+    std::vector<std::vector<LoopUse>> StartRims(Profile.Loops.size()), EndRims(Profile.Loops.size());   // [-] - Cap boundaries (partial)
     for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
     {
         const ProfileLoop& Loop = Profile.Loops[LoopIndex];
         const int Count = static_cast<int>(Loop.Segments.size());
 
-        // ③ Full circle off the axis → closed torus (equator + meridian circles through one vertex, chart [0, 2π]²).
+        // ③ Full circle off the axis → torus (closed: equator + meridian through one vertex, chart [0, 2π]²; partial:
+        //    meridians at 𝑢 = 0 and 𝑢 = Angle joined by the equator track, which is the 𝑣-seam).
         if (Count == 1 && Loop.Segments[0].Kind == ProfileSegmentKind::Circle)
         {
             const ProfileSegment& Segment = Loop.Segments[0];
             const Vector2 Centre = Meridian(Segment.Centre);
             if (Centre.X - Segment.Radius <= Tolerance) { Refused.Refusal = "Revolve: circle " + Segment.Name + " touches or crosses the axis"; return Refused; }
             const TorusSurface Surface{ { Origin + AxisZ * Centre.Y, AxisX, AxisY, AxisZ }, Centre.X, Segment.Radius };
-            const int Vertex = Writer.AddVertex(Origin + AxisZ * Centre.Y + AxisX * (Centre.X + Segment.Radius));
-            const int Equator = Writer.AddEdge(Circle(Centre.X + Segment.Radius, Centre.Y), 0.0, FullTurn, Vertex, Vertex);
-            const int Ring = Writer.AddEdge(CircularArc{ { Origin + AxisZ * Centre.Y + AxisX * Centre.X, AxisX, AxisZ, Cross(AxisX, AxisZ) }, Segment.Radius }, 0.0, FullTurn, Vertex, Vertex);
+            const Vector3 Equatorial = Origin + AxisZ * Centre.Y + AxisX * (Centre.X + Segment.Radius);   // [len] - 𝑣 = 0 point at 𝑢 = 0
+            const int StartVertex = Writer.AddVertex(Equatorial);
+            const int EndVertex   = Partial ? Writer.AddVertex(TurnPoint(Equatorial)) : StartVertex;
+            const int Equator = Writer.AddEdge(Circle(Centre.X + Segment.Radius, Centre.Y), 0.0, Partial ? Angle : FullTurn, StartVertex, EndVertex);
+            const CircularArc Meridional{ { Origin + AxisZ * Centre.Y + AxisX * Centre.X, AxisX, AxisZ, Cross(AxisX, AxisZ) }, Segment.Radius };
+            const int Ring    = Writer.AddEdge(Meridional, 0.0, FullTurn, StartVertex, StartVertex);
+            const int FarRing = Partial ? Writer.AddEdge(TurnCurve(Meridional), 0.0, FullTurn, EndVertex, EndVertex) : Ring;
             LoopPlan Plan;
             const double Pi = std::numbers::pi;
-            Plan.Uses = { { Equator, Orientation::Forward, Vector2{ Pi, 0.0 } }, { Ring, Orientation::Forward, Vector2{ FullTurn, Pi } },
-                          { Equator, Orientation::Reversed, Vector2{ Pi, FullTurn } }, { Ring, Orientation::Reversed, Vector2{ 0.0, Pi } } };
+            Plan.Uses = { { Equator, Orientation::Forward, Vector2{ TrackMiddle, 0.0 } }, { FarRing, Orientation::Forward, Vector2{ FarSeam, Pi } },
+                          { Equator, Orientation::Reversed, Vector2{ TrackMiddle, FullTurn } }, { Ring, Orientation::Reversed, Vector2{ 0.0, Pi } } };
             const Vector2 Outward = OutwardAt(Segment, 0.0);
             Writer.AddFace(Surface, Place(Segment.Start), Lift(Outward), { Plan }, { SweepFaceRole::Side, Segment.Name, static_cast<int>(LoopIndex) });
+            StartRims[LoopIndex] = { { Ring, Orientation::Forward } };
+            EndRims[LoopIndex]   = { { FarRing, Orientation::Forward } };
             continue;
         }
 
-        // ④ Vertices (every profile vertex; on-axis ones are poles / apexes) and their circles.
-        std::vector<int> Vertex(Count), Ring(Count, -1);
+        // ④ Vertices (every profile vertex; on-axis ones are poles / apexes) and their tracks: closed circles for a
+        //    full turn, arcs [0, Angle] from the profile vertex to its turned copy otherwise.
+        std::vector<int> Vertex(Count), FarVertex(Count), Ring(Count, -1);
         std::vector<Vector2> RZ(Count);
         for (int Index = 0; Index < Count; ++Index)
         {
             RZ[Index] = Meridian(Loop.Segments[Index].Start);
             const bool OnAxis = RZ[Index].X <= Tolerance;
-            Vertex[Index] = Writer.AddVertex(OnAxis ? Origin + AxisZ * RZ[Index].Y : Place(Loop.Segments[Index].Start));
-            if (!OnAxis) Ring[Index] = Writer.AddEdge(Circle(RZ[Index].X, RZ[Index].Y), 0.0, FullTurn, Vertex[Index], Vertex[Index]);
+            Vertex[Index]    = Writer.AddVertex(OnAxis ? Origin + AxisZ * RZ[Index].Y : Place(Loop.Segments[Index].Start));
+            FarVertex[Index] = Partial && !OnAxis ? Writer.AddVertex(TurnPoint(Place(Loop.Segments[Index].Start))) : Vertex[Index];
+            if (!OnAxis) Ring[Index] = Writer.AddEdge(Circle(RZ[Index].X, RZ[Index].Y), 0.0, Partial ? Angle : FullTurn, Vertex[Index], FarVertex[Index]);
         }
 
         // ⑤ One face per segment not lying on the axis.
@@ -349,21 +378,10 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
             const Vector2 Middle  = EvaluateProfileSegment(Segment, 0.5);
             const Vector3 Probe   = Place(Middle);
             const Vector3 Outward = Lift(OutwardAt(Segment, 0.5));
-            if (Segment.Kind == ProfileSegmentKind::Line && Start.X <= Tolerance && End.X <= Tolerance) continue;   // On the axis: sweeps nothing
+            const bool    OnAxisLine = Segment.Kind == ProfileSegmentKind::Line && Start.X <= Tolerance && End.X <= Tolerance;   // Sweeps nothing
+            const bool    Flat       = Segment.Kind == ProfileSegmentKind::Line && !OnAxisLine && std::fabs(Start.Y - End.Y) <= Tolerance;  // Plane ⟂ axis
 
-            // Plane ⟂ axis: disc or annulus bounded by the two circles.
-            if (Segment.Kind == ProfileSegmentKind::Line && std::fabs(Start.Y - End.Y) <= Tolerance)
-            {
-                const PlaneSurface Surface{ { Origin + AxisZ * Start.Y, AxisX, AxisY, AxisZ } };
-                std::vector<LoopPlan> Plans;
-                const int Larger = Start.X > End.X ? Index : Next, Smaller = Start.X > End.X ? Next : Index;
-                Plans.push_back({ { { Ring[Larger], Orientation::Forward } }, true });
-                if (Ring[Smaller] >= 0) Plans.push_back({ { { Ring[Smaller], Orientation::Forward } }, false });
-                Writer.AddFace(Surface, Probe, Outward, Plans, Role);
-                continue;
-            }
-
-            // Curved face: seam = the profile segment itself at 𝑢 = 0.
+            // Profile copy at 𝑢 = 0 (the seam of a full turn) and its turned copy at 𝑢 = Angle.
             SurfaceGeometry Surface;
             CurveGeometry   SeamCurve;
             double SeamLow = 0.0, SeamHigh = 0.0, StartV = 0.0, EndV = 0.0;
@@ -371,9 +389,10 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
             if (Segment.Kind == ProfileSegmentKind::Line)
             {
                 const double Length = Distance(Segment.Start, Segment.End);
-                SeamCurve = StraightLine{ Place(Segment.Start), Lift(Normalize(Segment.End - Segment.Start)) };
+                SeamCurve = StraightLine{ OnAxisLine ? Origin + AxisZ * Start.Y : Place(Segment.Start), Lift(Normalize(Segment.End - Segment.Start)) };
                 SeamLow = 0.0; SeamHigh = Length;
-                if (std::fabs(Start.X - End.X) <= Tolerance)
+                if (OnAxisLine || Flat) {}
+                else if (std::fabs(Start.X - End.X) <= Tolerance)
                 {
                     Surface = CylinderSurface{ { Origin, AxisX, AxisY, AxisZ }, Start.X };
                     StartV = Start.Y; EndV = End.Y;
@@ -410,16 +429,76 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
                     Refused.Refusal = "Revolve: arc " + Segment.Name + " crosses the axis"; return Refused;
                 }
             }
-            const int SeamStart = SeamSense == Orientation::Forward ? Vertex[Index] : Vertex[Next];
-            const int SeamEnd   = SeamSense == Orientation::Forward ? Vertex[Next] : Vertex[Index];
-            const int Seam      = Writer.AddEdge(SeamCurve, SeamLow, SeamHigh, SeamStart, SeamEnd);
+            // A full turn needs the copy only as the seam of a curved face; a partial one needs both copies for the caps.
+            int Seam = -1, FarCopy = -1;                                                     // [-] - Copies at 𝑢 = 0 and 𝑢 = Angle
+            if (Partial || !(OnAxisLine || Flat))
+            {
+                const bool Along = SeamSense == Orientation::Forward;                        // [-] - Edge runs Index → Next
+                Seam    = Writer.AddEdge(SeamCurve, SeamLow, SeamHigh, Along ? Vertex[Index] : Vertex[Next], Along ? Vertex[Next] : Vertex[Index]);
+                FarCopy = !Partial || OnAxisLine ? Seam
+                        : Writer.AddEdge(TurnCurve(SeamCurve), SeamLow, SeamHigh, Along ? FarVertex[Index] : FarVertex[Next], Along ? FarVertex[Next] : FarVertex[Index]);
+                StartRims[LoopIndex].push_back({ Seam, SeamSense });
+                EndRims[LoopIndex].push_back({ FarCopy, SeamSense });
+            }
+            if (OnAxisLine) continue;
+
+            // Plane ⟂ axis: disc / annulus (full turn) or annular sector (partial) bounded by the tracks.
+            if (Flat)
+            {
+                const PlaneSurface Surface{ { Origin + AxisZ * Start.Y, AxisX, AxisY, AxisZ } };
+                std::vector<LoopPlan> Plans;
+                const int Larger = Start.X > End.X ? Index : Next, Smaller = Start.X > End.X ? Next : Index;
+                if (!Partial)
+                {
+                    Plans.push_back({ { { Ring[Larger], Orientation::Forward } }, true });
+                    if (Ring[Smaller] >= 0) Plans.push_back({ { { Ring[Smaller], Orientation::Forward } }, false });
+                }
+                else
+                {
+                    const Orientation Outbound = Larger == Index ? SeamSense : Opposite(SeamSense);   // Copy use Larger → Smaller
+                    LoopPlan Plan;
+                    Plan.Uses.push_back({ Ring[Larger], Orientation::Forward });
+                    Plan.Uses.push_back({ FarCopy, Outbound });
+                    if (Ring[Smaller] >= 0) Plan.Uses.push_back({ Ring[Smaller], Orientation::Reversed });
+                    Plan.Uses.push_back({ Seam, Opposite(Outbound) });
+                    Plans.push_back(Plan);
+                }
+                Writer.AddFace(Surface, Probe, Outward, Plans, Role);
+                continue;
+            }
+
+            // Curved face: bounded by the two tracks and the two profile copies (one seam edge used twice when full).
             const double MiddleV = 0.5 * (StartV + EndV);
             LoopPlan Plan;
-            if (Ring[Index] >= 0) Plan.Uses.push_back({ Ring[Index], Orientation::Forward, Vector2{ std::numbers::pi, StartV } });
-            Plan.Uses.push_back({ Seam, SeamSense, Vector2{ FullTurn, MiddleV } });
-            if (Ring[Next] >= 0) Plan.Uses.push_back({ Ring[Next], Orientation::Reversed, Vector2{ std::numbers::pi, EndV } });
+            if (Ring[Index] >= 0) Plan.Uses.push_back({ Ring[Index], Orientation::Forward, Vector2{ TrackMiddle, StartV } });
+            Plan.Uses.push_back({ FarCopy, SeamSense, Vector2{ FarSeam, MiddleV } });
+            if (Ring[Next] >= 0) Plan.Uses.push_back({ Ring[Next], Orientation::Reversed, Vector2{ TrackMiddle, EndV } });
             Plan.Uses.push_back({ Seam, Opposite(SeamSense), Vector2{ 0.0, MiddleV } });
             Writer.AddFace(Surface, Probe, Outward, { Plan }, Role);
+        }
+    }
+
+    // ⑥ Partial: planar caps at 𝑢 = 0 and 𝑢 = Angle, one pair per outer loop with the holes it directly encloses.
+    if (Partial)
+    {
+        const Vector3 FarX = TurnDirection(AxisX), FarY = TurnDirection(AxisY);              // [-] - Frame of the far cap
+        for (size_t Outer = 0; Outer < Profile.Loops.size(); ++Outer)
+        {
+            if (Profile.Loops[Outer].Depth % 2 != 0) continue;
+            for (int End = 0; End < 2; ++End)
+            {
+                std::vector<LoopPlan> Plans;
+                for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
+                {
+                    if (LoopIndex != Outer && Profile.Loops[LoopIndex].Enclosure != static_cast<int>(Outer)) continue;
+                    Plans.push_back({ End == 0 ? StartRims[LoopIndex] : EndRims[LoopIndex], LoopIndex == Outer });
+                }
+                const Vector3 CapX = End == 0 ? AxisX : FarX;
+                const PlaneSurface Surface{ { Origin, CapX, AxisZ, Cross(CapX, AxisZ) } };
+                const Vector3 Probe = End == 0 ? Place(Profile.Loops[Outer].Segments[0].Start) : TurnPoint(Place(Profile.Loops[Outer].Segments[0].Start));
+                const SweepFace Role{ End == 0 ? SweepFaceRole::StartCap : SweepFaceRole::EndCap, {}, static_cast<int>(Outer) };
+                Writer.AddFace(Surface, Probe, End == 0 ? AxisY * -1.0 : FarY, Plans, Role);
+            }
         }
     }
     return Assemble(Partition, Writer, "Revolve");

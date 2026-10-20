@@ -410,6 +410,46 @@ EditOutcome<bool> CollapseEdgeFace(ModelPartition& Partition, EdgeToken Edge)
     return { true };
 }
 
+EditOutcome<bool> CollapseVertexJoinEdges(ModelPartition& Partition, VertexToken Vertex, EdgeToken Kept, EdgeToken Absorbed)
+{
+    FinToken KeptFirst = {}, KeptSecond = {};                                                // [-] - Kept's two fins
+    FinToken AbsorbedFirst = {}, AbsorbedSecond = {};                                        // [-] - Absorbed's two fins
+    if (Kept == Absorbed) return { false, "KVE: the two edges are one" };
+    if (!ResolveEdgeFins(Partition, Kept, KeptFirst, KeptSecond) || !ResolveEdgeFins(Partition, Absorbed, AbsorbedFirst, AbsorbedSecond))
+    {
+        return { false, "KVE: edges are not manifold two-fin edges" };
+    }
+    EdgeProfile&       KeptEdge     = Partition.Edges.Resolve(Kept);
+    const EdgeProfile& AbsorbedEdge = Partition.Edges.Resolve(Absorbed);
+    if (!(KeptEdge.Start == Vertex) && !(KeptEdge.End == Vertex)) return { false, "KVE: vertex is not an end of the kept edge" };
+    if (!(AbsorbedEdge.Start == Vertex) && !(AbsorbedEdge.End == Vertex)) return { false, "KVE: vertex is not an end of the absorbed edge" };
+    if (KeptEdge.Start == KeptEdge.End || AbsorbedEdge.Start == AbsorbedEdge.End) return { false, "KVE: closed edge" };
+    const VertexToken Far = AbsorbedEdge.Start == Vertex ? AbsorbedEdge.End : AbsorbedEdge.Start;  // [-] - New end of Kept
+
+    // 📝 At a degree-two vertex each Kept fin is adjacent in its loop to one Absorbed fin; that fin is unlinked.
+    for (const FinToken KeptFin : { KeptFirst, KeptSecond })
+    {
+        const FinProfile& Use      = Partition.Fins.Resolve(KeptFin);
+        const bool        Arriving = Partition.FinEnd(KeptFin) == Vertex;                    // [-] - Kept fin ends at Vertex
+        const FinToken    Adjacent = Arriving ? Use.Successor : Use.Predecessor;             // [-] - Fin across the vertex
+        if (!(Partition.Fins.Resolve(Adjacent).Edge == Absorbed)) return { false, "KVE: vertex has degree above two" };
+    }
+    for (const FinToken KeptFin : { KeptFirst, KeptSecond })
+    {
+        const FinProfile& Use      = Partition.Fins.Resolve(KeptFin);
+        const LoopToken   Loop     = Use.Loop;                                               // [-] - Loop of both fins
+        const bool        Arriving = Partition.FinEnd(KeptFin) == Vertex;
+        const FinToken    Adjacent = Arriving ? Use.Successor : Use.Predecessor;
+        if (Arriving) LinkFins(Partition, KeptFin, Partition.Fins.Resolve(Adjacent).Successor);
+        else          LinkFins(Partition, Partition.Fins.Resolve(Adjacent).Predecessor, KeptFin);
+        if (Partition.Loops.Resolve(Loop).FirstFin == Adjacent) Partition.Loops.Resolve(Loop).FirstFin = KeptFin;
+    }
+    (KeptEdge.Start == Vertex ? KeptEdge.Start : KeptEdge.End) = Far;
+    ReclaimEdge(Partition, Absorbed, AbsorbedFirst, AbsorbedSecond);
+    Partition.Vertices.Reclaim(Vertex);
+    return { true };
+}
+
 EditOutcome<bool> CollapseBodyFaceVertex(ModelPartition& Partition, BodyToken Body)
 {
     if (!Partition.Bodies.Authenticate(Body)) return { false, "KVFS: stale body token" };

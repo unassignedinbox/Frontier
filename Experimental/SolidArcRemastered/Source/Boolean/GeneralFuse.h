@@ -46,6 +46,7 @@ struct GeneralFuseSettings
     double                      Precision    = SessionPrecision;                             // [len] - Incidence / merge distance
     SurfaceIntersectionSettings Intersection = {};                                           // [-]   - Face–face SSI
     WindingSettings             Containment  = {};                                           // [-]   - Fragment classification
+    bool                        MaximalFacesEnabled = true;                                  // [-]   - Remove redundant topology after assembly
 };
 
 struct GeneralFuseStatistics
@@ -53,7 +54,9 @@ struct GeneralFuseStatistics
     int    FacePairs          = 0;                                                           // [-]  - A-face × B-face pairs
     int    FacePairsTested    = 0;                                                           // [-]  - After bounding-box pruning
     int    CoincidentPairs    = 0;                                                           // [-]  - Same carrier surface
-    int    SectionBranches    = 0;                                                           // [-]  - Exact SSI branches kept
+    int    SectionBranches    = 0;                                                           // [-]  - SSI branches kept
+    int    TracedSections     = 0;                                                           // [-]  - Marched branches made exact carriers
+    int    SingularVertices   = 0;                                                           // [-]  - Branch crossings registered as vertices
     int    EdgeEdgeTests      = 0;                                                           // [-]  - Curve–curve tests
     int    EdgeFaceTests      = 0;                                                           // [-]  - Curve–surface tests
     int    InterferenceVertices = 0;                                                         // [-]  - New vertices from interferences
@@ -141,7 +144,9 @@ struct BooleanOutcome
     std::string Refusal = {};                                                                // [-] - Non-empty when refused
     int         Solids  = 0;                                                                 // [-] - Solid regions
     int         Shells  = 0;                                                                 // [-] - Shells (outer + cavities)
-    int         Faces   = 0;                                                                 // [-] - Faces kept
+    int         Faces   = 0;                                                                 // [-] - Faces of the result
+    int         FacesMerged = 0;                                                             // [-] - Fragments merged into maximal faces
+    int         EdgesJoined = 0;                                                             // [-] - Edges joined across degree-two vertices
     std::vector<FaceHistory> FaceHistories = {};                                             // [-] - Result face → argument face
     std::vector<EdgeHistory> EdgeHistories = {};                                             // [-] - Result edge → argument / section
 };
@@ -162,7 +167,8 @@ struct BooleanOutcome
 
 // 💡 Selection (BOP = GF + selection) and direct assembly of a new body: fins, radial pairs, shells by face connectivity,
 //    outer shells (positive volume) become solid regions, cavities (negative volume) join the region containing them.
-[[nodiscard]] BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutcome& Fuse, BooleanOperation Operation);
+//    Maximal faces (G5): fragments of one carrier are merged afterwards and the history redirected to the merged face.
+[[nodiscard]] BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutcome& Fuse, BooleanOperation Operation, bool MaximalFacesEnabled = true);
 
 [[nodiscard]] BooleanOutcome ComputeBoolean(ModelPartition&            Partition,
                                             BodyToken                  First,

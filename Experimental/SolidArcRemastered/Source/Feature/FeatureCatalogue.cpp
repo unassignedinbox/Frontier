@@ -295,10 +295,11 @@ namespace
         FeatureSpecimen Specimen;
         FeatureTree& Tree = Specimen.Tree;
         Tree.Name        = "TorusRing";
-        Tree.Description = "circle revolved about a construction line: one toroidal face, no vertices";
+        Tree.Description = "circle revolved about a construction line: one toroidal face at a full turn, end caps below it";
         TreeAuthoring Author{ Tree };
         Author.Parameter("Major", 2.0, 0.8, 3.0, "axis to circle centre");
         Author.Parameter("Minor", 0.5, 0.2, 0.7, "tube radius");
+        Author.Parameter("Turn", 2.0 * Pi, 0.3, 2.0 * Pi, "revolve angle [rad] (< 2π: partial torus with end caps)");
         FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, "Sketch#1");
         SketchModel& Sketch  = Section.Sketch;
         const int AxisStart = AppendSketchPoint(Sketch, { 0.0, 0.0 });
@@ -313,14 +314,15 @@ namespace
         Author.Bound(Sketch, Kind::Radius, Circle, -1, "Minor");
         FeatureStep& Revolve = Author.Sweep(FeatureStepKind::Revolve, "Revolve#2", "Sketch#1", LiteralValue(0.0), FeatureCombination::New);
         Revolve.AxisIdentifier = 1;
-        Specimen.Sweep = { {}, { { "Major", 0.8 }, { "Minor", 0.7 } }, { { "Major", 3.0 }, { "Minor", 0.2 } } };
+        Revolve.Angle          = ParameterValue("Turn");
+        Specimen.Sweep = { {}, { { "Major", 0.8 }, { "Minor", 0.7 } }, { { "Major", 3.0 }, { "Minor", 0.2 } }, { { "Turn", 0.5 * Pi } }, { { "Turn", 0.3 }, { "Major", 0.8 } } };
         Specimen.ExpectedVolume = [](const FeatureTree& Tree)
         {
             const double R = FeatureParameterValue(Tree, "Major"), r = FeatureParameterValue(Tree, "Minor");
-            return 2.0 * Pi * Pi * R * r * r;
+            return FeatureParameterValue(Tree, "Turn") * Pi * R * r * r;
         };
         Specimen.ExpectedRefusals = NoRefusals;
-        Specimen.Oracle           = "2π²·R·r²";
+        Specimen.Oracle           = "Φ·π·R·r² (Pappus; 2π²·R·r² at a full turn)";
         return Specimen;
     }
 
