@@ -44,6 +44,9 @@ struct PrismAssembly
 // Pointed cone: base circle at Frame.Origin, apex at Origin + Height·ZAxis.
 [[nodiscard]] EditOutcome<BodyToken> ConstructCone(ModelPartition& Partition, const OrthonormalFrame& Frame, double Radius, double Height);
 
+// Truncated cone: circle of OriginRadius at Frame.Origin, top circle of TopRadius at Origin + Height·ZAxis, seam through +XAxis.
+[[nodiscard]] EditOutcome<BodyToken> ConstructFrustum(ModelPartition& Partition, const OrthonormalFrame& Frame, double OriginRadius, double TopRadius, double Height);
+
 // Sphere: one face, one seam edge from the south pole to the north pole, singular rows at the poles.
 [[nodiscard]] EditOutcome<BodyToken> ConstructSphere(ModelPartition& Partition, const OrthonormalFrame& Frame, double Radius);
 

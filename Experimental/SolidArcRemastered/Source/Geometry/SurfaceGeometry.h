@@ -11,6 +11,7 @@
 
 #include "Geometry/VectorAlgebra.h"
 
+#include <optional>
 #include <variant>
 
 namespace Frontier::SolidArcRemastered
@@ -41,7 +42,7 @@ struct CylinderSurface
 struct ConeSurface
 {
     OrthonormalFrame Frame       = {};                                                       // [-]   - Axis frame
-    double           BaseRadius  = 1.0;                                                      // [len] - r₀, radius at 𝑣 = 0
+    double           OriginRadius  = 1.0;                                                      // [len] - r₀, radius at 𝑣 = 0
     double           RadialSlope = -1.0;                                                     // [-]   - s = dr/d𝑣
 };
 
@@ -94,5 +95,10 @@ struct SurfacePeriodicity
 [[nodiscard]] SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept;
 
 [[nodiscard]] const char*        SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept;
+
+// 💡 Exact offset by Distance along the natural normal: every analytic type offsets to its own type (plane → plane,
+//    cylinder r → r + δ, cone r₀ → r₀ + δ·√(1 + s²) with the same slope, sphere R → R + δ, torus r → r + δ). Empty when
+//    the offset degenerates (radius ≤ 0, torus tube reaching its axis) — the curvature-radius limit of a rolling ball.
+[[nodiscard]] std::optional<SurfaceGeometry> OffsetSurface(const SurfaceGeometry& Surface, double Distance) noexcept;
 
 } // namespace Frontier::SolidArcRemastered

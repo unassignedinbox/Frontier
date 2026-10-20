@@ -6,6 +6,7 @@
 #include "Boolean/GeneralFuse.h"
 
 #include "Audit/EnclosedVolume.h"
+#include "Construction/BodyAssembly.h"
 #include "Intersection/CurveSurfaceIntersection.h"
 
 #include <algorithm>
@@ -67,14 +68,14 @@ namespace
         const bool Straight = std::holds_alternative<StraightLine>(Curve);                   // [-] - Two samples suffice
         const int  Samples  = Straight ? 1 : 32;                                             // [-] - Pieces
         for (int Index = 0; Index <= Samples; ++Index) Bounds.Include(EvaluateCurve(Curve, Low + (High - Low) * Index / Samples).Position);
-        const double Bulge = Straight ? 0.0 : std::get<CircularArc>(Curve).Radius * (1.0 - std::cos(0.5 * (High - Low) / Samples));
+        const double Bulge = MeasureCurveBulge(Curve, Low, High, Samples);
         Bounds.Inflate(Bulge + Margin);
         return Bounds;
     }
 
     [[nodiscard]] double ParameterScale(const CurveGeometry& Curve) noexcept
     {
-        return std::holds_alternative<StraightLine>(Curve) ? 1.0 : std::get<CircularArc>(Curve).Radius;
+        return MeasureParameterScale(Curve);
     }
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -83,9 +84,88 @@ namespace
 
     // 📝 Closed-form intersection points of two analytic carriers (coincident overlaps return nothing: their ends are
     //    found as vertex-on-edge paves).
+    // Distance from a point to a carrier (closest point by exact inversion).
+    [[nodiscard]] double MeasureCarrierDistance(const CurveGeometry& Curve, Vector3 Point)
+    {
+        return Distance(Point, EvaluateCurve(Curve, ProjectOntoCurve(Curve, Point, 0.0)).Position);
+    }
+
+    // 📝 Pairs with an ellipse: a carrier crossing the conic's plane gives at most two candidates (trigonometric equation
+    //    K + A·cos τ + B·sin τ = 0, or the line's piercing point), accepted on the other carrier by exact inversion.
+    //    Coplanar pairs: local minima of the distance over 720 samples of the first carrier, polished by golden section.
+    [[nodiscard]] std::vector<Vector3> IntersectEllipticCarriers(const CurveGeometry& First, const CurveGeometry& Second, double Precision)
+    {
+        std::vector<Vector3> Points;
+        const auto Accept = [&](Vector3 Point)
+        {
+            if (MeasureCarrierDistance(First, Point) > Precision || MeasureCarrierDistance(Second, Point) > Precision) return;
+            for (const Vector3& Known : Points) if (Distance(Known, Point) <= Precision) return;
+            Points.push_back(Point);
+        };
+        const std::optional<ConicForm> ConicA = ResolveConicForm(First);
+        const std::optional<ConicForm> ConicB = ResolveConicForm(Second);
+        const CurveGeometry& Planar = ConicB ? Second : First;                               // [-] - A conic whose plane is used
+        const CurveGeometry& Other  = ConicB ? First : Second;                               // [-] - The carrier cut by that plane
+        const ConicForm      Plane  = ConicB ? *ConicB : *ConicA;
+        bool Coplanar = false;
+        if (const auto* Line = std::get_if<StraightLine>(&Other))
+        {
+            const double Climb = Dot(Line->Direction, Plane.Normal);                         // [-] - d·N
+            const double Height = Dot(Line->Origin - Plane.Centre, Plane.Normal);            // [len] - (o − c)·N
+            if (std::fabs(Climb) > 1.0e-12) Accept(Line->Origin + Line->Direction * (-Height / Climb));
+            else Coplanar = std::fabs(Height) <= Precision;
+        }
+        else
+        {
+            const ConicForm Cut = *ResolveConicForm(Other);
+            const double Constant = Dot(Cut.Centre - Plane.Centre, Plane.Normal);            // [len] - K
+            const double CosTerm  = Dot(Cut.CosineAxis, Plane.Normal);                       // [len] - A
+            const double SinTerm  = Dot(Cut.SineAxis, Plane.Normal);                         // [len] - B
+            const double Amplitude = std::hypot(CosTerm, SinTerm);                           // [len] - √(A² + B²)
+            if (Amplitude <= 1.0e-12 * MeasureParameterScale(Other)) Coplanar = std::fabs(Constant) <= Precision;
+            else if (std::fabs(Constant) <= Amplitude * (1.0 + 1.0e-12))
+            {
+                const double Phase  = std::atan2(SinTerm, CosTerm);                          // [rad] - φ
+                const double Spread = std::acos(std::clamp(-Constant / Amplitude, -1.0, 1.0)); // [rad] - ± offset
+                for (double τ : { Phase + Spread, Phase - Spread }) Accept(EvaluateCurve(Other, τ).Position);
+            }
+        }
+        if (!Coplanar) return Points;
+        constexpr int SampleCount = 720;                                                     // [-] - Samples of the first carrier
+        const bool    Straight    = std::holds_alternative<StraightLine>(First);
+        const double  Reach       = 4.0 * (MeasureParameterScale(Planar) + Distance(Plane.Centre, EvaluateCurve(First, 0.0).Position));
+        const double  Low         = Straight ? -Reach : 0.0;                                 // [-] - τ window of the first carrier
+        const double  High        = Straight ? Reach : 2.0 * std::numbers::pi;
+        const auto    Gap         = [&](double τ) { return MeasureCarrierDistance(Second, EvaluateCurve(First, τ).Position); };
+        std::vector<double> Values(SampleCount + 1);
+        for (int Index = 0; Index <= SampleCount; ++Index) Values[Index] = Gap(Low + (High - Low) * Index / SampleCount);
+        for (int Index = 0; Index <= SampleCount; ++Index)
+        {
+            const double Before = Values[Index == 0 ? (Straight ? 0 : SampleCount - 1) : Index - 1];
+            const double After  = Values[Index == SampleCount ? (Straight ? SampleCount : 1) : Index + 1];
+            if (Values[Index] > Before || Values[Index] > After) continue;
+            double Left = Low + (High - Low) * (Index - 1) / SampleCount;                    // [-] - Bracket
+            double Right = Low + (High - Low) * (Index + 1) / SampleCount;                   // [-] - Bracket
+            constexpr double Golden = 0.6180339887498949;                                    // [-] - (√5 − 1)/2
+            for (int Iteration = 0; Iteration < 80; ++Iteration)
+            {
+                const double Inner = Right - Golden * (Right - Left);                        // [-] - Lower probe
+                const double Outer = Left + Golden * (Right - Left);                         // [-] - Upper probe
+                if (Gap(Inner) < Gap(Outer)) Right = Outer;
+                else                         Left  = Inner;
+            }
+            Accept(EvaluateCurve(First, 0.5 * (Left + Right)).Position);
+        }
+        return Points;
+    }
+
     [[nodiscard]] std::vector<Vector3> IntersectCarriers(const CurveGeometry& First, const CurveGeometry& Second, double Precision)
     {
         std::vector<Vector3> Points;
+        if (std::holds_alternative<EllipticalArc>(First) || std::holds_alternative<EllipticalArc>(Second))
+        {
+            return IntersectEllipticCarriers(First, Second, Precision);
+        }
         const auto* LineA   = std::get_if<StraightLine>(&First);
         const auto* LineB   = std::get_if<StraightLine>(&Second);
         if (LineA && LineB)
@@ -420,7 +500,7 @@ namespace
                             continue;
                         }
                         ++Outcome.Statistics.SectionBranches;
-                        const bool Closed = std::holds_alternative<CircularArc>(Branch.Curve) && Branch.CurveHigh - Branch.CurveLow >= FullTurn - 1.0e-9;
+                        const bool Closed = PeriodicCondition(Branch.Curve) && Branch.CurveHigh - Branch.CurveLow >= FullTurn - 1.0e-9;
                         Sections.push_back({ Branch.Curve, Branch.CurveLow, Branch.CurveHigh, Closed, static_cast<int>(IndexA), static_cast<int>(IndexB) });
                     }
                 }
@@ -963,7 +1043,7 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
     BooleanOutcome Outcome;
     if (!Fuse.Refusal.empty()) { Outcome.Refusal = Fuse.Refusal; return Outcome; }
 
-    // ① Selection and the manifold check: every kept pave block is used exactly twice, in opposite directions.
+    // ① Selection (BOP = GF + selection): kept fragments become blueprint faces, flipped ones with reversed loops.
     std::vector<std::pair<int, bool>> Kept;                                                  // [-] - (fragment, flipped)
     for (size_t Index = 0; Index < Fuse.Fragments.size(); ++Index)
     {
@@ -971,154 +1051,40 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
         if (Keep) Kept.push_back({ static_cast<int>(Index), Flip });
     }
     if (Kept.empty()) { Outcome.Refusal = "Boolean: empty result"; return Outcome; }
-    std::vector<int> UseCount(Fuse.Edges.size(), 0), Balance(Fuse.Edges.size(), 0);
+    BodyBlueprint Blueprint;
+    for (const FuseVertex& Vertex : Fuse.Vertices) Blueprint.Vertices.push_back({ Vertex.Position });
+    for (const FuseEdge& Block : Fuse.Edges) Blueprint.Edges.push_back({ Block.Curve, Block.Low, Block.High, Block.Start, Block.End });
     for (const auto& [Index, Flip] : Kept)
     {
-        for (const auto& Loop : Fuse.Fragments[Index].Loops)
-        {
-            for (const FuseUse& Use : Loop)
-            {
-                if (Use.Edge < 0) continue;
-                ++UseCount[Use.Edge];
-                Balance[Use.Edge] += ((Use.Sense == Orientation::Forward) != Flip) ? 1 : -1;
-            }
-        }
-    }
-    for (size_t Edge = 0; Edge < Fuse.Edges.size(); ++Edge)
-    {
-        if (UseCount[Edge] != 0 && (UseCount[Edge] != 2 || Balance[Edge] != 0))
-        {
-            Outcome.Refusal = "Boolean: non-manifold or open result (pave block " + std::to_string(Edge) + " used " + std::to_string(UseCount[Edge]) + " times)";
-            return Outcome;
-        }
-    }
-
-    // ② Shells = connected components of kept fragments through shared pave blocks.
-    std::vector<int> Component(Kept.size());
-    std::iota(Component.begin(), Component.end(), 0);
-    const std::function<int(int)> Root = [&](int Index) { return Component[Index] == Index ? Index : Component[Index] = Root(Component[Index]); };
-    std::map<int, int> FirstUser;
-    for (size_t Slot = 0; Slot < Kept.size(); ++Slot)
-    {
-        for (const auto& Loop : Fuse.Fragments[Kept[Slot].first].Loops)
-        {
-            for (const FuseUse& Use : Loop)
-            {
-                if (Use.Edge < 0) continue;
-                const auto Found = FirstUser.find(Use.Edge);
-                if (Found == FirstUser.end()) FirstUser[Use.Edge] = static_cast<int>(Slot);
-                else Component[Root(static_cast<int>(Slot))] = Root(Found->second);
-            }
-        }
-    }
-
-    // ③ Records: body, vertices, edges (carrier copies), shells, faces, loops, fins.
-    const BodyToken   Body     = Partition.Bodies.Issue({ BodyCategory::Solid, {} });
-    const RegionToken Exterior = Partition.Regions.Issue({ Body, RegionMaterial::Void, {} });
-    std::map<int, VertexToken> Vertices;
-    std::map<int, EdgeToken>   Edges;
-    const auto IssueVertex = [&](int Index)
-    {
-        const auto Found = Vertices.find(Index);
-        if (Found != Vertices.end()) return Found->second;
-        return Vertices[Index] = Partition.Vertices.Issue({ Fuse.Vertices[Index].Position, ExactPrecision });
-    };
-    const auto IssueEdge = [&](int Index)
-    {
-        const auto Found = Edges.find(Index);
-        if (Found != Edges.end()) return Found->second;
-        const FuseEdge& Block = Fuse.Edges[Index];
-        const EdgeToken Edge  = Partition.Edges.Issue({ {}, IssueVertex(Block.Start), IssueVertex(Block.End), Block.Low, Block.High, ExactPrecision, {} });
-        Partition.AttachCurve(Edge, Block.Curve, Block.Low, Block.High);
-        Outcome.EdgeHistories.push_back({ Edge, Block.Argument });
-        return Edges[Index] = Edge;
-    };
-    std::map<int, SolidShellToken> Shells;
-    std::vector<SolidShellToken>   ShellOrder;
-    for (size_t Slot = 0; Slot < Kept.size(); ++Slot)
-    {
-        const int Group = Root(static_cast<int>(Slot));
-        if (Shells.count(Group) == 0)
-        {
-            Shells[Group] = Partition.Shells.Issue({ {}, {} });
-            ShellOrder.push_back(Shells[Group]);
-        }
-        const SolidShellToken Shell    = Shells[Group];
-        const auto&           Fragment = Fuse.Fragments[Kept[Slot].first];
-        const bool            Flip     = Kept[Slot].second;
-        const FaceToken       Face     = Partition.Faces.Issue({ Shell, {}, Orientation::Forward, {} });
-        Partition.AttachSurface(Face, Fragment.Surface, Flip ? InvertOrientation(Fragment.Sense) : Fragment.Sense);
-        Partition.Shells.Resolve(Shell).Faces.push_back(Face);
-        Outcome.FaceHistories.push_back({ Face, Fragment.Argument, Fragment.Source, Fragment.State, Flip });
+        const FuseFragment& Fragment = Fuse.Fragments[Index];
+        BlueprintFace Face{ Fragment.Surface, Flip ? InvertOrientation(Fragment.Sense) : Fragment.Sense, {} };
         for (const auto& LoopUses : Fragment.Loops)
         {
-            std::vector<const FuseUse*> Order;
-            for (const FuseUse& Use : LoopUses) if (Use.Edge >= 0) Order.push_back(&Use);
-            if (Flip) std::reverse(Order.begin(), Order.end());
-            const LoopToken Loop = Partition.Loops.Issue({ Face, {}, {} });
-            Partition.Faces.Resolve(Face).Loops.push_back(Loop);
-            std::vector<FinToken> Fins;
-            for (const FuseUse* Use : Order)
+            std::vector<BlueprintUse> Loop;
+            for (const FuseUse& Use : LoopUses)
             {
-                const EdgeToken   Edge  = IssueEdge(Use->Edge);
-                const Orientation Sense = Flip ? InvertOrientation(Use->Sense) : Use->Sense;
-                const FinToken    Fin   = Partition.Fins.Issue({ Loop, Edge, Sense, {}, {}, {}, Use->SurfaceCurve });
-                EdgeProfile& EdgeRecord = Partition.Edges.Resolve(Edge);
-                if (!EdgeRecord.RadialFin.PresentCondition()) EdgeRecord.RadialFin = Fin;
-                else
-                {
-                    Partition.Fins.Resolve(Fin).RadialSuccessor                 = EdgeRecord.RadialFin;
-                    Partition.Fins.Resolve(EdgeRecord.RadialFin).RadialSuccessor = Fin;
-                }
-                Fins.push_back(Fin);
+                if (Use.Edge < 0) continue;                                                  // Virtual closure along a singular row
+                Loop.push_back({ Use.Edge, Flip ? InvertOrientation(Use.Sense) : Use.Sense, Use.SurfaceCurve });
             }
-            for (size_t Index = 0; Index < Fins.size(); ++Index)
-            {
-                Partition.Fins.Resolve(Fins[Index]).Successor                      = Fins[(Index + 1) % Fins.size()];
-                Partition.Fins.Resolve(Fins[(Index + 1) % Fins.size()]).Predecessor = Fins[Index];
-            }
-            Partition.Loops.Resolve(Loop).FirstFin = Fins.front();
+            if (Flip) std::reverse(Loop.begin(), Loop.end());
+            Face.Loops.push_back(std::move(Loop));
         }
-        ++Outcome.Faces;
+        Blueprint.Faces.push_back(std::move(Face));
     }
 
-    // ④ Regions: outer shells (positive volume) → solid regions; cavities → the smallest solid region containing them.
-    std::vector<SolidShellToken> OuterShells, CavityShells;
-    for (SolidShellToken Shell : ShellOrder) (IntegrateShellVolume(Partition, Shell) > 0.0 ? OuterShells : CavityShells).push_back(Shell);
-    std::vector<RegionToken> Regions = { Exterior };
-    std::vector<double>      OuterVolumes;
-    for (SolidShellToken Shell : OuterShells)
+    // ② Assembly, then OCCT-style history: every result face is Modified from one argument face.
+    const AssemblyOutcome Assembly = AssembleBody(Partition, Blueprint, "Boolean");
+    if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
+    for (size_t Slot = 0; Slot < Kept.size(); ++Slot)
     {
-        const RegionToken Region = Partition.Regions.Issue({ Body, RegionMaterial::Solid, { Shell } });
-        Partition.Shells.Resolve(Shell).Region = Region;
-        Regions.push_back(Region);
-        OuterVolumes.push_back(IntegrateShellVolume(Partition, Shell));
+        const FuseFragment& Fragment = Fuse.Fragments[Kept[Slot].first];
+        Outcome.FaceHistories.push_back({ Assembly.Faces[Slot], Fragment.Argument, Fragment.Source, Fragment.State, Kept[Slot].second });
     }
-    for (SolidShellToken Cavity : CavityShells)
-    {
-        const FaceToken AnyFace  = Partition.Shells.Resolve(Cavity).Faces.front();
-        const FinToken  AnyFin   = Partition.Loops.Resolve(Partition.Faces.Resolve(AnyFace).Loops.front()).FirstFin;
-        const Vector3   Witness  = Partition.Vertices.Resolve(Partition.FinStart(AnyFin)).Position;
-        int    Owner = -1;
-        double OwnerVolume = std::numeric_limits<double>::max();
-        for (size_t Index = 0; Index < OuterShells.size(); ++Index)
-        {
-            const BodyContainment Containment = PrepareFaceContainment(Partition, Partition.Shells.Resolve(OuterShells[Index]).Faces);
-            if (ClassifySolidPoint(Containment, Witness).Membership == PointMembership::Inside && OuterVolumes[Index] < OwnerVolume)
-            {
-                Owner       = static_cast<int>(Index);
-                OwnerVolume = OuterVolumes[Index];
-            }
-        }
-        if (Owner < 0) { Outcome.Refusal = "Boolean: a cavity shell lies in no solid region"; return Outcome; }
-        const RegionToken Region = Regions[Owner + 1];
-        Partition.Regions.Resolve(Region).Shells.push_back(Cavity);
-        Partition.Shells.Resolve(Cavity).Region = Region;
-    }
-    Partition.Bodies.Resolve(Body).Regions = Regions;
-    Outcome.Body   = Body;
-    Outcome.Solids = static_cast<int>(OuterShells.size());
-    Outcome.Shells = static_cast<int>(ShellOrder.size());
+    for (int Index : Assembly.EdgeOrder) Outcome.EdgeHistories.push_back({ Assembly.Edges[Index], Fuse.Edges[Index].Argument });
+    Outcome.Body   = Assembly.Body;
+    Outcome.Solids = Assembly.Solids;
+    Outcome.Shells = Assembly.Shells;
+    Outcome.Faces  = static_cast<int>(Kept.size());
     return Outcome;
 }
 

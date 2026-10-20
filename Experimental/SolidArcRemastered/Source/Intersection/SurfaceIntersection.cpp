@@ -289,8 +289,8 @@ namespace
         if (const auto* Cone = std::get_if<ConeSurface>(&Surface))
         {
             const double s = Cone->RadialSlope;                                              // [-] - dr/d𝑣
-            return std::vector<PlanarPrimitive>{ { false, { Cone->BaseRadius, h }, Normalize(Vector2{ s, σ }), 0.0 },
-                                                 { false, { -Cone->BaseRadius, h }, Normalize(Vector2{ -s, σ }), 0.0 } };
+            return std::vector<PlanarPrimitive>{ { false, { Cone->OriginRadius, h }, Normalize(Vector2{ s, σ }), 0.0 },
+                                                 { false, { -Cone->OriginRadius, h }, Normalize(Vector2{ -s, σ }), 0.0 } };
         }
         const auto& Torus = std::get<TorusSurface>(Surface);
         return std::vector<PlanarPrimitive>{ { true, { Torus.MajorRadius, h }, {}, Torus.MinorRadius }, { true, { -Torus.MajorRadius, h }, {}, Torus.MinorRadius } };
@@ -510,7 +510,7 @@ namespace
         {
             for (const double Side : { 1.0, -1.0 })
             {
-                RegisterLine(Context, StraightLine{ Frame.Origin + InPlane * (Side * Cone->BaseRadius), Normalize(InPlane * (Side * Cone->RadialSlope) + Frame.ZAxis) }, false);
+                RegisterLine(Context, StraightLine{ Frame.Origin + InPlane * (Side * Cone->OriginRadius), Normalize(InPlane * (Side * Cone->RadialSlope) + Frame.ZAxis) }, false);
             }
             return true;
         }

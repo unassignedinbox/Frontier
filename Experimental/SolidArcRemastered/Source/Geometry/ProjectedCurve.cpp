@@ -54,7 +54,7 @@ ParameterSample EvaluateProjectedParameterCurve(const ProjectedParameterCurve& C
 
 ParameterCurve FitSurfaceCurve(const SurfaceGeometry& Surface, const CurveGeometry& Curve, double Low, double High, const ParameterWindow& Window, std::optional<Vector2> Anchor)
 {
-    // ① Plane: the chart is an orthonormal frame, so lines and circles map exactly.
+    // ① Plane: the chart is an orthonormal frame, so lines, circles and ellipses map exactly.
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {
         const OrthonormalFrame& Frame = Plane->Frame;
@@ -63,8 +63,8 @@ ParameterCurve FitSurfaceCurve(const SurfaceGeometry& Surface, const CurveGeomet
         {
             return ParameterLine{ Chart(Line->Origin - Frame.Origin), Chart(Line->Direction) };
         }
-        const auto& Arc = std::get<CircularArc>(Curve);
-        return ParameterEllipse{ Chart(Arc.Frame.Origin - Frame.Origin), Chart(Arc.Frame.XAxis), Chart(Arc.Frame.YAxis), Arc.Radius };
+        const ConicForm Conic = *ResolveConicForm(Curve);
+        return ParameterEllipse{ Chart(Conic.Centre - Frame.Origin), Chart(Conic.CosineAxis), Chart(Conic.SineAxis), 1.0 };
     }
 
     // ② Unwrap table from the midpoint outwards; the midpoint image is folded into the window.

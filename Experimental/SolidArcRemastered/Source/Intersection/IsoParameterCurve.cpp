@@ -78,11 +78,11 @@ IsoParameterCurve ExtractIsoParameterCurve(const SurfaceGeometry& Surface, IsoDi
             // 📝 Generator O + r₀·radial + 𝑣·(s·radial + Z); unit direction needs τ = 𝑣·√(1 + s²).
             const Vector3     Direction = Radial(Frame, Value);
             IsoParameterCurve Iso;
-            Iso.Curve = StraightLine{ Frame.Origin + Direction * Cone->BaseRadius, Normalize(Direction * s + Frame.ZAxis) };
+            Iso.Curve = StraightLine{ Frame.Origin + Direction * Cone->OriginRadius, Normalize(Direction * s + Frame.ZAxis) };
             Iso.Scale = std::sqrt(1.0 + s * s);
             return Iso;
         }
-        return LatitudeCircle(Frame, Frame.Origin + Frame.ZAxis * Value, Cone->BaseRadius + s * Value);
+        return LatitudeCircle(Frame, Frame.Origin + Frame.ZAxis * Value, Cone->OriginRadius + s * Value);
     }
     if (const auto* Sphere = std::get_if<SphereSurface>(&Surface))
     {

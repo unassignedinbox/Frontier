@@ -1,4 +1,17 @@
-# 🧩 SolidArcRemastered — evidence for steps 1–4
+# 🧩 SolidArcRemastered — evidence for steps 1–5
+
+**TL;DR (step 5)**: BlendValidation passes: the rolling-ball harness 15/15, BevelLab 6/6 and all 27 specimens, with 10 gates and 0 failures in 20.2 s.
+- **Exact:** ΔV matches the closed form to ≤ 7.0e-16. The worst rolling-ball law residual is 1.6e-15 over 71 037 samples (spine ↔ supports, blend face ↔ spine, corner centre ↔ 3 supports).
+- **Smooth:** fillet G1 across every contact and corner edge is ≤ 3.6e-15 rad.
+- **Sound:**
+  - every blended body is audit-sound, keeps its genus and leaves the source untouched;
+  - it tessellates watertight;
+  - it classifies points like the analytic clearance oracle (0 of 2 400 wrong);
+  - it Booleans downstream to ≤ 3.4e-16.
+- **Refusals:** the 5 refusals are atomic and say why: oversize, wider than an edge, rails cross, convex meets concave.
+- **Robust:** digests are deterministic, and ΔV ∝ s³ holds to 7.7e-14 from s = 10⁻³ to 10³.
+
+The old kernel's `RollingBallBlend` stopped at ~1e-6 residuals; carriers here are exact Cylinder, Torus, Cone, Plane and Sphere surfaces built from the spine (the intersection of offset surfaces).
 
 **TL;DR (step 4)**: TessellationValidation passes 0 failing rows over 305 bodies and 668 918 triangles: the 9 specimens, 15 Boolean scenes × 4 operations, and 240 random Boolean results. Every PolygonComplex:
 - is closed, with 0 unpaired sides, χ equal to the B-rep's and 0 unused vertices;
@@ -35,6 +48,8 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices | — |
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
+| `BlendValidation.md` | B1 closed-form ΔV · B2 audit, genus, face count, source untouched · B3 G1 and chamfer setback · B4 rolling-ball law · B5 tessellation · B6 winding vs clearance oracle · B7 Booleans downstream · B8 refusals · B9 determinism · B10 scale; per-specimen carriers and vertex classes | 🟢 PASS |
+| `BlendGallery/*.png` | 27 Before \| After panels. Before: source and selection. After: blend faces teal, corner spheres gold, spines cyan, contact rails green, with ΔV vs closed form, carriers and N gates in the caption. The 5 refusals show their reason | — |
 
 Reproduce (from the repository root):
 
@@ -46,6 +61,9 @@ Experimental/SolidArcRemastered/build/IntersectionValidation > Exhibits/SolidArc
 Experimental/SolidArcRemastered/build/ContainmentValidation > Exhibits/SolidArcRemastered/ContainmentValidation.md
 Experimental/SolidArcRemastered/build/BooleanValidation --detail > Exhibits/SolidArcRemastered/BooleanValidation.md
 Experimental/SolidArcRemastered/build/TessellationValidation > Exhibits/SolidArcRemastered/TessellationValidation.md
+Experimental/SolidArcRemastered/build/BlendValidation > Exhibits/SolidArcRemastered/BlendValidation.md
+python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # BlendGallery (needs Pillow + numpy)
+# single specimen or prefix: BlendValidation --only Rounded   (Scale selects B10)
 # single row or section: TessellationValidation --only RandomSpheres  (also Scale, Regressions, …)
 # single scene or family: BooleanValidation --only SphereLens
 ```
@@ -92,5 +110,23 @@ Experimental/SolidArcRemastered/build/TessellationValidation > Exhibits/SolidArc
 | RandomBlockSphere #4 (unpaired side) | Micro-lens: a sphere cap poking less than ε through a block face shares its whole 8-point boundary with the plane face, and both CDTs chose the same diagonal | Interior sides are claimed body-wide, and a later face splits a claimed side at its surface midpoint |
 | RandomBlockSphere #8 (refused) | `FindSide` rotated around an enclosing-triangle corner in one direction only; that fan is open, so a valid crossed side "vanished" during constraint recovery | Rotate both ways; a crossing side queued twice is skipped. Both are pinned by N11 |
 | Gallery render (DrilledBlock) | The viewer's default pitch put the eye *below* the model (Right × Up = −Ahead); a wireframe cannot show this, a shaded render can | Default pitch −0.45 (eye above); back faces drawn first in red |
+
+🐞 Defects the gates found and fixed during step 5:
+
+| Found by | Defect | Fix |
+|---|---|---|
+| B10 scale, mm-scale probe | Volume quadrature was not scale-free: an absolute tolerance, a G6 audit floor of `SessionPrecision` that refused mm-sized parts, and a π/16 panel span applied to *length* parameters | Relative panel criterion plus a shell-level floor of 10⁻¹⁵·Σ\|f\| (`MeasureShellVolume` returns Volume and FluxMagnitude); G6 fails only when \|V\| ≤ 10⁻¹⁰·FluxMagnitude. ΔV is now exactly ∝ s³ |
+| Quadrature fix, first draft | A relative-only criterion never terminates on rounding-noise integrands; a *per-face* floor fails on a plane through the origin, whose flux density is identically 0 | The floor is shell-level, not per face. `PanelLimit` is 64 |
+| B3 G1, first run | The measured angle bottomed out at 2.1e-8 rad: `acos(dot)` cannot resolve angles below √(2ε). The meter was wrong, not the surfaces | `atan2(\|a × b\|, a · b)`: worst 3.6e-15 rad |
+| Gallery render (RoundedBlock) | Spines and contact rails were drawn from the *untrimmed* sheet curves and overshot every corner by the setback | The encoder emits the result's real contact edges (blend face ∩ support) and traces the spine alongside them |
+
+🚧 Plan-gate gaps (step 5): these cases are refused cleanly, with a 🚧 reason and the source intact. They are not built yet:
+
+| Case | Today | Planned |
+|---|---|---|
+| Setback vertex (convex meets concave, `MixedConvexity`) | Refused at the vertex | Várady–Rockwood 2n-sided setback patch |
+| Tangent-chain propagation | Edges are blended only as selected | Grow the selection across G1 edges (old-kernel option A) |
+| Overflow (blend wider than its face, `FilletRailsCross`) | Refused: "contact rail runs backwards" | Smooth / cliff / notch overflow strategies |
+| Caps on curved faces, traced spines | Caps only on planar ends; spines only where SSI is analytic | Marched spines and SP-curve caps (needs G traced sections on both faces) |
 
 🚧 Known limitation (step 4): next to poles and apexes, triangle shape follows the chart's anisotropy. Sphere and Cone reach a minimum angle of 0.4–1.1°, with ≈ 21–25% of their triangles below 20° (`SphereQuality.png`). Specimens without singular points stay ≥ 14° (Torus 15.3°, Cylinder 20.9°, HollowBlock 14.0°). Boolean results also inherit their smallest *input* angle, where a section edge meets a boundary almost tangentially (DShaft 3.3°, RandomDrills 0.1°); no Delaunay refinement goes below the input angle. Every gate holds, so this is a shading-quality issue, not a correctness one. Rebuilding every star does not help. The cure is a pole-local chart (an azimuthal projection around the axis) for the singular rows.

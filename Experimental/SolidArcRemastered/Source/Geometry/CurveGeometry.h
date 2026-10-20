@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace Frontier::SolidArcRemastered
@@ -36,7 +37,25 @@ struct CircularArc
     double           Radius = 1.0;                                                           // [len] - Circle radius
 };
 
-using CurveGeometry = std::variant<StraightLine, CircularArc>;
+// 📝 P(τ) = Centre + a·cos τ·XAxis + b·sin τ·YAxis (a = MajorRadius along XAxis, b = MinorRadius along YAxis) — the exact
+//    section of a cylinder by an oblique plane, and the mitre between two equal-radius blend cylinders with meeting axes.
+struct EllipticalArc
+{
+    OrthonormalFrame Frame       = {};                                                       // [-]   - Origin is the centre
+    double           MajorRadius = 2.0;                                                      // [len] - a, semi-axis along XAxis
+    double           MinorRadius = 1.0;                                                      // [len] - b, semi-axis along YAxis
+};
+
+using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc>;
+
+// 📝 Common form of the periodic carriers: P(τ) = Centre + cos τ·CosineAxis + sin τ·SineAxis (axes orthogonal).
+struct ConicForm
+{
+    Vector3 Centre     = {};                                                                 // [len] - Centre
+    Vector3 CosineAxis = {};                                                                 // [len] - Semi-axis at τ = 0
+    Vector3 SineAxis   = {};                                                                 // [len] - Semi-axis at τ = π/2
+    Vector3 Normal     = {};                                                                 // [-]   - Unit plane normal (Frame.ZAxis)
+};
 
 struct CurveSample
 {
@@ -52,6 +71,15 @@ struct CurveSample
 [[nodiscard]] bool PeriodicCondition(const CurveGeometry& Curve) noexcept;
 
 [[nodiscard]] const char* CurveCategoryLabel(const CurveGeometry& Curve) noexcept;
+
+// Circle and ellipse in the common conic form; empty for a straight line.
+[[nodiscard]] std::optional<ConicForm> ResolveConicForm(const CurveGeometry& Curve) noexcept;
+
+// Largest distance of the curve from its chord over [Low, High] (sagitta bound used by bounding boxes); 0 for lines.
+[[nodiscard]] double MeasureCurveBulge(const CurveGeometry& Curve, double Low, double High, int Pieces) noexcept;
+
+// Characteristic length of one unit of τ (1 for lines, the radius for circles, the major radius for ellipses).
+[[nodiscard]] double MeasureParameterScale(const CurveGeometry& Curve) noexcept;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    2D PARAMETER-SPACE CURVES

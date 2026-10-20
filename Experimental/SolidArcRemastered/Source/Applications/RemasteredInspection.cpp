@@ -7,8 +7,11 @@
 #include "Audit/IntersectionAudit.h"
 #include "Audit/ModelAudit.h"
 #include "Audit/TessellationAudit.h"
+#include "Blend/BlendCatalogue.h"
+#include "Blend/EdgeBlend.h"
 #include "Boolean/BooleanCatalogue.h"
 #include "Containment/WindingNumber.h"
+#include "Inspection/BlendEncoding.h"
 #include "Inspection/BooleanEncoding.h"
 #include "Inspection/InspectionEncoding.h"
 #include "Inspection/IntersectionEncoding.h"
@@ -44,9 +47,40 @@ namespace
         return std::find(Scenes.begin(), Scenes.end(), Name) != Scenes.end();
     }
 
-    // The body a slice classifies: a model specimen, or the chosen operation of a Boolean scene.
+    [[nodiscard]] bool BlendSpecimenCondition(const std::string& Name)
+    {
+        const std::vector<std::string> Specimens = EnumerateBlendSpecimens();
+        return std::find(Specimens.begin(), Specimens.end(), Name) != Specimens.end();
+    }
+
+    // 📝 Blend specimen with the viewer's Size (catalogue size by default); the source body stays in the partition.
+    struct AppliedBlend
+    {
+        BlendSpecimen Specimen = {};                                                         // [-] - Catalogue entry
+        BlendSettings Settings = {};                                                         // [-] - Applied settings
+        BlendOutcome  Outcome  = {};                                                         // [-] - Result or refusal
+    };
+
+    [[nodiscard]] AppliedBlend ApplyBlend(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters)
+    {
+        AppliedBlend Applied;
+        Applied.Specimen = ConstructBlendSpecimen(Partition, Name);
+        Applied.Settings = Applied.Specimen.Settings;
+        Applied.Settings.Size = std::clamp(Parameters.Resolve("Size", Applied.Settings.Size), 1.0e-4, 10.0);
+        Applied.Outcome  = BlendEdges(Partition, Applied.Specimen.Body, Applied.Specimen.Edges, Applied.Settings);
+        return Applied;
+    }
+
+    // The body a slice classifies: a model specimen, the chosen operation of a Boolean scene, or a blend result (Source=1: before).
     [[nodiscard]] BodyToken ConstructSliceBody(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters, std::string& Refusal)
     {
+        if (BlendSpecimenCondition(Name))
+        {
+            const AppliedBlend Applied = ApplyBlend(Partition, Name, Parameters);
+            if (Parameters.Resolve("Source", 0.0) > 0.5) return Applied.Specimen.Body;
+            Refusal = Applied.Outcome.Refusal;
+            return Applied.Outcome.Body;
+        }
         if (BooleanSceneCondition(Name))
         {
             const int          Shown = std::clamp(static_cast<int>(std::lround(Parameters.Resolve("Operation", 0.0))), 0, 3);
@@ -175,6 +209,23 @@ namespace
 
         if (Verb == "slice") return AnswerSlice(Name, Parameters);
         if (Verb == "tessellate") return AnswerTessellation(Name, Parameters);
+        if (BlendSpecimenCondition(Name))
+        {
+            ModelPartition    Partition;
+            BlendInspection   Inspection;
+            Clock::time_point Start   = Clock::now();
+            const AppliedBlend Applied = ApplyBlend(Partition, Name, Parameters);
+            Inspection.ConstructionMilliseconds = std::max(0.0, ElapsedMilliseconds(Start) - Applied.Outcome.Statistics.Milliseconds);
+            Inspection.Applied      = Applied.Settings;
+            Inspection.SourceShown  = Parameters.Resolve("Source", 0.0) > 0.5;
+            Inspection.SourceVolume = IntegrateBodyVolume(Partition, Applied.Specimen.Body);
+            const BodyToken Shown   = Inspection.SourceShown || !Applied.Outcome.Refusal.empty() ? Applied.Specimen.Body : Applied.Outcome.Body;
+            Inspection.ShownVolume  = IntegrateBodyVolume(Partition, Shown);
+            Start = Clock::now();
+            const AuditReport Audit = AuditBody(Partition, Shown);
+            Inspection.AuditMilliseconds = ElapsedMilliseconds(Start);
+            return EncodeBlend(Partition, Applied.Specimen, Applied.Outcome, Shown, Audit, Inspection);
+        }
         if (BooleanSceneCondition(Name))
         {
             const int Shown = std::clamp(static_cast<int>(std::lround(Parameters.Resolve("Operation", 0.0))), 0, 3);

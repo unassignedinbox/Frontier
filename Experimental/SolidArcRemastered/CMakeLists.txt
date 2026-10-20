@@ -43,6 +43,11 @@ add_library(SolidArcRemastered STATIC
     Source/Topology/ModelPartition.cpp
     Source/Topology/EulerEdits.cpp
     Source/Construction/PrimitiveConstruction.cpp
+    Source/Construction/BodyAssembly.cpp
+    Source/Blend/RollingBallGeometry.cpp
+    Source/Blend/EdgeBlend.cpp
+    Source/Blend/BlendCatalogue.cpp
+    Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
     Source/Audit/ModelAudit.cpp
     Source/Audit/IntersectionAudit.cpp
@@ -81,6 +86,9 @@ target_link_libraries(BooleanValidation PRIVATE SolidArcRemastered)
 add_executable(TessellationValidation Validation/TessellationValidation.cpp)
 target_link_libraries(TessellationValidation PRIVATE SolidArcRemastered)
 
+add_executable(BlendValidation Validation/BlendValidation.cpp)
+target_link_libraries(BlendValidation PRIVATE SolidArcRemastered)
+
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
 add_test(NAME PredicateValidation COMMAND PredicateValidation)
@@ -88,3 +96,4 @@ add_test(NAME IntersectionValidation COMMAND IntersectionValidation)
 add_test(NAME ContainmentValidation COMMAND ContainmentValidation)
 add_test(NAME BooleanValidation COMMAND BooleanValidation)
 add_test(NAME TessellationValidation COMMAND TessellationValidation)
+add_test(NAME BlendValidation COMMAND BlendValidation)

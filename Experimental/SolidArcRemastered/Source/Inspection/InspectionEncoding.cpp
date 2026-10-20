@@ -4,6 +4,8 @@
 // 🧩 One-line JSON description of a body for the HTML inspection viewport (topology tree, exact samples, audit)
 
 #include "Inspection/InspectionEncoding.h"
+
+#include "Blend/BlendCatalogue.h"
 #include "Boolean/BooleanCatalogue.h"
 #include "Inspection/IntersectionCatalogue.h"
 #include "Inspection/JsonWriter.h"
@@ -385,6 +387,21 @@ std::string EncodeCatalogue()
         Writer.String("Description", Defaults.Description);
         Writer.OpenObject("Parameters");
         for (const auto& [Key, Magnitude] : Defaults.Parameters) Writer.Number(Key.c_str(), Magnitude);
+        Writer.CloseObject();
+        Writer.CloseObject();
+    }
+    for (const std::string& Name : EnumerateBlendSpecimens())
+    {
+        ModelPartition      Scratch;
+        const BlendSpecimen Defaults = ConstructBlendSpecimen(Scratch, Name);
+        Writer.OpenObject();
+        Writer.String("Name", Name);
+        Writer.String("Kind", "Blend");
+        Writer.String("Family", Defaults.Family);
+        Writer.String("Description", Defaults.Description);
+        Writer.OpenObject("Parameters");
+        Writer.Number("Size", Defaults.Settings.Size);
+        Writer.Number("Source", 0.0);
         Writer.CloseObject();
         Writer.CloseObject();
     }

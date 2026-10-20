@@ -1,0 +1,234 @@
+#====================================================================================================================================
+#                                                     GALLERYRASTERIZER.PY
+#====================================================================================================================================
+# 🧩 Before | After exhibit panels for the blend catalogue, rasterised from the C++ inspection host (no browser needed)
+
+"""
+Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--build-dir DIR] [--output DIR] [--only NAME ...]
+
+Before panel  the source body, shaded neutral, with the selected edges in amber (hidden parts dashed).
+After panel   the blend result coloured by provenance (blend faces teal, corner faces gold, modified faces slate), its B-rep
+              edges, ball-centre spines dotted cyan and contact rails green; a refused blend shows the refusal instead.
+Camera, lighting and colours follow Viewer/index.html (Yaw -0.7, Pitch -0.45: eye above). Requires Pillow + numpy.
+"""
+
+import argparse
+import colorsys
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    SETTINGS
+#------------------------------------------------------------------------------------------------------------------------
+
+PanelWidth     = 640                                                                     # [px] - One panel (final)
+PanelHeight    = 500                                                                     # [px]
+CaptionHeight  = 74                                                                      # [px] - Caption strip
+Supersample    = 2                                                                       # [-]  - Drawn at 2x, then downsampled
+Background     = (16, 19, 25)
+OriginHues     = { "Edge": 172, "Vertex": 45, "Modified": 215 }                          # [deg] - Viewer BlendOriginHue
+FontPath       = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    HOST
+#------------------------------------------------------------------------------------------------------------------------
+
+def PlainText(Text: str) -> str:
+    """DejaVu has no emoji glyphs: the planned-work marker becomes words, any other astral character is dropped."""
+    return "".join(Character for Character in Text.replace("\U0001F6A7", "planned") if ord(Character) <= 0xFFFF)
+
+
+def AskHost(Executable: Path, *Words: str) -> dict:
+    Completed = subprocess.run([str(Executable), *Words], capture_output=True, text=True, encoding="utf-8", timeout=600)
+    return json.loads(Completed.stdout)
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    CAMERA
+#------------------------------------------------------------------------------------------------------------------------
+
+class ViewerCamera:
+    """Orthographic view with the viewer's axes: Toward points at the eye, Right x Up = -Ahead."""
+
+    def __init__(self, Yaw: float = -0.7, Pitch: float = -0.45):
+        CosYaw, SinYaw, CosPitch, SinPitch = np.cos(Yaw), np.sin(Yaw), np.cos(Pitch), np.sin(Pitch)
+        self.Toward = np.array([-CosPitch * SinYaw, -CosPitch * CosYaw, -SinPitch])
+        self.Up     = np.array([-SinPitch * SinYaw, -SinPitch * CosYaw, CosPitch])
+        self.Right  = np.array([CosYaw, -SinYaw, 0.0])
+        Light       = self.Toward + 0.35 * self.Up + 0.25 * self.Right
+        self.Light  = Light / np.linalg.norm(Light)
+        self.Scale, self.Centre = 1.0, np.zeros(2)
+
+    def Fit(self, Points: np.ndarray, Width: int, Height: int, Margin: float = 0.1):
+        Plane = np.stack([Points @ self.Right, Points @ self.Up], axis=1)
+        Low, High = Plane.min(axis=0), Plane.max(axis=0)
+        self.Scale  = min(Width * (1 - 2 * Margin) / max(High[0] - Low[0], 1e-9), Height * (1 - 2 * Margin) / max(High[1] - Low[1], 1e-9))
+        self.Centre = 0.5 * (Low + High)
+        self.Width, self.Height = Width, Height
+
+    def Project(self, Points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        X = (Points @ self.Right - self.Centre[0]) * self.Scale + 0.5 * self.Width
+        Y = 0.5 * self.Height - (Points @ self.Up - self.Centre[1]) * self.Scale
+        return np.stack([X, Y], axis=1), Points @ self.Toward
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    RASTERISATION
+#------------------------------------------------------------------------------------------------------------------------
+
+def HslColour(Hue: float, Saturation: float, Lightness: float) -> tuple[int, int, int]:
+    Red, Green, Blue = colorsys.hls_to_rgb(Hue / 360.0, Lightness, Saturation)
+    return int(Red * 255), int(Green * 255), int(Blue * 255)
+
+
+def ShadeComplex(Camera: ViewerCamera, Complex: dict, Colour) -> tuple[Image.Image, np.ndarray]:
+    """Z-buffer rasterisation (depth interpolated per pixel, nearer = larger Toward·P). Returns colour and depth."""
+    Width, Height = Camera.Width, Camera.Height
+    Positions = np.asarray(Complex["Positions"], dtype=float).reshape(-1, 3)
+    Triangles = np.asarray(Complex["Triangles"], dtype=int).reshape(-1, 3)
+    Faces     = np.asarray(Complex["TriangleFaces"], dtype=int)
+    Screen, Ahead = Camera.Project(Positions)
+    Corners  = Positions[Triangles]
+    Normals  = np.cross(Corners[:, 1] - Corners[:, 0], Corners[:, 2] - Corners[:, 0])
+    Normals /= np.maximum(np.linalg.norm(Normals, axis=1, keepdims=True), 1e-300)
+    Facing   = Normals @ Camera.Toward
+    Diffuse  = np.clip(Normals @ Camera.Light, 0.0, 1.0)
+    Tokens   = [Face["Token"] for Face in Complex["Faces"]]
+    Palette  = np.zeros((len(Triangles) + 1, 3), dtype=np.uint8)
+    Palette[-1] = Background
+    for Triangle in range(len(Triangles)):
+        if Facing[Triangle] < 0: Palette[Triangle] = HslColour(0, 0.85, 0.30 + 0.25 * abs(Facing[Triangle]))       # Visible back face = defect
+        else:
+            Hue, Saturation = Colour(Tokens[Faces[Triangle]])
+            Palette[Triangle] = HslColour(Hue, Saturation, 0.18 + 0.50 * Diffuse[Triangle])
+    Depth = np.full((Height, Width), -np.inf)
+    Owner = np.full((Height, Width), len(Triangles), dtype=np.int64)
+    for Triangle, (A, B, C) in enumerate(Triangles):
+        Points = Screen[[A, B, C]]
+        Low  = np.maximum(np.floor(Points.min(axis=0)).astype(int), 0)
+        High = np.minimum(np.ceil(Points.max(axis=0)).astype(int), [Width - 1, Height - 1])
+        if (High < Low).any(): continue
+        Columns, Rows = np.meshgrid(np.arange(Low[0], High[0] + 1) + 0.5, np.arange(Low[1], High[1] + 1) + 0.5)
+        Determinant = (Points[1, 0] - Points[0, 0]) * (Points[2, 1] - Points[0, 1]) - (Points[2, 0] - Points[0, 0]) * (Points[1, 1] - Points[0, 1])
+        if abs(Determinant) < 1e-12: continue
+        Second = ((Columns - Points[0, 0]) * (Points[2, 1] - Points[0, 1]) - (Points[2, 0] - Points[0, 0]) * (Rows - Points[0, 1])) / Determinant
+        Third  = ((Points[1, 0] - Points[0, 0]) * (Rows - Points[0, 1]) - (Columns - Points[0, 0]) * (Points[1, 1] - Points[0, 1])) / Determinant
+        First  = 1.0 - Second - Third
+        Inside = (First >= -1e-9) & (Second >= -1e-9) & (Third >= -1e-9)
+        Value  = First * Ahead[A] + Second * Ahead[B] + Third * Ahead[C]
+        Window = Depth[Low[1]:High[1] + 1, Low[0]:High[0] + 1]
+        Nearer = Inside & (Value > Window)
+        Window[Nearer] = Value[Nearer]
+        Owner[Low[1]:High[1] + 1, Low[0]:High[0] + 1][Nearer] = Triangle
+    return Image.fromarray(Palette[Owner], "RGB"), Depth
+
+
+def DrawPolylines(Camera: ViewerCamera, Picture: Image.Image, Depth: Image.Image, Polylines, Colour, Width: int, Allowance: float,
+                  HiddenColour=None, Dotted: bool = False):
+    """Segments visible against the depth image are solid; hidden ones dashed in HiddenColour (skipped when None)."""
+    Paint   = ImageDraw.Draw(Picture)
+    Samples = Depth
+    for Polyline in Polylines:
+        Points = np.asarray(Polyline, dtype=float)
+        if len(Points) < 2: continue
+        Dense = np.concatenate([np.linspace(Points[Index], Points[Index + 1], 12, endpoint=False) for Index in range(len(Points) - 1)] + [Points[-1:]])
+        Screen, Ahead = Camera.Project(Dense)
+        for Index in range(len(Dense) - 1):
+            Middle  = 0.5 * (Screen[Index] + Screen[Index + 1])
+            Column, Row = int(np.clip(Middle[0], 0, Camera.Width - 1)), int(np.clip(Middle[1], 0, Camera.Height - 1))
+            Window  = Samples[max(Row - 1, 0):Row + 2, max(Column - 1, 0):Column + 2]          # Edges sit on face borders: 3×3 minimum
+            Visible = 0.5 * (Ahead[Index] + Ahead[Index + 1]) >= Window.min() - Allowance
+            if Dotted and Index % 3 == 2: continue
+            if Visible: Paint.line([tuple(Screen[Index]), tuple(Screen[Index + 1])], fill=Colour, width=Width)
+            elif HiddenColour is not None and Index % 4 < 2: Paint.line([tuple(Screen[Index]), tuple(Screen[Index + 1])], fill=HiddenColour, width=max(1, Width // 2))
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    PANELS
+#------------------------------------------------------------------------------------------------------------------------
+
+def RenderSpecimen(Executable: Path, Name: str, Output: Path):
+    After        = AskHost(Executable, "specimen", Name)
+    Before       = AskHost(Executable, "specimen", Name, "Source=1")
+    BeforeShaded = AskHost(Executable, "tessellate", Name, "Source=1", "SagRatio=0.0015")
+    Blend        = After["Blend"]
+    Refused      = "Refusal" in Blend
+    AfterShaded  = None if Refused else AskHost(Executable, "tessellate", Name, "SagRatio=0.0015")
+
+    Size, Font = Supersample, ImageFont.truetype(FontPath, 13 * Supersample)
+    Camera = ViewerCamera()
+    Cloud  = [np.asarray(BeforeShaded["Positions"], dtype=float).reshape(-1, 3)]
+    Camera.Fit(np.concatenate(Cloud), PanelWidth * Size, PanelHeight * Size)
+    Allowance = 0.004 * max(np.ptp(Cloud[0], axis=0).max(), 1e-9)
+
+    # ---- Before: neutral shading, B-rep edges, selection in amber
+    BeforePicture, BeforeDepth = ShadeComplex(Camera, BeforeShaded, lambda Token: (215, 0.10))
+    DrawPolylines(Camera, BeforePicture, BeforeDepth, [Edge["Polyline"] for Edge in Before["Edges"]], (10, 12, 16), 2 * Size, Allowance)
+    DrawPolylines(Camera, BeforePicture, BeforeDepth, [Selected["Polyline"] for Selected in Blend["Selection"]], (255, 179, 71), 4 * Size, Allowance, (200, 140, 60))
+
+    # ---- After: provenance shading, B-rep edges, spines and contacts
+    if Refused:
+        AfterPicture = Image.new("RGB", (PanelWidth * Size, PanelHeight * Size), Background)
+        Paint = ImageDraw.Draw(AfterPicture)
+        Verdict = "REFUSED, AS EXPECTED" if Blend["RefusalExpected"] else "REFUSED"
+        Paint.text((40 * Size, PanelHeight * Size // 2 - 40 * Size), Verdict, fill=(120, 230, 150) if Blend["RefusalExpected"] else (255, 120, 120), font=ImageFont.truetype(FontPath, 22 * Size))
+        Words, Line, Lines = PlainText(Blend["Refusal"]).split(), "", []
+        for Word in Words:
+            if len(Line) + len(Word) > 58: Lines.append(Line); Line = ""
+            Line += Word + " "
+        Lines.append(Line)
+        for Index, Text in enumerate(Lines): Paint.text((40 * Size, PanelHeight * Size // 2 + (Index * 20 - 4) * Size), Text, fill=(215, 220, 228), font=Font)
+    else:
+        Origins = { Entry["Face"]: Entry["Origin"] for Entry in Blend["FaceOrigins"] }
+        Colour  = lambda Token: (OriginHues.get(Origins.get(Token, "Modified"), 215), 0.14 if Origins.get(Token, "Modified") == "Modified" else 0.62)
+        AfterPicture, AfterDepth = ShadeComplex(Camera, AfterShaded, Colour)
+        DrawPolylines(Camera, AfterPicture, AfterDepth, [Edge["Polyline"] for Edge in After["Edges"]], (10, 12, 16), 2 * Size, Allowance)
+        DrawPolylines(Camera, AfterPicture, AfterDepth, [Polyline for Sheet in Blend["Sheets"] for Polyline in Sheet["SpinePolylines"]], (86, 212, 224), 2 * Size, 1e30, Dotted=True)
+        DrawPolylines(Camera, AfterPicture, AfterDepth, [Contact["Polyline"] for Sheet in Blend["Sheets"] for Contact in Sheet["Contacts"]], (127, 224, 160), 2 * Size, Allowance)
+
+    # ---- Compose: titles, caption
+    Sheet = Image.new("RGB", (2 * PanelWidth * Size, (PanelHeight + CaptionHeight) * Size), Background)
+    Sheet.paste(BeforePicture, (0, 0)); Sheet.paste(AfterPicture, (PanelWidth * Size, 0))
+    Paint = ImageDraw.Draw(Sheet)
+    Title = ImageFont.truetype(FontPath, 16 * Size)
+    Paint.text((14 * Size, 10 * Size), "Before: selection", fill=(255, 179, 71), font=Title)
+    Paint.text(((PanelWidth + 14) * Size, 10 * Size), "After: blend teal, corner gold, spine cyan, contacts green" if not Refused else "After", fill=(160, 220, 230), font=Title)
+    Paint.line([(PanelWidth * Size, 0), (PanelWidth * Size, PanelHeight * Size)], fill=(50, 56, 66), width=Size)
+    Summary, Statistics = After["Summary"], Blend["Statistics"]
+    First = f"{Name}  ·  {After['Family']}  ·  {Blend['Profile'].lower()} {Blend['Size']:g} on {len(Blend['Selection'])} edge(s)  ·  {After['Description']}"
+    if Refused: Second = f"Source body untouched (V = {Summary['SourceVolume']:.9f}); the refusal is atomic and prefixed 'Blend:'."
+    else:
+        Carriers = ", ".join(f"{Statistics[Key]} {Label}" for Key, Label in (("Planes", "plane"), ("Cylinders", "cylinder"), ("Cones", "cone"), ("Tori", "torus"), ("CornerSpheres", "sphere")) if Statistics[Key])
+        Expected = f"closed form {Summary['ExpectedDelta']:.12f}  ·  |error| {Summary['DeltaError']:.1e}" if "ExpectedDelta" in Summary else "no closed form at this size"
+        Gates    = "N1-N7 pass" if all(Gate["Passed"] for Gate in AfterShaded["Gates"]) else "N gate FAILED"
+        Faces    = next(Count["Measured"] for Count in Summary["Counts"] if Count["Name"] == "Faces")
+        Second   = f"dV {Summary['Delta']:.12f}  ·  {Expected}  ·  {Faces} faces  ·  {Carriers}  ·  {len(AfterShaded['Triangles']) // 3} triangles, {Gates}"
+    Paint.text((14 * Size, (PanelHeight + 12) * Size), PlainText(First), fill=(215, 220, 228), font=Font)
+    Paint.text((14 * Size, (PanelHeight + 38) * Size), PlainText(Second), fill=(150, 160, 175), font=Font)
+    # 📝 Downsample (anti-aliasing), then a 256-colour palette: about a third of the bytes, no visible banding on flat shading.
+    Sheet = Sheet.resize((2 * PanelWidth, PanelHeight + CaptionHeight), Image.LANCZOS).quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    Output.mkdir(parents=True, exist_ok=True)
+    Sheet.save(Output / f"{Name}.png", optimize=True)
+    return Refused
+
+
+def main():
+    Root = Path(__file__).resolve().parents[1]
+    Parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    Parser.add_argument("--build-dir", default=str(Root / "build"))
+    Parser.add_argument("--output", default=str(Root.parents[1] / "Exhibits" / "SolidArcRemastered" / "BlendGallery"))
+    Parser.add_argument("--only", nargs="*", default=None)
+    Arguments = Parser.parse_args()
+    Executable = Path(Arguments.build_dir) / ("RemasteredInspection.exe" if sys.platform == "win32" else "RemasteredInspection")
+    Catalogue  = AskHost(Executable, "catalogue")
+    Names      = [Entry["Name"] for Entry in Catalogue["Specimens"] if Entry.get("Kind") == "Blend"]
+    for Name in Names:
+        if Arguments.only and Name not in Arguments.only: continue
+        Refused = RenderSpecimen(Executable, Name, Path(Arguments.output))
+        print(f"{Name:28s} {'refused' if Refused else 'rendered'}")
+
+
+if __name__ == "__main__":
+    main()

@@ -89,8 +89,8 @@ SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 P
         //    the nearer line gives the distance. Natural normal (1, −s)/√(1+s²) on the first nappe.
         const double  s       = Cone->RadialSlope;                                           // [-] - dr/d𝑣
         const double  Norm    = std::sqrt(1.0 + s * s);                                      // [-] - Line normaliser
-        const double  First   = (ρ - Cone->BaseRadius - s * Local.Z) / Norm;                 // [len] - To the first nappe
-        const double  Second  = (ρ + Cone->BaseRadius + s * Local.Z) / Norm;                 // [len] - To the mirror nappe
+        const double  First   = (ρ - Cone->OriginRadius - s * Local.Z) / Norm;                 // [len] - To the first nappe
+        const double  Second  = (ρ + Cone->OriginRadius + s * Local.Z) / Norm;                 // [len] - To the mirror nappe
         const Vector3 Radial  = RadialDirection(Frame, Local, ρ);
         if (std::fabs(First) <= std::fabs(Second))
         {
@@ -130,12 +130,13 @@ std::vector<RationalSegment> ConvertToRationalSegments(const CurveGeometry& Curv
         return Segments;
     }
     // 📝 Arc of sweep Δ ≤ π/2: P₀, P₂ on the circle, P₁ at the tangent intersection, w₁ = cos(Δ/2) — exact conic.
-    const auto&  Arc        = std::get<CircularArc>(Curve);
+    //    An ellipse is the affine image of a circle and rational Bézier form is affine invariant: same weights.
+    const ConicForm Conic   = *ResolveConicForm(Curve);
     const int    PieceCount = std::max(1, static_cast<int>(std::ceil((High - Low) / (0.5 * std::numbers::pi) - 1.0e-12)));
     const double Sweep      = (High - Low) / PieceCount;                                     // [rad] - Δ per piece
     const auto   Point      = [&](double Angle, double Scale)
     {
-        return Arc.Frame.Origin + (Arc.Frame.XAxis * std::cos(Angle) + Arc.Frame.YAxis * std::sin(Angle)) * (Arc.Radius * Scale);
+        return Conic.Centre + (Conic.CosineAxis * std::cos(Angle) + Conic.SineAxis * std::sin(Angle)) * Scale;
     };
     for (int PieceIndex = 0; PieceIndex < PieceCount; ++PieceIndex)
     {
@@ -169,7 +170,7 @@ BernsteinPolynomial ComposeImplicitEquation(const SurfaceGeometry& Surface, cons
     }
     if (const auto* Cone = std::get_if<ConeSurface>(&Surface))                               // x² + y² − (r₀W + s·z)²
     {
-        const BernsteinPolynomial Radius = AddBernstein(ScaleBernstein(H.W, Cone->BaseRadius), ScaleBernstein(H.Z, Cone->RadialSlope));
+        const BernsteinPolynomial Radius = AddBernstein(ScaleBernstein(H.W, Cone->OriginRadius), ScaleBernstein(H.Z, Cone->RadialSlope));
         return AddBernstein(Planar, ScaleBernstein(Square(Radius), -1.0));
     }
     const BernsteinPolynomial Spatial = AddBernstein(Planar, Square(H.Z));                   // x² + y² + z²
@@ -195,7 +196,7 @@ double ImplicitMagnitude(const SurfaceGeometry& Surface, const RationalSegment& 
     {
         using Kind = std::decay_t<decltype(Typed)>;
         if constexpr (std::is_same_v<Kind, CylinderSurface> || std::is_same_v<Kind, SphereSurface>) Scale = std::max(Scale, Typed.Radius);
-        if constexpr (std::is_same_v<Kind, ConeSurface>) Scale = std::max(Scale, std::fabs(Typed.BaseRadius));
+        if constexpr (std::is_same_v<Kind, ConeSurface>) Scale = std::max(Scale, std::fabs(Typed.OriginRadius));
         if constexpr (std::is_same_v<Kind, TorusSurface>) Scale = std::max(Scale, Typed.MajorRadius + Typed.MinorRadius);
     }, Surface);
     const int Degree = std::holds_alternative<PlaneSurface>(Surface) ? 1 : std::holds_alternative<TorusSurface>(Surface) ? 4 : 2;

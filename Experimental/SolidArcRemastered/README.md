@@ -5,30 +5,34 @@
 - Step 2 covers Bézier-clipping root solving, curve–surface intersection and hybrid surface–surface intersection.
 - Step 3 adds generalized-winding-number containment and General Fuse Booleans (OCCT-style PaveFiller + Builder, all four operations from one fuse).
 - Step 4 adds watertight shared-edge tessellation: one sampling per edge, used by every face that touches it, and a constrained Delaunay triangulation per face in its parameter chart.
+- Step 5 adds rolling-ball fillets and chamfers. The spine is the intersection of the two offset surfaces (Choi–Ju). Exact Cylinder, Torus, Cone, Plane and corner Sphere carriers are trimmed at caps, mitres and ball corners. The body is rebuilt by assembly with face history, and every refusal is atomic.
 
 A C++ library is inspected through a Python host and a single-page HTML viewer that rebuilds whenever a source file changes.
 
-## Status: steps 1–4 of the build order
+## Status: steps 1–5 of the build order
 
 | Area | Content | Gate |
 |---|---|---|
 | A. Precision | Session/angular precision, local (tolerant) precision per edge and vertex, Shewchuk adaptive `Orient2D` / `Orient3D` | 🟢 PredicateValidation: 0 wrong out of 800 000 |
 | B. Topology | Body → Region → SolidShell → Face → Loop → Fin → Edge → Vertex, generation-checked tokens | 🟢 T1–T5 audit after every edit |
 | C. Euler edits | MVFS/KVFS, MEV/KEV, MEF/KEF, MEKR/KEMR, KFMRH/MFKRH, ReverseShellOrientation, TransferShell, DetachShell | 🟢 9 specimens torn down to an empty partition |
-| D. Geometry | Line, circle; plane, cylinder, cone, sphere, torus; SP-curves (line, ellipse) | 🟢 Volume by quadrature, relative error ≤ 1.4e-15 |
+| D. Geometry | Line, circle, ellipse (`ConicForm`); plane, cylinder, cone, sphere, torus, offset surface; SP-curves (line, ellipse) | 🟢 Volume by quadrature, relative error ≤ 1.4e-15 |
 | E. Root solving + CSI | Bernstein algebra, Bézier clipping (Sederberg–Nishita), exact rational Bézier arcs composed into implicit surfaces (degree ≤ 8), roots of F and F′, Newton polish on the exact distance, tangent and coincident detection | 🟢 IntersectionValidation E1/E2: 60 000 polynomials, all within the condition bound; 2 000 random curve–surface pairs, 0 of 3 183 sign changes missed |
 | F. Hybrid SSI | Analytic dispatch (plane–plane, coaxial meridians, parallel sections, plane through an axis), then lattice + boundary seeds, normal-cone loop detection, 3D-corrector marching, singular-point splitting | 🟢 F1: 3 500 random analytic cases ≤ 5.4e-15. F2: marching on the exact curves (≤ 7.6e-15). F3: 22 gallery runs + 300 random oblique pairs sound, and the negative control is caught |
 | G. General Fuse Booleans | PaveFiller: EE, EF, FF interferences (exact SSI; marched sections that touch both faces are refused), paves, pave blocks, common blocks, section splitting, imprint. Builder: face splitting by smallest-turn cycle tracing in the chart, outer/hole assignment, fragment classification (GWN, plus normals for on-boundary fragments). Selection and assembly for ∪ ∩ − with history (Modified / Generated) | 🟢 BooleanValidation: 15 closed-form scenes × 4 operations + 160 random pairs; audit sound, ΔV ≤ 3.6e-15, identities ≤ 5.7e-14, 0 of 22 560 oracle points wrong; an open argument is refused |
 | H. Containment | Projected SP-curves (`ParameterProjection`), face domains in the chart, 2D parameter winding, 3D generalized winding number Σ Ω_F / 4π by Green in the chart (adaptive Gauss–Kronrod). Proximity first, then the nearest-normal shortcut, then winding | 🟢 ContainmentValidation H1–H6: 12 000 random points, normal offsets down to 1e-7, on-boundary points, ray-cast parity, open-box Van Oosterom–Strackee, 2D holes; 0 wrong, integer residual ≤ 3.2e-13 |
 | N. Shared-edge CDT tessellation | Exact `InCircle`; Bowyer–Watson CDT with exact cavity repair, Sloan constraint recovery, parity classification (`ChartTriangulation`). Per edge: adaptive τ bisection to sag ε, a √(8ε/κ) chord bound and chart fidelity on every fin. Per face: linear chart scaled by \|S_u\|, \|S_v\|; Ruppert-style refinement on 3D sag (distance to the surface) and side length, with a quality floor; pole and apex stars rebuilt from the chart boundary of the star; 3D side flips of folded slivers; split of interior sides another face already used | 🟢 TessellationValidation: 305 bodies (9 specimens, 15 scenes × 4, 240 random Boolean results), 668 918 triangles. 0 unpaired sides, χ equal, peak ≤ ε, 0 inverted / zero-area / folded, \|ΔV\| ≤ 0.48 ε·A, 0 missing edge sides. Convergence slopes ≈ 1, deterministic digests, scale-free 10⁻³…10³, 201 CDT regressions |
+| I. Rolling-ball blends | `ResolveEdgeBlendSheet`: convexity from (n₀ × n₁)·(t·σ); fillet radius r or chamfer setback d (r = d·tan(θ/2)); spine = SSI of the two offset surfaces; carrier Cylinder / Torus (fillet) or Plane / Cone / Cylinder (chamfer). `BlendEdges`: vertex classes Cap (planar end face), Mitre (two blends, elliptical seam), BallCorner (three convex fillets, sphere), Continuation; contact rails trimmed against each other; rebuilt with `AssembleBody` (shared with General Fuse), then audit, then the genus is compared. The source body is never touched | 🟢 BlendValidation B1–B10: rolling-ball harness 15/15, BevelLab 6/6, 27 specimens. ΔV vs closed form ≤ 7.0e-16, G1 ≤ 3.6e-15 rad, rolling-ball law ≤ 1.6e-15 over 71 037 samples, tessellation N gates, 0 of 2 400 winding points wrong, 4 Booleans downstream ≤ 3.4e-16, 5 atomic refusals, deterministic, ΔV ∝ s³ to 7.7e-14 |
 
-Next in the build order: I (rolling-ball blends), then J + K (offset, face change), and so on. See `Documentation/RESEARCH-KernelAlgorithms.md`.
+🚧 Step-5 plan-gate gaps (refused with a 🚧 reason, never built wrong): setback vertex blends where convex meets concave (Várady–Rockwood 2n-sided), tangent-chain propagation, overflow strategies (smooth / cliff / notch), caps on curved end faces and traced (marched) spines.
+
+Next in the build order: J + K (offset, face change), then L + M, and so on. See `Documentation/RESEARCH-KernelAlgorithms.md`.
 
 ## Layout
 
 ```
 SolidArcRemastered/
-├── CMakeLists.txt            static lib + RemasteredInspection + 6 validations (ctest)
+├── CMakeLists.txt            static lib + RemasteredInspection + 7 validations (ctest)
 ├── Source/
 │   ├── Precision/            PrecisionSpecification.h, ExactPredicates
 │   ├── Geometry/             VectorAlgebra.h, CurveGeometry, SurfaceGeometry, ProjectedCurve (exact or projected SP-curves)
@@ -37,12 +41,14 @@ SolidArcRemastered/
 │   ├── Tessellation/         ChartTriangulation (exact CDT), BodyTessellation (shared-edge sampling, per-face refinement, repairs)
 │   ├── Boolean/              GeneralFuse (PaveFiller + Builder + selection/assembly), BooleanCatalogue (15 closed-form scenes)
 │   ├── Topology/             RecordStore.h (tokens), ModelPartition, EulerEdits
-│   ├── Construction/         PrimitiveConstruction (prism, block, cylinder, cone, sphere, torus, perforated, hollow)
+│   ├── Construction/         PrimitiveConstruction (prism, block, cylinder, cone, frustum, sphere, torus, perforated, hollow), BodyAssembly (faces + shared edges → body)
+│   ├── Blend/                RollingBallGeometry (sheets, spines, carriers), EdgeBlend (BlendEdges: vertex classes, trimming, assembly), BlendCatalogue (27 specimens)
 │   ├── Audit/                ModelAudit (T1–T6, G1–G6), EnclosedVolume (divergence-theorem quadrature), IntersectionAudit (I1–I6), TessellationAudit (N1–N7)
-│   ├── Inspection/           SpecimenCatalogue, IntersectionCatalogue, InspectionEncoding, IntersectionEncoding, BooleanEncoding, TessellationEncoding, JsonWriter.h
+│   ├── Inspection/           SpecimenCatalogue, IntersectionCatalogue, InspectionEncoding, IntersectionEncoding, BooleanEncoding, TessellationEncoding, BlendEncoding, JsonWriter.h
 │   └── Applications/         RemasteredInspection.cpp (stdin line protocol)
-├── Validation/               Topology-, Predicate-, Intersection-, Containment-, Boolean-, TessellationValidation.cpp
+├── Validation/               Topology-, Predicate-, Intersection-, Containment-, Boolean-, Tessellation-, BlendValidation.cpp
 ├── Tooling/InspectionHost.py stdlib-only host: static viewer, API, SSE, rebuild on change
+│   GalleryRasterizer.py      Before | After exhibit PNGs straight from the C++ process (Pillow + numpy, z-buffer)
 └── Viewer/index.html         self-contained canvas viewer
 ```
 
@@ -65,10 +71,11 @@ ctest --test-dir Experimental/SolidArcRemastered/build -C RelWithDebInfo
 
 | Host endpoint | Purpose |
 |---|---|
-| `GET /api/catalogue` | Specimen and scene names, `Kind` (Model / Intersection / Boolean), descriptions, default parameters |
+| `GET /api/catalogue` | Specimen and scene names, `Kind` (Model / Intersection / Boolean / Blend), descriptions, default parameters |
 | `GET /api/specimen?name=Torus&MajorRadius=4` | Construct + audit + encode (one line to the persistent C++ process) |
 | `GET /api/specimen?name=SteinmetzCrossing&MarchingOnly=1` | Solve + audit an intersection scene (common keys: MarchingOnly, LoopDetection, ChordTolerance, Lattice) |
 | `GET /api/specimen?name=NapkinRing&Operation=2` | Boolean scene: General Fuse once, all four operations assembled, the chosen one (0 ∪, 1 ∩, 2 A − B, 3 B − A) audited and encoded with history |
+| `GET /api/blend?name=RoundedBlock&Size=0.2&Source=0` | Blend specimen (same verb as `/api/specimen`): blend applied (Size clamped to 10⁻⁴…10), audited and encoded with selection, sheets (carrier, radius, dihedral, residual, spine, contact edges), face provenance and statistics; `Source=1` shows the untouched source. A refusal still returns the source and the reason |
 | `GET /api/slice?name=DrilledBlock&Operation=2&Axis=2&Offset=0.5&Resolution=29` | Winding-number slice of a model or Boolean result: N × N grid, membership and winding per point |
 | `GET /api/tessellation?name=NapkinRing&Operation=2&SagRatio=0.001` | Shared-edge CDT PolygonComplex of a model or Boolean result (ε = SagRatio × diagonal, clamped to 10⁻⁴…5·10⁻²): positions, outward triangles, face per triangle, edge polylines, per-face records, N1–N7 verdicts |
 | `GET /api/validation?name=BooleanValidation` | Run a gate, returns markdown |
@@ -86,7 +93,7 @@ ctest --test-dir Experimental/SolidArcRemastered/build -C RelWithDebInfo
 | Topology | Body → … → Fin tree; hovering a row highlights that token's geometry |
 | Winding-number slice | Toggle plus axis, offset and resolution: an axis-aligned grid through the body box, coloured inside / outside / boundary; table of method counts, max integer residual, evaluations, ms |
 | Tessellation (N) | Toggle plus ε / diagonal and colouring (by face, or by minimum angle red 0° → green ≥ 40°). Shaded triangles with a headlight; back faces are drawn first in red, so any red that shows through marks a gap or an inverted triangle. Tables: N1–N7 gates, volume and area, then per face triangles, insertions, star · flip · split repairs and ms (hover a row to highlight the face) |
-| Gates | Runs any of the 6 validations and renders the markdown |
+| Gates | Runs any of the 7 validations and renders the markdown |
 
 Intersection scenes (the second group in the selector) reuse the same panels:
 
@@ -110,6 +117,15 @@ Boolean scenes (the third group) show:
 | General Fuse | Face pairs tested, coincident pairs, section branches, EE / EF tests, paves, split edges, common blocks, section and imprinted edges, dropped cycles |
 | Face history | Result face ← argument face, the state that kept it, and whether it was flipped; hovering a row highlights the face |
 
+Blend specimens (the fourth group) show:
+
+| Panel | Shows |
+|---|---|
+| Controls | Size (radius or setback), After · Before segmented control, blend-guide toggle; tessellation colouring "by blend origin" |
+| Stage | Selected edges amber dashed, spines (ball centres) cyan dotted, contact rails green; hatch and shading teal for blend faces, gold for corner faces, slate for modified faces |
+| Measured vs expected | Faces / edges / vertices / genus against the expected counts; V before, V shown, ΔV vs closed form (gate 10⁻⁹·max(1, V)); blend, construction and audit times |
+| Blend | Profile and size, edges blended, exact carriers by type, vertex classes (cap · mitre · ball · continuation); sheets (edge, wedge θ, spine, carrier, rolling-ball residual); face provenance (face, origin, source face, surface) (hover a row to highlight the face). A refusal shows the source with a banner: green when the refusal is the expected outcome |
+
 ## Conventions
 
 | Topic | Rule |
@@ -122,4 +138,5 @@ Boolean scenes (the third group) show:
 | Boolean selection | ∪ = A-Outside + B-Outside + A-OnSame · ∩ = A-Inside + B-Inside + A-OnSame · A − B = A-Outside + A-OnOpposite + flipped B-Inside · B − A is symmetric |
 | Boolean assembly | Every pave block needs exactly two balanced uses, otherwise the result is refused as non-manifold or open. Shells come from union-find over shared edges; negative-volume shells are cavities placed in the solid that contains them. An empty selection is refused ("Boolean: empty result") |
 | Tessellation | ε = SagRatio × body diagonal (default 10⁻³). An edge's samples are shared by every fin, and the face polygon uses them in fin order, so sides on edges match by construction. Triangles are outward CCW. A pole or apex is one vertex: singular-row triangles collapse onto it. The default camera looks from above (pitch < 0; the projection frame is Right × Up = −Ahead) |
+| Blends | `BlendEdges` never edits its input: it builds a new body by assembly, and a refusal returns no body (the message starts with "Blend: "). Fillet Size is the ball radius r; chamfer Size is the setback d along both faces. History: each result face is Edge (blend sheet), Vertex (corner sphere) or Modified (source face, trimmed). Contact rails drawn in the viewer are the result's real edges, not the untrimmed sheet curves |
 | Containment | ClassifySolidPoint: Boundary within Precision; then the nearest-normal shortcut when the nearest point is a face interior point closer than NearDistance; otherwise Σ Ω_F / 4π with |w| > ½ inside. Every result carries IntegerResidual = |w − round(w)|, and General Fuse refuses a fragment whose residual exceeds 1e-3 (argument not closed) rather than rounding it |

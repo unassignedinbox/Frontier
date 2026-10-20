@@ -71,7 +71,7 @@ SurfaceSample EvaluateSurface(const SurfaceGeometry& Surface, Vector2 Parameter)
     if (const auto* Cone = std::get_if<ConeSurface>(&Surface))
     {
         const RadialDirection Direction = EvaluateRadial(Cone->Frame, 𝑢);
-        const double          ρ         = Cone->BaseRadius + 𝑣 * Cone->RadialSlope;          // [len] - Local radius
+        const double          ρ         = Cone->OriginRadius + 𝑣 * Cone->RadialSlope;          // [len] - Local radius
         return {
             Cone->Frame.Origin + Direction.Radial * ρ + Cone->Frame.ZAxis * 𝑣,
             Direction.Tangent * ρ,
@@ -135,7 +135,7 @@ Vector2 ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vec
     {
         // 📝 Foot of the perpendicular on the generator line (r₀ + 𝑣·s, 𝑣) in the meridian half-plane.
         const double s = Cone->RadialSlope;                                                  // [-] - dr/d𝑣
-        return { 𝑢, ((ρ - Cone->BaseRadius) * s + Local.Z) / (1.0 + s * s) };
+        return { 𝑢, ((ρ - Cone->OriginRadius) * s + Local.Z) / (1.0 + s * s) };
     }
     if (std::holds_alternative<SphereSurface>(Surface)) return { 𝑢, std::atan2(Local.Z, ρ) };
     const auto&  Torus = std::get<TorusSurface>(Surface);
@@ -154,6 +154,38 @@ const char* SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept
 {
     constexpr const char* Labels[] = { "Plane", "Cylinder", "Cone", "Sphere", "Torus" };
     return Labels[Surface.index()];
+}
+
+std::optional<SurfaceGeometry> OffsetSurface(const SurfaceGeometry& Surface, double Distance) noexcept
+{
+    if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
+    {
+        PlaneSurface Offset = *Plane;
+        Offset.Frame.Origin = Plane->Frame.Origin + Plane->Frame.ZAxis * Distance;
+        return Offset;
+    }
+    if (const auto* Cylinder = std::get_if<CylinderSurface>(&Surface))
+    {
+        if (!(Cylinder->Radius + Distance > 0.0)) return std::nullopt;
+        return CylinderSurface{ Cylinder->Frame, Cylinder->Radius + Distance };
+    }
+    if (const auto* Cone = std::get_if<ConeSurface>(&Surface))
+    {
+        // 📝 n = (ρ̂ − s·ẑ)/√(1 + s²): a point at height 𝑣 moves to radius r + δ/√(1 + s²) at height 𝑣 − δs/√(1 + s²),
+        //    which lies on r₀′ + 𝑣′·s with r₀′ = r₀ + δ·√(1 + s²).
+        const double OriginRadius = Cone->OriginRadius + Distance * std::sqrt(1.0 + Cone->RadialSlope * Cone->RadialSlope);
+        if (!(OriginRadius > 0.0)) return std::nullopt;
+        return ConeSurface{ Cone->Frame, OriginRadius, Cone->RadialSlope };
+    }
+    if (const auto* Sphere = std::get_if<SphereSurface>(&Surface))
+    {
+        if (!(Sphere->Radius + Distance > 0.0)) return std::nullopt;
+        return SphereSurface{ Sphere->Frame, Sphere->Radius + Distance };
+    }
+    const auto& Torus = std::get<TorusSurface>(Surface);
+    const double Minor = Torus.MinorRadius + Distance;                                       // [len] - Offset tube radius
+    if (!(Minor > 0.0) || !(Minor < Torus.MajorRadius)) return std::nullopt;
+    return TorusSurface{ Torus.Frame, Torus.MajorRadius, Minor };
 }
 
 } // namespace Frontier::SolidArcRemastered

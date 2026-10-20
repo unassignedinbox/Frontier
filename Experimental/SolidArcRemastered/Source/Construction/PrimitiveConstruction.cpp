@@ -39,8 +39,8 @@ namespace
         {
             return ParameterLine{ Chart2D(Line->Origin), Direction2D(Line->Direction) };
         }
-        const auto& Arc = std::get<CircularArc>(Curve);
-        return ParameterEllipse{ Chart2D(Arc.Frame.Origin), Direction2D(Arc.Frame.XAxis), Direction2D(Arc.Frame.YAxis), Arc.Radius };
+        const ConicForm Conic = *ResolveConicForm(Curve);
+        return ParameterEllipse{ Chart2D(Conic.Centre), Direction2D(Conic.CosineAxis), Direction2D(Conic.SineAxis), 1.0 };
     }
 
     // ① Lines for every edge without a curve; ② planes (Newell normal over all loops) for every face without a surface;
@@ -227,6 +227,39 @@ EditOutcome<BodyToken> ConstructCone(ModelPartition& Partition, const Orthonorma
     const double Ascent = Height / Generator;                                                // [-] - d𝑣/dτ along the seam
     Partition.AttachSurfaceCurve(Rim.RetainedFin, ParameterLine{ { 0.0, 0.0 }, { 1.0, 0.0 } });
     Partition.AttachSurfaceCurve(Seam.OutboundFin, ParameterLine{ { FullTurn, 0.0 }, { 0.0, Ascent } });
+    Partition.AttachSurfaceCurve(Seam.ReturnFin, ParameterLine{ { 0.0, 0.0 }, { 0.0, Ascent } });
+    AttachLinearGeometry(Partition, Acorn.Body);
+    Partition.Bodies.Resolve(Acorn.Body).Category = BodyCategory::Solid;
+    return { Acorn.Body };
+}
+
+EditOutcome<BodyToken> ConstructFrustum(ModelPartition& Partition, const OrthonormalFrame& Frame, double OriginRadius, double TopRadius, double Height)
+{
+    if (!(OriginRadius > 0.0) || !(TopRadius > 0.0) || !(Height > 0.0)) return { {}, "Frustum: radii and height must be positive" };
+    const Vector3 RimVertex = Frame.Origin + Frame.XAxis * OriginRadius;                      // [len] - Seam foot
+    const Vector3 Lift       = Frame.ZAxis * Height;                                         // [len] - Axis displacement
+    const Vector3 TopVertex  = Frame.Origin + Lift + Frame.XAxis * TopRadius;                // [len] - Seam head
+    const double  Generator  = Distance(RimVertex, TopVertex);                               // [len] - Seam length
+
+    // ① MVFS · MEF (closed base circle) · MEV (seam) · MEF (closed top circle), as for the cylinder.
+    SOLIDARC_REQUIRE(Acorn, ConstructBodyFaceVertex(Partition, RimVertex));
+    SOLIDARC_REQUIRE(Rim, ConstructEdgeFace(Partition, { Acorn.Loop, {} }, { Acorn.Loop, {} }));
+    SOLIDARC_REQUIRE(Seam, ConstructEdgeVertex(Partition, { Acorn.Loop, Rim.RetainedFin }, TopVertex));
+    SOLIDARC_REQUIRE(Top, ConstructEdgeFace(Partition, { Acorn.Loop, Seam.ReturnFin }, { Acorn.Loop, Seam.ReturnFin }));
+
+    // ② Acorn.Face = top cap, Rim.Face = bottom cap, Top.Face = lateral cone r(𝑣) = r₀ + 𝑣·(r₁ − r₀)/h.
+    Partition.AttachCurve(Rim.Edge, CircularArc{ Frame, OriginRadius }, 0.0, FullTurn);
+    Partition.AttachCurve(Top.Edge, CircularArc{ TranslateFrame(Frame, Lift), TopRadius }, 0.0, FullTurn);
+    Partition.AttachCurve(Seam.Edge, StraightLine{ RimVertex, (TopVertex - RimVertex) * (1.0 / Generator) }, 0.0, Generator);
+    Partition.AttachSurface(Acorn.Face, PlaneSurface{ TranslateFrame(Frame, Lift) }, Orientation::Forward);
+    Partition.AttachSurface(Rim.Face, InvertedPlane(Frame), Orientation::Forward);
+    Partition.AttachSurface(Top.Face, ConeSurface{ Frame, OriginRadius, (TopRadius - OriginRadius) / Height }, Orientation::Forward);
+
+    // ③ SP-curves on the lateral chart [0, 2π] × [0, h]: forward seam at 𝑢 = 2π, reversed seam at 𝑢 = 0.
+    const double Ascent = Height / Generator;                                                // [-] - d𝑣/dτ along the seam
+    Partition.AttachSurfaceCurve(Rim.RetainedFin, ParameterLine{ { 0.0, 0.0 }, { 1.0, 0.0 } });
+    Partition.AttachSurfaceCurve(Seam.OutboundFin, ParameterLine{ { FullTurn, 0.0 }, { 0.0, Ascent } });
+    Partition.AttachSurfaceCurve(Top.TransferredFin, ParameterLine{ { 0.0, Height }, { 1.0, 0.0 } });
     Partition.AttachSurfaceCurve(Seam.ReturnFin, ParameterLine{ { 0.0, 0.0 }, { 0.0, Ascent } });
     AttachLinearGeometry(Partition, Acorn.Body);
     Partition.Bodies.Resolve(Acorn.Body).Category = BodyCategory::Solid;

@@ -838,13 +838,13 @@ namespace
 
             Summary.DelaunayViolations = Tiling.CountDelaunayViolations();
             if (Summary.DelaunayViolations > 0) Tiling.Legalize();
-            Emit();
+            PublishTriangles();
             return {};
         }
 
         // ③ Triangles in the outward sense; interior points become complex vertices; pole / apex slivers collapse; folded
         //    stars at singular vertices are repaired.
-        void Emit()
+        void PublishTriangles()
         {
             const ChartTriangulation& Tiling  = *Triangulation;
             const bool                Flip  = Partition.Faces.Resolve(Face).Sense == Orientation::Reversed;
@@ -926,7 +926,7 @@ double MeasurePeakCurvature(const SurfaceGeometry& Surface, Vector2 Parameter) n
     if (const auto* Cone = std::get_if<ConeSurface>(&Surface))
     {
         // Circumferential curvature cos β / ρ with tan β = s; the generator is straight.
-        const double ρ = std::fabs(Cone->BaseRadius + Parameter.Y * Cone->RadialSlope);      // [len] - Distance from the axis
+        const double ρ = std::fabs(Cone->OriginRadius + Parameter.Y * Cone->RadialSlope);      // [len] - Distance from the axis
         return ρ > 0.0 ? 1.0 / (ρ * std::sqrt(1.0 + Cone->RadialSlope * Cone->RadialSlope)) : INFINITY;
     }
     const auto& Torus = std::get<TorusSurface>(Surface);

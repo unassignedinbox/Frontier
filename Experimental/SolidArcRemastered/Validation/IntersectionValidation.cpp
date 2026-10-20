@@ -425,10 +425,10 @@ namespace
             {
                 AnalyticPair Pair;
                 const OrthonormalFrame Frame = RandomFrame(RandomPoint(2.0), RandomDirection());
-                const double BaseRadius = Uniform(1.0, 2.0), Slope = Uniform(-0.5, 0.5), Height = Uniform(-1.2, 1.2);
-                Pair.First = ConeSurface{ Frame, BaseRadius, Slope };                                               Pair.FirstBox = { { 0.0, -1.5 }, { FullTurn, 1.5 } };
+                const double OriginRadius = Uniform(1.0, 2.0), Slope = Uniform(-0.5, 0.5), Height = Uniform(-1.2, 1.2);
+                Pair.First = ConeSurface{ Frame, OriginRadius, Slope };                                               Pair.FirstBox = { { 0.0, -1.5 }, { FullTurn, 1.5 } };
                 Pair.Second = PlaneSurface{ RandomFrame(Frame.Origin + Frame.ZAxis * Height, Frame.ZAxis) };  Pair.SecondBox = WidePlane;
-                Pair.Circles = { { Frame.Origin + Frame.ZAxis * Height, Frame.ZAxis, BaseRadius + Slope * Height } };
+                Pair.Circles = { { Frame.Origin + Frame.ZAxis * Height, Frame.ZAxis, OriginRadius + Slope * Height } };
                 return Pair;
             } },
             { "cylinder × coaxial sphere", []()

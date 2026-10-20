@@ -11,8 +11,9 @@ Endpoints
     GET /api/catalogue            specimen names, descriptions and default parameters
     GET /api/specimen?name=N&K=V  construct + audit + encode one specimen (one line to the persistent C++ process)
     GET /api/slice?name=N&K=V     generalized-winding-number slice of a model or Boolean result (Axis, Offset, Resolution)
-    GET /api/tessellation?name=N&K=V  shared-edge CDT PolygonComplex of a model or Boolean result (SagRatio) with N1–N7 gates
-    GET /api/validation?name=N    run Topology | Predicate | Intersection | Containment | Boolean | TessellationValidation, returns markdown
+    GET /api/tessellation?name=N&K=V  shared-edge CDT PolygonComplex of a model, Boolean or blend result (SagRatio) with N1–N7 gates
+    GET /api/blend?name=N&K=V     rolling-ball blend of a catalogue specimen (Size, Source=1 shows the body before), provenance + ΔV check
+    GET /api/validation?name=N    run TopologyValidation | ... | TessellationValidation | BlendValidation, returns markdown
     GET /api/status               build state (Building | Ready | Failed), stale flag, build log, revision
     GET /api/events               Server-Sent Events: build state changes
 """
@@ -39,7 +40,7 @@ ViewerRoot      = ProjectRoot / "Viewer"
 WatchedRoots    = [ProjectRoot / "Source", ProjectRoot / "Validation", ProjectRoot / "CMakeLists.txt"]
 WatchInterval   = 0.5                                                                        # [s]  - Source scan period
 RequestTimeout  = 30.0                                                                       # [s]  - One specimen request
-ValidationNames = { "TopologyValidation", "PredicateValidation", "IntersectionValidation", "ContainmentValidation", "BooleanValidation", "TessellationValidation" }
+ValidationNames = { "TopologyValidation", "PredicateValidation", "IntersectionValidation", "ContainmentValidation", "BooleanValidation", "TessellationValidation", "BlendValidation" }
 ContentKinds    = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" }
 
 #------------------------------------------------------------------------------------------------------------------------
@@ -206,8 +207,9 @@ def ConstructHandlerClass(Builds: BuildDivision, Inspection: InspectionProcess):
             Query   = { Key: Values[-1] for Key, Values in parse_qs(Address.query).items() }
             if Address.path == "/api/catalogue":
                 return self.RespondJson(Inspection.Request("catalogue"))
-            if Address.path in ("/api/specimen", "/api/slice", "/api/tessellation"):
-                Verb = {"/api/specimen": "specimen", "/api/slice": "slice", "/api/tessellation": "tessellate"}[Address.path]
+            if Address.path in ("/api/specimen", "/api/slice", "/api/tessellation", "/api/blend"):
+                # 📝 Blend specimens answer the specimen verb (the C++ host dispatches on the catalogue name).
+                Verb = {"/api/specimen": "specimen", "/api/slice": "slice", "/api/tessellation": "tessellate", "/api/blend": "specimen"}[Address.path]
                 Name = Query.pop("name", "")
                 if not Name.isidentifier():
                     return self.RespondJson(json.dumps({ "Refusal": "specimen name must be an identifier" }))
