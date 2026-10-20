@@ -1,0 +1,469 @@
+/*====================================================================================================================================
+                                                   DRAFTINGRASTERIZATION.CPP
+====================================================================================================================================*/
+// 🧩 Viewport rasterization: offscreen colour + R32 identity + depth, surface / edge / grid programs, probe and readback
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INCLUDES
+//------------------------------------------------------------------------------------------------------------------------
+
+#include "Viewport/DraftingRasterization.h"
+
+#include "Viewport/Generated/DraftingShaderArchive.h"
+
+#include <algorithm>
+#include <cstring>
+#include <stdexcept>
+
+namespace Frontier::DraftingWorkspace
+{
+
+namespace
+{
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    CONSTANTS
+//------------------------------------------------------------------------------------------------------------------------
+
+constexpr VkFormat ColourFormat   = VK_FORMAT_R8G8B8A8_UNORM;
+constexpr VkFormat IdentityFormat = VK_FORMAT_R32_UINT;
+constexpr VkFormat DepthFormat    = VK_FORMAT_D32_SFLOAT;
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INTERNAL FUNCTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+void Require(VkResult Result, const char* Label)
+{
+    if (Result != VK_SUCCESS) throw std::runtime_error(std::string(Label) + " failed (VkResult " + std::to_string(static_cast<int>(Result)) + ")");
+}
+
+template <size_t Words>
+VkShaderModule CreateModule(VkDevice Device, const uint32_t (&Code)[Words])
+{
+    VkShaderModuleCreateInfo Request{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+    Request.codeSize = Words * sizeof(uint32_t);
+    Request.pCode    = Code;
+    VkShaderModule Module = VK_NULL_HANDLE;
+    Require(vkCreateShaderModule(Device, &Request, nullptr, &Module), "vkCreateShaderModule");
+    return Module;
+}
+
+struct PipelineRecipe
+{
+    VkShaderModule                                 Vertex         = VK_NULL_HANDLE;
+    VkShaderModule                                 Fragment       = VK_NULL_HANDLE;
+    const char*                                    VertexEntry    = "main";
+    const char*                                    FragmentEntry  = "main";
+    std::vector<VkVertexInputBindingDescription>   Bindings       = {};
+    std::vector<VkVertexInputAttributeDescription> Attributes     = {};
+    bool                                           DepthWrite     = true;
+    bool                                           ColourBlend    = false;
+    bool                                           IdentityWrite  = true;
+};
+
+VkPipeline CreatePipeline(VkDevice Device, VkPipelineLayout Layout, const PipelineRecipe& Recipe)
+{
+    VkPipelineShaderStageCreateInfo Programs[2]{};
+    Programs[0] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, Recipe.Vertex, Recipe.VertexEntry, nullptr };
+    Programs[1] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, Recipe.Fragment, Recipe.FragmentEntry, nullptr };
+
+    VkPipelineVertexInputStateCreateInfo Input{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    Input.vertexBindingDescriptionCount   = static_cast<uint32_t>(Recipe.Bindings.size());
+    Input.pVertexBindingDescriptions      = Recipe.Bindings.data();
+    Input.vertexAttributeDescriptionCount = static_cast<uint32_t>(Recipe.Attributes.size());
+    Input.pVertexAttributeDescriptions    = Recipe.Attributes.data();
+    VkPipelineInputAssemblyStateCreateInfo Assembly{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+    Assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo Viewport{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+    Viewport.viewportCount = 1;
+    Viewport.scissorCount  = 1;
+    VkPipelineRasterizationStateCreateInfo Raster{ VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+    Raster.polygonMode = VK_POLYGON_MODE_FILL;
+    Raster.cullMode    = VK_CULL_MODE_NONE;
+    Raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;                                    // 📝 Outward CCW triangles (y-flip in ClipFromWorld)
+    Raster.lineWidth   = 1.0f;
+    VkPipelineMultisampleStateCreateInfo Samples{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+    Samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo DepthState{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+    DepthState.depthTestEnable  = VK_TRUE;
+    DepthState.depthWriteEnable = Recipe.DepthWrite ? VK_TRUE : VK_FALSE;
+    DepthState.depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL;
+    VkPipelineColorBlendAttachmentState Blends[2]{};
+    Blends[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    if (Recipe.ColourBlend)
+    {
+        Blends[0].blendEnable         = VK_TRUE;
+        Blends[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        Blends[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        Blends[0].colorBlendOp        = VK_BLEND_OP_ADD;
+        Blends[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        Blends[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        Blends[0].alphaBlendOp        = VK_BLEND_OP_ADD;
+    }
+    Blends[1].colorWriteMask = Recipe.IdentityWrite ? VkColorComponentFlags(VK_COLOR_COMPONENT_R_BIT) : VkColorComponentFlags(0);         // 📝 Integer target: never blended
+    VkPipelineColorBlendStateCreateInfo Blend{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+    Blend.attachmentCount = 2;
+    Blend.pAttachments    = Blends;
+    const VkDynamicState Dynamic[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo DynamicState{ VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+    DynamicState.dynamicStateCount = 2;
+    DynamicState.pDynamicStates    = Dynamic;
+    const VkFormat ColourFormats[] = { ColourFormat, IdentityFormat };
+    VkPipelineRenderingCreateInfo Rendering{ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+    Rendering.colorAttachmentCount    = 2;
+    Rendering.pColorAttachmentFormats = ColourFormats;
+    Rendering.depthAttachmentFormat   = DepthFormat;
+
+    VkGraphicsPipelineCreateInfo Request{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+    Request.pNext               = &Rendering;
+    Request.stageCount          = 2;
+    Request.pStages             = Programs;
+    Request.pVertexInputState   = &Input;
+    Request.pInputAssemblyState = &Assembly;
+    Request.pViewportState      = &Viewport;
+    Request.pRasterizationState = &Raster;
+    Request.pMultisampleState   = &Samples;
+    Request.pDepthStencilState  = &DepthState;
+    Request.pColorBlendState    = &Blend;
+    Request.pDynamicState       = &DynamicState;
+    Request.layout              = Layout;
+    VkPipeline Pipeline = VK_NULL_HANDLE;
+    Require(vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, &Request, nullptr, &Pipeline), "vkCreateGraphicsPipelines");
+    return Pipeline;
+}
+
+void Narrow(const DraftingMatrix& Source, float Target[16])
+{
+    for (int Index = 0; Index < 16; ++Index) Target[Index] = static_cast<float>(Source[Index]);
+}
+
+void Narrow(const std::array<double, 3>& Source, float Target[4], float Fourth)
+{
+    for (int Index = 0; Index < 3; ++Index) Target[Index] = static_cast<float>(Source[Index]);
+    Target[3] = Fourth;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    RASTERIZATION
+//------------------------------------------------------------------------------------------------------------------------
+
+DraftingRasterization::~DraftingRasterization()
+{
+    Destroy();
+}
+
+bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& Refusal)
+{
+    Device = &Borrowed;
+    try
+    {
+        // ① descriptor set: face states (binding 0), edge states (binding 1)
+        VkDescriptorSetLayoutBinding Bindings[2]{};
+        Bindings[0] = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+        Bindings[1] = { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+        VkDescriptorSetLayoutCreateInfo LayoutRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        LayoutRequest.bindingCount = 2;
+        LayoutRequest.pBindings    = Bindings;
+        Require(vkCreateDescriptorSetLayout(Device->Device, &LayoutRequest, nullptr, &BufferLayout), "vkCreateDescriptorSetLayout");
+        const VkDescriptorPoolSize PoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 };
+        VkDescriptorPoolCreateInfo PoolRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        PoolRequest.maxSets       = 1;
+        PoolRequest.poolSizeCount = 1;
+        PoolRequest.pPoolSizes    = &PoolSize;
+        Require(vkCreateDescriptorPool(Device->Device, &PoolRequest, nullptr, &DescriptorPool), "vkCreateDescriptorPool");
+        VkDescriptorSetAllocateInfo SetRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        SetRequest.descriptorPool     = DescriptorPool;
+        SetRequest.descriptorSetCount = 1;
+        SetRequest.pSetLayouts        = &BufferLayout;
+        Require(vkAllocateDescriptorSets(Device->Device, &SetRequest, &BufferSet), "vkAllocateDescriptorSets");
+
+        // ② pipeline layout: the set + one 128-byte push range
+        const VkPushConstantRange Push{ VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128 };
+        VkPipelineLayoutCreateInfo PipelineLayoutRequest{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        PipelineLayoutRequest.setLayoutCount         = 1;
+        PipelineLayoutRequest.pSetLayouts            = &BufferLayout;
+        PipelineLayoutRequest.pushConstantRangeCount = 1;
+        PipelineLayoutRequest.pPushConstantRanges    = &Push;
+        Require(vkCreatePipelineLayout(Device->Device, &PipelineLayoutRequest, nullptr, &PipelineLayout), "vkCreatePipelineLayout");
+
+        CreatePipelines();
+        ProbeReadback = Device->CreateBuffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+        AssignStates({}, {});
+        CreateTargets(64, 64);
+        return true;
+    }
+    catch (const std::exception& Failure)
+    {
+        Refusal = Failure.what();
+        Destroy();
+        return false;
+    }
+}
+
+void DraftingRasterization::CreatePipelines()
+{
+    using namespace ShaderArchive;
+    const VkShaderModule SurfaceVertex   = CreateModule(Device->Device, DraftingSurfaceVertexCode);
+    const VkShaderModule SurfaceFragment = CreateModule(Device->Device, DraftingSurfaceFragmentCode);
+    const VkShaderModule EdgeVertex      = CreateModule(Device->Device, DraftingEdgeVertexCode);
+    const VkShaderModule EdgeFragment    = CreateModule(Device->Device, DraftingEdgeFragmentCode);
+    const VkShaderModule GridVertex      = CreateModule(Device->Device, DraftingGridVertexCode);
+    const VkShaderModule GridFragment    = CreateModule(Device->Device, DraftingGridFragmentCode);
+
+    PipelineRecipe Surface;
+    Surface.Vertex        = SurfaceVertex;
+    Surface.Fragment      = SurfaceFragment;
+    Surface.VertexEntry   = DraftingSurfaceVertexEntry;
+    Surface.FragmentEntry = DraftingSurfaceFragmentEntry;
+    Surface.Bindings      = { { 0, sizeof(DraftingSceneCorner), VK_VERTEX_INPUT_RATE_VERTEX } };
+    Surface.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
+    SurfacePipeline       = CreatePipeline(Device->Device, PipelineLayout, Surface);
+
+    PipelineRecipe Edge;
+    Edge.Vertex        = EdgeVertex;
+    Edge.Fragment      = EdgeFragment;
+    Edge.VertexEntry   = DraftingEdgeVertexEntry;
+    Edge.FragmentEntry = DraftingEdgeFragmentEntry;
+    Edge.Bindings      = { { 0, sizeof(DraftingSceneSegment), VK_VERTEX_INPUT_RATE_INSTANCE } };
+    Edge.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
+    Edge.ColourBlend   = true;
+    EdgePipeline       = CreatePipeline(Device->Device, PipelineLayout, Edge);
+
+    PipelineRecipe Grid;
+    Grid.Vertex        = GridVertex;
+    Grid.Fragment      = GridFragment;
+    Grid.VertexEntry   = DraftingGridVertexEntry;
+    Grid.FragmentEntry = DraftingGridFragmentEntry;
+    Grid.DepthWrite    = false;
+    Grid.ColourBlend   = true;
+    Grid.IdentityWrite = false;
+    GridPipeline       = CreatePipeline(Device->Device, PipelineLayout, Grid);
+
+    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, GridVertex, GridFragment })
+        vkDestroyShaderModule(Device->Device, Module, nullptr);
+}
+
+void DraftingRasterization::Destroy()
+{
+    if (!Device || !Device->Device) return;
+    vkDeviceWaitIdle(Device->Device);
+    DestroyTargets();
+    for (DraftingBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer }) Device->DestroyBuffer(*Buffer);
+    for (VkPipeline* Pipeline : { &SurfacePipeline, &EdgePipeline, &GridPipeline })
+    {
+        if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
+        *Pipeline = VK_NULL_HANDLE;
+    }
+    if (PipelineLayout) vkDestroyPipelineLayout(Device->Device, PipelineLayout, nullptr);
+    if (DescriptorPool) vkDestroyDescriptorPool(Device->Device, DescriptorPool, nullptr);
+    if (BufferLayout) vkDestroyDescriptorSetLayout(Device->Device, BufferLayout, nullptr);
+    PipelineLayout   = VK_NULL_HANDLE;
+    DescriptorPool   = VK_NULL_HANDLE;
+    BufferLayout     = VK_NULL_HANDLE;
+    BufferSet        = VK_NULL_HANDLE;
+    UploadedRevision = UINT64_MAX;
+    Device           = nullptr;
+}
+
+void DraftingRasterization::CreateTargets(uint32_t Width, uint32_t Height)
+{
+    Colour   = Device->CreateImage(Width, Height, ColourFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                   VK_IMAGE_ASPECT_COLOR_BIT);
+    Identity = Device->CreateImage(Width, Height, IdentityFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    Depth    = Device->CreateImage(Width, Height, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    ColourReadback   = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+    IdentityReadback = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+    // 📝 The interface samples the colour target before the first Record(): start it in the sampled layout.
+    Device->SubmitImmediately([&](VkCommandBuffer Commands)
+    {
+        TransitionDraftingImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    });
+}
+
+void DraftingRasterization::DestroyTargets()
+{
+    for (DraftingImage* Image : { &Colour, &Identity, &Depth }) Device->DestroyImage(*Image);
+    for (DraftingBuffer* Buffer : { &ColourReadback, &IdentityReadback }) Device->DestroyBuffer(*Buffer);
+}
+
+void DraftingRasterization::Resize(uint32_t Width, uint32_t Height)
+{
+    Width  = std::max<uint32_t>(Width, 8);
+    Height = std::max<uint32_t>(Height, 8);
+    if (Width == Colour.Width && Height == Colour.Height) return;
+    vkDeviceWaitIdle(Device->Device);
+    DestroyTargets();
+    CreateTargets(Width, Height);
+}
+
+void DraftingRasterization::UploadScene(const DraftingScene& Scene)
+{
+    vkDeviceWaitIdle(Device->Device);
+    Device->DestroyBuffer(CornerBuffer);
+    Device->DestroyBuffer(SegmentBuffer);
+    CornerCount  = static_cast<uint32_t>(Scene.Corners.size());
+    SegmentCount = static_cast<uint32_t>(Scene.Segments.size());
+    CornerBuffer  = Device->CreateBuffer(sizeof(DraftingSceneCorner) * std::max<size_t>(CornerCount, 1), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+    SegmentBuffer = Device->CreateBuffer(sizeof(DraftingSceneSegment) * std::max<size_t>(SegmentCount, 1), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+    if (CornerCount) std::memcpy(CornerBuffer.Mapped, Scene.Corners.data(), sizeof(DraftingSceneCorner) * CornerCount);
+    if (SegmentCount) std::memcpy(SegmentBuffer.Mapped, Scene.Segments.data(), sizeof(DraftingSceneSegment) * SegmentCount);
+    UploadedRevision = Scene.Revision;
+    AssignStates(std::vector<uint32_t>(Scene.Faces.size(), 0u), std::vector<uint32_t>(Scene.Edges.size(), 0u));
+}
+
+void DraftingRasterization::AssignStates(const std::vector<uint32_t>& FaceStates, const std::vector<uint32_t>& EdgeStates)
+{
+    // 📝 Reallocate only when the counts change (a new scene); otherwise overwrite through the persistent mapping.
+    const bool ReshapeCondition = !FaceStateBuffer.Buffer || FaceStates.size() != FaceCount || EdgeStates.size() != EdgeCount;
+    if (ReshapeCondition)
+    {
+        vkDeviceWaitIdle(Device->Device);
+        Device->DestroyBuffer(FaceStateBuffer);
+        Device->DestroyBuffer(EdgeStateBuffer);
+        FaceCount       = static_cast<uint32_t>(FaceStates.size());
+        EdgeCount       = static_cast<uint32_t>(EdgeStates.size());
+        FaceStateBuffer = Device->CreateBuffer(4 * std::max<size_t>(FaceCount, 1), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        EdgeStateBuffer = Device->CreateBuffer(4 * std::max<size_t>(EdgeCount, 1), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        const VkDescriptorBufferInfo Targets[2] = { { FaceStateBuffer.Buffer, 0, VK_WHOLE_SIZE }, { EdgeStateBuffer.Buffer, 0, VK_WHOLE_SIZE } };
+        VkWriteDescriptorSet Writes[2]{};
+        for (uint32_t Binding = 0; Binding < 2; ++Binding)
+        {
+            Writes[Binding]                 = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+            Writes[Binding].dstSet          = BufferSet;
+            Writes[Binding].dstBinding      = Binding;
+            Writes[Binding].descriptorCount = 1;
+            Writes[Binding].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            Writes[Binding].pBufferInfo     = &Targets[Binding];
+        }
+        vkUpdateDescriptorSets(Device->Device, 2, Writes, 0, nullptr);
+    }
+    std::memset(FaceStateBuffer.Mapped, 0, FaceStateBuffer.Size);
+    std::memset(EdgeStateBuffer.Mapped, 0, EdgeStateBuffer.Size);
+    if (!FaceStates.empty()) std::memcpy(FaceStateBuffer.Mapped, FaceStates.data(), 4 * FaceStates.size());
+    if (!EdgeStates.empty()) std::memcpy(EdgeStateBuffer.Mapped, EdgeStates.data(), 4 * EdgeStates.size());
+}
+
+void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCameraFrame& Frame, const DraftingViewportStyle& Style,
+                                   bool ReadbackCondition, int ProbeX, int ProbeY)
+{
+    // ① targets → attachments (contents discarded: everything is cleared)
+    TransitionDraftingImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    TransitionDraftingImage(Commands, Identity.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    TransitionDraftingImage(Commands, Depth.Image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+    VkRenderingAttachmentInfo ColourTargets[2]{};
+    ColourTargets[0] = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    ColourTargets[0].imageView   = Colour.View;
+    ColourTargets[0].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    ColourTargets[0].loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    ColourTargets[0].storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+    std::memcpy(ColourTargets[0].clearValue.color.float32, Style.Background, sizeof(Style.Background));
+    ColourTargets[1] = ColourTargets[0];
+    ColourTargets[1].imageView = Identity.View;
+    ColourTargets[1].clearValue.color.uint32[0] = 0u;
+    ColourTargets[1].clearValue.color.uint32[1] = 0u;
+    ColourTargets[1].clearValue.color.uint32[2] = 0u;
+    ColourTargets[1].clearValue.color.uint32[3] = 0u;
+    VkRenderingAttachmentInfo DepthTarget{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+    DepthTarget.imageView               = Depth.View;
+    DepthTarget.imageLayout             = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    DepthTarget.loadOp                  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    DepthTarget.storeOp                 = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    DepthTarget.clearValue.depthStencil = { 1.0f, 0 };
+    VkRenderingInfo Rendering{ VK_STRUCTURE_TYPE_RENDERING_INFO };
+    Rendering.renderArea           = { { 0, 0 }, { Colour.Width, Colour.Height } };
+    Rendering.layerCount           = 1;
+    Rendering.colorAttachmentCount = 2;
+    Rendering.pColorAttachments    = ColourTargets;
+    Rendering.pDepthAttachment     = &DepthTarget;
+    vkCmdBeginRendering(Commands, &Rendering);
+
+    const VkViewport Viewport{ 0.0f, 0.0f, float(Colour.Width), float(Colour.Height), 0.0f, 1.0f };
+    const VkRect2D   Scissor{ { 0, 0 }, { Colour.Width, Colour.Height } };
+    vkCmdSetViewport(Commands, 0, 1, &Viewport);
+    vkCmdSetScissor(Commands, 0, 1, &Scissor);
+    vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
+
+    // ② surfaces, then edges (depth-biased toward the eye), then the grid behind both
+    DraftingProjectionBlock Projection;
+    Narrow(Frame.ClipFromWorld, Projection.ClipFromWorld);
+    Narrow(Frame.Right, Projection.ViewRight, Frame.OrthographicEnabled ? 1.0f : 0.0f);
+    Narrow(Frame.Up, Projection.ViewUp, 0.0f);
+    Narrow(Frame.Forward, Projection.ViewForward, 0.0f);
+    Projection.DisplayStroke[0] = float(Colour.Width);
+    Projection.DisplayStroke[1] = float(Colour.Height);
+    Projection.DisplayStroke[2] = Style.EdgeStroke;
+    Projection.DisplayStroke[3] = Style.EdgeDepthBias;
+    const VkShaderStageFlags PushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    const VkDeviceSize       Origin     = 0;
+    if (Style.SurfacesEnabled && CornerCount)
+    {
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, SurfacePipeline);
+        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
+        vkCmdBindVertexBuffers(Commands, 0, 1, &CornerBuffer.Buffer, &Origin);
+        vkCmdDraw(Commands, CornerCount, 1, 0, 0);
+    }
+    if (Style.EdgesEnabled && SegmentCount)
+    {
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, EdgePipeline);
+        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
+        vkCmdBindVertexBuffers(Commands, 0, 1, &SegmentBuffer.Buffer, &Origin);
+        vkCmdDraw(Commands, 6, SegmentCount, 0, 0);
+    }
+    if (Style.GridEnabled)
+    {
+        DraftingGridBlock Grid;
+        Narrow(Frame.ClipFromWorld, Grid.ClipFromWorld);
+        Narrow(Frame.WorldFromClip, Grid.WorldFromClip);
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, GridPipeline);
+        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Grid), &Grid);
+        vkCmdDraw(Commands, 3, 1, 0, 0);
+    }
+    vkCmdEndRendering(Commands);
+
+    // ③ identity probe / full readback, then the colour target → sampled
+    TransitionDraftingImage(Commands, Identity.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    static_cast<uint32_t*>(ProbeReadback.Mapped)[0] = 0u;
+    if (ProbeX >= 0 && ProbeY >= 0 && uint32_t(ProbeX) < Identity.Width && uint32_t(ProbeY) < Identity.Height)
+    {
+        VkBufferImageCopy Probe{};
+        Probe.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        Probe.imageOffset      = { ProbeX, ProbeY, 0 };
+        Probe.imageExtent      = { 1, 1, 1 };
+        vkCmdCopyImageToBuffer(Commands, Identity.Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, ProbeReadback.Buffer, 1, &Probe);
+    }
+    if (ReadbackCondition)
+    {
+        VkBufferImageCopy Whole{};
+        Whole.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+        Whole.imageExtent      = { Colour.Width, Colour.Height, 1 };
+        vkCmdCopyImageToBuffer(Commands, Identity.Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, IdentityReadback.Buffer, 1, &Whole);
+        TransitionDraftingImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        vkCmdCopyImageToBuffer(Commands, Colour.Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, ColourReadback.Buffer, 1, &Whole);
+        TransitionDraftingImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+    else
+    {
+        TransitionDraftingImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+}
+
+uint32_t DraftingRasterization::ProbedIdentity() const
+{
+    return ProbeReadback.Mapped ? static_cast<const uint32_t*>(ProbeReadback.Mapped)[0] : 0u;
+}
+
+const uint32_t* DraftingRasterization::ReadbackColour() const
+{
+    return static_cast<const uint32_t*>(ColourReadback.Mapped);
+}
+
+const uint32_t* DraftingRasterization::ReadbackIdentity() const
+{
+    return static_cast<const uint32_t*>(IdentityReadback.Mapped);
+}
+
+} // namespace Frontier::DraftingWorkspace

@@ -1,0 +1,324 @@
+/*====================================================================================================================================
+                                                   DRAFTINGDOCUMENTCODEC.CPP
+====================================================================================================================================*/
+// 🧩 DraftingWorkspace document files (.drafting.toml): parameters, steps, sketches, references, captions (toml++)
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INCLUDES
+//------------------------------------------------------------------------------------------------------------------------
+
+#include "Document/DraftingDocumentCodec.h"
+
+#include <toml++/toml.hpp>
+
+#include <fstream>
+#include <sstream>
+
+namespace Frontier::DraftingWorkspace
+{
+
+using namespace Frontier::SolidArcRemastered;
+
+namespace
+{
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    CONSTANTS
+//------------------------------------------------------------------------------------------------------------------------
+
+constexpr int64_t FormatVersion = 1;                                                         // [-] - Bumped on an incompatible change
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    ENCODING
+//------------------------------------------------------------------------------------------------------------------------
+
+[[nodiscard]] toml::array EncodeVector(const Vector3& Value) { return toml::array{ Value.X, Value.Y, Value.Z }; }
+
+[[nodiscard]] toml::table EncodeValue(const FeatureValue& Value)
+{
+    toml::table Table{ { "Literal", Value.Literal } };
+    if (!Value.Parameter.empty())
+    {
+        Table.insert("Parameter", Value.Parameter);
+        Table.insert("Factor", Value.Factor);
+        Table.insert("Offset", Value.Offset);
+    }
+    if (!Value.SecondParameter.empty())
+    {
+        Table.insert("SecondParameter", Value.SecondParameter);
+        Table.insert("SecondFactor", Value.SecondFactor);
+    }
+    return Table;
+}
+
+[[nodiscard]] toml::table EncodeSketch(const SketchModel& Sketch)
+{
+    toml::array Points;
+    for (const SketchPoint& Point : Sketch.Points) Points.push_back(toml::array{ Point.Position.X, Point.Position.Y });
+    toml::array Curves;
+    for (const SketchCurve& Curve : Sketch.Curves)
+    {
+        Curves.push_back(toml::table{ { "Kind", static_cast<int64_t>(Curve.Kind) }, { "Identifier", Curve.Identifier },
+                                      { "Start", Curve.Start }, { "End", Curve.End }, { "Centre", Curve.Centre },
+                                      { "Radius", Curve.Radius }, { "Construction", Curve.Construction } });
+    }
+    toml::array Constraints;
+    for (const SketchConstraint& Constraint : Sketch.Constraints)
+    {
+        toml::table Entry{ { "Kind", static_cast<int64_t>(Constraint.Kind) }, { "First", Constraint.First }, { "Second", Constraint.Second },
+                           { "Third", Constraint.Third }, { "Value", Constraint.Value }, { "SecondValue", Constraint.SecondValue },
+                           { "Label", Constraint.Label } };
+        if (!Constraint.Parameter.empty()) Entry.insert("Parameter", Constraint.Parameter);
+        Constraints.push_back(std::move(Entry));
+    }
+    return toml::table{ { "Points", std::move(Points) }, { "Curves", std::move(Curves) }, { "Constraints", std::move(Constraints) } };
+}
+
+[[nodiscard]] toml::table EncodeStep(const FeatureStep& Step, const std::map<std::string, std::string>& Captions)
+{
+    toml::table Table{ { "Kind", static_cast<int64_t>(Step.Kind) }, { "KindLabel", FeatureStepKindLabel(Step.Kind) }, { "Label", Step.Label } };
+    const auto Found = Captions.find(Step.Label);
+    if (Found != Captions.end()) Table.insert("Caption", Found->second);
+    switch (Step.Kind)
+    {
+    case FeatureStepKind::Sketch:
+        Table.insert("PlaneOrigin", EncodeVector(Step.Plane.Origin));
+        Table.insert("PlaneXAxis", EncodeVector(Step.Plane.XAxis));
+        Table.insert("PlaneYAxis", EncodeVector(Step.Plane.YAxis));
+        Table.insert("PlaneZAxis", EncodeVector(Step.Plane.ZAxis));
+        Table.insert("Elevation", EncodeValue(Step.Elevation));
+        Table.insert("Sketch", EncodeSketch(Step.Sketch));
+        break;
+    case FeatureStepKind::Extrude:
+    case FeatureStepKind::Revolve:
+        Table.insert("Profile", Step.Profile);
+        Table.insert("Extent", EncodeValue(Step.Extent));
+        Table.insert("Combination", static_cast<int64_t>(Step.Combination));
+        Table.insert("AxisIdentifier", Step.AxisIdentifier);
+        Table.insert("Angle", EncodeValue(Step.Angle));
+        break;
+    case FeatureStepKind::Blend:
+        Table.insert("Shape", static_cast<int64_t>(Step.Shape));
+        Table.insert("Size", EncodeValue(Step.Size));
+        break;
+    case FeatureStepKind::FaceOperation:
+        Table.insert("Operation", static_cast<int64_t>(Step.Operation));
+        Table.insert("Amount", EncodeValue(Step.Amount));
+        break;
+    }
+    if (!Step.References.empty())
+    {
+        toml::array References;
+        for (const TopologyReference& Reference : Step.References)
+        {
+            toml::table Entry{ { "Kind", static_cast<int64_t>(Reference.Kind) }, { "Name", Reference.Name } };
+            if (Reference.Signature.CapturedCondition)
+            {
+                Entry.insert("Position", EncodeVector(Reference.Signature.Position));
+                Entry.insert("Direction", EncodeVector(Reference.Signature.Direction));
+                Entry.insert("Category", Reference.Signature.Category);
+                Entry.insert("Size", Reference.Signature.Size);
+            }
+            References.push_back(std::move(Entry));
+        }
+        Table.insert("References", std::move(References));
+    }
+    return Table;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DECODING
+//------------------------------------------------------------------------------------------------------------------------
+
+[[nodiscard]] Vector3 DecodeVector(const toml::node_view<const toml::node> View, Vector3 Fallback)
+{
+    const toml::array* Array = View.as_array();
+    if (!Array || Array->size() != 3) return Fallback;
+    return { (*Array)[0].value_or(Fallback.X), (*Array)[1].value_or(Fallback.Y), (*Array)[2].value_or(Fallback.Z) };
+}
+
+[[nodiscard]] FeatureValue DecodeValue(const toml::node_view<const toml::node> View, FeatureValue Fallback = {})
+{
+    if (!View.is_table()) return Fallback;
+    FeatureValue Value;
+    Value.Literal         = View["Literal"].value_or(0.0);
+    Value.Parameter       = View["Parameter"].value_or(std::string{});
+    Value.Factor          = View["Factor"].value_or(1.0);
+    Value.Offset          = View["Offset"].value_or(0.0);
+    Value.SecondParameter = View["SecondParameter"].value_or(std::string{});
+    Value.SecondFactor    = View["SecondFactor"].value_or(0.0);
+    return Value;
+}
+
+[[nodiscard]] SketchModel DecodeSketch(const toml::node_view<const toml::node> View)
+{
+    SketchModel Sketch;
+    if (const toml::array* Points = View["Points"].as_array())
+    {
+        for (const toml::node& Point : *Points)
+        {
+            const toml::array* Pair = Point.as_array();
+            if (Pair && Pair->size() == 2) Sketch.Points.push_back({ { (*Pair)[0].value_or(0.0), (*Pair)[1].value_or(0.0) } });
+        }
+    }
+    if (const toml::array* Curves = View["Curves"].as_array())
+    {
+        for (const toml::node& Entry : *Curves)
+        {
+            const toml::node_view<const toml::node> Curve{ Entry };
+            SketchCurve Decoded;
+            Decoded.Kind         = static_cast<SketchCurveKind>(Curve["Kind"].value_or(int64_t{ 0 }));
+            Decoded.Identifier   = static_cast<int>(Curve["Identifier"].value_or(int64_t{ 0 }));
+            Decoded.Start        = static_cast<int>(Curve["Start"].value_or(int64_t{ -1 }));
+            Decoded.End          = static_cast<int>(Curve["End"].value_or(int64_t{ -1 }));
+            Decoded.Centre       = static_cast<int>(Curve["Centre"].value_or(int64_t{ -1 }));
+            Decoded.Radius       = Curve["Radius"].value_or(1.0);
+            Decoded.Construction = Curve["Construction"].value_or(false);
+            Sketch.Curves.push_back(Decoded);
+        }
+    }
+    if (const toml::array* Constraints = View["Constraints"].as_array())
+    {
+        for (const toml::node& Entry : *Constraints)
+        {
+            const toml::node_view<const toml::node> Constraint{ Entry };
+            SketchConstraint Decoded;
+            Decoded.Kind        = static_cast<SketchConstraintKind>(Constraint["Kind"].value_or(int64_t{ 0 }));
+            Decoded.First       = static_cast<int>(Constraint["First"].value_or(int64_t{ -1 }));
+            Decoded.Second      = static_cast<int>(Constraint["Second"].value_or(int64_t{ -1 }));
+            Decoded.Third       = static_cast<int>(Constraint["Third"].value_or(int64_t{ -1 }));
+            Decoded.Value       = Constraint["Value"].value_or(0.0);
+            Decoded.SecondValue = Constraint["SecondValue"].value_or(0.0);
+            Decoded.Parameter   = Constraint["Parameter"].value_or(std::string{});
+            Decoded.Label       = Constraint["Label"].value_or(std::string{});
+            Sketch.Constraints.push_back(std::move(Decoded));
+        }
+    }
+    return Sketch;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    PUBLIC FUNCTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+std::string EncodeDraftingDocument(const DraftingDocument& Document)
+{
+    toml::array Parameters;
+    for (const FeatureParameter& Parameter : Document.Tree.Parameters)
+    {
+        Parameters.push_back(toml::table{ { "Name", Parameter.Name }, { "Value", Parameter.Value }, { "Low", Parameter.Low },
+                                          { "High", Parameter.High }, { "Description", Parameter.Description } });
+    }
+    toml::array Steps;
+    for (const FeatureStep& Step : Document.Tree.Steps) Steps.push_back(EncodeStep(Step, Document.Captions));
+    const toml::table Root{ { "Format", "DraftingWorkspace" }, { "FormatVersion", FormatVersion }, { "Title", Document.Title },
+                            { "Description", Document.Tree.Description }, { "Parameters", std::move(Parameters) }, { "Steps", std::move(Steps) } };
+    std::ostringstream Stream;
+    Stream << "# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)\n";
+    Stream << Root << "\n";
+    return Stream.str();
+}
+
+DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
+{
+    DraftingDocumentFile File;
+    toml::table          Root;
+    try
+    {
+        Root = toml::parse(Text);
+    }
+    catch (const toml::parse_error& Failure)
+    {
+        File.Refusal = std::string("TOML: ") + std::string(Failure.description());
+        return File;
+    }
+    if (Root["Format"].value_or(std::string{}) != "DraftingWorkspace") { File.Refusal = "not a DraftingWorkspace document"; return File; }
+    if (Root["FormatVersion"].value_or(int64_t{ 0 }) > FormatVersion) { File.Refusal = "document written by a newer DraftingWorkspace"; return File; }
+    File.Title            = Root["Title"].value_or(std::string{ "Untitled" });
+    File.Tree.Name        = File.Title;
+    File.Tree.Description = Root["Description"].value_or(std::string{});
+    if (const toml::array* Parameters = Root["Parameters"].as_array())
+    {
+        for (const toml::node& Entry : *Parameters)
+        {
+            const toml::node_view<const toml::node> Parameter{ Entry };
+            File.Tree.Parameters.push_back({ Parameter["Name"].value_or(std::string{}), Parameter["Value"].value_or(0.0),
+                                             Parameter["Low"].value_or(0.0), Parameter["High"].value_or(1.0),
+                                             Parameter["Description"].value_or(std::string{}) });
+        }
+    }
+    if (const toml::array* Steps = Root["Steps"].as_array())
+    {
+        for (const toml::node& Entry : *Steps)
+        {
+            const toml::node_view<const toml::node> View{ Entry };
+            FeatureStep Step;
+            Step.Kind  = static_cast<FeatureStepKind>(View["Kind"].value_or(int64_t{ 0 }));
+            Step.Label = View["Label"].value_or(std::string{});
+            if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
+            if (const auto Caption = View["Caption"].value<std::string>()) File.Captions[Step.Label] = *Caption;
+            Step.Plane.Origin   = DecodeVector(View["PlaneOrigin"], Step.Plane.Origin);
+            Step.Plane.XAxis    = DecodeVector(View["PlaneXAxis"], Step.Plane.XAxis);
+            Step.Plane.YAxis    = DecodeVector(View["PlaneYAxis"], Step.Plane.YAxis);
+            Step.Plane.ZAxis    = DecodeVector(View["PlaneZAxis"], Step.Plane.ZAxis);
+            Step.Elevation      = DecodeValue(View["Elevation"]);
+            Step.Sketch         = DecodeSketch(View["Sketch"]);
+            Step.Profile        = View["Profile"].value_or(std::string{});
+            Step.Extent         = DecodeValue(View["Extent"]);
+            Step.Combination    = static_cast<FeatureCombination>(View["Combination"].value_or(int64_t{ 0 }));
+            Step.AxisIdentifier = static_cast<int>(View["AxisIdentifier"].value_or(int64_t{ -1 }));
+            Step.Angle          = DecodeValue(View["Angle"], Step.Angle);
+            Step.Shape          = static_cast<BlendProfile>(View["Shape"].value_or(int64_t{ 0 }));
+            Step.Size           = DecodeValue(View["Size"]);
+            Step.Operation      = static_cast<FaceOperationKind>(View["Operation"].value_or(int64_t{ 1 }));
+            Step.Amount         = DecodeValue(View["Amount"]);
+            if (const toml::array* References = View["References"].as_array())
+            {
+                for (const toml::node& ReferenceEntry : *References)
+                {
+                    const toml::node_view<const toml::node> Reference{ ReferenceEntry };
+                    TopologyReference Decoded;
+                    Decoded.Kind = static_cast<ReferenceKind>(Reference["Kind"].value_or(int64_t{ 1 }));
+                    Decoded.Name = Reference["Name"].value_or(std::string{});
+                    if (Reference["Position"])
+                    {
+                        Decoded.Signature.CapturedCondition = true;
+                        Decoded.Signature.Position  = DecodeVector(Reference["Position"], {});
+                        Decoded.Signature.Direction = DecodeVector(Reference["Direction"], {});
+                        Decoded.Signature.Category  = Reference["Category"].value_or(std::string{});
+                        Decoded.Signature.Size      = Reference["Size"].value_or(0.0);
+                    }
+                    Step.References.push_back(std::move(Decoded));
+                }
+            }
+            File.Tree.Steps.push_back(std::move(Step));
+        }
+    }
+    return File;
+}
+
+bool SaveDraftingDocument(const DraftingDocument& Document, const std::string& Path)
+{
+    std::ofstream Stream(Path, std::ios::binary);
+    if (!Stream) return false;
+    Stream << EncodeDraftingDocument(Document);
+    return static_cast<bool>(Stream);
+}
+
+DraftingDocumentFile LoadDraftingDocumentFile(const std::string& Path)
+{
+    std::ifstream Stream(Path, std::ios::binary);
+    if (!Stream)
+    {
+        DraftingDocumentFile File;
+        File.Refusal = "cannot open " + Path;
+        return File;
+    }
+    std::ostringstream Text;
+    Text << Stream.rdbuf();
+    return DecodeDraftingDocument(Text.str());
+}
+
+} // namespace Frontier::DraftingWorkspace

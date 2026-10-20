@@ -78,6 +78,11 @@ add_library(SolidArcRemastered STATIC
 )
 target_include_directories(SolidArcRemastered PUBLIC Source)
 
+# 📝 Embedded by another project (Experimental/DraftingWorkspace adds this folder): the library only, no tools or tests.
+if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    return()
+endif()
+
 #-------------------------------------------------------------------------------------------------------------------
 #                                                    EXECUTABLES
 #-------------------------------------------------------------------------------------------------------------------
