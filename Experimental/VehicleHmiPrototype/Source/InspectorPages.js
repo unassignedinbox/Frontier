@@ -389,7 +389,12 @@ function BuildVehicle(Host, C, Body)
     C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " mm", () => Host.Vehicle.Wheels[Wheel].TyreDeflection * 1000.0, "", 0]), 4);
     C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " tread", () => Host.Thermal.QueryTreadFractions()[Wheel] * 100.0, "%"]), 4);
     C.Readout(Tyres, () => [Host.QueryTyreLive().States.map((State, Wheel) => `${Names[Wheel]} ${State || "ok"}`).join(" · ")]);
-    C.Muted(Tyres, "GPU volumetric tyre physics (Chaos Flesh / PB-FEM continuum): real-time contact patch flattening, internal pressure dilatation, volumetric sidewall bulges and lateral shear distortion.");
+    C.Switch(Tyres, S, "TyreCarcass", { Label: "XPBD tyre carcass (GPU)",
+                                       Detail: "A 1024-particle pneumatic lattice per tyre (cords, volume row, shape matching), 32 substeps a frame, sets each tyre's vertical stiffness and contact patch. Off: the analytic carcass spring" });
+    C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " XPBD kN", () => (Host.TyreCarcass ? Host.TyreCarcass.Readings[Wheel].Load : 0.0) / 1000.0, "", 2]), 4);
+    C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " patch cm", () => (Host.TyreCarcass ? Host.TyreCarcass.Readings[Wheel].PatchLength : 0.0) * 100.0, "", 0]), 4);
+    C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " kN/m", () => (Host.Vehicle.Wheels[Wheel].CarcassSecant || 0.0) / 1000.0, "", 0]), 4);
+    C.Muted(Tyres, "XPBD soft-body carcass on the GPU (the Slate engine's six TyreSolver kernels, 16 × 64 particles, 3712 cords, pressure-volume row, shape block). The rim is driven by the vehicle, the load comes back two frames late and the vehicle integrates against the secant stiffness it implies. The vertex shader draws the rubber at the carcass's deflection with its patch flattening, sidewall bulge and shear.");
     Slider(C, Tyres, S, "TyrePressureFront", "Front cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
     Slider(C, Tyres, S, "TyrePressureRear", "Rear cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
     C.Switch(Tyres, S, "TyreWear", { Label: "Tread wear", Detail: "Sliding work abrades the tread, hotter faster" });

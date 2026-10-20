@@ -40,6 +40,12 @@ const StepUp           = 0.2;           // [m]     tallest piece of debris a tyr
 //    25 kN/m with no air. The deflection lowers its corner and shortens its rolling radius; past the pinch the rim
 //    flange presses the road through the rubber. A flat rolled far enough sheds its rubber and the wheel runs on its
 //    rim (the GI-Updated-Html-Version branch's model, carried over).
+// 📝 The XPBD carcass (TyreCarcassSolver.js) refines this analytic spring where it has a well-conditioned reading: the vehicle then integrates against the
+//    tyre's measured operating point, F = L₀ + k(δ − δ₀), with k the secant stiffness the load L₀ at deflection δ₀ implies (the engine's rule for ContactLoad). The
+//    analytic stiffness stays the prior the reading is clamped around, so a bad reading can bend the tyre but never break the car.
+const CarcassSecantMinimum = 0.35;   // [-] of the analytic stiffness
+const CarcassSecantMaximum = 3.0;    // [-]
+const CarcassSecantBlend   = 0.35;   // [-] weight of each new reading in the smoothed secant (one reading per rendered frame)
 const TyreSidewallStiffness = 25000.0;     // [N/m]
 const TyreAirStiffness      = 0.9;         // [N/m/Pa]
 const TyrePinchClearance    = 0.022;       // [m]   rubber between flange and road at the pinch
@@ -97,6 +103,28 @@ export class VehicleSolver
         this.Support     = null;    // [-] RigidBodyWorld: heavy debris the wheels can drive over (QuerySupport)
         this.Frozen      = false;   // [-] held where it is (rezzing in): no integration, no forces
         this.Respawn();
+    }
+
+    // 📝 Readings: TyreCarcassSolver.Readings (one per wheel), or null for the analytic carcass alone. Assigned by the host before each step.
+    AssignCarcass(Readings)
+    {
+        this.CarcassReadings = Readings || null;
+    }
+
+    // 📝 The wheel's heading (yaw of its steered forward axis) and the hub's world velocity, for the carcass.
+    QueryWheelHeading(Index)
+    {
+        const Forward = RotateVector(MultiplyQuaternion(this.Orientation, ConstructAxisQuaternion([0.0, 0.0, 1.0], this.Wheels[Index].Steer)), [1.0, 0.0, 0.0]);
+        return Math.atan2(Forward[1], Forward[0]);
+    }
+
+    QueryHubVelocity(Index)
+    {
+        const Hub = this.QueryWheelTransform(Index).slice(12, 15);
+        const Arm = [Hub[0] - this.Position[0], Hub[1] - this.Position[1], Hub[2] - this.Position[2]];
+        const W = this.AngularVelocity;
+        return [this.LinearVelocity[0] + W[1] * Arm[2] - W[2] * Arm[1], this.LinearVelocity[1] + W[2] * Arm[0] - W[0] * Arm[2],
+                this.LinearVelocity[2] + W[0] * Arm[1] - W[1] * Arm[0]];
     }
 
     Respawn(Position = [SpawnPoint.Position[0], SpawnPoint.Position[1], VehicleGeometry.CoMHeight + 0.02], Yaw = SpawnPoint.Yaw)
@@ -416,6 +444,7 @@ export class VehicleSolver
                         Highest = Math.max(Highest, Height - Drop);
                     }
                 }
+                Wheel.EffectiveGround = Highest;   // [m] world Z of the road under the tyre's profile: the plane the carcass is pressed onto
                 const Lift = Math.max(0.0, Highest - Ground[2]) / -Axis[2];
                 // 📝 TouchLength is the strut length at which the uncompressed tyre just meets the road; a longer strut
                 //    squeezes the tyre by the difference (× Projection, the road normal's share along the strut).
@@ -426,6 +455,7 @@ export class VehicleSolver
                     Stack.Contact = true;
                     Stack.Stiffness = Wheel.Shredded ? RimStiffness : TyreSidewallStiffness + TyreAirStiffness * Math.max(0.0, Wheel.Pressure);
                     Stack.Pinch = Wheel.Radius - VehicleGeometry.TyreRimRadius - TyrePinchClearance;
+                    Stack.Carcass = this.ResolveCarcassLaw(Index, Wheel, Stack.Stiffness);
                 }
                 else
                     Wheel.SupportBody = null;
@@ -434,6 +464,7 @@ export class VehicleSolver
             {
                 Wheel.SupportBody = null;
                 Wheel.GroundHeight = undefined;
+                Wheel.EffectiveGround = undefined;
             }
             Stacks.push(Stack);
         }
@@ -450,7 +481,11 @@ export class VehicleSolver
         {
             const Stack = Stacks[Index], Wheel = this.Wheels[Index];
             const Squeeze = Math.max(0.0, (Candidate - Stack.TouchLength) * Stack.Projection);
-            return Stack.Stiffness * Squeeze + (Wheel.Shredded ? 0.0 : RimStiffness * Math.max(0.0, Squeeze - Stack.Pinch));
+            const Rim = Wheel.Shredded ? 0.0 : RimStiffness * Math.max(0.0, Squeeze - Stack.Pinch);
+            // 📝 The measured carcass: an implicit spring through the last operating point, which cannot pull.
+            if (Stack.Carcass)
+                return Math.max(0.0, Stack.Carcass.Load + Stack.Carcass.Secant * (Squeeze - Stack.Carcass.Deflection)) + Rim;
+            return Stack.Stiffness * Squeeze + Rim;
         };
         const CompressionOf = (Index, Candidate) => this.Struts[Index].FreeLength - Math.max(Candidate, Stacks[Index].BumpLength);
         const StrutForceOf = (Index, Candidate, BarStiffness, OtherCompression) =>
@@ -905,6 +940,30 @@ export class VehicleSolver
     //--------------------------------------------------------------------------------------------------------------------
     //                                                    POSES
     //--------------------------------------------------------------------------------------------------------------------
+
+    // 📝 The carcass law for one wheel from the newest well-conditioned reading, or null. The secant is smoothed over readings (one per frame) and clamped around
+    //    the analytic stiffness; the load and deflection it passes through are those of the latest reading, two frames old.
+    ResolveCarcassLaw(Index, Wheel, AnalyticStiffness)
+    {
+        const Reading = this.CarcassReadings ? this.CarcassReadings[Index] : null;
+        if (!Reading || !Reading.Valid || Wheel.Shredded || !(AnalyticStiffness > 0.0))
+        {
+            Wheel.CarcassSecant = 0.0;
+            return null;
+        }
+        if (Wheel.CarcassFrame !== Reading.Frame)
+        {
+            Wheel.CarcassFrame = Reading.Frame;
+            const Raw = ClampScalar(Reading.Secant, CarcassSecantMinimum * AnalyticStiffness, CarcassSecantMaximum * AnalyticStiffness);
+            Wheel.CarcassSecant = Wheel.CarcassSecant > 0.0 ? Wheel.CarcassSecant + CarcassSecantBlend * (Raw - Wheel.CarcassSecant) : Raw;
+            Wheel.CarcassLoad = Reading.Load;
+            Wheel.CarcassDeflection = Reading.Deflection;
+            Wheel.CarcassPatch = [Reading.PatchLength, Reading.PatchWidth];
+        }
+        if (!(Wheel.CarcassSecant > 0.0))
+            return null;
+        return { Load: Wheel.CarcassLoad, Deflection: Wheel.CarcassDeflection, Secant: Wheel.CarcassSecant };
+    }
 
     QueryBodyTransform()
     {

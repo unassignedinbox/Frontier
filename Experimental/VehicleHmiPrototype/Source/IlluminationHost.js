@@ -5,6 +5,7 @@ import { VehicleAppearance } from "./VehicleAppearance.js";
 import { LightingSystem, AutomotiveMode, RoofFixtureType } from "./LightingSystem.js";
 import { LightClusterSpace } from "./LightClusterSpace.js";
 import { BenchmarkMetrics } from "./BenchmarkMetrics.js";
+import { TyreCarcassSolver, ResolveCarcassPose } from "./TyreCarcassSolver.js";
 //============================================================================================================================================
 //                                                           ILLUMINATIONHOST.JS
 //============================================================================================================================================
@@ -97,7 +98,7 @@ const TemporalRestartBit = 2048;   // [-] FeatureTemporalRestart in SceneRecords
 const SmokeCompositeBit  = 4096;   // [-] FeatureSmokeComposite in SceneRecords.wgsl
 
 const PassNames = ["Distance union", "Card lighting", "Shadow", "Surface", "Depth pyramid", "Direct", "ReSTIR GI",
-                    "Diffuse reconstruction", "Reflection", "Glossy reconstruction", "Resolve", "Smoke transport", "Smoke render"];
+                    "Diffuse reconstruction", "Reflection", "Glossy reconstruction", "Resolve", "Smoke transport", "Smoke render", "Tyre carcass"];
 
 const FrameRecordExtent = 528;   // [B] FrameRecord in SceneRecords.wgsl (130 floats, padded to a 16-byte multiple)
 const FireLightReach    = 14.0;  // [m] influence radius of a tyre fire's light
@@ -139,6 +140,8 @@ class IlluminationHost
             MultiBounceNEE: true,
             Indirect: true, ScreenTraversal: Query.get("screentraces") === "1", ScreenIndirect: true, ScreenReflection: true,
             LightGrid: Query.get("lightgrid") !== "0",
+            // 📝 The XPBD tyre carcass drives the tyres' vertical stiffness and contact patch (?tyres=analytic keeps the analytic carcass spring alone).
+            TyreCarcass: Query.get("tyres") !== "analytic", TyreSubsteps: Math.max(8, Math.min(32, Number(Query.get("tyresubsteps") || 32))),
             TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
             SpatialCount: 5, SpatialRadius: 20, TemporalTallyLimit: 20, IndirectScale: 1.0, VarianceKernel: true, Reflection: true,
             Antialias: true, TraceScale: 2, FreezeDistance: false, CardRadiosity: true, CardTileBudget: this.Grade.TileBudget,
@@ -210,6 +213,7 @@ class IlluminationHost
         this.Scene = new SceneStructure();
         await this.Scene.ConstructScene("Archive", this.StressCapacity);
         this.Vehicle = new VehicleSolver(this.Scene.QueryObstacleBounds());
+        await this.ConstructTyreCarcass();
         // 📝 The body's own hull: ~700 points ray-cast from its facets (HullStructure.js) meet the course and the boxes.
         this.Vehicle.AssignHullPoints(ConstructHullPoints(this.Scene.FacetSets[this.Scene.VehicleBodySet].Facets), HullPointRadius);
         this.PositionVehicle();
@@ -403,6 +407,41 @@ class IlluminationHost
             this.ApplyPreset(this.PendingPreset);
     }
 
+    // 📝 The XPBD tyre carcass: guarded, so a device that cannot build its pipelines (or a missing lattice) leaves the analytic carcass in charge instead of failing the exhibit.
+    async ConstructTyreCarcass()
+    {
+        this.TyreCarcass = null;
+        if (!this.Settings.TyreCarcass) return;
+        try
+        {
+            const Response = await fetch("Archive/TyreLattice.bin", { cache: "no-cache" });
+            if (!Response.ok) throw new Error(`Archive/TyreLattice.bin ${Response.status}`);
+            const Solver = new TyreCarcassSolver(this.Exchange, this.Shaders, 4, this.Settings.TyreSubsteps);
+            await Solver.ConstructResources(new Uint8Array(await Response.arrayBuffer()));
+            this.TyreCarcass = Solver;
+        }
+        catch (Failure)
+        {
+            console.warn("[tyres] the XPBD carcass is unavailable, the analytic carcass stays in charge:", Failure.message || Failure);
+        }
+    }
+
+    // 📝 Records the carcass's frame: each wheel's hub as the vehicle holds it, the road under its profile, its gauge pressure.
+    RecordTyreCarcass(Encoder, Seconds)
+    {
+        const Carcass = this.TyreCarcass;
+        if (!Carcass || !this.Settings.TyreCarcass) return;
+        const Vehicle = this.Vehicle, YawRate = Vehicle.AngularVelocity[2];
+        const States = Vehicle.Wheels.map((Wheel, Index) =>
+        {
+            const Hub = Vehicle.QueryWheelTransform(Index).slice(12, 15);
+            const Ground = Wheel.EffectiveGround !== undefined ? Wheel.EffectiveGround : Hub[2] - Wheel.Radius - 0.4;
+            return { End: ResolveCarcassPose(Hub, Vehicle.QueryWheelHeading(Index), Wheel.SpinAngle, Vehicle.QueryHubVelocity(Index), Wheel.Spin, YawRate),
+                     Ground, Gauge: Math.max(0.0, Wheel.Pressure) };
+        });
+        Carcass.Record(Encoder, States, Seconds, this.Metrics.QueryWrites("Tyre carcass"));
+    }
+
     // 📝 The glass sphere's index of refraction: the bend and the Fresnel F0 that follows it, written into its record in place.
     ApplyGlassIndex()
     {
@@ -455,6 +494,15 @@ class IlluminationHost
         }
         else if (["SunElevation", "SunAzimuth", "SolarIlluminance", "EmissionScale"].includes(Key))
             this.Settings.LightingPreset = "Custom";
+        else if (Key === "TyreCarcass")
+        {
+            // 📝 Switching the carcass on or off drops what it last measured: the readings were taken under the other law.
+            if (this.TyreCarcass)
+            {
+                this.TyreCarcass.Readings.forEach((Reading) => { Reading.Valid = false; });
+                this.TyreCarcass.PriorEnd.fill(null);
+            }
+        }
         else if (Key === "RayTracing")
         {
             this.PriorValid = false;
@@ -1122,6 +1170,7 @@ class IlluminationHost
             Command = { Throttle: 0.0, Brake: 0.0, Steer: 0.0, Handbrake: false };
         const Step = this.FixedStep ? this.FixedStep : Δτ;
         this.Vehicle.AssignAssists({ LineLock: this.Settings.LineLock });
+        this.Vehicle.AssignCarcass(this.TyreCarcass && this.Settings.TyreCarcass ? this.TyreCarcass.Readings : null);
         this.Recovery.Advance(Step);
         this.Fracture.ResolveImpacts(this.Vehicle, Step);
         this.Vehicle.Advance(Command, Step);
@@ -1206,6 +1255,7 @@ class IlluminationHost
 
         // ④ record
         const Encoder = Device.createCommandEncoder({ label: `Frame ${this.FrameIndex}` });
+        this.RecordTyreCarcass(Encoder, Step);
         const Included = (Name) => !this.Omitted.has(Name);
         this.Atmosphere.RecordSkyView(Encoder, this.Settings.SolarIlluminance);
         // 📝 Fragments born this frame get their distance volumes before the union reads them.
@@ -1271,6 +1321,7 @@ class IlluminationHost
         }
         const Timed = this.Metrics.RecordResolve(Encoder);
         Device.queue.submit([Encoder.finish()]);
+        if (this.TyreCarcass) this.TyreCarcass.Harvest();
         this.FramesInFlight = (this.FramesInFlight || 0) + 1;
         Device.queue.onSubmittedWorkDone().then(() => { this.FramesInFlight--; });
         if (Timed)
