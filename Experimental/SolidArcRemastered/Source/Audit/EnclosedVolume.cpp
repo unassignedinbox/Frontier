@@ -8,6 +8,7 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -80,14 +81,21 @@ namespace
     template <typename Integrand>
     // ⚠️ Floor (absolute, from the whole face) accepts panels whose integrand is analytically zero but numerically noise
     //    (𝑣′ ~ 10⁻¹⁷ along a projected SP-curve): their relative disagreement never shrinks.
-    [[nodiscard]] double IntegrateAdaptive(double Low, double High, double Coarse, const Integrand& Function, double Floor, int Depth)
+    // ⚠️ Round-off stagnation: a procedural carrier (traced spine, projected rail) evaluates to ~10⁻¹² only, so its
+    //    gaps stop shrinking (smooth panels shrink ~2⁻¹⁶ per level, kinked ones ~⅛) and the refinement ran to depth 24
+    //    on every panel. A gap already inside the noise band (≤ 10⁻⁹ of ∫|f|) shrinking slower than ¼ per level (noise,
+    //    or a sub-tolerance jump whose error is the gap itself) is accepted; larger
+    //    gaps (an unresolved pole swing) always refine.
+    [[nodiscard]] double IntegrateAdaptive(double Low, double High, double Coarse, const Integrand& Function, double Floor, int Depth, double ParentGap = std::numeric_limits<double>::infinity())
     {
         const double        Middle = 0.5 * (Low + High);
         const PanelEstimate Left   = IntegratePanel(Low, Middle, Function);
         const PanelEstimate Right  = IntegratePanel(Middle, High, Function);
         const double        Gap    = std::fabs(Left.Value + Right.Value - Coarse);           // [-] - Halves vs whole
-        if (Depth >= 24 || Gap <= 1.0e-14 * (Left.Magnitude + Right.Magnitude) || Gap <= Floor) return Left.Value + Right.Value;
-        return IntegrateAdaptive(Low, Middle, Left.Value, Function, Floor, Depth + 1) + IntegrateAdaptive(Middle, High, Right.Value, Function, Floor, Depth + 1);
+        const double        Scale  = Left.Magnitude + Right.Magnitude;                       // [-] - ∫|f| over the panel
+        if (Depth >= 24 || Gap <= 1.0e-14 * Scale || Gap <= Floor) return Left.Value + Right.Value;
+        if (Gap <= 1.0e-9 * Scale && Gap > 0.25 * ParentGap) return Left.Value + Right.Value;
+        return IntegrateAdaptive(Low, Middle, Left.Value, Function, Floor, Depth + 1, Gap) + IntegrateAdaptive(Middle, High, Right.Value, Function, Floor, Depth + 1, Gap);
     }
 
     template <typename Integrand>
@@ -226,9 +234,11 @@ double IntegrateBodyVolume(const ModelPartition& Partition, BodyToken Body)
 
 double IntegrateParametricArea(const ModelPartition& Partition, FaceToken Face)
 {
-    // Density 1 never cancels, so the face's own magnitude is a valid floor scale here.
+    // Density 1 never cancels, so the face's own magnitude (× its carrier's derivative noise) is a valid floor here.
     const auto Unit = [](Vector2) { return 1.0; };
-    return IntegrateFaceLoops(Partition, Face, Unit, 1.0e-15 * IntegrateFaceLoops(Partition, Face, Unit, 0.0, true), false);  // Σ ∮ 𝑢 d𝑣
+    const FaceProfile& Profile = Partition.Faces.Resolve(Face);
+    const double Noise = std::max(1.0e-15, Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0);
+    return IntegrateFaceLoops(Partition, Face, Unit, Noise * IntegrateFaceLoops(Partition, Face, Unit, 0.0, true), false);  // Σ ∮ 𝑢 d𝑣
 }
 
 } // namespace Frontier::SolidArcRemastered
