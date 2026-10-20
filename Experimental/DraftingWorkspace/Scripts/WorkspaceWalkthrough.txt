@@ -18,7 +18,7 @@ click world 2.0 0.6 1.0
 expect selected-faces contains Extrude#2.Cap(End)
 move world 1.0 1.25 1.75
 frames 2
-click world 1.0 1.25 1.75 Left Ctrl
+click world 1.0 1.25 1.75 Left Shift
 expect selected-faces == 2
 capture 02FacesSelected
 click world 1.0 1.25 1.75 Left Ctrl
@@ -71,16 +71,18 @@ expect undo == 6
 expect sound == 1
 capture 05FilletApplied
 
-# ⑤ Shift+B chamfer on an edge that meets the earlier fillet: refusal shown, Apply disabled, Esc cancels
+# ⑤ B then C (Plasticity chamfer) on an edge that meets the earlier fillet on an edge that meets the earlier fillet: refusal shown, Apply disabled, Esc cancels
 move world 2.0 0.0 1.0
 frames 2
 click world 2.0 0.0 1.0
 expect selected-edges == 1
-key B Shift
+key B
+frames 2
+key C
 frames 2
 expect bevel-active == 1
 expect bevel-chamfer == 1
-expect bevel-refusal contains blend ends on a curved face
+expect bevel-refusal contains consumed by the blend
 capture 06BevelRefusal
 key Escape
 frames 1
@@ -88,29 +90,29 @@ expect bevel-active == 0
 expect faces == 12
 expect steps == 9
 
-# ⑥ undo / redo (Ctrl+Z, Ctrl+Y, header buttons)
+# ⑥ undo / redo (Ctrl+Z, Ctrl+Shift+Z, header buttons)
 key Z Ctrl
 expect faces == 11
 expect redo == 1
-key Y Ctrl
+key Z Ctrl Shift
 expect faces == 12
 click @HeaderUndo
 expect faces == 11
 click @HeaderRedo
 expect faces == 12
 
-# ⑦ navigation: RMB orbit (yaw only), Shift+RMB and middle pan, wheel dolly
+# ⑦ navigation (Plasticity orbit-controls): middle orbit (yaw about z, then elevation), right pan, wheel dolly
 key Escape
 expect camera-yaw ~ -0.7853981634
-drag Right viewport 0.5 0.5 by 120 0 12
+drag Middle viewport 0.5 0.5 by 120 0 12
 expect camera-yaw ~ -1.7453981634
 expect camera-pitch ~ 0.6154797087
-drag Right viewport 0.5 0.5 by 0 -50 5
+drag Middle viewport 0.5 0.5 by 0 -50 5
 expect camera-pitch ~ 0.2154797087
-drag Right viewport 0.5 0.5 by 60 0 6 Shift
+drag Right viewport 0.5 0.5 by 60 0 6
 expect camera-yaw ~ -1.7453981634
 expect camera-target-x != 2
-drag Middle viewport 0.5 0.5 by 0 40 4
+drag Right viewport 0.5 0.5 by 0 40 4
 expect camera-target-z != 0.875
 wheel viewport 0.5 0.5 2
 expect camera-distance < 7.9

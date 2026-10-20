@@ -6,7 +6,7 @@
   "Steps": [],
   "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
   "Selection": {"Faces": [], "Edges": []},
-  "PickMode": 1,
+  "PickMode": 5,
   "Hover": "",
   "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "PreviewFaces": 0, "Refusal": ""},

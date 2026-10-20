@@ -34,9 +34,45 @@ namespace Frontier::DraftingWorkspace
 // 📝 SolidArc selection modes: 1 picks whatever is under the pointer, 2 edges only, 3 faces only.
 enum class DraftingPickMode : uint8_t
 {
-    Any  = 1,
-    Edge = 2,
-    Face = 3,
+    Edge  = 2,                                                                               // Plasticity 2
+    Face  = 3,                                                                               // Plasticity 3
+    Solid = 4,                                                                               // Plasticity 4: a click selects the whole body
+    Any   = 5,                                                                               // Plasticity 5 / Tab: edges and faces
+};
+
+// What a viewport click does to the selection (Plasticity: click, Shift+click, Ctrl+click, Alt+click).
+enum class DraftingPickIntent : uint8_t
+{
+    Replace = 0,                                                                             // The selection becomes the hit
+    Add     = 1,                                                                             // The hit joins the selection
+    Remove  = 2,                                                                             // The hit leaves the selection
+    Extend  = 3,                                                                             // Edges: the hit's tangent chain joins
+};
+
+// The command a session (B fillet, E extrude) stages and applies.
+enum class DraftingSessionVerb : uint8_t
+{
+    Blend   = 0,                                                                             // Fillet / chamfer on the selected edges
+    Extrude = 1,                                                                             // Extrude the selected faces
+};
+
+// Shift+R repeats the last applied command on the current selection.
+enum class DraftingRepeatKind : uint8_t
+{
+    None      = 0,
+    Blend     = 1,
+    Face      = 2,
+    Construct = 3,
+};
+
+struct DraftingRepeat
+{
+    DraftingRepeatKind          Kind      = DraftingRepeatKind::None;                        // [-]   - What to repeat
+    Modeller::BlendProfile      Shape     = Modeller::BlendProfile::Fillet;                  // [-]   - Blend
+    double                      Size      = 0.0;                                             // [len] - Blend size
+    Modeller::FaceOperationKind Operation = Modeller::FaceOperationKind::Extrude;            // [-]   - Face verb
+    double                      Amount    = 0.0;                                             // [-]   - Face amount (model units)
+    DraftingConstructRequest    Construct = {};                                              // [-]   - Construct request
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -48,6 +84,8 @@ enum class DraftingPickMode : uint8_t
 struct DraftingBevelSession
 {
     bool                              ActiveCondition = false;                               // [-]   - Session open
+    DraftingSessionVerb               Verb            = DraftingSessionVerb::Blend;          // [-]   - B (blend) / E (extrude)
+    DraftingSessionVerb               PreviewVerb      = DraftingSessionVerb::Blend;          // [-]   - Verb the preview was built for
     bool                              PinnedCondition = false;                               // [-]   - Numeric entry pins the size
     Modeller::BlendProfile            Shape           = Modeller::BlendProfile::Fillet;      // [-]   - Cross-section
     double                            Size            = 0.25;                                // [len] - Radius / setback
@@ -66,10 +104,13 @@ struct DraftingWorkspaceState
     DraftingScene                         Scene          = {};                               // [-]   - Display arrays of the document
     DraftingCamera                        Camera         = {};                               // [-]   - Viewport camera
     DraftingViewportStyle                 Style          = {};                               // [-]   - Viewport appearance
-    DraftingPickMode                      PickMode       = DraftingPickMode::Any;            // [-]   - 1 / 2 / 3
-    DraftingBevelSession                  Bevel          = {};                               // [-]   - B / Shift+B session
+    DraftingPickMode                      PickMode       = DraftingPickMode::Any;            // [-]   - 2 / 3 / 4 / 5 (Plasticity)
+    DraftingBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
+    DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
+    std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
     bool                                  ConstructOpen  = false;                            // [-]   - Construct dialog requested
+    bool                                  ConstructShown = false;                            // [-]   - Construct dialog drawn this frame
     Modeller::FaceOperationKind           FaceVerb       = Modeller::FaceOperationKind::Push; // [-]  - Face-edit verb
     double                                FaceAmount     = 0.25;                             // [-]   - Face-edit amount (by verb)
     std::string                           FocusedStep    = {};                               // [-]   - Outliner row (step label)

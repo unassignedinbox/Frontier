@@ -144,6 +144,9 @@ void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureConditio
 void SelectDraftingName(DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name, bool AdditiveCondition);
 void ClearDraftingSelection(DraftingDocument& Document);
 
+// Names of the edge's tangent chain on the current body (the edge itself first); just the name when it does not resolve.
+[[nodiscard]] std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, const std::string& Name);
+
 // Step caption for the outliner ("Block1 · Sketch", "Fillet3"), falling back to the label.
 [[nodiscard]] std::string DescribeDraftingStep(const DraftingDocument& Document, const Modeller::FeatureStep& Step);
 

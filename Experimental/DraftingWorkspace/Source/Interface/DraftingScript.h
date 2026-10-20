@@ -60,6 +60,7 @@ struct DraftingScriptStep
     ImGuiKey             Key       = ImGuiKey_None;                                          // [-] - Key
     bool                 Control   = false;                                                  // [-] - Modifier held with Key / Button
     bool                 Shift     = false;                                                  // [-] - Modifier held with Key / Button
+    bool                 Alternate = false;                                                  // [-] - Alt held with Key / Button
     std::string          Text      = {};                                                     // [-] - Characters, capture name, expectation
     float                Wheel     = 0.0f;                                                   // [-] - Wheel steps
     bool                 Anchoring = false;                                                  // [-] - Move: remember the resolved point (drag start)

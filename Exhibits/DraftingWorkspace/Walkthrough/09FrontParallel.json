@@ -1,5 +1,5 @@
 {
-  "Frame": 197,
+  "Frame": 202,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -9,7 +9,7 @@
   "PickMode": 2,
   "Hover": "",
   "Camera": {"Yaw": -1.570796327, "Pitch": 0, "Distance": 6.232551794, "Target": [1.543576332, 1.399327478, 1.184619988], "Orthographic": true},
-  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: vertex V67: blend ends on a curved face (cap on non-planar faces)"},
+  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)"},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,

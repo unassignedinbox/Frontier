@@ -1,5 +1,5 @@
 {
-  "Frame": 102,
+  "Frame": 107,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -9,10 +9,10 @@
   "PickMode": 2,
   "Hover": "Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1))",
   "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
-  "Bevel": {"Active": true, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "PreviewFaces": 12, "Refusal": "Blend#10: Blend: vertex V67: blend ends on a curved face (cap on non-planar faces)"},
+  "Bevel": {"Active": true, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "PreviewFaces": 12, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)"},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Chamfer session (Shift+B): move horizontally, Enter applies",
+  "Status": "Fillet (B): move horizontally · D fillet · C chamfer · click edits the edges · Enter / right-click applies · Esc aborts",
   "Viewport": [320, 160, 930, 730]
 }

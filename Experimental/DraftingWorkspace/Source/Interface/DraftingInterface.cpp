@@ -327,24 +327,44 @@ void OpenBevelSession(DraftingWorkspaceState& State, BlendProfile Shape)
         Announce(State, "Bevel needs selected edges (mode 2)");
         return;
     }
-    const double Previous = State.Bevel.Size;
+    const double Previous = State.Bevel.Verb == DraftingSessionVerb::Blend ? State.Bevel.Size : 0.0;
     State.Bevel                 = {};
     State.Bevel.ActiveCondition = true;
+    State.Bevel.Verb            = DraftingSessionVerb::Blend;
     State.Bevel.Shape           = Shape;
     State.Bevel.Size            = Previous > 0.0 ? Previous : 0.25;
     WriteBevelText(State.Bevel);
-    Announce(State, Shape == BlendProfile::Fillet ? "Fillet session (B): move horizontally, Enter applies" : "Chamfer session (Shift+B): move horizontally, Enter applies");
+    Announce(State, "Fillet (B): move horizontally · D fillet · C chamfer · click edits the edges · Enter / right-click applies · Esc aborts");
+}
+
+// Plasticity E: extrude the selected faces; the pointer sets the signed distance like the fillet size.
+void OpenExtrudeSession(DraftingWorkspaceState& State)
+{
+    if (State.Document.Selection.Faces.empty())
+    {
+        Announce(State, "Extrude needs selected faces (mode 3)");
+        return;
+    }
+    const double Remembered = State.LastCommand.Kind == DraftingRepeatKind::Face && State.LastCommand.Operation == FaceOperationKind::Extrude ? State.LastCommand.Amount : 0.5;
+    State.Bevel                 = {};
+    State.Bevel.ActiveCondition = true;
+    State.Bevel.Verb            = DraftingSessionVerb::Extrude;
+    State.Bevel.Size            = Remembered;
+    WriteBevelText(State.Bevel);
+    Announce(State, "Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts");
 }
 
 void StageBevelPreview(DraftingWorkspaceState& State)
 {
     DraftingBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
-    if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape) return;
+    if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb) return;
     Bevel.StagedSize  = Bevel.Size;
     Bevel.StagedShape = Bevel.Shape;
+    Bevel.PreviewVerb  = Bevel.Verb;
     Bevel.Preview     = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
-    const DraftingCommandOutcome Outcome = BlendDraftingSelection(*Bevel.Preview, Bevel.Shape, Bevel.Size);
+    const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Extrude ? ChangeDraftingSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
+                                                                                      : BlendDraftingSelection(*Bevel.Preview, Bevel.Shape, Bevel.Size);
     if (Outcome.AcceptedCondition)
     {
         Bevel.PreviewScene = BuildDraftingScene(*Bevel.Preview);
@@ -363,7 +383,16 @@ void ApplyBevelSession(DraftingWorkspaceState& State)
     const double       Size  = State.Bevel.Size;
     State.Bevel.ActiveCondition = false;
     State.Bevel.Preview.reset();
-    Conclude(State, BlendDraftingSelection(State.Document, Shape, Size));
+    if (State.Bevel.Verb == DraftingSessionVerb::Extrude)
+    {
+        const DraftingCommandOutcome Outcome = ChangeDraftingSelection(State.Document, FaceOperationKind::Extrude, Size);
+        if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Face, Shape, 0.0, FaceOperationKind::Extrude, Size, {} };
+        Conclude(State, Outcome);
+        return;
+    }
+    const DraftingCommandOutcome Outcome = BlendDraftingSelection(State.Document, Shape, Size);
+    if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Blend, Shape, Size, FaceOperationKind::Extrude, 0.0, {} };
+    Conclude(State, Outcome);
 }
 
 void CancelBevelSession(DraftingWorkspaceState& State)
@@ -378,6 +407,14 @@ void CancelBevelSession(DraftingWorkspaceState& State)
 void AdjustBevelSize(DraftingWorkspaceState& State, double Delta)
 {
     DraftingBevelSession& Bevel = State.Bevel;
+    if (Bevel.Verb == DraftingSessionVerb::Extrude)
+    {
+        double Distance = Bevel.Size + Delta;                                                // [len] - Signed extrusion
+        if (std::abs(Distance) < 1.0e-3) Distance = Distance < 0.0 ? -1.0e-3 : 1.0e-3;
+        Bevel.Size = std::round(Distance * 1.0e4) * 1.0e-4;
+        WriteBevelText(Bevel);
+        return;
+    }
     double Signed = (Bevel.Shape == BlendProfile::Fillet ? Bevel.Size : -Bevel.Size) + Delta;
     if (std::abs(Signed) < 1.0e-3) Signed = Signed < 0.0 ? -1.0e-3 : 1.0e-3;
     Bevel.Shape = Signed > 0.0 ? BlendProfile::Fillet : BlendProfile::Chamfer;
@@ -412,7 +449,7 @@ DraftingCameraFrame ViewportFrame(const DraftingWorkspaceState& State)
 
 // 💡 The GPU identity under the pointer is primary (identity target readback); modes 2 / 3 retarget it with the
 //    exact CPU ray pick so an edge stroke never blocks a face click and a face never blocks a nearby edge.
-void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, bool AdditiveCondition)
+void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickIntent Intent)
 {
     const DraftingCameraFrame Frame = ViewportFrame(State);
     const DraftingRay         Ray   = CastDraftingRay(Frame, Local.x, Local.y);
@@ -429,26 +466,66 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, bool AdditiveCon
     }
     if (Identity == 0)
     {
-        if (!AdditiveCondition && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()))
+        if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()))
         {
             ClearDraftingSelection(State.Document);
             Announce(State, "Selection cleared");
         }
         return;
     }
-    const std::string Name = NameDraftingIdentity(State.Scene, Identity);
-    SelectDraftingName(State.Document, DraftingIdentityKind(Identity), Name, AdditiveCondition);
-    Announce(State, (AdditiveCondition ? "Toggled " : "Selected ") + Name);
+    if (State.PickMode == DraftingPickMode::Solid)
+    {
+        if (Intent == DraftingPickIntent::Remove)
+        {
+            ClearDraftingSelection(State.Document);
+            Announce(State, "Body deselected");
+            return;
+        }
+        ClearDraftingSelection(State.Document);
+        for (const DraftingSceneFace& Face : State.Scene.Faces) SelectDraftingName(State.Document, DraftingSelectionKind::Face, Face.Name, true);
+        Announce(State, Compose("Selected the body (%d faces)", int(State.Scene.Faces.size())));
+        return;
+    }
+    const std::string           Name = NameDraftingIdentity(State.Scene, Identity);
+    const DraftingSelectionKind Kind = DraftingIdentityKind(Identity);
+    const auto Member = [&](const std::string& Candidate)
+    {
+        const std::vector<std::string>& Names = Kind == DraftingSelectionKind::Edge ? State.Document.Selection.Edges : State.Document.Selection.Faces;
+        return std::find(Names.begin(), Names.end(), Candidate) != Names.end();
+    };
+    switch (Intent)
+    {
+    case DraftingPickIntent::Replace:
+        SelectDraftingName(State.Document, Kind, Name, false);
+        Announce(State, "Selected " + Name);
+        break;
+    case DraftingPickIntent::Add:
+        if (!Member(Name)) SelectDraftingName(State.Document, Kind, Name, true);
+        Announce(State, "Added " + Name);
+        break;
+    case DraftingPickIntent::Remove:
+        if (Member(Name)) SelectDraftingName(State.Document, Kind, Name, true);
+        Announce(State, "Removed " + Name);
+        break;
+    case DraftingPickIntent::Extend:
+    {
+        const std::vector<std::string> Chain = Kind == DraftingSelectionKind::Edge ? DraftingTangentChain(State.Document, Name) : std::vector<std::string>{ Name };
+        for (const std::string& Link : Chain)
+        {
+            if (!Member(Link)) SelectDraftingName(State.Document, Kind, Link, true);
+        }
+        Announce(State, Compose("Extended along the tangent chain: %d %s", int(Chain.size()), Kind == DraftingSelectionKind::Edge ? "edge(s)" : "face(s)"));
+        break;
+    }
+    }
 }
 
-void SelectEverything(DraftingWorkspaceState& State)
+DraftingPickIntent PickIntentOf(const ImGuiIO& Io)
 {
-    ClearDraftingSelection(State.Document);
-    if (State.PickMode == DraftingPickMode::Edge)
-        for (const DraftingSceneEdge& Edge : State.Scene.Edges) SelectDraftingName(State.Document, DraftingSelectionKind::Edge, Edge.Name, true);
-    else
-        for (const DraftingSceneFace& Face : State.Scene.Faces) SelectDraftingName(State.Document, DraftingSelectionKind::Face, Face.Name, true);
-    Announce(State, Compose("Selected all %s", State.PickMode == DraftingPickMode::Edge ? "edges" : "faces"));
+    if (Io.KeyAlt) return DraftingPickIntent::Extend;
+    if (Io.KeyCtrl) return DraftingPickIntent::Remove;
+    if (Io.KeyShift) return DraftingPickIntent::Add;
+    return DraftingPickIntent::Replace;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -476,6 +553,11 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     }
     ImGui::SameLine();
     if (PressButton(State, "Save as…###HeaderSaveAs")) ImGui::OpenPopup("Save document");
+    if (!State.PopupRequest.empty())
+    {
+        ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Ctrl+O / Ctrl+Shift+S (same ID stack as the buttons)
+        State.PopupRequest.clear();
+    }
     ImGui::SameLine(0, 18);
     if (PressButton(State, "Undo###HeaderUndo", ImVec2(0, 0), !State.Document.UndoEntries.empty() && !State.Bevel.ActiveCondition)) Undo(State);
     ImGui::SameLine();
@@ -560,7 +642,9 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
         ImGui::OpenPopup("Construct");
         State.ConstructOpen = false;
     }
+    State.ConstructShown = false;
     if (!ImGui::BeginPopupModal("Construct", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    State.ConstructShown = true;
     DraftingConstructRequest& Form = State.ConstructForm;
     ImGui::Text("%s", DraftingConstructLabel(Form.Kind));
     ImGui::Separator();
@@ -611,12 +695,32 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
         Field("Minor [m]###ConstructMinor", Form.Minor);
         break;
     }
+    // Plasticity box / cylinder / sphere command keys: Q union · W difference · E intersect · R new body; Enter creates.
+    bool CreateCondition = false;
+    if (!ImGui::GetIO().WantTextInput)
+    {
+        if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_Q, false)) Form.Combination = FeatureCombination::Union;
+        if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_W, false)) Form.Combination = FeatureCombination::Difference;
+        if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_E, false)) Form.Combination = FeatureCombination::Intersection;
+        if (ImGui::IsKeyPressed(ImGuiKey_R, false)) Announce(State, "New body (R): documents hold one body; use Q / W / E");
+        CreateCondition = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        {
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextUnformatted("Q union · W difference · E intersect · Enter create · Esc cancel");
+    ImGui::PopStyleColor();
     ImGui::Spacing();
-    if (PressButton(State, "Create###ConstructCreate", ImVec2(130, 0)))
+    if (PressButton(State, "Create###ConstructCreate", ImVec2(130, 0)) || CreateCondition)
     {
         DraftingConstructRequest Request = Form;
         if (FirstBody) Request.Combination = FeatureCombination::New;
         const bool FitCondition = FirstBody;
+        State.LastCommand = { DraftingRepeatKind::Construct, BlendProfile::Fillet, 0.0, FaceOperationKind::Extrude, 0.0, Request };
         Conclude(State, ConstructDraftingPrimitive(State.Document, Request));
         if (FitCondition && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
         ImGui::CloseCurrentPopup();
@@ -856,8 +960,8 @@ void DrawViewportBar(DraftingWorkspaceState& State)
     ImGui::SameLine(0, 4);
     if (PressButton(State, "Fit###FitView") && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
     ImGui::SameLine(0, 16);
-    const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::Any, "1 Any###Mode1" }, { DraftingPickMode::Edge, "2 Edge###Mode2" },
-                                                               { DraftingPickMode::Face, "3 Face###Mode3" } };
+    const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::Edge, "2 Edge###Mode2" }, { DraftingPickMode::Face, "3 Face###Mode3" },
+                                                               { DraftingPickMode::Solid, "4 Solid###Mode4" }, { DraftingPickMode::Any, "5 All###Mode5" } };
     for (const auto& [Mode, Label] : Modes)
     {
         if (ToggleButton(State, Label, State.PickMode == Mode)) State.PickMode = Mode;
@@ -892,8 +996,9 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         Canvas->AddImageRounded(ViewportTexture, Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, PanelRounding,
                                 ImDrawFlags_RoundCornersBottom);
 
-    // 📝 Gestures (SolidArc corrected navigation): RMB orbit (yaw about world z, elevation about camera right), middle or
-    //    Shift+RMB pan, wheel dolly, LMB click pick (Ctrl / Shift toggle), LMB drag orbit.
+    // 📝 Gestures (Plasticity orbit-controls / viewport-selector): middle drag orbit (yaw about world z, elevation about
+    //    camera right), right drag pan, wheel dolly; LMB click replaces the selection, Shift+click adds, Ctrl+click
+    //    removes, Alt+click adds the edge's tangent chain. In a command: click edits the selection, right-click finishes.
     ImGuiIO&     Io        = ImGui::GetIO();
     const ImVec2 Local(Io.MousePos.x - Image.x, Io.MousePos.y - Image.y);
     const ImVec2 CubeCorner(Image.x + Extent.x - CubeExtent - 12, Image.y + 12);
@@ -903,11 +1008,10 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     const DraftingCameraFrame Frame = ViewportFrame(State);
     if (ImGui::IsItemActive() || Hovered)
     {
-        const bool ShiftHeld = Io.KeyShift;
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) || (ShiftHeld && ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f)))
-            PanDraftingCamera(State.Camera, Frame, Io.MouseDelta.x, Io.MouseDelta.y);
-        else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, ClickTolerance) || ImGui::IsMouseDragging(ImGuiMouseButton_Left, ClickTolerance))
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f))
             OrbitDraftingCamera(State.Camera, Io.MouseDelta.x, Io.MouseDelta.y);
+        else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, ClickTolerance))
+            PanDraftingCamera(State.Camera, Frame, Io.MouseDelta.x, Io.MouseDelta.y);
     }
     if (Hovered && Io.MouseWheel != 0.0f) DollyDraftingCamera(State.Camera, Io.MouseWheel);
 
@@ -916,17 +1020,21 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         const bool Idle = !ImGui::IsAnyMouseDown();
         if (Hovered && Idle && !State.Bevel.PinnedCondition && Io.MouseDelta.x != 0.0f)
             AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
-        if (LeftClick && !OverCube) ApplyBevelSession(State);
-        if (RightClick && !OverCube) CancelBevelSession(State);
+        if (LeftClick && !OverCube)
+        {
+            PickAtPointer(State, Local, PickIntentOf(Io));
+            State.Bevel.StagedSize = -1.0;                                                   // Selection changed: rebuild the preview
+        }
+        if (RightClick && !OverCube) ApplyBevelSession(State);
     }
     else if (LeftClick && !OverCube)
     {
-        PickAtPointer(State, Local, Io.KeyCtrl || Io.KeyShift);
+        PickAtPointer(State, Local, PickIntentOf(Io));
     }
 
     // Overlays: status pills (top-left), interaction hint (bottom-left).
     ImVec2 Pill(Image.x + 12, Image.y + 12);
-    static const char* ModeNames[] = { "", "Mode 1 · any", "Mode 2 · edges", "Mode 3 · faces" };
+    static const char* ModeNames[] = { "", "", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
     DrawStatusPill(Canvas, Pill, ModeNames[int(State.PickMode)], SelectedColour);
     DrawStatusPill(Canvas, Pill, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective", MutedColour);
     static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
@@ -941,13 +1049,14 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     {
         ImVec2 Below(Image.x + 12, Image.y + 44);
         const bool Refused = !State.Bevel.Refusal.empty();
-        DrawStatusPill(Canvas, Below, Compose("%s %s m%s", State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d", FormatLength(State.Bevel.Size).c_str(),
+        const char* Caption = State.Bevel.Verb == DraftingSessionVerb::Extrude ? "Extrude d" : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
+        DrawStatusPill(Canvas, Below, Compose("%s %s m%s", Caption, FormatLength(State.Bevel.Size).c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
     }
     const char* Hint = State.Bevel.ActiveCondition
-                           ? "Move: size (right = fillet, left = chamfer, Shift fine) · click / Enter apply · right-click / Esc cancel"
-                           : "RMB orbit · middle or Shift+RMB pan · wheel zoom · click select (Ctrl/Shift toggle) · B fillet · Shift+B chamfer · E extrude";
+                           ? "Move: size (Shift fine) · D fillet · C chamfer · click edits selection · Enter / right-click finish · Esc abort"
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 2/3/4/5 modes · B fillet · E extrude · Space frame";
     Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, Hint);
 
     ImGui::End();
@@ -961,20 +1070,24 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
 
 void DrawBevelCard(DraftingWorkspaceState& State)
 {
-    DraftingBevelSession& Bevel = State.Bevel;
-    BeginCard("Bevel");
-    if (ToggleButton(State, "Fillet###BevelFillet", Bevel.Shape == BlendProfile::Fillet, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Fillet;
-    ImGui::SameLine();
-    if (ToggleButton(State, "Chamfer###BevelChamfer", Bevel.Shape == BlendProfile::Chamfer, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Chamfer;
+    DraftingBevelSession& Bevel   = State.Bevel;
+    const bool            Extrude = Bevel.Verb == DraftingSessionVerb::Extrude;
+    BeginCard(Extrude ? "Extrude" : "Bevel");
+    if (!Extrude)
+    {
+        if (ToggleButton(State, "Fillet  (D)###BevelFillet", Bevel.Shape == BlendProfile::Fillet, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Fillet;
+        ImGui::SameLine();
+        if (ToggleButton(State, "Chamfer  (C)###BevelChamfer", Bevel.Shape == BlendProfile::Chamfer, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Chamfer;
+    }
     ImGui::SetNextItemWidth(110);
-    if (ImGui::InputText(Bevel.Shape == BlendProfile::Fillet ? "Radius###BevelSize" : "Setback###BevelSize", Bevel.SizeText.data(), Bevel.SizeText.size(),
-                         ImGuiInputTextFlags_EnterReturnsTrue))
+    if (ImGui::InputText(Extrude ? "Distance###BevelSize" : Bevel.Shape == BlendProfile::Fillet ? "Radius###BevelSize" : "Setback###BevelSize", Bevel.SizeText.data(),
+                         Bevel.SizeText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
     {
         double Parsed = 0.0;
         if (ParseDraftingLength(Bevel.SizeText.data(), Parsed) && Parsed != 0.0)
         {
-            if (Parsed < 0.0) Bevel.Shape = BlendProfile::Chamfer;
-            Bevel.Size            = std::abs(Parsed);
+            if (Parsed < 0.0 && !Extrude) Bevel.Shape = BlendProfile::Chamfer;
+            Bevel.Size            = Extrude ? Parsed : std::abs(Parsed);
             Bevel.PinnedCondition = true;
             Announce(State, Compose("Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
         }
@@ -988,7 +1101,8 @@ void DrawBevelCard(DraftingWorkspaceState& State)
     ImGui::SameLine();
     if (PressButton(State, "Mouse adjust###BevelMouse", ImVec2(0, 0), Bevel.PinnedCondition)) Bevel.PinnedCondition = false;
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextWrapped("%d edge(s): %s", int(State.Document.Selection.Edges.size()), State.Document.Selection.Edges.empty() ? "-" : State.Document.Selection.Edges.front().c_str());
+    const std::vector<std::string>& Operands = Extrude ? State.Document.Selection.Faces : State.Document.Selection.Edges;
+    ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
     ImGui::TextUnformatted("Units: 250mm, -25cm, 0.25m, 1in, 1ft");
     ImGui::PopStyleColor();
     if (!Bevel.Refusal.empty())
@@ -1050,7 +1164,7 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
         BeginCard("Edges");
         if (PressButton(State, "Fillet  (B)###EdgeFillet", ImVec2(140, 0))) OpenBevelSession(State, BlendProfile::Fillet);
         ImGui::SameLine();
-        if (PressButton(State, "Chamfer  (Shift+B)###EdgeChamfer", ImVec2(140, 0))) OpenBevelSession(State, BlendProfile::Chamfer);
+        if (PressButton(State, "Chamfer  (B, C)###EdgeChamfer", ImVec2(140, 0))) OpenBevelSession(State, BlendProfile::Chamfer);
         EndCard();
     }
     if (!Selection.Faces.empty())
@@ -1079,7 +1193,12 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
             RegisterWidget(State, "FaceAmount");
         }
         if (PressButton(State, "Apply  (E: extrude)###FaceApply", ImVec2(-1, 0)))
-            Conclude(State, ChangeDraftingSelection(State.Document, State.FaceVerb, FaceAmountToModel(State.FaceVerb, State.FaceAmount)));
+        {
+            const double                 Amount  = FaceAmountToModel(State.FaceVerb, State.FaceAmount);
+            const DraftingCommandOutcome Outcome = ChangeDraftingSelection(State.Document, State.FaceVerb, Amount);
+            if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Face, BlendProfile::Fillet, 0.0, State.FaceVerb, Amount, {} };
+            Conclude(State, Outcome);
+        }
         EndCard();
     }
 }
@@ -1175,52 +1294,169 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 //                                                    SHORTCUTS + RECOVERY
 //------------------------------------------------------------------------------------------------------------------------
 
+// Plasticity Space (viewport:navigate:selection): frame the selected faces and edges, or the whole body.
+void FrameSelection(DraftingWorkspaceState& State)
+{
+    if (State.Scene.Faces.empty()) return;
+    const DraftingSelection& Selection = State.Document.Selection;
+    DraftingScene Bounds;
+    Bounds.BoundsLow  = { 1.0e300, 1.0e300, 1.0e300 };
+    Bounds.BoundsHigh = { -1.0e300, -1.0e300, -1.0e300 };
+    bool Found = false;
+    const auto Include = [&](const float* Point)
+    {
+        for (int Axis = 0; Axis < 3; ++Axis)
+        {
+            Bounds.BoundsLow[Axis]  = std::min(Bounds.BoundsLow[Axis], double(Point[Axis]));
+            Bounds.BoundsHigh[Axis] = std::max(Bounds.BoundsHigh[Axis], double(Point[Axis]));
+        }
+        Found = true;
+    };
+    for (const DraftingSceneFace& Face : State.Scene.Faces)
+    {
+        if (std::find(Selection.Faces.begin(), Selection.Faces.end(), Face.Name) == Selection.Faces.end()) continue;
+        for (uint32_t Corner = Face.FirstCorner; Corner < Face.FirstCorner + Face.CornerCount; ++Corner) Include(State.Scene.Corners[Corner].Position);
+    }
+    for (const DraftingSceneEdge& Edge : State.Scene.Edges)
+    {
+        if (std::find(Selection.Edges.begin(), Selection.Edges.end(), Edge.Name) == Selection.Edges.end()) continue;
+        for (uint32_t Segment = Edge.FirstSegment; Segment < Edge.FirstSegment + Edge.SegmentCount; ++Segment)
+        {
+            Include(State.Scene.Segments[Segment].Start);
+            Include(State.Scene.Segments[Segment].End);
+        }
+    }
+    FitDraftingCamera(State.Camera, Found ? Bounds : State.Scene);
+    Announce(State, Found ? "Framed the selection (Space)" : "Framed the body (Space)");
+}
+
+// Plasticity Shift+R (edit:repeat-last-command) on the current selection.
+void RepeatLastCommand(DraftingWorkspaceState& State)
+{
+    const DraftingRepeat& Last = State.LastCommand;
+    switch (Last.Kind)
+    {
+    case DraftingRepeatKind::None:      Announce(State, "Nothing to repeat yet"); return;
+    case DraftingRepeatKind::Blend:     Conclude(State, BlendDraftingSelection(State.Document, Last.Shape, Last.Size)); return;
+    case DraftingRepeatKind::Face:      Conclude(State, ChangeDraftingSelection(State.Document, Last.Operation, Last.Amount)); return;
+    case DraftingRepeatKind::Construct: Conclude(State, ConstructDraftingPrimitive(State.Document, Last.Construct)); return;
+    }
+}
+
+void OpenConstruct(DraftingWorkspaceState& State, DraftingConstructKind Kind)
+{
+    State.ConstructForm.Kind = Kind;
+    State.ConstructOpen      = true;
+}
+
+// 📝 Plasticity default keymap (nkallen/plasticity src/startup/default-keymap.ts). Commands this modeller does not have
+//    (control points, curves, hide, materials, groups, clipboard, booleans between bodies) announce that instead of
+//    silently doing something else; no non-Plasticity shortcut remains.
 void ApplyShortcuts(DraftingWorkspaceState& State)
 {
     ImGuiIO& Io = ImGui::GetIO();
     if (Io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
-    const bool Control = Io.KeyCtrl;
-    const bool Shift   = Io.KeyShift;
+    const bool Control   = Io.KeyCtrl;
+    const bool Shift     = Io.KeyShift;
+    const bool Alternate = Io.KeyAlt;
     auto Pressed = [](ImGuiKey Key) { return ImGui::IsKeyPressed(Key, false); };
 
-    if (Control)
-    {
-        if (Pressed(ImGuiKey_Z)) { if (Shift) Redo(State); else Undo(State); }
-        if (Pressed(ImGuiKey_Y)) Redo(State);
-        if (Pressed(ImGuiKey_S))
-        {
-            if (State.DocumentPath.empty()) SaveDocument(State, State.Options.DocumentPath);
-            else SaveDocument(State, State.DocumentPath);
-        }
-        if (Pressed(ImGuiKey_A)) SelectEverything(State);
-        return;
-    }
+    // body[command] — a running command (fillet-solid, extrude).
     if (State.Bevel.ActiveCondition)
     {
         if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyBevelSession(State);
         if (Pressed(ImGuiKey_Escape)) CancelBevelSession(State);
+        if (State.Bevel.Verb == DraftingSessionVerb::Blend && !Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_D)) State.Bevel.Shape = BlendProfile::Fillet;                // gizmo:fillet-solid:fillet
+            if (Pressed(ImGuiKey_C)) State.Bevel.Shape = BlendProfile::Chamfer;               // gizmo:fillet-solid:chamfer
+        }
         return;
     }
-    if (Pressed(ImGuiKey_1)) State.PickMode = DraftingPickMode::Any;
+
+    // Viewport navigation (any modifier state the keymap names).
+    if (Pressed(ImGuiKey_Keypad1)) PresentView(State, Control ? DraftingViewPreset::Back : DraftingViewPreset::Front);
+    if (Pressed(ImGuiKey_Keypad3)) PresentView(State, Control ? DraftingViewPreset::Left : DraftingViewPreset::Right);
+    if (Pressed(ImGuiKey_Keypad7)) PresentView(State, Control ? DraftingViewPreset::Bottom : DraftingViewPreset::Top);
+    if (Pressed(ImGuiKey_Keypad5)) State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
+
+    if (Control)
+    {
+        if (Pressed(ImGuiKey_Z)) { if (Shift) Redo(State); else Undo(State); }
+        if (Pressed(ImGuiKey_S))
+        {
+            if (Shift) State.PopupRequest = "Save document";                                // file:save-as
+            else SaveDocument(State, State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath);
+        }
+        if (Pressed(ImGuiKey_O)) State.PopupRequest = "Open document";
+        if (Pressed(ImGuiKey_N)) StartNewDocument(State);
+        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) Announce(State, "Copy / paste: not available (one body per document)");
+        if (Pressed(ImGuiKey_H)) Announce(State, "Invert hidden: not available (no per-face visibility)");
+        if (Pressed(ImGuiKey_G)) Announce(State, "Group: not available");
+        if (Pressed(ImGuiKey_D)) Announce(State, "Place: not available");
+        if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Selection convert: not available yet");
+        return;
+    }
+    if (Alternate)
+    {
+        if (Pressed(ImGuiKey_A)) { ClearDraftingSelection(State.Document); State.FocusedStep = {}; Announce(State, "Selection cleared"); }
+        if (Pressed(ImGuiKey_Z))
+        {
+            if (Shift) { State.Style.GridEnabled = !State.Style.GridEnabled; Announce(State, State.Style.GridEnabled ? "Overlays on" : "Overlays off"); }
+            else { State.Style.SurfacesEnabled = !State.Style.SurfacesEnabled; Announce(State, State.Style.SurfacesEnabled ? "X-ray off" : "X-ray on (edges only)"); }
+        }
+        if (Pressed(ImGuiKey_E)) Announce(State, "Evolution: not available");
+        if (Pressed(ImGuiKey_X)) Announce(State, "Mirror: not available");
+        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_M) || Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
+        return;
+    }
+    if (Shift)
+    {
+        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) OpenConstruct(State, DraftingConstructKind::Block);     // corner / centre box
+        if (Pressed(ImGuiKey_X)) OpenConstruct(State, DraftingConstructKind::Cylinder);
+        if (Pressed(ImGuiKey_Z)) OpenConstruct(State, DraftingConstructKind::Sphere);
+        if (Pressed(ImGuiKey_R)) RepeatLastCommand(State);
+        if (Pressed(ImGuiKey_D)) Announce(State, "Duplicate: not available (one body per document)");
+        if (Pressed(ImGuiKey_A) || Pressed(ImGuiKey_S) || Pressed(ImGuiKey_Q) || Pressed(ImGuiKey_W)) Announce(State, "Curves and sketches: use the outliner's sketch steps");
+        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_P)) Announce(State, "Not available in this modeller");
+        if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Mode toggles: one mode at a time (2 / 3 / 4 / 5)");
+        return;
+    }
+
+    // body:not([gizmo]) — no command running.
+    if (Pressed(ImGuiKey_1)) Announce(State, "Control-point mode: not available (exact B-rep, no control points)");
     if (Pressed(ImGuiKey_2)) State.PickMode = DraftingPickMode::Edge;
     if (Pressed(ImGuiKey_3)) State.PickMode = DraftingPickMode::Face;
-    if (Pressed(ImGuiKey_B)) OpenBevelSession(State, Shift ? BlendProfile::Chamfer : BlendProfile::Fillet);
-    if (Pressed(ImGuiKey_E))
-    {
-        if (State.Document.Selection.Faces.empty()) Announce(State, "Extrude needs selected faces (mode 3)");
-        else Conclude(State, ChangeDraftingSelection(State.Document, FaceOperationKind::Extrude, State.FaceVerb == FaceOperationKind::Extrude ? State.FaceAmount : 0.5));
-    }
-    if (Pressed(ImGuiKey_F) && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
+    if (Pressed(ImGuiKey_4)) State.PickMode = DraftingPickMode::Solid;
+    if (Pressed(ImGuiKey_5) || Pressed(ImGuiKey_Tab)) State.PickMode = DraftingPickMode::Any;
+    if (Pressed(ImGuiKey_B)) OpenBevelSession(State, BlendProfile::Fillet);
+    if (Pressed(ImGuiKey_E)) OpenExtrudeSession(State);
+    if (Pressed(ImGuiKey_Space)) FrameSelection(State);
+    if (Pressed(ImGuiKey_Q)) Announce(State, "Boolean (Q) needs two bodies: construct with Shift+C / V / X / Z, then Q / W / E");
+    if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
+    if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
+    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O) || Pressed(ImGuiKey_L) || Pressed(ImGuiKey_M))
+        Announce(State, "Not available in this modeller");
     if (Pressed(ImGuiKey_Escape))
     {
         ClearDraftingSelection(State.Document);
         State.FocusedStep = {};
         Announce(State, "Selection cleared");
     }
-    if (Pressed(ImGuiKey_Delete) && !State.FocusedStep.empty())
+    if (Pressed(ImGuiKey_X) || Pressed(ImGuiKey_Delete) || Pressed(ImGuiKey_Backspace))
     {
-        Conclude(State, DeleteDraftingStep(State.Document, State.FocusedStep));
-        State.FocusedStep = {};
+        if (!State.FocusedStep.empty())
+        {
+            Conclude(State, DeleteDraftingStep(State.Document, State.FocusedStep));
+            State.FocusedStep = {};
+        }
+        else if (!State.Document.Selection.Faces.empty())
+        {
+            const DraftingCommandOutcome Outcome = ChangeDraftingSelection(State.Document, FaceOperationKind::Delete, 0.0);
+            if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Face, BlendProfile::Fillet, 0.0, FaceOperationKind::Delete, 0.0, {} };
+            Conclude(State, Outcome);
+        }
+        else Announce(State, "Delete needs selected faces or a focused feature step");
     }
 }
 

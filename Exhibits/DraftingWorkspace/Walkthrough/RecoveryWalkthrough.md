@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 39 frames · 4.64917 s · slowest frame 826.961 ms
+- Frame: 1600 x 900 · 39 frames · 4.59463 s · slowest frame 814.434 ms
 - Script: Experimental/DraftingWorkspace/Scripts/RecoveryWalkthrough.txt
 - Expectations: 12 / 12 passed
 
@@ -22,9 +22,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 16WelcomeBack | 4 | `c28e33d7e10188e4` |
-| 17Recovered | 13 | `95e421359acadbbb` |
-| 18Opened | 39 | `42dbc96abb9b6e32` |
+| 16WelcomeBack | 4 | `296d8f250befff41` |
+| 17Recovered | 13 | `a9360b1d318fe7ca` |
+| 18Opened | 39 | `df2d03c208bd9bf7` |
 
 ## Journal
 

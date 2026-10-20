@@ -6,7 +6,7 @@
   "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cylinder2 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Cylinder2 · Extrude", "Refused": false}, {"Label": "Blend#7", "Caption": "Fillet1 · Blend", "Refused": false}, {"Label": "Blend#8", "Caption": "Chamfer1 · Blend", "Refused": false}, {"Label": "Blend#9", "Caption": "Fillet2 · Blend", "Refused": false}, {"Label": "Change#10", "Caption": "Push1 · FaceOperation", "Refused": false}, {"Label": "Sketch#11", "Caption": "Cylinder3 · Sketch", "Refused": false}, {"Label": "Extrude#12", "Caption": "Cylinder3 · Extrude", "Refused": false}],
   "Body": {"Faces": 13, "Edges": 30, "Vertices": 20, "Genus": 2, "Volume": 12.41775162, "Sound": true},
   "Selection": {"Faces": [], "Edges": []},
-  "PickMode": 1,
+  "PickMode": 5,
   "Hover": "Extrude#2.Cap(End)",
   "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 8.068516761, "Target": [2, 1.25, 1], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "PreviewFaces": 0, "Refusal": ""},

@@ -11,6 +11,7 @@
 
 #include "Audit/EnclosedVolume.h"
 #include "Audit/ModelAudit.h"
+#include "Blend/RollingBallGeometry.h"
 #include "Sketch/SketchCatalogue.h"
 #include "Sketch/SketchSolver.h"
 
@@ -513,6 +514,27 @@ void SelectDraftingName(DraftingDocument& Document, DraftingSelectionKind Kind, 
     const auto Found = std::find(Names.begin(), Names.end(), Name);
     if (Found != Names.end()) Names.erase(Found);
     else Names.push_back(Name);
+}
+
+std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, const std::string& Name)
+{
+    if (!Document.Partition || !Document.Regeneration.Body.PresentCondition()) return { Name };
+    const Modeller::BodyNaming&    Naming    = Document.Regeneration.Naming;
+    const Modeller::BodyInventory  Inventory = Document.Partition->CollectInventory(Document.Regeneration.Body);
+    std::vector<Modeller::EdgeToken> Seeds;
+    for (const Modeller::EdgeToken Edge : Inventory.Edges)
+    {
+        const auto Found = Naming.Edges.find(Edge.Slot);
+        if (Found != Naming.Edges.end() && Found->second == Name) Seeds.push_back(Edge);
+    }
+    if (Seeds.empty()) return { Name };
+    std::vector<std::string> Names;
+    for (const Modeller::EdgeToken Edge : Modeller::GrowTangentChain(*Document.Partition, Document.Regeneration.Body, Seeds))
+    {
+        const auto Found = Naming.Edges.find(Edge.Slot);
+        if (Found != Naming.Edges.end()) Names.push_back(Found->second);
+    }
+    return Names;
 }
 
 void ClearDraftingSelection(DraftingDocument& Document)

@@ -38,8 +38,12 @@ std::vector<std::string> SplitWords(const std::string& Line)
 ImGuiKey KeyByName(const std::string& Name)
 {
     static const std::map<std::string, ImGuiKey> Keys = {
-        { "A", ImGuiKey_A }, { "B", ImGuiKey_B }, { "E", ImGuiKey_E }, { "F", ImGuiKey_F }, { "S", ImGuiKey_S }, { "Y", ImGuiKey_Y }, { "Z", ImGuiKey_Z },
-        { "1", ImGuiKey_1 }, { "2", ImGuiKey_2 }, { "3", ImGuiKey_3 }, { "Enter", ImGuiKey_Enter }, { "Escape", ImGuiKey_Escape },
+        { "A", ImGuiKey_A }, { "B", ImGuiKey_B }, { "C", ImGuiKey_C }, { "D", ImGuiKey_D }, { "E", ImGuiKey_E }, { "F", ImGuiKey_F },
+        { "G", ImGuiKey_G }, { "H", ImGuiKey_H }, { "N", ImGuiKey_N }, { "O", ImGuiKey_O }, { "Q", ImGuiKey_Q }, { "R", ImGuiKey_R },
+        { "S", ImGuiKey_S }, { "V", ImGuiKey_V }, { "W", ImGuiKey_W }, { "X", ImGuiKey_X }, { "Y", ImGuiKey_Y }, { "Z", ImGuiKey_Z },
+        { "1", ImGuiKey_1 }, { "2", ImGuiKey_2 }, { "3", ImGuiKey_3 }, { "4", ImGuiKey_4 }, { "5", ImGuiKey_5 },
+        { "Keypad1", ImGuiKey_Keypad1 }, { "Keypad3", ImGuiKey_Keypad3 }, { "Keypad5", ImGuiKey_Keypad5 }, { "Keypad7", ImGuiKey_Keypad7 },
+        { "Space", ImGuiKey_Space }, { "Enter", ImGuiKey_Enter }, { "Escape", ImGuiKey_Escape },
         { "Delete", ImGuiKey_Delete }, { "Backspace", ImGuiKey_Backspace }, { "Tab", ImGuiKey_Tab },
     };
     const auto Found = Keys.find(Name);
@@ -101,12 +105,13 @@ bool ReadTarget(const std::vector<std::string>& Words, size_t& Index, DraftingSc
     return true;
 }
 
-void ReadModifiers(const std::vector<std::string>& Words, size_t Index, bool& Control, bool& Shift)
+void ReadModifiers(const std::vector<std::string>& Words, size_t Index, bool& Control, bool& Shift, bool& Alternate)
 {
     for (; Index < Words.size(); ++Index)
     {
         if (Words[Index] == "Ctrl") Control = true;
         if (Words[Index] == "Shift") Shift = true;
+        if (Words[Index] == "Alt") Alternate = true;
     }
 }
 
@@ -177,6 +182,9 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "selected-faces") return Join(Document.Selection.Faces);
     if (Field == "selected-edges") return Join(Document.Selection.Edges);
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
+    if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
+    if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
+    if (Field == "construct-combination") return Numeric(int(State.ConstructForm.Combination));
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
     if (Field == "bevel-size") return Numeric(State.Bevel.Size);
     if (Field == "bevel-pinned") return Numeric(State.Bevel.PinnedCondition ? 1 : 0);
@@ -302,7 +310,7 @@ DraftingScript ParseDraftingScript(const std::string& Text)
             if (Verb == "click" && !ReadTarget(Words, Index, Move.Target)) { Refuse("click target"); continue; }
             DraftingScriptStep Down{ DraftingStepKind::Button };
             Down.Button = Index < Words.size() ? ButtonByName(Words[Index]) : ImGuiMouseButton_Left;
-            ReadModifiers(Words, Index, Down.Control, Down.Shift);
+            ReadModifiers(Words, Index, Down.Control, Down.Shift, Down.Alternate);
             Down.Down = true;
             DraftingScriptStep Up = Down;
             Up.Down = false;
@@ -322,8 +330,8 @@ DraftingScript ParseDraftingScript(const std::string& Text)
             const float TravelX = std::stof(Words[Index + 1]);
             const float TravelY = std::stof(Words[Index + 2]);
             const int   Count   = std::max(1, std::stoi(Words[Index + 3]));
-            bool Control = false, Shift = false;
-            ReadModifiers(Words, Index + 4, Control, Shift);
+            bool Control = false, Shift = false, Alternate = false;
+            ReadModifiers(Words, Index + 4, Control, Shift, Alternate);
             DraftingScriptStep Start{ DraftingStepKind::Move };
             Start.Target    = From;
             Start.Anchoring = true;
@@ -332,8 +340,9 @@ DraftingScript ParseDraftingScript(const std::string& Text)
             DraftingScriptStep Down{ DraftingStepKind::Button };
             Down.Button  = Button;
             Down.Down    = true;
-            Down.Control = Control;
-            Down.Shift   = Shift;
+            Down.Control   = Control;
+            Down.Shift     = Shift;
+            Down.Alternate = Alternate;
             Push(Down);
             for (int Frame = 1; Frame <= Count; ++Frame)
             {
@@ -367,7 +376,7 @@ DraftingScript ParseDraftingScript(const std::string& Text)
             DraftingScriptStep Down{ DraftingStepKind::Key };
             Down.Key  = KeyByName(Words[1]);
             Down.Down = true;
-            ReadModifiers(Words, 2, Down.Control, Down.Shift);
+            ReadModifiers(Words, 2, Down.Control, Down.Shift, Down.Alternate);
             DraftingScriptStep Up = Down;
             Up.Down = false;
             Push(Down);
@@ -439,12 +448,14 @@ std::string AdvanceDraftingScript(DraftingScript& Script, DraftingWorkspaceState
         {
             Io.AddKeyEvent(ImGuiMod_Ctrl, Step.Control);
             Io.AddKeyEvent(ImGuiMod_Shift, Step.Shift);
+            Io.AddKeyEvent(ImGuiMod_Alt, Step.Alternate);
         }
         Io.AddMouseButtonEvent(Step.Button, Step.Down);
         if (!Step.Down)
         {
             Io.AddKeyEvent(ImGuiMod_Ctrl, false);
             Io.AddKeyEvent(ImGuiMod_Shift, false);
+            Io.AddKeyEvent(ImGuiMod_Alt, false);
         }
         break;
     case DraftingStepKind::Key:
@@ -452,6 +463,7 @@ std::string AdvanceDraftingScript(DraftingScript& Script, DraftingWorkspaceState
         {
             Io.AddKeyEvent(ImGuiMod_Ctrl, Step.Control);
             Io.AddKeyEvent(ImGuiMod_Shift, Step.Shift);
+            Io.AddKeyEvent(ImGuiMod_Alt, Step.Alternate);
             Io.AddKeyEvent(Step.Key, true);
         }
         else
@@ -459,6 +471,7 @@ std::string AdvanceDraftingScript(DraftingScript& Script, DraftingWorkspaceState
             Io.AddKeyEvent(Step.Key, false);
             Io.AddKeyEvent(ImGuiMod_Ctrl, false);
             Io.AddKeyEvent(ImGuiMod_Shift, false);
+            Io.AddKeyEvent(ImGuiMod_Alt, false);
         }
         break;
     case DraftingStepKind::Text:

@@ -3,8 +3,13 @@
 **TL;DR (step 9)**: The workspace runs the SolidArcRemastered feature tree behind an ImGui shell that mirrors the SolidArc browser editor. It uses Vulkan 1.3 (volk), SPIR-V compiled from Slang, a GLFW host without a client API, and TOML options. ctest passes **5 / 5** (90.6 s on SwiftShader).
 - **Document gates W1–W8 🟢:** construct, pick, fillet / chamfer, push and parameter edit all match closed forms to ≤ 6.1e-16. Refusals are atomic, undo / redo is exact, and TOML save → load → save is byte-equal.
 - **Viewport gates V1–V7 🟢:** the GPU identity buffer equals the CPU ray pick (0 mismatched pixels over 14 views). 100 % of edge pixels are explained, hover probe = readback, selection colours hold, all 7 view presets are checked, and digests are deterministic.
-- **Walkthroughs:** **131 / 131** expectations pass (main 78, shortcuts 41, recovery 12), driven by real ImGui pointer and keyboard events on the offscreen Vulkan frame. They produce 21 captures.
-- **Parity gate:** `PARITY-SolidArcBrowserEditor.md` has 58 rows: 🟢 48 · ⚠️ 4 · 🚧 6 (sketch drawing, multi-document, workplane offset).
+- **Walkthroughs:** **158 / 158** expectations pass (main 78, shortcuts 68, recovery 12), driven by real ImGui pointer and keyboard events on the offscreen Vulkan frame. They produce 22 captures.
+- **Keymap: Plasticity** (`nkallen/plasticity` default keymap):
+  - middle-drag orbits, right-drag pans; click replaces, Shift adds, Ctrl removes, Alt adds the tangent chain;
+  - 2 / 3 / 4 / 5 (Tab) selection modes; B fillet (D / C inside), E extrude, Space frames;
+  - numpad views, Shift+C / V / X / Z construct, Shift+R repeat, Alt+A / Esc deselect, X / Delete delete.
+  - Keys for tools this modeller lacks announce that, so no non-Plasticity shortcut remains.
+- **Parity gate:** `PARITY-SolidArcBrowserEditor.md` has 58 rows: 🟢 51 · ⚠️ 1 · 🚧 6 (sketch drawing, multi-document, workplane offset), plus the Plasticity keymap table.
 - **View-aligned grid:** Top / Bottom → XY, Front / Back → XZ, Right / Left → YZ, with X red, Y green, Z blue. Isometric keeps the active plane.
 
 ## Layout
