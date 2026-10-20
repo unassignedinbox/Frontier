@@ -389,6 +389,22 @@ void AdjustBevelSize(DraftingWorkspaceState& State, double Delta)
 //                                                    VIEWPORT PICKING
 //------------------------------------------------------------------------------------------------------------------------
 
+// Named views also choose the drawing plane (and its grid); Isometric / free orbit keep the active one.
+void PresentView(DraftingWorkspaceState& State, DraftingViewPreset Preset)
+{
+    PresentDraftingView(State.Camera, Preset);
+    switch (Preset)
+    {
+    case DraftingViewPreset::Top:
+    case DraftingViewPreset::Bottom: State.Style.GridPlane = 0; break;
+    case DraftingViewPreset::Front:
+    case DraftingViewPreset::Back:   State.Style.GridPlane = 1; break;
+    case DraftingViewPreset::Right:
+    case DraftingViewPreset::Left:   State.Style.GridPlane = 2; break;
+    case DraftingViewPreset::Isometric: break;
+    }
+}
+
 DraftingCameraFrame ViewportFrame(const DraftingWorkspaceState& State)
 {
     return FrameDraftingCamera(State.Camera, std::max(1.0f, State.ViewportRect[2]), std::max(1.0f, State.ViewportRect[3]));
@@ -791,7 +807,7 @@ bool DrawOrientationCube(DraftingWorkspaceState& State, ImDrawList* Canvas, ImVe
     }
     if (Hovered && ClickCondition)
     {
-        PresentDraftingView(State.Camera, Hovered->Preset);
+        PresentView(State, Hovered->Preset);
         Announce(State, std::string("View ") + Hovered->Label + " (orientation cube)");
     }
     return Inside;
@@ -814,7 +830,7 @@ void DrawViewportBar(DraftingWorkspaceState& State)
         const std::string Label = std::string(DraftingViewLabel(Preset)) + "###View" + DraftingViewLabel(Preset);
         if (PressButton(State, Label.c_str()))
         {
-            PresentDraftingView(State.Camera, Preset);
+            PresentView(State, Preset);
             Announce(State, std::string("View ") + DraftingViewLabel(Preset));
         }
         ImGui::SameLine(0, 4);
@@ -825,7 +841,7 @@ void DrawViewportBar(DraftingWorkspaceState& State)
         for (DraftingViewPreset Preset : { DraftingViewPreset::Bottom, DraftingViewPreset::Back, DraftingViewPreset::Left })
         {
             const std::string Label = std::string(DraftingViewLabel(Preset)) + "###View" + DraftingViewLabel(Preset);
-            if (ImGui::Selectable(Label.c_str())) PresentDraftingView(State.Camera, Preset);
+            if (ImGui::Selectable(Label.c_str())) PresentView(State, Preset);
             RegisterWidget(State, Label.c_str());
         }
         ImGui::EndPopup();
@@ -913,6 +929,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     static const char* ModeNames[] = { "", "Mode 1 · any", "Mode 2 · edges", "Mode 3 · faces" };
     DrawStatusPill(Canvas, Pill, ModeNames[int(State.PickMode)], SelectedColour);
     DrawStatusPill(Canvas, Pill, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective", MutedColour);
+    static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
+    DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
         DrawStatusPill(Canvas, Pill, Compose("%s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus),

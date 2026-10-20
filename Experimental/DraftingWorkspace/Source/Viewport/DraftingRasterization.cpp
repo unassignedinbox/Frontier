@@ -415,9 +415,24 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
     }
     if (Style.GridEnabled)
     {
+        // 📝 Plane rows pick (u, v, n) from world (x, y, z): XY → (x, y, z), XZ → (x, z, y), YZ → (y, z, x); the world
+        //    axis colours follow (X red, Y green, Z blue) as in the SolidArc view-aligned grid table.
+        static constexpr int   PlaneAxes[3][3] = { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 2, 0 } };
+        static constexpr float AxisColours[3][4] = { { 0.86f, 0.26f, 0.26f, 1.0f }, { 0.30f, 0.80f, 0.34f, 1.0f }, { 0.30f, 0.52f, 0.92f, 1.0f } };
+        const int  Plane = std::clamp(Style.GridPlane, 0, 2);
+        DraftingMatrix PlaneFromClip{};
+        for (int Column = 0; Column < 4; ++Column)
+        {
+            for (int Row = 0; Row < 3; ++Row) PlaneFromClip[Column * 4 + Row] = Frame.WorldFromClip[Column * 4 + PlaneAxes[Plane][Row]];
+            PlaneFromClip[Column * 4 + 3] = Frame.WorldFromClip[Column * 4 + 3];
+        }
         DraftingGridBlock Grid;
-        Narrow(Frame.ClipFromWorld, Grid.ClipFromWorld);
-        Narrow(Frame.WorldFromClip, Grid.WorldFromClip);
+        Narrow(PlaneFromClip, Grid.PlaneFromClip);
+        for (int Channel = 0; Channel < 4; ++Channel)
+        {
+            Grid.AlongU[Channel] = AxisColours[PlaneAxes[Plane][0]][Channel];
+            Grid.AlongV[Channel] = AxisColours[PlaneAxes[Plane][1]][Channel];
+        }
         vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, GridPipeline);
         vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Grid), &Grid);
         vkCmdDraw(Commands, 3, 1, 0, 0);

@@ -47,7 +47,7 @@ const CompilerBinary = Fs.readFileSync(Path.join(Path.dirname(Path.resolve(Compi
 //------------------------------------------------------------------------------------------------------------------------
 
 const ProjectionFields = [['ClipFromWorld', 0, 64], ['ViewRight', 64, 16], ['ViewUp', 80, 16], ['ViewForward', 96, 16], ['DisplayStroke', 112, 16]];
-const GridFields       = [['ClipFromWorld', 0, 64], ['WorldFromClip', 64, 64]];
+const GridFields       = [['PlaneFromClip', 0, 64], ['AlongU', 64, 16], ['AlongV', 80, 16], ['Reserved', 96, 16], ['ReservedSecond', 112, 16]];
 const Programs = [
     ['DraftingSurface.slang', ['DraftingSurfaceVertex', 'DraftingSurfaceFragment'], ProjectionFields, [['FaceStates', 0]]],
     ['DraftingEdge.slang',    ['DraftingEdgeVertex', 'DraftingEdgeFragment'],       ProjectionFields, [['EdgeStates', 1]]],

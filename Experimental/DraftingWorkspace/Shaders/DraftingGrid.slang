@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                       DRAFTINGGRID.SLANG
 ====================================================================================================================================*/
-// 🧩 Analytic ground grid on z = 0 (adaptive decades, X axis red, Y axis green), depth-tested behind the model
+// 🧩 Analytic grid on the active drawing plane (adaptive decades, world-axis colours), depth-tested behind the model
 
 #include "DraftingProjection.slang"
 
@@ -54,8 +54,8 @@ GridPixel DraftingGridVertex(uint VertexIndex : SV_VulkanVertexID)
 [shader("fragment")]
 GridTargets DraftingGridFragment(GridPixel Pixel)
 {
-    float4 Near = mul(Projection.WorldFromClip, float4(Pixel.Device, 0.0, 1.0));
-    float4 Far  = mul(Projection.WorldFromClip, float4(Pixel.Device, 1.0, 1.0));
+    float4 Near = mul(Projection.PlaneFromClip, float4(Pixel.Device, 0.0, 1.0));
+    float4 Far  = mul(Projection.PlaneFromClip, float4(Pixel.Device, 1.0, 1.0));
     float3 From = Near.xyz / Near.w;
     float3 To   = Far.xyz / Far.w;
     float  Run  = To.z - From.z;
@@ -63,6 +63,11 @@ GridTargets DraftingGridFragment(GridPixel Pixel)
     float  Reach    = abs(Run) < 1.0e-9 ? -1.0 : -From.z / Run;
     bool   HitCondition = Reach >= 0.0 && Reach <= 1.0;
     float3 Ground   = lerp(From, To, saturate(Reach));
+
+    // Device depth where the homogeneous n coordinate vanishes (linear in device z).
+    float DepthRun = Far.z - Near.z;
+    float Depth    = abs(DepthRun) < 1.0e-12 ? 2.0 : -Near.z / DepthRun;
+    float Weight   = lerp(Near.w, Far.w, saturate(Depth));
 
     // 📝 Adaptive decades: the minor spacing is the power of ten that keeps cells ≥ ~8 px; the next decade fades in.
     float2 Footprint = fwidth(Ground.xy);
@@ -77,16 +82,15 @@ GridTargets DraftingGridFragment(GridPixel Pixel)
     float3 Colour = float3(0.62, 0.66, 0.74);
     float  Alpha  = Line * 0.32;
     float2 AxisWidth = Footprint * 1.5;
-    if (abs(Ground.y) < AxisWidth.y) { Colour = float3(0.86, 0.26, 0.26); Alpha = 0.85; }        // X axis (y = 0)
-    if (abs(Ground.x) < AxisWidth.x) { Colour = float3(0.30, 0.80, 0.34); Alpha = 0.85; }        // Y axis (x = 0)
+    if (abs(Ground.y) < AxisWidth.y) { Colour = Projection.AlongU.rgb; Alpha = 0.85; }       // axis along u (v = 0)
+    if (abs(Ground.x) < AxisWidth.x) { Colour = Projection.AlongV.rgb; Alpha = 0.85; }       // axis along v (u = 0)
 
     // 📝 Fade over the far part of the near → far range so the horizon never aliases.
-    float4 Clip = mul(Projection.ClipFromWorld, float4(Ground, 1.0));
-    float  Fade = saturate(1.0 - Reach * 2.5);
-    if (!HitCondition || Clip.w <= 0.0 || Alpha * Fade < 0.004) discard;
+    float Fade = saturate(1.0 - Reach * 2.5);
+    if (!HitCondition || Depth < 0.0 || Depth > 1.0 || Weight <= 0.0 || Alpha * Fade < 0.004) discard;
 
     GridTargets Targets;
     Targets.Colour = float4(Colour, Alpha * Fade);
-    Targets.Depth  = saturate(Clip.z / Clip.w);
+    Targets.Depth  = saturate(Depth);
     return Targets;
 }

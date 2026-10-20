@@ -190,6 +190,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "camera-target-z") return Numeric(State.Camera.Target[2]);
     if (Field == "orthographic") return Numeric(State.Camera.OrthographicEnabled ? 1 : 0);
     if (Field == "grid") return Numeric(State.Style.GridEnabled ? 1 : 0);
+    if (Field == "grid-plane") return Numeric(State.Style.GridPlane);
     if (Field == "dirty") return Numeric(State.DirtyCondition ? 1 : 0);
     if (Field == "welcome") return Numeric(State.WelcomeOpen ? 1 : 0);
     if (Field == "focused-step") { Text = State.FocusedStep; Number = double(Text.size()); return true; }

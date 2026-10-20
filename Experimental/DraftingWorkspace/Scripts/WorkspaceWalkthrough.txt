@@ -119,13 +119,21 @@ capture 07Navigated
 # ⑧ orientation cube, view bar, projection, grid
 click @CubeTop
 expect camera-pitch ~ 1.5707963268
+expect grid-plane == 0
 capture 08ViewCubeTop
 click @Projection
 expect orthographic == 1
 click @ViewFront
 expect camera-pitch ~ 0
 expect camera-yaw ~ -1.5707963268
+expect grid-plane == 1
 capture 09FrontParallel
+click @ViewRight
+expect grid-plane == 2
+capture 09RightParallel
+click @ViewIsometric
+expect grid-plane == 2
+click @ViewTop
 click @Projection
 click @GridToggle
 expect grid == 0
@@ -133,6 +141,7 @@ click @GridToggle
 click @ViewIsometric
 click @FitView
 expect camera-pitch ~ 0.6154797087
+expect grid-plane == 0
 
 # ⑨ face edit in mode 3: Push the boss top 0.25 through the Inspector
 key 3

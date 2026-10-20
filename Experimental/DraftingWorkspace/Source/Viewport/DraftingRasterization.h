@@ -46,8 +46,11 @@ static_assert(sizeof(DraftingProjectionBlock) == 128, "DraftingProjection push c
 
 struct DraftingGridBlock
 {
-    float ClipFromWorld[16] = {};                                                            // [-] - Projection × view
-    float WorldFromClip[16] = {};                                                            // [-] - Inverse
+    float PlaneFromClip[16]  = {};                                                           // [-]   - Grid coordinates (u, v, n) ← clip
+    float AlongU[4]          = {};                                                           // [0-1] - Colour of the axis along u
+    float AlongV[4]          = {};                                                           // [0-1] - Colour of the axis along v
+    float Reserved[4]        = {};                                                           // [-]   - Padding to 128 bytes
+    float ReservedSecond[4]  = {};                                                           // [-]   - Padding to 128 bytes
 };
 static_assert(sizeof(DraftingGridBlock) == 128, "DraftingGridProjection push constant must stay 128 bytes");
 
@@ -56,7 +59,8 @@ struct DraftingViewportStyle
     float Background[4]   = { 0.090f, 0.106f, 0.137f, 1.0f };                                // [0-1] - SolidArc viewport #171b23
     float EdgeStroke      = 1.5f;                                                            // [px]  - Edge stroke width
     float EdgeDepthBias   = 1.5e-5f;                                                         // [-]   - Clip-depth pull toward the eye
-    bool  GridEnabled     = true;                                                            // [-]   - Ground grid
+    bool  GridEnabled     = true;                                                            // [-]   - Drawing-plane grid
+    int   GridPlane       = 0;                                                               // [-]   - 0 XY (Top/Bottom), 1 XZ (Front/Back), 2 YZ (Right/Left)
     bool  EdgesEnabled    = true;                                                            // [-]   - B-rep edges
     bool  SurfacesEnabled = true;                                                            // [-]   - B-rep faces
 };

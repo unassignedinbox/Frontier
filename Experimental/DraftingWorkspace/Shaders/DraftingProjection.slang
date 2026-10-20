@@ -18,11 +18,16 @@ struct DraftingProjection
     float4                DisplayStroke;                                                     // [px] - Width, height, edge stroke, edge depth bias
 };
 
-// 📝 Grid program: needs the inverse to unproject each pixel onto the ground plane z = 0.
+// 📝 Grid program: PlaneFromClip unprojects each pixel into grid coordinates (u, v, n) of the active drawing plane
+//    (Top/Bottom XY, Front/Back XZ, Right/Left YZ); the grid lies on n = 0. Depth is solved from the homogeneous n,
+//    which is linear in device z, so no forward matrix is needed.
 struct DraftingGridProjection
 {
-    column_major float4x4 ClipFromWorld;                                                     // [-] - Projection × view
-    column_major float4x4 WorldFromClip;                                                     // [-] - Its inverse
+    column_major float4x4 PlaneFromClip;                                                     // [-]   - Grid coordinates ← clip
+    float4                AlongU;                                                            // [0-1] - Colour of the axis running along u (v = 0)
+    float4                AlongV;                                                            // [0-1] - Colour of the axis running along v (u = 0)
+    float4                Reserved;                                                          // [-]   - Keeps the block at 128 bytes
+    float4                ReservedSecond;                                                    // [-]   - Keeps the block at 128 bytes
 };
 
 //------------------------------------------------------------------------------------------------------------------------

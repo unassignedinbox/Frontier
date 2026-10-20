@@ -7,11 +7,11 @@
   },
   {
    "file": "Shaders/DraftingGrid.slang",
-   "sha256": "fc249e141010848930f32d96d07c3b3f08741c0562ac9a217e0a76c23fb4b029"
+   "sha256": "a03a2ce84cb83deb29ea7234c8a1c5333ce02af402040325d2597b0e986c4f30"
   },
   {
    "file": "Shaders/DraftingProjection.slang",
-   "sha256": "1fb9db3d5280e183a05a5625420f5b3239af2609ce65ded505077b6590df3e2d"
+   "sha256": "181c9d3afa5f0707780a61666b1ddaff2ade3a944a232a086d996d353de32266"
   },
   {
    "file": "Shaders/DraftingSurface.slang",
@@ -3718,7 +3718,7 @@
         "name": "DraftingGridProjection",
         "fields": [
          {
-          "name": "ClipFromWorld",
+          "name": "PlaneFromClip",
           "type": {
            "kind": "matrix",
            "rowCount": 4,
@@ -3743,11 +3743,10 @@
           }
          },
          {
-          "name": "WorldFromClip",
+          "name": "AlongU",
           "type": {
-           "kind": "matrix",
-           "rowCount": 4,
-           "columnCount": 4,
+           "kind": "vector",
+           "elementCount": 4,
            "elementType": {
             "kind": "scalar",
             "scalarType": "float32"
@@ -3755,7 +3754,7 @@
            "sizes": [
             {
              "kind": "uniform",
-             "value": 64,
+             "value": 16,
              "alignment": 16
             }
            ]
@@ -3763,8 +3762,80 @@
           "binding": {
            "kind": "uniform",
            "offset": 64,
-           "size": 64,
-           "elementStride": 0
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "AlongV",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 80,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Reserved",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 96,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "ReservedSecond",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 112,
+           "size": 16,
+           "elementStride": 4
           }
          }
         ],
@@ -3788,7 +3859,7 @@
          "name": "DraftingGridProjection",
          "fields": [
           {
-           "name": "ClipFromWorld",
+           "name": "PlaneFromClip",
            "type": {
             "kind": "matrix",
             "rowCount": 4,
@@ -3813,11 +3884,10 @@
            }
           },
           {
-           "name": "WorldFromClip",
+           "name": "AlongU",
            "type": {
-            "kind": "matrix",
-            "rowCount": 4,
-            "columnCount": 4,
+            "kind": "vector",
+            "elementCount": 4,
             "elementType": {
              "kind": "scalar",
              "scalarType": "float32"
@@ -3825,7 +3895,7 @@
             "sizes": [
              {
               "kind": "uniform",
-              "value": 64,
+              "value": 16,
               "alignment": 16
              }
             ]
@@ -3833,8 +3903,80 @@
            "binding": {
             "kind": "uniform",
             "offset": 64,
-            "size": 64,
-            "elementStride": 0
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "AlongV",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Reserved",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ReservedSecond",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
            }
           }
          ],
@@ -3878,7 +4020,7 @@
          "name": "DraftingGridProjection",
          "fields": [
           {
-           "name": "ClipFromWorld",
+           "name": "PlaneFromClip",
            "type": {
             "kind": "matrix",
             "rowCount": 4,
@@ -3903,11 +4045,10 @@
            }
           },
           {
-           "name": "WorldFromClip",
+           "name": "AlongU",
            "type": {
-            "kind": "matrix",
-            "rowCount": 4,
-            "columnCount": 4,
+            "kind": "vector",
+            "elementCount": 4,
             "elementType": {
              "kind": "scalar",
              "scalarType": "float32"
@@ -3915,7 +4056,7 @@
             "sizes": [
              {
               "kind": "uniform",
-              "value": 64,
+              "value": 16,
               "alignment": 16
              }
             ]
@@ -3923,8 +4064,80 @@
            "binding": {
             "kind": "uniform",
             "offset": 64,
-            "size": 64,
-            "elementStride": 0
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "AlongV",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Reserved",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ReservedSecond",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
            }
           }
          ],
@@ -3948,7 +4161,7 @@
           "name": "DraftingGridProjection",
           "fields": [
            {
-            "name": "ClipFromWorld",
+            "name": "PlaneFromClip",
             "type": {
              "kind": "matrix",
              "rowCount": 4,
@@ -3973,11 +4186,10 @@
             }
            },
            {
-            "name": "WorldFromClip",
+            "name": "AlongU",
             "type": {
-             "kind": "matrix",
-             "rowCount": 4,
-             "columnCount": 4,
+             "kind": "vector",
+             "elementCount": 4,
              "elementType": {
               "kind": "scalar",
               "scalarType": "float32"
@@ -3985,7 +4197,7 @@
              "sizes": [
               {
                "kind": "uniform",
-               "value": 64,
+               "value": 16,
                "alignment": 16
               }
              ]
@@ -3993,8 +4205,80 @@
             "binding": {
              "kind": "uniform",
              "offset": 64,
-             "size": 64,
-             "elementStride": 0
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "AlongV",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 80,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Reserved",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 96,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "ReservedSecond",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 112,
+             "size": 16,
+             "elementStride": 4
             }
            }
           ],
@@ -4115,8 +4399,8 @@
   {
    "name": "DraftingGridFragment",
    "entry": "main",
-   "words": 1298,
-   "sha256": "369f6e3819313ab7ff3efefd25946371a763fa4e64e0d30cb41f6566560d229c",
+   "words": 1465,
+   "sha256": "46d07a3531e4c6da2f5d5b756e6ad3ddd0c99c20ed4be6b443e81e598e3b4e64",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -4133,7 +4417,7 @@
         "name": "DraftingGridProjection",
         "fields": [
          {
-          "name": "ClipFromWorld",
+          "name": "PlaneFromClip",
           "type": {
            "kind": "matrix",
            "rowCount": 4,
@@ -4158,11 +4442,10 @@
           }
          },
          {
-          "name": "WorldFromClip",
+          "name": "AlongU",
           "type": {
-           "kind": "matrix",
-           "rowCount": 4,
-           "columnCount": 4,
+           "kind": "vector",
+           "elementCount": 4,
            "elementType": {
             "kind": "scalar",
             "scalarType": "float32"
@@ -4170,7 +4453,7 @@
            "sizes": [
             {
              "kind": "uniform",
-             "value": 64,
+             "value": 16,
              "alignment": 16
             }
            ]
@@ -4178,8 +4461,80 @@
           "binding": {
            "kind": "uniform",
            "offset": 64,
-           "size": 64,
-           "elementStride": 0
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "AlongV",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 80,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Reserved",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 96,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "ReservedSecond",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 112,
+           "size": 16,
+           "elementStride": 4
           }
          }
         ],
@@ -4203,7 +4558,7 @@
          "name": "DraftingGridProjection",
          "fields": [
           {
-           "name": "ClipFromWorld",
+           "name": "PlaneFromClip",
            "type": {
             "kind": "matrix",
             "rowCount": 4,
@@ -4228,11 +4583,10 @@
            }
           },
           {
-           "name": "WorldFromClip",
+           "name": "AlongU",
            "type": {
-            "kind": "matrix",
-            "rowCount": 4,
-            "columnCount": 4,
+            "kind": "vector",
+            "elementCount": 4,
             "elementType": {
              "kind": "scalar",
              "scalarType": "float32"
@@ -4240,7 +4594,7 @@
             "sizes": [
              {
               "kind": "uniform",
-              "value": 64,
+              "value": 16,
               "alignment": 16
              }
             ]
@@ -4248,8 +4602,80 @@
            "binding": {
             "kind": "uniform",
             "offset": 64,
-            "size": 64,
-            "elementStride": 0
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "AlongV",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Reserved",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ReservedSecond",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
            }
           }
          ],
@@ -4293,7 +4719,7 @@
          "name": "DraftingGridProjection",
          "fields": [
           {
-           "name": "ClipFromWorld",
+           "name": "PlaneFromClip",
            "type": {
             "kind": "matrix",
             "rowCount": 4,
@@ -4318,11 +4744,10 @@
            }
           },
           {
-           "name": "WorldFromClip",
+           "name": "AlongU",
            "type": {
-            "kind": "matrix",
-            "rowCount": 4,
-            "columnCount": 4,
+            "kind": "vector",
+            "elementCount": 4,
             "elementType": {
              "kind": "scalar",
              "scalarType": "float32"
@@ -4330,7 +4755,7 @@
             "sizes": [
              {
               "kind": "uniform",
-              "value": 64,
+              "value": 16,
               "alignment": 16
              }
             ]
@@ -4338,8 +4763,80 @@
            "binding": {
             "kind": "uniform",
             "offset": 64,
-            "size": 64,
-            "elementStride": 0
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "AlongV",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Reserved",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ReservedSecond",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
            }
           }
          ],
@@ -4363,7 +4860,7 @@
           "name": "DraftingGridProjection",
           "fields": [
            {
-            "name": "ClipFromWorld",
+            "name": "PlaneFromClip",
             "type": {
              "kind": "matrix",
              "rowCount": 4,
@@ -4388,11 +4885,10 @@
             }
            },
            {
-            "name": "WorldFromClip",
+            "name": "AlongU",
             "type": {
-             "kind": "matrix",
-             "rowCount": 4,
-             "columnCount": 4,
+             "kind": "vector",
+             "elementCount": 4,
              "elementType": {
               "kind": "scalar",
               "scalarType": "float32"
@@ -4400,7 +4896,7 @@
              "sizes": [
               {
                "kind": "uniform",
-               "value": 64,
+               "value": 16,
                "alignment": 16
               }
              ]
@@ -4408,8 +4904,80 @@
             "binding": {
              "kind": "uniform",
              "offset": 64,
-             "size": 64,
-             "elementStride": 0
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "AlongV",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 80,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Reserved",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 96,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "ReservedSecond",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 112,
+             "size": 16,
+             "elementStride": 4
             }
            }
           ],
