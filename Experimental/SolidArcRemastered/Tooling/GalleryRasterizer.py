@@ -1,14 +1,16 @@
 #====================================================================================================================================
 #                                                     GALLERYRASTERIZER.PY
 #====================================================================================================================================
-# 🧩 Before | After exhibit panels for the blend catalogue, rasterised from the C++ inspection host (no browser needed)
+# 🧩 Before | After exhibit panels for the blend and face-operation catalogues, rasterised from the C++ inspection host
 
 """
-Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--build-dir DIR] [--output DIR] [--only NAME ...]
+Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--kind Blend|FaceOperation] [--build-dir DIR] [--output DIR] [--only NAME ...]
 
-Before panel  the source body, shaded neutral, with the selected edges in amber (hidden parts dashed).
-After panel   the blend result coloured by provenance (blend faces teal, corner faces gold, modified faces slate), its B-rep
-              edges, ball-centre spines dotted cyan and contact rails green; a refused blend shows the refusal instead.
+Before panel  the source body, shaded neutral, with the selection in amber (edges for blends, face outlines for face
+              operations; hidden parts dashed).
+After panel   the result coloured by provenance — blends: blend faces teal, corner faces gold, modified faces slate, spines
+              dotted cyan, contact rails green; face operations: replaced orange, trimmed teal, generated violet, unchanged
+              slate. A refusal is shown as text instead.
 Camera, lighting and colours follow Viewer/index.html (Yaw -0.7, Pitch -0.45: eye above). Requires Pillow + numpy.
 """
 
@@ -32,6 +34,7 @@ CaptionHeight  = 74                                                             
 Supersample    = 2                                                                       # [-]  - Drawn at 2x, then downsampled
 Background     = (16, 19, 25)
 OriginHues     = { "Edge": 172, "Vertex": 45, "Modified": 215 }                          # [deg] - Viewer BlendOriginHue
+ChangeHues     = { "Replaced": 28, "Trimmed": 172, "Generated": 290, "Unchanged": 215 }   # [deg] - Viewer FaceChangeHue
 FontPath       = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 #------------------------------------------------------------------------------------------------------------------------
@@ -149,24 +152,26 @@ def DrawPolylines(Camera: ViewerCamera, Picture: Image.Image, Depth: Image.Image
 #                                                    PANELS
 #------------------------------------------------------------------------------------------------------------------------
 
-def RenderSpecimen(Executable: Path, Name: str, Output: Path):
+def RenderSpecimen(Executable: Path, Name: str, Output: Path, Kind: str = "Blend"):
     After        = AskHost(Executable, "specimen", Name)
     Before       = AskHost(Executable, "specimen", Name, "Source=1")
     BeforeShaded = AskHost(Executable, "tessellate", Name, "Source=1", "SagRatio=0.0015")
-    Blend        = After["Blend"]
+    Blend        = After[Kind]                                                                 # Blend or FaceOperation section
     Refused      = "Refusal" in Blend
     AfterShaded  = None if Refused else AskHost(Executable, "tessellate", Name, "SagRatio=0.0015")
 
     Size, Font = Supersample, ImageFont.truetype(FontPath, 13 * Supersample)
     Camera = ViewerCamera()
     Cloud  = [np.asarray(BeforeShaded["Positions"], dtype=float).reshape(-1, 3)]
+    if AfterShaded is not None and Kind == "FaceOperation": Cloud.append(np.asarray(AfterShaded["Positions"], dtype=float).reshape(-1, 3))
     Camera.Fit(np.concatenate(Cloud), PanelWidth * Size, PanelHeight * Size)
     Allowance = 0.004 * max(np.ptp(Cloud[0], axis=0).max(), 1e-9)
 
     # ---- Before: neutral shading, B-rep edges, selection in amber
     BeforePicture, BeforeDepth = ShadeComplex(Camera, BeforeShaded, lambda Token: (215, 0.10))
     DrawPolylines(Camera, BeforePicture, BeforeDepth, [Edge["Polyline"] for Edge in Before["Edges"]], (10, 12, 16), 2 * Size, Allowance)
-    DrawPolylines(Camera, BeforePicture, BeforeDepth, [Selected["Polyline"] for Selected in Blend["Selection"]], (255, 179, 71), 4 * Size, Allowance, (200, 140, 60))
+    Selection = [Selected["Polyline"] for Selected in Blend["Selection"]] if Kind == "Blend" else [Polyline for Selected in Blend["Selection"] for Polyline in Selected["Outline"]]
+    DrawPolylines(Camera, BeforePicture, BeforeDepth, Selection, (255, 179, 71), 4 * Size, Allowance, (200, 140, 60))
 
     # ---- After: provenance shading, B-rep edges, spines and contacts
     if Refused:
@@ -182,11 +187,13 @@ def RenderSpecimen(Executable: Path, Name: str, Output: Path):
         for Index, Text in enumerate(Lines): Paint.text((40 * Size, PanelHeight * Size // 2 + (Index * 20 - 4) * Size), Text, fill=(215, 220, 228), font=Font)
     else:
         Origins = { Entry["Face"]: Entry["Origin"] for Entry in Blend["FaceOrigins"] }
-        Colour  = lambda Token: (OriginHues.get(Origins.get(Token, "Modified"), 215), 0.14 if Origins.get(Token, "Modified") == "Modified" else 0.62)
+        Hues, Plain = (OriginHues, "Modified") if Kind == "Blend" else (ChangeHues, "Unchanged")
+        Colour  = lambda Token: (Hues.get(Origins.get(Token, Plain), 215), 0.14 if Origins.get(Token, Plain) == Plain else 0.62)
         AfterPicture, AfterDepth = ShadeComplex(Camera, AfterShaded, Colour)
         DrawPolylines(Camera, AfterPicture, AfterDepth, [Edge["Polyline"] for Edge in After["Edges"]], (10, 12, 16), 2 * Size, Allowance)
-        DrawPolylines(Camera, AfterPicture, AfterDepth, [Polyline for Sheet in Blend["Sheets"] for Polyline in Sheet["SpinePolylines"]], (86, 212, 224), 2 * Size, 1e30, Dotted=True)
-        DrawPolylines(Camera, AfterPicture, AfterDepth, [Contact["Polyline"] for Sheet in Blend["Sheets"] for Contact in Sheet["Contacts"]], (127, 224, 160), 2 * Size, Allowance)
+        if Kind == "Blend":
+            DrawPolylines(Camera, AfterPicture, AfterDepth, [Polyline for Sheet in Blend["Sheets"] for Polyline in Sheet["SpinePolylines"]], (86, 212, 224), 2 * Size, 1e30, Dotted=True)
+            DrawPolylines(Camera, AfterPicture, AfterDepth, [Contact["Polyline"] for Sheet in Blend["Sheets"] for Contact in Sheet["Contacts"]], (127, 224, 160), 2 * Size, Allowance)
 
     # ---- Compose: titles, caption
     Sheet = Image.new("RGB", (2 * PanelWidth * Size, (PanelHeight + CaptionHeight) * Size), Background)
@@ -194,11 +201,20 @@ def RenderSpecimen(Executable: Path, Name: str, Output: Path):
     Paint = ImageDraw.Draw(Sheet)
     Title = ImageFont.truetype(FontPath, 16 * Size)
     Paint.text((14 * Size, 10 * Size), "Before: selection", fill=(255, 179, 71), font=Title)
-    Paint.text(((PanelWidth + 14) * Size, 10 * Size), "After: blend teal, corner gold, spine cyan, contacts green" if not Refused else "After", fill=(160, 220, 230), font=Title)
+    Heading = "After: blend teal, corner gold, spine cyan, contacts green" if Kind == "Blend" else "After: replaced orange, trimmed teal, generated violet"
+    Paint.text(((PanelWidth + 14) * Size, 10 * Size), Heading if not Refused else "After", fill=(160, 220, 230), font=Title)
     Paint.line([(PanelWidth * Size, 0), (PanelWidth * Size, PanelHeight * Size)], fill=(50, 56, 66), width=Size)
     Summary, Statistics = After["Summary"], Blend["Statistics"]
-    First = f"{Name}  ·  {After['Family']}  ·  {Blend['Profile'].lower()} {Blend['Size']:g} on {len(Blend['Selection'])} edge(s)  ·  {After['Description']}"
-    if Refused: Second = f"Source body untouched (V = {Summary['SourceVolume']:.9f}); the refusal is atomic and prefixed 'Blend:'."
+    if Kind == "FaceOperation":
+        First = f"{Name}  ·  {After['Family']}  ·  {' -> '.join(Blend['Steps'])}  ·  {After['Description']}"
+        if Refused: Second = f"Source body untouched (V = {Summary['SourceVolume']:.9f}); the refusal is atomic and verb-prefixed."
+        else:
+            Expected = f"V* {Summary['ExpectedVolume']:.10f}  ·  |error| {Summary['VolumeError']:.1e}" if "ExpectedVolume" in Summary else ("open sheet" if Summary["Category"] == "Sheet" else "no closed form")
+            Volume   = f"V {Summary['Volume']:.10f}  ·  " if "Volume" in Summary else ""
+            Counts   = " / ".join(str(next(Count["Measured"] for Count in Summary["Counts"] if Count["Name"] == Key)) for Key in ("Faces", "Edges", "Vertices"))
+            Gates    = "N1-N7 pass" if all(Gate["Passed"] for Gate in AfterShaded["Gates"]) else "N gate FAILED"
+            Second   = f"{Volume}{Expected}  ·  F/E/V {Counts}  ·  {Statistics['ReplacedFaces']} carrier(s) replaced  ·  {len(AfterShaded['Triangles']) // 3} triangles, {Gates}"
+    elif Refused: Second = f"Source body untouched (V = {Summary['SourceVolume']:.9f}); the refusal is atomic and prefixed 'Blend:'."
     else:
         Carriers = ", ".join(f"{Statistics[Key]} {Label}" for Key, Label in (("Planes", "plane"), ("Cylinders", "cylinder"), ("Cones", "cone"), ("Tori", "torus"), ("CornerSpheres", "sphere")) if Statistics[Key])
         Expected = f"closed form {Summary['ExpectedDelta']:.12f}  ·  |error| {Summary['DeltaError']:.1e}" if "ExpectedDelta" in Summary else "no closed form at this size"
@@ -218,15 +234,17 @@ def main():
     Root = Path(__file__).resolve().parents[1]
     Parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     Parser.add_argument("--build-dir", default=str(Root / "build"))
-    Parser.add_argument("--output", default=str(Root.parents[1] / "Exhibits" / "SolidArcRemastered" / "BlendGallery"))
+    Parser.add_argument("--kind", choices=("Blend", "FaceOperation"), default="Blend")
+    Parser.add_argument("--output", default=None, help="default: Exhibits/SolidArcRemastered/BlendGallery or FaceOperationGallery")
     Parser.add_argument("--only", nargs="*", default=None)
     Arguments = Parser.parse_args()
+    Output = Path(Arguments.output) if Arguments.output else Root.parents[1] / "Exhibits" / "SolidArcRemastered" / ("BlendGallery" if Arguments.kind == "Blend" else "FaceOperationGallery")
     Executable = Path(Arguments.build_dir) / ("RemasteredInspection.exe" if sys.platform == "win32" else "RemasteredInspection")
     Catalogue  = AskHost(Executable, "catalogue")
-    Names      = [Entry["Name"] for Entry in Catalogue["Specimens"] if Entry.get("Kind") == "Blend"]
+    Names      = [Entry["Name"] for Entry in Catalogue["Specimens"] if Entry.get("Kind") == Arguments.kind]
     for Name in Names:
         if Arguments.only and Name not in Arguments.only: continue
-        Refused = RenderSpecimen(Executable, Name, Path(Arguments.output))
+        Refused = RenderSpecimen(Executable, Name, Output, Arguments.kind)
         print(f"{Name:28s} {'refused' if Refused else 'rendered'}")
 
 

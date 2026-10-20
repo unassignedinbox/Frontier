@@ -11,8 +11,10 @@
 #include "Blend/EdgeBlend.h"
 #include "Boolean/BooleanCatalogue.h"
 #include "Containment/WindingNumber.h"
+#include "Local/FaceOperationCatalogue.h"
 #include "Inspection/BlendEncoding.h"
 #include "Inspection/BooleanEncoding.h"
+#include "Inspection/FaceOperationEncoding.h"
 #include "Inspection/InspectionEncoding.h"
 #include "Inspection/IntersectionEncoding.h"
 #include "Inspection/JsonWriter.h"
@@ -21,6 +23,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -71,9 +74,61 @@ namespace
         return Applied;
     }
 
+    [[nodiscard]] bool FaceOperationSpecimenCondition(const std::string& Name)
+    {
+        const std::vector<std::string> Specimens = EnumerateFaceOperationSpecimens();
+        return std::find(Specimens.begin(), Specimens.end(), Name) != Specimens.end();
+    }
+
+    // 📝 Face-operation specimen with the viewer's Amount (multiplier on the last step's distance, angle, vector and
+    //    scale change; 1 = catalogue). Steps run in order; the first refusal stops the chain, the source stays intact.
+    struct AppliedFaceOperation
+    {
+        FaceOperationSpecimen              Specimen  = {};                                   // [-]  - Catalogue entry
+        std::vector<FaceOperationSettings> Steps     = {};                                   // [-]  - Steps actually run
+        FaceOperationOutcome               Outcome   = {};                                   // [-]  - Last outcome (or the refusal)
+        int                                Completed = 0;                                    // [-]  - Steps that succeeded
+        double                             Amount    = 1.0;                                  // [-]  - Applied multiplier
+        double                             Milliseconds = 0.0;                               // [ms] - Σ step wall time
+    };
+
+    [[nodiscard]] AppliedFaceOperation ApplyFaceOperationSpecimen(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters)
+    {
+        AppliedFaceOperation Applied;
+        Applied.Specimen = ConstructFaceOperationSpecimen(Partition, Name);
+        Applied.Steps    = Applied.Specimen.Steps;
+        Applied.Amount   = std::clamp(Parameters.Resolve("Amount", 1.0), -4.0, 4.0);
+        if (!Applied.Steps.empty())
+        {
+            FaceOperationSettings& Last = Applied.Steps.back();
+            Last.Distance *= Applied.Amount;
+            Last.Angle    *= Applied.Amount;
+            Last.Vector    = Last.Vector * Applied.Amount;
+            Last.Factor    = 1.0 + (Last.Factor - 1.0) * Applied.Amount;
+        }
+        BodyToken Cursor = Applied.Specimen.Body;
+        Applied.Outcome.Body = Cursor;
+        for (const FaceOperationSettings& Step : Applied.Steps)
+        {
+            Applied.Outcome = ApplyFaceOperation(Partition, Cursor, Step);
+            Applied.Milliseconds += Applied.Outcome.Milliseconds;
+            if (!Applied.Outcome.Refusal.empty()) break;
+            Cursor = Applied.Outcome.Body;
+            ++Applied.Completed;
+        }
+        return Applied;
+    }
+
     // The body a slice classifies: a model specimen, the chosen operation of a Boolean scene, or a blend result (Source=1: before).
     [[nodiscard]] BodyToken ConstructSliceBody(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters, std::string& Refusal)
     {
+        if (FaceOperationSpecimenCondition(Name))
+        {
+            const AppliedFaceOperation Applied = ApplyFaceOperationSpecimen(Partition, Name, Parameters);
+            if (Parameters.Resolve("Source", 0.0) > 0.5) return Applied.Specimen.Body;
+            Refusal = Applied.Outcome.Refusal;
+            return Applied.Outcome.Body;
+        }
         if (BlendSpecimenCondition(Name))
         {
             const AppliedBlend Applied = ApplyBlend(Partition, Name, Parameters);
@@ -209,6 +264,27 @@ namespace
 
         if (Verb == "slice") return AnswerSlice(Name, Parameters);
         if (Verb == "tessellate") return AnswerTessellation(Name, Parameters);
+        if (FaceOperationSpecimenCondition(Name))
+        {
+            ModelPartition          Partition;
+            FaceOperationInspection Inspection;
+            Clock::time_point Start = Clock::now();
+            const AppliedFaceOperation Applied = ApplyFaceOperationSpecimen(Partition, Name, Parameters);
+            Inspection.ConstructionMilliseconds = std::max(0.0, ElapsedMilliseconds(Start) - Applied.Milliseconds);
+            Inspection.Applied               = Applied.Steps;
+            Inspection.Amount                = Applied.Amount;
+            Inspection.CompletedSteps        = Applied.Completed;
+            Inspection.OperationMilliseconds = Applied.Milliseconds;
+            Inspection.SourceShown           = Parameters.Resolve("Source", 0.0) > 0.5;
+            Inspection.SourceVolume          = IntegrateBodyVolume(Partition, Applied.Specimen.Body);
+            const bool      Changed = !Inspection.SourceShown && Applied.Outcome.Refusal.empty();
+            const BodyToken Shown   = Changed ? Applied.Outcome.Body : Applied.Specimen.Body;
+            Inspection.ShownVolume  = Changed && Applied.Outcome.Category == BodyCategory::Sheet ? std::nan("") : IntegrateBodyVolume(Partition, Shown);
+            Start = Clock::now();
+            const AuditReport Audit = AuditBody(Partition, Shown);
+            Inspection.AuditMilliseconds = ElapsedMilliseconds(Start);
+            return EncodeFaceOperation(Partition, Applied.Specimen, Applied.Outcome, Shown, Audit, Inspection);
+        }
         if (BlendSpecimenCondition(Name))
         {
             ModelPartition    Partition;

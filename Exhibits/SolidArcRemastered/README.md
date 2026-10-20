@@ -1,4 +1,15 @@
-# 🧩 SolidArcRemastered — evidence for steps 1–5
+# 🧩 SolidArcRemastered — evidence for steps 1–6
+
+**TL;DR (step 6)**: FaceOperationValidation passes: corpus section E 36/36, chains 6/6, extras 12/12 and refusals 8/8, with 9 gates and 0 failures in 120.6 s.
+- **Gate met:** corpus section E has **0 refusals on HoleSlab and Can**; the old `FaceEditSolver` refused 17 of those rows. Closed forms are exact: V vs the hand-derived value ≤ 5.0e-15 over 51 bodies (prisms, frusta, cones, wedges, hollows).
+- **One algorithm:** push, tweak, offset, scale, rotate, draft, extend, trim, offset-body, hollow, extrude, delete, heal and thicken all run through `PlanFaceChange` (new carriers → re-intersected edges and vertices → `AssembleBody`) or a topology rebuild on top of it.
+- **Exact:** every edge lies on both face carriers to ≤ 2.6e-16·L. Six chains equal an independent construction to ≤ 3.8e-16.
+- **Sound:**
+  - every result is audit-sound, with the expected category, genus and F/E/V, and the source is untouched;
+  - it tessellates watertight (open sheets by sheet rules);
+  - 0 of 2 210 winding-number probes ±ε off the true faces are on the wrong side.
+- **Refusals:** the 8 refusals are atomic, verb-prefixed and say why. That includes a 60° rotation that would make the Can pass through itself, caught by the new edge/face clash probe.
+- **Robust:** digests are deterministic, and the relative V error is ≤ 1.2e-14 from s = 10⁻³ to 10³.
 
 **TL;DR (step 5)**: BlendValidation passes: the rolling-ball harness 15/15, BevelLab 6/6 and all 27 specimens, with 10 gates and 0 failures in 20.2 s.
 - **Exact:** ΔV matches the closed form to ≤ 7.0e-16. The worst rolling-ball law residual is 1.6e-15 over 71 037 samples (spine ↔ supports, blend face ↔ spine, corner centre ↔ 3 supports).
@@ -49,6 +60,8 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
 | `BlendValidation.md` | B1 closed-form ΔV · B2 audit, genus, face count, source untouched · B3 G1 and chamfer setback · B4 rolling-ball law · B5 tessellation · B6 winding vs clearance oracle · B7 Booleans downstream · B8 refusals · B9 determinism · B10 scale; per-specimen carriers and vertex classes | 🟢 PASS |
+| `FaceOperationValidation.md` | E1 closed-form V · E2 audit, category, genus, F/E/V, source untouched · E3 edges on both carriers · E4 tessellation · E5 winding probe off every face · E6 chains vs reference · E7 refusals · E8 determinism · E9 scale; corpus-E table with the old-kernel column, chains, extras, refusals | 🟢 PASS |
+| `FaceOperationGallery/*.png` | 62 Before \| After panels. Before: source with the selected faces outlined. After: replaced carriers orange, trimmed faces teal, generated faces violet, with V vs closed form, F/E/V and N gates in the caption. The 8 refusals show their reason | — |
 | `BlendGallery/*.png` | 27 Before \| After panels. Before: source and selection. After: blend faces teal, corner spheres gold, spines cyan, contact rails green, with ΔV vs closed form, carriers and N gates in the caption. The 5 refusals show their reason | — |
 
 Reproduce (from the repository root):
@@ -62,7 +75,10 @@ Experimental/SolidArcRemastered/build/ContainmentValidation > Exhibits/SolidArcR
 Experimental/SolidArcRemastered/build/BooleanValidation --detail > Exhibits/SolidArcRemastered/BooleanValidation.md
 Experimental/SolidArcRemastered/build/TessellationValidation > Exhibits/SolidArcRemastered/TessellationValidation.md
 Experimental/SolidArcRemastered/build/BlendValidation > Exhibits/SolidArcRemastered/BlendValidation.md
+Experimental/SolidArcRemastered/build/FaceOperationValidation > Exhibits/SolidArcRemastered/FaceOperationValidation.md
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # BlendGallery (needs Pillow + numpy)
+python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceOperation   # FaceOperationGallery
+# single specimen or prefix: FaceOperationValidation --only Push   (Scale selects E9)
 # single specimen or prefix: BlendValidation --only Rounded   (Scale selects B10)
 # single row or section: TessellationValidation --only RandomSpheres  (also Scale, Regressions, …)
 # single scene or family: BooleanValidation --only SphereLens
@@ -119,6 +135,27 @@ python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # Blend
 | Quadrature fix, first draft | A relative-only criterion never terminates on rounding-noise integrands; a *per-face* floor fails on a plane through the origin, whose flux density is identically 0 | The floor is shell-level, not per face. `PanelLimit` is 64 |
 | B3 G1, first run | The measured angle bottomed out at 2.1e-8 rad: `acos(dot)` cannot resolve angles below √(2ε). The meter was wrong, not the surfaces | `atan2(\|a × b\|, a · b)`: worst 3.6e-15 rad |
 | Gallery render (RoundedBlock) | Spines and contact rails were drawn from the *untrimmed* sheet curves and overshot every corner by the setback | The encoder emits the result's real contact edges (blend face ∩ support) and traces the spine alongside them |
+
+🐞 Defects the gates found and fixed during step 6:
+
+| Found by | Defect | Fix |
+|---|---|---|
+| E7, `RotateCanSteep` | Rotating the Can top by 60° made the tilted plane dip below the base; every edge still solved, intervals stayed positive and the audit was sound, so a self-intersecting body was returned | `DetectSelfClash`: every edge against every face that does not use it. A crossing inside the face, or on its boundary away from the edge's own vertices (edge–edge contact), refuses the change |
+| E5, first run | 2 994 of 7 001 probes wrong, on curved bodies only. The probe started from triangle centroids, which sit inside the true surface by the chord sag (> ε). The meter was wrong, not the bodies | Probe from the chart centroid evaluated on the true carrier, along the true outward normal; 40 probes per body (347 s → 120 s) |
+| Viewer / gallery, open sheets | Tessellation gates N1 and N4 failed on every sheet: the laminar rim sides are legitimately single and an open body encloses no volume | `TessellationAuditReport.LaminarSides`; N1 allows exactly those, N4 is n/a for open bodies |
+| `ExtrudeCurved` refusal text | A cylinder's own seam edge was counted as "two selected faces share an edge" | Planarity is checked first; shared edges count distinct faces |
+
+📝 `TessellationValidation.md` was refreshed. Rows, bodies and verdicts are unchanged, but triangle counts in the three random-Boolean rows and one digest differ from the old file. A scratch build of the previous commit reproduces today's numbers exactly, so the old file was stale from an earlier step; step 6 did not change it.
+
+🚧 Plan-gate gaps (step 6): these cases are refused cleanly, with the source intact:
+
+| Case | Today | Planned |
+|---|---|---|
+| Self-intersection removal | Detected and refused | Trim / repair / extend (Parasolid), or an offset solid + regularised Boolean (§ J fallback) |
+| Topology change during a face change | An edge that would run backwards is refused | Edge collapse and face split (local Boolean) |
+| Joint extrusion, curved extrusion | Refused | Shared side faces; a ruled side ring on curved boundaries |
+| Thicken outward or both ways, closed sheets | Inward only; open sheets only | Two-sided skins, closed sheets via hollow |
+| Blends across a changed face | Not re-made | Re-run `BlendEdges` on the history of blend faces (§ K step 3) |
 
 🚧 Plan-gate gaps (step 5): these cases are refused cleanly, with a 🚧 reason and the source intact. They are not built yet:
 

@@ -67,6 +67,13 @@ TessellationAuditReport AuditTessellation(const ModelPartition& Partition, BodyT
         if (From < To || Back == 0) Undirected += 1;
         if (Count != 1 || Back != 1) Report.UnpairedSides += (From < To || Back == 0) ? 1 : 0;
     }
+    // 📝 A sheet's rim edge has one fin, so each of its sample pairs is used by exactly one triangle — the only sides a
+    //    sheet may leave unpaired.
+    for (const PolygonComplexEdge& Edge : Complex.Edges)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge.Edge);
+        if (Partition.Fins.Resolve(Profile.RadialFin).RadialSuccessor == Profile.RadialFin) Report.LaminarSides += static_cast<int64_t>(Edge.Vertices.size()) - 1;
+    }
     for (char Flag : Referenced) Report.Vertices += Flag;
     Report.UnusedVertices = static_cast<int>(Complex.Positions.size()) - Report.Vertices;
     Report.EulerComplex   = Report.Vertices - static_cast<int>(Undirected) + Report.Triangles;
@@ -174,7 +181,8 @@ TessellationAuditReport AuditTessellation(const ModelPartition& Partition, BodyT
             const int  AgainstCount = Against == Directed.end() ? 0 : Against->second;
             // A Forward fin's face lies left of the edge, so its triangle traverses the side against τ… or along it,
             // depending on the face sense — only the pairing (one use per fin, opposite directions) is invariant.
-            if (AlongCount + AgainstCount != Forward + Backward || AlongCount != AgainstCount) Report.MissingEdgeSides += 1;
+            // A laminar (sheet boundary) edge has one fin and one triangle side.
+            if (AlongCount + AgainstCount != Forward + Backward || (Forward + Backward == 2 && AlongCount != AgainstCount)) Report.MissingEdgeSides += 1;
         }
     }
     return Report;

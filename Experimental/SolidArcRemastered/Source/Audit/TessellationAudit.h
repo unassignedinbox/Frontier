@@ -21,6 +21,7 @@ struct TessellationAuditReport
 {
     // ---- N1 closure and topology
     int64_t UnpairedSides    = 0;                                                            // [-]    - Undirected sides not used once in each direction
+    int64_t LaminarSides     = 0;                                                            // [-]    - Sample pairs on laminar (sheet rim) edges — allowed unpaired
     int     EulerComplex     = 0;                                                            // [-]    - V − E + F of the complex
     int     EulerBrep        = 0;                                                            // [-]    - V − E + F − (L − F) of the body
     int     UnusedVertices   = 0;                                                            // [-]    - Positions no triangle references

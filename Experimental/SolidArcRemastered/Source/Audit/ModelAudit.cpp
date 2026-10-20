@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 
 namespace Frontier::SolidArcRemastered
@@ -163,8 +164,11 @@ AuditReport AuditBody(const ModelPartition& Partition, BodyToken Body, AuditScop
         });
     }
 
-    // ---- T3 edge uses: a solid edge has exactly two fins, of opposite sense, in one shell.
-    const size_t UseCheck = Ledger.Open("T3", "Each edge has two opposite fins in one shell");
+    // ---- T3 edge uses: a solid edge has exactly two fins, of opposite sense, in one shell; a sheet edge may instead be
+    //      laminar (a one-fin ring on the sheet boundary).
+    const bool   SheetCondition = Partition.Bodies.Resolve(Body).Category == BodyCategory::Sheet;
+    const size_t UseCheck       = Ledger.Open("T3", SheetCondition ? "Each edge has two opposite fins in one shell, or one (laminar)" : "Each edge has two opposite fins in one shell");
+    std::vector<EdgeToken> LaminarEdges;
     std::map<uint32_t, int> InventoryUse;                                                    // [-] - Fin count per edge slot
     for (FinToken Fin : Inventory.Fins) InventoryUse[Partition.Fins.Resolve(Fin).Edge.Slot] += 1;
     for (EdgeToken Edge : Inventory.Edges)
@@ -173,6 +177,12 @@ AuditReport AuditBody(const ModelPartition& Partition, BodyToken Body, AuditScop
         const FinToken First  = Partition.Edges.Resolve(Edge).RadialFin;                     // [-] - Ring entry
         if (!Partition.Fins.Authenticate(First)) { Ledger.Fail(UseCheck, LabelToken("E", Edge), "stale radial fin"); continue; }
         const FinToken Second = Partition.Fins.Resolve(First).RadialSuccessor;               // [-] - Ring mate
+        if (SheetCondition && Second == First && InventoryUse[Edge.Slot] == 1)
+        {
+            if (!(Partition.Fins.Resolve(First).Edge == Edge)) Ledger.Fail(UseCheck, LabelToken("E", Edge), "ring fin names another edge");
+            LaminarEdges.push_back(Edge);
+            continue;
+        }
         if (!Partition.Fins.Authenticate(Second) || !(Partition.Fins.Resolve(Second).RadialSuccessor == First) || First == Second)
         {
             Ledger.Fail(UseCheck, LabelToken("E", Edge), "radial ring is not a two-fin ring");
@@ -188,11 +198,21 @@ AuditReport AuditBody(const ModelPartition& Partition, BodyToken Body, AuditScop
         if (!(FirstShell == SecondShell)) Ledger.Fail(UseCheck, LabelToken("E", Edge), "fins lie in different shells");
     }
 
-    // ---- T4 Euler–Poincaré: V − E + 2F − L = 2(S − G) must give an integral, non-negative genus.
+    // ---- T4 Euler–Poincaré: V − E + 2F − L = 2(S − G) − B must give an integral, non-negative genus (B = boundary
+    //      cycles of laminar edges, 0 for a solid).
     const size_t EulerCheck = Ledger.Open("T4", "Euler-Poincare gives an integral genus >= 0");
     Ledger.Examine(EulerCheck);
+    std::map<uint32_t, uint32_t> BoundaryRoot;                                               // [-] - Union-find over laminar vertices
+    const std::function<uint32_t(uint32_t)> FindRoot = [&](uint32_t Slot) { return BoundaryRoot[Slot] == Slot ? Slot : BoundaryRoot[Slot] = FindRoot(BoundaryRoot[Slot]); };
+    for (EdgeToken Edge : LaminarEdges)
+    {
+        for (VertexToken Vertex : { Partition.Edges.Resolve(Edge).Start, Partition.Edges.Resolve(Edge).End }) BoundaryRoot.try_emplace(Vertex.Slot, Vertex.Slot);
+        BoundaryRoot[FindRoot(Partition.Edges.Resolve(Edge).Start.Slot)] = FindRoot(Partition.Edges.Resolve(Edge).End.Slot);
+    }
+    long BoundaryCycles = 0;                                                                 // [-] - B
+    for (const auto& [Slot, Root] : BoundaryRoot) BoundaryCycles += FindRoot(Slot) == Slot;
     const long Characteristic = static_cast<long>(Inventory.Vertices.size()) - static_cast<long>(Inventory.Edges.size()) +
-                                2L * static_cast<long>(Inventory.Faces.size()) - static_cast<long>(Inventory.Loops.size());
+                                2L * static_cast<long>(Inventory.Faces.size()) - static_cast<long>(Inventory.Loops.size()) + BoundaryCycles;
     const long ShellCount = static_cast<long>(Inventory.Shells.size());                      // [-] - S
     if (Characteristic % 2 != 0 || ShellCount - Characteristic / 2 < 0)
     {

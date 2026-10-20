@@ -9,6 +9,7 @@
 #include "Boolean/BooleanCatalogue.h"
 #include "Inspection/IntersectionCatalogue.h"
 #include "Inspection/JsonWriter.h"
+#include "Local/FaceOperationCatalogue.h"
 #include "Topology/ModelPartition.h"
 
 #include <algorithm>
@@ -401,6 +402,21 @@ std::string EncodeCatalogue()
         Writer.String("Description", Defaults.Description);
         Writer.OpenObject("Parameters");
         Writer.Number("Size", Defaults.Settings.Size);
+        Writer.Number("Source", 0.0);
+        Writer.CloseObject();
+        Writer.CloseObject();
+    }
+    for (const std::string& Name : EnumerateFaceOperationSpecimens())
+    {
+        ModelPartition              Scratch;
+        const FaceOperationSpecimen Defaults = ConstructFaceOperationSpecimen(Scratch, Name);
+        Writer.OpenObject();
+        Writer.String("Name", Name);
+        Writer.String("Kind", "FaceOperation");
+        Writer.String("Family", Defaults.Family);
+        Writer.String("Description", Defaults.Description);
+        Writer.OpenObject("Parameters");
+        Writer.Number("Amount", 1.0);
         Writer.Number("Source", 0.0);
         Writer.CloseObject();
         Writer.CloseObject();

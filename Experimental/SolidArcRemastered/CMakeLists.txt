@@ -47,6 +47,10 @@ add_library(SolidArcRemastered STATIC
     Source/Blend/RollingBallGeometry.cpp
     Source/Blend/EdgeBlend.cpp
     Source/Blend/BlendCatalogue.cpp
+    Source/Local/FaceChange.cpp
+    Source/Local/FaceOperations.cpp
+    Source/Local/TopologyRebuild.cpp
+    Source/Local/FaceOperationCatalogue.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
     Source/Audit/ModelAudit.cpp
@@ -55,6 +59,7 @@ add_library(SolidArcRemastered STATIC
     Source/Inspection/SpecimenCatalogue.cpp
     Source/Inspection/InspectionEncoding.cpp
     Source/Inspection/BooleanEncoding.cpp
+    Source/Inspection/FaceOperationEncoding.cpp
     Source/Inspection/IntersectionCatalogue.cpp
     Source/Inspection/IntersectionEncoding.cpp
     Source/Inspection/TessellationEncoding.cpp
@@ -89,6 +94,9 @@ target_link_libraries(TessellationValidation PRIVATE SolidArcRemastered)
 add_executable(BlendValidation Validation/BlendValidation.cpp)
 target_link_libraries(BlendValidation PRIVATE SolidArcRemastered)
 
+add_executable(FaceOperationValidation Validation/FaceOperationValidation.cpp)
+target_link_libraries(FaceOperationValidation PRIVATE SolidArcRemastered)
+
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
 add_test(NAME PredicateValidation COMMAND PredicateValidation)
@@ -97,3 +105,4 @@ add_test(NAME ContainmentValidation COMMAND ContainmentValidation)
 add_test(NAME BooleanValidation COMMAND BooleanValidation)
 add_test(NAME TessellationValidation COMMAND TessellationValidation)
 add_test(NAME BlendValidation COMMAND BlendValidation)
+add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)

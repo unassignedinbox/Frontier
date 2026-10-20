@@ -25,7 +25,9 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     AssemblyOutcome Outcome;
     if (Blueprint.Faces.empty()) { Outcome.Refusal = Label + ": empty result"; return Outcome; }
 
-    // ① Manifold check: every used edge is used exactly twice, in opposite directions.
+    // ① Manifold check: every used edge is used exactly twice, in opposite directions (a sheet also allows one use: a
+    //    laminar edge on its boundary).
+    const bool SheetCondition = Blueprint.Category == BodyCategory::Sheet;
     std::vector<int> UseCount(Blueprint.Edges.size(), 0), Balance(Blueprint.Edges.size(), 0);
     for (const BlueprintFace& Face : Blueprint.Faces)
     {
@@ -45,7 +47,8 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     }
     for (size_t Edge = 0; Edge < Blueprint.Edges.size(); ++Edge)
     {
-        if (UseCount[Edge] != 0 && (UseCount[Edge] != 2 || Balance[Edge] != 0))
+        const bool Laminar = SheetCondition && UseCount[Edge] == 1;
+        if (UseCount[Edge] != 0 && !Laminar && (UseCount[Edge] != 2 || Balance[Edge] != 0))
         {
             Outcome.Refusal = Label + ": non-manifold or open result (pave block " + std::to_string(Edge) + " used " + std::to_string(UseCount[Edge]) + " times)";
             return Outcome;
@@ -71,7 +74,7 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     }
 
     // ③ Records: body, vertices, edges (carrier copies), shells, faces, loops, fins — issued on first use.
-    const BodyToken   Body     = Partition.Bodies.Issue({ BodyCategory::Solid, {} });
+    const BodyToken   Body     = Partition.Bodies.Issue({ Blueprint.Category, {} });
     const RegionToken Exterior = Partition.Regions.Issue({ Body, RegionMaterial::Void, {} });
     std::map<int, VertexToken> Vertices;
     Outcome.Edges.assign(Blueprint.Edges.size(), EdgeToken{});
@@ -117,7 +120,11 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
                 const EdgeToken Edge = IssueEdge(Use.Edge);
                 const FinToken  Fin  = Partition.Fins.Issue({ Loop, Edge, Use.Sense, {}, {}, {}, Use.SurfaceCurve });
                 EdgeProfile& EdgeRecord = Partition.Edges.Resolve(Edge);
-                if (!EdgeRecord.RadialFin.PresentCondition()) EdgeRecord.RadialFin = Fin;
+                if (!EdgeRecord.RadialFin.PresentCondition())
+                {
+                    EdgeRecord.RadialFin                        = Fin;
+                    Partition.Fins.Resolve(Fin).RadialSuccessor = Fin;                       // One-fin ring until a mate arrives
+                }
                 else
                 {
                     Partition.Fins.Resolve(Fin).RadialSuccessor                 = EdgeRecord.RadialFin;
@@ -134,7 +141,18 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
         }
     }
 
-    // ④ Regions: outer shells (positive volume) → solid regions; cavities → the smallest solid region containing them.
+    // ④ Regions: a sheet's shells bound no volume and live in the exterior void (Parasolid sheet bodies).
+    if (SheetCondition)
+    {
+        Partition.Regions.Resolve(Exterior).Shells = ShellOrder;
+        for (SolidShellToken SolidShell : ShellOrder) Partition.Shells.Resolve(SolidShell).Region = Exterior;
+        Partition.Bodies.Resolve(Body).Regions = { Exterior };
+        Outcome.Body   = Body;
+        Outcome.Shells = static_cast<int>(ShellOrder.size());
+        return Outcome;
+    }
+
+    //    Solid: outer shells (positive volume) → solid regions; cavities → the smallest solid region containing them.
     std::vector<SolidShellToken> OuterShells, CavityShells;
     for (SolidShellToken SolidShell : ShellOrder) (IntegrateShellVolume(Partition, SolidShell) > 0.0 ? OuterShells : CavityShells).push_back(SolidShell);
     std::vector<RegionToken> Regions = { Exterior };

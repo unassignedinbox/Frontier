@@ -79,8 +79,10 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
     <label class="Toggle"><input type="checkbox" id="ShowLabels"> Token labels</label>
     <label class="Toggle"><input type="checkbox" id="ShowGhosts" checked> Boolean argument ghosts (A / B)</label>
     <label class="Toggle"><input type="checkbox" id="ShowBlendGuides" checked> Blend guides (selection · spine · contacts)</label>
+    <label class="Toggle"><input type="checkbox" id="ShowFaceGuides" checked> Face-operation guides (selected faces before)</label>
     <div class="Legend" id="BooleanLegend" style="display:none"><span><i style="background:#5aa9ff"></i>from A</span><span><i style="background:#ff9f43"></i>from B</span><span><i style="background:#7fe0a0"></i>section edge</span><span><i style="background:repeating-linear-gradient(90deg,#8a93a3 0 3px,transparent 3px 6px)"></i>argument ghost</span></div>
     <div class="Legend" id="BlendLegend" style="display:none"><span><i style="background:#ffb347"></i>selected edge</span><span><i style="background:#56d4e0"></i>spine (ball centre)</span><span><i style="background:#7fe0a0"></i>contact</span><span><i style="background:#3fb8a8"></i>blend face</span><span><i style="background:#e0b840"></i>corner face</span></div>
+    <div class="Legend" id="FaceOperationLegend" style="display:none"><span><i style="background:repeating-linear-gradient(90deg,#ffb347 0 4px,transparent 4px 7px)"></i>selected face (before)</span><span><i style="background:hsl(28,62%,50%)"></i>replaced</span><span><i style="background:hsl(172,62%,50%)"></i>trimmed</span><span><i style="background:hsl(290,62%,55%)"></i>generated</span><span><i style="background:hsl(215,14%,50%)"></i>unchanged</span></div>
     <h3>Winding-number slice (H)</h3>
     <label class="Toggle"><input type="checkbox" id="ShowSlice"> Classify a plane through the body</label>
     <div class="Parameter"><span>Axis</span><select id="SliceAxis"><option value="0">x</option><option value="1">y</option><option value="2" selected>z</option></select></div>
@@ -100,8 +102,9 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
     <button data-validation="IntersectionValidation" style="margin-top:4px">Run IntersectionValidation</button>
     <button data-validation="ContainmentValidation" style="margin-top:4px">Run ContainmentValidation (~1.5 min)</button>
     <button data-validation="BooleanValidation" style="margin-top:4px">Run BooleanValidation (~3 min)</button>
-    <button data-validation="TessellationValidation" style="margin-top:4px">Run TessellationValidation (~2.5 min)</button>
+    <button data-validation="TessellationValidation" style="margin-top:4px">Run TessellationValidation (~20 s)</button>
     <button data-validation="BlendValidation" style="margin-top:4px">Run BlendValidation (~25 s)</button>
+    <button data-validation="FaceOperationValidation" style="margin-top:4px">Run FaceOperationValidation (~2 min)</button>
     <div class="Description" style="margin-top:10px">Drag: orbit · Shift/right-drag: pan · Wheel: zoom · Hover tree rows or edges to highlight by Token · Click a finding to locate its subject.</div>
 </div>
 
@@ -134,6 +137,12 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
             <table id="SheetTable"></table>
             <h3>Face provenance</h3>
             <table id="ProvenanceTable"></table>
+        </div>
+        <div id="FaceOperationPanel" style="display:none">
+            <h3>Face operation (K: new carriers → re-intersect → audit)</h3>
+            <table id="FaceOperationTable"></table>
+            <h3>Face provenance</h3>
+            <table id="FaceProvenanceTable"></table>
         </div>
         <div id="TessellationPanel" style="display:none">
             <h3>Tessellation gates (N1–N7)</h3>
@@ -175,6 +184,7 @@ const Viewer  =
     FaceHistories: {},                                   // Boolean result face token → { Argument, Source, State, Flipped }
     EdgeOrigins : {},                                    // Boolean result edge token → "A" | "B" | "Section"
     BlendOrigins: {},                                    // Blend result face token → { Origin, Source, Surface }
+    FaceOrigins : {},                                    // Face-operation result face token → { Origin, Source, Surface }
     Slice       : null,                                  // Last winding-number slice answer
     SliceSerial : 0,                                     // Drops out-of-order slice answers
     Tessellation: null,                                  // Last PolygonComplex answer (+ derived normals and angles)
@@ -249,6 +259,7 @@ function Render()
     const WholeBody = Active && (IntersectionKind ? Active === "Scene" : /^(B|R|S)\d/.test(Active));   // Body / region / shell lights everything
     const BooleanKind = Inspection.Kind === "Boolean";
     const BlendKind = Inspection.Kind === "Blend";
+    const FaceKind  = Inspection.Kind === "FaceOperation";
     const DrawPolyline = (Polyline) =>
     {
         Context.beginPath();
@@ -280,8 +291,9 @@ function Render()
             const Lit = WholeBody || HighlightCondition(Face.Token);
             const History = Viewer.FaceHistories[Face.Token];
             const Origin = BlendKind ? Viewer.BlendOrigins[Face.Token] : null;
+            const Change = FaceKind ? Viewer.FaceOrigins[Face.Token] : null;
             const Hue = BooleanKind && History ? (History.Argument === "A" ? 205 : 28) + (FaceIndex * 11) % 24   // A blue, B orange
-                      : Origin ? BlendOriginHue(Origin.Origin) : FaceHue(FaceIndex);
+                      : Origin ? BlendOriginHue(Origin.Origin) : Change ? FaceChangeHue(Change.Origin) : FaceHue(FaceIndex);
             Context.strokeStyle = `hsla(${Hue}, 70%, ${Lit ? 70 : 55}%, ${Lit ? 0.85 : (BooleanKind ? 0.36 : 0.28)})`;
             Context.lineWidth = Lit ? 1.4 : 1;
             for (const Line of Face.Hatch)
@@ -316,6 +328,14 @@ function Render()
         Inspection.Blend.Sheets.forEach(Sheet => Sheet.SpinePolylines.forEach(DrawPolyline));
         Context.setLineDash([]); Context.lineWidth = 1.2; Context.strokeStyle = "rgba(127, 224, 160, 0.8)";
         Inspection.Blend.Sheets.forEach(Sheet => Sheet.Contacts.forEach(Contact => DrawPolyline(Contact.Polyline)));
+    }
+
+    // ---- Face-operation guides: outlines of the selected source faces (amber, dashed) — the "before" ghost
+    if (FaceKind && Display("ShowFaceGuides"))
+    {
+        Context.lineWidth = 2; Context.setLineDash([6, 4]); Context.strokeStyle = "rgba(255, 179, 71, 0.9)";
+        Inspection.FaceOperation.Selection.forEach(Selected => Selected.Outline.forEach(DrawPolyline));
+        Context.setLineDash([]);
     }
 
     // ---- Normals
@@ -491,7 +511,10 @@ function RenderReport(Inspection)
     document.getElementById("BooleanLegend").style.display = Inspection.Kind === "Boolean" ? "" : "none";
     document.getElementById("BlendPanel").style.display = Inspection.Kind === "Blend" ? "" : "none";
     document.getElementById("BlendLegend").style.display = Inspection.Kind === "Blend" ? "" : "none";
+    document.getElementById("FaceOperationPanel").style.display = Inspection.Kind === "FaceOperation" ? "" : "none";
+    document.getElementById("FaceOperationLegend").style.display = Inspection.Kind === "FaceOperation" ? "" : "none";
     if (Inspection.Kind === "Blend") { RenderBlendReport(Inspection); return; }
+    if (Inspection.Kind === "FaceOperation") { RenderFaceOperationReport(Inspection); return; }
     if (Inspection.Kind === "Intersection") { RenderIntersectionReport(Inspection); return; }
     if (Inspection.Kind === "Boolean") { RenderBooleanReport(Inspection); return; }
     document.getElementById("MetricHeading").textContent = "Volume and timing";
@@ -652,6 +675,46 @@ function RenderBlendReport(Inspection)
         (Blend.Refusal ? (Blend.RefusalExpected ? "refused, as expected" : "refused") : `${Inspection.Audit.Sound ? "audit sound" : "audit findings"} · ΔV error ${Summary.DeltaError != null ? Summary.DeltaError.toExponential(1) : "—"}`);
 }
 
+// Replaced faces orange, trimmed teal, generated violet, unchanged slate (low saturation).
+function FaceChangeHue(Origin) { return Origin === "Replaced" ? 28 : Origin === "Trimmed" ? 172 : Origin === "Generated" ? 290 : 215; }
+
+function RenderFaceOperationReport(Inspection)
+{
+    const Summary = Inspection.Summary, Operation = Inspection.FaceOperation, Statistics = Operation.Statistics;
+    document.getElementById("MetricHeading").textContent = "Volume and timing";
+    document.getElementById("CountTable").innerHTML = "<tr><th></th><th>Quantity</th><th class=Number>Measured</th><th class=Number>Expected</th></tr>" +
+        Summary.Counts.map(Count => `<tr><td>${Count.Expected == null ? "" : Verdict(Count.Measured === Count.Expected)}</td><td>${Count.Name}</td><td class=Number>${Count.Measured}</td><td class=Number>${Count.Expected ?? "—"}</td></tr>`).join("") +
+        `<tr><td></td><td>Fins · Regions · category</td><td class=Number>${Summary.Fins} · ${Summary.Regions} · ${Summary.Category}</td><td class=Number>—</td></tr>`;
+    const VolumePassed = Summary.VolumeError != null && Summary.VolumeError <= Summary.VolumeAllowance;
+    const ShownLabel   = Operation.Shown ? "after" : Operation.Refusal ? "before (refused)" : "before (Source = 1)";
+    document.getElementById("VolumeTable").innerHTML = "<tr><th></th><th>Metric</th><th class=Number>Value</th><th class=Number>Expected / allowed</th></tr>" +
+        `<tr><td></td><td>V before</td><td class=Number>${Summary.SourceVolume.toPrecision(12)}</td><td></td></tr>` +
+        `<tr><td>${Summary.VolumeError != null ? Verdict(VolumePassed) : ""}</td><td>V shown (${ShownLabel})</td><td class=Number>${Summary.Volume != null ? Summary.Volume.toPrecision(12) : "— (open sheet)"}</td><td class=Number>${Summary.ExpectedVolume != null ? Summary.ExpectedVolume.toPrecision(12) : (Operation.Shown && Inspection.Parameters.Amount !== 1 ? "— (Amount ≠ 1)" : "—")}</td></tr>` +
+        (Summary.VolumeError != null ? `<tr><td></td><td>|V − V*|</td><td class=Number>${Summary.VolumeError.toExponential(2)}</td><td class=Number>${Summary.VolumeAllowance.toExponential(1)}</td></tr>` : "") +
+        `<tr><td></td><td>Operation · construction · audit</td><td class=Number colspan=2>${Milliseconds(Statistics.Milliseconds)} · ${Milliseconds(Summary.ConstructionMilliseconds)} · ${Milliseconds(Summary.AuditMilliseconds)}</td></tr>`;
+    const Edges = Statistics.EdgeCategories.filter(Entry => Entry.Count > 0).map(Entry => `${Entry.Count} ${Entry.Name.toLowerCase()}`).join(" · ") || "—";
+    document.getElementById("FaceOperationTable").innerHTML =
+        (Operation.Refusal ? `<tr><td>${Operation.RefusalExpected ? "🟢 refused, as expected" : "⚠️ refused"}</td><td colspan=2>${Escape(Operation.Refusal)}</td></tr>` : "") +
+        Operation.Steps.map((Step, Index) => `<tr><td>Step ${Index + 1}${Index < Operation.CompletedSteps ? "" : Operation.Refusal && Index === Operation.CompletedSteps ? " 🔴" : ""}</td><td colspan=2>${Escape(Step)}</td></tr>`).join("") +
+        (Operation.Corpus ? `<tr><td>Corpus row · old kernel</td><td colspan=2><code>${Escape(Operation.Corpus)}</code> · ${Escape(Operation.LegacyStatus)}</td></tr>` : "") +
+        `<tr><td>Method</td><td colspan=2>${Escape(Operation.Method || "—")}</td></tr>` +
+        `<tr><td>Carriers replaced · vertices re-solved</td><td class=Number colspan=2>${Statistics.ReplacedFaces} · ${Statistics.MovedVertices}</td></tr>` +
+        `<tr><td>Edges</td><td class=Number colspan=2>${Edges} (${Statistics.EllipticalEdges} elliptical)</td></tr>` +
+        `<tr><td>Max vertex · edge residual</td><td class=Number colspan=2>${Statistics.MaxVertexResidual.toExponential(1)} · ${Statistics.MaxEdgeResidual.toExponential(1)}</td></tr>`;
+    document.getElementById("FaceProvenanceTable").innerHTML = Operation.FaceOrigins.length === 0 ? "<tr><td>— source body shown</td></tr>" :
+        "<tr><th>Face</th><th>Origin</th><th>From</th><th>Surface</th></tr>" +
+        Operation.FaceOrigins.map(Entry => `<tr data-token="${Entry.Face}"><td>${Entry.Face}</td><td><i class=Swatch style="background:hsl(${FaceChangeHue(Entry.Origin)}, ${Entry.Origin === "Unchanged" ? 14 : 62}%, 50%)"></i> ${Entry.Origin}</td><td>${Entry.Source}</td><td>${Entry.Surface}</td></tr>`).join("");
+    document.querySelectorAll("#FaceProvenanceTable tr[data-token]").forEach(Row =>
+    {
+        Row.addEventListener("mouseenter", () => { Viewer.Highlight = Row.dataset.token; Render(); });
+        Row.addEventListener("mouseleave", () => { Viewer.Highlight = null; Render(); });
+    });
+    RenderAuditAndTree(Inspection);
+    const Passed = Operation.Refusal ? Operation.RefusalExpected : Inspection.Audit.Sound && (Summary.VolumeError == null || VolumePassed);
+    document.getElementById("Headline").textContent = `${Passed ? "🟢" : "🔴"} ${Inspection.Specimen} · ${Operation.Steps.join(" → ")} · ` +
+        (Operation.Refusal ? (Operation.RefusalExpected ? "refused, as expected" : "refused") : `${Inspection.Audit.Sound ? "audit sound" : "audit findings"} · V error ${Summary.VolumeError != null ? Summary.VolumeError.toExponential(1) : "—"}`);
+}
+
 function RenderAuditAndTree(Inspection)
 {
     document.getElementById("AuditTable").innerHTML = "<tr><th></th><th>Check</th><th class=Number>Examined</th><th class=Number>Failed</th></tr>" +
@@ -704,6 +767,23 @@ function RenderParameters(Descriptor, Values)
                          `<input type=hidden data-key="Operation" value="${Current}">`;
         List.querySelectorAll("#OperationSelector button").forEach(Button => Button.addEventListener("click", () => SelectOperation(Number(Button.dataset.operation))));
         document.getElementById("SpecimenDescription").textContent = Descriptor.Description;
+        return;
+    }
+    if (Descriptor.Kind === "FaceOperation")
+    {
+        const Amount = Values && "Amount" in Values ? Values.Amount : Descriptor.Parameters.Amount;
+        const Source = Values && "Source" in Values ? Number(Values.Source) : 0;
+        List.innerHTML = `<label class=Parameter><span>Amount (× last step)</span><input type=number step=0.1 min=-4 max=4 data-key="Amount" value="${Amount}"></label>` +
+                         `<div class=Segmented id=FaceStateSelector>${["After", "Before"].map((Label, Index) => `<button data-source="${Index}" class="${Index === Source ? "Active" : ""}">${Label}</button>`).join("")}</div>` +
+                         `<input type=hidden data-key="Source" value="${Source}">`;
+        List.querySelector("input[data-key=Amount]").addEventListener("input", ScheduleRequest);
+        List.querySelectorAll("#FaceStateSelector button").forEach(Button => Button.addEventListener("click", () =>
+        {
+            List.querySelector("input[data-key=Source]").value = Button.dataset.source;
+            List.querySelectorAll("#FaceStateSelector button").forEach(Other => Other.classList.toggle("Active", Other === Button));
+            RequestSpecimen(true);
+        }));
+        document.getElementById("SpecimenDescription").textContent = `${Descriptor.Family} · ${Descriptor.Description}`;
         return;
     }
     if (Descriptor.Kind === "Blend")
@@ -766,6 +846,14 @@ async function RequestSpecimen(KeepCamera)
     {
         Refusal.style.display = "none"; Viewer.FaceHistories = {}; Viewer.EdgeOrigins = {};
         Viewer.BlendOrigins = Answer.Kind === "Blend" ? Object.fromEntries(Answer.Blend.FaceOrigins.map(Entry => [Entry.Face, Entry])) : {};
+        Viewer.FaceOrigins  = Answer.Kind === "FaceOperation" ? Object.fromEntries(Answer.FaceOperation.FaceOrigins.map(Entry => [Entry.Face, Entry])) : {};
+        if (Answer.Kind === "FaceOperation" && Answer.FaceOperation.Refusal)
+        {
+            // 📝 A refused face operation still shows the untouched source body.
+            Refusal.style.display = "block";
+            Refusal.classList.toggle("Expected", Answer.FaceOperation.RefusalExpected);
+            Refusal.textContent = Answer.FaceOperation.RefusalExpected ? `🟢 refused, as expected — ${Answer.FaceOperation.Refusal}` : `⚠️ ${Answer.Specimen} refused: ${Answer.FaceOperation.Refusal}`;
+        }
         if (Answer.Kind === "Blend" && Answer.Blend.Refusal)
         {
             // 📝 A refused blend still shows the untouched source body.
@@ -799,7 +887,7 @@ async function LoadCatalogue()
     const Selected = Select.value || new URLSearchParams(location.hash.slice(1)).get("specimen") || "Block";
     Viewer.Catalogue = Answer.Specimens;
     const Group = (Kind, Label) => `<optgroup label="${Label}">` + Answer.Specimens.filter(Specimen => (Specimen.Kind || "Model") === Kind).map(Specimen => `<option>${Specimen.Name}</option>`).join("") + "</optgroup>";
-    Select.innerHTML = Group("Model", "Models (step 1)") + Group("Intersection", "Intersections (step 2)") + Group("Boolean", "Booleans (step 3)") + Group("Blend", "Blends (step 5)");
+    Select.innerHTML = Group("Model", "Models (step 1)") + Group("Intersection", "Intersections (step 2)") + Group("Boolean", "Booleans (step 3)") + Group("Blend", "Blends (step 5)") + Group("FaceOperation", "Face operations (step 6)");
     Select.value = Viewer.Catalogue.some(Specimen => Specimen.Name === Selected) ? Selected : Viewer.Catalogue[0].Name;
     const Values = {};
     document.querySelectorAll("#ParameterList input").forEach(Input => Values[Input.dataset.key] = Input.value);

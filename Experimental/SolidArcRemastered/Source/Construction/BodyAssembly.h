@@ -60,6 +60,7 @@ struct BodyBlueprint
     std::vector<BlueprintVertex> Vertices = {};                                              // [-] - All candidate vertices
     std::vector<BlueprintEdge>   Edges    = {};                                              // [-] - All candidate edges
     std::vector<BlueprintFace>   Faces    = {};                                              // [-] - Faces of the body
+    BodyCategory                 Category = BodyCategory::Solid;                             // [-] - Solid, or Sheet (laminar edges allowed)
 };
 
 struct AssemblyOutcome

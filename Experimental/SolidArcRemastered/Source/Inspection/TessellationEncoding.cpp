@@ -20,7 +20,7 @@ namespace Frontier::SolidArcRemastered
 
 namespace
 {
-    void WriteGate(JsonWriter& Writer, const char* Name, const std::string& Measured, const char* Allowance, bool Passed)
+    void WriteGate(JsonWriter& Writer, const char* Name, const std::string& Measured, const std::string& Allowance, bool Passed)
     {
         Writer.OpenObject();
         Writer.String("Name", Name);
@@ -111,17 +111,20 @@ std::string EncodeTessellation(const ModelPartition& Partition, const std::strin
         Folded   += Face.FoldedResidual;
         Delaunay += Face.DelaunayViolations;
     }
-    const double VolumeRatio = Outcome.Sag > 0.0 && Report.ComplexArea > 0.0 ? std::fabs(Report.ComplexVolume - Report.ExactVolume) / (Outcome.Sag * Report.ComplexArea) : 0.0;
+    // 💡 Open sheets: the laminar rim sides are the allowed unpaired sides and an enclosed volume does not exist (N4 n/a).
+    const bool   Open        = Report.LaminarSides > 0;
+    const double VolumeRatio = !Open && Outcome.Sag > 0.0 && Report.ComplexArea > 0.0 ? std::fabs(Report.ComplexVolume - Report.ExactVolume) / (Outcome.Sag * Report.ComplexArea) : 0.0;
     const bool   Refused     = !Outcome.Refusal.empty();
     Writer.OpenArray("Gates");
-    WriteGate(Writer, "N1 closure: unpaired sides · χ complex / B-rep · unused vertices",
+    WriteGate(Writer, Open ? "N1 closure: unpaired sides (laminar rim) · χ complex / B-rep · unused vertices" : "N1 closure: unpaired sides · χ complex / B-rep · unused vertices",
               Format("%.0f · %.0f / %.0f", static_cast<double>(Report.UnpairedSides), Report.EulerComplex, Report.EulerBrep) + Format(" · %.0f", Report.UnusedVertices),
-              "0 · equal · 0", !Refused && Report.UnpairedSides == 0 && Report.EulerComplex == Report.EulerBrep && Report.UnusedVertices == 0);
+              Open ? Format("%.0f · equal · 0", static_cast<double>(Report.LaminarSides)) : std::string("0 · equal · 0"),
+              !Refused && Report.UnpairedSides == Report.LaminarSides && Report.EulerComplex == Report.EulerBrep && Report.UnusedVertices == 0);
     WriteGate(Writer, "N2 peak deviation / ε (7 samples per triangle)", Format("%.3f", Outcome.Sag > 0.0 ? Report.PeakDeviation / Outcome.Sag : 0.0), "≤ 1",
               !Refused && Report.PeakDeviation <= Outcome.Sag);
     WriteGate(Writer, "N3 inverted · zero-area · folded", Format("%.0f · %.0f · %.0f", static_cast<double>(Report.Inverted), static_cast<double>(Report.Degenerate),
               static_cast<double>(Folded)), "0 · 0 · 0", !Refused && Report.Inverted == 0 && Report.Degenerate == 0 && Folded == 0);
-    WriteGate(Writer, "N4 |V_complex − V_B-rep| / (ε·A)", Format("%.3f", VolumeRatio), "≤ 1", !Refused && VolumeRatio <= 1.0);
+    WriteGate(Writer, "N4 |V_complex − V_B-rep| / (ε·A)", Open ? std::string("— (open sheet)") : Format("%.3f", VolumeRatio), Open ? "n/a" : "≤ 1", !Refused && VolumeRatio <= 1.0);
     WriteGate(Writer, "N5 Delaunay residual (chart, before final legalisation)", Format("%.0f", static_cast<double>(Delaunay)), "0",
               !Refused && Delaunay == 0);
     WriteGate(Writer, "N6 missing / edge-sample sides", Format("%.0f / %.0f", static_cast<double>(Report.MissingEdgeSides), static_cast<double>(Report.EdgeSides)), "0",

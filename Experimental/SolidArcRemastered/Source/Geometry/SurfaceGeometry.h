@@ -41,9 +41,9 @@ struct CylinderSurface
 // 📝 P(𝑢, 𝑣) = Origin + (r₀ + 𝑣·s)·(cos 𝑢·X + sin 𝑢·Y) + 𝑣·Z; apex where r₀ + 𝑣·s = 0; 𝑢 periodic 2π.
 struct ConeSurface
 {
-    OrthonormalFrame Frame       = {};                                                       // [-]   - Axis frame
-    double           OriginRadius  = 1.0;                                                      // [len] - r₀, radius at 𝑣 = 0
-    double           RadialSlope = -1.0;                                                     // [-]   - s = dr/d𝑣
+    OrthonormalFrame Frame        = {};                                                      // [-]   - Axis frame
+    double           OriginRadius = 1.0;                                                     // [len] - r₀, radius at 𝑣 = 0
+    double           RadialSlope  = -1.0;                                                    // [-]   - s = dr/d𝑣
 };
 
 // 📝 P(𝑢, 𝑣) = Origin + r·(cos 𝑣·(cos 𝑢·X + sin 𝑢·Y) + sin 𝑣·Z); 𝑣 ∈ [−π/2, π/2]; poles at 𝑣 = ±π/2.
