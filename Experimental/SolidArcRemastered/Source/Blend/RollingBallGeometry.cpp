@@ -194,14 +194,21 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     if (Section.CoincidentCondition) return Refuse("offset supports coincide");
     double Nearest = std::numeric_limits<double>::max();                                     // [len] - Spine-to-edge distance
     bool   TracedCondition = false;                                                          // [-]   - A marched branch was seen
+    bool   ConicCondition  = false;                                                          // [-]   - An exact ellipse branch was seen
     for (const IntersectionBranch& Branch : Section.Branches)
     {
         if (Branch.Category == BranchCategory::Traced) { TracedCondition = true; continue; }
+        if (!std::holds_alternative<StraightLine>(Branch.Curve) && !std::holds_alternative<CircularArc>(Branch.Curve))
+        {
+            ConicCondition = true;                                                           // ⑤–⑥ build carriers for lines and circles only
+            continue;
+        }
         const double Gap = Distance(Position, EvaluateCurve(Branch.Curve, ProjectOntoCurve(Branch.Curve, Position, 0.0)).Position);
         if (Gap < Nearest) { Nearest = Gap; Sheet.Spine = Branch.Curve; }
     }
     if (Nearest == std::numeric_limits<double>::max())
     {
+        if (ConicCondition) return Refuse("spine is an ellipse (equal-radius crossing; elliptical rolling-ball carrier, 🚧)");
         return Refuse(TracedCondition ? "spine is not an exact line or circle (procedural rolling-ball carriers, 🚧)" : "offset supports do not meet (no spine)");
     }
 

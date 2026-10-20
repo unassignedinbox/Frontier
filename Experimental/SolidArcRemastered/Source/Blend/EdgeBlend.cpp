@@ -9,6 +9,7 @@
 #include "Containment/FaceDomain.h"
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/CurveSurfaceIntersection.h"
+#include "Local/FaceChange.h"
 
 #include <algorithm>
 #include <chrono>
@@ -759,6 +760,9 @@ BlendOutcome BlendEdges(ModelPartition& Partition, BodyToken Body, const std::ve
     }
     const int Genus = AuditBody(Partition, Body).Genus;
     if (Outcome.Audit.Genus != Genus) return Finish("genus changed from " + std::to_string(Genus) + " to " + std::to_string(Outcome.Audit.Genus));
+    // ⑥ Blends that reach each other (footprints overlapping on a shared face, tubes cutting through a neighbour) pass
+    //    the local audit but leave the body passing through itself: refuse instead of returning it.
+    if (std::string Clash = DetectSelfClash(Partition, Assembly.Body); !Clash.empty()) return Finish("neighbouring blends overlap: " + Clash);
     for (size_t Index = 0; Index < Assembly.Faces.size(); ++Index)
     {
         BlendFaceHistory History = Rebuild.Provenance[Index];

@@ -287,4 +287,14 @@ std::vector<TransformOutcome> ArrayBody(ModelPartition& Partition, BodyToken Sou
     return Copies;
 }
 
+std::vector<TransformOutcome> CircularArrayBody(ModelPartition& Partition, BodyToken Source, Vector3 AxisPoint, Vector3 AxisDirection, int Count, double Sweep)
+{
+    std::vector<TransformOutcome> Copies;
+    if (Count < 1) return Copies;
+    const double Pitch = Sweep / static_cast<double>(Count);                                 // [rad] - Angle between instances
+    for (int Instance = 1; Instance < Count; ++Instance)
+        Copies.push_back(TransformBody(Partition, Source, RotationMap(AxisPoint, AxisDirection, Pitch * static_cast<double>(Instance))));
+    return Copies;
+}
+
 } // namespace Frontier::SolidArcRemastered
