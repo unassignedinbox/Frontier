@@ -5,6 +5,8 @@
 
 #include "Intersection/ImplicitSurface.h"
 
+#include "Geometry/RollingBallCarrier.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -27,7 +29,11 @@ namespace
 
     [[nodiscard]] const OrthonormalFrame& FrameOf(const SurfaceGeometry& Surface) noexcept
     {
-        return std::visit([](const auto& Typed) -> const OrthonormalFrame& { return Typed.Frame; }, Surface);
+        return std::visit([](const auto& Typed) -> const OrthonormalFrame&
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(Typed)>, RollingBallSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // No frame: handled first
+            else return Typed.Frame;
+        }, Surface);
     }
 
     // Unit radial direction of a local point; on the axis any perpendicular direction is a valid gradient choice.
@@ -69,6 +75,11 @@ namespace
 
 SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 Position) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface))
+    {
+        const RollingBallDistance Measure = MeasureRollingBallDistance(*Carrier, Position);   // |X − C(𝑢*)| − r, exact
+        return { Measure.Distance, Measure.Normal, Measure.Foot };
+    }
     const OrthonormalFrame& Frame = FrameOf(Surface);
     const Vector3           Local = LocalCoordinates(Frame, Position);                       // [len] - Frame coordinates
     const double            ρ     = std::hypot(Local.X, Local.Y);                            // [len] - Distance from the axis
@@ -160,6 +171,8 @@ Vector3 EvaluateRationalSegment(const RationalSegment& Segment, double 𝑡)
 
 BernsteinPolynomial ComposeImplicitEquation(const SurfaceGeometry& Surface, const RationalSegment& Segment)
 {
+    // ⚠️ The rolling-ball carrier has no polynomial implicit form; IntersectCurveSurface scans its exact distance instead.
+    if (std::holds_alternative<RollingBallSurface>(Surface)) return BernsteinPolynomial{ { 1.0 } };
     const HomogeneousCoordinates H = ComposeHomogeneous(FrameOf(Surface), Segment);
     if (std::holds_alternative<PlaneSurface>(Surface)) return H.Z;                             // z
     const BernsteinPolynomial Planar = AddBernstein(Square(H.X), Square(H.Y));               // x² + y²

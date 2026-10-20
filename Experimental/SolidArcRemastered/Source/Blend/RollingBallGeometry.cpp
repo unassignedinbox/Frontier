@@ -9,6 +9,8 @@
 
 #include "Containment/FaceDomain.h"
 #include "Intersection/SurfaceIntersection.h"
+#include "Geometry/RollingBallCarrier.h"
+#include "Intersection/IntersectionCurve.h"
 
 #include <algorithm>
 #include <cmath>
@@ -194,30 +196,31 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     const ParameterBox BoxB = ExpandWindow(Sheet.Offsets[1], DescribeFaceDomain(Partition, Sheet.Faces[1]).Window, Margin);
     const SurfaceIntersectionOutcome Section = IntersectSurfaces(Sheet.Offsets[0], BoxA, Sheet.Offsets[1], BoxB);
     if (Section.CoincidentCondition) return Refuse("offset supports coincide");
+    // 💡 Lines and circles keep their analytic carriers (cylinder, torus, cone, plane); ellipses and traced branches get
+    //    the procedural rolling-ball carrier, whose spine is the exact branch itself (traced: Newton onto both offsets).
     double Nearest = std::numeric_limits<double>::max();                                     // [len] - Spine-to-edge distance
-    bool   TracedCondition = false;                                                          // [-]   - A marched branch was seen
-    bool   ConicCondition  = false;                                                          // [-]   - An exact ellipse branch was seen
     for (const IntersectionBranch& Branch : Section.Branches)
     {
-        if (Branch.Category == BranchCategory::Traced) { TracedCondition = true; continue; }
-        if (!std::holds_alternative<StraightLine>(Branch.Curve) && !std::holds_alternative<CircularArc>(Branch.Curve))
+        CurveGeometry Candidate = Branch.Curve;
+        if (Branch.Category == BranchCategory::Traced)
         {
-            ConicCondition = true;                                                           // ⑤–⑥ build carriers for lines and circles only
-            continue;
+            if (Branch.Chart.size() < 2 || Branch.TangentialCondition) continue;
+            std::vector<Vector3> Guide;
+            for (const IntersectionChartPoint& Point : Branch.Chart) Guide.push_back(Point.Position);
+            Candidate = BuildIntersectionCurve(Sheet.Offsets[0], Sheet.Offsets[1], Guide, Branch.ClosedCondition);
         }
-        const double Gap = Distance(Position, EvaluateCurve(Branch.Curve, ProjectOntoCurve(Branch.Curve, Position, 0.0)).Position);
-        if (Gap < Nearest) { Nearest = Gap; Sheet.Spine = Branch.Curve; }
+        const double Gap = Distance(Position, EvaluateCurve(Candidate, ProjectOntoCurve(Candidate, Position, 0.0)).Position);
+        if (Gap < Nearest) { Nearest = Gap; Sheet.Spine = Candidate; }
     }
-    if (Nearest == std::numeric_limits<double>::max())
-    {
-        if (ConicCondition) return Refuse("spine is an ellipse (equal-radius crossing; elliptical rolling-ball carrier, 🚧)");
-        return Refuse(TracedCondition ? "spine is not an exact line or circle (procedural rolling-ball carriers, 🚧)" : "offset supports do not meet (no spine)");
-    }
+    if (Nearest == std::numeric_limits<double>::max()) return Refuse("offset supports do not meet (no spine)");
+    const bool AnalyticCondition = std::holds_alternative<StraightLine>(Sheet.Spine) || std::holds_alternative<CircularArc>(Sheet.Spine);   // [-] - Analytic carrier
+    if (!AnalyticCondition && Settings.Profile == BlendProfile::Chamfer) return Refuse("chamfer on a traced or elliptical spine (ruled procedural carrier, 🚧)");
 
     // ⑤ Contact curves (same τ as the spine).
     for (int Side = 0; Side < 2; ++Side)
     {
-        const std::optional<CurveGeometry> Contact = ResolveContactCurve(Sheet.Spine, Supports[Side], Scale);
+        const std::optional<CurveGeometry> Contact = AnalyticCondition ? ResolveContactCurve(Sheet.Spine, Supports[Side], Scale)
+                                                                       : std::optional<CurveGeometry>{ ConstructContactCurve(Sheet.Spine, Supports[Side]) };
         if (!Contact) return Refuse("contact curve degenerates (ball reaches a support axis)");
         Sheet.Contacts[Side] = *Contact;
     }
@@ -229,7 +232,20 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     const Vector3 FootA    = EvaluateCurve(Sheet.Contacts[0], 0.0).Position;                 // [len] - Contact A at τ = 0
     const Vector3 FootB    = EvaluateCurve(Sheet.Contacts[1], 0.0).Position;                 // [len] - Contact B at τ = 0
     const Vector3 Bisector = Normalize((FootA - Centre) + (FootB - Centre));                 // [-]   - Towards the edge side
-    if (const auto* Line = std::get_if<StraightLine>(&Sheet.Spine))
+    if (!AnalyticCondition)
+    {
+        // 📝 Procedural carrier: 𝑢 is the spine τ (SpineAxis 0), 𝑣 = 0 on contact A; the cross-section centre is the polar
+        //    angle of the bisector at the mid-section.
+        const RollingBallSurface Carrier = ConstructRollingBallSurface(Sheet.Spine, Sheet.Radius, Supports[0]);
+        const Vector3 BallMiddle  = EvaluateCurve(Sheet.Spine, SpineMiddle).Position;          // [len] - Mid-section ball centre
+        const Vector3 MiddleA     = EvaluateCurve(Sheet.Contacts[0], SpineMiddle).Position;    // [len] - Mid-section contact A
+        const Vector3 MiddleB     = EvaluateCurve(Sheet.Contacts[1], SpineMiddle).Position;    // [len] - Mid-section contact B
+        const Vector3 Towards     = BallMiddle + Normalize(MiddleA + MiddleB - BallMiddle * 2.0) * Sheet.Radius;
+        Sheet.Surface     = Carrier;
+        Sheet.SpineAxis   = 0;
+        Sheet.CrossCentre = ProjectOntoRollingBall(Carrier, Towards, { SpineMiddle, 0.0 }).Y;
+    }
+    else if (const auto* Line = std::get_if<StraightLine>(&Sheet.Spine))
     {
         if (Settings.Profile == BlendProfile::Fillet)
         {

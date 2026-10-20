@@ -7,6 +7,7 @@
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/ImplicitSurface.h"
 #include "Intersection/IsoParameterCurve.h"
+#include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
 #include <array>
@@ -30,7 +31,11 @@ namespace
 
     [[nodiscard]] const OrthonormalFrame& FrameOf(const SurfaceGeometry& Surface) noexcept
     {
-        return std::visit([](const auto& Typed) -> const OrthonormalFrame& { return Typed.Frame; }, Surface);
+        return std::visit([](const auto& Typed) -> const OrthonormalFrame&
+        {
+            if constexpr (std::is_same_v<std::decay_t<decltype(Typed)>, RollingBallSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Never an axis candidate
+            else return Typed.Frame;
+        }, Surface);
     }
 
     [[nodiscard]] Vector2 BoxCentre(const ParameterBox& Box) noexcept { return (Box.Low + Box.High) * 0.5; }
@@ -268,6 +273,7 @@ namespace
     {
         const auto OnAxis = [&](Vector3 Point) { return Length(Cross(Point - Axis.Origin, Axis.ZAxis)) <= Precision; };
         const auto Height = [&](Vector3 Point) { return Dot(Point - Axis.Origin, Axis.ZAxis); };
+        if (std::holds_alternative<RollingBallSurface>(Surface)) return std::nullopt;        // Not a surface of revolution
         if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
         {
             if (Length(Cross(Plane->Frame.ZAxis, Axis.ZAxis)) > ParallelSine) return std::nullopt;

@@ -8,6 +8,7 @@
 #include "Construction/BodyAssembly.h"
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/IntersectionCurve.h"
+#include "Geometry/RollingBallCarrier.h"
 
 #include <cmath>
 #include <map>
@@ -78,6 +79,8 @@ namespace
         std::string     Refusal = {};                                                        // [-] - Why not mappable
     };
 
+    [[nodiscard]] CurveGeometry MapCurveImage(const MapAnalysis& Analysis, const CurveGeometry& Curve);   // MapCurve(...).Curve
+
     [[nodiscard]] MappedSurface MapSurface(const MapAnalysis& Analysis, const SurfaceGeometry& Surface)
     {
         MappedSurface Mapped;
@@ -94,14 +97,27 @@ namespace
         }
         if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map turns curved faces into surfaces outside the carrier kinds"; return Mapped; }
         const double Scale = Analysis.Scale;                                                 // [-] - s
+        if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
+        {
+            // 📝 Geometric definition: the image spine and guide rebuild the carrier with radius s·r; the natural normal
+            //    still points away from the spine, so the face sense is kept even under a reflection.
+            const MappedSurface Guide = MapSurface(Analysis, Ball->Definition->Guide);
+            if (!Guide.Refusal.empty()) { Mapped.Refusal = Guide.Refusal; return Mapped; }
+            Mapped.Surface = ConstructRollingBallSurface(MapCurveImage(Analysis, Ball->Definition->Spine), Ball->Definition->Radius * Scale, Guide.Surface);
+            return Mapped;
+        }
         std::visit([&](const auto& Carrier)
         {
             using Kind = std::decay_t<decltype(Carrier)>;
+            if constexpr (std::is_same_v<Kind, RollingBallSurface>) return;                  // Mapped above
+            else
+            {
             const OrthonormalFrame Frame = MapSurfaceFrame(Analysis, Carrier.Frame);
             if constexpr (std::is_same_v<Kind, CylinderSurface>) Mapped.Surface = CylinderSurface{ Frame, Carrier.Radius * Scale };
             else if constexpr (std::is_same_v<Kind, ConeSurface>) Mapped.Surface = ConeSurface{ Frame, Carrier.OriginRadius * Scale, Carrier.RadialSlope };
             else if constexpr (std::is_same_v<Kind, SphereSurface>) Mapped.Surface = SphereSurface{ Frame, Carrier.Radius * Scale };
             else if constexpr (std::is_same_v<Kind, TorusSurface>) Mapped.Surface = TorusSurface{ Frame, Carrier.MajorRadius * Scale, Carrier.MinorRadius * Scale };
+            }
         }, Surface);
         return Mapped;
     }
@@ -141,6 +157,18 @@ namespace
             Mapped.Curve = IntersectionCurve{ std::move(Image) };
             return Mapped;
         }
+        if (const auto* Contact = std::get_if<ContactCurve>(&Curve))
+        {
+            // 📝 A rail is the foot of its spine on its support: map both and rebuild; τ stretches like the spine's.
+            const ContactDefinition& Source = *Contact->Definition;
+            const MappedCurve        Spine  = MapCurve(Analysis, Source.Spine);
+            const MappedSurface      Support = MapSurface(Analysis, Source.Support);
+            if (!Spine.Refusal.empty() || !Support.Refusal.empty()) { Mapped.Refusal = Spine.Refusal.empty() ? Support.Refusal : Spine.Refusal; return Mapped; }
+            const ContactCurve Forward = ConstructContactCurve(Spine.Curve, Support.Surface);
+            Mapped.Curve   = Source.Direction > 0.0 ? CurveGeometry{ Forward } : ReverseContactCurve(*Forward.Definition);
+            Mapped.Stretch = Spine.Stretch;
+            return Mapped;
+        }
         if (const auto* Arc = std::get_if<CircularArc>(&Curve)) Mapped.Curve = CircularArc{ MapCurveFrame(Analysis, Arc->Frame), Arc->Radius * Analysis.Scale };
         else
         {
@@ -149,6 +177,8 @@ namespace
         }
         return Mapped;
     }
+
+    CurveGeometry MapCurveImage(const MapAnalysis& Analysis, const CurveGeometry& Curve) { return MapCurve(Analysis, Curve).Curve; }
 
     // Chart image of a point for the periodic-image choice: 𝑢 → ±𝑢 (mirror), 𝑣 scales with s on cylinders / cones only.
     [[nodiscard]] Vector2 MapAnchor(const MapAnalysis& Analysis, const SurfaceGeometry& Surface, Vector2 Parameter)

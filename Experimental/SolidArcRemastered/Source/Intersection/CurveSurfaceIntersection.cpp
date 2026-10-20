@@ -6,6 +6,7 @@
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/ImplicitSurface.h"
 #include "Intersection/IntersectionCurve.h"
+#include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
 #include <cmath>
@@ -89,6 +90,35 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
 {
     CurveSurfaceOutcome    Outcome;
     std::vector<Candidate> Candidates;
+    // 💡 No rational form on one side (traced curve, contact rail) or no implicit form on the other (rolling-ball
+    //    carrier): scan the exact signed distance instead of composing a polynomial.
+    const bool ScanCondition = std::holds_alternative<IntersectionCurve>(Curve) || std::holds_alternative<ContactCurve>(Curve) || std::holds_alternative<RollingBallSurface>(Surface);
+    if (ScanCondition && !std::holds_alternative<IntersectionCurve>(Curve))
+    {
+        // 📝 Spacing ≤ r/10 on a rolling-ball carrier (d is near-linear across a fraction of the tube radius) and ≤ 1/256
+        //    of the curve's chord length; rails also take 16 samples per spine guide knot.
+        double Chord = 0.0;                                                                  // [len] - Chord length of the interval
+        Vector3 Previous = EvaluateCurve(Curve, Low).Position;
+        for (int Index = 1; Index <= 64; ++Index)
+        {
+            const Vector3 Next = EvaluateCurve(Curve, Low + (High - Low) * Index / 64).Position;
+            Chord += Length(Next - Previous);
+            Previous = Next;
+        }
+        double Spacing = Chord / 256.0;                                                      // [len] - Target sample spacing
+        if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) Spacing = std::min(Spacing, 0.1 * Carrier->Definition->Radius);
+        const int Knots = static_cast<int>(CollectCurveBreakpoints(Curve, Low, High).size());
+        const int Count = std::clamp(std::max(static_cast<int>(std::ceil(Chord / std::max(Spacing, 1.0e-300))), 16 * Knots), 64, 16384);
+        std::vector<double> Values(Count + 1);
+        for (int Index = 0; Index <= Count; ++Index) Values[Index] = ProbeDistance(Curve, Surface, Low + (High - Low) * Index / Count).Distance;
+        for (int Index = 0; Index <= Count; ++Index)
+        {
+            const double τ = Low + (High - Low) * Index / Count;
+            if (Index < Count && Values[Index] * Values[Index + 1] < 0.0) Candidates.push_back({ τ + 0.5 * (High - Low) / Count, false });
+            const bool Minimum = (Index == 0 || std::fabs(Values[Index]) <= std::fabs(Values[Index - 1])) && (Index == Count || std::fabs(Values[Index]) <= std::fabs(Values[Index + 1]));
+            if (Minimum) Candidates.push_back({ τ, true });
+        }
+    }
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve))
     {
         // 📝 An intersection curve has no rational form: the exact signed distance is scanned at 16 samples per guide
@@ -107,7 +137,7 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
             if (Minimum) Candidates.push_back({ τ, true });
         }
     }
-    for (const RationalSegment& Segment : std::holds_alternative<IntersectionCurve>(Curve) ? std::vector<RationalSegment>{} : ConvertToRationalSegments(Curve, Low, High))
+    for (const RationalSegment& Segment : ScanCondition ? std::vector<RationalSegment>{} : ConvertToRationalSegments(Curve, Low, High))
     {
         // ---- ① Composed implicit equation; an identically vanishing one means the segment lies in the surface.
         const BernsteinPolynomial Equation  = ComposeImplicitEquation(Surface, Segment);

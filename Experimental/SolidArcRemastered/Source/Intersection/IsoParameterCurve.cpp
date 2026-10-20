@@ -5,6 +5,8 @@
 
 #include "Intersection/IsoParameterCurve.h"
 
+#include "Geometry/RollingBallCarrier.h"
+
 #include <cmath>
 
 namespace Frontier::SolidArcRemastered
@@ -50,6 +52,14 @@ namespace
 
 IsoParameterCurve ExtractIsoParameterCurve(const SurfaceGeometry& Surface, IsoDirection Direction, double Value) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface))
+    {
+        // 📝 𝑢 = const is the exact cross-section circle (τ = 𝑣); 𝑣 = const has no exact carrier and is skipped.
+        IsoParameterCurve Iso;
+        if (Direction == IsoDirection::FixedU) Iso.Curve = ExtractRollingBallSection(*Carrier, Value);
+        else Iso.DegenerateCondition = true;
+        return Iso;
+    }
     const bool FixedU = Direction == IsoDirection::FixedU;                                   // [-] - 𝑣 runs along the curve
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {

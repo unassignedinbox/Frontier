@@ -217,6 +217,7 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
         {
             for (const BlueprintUse& Use : Loop)
             {
+                if (std::holds_alternative<ContactCurve>(Blueprint.Edges[Use.Edge].Curve)) return LabelToken("F", Description.Inventory.Faces[Face]) + " is bounded by a rolling-ball contact rail (🚧 ruled sides over procedural edges)";
                 if (std::holds_alternative<IntersectionCurve>(Blueprint.Edges[Use.Edge].Curve)) return LabelToken("F", Description.Inventory.Faces[Face]) + " is bounded by an intersection curve (🚧 ruled sides over traced edges)";
             }
         }
@@ -257,7 +258,7 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
                 {
                     using Type = std::decay_t<decltype(Carrier)>;
                     if constexpr (std::is_same_v<Type, StraightLine>) Carrier.Origin = Carrier.Origin + Lift;
-                    else if constexpr (std::is_same_v<Type, IntersectionCurve>) {}                // Refused above
+                    else if constexpr (std::is_same_v<Type, IntersectionCurve> || std::is_same_v<Type, ContactCurve>) {}   // Refused above
                     else Carrier.Frame.Origin = Carrier.Frame.Origin + Lift;
                 }, Lifted);
                 const int UpperStart = RaisedVertex(Lower.Start);                             // Issues rise edges first

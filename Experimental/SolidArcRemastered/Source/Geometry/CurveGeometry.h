@@ -56,7 +56,15 @@ struct IntersectionCurve
     std::shared_ptr<const TracedIntersection> Trace = {};                                    // [-] - Shared, immutable
 };
 
-using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc, IntersectionCurve>;
+// 📝 Contact rail of a procedural rolling-ball blend: P(τ) = foot of the spine point C(s·τ) on an analytic support
+//    (closed-form foot, so exact to the spine's precision); s = ±1 records reversal. Geometry/RollingBallCarrier.h.
+struct ContactDefinition;
+struct ContactCurve
+{
+    std::shared_ptr<const ContactDefinition> Definition = {};                                // [-] - Shared, immutable
+};
+
+using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc, IntersectionCurve, ContactCurve>;
 
 // 📝 Common form of the periodic carriers: P(τ) = Centre + cos τ·CosineAxis + sin τ·SineAxis (axes orthogonal).
 struct ConicForm

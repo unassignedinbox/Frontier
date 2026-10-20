@@ -167,6 +167,7 @@ namespace
         // 📝 Intersection curves cross other carriers only where they cross a face of the other argument, which the
         //    edge–face pass finds exactly (Newton on the carrier), so the edge–edge pass skips them.
         if (std::holds_alternative<IntersectionCurve>(First) || std::holds_alternative<IntersectionCurve>(Second)) return Points;
+        if (std::holds_alternative<ContactCurve>(First) || std::holds_alternative<ContactCurve>(Second)) return Points;   // Same for rails
         if (std::holds_alternative<EllipticalArc>(First) || std::holds_alternative<EllipticalArc>(Second))
         {
             return IntersectEllipticCarriers(First, Second, Precision);

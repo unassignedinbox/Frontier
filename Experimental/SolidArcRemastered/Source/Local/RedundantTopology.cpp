@@ -53,10 +53,17 @@ namespace
             return FirstSense == SecondSense && SameFrame(PlaneA->Frame, PlaneB.Frame, Precision) ? CarrierMatch::Identical : CarrierMatch::Coplanar;
         }
         if (FirstSense != SecondSense) return CarrierMatch::Distinct;
+        if (const auto* BallA = std::get_if<RollingBallSurface>(&First))                     // Same definition only (conservative)
+        {
+            return BallA->Definition == std::get<RollingBallSurface>(Second).Definition ? CarrierMatch::Identical : CarrierMatch::Distinct;
+        }
         const bool Same = std::visit([&](const auto& SurfaceA) -> bool
         {
             using Kind = std::decay_t<decltype(SurfaceA)>;
             const Kind& SurfaceB = std::get<Kind>(Second);
+            if constexpr (std::is_same_v<Kind, RollingBallSurface>) return false;             // Handled above
+            else
+            {
             if (!SameFrame(SurfaceA.Frame, SurfaceB.Frame, Precision)) return false;
             if constexpr (std::is_same_v<Kind, CylinderSurface> || std::is_same_v<Kind, SphereSurface>) return std::fabs(SurfaceA.Radius - SurfaceB.Radius) <= Precision;
             else if constexpr (std::is_same_v<Kind, ConeSurface>)
@@ -68,6 +75,7 @@ namespace
                 return std::fabs(SurfaceA.MajorRadius - SurfaceB.MajorRadius) <= Precision && std::fabs(SurfaceA.MinorRadius - SurfaceB.MinorRadius) <= Precision;
             }
             else return false;
+            }
         }, First);
         return Same ? CarrierMatch::Identical : CarrierMatch::Distinct;
     }

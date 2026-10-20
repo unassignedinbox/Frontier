@@ -5,8 +5,11 @@
 
 #include "Geometry/SurfaceGeometry.h"
 
+#include "Geometry/RollingBallCarrier.h"
+
 #include <cmath>
 #include <numbers>
+#include <type_traits>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -53,6 +56,7 @@ namespace
 
 SurfaceSample EvaluateSurface(const SurfaceGeometry& Surface, Vector2 Parameter) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return EvaluateRollingBall(*Carrier, Parameter);
     const double 𝑢 = Parameter.X;                                                            // [-] - First surface parameter
     const double 𝑣 = Parameter.Y;                                                            // [-] - Second surface parameter
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
@@ -100,6 +104,7 @@ SurfaceSample EvaluateSurface(const SurfaceGeometry& Surface, Vector2 Parameter)
 
 Vector3 EvaluateSurfaceNormal(const SurfaceGeometry& Surface, Vector2 Parameter) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return EvaluateRollingBallNormal(*Carrier, Parameter);
     const double 𝑢 = Parameter.X;                                                            // [-] - First surface parameter
     const double 𝑣 = Parameter.Y;                                                            // [-] - Second surface parameter
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface)) return Plane->Frame.ZAxis;
@@ -120,12 +125,17 @@ Vector3 EvaluateSurfaceNormal(const SurfaceGeometry& Surface, Vector2 Parameter)
 
 Vector2 ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return ProjectOntoRollingBall(*Carrier, Position, Reference);
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {
         const Vector3 Local = LocalCoordinates(Plane->Frame, Position);
         return { Local.X, Local.Y };
     }
-    const OrthonormalFrame& Frame = std::visit([](const auto& Typed) -> const OrthonormalFrame& { return Typed.Frame; }, Surface);
+    const OrthonormalFrame& Frame = std::visit([](const auto& Typed) -> const OrthonormalFrame&
+    {
+        if constexpr (std::is_same_v<std::decay_t<decltype(Typed)>, RollingBallSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Returned above
+        else return Typed.Frame;
+    }, Surface);
     const Vector3 Local  = LocalCoordinates(Frame, Position);                                // [len] - Frame coordinates
     const double  ρ      = std::hypot(Local.X, Local.Y);                                     // [len] - Distance from the axis
     // ⚠️ On the axis the azimuth is undefined; the reference azimuth is kept (poles, apex).
@@ -147,17 +157,24 @@ SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept
 {
     if (std::holds_alternative<PlaneSurface>(Surface)) return { 0.0, 0.0 };
     if (std::holds_alternative<TorusSurface>(Surface)) return { FullTurn, FullTurn };
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return ResolveRollingBallPeriodicity(*Carrier);
     return { FullTurn, 0.0 };
+}
+
+double MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept
+{
+    return std::holds_alternative<RollingBallSurface>(Surface) ? RollingBallDerivativeNoise : 0.0;
 }
 
 const char* SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept
 {
-    constexpr const char* Labels[] = { "Plane", "Cylinder", "Cone", "Sphere", "Torus" };
+    constexpr const char* Labels[] = { "Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall" };
     return Labels[Surface.index()];
 }
 
 std::optional<SurfaceGeometry> OffsetSurface(const SurfaceGeometry& Surface, double Distance) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return OffsetRollingBall(*Carrier, Distance);
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {
         PlaneSurface Offset = *Plane;

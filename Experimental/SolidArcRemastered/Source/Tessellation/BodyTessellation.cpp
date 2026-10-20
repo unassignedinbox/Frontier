@@ -5,6 +5,8 @@
 
 #include "Tessellation/BodyTessellation.h"
 
+#include "Geometry/RollingBallCarrier.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -920,6 +922,7 @@ namespace
 
 double MeasurePeakCurvature(const SurfaceGeometry& Surface, Vector2 Parameter) noexcept
 {
+    if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return MeasureRollingBallCurvature(*Carrier, Parameter.X);
     if (std::holds_alternative<PlaneSurface>(Surface)) return 0.0;
     if (const auto* Cylinder = std::get_if<CylinderSurface>(&Surface)) return 1.0 / Cylinder->Radius;
     if (const auto* Sphere = std::get_if<SphereSurface>(&Surface)) return 1.0 / Sphere->Radius;

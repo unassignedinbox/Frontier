@@ -189,12 +189,19 @@ ShellVolumeMeasure MeasureShellVolume(const ModelPartition& Partition, SolidShel
 {
     // ⚠️ The noise floor 10⁻¹⁵ · Σ∫|G 𝑣′| is taken over the whole shell, never one face: a plane through the origin
     //    has flux density P·n ≡ 0, so its own magnitude is round-off and a per-face floor never stops the refinement.
+    //    A procedural carrier's face is refined only down to its own derivative noise (× its magnitude): below that the
+    //    panel gaps are round-off and the refinement would run to the depth cap.
+    const std::vector<FaceToken>& Faces = Partition.Shells.Resolve(SolidShell).Faces;
+    std::vector<double> FaceMagnitudes(Faces.size(), 0.0);                                   // [len³] - Per face ∫|G 𝑣′| dτ
     double Magnitude = 0.0;                                                                  // [len³] - Σ∫|G 𝑣′| dτ
-    for (FaceToken Face : Partition.Shells.Resolve(SolidShell).Faces) Magnitude += IntegrateFaceFlux(Partition, Face, 0.0, true);
+    for (size_t Index = 0; Index < Faces.size(); ++Index) Magnitude += FaceMagnitudes[Index] = IntegrateFaceFlux(Partition, Faces[Index], 0.0, true);
     ShellVolumeMeasure Measure;
-    for (FaceToken Face : Partition.Shells.Resolve(SolidShell).Faces)
+    for (size_t Index = 0; Index < Faces.size(); ++Index)
     {
-        const double Flux = IntegrateFaceFlux(Partition, Face, 1.0e-15 * Magnitude, false);  // [len³] - Face flux
+        const FaceToken Face  = Faces[Index];
+        const FaceProfile& Profile = Partition.Faces.Resolve(Face);
+        const double Noise = Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0;
+        const double Flux  = IntegrateFaceFlux(Partition, Face, std::max(1.0e-15 * Magnitude, Noise * FaceMagnitudes[Index]), false);  // [len³] - Face flux
         Measure.Volume        += Flux;
         Measure.FluxMagnitude += std::fabs(Flux);
     }

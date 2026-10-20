@@ -364,6 +364,12 @@ namespace
             {
                 if (SheetOf(End.first)->ConvexCondition != Convex) return "convex and concave blends meet (setback vertex blend, 🚧)";
             }
+            if (Blended.size() == 2 && Blended[0].first != Blended[1].first && !Sharp.empty())
+            {
+                bool SeamsOnly = true;                                                       // [-] - Every other edge is a seam
+                for (const auto& End : Sharp) { const auto Faces = FacesOfEdge(End.first); SeamsOnly = SeamsOnly && Faces.first == Faces.second; }
+                if (SeamsOnly) return ResolveSeamCrossing(Vertex, Blended[0], Blended[1], Sharp);
+            }
             if (Ends.size() != 3) return "degree " + std::to_string(Ends.size()) + " vertex with blended edges (setback vertex blend, 🚧)";
             if (Blended.size() == 2 && Blended[0].first == Blended[1].first) return ResolveContinuation(Vertex, Blended[0].first, Sharp[0].first);
             if (Blended.size() == 1) return ResolveCap(Vertex, Blended[0], Sharp[0].first, Sharp[1].first);
@@ -399,6 +405,55 @@ namespace
                 Terminations[{ Edge.Slot, End }]       = { { Section, FootA, FootB } };
             }
             TrimVertices[{ Seam.Slot, EndAt(Seam, Vertex) }] = SeamSide == 0 ? FootA : FootB;
+            ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Continuation)];
+            return {};
+        }
+
+        // 📝 A blended loop split into two edges at a vertex where only seams meet it (a radial bore mouth crossing the seams of
+        //    both cylinders): the two sheets continue smoothly, so the joint is their shared cross-section at the vertex,
+        //    and every seam is trimmed at the foot on its own support. The seams must pass through those feet; seams that
+        //    cross the rails at different sections would need extra rail vertices and are refused.
+        [[nodiscard]] std::string ResolveSeamCrossing(VertexToken Vertex, std::pair<EdgeToken, int> EndA, std::pair<EdgeToken, int> EndB, const std::vector<std::pair<EdgeToken, int>>& Seams)
+        {
+            const EdgeBlendSheet& SheetA = *SheetOf(EndA.first);
+            const EdgeBlendSheet& SheetB = *SheetOf(EndB.first);
+            const int SideB[2] = { SideOn(SheetB, SheetA.Faces[0]), SideOn(SheetB, SheetA.Faces[1]) };   // Side of B on A's faces
+            if (SideB[0] < 0 || SideB[1] < 0) return "seam crossing: the blended edges do not share both supports";
+            const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            const double  SpineA   = ProjectOntoCurve(SheetA.Spine, Position, 0.0);         // [-] - Section through the vertex on A
+            const Vector3 Ball     = EvaluateCurve(SheetA.Spine, SpineA).Position;          // [len] - Ball centre
+            if (!Agree(DistanceToCurve(SheetB.Spine, Ball))) return "seam crossing: spines do not share the section ball";
+            const double SpineB = ProjectOntoCurve(SheetB.Spine, Ball, 0.0);                // [-] - Same section on B
+            int Feet[2] = { -1, -1 };
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const Vector3 FootA = EvaluateCurve(SheetA.Contacts[Side], SpineA).Position;
+                const Vector3 FootB = EvaluateCurve(SheetB.Contacts[SideB[Side]], SpineB).Position;
+                if (!Agree(Distance(FootA, FootB))) return "seam crossing: the blends' sections disagree (unequal sizes, setback 🚧)";
+                Feet[Side] = IssueVertex((FootA + FootB) * 0.5);
+            }
+            for (const auto& Seam : Seams)
+            {
+                const int Side = SideOn(SheetA, FacesOfEdge(Seam.first).first);
+                if (Side < 0) return "seam crossing: a seam is not on a support of the blend";
+                if (!Agree(DistanceToCurve(Partition.Curves.Resolve(Partition.Edges.Resolve(Seam.first).Curve), PositionOf(Feet[Side]))))
+                    return "seam crossing: a seam meets the rail away from the shared section (extra rail vertex, 🚧)";
+                TrimVertices[{ Seam.first.Slot, Seam.second }] = Feet[Side];
+            }
+            int Section = -1;
+            if (Settings.Profile == BlendProfile::Fillet)
+            {
+                const Vector3 Out = PositionOf(Feet[0]) - Ball;                              // [len] - To contact A
+                Section = IssueConicArc(CircularArc{ ConstructFrame(Ball, Cross(Out, PositionOf(Feet[1]) - Ball), Out), SheetA.Radius }, Feet[0], Feet[1]);
+            }
+            else Section = IssueSegment(Feet[0], Feet[1]);
+            if (Section < 0) return "seam crossing: degenerate cross-section";
+            ContactVertices[{ EndA.first.Slot, 0, EndA.second }] = Feet[0];
+            ContactVertices[{ EndA.first.Slot, 1, EndA.second }] = Feet[1];
+            Terminations[{ EndA.first.Slot, EndA.second }]       = { { Section, Feet[0], Feet[1] } };
+            ContactVertices[{ EndB.first.Slot, SideB[0], EndB.second }] = Feet[0];
+            ContactVertices[{ EndB.first.Slot, SideB[1], EndB.second }] = Feet[1];
+            Terminations[{ EndB.first.Slot, EndB.second }]       = { { Section, Feet[SideB[0] == 0 ? 0 : 1], Feet[SideB[0] == 0 ? 1 : 0] } };
             ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Continuation)];
             return {};
         }

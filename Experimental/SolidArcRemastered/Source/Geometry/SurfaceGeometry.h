@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                        SURFACEGEOMETRY.H
 ====================================================================================================================================*/
-// 🧩 Analytic surfaces (plane, cylinder, cone, sphere, torus): evaluation, closed-form normals, closed-form inversion
+// 🧩 Analytic surfaces (plane, cylinder, cone, sphere, torus) + the procedural rolling-ball carrier: evaluation, normals, inversion
 
 #pragma once
 
@@ -11,6 +11,7 @@
 
 #include "Geometry/VectorAlgebra.h"
 
+#include <memory>
 #include <optional>
 #include <variant>
 
@@ -61,7 +62,16 @@ struct TorusSurface
     double           MinorRadius = 0.5;                                                      // [len] - r, tube radius
 };
 
-using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface>;
+// 📝 Procedural rolling-ball carrier (Geometry/RollingBallCarrier.h): P(𝑢, 𝑣) = C(𝑢) + r·(cos 𝑣·E₁(𝑢) + sin 𝑣·E₂(𝑢)), the
+//    envelope of balls of radius r centred on an exact spine C (traced, elliptical, any curve). E₁ points at the foot on
+//    the guide support, E₂ = E₁ × T. Positions and normals are exact to the spine's own precision; 𝑣 periodic 2π.
+struct RollingBallDefinition;
+struct RollingBallSurface
+{
+    std::shared_ptr<const RollingBallDefinition> Definition = {};                            // [-] - Shared, immutable
+};
+
+using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface, RollingBallSurface>;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
@@ -93,6 +103,9 @@ struct SurfacePeriodicity
 [[nodiscard]] Vector2            ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept;
 
 [[nodiscard]] SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept;
+
+// Relative accuracy of the chart derivatives: 0 for closed-form carriers, the finite-difference noise for procedural ones.
+[[nodiscard]] double             MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept;
 
 [[nodiscard]] const char*        SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept;
 

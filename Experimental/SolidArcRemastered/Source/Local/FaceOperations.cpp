@@ -11,6 +11,8 @@
 
 #include "Boolean/GeneralFuse.h"
 #include "Local/TopologyRebuild.h"
+#include "Geometry/RollingBallCarrier.h"
+#include "Intersection/IntersectionCurve.h"
 
 #include <algorithm>
 #include <chrono>
@@ -63,17 +65,53 @@ namespace
         return Motion;
     }
 
-    [[nodiscard]] SurfaceGeometry MoveSurface(const SurfaceGeometry& Surface, const SimilarityMotion& Motion)
+    [[nodiscard]] SurfaceGeometry MoveSurface(const SurfaceGeometry& Surface, const SimilarityMotion& Motion);
+
+    // 📝 Proper similarity of a carrier curve (rotation, uniform scale k, translation). Conic frames move; a traced curve
+    //    moves its surfaces and guide (closed knots are invariant, open chord-length knots scale by k); a contact rail
+    //    rebuilds from its moved spine and support.
+    [[nodiscard]] CurveGeometry MoveCurve(const CurveGeometry& Curve, const SimilarityMotion& Motion)
     {
+        if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ Motion.Move(Line->Origin), Motion.Turn(Line->Direction) };
+        if (const auto* Arc = std::get_if<CircularArc>(&Curve)) return CircularArc{ Motion.MoveFrame(Arc->Frame), Arc->Radius * Motion.Scale };
+        if (const auto* Ellipse = std::get_if<EllipticalArc>(&Curve)) return EllipticalArc{ Motion.MoveFrame(Ellipse->Frame), Ellipse->MajorRadius * Motion.Scale, Ellipse->MinorRadius * Motion.Scale };
+        if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve))
+        {
+            const TracedIntersection& Source = *Traced->Trace;
+            auto Image = std::make_shared<TracedIntersection>(Source);
+            const double Stretch = Source.Closed ? 1.0 : Motion.Scale;                        // [-] - τ′ = Stretch·τ
+            Image->First  = MoveSurface(Source.First, Motion);
+            Image->Second = MoveSurface(Source.Second, Motion);
+            for (Vector3& Point : Image->Points) Point = Motion.Move(Point);
+            for (Vector3& Tangent : Image->Tangents) Tangent = Motion.Turn(Tangent) * (Motion.Scale / Stretch);
+            for (double& Knot : Image->Knots) Knot *= Stretch;
+            Image->Perimeter *= Motion.Scale;
+            return IntersectionCurve{ std::move(Image) };
+        }
+        const ContactDefinition& Source  = *std::get<ContactCurve>(Curve).Definition;
+        const ContactCurve       Forward = ConstructContactCurve(MoveCurve(Source.Spine, Motion), MoveSurface(Source.Support, Motion));
+        return Source.Direction > 0.0 ? CurveGeometry{ Forward } : ReverseContactCurve(*Forward.Definition);
+    }
+
+    SurfaceGeometry MoveSurface(const SurfaceGeometry& Surface, const SimilarityMotion& Motion)
+    {
+        if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
+        {
+            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion));
+        }
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {
+            using Type  = std::decay_t<decltype(Carrier)>;
+            if constexpr (std::is_same_v<Type, RollingBallSurface>) return Carrier;           // Moved above
+            else
+            {
             auto Moved  = Carrier;
             Moved.Frame = Motion.MoveFrame(Carrier.Frame);
-            using Type  = std::decay_t<decltype(Carrier)>;
             if constexpr (std::is_same_v<Type, CylinderSurface> || std::is_same_v<Type, SphereSurface>) Moved.Radius *= Motion.Scale;
             if constexpr (std::is_same_v<Type, ConeSurface>)  Moved.OriginRadius *= Motion.Scale;
             if constexpr (std::is_same_v<Type, TorusSurface>) { Moved.MajorRadius *= Motion.Scale; Moved.MinorRadius *= Motion.Scale; }
             return Moved;
+            }
         }, Surface);
     }
 
