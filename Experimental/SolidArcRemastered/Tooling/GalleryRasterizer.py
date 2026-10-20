@@ -1,16 +1,18 @@
 #====================================================================================================================================
 #                                                     GALLERYRASTERIZER.PY
 #====================================================================================================================================
-# 🧩 Before | After exhibit panels for the blend and face-operation catalogues, rasterised from the C++ inspection host
+# 🧩 Before | After exhibit panels for the blend, face-operation and feature-tree catalogues, rasterised from the C++ inspection host
 
 """
-Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--kind Blend|FaceOperation] [--build-dir DIR] [--output DIR] [--only NAME ...]
+Run:  python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py [--kind Blend|FaceOperation|Feature] [--build-dir DIR] [--output DIR] [--only NAME ...]
 
 Before panel  the source body, shaded neutral, with the selection in amber (edges for blends, face outlines for face
               operations; hidden parts dashed).
 After panel   the result coloured by provenance — blends: blend faces teal, corner faces gold, modified faces slate, spines
               dotted cyan, contact rails green; face operations: replaced orange, trimmed teal, generated violet, unchanged
               slate. A refusal is shown as text instead.
+Feature trees  Authored (catalogue defaults) | Regenerated (FeatureVariants below): faces coloured by the step that created
+              them (persistent-name prefix), sketches dashed violet; refused steps are listed over the kept body.
 Camera, lighting and colours follow Viewer/index.html (Yaw -0.7, Pitch -0.45: eye above). Requires Pillow + numpy.
 """
 
@@ -36,6 +38,15 @@ Background     = (16, 19, 25)
 OriginHues     = { "Edge": 172, "Vertex": 45, "Modified": 215 }                          # [deg] - Viewer BlendOriginHue
 ChangeHues     = { "Replaced": 28, "Trimmed": 172, "Generated": 290, "Unchanged": 215 }   # [deg] - Viewer FaceChangeHue
 FontPath       = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FeatureVariants = {                                                                      # Regenerated panel: parameters changed from the defaults
+    "BlockFillet":     ["Width=5", "Radius=0.4"],
+    "BossFillet":      ["BossX=1", "BossRadius=0.7", "Radius=0.25"],
+    "SteppedShaft":    ["PinRadius=0.4", "Chamfer=0.2"],
+    "SlotPocket":      ["SlotLength=0.5", "Push=-0.1"],
+    "TorusRing":       ["Major=0.8", "Minor=0.7"],
+    "HoleLeavesPlate": ["HoleX=5"],
+    "SplitFacePush":   ["GrooveX=0.5"],
+}
 
 #------------------------------------------------------------------------------------------------------------------------
 #                                                    HOST
@@ -230,21 +241,71 @@ def RenderSpecimen(Executable: Path, Name: str, Output: Path, Kind: str = "Blend
     return Refused
 
 
+def RenderFeature(Executable: Path, Name: str, Output: Path):
+    """Authored | regenerated panels of one feature tree; returns True when the regenerated tree refused a step."""
+    Variant = FeatureVariants.get(Name, [])
+    Answers = [AskHost(Executable, "specimen", Name, *Words) for Words in ([], Variant)]
+    Shaded  = [AskHost(Executable, "tessellate", Name, *Words, "SagRatio=0.0015") if Answer["Summary"].get("Volume") is not None else None for Answer, Words in zip(Answers, ([], Variant))]
+    Size, Font = Supersample, ImageFont.truetype(FontPath, 13 * Supersample)
+    Camera = ViewerCamera()
+    Cloud  = np.concatenate([np.asarray(Complex["Positions"], dtype=float).reshape(-1, 3) for Complex in Shaded if Complex is not None])
+    Camera.Fit(Cloud, PanelWidth * Size, PanelHeight * Size)
+    Allowance = 0.004 * max(np.ptp(Cloud, axis=0).max(), 1e-9)
+    Pictures = []
+    for Answer, Complex in zip(Answers, Shaded):
+        Feature = Answer["Feature"]
+        Names   = { Entry["Token"]: Entry["Name"] for Entry in Feature["Names"]["Faces"] }
+        Labels  = [Step["Label"] for Step in Feature["Steps"]]
+        def Colour(Token, Names=Names, Labels=Labels):
+            Index = next((Position for Position, Label in enumerate(Labels) if Names.get(Token, "").startswith(Label + ".")), -1)
+            return ((200 + 67 * Index) % 360, 0.55) if Index >= 0 else (215, 0.10)
+        Picture, Depth = ShadeComplex(Camera, Complex, Colour)
+        DrawPolylines(Camera, Picture, Depth, [Edge["Polyline"] for Edge in Answer["Edges"]], (10, 12, 16), 2 * Size, Allowance)
+        Sketches = [Curve["Polyline"] for Sketch in Feature["Sketches"] for Curve in Sketch["Curves"] if not Curve["Construction"]]
+        DrawPolylines(Camera, Picture, Depth, Sketches, (197, 139, 255), 2 * Size, 1e30, Dotted=True)
+        Paint = ImageDraw.Draw(Picture)
+        Refused = [Step for Step in Feature["Steps"] if Step["Status"] == "Refused"]
+        for Index, Step in enumerate(Refused):
+            Expected = Step["Label"] in Feature["ExpectedRefusals"]
+            Paint.text((14 * Size, (40 + 20 * Index) * Size), PlainText(f"{Step['Label']} refused{' (as expected)' if Expected else ''}: {Step['Refusal']}")[:96], fill=(120, 230, 150) if Expected else (255, 120, 120), font=Font)
+        Pictures.append(Picture)
+
+    Sheet = Image.new("RGB", (2 * PanelWidth * Size, (PanelHeight + CaptionHeight) * Size), Background)
+    Sheet.paste(Pictures[0], (0, 0)); Sheet.paste(Pictures[1], (PanelWidth * Size, 0))
+    Paint = ImageDraw.Draw(Sheet)
+    Title = ImageFont.truetype(FontPath, 16 * Size)
+    Paint.text((14 * Size, 10 * Size), "Authored (catalogue defaults)", fill=(197, 139, 255), font=Title)
+    Paint.text(((PanelWidth + 14) * Size, 10 * Size), "Regenerated: " + ", ".join(Word.replace("=", " = ") for Word in Variant), fill=(160, 220, 230), font=Title)
+    Paint.line([(PanelWidth * Size, 0), (PanelWidth * Size, PanelHeight * Size)], fill=(50, 56, 66), width=Size)
+    def Describe(Answer):
+        Summary = Answer["Summary"]
+        Methods = ", ".join(Reference["Method"] for Step in Answer["Feature"]["Steps"] for Reference in Step["References"]) or "none"
+        Volume  = f"V {Summary['Volume']:.10f} vs V* {Summary['ExpectedVolume']:.10f} (|error| {Summary['VolumeError']:.1e})" if "ExpectedVolume" in Summary else "no body"
+        return f"{Volume} · references: {Methods}"
+    First = f"{Name}  ·  {' -> '.join(Step['Label'] for Step in Answers[0]['Feature']['Steps'])}  ·  {Answers[0]['Feature']['Oracle']}"
+    Paint.text((14 * Size, (PanelHeight + 12) * Size), PlainText(First)[:170], fill=(215, 220, 228), font=Font)
+    Paint.text((14 * Size, (PanelHeight + 38) * Size), PlainText("Authored " + Describe(Answers[0]) + "   |   regenerated " + Describe(Answers[1]))[:190], fill=(150, 160, 175), font=Font)
+    Sheet = Sheet.resize((2 * PanelWidth, PanelHeight + CaptionHeight), Image.LANCZOS).quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    Output.mkdir(parents=True, exist_ok=True)
+    Sheet.save(Output / f"{Name}.png", optimize=True)
+    return any(Step["Status"] == "Refused" for Step in Answers[1]["Feature"]["Steps"])
+
+
 def main():
     Root = Path(__file__).resolve().parents[1]
     Parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     Parser.add_argument("--build-dir", default=str(Root / "build"))
-    Parser.add_argument("--kind", choices=("Blend", "FaceOperation"), default="Blend")
-    Parser.add_argument("--output", default=None, help="default: Exhibits/SolidArcRemastered/BlendGallery or FaceOperationGallery")
+    Parser.add_argument("--kind", choices=("Blend", "FaceOperation", "Feature"), default="Blend")
+    Parser.add_argument("--output", default=None, help="default: Exhibits/SolidArcRemastered/<Kind>Gallery")
     Parser.add_argument("--only", nargs="*", default=None)
     Arguments = Parser.parse_args()
-    Output = Path(Arguments.output) if Arguments.output else Root.parents[1] / "Exhibits" / "SolidArcRemastered" / ("BlendGallery" if Arguments.kind == "Blend" else "FaceOperationGallery")
+    Output = Path(Arguments.output) if Arguments.output else Root.parents[1] / "Exhibits" / "SolidArcRemastered" / (Arguments.kind + "Gallery")
     Executable = Path(Arguments.build_dir) / ("RemasteredInspection.exe" if sys.platform == "win32" else "RemasteredInspection")
     Catalogue  = AskHost(Executable, "catalogue")
     Names      = [Entry["Name"] for Entry in Catalogue["Specimens"] if Entry.get("Kind") == Arguments.kind]
     for Name in Names:
         if Arguments.only and Name not in Arguments.only: continue
-        Refused = RenderSpecimen(Executable, Name, Output, Arguments.kind)
+        Refused = RenderFeature(Executable, Name, Output) if Arguments.kind == "Feature" else RenderSpecimen(Executable, Name, Output, Arguments.kind)
         print(f"{Name:28s} {'refused' if Refused else 'rendered'}")
 
 

@@ -90,7 +90,7 @@ Both UI versions drive the C++ kernel through the same command stream: browser �
 
 | # | Gap | Evidence | Fix direction |
 |---|---|---|---|
-| G1 | 🔴 Bevel/boolean/face-op bodies do not regenerate | `Results/Regeneration.txt`: plain extrusion follows its sketch (3 → 6, z + 0.5); bevelled one stays 2.982806. Now announced by a ⚠️ row | feature tree (§ 3) with Bevel as the first step type: regenerate base → replay `BevelFeature` via names / `Rebind` |
+| G1 | 🟢 Closed in step 7 (`Experimental/SolidArcRemastered` FeatureTree, FeatureValidation F1–F7). Was: bevel/boolean/face-op bodies do not regenerate | `Results/Regeneration.txt`: plain extrusion follows its sketch (3 → 6, z + 0.5); bevelled one stays 2.982806. Now announced by a ⚠️ row | feature tree (§ 3) with Bevel as the first step type: regenerate base → replay `BevelFeature` via names / `Rebind` |
 | G2 | Circle swept along an arc is fitted, not exact | BentPipe volume error 2.8e-6 (1.4e-5 relative), 1 freeform edge | `Pipe` on an arc path = `Revolve` of the circle about the arc axis |
 | G3 | Seam on an intersection point is misdiagnosed | CrossUnequal: "coincident faces along the intersection (not transversal)"; same pair shifted by 0.1 z unions fine (4.009803) | seed SSI marching off-seam; classify by surface normals, not by the trace collision |
 | G4 | Singular intersections (curves crossing) refuse | Steinmetz: "intersection runs into a surface singularity or seam corner" | branch-point detection + split at the singular point (legitimate hard case) |

@@ -1,4 +1,14 @@
-# 🧩 SolidArcRemastered — evidence for steps 1–6
+# 🧩 SolidArcRemastered — evidence for steps 1–7
+
+**TL;DR (step 7)**: SketchValidation passes 18/18 sketches (9 gates, 56 ms) and FeatureValidation passes 33/33 regenerations of 7 trees (7 gates, 3.7 s).
+- **Plan gate, sketches:** under-, well- and over-constrained sketches report the hand-counted DOF. The rank-revealing QR names the redundant constraint (`Parallel`, `Turn120`) and the conflict group ({V1, V2, Width, TopLength}). Touching circles are flagged ⚠️ singular, and a bow-tie profile is refused.
+- **Plan gate, naming:** 1 164 survivors were tracked through every step. 74 changed their inventory index and 18 changed name (split pieces), yet every one resolves back to itself. Faces keep the exact name.
+- **Plan gate, G1 closed:** `BlockFillet` (sketch → extrude → fillet) follows its sketch. Width, depth, height and radius edits regenerate with V vs closed form ≤ 2.1e-15; before step 7 the bevelled body stayed at 2.982806.
+- **No silent guesses:**
+  - references resolve Exact 30 · Geometric 2 · Refused 3;
+  - a groove through the middle of a pushed face is refused as "ambiguous: 2 equally plausible candidates";
+  - a chamfer whose hole left the plate is refused as "not found".
+- **Refusals:** a refused step keeps the previous body, later steps still run, and the final body is audit-sound. Names and volume bits are deterministic.
 
 **TL;DR (step 6)**: FaceOperationValidation passes: corpus section E 36/36, chains 6/6, extras 12/12 and refusals 8/8, with 9 gates and 0 failures in 120.6 s.
 - **Gate met:** corpus section E has **0 refusals on HoleSlab and Can**; the old `FaceEditSolver` refused 17 of those rows. Closed forms are exact: V vs the hand-derived value ≤ 5.0e-15 over 51 bodies (prisms, frusta, cones, wedges, hollows).
@@ -62,6 +72,9 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `BlendValidation.md` | B1 closed-form ΔV · B2 audit, genus, face count, source untouched · B3 G1 and chamfer setback · B4 rolling-ball law · B5 tessellation · B6 winding vs clearance oracle · B7 Booleans downstream · B8 refusals · B9 determinism · B10 scale; per-specimen carriers and vertex classes | 🟢 PASS |
 | `FaceOperationValidation.md` | E1 closed-form V · E2 audit, category, genus, F/E/V, source untouched · E3 edges on both carriers · E4 tessellation · E5 winding probe off every face · E6 chains vs reference · E7 refusals · E8 determinism · E9 scale; corpus-E table with the old-kernel column, chains, extras, refusals | 🟢 PASS |
 | `FaceOperationGallery/*.png` | 62 Before \| After panels. Before: source with the selected faces outlined. After: replaced carriers orange, trimmed faces teal, generated faces violet, with V vs closed form, F/E/V and N gates in the caption. The 8 refusals show their reason | — |
+| `SketchValidation.md` | S1 DOF, redundant set, conflict groups vs hand count · S2 positions vs closed form · S3 random starts · S4 minimum-norm motion · S5 fixed-point flags · S6 scale · S7 singularity · S8 profile area and refusals · S9 determinism; corpus table with n, m, rank (structural), conditioning, blame | 🟢 PASS |
+| `FeatureValidation.md` | F1 V vs closed form · F2 refused set = oracle, audit · F3 names complete and unique · F4 survivors resolve to themselves · F5 refused step keeps the body · F6 resolution methods · F7 determinism; regeneration table, oracles, survivor naming table, name samples | 🟢 PASS |
+| `FeatureGallery/*.png` | 7 Authored \| Regenerated panels: faces hued by the step that created them, solved sketches dotted violet, refused steps listed with their reason; V vs closed form and resolution methods in the caption | — |
 | `BlendGallery/*.png` | 27 Before \| After panels. Before: source and selection. After: blend faces teal, corner spheres gold, spines cyan, contact rails green, with ΔV vs closed form, carriers and N gates in the caption. The 5 refusals show their reason | — |
 
 Reproduce (from the repository root):
@@ -76,8 +89,12 @@ Experimental/SolidArcRemastered/build/BooleanValidation --detail > Exhibits/Soli
 Experimental/SolidArcRemastered/build/TessellationValidation > Exhibits/SolidArcRemastered/TessellationValidation.md
 Experimental/SolidArcRemastered/build/BlendValidation > Exhibits/SolidArcRemastered/BlendValidation.md
 Experimental/SolidArcRemastered/build/FaceOperationValidation > Exhibits/SolidArcRemastered/FaceOperationValidation.md
+Experimental/SolidArcRemastered/build/SketchValidation > Exhibits/SolidArcRemastered/SketchValidation.md
+Experimental/SolidArcRemastered/build/FeatureValidation > Exhibits/SolidArcRemastered/FeatureValidation.md
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # BlendGallery (needs Pillow + numpy)
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceOperation   # FaceOperationGallery
+python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Feature   # FeatureGallery
+# single tree: FeatureValidation --only Boss
 # single specimen or prefix: FaceOperationValidation --only Push   (Scale selects E9)
 # single specimen or prefix: BlendValidation --only Rounded   (Scale selects B10)
 # single row or section: TessellationValidation --only RandomSpheres  (also Scale, Regressions, …)
@@ -136,6 +153,16 @@ python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceO
 | B3 G1, first run | The measured angle bottomed out at 2.1e-8 rad: `acos(dot)` cannot resolve angles below √(2ε). The meter was wrong, not the surfaces | `atan2(\|a × b\|, a · b)`: worst 3.6e-15 rad |
 | Gallery render (RoundedBlock) | Spines and contact rails were drawn from the *untrimmed* sheet curves and overshot every corner by the setback | The encoder emits the result's real contact edges (blend face ∩ support) and traces the spine alongside them |
 
+🐞 Defects the gates found and fixed during step 7:
+
+| Found by | Defect | Fix |
+|---|---|---|
+| S1, conflict groups | LM minimised the merit over all rows, so the conflict was smeared over every constraint and none stayed clearly unmet | The merit runs over the independent rows only; dependent rows are diagnosed afterwards (redundant if met, conflicting if not) |
+| S2, tangent arc | Tangency posed as "line at distance r" plus "endpoint on the arc" is a double root, so J loses rank at the solution and the tangency looks redundant | Endpoint-angle form: the line direction is perpendicular to the radius at the shared endpoint |
+| S1, redundant blame | Max-norm column pivoting blamed an arbitrary member of a dependent set, not the constraint the user added last | Ordered pivoting: the latest constraint in a dependent set is blamed |
+| S6 / S7, singularity | An absolute conditioning floor is not scale-free and cannot separate a near-singular sketch from a merely skewed one | Conditioning ratio vs the same sketch at a generic configuration (< 10⁻³ = singular) |
+| Viewer, ConflictingRectangle | The area row said "dimension edited" for sketches with no closed form at all | The encoder writes `Summary.Edited`; the viewer says "no closed form" otherwise |
+
 🐞 Defects the gates found and fixed during step 6:
 
 | Found by | Defect | Fix |
@@ -146,6 +173,15 @@ python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceO
 | `ExtrudeCurved` refusal text | A cylinder's own seam edge was counted as "two selected faces share an edge" | Planarity is checked first; shared edges count distinct faces |
 
 📝 `TessellationValidation.md` was refreshed. Rows, bodies and verdicts are unchanged, but triangle counts in the three random-Boolean rows and one digest differ from the old file. A scratch build of the previous commit reproduces today's numbers exactly, so the old file was stale from an earlier step; step 6 did not change it.
+
+🚧 Plan-gate gaps (step 7): these cases are refused cleanly, never guessed:
+
+| Case | Today | Planned |
+|---|---|---|
+| Large sketches | One numerical system (fine to 122 unknowns, 15 ms) | Graph-constructive decomposition (§ M 🥈, Owen / Fudos–Hoffmann) |
+| Sketch on a face | Sketch planes are fixed placements | Sketch placement as a resolved face reference |
+| Ambiguous references | Refused, listing ≤ 4 candidates | User repair dialogue in DraftingWorkspace |
+| Incremental regeneration | Full replay on every edit | Replay from the first changed step |
 
 🚧 Plan-gate gaps (step 6): these cases are refused cleanly, with the source intact:
 

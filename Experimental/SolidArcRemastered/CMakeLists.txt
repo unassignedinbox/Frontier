@@ -51,6 +51,13 @@ add_library(SolidArcRemastered STATIC
     Source/Local/FaceOperations.cpp
     Source/Local/TopologyRebuild.cpp
     Source/Local/FaceOperationCatalogue.cpp
+    Source/Sketch/SketchSolver.cpp
+    Source/Sketch/SketchProfile.cpp
+    Source/Sketch/SketchCatalogue.cpp
+    Source/Feature/ProfileSweep.cpp
+    Source/Feature/TopologicalNaming.cpp
+    Source/Feature/FeatureTree.cpp
+    Source/Feature/FeatureCatalogue.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
     Source/Audit/ModelAudit.cpp
@@ -60,6 +67,7 @@ add_library(SolidArcRemastered STATIC
     Source/Inspection/InspectionEncoding.cpp
     Source/Inspection/BooleanEncoding.cpp
     Source/Inspection/FaceOperationEncoding.cpp
+    Source/Inspection/FeatureEncoding.cpp
     Source/Inspection/IntersectionCatalogue.cpp
     Source/Inspection/IntersectionEncoding.cpp
     Source/Inspection/TessellationEncoding.cpp
@@ -96,6 +104,11 @@ target_link_libraries(BlendValidation PRIVATE SolidArcRemastered)
 
 add_executable(FaceOperationValidation Validation/FaceOperationValidation.cpp)
 target_link_libraries(FaceOperationValidation PRIVATE SolidArcRemastered)
+add_executable(FeatureValidation Validation/FeatureValidation.cpp)
+target_link_libraries(FeatureValidation PRIVATE SolidArcRemastered)
+
+add_executable(SketchValidation Validation/SketchValidation.cpp)
+target_link_libraries(SketchValidation PRIVATE SolidArcRemastered)
 
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
@@ -106,3 +119,5 @@ add_test(NAME BooleanValidation COMMAND BooleanValidation)
 add_test(NAME TessellationValidation COMMAND TessellationValidation)
 add_test(NAME BlendValidation COMMAND BlendValidation)
 add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)
+add_test(NAME SketchValidation COMMAND SketchValidation)
+add_test(NAME FeatureValidation COMMAND FeatureValidation)

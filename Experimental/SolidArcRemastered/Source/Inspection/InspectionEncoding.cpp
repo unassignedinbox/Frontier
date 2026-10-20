@@ -10,6 +10,7 @@
 #include "Inspection/IntersectionCatalogue.h"
 #include "Inspection/JsonWriter.h"
 #include "Local/FaceOperationCatalogue.h"
+#include "Inspection/FeatureEncoding.h"
 #include "Topology/ModelPartition.h"
 
 #include <algorithm>
@@ -434,6 +435,7 @@ std::string EncodeCatalogue()
         Writer.CloseObject();
         Writer.CloseObject();
     }
+    EncodeDraftingCatalogue(Writer);
     Writer.CloseArray();
     Writer.CloseObject();
     return Writer.Result();

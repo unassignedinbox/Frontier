@@ -15,6 +15,7 @@
 #include "Inspection/BlendEncoding.h"
 #include "Inspection/BooleanEncoding.h"
 #include "Inspection/FaceOperationEncoding.h"
+#include "Inspection/FeatureEncoding.h"
 #include "Inspection/InspectionEncoding.h"
 #include "Inspection/IntersectionEncoding.h"
 #include "Inspection/JsonWriter.h"
@@ -119,9 +120,56 @@ namespace
         return Applied;
     }
 
+    [[nodiscard]] bool SketchSpecimenCondition(const std::string& Name)
+    {
+        for (const SketchSpecimen& Specimen : BuildSketchCatalogue()) if (Specimen.Name == Name) return true;
+        return false;
+    }
+
+    [[nodiscard]] bool FeatureSpecimenCondition(const std::string& Name)
+    {
+        const std::vector<std::string> Specimens = EnumerateFeatureSpecimens();
+        return std::find(Specimens.begin(), Specimens.end(), Name) != Specimens.end();
+    }
+
+    // 📝 Feature tree with the viewer's parameters, replayed up to Upto steps. References are first captured at the
+    //    authored defaults (as a designer would have picked them), so a changed parameter exercises the real resolver.
+    struct RegeneratedFeature
+    {
+        FeatureSpecimen     Specimen = {};                                                   // [-] - Catalogue entry (authored tree)
+        FeatureTree         Tree     = {};                                                   // [-] - Tree as replayed
+        RegenerationOutcome Outcome  = {};                                                   // [-] - Body, names, step reports
+        int                 Shown    = 0;                                                    // [-] - Steps replayed
+        int                 Total    = 0;                                                    // [-] - Steps authored
+    };
+
+    [[nodiscard]] RegeneratedFeature RegenerateFeatureSpecimen(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters)
+    {
+        RegeneratedFeature Regenerated;
+        Regenerated.Specimen = BuildFeatureSpecimen(Name);
+        Regenerated.Tree     = Regenerated.Specimen.Tree;
+        {
+            ModelPartition Authoring;
+            (void)RegenerateFeatureTree(Authoring, Regenerated.Tree, true);
+        }
+        for (FeatureParameter& Parameter : Regenerated.Tree.Parameters) Parameter.Value = Parameters.Resolve(Parameter.Name, Parameter.Value);
+        Regenerated.Total = static_cast<int>(Regenerated.Tree.Steps.size());
+        Regenerated.Shown = std::clamp(static_cast<int>(std::lround(Parameters.Resolve("Upto", Regenerated.Total))), 1, Regenerated.Total);
+        Regenerated.Tree.Steps.resize(Regenerated.Shown);
+        Regenerated.Outcome = RegenerateFeatureTree(Partition, Regenerated.Tree, false);
+        return Regenerated;
+    }
+
     // The body a slice classifies: a model specimen, the chosen operation of a Boolean scene, or a blend result (Source=1: before).
     [[nodiscard]] BodyToken ConstructSliceBody(ModelPartition& Partition, const std::string& Name, const SpecimenParameters& Parameters, std::string& Refusal)
     {
+        if (SketchSpecimenCondition(Name)) { Refusal = "a sketch has no body"; return {}; }
+        if (FeatureSpecimenCondition(Name))
+        {
+            const RegeneratedFeature Regenerated = RegenerateFeatureSpecimen(Partition, Name, Parameters);
+            if (!Regenerated.Outcome.Body.PresentCondition()) Refusal = "no body after the replayed steps";
+            return Regenerated.Outcome.Body;
+        }
         if (FaceOperationSpecimenCondition(Name))
         {
             const AppliedFaceOperation Applied = ApplyFaceOperationSpecimen(Partition, Name, Parameters);
@@ -264,6 +312,42 @@ namespace
 
         if (Verb == "slice") return AnswerSlice(Name, Parameters);
         if (Verb == "tessellate") return AnswerTessellation(Name, Parameters);
+        if (SketchSpecimenCondition(Name))
+        {
+            for (const SketchSpecimen& Specimen : BuildSketchCatalogue())
+            {
+                if (Specimen.Name != Name) continue;
+                SketchModel Solved = Specimen.Sketch;
+                bool        EditedCondition = false;
+                for (SketchConstraint& Constraint : Solved.Constraints)
+                {
+                    if (!EditableDimensionCondition(Constraint) || Constraint.Label.empty()) continue;
+                    const double Edited = Parameters.Resolve(Constraint.Label, Constraint.Value);
+                    EditedCondition = EditedCondition || Edited != Constraint.Value;
+                    Constraint.Value = Edited;
+                }
+                const SketchSolveOutcome Solve   = SolveSketch(Solved);
+                const SketchProfile      Profile = ExtractSketchProfile(Solved);
+                return EncodeSketch(Specimen, Solved, Solve, Profile, EditedCondition);
+            }
+        }
+        if (FeatureSpecimenCondition(Name))
+        {
+            ModelPartition    Partition;
+            FeatureInspection Inspection;
+            const RegeneratedFeature Regenerated = RegenerateFeatureSpecimen(Partition, Name, Parameters);
+            Inspection.ShownSteps = Regenerated.Shown;
+            Inspection.TotalSteps = Regenerated.Total;
+            AuditReport Audit;
+            const Clock::time_point Start = Clock::now();
+            if (Regenerated.Outcome.Body.PresentCondition())
+            {
+                Audit = AuditBody(Partition, Regenerated.Outcome.Body);
+                Inspection.Volume = IntegrateBodyVolume(Partition, Regenerated.Outcome.Body);
+            }
+            Inspection.AuditMilliseconds = ElapsedMilliseconds(Start);
+            return EncodeFeature(Partition, Regenerated.Specimen, Regenerated.Tree, Regenerated.Outcome, Audit, Inspection);
+        }
         if (FaceOperationSpecimenCondition(Name))
         {
             ModelPartition          Partition;

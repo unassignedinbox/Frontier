@@ -88,6 +88,9 @@ public:
         }
     }
 
+    // Token of the current occupant of a slot (persistent names are keyed by slot; the generation is re-attached here).
+    [[nodiscard]] Token TokenAt(uint32_t Slot) const noexcept { return { Slot, Slot < SlotTable.size() ? SlotTable[Slot].Generation : 0u }; }
+
     [[nodiscard]] size_t OccupiedCount() const noexcept { return SlotTable.size() - VacancyTable.size(); }
 
 private:

@@ -80,9 +80,12 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
     <label class="Toggle"><input type="checkbox" id="ShowGhosts" checked> Boolean argument ghosts (A / B)</label>
     <label class="Toggle"><input type="checkbox" id="ShowBlendGuides" checked> Blend guides (selection · spine · contacts)</label>
     <label class="Toggle"><input type="checkbox" id="ShowFaceGuides" checked> Face-operation guides (selected faces before)</label>
+    <label class="Toggle"><input type="checkbox" id="ShowSketches" checked> Feature sketches on their planes</label>
     <div class="Legend" id="BooleanLegend" style="display:none"><span><i style="background:#5aa9ff"></i>from A</span><span><i style="background:#ff9f43"></i>from B</span><span><i style="background:#7fe0a0"></i>section edge</span><span><i style="background:repeating-linear-gradient(90deg,#8a93a3 0 3px,transparent 3px 6px)"></i>argument ghost</span></div>
     <div class="Legend" id="BlendLegend" style="display:none"><span><i style="background:#ffb347"></i>selected edge</span><span><i style="background:#56d4e0"></i>spine (ball centre)</span><span><i style="background:#7fe0a0"></i>contact</span><span><i style="background:#3fb8a8"></i>blend face</span><span><i style="background:#e0b840"></i>corner face</span></div>
     <div class="Legend" id="FaceOperationLegend" style="display:none"><span><i style="background:repeating-linear-gradient(90deg,#ffb347 0 4px,transparent 4px 7px)"></i>selected face (before)</span><span><i style="background:hsl(28,62%,50%)"></i>replaced</span><span><i style="background:hsl(172,62%,50%)"></i>trimmed</span><span><i style="background:hsl(290,62%,55%)"></i>generated</span><span><i style="background:hsl(215,14%,50%)"></i>unchanged</span></div>
+    <div class="Legend" id="FeatureLegend" style="display:none"><span><i style="background:repeating-linear-gradient(90deg,#c58bff 0 4px,transparent 4px 7px)"></i>sketch</span><span><i style="background:repeating-linear-gradient(90deg,#ff5d5d 0 4px,transparent 4px 7px)"></i>refused sketch</span><span>faces coloured by the step that created them · hover: persistent name</span></div>
+    <div class="Legend" id="SketchLegend" style="display:none"><span><i style="background:#7fe0a0"></i>fully fixed</span><span><i style="background:#9fc4ff"></i>free (DOF left)</span><span><i style="background:repeating-linear-gradient(90deg,#8a93a3 0 3px,transparent 3px 6px)"></i>construction</span></div>
     <h3>Winding-number slice (H)</h3>
     <label class="Toggle"><input type="checkbox" id="ShowSlice"> Classify a plane through the body</label>
     <div class="Parameter"><span>Axis</span><select id="SliceAxis"><option value="0">x</option><option value="1">y</option><option value="2" selected>z</option></select></div>
@@ -105,6 +108,8 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
     <button data-validation="TessellationValidation" style="margin-top:4px">Run TessellationValidation (~20 s)</button>
     <button data-validation="BlendValidation" style="margin-top:4px">Run BlendValidation (~25 s)</button>
     <button data-validation="FaceOperationValidation" style="margin-top:4px">Run FaceOperationValidation (~2 min)</button>
+    <button data-validation="SketchValidation" style="margin-top:4px">Run SketchValidation (&lt;1 s)</button>
+    <button data-validation="FeatureValidation" style="margin-top:4px">Run FeatureValidation (~8 s)</button>
     <div class="Description" style="margin-top:10px">Drag: orbit · Shift/right-drag: pan · Wheel: zoom · Hover tree rows or edges to highlight by Token · Click a finding to locate its subject.</div>
 </div>
 
@@ -143,6 +148,16 @@ td.Number { text-align:right; font-variant-numeric:tabular-nums; }
             <table id="FaceOperationTable"></table>
             <h3>Face provenance</h3>
             <table id="FaceProvenanceTable"></table>
+        </div>
+        <div id="FeaturePanel" style="display:none">
+            <h3>Feature tree (replay · persistent names · reference resolution)</h3>
+            <table id="FeatureTable"></table>
+            <h3>Persistent names (hover to locate)</h3>
+            <table id="NameTable"></table>
+        </div>
+        <div id="SketchPanel" style="display:none">
+            <h3>Constraints (rank-revealing QR diagnosis)</h3>
+            <table id="ConstraintTable"></table>
         </div>
         <div id="TessellationPanel" style="display:none">
             <h3>Tessellation gates (N1–N7)</h3>
@@ -185,6 +200,7 @@ const Viewer  =
     EdgeOrigins : {},                                    // Boolean result edge token → "A" | "B" | "Section"
     BlendOrigins: {},                                    // Blend result face token → { Origin, Source, Surface }
     FaceOrigins : {},                                    // Face-operation result face token → { Origin, Source, Surface }
+    FeatureNames: {},                                    // Feature result face / edge / vertex token → persistent name
     Slice       : null,                                  // Last winding-number slice answer
     SliceSerial : 0,                                     // Drops out-of-order slice answers
     Tessellation: null,                                  // Last PolygonComplex answer (+ derived normals and angles)
@@ -260,6 +276,8 @@ function Render()
     const BooleanKind = Inspection.Kind === "Boolean";
     const BlendKind = Inspection.Kind === "Blend";
     const FaceKind  = Inspection.Kind === "FaceOperation";
+    const FeatureKind = Inspection.Kind === "Feature";
+    const SketchKind  = Inspection.Kind === "Sketch";
     const DrawPolyline = (Polyline) =>
     {
         Context.beginPath();
@@ -293,7 +311,7 @@ function Render()
             const Origin = BlendKind ? Viewer.BlendOrigins[Face.Token] : null;
             const Change = FaceKind ? Viewer.FaceOrigins[Face.Token] : null;
             const Hue = BooleanKind && History ? (History.Argument === "A" ? 205 : 28) + (FaceIndex * 11) % 24   // A blue, B orange
-                      : Origin ? BlendOriginHue(Origin.Origin) : Change ? FaceChangeHue(Change.Origin) : FaceHue(FaceIndex);
+                      : Origin ? BlendOriginHue(Origin.Origin) : Change ? FaceChangeHue(Change.Origin) : FeatureKind ? FeatureStepHue(Face.Token) : FaceHue(FaceIndex);
             Context.strokeStyle = `hsla(${Hue}, 70%, ${Lit ? 70 : 55}%, ${Lit ? 0.85 : (BooleanKind ? 0.36 : 0.28)})`;
             Context.lineWidth = Lit ? 1.4 : 1;
             for (const Line of Face.Hatch)
@@ -312,7 +330,9 @@ function Render()
         const BranchColour = Edge.Curve === "Traced" ? "#ffb060" : "#7fe0a0";             // Marched vs exact branch
         const Origin       = BooleanKind ? Viewer.EdgeOrigins[Edge.Token] : null;
         const OriginColour = Origin === "Section" ? "#7fe0a0" : Origin === "B" ? "#ffc58a" : "#9fc4ff";
-        Context.strokeStyle = Lit ? "#ffffff" : (IntersectionKind ? BranchColour : BooleanKind ? OriginColour : (Edge.Precision != null ? "#e8c547" : "#9fc4ff"));
+        Context.strokeStyle = Lit ? "#ffffff" : SketchKind ? (Edge.Construction ? "#8a93a3" : Edge.Fixed ? "#7fe0a0" : "#9fc4ff")
+                            : (IntersectionKind ? BranchColour : BooleanKind ? OriginColour : (Edge.Precision != null ? "#e8c547" : "#9fc4ff"));
+        Context.setLineDash(SketchKind && Edge.Construction ? [5, 4] : []);
         Context.lineWidth   = Lit ? 3 : (IntersectionKind || Origin === "Section" ? 2.4 : 1.6);
         Context.beginPath();
         Edge.Polyline.forEach((Position, SampleIndex) => { const Screen = ProjectPoint(Position); SampleIndex ? Context.lineTo(Screen[0], Screen[1]) : Context.moveTo(Screen[0], Screen[1]); });
@@ -328,6 +348,24 @@ function Render()
         Inspection.Blend.Sheets.forEach(Sheet => Sheet.SpinePolylines.forEach(DrawPolyline));
         Context.setLineDash([]); Context.lineWidth = 1.2; Context.strokeStyle = "rgba(127, 224, 160, 0.8)";
         Inspection.Blend.Sheets.forEach(Sheet => Sheet.Contacts.forEach(Contact => DrawPolyline(Contact.Polyline)));
+    }
+
+    Context.setLineDash([]);
+
+    // ---- Feature sketches drawn on their (elevated) planes: violet dashed, red when the sketch was refused
+    if (FeatureKind && Display("ShowSketches"))
+    {
+        Context.lineWidth = 1.6;
+        Inspection.Feature.Sketches.forEach(Sketch =>
+        {
+            Sketch.Curves.forEach(Curve =>
+            {
+                Context.setLineDash(Curve.Construction ? [2, 4] : [6, 4]);
+                Context.strokeStyle = Sketch.Refused ? "rgba(255, 93, 93, 0.9)" : "rgba(197, 139, 255, 0.85)";
+                DrawPolyline(Curve.Polyline);
+            });
+        });
+        Context.setLineDash([]);
     }
 
     // ---- Face-operation guides: outlines of the selected source faces (amber, dashed) — the "before" ghost
@@ -452,6 +490,8 @@ function PickToken(PointerX, PointerY)
             if (Distance < BestDistance) { BestDistance = Distance; Best = { Token: Edge.Token, Detail: Edge.Curve + (Origin ? ` · ${Origin === "Section" ? "section edge (Generated)" : "from " + Origin}` : "") + (Edge.Precision != null ? ` · tolerant ε=${Edge.Precision}` : "") }; }
         }
     }
+    if (Best && Inspection.Kind === "Feature" && Viewer.FeatureNames[Best.Token]) Best.Detail = Viewer.FeatureNames[Best.Token] + " · " + Best.Detail;
+    if (Best && Inspection.Kind === "Sketch") Best.Detail = (Best.Token.startsWith("P") ? "point" : "curve") + " · " + (Best.Detail === "exact" ? "" : Best.Detail);
     return Best;
 }
 
@@ -513,6 +553,12 @@ function RenderReport(Inspection)
     document.getElementById("BlendLegend").style.display = Inspection.Kind === "Blend" ? "" : "none";
     document.getElementById("FaceOperationPanel").style.display = Inspection.Kind === "FaceOperation" ? "" : "none";
     document.getElementById("FaceOperationLegend").style.display = Inspection.Kind === "FaceOperation" ? "" : "none";
+    document.getElementById("FeaturePanel").style.display = Inspection.Kind === "Feature" ? "" : "none";
+    document.getElementById("FeatureLegend").style.display = Inspection.Kind === "Feature" ? "" : "none";
+    document.getElementById("SketchPanel").style.display = Inspection.Kind === "Sketch" ? "" : "none";
+    document.getElementById("SketchLegend").style.display = Inspection.Kind === "Sketch" ? "" : "none";
+    if (Inspection.Kind === "Feature") { RenderFeatureReport(Inspection); return; }
+    if (Inspection.Kind === "Sketch") { RenderSketchReport(Inspection); return; }
     if (Inspection.Kind === "Blend") { RenderBlendReport(Inspection); return; }
     if (Inspection.Kind === "FaceOperation") { RenderFaceOperationReport(Inspection); return; }
     if (Inspection.Kind === "Intersection") { RenderIntersectionReport(Inspection); return; }
@@ -715,6 +761,84 @@ function RenderFaceOperationReport(Inspection)
         (Operation.Refusal ? (Operation.RefusalExpected ? "refused, as expected" : "refused") : `${Inspection.Audit.Sound ? "audit sound" : "audit findings"} · V error ${Summary.VolumeError != null ? Summary.VolumeError.toExponential(1) : "—"}`);
 }
 
+// Faces coloured by the step that created them (persistent-name prefix "Extrude#2" → step index).
+function FeatureStepHue(Token)
+{
+    const Name = Viewer.FeatureNames[Token] || "";
+    const Index = Viewer.Inspection.Feature.Steps.findIndex(Step => Name.startsWith(Step.Label + "."));
+    return Index < 0 ? 215 : (200 + Index * 67) % 360;
+}
+
+const MethodBadge = (Method) => Method === "Exact" ? "🟢 exact" : Method === "Source" ? "🟢 source" : Method === "Geometric" ? "🔍 geometric" : "🔴 refused";
+
+function RenderFeatureReport(Inspection)
+{
+    const Summary = Inspection.Summary, Feature = Inspection.Feature;
+    const Complete = Feature.ShownSteps === Feature.TotalSteps;
+    const Refused = Feature.Steps.filter(Step => Step.Status === "Refused").map(Step => Step.Label);
+    const RefusalsAsExpected = !Complete || (Refused.length === Feature.ExpectedRefusals.length && Refused.every(Label => Feature.ExpectedRefusals.includes(Label)));
+    document.getElementById("MetricHeading").textContent = "Volume and timing";
+    document.getElementById("CountTable").innerHTML = "<tr><th></th><th>Quantity</th><th class=Number>Measured</th><th class=Number></th></tr>" +
+        Summary.Counts.map(Count => `<tr><td></td><td>${Count.Name}</td><td class=Number>${Count.Measured}</td><td></td></tr>`).join("") +
+        `<tr><td></td><td>Fins · Regions</td><td class=Number>${Summary.Fins} · ${Summary.Regions}</td><td></td></tr>`;
+    const VolumePassed = Summary.VolumeError != null && Summary.VolumeError <= Summary.VolumeAllowance;
+    document.getElementById("VolumeTable").innerHTML = "<tr><th></th><th>Metric</th><th class=Number>Value</th><th class=Number>Expected / allowed</th></tr>" +
+        `<tr><td>${Summary.VolumeError != null ? Verdict(VolumePassed) : ""}</td><td>V (quadrature)</td><td class=Number>${Summary.Volume != null ? Summary.Volume.toPrecision(12) : "— (no body)"}</td><td class=Number>${Summary.ExpectedVolume != null ? Summary.ExpectedVolume.toPrecision(12) : (Complete ? "—" : "— (partial replay)")}</td></tr>` +
+        (Summary.VolumeError != null ? `<tr><td></td><td>|V − V*|</td><td class=Number>${Summary.VolumeError.toExponential(2)}</td><td class=Number>${Summary.VolumeAllowance.toExponential(1)}</td></tr>` : "") +
+        `<tr><td></td><td>Closed form</td><td colspan=2>${Escape(Feature.Oracle)}</td></tr>` +
+        `<tr><td></td><td>Regeneration · audit</td><td class=Number colspan=2>${Milliseconds(Summary.RegenerationMilliseconds)} · ${Milliseconds(Summary.AuditMilliseconds)}</td></tr>`;
+    document.getElementById("FeatureTable").innerHTML = "<tr><th>Step</th><th>Status</th><th>Detail</th><th>References → resolution</th><th class=Number>ms</th></tr>" +
+        Feature.Steps.map(Step =>
+        {
+            const Expected = Feature.ExpectedRefusals.includes(Step.Label);
+            const Status = Step.Status === "Built" ? "🟢 built" : Expected ? "🟢 refused, as expected" : "🔴 refused";
+            const References = Step.References.map(Reference => `<div data-token="${Reference.Token || ""}" class=Clickable><code>${Escape(Reference.Name)}</code> ${MethodBadge(Reference.Method)}${Reference.Matched && Reference.Matched !== Reference.Name ? ` → <code>${Escape(Reference.Matched)}</code>` : ""}${Reference.Token ? ` (${Reference.Token})` : ""}</div>`).join("");
+            return `<tr><td><b>${Step.Label}</b></td><td>${Status}</td><td>${Escape(Step.Detail || "")}${Step.Refusal ? `<div style="color:var(--Muted)">${Escape(Step.Refusal)}</div>` : ""}</td><td>${References || "—"}</td><td class=Number>${Step.Milliseconds.toFixed(1)}</td></tr>`;
+        }).join("");
+    const Names = Feature.Names;
+    document.getElementById("NameTable").innerHTML = "<tr><th>Token</th><th>Persistent name</th></tr>" +
+        Names.Faces.map(Entry => `<tr data-token="${Entry.Token}"><td><i class=Swatch style="background:hsl(${FeatureStepHue(Entry.Token)}, 62%, 50%)"></i> ${Entry.Token}</td><td><code>${Escape(Entry.Name)}</code></td></tr>`).join("") +
+        Names.Edges.map(Entry => `<tr data-token="${Entry.Token}"><td>${Entry.Token}</td><td><code>${Escape(Entry.Name)}</code></td></tr>`).join("");
+    document.querySelectorAll("#NameTable tr[data-token], #FeatureTable div[data-token]").forEach(Row =>
+    {
+        Row.addEventListener("mouseenter", () => { Viewer.Highlight = Row.dataset.token || null; Render(); });
+        Row.addEventListener("mouseleave", () => { Viewer.Highlight = null; Render(); });
+    });
+    RenderAuditAndTree(Inspection);
+    const Built = Feature.Steps.filter(Step => Step.Status === "Built").length;
+    const Passed = RefusalsAsExpected && (Summary.Volume == null || Inspection.Audit.Sound) && (Summary.VolumeError == null || VolumePassed);
+    document.getElementById("Headline").textContent = `${Passed ? "🟢" : "🔴"} ${Inspection.Specimen} · ${Built}/${Feature.Steps.length} steps built` + (Complete ? "" : ` (replay ${Feature.ShownSteps}/${Feature.TotalSteps})`) +
+        ` · ${Summary.Volume == null ? "no body" : Inspection.Audit.Sound ? "audit sound" : "audit findings"} · V error ${Summary.VolumeError != null ? Summary.VolumeError.toExponential(1) : "—"}`;
+}
+
+function RenderSketchReport(Inspection)
+{
+    const Summary = Inspection.Summary, Diagnosis = Inspection.Diagnosis;
+    const Row = (Name, Measured, Expected) => `<tr><td>${Expected == null ? "" : Verdict(Measured === Expected)}</td><td>${Name}</td><td class=Number>${Measured}</td><td class=Number>${Expected ?? "—"}</td></tr>`;
+    document.getElementById("MetricHeading").textContent = "Profile and conditioning";
+    document.getElementById("CountTable").innerHTML = "<tr><th></th><th>Quantity</th><th class=Number>Measured</th><th class=Number>Expected</th></tr>" +
+        Row("Degrees of freedom (n − rank)", Diagnosis.DegreesOfFreedom, Summary.ExpectedDegreesOfFreedom) +
+        Row("Redundant constraints", Inspection.Redundant.length, Summary.ExpectedRedundant) +
+        Row("Conflict groups", Diagnosis.ConflictGroups.length, Summary.ExpectedConflictGroups) +
+        Row("Positional singularity", Diagnosis.Singular, Summary.ExpectedSingular) +
+        Row("Closed profile", !Summary.ProfileRefusal && Summary.Loops > 0, Summary.ExpectedProfile) +
+        `<tr><td></td><td>Unknowns · equations · rank · structural rank</td><td class=Number colspan=2>${Diagnosis.Unknowns} · ${Diagnosis.Equations} · ${Diagnosis.Rank} · ${Diagnosis.StructuralRank}</td></tr>`;
+    const AreaError = Summary.ExpectedArea != null ? Math.abs(Summary.Area - Summary.ExpectedArea) : null;
+    document.getElementById("VolumeTable").innerHTML = "<tr><th></th><th>Metric</th><th class=Number>Value</th><th class=Number>Expected</th></tr>" +
+        `<tr><td>${AreaError != null ? Verdict(AreaError <= 1e-9 * Math.max(1, Summary.ExpectedArea)) : ""}</td><td>Profile area</td><td class=Number>${Summary.ProfileRefusal ? "— " + Escape(Summary.ProfileRefusal) : Summary.Area.toPrecision(12)}</td><td class=Number>${Summary.ExpectedArea != null ? Summary.ExpectedArea.toPrecision(12) : Summary.Edited ? "— (dimension edited)" : "— (no closed form)"}</td></tr>` +
+        `<tr><td></td><td>Conditioning (at solution / generic)</td><td class=Number colspan=2>${Diagnosis.Conditioning.toExponential(2)} / ${Diagnosis.GenericConditioning.toExponential(2)}</td></tr>` +
+        `<tr><td></td><td>Max residual · iterations</td><td class=Number colspan=2>${Diagnosis.MaxResidual.toExponential(1)} · ${Diagnosis.Iterations}</td></tr>` +
+        `<tr><td></td><td>Solve</td><td class=Number colspan=2>${Milliseconds(Diagnosis.Milliseconds)}</td></tr>`;
+    const Badge = (Status) => Status === "Satisfied" ? "🟢 satisfied" : Status === "Redundant" ? "⚠️ redundant" : Status === "Conflicting" ? "🔴 conflicting" : "🔴 unmet";
+    document.getElementById("ConstraintTable").innerHTML = "<tr><th>Constraint</th><th>Kind</th><th class=Number>Value</th><th>Status</th><th class=Number>Residual</th></tr>" +
+        Diagnosis.Constraints.map(Entry => `<tr><td>${Escape(Entry.Label)}</td><td>${Entry.Kind}</td><td class=Number>${Entry.Value != null ? FormatMetric(Entry.Value) : ""}</td><td>${Badge(Entry.Status)}</td><td class=Number>${Entry.Residual.toExponential(1)}</td></tr>`).join("") +
+        Diagnosis.ConflictGroups.map(Group => `<tr><td colspan=5>🔴 conflict group: ${Group.map(Escape).join(" · ")}</td></tr>`).join("");
+    RenderAuditAndTree(Inspection);
+    const Passed = Diagnosis.DegreesOfFreedom === Summary.ExpectedDegreesOfFreedom && Diagnosis.ConflictGroups.length === Summary.ExpectedConflictGroups && Diagnosis.Singular === Summary.ExpectedSingular;
+    document.getElementById("Headline").textContent = `${Passed ? "🟢" : "🔴"} ${Inspection.Specimen} · DOF ${Diagnosis.DegreesOfFreedom} · rank ${Diagnosis.Rank}/${Diagnosis.Unknowns}` +
+        (Diagnosis.ConflictGroups.length ? ` · ${Diagnosis.ConflictGroups.length} conflict group(s)` : "") + (Diagnosis.Singular ? " · ⚠️ singular" : "") + (Summary.ProfileRefusal ? " · no profile" : ` · area ${Summary.Area.toPrecision(6)}`);
+}
+
 function RenderAuditAndTree(Inspection)
 {
     document.getElementById("AuditTable").innerHTML = "<tr><th></th><th>Check</th><th class=Number>Examined</th><th class=Number>Failed</th></tr>" +
@@ -766,6 +890,29 @@ function RenderParameters(Descriptor, Values)
         List.innerHTML = `<div class=Segmented id=OperationSelector>${["A ∪ B", "A ∩ B", "A − B", "B − A"].map((Label, Index) => `<button data-operation="${Index}" class="${Index === Current ? "Active" : ""}">${Label}</button>`).join("")}</div>` +
                          `<input type=hidden data-key="Operation" value="${Current}">`;
         List.querySelectorAll("#OperationSelector button").forEach(Button => Button.addEventListener("click", () => SelectOperation(Number(Button.dataset.operation))));
+        document.getElementById("SpecimenDescription").textContent = Descriptor.Description;
+        return;
+    }
+    if (Descriptor.Kind === "Feature")
+    {
+        const Pick = (Key) => Values && Key in Values && Values[Key] !== "" ? Number(Values[Key]) : Descriptor.Parameters[Key];
+        const Upto = Pick("Upto");
+        List.innerHTML = Descriptor.Ranges.map(Range =>
+            `<label class=Parameter title="${Escape(Range.Description)}"><span>${Range.Name}</span><input type=range step=any min=${Range.Low} max=${Range.High} data-key="${Range.Name}" value="${Pick(Range.Name)}"></label>` +
+            `<label class=Parameter title="${Escape(Range.Description)}"><span style="color:var(--Muted)">${Escape(Range.Description)}</span><input type=number step=any data-mirror="${Range.Name}" value="${Pick(Range.Name)}"></label>`).join("") +
+            `<label class=Parameter><span>Replay up to</span><select id=UptoSelect>${Descriptor.Steps.map((Label, Index) => `<option value="${Index + 1}"${Index + 1 === Upto ? " selected" : ""}>${Index + 1} · ${Label}</option>`).join("")}</select></label>` +
+            `<input type=hidden data-key="Upto" value="${Upto}">`;
+        List.querySelectorAll("input[type=range]").forEach(Slider => Slider.addEventListener("input", () =>
+        {
+            List.querySelector(`input[data-mirror="${Slider.dataset.key}"]`).value = Number(Slider.value).toPrecision(6);
+            ScheduleRequest();
+        }));
+        List.querySelectorAll("input[data-mirror]").forEach(Mirror => Mirror.addEventListener("input", () =>
+        {
+            List.querySelector(`input[data-key="${Mirror.dataset.mirror}"]`).value = Mirror.value;
+            ScheduleRequest();
+        }));
+        List.querySelector("#UptoSelect").addEventListener("change", Event => { List.querySelector("input[data-key=Upto]").value = Event.target.value; RequestSpecimen(true); });
         document.getElementById("SpecimenDescription").textContent = Descriptor.Description;
         return;
     }
@@ -847,6 +994,19 @@ async function RequestSpecimen(KeepCamera)
         Refusal.style.display = "none"; Viewer.FaceHistories = {}; Viewer.EdgeOrigins = {};
         Viewer.BlendOrigins = Answer.Kind === "Blend" ? Object.fromEntries(Answer.Blend.FaceOrigins.map(Entry => [Entry.Face, Entry])) : {};
         Viewer.FaceOrigins  = Answer.Kind === "FaceOperation" ? Object.fromEntries(Answer.FaceOperation.FaceOrigins.map(Entry => [Entry.Face, Entry])) : {};
+        Viewer.FeatureNames = Answer.Kind === "Feature" ? Object.fromEntries([...Answer.Feature.Names.Faces, ...Answer.Feature.Names.Edges, ...Answer.Feature.Names.Vertices].map(Entry => [Entry.Token, Entry.Name])) : {};
+        if (Answer.Kind === "Feature")
+        {
+            // 📝 A refused step keeps the previous body; the banner says which steps and whether the oracle expected it.
+            const Refused = Answer.Feature.Steps.filter(Step => Step.Status === "Refused");
+            if (Refused.length)
+            {
+                const Expected = Answer.Feature.ShownSteps === Answer.Feature.TotalSteps && Refused.length === Answer.Feature.ExpectedRefusals.length && Refused.every(Step => Answer.Feature.ExpectedRefusals.includes(Step.Label));
+                Refusal.style.display = "block";
+                Refusal.classList.toggle("Expected", Expected);
+                Refusal.textContent = `${Expected ? "🟢 refused, as expected" : "⚠️ refused"} — ${Refused.map(Step => Step.Label + ": " + Step.Refusal).join(" · ")} (previous body kept)`;
+            }
+        }
         if (Answer.Kind === "FaceOperation" && Answer.FaceOperation.Refusal)
         {
             // 📝 A refused face operation still shows the untouched source body.
@@ -887,7 +1047,7 @@ async function LoadCatalogue()
     const Selected = Select.value || new URLSearchParams(location.hash.slice(1)).get("specimen") || "Block";
     Viewer.Catalogue = Answer.Specimens;
     const Group = (Kind, Label) => `<optgroup label="${Label}">` + Answer.Specimens.filter(Specimen => (Specimen.Kind || "Model") === Kind).map(Specimen => `<option>${Specimen.Name}</option>`).join("") + "</optgroup>";
-    Select.innerHTML = Group("Model", "Models (step 1)") + Group("Intersection", "Intersections (step 2)") + Group("Boolean", "Booleans (step 3)") + Group("Blend", "Blends (step 5)") + Group("FaceOperation", "Face operations (step 6)");
+    Select.innerHTML = Group("Model", "Models (step 1)") + Group("Intersection", "Intersections (step 2)") + Group("Boolean", "Booleans (step 3)") + Group("Blend", "Blends (step 5)") + Group("FaceOperation", "Face operations (step 6)") + Group("Sketch", "Sketches (step 7)") + Group("Feature", "Feature trees (step 7)");
     Select.value = Viewer.Catalogue.some(Specimen => Specimen.Name === Selected) ? Selected : Viewer.Catalogue[0].Name;
     const Values = {};
     document.querySelectorAll("#ParameterList input").forEach(Input => Values[Input.dataset.key] = Input.value);
@@ -999,7 +1159,7 @@ async function RequestTessellation()
     const Panel = document.getElementById("TessellationPanel"), Table = document.getElementById("TessellationTable"), FaceTable = document.getElementById("TessellationFaceTable");
     if (!Descriptor || !document.getElementById("ShowShaded").checked) { Panel.style.display = "none"; Viewer.Tessellation = null; Render(); return; }
     Panel.style.display = "";
-    if (Descriptor.Kind === "Intersection") { Table.innerHTML = "<tr><td>— intersection scenes have no body to tessellate</td></tr>"; FaceTable.innerHTML = ""; Viewer.Tessellation = null; Render(); return; }
+    if (Descriptor.Kind === "Intersection" || Descriptor.Kind === "Sketch") { Table.innerHTML = `<tr><td>— ${Descriptor.Kind === "Sketch" ? "a sketch" : "an intersection scene"} has no body to tessellate</td></tr>`; FaceTable.innerHTML = ""; Viewer.Tessellation = null; Render(); return; }
     const Query = new URLSearchParams({ name: Descriptor.Name });
     document.querySelectorAll("#ParameterList input").forEach(Input => { if (Input.value !== "") Query.set(Input.dataset.key, Input.value); });
     Query.set("SagRatio", document.getElementById("TessellationSag").value);
@@ -1047,7 +1207,7 @@ async function RequestSlice()
     const Panel = document.getElementById("SlicePanel"), Table = document.getElementById("SliceTable");
     if (!Descriptor || !document.getElementById("ShowSlice").checked) { Panel.style.display = "none"; Viewer.Slice = null; Render(); return; }
     Panel.style.display = "";
-    if (Descriptor.Kind === "Intersection") { Table.innerHTML = "<tr><td>— intersection scenes enclose no solid</td></tr>"; Viewer.Slice = null; Render(); return; }
+    if (Descriptor.Kind === "Intersection" || Descriptor.Kind === "Sketch") { Table.innerHTML = "<tr><td>— nothing enclosed to classify</td></tr>"; Viewer.Slice = null; Render(); return; }
     const Query = new URLSearchParams({ name: Descriptor.Name });
     document.querySelectorAll("#ParameterList input").forEach(Input => { if (Input.value !== "") Query.set(Input.dataset.key, Input.value); });
     Query.set("Axis", document.getElementById("SliceAxis").value);
