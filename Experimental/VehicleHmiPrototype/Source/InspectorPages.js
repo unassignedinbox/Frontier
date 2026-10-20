@@ -9,6 +9,7 @@
 //    the Fracture inspector is the Fracture Editor's (Material, Impact, Fragment quality, Bake, Geometry receipt),
 //    driving the exhibit's own breakable props.
 
+import { RendererLabels } from "./RendererNames.js";
 import { GasParameterCatalogue, ConstructGasParameters } from "./SmokeSequence.js";
 import { FractureMaterials, FractureMaterialOrder } from "./FractureStructure.js";
 import { FractureModes } from "./FractureSequence.js";
@@ -71,8 +72,8 @@ export function ConstructEntities(Host)
     const S = Host.Settings;
     const Entities = [
         { Id: "render", Group: "Render", Name: "Render settings", Type: "Renderer", Glyph: "Monitor", Colour: Accent.Render,
-          Description: "RTX ReSTIR Path Tracer, resolution, reflections & debug views",
-          Meta: () => `${S.RayTracing ? "RTX · PT" : "GTX · SDF"} · ${Host.GradeName}`, State: () => "live", Build: (C, B) => BuildRender(Host, C, B),
+          Description: "BVH ReSTIR Path Tracer, resolution, reflections & debug views",
+          Meta: () => `${S.RayTracing ? "BVH · PT" : "SDF · GI"} · ${Host.GradeName}`, State: () => "live", Build: (C, B) => BuildRender(Host, C, B),
           Switches: () => [Feature("Raytracing", "Zap", S, "RayTracing"), Feature("Indirect", "Sparkles", S, "Indirect"),
                            Feature("Reflections", "Aperture", S, "Reflection"), Feature("Denoiser", "Layers", S, "VarianceKernel"),
                            Feature("TAA", "Scan", S, "Antialias")] },
@@ -178,11 +179,11 @@ function GasSlider(C, Parent, Gas, Key, Labels = null)
 function BuildRender(Host, C, Body)
 {
     const S = Host.Settings;
-    const Arch = C.Card(Body, "RTX · ReSTIR Path Tracer", "Zap", { Accent: Accent.Render, Index: 1 });
-    C.Metric(Arch, () => (S.RayTracing ? `${S.MaxBounces}B GI · ${S.ReflectionBounces}B Refl · M=${S.InitialCandidates}` : "GTX SDF GI"), "", 0,
-             () => [S.RayTracing ? "RTX raytracing" : "GTX distance field", "live"]);
+    const Arch = C.Card(Body, RendererLabels.bvh.Long, "Zap", { Accent: Accent.Render, Index: 1 });
+    C.Metric(Arch, () => (S.RayTracing ? `${S.MaxBounces}B GI · ${S.ReflectionBounces}B Refl · M=${S.InitialCandidates}` : "SDF GI"), "", 0,
+             () => [S.RayTracing ? "BVH path tracing (software)" : "SDF distance field", "live"]);
     C.Muted(Arch, "Two-level BVH (TLAS over scene occupants + Binned-SAH BLAS per mesh) with multi-bounce BSDF importance sampling, RIS Next-Event Estimation, MIS, and Russian Roulette.");
-    C.Segmented(Arch, S, "RayTracing", [["RTX · ReSTIR Path Tracer", true], ["GTX · Distance-Field GI", false]], { Label: "Renderer architecture" });
+    C.Segmented(Arch, S, "RayTracing", [[RendererLabels.bvh.Long, true], [RendererLabels.sdf.Long, false]], { Label: "Renderer architecture" });
     Slider(C, Arch, S, "MaxBounces", "GI path bounces", 1, 4, 1, "", 0, ["1 bounce", "4 bounces"]);
     Slider(C, Arch, S, "ReflectionBounces", "Reflection bounces", 1, 4, 1, "", 0, ["1 bounce", "4 bounces"]);
     Slider(C, Arch, S, "InitialCandidates", "Initial RIS path candidates", 1, 4, 1, "", 0, ["Fast", "Low variance"]);
@@ -193,11 +194,11 @@ function BuildRender(Host, C, Body)
     C.Switch(Arch, S, "FireflyFilter", { Label: "Firefly & boiling suppression", Detail: "Jacobian & luminance outlier clamp" });
 
     const Refl = C.Card(Body, "Ray-traced reflections", "Aperture", { Accent: Accent.Render, Index: 2 });
-    C.Metric(Refl, () => (S.Reflection ? (S.RayTracing && S.RayTracedReflections ? `RTX · ${S.ReflectionBounces} bounce${S.ReflectionBounces > 1 ? "s" : ""}` : "GTX · SDF") : "Off"), "", 0,
+    C.Metric(Refl, () => (S.Reflection ? (S.RayTracing && S.RayTracedReflections ? `BVH · ${S.ReflectionBounces} bounce${S.ReflectionBounces > 1 ? "s" : ""}` : "SDF · SDF") : "Off"), "", 0,
              () => [`rough ≤ ${(S.ReflectionRoughness ?? 0.80).toFixed(2)}`, S.Reflection ? "live" : "warm"]);
     C.Muted(Refl, "Multi-bounce GGX VNDF glossy and mirror reflections traced against the Two-Level BVH with direct NEE, surface-card GI, and SVGF spatio-temporal reconstruction.");
     C.Switch(Refl, S, "Reflection", { Label: "Enable glossy & mirror reflections", Detail: "Screen-space reflection target + exterior mirror glass" });
-    C.Switch(Refl, S, "RayTracedReflections", { Label: "Use RTX BVH reflection rays", Detail: "Exact triangle hits instead of SDF sphere-tracing" });
+    C.Switch(Refl, S, "RayTracedReflections", { Label: "Use BVH reflection rays", Detail: "Exact triangle hits instead of SDF sphere-tracing" });
     Slider(C, Refl, S, "ReflectionBounces", "Reflection bounces", 1, 4, 1, "", 0, ["Single bounce", "4 bounces"]);
     Slider(C, Refl, S, "ReflectionScale", "Reflection intensity", 0, 3, 0.05, "×", 2);
     Slider(C, Refl, S, "ReflectionRoughness", "Roughness cutoff", 0.15, 1.0, 0.05, "", 2, ["Mirror only", "All surfaces"]);
@@ -233,6 +234,10 @@ function BuildRender(Host, C, Body)
                                        Detail: "Each receiver tests only the lights whose reach touches its grid cell. Off tests every light (the reference; same image, slower)" });
     C.Switch(Lights, S, "IesProfiles", { Label: "IES photometric profiles",
                                          Detail: "Beams follow LM-63 Type C tables (Profiles/*.ies: authored demonstration curves; measured TILT=NONE files drop in). Off: the analytic beam shapes" });
+    C.Switch(Lights, S, "EmissiveLights", { Label: "Emissive clusters (BVH)",
+                                            Detail: "The second light structure: emissive triangles (lamp lenses, tunnel strips, signals) sampled as lights by next-event estimation with exact area pdfs, partitioned with the BSDF hit. Ray tracing only" });
+    C.Stats(Lights, [["clusters", () => Host.Emissive ? Host.Emissive.Statistics.Instances : 0, "", 0], ["triangles", () => Host.Emissive ? Host.Emissive.Statistics.Triangles : 0, "", 0],
+                     ["capped cells", () => Host.Emissive ? Host.Emissive.Statistics.TruncatedCells : 0, "", 0]], 3);
     C.Muted(Lights, "Point, street, beam and flood lights are binned into a 16 x 16 x 4 world grid of 32-bit masks. The same grid serves the direct pass, the card relighting and every path vertex of the ray tracer.");
 
     const Screen = C.Card(Body, "Screen-space traces", "Scan", { Accent: Accent.Render, Index: 7 });
@@ -240,7 +245,7 @@ function BuildRender(Host, C, Body)
                                             Detail: "Walks the nearest-depth pyramid first; only rays the screen cannot settle go on to the BVH or the distance field. Enabling it restarts temporal reuse once" });
     C.Switch(Screen, S, "ScreenIndirect", { Label: "Screen traces for GI candidates", Detail: "Needs the master gate" });
     C.Switch(Screen, S, "ScreenReflection", { Label: "Screen traces for reflections", Detail: "Needs the master gate" });
-    C.Muted(Screen, "Each gate applies only when the master gate is on. A miss resumes in the RTX BVH path tracer, or in the distance field in GTX mode.");
+    C.Muted(Screen, "Each gate applies only when the master gate is on. A miss resumes in the BVH path tracer, or in the distance field in SDF mode.");
 
     const Debug = C.Card(Body, "Debug views", "Bug", { Accent: Accent.Render, Index: 8 });
     C.Select(Debug, S, "Inspection", InspectionModes, { Label: "Display" });

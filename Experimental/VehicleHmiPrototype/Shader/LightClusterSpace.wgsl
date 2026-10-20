@@ -19,6 +19,20 @@ const PhotometryAzimuthBins      : u32 = 37u;    // 10° steps of C-plane around
 const PhotometryPolarBins        : u32 = 91u;    // 2° steps from the axis
 const PhotometryTexelsPerProfile : u32 = 3367u;
 
+// 📝 The emissive region (EmissiveLightSpace.js): emissive triangles per facet set in local space, one record per cluster instance, and per grid cell eight cluster ids.
+struct EmissiveTriangleRecord
+{
+    A  : vec4f,   // xyz local corner A
+    E1 : vec4f,   // xyz edge B − A, w the local area
+    E2 : vec4f,   // xyz edge C − A, w the material family (bitcast u32)
+}
+
+struct EmissiveClusterRecord
+{
+    CentreReach : vec4f,   // xyz world centre, w radius
+    Meta        : vec4u,   // x occupant, y first triangle, z triangle count, w power (bitcast f32; area × luminance, world)
+}
+
 struct LightClusterRecords
 {
     Minimum   : vec4f,            // xyz world minimum corner of the grid, w = 1 once the photometric atlas is uploaded
@@ -27,7 +41,12 @@ struct LightClusterRecords
     CellMasks : array<vec4u, 256>, // 16 × 16 × 4 cells, x fastest: bit i of cell c is bit (c & 3) of lane CellMasks[c >> 2]; vec4u keeps the
                                    // record legal as a UNIFORM too (array strides there are multiples of 16), with the memory of array<u32, 1024>
     Atlas     : array<vec4u, 1474>, // 7 photometric profiles, one byte per texel (23 569 texels, padded to a vec4u)
+    EmissiveTriangles : array<EmissiveTriangleRecord, 160>,
+    EmissiveClusters  : array<EmissiveClusterRecord, 224>,
+    EmissiveCells     : array<vec4u, 1024>,   // per cell eight u16 cluster ids, the strongest first (0x7FFF empty)
 }
+
+// 📝 Extent.w holds the number of cluster instances in the table, 0 when the emissive structure is off.
 
 const LightClusterResolution : vec3u = vec3u(16u, 16u, 4u);
 

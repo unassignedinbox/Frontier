@@ -43,7 +43,7 @@ export class SurfaceProjection
             ["Uniform", "StorageRead", "Texture2D", "TextureDepth2D", "TextureDepth2DLayered", "SamplerComparison", "Uniform", "Texture2D",
              "Sampler", "StorageTexture2D:rgba16float", "StorageTexture2D:rgba16float"], GPUShaderStage.COMPUTE, "Direct radiance");
         // 📝 Group 0 ends with the direct radiance and the diffuse irradiance targets; the lights and their grid masks arrive with the BVH in group 3.
-        //    The pass traverses the scene distance field to shadow a tyre fire's light and, in GTX mode, each light in its grid cell.
+        //    The pass traverses the scene distance field to shadow a tyre fire's light and, in SDF mode, each light in its grid cell.
         this.DirectProgram = await this.Shaders.ConstructComputeProgram("DirectRadiance.wgsl", "IntegrateDirectRadiance",
                                                                         [this.DirectLayout, DistanceLayout, SamplingLayout, RayTracingLayout]);
     }

@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                        RESTIRPATHTRACER.TEST.MJS
 //============================================================================================================================================
-// 🧩 Verification suite for the RTX Full ReSTIR GI Path Tracer:
+// 🧩 Verification suite for the BVH (software) Full ReSTIR GI path tracer:
 //    1. Default renderer configuration (RayTracing: true, 3 bounces, 2 initial RIS candidates, RT shadows, Russian Roulette, NEE+MIS)
 //    2. Two-Level BVH Acceleration Structure (TLAS over active occupants + Binned-SAH BLAS per FacetSet)
 //    3. Exact Möller–Trumbore ray-triangle intersection, smooth normal interpolation, glass pass-through, and shredded tyre rim exposure
@@ -43,13 +43,13 @@ globalThis.fetch = async (Resource, Init) =>
     return OriginalFetch(Resource, Init);
 };
 
-describe("RTX Full ReSTIR GI Path Tracer", () =>
+describe("BVH Full ReSTIR GI Path Tracer", () =>
 {
-    it("sets RTX Raytracing as the default renderer mode in IlluminationHost and InspectorPages", () =>
+    it("sets the BVH path tracer as the default renderer mode in IlluminationHost and InspectorPages", () =>
     {
         const HostSource = fs.readFileSync(path.join(RootDir, "Source/IlluminationHost.js"), "utf8");
-        assert.match(HostSource, /const RendererParam = \(Query\.get\("renderer"\) \|\| "rtx"\)\.toLowerCase\(\);/);
-        assert.match(HostSource, /RayTracing:\s*RendererParam !== "gtx"/);
+        assert.match(HostSource, /const RendererParam = ResolveRendererName\(Query\.get\("renderer"\)\);/);
+        assert.match(HostSource, /RayTracing:\s*RendererParam === "bvh"/);
         assert.match(HostSource, /RayTracedShadows:\s*true/);
         assert.match(HostSource, /RayTracedReflections:\s*true/);
         assert.match(HostSource, /ReflectionBounces:\s*Math\.max\(1,\s*Math\.min\(4,\s*Number\(Query\.get\("reflbounces"\)\s*\|\|\s*2\)\)\)/);
@@ -60,7 +60,7 @@ describe("RTX Full ReSTIR GI Path Tracer", () =>
         assert.match(HostSource, /MultiBounceNEE:\s*true/);
 
         const InspectorSource = fs.readFileSync(path.join(RootDir, "Source/InspectorPages.js"), "utf8");
-        assert.match(InspectorSource, /RTX · ReSTIR Path Tracer/);
+        assert.match(InspectorSource, /RendererLabels\.bvh\.Long/);
         assert.match(InspectorSource, /GI path bounces/);
         assert.match(InspectorSource, /Reflection bounces/);
         assert.match(InspectorSource, /Ray-traced reflections/);

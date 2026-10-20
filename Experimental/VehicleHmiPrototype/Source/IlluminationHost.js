@@ -5,8 +5,10 @@ import { VehicleAppearance } from "./VehicleAppearance.js";
 import { LightingSystem, AutomotiveMode, RoofFixtureType } from "./LightingSystem.js";
 import { LightClusterSpace } from "./LightClusterSpace.js";
 import { BenchmarkMetrics } from "./BenchmarkMetrics.js";
+import { ResolveRendererName } from "./RendererNames.js";
 import { TyreCarcassSolver, ResolveCarcassPose } from "./TyreCarcassSolver.js";
 import { RetrievePhotometricAtlas } from "./Photometry.js";
+import { EmissiveLightSpace } from "./EmissiveLightSpace.js";
 //============================================================================================================================================
 //                                                           ILLUMINATIONHOST.JS
 //============================================================================================================================================
@@ -117,7 +119,7 @@ class IlluminationHost
         this.Grade = { ...QualityGrades[this.GradeName] };
         if (Query.has("scale"))
             this.Grade.RenderScale = Math.max(0.25, Math.min(2.0, Number(Query.get("scale"))));
-        const RendererParam = (Query.get("renderer") || "rtx").toLowerCase();
+        const RendererParam = ResolveRendererName(Query.get("renderer"));
         this.Benchmark = new BenchmarkMetrics();
         this.Settings = {
             Inspection: Number(Query.get("inspection") || 0), DistanceInspection: 1, InsetEnabled: false, SliceHeight: 0.6,
@@ -127,8 +129,9 @@ class IlluminationHost
             Gas: ConstructGasParameters(),
             SunElevation: 38.0, SunAzimuth: 145.0, SolarIlluminance: 12.0, SkyScale: 1.0, EmissionScale: 1.0, GlassIndex: DefaultGlassIndex,
             ExposureCompensation: 0.0, AutoExposure: true, DirectShadow: true,
-            // 📝 RTX Full ReSTIR GI Path Tracer is the default renderer (?renderer=gtx selects GTX Distance-Field GI).
-            RayTracing: RendererParam !== "gtx",
+            // 📝 The BVH ReSTIR GI path tracer (a software two-level BVH in WGSL compute; no hardware ray tracing) is the default renderer; ?renderer=sdf selects the distance-field GI.
+            //    (?renderer=rtx and ?renderer=gtx are accepted as the old names of the same two renderers: see RendererNames.js.)
+            RayTracing: RendererParam === "bvh",
             RayTracedShadows: true,
             RayTracedReflections: true,
             MaxBounces: Math.max(1, Math.min(4, Number(Query.get("bounces") || 3))),
@@ -140,7 +143,7 @@ class IlluminationHost
             FireflyFilter: true,
             MultiBounceNEE: true,
             Indirect: true, ScreenTraversal: Query.get("screentraces") === "1", ScreenIndirect: true, ScreenReflection: true,
-            LightGrid: Query.get("lightgrid") !== "0", IesProfiles: Query.get("ies") !== "0",
+            LightGrid: Query.get("lightgrid") !== "0", IesProfiles: Query.get("ies") !== "0", EmissiveLights: Query.get("emissive") !== "0",
             // 📝 The XPBD tyre carcass drives the tyres' vertical stiffness and contact patch (?tyres=analytic keeps the analytic carcass spring alone).
             TyreCarcass: Query.get("tyres") !== "analytic", TyreSubsteps: Math.max(8, Math.min(32, Number(Query.get("tyresubsteps") || 32))),
             TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
@@ -249,10 +252,11 @@ class IlluminationHost
         Device.queue.writeBuffer(this.OccupantRecords, 0, this.Scene.EncodeOccupantRecords(this.Volumes));
         this.Scene.ConstructDrawRuns();
 
-        // ③b Two-level BVH acceleration structure (TLAS + Binned-SAH BLAS) for RTX ReSTIR GI Path Tracing
+        // ③b Two-level BVH acceleration structure (TLAS + Binned-SAH BLAS) for the software BVH ReSTIR GI path tracer
         this.ReportProgress("Constructing TLAS + Binned-SAH BLAS ray-tracing hierarchy", 0.68);
         this.RayTracing = new RayTracingSpace(this.Exchange);
         this.RayTracing.ConstructResources(this.Scene, this.MaterialRecords, this.LightRecords);
+        this.ConstructEmissiveLights();
 
         this.StreetLampPoles = ResolveLevelPlacements()
             .filter((P) => P.Shape === "PoleHead")
@@ -407,6 +411,42 @@ class IlluminationHost
         this.Fracture.OnBreak = (Prop) => this.Shell.Announce(`${Prop.Definition.Name} — ${Prop.Pieces.length} fragments`);
         if (this.PendingPreset)
             this.ApplyPreset(this.PendingPreset);
+    }
+
+    // 📝 The emissive clusters (EmissiveLightSpace.js): built once from the scene's emissive triangles, refreshed each frame for the occupants that move.
+    ConstructEmissiveLights()
+    {
+        this.Emissive = new EmissiveLightSpace();
+        this.Emissive.Construct(this.Scene, this.Materials, this.RayTracing);
+        this.EmissiveUploaded = false;
+        this.EmissiveActive = false;
+    }
+
+    UpdateEmissiveLights()
+    {
+        const Emissive = this.Emissive;
+        if (!Emissive) return;
+        const Active = !!(this.Settings.EmissiveLights && this.Settings.RayTracing);
+        const Device = this.Exchange.Device;
+        if (!Active)
+        {
+            if (this.EmissiveActive) { Emissive.Count = 0; this.LightClusters.AssignEmissive(Device, Emissive, false); }   // Extent.w = 0 switches the structure off in the shaders
+            this.EmissiveActive = false;
+            return;
+        }
+        if (!this.EmissiveActive) Emissive.StaticSignature = "";   // re-enabled: refresh everything
+        this.EmissiveActive = true;
+        if (Emissive.Update(this.Scene, this.Materials, this.Settings.EmissionScale))
+        {
+            this.LightClusters.AssignEmissive(Device, Emissive, !this.EmissiveUploaded);
+            this.EmissiveUploaded = true;
+            if (Emissive.MembershipChanged)
+            {
+                // the role bit lives in the occupant records, which are uploaded once for the static occupants: write them all again
+                Device.queue.writeBuffer(this.OccupantRecords, 0, this.Scene.EncodeOccupantRecords(this.Volumes));
+                Emissive.MembershipChanged = false;
+            }
+        }
     }
 
     // 📝 The IES atlas: seven LM-63 files packed into the light record. A missing or malformed file leaves every light on its analytic beam shape.
@@ -1245,6 +1285,7 @@ class IlluminationHost
             Enabled: this.Settings.SmokeEnabled, Emissions, Vehicle: this.Vehicle, Light, SkyScale: this.Settings.SkyScale,
             Gas: this.Settings.Gas, Readings, Thermal: this.Thermal });
         this.EncodeFrameRecord(Camera, Light);
+        this.UpdateEmissiveLights();
         Device.queue.writeBuffer(this.OccupantRecords, 0, this.Scene.EncodeOccupantRecords(this.Volumes, this.Scene.DynamicCount));
 
         if (this.Lighting && this.LightRecords)
@@ -1381,8 +1422,8 @@ class IlluminationHost
         const Slowest = Durations.length ? Durations[Math.min(Durations.length - 1, Math.floor(0.99 * Durations.length))] : 0.0;
         this.LowRate = Slowest > 0.0 ? (1000.0 / Slowest).toFixed(0) : "–";
         const RendererTag = this.Settings.RayTracing
-            ? `RTX ReSTIR PT (${this.Settings.MaxBounces}B GI · ${this.Settings.ReflectionBounces}B Refl · M=${this.Settings.InitialCandidates})`
-            : "GTX SDF GI";
+            ? `BVH ReSTIR PT (${this.Settings.MaxBounces}B GI · ${this.Settings.ReflectionBounces}B Refl · M=${this.Settings.InitialCandidates})`
+            : "SDF GI";
         const AccelLine = this.Settings.RayTracing && this.RayTracing
             ? `BVH hierarchy   TLAS ${this.RayTracing.ActiveInstances} instances (${this.RayTracing.UsedTlasNodes} nodes) · BLAS ${this.RayTracing.TotalTriangles} tris`
             : `GDF bricks rewritten  ${Rewritten}${this.Distance.Frozen ? "  (frozen)" : ""} · card tiles ${this.Cards.ScheduledTiles}`;
@@ -1426,8 +1467,8 @@ class IlluminationHost
         const Lines = [];
         if (this.RayTracing)
         {
-            Lines.push(`RTX TLAS: ${this.RayTracing.ActiveInstances} active instances · ${this.RayTracing.UsedTlasNodes} TLAS nodes`);
-            Lines.push(`RTX BLAS: ${this.Scene.FacetSets.length} facet sets · ${this.RayTracing.TotalTriangles} triangles · ${this.RayTracing.StaticNodeCount - 4608} BLAS nodes`);
+            Lines.push(`BVH TLAS: ${this.RayTracing.ActiveInstances} active instances · ${this.RayTracing.UsedTlasNodes} TLAS nodes`);
+            Lines.push(`BVH BLAS: ${this.Scene.FacetSets.length} facet sets · ${this.RayTracing.TotalTriangles} triangles · ${this.RayTracing.StaticNodeCount - 4608} BLAS nodes`);
         }
         Lines.push(...this.Distance.Clips.map((Clip, Level) =>
             `cascade ${Level}: ${Resolution}³ · voxel ${(Clip.VoxelExtent * 100).toFixed(1)} cm · span ${(Clip.VoxelExtent * Resolution).toFixed(0)} m`));

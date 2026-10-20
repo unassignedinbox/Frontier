@@ -62,9 +62,9 @@ so scene exposure no longer bleaches its authored colours. Both brightness contr
 reach zero correctly; set the in-tablet and inspector brightness to 100% / 1 for
 normal viewing. Scene emission strength does not boost the UI.
 
-## RTX · Full ReSTIR GI Path Tracer (Default Render Mode)
+## BVH · Full ReSTIR GI Path Tracer (Default Render Mode)
 
-The default renderer is now **RTX · ReSTIR Path Tracer** (`RayTracing: true`, configurable in **Render settings → RTX · ReSTIR Path Tracer** or via `?renderer=rtx|gtx`):
+The default renderer is **BVH · ReSTIR Path Tracer** (`RayTracing: true`, configurable in **Render settings → BVH · ReSTIR Path Tracer** or via `?renderer=bvh|sdf`; `rtx` and `gtx` are accepted as the old names of the same two renderers). It is a *software* path tracer: a two-level BVH traversed in WGSL compute shaders. WebGPU has no hardware ray tracing, so nothing here uses RT cores:
 
 - **Two-Level BVH Acceleration Structure (`Source/RayTracingSpace.js` & `Shader/RayTraversal.wgsl`)**:
   - **Bottom-Level Acceleration Structure (BLAS)**: Binned-SAH BVH (`LeafCapacity = 4`, 12 SAH bins) built over all 56 `FacetSets` (20,854 static/mesh triangles across `ControlVehicle` body/wheels/cabin/roof fixtures, the 3,664-triangle `Proving ground` course mesh, buildings, cones, breakables, stress objects, and street lamp poles/gantries) plus dynamic per-fragment BLAS leaves registered on the fly when breakable props shatter (`RegisterPropFragments`).
@@ -77,7 +77,7 @@ The default renderer is now **RTX · ReSTIR Path Tracer** (`RayTracing: true`, c
 - **Spatiotemporal ReSTIR GI Reuse & Multi-Bounce Ray-Traced Reflections / Direct Shadows**:
   - **Temporal Reuse (`Shader/ReservoirTemporal.wgsl`)**: Motion-vector reprojection with rigid/dynamic occupant vertex carry (`CarryReservoirSample`), plane-distance geometric rejection, and exact BVH visibility validation.
   - **Spatial Reuse (`Shader/ReservoirSpatial.wgsl`)**: Disk neighbor reservoir merging with the solid-angle reconnection-shift Jacobian $|\partial\omega_r / \partial\omega_q|$, `1/Z` pairwise/tally normalization, and adopted BVH visibility verification.
-  - **Multi-Bounce Ray-Traced Reflections & Direct Shadows (`Shader/ReflectionTraversal.wgsl`, `Shader/DisplayRecombination.wgsl`, `Shader/DirectRadiance.wgsl`)**: Traces 1–4 bounce GGX VNDF glossy and mirror reflection paths (`TraceMultiBounceReflection`, default `ReflectionBounces: 2`, configurable via `?reflbounces=1..4` or the **Ray-traced reflections** / **RTX · ReSTIR Path Tracer** inspector cards) across car paint, glass, mirrors, and wet asphalt with direct NEE + BVH shadow rays, surface-card GI, Fresnel/clearcoat continuation, and SVGF spatio-temporal reconstruction.
+  - **Multi-Bounce Ray-Traced Reflections & Direct Shadows (`Shader/ReflectionTraversal.wgsl`, `Shader/DisplayRecombination.wgsl`, `Shader/DirectRadiance.wgsl`)**: Traces 1–4 bounce GGX VNDF glossy and mirror reflection paths (`TraceMultiBounceReflection`, default `ReflectionBounces: 2`, configurable via `?reflbounces=1..4` or the **Ray-traced reflections** / **BVH · ReSTIR Path Tracer** inspector cards) across car paint, glass, mirrors, and wet asphalt with direct NEE + BVH shadow rays, surface-card GI, Fresnel/clearcoat continuation, and SVGF spatio-temporal reconstruction.
 
 ## Checks
 

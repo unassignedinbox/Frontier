@@ -290,7 +290,7 @@ test("executed: the carcass's load rises with deflection and with pressure (six 
 
 test("executed: the whole app on the carcass: the four loads sum to the car's weight and the tyres deflect plausibly", { skip: !Enabled, timeout: 3000000 }, () =>
 {
-    const Output = OnSoftwareGpu([process.execPath, path.join(Here, "HeadlessHarness.mjs"), "..", "90", "?capture=1&quality=low&renderer=gtx&omit=Resampling,Diffuse,Reflection,Smoke,Cabin,Sparks"],
+    const Output = OnSoftwareGpu([process.execPath, path.join(Here, "HeadlessHarness.mjs"), "..", "90", "?capture=1&quality=low&renderer=sdf&omit=Resampling,Diffuse,Reflection,Smoke,Cabin,Sparks"],
         { SIZE: "160x90", HARNESS_TIMEOUT: "2500000", HOOKS: path.join(Here, "TyreCarcassHooks.mjs"), SERIES_EVERY: "10" });
     const Series = JSON.parse(Output.split("\n").find((Line) => Line.startsWith("TYRESERIES ")).slice(11));
     assert.equal(Series.Dispatches, 416, "13 dispatches × 32 substeps");

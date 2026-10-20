@@ -10,11 +10,12 @@ export const CaptureFrameCount = 120;
 // 📝 Each configuration names the settings it changes; the others keep their current values.
 const ScreenOn = { ScreenTraversal: true, ScreenIndirect: true, ScreenReflection: true };
 export const CaptureMatrix = Object.freeze([
-    Object.freeze({ Name: "GTX distance field",             Settings: Object.freeze({ RayTracing: false, ScreenTraversal: false }) }),
-    Object.freeze({ Name: "GTX + screen traces",            Settings: Object.freeze({ RayTracing: false, ...ScreenOn }) }),
-    Object.freeze({ Name: "RTX path tracer",                Settings: Object.freeze({ RayTracing: true,  ScreenTraversal: false, LightGrid: true }) }),
-    Object.freeze({ Name: "RTX + screen traces",            Settings: Object.freeze({ RayTracing: true,  ...ScreenOn }) }),
-    Object.freeze({ Name: "RTX, light grid off (all lights)", Settings: Object.freeze({ RayTracing: true,  ScreenTraversal: false, LightGrid: false }) })
+    Object.freeze({ Name: "SDF distance field",             Settings: Object.freeze({ RayTracing: false, ScreenTraversal: false }) }),
+    Object.freeze({ Name: "SDF + screen traces",            Settings: Object.freeze({ RayTracing: false, ...ScreenOn }) }),
+    Object.freeze({ Name: "BVH path tracer",                Settings: Object.freeze({ RayTracing: true,  ScreenTraversal: false, LightGrid: true }) }),
+    Object.freeze({ Name: "BVH + screen traces",            Settings: Object.freeze({ RayTracing: true,  ...ScreenOn }) }),
+    Object.freeze({ Name: "BVH, light grid off (all lights)", Settings: Object.freeze({ RayTracing: true,  ScreenTraversal: false, LightGrid: false }) }),
+    Object.freeze({ Name: "BVH, emissive clusters off",      Settings: Object.freeze({ RayTracing: true,  ScreenTraversal: false, EmissiveLights: false }) })
 ]);
 
 // 📝 The settings the log may change; every other setting is only read.
@@ -110,7 +111,7 @@ export class BenchmarkMetrics
         if (this.Finished)
             return this.Results.map((Result) => `${Result.Name.padEnd(34)} median ${Result.Frame.Median.toFixed(1)} ms · p95 ${Result.Frame.P95.toFixed(1)} ms`)
                                .concat([this.CopyStatus || "Press Copy log to copy the full text."]);
-        return ["Idle. Capture current settings, or the matrix of renderer configurations (GTX / RTX, screen traces, light grid)."];
+        return ["Idle. Capture current settings, or the matrix of renderer configurations (SDF / BVH, screen traces, light grid)."];
     }
 
     // 📝 Plain text for the clipboard: the machine, the settings, and each configuration's frame and pass figures.

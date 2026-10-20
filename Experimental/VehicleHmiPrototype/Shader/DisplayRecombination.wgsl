@@ -123,7 +123,7 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
     let View = normalize(Frame.CameraPosition - Position);
     let NdotV = max(dot(Normal, View), 1.0e-3);
 
-    // 📝 Inside the car's cabin: SDF volumes need 0.05 to counter self-hit, whereas RTX traces through real window openings.
+    // 📝 Inside the car's cabin: SDF volumes need 0.05 to counter self-hit, whereas the BVH tracer traces through real window openings.
     let TargetCabinShare = select(CabinIndirectShare, 0.45, FeatureEnabled(Frame, FeatureRayTracing));
     let Enclosure = mix(1.0, TargetCabinShare, ResolveCabinShare((Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz));
     var Irradiance = vec3f(0.0);

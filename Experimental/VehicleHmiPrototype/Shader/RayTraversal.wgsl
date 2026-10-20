@@ -44,6 +44,7 @@ struct RayHit
     Geometry : vec3f,   // [-]   geometric triangle normal in world space
     Identity : u32,     // [-]   Occupant index, GroundIdentity, or SkyIdentity on miss
     Family   : u32,     // [-]   exact triangle MaterialRecord index
+    Triangle : u32,     // [-]   global index of the struck triangle in BvhTriangles (0xFFFFFFFF: none)
     Steps    : u32,     // [-]   BVH traversal step count
     Hit      : bool,
 }
@@ -79,6 +80,7 @@ fn TraceSceneRay(Origin: vec3f, Direction: vec3f, MinimumTravel: f32, MaximumTra
     Result.Geometry = -Direction;
     Result.Identity = SkyIdentity;
     Result.Family   = 0u;
+    Result.Triangle = 0xFFFFFFFFu;
     Result.Steps    = 0u;
     Result.Hit      = false;
 
@@ -264,6 +266,7 @@ fn TraceSceneRay(Origin: vec3f, Direction: vec3f, MinimumTravel: f32, MaximumTra
         Result.Geometry = WorldGeom;
         Result.Family   = select(RawFamily, Occ.MaterialOverride, Occ.MaterialOverride != NoMaterialOverride);
         Result.Identity = select(BestOcc, GroundIdentity, BestOcc == GroundOccupantIndex);
+        Result.Triangle = BestTri;
         Result.Hit      = true;
         return Result;
     }
@@ -477,6 +480,39 @@ fn EvaluateGgxVndfPdf(NoV: f32, NoH: f32, VoH: f32, Roughness: f32) -> f32
     return (D * G1) / max(4.0 * NoV, 1.0e-4);
 }
 
+// 📐 The probability with which the mixture BSDF sampler below picks its specular lobe, and the roughness it samples that lobe with; one definition for the sampler
+//    and for EvaluateBsdfPdf, so the pdf of a direction is the pdf the sampler really used.
+fn ResolveSpecularProbability(Surface: SurfaceSample, NoV: f32) -> f32
+{
+    let F0  = ResolveSpecularColour(Surface);
+    let FresnelLum = ResolveLuminance(ResolveFresnel(F0, NoV)) + Surface.CoatWeight * 0.04;
+    let DiffuseLum = ResolveLuminance(ResolveDiffuseAlbedo(Surface));
+    let SpecProb = FresnelLum / max(FresnelLum + DiffuseLum, 1.0e-4);
+    return select(clamp(SpecProb, 0.15, 0.85), 0.92, Surface.Metalness > 0.9 && Surface.Roughness < 0.25);
+}
+
+fn ResolveEffectiveRoughness(Surface: SurfaceSample) -> f32
+{
+    return clamp(mix(Surface.Roughness, Surface.CoatRoughness, Surface.CoatWeight * 0.5), 0.04, 1.0);
+}
+
+// 📐 The mixture pdf (solid angle) with which SampleSurfaceBsdf would have produced LightDir from View, 0 below the horizon.
+fn EvaluateBsdfPdf(Surface: SurfaceSample, Normal: vec3f, View: vec3f, LightDir: vec3f) -> f32
+{
+    let NoL = dot(Normal, LightDir);
+    if (NoL <= 1.0e-4)
+    {
+        return 0.0;
+    }
+    let NoV  = max(dot(Normal, View), 1.0e-4);
+    let Half = normalize(View + LightDir);
+    let NoH  = saturate(dot(Normal, Half));
+    let VoH  = max(dot(View, Half), 1.0e-4);
+    let DiffPdf = NoL * InversePi;
+    let SpecPdf = EvaluateGgxVndfPdf(NoV, NoH, VoH, ResolveEffectiveRoughness(Surface));
+    return max(mix(DiffPdf, SpecPdf, ResolveSpecularProbability(Surface, NoV)), 1.0e-4);
+}
+
 // 📐 Two-layer PBR BSDF importance sampling (GGX VNDF specular/clearcoat lobe + cosine diffuse lobe) with exact mixture PDF.
 fn SampleSurfaceBsdf(
     Surface       : SurfaceSample,
@@ -489,18 +525,8 @@ fn SampleSurfaceBsdf(
 ) -> bool
 {
     let NoV = max(dot(Normal, View), 1.0e-4);
-    let F0  = ResolveSpecularColour(Surface);
-    let FresnelLum = ResolveLuminance(ResolveFresnel(F0, NoV)) + Surface.CoatWeight * 0.04;
-    let DiffuseLum = ResolveLuminance(ResolveDiffuseAlbedo(Surface));
-
-    var SpecProb = FresnelLum / max(FresnelLum + DiffuseLum, 1.0e-4);
-    SpecProb = select(clamp(SpecProb, 0.15, 0.85), 0.92, Surface.Metalness > 0.9 && Surface.Roughness < 0.25);
-
-    let EffectiveRough = clamp(
-        mix(Surface.Roughness, Surface.CoatRoughness, Surface.CoatWeight * 0.5),
-        0.04,
-        1.0
-    );
+    let SpecProb       = ResolveSpecularProbability(Surface, NoV);
+    let EffectiveRough = ResolveEffectiveRoughness(Surface);
 
     let Basis    = ConstructTangentFrame(Normal);
     let Choice   = AdvanceUniform(Seed);
@@ -529,19 +555,227 @@ fn SampleSurfaceBsdf(
         return false;
     }
 
-    let Half    = normalize(View + LightDir);
-    let NoH     = saturate(dot(Normal, Half));
-    let VoH     = max(dot(View, Half), 1.0e-4);
-    let DiffPdf = NoL * InversePi;
-    let SpecPdf = EvaluateGgxVndfPdf(NoV, NoH, VoH, EffectiveRough);
-    let MixPdf  = max(mix(DiffPdf, SpecPdf, SpecProb), 1.0e-4);
-
-    let Brdf = ResolveDirectReflectance(Surface, Normal, View, LightDir);
+    let MixPdf = EvaluateBsdfPdf(Surface, Normal, View, LightDir);
+    let Brdf   = ResolveDirectReflectance(Surface, Normal, View, LightDir);
     *OutDirection  = LightDir;
     *OutThroughput = min(Brdf / MixPdf, vec3f(8.0));
     *OutPdf        = MixPdf;
     return true;
 }
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                      EMISSIVE CLUSTERS AS LIGHTS (NEXT-EVENT ESTIMATION)
+//------------------------------------------------------------------------------------------------------------------------
+// BEGIN EMISSIVE SAMPLING (Tools/EmissiveParityGpu.mjs extracts exactly this block into a probe shader)
+// 📝 See EmissiveLightSpace.js for the structure and the argument that this is unbiased. In short: an emitter point has two techniques, the BSDF ray that happens to hit it and
+//    the light sample below. The BSDF technique keeps the renderer's own heuristic weight w_b(ω) (EvaluateEmissiveBsdfWeight) and the light technique takes 1 − w_b(ω). Wherever
+//    the light technique is not available (feature off, not ray tracing, outside the grid, a cell with more clusters than slots) the BSDF hit counts in full.
+
+const EmissiveEmptySlot     : u32 = 0x7FFFu;
+const EmissiveSlotCount     : u32 = 8u;
+const EmissiveUnusable      : vec4u = vec4u(0xFFFFFFFFu);
+const EmissiveSamplesPerVertex : u32 = 2u;
+
+struct EmissiveSample
+{
+    Valid    : bool,
+    Position : vec3f,   // [m]  world point on the emitter
+    Normal   : vec3f,   // [-]  its geometric normal (emitters shine from both sides, as the traversal flips normals to face the ray)
+    Radiance : vec3f,   // [-]  emitted radiance, colour × luminance × the emission scale
+    Pdf      : f32,     // [1/m²] density of choosing this point (cluster × triangle × uniform on the triangle)
+}
+
+// 📝 The cell's cluster ids at a world position, or EmissiveUnusable (the feature is off, not ray tracing, no clusters, or the point lies outside the grid): then there is no
+//    light technique at that vertex and every emitter seen from it counts in full.
+fn ResolveEmissiveCell(Position: vec3f) -> vec4u
+{
+    if (!ExtendedEnabled(Frame, ExtendedEmissiveLights) || !FeatureEnabled(Frame, FeatureRayTracing) || SceneLights.Extent.w < 0.5)
+    {
+        return EmissiveUnusable;
+    }
+    let Local = (Position - SceneLights.Minimum.xyz) / SceneLights.Extent.xyz;
+    if (any(Local < vec3f(0.0)) || any(Local >= vec3f(1.0)))
+    {
+        return EmissiveUnusable;
+    }
+    let Cell = min(vec3u(Local * vec3f(LightClusterResolution)), LightClusterResolution - vec3u(1u));
+    return SceneLights.EmissiveCells[Cell.x + LightClusterResolution.x * (Cell.y + LightClusterResolution.y * Cell.z)];
+}
+
+fn EmissiveUsable(Words: vec4u) -> bool
+{
+    return Words.x != 0xFFFFFFFFu;
+}
+
+fn ResolveEmissiveSlot(Words: vec4u, Slot: u32) -> u32
+{
+    let Pair = Words[Slot >> 1u];
+    return select(Pair & 0x7FFFu, (Pair >> 16u) & 0x7FFFu, (Slot & 1u) != 0u);
+}
+
+// 📝 Is this traced hit an emitter the table represents (its occupant carries RoleEmissiveCluster)?
+fn IsTableEmitter(Identity: u32) -> bool
+{
+    return Identity < arrayLength(&Occupants) && (Occupants[Identity].Roles & RoleEmissiveCluster) != 0u;
+}
+
+// 📐 Can this cell's light technique draw the traced hit (occupant, BVH triangle)? Exactly when the triangle is in a cluster the cell lists. The BSDF technique takes the partition's
+//    w_b at such a hit and weight 1 at every other emitter.
+fn IsListedEmitter(Words: vec4u, Identity: u32, Triangle: u32) -> bool
+{
+    if (!EmissiveUsable(Words) || !IsTableEmitter(Identity))
+    {
+        return false;
+    }
+    for (var Slot = 0u; Slot < EmissiveSlotCount; Slot += 1u)
+    {
+        let Id = ResolveEmissiveSlot(Words, Slot);
+        if (Id == EmissiveEmptySlot)
+        {
+            break;
+        }
+        let Cluster = SceneLights.EmissiveClusters[Id];
+        if (Cluster.Meta.x != Identity)
+        {
+            continue;
+        }
+        for (var Index = 0u; Index < Cluster.Meta.z; Index += 1u)
+        {
+            if (bitcast<u32>(SceneLights.EmissiveTriangles[Cluster.Meta.y + Index].A.w) == Triangle)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// 📝 The conservative occupant-level version, for screen strikes (which know the occupant but not the triangle): true when ANY cluster of the occupant is listed. Treating a strike
+//    as listed when it need not be only sends that ray down the BVH path instead of the screen, which is always correct.
+fn IsListedOccupant(Words: vec4u, Identity: u32) -> bool
+{
+    if (!EmissiveUsable(Words) || !IsTableEmitter(Identity))
+    {
+        return false;
+    }
+    for (var Slot = 0u; Slot < EmissiveSlotCount; Slot += 1u)
+    {
+        let Id = ResolveEmissiveSlot(Words, Slot);
+        if (Id == EmissiveEmptySlot)
+        {
+            break;
+        }
+        if (SceneLights.EmissiveClusters[Id].Meta.x == Identity)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn ResolveEmissiveTriangleWeight(Triangle: EmissiveTriangleRecord) -> f32
+{
+    return Triangle.E1.w * ResolveLuminance(RayMaterials[bitcast<u32>(Triangle.E2.w)].Emission);
+}
+
+// 📐 The heuristic weight the path tracer has always given the BSDF technique at an emissive hit: a function of the BSDF's pdf for the direction and of the emitter's geometry
+//    (squared distance, cosine at the emitter) and of nothing else. Defined by the pair (vertex, emitter point), so the light technique can evaluate the very same number.
+fn EvaluateEmissiveBsdfWeight(BsdfPdf: f32, Distance: f32, CosineAtEmitter: f32) -> f32
+{
+    let DistSq   = max(Distance * Distance, 0.04);
+    let GeomTerm = max(CosineAtEmitter, 0.05) / DistSq;
+    return clamp((BsdfPdf * BsdfPdf) / max(BsdfPdf * BsdfPdf + GeomTerm * GeomTerm * 0.01, 1.0e-5), 0.15, 1.0);
+}
+
+// 📐 Draws one point on the emitters of a cell: a cluster in proportion to power / (d² + r²), a triangle in proportion to area × luminance, a uniform point on it.
+//    R carries four uniforms (cluster, triangle, the two barycentric coordinates).
+fn SampleEmissiveLight(Position: vec3f, Words: vec4u, R: vec4f) -> EmissiveSample
+{
+    var Result : EmissiveSample;
+    Result.Valid = false;
+    var Weights : array<f32, 8>;
+    var Total = 0.0;
+    var Count = 0u;
+    for (var Slot = 0u; Slot < EmissiveSlotCount; Slot += 1u)
+    {
+        let Id = ResolveEmissiveSlot(Words, Slot);
+        if (Id == EmissiveEmptySlot)
+        {
+            break;
+        }
+        let Cluster = SceneLights.EmissiveClusters[Id];
+        let Toward  = Cluster.CentreReach.xyz - Position;
+        let Weight  = max(bitcast<f32>(Cluster.Meta.w), 0.0) / (dot(Toward, Toward) + Cluster.CentreReach.w * Cluster.CentreReach.w + 1.0e-4);
+        Weights[Slot] = Weight;
+        Total += Weight;
+        Count += 1u;
+    }
+    if (Count == 0u || !(Total > 0.0))
+    {
+        return Result;
+    }
+    var Chosen = Count - 1u;
+    var Running = 0.0;
+    let Pick = R.x * Total;
+    for (var Slot = 0u; Slot < Count; Slot += 1u)
+    {
+        Running += Weights[Slot];
+        if (Pick < Running)
+        {
+            Chosen = Slot;
+            break;
+        }
+    }
+    let ClusterProbability = Weights[Chosen] / Total;
+    let Cluster = SceneLights.EmissiveClusters[ResolveEmissiveSlot(Words, Chosen)];
+    let First = Cluster.Meta.y;
+    let Number = Cluster.Meta.z;
+    var TriangleTotal = 0.0;
+    for (var Index = 0u; Index < Number; Index += 1u)
+    {
+        TriangleTotal += ResolveEmissiveTriangleWeight(SceneLights.EmissiveTriangles[First + Index]);
+    }
+    if (!(TriangleTotal > 0.0))
+    {
+        return Result;
+    }
+    var Triangle = SceneLights.EmissiveTriangles[First + Number - 1u];
+    var TriangleWeight = ResolveEmissiveTriangleWeight(Triangle);
+    var Cumulative = 0.0;
+    let TrianglePick = R.y * TriangleTotal;
+    for (var Index = 0u; Index < Number; Index += 1u)
+    {
+        let Candidate = SceneLights.EmissiveTriangles[First + Index];
+        let Weight    = ResolveEmissiveTriangleWeight(Candidate);
+        Cumulative += Weight;
+        if (TrianglePick < Cumulative)
+        {
+            Triangle       = Candidate;
+            TriangleWeight = Weight;
+            break;
+        }
+    }
+    let Root = sqrt(R.z);
+    let B1   = Root * (1.0 - R.w);
+    let B2   = Root * R.w;
+    let ToWorld = Occupants[Cluster.Meta.x].LocalToWorld;
+    let Point   = (ToWorld * vec4f(Triangle.A.xyz + Triangle.E1.xyz * B1 + Triangle.E2.xyz * B2, 1.0)).xyz;
+    let Edge1   = (ToWorld * vec4f(Triangle.E1.xyz, 0.0)).xyz;
+    let Edge2   = (ToWorld * vec4f(Triangle.E2.xyz, 0.0)).xyz;
+    let Cross   = cross(Edge1, Edge2);
+    let Area    = 0.5 * length(Cross);
+    if (!(Area > 1.0e-9))
+    {
+        return Result;
+    }
+    Result.Valid    = true;
+    Result.Position = Point;
+    Result.Normal   = Cross / (2.0 * Area);
+    Result.Radiance = RayMaterials[bitcast<u32>(Triangle.E2.w)].Emission * Frame.EmissionScale;
+    Result.Pdf      = ClusterProbability * (TriangleWeight / TriangleTotal) / Area;
+    return Result;
+}
+// END EMISSIVE SAMPLING
 
 // 📐 Next-Event Estimation (NEE) at a path vertex:
 //    1. Soft solar cone NEE with exact BVH shadow ray + MIS weight
@@ -553,7 +787,8 @@ fn EvaluateDirectNextEvent(
     View         : vec3f,
     Surface      : SurfaceSample,
     Seed         : ptr<function, u32>,
-    TraceShadows : bool
+    TraceShadows : bool,
+    AllowEmissive : bool
 ) -> vec3f
 {
     var Direct = vec3f(0.0);
@@ -589,6 +824,7 @@ fn EvaluateDirectNextEvent(
     var SelectedDist    = 0.0;
     var SelectedWeight  = 0.0;
     var WeightSum       = 0.0;
+    var SelectedEmissive = false;
 
     // 📝 Only the lights whose reach touches this vertex's grid cell are candidates (LightClusterSpace.wgsl); a vertex outside the grid
     //    takes them all, so none is ever skipped.
@@ -619,13 +855,59 @@ fn EvaluateDirectNextEvent(
             SelectedDir     = LDir;
             SelectedDist    = Dist;
             SelectedWeight  = Weight;
+            SelectedEmissive = false;
+        }
+    }
+
+    // 4. The emissive clusters of the vertex's cell: EmissiveSamplesPerVertex independent point samples, each an unbiased estimate of ALL the emitters' share of the light
+    //    (the light technique's 1 − w_b), merged into the same resampling as the lights above so one shadow ray serves the lot. An estimate is random, so it carries its 1/pdf
+    //    in its contribution; the resampling identity holds for any realisation of the candidates.
+    if (AllowEmissive)
+    {
+        let Words = ResolveEmissiveCell(Position);
+        if (EmissiveUsable(Words))
+        {
+            for (var Sample = 0u; Sample < EmissiveSamplesPerVertex; Sample += 1u)
+            {
+                let Draw = vec4f(AdvanceUniform(Seed), AdvanceUniform(Seed), AdvanceUniform(Seed), AdvanceUniform(Seed));
+                let Emitter = SampleEmissiveLight(Position, Words, Draw);
+                if (!Emitter.Valid)
+                {
+                    continue;
+                }
+                let Toward = Emitter.Position - Position;
+                let Dist   = length(Toward);
+                let LDir   = Toward / max(Dist, 1.0e-4);
+                if (dot(Normal, LDir) <= 1.0e-4)
+                {
+                    continue;
+                }
+                let CosEmitter = abs(dot(Emitter.Normal, LDir));
+                let BsdfWeight = EvaluateEmissiveBsdfWeight(EvaluateBsdfPdf(Surface, Normal, View, LDir), Dist, CosEmitter);
+                let Scale      = CosEmitter * (1.0 - BsdfWeight) / (max(Dist * Dist, 1.0e-4) * max(Emitter.Pdf, 1.0e-8) * f32(EmissiveSamplesPerVertex));
+                let Contrib    = ResolveDirectReflectance(Surface, Normal, View, LDir) * Emitter.Radiance * Scale;
+                let Weight     = ResolveLuminance(Contrib);
+                if (!(Weight > 1.0e-5))
+                {
+                    continue;
+                }
+                WeightSum += Weight;
+                if (AdvanceUniform(Seed) * WeightSum < Weight)
+                {
+                    SelectedContrib  = Contrib;
+                    SelectedDir      = LDir;
+                    SelectedDist     = Dist;
+                    SelectedWeight   = Weight;
+                    SelectedEmissive = true;
+                }
+            }
         }
     }
 
     if (SelectedWeight > 0.0)
     {
         var LightVis = 1.0;
-        if (TraceShadows)
+        if (TraceShadows || SelectedEmissive)
         {
             LightVis = TraceSceneVisibility(Origin, SelectedDir, RayEpsilon, max(SelectedDist - 0.08, RayEpsilon));
         }
@@ -642,7 +924,7 @@ fn EvaluateDirectNextEvent(
 
 // 📐 Traces a full multi-bounce path starting along (Origin, FirstDirection), returning the first bounce surface vertex
 //    x_s and the complete multi-bounce incoming radiance L_s gathered along the path for ReSTIR GI resampling.
-fn TraceMultiBouncePath(Origin: vec3f, FirstDirection: vec3f, Seed: ptr<function, u32>) -> ReservoirSample
+fn TraceMultiBouncePath(Origin: vec3f, PrimaryNormal: vec3f, FirstDirection: vec3f, Seed: ptr<function, u32>) -> ReservoirSample
 {
     let Hit1 = TraceSceneRay(Origin, FirstDirection, RayEpsilon, 500.0);
     if (!Hit1.Hit)
@@ -658,9 +940,21 @@ fn TraceMultiBouncePath(Origin: vec3f, FirstDirection: vec3f, Seed: ptr<function
     let Mat1  = RayMaterials[Hit1.Family];
     let Surf1 = ProjectSurfaceSample(Mat1);
 
-    // Bounce 1 direct emission + Next-Event Estimation
-    var TotalRadiance = Surf1.Emission * Frame.EmissionScale;
-    TotalRadiance += EvaluateDirectNextEvent(Hit1.Position, Hit1.Normal, -FirstDirection, Surf1, Seed, true);
+    // Bounce 1 direct emission + Next-Event Estimation. The primary vertex x_v is where the cosine-sampled candidate starts: when the emitter structure covers it
+    // (DirectRadiance adds the light technique there) the emission this candidate finds at its first hit takes the BSDF technique's share of the partition, w_b with the
+    // cosine pdf the candidate was drawn with; elsewhere it counts in full, as it always did.
+    var EmissionWeight = 1.0;
+    let PrimaryPosition = Origin - PrimaryNormal * RayEpsilon;
+    if (IsListedEmitter(ResolveEmissiveCell(PrimaryPosition), Hit1.Identity, Hit1.Triangle))
+    {
+        EmissionWeight = EvaluateEmissiveBsdfWeight(max(dot(PrimaryNormal, FirstDirection), 0.0) * InversePi, length(Hit1.Position - PrimaryPosition),
+                                                    abs(dot(Hit1.Geometry, FirstDirection)));
+    }
+    var TotalRadiance = Surf1.Emission * Frame.EmissionScale * EmissionWeight;
+    TotalRadiance += EvaluateDirectNextEvent(Hit1.Position, Hit1.Normal, -FirstDirection, Surf1, Seed, true, true);
+    // 📝 The cell whose light technique the vertex the next BSDF sample leaves from has (it sampled the emitters in its own next-event estimation just above, or below for later
+    //    vertices); unusable where it had none.
+    var VertexWords = ResolveEmissiveCell(Hit1.Position);
 
     let MaxBounces     = ResolveMaxBounces(Frame);
     var PathThroughput = vec3f(1.0);
@@ -705,18 +999,29 @@ fn TraceMultiBouncePath(Origin: vec3f, FirstDirection: vec3f, Seed: ptr<function
         let MatB  = RayMaterials[HitB.Family];
         let SurfB = ProjectSurfaceSample(MatB);
 
-        // Balance-heuristic MIS weight on secondary emissive hits
-        let DistSq    = max(HitB.Travel * HitB.Travel, 0.04);
-        let CosAtHit  = max(dot(HitB.Normal, -NextDir), 0.05);
-        let GeomTerm  = CosAtHit / DistSq;
-        let MisWeight = clamp((BsdfPdf * BsdfPdf) / max(BsdfPdf * BsdfPdf + GeomTerm * GeomTerm * 0.01, 1.0e-5), 0.15, 1.0);
+        // MIS weight on secondary emissive hits. Legacy (emissive lights off): the renderer's heuristic, which had no light technique to balance and lost energy. Emissive lights on:
+        // a table emitter seen from a vertex that sampled the emitters takes w_b (the light technique has 1 − w_b); everything else counts in full.
+        var MisWeight = 1.0;
+        if (!ExtendedEnabled(Frame, ExtendedEmissiveLights))
+        {
+            let DistSq   = max(HitB.Travel * HitB.Travel, 0.04);
+            let CosAtHit = max(dot(HitB.Normal, -NextDir), 0.05);
+            let GeomTerm = CosAtHit / DistSq;
+            MisWeight    = clamp((BsdfPdf * BsdfPdf) / max(BsdfPdf * BsdfPdf + GeomTerm * GeomTerm * 0.01, 1.0e-5), 0.15, 1.0);
+        }
+        else if (IsListedEmitter(VertexWords, HitB.Identity, HitB.Triangle))
+        {
+            MisWeight = EvaluateEmissiveBsdfWeight(BsdfPdf, length(HitB.Position - CurrPos), abs(dot(HitB.Geometry, -NextDir)));
+        }
 
         TotalRadiance += PathThroughput * SurfB.Emission * Frame.EmissionScale * MisWeight;
 
+        VertexWords = EmissiveUnusable;
         if (FeatureEnabled(Frame, FeatureMultiBounceNEE))
         {
-            let DirectB = EvaluateDirectNextEvent(HitB.Position, HitB.Normal, -NextDir, SurfB, Seed, Bounce <= 2u);
+            let DirectB = EvaluateDirectNextEvent(HitB.Position, HitB.Normal, -NextDir, SurfB, Seed, Bounce <= 2u, true);
             TotalRadiance += PathThroughput * DirectB;
+            VertexWords = ResolveEmissiveCell(HitB.Position);
         }
 
         CurrPos      = HitB.Position;
@@ -797,7 +1102,7 @@ fn TraceMultiBounceReflection(
         var HitRadiance = HitSurf.Emission * Frame.EmissionScale;
 
         // Direct Next-Event Estimation (Sun cone + Fire + RIS over 32 IES lights with exact BVH shadow rays)
-        HitRadiance += EvaluateDirectNextEvent(Hit.Position, Hit.Normal, ViewDir, HitSurf, Seed, Bounce <= 2u) * InversePi;
+        HitRadiance += EvaluateDirectNextEvent(Hit.Position, Hit.Normal, ViewDir, HitSurf, Seed, Bounce <= 2u, false) * InversePi;
 
         // Indirect diffuse illumination on the reflected surface so shadowed faces retain natural colour and depth
         let DiffuseAlbedo = ResolveDiffuseAlbedo(HitSurf);

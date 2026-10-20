@@ -62,7 +62,7 @@ fn TraverseReflection(@builtin(global_invocation_id) Invocation: vec3u)
     }
 
     // 📝 Lumen's two-part trace: the screen first (nearest-depth walk, contact detail finer than any voxel or BVH leaf needs), then, where
-    //    the screen cannot settle the ray, the BVH multi-bounce tracer in RTX mode or the scene distance field resumed from the last point
+    //    the screen cannot settle the ray, the BVH multi-bounce tracer when the BVH renderer is active or the scene distance field resumed from the last point
     //    the screen proved unoccluded.
     let Bias = ResolveSurfaceBias(Position);
     var Strike: ScreenHit;

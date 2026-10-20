@@ -2,7 +2,7 @@
 //                                                           RAYTRACINGSPACE.JS
 //============================================================================================================================================
 // 🧩 Two-level ray-tracing acceleration structure (TLAS over active scene occupants + Binned-SAH BLAS per facet set)
-//    for the RTX Full ReSTIR GI Path Tracer in WebGPU.
+//    for the software-BVH Full ReSTIR GI path tracer in WebGPU (WGSL compute; WebGPU exposes no hardware ray tracing, so nothing here touches RT cores).
 
 import { OccupantRole } from "./FacetStructure.js";
 import { CourseMaterial } from "./MaterialSpecification.js";
@@ -305,7 +305,8 @@ export function ConstructFacetBlas(Facets, GlobalNodeOffset, GlobalTriangleOffse
         NodeBytes,
         NodeCount: Nodes.length,
         TriangleBytes,
-        TriangleCount: FacetCount
+        TriangleCount: FacetCount,
+        Order                       // [-] leaf slot i holds facet Order[i]: the emissive table maps facets to BVH triangles through it
     };
 }
 
@@ -347,6 +348,10 @@ export class RayTracingSpace
             const Blas = ConstructFacetBlas(Set.Facets, NodeCursor, TriangleCursor);
             this.FacetBlasRoots[SetIndex] = Blas.RootNode;
             Set.BlasRoot = Blas.RootNode;
+            // 📝 Facet f of this set is BVH triangle TriangleSlots[f] (global index into the triangle buffer): EmissiveLightSpace stores it so the shader can say whether a traced hit is
+            //    a triangle the light technique can sample.
+            Set.TriangleSlots = new Uint32Array(Set.Facets.length);
+            Blas.Order.forEach((FacetIndex, Slot) => { Set.TriangleSlots[FacetIndex] = TriangleCursor + Slot; });
             NodeCursor     += Blas.NodeCount;
             TriangleCursor += Blas.TriangleCount;
             BlasResults.push(Blas);

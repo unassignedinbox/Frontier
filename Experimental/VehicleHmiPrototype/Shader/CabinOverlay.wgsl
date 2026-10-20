@@ -188,7 +188,7 @@ fn OverlayFragment(Varying: OverlayVarying) -> @location(0) vec4f
         let Texel = textureSampleLevel(ClusterTexture, LinearSampler, Varying.Coordinates, 0.0);
         return vec4f(ScreenRadiance(Texel.rgb * Texel.a * Overlay.Tablet.y), 1.0);
     }
-    // 📝 Mirror: in RTX ray-traced reflection mode when the raster mirror cameras are off, let the G-buffer's
+    // 📝 Mirror: in BVH ray-traced reflection mode when the raster mirror cameras are off, let the G-buffer's
     //    multi-bounce ray-traced MirrorGlass reflection shine through instead of painting flat sky over it.
     if (Overlay.Glass.z < 0.5 && FeatureEnabled(Frame, FeatureRayTracing) && FeatureEnabled(Frame, FeatureReflection)
         && FeatureEnabled(Frame, FeatureRayTracedReflections))

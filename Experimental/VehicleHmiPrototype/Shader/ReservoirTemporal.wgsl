@@ -95,8 +95,8 @@ fn ResampleTemporal(@builtin(global_invocation_id) Invocation: vec3u)
     textureStore(GuideTarget, vec2i(TracePixel), vec4f(EncodeOctahedral(Normal), ViewDepth, 1.0 + ExpectedDepth));
     var Seed = ConstructPixelSeed(TracePixel, Frame.FrameIndex, 11u);
 
-    // ② initial candidates: per candidate the screen first (nearest-depth walk), then the BVH path tracer in RTX mode or the scene
-    //    distance field in GTX mode, resumed from the last point the screen proved unoccluded
+    // ② initial candidates: per candidate the screen first (nearest-depth walk), then the BVH path tracer (BVH renderer) or the scene
+    //    distance field in SDF mode, resumed from the last point the screen proved unoccluded
     let Bias         = ResolveSurfaceBias(Position);
     let Basis        = ConstructTangentFrame(Normal);
     let UseRayTrace  = FeatureEnabled(Frame, FeatureRayTracing);
@@ -112,6 +112,12 @@ fn ResampleTemporal(@builtin(global_invocation_id) Invocation: vec3u)
         {
             Strike = TraverseScreenDepth(Position + Normal * ResolveScreenBias(ViewDepth), Direction, 300.0, ScreenTraversalSteps);
         }
+        // 📝 A screen strike on an emitter the table represents would count its emission in full while DirectRadiance's light sample already supplies the light technique's
+        //    share: let that ray take the BVH path, whose first-hit weight is the BSDF technique's share of the partition.
+        if (Strike.Hit && UseRayTrace && IsListedOccupant(ResolveEmissiveCell(Position), Strike.Identity))
+        {
+            Strike.Hit = false;
+        }
         var Candidate : ReservoirSample;
         if (Strike.Hit)
         {
@@ -122,7 +128,7 @@ fn ResampleTemporal(@builtin(global_invocation_id) Invocation: vec3u)
         }
         else if (UseRayTrace)
         {
-            Candidate = TraceMultiBouncePath(Position + Normal * RayEpsilon, Direction, &Seed);
+            Candidate = TraceMultiBouncePath(Position + Normal * RayEpsilon, Normal, Direction, &Seed);
         }
         else
         {

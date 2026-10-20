@@ -63,7 +63,7 @@ const FeatureAutoExposure      : u32 = 512u;
 const FeatureRadianceRefresh   : u32 = 1024u;
 const FeatureTemporalRestart   : u32 = 2048u;   // [-] set for one frame: every temporal history restarts
 const FeatureSmokeComposite    : u32 = 4096u;   // [-] smoke and plume composited over the recombined radiance
-const FeatureRayTracing        : u32 = 8192u;   // [-] RTX TLAS/BLAS multi-bounce ReSTIR path tracer
+const FeatureRayTracing        : u32 = 8192u;   // [-] software BVH (TLAS/BLAS) multi-bounce ReSTIR path tracer
 const FeatureRayTracedShadows  : u32 = 16384u;  // [-] exact BVH visibility for solar cone & clustered IES lights
 const FeatureRussianRoulette      : u32 = 32768u;  // [-] throughput-weighted Russian roulette termination
 const FeatureFireflyFilter        : u32 = 65536u;  // [-] Jacobian & variance firefly/boiling suppression
@@ -158,6 +158,7 @@ const RoleDistance : u32 = 2u;
 const RoleCards    : u32 = 4u;
 const RoleDynamic  : u32 = 8u;
 const RoleFallback : u32 = 16u;   // card-less: FirstCard carries the packed albedo
+const RoleEmissiveCluster : u32 = 64u;   // represented in the emissive light table (EmissiveLightSpace.js)
 const RoleShredded : u32 = 32u;   // fractured / shredded tyre piece: ray traversal passes through its TyreFamily rubber
 const NoMaterialOverride : u32 = 0xFFFFFFFFu;
 

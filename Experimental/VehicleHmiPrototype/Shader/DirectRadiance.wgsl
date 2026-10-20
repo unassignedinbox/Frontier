@@ -132,7 +132,7 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
     }
 
     // 📝 Only the lights whose reach touches this point's grid cell are evaluated (LightClusterSpace.wgsl). Their shadow is the exact
-    //    BVH visibility in RTX mode and the distance-field soft shadow otherwise.
+    //    BVH visibility when the BVH renderer is active and the distance-field soft shadow otherwise.
     var Candidates = ResolveLightCandidates(Position);
     while (Candidates != 0u)
     {
@@ -159,6 +159,39 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
             Irradiance += Lit;
             Radiance += Lit * ResolveDirectReflectance(Surface, Normal, View, TowardLight);
         }
+    }
+
+    // 📝 The light technique of the emissive partition at this primary vertex (BVH mode only; see EmissiveLightSpace.js and RayTraversal.wgsl). The ReSTIR candidates that start here are
+    //    cosine sampled and see diffuse transport only, so this adds the emitters' DIFFUSE share: albedo/π × irradiance, with the BSDF technique's w_b taken off (the candidate's
+    //    first hit carries it). Specular reflections of emitters stay with the reflection pass, which counts them in full.
+    let EmissiveWords = ResolveEmissiveCell(Position);
+    if (EmissiveUsable(EmissiveWords))
+    {
+        var EmissiveIrradiance = vec3f(0.0);
+        for (var Sample = 0u; Sample < EmissiveSamplesPerVertex; Sample += 1u)
+        {
+            let Draw    = vec4f(ProjectTemporalPair(Pixel, Frame.FrameIndex, 21u + 4u * Sample), ProjectTemporalPair(Pixel, Frame.FrameIndex, 23u + 4u * Sample));
+            let Emitter = SampleEmissiveLight(Position, EmissiveWords, Draw);
+            if (!Emitter.Valid)
+            {
+                continue;
+            }
+            let Toward     = Emitter.Position - Position;
+            let Dist       = length(Toward);
+            let LDir       = Toward / max(Dist, 1.0e-4);
+            let CosSurface = dot(Normal, LDir);
+            if (CosSurface <= 1.0e-4)
+            {
+                continue;
+            }
+            let CosEmitter = abs(dot(Emitter.Normal, LDir));
+            let BsdfWeight = EvaluateEmissiveBsdfWeight(CosSurface * InversePi, Dist, CosEmitter);
+            let Visible    = TraceSceneVisibility(RayOrigin, LDir, RayEpsilon, max(Dist - 0.08, RayEpsilon));
+            EmissiveIrradiance += Emitter.Radiance * (CosEmitter * CosSurface * (1.0 - BsdfWeight) * Visible
+                                                      / (max(Dist * Dist, 1.0e-4) * max(Emitter.Pdf, 1.0e-8) * f32(EmissiveSamplesPerVertex)));
+        }
+        Irradiance += EmissiveIrradiance;
+        Radiance   += ResolveDiffuseAlbedo(Surface) * InversePi * EmissiveIrradiance;
     }
 
     textureStore(DirectTarget, vec2i(Pixel), vec4f(Radiance, Visibility));

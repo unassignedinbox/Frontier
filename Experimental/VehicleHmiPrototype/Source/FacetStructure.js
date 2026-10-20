@@ -21,7 +21,8 @@ export const OccupantRole = Object.freeze({
     Distance: 2,   // [-] - unioned into the scene distance field from its own distance volume
     Cards:    4,   // [-] - owns surface cards in the card depot
     Dynamic:  8,   // [-] - transform may change every frame
-    Fallback: 16   // [-] - card-less: a traced hit shades from the packed albedo (FirstCard) instead of reading cards
+    Fallback: 16,  // [-] - card-less: a traced hit shades from the packed albedo (FirstCard) instead of reading cards
+    EmissiveCluster: 64   // [-] - represented in the emissive light table (EmissiveLightSpace.js): the ray tracer samples it as a light and partitions its emission
 });
 
 export const VertexStride = 32;   // [B] - position.xyz, family (u32), normal.xyz, occupant offset (u32; composite sets)

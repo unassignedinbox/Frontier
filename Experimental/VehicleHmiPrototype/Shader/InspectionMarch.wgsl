@@ -62,7 +62,7 @@ fn MarchInspection(@builtin(global_invocation_id) Invocation: vec3u)
                     var Seed = ConstructPixelSeed(Pixel, Frame.FrameIndex, 53u);
                     let Surf = ProjectSurfaceSample(RayMaterials[RtHit.Family]);
                     Colour   = Surf.Emission * Frame.EmissionScale
-                             + EvaluateDirectNextEvent(RtHit.Position, RtHit.Normal, -Direction, Surf, &Seed, true);
+                             + EvaluateDirectNextEvent(RtHit.Position, RtHit.Normal, -Direction, Surf, &Seed, true, false);
                 }
                 else
                 {
