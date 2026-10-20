@@ -33,8 +33,9 @@ enum class BlendProfile : uint8_t
 // 📝 Size is the ball radius for a fillet and the equal setback along each face for a chamfer.
 struct BlendSettings
 {
-    BlendProfile Profile = BlendProfile::Fillet;                                             // [-]   - Cross-section
-    double       Size    = 0.1;                                                              // [len] - Radius / setback
+    BlendProfile Profile             = BlendProfile::Fillet;                                 // [-]   - Cross-section
+    double       Size                = 0.1;                                                  // [len] - Radius / setback
+    bool         TangentChainEnabled = false;                                                // [-]   - Grow the edge set along G1 chains first
 };
 
 // 💡 Everything about one blended edge that does not depend on its neighbours. Spine and both contact curves share
@@ -85,6 +86,14 @@ struct EdgeBlendSheetOutcome
 
 // Closest point of a surface to a position (exact inversion).
 [[nodiscard]] Vector3 ProjectPointOntoSurface(const SurfaceGeometry& Surface, Vector3 Position) noexcept;
+
+// 💡 Tangent-chain propagation: the seeds plus every sharp edge reached through a vertex where the edge curve continues
+//    G1 (unit tangents agree to 1e-9). Smooth edges (tangent faces, e.g. the seam between a slot wall and its rounded
+//    end) are never added — they have nothing to blend. Order: seeds first, then breadth-first along the chains.
+[[nodiscard]] std::vector<EdgeToken> GrowTangentChain(const ModelPartition& Partition, BodyToken Body, const std::vector<EdgeToken>& Seeds);
+
+// True when the two faces of a manifold edge meet tangentially at mid-edge (normals parallel to 1e-9).
+[[nodiscard]] bool SmoothEdgeCondition(const ModelPartition& Partition, EdgeToken Edge);
 
 [[nodiscard]] const char* BlendProfileLabel(BlendProfile Profile) noexcept;
 

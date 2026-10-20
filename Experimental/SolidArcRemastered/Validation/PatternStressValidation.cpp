@@ -373,8 +373,9 @@ namespace
         };
     }
 
-    // Blends Edges (Count < 0: any non-empty selection) of Built.Body in place.
-    void BlendStep(ModelPartition& Partition, StressBuilt& Built, const EdgeCriterion& Criterion, int Count, BlendProfile Profile, double Size)
+    // Blends Edges (Count < 0: any non-empty selection) of Built.Body in place; ChainCondition grows the seeds along G1 chains.
+    void BlendStep(ModelPartition& Partition, StressBuilt& Built, const EdgeCriterion& Criterion, int Count, BlendProfile Profile, double Size,
+                   bool ChainCondition = false)
     {
         if (!Built.Refusal.empty()) return;
         const std::vector<EdgeToken> Edges = EdgesWhere(Partition, Built.Body, Criterion);
@@ -386,6 +387,7 @@ namespace
         BlendSettings Settings;
         Settings.Profile = Profile;
         Settings.Size    = Size;
+        Settings.TangentChainEnabled = ChainCondition;
         const auto         Moment  = Clock::now();
         const BlendOutcome Outcome = BlendEdges(Partition, Built.Body, Edges, Settings);
         Narrate("BlendEdges", Moment);
@@ -395,6 +397,7 @@ namespace
         Built.MaximalCondition = false;                                                       // blend faces may share a carrier with a support
         Built.OracleClearance = std::max(Built.OracleClearance, 1.5 * Size);
         if (Count < 0) Built.Note += std::to_string(Edges.size()) + " edges blended";
+        if (ChainCondition) Built.Note += std::to_string(Edges.size()) + " seed(s) → " + std::to_string(Outcome.Statistics.BlendedEdges) + " edges along the tangent chain";
     }
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -1008,6 +1011,24 @@ namespace
         {
             StressBuilt Built = RoundedBlock(P);
             BlendStep(P, Built, TopLoop, -1, BlendProfile::Chamfer, 0.1);
+            Built.Expected -= EdgeChamferLoss(0.1, 8.0) + BossRimChamferLoss(0.5, 0.1);
+            return Built;
+        });
+        Add("T", "T7", "Stadium slot + fillet r 0.1 seeded with ONE rim line, tangent chain on (must equal T1)", [=](Partition& P)
+        {
+            StressBuilt Built = StadiumSlot(P);
+            BlendStep(P, Built, [=](Vector3 Start, Vector3 End, const CurveGeometry& Curve)
+                      { return SlotRim(1.0)(Start, End, Curve) && std::fabs(Start.Y - 2.6) < 1e-9 && std::fabs(End.Y - 2.6) < 1e-9; }, 1,
+                      BlendProfile::Fillet, 0.1, true);
+            Built.Expected -= 2.0 * EdgeFilletLoss(0.1, 4.0) + BoreRimFilletLoss(0.4, 0.1);
+            return Built;
+        });
+        Add("T", "T8", "Rounded block + chamfer c 0.1 seeded with ONE top line, tangent chain on (must equal T5)", [=](Partition& P)
+        {
+            StressBuilt Built = RoundedBlock(P);
+            BlendStep(P, Built, [=](Vector3 Start, Vector3 End, const CurveGeometry& Curve)
+                      { return TopLoop(Start, End, Curve) && std::fabs(Start.Y) < 1e-9 && std::fabs(End.Y) < 1e-9; }, 1,
+                      BlendProfile::Chamfer, 0.1, true);
             Built.Expected -= EdgeChamferLoss(0.1, 8.0) + BossRimChamferLoss(0.5, 0.1);
             return Built;
         });

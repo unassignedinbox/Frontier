@@ -927,7 +927,8 @@ BlendOutcome BlendEdges(ModelPartition& Partition, BodyToken Body, const std::ve
         return Outcome;
     };
     BlendRebuild Rebuild(Partition, Body, Settings, Outcome);
-    if (std::string Refusal = Rebuild.Run(Edges); !Refusal.empty()) return Finish(Refusal);
+    const std::vector<EdgeToken> Selection = Settings.TangentChainEnabled ? GrowTangentChain(Partition, Body, Edges) : Edges;
+    if (std::string Refusal = Rebuild.Run(Selection); !Refusal.empty()) return Finish(Refusal);
 
     // ⑤ Assembly and the atomic soundness gate (topology + geometry audit, genus unchanged).
     const AssemblyOutcome Assembly = AssembleBody(Partition, Rebuild.Blueprint, "Blend");

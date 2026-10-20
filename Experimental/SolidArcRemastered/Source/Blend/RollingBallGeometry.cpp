@@ -13,7 +13,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numbers>
+#include <set>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -312,6 +314,73 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     Sheet.Sense = ((Facing > 0.0) == Sheet.ConvexCondition) ? Orientation::Forward : Orientation::Reversed;
     Outcome.Sheet = Sheet;
     return Outcome;
+}
+
+bool SmoothEdgeCondition(const ModelPartition& Partition, EdgeToken Edge)
+{
+    const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+    const FinToken     First   = Profile.RadialFin;
+    const FinToken     Second  = Partition.RadialMate(First);
+    if (Second == First || Partition.RadialMate(Second) != First) return false;
+    const CurveGeometry& Carrier = Partition.Curves.Resolve(Profile.Curve);
+    const double  Middle   = 0.5 * (Profile.IntervalLow + Profile.IntervalHigh);              // [-] - Mid-edge τ
+    const Vector3 Position = EvaluateCurve(Carrier, Middle).Position;
+    Vector3 Normals[2];
+    int     Side = 0;
+    for (FinToken Fin : { First, Second })
+    {
+        const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+        const FaceProfile& Face = Partition.Faces.Resolve(Partition.Loops.Resolve(Use.Loop).Face);
+        const Vector2 Reference = Use.SurfaceCurve ? EvaluateParameterCurve(*Use.SurfaceCurve, Middle).Position : Vector2{ 0.0, 0.0 };
+        Normals[Side++] = ResolveOutwardNormal(Partition.Surfaces.Resolve(Face.Surface), Face.Sense, Position, Reference);
+    }
+    return Length(Cross(Normals[0], Normals[1])) < 1.0e-9 && Dot(Normals[0], Normals[1]) > 0.0;
+}
+
+std::vector<EdgeToken> GrowTangentChain(const ModelPartition& Partition, BodyToken Body, const std::vector<EdgeToken>& Seeds)
+{
+    const BodyInventory Inventory = Partition.CollectInventory(Body);
+    std::map<uint32_t, std::vector<std::pair<EdgeToken, int>>> Star;                         // vertex slot → (edge, end)
+    for (EdgeToken Edge : Inventory.Edges)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        Star[Profile.Start.Slot].push_back({ Edge, 0 });
+        Star[Profile.End.Slot].push_back({ Edge, 1 });
+    }
+    // Unit tangent at an edge end, pointing from the vertex into the edge.
+    const auto Inward = [&](EdgeToken Edge, int End)
+    {
+        const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
+        const CurveGeometry& Carrier = Partition.Curves.Resolve(Profile.Curve);
+        const Vector3 Along = Normalize(EvaluateCurve(Carrier, End == 0 ? Profile.IntervalLow : Profile.IntervalHigh).Derivative);
+        return End == 0 ? Along : Along * -1.0;
+    };
+    std::vector<EdgeToken> Chain;
+    std::set<uint32_t>     Chosen;
+    for (EdgeToken Seed : Seeds)
+    {
+        if (Chosen.insert(Seed.Slot).second) Chain.push_back(Seed);
+    }
+    for (size_t Cursor = 0; Cursor < Chain.size(); ++Cursor)
+    {
+        const EdgeToken    Edge    = Chain[Cursor];
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        if (Profile.Start == Profile.End) continue;                                          // Closed rim: no ends to cross
+        for (int End = 0; End < 2; ++End)
+        {
+            const VertexToken Vertex = End == 0 ? Profile.Start : Profile.End;
+            const Vector3     Leaving = Inward(Edge, End) * -1.0;                            // [-] - Direction through the vertex
+            for (const auto& [Other, OtherEnd] : Star[Vertex.Slot])
+            {
+                if (Chosen.count(Other.Slot) != 0) continue;
+                if (Dot(Leaving, Inward(Other, OtherEnd)) < 1.0 - 1.0e-9) continue;
+                if (SmoothEdgeCondition(Partition, Other)) continue;
+                Chosen.insert(Other.Slot);
+                Chain.push_back(Other);
+            }
+        }
+    }
+    return Chain;
 }
 
 const char* BlendProfileLabel(BlendProfile Profile) noexcept
