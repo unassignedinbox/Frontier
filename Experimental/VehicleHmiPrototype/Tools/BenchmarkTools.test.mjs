@@ -83,3 +83,69 @@ test("plumbing: harness + BenchHooks + RunBenchmark produce a result file on the
     assert.ok(["faster", "slower", "no measurable difference", "no data"].includes(Result.Comparison.Verdict));
     assert.match(Result.Machine.SwiftShader, /sparticuz/);
 });
+
+// ---- the check-run reporter (Tools/PostCheckRun.mjs) ----
+import { FilterTap, Fit, BuildRequest, ParseArguments as ParseReportArguments, MaximumText } from "./PostCheckRun.mjs";
+
+test("reporter: TAP output is cut down to counts, names, failures and printed diagnostics", () =>
+{
+    const Tap = ["TAP version 13", "# Subtest: a", "    ok 1 - inner", "ok 1 - alpha", "  ---", "  duration_ms: 1.5", "  ...", "# Subtest: b", "not ok 2 - beta", "  ---", "  duration_ms: 2.5",
+                 "  error: 'boom'", "  code: 'ERR_ASSERTION'", "  expected: 255", "  actual: 244", "  stack: |-", "    at x", "  ...", "ok 3 - gamma # SKIP", "  # measured 12 of 20736 pixels differ", "1..3", "# tests 3", "# pass 1", "# fail 1", "# skipped 1", "# duration_ms 99"].join("\n");
+    const Kept = FilterTap(Tap).split("\n");
+    assert.ok(Kept.includes("ok 1 - alpha") && Kept.includes("not ok 2 - beta") && Kept.includes("ok 3 - gamma # SKIP") && Kept.includes("    ok 1 - inner"));
+    assert.ok(Kept.includes("  error: 'boom'") && Kept.includes("  expected: 255") && Kept.includes("  actual: 244"), "the failing test's message is kept");
+    assert.ok(Kept.includes("# tests 3") && Kept.includes("# fail 1") && Kept.includes("  # measured 12 of 20736 pixels differ"), "counts and printed diagnostics are kept");
+    assert.ok(!Kept.some((Line) => /duration_ms: 1\.5|stack:|at x|Subtest/.test(Line)), "passing tests' YAML, stacks and subtest headers are dropped");
+    assert.equal(FilterTap("plain text\nno tap"), "", "non-TAP lines are not invented");
+});
+
+test("reporter: the request is a valid completed check run and fits the API's limits", () =>
+{
+    const Long = Array.from({ length: 5000 }, (_, Index) => `line ${Index} with some text`).join("\n");
+    assert.ok(Fit(Long).length < MaximumText + 100 && Fit(Long).endsWith("line 4999 with some text") && /characters cut from the start/.test(Fit(Long)), "the end is kept");
+    assert.equal(Fit("short"), "short");
+    const Request = BuildRequest({ Name: "Report: unit tests", Title: "87 passed, 0 failed", Summary: "Unit tests", Text: "a ``` fence", Conclusion: "success", Sha: "a".repeat(40), Repository: "o/r" });
+    assert.equal(Request.Url, "https://api.github.com/repos/o/r/check-runs");
+    assert.equal(Request.Body.status, "completed"); assert.equal(Request.Body.conclusion, "success"); assert.equal(Request.Body.head_sha, "a".repeat(40));
+    assert.ok(Request.Body.output.text.startsWith("```text\n") && Request.Body.output.text.endsWith("\n```") && !/a ``` fence/.test(Request.Body.output.text), "a fence inside the text cannot close the block");
+    assert.ok(JSON.stringify(Request.Body).length < 65535 + 2000);
+    assert.throws(() => BuildRequest({ Name: "x", Conclusion: "green", Sha: "s", Repository: "o/r" }), /not a check-run conclusion/);
+    assert.throws(() => BuildRequest({ Name: "", Conclusion: "success", Sha: "s", Repository: "o/r" }), /required/);
+    const Parsed = ParseReportArguments(["--name", "n", "--title", "t", "--conclusion", "failure", "--filter", "tap", "--dry"]);
+    assert.equal(Parsed.name, "n"); assert.equal(Parsed.conclusion, "failure"); assert.equal(Parsed.dry, true);
+    assert.throws(() => ParseReportArguments(["--bogus", "1"]), /unknown option/);
+});
+
+import { TapTitle } from "./PostCheckRun.mjs";
+import { RenderCpuTable } from "./BenchmarkStatistics.mjs";
+
+test("reporter: a TAP title from the counts, raw markdown mode, and the CPU table", () =>
+{
+    assert.equal(TapTitle("# tests 96\n# pass 87\n# fail 0\n# skipped 9\n"), "87 passed, 0 failed, 9 skipped");
+    assert.equal(TapTitle("no tap here"), "");
+    const Raw = BuildRequest({ Name: "n", Title: "t", Text: "| a | b |\n|---|---|", Conclusion: "neutral", Sha: "s", Repository: "o/r", Raw: true });
+    assert.equal(Raw.Body.output.text, "| a | b |\n|---|---|", "markdown goes through unwrapped");
+    assert.equal(ParseReportArguments(["--raw"]).raw, true);
+    const Table = RenderCpuTable({ Machine: { Cpu: "Test CPU", Cores: 4, Node: "v22" }, AtlasBuild: { MedianMs: 16.76, MinMs: 14.7, MaxMs: 18.5 }, EmissiveInstances: 62, EmissiveFullRebuild: { MedianMs: 2.7, MinMs: 2.5, MaxMs: 3.6 } });
+    assert.match(Table, /Test CPU × 4 cores/); assert.match(Table, /\| AtlasBuild \| 16\.760 \| 14\.700 \| 18\.500 \|/); assert.match(Table, /EmissiveInstances: 62/);
+    // the summariser reads a directory holding both kinds of file
+    const Directory = fs.mkdtempSync(path.join(os.tmpdir(), "bench-"));
+    fs.writeFileSync(path.join(Directory, "cpu-bench.json"), JSON.stringify({ Machine: { Cpu: "Test CPU", Cores: 4, Node: "v22" }, AtlasBuild: { MedianMs: 1, MinMs: 1, MaxMs: 1 }, EmissiveFullRebuild: { MedianMs: 2, MinMs: 2, MaxMs: 2 } }));
+    fs.writeFileSync(path.join(Directory, "bench-x.json"), JSON.stringify({ Label: "x", Baseline: "a", Variant: "b", Machine: {}, Comparison: Compare([100, 101], [80, 81]) }));
+    const Markdown = SummariseDirectory([Directory]);
+    assert.match(Markdown, /### Toggle benchmarks/); assert.match(Markdown, /### CPU microbenchmarks/); assert.match(Markdown, /\*\*faster\*\*/);
+});
+
+import { EscapeData, EscapeProperty, Annotation, AnnotationLimit } from "./PostCheckRun.mjs";
+
+test("reporter: annotations are escaped the way the runner expects and cannot be split or forged", () =>
+{
+    assert.equal(EscapeData("a%b\nc\r\nd"), "a%25b%0Ac%0D%0Ad");
+    assert.equal(EscapeProperty("Report: a, b"), "Report%3A a%2C b");
+    const Line = Annotation("Report: unit tests: 87 passed, 0 failed", "# pass 87\n# fail 0\n::error::not a command at line start");
+    assert.ok(Line.startsWith("::notice title=Report%3A unit tests%3A 87 passed%2C 0 failed::"), Line.slice(0, 80));
+    assert.ok(!Line.includes("\n"), "the whole annotation is one line: a newline would end the command and let the text forge another");
+    assert.ok(Line.includes("%0A%0A") === false && Line.includes("# pass 87%0A# fail 0%0A::error::not a command"), "newlines are encoded, so a '::error::' inside the text is data, not a command");
+    assert.ok(Annotation("t", "x".repeat(100000)).length < AnnotationLimit + 400, "long text is cut to the API's limit, keeping the end");
+    assert.equal(Annotation("t", "x", "warning"), "::warning title=t::x");
+});

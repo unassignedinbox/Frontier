@@ -1,5 +1,48 @@
 # Vehicle HMI Prototype — JavaScript/WebGPU + Jolt WebAssembly
 
+## The combined WebGPU prototype: start here
+
+One app, built from five branches, with each feature taken from the implementation that was better where they competed, and the missing pieces ported from the
+user's other repositories. The plan, the evidence behind each choice, the numbers and the known issues are in **[COMBINED_PLAN.md](COMBINED_PLAN.md)**; this page is how to run it.
+
+| Feature | What it is here | Switch (URL) |
+| --- | --- | --- |
+| **BVH path tracer** | A *software* two-level BVH (TLAS over occupants, binned-SAH BLAS per mesh) traversed in WGSL compute shaders. WebGPU has no hardware ray tracing, so nothing here uses RT cores. | `?renderer=bvh` (default) or `sdf`. `rtx` and `gtx` are accepted as the old names. |
+| **ReSTIR GI** | Triangle ReSTIR GI with multi-bounce paths, temporal and spatial reuse, visibility reuse (from the f5 branch). | `bounces`, `reflbounces`, `candidates` |
+| **Screen traces** (Lumen's last pillar) | A nearest-depth hierarchy walk over the depth buffer first; on a miss the ray hands off to the scene distance field (SDF mode) or the BVH tracer (BVH mode), resuming where the screen proved the ray unoccluded. | `?screentraces=1` |
+| **Clustered lights, system 1: real lights** | A world grid (16 × 16 × 4) of `u32` masks over up to 32 point, spot, flood and street lights, with IES photometry (4 real measured files, 3 authored: `Profiles/README.md`). | `?lightgrid=0`, `?ies=0` |
+| **Clustered lights, system 2: emissive surfaces** | Emissive triangles grouped into clusters, binned into the same grid; each cell keeps its 8 strongest, and next-event estimation samples them with exact pdfs under an unbiased partition (BVH renderer). | `?emissive=0` |
+| **XPBD tyres** | A 3-D XPBD carcass per tyre (6 compute kernels) whose load/deflection law drives the vehicle's tyre stiffness and contact patch. Ported from Slate `ca517016`. | `?tyres=analytic`, `?tyresubsteps=8…32` (default 32) |
+
+```sh
+# From Experimental/VehicleHmiPrototype
+npm ci && npm --prefix Tools ci                  # Jolt (browser WASM) and Dawn (headless validation)
+python3 -m http.server 8080 --bind 0.0.0.0       # then open http://localhost:8080/  (Chrome / Edge with WebGPU)
+```
+
+### Tests, all of which have been run
+
+```sh
+npm test                                         # unit tests, CPU only (a few seconds)
+npm --prefix Tools run validate:modes            # the whole app on Dawn's null backend in 20 URL modes: every shader, layout and pipeline validated
+npm --prefix Tools run validate                  # …and validate:screen, :effects, :slate, :orbit, :emissive
+RUN_GPU=1 npm test                               # adds the EXECUTED tests: WGSL really runs on CPU cores through SwiftShader (needs registry.npmjs.org once; ~30 min)
+npm --prefix Tools run bench:cpu                 # CPU-side costs of the new structures on the real scene
+npm --prefix Tools run bench -- --label "screen traces" --baseline "renderer=bvh" --variant "renderer=bvh&screentraces=1"   # one toggle, baseline vs variant, interleaved
+```
+
+*Executed* means the shader code runs: the null backend only validates it. The executed tests compare the WGSL with its CPU twin (emissive sampler: 3000 queries; IES lookup:
+2400 directions), check the XPBD kernels physically (load rises with deflection and pressure; the four loads sum to the car's weight in the full app), and render whole frames
+headless, then compare frames (the light grid is an exact cull; screen traces stay close to the reference; emissive clusters add no energy). GitHub Actions (`.github/workflows/`) runs the unit tests, the 20-mode validation, the executed tests and a toggle-benchmark matrix on every push of
+the branch. 🔴 **GitHub runners have no GPU**: the benchmark numbers are shader work on CPU cores (a relative measure), not GPU time, and every report says so.
+
+Documents: [COMBINED_PLAN.md](COMBINED_PLAN.md) (plan, provenance, results, known issues, notes for the C++ port) · [Profiles/README.md](Profiles/README.md) (IES provenance and licences) ·
+[Tools/TyreLattice/README.md](Tools/TyreLattice/README.md) (how the XPBD tyre lattice is exported from the C++ engine) · [SLATE_PORT.md](SLATE_PORT.md) (the earlier Jolt/HMI port notes).
+
+---
+
+*The sections below are the inherited descriptions of the parts (f5's vehicle prototype, then the IlluminationHost exhibit); the combined-prototype behaviour above takes precedence.*
+
 Reconstructed from `Experimental/01a141bc-a4a3-72ce-8295-398724231feb.patch`
 on `SultanAladin/Frontier-`, supplied branch `arena/9440f4d0-frontier`.
 The source patch is not retained. Vehicle `.facet` binaries were regenerated with
@@ -408,6 +451,14 @@ palette, glow, momentum) and the triggers.
 | `camera=Chase\|Cockpit\|Passenger\|Hood\|Tyre FL\|Tyre RL` | camera rig at start |
 | `hudscale=0.6…1.8` | on-screen diagnostic HUD scale (physical cockpit stays fixed) |
 | `capture=1` | diagnostic: present through a read-back canvas (headless software adapters) |
+| `renderer=bvh\|sdf` | the BVH path tracer (default) or the distance-field renderer (`rtx` and `gtx` still work as the old names) |
+| `screentraces=1` | screen traces first (nearest-depth hierarchy walk), then the distance field (SDF mode) or the BVH tracer (BVH mode) |
+| `lightgrid=0` | test every light per pixel instead of the world light grid (an exact cull: the picture must not change) |
+| `ies=0` | analytic beam shapes instead of the IES photometric profiles |
+| `emissive=0` | no emissive-surface light sampling (BVH renderer): emitters are found by BSDF hits only |
+| `tyres=analytic` | the analytic tyre carcass spring instead of the XPBD carcass |
+| `tyresubsteps=8…32` | XPBD substeps per frame (default 32; 16 is not converged) |
+| `bounces=1…4`, `reflbounces=1…4`, `candidates=1…4` | BVH path tracer: GI bounces (3), reflection bounces (2), initial RIS candidates (2) |
 
 ## Stress test
 

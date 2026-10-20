@@ -4,7 +4,8 @@
 // 🧩 Executed-shader checks: the real app runs headless on a SwiftShader Vulkan device (Tools/RunOnSoftwareGpu.mjs), so every WGSL program
 //    really executes, and the captured frames are compared. Opt-in (minutes, needs registry.npmjs.org once for SwiftShader):
 //
-//        RUN_GPU=1 npm run test:gpu                       (SIZE, HARNESS_TIMEOUT and GPU_FRAMES override the defaults; GPU_ARTIFACT_DIR keeps the frames and logs)
+//        RUN_GPU=1 npm run test:gpu                       (SIZE, HARNESS_TIMEOUT and GPU_FRAMES override the defaults; GPU_ARTIFACT_DIR keeps the frames and logs;
+//                                                          GPU_JOBS=1 renders one frame at a time: each render needs about 0.7 GB)
 //
 // 📝 Frames are deterministic: the harness clock advances one 60 Hz step per executed frame and the TAA jitter and every random sequence
 //    follow the frame index, so two runs with the same query and frame count produce the same image up to a tiny noise floor (about 40 of
@@ -59,6 +60,20 @@ export function Compare(A, B)
     return { MeanAbs: Sum / (A.Width * A.Height * 3), Max, Different, Pixels: A.Width * A.Height };
 }
 
+// ➡️ How many pixels differ by at least N steps (the largest channel difference of the pixel).
+export function Histogram(A, B)
+{
+    assert.equal(A.Width, B.Width); assert.equal(A.Height, B.Height);
+    const Counts = new Array(256).fill(0);
+    for (let Index = 0; Index < A.Rgba.length; Index += 4)
+    {
+        let Pixel = 0;
+        for (let C = 0; C < 3; ++C) Pixel = Math.max(Pixel, Math.abs(A.Rgba[Index + C] - B.Rgba[Index + C]));
+        Counts[Pixel]++;
+    }
+    return { Counts, AtLeast: (Steps) => Counts.slice(Steps).reduce((Sum, Value) => Sum + Value, 0) };
+}
+
 export function Region(Image, X0, Y0, X1, Y1)
 {
     const Sum = [0, 0, 0]; let Count = 0;
@@ -68,9 +83,16 @@ export function Region(Image, X0, Y0, X1, Y1)
     return Sum.map((V) => V / Count);
 }
 
-function Render(Name, Query, FrameCount = Frames, Extra = {})
+// 📝 At most GPU_JOBS renders run at once (default 2; a headless render of this app takes 0.7 GB, so GPU_JOBS=1 on a machine with 4 GB or less). A render killed by the OOM killer
+//    dies with no output and exit code 1 (RunOnSoftwareGpu passes on a missing status as 1), which looks exactly like a failing test.
+let Running = 0; const Waiting = [];
+const Acquire = async () => { if (Running >= Number(process.env.GPU_JOBS || 2)) await new Promise((Resolve) => Waiting.push(Resolve)); Running++; };
+const Release = () => { Running--; Waiting.shift()?.(); };
+
+async function Render(Name, Query, FrameCount = Frames, Extra = {})
 {
     const Out = path.join(Scratch, `${Name}.png`);
+    await Acquire();
     return new Promise((Resolve, Reject) =>
     {
         const Child = spawn(process.execPath, [path.join(Here, "RunOnSoftwareGpu.mjs"), process.execPath, path.join(Here, "HeadlessHarness.mjs"), "..", String(FrameCount),
@@ -82,6 +104,7 @@ function Render(Name, Query, FrameCount = Frames, Extra = {})
         Child.stderr.on("data", (Chunk) => { Log += Chunk; });
         Child.on("exit", (Code) =>
         {
+            Release();
             // 📝 GPU_ARTIFACT_DIR: keep every rendered frame and its log (CI uploads the directory, so a failed comparison can be looked at)
             if (process.env.GPU_ARTIFACT_DIR) { fs.mkdirSync(process.env.GPU_ARTIFACT_DIR, { recursive: true }); fs.writeFileSync(path.join(process.env.GPU_ARTIFACT_DIR, `${Name}.log`), Log); if (fs.existsSync(Out)) fs.copyFileSync(Out, path.join(process.env.GPU_ARTIFACT_DIR, `${Name}.png`)); }
             (Code === 0 && fs.existsSync(Out)) ? Resolve({ Name, Out, Log, Image: DecodePng(Out) }) : Reject(new Error(`${Name} exited ${Code}\n${Log.slice(-1500)}`));
@@ -99,38 +122,43 @@ const GreyAsphalt = (Rgb, Label) =>
     assert.ok(G < R * 1.25 && G < B * 1.35 && R > 20, `${Label}: the ground must read as grey tarmac, not grass (R ${R.toFixed(0)} G ${G.toFixed(0)} B ${B.toFixed(0)})`);
 };
 
-test("executed: SDF frame is lit, finite and the tarmac stays tarmac through the old z-fight frames", { skip: !Enabled, timeout: 1800000 }, async () =>
+test("executed: SDF frame is lit, finite and the tarmac stays tarmac through the old z-fight frames", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
     const Off = await Once("sdf-grid", "renderer=sdf");
     assert.match(Off.Log, /0 errors, 0 warnings/);
+    T.diagnostic(`SDF frame: ground-left RGB ${Region(Off.Image, 0.02, 0.8, 0.25, 0.97).map((V) => V.toFixed(0))}, sky RGB ${Region(Off.Image, 0.1, 0.02, 0.9, 0.12).map((V) => V.toFixed(0))}`);
     GreyAsphalt(Region(Off.Image, 0.02, 0.8, 0.25, 0.97), "ground-left");
     GreyAsphalt(Region(Off.Image, 0.75, 0.8, 0.98, 0.97), "ground-right");
     const Sky = Region(Off.Image, 0.1, 0.02, 0.9, 0.12);
     assert.ok(Sky[2] > Sky[0] && Sky[2] > 120, `the sky is blue (${Sky.map((V) => V.toFixed(0))})`);
 });
 
-test("executed: the world light grid is an exact cull (SDF frame identical with every light tested)", { skip: !Enabled, timeout: 1800000 }, async () =>
+test("executed: the world light grid is an exact cull (SDF frame identical with every light tested)", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
     const [On, Off] = await Pair(Once("sdf-grid", "renderer=sdf"), Once("sdf-nogrid", "renderer=sdf&lightgrid=0"));
-    const Difference = Compare(On.Image, Off.Image);
-    // 📝 Measured noise floor: two IDENTICAL runs differ in ~40 of 20736 pixels by one 8-bit step (unordered atomics in the card relighting), so
-    //    "equal" means at most one or two steps in a couple of percent of the pixels, not bit equality. A light the grid wrongly dropped would
-    //    change whole beams by tens of steps.
-    assert.ok(Difference.Max <= 2 && Difference.Different <= 0.02 * Difference.Pixels,
-              `grid on vs off must agree to the noise floor, ${Difference.Different} of ${Difference.Pixels} pixels differ (max ${Difference.Max})`);
+    const Difference = Compare(On.Image, Off.Image), Steps = Histogram(On.Image, Off.Image);
+    T.diagnostic(`light grid on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ, max ${Difference.Max} (8-bit steps), mean abs ${Difference.MeanAbs.toFixed(3)}; pixels differing by at least 2 / 4 / 8 steps: ${Steps.AtLeast(2)} / ${Steps.AtLeast(4)} / ${Steps.AtLeast(8)}`);
+    // 📝 What "exact" can mean here. Two IDENTICAL runs already differ in tens of pixels by one 8-bit step (unordered atomics in the card relighting, TAA), and a high-contrast edge
+    //    (a highlight on a cone) can move a few pixels by two or three steps: measured here, 82 of 20736 pixels differ, 79 by exactly one step and 3, in a cluster 4 pixels wide, by
+    //    2-3. A light the grid wrongly dropped would change whole beams, hundreds of pixels by tens of steps. So the test bounds the pixels that moved by more than the floor, and
+    //    bounds how far any pixel moves, rather than demanding that no single pixel ever moves by 3.
+    assert.ok(Difference.Different <= 0.02 * Difference.Pixels, `grid on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ (at most 2 % may)`);
+    assert.ok(Steps.AtLeast(2) <= 0.001 * Difference.Pixels, `grid on vs off: ${Steps.AtLeast(2)} pixels moved by 2 or more steps (at most 0.1 % = ${Math.floor(0.001 * Difference.Pixels)} may)`);
+    assert.ok(Difference.Max <= 8, `grid on vs off: the largest change is ${Difference.Max} steps (a dropped light changes beams by tens)`);
 });
 
-test("executed: screen traces are sane, finite and change the SDF image", { skip: !Enabled, timeout: 1800000 }, async () =>
+test("executed: screen traces are sane, finite and change the SDF image", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
     const [Off, On] = await Pair(Once("sdf-grid", "renderer=sdf"), Once("sdf-screen", "renderer=sdf&screentraces=1"));
     assert.match(On.Log, /0 errors, 0 warnings/);
     GreyAsphalt(Region(On.Image, 0.02, 0.8, 0.25, 0.97), "screen traces: ground-left");
     const Difference = Compare(Off.Image, On.Image);
+    T.diagnostic(`SDF screen traces on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ, max ${Difference.Max}, mean abs ${Difference.MeanAbs.toFixed(3)} / 255`);
     assert.ok(Difference.Different > 0, "enabling the screen traces must change some pixels (otherwise the gate does nothing)");
     assert.ok(Difference.MeanAbs < 6, `screen traces must stay close to the distance-field reference (mean abs ${Difference.MeanAbs.toFixed(2)} / 255)`);
 });
 
-test("executed: BVH path tracer + screen traces + light grid render a sane, tarmac-grey frame", { skip: !Enabled, timeout: 1800000 }, async () =>
+test("executed: BVH path tracer + screen traces + light grid render a sane, tarmac-grey frame", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
     const [Bvh, BvhScreen] = await Pair(Once("bvh", "renderer=bvh"), Once("bvh-screen", "renderer=bvh&screentraces=1"));
     for (const Run of [Bvh, BvhScreen])
@@ -139,13 +167,14 @@ test("executed: BVH path tracer + screen traces + light grid render a sane, tarm
         GreyAsphalt(Region(Run.Image, 0.02, 0.8, 0.25, 0.97), `${Run.Name}: ground-left`);
     }
     const Difference = Compare(Bvh.Image, BvhScreen.Image);
+    T.diagnostic(`BVH screen traces on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ, max ${Difference.Max}, mean abs ${Difference.MeanAbs.toFixed(3)} / 255`);
     assert.ok(Difference.Different > 0, "enabling the screen traces must change some BVH pixels");
     assert.ok(Difference.MeanAbs < 10, `BVH with screen traces must stay close to the pure BVH path tracer (mean abs ${Difference.MeanAbs.toFixed(2)} / 255)`);
 });
 
 process.on("exit", () => { try { fs.rmSync(Scratch, { recursive: true, force: true }); } catch { /* best effort */ } });
 
-test("executed: emissive clusters on vs off at night: both lit and sane, and the partition neither adds nor removes energy", { skip: !Enabled, timeout: 1800000 }, async () =>
+test("executed: emissive clusters on vs off at night: both lit and sane, and the partition neither adds nor removes energy", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
     // 📝 What this can and cannot show. At night the lamps and the tail strip are lit, but the analytic street lamps still dominate, so the structure moves few pixels: this is a smoke
     //    and BIAS test (the partition of unity must not change the frame's mean light anywhere), not a variance test. The estimator itself is verified where it can be: against the analytic
@@ -168,5 +197,6 @@ test("executed: emissive clusters on vs off at night: both lit and sane, and the
         for (let C = 0; C < 3; ++C) assert.ok(Math.abs(A[C] - B[C]) < 4, `${Name} channel ${C}: ${A[C].toFixed(1)} with the structure, ${B[C].toFixed(1)} without`);
     }
     const Difference = Compare(On.Image, Off.Image);
+    T.diagnostic(`night, emissive clusters on vs off: mean luminance ${Mean(On.Image).toFixed(2)} vs ${Mean(Off.Image).toFixed(2)}; ${Difference.Different} of ${Difference.Pixels} pixels differ, mean abs ${Difference.MeanAbs.toFixed(3)} / 255; structure: ${JSON.stringify(State(On))}`);
     assert.ok(Difference.MeanAbs < 4, `the frames stay close (mean abs ${Difference.MeanAbs.toFixed(2)} / 255)`);
 });

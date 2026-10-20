@@ -39,6 +39,18 @@ export function Compare(BaselineRuns, VariantRuns)
     return { BaselineMs: Baseline, VariantMs: Variant, Ratio, Noise, Band, Verdict };
 }
 
+// ➡️ Markdown for the CPU microbenchmarks (Tools/CpuBenchHooks.mjs): one row per measurement.
+export function RenderCpuTable(Result)
+{
+    const Lines = [`**Machine**: ${Result.Machine?.Cpu ?? "unknown CPU"} × ${Result.Machine?.Cores ?? "?"} cores, Node ${Result.Machine?.Node ?? "?"}. These are JavaScript timings (V8 does what it does in the browser), so unlike the shader numbers they are valid on any runner.`, "",
+                   "| Measurement | median ms | min ms | max ms |", "|---|---:|---:|---:|"];
+    for (const [Name, Value] of Object.entries(Result))
+        if (Value && typeof Value === "object" && Number.isFinite(Value.MedianMs)) Lines.push(`| ${Name} | ${Value.MedianMs.toFixed(3)} | ${Value.MinMs.toFixed(3)} | ${Value.MaxMs.toFixed(3)} |`);
+    for (const [Name, Value] of Object.entries(Result))
+        if (typeof Value === "number") Lines.push("", `${Name}: ${Value}`);
+    return Lines.join("\n");
+}
+
 export const Percent = (Ratio) => `${Ratio >= 1 ? "+" : "−"}${(Math.abs(Ratio - 1) * 100).toFixed(1)} %`;
 
 // ➡️ Markdown for the job summary: one row per toggle.

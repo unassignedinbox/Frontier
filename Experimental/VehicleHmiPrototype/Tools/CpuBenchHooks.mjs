@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { ConstructPhotometricAtlas, PhotometryProfileFiles } from "../Source/Photometry.js";
 import { Summarise } from "./BenchmarkStatistics.mjs";
@@ -30,7 +31,7 @@ export default {
 
     async Report(Host)
     {
-        const Result = {};
+        const Result = { Machine: { Cpu: os.cpus()[0]?.model?.trim() ?? "unknown", Cores: os.cpus().length, Node: process.version } };
         // 1. the photometric atlas from the seven real files (a start-up cost: the FREGAT roadway file alone is 560 KB)
         const Texts = Object.fromEntries(PhotometryProfileFiles.map((Name) => [Name, fs.readFileSync(path.join(Here, "..", "Profiles", `${Name}.ies`), "utf8")]));
         Result.AtlasBuild = Time(() => ConstructPhotometricAtlas(Texts), 15, 2);

@@ -33,11 +33,18 @@ concurrency:
   group: vehicle-hmi-bench-${{ github.ref }}
   cancel-in-progress: true
 
+# checks: write lets the jobs publish their tables as check runs (Tools/PostCheckRun.mjs), readable through api.github.com even where job logs and artifacts are not reachable.
 permissions:
   contents: read
+  checks: write
+
+defaults:
+  run:
+    shell: bash
 
 env:
   APP: Experimental/VehicleHmiPrototype
+  GITHUB_TOKEN: ${{ github.token }}
   FRAMES: ${{ inputs.frames || '10' }}
   ROUNDS: ${{ inputs.rounds || '2' }}
 
@@ -47,8 +54,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -62,23 +69,16 @@ jobs:
       - name: Measure
         working-directory: Experimental/VehicleHmiPrototype/Tools
         run: |
-          set -e
-          HOOKS=CpuBenchHooks.mjs BACKEND=null node HeadlessHarness.mjs .. 3 "?capture=1" | tee cpu.log
           mkdir -p "$RUNNER_TEMP/bench"
+          HOOKS=CpuBenchHooks.mjs BACKEND=null node HeadlessHarness.mjs .. 3 "?capture=1" | tee cpu.log
           grep '^CPUBENCH ' cpu.log | sed 's/^CPUBENCH //' > "$RUNNER_TEMP/bench/cpu-bench.json"
-          {
-            echo "## CPU microbenchmarks"
-            echo
-            echo "$(node -e "const os=require('os');console.log(os.cpus()[0].model.trim()+' x '+os.cpus().length+' cores, Node '+process.version)")"
-            echo
-            echo '| What | median ms | min ms | max ms |'
-            echo '|---|---:|---:|---:|'
-            node -e "
-              const R = JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/bench/cpu-bench.json', 'utf8'));
-              for (const [K, V] of Object.entries(R)) if (typeof V === 'object') console.log('| ' + K + ' | ' + V.MedianMs.toFixed(3) + ' | ' + V.MinMs.toFixed(3) + ' | ' + V.MaxMs.toFixed(3) + ' |');
-            "
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+          node SummariseBenchmarks.mjs "$RUNNER_TEMP/bench" --out "$RUNNER_TEMP/bench/cpu-table.md"
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node PostCheckRun.mjs --name "Bench: CPU microbenchmarks" --title "CPU-side costs on the real scene" --file "$RUNNER_TEMP/bench/cpu-table.md" --raw --conclusion neutral
+      - uses: actions/upload-artifact@v7
         with:
           name: bench-cpu
           path: ${{ runner.temp }}/bench
@@ -104,8 +104,8 @@ jobs:
           - { slug: tyres-sub16,       label: "XPBD 16 substeps vs 32",                 baseline: "tyresubsteps=32",                       variant: "tyresubsteps=16" }
           - { slug: tyres-sub8,        label: "XPBD 8 substeps vs 32",                  baseline: "tyresubsteps=32",                       variant: "tyresubsteps=8" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -117,7 +117,7 @@ jobs:
           npm ci --prefix "$APP"
           npm ci --prefix "$APP/Tools"
       - name: Cache SwiftShader
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Experimental/VehicleHmiPrototype/Tools/.swiftshader
           key: swiftshader-${{ runner.os }}-${{ hashFiles('Experimental/VehicleHmiPrototype/Tools/RunOnSoftwareGpu.mjs') }}
@@ -130,8 +130,15 @@ jobs:
           SLUG: ${{ matrix.slug }}
         run: |
           mkdir -p "$RUNNER_TEMP/bench"
-          node RunBenchmark.mjs --label "$LABEL" --baseline "$BASELINE" --variant "$VARIANT" --frames "$FRAMES" --rounds "$ROUNDS" --out "$RUNNER_TEMP/bench/bench-$SLUG.json"
-      - uses: actions/upload-artifact@v4
+          node RunBenchmark.mjs --label "$LABEL" --baseline "$BASELINE" --variant "$VARIANT" --frames "$FRAMES" --rounds "$ROUNDS" --out "$RUNNER_TEMP/bench/bench-$SLUG.json" 2>&1 | tee "$RUNNER_TEMP/bench-run.log"
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          node PostCheckRun.mjs --name "Bench: $LABEL" --title "$(tail -n 1 "$RUNNER_TEMP/bench-run.log" | cut -c1-240)" --file "$RUNNER_TEMP/bench-run.log" --conclusion "${{ job.status == 'success' && 'neutral' || 'failure' }}"
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bench-${{ matrix.slug }}
@@ -145,11 +152,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: bench-*
           path: bench-results
@@ -158,7 +165,12 @@ jobs:
         working-directory: Experimental/VehicleHmiPrototype/Tools
         run: |
           node SummariseBenchmarks.mjs "$GITHUB_WORKSPACE/bench-results" --out "$GITHUB_WORKSPACE/bench-results/summary.md"
-      - uses: actions/upload-artifact@v4
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node PostCheckRun.mjs --name "Bench: summary table" --title "toggle verdicts (software rasteriser) and CPU microbenchmarks" --file "$GITHUB_WORKSPACE/bench-results/summary.md" --raw --conclusion neutral
+      - uses: actions/upload-artifact@v7
         with:
           name: bench-summary
           path: bench-results/summary.md

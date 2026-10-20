@@ -25,11 +25,18 @@ concurrency:
   group: vehicle-hmi-ci-${{ github.ref }}
   cancel-in-progress: true
 
+# checks: write lets the jobs publish their key output as check runs (Tools/PostCheckRun.mjs), readable through api.github.com even where job logs are not reachable.
 permissions:
   contents: read
+  checks: write
+
+defaults:
+  run:
+    shell: bash          # bash -e -o pipefail: `tee` cannot mask a failing test
 
 env:
   APP: Experimental/VehicleHmiPrototype
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   unit:
@@ -37,8 +44,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -51,15 +58,20 @@ jobs:
           npm ci --prefix "$APP/Tools"
       - name: Unit tests
         working-directory: Experimental/VehicleHmiPrototype
-        run: npm test
+        run: npm test 2>&1 | tee "$RUNNER_TEMP/unit.log"
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node PostCheckRun.mjs --name "Report: unit tests" --file "$RUNNER_TEMP/unit.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
 
   validate:
     name: Validate on the null backend (every URL mode and the validate family)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -72,21 +84,27 @@ jobs:
           npm ci --prefix "$APP/Tools"
       - name: Every URL mode (renderer names, each toggle, combinations)
         working-directory: Experimental/VehicleHmiPrototype/Tools
-        run: npm run validate:modes
+        run: npm run validate:modes 2>&1 | tee -a "$RUNNER_TEMP/validate.log"
       - name: validate, validate:screen, validate:effects, validate:slate, validate:orbit, validate:emissive
         working-directory: Experimental/VehicleHmiPrototype/Tools
         run: |
-          set -e
-          npm run validate
-          npm run validate:screen
-          npm run validate:effects
-          npm run validate:slate
-          npm run validate:orbit
-          npm run validate:emissive | tee emissive.log
+          for Script in validate validate:screen validate:effects validate:slate validate:orbit; do
+            echo "== npm run $Script" | tee -a "$RUNNER_TEMP/validate.log"
+            npm run -s "$Script" 2>&1 | grep -E '=== harness|rror|FAIL' | tee -a "$RUNNER_TEMP/validate.log"
+          done
+          echo "== npm run validate:emissive" | tee -a "$RUNNER_TEMP/validate.log"
+          npm run -s validate:emissive 2>&1 | grep -E '=== harness|^EMISSIVE' | tee emissive.log | tee -a "$RUNNER_TEMP/validate.log"
           grep -q '"Failures":\[\]' emissive.log
       - name: Vehicle stability
         working-directory: Experimental/VehicleHmiPrototype/Tools
-        run: npm run test:stability
+        run: |
+          echo "== npm run test:stability" | tee -a "$RUNNER_TEMP/validate.log"
+          npm run -s test:stability 2>&1 | tail -n 12 | tee -a "$RUNNER_TEMP/validate.log"
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node PostCheckRun.mjs --name "Report: validate" --title "every URL mode and the validate family on the null backend" --file "$RUNNER_TEMP/validate.log" --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
 
   gpu:
     name: Executed GPU tests (SwiftShader, CPU cores)
@@ -94,8 +112,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -107,7 +125,7 @@ jobs:
           npm ci --prefix "$APP"
           npm ci --prefix "$APP/Tools"
       - name: Cache SwiftShader
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Experimental/VehicleHmiPrototype/Tools/.swiftshader
           key: swiftshader-${{ runner.os }}-${{ hashFiles('Experimental/VehicleHmiPrototype/Tools/RunOnSoftwareGpu.mjs') }}
@@ -121,16 +139,22 @@ jobs:
         working-directory: Experimental/VehicleHmiPrototype
         env:
           RUN_GPU: "1"
-        run: node --test Tools/EmissiveLights.test.mjs Tools/Photometry.test.mjs Tools/TyreCarcass.test.mjs
+        run: node --test Tools/EmissiveLights.test.mjs Tools/Photometry.test.mjs Tools/TyreCarcass.test.mjs 2>&1 | tee "$RUNNER_TEMP/gpu-parity.log"
       - name: Executed full-app tests (frames rendered and compared)
         working-directory: Experimental/VehicleHmiPrototype/Tools
         env:
           RUN_GPU: "1"
           GPU_ARTIFACT_DIR: ${{ runner.temp }}/gpu-frames
-        run: npm run test:gpu
+        run: npm run test:gpu 2>&1 | tee "$RUNNER_TEMP/gpu-full.log"
+      - name: Report
+        if: always()
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node PostCheckRun.mjs --name "Report: executed shader parity" --file "$RUNNER_TEMP/gpu-parity.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
+          node PostCheckRun.mjs --name "Report: executed full-app frames" --file "$RUNNER_TEMP/gpu-full.log" --filter tap --conclusion "${{ job.status == 'success' && 'success' || 'failure' }}"
       - name: Upload the rendered frames and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gpu-frames
           path: ${{ runner.temp }}/gpu-frames
