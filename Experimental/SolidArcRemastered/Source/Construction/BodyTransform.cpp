@@ -99,11 +99,14 @@ namespace
         const double Scale = Analysis.Scale;                                                 // [-] - s
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
-            // 📝 Geometric definition: the image spine and guide rebuild the carrier with radius s·r; the natural normal
-            //    still points away from the spine, so the face sense is kept even under a reflection.
+            // 📝 Geometric definition: the image spine and guide rebuild the carrier with radius s·r.
+            //    A reflection flips the handedness so the image chart is M·P(𝑢, 𝑣) and every SP-curve keeps its (𝑢, 𝑣);
+            //    ∂𝑢 × ∂𝑣 (the natural normal) then flips relative to M·n, so the face sense flips with it.
             const MappedSurface Guide = MapSurface(Analysis, Ball->Definition->Guide);
             if (!Guide.Refusal.empty()) { Mapped.Refusal = Guide.Refusal; return Mapped; }
-            Mapped.Surface = ConstructRollingBallSurface(MapCurveImage(Analysis, Ball->Definition->Spine), Ball->Definition->Radius * Scale, Guide.Surface);
+            Mapped.Surface = ConstructRollingBallSurface(MapCurveImage(Analysis, Ball->Definition->Spine), Ball->Definition->Radius * Scale, Guide.Surface,
+                                                         Ball->Definition->Handedness * (Analysis.Determinant < 0.0 ? -1.0 : 1.0));
+            Mapped.Flip    = Analysis.Determinant < 0.0;
             return Mapped;
         }
         std::visit([&](const auto& Carrier)
@@ -184,6 +187,7 @@ namespace
     [[nodiscard]] Vector2 MapAnchor(const MapAnalysis& Analysis, const SurfaceGeometry& Surface, Vector2 Parameter)
     {
         if (std::holds_alternative<PlaneSurface>(Surface)) return Parameter;                // No periodic image to choose
+        if (std::holds_alternative<RollingBallSurface>(Surface)) return Parameter;          // Chart carried exactly (handedness)
         const double U = Analysis.Determinant > 0.0 ? Parameter.X : -Parameter.X;
         const bool   Linear = std::holds_alternative<CylinderSurface>(Surface) || std::holds_alternative<ConeSurface>(Surface);
         return { U, Linear ? Parameter.Y * Analysis.Scale : Parameter.Y };

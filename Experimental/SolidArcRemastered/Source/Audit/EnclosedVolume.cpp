@@ -132,8 +132,10 @@ namespace
 
     // Line integral of G(q) dq_𝑣 along one fin, where G = ∫_0^𝑢 Density(s, 𝑣) ds (Density supplied by the caller).
     // Magnitude mode returns ∫|G 𝑣′| dτ over the initial panels instead (no adaptive refinement).
+    // ⚠️ Knots: a traced rolling-ball spine is only C¹ at its knots, so the flux density (through T′) jumps there; the
+    //    inner 𝑢 integral is split at the chart's breakpoints (Chart may be null: density without a surface).
     template <typename Density>
-    [[nodiscard]] double IntegrateFin(const ModelPartition& Partition, FinToken Fin, const Density& Function, double Floor, bool MagnitudeMode = false)
+    [[nodiscard]] double IntegrateFin(const ModelPartition& Partition, FinToken Fin, const Density& Function, double Floor, bool MagnitudeMode = false, const SurfaceGeometry* Chart = nullptr)
     {
         const FinProfile& Use = Partition.Fins.Resolve(Fin);
         if (!Use.SurfaceCurve.has_value()) return std::nan("");
@@ -142,10 +144,13 @@ namespace
         {
             const ParameterSample Sample = EvaluateParameterCurve(Curve, τ);
             if (Sample.Derivative.Y == 0.0) return 0.0;
-            const double Primitive = IntegrateComposite(0.0, Sample.Position.X, PanelSpan, [&](double s)
-            {
-                return Function(Vector2{ s, Sample.Position.Y });
-            });
+            const auto   Row   = [&](double s) { return Function(Vector2{ s, Sample.Position.Y }); };
+            const double Reach = Sample.Position.X;                                          // [-] - Inner upper limit
+            std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(0.0, Reach), std::max(0.0, Reach)) : std::vector<double>{};
+            if (Reach < 0.0) std::reverse(Knots.begin(), Knots.end());
+            double Primitive = 0.0, From = 0.0;                                              // [-] - ∫₀^𝑢 density, running piece start
+            for (double Knot : Knots) { Primitive += IntegrateComposite(From, Knot, PanelSpan, Row); From = Knot; }
+            Primitive += IntegrateComposite(From, Reach, PanelSpan, Row);
             return Primitive * Sample.Derivative.Y;
         };
         // 📝 Split at the carrier's breakpoints (intersection-curve knots, where it is only C¹) so every panel sees an
@@ -170,12 +175,12 @@ namespace
 
     // Σ over a face's fins: integral (absolute acceptance floor supplied) or, in magnitude mode, Σ∫|G 𝑣′| dτ.
     template <typename Density>
-    [[nodiscard]] double IntegrateFaceLoops(const ModelPartition& Partition, FaceToken Face, const Density& Function, double Floor, bool MagnitudeMode)
+    [[nodiscard]] double IntegrateFaceLoops(const ModelPartition& Partition, FaceToken Face, const Density& Function, double Floor, bool MagnitudeMode, const SurfaceGeometry* Chart = nullptr)
     {
         double Total = 0.0;
         for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
         {
-            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin) { Total += IntegrateFin(Partition, Fin, Function, Floor, MagnitudeMode); });
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin) { Total += IntegrateFin(Partition, Fin, Function, Floor, MagnitudeMode, Chart); });
         }
         return Total;
     }
@@ -185,7 +190,7 @@ namespace
         const FaceProfile& Profile = Partition.Faces.Resolve(Face);
         if (!Profile.Surface.PresentCondition()) return std::nan("");
         const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
-        return IntegrateFaceLoops(Partition, Face, [&](Vector2 Parameter) { return FluxDensity(Surface, Parameter); }, Floor, MagnitudeMode);
+        return IntegrateFaceLoops(Partition, Face, [&](Vector2 Parameter) { return FluxDensity(Surface, Parameter); }, Floor, MagnitudeMode, &Surface);
     }
 }
 

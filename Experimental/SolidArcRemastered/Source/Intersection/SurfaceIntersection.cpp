@@ -777,10 +777,11 @@ namespace
     [[nodiscard]] std::vector<Vector3> CollectLatticeSeeds(const IntersectionContext& Context)
     {
         std::vector<Vector3> Seeds;
+        int Degenerate = 0;                                                                  // [-] - First-surface iso-curves without a carrier
         const auto Harvest = [&](const SurfaceGeometry& CurveSurface, const ParameterBox& CurveBox, const SurfaceGeometry& Target, IsoDirection Direction, double Value)
         {
             const IsoParameterCurve Iso = ExtractIsoParameterCurve(CurveSurface, Direction, Value);
-            if (Iso.DegenerateCondition) return;
+            if (Iso.DegenerateCondition) { Degenerate += &CurveSurface == &Context.First; return; }
             const double RunLow  = Direction == IsoDirection::FixedU ? CurveBox.Low.Y : CurveBox.Low.X;
             const double RunHigh = Direction == IsoDirection::FixedU ? CurveBox.High.Y : CurveBox.High.X;
             Context.Outcome.Statistics.LatticeCurves += 1;
@@ -804,6 +805,18 @@ namespace
         }
         const SurfacePeriodicity OtherPeriodicity = ResolvePeriodicity(Context.Second);
         const ParameterBox&      OtherBox         = Context.SecondBox;
+        // ⚠️ A first surface with a missing lattice direction (rolling-ball 𝑣-iso-curves have no exact carrier) cannot see a
+        //    loop that wraps that direction — a pipe's cross-section in a plane crosses no 𝑢-circle and no box edge, and
+        //    its normals are never parallel to the plane's, so normal cones miss it too. The second surface's interior
+        //    lattice then seeds as well.
+        if (Degenerate > 0)
+        {
+            for (int Line = 1; Line < Divisions; ++Line)
+            {
+                Harvest(Context.Second, OtherBox, Context.First, IsoDirection::FixedU, OtherBox.Low.X + (OtherBox.High.X - OtherBox.Low.X) * Line / Divisions);
+                Harvest(Context.Second, OtherBox, Context.First, IsoDirection::FixedV, OtherBox.Low.Y + (OtherBox.High.Y - OtherBox.Low.Y) * Line / Divisions);
+            }
+        }
         if (!(OtherPeriodicity.PeriodU > 0.0 && OtherBox.High.X - OtherBox.Low.X >= OtherPeriodicity.PeriodU - 1.0e-12))
         {
             Harvest(Context.Second, OtherBox, Context.First, IsoDirection::FixedU, OtherBox.Low.X);

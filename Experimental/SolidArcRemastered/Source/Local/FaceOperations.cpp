@@ -97,7 +97,7 @@ namespace
     {
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
-            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion));
+            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion), Ball->Definition->Handedness);
         }
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {

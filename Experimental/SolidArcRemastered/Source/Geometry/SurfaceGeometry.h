@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -103,6 +104,9 @@ struct SurfacePeriodicity
 [[nodiscard]] Vector2            ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept;
 
 [[nodiscard]] SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept;
+
+// Interior 𝑢 values in [Low, High] where the chart is only C¹ (the knots of a traced rolling-ball spine); empty otherwise.
+[[nodiscard]] std::vector<double> CollectSurfaceBreakpoints(const SurfaceGeometry& Surface, double Low, double High);
 
 // Relative accuracy of the chart derivatives: 0 for closed-form carriers, the finite-difference noise for procedural ones.
 [[nodiscard]] double             MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept;

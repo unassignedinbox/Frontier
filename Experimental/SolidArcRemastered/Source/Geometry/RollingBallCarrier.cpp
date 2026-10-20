@@ -66,7 +66,7 @@ namespace
         Frame.Tangent = Normalize(Sample.Derivative);
         const Vector3 Towards = FootOnSupport(Definition.Guide, Frame.Centre) - Frame.Centre;  // [len] - ≈ r·E₁
         Frame.First  = Normalize(Towards - Frame.Tangent * Dot(Towards, Frame.Tangent));
-        Frame.Second = Cross(Frame.First, Frame.Tangent);
+        Frame.Second = Cross(Frame.First, Frame.Tangent) * Definition.Handedness;
         return Frame;
     }
 
@@ -108,7 +108,7 @@ CarrierRange MeasureCarrierRange(const CurveGeometry& Curve) noexcept
 
 // ---- Carrier ----------------------------------------------------------------------------------------------------------
 
-RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide)
+RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness)
 {
     auto Definition = std::make_shared<RollingBallDefinition>();
     const CarrierRange Range = MeasureCarrierRange(Spine);
@@ -118,6 +118,7 @@ RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, doubl
     Definition->SpineLow  = Range.Low;
     Definition->SpineHigh = Range.High;
     Definition->Period    = Range.Period;
+    Definition->Handedness = Handedness < 0.0 ? -1.0 : 1.0;
     return RollingBallSurface{ std::move(Definition) };
 }
 
@@ -140,7 +141,8 @@ SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Par
 Vector3 EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Parameter) noexcept
 {
     const SectionFrame Frame = ResolveSection(*Surface.Definition, Parameter.X);
-    return Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y);      // Exact: away from the spine
+    // Exact radial direction; ∂𝑢 × ∂𝑣 points away from the spine for handedness +1, towards it for the mirror image.
+    return (Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y)) * Surface.Definition->Handedness;
 }
 
 Vector2 ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept
@@ -165,9 +167,10 @@ SurfacePeriodicity ResolveRollingBallPeriodicity(const RollingBallSurface& Surfa
 std::optional<SurfaceGeometry> OffsetRollingBall(const RollingBallSurface& Surface, double Distance)
 {
     const RollingBallDefinition& Definition = *Surface.Definition;
-    if (!(Definition.Radius + Distance > 0.0)) return std::nullopt;
+    const double Radius = Definition.Radius + Definition.Handedness * Distance;              // [len] - Along the natural normal
+    if (!(Radius > 0.0)) return std::nullopt;
     auto Offset = std::make_shared<RollingBallDefinition>(Definition);
-    Offset->Radius = Definition.Radius + Distance;
+    Offset->Radius = Radius;
     return SurfaceGeometry{ RollingBallSurface{ std::move(Offset) } };
 }
 
@@ -200,9 +203,10 @@ RollingBallDistance MeasureRollingBallDistance(const RollingBallSurface& Surface
     const Vector3 Offset   = Position - Centre;
     const double  Reach    = Length(Offset);                                                 // [len] - Distance to the spine
     RollingBallDistance Outcome;
-    Outcome.Normal   = Reach > 0.0 ? Offset * (1.0 / Reach) : ResolveSection(Definition, 𝑢).First;
-    Outcome.Distance = Reach - Definition.Radius;
-    Outcome.Foot     = Centre + Outcome.Normal * Definition.Radius;
+    const Vector3 Radial = Reach > 0.0 ? Offset * (1.0 / Reach) : ResolveSection(Definition, 𝑢).First;
+    Outcome.Normal   = Radial * Definition.Handedness;                                       // Signed like the natural normal
+    Outcome.Distance = (Reach - Definition.Radius) * Definition.Handedness;
+    Outcome.Foot     = Centre + Radial * Definition.Radius;
     return Outcome;
 }
 

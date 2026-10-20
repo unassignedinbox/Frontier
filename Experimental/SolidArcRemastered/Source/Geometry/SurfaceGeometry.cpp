@@ -161,6 +161,12 @@ SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept
     return { FullTurn, 0.0 };
 }
 
+std::vector<double> CollectSurfaceBreakpoints(const SurfaceGeometry& Surface, double Low, double High)
+{
+    if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface)) return CollectCurveBreakpoints(Ball->Definition->Spine, Low, High);
+    return {};
+}
+
 double MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept
 {
     return std::holds_alternative<RollingBallSurface>(Surface) ? RollingBallDerivativeNoise : 0.0;

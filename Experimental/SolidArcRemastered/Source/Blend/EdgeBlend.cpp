@@ -377,6 +377,32 @@ namespace
             return ResolveBallCorner(Vertex, Blended);
         }
 
+        // 📝 Section where the rail on Side crosses a seam of its support (secant on the signed offset across the seam,
+        //    from the vertex's own section). A seam is a chart artefact, so the section may move off the old vertex; the
+        //    vertex projection alone left the foot off the seam on any mouth without a mirror plane through the seam.
+        [[nodiscard]] double ResolveSeamSection(const EdgeBlendSheet& Sheet, int Side, EdgeToken Seam, double Start) const
+        {
+            const CurveGeometry&   SeamCurve = Partition.Curves.Resolve(Partition.Edges.Resolve(Seam).Curve);
+            const SurfaceGeometry& Support   = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Sheet.Faces[Side]).Surface);
+            const auto Across = [&](double τ)
+            {
+                const Vector3     Rail = EvaluateCurve(Sheet.Contacts[Side], τ).Position;
+                const CurveSample Foot = EvaluateCurve(SeamCurve, ProjectOntoCurve(SeamCurve, Rail, 0.0));
+                const Vector3     Normal = EvaluateSurfaceNormal(Support, ProjectOntoSurface(Support, Foot.Position, { 0.0, 0.0 }));
+                return Dot(Rail - Foot.Position, Normalize(Cross(Normal, Foot.Derivative)));
+            };
+            double Previous = Start, Current = Start + 1.0e-4 * std::max(1.0, std::fabs(Start));
+            double PreviousValue = Across(Previous), CurrentValue = Across(Current);
+            for (int Iteration = 0; Iteration < 60 && CurrentValue != PreviousValue; ++Iteration)
+            {
+                const double Next = Current - CurrentValue * (Current - Previous) / (CurrentValue - PreviousValue);
+                Previous = Current; PreviousValue = CurrentValue;
+                Current  = Next;    CurrentValue  = Across(Current);
+                if (std::fabs(Current - Previous) <= 1.0e-15 * (1.0 + std::fabs(Current))) break;
+            }
+            return Current;
+        }
+
         // 📝 Closed rim through its seam vertex: the cross-section at the vertex is the blend face's seam.
         [[nodiscard]] std::string ResolveContinuation(VertexToken Vertex, EdgeToken Edge, EdgeToken Seam)
         {
@@ -386,9 +412,11 @@ namespace
             const int SeamSide = SideOn(Sheet, SeamFace);
             if (SeamSide < 0) return "seam is not on a support of the blended rim";
             const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
-            const double  τ        = ProjectOntoCurve(Sheet.Spine, Position, 0.0);           // [-] - Section through the vertex
+            const double  τ        = ResolveSeamSection(Sheet, SeamSide, Seam, ProjectOntoCurve(Sheet.Spine, Position, 0.0));
             const int     FootA    = IssueVertex(EvaluateCurve(Sheet.Contacts[0], τ).Position);
             const int     FootB    = IssueVertex(EvaluateCurve(Sheet.Contacts[1], τ).Position);
+            const CurveGeometry& SeamCurve = Partition.Curves.Resolve(Partition.Edges.Resolve(Seam).Curve);
+            if (!Agree(DistanceToCurve(SeamCurve, PositionOf(SeamSide == 0 ? FootA : FootB)))) return "seam does not cross the contact rail";
             int Section = -1;
             if (Settings.Profile == BlendProfile::Fillet)
             {
@@ -420,7 +448,9 @@ namespace
             const int SideB[2] = { SideOn(SheetB, SheetA.Faces[0]), SideOn(SheetB, SheetA.Faces[1]) };   // Side of B on A's faces
             if (SideB[0] < 0 || SideB[1] < 0) return "seam crossing: the blended edges do not share both supports";
             const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
-            const double  SpineA   = ProjectOntoCurve(SheetA.Spine, Position, 0.0);         // [-] - Section through the vertex on A
+            const int     FirstSide = SideOn(SheetA, FacesOfEdge(Seams[0].first).first);
+            if (FirstSide < 0) return "seam crossing: a seam is not on a support of the blend";
+            const double  SpineA   = ResolveSeamSection(SheetA, FirstSide, Seams[0].first, ProjectOntoCurve(SheetA.Spine, Position, 0.0));
             const Vector3 Ball     = EvaluateCurve(SheetA.Spine, SpineA).Position;          // [len] - Ball centre
             if (!Agree(DistanceToCurve(SheetB.Spine, Ball))) return "seam crossing: spines do not share the section ball";
             const double SpineB = ProjectOntoCurve(SheetB.Spine, Ball, 0.0);                // [-] - Same section on B

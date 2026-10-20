@@ -33,6 +33,7 @@ struct RollingBallDefinition
     double          SpineLow  = 0.0;                                                         // [-]   - 𝑢 range of the spine
     double          SpineHigh = 0.0;                                                         // [-]
     double          Period    = 0.0;                                                         // [-]   - 𝑢 period (0 when open)
+    double          Handedness = 1.0;                                                        // [-]   - E₂ = ±(E₁ × T); a reflection flips it
 };
 
 struct ContactDefinition
@@ -51,7 +52,8 @@ struct ContactDefinition
 
 // ---- Carrier ----------------------------------------------------------------------------------------------------------
 
-[[nodiscard]] RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide);
+// ⚠️ Handedness −1 is the mirror image: a reflection M maps the carrier to M·P(𝑢, 𝑣) only if E₂ flips with it.
+[[nodiscard]] RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness = 1.0);
 [[nodiscard]] SurfaceSample      EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector3            EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector2            ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept;
