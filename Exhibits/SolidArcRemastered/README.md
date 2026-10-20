@@ -1,6 +1,6 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-**TL;DR (robust blends)**: 6 of the 8 pattern-stress refusals are now built and pass every gate. A new T family (tangent chains) adds 6 rows, all 🟢. PatternStressValidation now runs 62 rows: 🟢 60 · ⚠️ 2 · **🔴 0 wrong** (601 operations, 460 s). The 2 remaining refusals are P7 (traced spine) and P8 (elliptical spine).
+**TL;DR (robust blends)**: 6 of the 8 pattern-stress refusals are now built and pass every gate. A new T family (tangent chains) adds 8 rows, all 🟢. PatternStressValidation now runs 64 rows: 🟢 62 · ⚠️ 2 · **🔴 0 wrong** (610 operations, 469 s). The 2 remaining refusals are P7 (traced spine) and P8 (elliptical spine).
 
 | Row | Was refused | Construction now | Now |
 |---|---|---|---|
@@ -10,8 +10,9 @@
 | P4 spoke–hub concave fillets | edge consumed by the blend | Concave ends extend the sharp edge's neighbour instead of consuming it | 🟢 |
 | P5 spoke tops ending on the hub | blend ends on a curved face | The cap is the section of the blend surface by the end face (plane, analytic or traced) | 🟢 |
 | T1–T3 stadium slot rims · T4–T5 rounded-block top loop · T6 boss foot loop | (new) | Smooth joint: the blends share their cross-section at the vertex (circle or chord) | 🟢 |
+| T7 / T8 one seed edge, `TangentChainEnabled` | (new) | `GrowTangentChain` adds every sharp edge reached through a G1 vertex (1 → 4 slot-rim edges, 1 → 8 rounded-block edges); the result equals T1 / T5 | 🟢 |
 
-- All 6 T rows match their closed form to ≤ 8.5e-14, with 0 of 1 800 oracle points wrong. T4 and T5 model the rounded block exactly, so the oracle tests 300 of 300 points.
+- All 8 T rows match their closed form to ≤ 8.5e-14, with 0 of 2 400 oracle points wrong. T4 and T5 model the rounded block exactly, so the oracle tests 300 of 300 points.
 - 🐞 Defects found and fixed along the way:
   - **Newton drift** (`IntersectionCurve.cpp` `CorrectOntoBoth`): a converged point was stepped again at a tangent contact, so the endpoint error went from 1.6e-16 to 7.1e-8. The residual test now runs before the step.
   - **Smooth joints located by tangent crossings** were only √ε accurate. 10⁻⁸ chart gaps made the tessellator insert false pole rows, so T4 was not watertight. The smooth-joint construction now uses only transversal operations.
@@ -111,7 +112,7 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `BooleanValidation.md` | B1 audit · B2 closed-form volume · B3 volume identities · B4 membership oracle · B5 shell/solid counts; 23 scenes, 5 random families, open-argument negative control; per-operation table | 🟢 PASS |
 | `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices. The 8 step-8 scenes (CrossUnequal, CrossOffset, SteinmetzSolid, SteinmetzOblique, BlockFlushHalf, BlockStep, BlockFlushSlot, BlockFlushCorner) are shaded 2 × 2 sheets of ∪ ∩ − −′: faces tinted by argument (A blue, B orange), section edges gold; a merged maximal face keeps one source tint | — |
 | `CorpusValidation.md` | R1 refusals · R2 closed-form V · R3 audit, category, sources untouched · R4 redundant edges (maximal faces) · R5 tessellation; one row per FeatureSuitability corpus command with the old kernel's verdict, plus section X (G4 / G5 scenes, mirror, full-turn pipe) | 🟢 79/79, 0 refused |
-| `PatternStressValidation.md` | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes; a refusal is ⚠️, a built wrong body 🔴 | 🟢 60 · ⚠️ 2 · 🔴 0 |
+| `PatternStressValidation.md` (64 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes; a refusal is ⚠️, a built wrong body 🔴 | 🟢 62 · ⚠️ 2 · 🔴 0 |
 | `ModelGallery/*.png` | Shaded step-8 specimens (PipeBend, LoftFrustum, SweptRing, MirroredCross, ArrayedPins), one hue per face, with V, error, audit and tessellation verdicts | — |
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
@@ -277,7 +278,7 @@ Harness fixes (no modeller change): edge criteria that also caught rib-top end e
 | Case | Today | Planned |
 |---|---|---|
 | Setback vertex (convex meets concave, `MixedConvexity`) | Refused at the vertex | Várady–Rockwood 2n-sided setback patch |
-| Tangent-chain propagation | Edges are blended only as selected | Grow the selection across G1 edges (old-kernel option A) |
+| Tangent-chain propagation | ✔️ Built: `GrowTangentChain` / `BlendSettings.TangentChainEnabled`; DraftingWorkspace Alt+click | — |
 | Overflow (blend wider than its face, `FilletRailsCross`) | Refused: "contact rail runs backwards" | Smooth / cliff / notch overflow strategies |
 | Traced spines | Spines only where SSI gives a line or circle (P7 traced, P8 ellipse). Caps and mitres on curved faces are built (traced sections allowed) | Marched spines with procedural rolling-ball carriers |
 
