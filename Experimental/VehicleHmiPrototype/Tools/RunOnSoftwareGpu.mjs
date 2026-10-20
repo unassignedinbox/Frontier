@@ -19,7 +19,8 @@ import { fileURLToPath } from "node:url";
 
 const Here = path.dirname(fileURLToPath(import.meta.url));
 export const SoftwareGpuDirectory = process.env.SOFTWARE_GPU_DIR || path.join(Here, ".swiftshader");
-const Package = process.env.SOFTWARE_GPU_PACKAGE || "@sparticuz/chromium@153.0.0";
+export const SoftwareGpuPackage = process.env.SOFTWARE_GPU_PACKAGE || "@sparticuz/chromium@153.0.0";
+const Package = SoftwareGpuPackage;
 
 function ReadTarEntries(Archive)
 {

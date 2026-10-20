@@ -1,0 +1,138 @@
+# Vehicle HMI prototype: unit tests, the validate family, and the executed GPU tests.
+#
+# GitHub-hosted runners have no GPU. "Executed" means the WGSL really runs, on CPU cores, through SwiftShader (a software Vulkan device) under Dawn, so shaders are executed
+# and compared instead of only being compiled. The null backend (Tools/ValidateModes.mjs) validates every shader, layout and pipeline exactly as Chrome would, without executing.
+name: Vehicle HMI prototype CI
+
+on:
+  push:
+    branches: ["arena/aef49291-frontier"]
+    paths:
+      - "Experimental/VehicleHmiPrototype/**"
+      - ".github/workflows/vehicle-hmi-ci.yml"
+  pull_request:
+    paths:
+      - "Experimental/VehicleHmiPrototype/**"
+      - ".github/workflows/vehicle-hmi-ci.yml"
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: "Run the executed (SwiftShader) GPU tests (about 25 minutes)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: vehicle-hmi-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP: Experimental/VehicleHmiPrototype
+
+jobs:
+  unit:
+    name: Unit tests (CPU only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            Experimental/VehicleHmiPrototype/package-lock.json
+            Experimental/VehicleHmiPrototype/Tools/package-lock.json
+      - name: Install (app and Tools)
+        run: |
+          npm ci --prefix "$APP"
+          npm ci --prefix "$APP/Tools"
+      - name: Unit tests
+        working-directory: Experimental/VehicleHmiPrototype
+        run: npm test
+
+  validate:
+    name: Validate on the null backend (every URL mode and the validate family)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            Experimental/VehicleHmiPrototype/package-lock.json
+            Experimental/VehicleHmiPrototype/Tools/package-lock.json
+      - name: Install (app and Tools)
+        run: |
+          npm ci --prefix "$APP"
+          npm ci --prefix "$APP/Tools"
+      - name: Every URL mode (renderer names, each toggle, combinations)
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: npm run validate:modes
+      - name: validate, validate:screen, validate:effects, validate:slate, validate:orbit, validate:emissive
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          set -e
+          npm run validate
+          npm run validate:screen
+          npm run validate:effects
+          npm run validate:slate
+          npm run validate:orbit
+          npm run validate:emissive | tee emissive.log
+          grep -q '"Failures":\[\]' emissive.log
+      - name: Vehicle stability
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: npm run test:stability
+
+  gpu:
+    name: Executed GPU tests (SwiftShader, CPU cores)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.gpu }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            Experimental/VehicleHmiPrototype/package-lock.json
+            Experimental/VehicleHmiPrototype/Tools/package-lock.json
+      - name: Install (app and Tools)
+        run: |
+          npm ci --prefix "$APP"
+          npm ci --prefix "$APP/Tools"
+      - name: Cache SwiftShader
+        uses: actions/cache@v4
+        with:
+          path: Experimental/VehicleHmiPrototype/Tools/.swiftshader
+          key: swiftshader-${{ runner.os }}-${{ hashFiles('Experimental/VehicleHmiPrototype/Tools/RunOnSoftwareGpu.mjs') }}
+      - name: Fetch SwiftShader (npm registry, first run only)
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: node RunOnSoftwareGpu.mjs --print
+      - name: Machine
+        run: |
+          node -e "const os=require('os');console.log(os.cpus()[0].model, 'x', os.cpus().length, 'cores,', Math.round(os.totalmem()/2**30), 'GiB')"
+      - name: Executed unit-test GPU variants (shader parity with the CPU references)
+        working-directory: Experimental/VehicleHmiPrototype
+        env:
+          RUN_GPU: "1"
+        run: node --test Tools/EmissiveLights.test.mjs Tools/Photometry.test.mjs Tools/TyreCarcass.test.mjs
+      - name: Executed full-app tests (frames rendered and compared)
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          RUN_GPU: "1"
+          GPU_ARTIFACT_DIR: ${{ runner.temp }}/gpu-frames
+        run: npm run test:gpu
+      - name: Upload the rendered frames and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-frames
+          path: ${{ runner.temp }}/gpu-frames
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,165 @@
+# Vehicle HMI prototype: toggle benchmarks ("which is faster?").
+#
+# 🔴 GitHub-hosted runners have NO GPU. Every full-app number here is the shader code executing on CPU cores through SwiftShader (a software Vulkan device): a measure of RELATIVE
+# ALU and branch work between two configurations, not of GPU time. It says nothing about memory bandwidth, occupancy or fixed-function hardware, so a ranking is a hypothesis for a
+# real GPU, not a result. The CPU microbenchmarks (job "cpu") are different: they are JavaScript doing what it does in the browser every frame, so they are valid anywhere.
+#
+# How a toggle is measured: each matrix job runs the BASELINE query and the VARIANT query interleaved (baseline, variant, variant, baseline, ...) on ONE runner, so the difference
+# between runners cancels. The spread between repeats of the same query is the noise floor: a variant is only called faster or slower when it leaves both a 5 % band and twice
+# the noise (Tools/BenchmarkStatistics.mjs; unit-tested in Tools/BenchmarkTools.test.mjs). Otherwise the verdict is "no measurable difference".
+#
+# Run it by hand:  gh workflow run vehicle-hmi-bench.yml --ref arena/aef49291-frontier -f frames=12 -f rounds=3
+name: Vehicle HMI toggle benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      frames:
+        description: "Frames per run, warm-up included (3 are discarded)"
+        default: "10"
+      rounds:
+        description: "Baseline/variant pairs per toggle (2 = A B B A)"
+        default: "2"
+  push:
+    branches: ["arena/aef49291-frontier"]
+    paths:
+      - ".github/workflows/vehicle-hmi-bench.yml"
+      - "Experimental/VehicleHmiPrototype/Tools/Bench*.mjs"
+      - "Experimental/VehicleHmiPrototype/Tools/CpuBenchHooks.mjs"
+      - "Experimental/VehicleHmiPrototype/Tools/RunBenchmark.mjs"
+      - "Experimental/VehicleHmiPrototype/Tools/SummariseBenchmarks.mjs"
+
+concurrency:
+  group: vehicle-hmi-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP: Experimental/VehicleHmiPrototype
+  FRAMES: ${{ inputs.frames || '10' }}
+  ROUNDS: ${{ inputs.rounds || '2' }}
+
+jobs:
+  cpu:
+    name: CPU microbenchmarks (valid on any runner)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            Experimental/VehicleHmiPrototype/package-lock.json
+            Experimental/VehicleHmiPrototype/Tools/package-lock.json
+      - name: Install (app and Tools)
+        run: |
+          npm ci --prefix "$APP"
+          npm ci --prefix "$APP/Tools"
+      - name: Measure
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          set -e
+          HOOKS=CpuBenchHooks.mjs BACKEND=null node HeadlessHarness.mjs .. 3 "?capture=1" | tee cpu.log
+          mkdir -p "$RUNNER_TEMP/bench"
+          grep '^CPUBENCH ' cpu.log | sed 's/^CPUBENCH //' > "$RUNNER_TEMP/bench/cpu-bench.json"
+          {
+            echo "## CPU microbenchmarks"
+            echo
+            echo "$(node -e "const os=require('os');console.log(os.cpus()[0].model.trim()+' x '+os.cpus().length+' cores, Node '+process.version)")"
+            echo
+            echo '| What | median ms | min ms | max ms |'
+            echo '|---|---:|---:|---:|'
+            node -e "
+              const R = JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/bench/cpu-bench.json', 'utf8'));
+              for (const [K, V] of Object.entries(R)) if (typeof V === 'object') console.log('| ' + K + ' | ' + V.MedianMs.toFixed(3) + ' | ' + V.MinMs.toFixed(3) + ' | ' + V.MaxMs.toFixed(3) + ' |');
+            "
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-cpu
+          path: ${{ runner.temp }}/bench
+          retention-days: 30
+
+  toggles:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # baseline = without the feature (or the older alternative), variant = with it, so "+x %" reads "the feature costs x %"
+          - { slug: renderer,          label: "BVH path tracer vs SDF renderer",        baseline: "renderer=sdf",                          variant: "renderer=bvh" }
+          - { slug: screen-bvh,        label: "Screen traces on the BVH renderer",      baseline: "renderer=bvh",                          variant: "renderer=bvh&screentraces=1" }
+          - { slug: screen-sdf,        label: "Screen traces on the SDF renderer",      baseline: "renderer=sdf",                          variant: "renderer=sdf&screentraces=1" }
+          - { slug: light-grid,        label: "World light grid (vs testing every light)", baseline: "lightgrid=0",                        variant: "lightgrid=1" }
+          - { slug: ies,               label: "IES photometric profiles",               baseline: "ies=0",                                 variant: "ies=1" }
+          - { slug: emissive-day,      label: "Emissive clusters, day",                 baseline: "emissive=0",                            variant: "emissive=1" }
+          - { slug: emissive-night,    label: "Emissive clusters, night",               baseline: "preset=Night&emissive=0",               variant: "preset=Night&emissive=1" }
+          - { slug: tyres-xpbd,        label: "XPBD tyre carcass (32 substeps) vs analytic tyres", baseline: "tyres=analytic",              variant: "tyres=xpbd" }
+          - { slug: tyres-sub16,       label: "XPBD 16 substeps vs 32",                 baseline: "tyresubsteps=32",                       variant: "tyresubsteps=16" }
+          - { slug: tyres-sub8,        label: "XPBD 8 substeps vs 32",                  baseline: "tyresubsteps=32",                       variant: "tyresubsteps=8" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            Experimental/VehicleHmiPrototype/package-lock.json
+            Experimental/VehicleHmiPrototype/Tools/package-lock.json
+      - name: Install (app and Tools)
+        run: |
+          npm ci --prefix "$APP"
+          npm ci --prefix "$APP/Tools"
+      - name: Cache SwiftShader
+        uses: actions/cache@v4
+        with:
+          path: Experimental/VehicleHmiPrototype/Tools/.swiftshader
+          key: swiftshader-${{ runner.os }}-${{ hashFiles('Experimental/VehicleHmiPrototype/Tools/RunOnSoftwareGpu.mjs') }}
+      - name: Benchmark ${{ matrix.label }}
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        env:
+          LABEL: ${{ matrix.label }}
+          BASELINE: ${{ matrix.baseline }}
+          VARIANT: ${{ matrix.variant }}
+          SLUG: ${{ matrix.slug }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bench"
+          node RunBenchmark.mjs --label "$LABEL" --baseline "$BASELINE" --variant "$VARIANT" --frames "$FRAMES" --rounds "$ROUNDS" --out "$RUNNER_TEMP/bench/bench-$SLUG.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-${{ matrix.slug }}
+          path: ${{ runner.temp }}/bench
+          retention-days: 30
+
+  summary:
+    name: Summary table
+    needs: [cpu, toggles]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bench-*
+          path: bench-results
+          merge-multiple: true
+      - name: Table
+        working-directory: Experimental/VehicleHmiPrototype/Tools
+        run: |
+          node SummariseBenchmarks.mjs "$GITHUB_WORKSPACE/bench-results" --out "$GITHUB_WORKSPACE/bench-results/summary.md"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-summary
+          path: bench-results/summary.md
+          retention-days: 90
