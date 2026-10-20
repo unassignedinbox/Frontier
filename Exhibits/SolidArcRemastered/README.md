@@ -1,4 +1,21 @@
-# 🧩 SolidArcRemastered — evidence for steps 1–8
+# 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
+
+**TL;DR (pattern stress)**: PatternStressValidation runs 56 rows: 🟢 48 · ⚠️ 8 refused · **🔴 0 wrong**, with 573 modeller operations in 413 s. Every scene uses the modeller's own arrays (`ArrayBody`, the new `CircularArrayBody`) → Boolean chains → optional fillet or chamfer.
+- **Booleans hold everywhere tested (25/25 🟢):** linear arrays up to 40 holes, circular arrays up to 24, overlapping slots and rings, coplanar ribs, and 6 touching blocks merged to 6 maximal faces. Mixed chains cover coaxial bores, coincident radii, a shuffled order, intersect → 4 lumps, and 3 × 3 crossing bores (genus 15, 18 singular points).
+  - |ΔV| ≤ 1.6e-13 against hand-derived closed forms; 0 of 13 800 oracle points wrong; 207 176 triangles, all watertight.
+  - The tree order and the shuffled order give the same F/E and volume as the sequential chain.
+- **Blends on Boolean results (22/22 🟢):** fillets and chamfers on hole rims, boss rims and feet, rib edges, plate edges, a 40-rim blend in one operation, a blend after a blend, and Boolean-after-blend. All 20 built rows are exact to the closed form, and B20 / B22 refuse as required.
+  - Overlap boundary pinned: rim fillet r 0.19 (footprints 0.02 apart) is exact; r 0.21 and r 0.5 are refused.
+- **Where it stops (8 ⚠️, all named limits):**
+  - mitres between non-cylindrical fillets (slot cusps, scallops, ring);
+  - a chamfer mitre whose contacts do not meet;
+  - a blend ending on a curved face (spokes on a hub);
+  - an edge consumed by the blend;
+  - traced spines (radial bores);
+  - elliptical spines (equal-radius crossings).
+- 🐞 **2 defects found and fixed:**
+  - a crash: an `EllipticalArc` spine reached `std::get<CircularArc>` and aborted the process;
+  - a lie: overlapping neighbouring blends built an audit-sound but self-intersecting body. `BlendEdges` now runs the step-6 `DetectSelfClash` gate.
 
 **TL;DR (step 8)**: CorpusValidation passes 79/79 rows (5 gates, 6.2 s), and the plan gate is met: **0 corpus refusals**. The old kernel refused 19 of its 176 FeatureSuitability rows; all 19 now run and match the closed form.
 - **Exact:** V vs the hand-derived closed form is ≤ 3.59e-14 over 76 bodies. Every result is audit-sound with its source untouched, has 0 redundant edges, and tessellates watertight.
@@ -77,6 +94,7 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `BooleanValidation.md` | B1 audit · B2 closed-form volume · B3 volume identities · B4 membership oracle · B5 shell/solid counts; 23 scenes, 5 random families, open-argument negative control; per-operation table | 🟢 PASS |
 | `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices. The 8 step-8 scenes (CrossUnequal, CrossOffset, SteinmetzSolid, SteinmetzOblique, BlockFlushHalf, BlockStep, BlockFlushSlot, BlockFlushCorner) are shaded 2 × 2 sheets of ∪ ∩ − −′: faces tinted by argument (A blue, B orange), section edges gold; a merged maximal face keeps one source tint | — |
 | `CorpusValidation.md` | R1 refusals · R2 closed-form V · R3 audit, category, sources untouched · R4 redundant edges (maximal faces) · R5 tessellation; one row per FeatureSuitability corpus command with the old kernel's verdict, plus section X (G4 / G5 scenes, mirror, full-turn pipe) | 🟢 79/79, 0 refused |
+| `PatternStressValidation.md` | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · P probes; a refusal is ⚠️, a built wrong body 🔴 | 🟢 0 wrong · ⚠️ 8 |
 | `ModelGallery/*.png` | Shaded step-8 specimens (PipeBend, LoftFrustum, SweptRing, MirroredCross, ArrayedPins), one hue per face, with V, error, audit and tessellation verdicts | — |
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
@@ -103,6 +121,7 @@ Experimental/SolidArcRemastered/build/FaceOperationValidation > Exhibits/SolidAr
 Experimental/SolidArcRemastered/build/SketchValidation > Exhibits/SolidArcRemastered/SketchValidation.md
 Experimental/SolidArcRemastered/build/FeatureValidation > Exhibits/SolidArcRemastered/FeatureValidation.md
 Experimental/SolidArcRemastered/build/CorpusValidation > Exhibits/SolidArcRemastered/CorpusValidation.md
+Experimental/SolidArcRemastered/build/PatternStressValidation > Exhibits/SolidArcRemastered/PatternStressValidation.md   # ~7 min; --only L|C|M|B|P or a row code, --verbose for phase timings
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py      # BlendGallery (needs Pillow + numpy)
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind FaceOperation   # FaceOperationGallery
 python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Feature   # FeatureGallery
@@ -115,6 +134,15 @@ python Experimental/SolidArcRemastered/Tooling/GalleryRasterizer.py --kind Boole
 # single row or section: TessellationValidation --only RandomSpheres  (also Scale, Regressions, …)
 # single scene or family: BooleanValidation --only SphereLens
 ```
+
+🐞 Defects the pattern stress test found and fixed:
+
+| Row | Before | Cause | Fix | After |
+|---|---|---|---|---|
+| P8 equal cross-bores + fillet | 🔴 process aborted: `std::bad_variant_access` | Offsets of two equal cylinders meet in exact ellipses; step ④ accepted any analytic branch as the spine, and steps ⑤–⑥ assume a line or circle | `RollingBallGeometry.cpp` ④ keeps line and circle branches only; an ellipse is refused as "spine is an ellipse (… 🚧)" | ⚠️ honest refusal |
+| B20 / B22 rim fillets r 0.5 / 0.21 on holes at pitch 1 | 🔴 built: V equals the naive sum of 4 disjoint tori (double-counted overlap), tessellation not watertight, audit sound | No global clash test after blending; the per-face audit cannot see two blend faces crossing | `EdgeBlend.cpp` ⑥ runs `DetectSelfClash` (step 6) on the assembled body and refuses "neighbouring blends overlap: E… passes through F…" | 🟢 refused as expected; r 0.19 still exact |
+
+Harness fixes (no modeller change): edge criteria that also caught rib-top end edges, bore seam lines and the hub seam (count mismatches on B9, B11, B12, B15, B16 and P4). The membership oracle now uses relaxed quadrature (samples sit ≥ 10⁻³ from every primitive) because traced faces took over 150 s per row.
 
 🐞 Defects the gates found and fixed during step 1:
 
