@@ -103,15 +103,23 @@ export class ShaderInterchange
     {
         const Module = await this.ConstructModule(FileName, Constants);
         const Device = this.Exchange.Device;
+        // 📝 The pipeline layout is created inside the scope too: a layout over the device limits (storage buffers per stage, bind groups)
+        //    is reported here with its own message instead of as "invalid due to a previous error".
         Device.pushErrorScope("validation");
-        const Program = await Device.createComputePipelineAsync({
-            label:   `${FileName}:${EntryPoint}`,
-            layout:  Device.createPipelineLayout({ bindGroupLayouts: Layouts }),
-            compute: { module: Module, entryPoint: EntryPoint }
-        });
+        const Layout = Device.createPipelineLayout({ label: `${FileName}:${EntryPoint} layout`, bindGroupLayouts: Layouts });
+        let Program = null, Thrown = null;
+        try
+        {
+            Program = await Device.createComputePipelineAsync({
+                label:   `${FileName}:${EntryPoint}`,
+                layout:  Layout,
+                compute: { module: Module, entryPoint: EntryPoint }
+            });
+        }
+        catch (Failure) { Thrown = Failure; }
         const Failure = await Device.popErrorScope();
-        if (Failure)
-            throw new Error(`Compute program ${FileName}:${EntryPoint} — ${Failure.message}`);
+        if (Failure || Thrown)
+            throw new Error(`Compute program ${FileName}:${EntryPoint} — ${Failure ? Failure.message : Thrown.message}`);
         return Program;
     }
 

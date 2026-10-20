@@ -18,11 +18,12 @@ import { DerezPresets } from "./EffectSequence.js";
 import { FormatPrimary } from "./TrainingSequence.js";
 import { CameraRigs } from "./CabinStructure.js";
 import { AutomotiveMode, RoofFixtureType } from "./LightingSystem.js";
+import { CaptureFrameCount, CaptureMatrix } from "./BenchmarkMetrics.js";
 
 export const InspectionModes = [
     ["Final image", 0], ["Direct sun only", 1], ["Indirect diffuse (GI)", 2], ["Indirect irradiance (denoised)", 3],
     ["ReSTIR irradiance (raw, no denoise)", 4], ["Glossy reflections", 5], ["BVH / Distance-field inspection", 6],
-    ["Surface cards (texel space)", 7], ["Normals", 8], ["Albedo", 9]
+    ["Surface cards (texel space)", 7], ["Normals", 8], ["Albedo", 9], ["Fresnel reflectance (environment)", 10]
 ];
 
 export const DistanceInspections = [
@@ -227,14 +228,26 @@ function BuildRender(Host, C, Body)
     C.Switch(Image, S, "VarianceKernel", { Label: "Denoiser (SVGF)" });
     C.Switch(Image, S, "Antialias", { Label: "Temporal antialiasing", Detail: "Also resolves dithered tyre marks" });
 
-    const Debug = C.Card(Body, "Debug views", "Bug", { Accent: Accent.Render, Index: 6 });
+    const Lights = C.Card(Body, "Clustered lights", "Lightbulb", { Accent: Accent.Render, Index: 6 });
+    C.Switch(Lights, S, "LightGrid", { Label: "World light grid",
+                                       Detail: "Each receiver tests only the lights whose reach touches its grid cell. Off tests every light (the reference; same image, slower)" });
+    C.Muted(Lights, "Point, street, beam and flood lights are binned into a 16 x 16 x 4 world grid of 32-bit masks. The same grid serves the direct pass, the card relighting and every path vertex of the ray tracer.");
+
+    const Screen = C.Card(Body, "Screen-space traces", "Scan", { Accent: Accent.Render, Index: 7 });
+    C.Switch(Screen, S, "ScreenTraversal", { Label: "Screen traces (master gate)",
+                                            Detail: "Walks the nearest-depth pyramid first; only rays the screen cannot settle go on to the BVH or the distance field. Enabling it restarts temporal reuse once" });
+    C.Switch(Screen, S, "ScreenIndirect", { Label: "Screen traces for GI candidates", Detail: "Needs the master gate" });
+    C.Switch(Screen, S, "ScreenReflection", { Label: "Screen traces for reflections", Detail: "Needs the master gate" });
+    C.Muted(Screen, "Each gate applies only when the master gate is on. A miss resumes in the RTX BVH path tracer, or in the distance field in GTX mode.");
+
+    const Debug = C.Card(Body, "Debug views", "Bug", { Accent: Accent.Render, Index: 8 });
     C.Select(Debug, S, "Inspection", InspectionModes, { Label: "Display" });
     C.Select(Debug, S, "DistanceInspection", DistanceInspections, { Label: "BVH / SDF view" });
     C.Switch(Debug, S, "HudVisible", { Label: "Readout overlay", Detail: "H" });
     C.Switch(Debug, S, "InsetEnabled", { Label: "Distance slice inset", Detail: "J" });
     Slider(C, Debug, S, "SliceHeight", "Slice height", 0.05, 4.0, 0.05, "m", 2);
 
-    const Timing = C.Card(Body, "Frame timing", "Activity", { Accent: Accent.Render, Index: 7 });
+    const Timing = C.Card(Body, "Frame timing", "Activity", { Accent: Accent.Render, Index: 9 });
     C.Metric(Timing, () => 1.0 / Math.max(Host.FrameSeconds || 1, 1.0e-4), "fps", 0, () => [`1% low ${Host.LowRate || "–"}`, ""]);
     C.Stats(Timing, [["Frame", () => (Host.FrameSeconds || 0) * 1000.0, "ms", 1], ["Draw runs", () => Host.Scene.DrawRuns.length],
                      ["TLAS instances", () => (Host.RayTracing ? Host.RayTracing.ActiveInstances : 0)]]);
@@ -245,6 +258,15 @@ function BuildRender(Host, C, Body)
         return Object.entries(Host.Metrics.Durations).filter(([, Milliseconds]) => Milliseconds > 0.0)
                      .map(([Name, Milliseconds]) => `${Name.padEnd(24)}${Milliseconds.toFixed(2).padStart(7)} ms`);
     });
+
+    const Log = C.Card(Body, "Hardware log", "Cpu", { Accent: Accent.Render, Index: 10 });
+    C.Muted(Log, `Captures ${CaptureFrameCount} frames per configuration on this machine, then builds a plain-text log to copy. Nothing is saved to disk. `
+                 + "The matrix runs the distance field, the triangle BVH reflections and the screen traces in turn.");
+    C.Readout(Log, () => Host.Benchmark.StatusLines());
+    const LogRow = C.ActionRow(Log);
+    C.Button(LogRow, "Capture current", "Activity", () => Host.Benchmark.Begin(Host, [{ Name: "Current settings", Settings: {} }]));
+    C.Button(LogRow, "Capture matrix", "Layers", () => Host.Benchmark.Begin(Host, CaptureMatrix));
+    C.Button(LogRow, "Copy log", "Check", () => Host.Benchmark.Copy());
 }
 
 function BuildField(Host, C, Body)
@@ -424,7 +446,7 @@ function BuildVehicle(Host, C, Body)
             }
         }
     });
-    C.Muted(LightingCard, "Clustered photometric light sources: analytical IES profiles with zero stepped rings, coupled in real time to surface cards for ReSTIR GI multi-bounce radiosity.");
+    C.Muted(LightingCard, "Light sources with analytical beam profiles (roadway, low and high beam, fog, floodlight), coupled in real time to surface cards for ReSTIR GI multi-bounce radiosity.");
 
     const Camera = C.Card(Body, "Camera", "Camera", { Accent: Accent.Vehicle, Index: 4 });
     C.Segmented(Camera, { Free: Host.FreeCamera }, "Free", [["Car rigs", false], ["Free (F8)", true]], { OnChange: (Free) => Host.AssignCamera(Free) });
@@ -868,12 +890,19 @@ function HexToRgb(Hex)
 
 function BuildLevel(Host, C, Body)
 {
-    const Zones = C.Card(Body, "Proving grounds", "Map", { Accent: Accent.Level, Index: 1, Subtitle: "Teleport the car" });
+    const S = Host.Settings;
+    const Test = C.Card(Body, "Metal & glass row", "Layers", { Accent: Accent.Level, Index: 1, Subtitle: "Mirror · aluminium · gold · glass" });
+    C.Muted(Test, "A plane mirror and three 1 m spheres on the open asphalt south-east of the course. Metals reflect in their own colour; the glass bends the " +
+                  "light behind it by its index of refraction, and every surface's reflectance follows Fresnel: F0 at normal incidence, rising toward grazing.");
+    Slider(C, Test, S, "GlassIndex", "Glass index of refraction", 1.0, 2.5, 0.01, "n", 2, ["Thin", "Dense"]);
+    C.Muted(Test, "Glass F0 = ((n − 1)/(n + 1))². At n = 1.5 that is 4 %. Inspection → Fresnel reflectance shows the environment reflectance per pixel.");
+
+    const Zones = C.Card(Body, "Proving grounds", "Map", { Accent: Accent.Level, Index: 2, Subtitle: "Teleport the car" });
     C.Muted(Zones, "A 216 × 120 m asphalt pad in a grass surround. West: the main straight with kerbs and a jump, a skidpad, a concrete burnout box, a smash alley of breakable props, a slatted hangar for bounce light, a container yard and a lit tunnel. East: the training arena — launch strip, slalom, moose test, cone bowling, spin box and a figure-8.");
     for (const Zone of LevelZones)
         C.LinkButton(Zones, `${Zone.Name} · ${Zone.Note}`, () => Host.TeleportVehicle(Zone));
 
-    const Budget = C.Card(Body, "Scene budget", "Cpu", { Accent: Accent.Level, Index: 2 });
+    const Budget = C.Card(Body, "Scene budget", "Cpu", { Accent: Accent.Level, Index: 3 });
     C.Stats(Budget, [["Occupants", () => Host.Scene.Occupants.length], ["In the field", () => Host.Scene.QueryUnionCount()],
                      ["Volumes", () => Host.Volumes.Volumes.length]]);
     C.Stats(Budget, [["Cards", () => Host.Cards.Cards.length], ["Draw runs", () => Host.Scene.DrawRuns.length],

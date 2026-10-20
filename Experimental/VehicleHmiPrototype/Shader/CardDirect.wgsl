@@ -1,14 +1,14 @@
 //============================================================================================================================================
 //                                                             CARDDIRECT.WGSL
 //============================================================================================================================================
-// 🧩 Direct sun and clustered light irradiance on every scheduled card texel, feeding the surface cache and indirect GI radiosity.
+// 🧩 Direct sun and light-grid irradiance on every scheduled card texel, feeding the surface cache and indirect GI radiosity.
 
 //! include "FrameDescriptor.wgsl"
 //! include "DistanceTraversal.wgsl"
 //! include "CardProjection.wgsl"
 //! include "CardIrradiance.wgsl"
 //! include "FireIllumination.wgsl"
-//! include "ClusteredLights.wgsl"
+//! include "LightClusterSpace.wgsl"
 
 @group(0) @binding(1) var<storage, read> Cards        : array<CardRecord>;
 @group(0) @binding(2) var<storage, read> Occupants    : array<OccupantRecord>;
@@ -17,7 +17,7 @@
 @group(0) @binding(5) var CardNormal                  : texture_2d<f32>;
 @group(0) @binding(6) var CardDepth                   : texture_2d<f32>;
 @group(0) @binding(7) var CardDirectTarget            : texture_storage_2d<rgba16float, write>;
-@group(0) @binding(8) var<storage, read> SceneLights  : array<LightRecord>;
+@group(0) @binding(8) var<storage, read> SceneLights   : LightClusterRecords;
 
 @compute @workgroup_size(8, 8)
 fn IntegrateCardDirect(@builtin(workgroup_id) Group: vec3u, @builtin(local_invocation_id) Local: vec3u)
@@ -63,12 +63,26 @@ fn IntegrateCardDirect(@builtin(workgroup_id) Group: vec3u, @builtin(local_invoc
     let Fire = ResolveFireArrival(Position, Normal);
     Irradiance += Fire.Illuminance * max(dot(Normal, Fire.Direction), 0.0);
 
-    // Clustered light irradiance feeding surface cards (which bounce into ReSTIR GI & multi-bounce radiosity!)
-    let NumLights = arrayLength(&SceneLights);
-    for (var i = 0u; i < NumLights; i++) {
-        let Light = SceneLights[i];
-        let LightIllum = EvaluateLightArrival(Light, Position, Normal);
-        Irradiance += LightIllum;
+    // 📝 Light irradiance feeding the surface cards, which bounce into ReSTIR GI and multi-bounce radiosity. Only the lights
+    //    whose reach touches this point's cell are evaluated, and each is shadowed by the distance field like the sun.
+    var Candidates = ResolveLightCandidates(Position);
+    while (Candidates != 0u)
+    {
+        let Index = firstTrailingBit(Candidates);
+        Candidates &= Candidates - 1u;
+        let Light = SceneLights.Lights[Index];
+        let Illuminance = EvaluateLightArrival(Light, Position, Normal);
+        if (any(Illuminance > vec3f(0.0)))
+        {
+            let Toward = Light.PositionType.xyz - Position;
+            var Shade = 1.0;
+            if (FeatureEnabled(Frame, FeatureDirectShadow))
+            {
+                let Bias = ResolveSurfaceBias(Position);
+                Shade = TraverseSceneShadow(Position + Normal * Bias, normalize(Toward), 0.5 * Bias, max(length(Toward) - 0.5, 0.0), 4.0);
+            }
+            Irradiance += Illuminance * Shade;
+        }
     }
 
     textureStore(CardDirectTarget, Texel, vec4f(Irradiance, 1.0));

@@ -20,7 +20,9 @@ export class DisplayProjection
         const Compute = GPUShaderStage.COMPUTE;
         this.RecombineLayout = this.Exchange.ConstructDescriptorLayout(
             ["Uniform", "StorageRead", "Texture2D", "TextureDepth2D", "Texture2D", "Texture2D", "Texture2D", "Texture2D", "Texture2D",
-             "Texture2D", "StorageTexture2D:rgba16float", "StorageRead", "Texture2D", "Sampler"], Compute, "Display recombination");
+             "Texture2D", "StorageTexture2D:rgba16float", "StorageRead", "Texture2D", "Sampler", "Texture2D", "StorageTexture2D:rgba16float"], Compute, "Display recombination");
+        this.RefractLayout = this.Exchange.ConstructDescriptorLayout(
+            ["Uniform", "StorageRead", "Texture2D", "TextureDepth2D", "Texture2D", "StorageTexture2D:rgba16float"], Compute, "Display refraction");
         this.AntialiasLayout = this.Exchange.ConstructDescriptorLayout(
             ["Uniform", "Texture2D", "Texture2D", "Texture2D", "Sampler", "StorageTexture2D:rgba16float"], Compute, "Display antialias");
         this.ExposureLayout = this.Exchange.ConstructDescriptorLayout(["Uniform", "Texture2D", "Storage"], Compute, "Display exposure");
@@ -28,6 +30,7 @@ export class DisplayProjection
         this.PresentLayout = this.Exchange.ConstructDescriptorLayout(["Uniform", "Texture2D", "StorageRead"],
                                                                      GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, "Display present");
         this.RecombineProgram  = await this.Shaders.ConstructComputeProgram("DisplayRecombination.wgsl", "ResolveRecombination", [this.RecombineLayout]);
+        this.RefractProgram    = await this.Shaders.ConstructComputeProgram("DisplayRefraction.wgsl", "ResolveRefraction", [this.RefractLayout]);
         this.AntialiasProgram  = await this.Shaders.ConstructComputeProgram("DisplayAntialias.wgsl", "IntegrateAntialias", [this.AntialiasLayout]);
         this.ExposureProgram   = await this.Shaders.ConstructComputeProgram("DisplayExposure.wgsl", "IntegrateExposure", [this.ExposureLayout]);
         this.InspectionProgram = await this.Shaders.ConstructComputeProgram("InspectionMarch.wgsl", "MarchInspection",
@@ -50,19 +53,26 @@ export class DisplayProjection
         const Construct = (Label, Extra = 0) => this.Exchange.ConstructTexture({ label: Label, size: ScreenExtent, format: "rgba16float", usage: Usage | Extra });
         // 📝 Recombined is also a render target (the cabin overlay draws glass, screens and mirrors into it before the
         //    temporal antialiasing); the resolved pair can be copied out, and Post takes what is drawn after it (sparks).
-        const Recombined = Construct("Recombined radiance", GPUTextureUsage.RENDER_ATTACHMENT);
+        const Recombined = Construct("Recombined radiance", GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
+        // 📝 The refraction pass reads a copy of the recombined radiance (the backdrop) and writes the result back into Recombined.
+        const Backdrop   = Construct("Refraction backdrop", GPUTextureUsage.COPY_DST);
         const Inspection = Construct("Inspection radiance");
         const Resolved   = [Construct("Resolved radiance A", GPUTextureUsage.COPY_SRC), Construct("Resolved radiance B", GPUTextureUsage.COPY_SRC)];
         const Post       = Construct("Post radiance", GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST);
-        this.Textures = [Recombined, Inspection, ...Resolved, Post];
+        // 📝 Diffuse exitance per pixel, never an inspection signal: the next frame's screen traces read it (DisplayRecombination.wgsl).
+        const Exitance   = Construct("Diffuse exitance");
+        this.Textures = [Recombined, Backdrop, Inspection, ...Resolved, Post, Exitance];
         this.ResolvedTextures = Resolved;
         this.PostTexture = Post;
         this.ScreenExtent = ScreenExtent;
-        this.Views = { Recombined: Recombined.createView(), Inspection: Inspection.createView(), Resolved: Resolved.map((Texture) => Texture.createView()),
-                       Post: Post.createView() };
+        this.RecombinedTexture = Recombined;
+        this.BackdropTexture = Backdrop;
+        this.Views = { Recombined: Recombined.createView(), Backdrop: Backdrop.createView(), Inspection: Inspection.createView(), Resolved: Resolved.map((Texture) => Texture.createView()),
+                       Post: Post.createView(), Exitance: Exitance.createView() };
         if (!this.EmptySmoke) this.EmptySmoke = this.Exchange.ConstructTexture({ label: "Idle plume", size: [1,1], format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING });
         this.RecombineResources = [this.FrameRecords, this.MaterialRecords, Surface.Views.Attributes, Surface.Views.Depth, Surface.Views.Direct, Diffuse.Views.Screen,
-             Glossy.Views.Screen, Resampling.Views.Irradiance, this.Views.Inspection, Cards.Views.Final, this.Views.Recombined, this.OccupantRecords, this.EmptySmoke.createView(), this.LinearClamp];
+             Glossy.Views.Screen, Resampling.Views.Irradiance, this.Views.Inspection, Cards.Views.Final, this.Views.Recombined, this.OccupantRecords, this.EmptySmoke.createView(), this.LinearClamp,
+             Surface.Views.DirectIrradiance, this.Views.Exitance];
         this.AssignSmoke(this.EmptySmoke.createView());
         this.AntialiasGroups = [0, 1].map((Parity) => this.Exchange.ConstructDescriptorGroup(this.AntialiasLayout,
             [this.FrameRecords, this.Views.Recombined, this.Views.Resolved[1 - Parity], Surface.Views.Motion, this.LinearClamp, this.Views.Resolved[Parity]]));
@@ -70,6 +80,8 @@ export class DisplayProjection
             [this.FrameRecords, this.Views.Resolved[Parity], this.AdaptationRecords]));
         this.PresentGroups = [0, 1].map((Parity) => this.Exchange.ConstructDescriptorGroup(this.PresentLayout,
             [this.FrameRecords, this.Views.Resolved[Parity], this.AdaptationRecords]));
+        this.RefractGroup = this.Exchange.ConstructDescriptorGroup(this.RefractLayout,
+            [this.FrameRecords, this.MaterialRecords, Surface.Views.Attributes, Surface.Views.Depth, this.Views.Backdrop, this.Views.Recombined]);
         this.InspectionGroup = this.Exchange.ConstructDescriptorGroup(this.InspectionLayout, [this.FrameRecords, this.Views.Inspection]);
         this.PostGroups = {
             Exposure: this.Exchange.ConstructDescriptorGroup(this.ExposureLayout, [this.FrameRecords, this.Views.Post, this.AdaptationRecords]),
@@ -93,6 +105,17 @@ export class DisplayProjection
             Exposure: this.Exchange.ConstructDescriptorGroup(this.ExposureLayout, [this.FrameRecords, ComposedView, this.AdaptationRecords]),
             Present:  this.Exchange.ConstructDescriptorGroup(this.PresentLayout, [this.FrameRecords, ComposedView, this.AdaptationRecords])
         };
+    }
+
+    RecordRefraction(Encoder)
+    {
+        const [Width, Height] = this.ScreenExtent;
+        Encoder.copyTextureToTexture({ texture: this.RecombinedTexture }, { texture: this.BackdropTexture }, [Width, Height]);
+        const Pass = Encoder.beginComputePass({ label: "Display refraction" });
+        Pass.setPipeline(this.RefractProgram);
+        Pass.setBindGroup(0, this.RefractGroup);
+        Pass.dispatchWorkgroups(Math.ceil(Width / 8), Math.ceil(Height / 8));
+        Pass.end();
     }
 
     RecordInspection(Encoder, DistanceGroup, SamplingGroup, RayTracingGroup)
@@ -120,12 +143,14 @@ export class DisplayProjection
         Pass.setPipeline(this.RecombineProgram);
         Pass.setBindGroup(0, this.RecombineGroup);
         Pass.dispatchWorkgroups(Math.ceil(Width / 8), Math.ceil(Height / 8));
+        // 📝 Glass refracts what the recombination left behind it: the backdrop is copied out, then only refractive pixels are rewritten.
+        Pass.end();
+        this.RecordRefraction(Encoder);
         if (Overlay)
         {
-            Pass.end();
             Overlay(Encoder, this.Views.Recombined);
-            Pass = Encoder.beginComputePass({ label: "Display antialias" });
         }
+        Pass = Encoder.beginComputePass({ label: "Display antialias" });
         Pass.setPipeline(this.AntialiasProgram);
         Pass.setBindGroup(0, this.AntialiasGroups[Parity]);
         Pass.dispatchWorkgroups(Math.ceil(Width / 8), Math.ceil(Height / 8));

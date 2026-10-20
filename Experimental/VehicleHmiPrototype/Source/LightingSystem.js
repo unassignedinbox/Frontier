@@ -1,12 +1,12 @@
 //============================================================================================================================================
 //                                                            LIGHTINGSYSTEM.JS
 //============================================================================================================================================
-// 🧩 World-space clustered lighting with IES profiles (roadway batwing, low beam, high beam, fog, floodlight)
-//    and real-time coupling to surface cards for multi-bounce indirect GI.
+// 🧩 World-space light records (beam profiles: roadway batwing, low beam, high beam, fog, floodlight) that feed the
+//    light grid (LightClusterSpace.js) and the surface cards for multi-bounce indirect GI.
 
 export const LightType = Object.freeze({
     Omni: 0,
-    StreetLamp: 1,    // Type II / Type III roadway batwing IES
+    StreetLamp: 1,    // roadway batwing (Type II / Type III spread)
     LowBeam: 2,       // Automotive asymmetric low beam cutoff
     HighBeam: 3,      // Automotive collimated pencil beam
     Fog: 4,           // Low-mounted razor-sharp horizontal cutoff
@@ -30,20 +30,8 @@ export const MaxSceneLights = 32;
 // PositionType: vec4f [px, py, pz, type]
 // DirectionReach: vec4f [dx, dy, dz, reach]
 // ColourIntensity: vec4f [r, g, b, intensity]
-// Params: vec4f [innerCos, outerCos, iesParam, active]
+// Params: vec4f [innerCos, outerCos, profileVariant, active]
 export const LightRecordFloats = 16;
-export const LightBufferBytes = MaxSceneLights * LightRecordFloats * 4; // 2048 bytes
-
-// 16x16x4 spatial grid over the proving grounds [-80..180] in X, [-80..80] in Y, [-2..28] in Z
-export const ClusterGridBounds = Object.freeze({
-    Minimum: [-80.0, -80.0, -2.0],
-    Extent:  [260.0, 160.0, 30.0],
-    ResX: 16,
-    ResY: 16,
-    ResZ: 4,
-    CellCount: 1024,
-    MaxLightsPerCell: 8
-});
 
 export class LightingSystem {
     constructor() {

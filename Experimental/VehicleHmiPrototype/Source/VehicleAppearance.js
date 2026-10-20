@@ -1,5 +1,5 @@
 // Shared vehicle materials: the Garage, mirrors and world all use these records.
-import { CourseMaterial, EncodeMaterialRecords } from './MaterialSpecification.js';
+import { CourseMaterial, EncodeMaterialRecords, MaterialRecordBytes } from './MaterialSpecification.js';
 export const PaintColours = ['#a4d8be', '#d4bd88', '#9eb8df', '#e2ada4'];
 export function LinearColour(Hex) {
     if (!/^#[0-9a-f]{6}$/i.test(Hex)) throw new TypeError('Expected #RRGGBB');
@@ -32,6 +32,6 @@ export class VehicleAppearance {
         Hub.Roughness = DarkWheels ? 0.38 : 0.2;
         this.Colour = Colour; this.Matte = Matte; this.DarkWheels = DarkWheels;
         for (const Family of [CourseMaterial.BodyCoat, CourseMaterial.Hub])
-            this.Upload(Family * 48, EncodeMaterialRecords([this.Materials[Family]]));
+            this.Upload(Family * MaterialRecordBytes, EncodeMaterialRecords([this.Materials[Family]]));
     }
 }

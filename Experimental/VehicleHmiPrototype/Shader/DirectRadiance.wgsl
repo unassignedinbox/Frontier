@@ -1,14 +1,15 @@
 //============================================================================================================================================
 //                                                           DIRECTRADIANCE.WGSL
 //============================================================================================================================================
-// 🧩 Direct sun radiance and clustered lights at every primary surface, cascaded shadow depth, and sky background.
+// 🧩 Direct sun radiance, tyre-fire and light-grid arrivals at every primary surface, cascaded shadow depth, and sky background.
 
 //! include "FrameDescriptor.wgsl"
 //! include "SurfaceReflectance.wgsl"
 //! include "PackingCodec.wgsl"
 //! include "SkyProjection.wgsl"
 //! include "FireIllumination.wgsl"
-//! include "ClusteredLights.wgsl"
+//! include "DistanceTraversal.wgsl"
+//! include "LightClusterSpace.wgsl"
 //! include "RayTraversal.wgsl"
 
 struct CascadeReceiver
@@ -26,8 +27,10 @@ struct CascadeReceiver
 @group(0) @binding(6) var<uniform> Receiver            : CascadeReceiver;
 @group(0) @binding(7) var DirectSkyView                : texture_2d<f32>;
 @group(0) @binding(8) var DirectSkySampler             : sampler;
-@group(0) @binding(9) var DirectTarget                 : texture_storage_2d<rgba16float, write>;
-@group(0) @binding(10) var<storage, read> SceneLights  : array<LightRecord>;
+@group(0) @binding(9) var DirectTarget                 : texture_storage_2d<rgba16float, write>;   // rgb radiance, w sun visibility
+// 📝 SceneLights (group 3, binding 3) is declared once, by RayTraversal.wgsl: the same light records and cell masks serve this pass,
+//    the ray-traced next-event estimation and the card relighting.
+@group(0) @binding(10) var DirectIrradianceTarget      : texture_storage_2d<rgba16float, write>;   // rgb diffuse irradiance of fire and lights
 
 // 📐 3×3 percentage-closer taps, each a hardware bilinear comparison, after a normal offset of 1.5 texels.
 fn ResolveCascadeVisibility(Position: vec3f, Normal: vec3f) -> f32
@@ -90,6 +93,7 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
     {
         let Far = ReconstructWorldPosition(Centre, 1.0e-6);
         textureStore(DirectTarget, vec2i(Pixel), vec4f(ResolveBackgroundRadiance(normalize(Far - Frame.CameraPosition)), 0.0));
+        textureStore(DirectIrradianceTarget, vec2i(Pixel), vec4f(0.0));
         return;
     }
     let Position     = ReconstructWorldPosition(Centre, Depth);
@@ -115,35 +119,48 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
         }
     }
     var Radiance = Frame.SunIlluminance * Visibility * ResolveDirectReflectance(Surface, Normal, View, SunDir);
+
+    // 📝 Irradiance here is diffuse (cosine-weighted, unscaled by the albedo): the display's screen exitance and the cards
+    //    both need it, and the radiance above carries only the specular-inclusive response for direct shading.
+    var Irradiance = vec3f(0.0);
     let Fire = ResolveFireArrival(Position, Normal);
     if (any(Fire.Illuminance > vec3f(0.0)))
     {
+        let FireCosine = max(dot(Normal, Fire.Direction), 0.0);
         Radiance += Fire.Illuminance * ResolveDirectReflectance(Surface, Normal, View, Fire.Direction);
+        Irradiance += Fire.Illuminance * FireCosine;
     }
 
-    // Clustered light evaluations with photometric / IES profiles and optional BVH ray-traced shadows
-    let NumLights = arrayLength(&SceneLights);
-    for (var i = 0u; i < NumLights; i++)
+    // 📝 Only the lights whose reach touches this point's grid cell are evaluated (LightClusterSpace.wgsl). Their shadow is the exact
+    //    BVH visibility in RTX mode and the distance-field soft shadow otherwise.
+    var Candidates = ResolveLightCandidates(Position);
+    while (Candidates != 0u)
     {
-        let Light = SceneLights[i];
-        if (Light.Params.w < 0.5)
-        {
-            break;
-        }
-        let LightIllum = EvaluateLightArrival(Light, Position, Normal);
-        if (any(LightIllum > vec3f(0.0)))
+        let Index = firstTrailingBit(Candidates);
+        Candidates &= Candidates - 1u;
+        let Light = SceneLights.Lights[Index];
+        let Illuminance = EvaluateLightArrival(Light, Position, Normal);
+        if (any(Illuminance > vec3f(0.0)))
         {
             let Offset      = Light.PositionType.xyz - Position;
             let LightDist   = length(Offset);
             let TowardLight = Offset / max(LightDist, 1.0e-4);
-            var LightVis    = 1.0;
+            var Shade       = 1.0;
             if (UseRtShadows)
             {
-                LightVis = TraceSceneVisibility(RayOrigin, TowardLight, RayEpsilon, max(LightDist - 0.08, RayEpsilon));
+                Shade = TraceSceneVisibility(RayOrigin, TowardLight, RayEpsilon, max(LightDist - 0.08, RayEpsilon));
             }
-            Radiance += LightIllum * LightVis * ResolveDirectReflectance(Surface, Normal, View, TowardLight);
+            else if (FeatureEnabled(Frame, FeatureDirectShadow))
+            {
+                let Bias = ResolveSurfaceBias(Position);
+                Shade = TraverseSceneShadow(Position + Normal * Bias, TowardLight, 0.5 * Bias, max(LightDist - 0.5, 0.0), 4.0);
+            }
+            let Lit = Illuminance * Shade;
+            Irradiance += Lit;
+            Radiance += Lit * ResolveDirectReflectance(Surface, Normal, View, TowardLight);
         }
     }
 
-    textureStore(DirectTarget, vec2i(Pixel), vec4f(Radiance, 1.0));
+    textureStore(DirectTarget, vec2i(Pixel), vec4f(Radiance, Visibility));
+    textureStore(DirectIrradianceTarget, vec2i(Pixel), vec4f(Irradiance, 1.0));
 }

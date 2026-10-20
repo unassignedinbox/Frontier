@@ -10,8 +10,8 @@ test('paint and rim records update the shared world material buffer only', () =>
     Appearance.Apply({ Colour: '#a4d8be', Matte: true, DarkWheels: true });
     assert.deepEqual(Materials[CourseMaterial.BodyCoat].Albedo, LinearColour('#a4d8be'));
     assert.equal(Materials[CourseMaterial.BodyCoat].Roughness, 0.7);
-    assert.deepEqual(Writes.map(([Offset]) => Offset), [6 * 48, 10 * 48]);
-    assert.ok(Writes.every(([, Data]) => Data.byteLength === 48));
+    assert.deepEqual(Writes.map(([Offset]) => Offset), [6 * 64, 10 * 64]);
+    assert.ok(Writes.every(([, Data]) => Data.byteLength === 64));
     assert.deepEqual(Materials[CourseMaterial.VehicleGlass], Glass);
     Appearance.Apply({ Matte: false });
     assert.equal(Materials[CourseMaterial.BodyCoat].Roughness, 0.0775);

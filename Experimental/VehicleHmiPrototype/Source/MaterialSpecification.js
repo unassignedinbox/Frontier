@@ -97,6 +97,13 @@ export const CourseMaterial = Object.freeze({
     MirrorTrim:      78,
     TabletHousing:   80,
     RimBase:         81, // original MatTyre finish on METAL geometry; never shredded
+    // 📝 Polished metal for reflection checks: a near-mirror finish (roughness 0.06, metalness 1), so the glossy and triangle reflections show it.
+    PolishedSteel:   82,
+    // 📝 The reflection test row beside the polished-steel panel: a plane mirror and three spheres, metal and glass.
+    MirrorSheet:     83,
+    AluminiumSphere: 84,
+    GoldSphere:      85,
+    GlassSphere:     86,
     RimScrape:       79     // the rear-view mirror's housing and stem: CabinTrim's finish, fixed to the shell, not the cockpit
 });
 
@@ -120,8 +127,33 @@ const BodyCoatHeadroom = 0.78;   // [-] - DriveSceneAuthor's flake headroom
 function Dielectric(Red, Green, Blue, Roughness)
 {
     return { Albedo: [Red, Green, Blue], Roughness, Metalness: 0.0, Emission: [0.0, 0.0, 0.0],
-             CoatWeight: 0.0, CoatRoughness: 0.0, SpecularLevel: 0.04, Transmission: 0.0 };
+             CoatWeight: 0.0, CoatRoughness: 0.0, SpecularLevel: 0.04, Transmission: 0.0, IndexOfRefraction: 0.0 };
 }
+
+// 📐 Fresnel F0 of a dielectric interface at normal incidence from its index of refraction: ((n − 1)/(n + 1))².
+export function FresnelF0FromIndex(IndexOfRefraction)
+{
+    const Reflectance = (IndexOfRefraction - 1.0) / (IndexOfRefraction + 1.0);
+    return Reflectance * Reflectance;
+}
+
+// 📝 A clear dielectric body: no diffuse albedo, all of its light transmitted (Transmission 1) and bent by its index of
+//    refraction, with F0 derived from that index so Fresnel follows it. Its reflection is the same split-sum response as any
+//    surface.
+export function Refractive(IndexOfRefraction, Roughness)
+{
+    const Material = Dielectric(0.0, 0.0, 0.0, Roughness);
+    Material.SpecularLevel = FresnelF0FromIndex(IndexOfRefraction);
+    Material.Transmission = 1.0;
+    Material.IndexOfRefraction = IndexOfRefraction;
+    return Material;
+}
+
+// 📝 Default index for the glass sphere: ordinary soda-lime glass.
+export const DefaultGlassIndex = 1.5;
+
+// 📐 Bytes per material record on the GPU: MaterialRecord in SceneRecords.wgsl is 13 scalars padded to 16.
+export const MaterialRecordBytes = 64;
 
 export function ConstructMaterialSpecification()
 {
@@ -210,6 +242,9 @@ export function ConstructMaterialSpecification()
     const Steel = Dielectric(0.10, 0.10, 0.11, 0.38);
     Steel.Metalness = 1.0;
     Materials[CourseMaterial.SteelDark]       = Steel;
+    const Polished = Dielectric(0.80, 0.81, 0.83, 0.06);
+    Polished.Metalness = 1.0;
+    Materials[CourseMaterial.PolishedSteel]   = Polished;
     const Warm = Dielectric(0.95, 0.90, 0.80, 0.30);
     Warm.Emission = [14.0, 10.2, 6.0];
     Materials[CourseMaterial.LampWarm]        = Warm;
@@ -288,6 +323,19 @@ export function ConstructMaterialSpecification()
     Materials[CourseMaterial.SeatFabric]   = Dielectric(0.055, 0.060, 0.075, 0.85);
     Materials[CourseMaterial.CabinCarpet]  = Dielectric(0.028, 0.028, 0.030, 0.95);
     Materials[CourseMaterial.MirrorTrim]   = Materials[CourseMaterial.CabinTrim];
+
+    // 📝 Metal and glass for the reflection test row. A metal's reflectance is its colour (F0, linear; the aluminium and gold
+    //    values are approximate); the mirror is a near-perfect plane. The glass refracts at the index the Glass index slider sets.
+    const Mirror = Dielectric(0.95, 0.95, 0.95, 0.02);
+    Mirror.Metalness = 1.0;
+    Materials[CourseMaterial.MirrorSheet] = Mirror;
+    const Aluminium = Dielectric(0.913, 0.921, 0.925, 0.18);
+    Aluminium.Metalness = 1.0;
+    Materials[CourseMaterial.AluminiumSphere] = Aluminium;
+    const Gold = Dielectric(1.0, 0.766, 0.336, 0.18);
+    Gold.Metalness = 1.0;
+    Materials[CourseMaterial.GoldSphere] = Gold;
+    Materials[CourseMaterial.GlassSphere] = Refractive(DefaultGlassIndex, 0.02);
     // Abraded aggregate and metal transfer: lighter, smoother than rubber, not a chrome strip.
     const RimScrape = Dielectric(0.16, 0.17, 0.18, 0.46);
     RimScrape.Metalness = 0.25;
@@ -295,15 +343,16 @@ export function ConstructMaterialSpecification()
     return Materials;
 }
 
-// 📝 48-byte records matching MaterialRecord in SceneRecords.wgsl.
+// 📝 64-byte records matching MaterialRecord in SceneRecords.wgsl: 13 scalars, padded to 16 floats.
 export function EncodeMaterialRecords(Materials)
 {
-    const Scalars = new Float32Array(Materials.length * 12);
+    const Scalars = new Float32Array(Materials.length * 16);
     Materials.forEach((Material, Index) =>
     {
-        const Offset = Index * 12;
+        const Offset = Index * 16;
         Scalars.set([...Material.Albedo, Material.Roughness, ...Material.Emission, Material.Metalness,
-                     Material.CoatWeight, Material.CoatRoughness, Material.SpecularLevel, Material.Transmission], Offset);
+                     Material.CoatWeight, Material.CoatRoughness, Material.SpecularLevel, Material.Transmission,
+                     Material.IndexOfRefraction ?? 0.0], Offset);
     });
     return Scalars;
 }

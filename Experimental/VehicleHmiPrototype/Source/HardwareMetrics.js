@@ -10,6 +10,7 @@ export class HardwareMetrics
         this.Exchange  = Exchange;
         this.PassNames = PassNames;
         this.Durations = Object.fromEntries(PassNames.map((Name) => [Name, 0.0]));
+        this.Raw       = Object.fromEntries(PassNames.map((Name) => [Name, 0.0]));   // [ms] latest resolved sample, unsmoothed
         this.Enabled   = Exchange.TimestampEnabled;
         this.Pending   = false;
         this.Written   = new Set();
@@ -58,9 +59,14 @@ export class HardwareMetrics
             {
                 if (!Written.has(Name))
                     return;
+                // 📝 The ceiling only rejects corrupt pairs (unordered or wrapped ticks); a software adapter can spend
+                //    whole seconds in one pass, and those durations are genuine. The first sample seeds the average.
                 const Elapsed = Number(Ticks[Index * 2 + 1] - Ticks[Index * 2]) / 1.0e6;
-                if (Elapsed >= 0.0 && Elapsed < 1000.0)
-                    this.Durations[Name] = this.Durations[Name] * 0.85 + Elapsed * 0.15;
+                if (Elapsed >= 0.0 && Elapsed < 60000.0)
+                {
+                    this.Raw[Name] = Elapsed;
+                    this.Durations[Name] = this.Durations[Name] > 0.0 ? this.Durations[Name] * 0.85 + Elapsed * 0.15 : Elapsed;
+                }
             });
         }
         catch (Failure)

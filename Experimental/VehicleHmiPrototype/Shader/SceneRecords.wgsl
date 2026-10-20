@@ -45,6 +45,8 @@ struct FrameRecord
     FireLightIntensity               : f32,       // [-]    point intensity; 0 when nothing burns
     FireLightColour                  : vec3f,     // [-]    chromaticity of the flame light
     FireLightReach                   : f32,       // [m]    influence radius
+    CameraNear                       : f32,       // [m]    near plane of the reversed infinite projection; device depth = CameraNear / view depth
+    Features2                        : u32,       // [-]    ExtendedFeature mask (screen traces, light grid, emissive lights)
 }
 
 // 📝 FeatureBit — the toggles the control panel exposes, read by the programs that honour them.
@@ -60,12 +62,33 @@ const FeatureDirectShadow      : u32 = 256u;
 const FeatureAutoExposure      : u32 = 512u;
 const FeatureRadianceRefresh   : u32 = 1024u;
 const FeatureTemporalRestart   : u32 = 2048u;   // [-] set for one frame: every temporal history restarts
+const FeatureSmokeComposite    : u32 = 4096u;   // [-] smoke and plume composited over the recombined radiance
 const FeatureRayTracing        : u32 = 8192u;   // [-] RTX TLAS/BLAS multi-bounce ReSTIR path tracer
 const FeatureRayTracedShadows  : u32 = 16384u;  // [-] exact BVH visibility for solar cone & clustered IES lights
 const FeatureRussianRoulette      : u32 = 32768u;  // [-] throughput-weighted Russian roulette termination
 const FeatureFireflyFilter        : u32 = 65536u;  // [-] Jacobian & variance firefly/boiling suppression
 const FeatureMultiBounceNEE       : u32 = 131072u; // [-] Next-Event Estimation + RIS at secondary path vertices
 const FeatureRayTracedReflections : u32 = 262144u; // [-] exact TLAS/BLAS multi-bounce ray-traced reflections
+// 📝 Bits 20-22, 24-26 and 28-30 of Features carry MaxBounces, InitialCandidates and ReflectionBounces (RayTraversal.wgsl), so the
+//    32 bits are spent. Every later toggle lives in the second word, Frame.Features2, where the bits cannot collide with those.
+
+// 📝 ExtendedFeature — Frame.Features2.
+const ExtendedScreenTraversal  : u32 = 1u;    // [-] master gate: screen traces ahead of the RT / distance-field tracer (default off)
+const ExtendedScreenIndirect   : u32 = 2u;    // [-] screen traces for ReSTIR GI candidates (needs the master gate)
+const ExtendedScreenReflection : u32 = 4u;    // [-] screen traces for reflection rays (needs the master gate)
+const ExtendedLightGrid        : u32 = 8u;    // [-] world light grid culling; off = every receiver tests every light (the reference)
+const ExtendedEmissiveLights   : u32 = 16u;   // [-] emissive-triangle clusters are sampled as lights (next-event estimation)
+
+fn ExtendedEnabled(Frame: FrameRecord, Bit: u32) -> bool
+{
+    return (Frame.Features2 & Bit) != 0u;
+}
+
+// 📝 A screen trace runs only when the master gate and its consumer's bit are both set.
+fn ScreenConsumerEnabled(Frame: FrameRecord, Consumer: u32) -> bool
+{
+    return ExtendedEnabled(Frame, ExtendedScreenTraversal) && ExtendedEnabled(Frame, Consumer);
+}
 
 fn FeatureEnabled(Frame: FrameRecord, Bit: u32) -> bool
 {
@@ -134,7 +157,7 @@ const RoleDistance : u32 = 2u;
 const RoleCards    : u32 = 4u;
 const RoleDynamic  : u32 = 8u;
 const RoleFallback : u32 = 16u;   // card-less: FirstCard carries the packed albedo
-const RoleShredded : u32 = 32u;   // wheel whose tyre rubber is shredded; ray traversal passes through TyreFamily
+const RoleShredded : u32 = 32u;   // fractured / shredded tyre piece: ray traversal passes through its TyreFamily rubber
 const NoMaterialOverride : u32 = 0xFFFFFFFFu;
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -167,6 +190,9 @@ struct MaterialRecord
     CoatRoughness : f32,     // [-]
     SpecularLevel : f32,     // [-]  dielectric F0
     Transmission  : f32,     // [-]
+    // 📝 Index of refraction; 0 keeps the surface opaque. The record is 64 bytes, its size rounded to 16 by WGSL: the
+    //    host writes 16 floats per material (MaterialRecordBytes in MaterialSpecification.js).
+    IndexOfRefraction : f32, // [-]  > 1 bends transmitted light by Snell's law (DisplayRefraction.wgsl)
 }
 
 //------------------------------------------------------------------------------------------------------------------------

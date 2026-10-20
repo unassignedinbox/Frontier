@@ -2,7 +2,9 @@ import { VehicleOrbitCamera } from "./VehicleOrbitCamera.js";
 import { DrivingCameraMotion } from "./DrivingCameraMotion.js";
 import { ResolveHudStyle } from "./HudLayout.js";
 import { VehicleAppearance } from "./VehicleAppearance.js";
-import { LightingSystem, LightBufferBytes, AutomotiveMode, RoofFixtureType } from "./LightingSystem.js";
+import { LightingSystem, AutomotiveMode, RoofFixtureType } from "./LightingSystem.js";
+import { LightClusterSpace } from "./LightClusterSpace.js";
+import { BenchmarkMetrics } from "./BenchmarkMetrics.js";
 //============================================================================================================================================
 //                                                           ILLUMINATIONHOST.JS
 //============================================================================================================================================
@@ -12,7 +14,7 @@ import { DeviceExchange } from "./DeviceExchange.js";
 import { ShaderInterchange } from "./ShaderInterchange.js";
 import { SceneStructure, OccupantStride, GroundLayout, OccupantRole } from "./FacetStructure.js";
 import { ConstructMaterialSpecification, EncodeMaterialRecords, CourseMaterial, MarkedFamilyFirst, MarkedFamilyLast,
-         MarkedFamilyExtraFirst, MarkedFamilyExtraLast } from "./MaterialSpecification.js";
+         MarkedFamilyExtraFirst, MarkedFamilyExtraLast, DefaultGlassIndex, FresnelF0FromIndex, MaterialRecordBytes } from "./MaterialSpecification.js";
 import { TyreMarkDepot, TyreMarkLayout } from "./TyreMarkDepot.js";
 import { OccupantDistanceSpace } from "./OccupantDistanceSpace.js";
 import { SceneDistanceSpace, ResolveMovedBounds } from "./SceneDistanceSpace.js";
@@ -22,6 +24,7 @@ import { RayTracingSpace } from "./RayTracingSpace.js";
 import { AtmosphereIntegrator } from "./AtmosphereIntegrator.js";
 import { ShadowProjection } from "./ShadowProjection.js";
 import { SurfaceProjection } from "./SurfaceProjection.js";
+import { NearestDepthSpace } from "./NearestDepthSpace.js";
 import { ResamplingSequence } from "./ResamplingSequence.js";
 import { VarianceIntegrator } from "./VarianceIntegrator.js";
 import { DisplayProjection } from "./DisplayProjection.js";
@@ -61,22 +64,25 @@ const ShaderSources = [
     "AtmosphereScattering.wgsl", "SurfaceReflectance.wgsl", "ShadowRaster.wgsl", "SurfaceRaster.wgsl", "DirectRadiance.wgsl",
     "ReservoirRecords.wgsl", "RayTraversal.wgsl", "ReservoirTemporal.wgsl", "ReservoirSpatial.wgsl", "ReflectionTraversal.wgsl",
     "VarianceTemporal.wgsl", "VarianceWavelet.wgsl", "VarianceUpsample.wgsl", "InspectionMarch.wgsl", "DisplayRecombination.wgsl",
-    "DisplayAntialias.wgsl", "DisplayExposure.wgsl", "DisplayPresent.wgsl", "FireIllumination.wgsl", "PlumeRecords.wgsl",
+    "DisplayRefraction.wgsl", "DisplayAntialias.wgsl", "DisplayExposure.wgsl", "DisplayPresent.wgsl", "FireIllumination.wgsl", "PlumeRecords.wgsl",
     "PlumeAdvection.wgsl", "PlumePressure.wgsl", "PlumeVorticity.wgsl", "PlumeMarch.wgsl", "FragmentDistance.wgsl",
     "EffectRecords.wgsl", "EffectRaster.wgsl", "VehicleVisual.wgsl", "SparkRaster.wgsl", "ForwardRaster.wgsl",
-    "CabinOverlay.wgsl", "CabinVolume.wgsl", "ClusteredLights.wgsl"
+    "CabinOverlay.wgsl", "CabinVolume.wgsl", "LightClusterSpace.wgsl", "ScreenTraversal.wgsl", "NearestDepthTransfer.wgsl", "NearestDepthReduction.wgsl"
 ];
 
 // 📝 Quality grades trade cascade resolution, card density and traversal length; selected with ?quality=low|medium|high.
+//    ScreenSteps bounds the nearest-depth walk of a screen trace (Lumen's screen-trace iteration limit).
 const QualityGrades = {
     high:   { ClipResolution: 128, FinestVoxel: 0.125, CardExtent: 2048, CardDensity: 1.0,  VoxelScale: 1.0, ShadowExtent: 2048,
-              Steps: 96, RenderScale: 1.0,  TileBudget: 2048, PixelLimit: 1920 * 1080 },
+              Steps: 96, ScreenSteps: 64, RenderScale: 1.0,  TileBudget: 2048, PixelLimit: 1920 * 1080 },
     medium: { ClipResolution: 96,  FinestVoxel: 0.16,  CardExtent: 2048, CardDensity: 0.75, VoxelScale: 1.4, ShadowExtent: 2048,
-              Steps: 80, RenderScale: 0.85, TileBudget: 1024, PixelLimit: 1600 * 900 },
+              Steps: 80, ScreenSteps: 48, RenderScale: 0.85, TileBudget: 1024, PixelLimit: 1600 * 900 },
     low:    { ClipResolution: 64,  FinestVoxel: 0.25,  CardExtent: 1024, CardDensity: 0.5,  VoxelScale: 2.2, ShadowExtent: 1024,
-              Steps: 64, RenderScale: 0.6,  TileBudget: 384,  PixelLimit: 1280 * 720 }
+              Steps: 64, ScreenSteps: 32, RenderScale: 0.6,  TileBudget: 384,  PixelLimit: 1280 * 720 }
 };
 
+// 📝 Bits of Frame.Features (SceneRecords.wgsl). Each setting named here sets its bit when on; the smoke composite is set from the smoke state.
+//    Bits 20-22, 24-26 and 28-30 carry the path-tracer counts, so every later toggle lives in Frame.Features2 (ExtendedFeatureBits).
 const FeatureBits = {
     Indirect: 1, TemporalReuse: 2, SpatialReuse: 4, VisibilityReuse: 8, VarianceKernel: 16, Reflection: 32,
     CardRadiosity: 64, Antialias: 128, DirectShadow: 256, AutoExposure: 512, RadianceRefresh: 1024,
@@ -84,12 +90,16 @@ const FeatureBits = {
     RayTracedReflections: 262144
 };
 
+// 📝 Bits of Frame.Features2 (ExtendedFeature in SceneRecords.wgsl); tests/FeatureBits.test.mjs keeps the two in step.
+const ExtendedFeatureBits = { ScreenTraversal: 1, ScreenIndirect: 2, ScreenReflection: 4, LightGrid: 8, EmissiveLights: 16 };
+
 const TemporalRestartBit = 2048;   // [-] FeatureTemporalRestart in SceneRecords.wgsl
+const SmokeCompositeBit  = 4096;   // [-] FeatureSmokeComposite in SceneRecords.wgsl
 
-const PassNames = ["Distance union", "Card lighting", "Shadow", "Surface", "Direct", "ReSTIR GI", "Diffuse reconstruction",
-                   "Reflection", "Glossy reconstruction", "Resolve", "Smoke transport", "Smoke render"];
+const PassNames = ["Distance union", "Card lighting", "Shadow", "Surface", "Depth pyramid", "Direct", "ReSTIR GI",
+                    "Diffuse reconstruction", "Reflection", "Glossy reconstruction", "Resolve", "Smoke transport", "Smoke render"];
 
-const FrameRecordExtent = 512;   // [B] FrameRecord in SceneRecords.wgsl (128 floats)
+const FrameRecordExtent = 528;   // [B] FrameRecord in SceneRecords.wgsl (130 floats, padded to a 16-byte multiple)
 const FireLightReach    = 14.0;  // [m] influence radius of a tyre fire's light
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -106,13 +116,14 @@ class IlluminationHost
         if (Query.has("scale"))
             this.Grade.RenderScale = Math.max(0.25, Math.min(2.0, Number(Query.get("scale"))));
         const RendererParam = (Query.get("renderer") || "rtx").toLowerCase();
+        this.Benchmark = new BenchmarkMetrics();
         this.Settings = {
             Inspection: Number(Query.get("inspection") || 0), DistanceInspection: 1, InsetEnabled: false, SliceHeight: 0.6,
             HudVisible: false, PanelVisible: true,
             SmokeEnabled: true, SmokeResolution: 2, IgnitionMode: 0, ThermalGrip: false, LineLock: true,
             TyreMarks: true, TyreMarkStrength: 1.0,
             Gas: ConstructGasParameters(),
-            SunElevation: 38.0, SunAzimuth: 145.0, SolarIlluminance: 12.0, SkyScale: 1.0, EmissionScale: 1.0,
+            SunElevation: 38.0, SunAzimuth: 145.0, SolarIlluminance: 12.0, SkyScale: 1.0, EmissionScale: 1.0, GlassIndex: DefaultGlassIndex,
             ExposureCompensation: 0.0, AutoExposure: true, DirectShadow: true,
             // 📝 RTX Full ReSTIR GI Path Tracer is the default renderer (?renderer=gtx selects GTX Distance-Field GI).
             RayTracing: RendererParam !== "gtx",
@@ -126,7 +137,9 @@ class IlluminationHost
             RussianRoulette: true,
             FireflyFilter: true,
             MultiBounceNEE: true,
-            Indirect: true, TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
+            Indirect: true, ScreenTraversal: Query.get("screentraces") === "1", ScreenIndirect: true, ScreenReflection: true,
+            LightGrid: Query.get("lightgrid") !== "0",
+            TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
             SpatialCount: 5, SpatialRadius: 20, TemporalTallyLimit: 20, IndirectScale: 1.0, VarianceKernel: true, Reflection: true,
             Antialias: true, TraceScale: 2, FreezeDistance: false, CardRadiosity: true, CardTileBudget: this.Grade.TileBudget,
             Quality: ["low", "medium", "high"].indexOf(this.GradeName),
@@ -211,7 +224,8 @@ class IlluminationHost
         // 📝 COPY_DST: the derez palette (VFX editor) rewrites its three glow records in place.
         this.MaterialRecords = this.Exchange.ConstructRecordsFrom(EncodeMaterialRecords(Materials), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Materials");
         this.FrameRecords    = this.Exchange.ConstructRecords(FrameRecordExtent, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Frame record");
-        this.LightRecords    = this.Exchange.ConstructRecords(LightBufferBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Clustered light records");
+        this.LightClusters   = new LightClusterSpace(this.Exchange);
+        this.LightRecords    = this.LightClusters.Records;
         this.OccupantRecords = this.Exchange.ConstructRecords(this.Scene.Occupants.length * OccupantStride,
                                                               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Occupant records");
         this.Lighting        = new LightingSystem();
@@ -241,6 +255,7 @@ class IlluminationHost
             MaximumTraversalSteps: { Type: "u32", Value: this.Grade.Steps },
             GroundPadMinimumX:     { Type: "f32", Value: GroundLayout.PadMinimum[0] },
             GroundPadMinimumY:     { Type: "f32", Value: GroundLayout.PadMinimum[1] },
+            ScreenTraversalSteps:  { Type: "u32", Value: this.Grade.ScreenSteps },
             GroundTileExtent:      { Type: "f32", Value: GroundLayout.TileExtent },
             GroundTileCountX:      { Type: "u32", Value: GroundLayout.TileCount[0] },
             GroundTileCountY:      { Type: "u32", Value: GroundLayout.TileCount[1] },
@@ -317,9 +332,11 @@ class IlluminationHost
         this.Surface = new SurfaceProjection(this.Exchange, this.Shaders);
         await this.Surface.ConstructPrograms(this.FrameRecords, this.OccupantRecords, this.MaterialRecords, this.Distance.TraversalLayout,
                                              this.Cards.SamplingLayout, this.RayTracing.TraversalLayout, this.Marks, this.Effects, this.VehicleRecords);
+        this.NearestDepth = new NearestDepthSpace(this.Exchange, this.Shaders);
+        await this.NearestDepth.ConstructPrograms();
         this.Resampling = new ResamplingSequence(this.Exchange, this.Shaders);
         await this.Resampling.ConstructPrograms(this.FrameRecords, this.MaterialRecords, this.Distance.TraversalLayout, this.Cards.SamplingLayout,
-                                                this.RayTracing.TraversalLayout);
+                                                this.NearestDepth.TraversalLayout);
         this.Diffuse = new VarianceIntegrator(this.Exchange, this.Shaders, "Diffuse", { MinimumWeight: 0.08, TallyLimit: 24, WaveletIterations: 3, ColourSigma: 4.0 });
         await this.Diffuse.ConstructPrograms(this.FrameRecords);
         this.Glossy = new VarianceIntegrator(this.Exchange, this.Shaders, "Glossy", { MinimumWeight: 0.12, TallyLimit: 12, WaveletIterations: 2, ColourSigma: 3.0 });
@@ -386,6 +403,15 @@ class IlluminationHost
             this.ApplyPreset(this.PendingPreset);
     }
 
+    // 📝 The glass sphere's index of refraction: the bend and the Fresnel F0 that follows it, written into its record in place.
+    ApplyGlassIndex()
+    {
+        const Glass = this.Materials[CourseMaterial.GlassSphere];
+        Glass.IndexOfRefraction = this.Settings.GlassIndex;
+        Glass.SpecularLevel = FresnelF0FromIndex(this.Settings.GlassIndex);
+        this.Exchange.Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.GlassSphere * MaterialRecordBytes, EncodeMaterialRecords([Glass]));
+    }
+
     // 📝 Every editor edit lands here once its value is written: most settings are read each frame and need nothing;
     //    these rebuild something or act.
     ApplySetting(Key)
@@ -409,6 +435,8 @@ class IlluminationHost
             this.Stress.Assign(this.Stress.QueryCapacity());
         else if (Key === "StressMotion")
             this.Stress.AssignMotion(this.Settings.StressMotion);
+        else if (Key === "GlassIndex")
+            this.ApplyGlassIndex();
         else if (Key === "SmokeResolution")
             this.Smoke.ConstructScreenTargets(this.ScreenExtent, this.Surface, this.Display, this.Settings.SmokeResolution, this.TraceExtent);
         else if (Key === "CoolTyres")
@@ -853,7 +881,8 @@ class IlluminationHost
         this.ScreenExtent = [Width, Height];
         this.TraceScaleUsed = Scale;
         this.TraceExtent = [Math.ceil(Width / Scale), Math.ceil(Height / Scale)];
-        this.Surface.ConstructTargets(Width, Height, this.Shadow, this.Atmosphere, this.LightRecords);
+        this.Surface.ConstructTargets(Width, Height, this.Shadow, this.Atmosphere);
+        this.NearestDepth.ConstructTargets(this.ScreenExtent, this.Surface);
         this.Resampling.ConstructTargets(this.TraceExtent, this.Surface);
         this.Diffuse.ConstructTargets(this.TraceExtent, this.ScreenExtent, this.Surface,
                                       [this.Resampling.Views.Irradiance, this.Resampling.Views.Irradiance], this.Resampling.Views.Guides);
@@ -861,6 +890,7 @@ class IlluminationHost
                                      [this.Resampling.Views.Reflection, this.Resampling.Views.Reflection], this.Resampling.Views.Guides);
         this.Display.ConstructTargets(this.ScreenExtent, this.Surface, this.Resampling, this.Diffuse, this.Glossy, this.Cards);
         this.Smoke.ConstructScreenTargets(this.ScreenExtent, this.Surface, this.Display, this.Settings.SmokeResolution, this.TraceExtent);
+        this.NearestDepth.ConstructTraversalGroups(this.Surface, this.Display, this.RayTracing);
         this.PriorValid = false;
         if (this.Capture)
         {
@@ -1017,13 +1047,24 @@ class IlluminationHost
         const EncodedCandidates  = Math.max(1, Math.min(7, (this.Settings.InitialCandidates | 0) || 2));
         const EncodedReflBounces = Math.max(1, Math.min(7, (this.Settings.ReflectionBounces | 0) || 2));
         Features |= (EncodedBounces << 20) | (EncodedCandidates << 24) | (EncodedReflBounces << 28);
+        // 📝 The second word: screen-trace gates, the light grid and the emissive lights (ExtendedFeatureBits).
+        let Extended = 0;
+        for (const [Key, Bit] of Object.entries(ExtendedFeatureBits))
+            if (this.Settings[Key]) Extended |= Bit;
+        // 📝 Switching a master gate restarts the temporal tallies for one frame: the pyramid and exitance only exist from the
+        //    frame they were enabled, and the reflections change source.
+        this.ScreenTracing = this.Settings.ScreenTraversal;
+        const Gates = `${this.Settings.ScreenTraversal}`;
+        if (this.GatesPrior !== undefined && Gates !== this.GatesPrior) this.PriorValid = false;
+        this.GatesPrior = Gates;
         if (!this.PriorValid)
         {
             Features &= ~(FeatureBits.TemporalReuse);
             Features |= TemporalRestartBit;
         }
-        if (this.Smoke.Resident && this.Settings.SmokeEnabled && !this.Omitted.has("Smoke")) Features |= 4096;
+        if (this.Smoke.Resident && this.Settings.SmokeEnabled && !this.Omitted.has("Smoke")) Features |= SmokeCompositeBit;
         Integers[103] = Features >>> 0;
+        Integers[129] = Extended >>> 0;
         Integers[104] = this.Settings.Inspection;
         Scalars[105] = this.Settings.TemporalTallyLimit;
         Scalars[106] = this.Settings.SpatialRadius;
@@ -1044,6 +1085,7 @@ class IlluminationHost
         Scalars[123] = this.Settings.SmokeEnabled ? Fire.Intensity : 0.0;
         Scalars.set(Fire.Colour, 124);
         Scalars[127] = FireLightReach;
+        Scalars[128] = Camera.Near;   // the camera's own near plane, for the screen traces' reversed depth
         this.Effects.LightAlbedo = this.Materials[CourseMaterial.BodyCoat].Albedo;
         this.Exchange.Device.queue.writeBuffer(this.FrameRecords, 0, Bytes);
     }
@@ -1064,6 +1106,7 @@ class IlluminationHost
         const Hud = document.getElementById("hud");
         if (Hud?.style) Object.assign(Hud.style, ResolveHudStyle(this.Settings));
         this.FrameSeconds = (this.FrameSeconds || Δτ) * 0.9 + Δτ * 0.1;
+        this.LastFrameMilliseconds = Now - (this.PriorFrameTime || Now);
         this.FrameDurations[this.FrameDurationCursor] = (Now - (this.PriorFrameTime || Now)) || 0.0;
         this.FrameDurationCursor = (this.FrameDurationCursor + 1) % this.FrameDurations.length;
         this.PriorFrameTime = Now;
@@ -1149,7 +1192,7 @@ class IlluminationHost
         if (this.Lighting && this.LightRecords)
         {
             const LightData = this.Lighting.Update(this.Vehicle.QueryBodyTransform(), this.StreetLampPoles);
-            Device.queue.writeBuffer(this.LightRecords, 0, LightData);
+            this.LightClusters.Update(Device, LightData);
         }
         if (this.RayTracing)
             this.RayTracing.UpdateTlas(this.Scene, this.Vehicle);
@@ -1179,20 +1222,24 @@ class IlluminationHost
         this.Surface.RecordSurface(Encoder, this.Scene, this.VertexRecords, this.Metrics.QueryWrites("Surface"));
         if (Included("Cabin"))
             this.Cabin.RecordViews(Encoder, this.Scene, this.VertexRecords, this.Vehicle.QueryBodyTransform(), this.QueryMirrorsVisible());
+        // 📝 Rebuilt only while the screen-trace master gate is on; enabling it restarts the temporal tallies for one frame.
+        if (this.ScreenTracing)
+            this.NearestDepth.RecordReduction(Encoder, Parity, this.Metrics.QueryWrites("Depth pyramid"));
+        const TraceGroup = this.NearestDepth.TraversalGroups[Parity];
         if (Included("Direct"))
             this.Surface.RecordDirect(Encoder, this.Distance.TraversalGroup, this.SamplingGroup, this.RayTracing.TraversalGroup,
                                       this.Metrics.QueryWrites("Direct"));
         if (this.Settings.Indirect && Included("Resampling"))
         {
-            this.Resampling.RecordResampling(Encoder, Parity, this.Distance.TraversalGroup, this.SamplingGroup,
-                                             this.RayTracing.TraversalGroup, this.Metrics.QueryWrites("ReSTIR GI"));
+            this.Resampling.RecordResampling(Encoder, Parity, this.Distance.TraversalGroup, this.SamplingGroup, TraceGroup,
+                                             this.Metrics.QueryWrites("ReSTIR GI"));
             if (Included("Diffuse"))
                 this.Diffuse.Record(Encoder, Parity, this.Settings.VarianceKernel, this.Metrics.QueryWrites("Diffuse reconstruction"));
         }
         if (this.Settings.Reflection && Included("Reflection") && Included("Resampling"))
         {
             this.Resampling.RecordReflection(Encoder, this.Distance.TraversalGroup, this.SamplingGroup,
-                                             this.RayTracing.TraversalGroup, this.Metrics.QueryWrites("Reflection"));
+                                             TraceGroup, this.Metrics.QueryWrites("Reflection"));
             this.Glossy.Record(Encoder, Parity, this.Settings.VarianceKernel, this.Metrics.QueryWrites("Glossy reconstruction"));
         }
         if (this.Settings.Inspection === 6 && Included("Inspection"))
@@ -1233,6 +1280,7 @@ class IlluminationHost
         this.PriorValid = true;
 
         this.PresentMeasurements(Now, Light);
+        this.Benchmark.Sample(this);
         this.FrameIndex++;
         requestAnimationFrame((Next) => this.AdvanceFrame(Next));
     }

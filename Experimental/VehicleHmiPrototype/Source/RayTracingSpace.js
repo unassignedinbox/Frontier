@@ -420,9 +420,11 @@ export class RayTracingSpace
                 GPUShaderStage.COMPUTE,
                 "RayTracing traversal"
             );
+            // 📝 The four resources of group 3 bindings 0-3: the screen-trace group (NearestDepthSpace) prepends the same four.
+            this.TraversalResources = [this.NodeBuffer, this.TriangleBuffer, MaterialRecords, LightRecords];
             this.TraversalGroup = this.Exchange.ConstructDescriptorGroup(
                 this.TraversalLayout,
-                [this.NodeBuffer, this.TriangleBuffer, MaterialRecords, LightRecords],
+                this.TraversalResources,
                 "RayTracing traversal group"
             );
         }

@@ -5,7 +5,7 @@
 
 import { CourseMaterial } from "./MaterialSpecification.js";
 import { CourseConstants, KerbConstants, SpawnPoint, EmitQuad, EmitBoxFacets, EmitPanelFacets, EmitPrismFacets,
-         EmitExtrusionFacets, EmitConeFacets, EmitRampFacets, EmitTyreBarrierFacets } from "./CourseStructure.js";
+         EmitExtrusionFacets, EmitConeFacets, EmitRampFacets, EmitTyreBarrierFacets, EmitSphereFacets } from "./CourseStructure.js";
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                      SHAPES
@@ -64,6 +64,14 @@ export const LevelShapes = Object.freeze({
     GantryBeam:   { Emit: () => EmitBoxFacets(21.6, 0.5, 0.6, CourseMaterial.SteelDark), Voxel: 0.12, Cards: 4 },
     GantryLamp:   { Emit: () => EmitBoxFacets(20.0, 0.22, 0.10, CourseMaterial.GateLamp), Voxel: 0.1, Cards: 4 },
     SignPost:     { Emit: () => EmitBoxFacets(0.12, 0.12, 3.8, CourseMaterial.SteelDark), Voxel: 0.1, Cards: 0, Distance: false },
+    // 📝 Polished metal for reflection checks (CourseMaterial.PolishedSteel): a column and a flat panel, both in the distance field.
+    ChromeColumn: { Emit: () => EmitPrismFacets(0.45, 3.2, 16, CourseMaterial.PolishedSteel), Voxel: 0.05, Cards: 12 },
+    ChromePanel:  { Emit: () => EmitBoxFacets(6.0, 0.12, 3.0, CourseMaterial.PolishedSteel), Voxel: 0.05, Cards: 12 },
+    // 📝 The reflection test row: a plane mirror (thin along X, facing the spheres) and three 1 m spheres.
+    MirrorSheet:     { Emit: () => EmitBoxFacets(0.08, 2.0, 1.5, CourseMaterial.MirrorSheet), Voxel: 0.04, Cards: 6 },
+    AluminiumSphere: { Emit: () => EmitSphereFacets(0.5, 24, 12, CourseMaterial.AluminiumSphere), Voxel: 0.05, Cards: 12 },
+    GoldSphere:      { Emit: () => EmitSphereFacets(0.5, 24, 12, CourseMaterial.GoldSphere), Voxel: 0.05, Cards: 12 },
+    GlassSphere:     { Emit: () => EmitSphereFacets(0.5, 24, 12, CourseMaterial.GlassSphere), Voxel: 0.05, Cards: 12 },
     TyreBarrier:  { Emit: () => EmitTyreBarrierFacets(6, 0.68, 0.33, 1.2), Voxel: 0.06, Cards: 12 }
 });
 
@@ -188,6 +196,17 @@ export function ResolveLevelPlacements()
         Place("PoleHead", `Light pole head ${Index}`, X + 0.7 * Math.cos(Angle), Y + 0.7 * Math.sin(Angle), 10.8, Angle);
     });
 
+    // ⑨ Polished metal for reflection checks: on open asphalt south-east of the course, clear of the cones and the racing line
+    for (let Index = 0; Index < 4; ++Index)
+        Place("ChromeColumn", `Chrome column ${Index}`, 100.0 + 4.0 * Index, -50.0);
+    Place("ChromePanel", "Chrome panel", 108.0, -54.0, 0.0, 0.0);
+
+    // ⑩ Mirror and spheres: aluminium, gold and glass on open asphalt, with the plane mirror facing them across 4 m.
+    Place("MirrorSheet", "Plane mirror", 124.0, -46.0, 0.0, 0.0);
+    Place("AluminiumSphere", "Aluminium sphere", 110.0, -42.0, 0.0, 0.0);
+    Place("GoldSphere", "Gold sphere", 113.0, -42.0, 0.0, 0.0);
+    Place("GlassSphere", "Glass sphere", 116.0, -42.0, 0.0, 0.0);
+
     return List;
 }
 
@@ -303,8 +322,21 @@ export function EmitLevelGroundFacets()
     const Facets = [];
     const Outer = 240.0;
     const CentreX = 0.5 * (C.PadMinimum[0] + C.PadMaximum[0]);
-    EmitQuad(Facets, [CentreX - Outer, -Outer, C.SurroundHeight], [CentreX + Outer, -Outer, C.SurroundHeight],
-             [CentreX + Outer, Outer, C.SurroundHeight], [CentreX - Outer, Outer, C.SurroundHeight], CourseMaterial.Grass);
+    // 📝 The grass surround is tiled in SurroundCell squares rather than emitted as one 480 m quad. A single pair of giant triangles that
+    //    the 3 m high camera clips against its near plane loses depth precision in the rasteriser (a software adapter showed the grass
+    //    winning the depth test against the tarmac 2 cm above it on a handful of TAA jitter phases); small tiles keep every interpolant
+    //    exact. The tiles share their corner coordinates, so the surface stays watertight.
+    const SurroundCell = 20.0;
+    const SurroundCount = Math.round(2.0 * Outer / SurroundCell);
+    for (let Row = 0; Row < SurroundCount; ++Row)
+    {
+        for (let Column = 0; Column < SurroundCount; ++Column)
+        {
+            const X0 = CentreX - Outer + Row * SurroundCell, X1 = CentreX - Outer + (Row + 1) * SurroundCell;
+            const Y0 = -Outer + Column * SurroundCell, Y1 = -Outer + (Column + 1) * SurroundCell;
+            EmitQuad(Facets, [X0, Y0, C.SurroundHeight], [X1, Y0, C.SurroundHeight], [X1, Y1, C.SurroundHeight], [X0, Y1, C.SurroundHeight], CourseMaterial.Grass);
+        }
+    }
 
     const CellsX = Math.round((C.PadMaximum[0] - C.PadMinimum[0]) / C.GroundCell);
     const CellsY = Math.round((C.PadMaximum[1] - C.PadMinimum[1]) / C.GroundCell);
@@ -417,6 +449,7 @@ export const TrainingDrills = Object.freeze([
 export const ArenaZones = Object.freeze([
     { Name: "Start grid",  Position: [-40.0, 0.0],   Yaw: 0.0,   Note: "Main straight" },
     { Name: "Garage",      Position: [34.0, 20.0],   Yaw: 90.0,  Note: "Hangar & vehicle workshop" },
+    { Name: "Metal & glass", Position: [112.0, -30.0], Yaw: -90.0, Note: "Mirror and three spheres" },
     { Name: "Tunnel",      Position: [-36.0, -48.0], Yaw: 0.0,   Note: "Lamps in the dark" },
     { Name: "East Course", Position: [80.0, 0.0],    Yaw: 0.0,   Note: "Open proving grounds" },
     { Name: "Smash Alley", Position: [-16.0, -27.0], Yaw: 0.0,   Note: "Breakable objects" },

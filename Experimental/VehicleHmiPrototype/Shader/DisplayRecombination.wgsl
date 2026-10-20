@@ -1,7 +1,8 @@
 //============================================================================================================================================
 //                                                        DISPLAYRECOMBINATION.WGSL
 //============================================================================================================================================
-// 🧩 Recombines direct, indirect diffuse, glossy reflection and emission per pixel, or substitutes an inspection signal.
+// 🧩 Recombines direct, indirect diffuse, glossy reflection and emission per pixel, or substitutes an inspection signal;
+//    also writes the diffuse exitance that the next frame's screen traces read.
 
 // 📝 The indirect term arrives demodulated (irradiance E) and is modulated here by the diffuse albedo, so texture-free
 //    surfaces keep their edges through the wavelet. Specular indirect uses the split-sum response F0·A + B over the
@@ -27,8 +28,11 @@
 
 @group(0) @binding(12) var TyrePlume : texture_2d<f32>;
 @group(0) @binding(13) var PlumeSampler : sampler;
+@group(0) @binding(14) var DirectIrradiance : texture_2d<f32>;   // rgb diffuse irradiance of fire and lights, from DirectRadiance
+@group(0) @binding(15) var ExitanceTarget : texture_storage_2d<rgba16float, write>;   // rgb diffuse exitance, read by the next frame's screen traces
+
 fn CompositePlume(Colour: vec3f, Pixel: vec2i) -> vec3f {
-    if ((Frame.Features & 4096u) == 0u || Frame.InspectionMode != 0u) { return Colour; }
+    if (!FeatureEnabled(Frame, FeatureSmokeComposite) || Frame.InspectionMode != 0u) { return Colour; }
     let Sample = textureSampleLevel(TyrePlume, PlumeSampler, (vec2f(Pixel) + 0.5) * Frame.InverseScreenExtent, 0.0);
     return Colour * Sample.a + Sample.rgb;
 }
@@ -48,6 +52,31 @@ const InspectionDistance   : u32 = 6u;
 const InspectionCards      : u32 = 7u;
 const InspectionNormal     : u32 = 8u;
 const InspectionAlbedo     : u32 = 9u;
+const InspectionFresnel    : u32 = 10u;
+
+// 📝 Diffuse exitance: the Lambert radiance the surface gives off, ρ/π · E, with the sun, the fire and the lights, and the
+//    indirect irradiance the pixel itself shows (enclosure included), plus emission. The cards hold the same quantity, so a
+//    screen-trace hit and a card hit agree. Inspection modes never change it.
+fn ResolveDiffuseExitance(Pixel: vec2i, Depth: f32, Visibility: f32) -> vec3f
+{
+    if (Depth <= 0.0)
+    {
+        return vec3f(0.0);
+    }
+    let Attributes = textureLoad(SurfaceAttributes, Pixel, 0);
+    let Normal = DecodeOctahedral(Attributes.xy);
+    let Surface = ProjectSurfaceSample(Materials[u32(Attributes.z + 0.5)]);
+    let Position = ReconstructWorldPosition(vec2f(Pixel) + 0.5, Depth);
+    let Enclosure = mix(1.0, CabinIndirectShare, ResolveCabinShare((Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz));
+    var Irradiance = Frame.SunIlluminance * Visibility * max(dot(Normal, Frame.SunDirection), 0.0);
+    Irradiance += textureLoad(DirectIrradiance, Pixel, 0).rgb;
+    if (FeatureEnabled(Frame, FeatureIndirect))
+    {
+        Irradiance += textureLoad(IndirectIrradiance, Pixel, 0).rgb * Frame.IndirectScale * Enclosure;
+    }
+    let Emission = (Surface.Emission + Surface.Albedo * max(Attributes.w - 1.0, 0.0)) * Frame.EmissionScale;
+    return ResolveDiffuseAlbedo(Surface) * InversePi * Irradiance + Emission;
+}
 
 @compute @workgroup_size(8, 8)
 fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
@@ -58,6 +87,12 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
         return;
     }
     let Direct = textureLoad(DirectRadiance, Pixel, 0);
+    let Depth = textureLoad(SurfaceDepth, Pixel, 0);
+    // 📝 Written only while the screen-trace master gate is on; enabling it restarts the temporal tallies for one frame.
+    if (ExtendedEnabled(Frame, ExtendedScreenTraversal))
+    {
+        textureStore(ExitanceTarget, Pixel, vec4f(ResolveDiffuseExitance(Pixel, Depth, Direct.w), 1.0));
+    }
     if (Frame.InspectionMode == InspectionDistance)
     {
         textureStore(RecombinedTarget, Pixel, vec4f(textureLoad(InspectionRadiance, Pixel, 0).rgb, 1.0));
@@ -76,7 +111,6 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
         textureStore(RecombinedTarget, Pixel, vec4f(Colour, 1.0));
         return;
     }
-    let Depth = textureLoad(SurfaceDepth, Pixel, 0);
     if (Depth <= 0.0)
     {
         textureStore(RecombinedTarget, Pixel, vec4f(CompositePlume(Direct.rgb, Pixel), 1.0));
@@ -138,6 +172,8 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
         case 5u: { Colour = Specular; }
         case 8u: { Colour = Normal * 0.5 + 0.5; }
         case 9u: { Colour = Surface.Albedo; }
+        // 📝 The environment reflectance per pixel: F0·A + B from the split-sum response, so Fresnel's rise toward grazing shows.
+        case 10u: { Colour = ResolveSpecularColour(Surface) * LayerResponse.x + vec3f(LayerResponse.y); }
         default: { }
     }
     textureStore(RecombinedTarget, Pixel, vec4f(CompositePlume(Colour, Pixel), 1.0));

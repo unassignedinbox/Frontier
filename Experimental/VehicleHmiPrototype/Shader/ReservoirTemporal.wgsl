@@ -1,19 +1,22 @@
 //============================================================================================================================================
 //                                                          RESERVOIRTEMPORAL.WGSL
 //============================================================================================================================================
-// 🧩 ReSTIR GI initial candidate and temporal reuse: a cosine ray through the scene distance field, then the prior reservoir.
+// 🧩 ReSTIR GI initial candidate and temporal reuse: a cosine ray (screen, then scene distance field), then the prior reservoir.
 
 // 📝 Per resampling pixel:
 //    ① the primary surface (x_v, n_v) is read from the surface projection and written to this frame's guide;
-//    ② one cosine-weighted ray is traced through the ONE scene distance field; its hit radiance is read from the
-//       surface cards (or the sky on an escape) — this is the candidate, with source pdf cosθ/π;
+//    ② one cosine-weighted ray is traced — first across the screen through the nearest-depth pyramid, then, where the
+//       screen cannot settle it, through the ONE scene distance field from the last point the screen proved unoccluded;
+//       its radiance is the sample exitance at the hit (or the sky on an escape) — this is the candidate, with source
+//       pdf cosθ/π whichever tracer answered;
 //    ③ the prior frame's reservoir is found by motion reprojection and validated against the prior guide; its
-//       reconnection vertex is carried with its occupant's motion, its radiance re-read from this frame's cards, and
+//       reconnection vertex is carried with its occupant's motion, its radiance re-resolved by the same exitance rule, and
 //       (on a rotating quarter of pixels) its visibility re-traced, so a vehicle driving between x_v and x_s darkens
 //       the reuse instead of leaving a ghost; M is clamped to TemporalTallyLimit;
 //    ④ W = Σw / (M · p̂(y)) is stored for the spatial pass and for the next frame.
 
 //! include "CardSampling.wgsl"
+//! include "ScreenTraversal.wgsl"
 //! include "ReservoirRecords.wgsl"
 //! include "DiscrepancySequence.wgsl"
 //! include "RayTraversal.wgsl"
@@ -60,8 +63,8 @@ fn RefreshSampleRadiance(Sample: ReservoirSample) -> vec3f
         return Sample.Radiance;
     }
     let Level = ResolveFinestClip(Sample.Position, 1.0);
-    let Card = SampleCardRadiance(Sample.Position, Sample.Normal, Sample.Identity, ResolveCardTolerance(Level));
-    return select(Sample.Radiance, Card.rgb, Card.w > 0.0);
+    let Exitance = ResolveSampleExitance(Sample.Position, Sample.Normal, Sample.Identity, ResolveCardTolerance(Level));
+    return select(Sample.Radiance, Exitance.rgb, Exitance.w > 0.0);
 }
 
 @compute @workgroup_size(8, 8)
@@ -92,7 +95,8 @@ fn ResampleTemporal(@builtin(global_invocation_id) Invocation: vec3u)
     textureStore(GuideTarget, vec2i(TracePixel), vec4f(EncodeOctahedral(Normal), ViewDepth, 1.0 + ExpectedDepth));
     var Seed = ConstructPixelSeed(TracePixel, Frame.FrameIndex, 11u);
 
-    // ② initial candidate generation (RIS over M_init multi-bounce paths in RTX mode, or scene distance field in GTX mode)
+    // ② initial candidates: per candidate the screen first (nearest-depth walk), then the BVH path tracer in RTX mode or the scene
+    //    distance field in GTX mode, resumed from the last point the screen proved unoccluded
     let Bias         = ResolveSurfaceBias(Position);
     let Basis        = ConstructTangentFrame(Normal);
     let UseRayTrace  = FeatureEnabled(Frame, FeatureRayTracing);
@@ -103,20 +107,34 @@ fn ResampleTemporal(@builtin(global_invocation_id) Invocation: vec3u)
     {
         let Pair      = ProjectTemporalPair(TracePixel, Frame.FrameIndex + CandIdx * 37u, 3u + CandIdx * 2u);
         let Direction = Basis * ProjectCosineHemisphere(Pair);
+        var Strike: ScreenHit;
+        if (ScreenConsumerEnabled(Frame, ExtendedScreenIndirect))
+        {
+            Strike = TraverseScreenDepth(Position + Normal * ResolveScreenBias(ViewDepth), Direction, 300.0, ScreenTraversalSteps);
+        }
         var Candidate : ReservoirSample;
-        if (UseRayTrace)
+        if (Strike.Hit)
+        {
+            Candidate.Position = Strike.Position;
+            Candidate.Normal   = Strike.Normal;
+            Candidate.Identity = Strike.Identity;
+            Candidate.Radiance = ResolveStrikeRadiance(Strike);
+        }
+        else if (UseRayTrace)
         {
             Candidate = TraceMultiBouncePath(Position + Normal * RayEpsilon, Direction, &Seed);
         }
         else
         {
-            let Hit = TraverseSceneDistance(Position + Normal * Bias, Direction, 0.5 * Bias, 300.0, 0.0);
+            // 📝 Backed off by one bias so a surface the screen saw the ray reach is still found by the distance field.
+            let Resume = max(0.5 * Bias, Strike.Travel - Bias);
+            let Hit = TraverseSceneDistance(Position + Normal * Bias, Direction, Resume, 300.0, 0.0);
             if (Hit.Hit)
             {
                 Candidate.Position = Hit.Position;
                 Candidate.Normal   = Hit.Normal;
                 Candidate.Identity = Hit.Identity;
-                Candidate.Radiance = ResolveTraversalRadiance(Hit, Direction);
+                Candidate.Radiance = ResolveContinuedRadiance(Hit, Direction);
             }
             else
             {

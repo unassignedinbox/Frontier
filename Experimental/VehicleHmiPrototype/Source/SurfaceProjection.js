@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                           SURFACEPROJECTION.JS
 //============================================================================================================================================
-// 🧩 Primary visibility (depth, attributes, motion) and the direct sun radiance resolved over it, sized to the screen.
+// 🧩 Primary visibility (depth, attributes, identity, motion) and the direct radiance resolved over it, sized to the screen.
 
 import { VertexStride } from "./FacetStructure.js";
 
@@ -17,6 +17,7 @@ export class SurfaceProjection
     // 📝 TyreMarks: the TyreMarkDepot whose deposit the raster reads for the road families.
     // 📝 Effects (EffectSequence) shares this pass: its record masks the car here, and its cubes draw after the runs.
     // 📝 VehicleRecords: the VehicleRecord the vertex stage deforms the tyres and turns the steering wheel by.
+    // 📝 Identity: the third target, the occupant identity screen traces compare against (r16float, exact below 2048).
     async ConstructPrograms(FrameRecords, OccupantRecords, MaterialRecords, DistanceLayout, SamplingLayout, RayTracingLayout, TyreMarks, Effects, VehicleRecords)
     {
         this.FrameRecords    = FrameRecords;
@@ -36,36 +37,43 @@ export class SurfaceProjection
                 { shaderLocation: 3, offset: 28, format: "uint32" }] }],
             Primitive: { topology: "triangle-list", cullMode: "none" },
             DepthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "greater" },
-            Targets: [{ format: "rgba16float" }, { format: "rg16float" }]
+            Targets: [{ format: "rgba16float" }, { format: "rg16float" }, { format: "r16float" }]
         }, [this.RasterLayout]);
         this.DirectLayout = this.Exchange.ConstructDescriptorLayout(
             ["Uniform", "StorageRead", "Texture2D", "TextureDepth2D", "TextureDepth2DLayered", "SamplerComparison", "Uniform", "Texture2D",
-             "Sampler", "StorageTexture2D:rgba16float", "StorageRead"], GPUShaderStage.COMPUTE, "Direct radiance");
+             "Sampler", "StorageTexture2D:rgba16float", "StorageTexture2D:rgba16float"], GPUShaderStage.COMPUTE, "Direct radiance");
+        // 📝 Group 0 ends with the direct radiance and the diffuse irradiance targets; the lights and their grid masks arrive with the BVH in group 3.
+        //    The pass traverses the scene distance field to shadow a tyre fire's light and, in GTX mode, each light in its grid cell.
         this.DirectProgram = await this.Shaders.ConstructComputeProgram("DirectRadiance.wgsl", "IntegrateDirectRadiance",
                                                                         [this.DirectLayout, DistanceLayout, SamplingLayout, RayTracingLayout]);
     }
 
-    ConstructTargets(Width, Height, Shadow, Atmosphere, LightRecords = null)
+    ConstructTargets(Width, Height, Shadow, Atmosphere)
     {
         this.Extent = [Width, Height];
-        if (LightRecords) this.LightRecords = LightRecords;
-        for (const Texture of [this.DepthTexture, this.AttributeTexture, this.MotionTexture, this.DirectTexture])
+        for (const Texture of [this.DepthTexture, this.AttributeTexture, this.MotionTexture, this.IdentityTexture, this.DirectTexture,
+                               this.DirectIrradianceTexture])
             if (Texture) Texture.destroy();
         const Attachment = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+        const Storage    = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
         this.DepthTexture     = this.Exchange.ConstructTexture({ label: "Surface depth", size: [Width, Height], format: "depth32float", usage: Attachment });
         this.AttributeTexture = this.Exchange.ConstructTexture({ label: "Surface attributes", size: [Width, Height], format: "rgba16float", usage: Attachment });
         this.MotionTexture    = this.Exchange.ConstructTexture({ label: "Surface motion", size: [Width, Height], format: "rg16float", usage: Attachment });
-        this.DirectTexture    = this.Exchange.ConstructTexture({ label: "Direct radiance", size: [Width, Height], format: "rgba16float",
-                                                                 usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+        this.IdentityTexture  = this.Exchange.ConstructTexture({ label: "Surface identity", size: [Width, Height], format: "r16float", usage: Attachment });
+        this.DirectTexture    = this.Exchange.ConstructTexture({ label: "Direct radiance", size: [Width, Height], format: "rgba16float", usage: Storage });
+        this.DirectIrradianceTexture = this.Exchange.ConstructTexture({ label: "Direct irradiance", size: [Width, Height], format: "rgba16float",
+                                                                        usage: Storage });
         this.Views = {
             Depth:      this.DepthTexture.createView(),
             Attributes: this.AttributeTexture.createView(),
             Motion:     this.MotionTexture.createView(),
-            Direct:     this.DirectTexture.createView()
+            Identity:   this.IdentityTexture.createView(),
+            Direct:     this.DirectTexture.createView(),
+            DirectIrradiance: this.DirectIrradianceTexture.createView()
         };
         this.DirectGroup = this.Exchange.ConstructDescriptorGroup(this.DirectLayout,
             [this.FrameRecords, this.MaterialRecords, this.Views.Attributes, this.Views.Depth, Shadow.LayeredView, Shadow.ComparisonSampler,
-             Shadow.ReceiverRecords, Atmosphere.SkyView, Atmosphere.SkySampler, this.Views.Direct, this.LightRecords]);
+             Shadow.ReceiverRecords, Atmosphere.SkyView, Atmosphere.SkySampler, this.Views.Direct, this.Views.DirectIrradiance]);
     }
 
     RecordSurface(Encoder, Scene, VertexRecords, TimestampWrites)
@@ -74,7 +82,8 @@ export class SurfaceProjection
             label: "Surface projection",
             colorAttachments: [
                 { view: this.Views.Attributes, clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store" },
-                { view: this.Views.Motion, clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store" }],
+                { view: this.Views.Motion, clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store" },
+                { view: this.Views.Identity, clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store" }],
             depthStencilAttachment: { view: this.Views.Depth, depthClearValue: 0.0, depthLoadOp: "clear", depthStoreOp: "store" },
             timestampWrites: TimestampWrites
         });

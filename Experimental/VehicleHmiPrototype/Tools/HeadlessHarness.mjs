@@ -149,6 +149,7 @@ await import(pathToFileURL(path.join(Root, "Source/IlluminationHost.js")).href);
 // Drive the frame loop until FrameLimit frames have run, then report.
 const Hooks = globalThis.HarnessHooks || {};
 let Simulated = 0;
+let ClockAligned = false;
 while (FramesRun < FrameLimit)
 {
     await new Promise((Resolve) => setTimeout(Resolve, 5));
@@ -164,8 +165,21 @@ while (FramesRun < FrameLimit)
         Simulated += 16.6667;
         const Host = globalThis.IlluminationExhibit;
         if (Host && Host.Ready && Hooks.BeforeFrame)
-            Hooks.BeforeFrame(Host, FramesRun);
+            await Hooks.BeforeFrame(Host, FramesRun);   // awaited: a hook may read the GPU back before the next frame is recorded
+        // 📝 The host stamps LastTime with performance.now() when it is constructed, long after the harness started (shader compilation on
+        //    a software adapter takes a minute). Align the simulated clock to it once, or every frame until the clock caught up would
+        //    have a time step of zero and the simulation would not move.
+        if (Host && Host.Ready && !ClockAligned)
+        {
+            Simulated = Math.max(Simulated, (Host.LastTime || Started) - Started);
+            ClockAligned = true;
+        }
+        const Executed = Host && Host.Ready ? Host.FrameIndex : -1;
         Callback(Started + Simulated);
+        // 📝 A callback the host skips (two frames already in flight) must not advance the app's clock, or a slow adapter would run
+        //    seconds of simulated time between frames and the images would depend on how the frames happened to pipeline.
+        if (Host && Host.Ready && Host.FrameIndex === Executed)
+            Simulated -= 16.6667;
         if (globalThis.IlluminationExhibit && globalThis.IlluminationExhibit.Ready)
             FramesRun = globalThis.IlluminationExhibit.FrameIndex;
     }

@@ -7,6 +7,7 @@
 //! include "PackingCodec.wgsl"
 //! include "EffectRecords.wgsl"
 //! include "VehicleVisual.wgsl"
+//! include "DistanceRecords.wgsl"
 
 @group(0) @binding(1) var<storage, read> Occupants : array<OccupantRecord>;
 @group(0) @binding(2) var TyreMarks                 : texture_2d<f32>;   // r deposit [0, 1], g lateral coordinate (0: untouched)
@@ -26,12 +27,14 @@ struct SurfaceVarying
     @location(4) WorldPosition              : vec3f,
     @location(5) @interpolate(flat) Vehicle : u32,
     @location(6) BodyLocal                  : vec3f,   // car-body frame, for the derez mask
+    @location(7) @interpolate(flat) Identity : u32,   // occupant identity in the distance field's vocabulary
 }
 
 struct SurfaceTargets
 {
     @location(0) Attributes : vec4f,   // xy octahedral shading normal, z material family, w 1 + glow (× albedo, as emission)
     @location(1) Motion     : vec2f,   // [px] current minus previous screen position
+    @location(2) Identity   : f32,     // occupant identity for screen traces, GroundIdentity for the course plane
 }
 
 // 📝 The vehicle's own motion in the vertex stage: shredded rubber is hidden; rigid wheel meshes keep their authored form, the cabin's
@@ -73,6 +76,10 @@ fn SurfaceVertex(@location(0) Position: vec3f, @location(1) Family: u32, @locati
     Varying.WorldPosition = World.xyz;
     Varying.Vehicle       = select(0u, 1u, Index < VehicleOccupantCount);
     Varying.BodyLocal     = (Occupants[0].WorldToLocal * World).xyz;
+    // 📝 The identity a screen trace reports for this surface, in the distance field's vocabulary: the occupant index for
+    //    every carded occupant, GroundIdentity for the course plane, whose cards belong to the ground tiles. Identities
+    //    stay below 2048, so the half-float attribute holds them exactly.
+    Varying.Identity      = select(GroundIdentity, Index, (Occupant.Roles & RoleCards) != 0u);
     return Varying;
 }
 
@@ -233,6 +240,7 @@ fn SurfaceFragment(Varying: SurfaceVarying) -> SurfaceTargets
     }
     var Targets: SurfaceTargets;
     Targets.Attributes = vec4f(EncodeOctahedral(Normal), f32(Family), 1.0 + Glow);
+    Targets.Identity   = f32(Varying.Identity);
     Targets.Motion     = ProjectScreenPixel(Varying.CurrentClip) - ProjectScreenPixel(Varying.PreviousClip);
     return Targets;
 }

@@ -10,7 +10,7 @@
 //! include "PackingCodec.wgsl"
 //! include "DiscrepancySequence.wgsl"
 //! include "FireIllumination.wgsl"
-//! include "ClusteredLights.wgsl"
+//! include "LightClusterSpace.wgsl"
 //! include "ReservoirRecords.wgsl"
 
 struct BoundingNode
@@ -24,7 +24,9 @@ struct BoundingNode
 @group(3) @binding(0) var<storage, read> BvhNodes     : array<BoundingNode>;
 @group(3) @binding(1) var<storage, read> BvhTriangles : array<vec4f>;
 @group(3) @binding(2) var<storage, read> RayMaterials : array<MaterialRecord>;
-@group(3) @binding(3) var<uniform> RayLights          : array<LightRecord, 32>;
+// 📝 The one declaration of SceneLights: the light records and their world-grid cell masks (LightClusterSpace.js). Every shader that includes
+//    this file reads its lights here; the passes that do not (card relighting) declare it themselves.
+@group(3) @binding(3) var<uniform> SceneLights         : LightClusterRecords;   // a uniform: the temporal pass is at the 8-storage-buffer limit
 
 const TlasLeafBit        : u32 = 0x80000000u;
 const TlasIndexMask      : u32 = 0x7FFFFFFFu;
@@ -544,7 +546,7 @@ fn SampleSurfaceBsdf(
 // 📐 Next-Event Estimation (NEE) at a path vertex:
 //    1. Soft solar cone NEE with exact BVH shadow ray + MIS weight
 //    2. Active tyre fire point light NEE
-//    3. Resampled Importance Sampling (RIS) over all 32 clustered photometric / IES lights with 1 exact BVH shadow ray
+//    3. Resampled Importance Sampling (RIS) over the lights of the vertex's grid cell with 1 exact BVH shadow ray
 fn EvaluateDirectNextEvent(
     Position     : vec3f,
     Normal       : vec3f,
@@ -588,13 +590,14 @@ fn EvaluateDirectNextEvent(
     var SelectedWeight  = 0.0;
     var WeightSum       = 0.0;
 
-    for (var LightIdx = 0u; LightIdx < 32u; LightIdx += 1u)
+    // 📝 Only the lights whose reach touches this vertex's grid cell are candidates (LightClusterSpace.wgsl); a vertex outside the grid
+    //    takes them all, so none is ever skipped.
+    var Candidates = ResolveLightCandidates(Position);
+    while (Candidates != 0u)
     {
-        let Light = RayLights[LightIdx];
-        if (Light.Params.w < 0.5)
-        {
-            break;
-        }
+        let LightIdx = firstTrailingBit(Candidates);
+        Candidates &= Candidates - 1u;
+        let Light = SceneLights.Lights[LightIdx];
         let Arrival = EvaluateLightArrival(Light, Position, Normal);
         if (all(Arrival <= vec3f(1.0e-5)))
         {

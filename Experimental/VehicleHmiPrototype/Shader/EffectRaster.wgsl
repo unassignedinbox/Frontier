@@ -355,10 +355,15 @@ fn ProjectEffectPixel(Clip: vec4f) -> vec2f
     return vec2f(Ndc.x * 0.5 + 0.5, 0.5 - Ndc.y * 0.5) * Frame.ScreenExtent;
 }
 
+// 📝 The cubes are not occupants, so their identity is SkyIdentity (DistanceRecords.wgsl): past the occupant array, where a screen
+//    trace reads no card for them. Declared here because this shader does not include the distance records.
+const EffectIdentity : f32 = 2045.0;
+
 struct EffectTargets
 {
     @location(0) Attributes : vec4f,
     @location(1) Motion     : vec2f,
+    @location(2) Identity   : f32,
 }
 
 @fragment
@@ -372,5 +377,6 @@ fn EffectFragment(Varying: EffectVarying) -> EffectTargets
     var Targets: EffectTargets;
     Targets.Attributes = vec4f(EncodeOctahedral(Normal), f32(Varying.Family), 1.0 + max(Varying.Glow, 0.0));
     Targets.Motion     = ProjectEffectPixel(Varying.CurrentClip) - ProjectEffectPixel(Varying.PreviousClip);
+    Targets.Identity   = EffectIdentity;
     return Targets;
 }

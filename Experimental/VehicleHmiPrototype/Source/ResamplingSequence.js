@@ -5,7 +5,8 @@
 
 // 📝 Order per frame: ① ResampleTemporal (initial candidate + temporal reuse, writes this frame's guide and
 //    reservoirs); ② ResampleSpatial (spatial reuse + resolve into demodulated irradiance); ③ TraverseReflection.
-//    Reservoirs and guides alternate between two slots by frame parity; the resolved signals are single.
+//    Reservoirs and guides alternate between two slots by frame parity; the resolved signals are single. The two
+//    programs that trace new rays (① and ③) take the screen-traversal group at slot 3; ② only re-tests visibility.
 const ReservoirStride = 32;   // [B] - ReservoirRecord
 
 export class ResamplingSequence
@@ -16,7 +17,9 @@ export class ResamplingSequence
         this.Shaders  = Shaders;
     }
 
-    async ConstructPrograms(FrameRecords, MaterialRecords, DistanceLayout, SamplingLayout, RayTracingLayout)
+    // 📝 TraceLayout: group 3 of every program that traces — the BVH, materials and light grid (bindings 0 to 3, RayTraversal.wgsl) and the screen
+    //    walk's pyramids, attributes, exitance and identity (bindings 4 to 8, ScreenTraversal.wgsl). NearestDepthSpace builds it and the groups.
+    async ConstructPrograms(FrameRecords, MaterialRecords, DistanceLayout, SamplingLayout, TraceLayout)
     {
         this.FrameRecords    = FrameRecords;
         this.MaterialRecords = MaterialRecords;
@@ -28,7 +31,7 @@ export class ResamplingSequence
             ["Uniform", "Texture2D", "TextureDepth2D", "StorageRead", "StorageTexture2D:rgba16float"], Compute, "Reservoir spatial");
         this.ReflectionLayout = this.Exchange.ConstructDescriptorLayout(
             ["Uniform", "StorageRead", "Texture2D", "TextureDepth2D", "StorageTexture2D:rgba16float"], Compute, "Reflection traversal");
-        const SharedLayouts = [DistanceLayout, SamplingLayout, RayTracingLayout];
+        const SharedLayouts = [DistanceLayout, SamplingLayout, TraceLayout];
         this.TemporalProgram   = await this.Shaders.ConstructComputeProgram("ReservoirTemporal.wgsl", "ResampleTemporal",
                                                                             [this.TemporalLayout, ...SharedLayouts]);
         this.SpatialProgram    = await this.Shaders.ConstructComputeProgram("ReservoirSpatial.wgsl", "ResampleSpatial",
@@ -63,13 +66,13 @@ export class ResamplingSequence
             [this.FrameRecords, this.MaterialRecords, Surface.Views.Attributes, Surface.Views.Depth, this.Views.Reflection]);
     }
 
-    RecordResampling(Encoder, Parity, DistanceGroup, SamplingGroup, RayTracingGroup, TimestampWrites)
+    RecordResampling(Encoder, Parity, DistanceGroup, SamplingGroup, TraceGroup, TimestampWrites)
     {
         const [Width, Height] = this.TraceExtent;
         const Pass = Encoder.beginComputePass({ label: "ReSTIR GI", timestampWrites: TimestampWrites });
         Pass.setBindGroup(1, DistanceGroup);
         Pass.setBindGroup(2, SamplingGroup);
-        Pass.setBindGroup(3, RayTracingGroup);
+        Pass.setBindGroup(3, TraceGroup);
         Pass.setPipeline(this.TemporalProgram);
         Pass.setBindGroup(0, this.TemporalGroups[Parity]);
         Pass.dispatchWorkgroups(Math.ceil(Width / 8), Math.ceil(Height / 8));
@@ -79,7 +82,7 @@ export class ResamplingSequence
         Pass.end();
     }
 
-    RecordReflection(Encoder, DistanceGroup, SamplingGroup, RayTracingGroup, TimestampWrites)
+    RecordReflection(Encoder, DistanceGroup, SamplingGroup, TraceGroup, TimestampWrites)
     {
         const [Width, Height] = this.TraceExtent;
         const Pass = Encoder.beginComputePass({ label: "Reflection traversal", timestampWrites: TimestampWrites });
@@ -87,7 +90,7 @@ export class ResamplingSequence
         Pass.setBindGroup(0, this.ReflectionGroup);
         Pass.setBindGroup(1, DistanceGroup);
         Pass.setBindGroup(2, SamplingGroup);
-        Pass.setBindGroup(3, RayTracingGroup);
+        Pass.setBindGroup(3, TraceGroup);
         Pass.dispatchWorkgroups(Math.ceil(Width / 8), Math.ceil(Height / 8));
         Pass.end();
     }

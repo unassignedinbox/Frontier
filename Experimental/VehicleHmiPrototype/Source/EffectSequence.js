@@ -16,7 +16,7 @@
 //    (or any box) uses a 6 × 6 grid on each face of its bounds. Eight emitters run at once.
 
 import { VertexStride } from "./FacetStructure.js";
-import { CourseMaterial, DerezPalette } from "./MaterialSpecification.js";
+import { CourseMaterial, DerezPalette, MaterialRecordBytes } from "./MaterialSpecification.js";
 import { ConstructRigidTransform, LengthVector } from "./TransformProjection.js";
 
 const EmitterSlots   = 8;
@@ -157,7 +157,7 @@ export class EffectSequence
             VertexLayouts: [],
             Primitive: { topology: "triangle-list", cullMode: "none" },
             DepthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "greater" },
-            Targets: [{ format: "rgba16float" }, { format: "rg16float" }]
+            Targets: [{ format: "rgba16float" }, { format: "rg16float" }, { format: "r16float" }]
         }, [this.Layout]);
     }
 
@@ -312,7 +312,7 @@ export class EffectSequence
         {
             const Linear = ParseColour(Hex);
             const Record = new Float32Array([...Albedo, 0.3, ...Linear.map((Channel) => Channel * Luminance * S.Intensity), 0.0, 0.0, 0.0, 0.04, 0.0]);
-            this.Exchange.Device.queue.writeBuffer(MaterialRecords, Family * 48, Record);
+            this.Exchange.Device.queue.writeBuffer(MaterialRecords, Family * MaterialRecordBytes, Record);
         };
         Write(CourseMaterial.DerezGlow, S.Glow, 5.0, [0.05, 0.10, 0.12]);
         Write(CourseMaterial.DerezHot, S.Hot, 10.0, [0.2, 0.2, 0.2]);

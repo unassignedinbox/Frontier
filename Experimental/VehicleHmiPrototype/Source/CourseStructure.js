@@ -258,6 +258,43 @@ export function EmitPrismFacets(Radius, Height, Sides, Family)
     return Facets;
 }
 
+// 📝 A sphere centred on (0, 0, Radius), so it stands on its bottom pole as the prisms stand on their base. Every triangle is
+//    wound outward (the cross product of its first two edges points away from the centre), as EmitBoxFacets winds its
+//    faces, and the triangles that collapse at a pole are dropped.
+export function EmitSphereFacets(Radius, Segments, Rings, Family)
+{
+    const Centre = [0.0, 0.0, Radius];
+    const Point = (Ring, Segment) =>
+    {
+        const Polar = Math.PI * Ring / Rings, Azimuth = 2.0 * Math.PI * Segment / Segments;
+        const Ground = Radius * Math.sin(Polar);
+        return [Centre[0] + Ground * Math.cos(Azimuth), Centre[1] + Ground * Math.sin(Azimuth), Centre[2] - Radius * Math.cos(Polar)];
+    };
+    const Facets = [];
+    const Emit = (A, B, C) =>
+    {
+        const Edge0 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], Edge1 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+        const Normal = [Edge0[1] * Edge1[2] - Edge0[2] * Edge1[1], Edge0[2] * Edge1[0] - Edge0[0] * Edge1[2], Edge0[0] * Edge1[1] - Edge0[1] * Edge1[0]];
+        const Outward = (A[0] + B[0] + C[0]) / 3.0 - Centre[0], OutwardY = (A[1] + B[1] + C[1]) / 3.0 - Centre[1],
+              OutwardZ = (A[2] + B[2] + C[2]) / 3.0 - Centre[2];
+        const Inward = Normal[0] * Outward + Normal[1] * OutwardY + Normal[2] * OutwardZ < 0.0;
+        Facets.push({ Corners: Inward ? [A, C, B] : [A, B, C], Family });
+    };
+    for (let Ring = 0; Ring < Rings; ++Ring)
+    {
+        for (let Segment = 0; Segment < Segments; ++Segment)
+        {
+            const A = Point(Ring, Segment), B = Point(Ring + 1, Segment);
+            const C = Point(Ring + 1, Segment + 1), D = Point(Ring, Segment + 1);
+            if (Ring + 1 < Rings)
+                Emit(A, B, C);
+            if (Ring > 0)
+                Emit(A, C, D);
+        }
+    }
+    return Facets;
+}
+
 // 📝 A convex (y, z) profile, counter-clockwise seen from +X, extruded along x over Length and centred on x = 0.
 export function EmitExtrusionFacets(Profile, Length, Family)
 {
