@@ -1,5 +1,7 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (4.9 MB, no external resources) with 16 interactive kernel models, every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
 **TL;DR (robust blends)**: 6 of the 8 pattern-stress refusals are now built and pass every gate. A new T family (tangent chains) adds 8 rows, all 🟢. PatternStressValidation now runs 64 rows: 🟢 62 · ⚠️ 2 · **🔴 0 wrong** (610 operations, 469 s). The 2 remaining refusals are P7 (traced spine) and P8 (elliptical spine).
 
 | Row | Was refused | Construction now | Now |

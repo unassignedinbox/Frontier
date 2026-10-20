@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<!--
+====================================================================================================================================
+                                                     SHOWCASETEMPLATE.HTML
+====================================================================================================================================
+🧩 Self-contained showcase of SolidArcRemastered + DraftingWorkspace; ShowcaseComposer.py replaces the payload marker with the
+   models, tables and stills. No external resources: inline CSS, inline SVG, WebGL 1, images as data URIs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontier · SolidArcRemastered + DraftingWorkspace · Showcase</title>
+<style>
+/* ---------------------------------------------------------------------------------------------------------------------
+   THEME
+   --------------------------------------------------------------------------------------------------------------------- */
+:root
+{
+    --Canvas      : #0e1117;
+    --Panel       : #161a22;
+    --PanelRaised : #1d222c;
+    --Rule        : #2a303c;
+    --Text        : #d9dee7;
+    --Muted       : #8b93a3;
+    --Teal        : #3ad6c0;
+    --Gold        : #f0b84a;
+    --Cyan        : #5fd3ee;
+    --Green       : #5ee08a;
+    --Red         : #ff6b6b;
+    --Blue        : #4c9bff;
+}
+*               { box-sizing: border-box; }
+html            { scroll-behavior: smooth; }
+body            { margin: 0; background: var(--Canvas); color: var(--Text); font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif; }
+a               { color: var(--Teal); text-decoration: none; }
+code            { font: 13px "JetBrains Mono", "Cascadia Code", Consolas, monospace; background: var(--PanelRaised); padding: 1px 5px; border-radius: 4px; }
+h1, h2, h3      { font-weight: 600; letter-spacing: -0.01em; margin: 0 0 10px; }
+h1              { font-size: 30px; }
+h2              { font-size: 22px; margin-top: 6px; }
+h3              { font-size: 16px; color: var(--Muted); }
+.Layout         { display: grid; grid-template-columns: 228px 1fr; min-height: 100vh; }
+.Sidebar        { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 22px 16px; background: var(--Panel); border-right: 1px solid var(--Rule); }
+.Sidebar .Brand { font-weight: 700; font-size: 17px; margin-bottom: 2px; }
+.Sidebar .Sub   { color: var(--Muted); font-size: 12px; margin-bottom: 18px; }
+.Sidebar a      { display: block; padding: 6px 10px; border-radius: 6px; color: var(--Text); font-size: 14px; }
+.Sidebar a:hover{ background: var(--PanelRaised); }
+.Sidebar a.Current { background: rgba(58, 214, 192, 0.14); color: var(--Teal); }
+main            { padding: 28px 36px 80px; max-width: 1320px; }
+section         { padding: 26px 0 30px; border-bottom: 1px solid var(--Rule); }
+.Lead           { color: var(--Muted); max-width: 900px; }
+.Tiles          { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin: 18px 0; }
+.Tile           { background: var(--Panel); border: 1px solid var(--Rule); border-radius: 10px; padding: 14px 16px; }
+.Tile .Figure   { font-size: 24px; font-weight: 700; }
+.Tile .Caption  { color: var(--Muted); font-size: 13px; }
+.Card           { background: var(--Panel); border: 1px solid var(--Rule); border-radius: 10px; padding: 16px 18px; }
+table           { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td          { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--Rule); vertical-align: top; }
+th              { color: var(--Muted); font-weight: 600; position: sticky; top: 0; background: var(--Panel); }
+tr:hover td     { background: rgba(255, 255, 255, 0.02); }
+td.Number       { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.TableFrame     { max-height: 560px; overflow: auto; border: 1px solid var(--Rule); border-radius: 10px; background: var(--Panel); }
+.Chips          { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; align-items: center; }
+.Chip           { border: 1px solid var(--Rule); background: var(--PanelRaised); color: var(--Text); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+.Chip.Current   { border-color: var(--Teal); color: var(--Teal); background: rgba(58, 214, 192, 0.12); }
+input.Search    { background: var(--PanelRaised); border: 1px solid var(--Rule); color: var(--Text); border-radius: 8px; padding: 5px 10px; font-size: 13px; min-width: 220px; }
+.Badge          { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: rgba(76, 155, 255, 0.16); color: var(--Blue); margin-left: 6px; cursor: pointer; }
+
+/* ---------------------------------------------------------------------------------------------------------------------
+   VIEWER
+   --------------------------------------------------------------------------------------------------------------------- */
+.Viewer         { display: grid; grid-template-columns: 1fr 300px; gap: 14px; }
+.ViewportFrame          { position: relative; height: 560px; border-radius: 10px; overflow: hidden; border: 1px solid var(--Rule); background: radial-gradient(ellipse at 50% 35%, #1e2430, #0c0f14); }
+.ViewportFrame canvas   { width: 100%; height: 100%; display: block; cursor: grab; }
+.Hud            { position: absolute; left: 12px; top: 10px; font-size: 12.5px; color: var(--Muted); pointer-events: none; }
+.Hud b          { color: var(--Text); }
+.Hint           { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--Muted); pointer-events: none; }
+.Toggles        { position: absolute; right: 10px; top: 10px; display: flex; gap: 6px; }
+.Picker         { display: flex; flex-direction: column; gap: 6px; max-height: 560px; overflow-y: auto; }
+.Picker button  { text-align: left; background: var(--Panel); border: 1px solid var(--Rule); color: var(--Text); border-radius: 8px; padding: 8px 11px; cursor: pointer; font-size: 13px; }
+.Picker button.Current { border-color: var(--Teal); background: rgba(58, 214, 192, 0.10); }
+.Picker small   { display: block; color: var(--Muted); font-size: 11.5px; }
+.Legend         { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--Muted); margin-top: 10px; }
+.Legend i       { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.ModelFacts     { margin-top: 10px; font-size: 13px; color: var(--Muted); }
+.ModelFacts b   { color: var(--Text); }
+
+/* ---------------------------------------------------------------------------------------------------------------------
+   GALLERIES
+   --------------------------------------------------------------------------------------------------------------------- */
+.Gallery        { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.Gallery figure { margin: 0; background: var(--Panel); border: 1px solid var(--Rule); border-radius: 10px; overflow: hidden; cursor: zoom-in; }
+.Gallery img    { width: 100%; display: block; }
+.Gallery figcaption { padding: 7px 11px; font-size: 13px; color: var(--Muted); }
+.Gallery figcaption b { color: var(--Text); font-weight: 600; }
+.Captures       { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+.Lightbox       { position: fixed; inset: 0; background: rgba(5, 7, 10, 0.92); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 10; cursor: zoom-out; padding: 24px; }
+.Lightbox img   { max-width: 96vw; max-height: 86vh; border-radius: 8px; }
+.Lightbox div   { color: var(--Text); margin-top: 12px; max-width: 1100px; text-align: center; }
+.Columns        { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.Note           { color: var(--Muted); font-size: 13px; margin-top: 8px; }
+ul.Tight        { margin: 6px 0; padding-left: 20px; }
+ul.Tight li     { margin: 3px 0; }
+@media (max-width: 980px)
+{
+    .Layout     { grid-template-columns: 1fr; }
+    .Sidebar    { position: static; height: auto; }
+    .Viewer, .Columns { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="Layout">
+<nav class="Sidebar" id="Sidebar">
+    <div class="Brand">🧩 Frontier</div>
+    <div class="Sub">SolidArcRemastered · DraftingWorkspace<br>branch arena/d90f0539-frontier</div>
+    <a href="#Overview">Overview</a>
+    <a href="#Models">Interactive models</a>
+    <a href="#Steps">Modeller steps 1–9</a>
+    <a href="#Stress">Pattern stress test</a>
+    <a href="#Blends">Robust blends</a>
+    <a href="#Galleries">Galleries</a>
+    <a href="#Workspace">DraftingWorkspace</a>
+    <a href="#Keymap">Plasticity keymap</a>
+    <a href="#Limits">Limits and next steps</a>
+</nav>
+<main>
+
+<!-- ============================================================================================================== -->
+<section id="Overview">
+    <h1>A Parasolid-style B-rep kernel, written from scratch, with its CAD workspace</h1>
+    <p class="Lead"><b>TL;DR</b>: SolidArcRemastered is an exact B-rep modeller in C++: topology, intersections, Booleans,
+    tessellation, rolling-ball blends, face operations, sketches and a persistently named feature tree. Every claim on this
+    page comes from a validation program in the repository. DraftingWorkspace puts the kernel behind a Vulkan + Slang +
+    ImGui workspace that uses the Plasticity keymap. This page is one file with no external resources: the models below are
+    real kernel tessellations, and the stills are the committed exhibits. Composed <span id="ComposedStamp"></span>.</p>
+    <div class="Tiles">
+        <div class="Tile"><div class="Figure">0 🔴</div><div class="Caption">wrong bodies across 64 pattern-stress rows (62 🟢 · 2 ⚠️ refused)</div></div>
+        <div class="Tile"><div class="Figure">≤ 7.0e-16</div><div class="Caption">blend ΔV vs closed form (step 5); all 8 tangent-chain rows ≤ 8.5e-14</div></div>
+        <div class="Tile"><div class="Figure">79 / 79</div><div class="Caption">corpus rows, 0 refusals (the old kernel refused 19)</div></div>
+        <div class="Tile"><div class="Figure">668 918</div><div class="Caption">triangles over 305 bodies, all watertight, peak/ε ≤ 1.000</div></div>
+        <div class="Tile"><div class="Figure">158 / 158</div><div class="Caption">workspace walkthrough expectations driven by real ImGui input</div></div>
+        <div class="Tile"><div class="Figure">51 / 58</div><div class="Caption">🟢 parity rows vs the SolidArc browser editor (⚠️ 1 · 🚧 6)</div></div>
+    </div>
+    <div class="Card">
+        <h3>Architecture</h3>
+        <svg viewBox="0 0 1180 250" width="100%" role="img" aria-label="Architecture diagram">
+            <defs>
+                <marker id="Arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8b93a3"/></marker>
+            </defs>
+            <g font-family="Segoe UI, system-ui, sans-serif" font-size="13" fill="#d9dee7">
+                <rect x="10"  y="20" width="170" height="60" rx="9" fill="#1d222c" stroke="#5fd3ee"/><text x="95"  y="46" text-anchor="middle">Sketch · constraints</text><text x="95"  y="64" text-anchor="middle" fill="#8b93a3" font-size="11.5">rank-revealing QR · DOF</text>
+                <rect x="220" y="20" width="170" height="60" rx="9" fill="#1d222c" stroke="#5fd3ee"/><text x="305" y="46" text-anchor="middle">Feature tree</text><text x="305" y="64" text-anchor="middle" fill="#8b93a3" font-size="11.5">persistent naming · replay</text>
+                <rect x="430" y="10" width="330" height="140" rx="11" fill="#161a22" stroke="#3ad6c0"/><text x="595" y="32" text-anchor="middle" font-weight="600">Modeller</text>
+                <rect x="445" y="44" width="95" height="40" rx="7" fill="#1d222c" stroke="#2a303c"/><text x="492" y="69" text-anchor="middle">Booleans</text>
+                <rect x="548" y="44" width="95" height="40" rx="7" fill="#1d222c" stroke="#2a303c"/><text x="595" y="69" text-anchor="middle">Blends</text>
+                <rect x="651" y="44" width="95" height="40" rx="7" fill="#1d222c" stroke="#2a303c"/><text x="698" y="69" text-anchor="middle">Face ops</text>
+                <rect x="445" y="94" width="148" height="40" rx="7" fill="#1d222c" stroke="#2a303c"/><text x="519" y="119" text-anchor="middle">Intersections (SSI)</text>
+                <rect x="601" y="94" width="145" height="40" rx="7" fill="#1d222c" stroke="#2a303c"/><text x="673" y="119" text-anchor="middle">Containment (GWN)</text>
+                <rect x="800" y="20" width="170" height="60" rx="9" fill="#1d222c" stroke="#f0b84a"/><text x="885" y="46" text-anchor="middle">B-rep partition</text><text x="885" y="64" text-anchor="middle" fill="#8b93a3" font-size="11.5">exact carriers · audit</text>
+                <rect x="1000" y="20" width="170" height="60" rx="9" fill="#1d222c" stroke="#f0b84a"/><text x="1085" y="46" text-anchor="middle">Tessellation</text><text x="1085" y="64" text-anchor="middle" fill="#8b93a3" font-size="11.5">chart CDT · watertight</text>
+                <rect x="800" y="170" width="370" height="64" rx="9" fill="#1d222c" stroke="#4c9bff"/><text x="985" y="196" text-anchor="middle" font-weight="600">DraftingWorkspace</text><text x="985" y="216" text-anchor="middle" fill="#8b93a3" font-size="11.5">Vulkan 1.3 · Slang → SPIR-V · ImGui · Plasticity keymap</text>
+                <rect x="10" y="170" width="380" height="64" rx="9" fill="#1d222c" stroke="#5ee08a"/><text x="200" y="196" text-anchor="middle" font-weight="600">Validation programs (11 + PatternStress)</text><text x="200" y="216" text-anchor="middle" fill="#8b93a3" font-size="11.5">closed forms · CSG oracle · audits · digests</text>
+                <rect x="430" y="170" width="330" height="64" rx="9" fill="#1d222c" stroke="#5ee08a"/><text x="595" y="196" text-anchor="middle" font-weight="600">Exact predicates · tolerances</text><text x="595" y="216" text-anchor="middle" fill="#8b93a3" font-size="11.5">Shewchuk orient / incircle · session precision 1e-8</text>
+            </g>
+            <g stroke="#8b93a3" stroke-width="1.5" fill="none" marker-end="url(#Arrow)">
+                <path d="M180,50 L218,50"/><path d="M390,50 L428,50"/><path d="M760,50 L798,50"/><path d="M970,50 L998,50"/>
+                <path d="M1085,80 L1085,168"/><path d="M885,80 L885,168"/><path d="M760,202 L798,202"/>
+                <path d="M390,202 L428,202"/><path d="M595,170 L595,152"/>
+            </g>
+        </svg>
+    </div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Models">
+    <h2>Interactive models</h2>
+    <p class="Lead">Real kernel output: each model is the tessellation of a pattern-stress result, exported by
+    <code>PatternStressValidation --export</code>. Faces are coloured by their exact carrier. Click a face to name it.</p>
+    <div class="Viewer">
+        <div>
+            <div class="ViewportFrame" id="ViewportFrame">
+                <canvas id="ViewerCanvas"></canvas>
+                <div class="Hud" id="Hud"></div>
+                <div class="Toggles">
+                    <button class="Chip Current" id="EdgesToggle">Edges</button>
+                    <button class="Chip" id="ProjectionToggle">Perspective</button>
+                    <button class="Chip" id="FrameButton">Frame · Space</button>
+                </div>
+                <div class="Hint">Plasticity mouse: middle drag orbit · right drag pan · wheel dolly · click select (left drag also orbits) · Space frame · Numpad 1 / 3 / 7 views (Ctrl opposite) · Numpad 5 ortho</div>
+            </div>
+            <div class="Legend" id="Legend"></div>
+            <div class="ModelFacts" id="ModelFacts"></div>
+        </div>
+        <div class="Picker" id="Picker"></div>
+    </div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Steps">
+    <h2>Modeller build, steps 1–9</h2>
+    <p class="Lead">Each step closes with a validation program and a gate; nothing is marked done without numbers.</p>
+    <div class="TableFrame" style="max-height:none">
+    <table>
+        <tr><th>Step</th><th>Scope</th><th>Gate result</th><th>Headline numbers</th><th>Commit</th></tr>
+        <tr><td>1</td><td>Topology, exact predicates, audit</td><td>🟢 both gates</td><td>9 specimens ≤ 1.4e-15 relative ΔV · 6 / 6 corruptions caught · exact predicates 0 errors where the naive determinant is wrong on 45.6 % of coplanar cases</td><td><code>43eba57</code></td></tr>
+        <tr><td>2</td><td>Intersections (roots, curve–surface, SSI, marching)</td><td>🟢 22 / 22</td><td>60 000 polynomials within the condition bound · 0 of 3 183 sign changes missed · analytic SSI ≤ 5.4e-15</td><td><code>43eba57</code></td></tr>
+        <tr><td>3</td><td>Booleans (general fuse) + containment</td><td>🟢 21 / 21 · 14 / 14</td><td>2 841 checks · ΔV ≤ 3.6e-15 · 0 of 22 560 oracle points wrong · containment exact down to 1e-7 offsets</td><td><code>43eba57</code></td></tr>
+        <tr><td>4</td><td>Tessellation (chart CDT, shared edge samplings)</td><td>🟢 0 failing</td><td>305 bodies · 668 918 triangles · closed, χ matches, peak/ε ≤ 1.000 · 201 CDT regression polygons</td><td><code>43eba57</code></td></tr>
+        <tr><td>5</td><td>Rolling-ball blends (exact carriers)</td><td>🟢 15 / 15 · 6 / 6 · 27</td><td>ΔV ≤ 7.0e-16 · law residual ≤ 1.6e-15 over 71 037 samples · G1 ≤ 3.6e-15 rad · ΔV ∝ s³ from 10⁻³ to 10³</td><td><code>43eba57</code></td></tr>
+        <tr><td>6</td><td>Face operations (one PlanFaceChange algorithm)</td><td>🟢 36 / 36 · 6 / 6 · 12 / 12 · 8 / 8</td><td>0 refusals on HoleSlab and Can (old solver refused 17) · ΔV ≤ 5.0e-15 over 51 bodies</td><td><code>ab1a78a</code></td></tr>
+        <tr><td>7</td><td>Sketches, feature tree, persistent naming</td><td>🟢 18 / 18 · 33 / 33</td><td>1 164 survivors tracked, every one resolves · references Exact 30 · Geometric 2 · Refused 3 · edits regenerate to ≤ 2.1e-15</td><td><code>b24e908</code></td></tr>
+        <tr><td>8</td><td>Corpus parity with the old kernel</td><td>🟢 79 / 79</td><td>0 refusals (old: 19 of 176) · ΔV ≤ 3.59e-14 over 76 bodies · old CrossOffset value shown wrong</td><td><code>de6786e</code></td></tr>
+        <tr><td>9</td><td>DraftingWorkspace (Vulkan · Slang · ImGui)</td><td>🟢 ctest 5 / 5</td><td>W1–W8 · V1–V7 · GPU identity buffer = CPU ray pick (0 mismatched pixels) · 158 / 158 walkthrough expectations</td><td><code>244fc3c</code> <code>41b4b6c</code> <code>6fcf29d</code></td></tr>
+        <tr><td>+</td><td>Pattern stress test</td><td>🟢 0 wrong</td><td>arrays → Boolean chains → blends · first run 56 rows (48 🟢 · 8 ⚠️) · 2 defects found and fixed</td><td><code>75c828c</code> <code>a07b72e</code></td></tr>
+        <tr><td>+</td><td>Robust blends + tangent chains</td><td>🟢 6 of 8 refusals built</td><td>64 rows: 62 🟢 · 2 ⚠️ · 0 🔴 · T1–T8 ≤ 8.5e-14 · 3 defects fixed (Newton drift, tangent crossings, periodic fold)</td><td><code>680aff4</code> <code>e9678d6</code> <code>1b3f509</code> <code>c387bf2</code></td></tr>
+    </table>
+    </div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Stress">
+    <h2>Pattern stress test</h2>
+    <p class="Lead" id="StressSummary"></p>
+    <div class="Chips" id="StressChips"></div>
+    <div class="TableFrame"><table id="StressTable"></table></div>
+    <p class="Note">Families: L linear arrays · C circular arrays · M mixed Boolean chains · B blends on Boolean results ·
+    T tangent chains · P blend patterns. A refusal is an honest limit (⚠️); a built wrong body would be 🔴. Rows marked
+    <span class="Badge">3D</span> open in the viewer.</p>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Blends">
+    <h2>Robust blends</h2>
+    <p class="Lead">Six of the eight first-run refusals are now built and pass every gate; a new T family adds tangent chains.</p>
+    <div class="TableFrame" style="max-height:none">
+    <table>
+        <tr><th>Row</th><th>Was refused</th><th>Construction now</th><th>Now</th></tr>
+        <tr><td>P1 slot cusps · P6 ring</td><td>mitre between non-cylindrical fillets</td><td>Section of fillet A by the bisector plane, accepted only if it lies on fillet B (5 samples)</td><td>🟢</td></tr>
+        <tr><td>P2 scallops (asymmetric)</td><td>same</td><td>General A ∩ B section (analytic or traced), endpoints projected onto both</td><td>🟢</td></tr>
+        <tr><td>P3 scallop chamfers</td><td>contacts do not meet (lines only)</td><td>Contact ∩ far face (any curve), confirmed on the other contact, then the A ∩ B section</td><td>🟢</td></tr>
+        <tr><td>P4 spoke–hub concave fillets</td><td>edge consumed by the blend</td><td>Concave ends extend the sharp edge's neighbour instead of consuming it</td><td>🟢</td></tr>
+        <tr><td>P5 spoke tops ending on the hub</td><td>blend ends on a curved face</td><td>The cap is the section of the blend surface by the end face (plane, analytic or traced)</td><td>🟢</td></tr>
+        <tr><td>T1–T6 slot rims · rounded block · boss foot</td><td>(new)</td><td>Smooth joint: the blends share their cross-section at the vertex (circle or chord)</td><td>🟢</td></tr>
+        <tr><td>T7 / T8 one seed edge</td><td>(new)</td><td><code>GrowTangentChain</code> adds every sharp edge reached through a G1 vertex (1 → 4, 1 → 8); equals T1 / T5</td><td>🟢</td></tr>
+    </table>
+    </div>
+    <div class="Columns" style="margin-top:14px">
+        <div class="Card"><h3>🐞 Defects found and fixed</h3>
+            <ul class="Tight">
+                <li><b>Newton drift</b>: a converged point was stepped again at a tangent contact (1.6e-16 → 7.1e-8). The residual test now runs first.</li>
+                <li><b>Tangent-crossing joints</b> were only √ε accurate and made false pole rows; smooth joints now use transversal operations only.</li>
+                <li><b>Periodic fold</b> on short seam arcs: the projection hint folds at the middle of the gap.</li>
+                <li><b>Crash</b>: an elliptical spine reached <code>std::get&lt;CircularArc&gt;</code>. <b>Lie</b>: overlapping blends built a self-intersecting body; <code>DetectSelfClash</code> now gates every blend.</li>
+            </ul>
+        </div>
+        <div class="Card"><h3>📝 Tolerances (never loosened)</h3>
+            <ul class="Tight">
+                <li>Session precision 1e-8 · predicates exact (Shewchuk)</li>
+                <li>Closed-form gate 1e-9 · max(1, V*) · join 1e-6 · audit edge 1e-5</li>
+                <li>Closure gap 1e-9 · tangent-chain G1 1e-9 rad</li>
+                <li>Tolerance order: vertex ≥ edge ≥ face (Jackson 1995)</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Galleries">
+    <h2>Galleries</h2>
+    <p class="Lead">Before | after panels rasterised from the C++ inspection host. Blends: blend faces teal, corner faces
+    gold, spines cyan, contact rails green. Face operations: replaced orange, trimmed teal, generated violet.</p>
+    <div class="Chips" id="GalleryChips"></div>
+    <div class="Gallery" id="GalleryGrid"></div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Workspace">
+    <h2>DraftingWorkspace</h2>
+    <p class="Lead">The feature tree behind an ImGui shell that mirrors the SolidArc browser editor: Vulkan 1.3 through volk,
+    shaders in Slang compiled to SPIR-V, a GLFW host without a client API, TOML options. Captures are SwiftShader frames
+    produced by the scripted walkthroughs (real pointer and keyboard events).</p>
+    <div class="Tiles">
+        <div class="Tile"><div class="Figure">5 / 5</div><div class="Caption">ctest (document W1–W8, viewport V1–V7, 3 walkthroughs)</div></div>
+        <div class="Tile"><div class="Figure">78 · 68 · 12</div><div class="Caption">expectations: main · shortcut · recovery walkthroughs</div></div>
+        <div class="Tile"><div class="Figure">0 px</div><div class="Caption">GPU identity buffer vs CPU ray pick mismatch over 14 views</div></div>
+        <div class="Tile"><div class="Figure">byte-equal</div><div class="Caption">TOML save → load → save round trip</div></div>
+    </div>
+    <div class="Gallery Captures" id="CaptureGrid"></div>
+    <h3 style="margin-top:22px">Viewport gate frames (shaded | identity buffer)</h3>
+    <div class="Gallery" id="ViewportGrid"></div>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Keymap">
+    <h2>Plasticity keymap</h2>
+    <p class="Lead">Decided 2026-10-20: every DraftingWorkspace shortcut follows Plasticity's default keymap. Keys whose
+    command does not exist yet announce themselves instead of doing nothing.</p>
+    <div class="Columns">
+        <div class="TableFrame" style="max-height:none"><table>
+            <tr><th>Input</th><th>Action</th><th></th></tr>
+            <tr><td>Middle drag · right drag · wheel</td><td>Orbit · pan · dolly</td><td>🟢</td></tr>
+            <tr><td>Click · Shift · Ctrl · Alt</td><td>Replace · add · remove · tangent chain</td><td>🟢</td></tr>
+            <tr><td>2 · 3 · 4 · 5 · Tab</td><td>Edge · face · solid · all modes, cycle</td><td>🟢</td></tr>
+            <tr><td>B (D / C inside)</td><td>Bevel session, fillet / chamfer</td><td>🟢</td></tr>
+            <tr><td>E</td><td>Extrude session</td><td>🟢</td></tr>
+            <tr><td>Enter · right click · Esc</td><td>Finish · finish · abort</td><td>🟢</td></tr>
+            <tr><td>Space</td><td>Frame selection</td><td>🟢</td></tr>
+        </table></div>
+        <div class="TableFrame" style="max-height:none"><table>
+            <tr><th>Input</th><th>Action</th><th></th></tr>
+            <tr><td>Numpad 1 / 3 / 7 (+ Ctrl) · Numpad 5</td><td>Front / right / top (opposite) · orthographic</td><td>🟢</td></tr>
+            <tr><td>Alt+Z · Shift+Alt+Z</td><td>Edges only · grid</td><td>⚠️ · 🟢</td></tr>
+            <tr><td>Shift+C / V / X / Z (Q / W / E)</td><td>Construct, Boolean combination</td><td>🟢</td></tr>
+            <tr><td>Shift+R</td><td>Repeat last command</td><td>🟢</td></tr>
+            <tr><td>X · Delete · Backspace</td><td>Delete</td><td>🟢</td></tr>
+            <tr><td>Esc · Alt+A</td><td>Deselect</td><td>🟢</td></tr>
+            <tr><td>Ctrl+Z · Ctrl+Shift+Z · Ctrl+N / O / S · Ctrl+Shift+S</td><td>Undo · redo · new / open / save · save as</td><td>🟢</td></tr>
+        </table></div>
+    </div>
+    <p class="Note">Parity with the SolidArc browser editor: 58 rows · 🟢 51 · ⚠️ 1 (GLFW host is compile-only here) · 🚧 6.</p>
+</section>
+
+<!-- ============================================================================================================== -->
+<section id="Limits">
+    <h2>Limits and next steps</h2>
+    <div class="TableFrame" style="max-height:none"><table>
+        <tr><th>Limit</th><th>Where it shows</th><th>Today</th><th>Plan</th></tr>
+        <tr><td>Traced blend spine</td><td>P7 radial bores</td><td>⚠️ refused, honest</td><td>B: exact procedural rolling-ball carrier evaluated from its spine</td></tr>
+        <tr><td>Elliptical blend spine</td><td>P8 equal-radius crossings</td><td>⚠️ refused, honest</td><td>B: same carrier, elliptical spine</td></tr>
+        <tr><td>Setback vertex blends</td><td>mixed convexity · vertex degree ≠ 3</td><td>🚧 refused</td><td>B for the strips, then A: NURBS n-sided corner patches</td></tr>
+        <tr><td>Overflow (blend wider than its face)</td><td>walkthrough ⑥: chamfer beside a fillet</td><td>🚧 refused ("edge consumed")</td><td>Cliff overflow first, from existing section curves; then smooth / notch</td></tr>
+    </table></div>
+    <p class="Note">Order agreed: C = B first (exact rolling-ball carrier unlocks P7 / P8 and setback strips), then A (NURBS)
+    for corner patches and general freeform.</p>
+</section>
+
+</main>
+</div>
+<div class="Lightbox" id="Lightbox"><img id="LightboxImage" alt=""><div id="LightboxCaption"></div></div>
+
+<script type="application/json" id="ShowcasePayload">/*@ShowcasePayload@*/</script>
+<script>
+"use strict";
+// ---------------------------------------------------------------------------------------------------------------------
+//  PAYLOAD
+// ---------------------------------------------------------------------------------------------------------------------
+const Payload    = JSON.parse(document.getElementById("ShowcasePayload").textContent);
+const Categories = ["Plane", "Cylinder", "Cone", "Sphere", "Torus", "Other"];
+const Palette    = { Plane: [0.50, 0.56, 0.65], Cylinder: [0.23, 0.80, 0.72], Cone: [0.74, 0.52, 0.95], Sphere: [0.94, 0.72, 0.29], Torus: [0.36, 0.78, 0.93], Other: [0.95, 0.45, 0.45] };
+document.getElementById("ComposedStamp").textContent = "from commit " + Payload.Commit + " (" + Payload.Composed + ")";
+
+function DecodeTransport(Text)
+{
+    const Binary = atob(Text);
+    const Bytes  = new Uint8Array(Binary.length);
+    for (let Index = 0; Index < Binary.length; ++Index) Bytes[Index] = Binary.charCodeAt(Index);
+    return Bytes.buffer;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  VECTOR MATHS
+// ---------------------------------------------------------------------------------------------------------------------
+const Subtract  = (A, B) => [A[0] - B[0], A[1] - B[1], A[2] - B[2]];
+const Add       = (A, B) => [A[0] + B[0], A[1] + B[1], A[2] + B[2]];
+const Scale     = (A, S) => [A[0] * S, A[1] * S, A[2] * S];
+const Dot       = (A, B) => A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
+const Cross     = (A, B) => [A[1] * B[2] - A[2] * B[1], A[2] * B[0] - A[0] * B[2], A[0] * B[1] - A[1] * B[0]];
+const Normalise = (A) => { const Length = Math.hypot(A[0], A[1], A[2]) || 1; return [A[0] / Length, A[1] / Length, A[2] / Length]; };
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  VIEWER
+// ---------------------------------------------------------------------------------------------------------------------
+const Canvas  = document.getElementById("ViewerCanvas");
+const Context = Canvas.getContext("webgl", { antialias: true }) || Canvas.getContext("experimental-webgl");
+const Viewer  =
+{
+    Model         : null,                                  // Decoded model (buffers + CPU copy for picking)
+    Camera        : { Target: [0, 0, 0], Distance: 10, Yaw: -0.7, Pitch: 0.5, Orthographic: false },
+    EdgesEnabled  : true,
+    HighlightFace : -1,
+    Gesture       : null,                                  // { Button, X, Y, Moved }
+};
+
+function CompileProgram(VertexSource, FragmentSource)
+{
+    const Program = Context.createProgram();
+    for (const [Kind, Source] of [[Context.VERTEX_SHADER, VertexSource], [Context.FRAGMENT_SHADER, FragmentSource]])
+    {
+        const Shader = Context.createShader(Kind);
+        Context.shaderSource(Shader, Source);
+        Context.compileShader(Shader);
+        if (!Context.getShaderParameter(Shader, Context.COMPILE_STATUS)) throw new Error(Context.getShaderInfoLog(Shader));
+        Context.attachShader(Program, Shader);
+    }
+    Context.linkProgram(Program);
+    return Program;
+}
+
+const SurfaceProgram = Context && CompileProgram(
+`attribute vec3 Position; attribute vec3 Normal; attribute vec3 Colour; attribute float Face;
+uniform mat4 Projection; uniform mat4 View; uniform float HighlightFace;
+varying vec3 ViewNormal; varying vec3 SurfaceColour; varying float Highlighted;
+void main()
+{
+    ViewNormal    = (View * vec4(Normal, 0.0)).xyz;
+    SurfaceColour = Colour;
+    Highlighted   = abs(Face - HighlightFace) < 0.5 ? 1.0 : 0.0;
+    gl_Position   = Projection * View * vec4(Position, 1.0);
+}`,
+`precision mediump float;
+varying vec3 ViewNormal; varying vec3 SurfaceColour; varying float Highlighted;
+void main()
+{
+    vec3  Direction = normalize(ViewNormal);
+    if (!gl_FrontFacing) Direction = -Direction;
+    float Key       = max(dot(Direction, normalize(vec3(0.35, 0.55, 1.0))), 0.0);
+    float Fill      = max(dot(Direction, normalize(vec3(-0.6, -0.2, 0.5))), 0.0);
+    float Sky       = 0.5 + 0.5 * Direction.y;
+    vec3  Albedo      = mix(SurfaceColour, vec3(0.30, 0.61, 1.0), Highlighted * 0.75);
+    vec3  Lit       = Albedo * (0.22 + 0.16 * Sky + 0.68 * Key + 0.18 * Fill) + vec3(0.10) * pow(Key, 24.0);
+    gl_FragColor    = vec4(pow(Lit, vec3(0.92)), 1.0);
+}`);
+
+const EdgeProgram = Context && CompileProgram(
+`attribute vec3 Position; uniform mat4 Projection; uniform mat4 View;
+void main() { gl_Position = Projection * View * vec4(Position, 1.0); }`,
+`precision mediump float; void main() { gl_FragColor = vec4(0.04, 0.05, 0.07, 1.0); }`);
+
+function DecodeModel(Entry)
+{
+    const Low       = Entry.Low, Span = Entry.Span;
+    const Quantised = new Uint16Array(DecodeTransport(Entry.Positions));
+    const Count     = Quantised.length / 3;
+    const Positions = new Float32Array(Quantised.length);
+    for (let Index = 0; Index < Quantised.length; ++Index) Positions[Index] = Low[Index % 3] + Quantised[Index] / 65535 * Span[Index % 3];
+    const Indices   = new Uint32Array(DecodeTransport(Entry.Indices));
+    const Kinds     = new Uint8Array(DecodeTransport(Entry.Kinds));
+    const Faces     = new Uint16Array(DecodeTransport(Entry.FaceIndices));
+    const Normals   = new Float32Array(Quantised.length);
+    for (let Corner = 0; Corner < Indices.length; Corner += 3)
+    {
+        const [A, B, C] = [Indices[Corner], Indices[Corner + 1], Indices[Corner + 2]];
+        const PointA = [Positions[3 * A], Positions[3 * A + 1], Positions[3 * A + 2]];
+        const Normal = Cross(Subtract([Positions[3 * B], Positions[3 * B + 1], Positions[3 * B + 2]], PointA), Subtract([Positions[3 * C], Positions[3 * C + 1], Positions[3 * C + 2]], PointA));
+        for (const Vertex of [A, B, C]) for (let Axis = 0; Axis < 3; ++Axis) Normals[3 * Vertex + Axis] += Normal[Axis];
+    }
+    const Colours = new Float32Array(Quantised.length);
+    for (let Vertex = 0; Vertex < Count; ++Vertex)
+    {
+        const Normal = Normalise([Normals[3 * Vertex], Normals[3 * Vertex + 1], Normals[3 * Vertex + 2]]);
+        Normals.set(Normal, 3 * Vertex);
+        Colours.set(Palette[Categories[Kinds[Vertex]]], 3 * Vertex);
+    }
+    const EdgeQuantised = new Uint16Array(DecodeTransport(Entry.EdgePositions));
+    const EdgePositions = new Float32Array(EdgeQuantised.length);
+    for (let Index = 0; Index < EdgeQuantised.length; ++Index) EdgePositions[Index] = Low[Index % 3] + EdgeQuantised[Index] / 65535 * Span[Index % 3];
+    const Upload = (Values, Target = Context.ARRAY_BUFFER) => { const Buffer = Context.createBuffer(); Context.bindBuffer(Target, Buffer); Context.bufferData(Target, Values, Context.STATIC_DRAW); return Buffer; };
+    return {
+        Entry, Positions, Indices, Faces, Count,
+        PositionBuffer: Upload(Positions), NormalBuffer: Upload(Normals), ColourBuffer: Upload(Colours), FaceBuffer: Upload(new Float32Array(Faces)),
+        IndexBuffer   : Upload(Indices, Context.ELEMENT_ARRAY_BUFFER), EdgeBuffer: Upload(EdgePositions), EdgeCount: EdgePositions.length / 3,
+        Centre        : [Low[0] + Span[0] / 2, Low[1] + Span[1] / 2, Low[2] + Span[2] / 2],
+        Radius        : 0.5 * Math.hypot(Span[0], Span[1], Span[2]),
+    };
+}
+
+function CameraBasis()
+{
+    const Camera  = Viewer.Camera;
+    const Forward = [-Math.cos(Camera.Pitch) * Math.cos(Camera.Yaw), -Math.cos(Camera.Pitch) * Math.sin(Camera.Yaw), -Math.sin(Camera.Pitch)];
+    const Right   = Normalise(Cross(Forward, [0, 0, 1]));
+    const Up      = Cross(Right, Forward);
+    const Eye     = Subtract(Camera.Target, Scale(Forward, Camera.Distance));
+    return { Forward, Right, Up, Eye };
+}
+
+function ViewMatrix(Basis)
+{
+    const { Forward, Right, Up, Eye } = Basis;
+    return new Float32Array([Right[0], Up[0], -Forward[0], 0, Right[1], Up[1], -Forward[1], 0, Right[2], Up[2], -Forward[2], 0, -Dot(Right, Eye), -Dot(Up, Eye), Dot(Forward, Eye), 1]);
+}
+
+function ProjectionMatrix(Aspect)
+{
+    const Camera = Viewer.Camera;
+    const Near   = Camera.Distance * 0.01, Far = Camera.Distance * 20;
+    if (Camera.Orthographic)
+    {
+        const Height = Camera.Distance * Math.tan(0.35);
+        const Width  = Height * Aspect;
+        return new Float32Array([1 / Width, 0, 0, 0, 0, 1 / Height, 0, 0, 0, 0, -2 / (Far - Near), 0, 0, 0, -(Far + Near) / (Far - Near), 1]);
+    }
+    const Focal = 1 / Math.tan(0.35);
+    return new Float32Array([Focal / Aspect, 0, 0, 0, 0, Focal, 0, 0, 0, 0, (Far + Near) / (Near - Far), -1, 0, 0, 2 * Far * Near / (Near - Far), 0]);
+}
+
+function Bind(Program, Name, Buffer, Size)
+{
+    const Location = Context.getAttribLocation(Program, Name);
+    if (Location < 0) return;
+    Context.bindBuffer(Context.ARRAY_BUFFER, Buffer);
+    Context.enableVertexAttribArray(Location);
+    Context.vertexAttribPointer(Location, Size, Context.FLOAT, false, 0, 0);
+}
+
+function RenderFrame()
+{
+    const Ratio  = window.devicePixelRatio || 1;
+    const Width  = Math.round(Canvas.clientWidth * Ratio), Height = Math.round(Canvas.clientHeight * Ratio);
+    if (Canvas.width !== Width || Canvas.height !== Height) { Canvas.width = Width; Canvas.height = Height; }
+    Context.viewport(0, 0, Width, Height);
+    Context.clearColor(0, 0, 0, 0);
+    Context.clear(Context.COLOR_BUFFER_BIT | Context.DEPTH_BUFFER_BIT);
+    const Model = Viewer.Model;
+    if (!Model) return;
+    const Basis      = CameraBasis();
+    const View       = ViewMatrix(Basis);
+    const Projection = ProjectionMatrix(Width / Height);
+    Context.enable(Context.DEPTH_TEST);
+    Context.enable(Context.POLYGON_OFFSET_FILL);
+    Context.polygonOffset(1.5, 2.0);
+    Context.useProgram(SurfaceProgram);
+    Context.uniformMatrix4fv(Context.getUniformLocation(SurfaceProgram, "Projection"), false, Projection);
+    Context.uniformMatrix4fv(Context.getUniformLocation(SurfaceProgram, "View"), false, View);
+    Context.uniform1f(Context.getUniformLocation(SurfaceProgram, "HighlightFace"), Viewer.HighlightFace);
+    Bind(SurfaceProgram, "Position", Model.PositionBuffer, 3);
+    Bind(SurfaceProgram, "Normal", Model.NormalBuffer, 3);
+    Bind(SurfaceProgram, "Colour", Model.ColourBuffer, 3);
+    Bind(SurfaceProgram, "Face", Model.FaceBuffer, 1);
+    Context.bindBuffer(Context.ELEMENT_ARRAY_BUFFER, Model.IndexBuffer);
+    Context.drawElements(Context.TRIANGLES, Model.Indices.length, Context.UNSIGNED_INT, 0);
+    for (let Location = 0; Location < 4; ++Location) Context.disableVertexAttribArray(Location);
+    if (Viewer.EdgesEnabled)
+    {
+        Context.useProgram(EdgeProgram);
+        Context.uniformMatrix4fv(Context.getUniformLocation(EdgeProgram, "Projection"), false, Projection);
+        Context.uniformMatrix4fv(Context.getUniformLocation(EdgeProgram, "View"), false, View);
+        Bind(EdgeProgram, "Position", Model.EdgeBuffer, 3);
+        Context.drawArrays(Context.LINES, 0, Model.EdgeCount);
+        for (let Location = 0; Location < 4; ++Location) Context.disableVertexAttribArray(Location);
+    }
+}
+
+function RequestFrame() { if (!Viewer.FramePending) { Viewer.FramePending = true; requestAnimationFrame(() => { Viewer.FramePending = false; RenderFrame(); }); } }
+
+function FrameModel()
+{
+    if (!Viewer.Model) return;
+    Viewer.Camera.Target   = Viewer.Model.Centre.slice();
+    Viewer.Camera.Distance = Viewer.Model.Radius / Math.tan(0.35) * 0.92;
+    RequestFrame();
+}
+
+function PickFace(PointerX, PointerY)
+{
+    const Model = Viewer.Model;
+    if (!Model) return -1;
+    const Bounds = Canvas.getBoundingClientRect();
+    const NormalX = (PointerX - Bounds.left) / Bounds.width * 2 - 1, NormalY = 1 - (PointerY - Bounds.top) / Bounds.height * 2;
+    const Basis   = CameraBasis();
+    const Height  = Math.tan(0.35), Width = Height * Bounds.width / Bounds.height;
+    let Origin, Direction;
+    if (Viewer.Camera.Orthographic)
+    {
+        Origin    = Add(Add(Basis.Eye, Scale(Basis.Right, NormalX * Width * Viewer.Camera.Distance)), Scale(Basis.Up, NormalY * Height * Viewer.Camera.Distance));
+        Direction = Basis.Forward;
+    }
+    else
+    {
+        Origin    = Basis.Eye;
+        Direction = Normalise(Add(Add(Basis.Forward, Scale(Basis.Right, NormalX * Width)), Scale(Basis.Up, NormalY * Height)));
+    }
+    let Nearest = Infinity, Face = -1;
+    const Positions = Model.Positions, Indices = Model.Indices;
+    for (let Corner = 0; Corner < Indices.length; Corner += 3)
+    {
+        const A = 3 * Indices[Corner], B = 3 * Indices[Corner + 1], C = 3 * Indices[Corner + 2];
+        const EdgeOne = [Positions[B] - Positions[A], Positions[B + 1] - Positions[A + 1], Positions[B + 2] - Positions[A + 2]];
+        const EdgeTwo = [Positions[C] - Positions[A], Positions[C + 1] - Positions[A + 1], Positions[C + 2] - Positions[A + 2]];
+        const Normal  = Cross(Direction, EdgeTwo);
+        const Determinant = Dot(EdgeOne, Normal);
+        if (Math.abs(Determinant) < 1e-14) continue;
+        const Offset = [Origin[0] - Positions[A], Origin[1] - Positions[A + 1], Origin[2] - Positions[A + 2]];
+        const First  = Dot(Offset, Normal) / Determinant;
+        if (First < 0 || First > 1) continue;
+        const Rotated = Cross(Offset, EdgeOne);
+        const Second  = Dot(Direction, Rotated) / Determinant;
+        if (Second < 0 || First + Second > 1) continue;
+        const Distance = Dot(EdgeTwo, Rotated) / Determinant;
+        if (Distance > 0 && Distance < Nearest) { Nearest = Distance; Face = Model.Faces[Indices[Corner]]; }
+    }
+    return Face;
+}
+
+function DescribeHud()
+{
+    const Model = Viewer.Model;
+    if (!Model) return;
+    const Entry = Model.Entry;
+    let Text = "<b>" + Entry.Code + "</b> · " + Entry.FaceKinds.length + " faces · " + (Model.Indices.length / 3).toLocaleString() + " triangles · " + (Viewer.Camera.Orthographic ? "orthographic" : "perspective");
+    if (Viewer.HighlightFace >= 0) Text += "<br>Selected: <b>face " + Viewer.HighlightFace + " · " + Entry.FaceKinds[Viewer.HighlightFace] + "</b>";
+    document.getElementById("Hud").innerHTML = Text;
+}
+
+function ShowModel(Code)
+{
+    const Entry = Payload.Models.find(Candidate => Candidate.Code === Code);
+    if (!Entry || !Context) return;
+    Viewer.Model         = DecodeModel(Entry);
+    Viewer.HighlightFace = -1;
+    for (const Button of document.querySelectorAll("#Picker button")) Button.classList.toggle("Current", Button.dataset.code === Code);
+    const Counts = {};
+    for (const Kind of Entry.FaceKinds) Counts[Kind] = (Counts[Kind] || 0) + 1;
+    document.getElementById("Legend").innerHTML = Categories.filter(Kind => Counts[Kind]).map(Kind => "<span><i style='background:rgb(" + Palette[Kind].map(Value => Math.round(Value * 255)).join(",") + ")'></i>" + Kind + " × " + Counts[Kind] + "</span>").join("");
+    const Row = Payload.Stress.Rows.find(Candidate => Candidate.Code === Code);
+    document.getElementById("ModelFacts").innerHTML = Row ? Row.Verdict + " <b>" + Row.Code + "</b> " + Row.Scene + " · F / E / V <b>" + Row.Topology + "</b> · genus " + Row.Genus + " · V <b>" + Row.Volume + "</b>" + (Row.Closed === "–" ? " (no closed form; checked by the CSG oracle)" : " vs closed form " + Row.Closed + " · |ΔV| <b>" + Row.Error + "</b>") + " · oracle wrong " + Row.Oracle : "";
+    FrameModel();
+    DescribeHud();
+}
+
+function InstallViewer()
+{
+    const Picker = document.getElementById("Picker");
+    if (!Context) { document.getElementById("Hud").textContent = "WebGL is not available in this browser."; return; }
+    Context.getExtension("OES_element_index_uint");
+    for (const Entry of Payload.Models)
+    {
+        const Button = document.createElement("button");
+        Button.dataset.code = Entry.Code;
+        Button.innerHTML = Entry.Code + " · " + Entry.Title + "<small>" + Entry.Caption + "</small>";
+        Button.onclick = () => ShowModel(Entry.Code);
+        Picker.appendChild(Button);
+    }
+    Canvas.addEventListener("contextmenu", Event => Event.preventDefault());
+    Canvas.addEventListener("pointerdown", Event =>
+    {
+        Canvas.setPointerCapture(Event.pointerId);
+        Viewer.Gesture = { Button: Event.button, X: Event.clientX, Y: Event.clientY, StartX: Event.clientX, StartY: Event.clientY, Moved: false };
+        if (Event.button === 1) Event.preventDefault();
+    });
+    Canvas.addEventListener("pointermove", Event =>
+    {
+        const Gesture = Viewer.Gesture;
+        if (!Gesture) return;
+        const DeltaX = Event.clientX - Gesture.X, DeltaY = Event.clientY - Gesture.Y;
+        Gesture.X = Event.clientX; Gesture.Y = Event.clientY;
+        if (Math.hypot(Event.clientX - Gesture.StartX, Event.clientY - Gesture.StartY) > 4) Gesture.Moved = true;
+        if (!Gesture.Moved) return;
+        const Camera = Viewer.Camera;
+        if (Gesture.Button === 2)
+        {
+            const Basis = CameraBasis();
+            const Rate  = 2 * Camera.Distance * Math.tan(0.35) / Canvas.clientHeight;
+            Camera.Target = Add(Camera.Target, Add(Scale(Basis.Right, -DeltaX * Rate), Scale(Basis.Up, DeltaY * Rate)));
+        }
+        else
+        {
+            Camera.Yaw  -= DeltaX * 0.008;
+            Camera.Pitch = Math.max(-1.55, Math.min(1.55, Camera.Pitch + DeltaY * 0.008));
+        }
+        RequestFrame();
+    });
+    Canvas.addEventListener("pointerup", Event =>
+    {
+        const Gesture = Viewer.Gesture;
+        Viewer.Gesture = null;
+        if (Gesture && !Gesture.Moved && Gesture.Button === 0)
+        {
+            const Face = PickFace(Event.clientX, Event.clientY);
+            if (Event.ctrlKey) { if (Face === Viewer.HighlightFace) Viewer.HighlightFace = -1; }
+            else Viewer.HighlightFace = Face;
+            DescribeHud();
+            RequestFrame();
+        }
+    });
+    Canvas.addEventListener("wheel", Event =>
+    {
+        Event.preventDefault();
+        Viewer.Camera.Distance *= Math.exp(Event.deltaY * 0.0012);
+        RequestFrame();
+    }, { passive: false });
+    Canvas.tabIndex = 0;
+    const ViewportFrame = document.getElementById("ViewportFrame");
+    ViewportFrame.addEventListener("pointerenter", () => Canvas.focus({ preventScroll: true }));
+    Canvas.addEventListener("keydown", Event =>
+    {
+        const Camera = Viewer.Camera;
+        const Views  = { Numpad1: [-Math.PI / 2, 0], Numpad3: [0, 0], Numpad7: [-Math.PI / 2, Math.PI / 2 - 1e-4] };
+        if (Event.code === "Space") { FrameModel(); Event.preventDefault(); }
+        else if (Views[Event.code])
+        {
+            Camera.Yaw   = Views[Event.code][0] + (Event.ctrlKey ? Math.PI : 0);
+            Camera.Pitch = Views[Event.code][1] * (Event.ctrlKey ? -1 : 1);
+            Event.preventDefault();
+        }
+        else if (Event.code === "Numpad5") { Camera.Orthographic = !Camera.Orthographic; ReflectToggles(); }
+        else if (Event.code === "Escape") { Viewer.HighlightFace = -1; DescribeHud(); }
+        else return;
+        RequestFrame();
+    });
+    document.getElementById("EdgesToggle").onclick = () => { Viewer.EdgesEnabled = !Viewer.EdgesEnabled; ReflectToggles(); RequestFrame(); };
+    document.getElementById("ProjectionToggle").onclick = () => { Viewer.Camera.Orthographic = !Viewer.Camera.Orthographic; ReflectToggles(); RequestFrame(); };
+    document.getElementById("FrameButton").onclick = FrameModel;
+    window.addEventListener("resize", RequestFrame);
+    ReflectToggles();
+    ShowModel(Payload.Models[0].Code);
+}
+
+function ReflectToggles()
+{
+    document.getElementById("EdgesToggle").classList.toggle("Current", Viewer.EdgesEnabled);
+    document.getElementById("ProjectionToggle").textContent = Viewer.Camera.Orthographic ? "Orthographic" : "Perspective";
+    DescribeHud();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  STRESS TABLE
+// ---------------------------------------------------------------------------------------------------------------------
+function InstallStress()
+{
+    const Stress = Payload.Stress;
+    document.getElementById("StressSummary").innerHTML = Stress.Summary;
+    const Families = ["All", ...new Set(Stress.Rows.map(Row => Row.Family))];
+    const Chips    = document.getElementById("StressChips");
+    const Search   = document.createElement("input");
+    Search.className = "Search"; Search.placeholder = "Filter rows (code, scene, finding)";
+    let Family = "All";
+    const Modelled = new Set(Payload.Models.map(Entry => Entry.Code));
+    const Render = () =>
+    {
+        const Needle = Search.value.toLowerCase();
+        const Rows   = Stress.Rows.filter(Row => (Family === "All" || Row.Family === Family) && (Row.Code + " " + Row.Scene + " " + Row.Finding).toLowerCase().includes(Needle));
+        document.getElementById("StressTable").innerHTML = "<tr><th></th><th>Code</th><th>Scene</th><th>Ops</th><th>F / E / V</th><th>Genus</th><th>V</th><th>|ΔV|</th><th>Oracle wrong</th><th>Triangles</th><th>ms</th><th>Finding</th></tr>" +
+            Rows.map(Row => "<tr><td>" + Row.Verdict + "</td><td><b>" + Row.Code + "</b>" + (Modelled.has(Row.Code) ? "<span class='Badge' data-code='" + Row.Code + "'>3D</span>" : "") + "</td><td>" + Row.Scene + "</td><td class='Number'>" + Row.Ops + "</td><td class='Number'>" + Row.Topology +
+                "</td><td class='Number'>" + Row.Genus + "</td><td class='Number'>" + Row.Volume + "</td><td class='Number'>" + Row.Error + "</td><td class='Number'>" + Row.Oracle + "</td><td class='Number'>" + Row.Triangles + "</td><td class='Number'>" + Row.Milliseconds + "</td><td>" + Row.Finding + "</td></tr>").join("");
+        for (const Badge of document.querySelectorAll("#StressTable .Badge")) Badge.onclick = () => { ShowModel(Badge.dataset.code); document.getElementById("Models").scrollIntoView(); };
+    };
+    for (const Name of Families)
+    {
+        const Chip = document.createElement("button");
+        Chip.className = "Chip" + (Name === "All" ? " Current" : "");
+        Chip.textContent = Name === "All" ? "All " + Stress.Rows.length : Name + " " + Stress.Rows.filter(Row => Row.Family === Name).length;
+        Chip.onclick = () => { Family = Name; for (const Other of Chips.querySelectorAll(".Chip")) Other.classList.toggle("Current", Other === Chip); Render(); };
+        Chips.appendChild(Chip);
+    }
+    Chips.appendChild(Search);
+    Search.oninput = Render;
+    Render();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  GALLERIES AND CAPTURES
+// ---------------------------------------------------------------------------------------------------------------------
+function OpenLightbox(Image, Caption)
+{
+    document.getElementById("LightboxImage").src = Image;
+    document.getElementById("LightboxCaption").innerHTML = Caption;
+    document.getElementById("Lightbox").style.display = "flex";
+}
+
+function FillGrid(Grid, Figures)
+{
+    Grid.innerHTML = "";
+    for (const Figure of Figures)
+    {
+        const Frame = document.createElement("figure");
+        Frame.innerHTML = "<img loading='lazy' alt='" + Figure.Name + "' src='" + Figure.Image + "'><figcaption><b>" + Figure.Name + "</b>" + (Figure.Caption ? " · " + Figure.Caption : "") + "</figcaption>";
+        Frame.onclick = () => OpenLightbox(Figure.Image, "<b>" + Figure.Name + "</b>" + (Figure.Caption ? " · " + Figure.Caption : ""));
+        Grid.appendChild(Frame);
+    }
+}
+
+function InstallGalleries()
+{
+    const Chips = document.getElementById("GalleryChips");
+    const Names = Object.keys(Payload.Galleries);
+    for (const Name of Names)
+    {
+        const Chip = document.createElement("button");
+        Chip.className = "Chip";
+        Chip.textContent = Name + " " + Payload.Galleries[Name].length;
+        Chip.onclick = () => { for (const Other of Chips.children) Other.classList.toggle("Current", Other === Chip); FillGrid(document.getElementById("GalleryGrid"), Payload.Galleries[Name]); };
+        Chips.appendChild(Chip);
+    }
+    Chips.children[0].click();
+    FillGrid(document.getElementById("CaptureGrid"), Payload.Captures);
+    FillGrid(document.getElementById("ViewportGrid"), Payload.Viewport);
+    document.getElementById("Lightbox").onclick = () => { document.getElementById("Lightbox").style.display = "none"; };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+//  NAVIGATION
+// ---------------------------------------------------------------------------------------------------------------------
+function InstallNavigation()
+{
+    const Links    = [...document.querySelectorAll("#Sidebar a")];
+    const Observer = new IntersectionObserver(Entries =>
+    {
+        for (const Entry of Entries) if (Entry.isIntersecting) for (const Link of Links) Link.classList.toggle("Current", Link.getAttribute("href") === "#" + Entry.target.id);
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    for (const Section of document.querySelectorAll("main section")) Observer.observe(Section);
+}
+
+InstallViewer();
+InstallStress();
+InstallGalleries();
+InstallNavigation();
+</script>
+</body>
+</html>

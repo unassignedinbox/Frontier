@@ -40,7 +40,8 @@ namespace
 
     constexpr double π = std::numbers::pi;
 
-    bool VerboseCondition = false;                                                            // --verbose: per-phase timings on stderr
+    bool        VerboseCondition = false;                                                     // --verbose: per-phase timings on stderr
+    std::string ExportDirectory  = {};                                                        // --export: tessellation JSON per built row
 
     void Narrate(const char* Phase, Clock::time_point Since)
     {
@@ -1170,9 +1171,53 @@ namespace
         }
     }
 
-    [[nodiscard]] bool MeasureTessellation(const ModelPartition& Partition, BodyToken Body, int64_t& Triangles, std::string& Detail)
+    // ----------------------------------------------------------------------------------------------------------------------
+    // TESSELLATION EXPORT
+    // ----------------------------------------------------------------------------------------------------------------------
+
+    // Writes positions, triangles, per-face carrier labels and the shared B-rep edge samplings as JSON, for the showcase.
+    void ExportTessellation(const ModelPartition& Partition, const TessellationOutcome& Outcome, const std::string& Code)
+    {
+        const std::string Path = ExportDirectory + "/" + Code + ".json";
+        std::FILE*        File = std::fopen(Path.c_str(), "w");
+        if (File == nullptr) return;
+        const PolygonComplex& Complex = Outcome.Complex;
+        std::fprintf(File, "{\"Code\":\"%s\",\"Positions\":[", Code.c_str());
+        for (std::size_t Index = 0; Index < Complex.Positions.size(); ++Index)
+        {
+            const Vector3& Position = Complex.Positions[Index];
+            std::fprintf(File, "%s%.7g,%.7g,%.7g", Index == 0 ? "" : ",", Position.X, Position.Y, Position.Z);
+        }
+        std::fprintf(File, "],\"Triangles\":[");
+        for (std::size_t Index = 0; Index < Complex.Triangles.size(); ++Index)
+        {
+            const std::array<int, 3>& Corners = Complex.Triangles[Index];
+            std::fprintf(File, "%s%d,%d,%d", Index == 0 ? "" : ",", Corners[0], Corners[1], Corners[2]);
+        }
+        std::fprintf(File, "],\"TriangleFaces\":[");
+        for (std::size_t Index = 0; Index < Complex.TriangleFaces.size(); ++Index) std::fprintf(File, "%s%d", Index == 0 ? "" : ",", Complex.TriangleFaces[Index]);
+        std::fprintf(File, "],\"Faces\":[");
+        for (std::size_t Index = 0; Index < Complex.Faces.size(); ++Index)
+        {
+            const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Complex.Faces[Index].Face).Surface);
+            std::fprintf(File, "%s\"%s\"", Index == 0 ? "" : ",", SurfaceCategoryLabel(Surface));
+        }
+        std::fprintf(File, "],\"Edges\":[");
+        for (std::size_t Index = 0; Index < Complex.Edges.size(); ++Index)
+        {
+            std::fprintf(File, "%s[", Index == 0 ? "" : ",");
+            const std::vector<int>& Vertices = Complex.Edges[Index].Vertices;
+            for (std::size_t Sample = 0; Sample < Vertices.size(); ++Sample) std::fprintf(File, "%s%d", Sample == 0 ? "" : ",", Vertices[Sample]);
+            std::fprintf(File, "]");
+        }
+        std::fprintf(File, "]}\n");
+        std::fclose(File);
+    }
+
+    [[nodiscard]] bool MeasureTessellation(const ModelPartition& Partition, BodyToken Body, const std::string& Code, int64_t& Triangles, std::string& Detail)
     {
         const TessellationOutcome     Outcome = TessellateBody(Partition, Body, {});
+        if (!ExportDirectory.empty()) ExportTessellation(Partition, Outcome, Code);
         const TessellationAuditReport Report  = AuditTessellation(Partition, Body, Outcome);
         Triangles = static_cast<int64_t>(Outcome.Complex.Triangles.size());
         const double VolumeRatio = std::fabs(Report.ComplexVolume - Report.ExactVolume) / (Outcome.Sag * Report.ComplexArea);
@@ -1217,7 +1262,7 @@ namespace
         Narrate("membership oracle", Moment);
         Moment = Clock::now();
         std::string Seams;
-        Result.Watertight   = MeasureTessellation(Partition, Built.Body, Result.Triangles, Seams);
+        Result.Watertight   = MeasureTessellation(Partition, Built.Body, Entry.Code, Result.Triangles, Seams);
         Narrate("tessellation", Moment);
         Result.Milliseconds = Elapsed(Start);
 
@@ -1255,6 +1300,7 @@ int main(int ArgumentCount, char** Arguments)
         const std::string Argument = Arguments[Index];
         if (Argument == "--only" && Index + 1 < ArgumentCount) OnlyCode = Arguments[++Index];
         if (Argument == "--verbose") VerboseCondition = true;
+        if (Argument == "--export" && Index + 1 < ArgumentCount) ExportDirectory = Arguments[++Index];
     }
     std::vector<StressResult> Results;
     for (const StressEntry& Entry : AuthorStress())

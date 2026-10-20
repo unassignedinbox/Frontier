@@ -65,6 +65,7 @@ SolidArcRemastered/
 ├── Validation/               Topology-, Predicate-, Intersection-, Containment-, Boolean-, Tessellation-, Blend-, FaceOperation-, Sketch-, Feature-, CorpusValidation.cpp
 ├── Tooling/InspectionHost.py stdlib-only host: static viewer, API, SSE, rebuild on change
 │   GalleryRasterizer.py      Before | After exhibit PNGs (--kind Blend | FaceOperation | Feature | Model | Boolean) straight from the C++ process (Pillow + numpy, z-buffer)
+│   ShowcaseComposer.py       Exhibits/Showcase.html: one self-contained page (WebGL models from PatternStressValidation --export, evidence tables, WebP stills); template ShowcaseTemplate.html
 └── Viewer/index.html         self-contained canvas viewer
 ```
 
@@ -83,6 +84,10 @@ python3 Experimental/SolidArcRemastered/Tooling/InspectionHost.py --cmake $V/cma
 cmake -S Experimental/SolidArcRemastered -B Experimental/SolidArcRemastered/build
 cmake --build Experimental/SolidArcRemastered/build --config RelWithDebInfo
 ctest --test-dir Experimental/SolidArcRemastered/build -C RelWithDebInfo
+
+# Showcase: export the stress tessellations, then compose the single-file page (Pillow)
+Experimental/SolidArcRemastered/build/PatternStressValidation --export _ClaudeScratch/tmp/meshes
+python Experimental/SolidArcRemastered/Tooling/ShowcaseComposer.py --meshes _ClaudeScratch/tmp/meshes
 ```
 
 | Host endpoint | Purpose |
