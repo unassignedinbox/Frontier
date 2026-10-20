@@ -777,11 +777,10 @@ namespace
     [[nodiscard]] std::vector<Vector3> CollectLatticeSeeds(const IntersectionContext& Context)
     {
         std::vector<Vector3> Seeds;
-        int Degenerate = 0;                                                                  // [-] - First-surface iso-curves without a carrier
         const auto Harvest = [&](const SurfaceGeometry& CurveSurface, const ParameterBox& CurveBox, const SurfaceGeometry& Target, IsoDirection Direction, double Value)
         {
             const IsoParameterCurve Iso = ExtractIsoParameterCurve(CurveSurface, Direction, Value);
-            if (Iso.DegenerateCondition) { Degenerate += &CurveSurface == &Context.First; return; }
+            if (Iso.DegenerateCondition) return;
             const double RunLow  = Direction == IsoDirection::FixedU ? CurveBox.Low.Y : CurveBox.Low.X;
             const double RunHigh = Direction == IsoDirection::FixedU ? CurveBox.High.Y : CurveBox.High.X;
             Context.Outcome.Statistics.LatticeCurves += 1;
@@ -808,8 +807,8 @@ namespace
         // ⚠️ A first surface with a missing lattice direction (rolling-ball 𝑣-iso-curves have no exact carrier) cannot see a
         //    loop that wraps that direction — a pipe's cross-section in a plane crosses no 𝑢-circle and no box edge, and
         //    its normals are never parallel to the plane's, so normal cones miss it too. The second surface's interior
-        //    lattice then seeds as well.
-        if (Degenerate > 0)
+        //    lattice then seeds as well. (A pole's point iso-curve is not such a gap: sphere and cone keep their lattice.)
+        if (std::holds_alternative<RollingBallSurface>(Context.First))
         {
             for (int Line = 1; Line < Divisions; ++Line)
             {
