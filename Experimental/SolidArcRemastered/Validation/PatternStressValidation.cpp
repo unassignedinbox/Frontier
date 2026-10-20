@@ -932,6 +932,99 @@ namespace
             return Built;
         });
 
+        // ---- T · Tangent-continuous chains (line ↔ arc across a smooth edge): the joint is a shared cross-section.
+        const auto StadiumSlot = [](Partition& P)
+        {
+            StressBuilt Built;
+            Built.Oracle = { { PlateShape }, {}, {}, { -0.5, -0.5, -0.5 }, { 12.5, 6.5, 1.5 } };
+            const BodyToken Plate = ConstructShape(P, PlateShape, Built.Refusal);
+            const std::vector<AnalyticShape> Cutters = { BoxShape({ 3, 2.6, -0.5 }, { 7, 3.4, 1.5 }), Bore({ 3, 3, 0 }, 0.4), Bore({ 7, 3, 0 }, 0.4) };
+            std::vector<BodyToken> Tools;
+            for (const AnalyticShape& Cutter : Cutters) { Tools.push_back(ConstructShape(P, Cutter, Built.Refusal)); ++Built.Operations; }
+            if (!Built.Refusal.empty()) return Built;
+            Built.Oracle.Removed = Cutters;
+            Built.Body           = ChainBooleans(P, Plate, Tools, BooleanOperation::Difference, Built);
+            Built.Expected       = PlateVolume - (4.0 * 0.8 + π * 0.16);
+            Built.ExpectedGenus  = 1;
+            return Built;
+        };
+        const auto SlotRim = [](double Height)
+        {
+            return [=](Vector3 Start, Vector3 End, const CurveGeometry&)
+            {
+                const auto Inner = [](Vector3 Point) { return Point.X > 2.0 && Point.X < 8.0 && Point.Y > 2.0 && Point.Y < 4.0; };
+                return std::fabs(Start.Z - Height) < 1e-9 && std::fabs(End.Z - Height) < 1e-9 && Inner(Start) && Inner(End);
+            };
+        };
+        Add("T", "T1", "Plate − stadium slot (box + 2 tangent cylinders) + fillet the top rim r 0.1", [=](Partition& P)
+        {
+            StressBuilt Built = StadiumSlot(P);
+            BlendStep(P, Built, SlotRim(1.0), -1, BlendProfile::Fillet, 0.1);
+            Built.Expected -= 2.0 * EdgeFilletLoss(0.1, 4.0) + BoreRimFilletLoss(0.4, 0.1);
+            return Built;
+        });
+        Add("T", "T2", "Stadium slot + chamfer the top rim c 0.1 (planes and cones, tangent joints)", [=](Partition& P)
+        {
+            StressBuilt Built = StadiumSlot(P);
+            BlendStep(P, Built, SlotRim(1.0), -1, BlendProfile::Chamfer, 0.1);
+            Built.Expected -= 2.0 * EdgeChamferLoss(0.1, 4.0) + BoreRimChamferLoss(0.4, 0.1);
+            return Built;
+        });
+        Add("T", "T3", "Stadium slot + fillet top AND bottom rims r 0.1 in one operation", [=](Partition& P)
+        {
+            StressBuilt Built = StadiumSlot(P);
+            BlendStep(P, Built, [=](Vector3 Start, Vector3 End, const CurveGeometry& Curve) { return SlotRim(1.0)(Start, End, Curve) || SlotRim(0.0)(Start, End, Curve); }, -1,
+                      BlendProfile::Fillet, 0.1);
+            Built.Expected -= 2.0 * (2.0 * EdgeFilletLoss(0.1, 4.0) + BoreRimFilletLoss(0.4, 0.1));
+            return Built;
+        });
+        const auto RoundedBlock = [](Partition& P)
+        {
+            StressBuilt Built;
+            const AnalyticShape Block = BoxShape({ 0, 0, 0 }, { 4, 2, 1 });
+            Built.Oracle = { { Block }, {}, {}, { -0.5, -0.5, -0.5 }, { 4.5, 2.5, 1.5 } };
+            Built.Body   = ConstructShape(P, Block, Built.Refusal);
+            BlendStep(P, Built, [](Vector3 Start, Vector3 End, const CurveGeometry&) { return std::fabs(Start.X - End.X) < 1e-9 && std::fabs(Start.Y - End.Y) < 1e-9; }, 4,
+                      BlendProfile::Fillet, 0.5);
+            Built.Expected = 8.0 - 4.0 * EdgeFilletLoss(0.5, 1.0);
+            return Built;
+        };
+        const auto TopLoop = [](Vector3 Start, Vector3 End, const CurveGeometry&) { return std::fabs(Start.Z - 1.0) < 1e-9 && std::fabs(End.Z - 1.0) < 1e-9; };
+        Add("T", "T4", "Block, fillet 4 vertical edges r 0.5, then fillet the top loop r 0.2 (lines + quarter tori)", [=](Partition& P)
+        {
+            StressBuilt Built = RoundedBlock(P);
+            BlendStep(P, Built, TopLoop, -1, BlendProfile::Fillet, 0.2);
+            Built.Expected -= EdgeFilletLoss(0.2, 8.0) + BossRimFilletLoss(0.5, 0.2);
+            return Built;
+        });
+        Add("T", "T5", "Block, fillet 4 vertical edges r 0.5, then chamfer the top loop c 0.1 (planes + cones)", [=](Partition& P)
+        {
+            StressBuilt Built = RoundedBlock(P);
+            BlendStep(P, Built, TopLoop, -1, BlendProfile::Chamfer, 0.1);
+            Built.Expected -= EdgeChamferLoss(0.1, 8.0) + BossRimChamferLoss(0.5, 0.1);
+            return Built;
+        });
+        Add("T", "T6", "Plate ∪ boss 2 × 1, round the boss verticals r 0.3, then fillet the concave foot loop r 0.1", [](Partition& P)
+        {
+            StressBuilt Built;
+            const AnalyticShape Boss = BoxShape({ 5, 2.5, 0.5 }, { 7, 3.5, 1.5 });
+            Built.Oracle = { { PlateShape, Boss }, {}, {}, { -0.5, -0.5, -0.5 }, { 12.5, 6.5, 2.0 } };
+            const BodyToken Plate = ConstructShape(P, PlateShape, Built.Refusal);
+            const BodyToken Lump  = ConstructShape(P, Boss, Built.Refusal);
+            if (!Built.Refusal.empty()) return Built;
+            Built.Body = ChainBooleans(P, Plate, { Lump }, BooleanOperation::Union, Built);
+            BlendStep(P, Built, [](Vector3 Start, Vector3 End, const CurveGeometry&)
+            {
+                return std::fabs(Start.X - End.X) < 1e-9 && std::fabs(Start.Y - End.Y) < 1e-9 && Start.X > 4.5 && Start.X < 7.5 && Start.Y > 2.0 && Start.Y < 4.0;
+            }, 4, BlendProfile::Fillet, 0.3);
+            BlendStep(P, Built, [](Vector3 Start, Vector3 End, const CurveGeometry&)
+            {
+                return std::fabs(Start.Z - 1.0) < 1e-9 && std::fabs(End.Z - 1.0) < 1e-9 && Start.X > 4.5 && Start.X < 7.5 && Start.Y > 2.0 && Start.Y < 4.0;
+            }, -1, BlendProfile::Fillet, 0.1);
+            Built.Expected = PlateVolume + 2.0 * 1.0 * 0.5 - 4.0 * EdgeFilletLoss(0.3, 0.5) + EdgeFilletLoss(0.1, 3.6) + BossFootFilletGain(0.3, 0.1);
+            return Built;
+        });
+
         // ---- P · Probes without a closed form: soundness, genus, oracle away from the blends, watertight tessellation.
         Add("P", "P1", "L4 slot + fillet every top rim arc r 0.05 (arcs meet at cusps)", [](Partition& P)
         {
@@ -1049,13 +1142,21 @@ namespace
         }
     }
 
-    [[nodiscard]] bool MeasureTessellation(const ModelPartition& Partition, BodyToken Body, int64_t& Triangles)
+    [[nodiscard]] bool MeasureTessellation(const ModelPartition& Partition, BodyToken Body, int64_t& Triangles, std::string& Detail)
     {
         const TessellationOutcome     Outcome = TessellateBody(Partition, Body, {});
         const TessellationAuditReport Report  = AuditTessellation(Partition, Body, Outcome);
         Triangles = static_cast<int64_t>(Outcome.Complex.Triangles.size());
         const double VolumeRatio = std::fabs(Report.ComplexVolume - Report.ExactVolume) / (Outcome.Sag * Report.ComplexArea);
-        return Outcome.Refusal.empty() && Report.UnpairedSides == Report.LaminarSides && Report.EulerComplex == Report.EulerBrep && Report.Inverted == 0 && VolumeRatio <= 1.0 && Report.MissingEdgeSides == 0;
+        const bool Watertight = Outcome.Refusal.empty() && Report.UnpairedSides == Report.LaminarSides && Report.EulerComplex == Report.EulerBrep && Report.Inverted == 0 && VolumeRatio <= 1.0 && Report.MissingEdgeSides == 0;
+        if (!Watertight)
+        {
+            char Text[200];
+            std::snprintf(Text, sizeof Text, "%s unpaired %lld · χ %d vs %d · inverted %lld · volume ratio %.3g · missing edge sides %lld", Outcome.Refusal.c_str(), static_cast<long long>(Report.UnpairedSides - Report.LaminarSides),
+                          Report.EulerComplex, Report.EulerBrep, static_cast<long long>(Report.Inverted), VolumeRatio, static_cast<long long>(Report.MissingEdgeSides));
+            Detail = Text;
+        }
+        return Watertight;
     }
 
     [[nodiscard]] StressResult Measure(const StressEntry& Entry)
@@ -1087,7 +1188,8 @@ namespace
         if (Built.OracleEnabled) MeasureOracle(Partition, Built, Result);
         Narrate("membership oracle", Moment);
         Moment = Clock::now();
-        Result.Watertight   = MeasureTessellation(Partition, Built.Body, Result.Triangles);
+        std::string Seams;
+        Result.Watertight   = MeasureTessellation(Partition, Built.Body, Result.Triangles, Seams);
         Narrate("tessellation", Moment);
         Result.Milliseconds = Elapsed(Start);
 
@@ -1102,7 +1204,7 @@ namespace
             if (Result.Error > 1.0e-9 * std::max(1.0, std::fabs(Built.Expected))) Faults.push_back("ΔV " + std::to_string(Result.Error));
         }
         if (Result.Wrong > 0) Faults.push_back("oracle " + std::to_string(Result.Wrong) + " / " + std::to_string(Result.Samples) + " wrong");
-        if (!Result.Watertight) Faults.push_back("tessellation not watertight");
+        if (!Result.Watertight) Faults.push_back("tessellation not watertight (" + Seams + ")");
         if (Built.MaximalCondition && Result.Redundant > 0) Faults.push_back(std::to_string(Result.Redundant) + " redundant edges");
         if (!Built.ExtraCondition) Faults.push_back("comparison failed");
         Result.Verdict = Faults.empty() ? "🟢" : "🔴";

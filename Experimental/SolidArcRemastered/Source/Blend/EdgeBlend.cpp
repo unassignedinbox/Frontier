@@ -9,14 +9,18 @@
 #include "Containment/FaceDomain.h"
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/CurveSurfaceIntersection.h"
+#include "Intersection/IntersectionCurve.h"
+#include "Intersection/SurfaceIntersection.h"
 #include "Local/FaceChange.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <numbers>
+#include <set>
 #include <tuple>
 
 namespace Frontier::SolidArcRemastered
@@ -119,6 +123,7 @@ namespace
         std::map<uint32_t, int>                    Pieces;                                   // sharp edge → blueprint edge
         std::map<std::pair<uint32_t, int>, int>    ContactPieces;                            // (edge, side) → blueprint edge
         std::vector<CornerPatch>                   Corners;
+        std::set<EdgeEndKey>                       Extensions;                               // sharp edge ends a concave blend may lengthen
 
         //----------------------------------------------------------------------------------------------------------------
         //                                            BLUEPRINT RECORDS
@@ -166,6 +171,89 @@ namespace
             if (Sweep <= 1.0e-12 || Sweep >= 2.0 * std::numbers::pi - 1.0e-12) return -1;
             if (Sweep <= std::numbers::pi) return IssueEdge(Curve, Start, End, From, To);
             return IssueEdge(Curve, End, Start + 2.0 * std::numbers::pi, To, From);
+        }
+
+        // 💡 Exact section of two carriers between two blueprint vertices lying on both (mitres, caps): two planes → segment;
+        //    an analytic SSI branch through both → that line or conic; otherwise the marched branch through both becomes an
+        //    exact intersection-curve carrier (Newton onto both surfaces per evaluation) trimmed to them. The SSI window
+        //    and step are scaled to the chord, not to the model, so small blends on large parts still resolve. −1 if no
+        //    branch passes through both points (e.g. the surfaces are tangent at an end and the march stops short).
+        int IssueSection(const SurfaceGeometry& First, const SurfaceGeometry& Second, int From, int To)
+        {
+            const Vector3 Start = PositionOf(From), End = PositionOf(To);
+            const double  Chord = Distance(Start, End);                                      // [len] - Endpoint separation
+            if (Chord <= Tolerance) return -1;
+            if (std::holds_alternative<PlaneSurface>(First) && std::holds_alternative<PlaneSurface>(Second)) return IssueSegment(From, To);
+            const auto Window = [&](const SurfaceGeometry& Surface)
+            {
+                const Vector2            Near   = ProjectOntoSurface(Surface, Start, {});
+                const Vector2            Far    = ProjectOntoSurface(Surface, End, Near);
+                const SurfaceSample      Sample = EvaluateSurface(Surface, (Near + Far) * 0.5);
+                const SurfacePeriodicity Period = ResolvePeriodicity(Surface);
+                double MarginU = 1.5 * Chord / std::max(Length(Sample.DerivativeU), 1.0e-12);  // [-] - Chord in 𝑢 units
+                double MarginV = 1.5 * Chord / std::max(Length(Sample.DerivativeV), 1.0e-12);  // [-] - Chord in 𝑣 units
+                if (Period.PeriodU > 0.0) MarginU = std::min(MarginU, 0.25 * Period.PeriodU);
+                if (Period.PeriodV > 0.0) MarginV = std::min(MarginV, 0.25 * Period.PeriodV);
+                ParameterBox Box{ { std::min(Near.X, Far.X) - MarginU, std::min(Near.Y, Far.Y) - MarginV }, { std::max(Near.X, Far.X) + MarginU, std::max(Near.Y, Far.Y) + MarginV } };
+                if (std::holds_alternative<SphereSurface>(Surface))
+                {
+                    Box.Low.Y  = std::max(Box.Low.Y, -0.5 * std::numbers::pi);
+                    Box.High.Y = std::min(Box.High.Y, 0.5 * std::numbers::pi);
+                }
+                return Box;
+            };
+            SurfaceIntersectionSettings Settings;
+            Settings.ChordTolerance = 1.0e-3 * Chord;
+            Settings.MaximumStep    = 0.125 * Chord;
+            const SurfaceIntersectionOutcome Section = IntersectSurfaces(First, Window(First), Second, Window(Second), Settings);
+            if (Section.CoincidentCondition) return -1;
+            for (const IntersectionBranch& Branch : Section.Branches)
+            {
+                if (Branch.Category != BranchCategory::Traced)
+                {
+                    if (DistanceToCurve(Branch.Curve, Start) > Agreement || DistanceToCurve(Branch.Curve, End) > Agreement) continue;
+                    if (std::holds_alternative<StraightLine>(Branch.Curve)) return IssueSegment(From, To);
+                    return IssueConicArc(Branch.Curve, From, To);
+                }
+                if (Branch.Chart.size() < 2 || Branch.StartTermination == BranchTermination::Limit || Branch.EndTermination == BranchTermination::Limit) continue;
+                std::vector<Vector3> Guide;
+                for (const IntersectionChartPoint& Point : Branch.Chart) Guide.push_back(Point.Position);
+                // 📝 Where the carriers are tangent (two fillets touching the shared face at M) the march stops just short of
+                //    the point with a singular termination. The endpoint is exact on both surfaces, so it closes the guide:
+                //    the normal-plane Newton at that knot starts on a solution, and acceptance below re-checks every sample.
+                if (!Branch.ClosedCondition)
+                {
+                    for (const Vector3& Endpoint : { Start, End })
+                    {
+                        const double Reach = 0.25 * Chord;                                   // [len] - How short a march may stop
+                        if (Branch.StartTermination == BranchTermination::Singular && Distance(Guide.front(), Endpoint) > Tolerance && Distance(Guide.front(), Endpoint) < Reach) Guide.insert(Guide.begin(), Endpoint);
+                        else if (Branch.EndTermination == BranchTermination::Singular && Distance(Guide.back(), Endpoint) > Tolerance && Distance(Guide.back(), Endpoint) < Reach) Guide.push_back(Endpoint);
+                    }
+                }
+                const CurveGeometry Carrier = BuildIntersectionCurve(First, Second, Guide, Branch.ClosedCondition);
+                if (Branch.ClosedCondition) { if (const int Arc = IssueConicArc(Carrier, From, To); Arc >= 0) return Arc; continue; }
+                const auto [Low, High] = MeasureIntersectionCurveRange(*std::get<IntersectionCurve>(Carrier).Trace);
+                const double Near = ProjectOntoCurve(Carrier, Start, Low);                   // [-] - τ at From
+                const double Far  = ProjectOntoCurve(Carrier, End, Low);                     // [-] - τ at To
+                if (Distance(EvaluateCurve(Carrier, Near).Position, Start) > Agreement || Distance(EvaluateCurve(Carrier, Far).Position, End) > Agreement) continue;
+                if (std::fabs(Far - Near) <= 1.0e-12) continue;
+                ++Outcome.Statistics.TracedSections;
+                return Near < Far ? IssueEdge(Carrier, Near, Far, From, To) : IssueEdge(Carrier, Far, Near, To, From);
+            }
+            return -1;
+        }
+
+        // Largest distance of an issued edge from a surface over Samples interior points (mitre / cap acceptance).
+        [[nodiscard]] double MeasureEdgeDeparture(int Edge, const SurfaceGeometry& Surface, int Samples) const
+        {
+            const BlueprintEdge& Block = Blueprint.Edges[Edge];
+            double Worst = 0.0;                                                              // [len] - Largest departure
+            for (int Sample = 1; Sample <= Samples; ++Sample)
+            {
+                const Vector3 Point = EvaluateCurve(Block.Curve, Block.Low + (Block.High - Block.Low) * Sample / (Samples + 1.0)).Position;
+                Worst = std::max(Worst, Distance(ProjectPointOntoSurface(Surface, Point), Point));
+            }
+            return Worst;
         }
 
         [[nodiscard]] Orientation LinkSense(const ChainLink& Link) const
@@ -327,8 +415,7 @@ namespace
                 if (Face != Sheet.Faces[0] && Face != Sheet.Faces[1]) Third = Face;
             }
             if (!Third.PresentCondition() || (FacesSecond.first != Third && FacesSecond.second != Third)) return "cap: no common third face";
-            const auto* Plane = std::get_if<PlaneSurface>(&SurfaceOf(Third));
-            if (!Plane) return "blend ends on a curved face (🚧 cap on non-planar faces)";
+            const auto*   Plane    = std::get_if<PlaneSurface>(&SurfaceOf(Third));
             const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
             int Feet[2] = { -1, -1 };
             for (int Side = 0; Side < 2; ++Side)
@@ -337,15 +424,18 @@ namespace
                 if (!Foot) return "cap: contact curve misses the third face";
                 Feet[Side] = IssueVertex(*Foot);
             }
+            // 📝 Cap = blend carrier ∩ third face between the feet. A cylinder on a plane is a closed-form conic; every
+            //    other pair (torus or cone blends, curved third faces) goes through the exact section primitive.
             int Cap = -1;
-            if (const auto* Cylinder = std::get_if<CylinderSurface>(&Sheet.Surface); Cylinder && Settings.Profile == BlendProfile::Fillet)
+            const auto* Cylinder = std::get_if<CylinderSurface>(&Sheet.Surface);
+            if (Cylinder && Plane)
             {
                 const std::optional<CurveGeometry> Conic = SectionCylinderByPlane(*Cylinder, Plane->Frame.Origin, Plane->Frame.ZAxis);
                 if (Conic) Cap = IssueConicArc(*Conic, Feet[0], Feet[1]);
             }
-            else if (std::holds_alternative<PlaneSurface>(Sheet.Surface)) Cap = IssueSegment(Feet[0], Feet[1]);
-            else return std::string("cap of a ") + SurfaceCategoryLabel(Sheet.Surface) + " blend (🚧)";
-            if (Cap < 0) return "cap curve is degenerate or misses its contacts";
+            else Cap = IssueSection(Sheet.Surface, SurfaceOf(Third), Feet[0], Feet[1]);
+            if (Cap < 0) return std::string("cap: no exact section of the ") + SurfaceCategoryLabel(Sheet.Surface) + " blend and the " + SurfaceCategoryLabel(SurfaceOf(Third)) + " face through both feet";
+            if (!Agree(MeasureEdgeDeparture(Cap, Sheet.Surface, 5)) || !Agree(MeasureEdgeDeparture(Cap, SurfaceOf(Third), 5))) return "cap curve leaves the blend or the third face";
             for (EdgeToken Sharp : { First, Second })
             {
                 const auto Faces = FacesOfEdge(Sharp);
@@ -353,6 +443,7 @@ namespace
                 const int Side = SideOn(Sheet, Support);
                 if (Side < 0) return "cap: sharp edge not on a support";
                 TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Feet[Side];
+                if (!Sheet.ConvexCondition) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });   // added material may run past the edge's end
             }
             ContactVertices[{ End.first.Slot, 0, End.second }] = Feet[0];
             ContactVertices[{ End.first.Slot, 1, End.second }] = Feet[1];
@@ -375,6 +466,11 @@ namespace
             const int OuterA  = 1 - SharedA, OuterB = 1 - SharedB;
             const FaceToken FaceA = SheetA.Faces[OuterA], FaceB = SheetB.Faces[OuterB];
             const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            {
+                const Vector3 NormalA = EvaluateSurfaceNormal(SurfaceOf(FaceA), ProjectOntoSurface(SurfaceOf(FaceA), Position, {}));
+                const Vector3 NormalB = EvaluateSurfaceNormal(SurfaceOf(FaceB), ProjectOntoSurface(SurfaceOf(FaceB), Position, {}));
+                if (Length(Cross(NormalA, NormalB)) < 1.0e-9) return ResolveSmoothJoint(Vertex, EndA, EndB, Sharp, SharedA, SharedB);
+            }
             const std::optional<Vector3> PointA = CrossCurveSurface(SheetA.Contacts[OuterA], Position, SurfaceOf(FaceB));
             const std::optional<Vector3> PointB = CrossCurveSurface(SheetB.Contacts[OuterB], Position, SurfaceOf(FaceA));
             if (!PointA || !PointB) return "mitre: outer contacts miss the far faces";
@@ -389,24 +485,46 @@ namespace
                 const Vector3 FootB = EvaluateCurve(SheetB.Contacts[SharedB], ProjectOntoCurve(SheetB.Spine, *Ball, 0.0)).Position;
                 if (!Agree(Distance(FootA, FootB))) return "mitre: blends touch the shared face apart";
                 Inner = IssueVertex((FootA + FootB) * 0.5);
-                const auto* CylinderA = std::get_if<CylinderSurface>(&SheetA.Surface);
-                if (!CylinderA || !std::holds_alternative<CylinderSurface>(SheetB.Surface)) return "mitre between non-cylindrical fillets (🚧)";
+                // 📝 Both fillets touch the shared face at M, so they are tangent there and A ∩ B is singular at that end.
+                //    Mirror-image blends (equal radii, symmetric supports — patterned cuts) meet on the plane through the
+                //    corner ball O, M and P, which cuts A transversally: try that section first (two cylinders give the
+                //    closed-form ellipse), then the general A ∩ B; the acceptance test below decides which one is true.
                 const Vector3 Normal = Cross(PositionOf(Inner) - *Ball, PositionOf(Outer) - *Ball);
-                const std::optional<CurveGeometry> Conic = SectionCylinderByPlane(*CylinderA, *Ball, Normal);
-                if (Conic) Mitre = IssueConicArc(*Conic, Inner, Outer);
+                const auto*   CylinderA = std::get_if<CylinderSurface>(&SheetA.Surface);
+                if (CylinderA && std::holds_alternative<CylinderSurface>(SheetB.Surface))
+                {
+                    if (const std::optional<CurveGeometry> Conic = SectionCylinderByPlane(*CylinderA, *Ball, Normal)) Mitre = IssueConicArc(*Conic, Inner, Outer);
+                }
+                else if (Length(Normal) > Tolerance * Tolerance)
+                {
+                    const PlaneSurface Bisector{ ConstructFrame(*Ball, Normal, PositionOf(Inner) - *Ball) };
+                    Mitre = IssueSection(SheetA.Surface, Bisector, Inner, Outer);
+                    if (Mitre >= 0 && MeasureEdgeDeparture(Mitre, SheetB.Surface, 5) > Agreement) Mitre = -1;
+                }
+                if (Mitre < 0 && !(CylinderA && std::holds_alternative<CylinderSurface>(SheetB.Surface))) Mitre = IssueSection(SheetA.Surface, SheetB.Surface, Inner, Outer);
+                if (Mitre < 0) return std::string("mitre: no exact section of the ") + SurfaceCategoryLabel(SheetA.Surface) + " and " + SurfaceCategoryLabel(SheetB.Surface)
+                                    + " fillets from the shared face to the sharp edge (asymmetric fillets are tangent at the shared face, 🚧)";
             }
             else
             {
-                const std::optional<Vector3> Meet = MeetLines(SheetA.Contacts[SharedA], SheetB.Contacts[SharedB]);
+                // 📝 M = contact A on the shared face ∩ chamfer B (lines meet in closed form; circles and other contacts through
+                //    the curve–surface solver, confirmed on contact B). Chamfers cut the shared face at an angle, so A ∩ B is
+                //    transversal at M and the exact section primitive applies to every carrier pair.
+                std::optional<Vector3> Meet = MeetLines(SheetA.Contacts[SharedA], SheetB.Contacts[SharedB]);
+                if (!Meet)
+                {
+                    Meet = CrossCurveSurface(SheetA.Contacts[SharedA], Position, SheetB.Surface);
+                    if (Meet && !Agree(DistanceToCurve(SheetB.Contacts[SharedB], *Meet))) Meet.reset();
+                }
                 if (!Meet) return "mitre: chamfer contacts on the shared face do not meet";
                 Inner = IssueVertex(*Meet);
-                if (std::holds_alternative<PlaneSurface>(SheetA.Surface) && std::holds_alternative<PlaneSurface>(SheetB.Surface)) Mitre = IssueSegment(Inner, Outer);
+                Mitre = IssueSection(SheetA.Surface, SheetB.Surface, Inner, Outer);
+                if (Mitre < 0) return std::string("mitre: no exact section of the ") + SurfaceCategoryLabel(SheetA.Surface) + " and " + SurfaceCategoryLabel(SheetB.Surface) + " chamfers";
             }
             if (Mitre < 0) return "mitre curve is degenerate";
-            const BlueprintEdge& Curve = Blueprint.Edges[Mitre];
-            const Vector3 Middle = EvaluateCurve(Curve.Curve, 0.5 * (Curve.Low + Curve.High)).Position;
-            if (!Agree(Distance(ProjectPointOntoSurface(SheetB.Surface, Middle), Middle))) return "mitre curve leaves the second blend";
+            if (!Agree(MeasureEdgeDeparture(Mitre, SheetA.Surface, 5)) || !Agree(MeasureEdgeDeparture(Mitre, SheetB.Surface, 5))) return "mitre curve leaves a blend";
             TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Outer;
+            if (!SheetA.ConvexCondition) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });
             for (const auto& [End, SharedSide] : { std::pair{ EndA, SharedA }, std::pair{ EndB, SharedB } })
             {
                 ContactVertices[{ End.first.Slot, SharedSide, End.second }]     = Inner;
@@ -415,6 +533,53 @@ namespace
                 Terminations[{ End.first.Slot, End.second }] = { { Mitre, From, From == Inner ? Outer : Inner } };
             }
             ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Mitre)];
+            return {};
+        }
+
+        // 📝 Tangent-continuous chain (line ↔ arc across a smooth sharp edge, e.g. a slot rim or a rounded-rectangle loop):
+        //    the two blends share their cross-section at the vertex, so the joint is that section — circle (fillet) or chord
+        //    (chamfer). Every point comes from a transversal operation: the ball is spine A ∩ the edge's normal plane at
+        //    the vertex, the feet are the contacts at that τ. (The mitre construction would use contact ∩ far face and
+        //    spine ∩ offset, which are tangent here and only √ε accurate — 1e-8 gaps that break the SP-curves.)
+        [[nodiscard]] std::string ResolveSmoothJoint(VertexToken Vertex, std::pair<EdgeToken, int> EndA, std::pair<EdgeToken, int> EndB, EdgeToken Sharp, int SharedA, int SharedB)
+        {
+            const EdgeBlendSheet& SheetA = *SheetOf(EndA.first);
+            const EdgeBlendSheet& SheetB = *SheetOf(EndB.first);
+            const int OuterA = 1 - SharedA, OuterB = 1 - SharedB;
+            const Vector3        Position = Partition.Vertices.Resolve(Vertex).Position;
+            const EdgeProfile&   Profile  = Partition.Edges.Resolve(EndA.first);
+            const CurveGeometry& Carrier  = Partition.Curves.Resolve(Profile.Curve);
+            const Vector3 Tangent = Normalize(EvaluateCurve(Carrier, ProjectOntoCurve(Carrier, Position, Profile.IntervalLow)).Derivative);
+            const Vector3 Pick    = std::fabs(Tangent.X) < 0.6 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 1.0, 0.0 };
+            const PlaneSurface Section{ ConstructFrame(Position, Tangent, Normalize(Cross(Tangent, Pick))) };
+            const std::optional<Vector3> Ball = CrossCurveSurface(SheetA.Spine, Position, Section);
+            if (!Ball || !Agree(DistanceToCurve(SheetB.Spine, *Ball))) return "smooth joint: spines do not share the section ball";
+            const double  SpineA = ProjectOntoCurve(SheetA.Spine, *Ball, 0.0);               // [-] - Section τ on A
+            const double  SpineB = ProjectOntoCurve(SheetB.Spine, *Ball, 0.0);               // [-] - Section τ on B
+            const Vector3 InnerA = EvaluateCurve(SheetA.Contacts[SharedA], SpineA).Position, InnerB = EvaluateCurve(SheetB.Contacts[SharedB], SpineB).Position;
+            const Vector3 OuterPointA = EvaluateCurve(SheetA.Contacts[OuterA], SpineA).Position, OuterPointB = EvaluateCurve(SheetB.Contacts[OuterB], SpineB).Position;
+            if (!Agree(Distance(InnerA, InnerB)) || !Agree(Distance(OuterPointA, OuterPointB))) return "smooth joint: the blends' sections disagree (unequal sizes, setback 🚧)";
+            const int Inner = IssueVertex((InnerA + InnerB) * 0.5);
+            const int Outer = IssueVertex((OuterPointA + OuterPointB) * 0.5);
+            if (!Agree(DistanceToCurve(Partition.Curves.Resolve(Partition.Edges.Resolve(Sharp).Curve), PositionOf(Outer)))) return "smooth joint: section misses the smooth edge";
+            int Joint = -1;
+            if (Settings.Profile == BlendProfile::Fillet)
+            {
+                const Vector3 Out = PositionOf(Inner) - *Ball;                               // [len] - To the shared-face foot
+                Joint = IssueConicArc(CircularArc{ ConstructFrame(*Ball, Cross(Out, PositionOf(Outer) - *Ball), Out), SheetA.Radius }, Inner, Outer);
+            }
+            else Joint = IssueSegment(Inner, Outer);
+            if (Joint < 0) return "smooth joint: degenerate section";
+            TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Outer;
+            if (!SheetA.ConvexCondition) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });
+            for (const auto& [End, SharedSide] : { std::pair{ EndA, SharedA }, std::pair{ EndB, SharedB } })
+            {
+                ContactVertices[{ End.first.Slot, SharedSide, End.second }]     = Inner;
+                ContactVertices[{ End.first.Slot, 1 - SharedSide, End.second }] = Outer;
+                const int From = SharedSide == 0 ? Inner : Outer;
+                Terminations[{ End.first.Slot, End.second }] = { { Joint, From, From == Inner ? Outer : Inner } };
+            }
+            ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Continuation)];
             return {};
         }
 
@@ -577,12 +742,27 @@ namespace
                 const int  To         = EndFound != TrimVertices.end() ? EndFound->second : MapOriginalVertex(Profile.End);
                 if (!Trimmed) { Pieces[Edge.Slot] = IssueEdge(Curve, Profile.IntervalLow, Profile.IntervalHigh, From, To); continue; }
                 if (Closed) return "edge " + LabelToken("E", Edge) + ": closed sharp edge at a blended vertex";
+                // 📝 A convex blend only shortens a sharp edge. A concave blend adds material flush with the third face, so its
+                //    end may lie past the old vertex: the edge is lengthened along its own carrier (the third face grows by the
+                //    cap region); the self-clash gate after assembly rejects an extension that runs into the body.
                 const double Span = Profile.IntervalHigh - Profile.IntervalLow;              // [-] - Original τ span
-                const double Low  = StartFound != TrimVertices.end() ? ProjectOntoCurve(Curve, PositionOf(From), Profile.IntervalLow - 0.25 * Span) : Profile.IntervalLow;
+                // Fold periodic carriers at the middle of the gap the edge does not cover, so a short arc extended at its
+                // start is not wrapped a full turn.
+                const double Fold = PeriodicCondition(Curve) ? Profile.IntervalLow - 0.5 * (2.0 * std::numbers::pi - Span) : Profile.IntervalLow - 0.25 * Span;
+                const double Low  = StartFound != TrimVertices.end() ? ProjectOntoCurve(Curve, PositionOf(From), Fold) : Profile.IntervalLow;
                 const double High = EndFound != TrimVertices.end() ? ProjectOntoCurve(Curve, PositionOf(To), Low) : Profile.IntervalHigh;
-                if (!(High - Low > Tolerance) || High > Profile.IntervalHigh + Agreement || Low < Profile.IntervalLow - Agreement)
+                const bool   LowExtended  = Extensions.count({ Edge.Slot, 0 }) != 0;
+                const bool   HighExtended = Extensions.count({ Edge.Slot, 1 }) != 0;
+                if (!(High - Low > Tolerance) || (High > Profile.IntervalHigh + Agreement && !HighExtended) || (Low < Profile.IntervalLow - Agreement && !LowExtended))
                 {
-                    return "edge " + LabelToken("E", Edge) + ": consumed by the blend (blend wider than the edge)";
+                    const double Overshoot = std::max({ Profile.IntervalLow - Low, High - Profile.IntervalHigh, Low - High }) * MeasureParameterScale(Curve);
+                    char Detail[96];
+                    std::snprintf(Detail, sizeof Detail, " (%s, overshoot %.3g)", CurveCategoryLabel(Curve), Overshoot);
+                    return "edge " + LabelToken("E", Edge) + ": consumed by the blend (blend wider than the edge)" + Detail;
+                }
+                if (Distance(EvaluateCurve(Curve, Low).Position, PositionOf(From)) > Agreement || Distance(EvaluateCurve(Curve, High).Position, PositionOf(To)) > Agreement)
+                {
+                    return "edge " + LabelToken("E", Edge) + ": blend end is off the sharp edge's carrier";
                 }
                 Pieces[Edge.Slot] = IssueEdge(Curve, Low, High, From, To);
             }

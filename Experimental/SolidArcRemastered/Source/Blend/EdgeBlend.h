@@ -59,6 +59,7 @@ struct BlendStatistics
     int    CarrierTori       = 0;                                                            // [-]
     int    CornerSpheres     = 0;                                                            // [-]   - Ball-corner patches
     int    EllipticalEdges   = 0;                                                            // [-]   - Mitres / caps that are ellipses
+    int    TracedSections    = 0;                                                            // [-]   - Mitres / caps on exact intersection curves
     double MaxSheetResidual  = 0.0;                                                          // [len] - Worst rolling-ball residual
     double MaxVertexResidual = 0.0;                                                          // [len] - Worst corner / mitre agreement
     double Milliseconds      = 0.0;                                                          // [ms]  - Wall time

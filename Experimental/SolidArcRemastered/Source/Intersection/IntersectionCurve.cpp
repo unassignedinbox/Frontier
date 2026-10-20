@@ -45,9 +45,13 @@ namespace
             const SurfaceDistance OnSecond = MeasureSurfaceDistance(Second, Position);
             const Vector3& A = OnFirst.Normal;
             const Vector3& B = OnSecond.Normal;
+            const double  PlaneResidual = Dot(PlaneNormal, Position - PlanePoint);            // [len²] - Off the plane
+            // 💡 Residual test before the step: where the surfaces are tangent (N₁ ∥ N₂, e.g. two fillets meeting on a
+            //    face) the system is near-singular and one more step turns 1e-16 of rounding into a 1e-8 sideways drift
+            //    that d₁ and d₂ only feel quadratically. A converged point is kept as it is.
+            if (std::fabs(OnFirst.Distance) <= Tolerance && std::fabs(OnSecond.Distance) <= Tolerance && std::fabs(PlaneResidual) <= Tolerance * Length(PlaneNormal)) break;
             const double Determinant = Dot(A, Cross(B, PlaneNormal));                        // [len] - a·(b×c)
             if (std::fabs(Determinant) <= 1.0e-14 * Length(PlaneNormal)) return false;
-            const double  PlaneResidual = Dot(PlaneNormal, Position - PlanePoint);            // [len²] - Off the plane
             const Vector3 Step = (Cross(B, PlaneNormal) * OnFirst.Distance + Cross(PlaneNormal, A) * OnSecond.Distance + Cross(A, B) * PlaneResidual) * (1.0 / Determinant);
             Position = Position - Step;
             if (Length(Step) <= 4.0e-16 * (1.0 + Length(Position))) break;
