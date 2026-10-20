@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frontier — Recovered Editors</title>
+<style>
+  :root { color-scheme: dark; --bg:#121212; --panel:#1b1b1b; --card:#222; --line:#ffffff14; --txt:#d6d6d6; --dim:#8a8a8a; --faint:#5f5f5f; --accent:#9fb8a8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font: 14px/1.6 "DM Sans", "General Sans", Arial, sans-serif; }
+  header { padding: 34px 28px 8px; max-width: 1060px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 500; margin: 6px 0 4px; }
+  h2 { font-size: 15px; font-weight: 500; margin: 28px 0 10px; color:#e4e4e4; }
+  p { color: var(--dim); max-width: 820px; }
+  code { background:#000; border:1px solid var(--line); border-radius:4px; padding: 1px 5px; font-size: 12px; color:#cfcfcf; }
+  .kicker { font-size: 10px; letter-spacing: 1.6px; color: var(--accent); }
+  main { max-width: 1060px; margin: 0 auto; padding: 10px 28px 48px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  a.card { display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 16px 14px; }
+  a.card:hover { background:#282828; border-color:#ffffff26; }
+  .card b { font-size:15px; font-weight:600; display:block; }
+  .card .tag { font-size:9px; letter-spacing:1.3px; color:var(--accent); display:block; margin-bottom:6px; }
+  .card span.d { color:var(--dim); font-size:12.5px; display:block; margin-top:5px; }
+  .card .path { color:var(--faint); font-size:11px; display:block; margin-top:9px; word-break:break-all; }
+  .hero { border-color:#9fb8a855; background:#1e2420; }
+  ol, ul { color:var(--dim); padding-left: 20px; max-width: 820px; }
+  li { margin: 4px 0; }
+  li b { color: var(--txt); font-weight: 600; }
+  .note { border-left:2px solid #7c806b; padding: 2px 0 2px 12px; color:var(--dim); max-width:820px; }
+  footer { color:var(--faint); font-size:12px; max-width:1060px; margin:0 auto; padding:0 28px 36px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <span class="kicker">FRONTIER · RECOVERED FROM COMMIT HISTORY</span>
+  <h1>◈ Recovered Editors</h1>
+  <p>The editor UI with <b>fracture / fluid (smoke-gas) / wind / particle</b> editors is
+     <b>Project-Zero</b>. It was never on any <code>main</code> / <code>master</code> branch — it lived on
+     <code>arena/*</code> branches of <code>SultanAladin/Frontier-</code> (origin: <code>unassignedinbox/Slate</code>).
+     Everything found is copied into this repo under <code>editors/</code> and served below.
+     Full provenance: <a href="FOUND.md">FOUND.md</a>.</p>
+</header>
+<main>
+
+  <h2>★ The one you described — all four editors in a single UI</h2>
+  <div class="grid">
+    <a class="card hero" href="editors/ProjectZeroEditor/index.html">
+      <span class="tag">MAIN FIND · PREBUILT · NO BUILD NEEDED</span>
+      <b>Project-Zero — Editor ↗</b>
+      <span class="d">One editor UI containing the <b>Fracture</b> card, <b>Gas/Fluid (smoke)</b> editor,
+        <b>Wind</b> editor and <b>Particle</b> editor. UI-only by design (“no engine connection”) —
+        its viewport is a checker preview, which is why fracture looks like it has no render here.</span>
+      <span class="path">editors/ProjectZeroEditor/index.html</span>
+    </a>
+  </div>
+
+  <h2>How to actually see each editor inside Project-Zero</h2>
+  <ol>
+    <li><b>Fracture:</b> in the outliner select a geometry object (<b>Cube / Sphere / Cylinder / Cone</b>) →
+        inspector → <b>Fracture</b> card → switch on <b>Enable fracture</b> → click the <b>↗</b> button
+        (top-right of the card; it stays disabled until fracture is enabled). That opens the standalone
+        Fracture Editor, which <i>does</i> have the three.js render.</li>
+    <li><b>Fluid / smoke-gas:</b> select <b>Gas Domain</b> → <b>Open FluidEditor</b> (drawer loads the built Fluid app).</li>
+    <li><b>Particle:</b> select <b>Flame Source</b> (the emitter child of Gas Domain) → <b>Open ParticleEditor</b>.</li>
+    <li><b>Wind:</b> select <b>World → Wind</b> → Wind inspector.</li>
+  </ol>
+  <p class="note">That hidden-until-enabled ↗ is most likely why you “don’t see it”: the Fracture card only shows a
+     diagram glyph — the render lives on the separate Fracture page it opens.</p>
+
+  <h2>The standalone expanded editors (also opened by Project-Zero)</h2>
+  <div class="grid">
+    <a class="card" href="editors/FractureEditor/index.html">
+      <span class="tag">STANDALONE · PREBUILT · THREE.JS RENDER</span>
+      <b>Fracture Editor ↗</b>
+      <span class="d">Full fracture authoring page with WebGL viewport (orbit, specimen geometry,
+        materials, precompute dynamic/baked, export). Opened by Project-Zero as
+        <code>FractureEditor/index.html?object=…</code>.</span>
+      <span class="path">editors/FractureEditor/index.html</span>
+    </a>
+    <a class="card" href="editors/Fluid/dist/index.html">
+      <span class="tag">STANDALONE · BUILT HERE (VITE) · WEBGL2/WEBGPU</span>
+      <b>Fluid Editor — gas / smoke ↗</b>
+      <span class="d">Gas-only fluid editor (fire &amp; smoke solver, presets, flipbook export).
+        Project-Zero’s gas card hosts exactly this build at <code>Fluid/dist/index.html</code>.</span>
+      <span class="path">editors/Fluid/dist/index.html</span>
+    </a>
+    <a class="card" href="editors/ParticleEditor/index.html">
+      <span class="tag">STANDALONE · NO BUILD STEP</span>
+      <b>Particle Editor ↗</b>
+      <span class="d">Emitter/particle authoring: fibres, force fields, lightning, dozens of presets
+        (rain, snow, fireworks, flares, black hole…). Project-Zero hosts this page for emitters.</span>
+      <span class="path">editors/ParticleEditor/index.html</span>
+    </a>
+  </div>
+
+  <h2>Also found in the other repos — now served too</h2>
+  <div class="grid">
+    <a class="card" href="editors/FrontierEditor/dist/index.html">
+      <span class="tag">FRONTIER- · BUILT HERE (VITE + REACT)</span>
+      <b>Frontier Editor (older browser editor) ↗</b>
+      <span class="d">The earlier scene-inspector editor (the one on <code>Frontier-</code> main).
+        Has wind/weather &amp; fluid graphics cards, but <b>no fracture</b> — that only exists in Project-Zero.</span>
+      <span class="path">editors/FrontierEditor/dist/index.html</span>
+    </a>
+    <a class="card" href="editors/FluxParticleStudio/dist/index.html">
+      <span class="tag">unassignedinbox/Slate · PREBUILT DIST</span>
+      <b>Flux · Particle Studio ↗</b>
+      <span class="d">Separate AE-style GPU particle editor (“Flux”) found in Slate’s history. Distinct from the Particle Editor above.</span>
+      <span class="path">editors/FluxParticleStudio/dist/index.html</span>
+    </a>
+    <a class="card" href="editors/FluidNodeEditor/FluidNodeEditor.html">
+      <span class="tag">SultanAladin/Frontier · NEEDS INTERNET (CDN three.js)</span>
+      <b>Fluid Node Editor ↗</b>
+      <span class="d">Node-graph fluid prototype. Note: <code>master</code> only had the HTML shell — the missing JS
+        was recovered from the <code>smrt-soft-shadows</code> branch. Loads three.js from unpkg at runtime.</span>
+      <span class="path">editors/FluidNodeEditor/FluidNodeEditor.html</span>
+    </a>
+    <a class="card" href="editors/WebFluidLab/dist/index.html">
+      <span class="tag">unassignedinbox/Slate · BUILT HERE (TSC + VITE)</span>
+      <b>Realtime Fluid Lab ↗</b>
+      <span class="d">WebGPU/WebGL2 SPH liquid lab (water/mud/honey…), an earlier standalone fluid experiment from Slate.</span>
+      <span class="path">editors/WebFluidLab/dist/index.html</span>
+    </a>
+  </div>
+
+  <h2>Not browser-runnable (found, but native)</h2>
+  <p>The same panels were also ported to native C++ in <code>Frontier-</code>
+     (<code>Engine/Editor/FractureEditorSurface.h</code>, <code>FluidEditorSurface.h</code>, <code>WindEditorSurface.h</code>,
+     <code>GasCardSurface.h</code> + <code>Exhibits/Workbench/{FractureEditor,FluidEditor,WindEditor,GasFluid}/</code>).
+     Those need the Vulkan/Win32 native build, so they can’t run on this web server — see <a href="FOUND.md">FOUND.md</a>.
+     Screenshot evidence from the browser fracture editor is in <code>editors/FractureEditor/Captures/</code>.</p>
+</main>
+<footer>
+  Served from this repo’s root — sibling layout is load-bearing:
+  Project-Zero opens <code>../FractureEditor/index.html</code>, <code>../Fluid/dist/index.html</code> and
+  <code>../ParticleEditor/index.html</code>. Don’t move one folder without the others.
+  Rebuild/serve instructions: <a href="FOUND.md">FOUND.md</a>.
+</footer>
+</body>
+</html>
