@@ -1,0 +1,191 @@
+/*====================================================================================================================================
+                                                 CURVESURFACEINTERSECTION.CPP
+====================================================================================================================================*/
+// 🧩 Bézier clipping candidates, signed-distance Newton polishing, tolerant tangency merge
+
+#include "Intersection/CurveSurfaceIntersection.h"
+#include "Intersection/ImplicitSurface.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace Frontier::SolidArcRemastered
+{
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INTERNAL FUNCTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+namespace
+{
+    constexpr int    NewtonLimit        = 40;                                                // [-] - Polishing iterations
+    constexpr double TangentSine        = 1.0e-7;                                            // [-] - |N·Ĉ′| below this is a touch
+    constexpr double CoincidentFraction = 1.0e-13;                                           // [-] - Coefficients ≤ this × L^d vanish
+
+    struct DistanceProbe
+    {
+        double Distance = 0.0;                                                               // [len] - d(τ)
+        double Slope    = 0.0;                                                               // [len] - d′(τ) = N·C′(τ)
+        double Speed    = 0.0;                                                               // [len] - |C′(τ)|
+    };
+
+    [[nodiscard]] DistanceProbe ProbeDistance(const CurveGeometry& Curve, const SurfaceGeometry& Surface, double τ)
+    {
+        const CurveSample     Sample  = EvaluateCurve(Curve, τ);
+        const SurfaceDistance Measure = MeasureSurfaceDistance(Surface, Sample.Position);
+        return { Measure.Distance, Dot(Measure.Normal, Sample.Derivative), Length(Sample.Derivative) };
+    }
+
+    // Newton on d(τ) = 0 — quadratic at transversal roots. Moves are confined to [Low, High].
+    [[nodiscard]] double PolishTransversal(const CurveGeometry& Curve, const SurfaceGeometry& Surface, double τ, double Low, double High)
+    {
+        for (int Iteration = 0; Iteration < NewtonLimit; ++Iteration)
+        {
+            const DistanceProbe Probe = ProbeDistance(Curve, Surface, τ);
+            if (std::fabs(Probe.Slope) <= 1.0e-14 * Probe.Speed) break;
+            const double Step = Probe.Distance / Probe.Slope;                                // [-] - Newton correction
+            τ = std::clamp(τ - Step, Low, High);
+            if (std::fabs(Step) <= 1.0e-16 * (1.0 + std::fabs(τ))) break;
+        }
+        return τ;
+    }
+
+    // Newton on d′(τ) = 0 (central-difference d″): the extremum of the distance, where a touch lives.
+    [[nodiscard]] double PolishExtremum(const CurveGeometry& Curve, const SurfaceGeometry& Surface, double τ, double Low, double High)
+    {
+        const double Increment = 1.0e-6 * std::max(1.0, High - Low);                         // [-] - Difference step
+        for (int Iteration = 0; Iteration < NewtonLimit; ++Iteration)
+        {
+            const double Slope     = ProbeDistance(Curve, Surface, τ).Slope;
+            const double Curvature = (ProbeDistance(Curve, Surface, τ + Increment).Slope - ProbeDistance(Curve, Surface, τ - Increment).Slope) / (2.0 * Increment);
+            if (std::fabs(Curvature) <= 1.0e-300) break;
+            const double Step = Slope / Curvature;                                           // [-] - Newton correction
+            τ = std::clamp(τ - Step, Low, High);
+            if (std::fabs(Step) <= 1.0e-15 * (1.0 + std::fabs(τ))) break;
+        }
+        return τ;
+    }
+
+    // Curve parameter of a point produced by a rational segment (arcs fold into the segment's own interval).
+    [[nodiscard]] double SegmentParameter(const CurveGeometry& Curve, const RationalSegment& Segment, double 𝑡)
+    {
+        if (std::holds_alternative<StraightLine>(Curve)) return Segment.CurveLow + 𝑡 * (Segment.CurveHigh - Segment.CurveLow);
+        return ProjectOntoCurve(Curve, EvaluateRationalSegment(Segment, 𝑡), Segment.CurveLow - 1.0e-9);
+    }
+
+    struct Candidate
+    {
+        double τ             = 0.0;                                                          // [-] - Curve parameter
+        bool   TouchCondition = false;                                                       // [-] - From a root of F′
+    };
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    PUBLIC FUNCTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low, double High, const SurfaceGeometry& Surface, const CurveSurfaceSettings& Settings)
+{
+    CurveSurfaceOutcome    Outcome;
+    std::vector<Candidate> Candidates;
+    for (const RationalSegment& Segment : ConvertToRationalSegments(Curve, Low, High))
+    {
+        // ---- ① Composed implicit equation; an identically vanishing one means the segment lies in the surface.
+        const BernsteinPolynomial Equation  = ComposeImplicitEquation(Surface, Segment);
+        const double              Magnitude = ImplicitMagnitude(Surface, Segment);           // [len^d] - L^d
+        double Largest = 0.0;                                                                // [len^d] - max |cᵢ|
+        for (double Coefficient : Equation.Coefficients) Largest = std::max(Largest, std::fabs(Coefficient));
+        if (Largest <= CoincidentFraction * Magnitude)
+        {
+            if (!Outcome.Coincidences.empty() && std::fabs(Outcome.Coincidences.back().High - Segment.CurveLow) <= 1.0e-12) Outcome.Coincidences.back().High = Segment.CurveHigh;
+            else Outcome.Coincidences.push_back({ Segment.CurveLow, Segment.CurveHigh });
+            continue;
+        }
+
+        // ---- ② Sign changes of F by Bézier clipping; extrema of F (roots of F′) as touch candidates.
+        const RootIsolation Crossings = IsolateBernsteinRoots(Equation, Settings.ParameterTolerance);
+        // ⚠️ A constant F (line parallel to a cylinder axis, circle coaxial with a surface of revolution) has a derivative
+        //    made of rounding noise; clipping it would chase noise, so its extremum search is skipped.
+        const BernsteinPolynomial Slope = DifferentiateBernstein(Equation);
+        double SlopeLargest = 0.0;                                                           // [len^d] - max |c′ᵢ|
+        for (double Coefficient : Slope.Coefficients) SlopeLargest = std::max(SlopeLargest, std::fabs(Coefficient));
+        const RootIsolation Extrema   = SlopeLargest <= CoincidentFraction * Magnitude ? RootIsolation{} : IsolateBernsteinRoots(Slope, Settings.ParameterTolerance);
+        Outcome.ClipSteps    += Crossings.ClipSteps + Extrema.ClipSteps;
+        Outcome.Subdivisions += Crossings.Subdivisions + Extrema.Subdivisions;
+        for (double Root : Crossings.Roots) Candidates.push_back({ SegmentParameter(Curve, Segment, Root), false });
+        for (double Root : Extrema.Roots)   Candidates.push_back({ SegmentParameter(Curve, Segment, Root), true });
+        // 📝 Segment end points are touch candidates too: a touch exactly at a joint has F′ ≠ 0 on either side.
+        Candidates.push_back({ Segment.CurveLow, true });
+        Candidates.push_back({ Segment.CurveHigh, true });
+    }
+    Outcome.Candidates = static_cast<int>(Candidates.size());
+
+    // ---- ③ Polish on the exact signed distance and accept within precision.
+    std::vector<CurveSurfaceCrossing> Transversals;
+    std::vector<CurveSurfaceCrossing> Touches;
+    const auto Accept = [&](double τ, bool TouchCondition)
+    {
+        const CurveSample     Sample  = EvaluateCurve(Curve, τ);
+        const SurfaceDistance Measure = MeasureSurfaceDistance(Surface, Sample.Position);
+        if (std::fabs(Measure.Distance) > Settings.Precision) return;
+        for (const CoincidentInterval& Interval : Outcome.Coincidences) if (τ >= Interval.Low - 1.0e-12 && τ <= Interval.High + 1.0e-12) return;
+        const double Sine = std::fabs(Dot(Measure.Normal, Sample.Derivative)) / std::max(Length(Sample.Derivative), 1.0e-300);
+        CurveSurfaceCrossing Crossing{ τ, ProjectOntoSurface(Surface, Measure.Foot, { 0.0, 0.0 }), Sample.Position,
+                                       TouchCondition || Sine <= TangentSine ? CrossingCategory::Tangent : CrossingCategory::Transversal, std::fabs(Measure.Distance) };
+        (Crossing.Category == CrossingCategory::Tangent ? Touches : Transversals).push_back(Crossing);
+    };
+    for (const Candidate& Entry : Candidates)
+    {
+        if (Entry.TouchCondition) Accept(PolishExtremum(Curve, Surface, Entry.τ, Low, High), true);
+        else                      Accept(PolishTransversal(Curve, Surface, Entry.τ, Low, High), false);
+    }
+
+    // ---- ④ Merge: duplicates collapse; crossings joined to a touch by a stretch within precision become that touch.
+    const auto ByParameter = [](const CurveSurfaceCrossing& First, const CurveSurfaceCrossing& Second) { return First.CurveParameter < Second.CurveParameter; };
+    std::sort(Transversals.begin(), Transversals.end(), ByParameter);
+    std::sort(Touches.begin(), Touches.end(), ByParameter);
+    const auto StretchWithinPrecision = [&](double From, double To)
+    {
+        for (int Sample = 1; Sample < 8; ++Sample)
+        {
+            if (std::fabs(ProbeDistance(Curve, Surface, From + (To - From) * Sample / 8.0).Distance) > Settings.Precision) return false;
+        }
+        return true;
+    };
+    std::vector<CurveSurfaceCrossing> Merged;
+    for (const CurveSurfaceCrossing& Touch : Touches)
+    {
+        if (!Merged.empty() && (Distance(Merged.back().Position, Touch.Position) <= 2.0 * Settings.Precision || StretchWithinPrecision(Merged.back().CurveParameter, Touch.CurveParameter)))
+        {
+            if (Touch.Residual < Merged.back().Residual) Merged.back() = Touch;
+            continue;
+        }
+        Merged.push_back(Touch);
+    }
+    // 📝 A genuine touch has an extremum of |d| below precision; reject "touches" that sit on a transversal crossing
+    //    (the extremum of F′ near a steep crossing polishes onto the crossing itself) — keep the transversal.
+    std::vector<CurveSurfaceCrossing> Accepted;
+    for (const CurveSurfaceCrossing& Crossing : Transversals)
+    {
+        if (!Accepted.empty() && Distance(Accepted.back().Position, Crossing.Position) <= 2.0 * Settings.Precision) continue;
+        Accepted.push_back(Crossing);
+    }
+    for (const CurveSurfaceCrossing& Touch : Merged)
+    {
+        const double Slope = std::fabs(ProbeDistance(Curve, Surface, Touch.CurveParameter).Slope) / std::max(ProbeDistance(Curve, Surface, Touch.CurveParameter).Speed, 1.0e-300);
+        bool Absorbed = false;                                                               // [-] - Touch joins nearby crossings
+        for (auto Crossing = Accepted.begin(); Crossing != Accepted.end();)
+        {
+            const bool Near = Distance(Crossing->Position, Touch.Position) <= 2.0 * Settings.Precision;
+            if (Near && Slope > TangentSine) { Absorbed = true; ++Crossing; continue; }      // Steep: it IS the crossing
+            if (Near || StretchWithinPrecision(Crossing->CurveParameter, Touch.CurveParameter)) { Crossing = Accepted.erase(Crossing); continue; }
+            ++Crossing;
+        }
+        if (!Absorbed) Accepted.push_back(Touch);
+    }
+    std::sort(Accepted.begin(), Accepted.end(), ByParameter);
+    Outcome.Crossings = std::move(Accepted);
+    return Outcome;
+}
+
+} // namespace Frontier::SolidArcRemastered

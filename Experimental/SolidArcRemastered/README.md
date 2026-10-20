@@ -1,0 +1,125 @@
+# 🧩 SolidArcRemastered
+
+**TL;DR**: This is a from-scratch, Parasolid-style B-rep modeller.
+- Step 1 covers precision, topology, Euler edits and analytic geometry.
+- Step 2 covers Bézier-clipping root solving, curve–surface intersection and hybrid surface–surface intersection.
+- Step 3 adds generalized-winding-number containment and General Fuse Booleans (OCCT-style PaveFiller + Builder, all four operations from one fuse).
+- Step 4 adds watertight shared-edge tessellation: one sampling per edge, used by every face that touches it, and a constrained Delaunay triangulation per face in its parameter chart.
+
+A C++ library is inspected through a Python host and a single-page HTML viewer that rebuilds whenever a source file changes.
+
+## Status: steps 1–4 of the build order
+
+| Area | Content | Gate |
+|---|---|---|
+| A. Precision | Session/angular precision, local (tolerant) precision per edge and vertex, Shewchuk adaptive `Orient2D` / `Orient3D` | 🟢 PredicateValidation: 0 wrong out of 800 000 |
+| B. Topology | Body → Region → SolidShell → Face → Loop → Fin → Edge → Vertex, generation-checked tokens | 🟢 T1–T5 audit after every edit |
+| C. Euler edits | MVFS/KVFS, MEV/KEV, MEF/KEF, MEKR/KEMR, KFMRH/MFKRH, ReverseShellOrientation, TransferShell, DetachShell | 🟢 9 specimens torn down to an empty partition |
+| D. Geometry | Line, circle; plane, cylinder, cone, sphere, torus; SP-curves (line, ellipse) | 🟢 Volume by quadrature, relative error ≤ 1.4e-15 |
+| E. Root solving + CSI | Bernstein algebra, Bézier clipping (Sederberg–Nishita), exact rational Bézier arcs composed into implicit surfaces (degree ≤ 8), roots of F and F′, Newton polish on the exact distance, tangent and coincident detection | 🟢 IntersectionValidation E1/E2: 60 000 polynomials, all within the condition bound; 2 000 random curve–surface pairs, 0 of 3 183 sign changes missed |
+| F. Hybrid SSI | Analytic dispatch (plane–plane, coaxial meridians, parallel sections, plane through an axis), then lattice + boundary seeds, normal-cone loop detection, 3D-corrector marching, singular-point splitting | 🟢 F1: 3 500 random analytic cases ≤ 5.4e-15. F2: marching on the exact curves (≤ 7.6e-15). F3: 22 gallery runs + 300 random oblique pairs sound, and the negative control is caught |
+| G. General Fuse Booleans | PaveFiller: EE, EF, FF interferences (exact SSI; marched sections that touch both faces are refused), paves, pave blocks, common blocks, section splitting, imprint. Builder: face splitting by smallest-turn cycle tracing in the chart, outer/hole assignment, fragment classification (GWN, plus normals for on-boundary fragments). Selection and assembly for ∪ ∩ − with history (Modified / Generated) | 🟢 BooleanValidation: 15 closed-form scenes × 4 operations + 160 random pairs; audit sound, ΔV ≤ 3.6e-15, identities ≤ 5.7e-14, 0 of 22 560 oracle points wrong; an open argument is refused |
+| H. Containment | Projected SP-curves (`ParameterProjection`), face domains in the chart, 2D parameter winding, 3D generalized winding number Σ Ω_F / 4π by Green in the chart (adaptive Gauss–Kronrod). Proximity first, then the nearest-normal shortcut, then winding | 🟢 ContainmentValidation H1–H6: 12 000 random points, normal offsets down to 1e-7, on-boundary points, ray-cast parity, open-box Van Oosterom–Strackee, 2D holes; 0 wrong, integer residual ≤ 3.2e-13 |
+| N. Shared-edge CDT tessellation | Exact `InCircle`; Bowyer–Watson CDT with exact cavity repair, Sloan constraint recovery, parity classification (`ChartTriangulation`). Per edge: adaptive τ bisection to sag ε, a √(8ε/κ) chord bound and chart fidelity on every fin. Per face: linear chart scaled by \|S_u\|, \|S_v\|; Ruppert-style refinement on 3D sag (distance to the surface) and side length, with a quality floor; pole and apex stars rebuilt from the chart boundary of the star; 3D side flips of folded slivers; split of interior sides another face already used | 🟢 TessellationValidation: 305 bodies (9 specimens, 15 scenes × 4, 240 random Boolean results), 668 918 triangles. 0 unpaired sides, χ equal, peak ≤ ε, 0 inverted / zero-area / folded, \|ΔV\| ≤ 0.48 ε·A, 0 missing edge sides. Convergence slopes ≈ 1, deterministic digests, scale-free 10⁻³…10³, 201 CDT regressions |
+
+Next in the build order: I (rolling-ball blends), then J + K (offset, face change), and so on. See `Documentation/RESEARCH-KernelAlgorithms.md`.
+
+## Layout
+
+```
+SolidArcRemastered/
+├── CMakeLists.txt            static lib + RemasteredInspection + 6 validations (ctest)
+├── Source/
+│   ├── Precision/            PrecisionSpecification.h, ExactPredicates
+│   ├── Geometry/             VectorAlgebra.h, CurveGeometry, SurfaceGeometry, ProjectedCurve (exact or projected SP-curves)
+│   ├── Intersection/         BernsteinPolynomial, ImplicitSurface, CurveSurfaceIntersection, IsoParameterCurve, SurfaceIntersection
+│   ├── Containment/          FaceDomain (chart loops, 2D winding, interior points), WindingNumber (3D GWN, ClassifySolidPoint)
+│   ├── Tessellation/         ChartTriangulation (exact CDT), BodyTessellation (shared-edge sampling, per-face refinement, repairs)
+│   ├── Boolean/              GeneralFuse (PaveFiller + Builder + selection/assembly), BooleanCatalogue (15 closed-form scenes)
+│   ├── Topology/             RecordStore.h (tokens), ModelPartition, EulerEdits
+│   ├── Construction/         PrimitiveConstruction (prism, block, cylinder, cone, sphere, torus, perforated, hollow)
+│   ├── Audit/                ModelAudit (T1–T6, G1–G6), EnclosedVolume (divergence-theorem quadrature), IntersectionAudit (I1–I6), TessellationAudit (N1–N7)
+│   ├── Inspection/           SpecimenCatalogue, IntersectionCatalogue, InspectionEncoding, IntersectionEncoding, BooleanEncoding, TessellationEncoding, JsonWriter.h
+│   └── Applications/         RemasteredInspection.cpp (stdin line protocol)
+├── Validation/               Topology-, Predicate-, Intersection-, Containment-, Boolean-, TessellationValidation.cpp
+├── Tooling/InspectionHost.py stdlib-only host: static viewer, API, SSE, rebuild on change
+└── Viewer/index.html         self-contained canvas viewer
+```
+
+## Run
+
+```bash
+# Windows (Developer PowerShell, cmake on PATH). The host configures and builds into ./build on first start.
+python Experimental/SolidArcRemastered/Tooling/InspectionHost.py
+# open http://localhost:8740
+
+# Linux sandbox (cmake and ninja from the scratch venv)
+V=_ClaudeScratch/.venv/bin
+python3 Experimental/SolidArcRemastered/Tooling/InspectionHost.py --cmake $V/cmake --generator Ninja --make-program $V/ninja
+
+# Gates without the viewer
+cmake -S Experimental/SolidArcRemastered -B Experimental/SolidArcRemastered/build
+cmake --build Experimental/SolidArcRemastered/build --config RelWithDebInfo
+ctest --test-dir Experimental/SolidArcRemastered/build -C RelWithDebInfo
+```
+
+| Host endpoint | Purpose |
+|---|---|
+| `GET /api/catalogue` | Specimen and scene names, `Kind` (Model / Intersection / Boolean), descriptions, default parameters |
+| `GET /api/specimen?name=Torus&MajorRadius=4` | Construct + audit + encode (one line to the persistent C++ process) |
+| `GET /api/specimen?name=SteinmetzCrossing&MarchingOnly=1` | Solve + audit an intersection scene (common keys: MarchingOnly, LoopDetection, ChordTolerance, Lattice) |
+| `GET /api/specimen?name=NapkinRing&Operation=2` | Boolean scene: General Fuse once, all four operations assembled, the chosen one (0 ∪, 1 ∩, 2 A − B, 3 B − A) audited and encoded with history |
+| `GET /api/slice?name=DrilledBlock&Operation=2&Axis=2&Offset=0.5&Resolution=29` | Winding-number slice of a model or Boolean result: N × N grid, membership and winding per point |
+| `GET /api/tessellation?name=NapkinRing&Operation=2&SagRatio=0.001` | Shared-edge CDT PolygonComplex of a model or Boolean result (ε = SagRatio × diagonal, clamped to 10⁻⁴…5·10⁻²): positions, outward triangles, face per triangle, edge polylines, per-face records, N1–N7 verdicts |
+| `GET /api/validation?name=BooleanValidation` | Run a gate, returns markdown |
+| `GET /api/status`, `GET /api/events` | Build state (Building / Ready / Failed, stale flag, log) as JSON and SSE |
+
+⚠️ When a rebuild fails, the previous binary keeps serving, but the banner says **STALE** and shows the compiler log.
+
+## Viewer
+
+| Panel | Shows |
+|---|---|
+| Stage | Orbit wireframe with trimmed iso-hatch per face, face normals (sense × surface normal), vertices, dashed tolerance spheres with ε |
+| Measured vs expected | V E F L S genus against closed-form expectations, volume error (gate 1e-12), timings |
+| Audit | 12 checks with 🟢/🔴, findings table (click to locate the subject) |
+| Topology | Body → … → Fin tree; hovering a row highlights that token's geometry |
+| Winding-number slice | Toggle plus axis, offset and resolution: an axis-aligned grid through the body box, coloured inside / outside / boundary; table of method counts, max integer residual, evaluations, ms |
+| Tessellation (N) | Toggle plus ε / diagonal and colouring (by face, or by minimum angle red 0° → green ≥ 40°). Shaded triangles with a headlight; back faces are drawn first in red, so any red that shows through marks a gap or an inverted triangle. Tables: N1–N7 gates, volume and area, then per face triangles, insertions, star · flip · split repairs and ms (hover a row to highlight the face) |
+| Gates | Runs any of the 6 validations and renders the markdown |
+
+Intersection scenes (the second group in the selector) reuse the same panels:
+
+| Panel | Shows |
+|---|---|
+| Stage | Both surface patches as hatching, cut to a window around the curve; exact branches green, marched branches orange; singular points as red rings, touch points as violet rings |
+| Measured vs expected | Branches, closed branches and special points against hand-derived counts |
+| Metrics | Length vs exact (gate 1e-3), max residual (1e-9), reference crossings / misses, worst reference gap, solve and audit ms |
+| Audit | I1 residual · I2 boxes · I3 dense-lattice completeness · I4 terminations · I5 counts · I6 length |
+| Tree | Surfaces, branches (category, points, length, terminations), special points, solver statistics |
+
+Boolean scenes (the third group) show:
+
+| Panel | Shows |
+|---|---|
+| Controls | Segmented operation selector A ∪ B · A ∩ B · A − B · B − A |
+| Stage | Dashed ghosts of both arguments; result hatch blue when it came from A, orange from B; section edges green |
+| Measured vs expected | Faces / edges / vertices, shells and solid regions against expectations, fragments per argument and per state |
+| Volume, identities and timing | Volume vs closed form (gate 1e-9), the three volume identities, fuse phases (intersect · split · classify), assembly and audit ms |
+| All four operations | Volume, closed form, faces and shells for every operation; click a row to show it. Expected-empty results get a green banner |
+| General Fuse | Face pairs tested, coincident pairs, section branches, EE / EF tests, paves, split edges, common blocks, section and imprinted edges, dropped cycles |
+| Face history | Result face ← argument face, the state that kept it, and whether it was flipped; hovering a row highlights the face |
+
+## Conventions
+
+| Topic | Rule |
+|---|---|
+| Orientation | MEF: the old loop keeps the forward fin, the new face gets the reversed fin. KEMR on First·X·Second·Y: X stays, Y becomes the ring |
+| Tokens | `{Slot, Generation}`. Reclaim increments the generation, so stale tokens fail `Authenticate` |
+| Precision | `ExactPrecision` (NaN) means session precision applies. Vertex ε ≥ incident edge ε (T5). Curves meet vertices within εV + εE (G1) |
+| Face splits | MEF / MFKRH give the new face a copy of the carrier surface and sense |
+| Intersection output | Branches carry an exact carrier (Line / Circle) or a marched chart: points on both surfaces with (u, v) on each. Closed branches do not repeat the first point. Singular points split branches, and both pieces end there |
+| Boolean selection | ∪ = A-Outside + B-Outside + A-OnSame · ∩ = A-Inside + B-Inside + A-OnSame · A − B = A-Outside + A-OnOpposite + flipped B-Inside · B − A is symmetric |
+| Boolean assembly | Every pave block needs exactly two balanced uses, otherwise the result is refused as non-manifold or open. Shells come from union-find over shared edges; negative-volume shells are cavities placed in the solid that contains them. An empty selection is refused ("Boolean: empty result") |
+| Tessellation | ε = SagRatio × body diagonal (default 10⁻³). An edge's samples are shared by every fin, and the face polygon uses them in fin order, so sides on edges match by construction. Triangles are outward CCW. A pole or apex is one vertex: singular-row triangles collapse onto it. The default camera looks from above (pitch < 0; the projection frame is Right × Up = −Ahead) |
+| Containment | ClassifySolidPoint: Boundary within Precision; then the nearest-normal shortcut when the nearest point is a face interior point closer than NearDistance; otherwise Σ Ω_F / 4π with |w| > ½ inside. Every result carries IntegerResidual = |w − round(w)|, and General Fuse refuses a fragment whose residual exceeds 1e-3 (argument not closed) rather than rounding it |

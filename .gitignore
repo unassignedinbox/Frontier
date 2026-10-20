@@ -1,0 +1,8 @@
+_ClaudeScratch/
+ExternalPackages/
+node_modules/
+dist/
+.cache/
+Exhibits/RollingBallBlend/Results/*.svg
+__pycache__/
+/build/

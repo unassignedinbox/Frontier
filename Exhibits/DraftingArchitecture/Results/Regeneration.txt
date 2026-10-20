@@ -1,0 +1,26 @@
+== without beveladd
+> rect (0,100) (2,101.5) --name=DriverRect
+> extrude DriverRect 1 --name=DrivenBlock
+  · extrude DriverRect → area 0 (filled, 0 hole(s))
+  ·   ↳ extrude of area{DriverRect}  length 1  direction (0.00 0.00 1.00)
+  extrude                    DrivenBlock  F  6  volume 3.000000  x 0.000..2.000  z 0.000..1.000
+> transform DriverRect --scale=(2,1,1) --pivot=(0,100,0)
+  ·   ↻ DrivenBlock rebuilt from its sources
+  transform x2               DrivenBlock  F  6  volume 6.000000  x 0.000..4.000  z 0.000..1.000
+> move DriverRect (0,0,0.5)
+  ·   ↻ DrivenBlock rebuilt from its sources
+  move +z0.5                 DrivenBlock  F  6  volume 6.000000  x 0.000..4.000  z 0.500..1.500
+== with beveladd
+> rect (0,100) (2,101.5) --name=DriverRect
+> extrude DriverRect 1 --name=DrivenBlock
+  · extrude DriverRect → area 0 (filled, 0 hole(s))
+  ·   ↳ extrude of area{DriverRect}  length 1  direction (0.00 0.00 1.00)
+  extrude                    DrivenBlock  F  6  volume 3.000000  x 0.000..2.000  z 0.000..1.000
+> beveladd 0.2 --mode=fillet --targets=2:e0
+  ·   ⚠️ DrivenBlock no longer follows its sources: bevelled bodies do not regenerate yet
+  · beveladd · fillet · exact native geometry; one undo step
+  beveladd                   DrivenBlock  F  7  volume 2.982806  x -0.000..2.000  z -0.000..1.000
+> transform DriverRect --scale=(2,1,1) --pivot=(0,100,0)
+  transform x2               DrivenBlock  F  7  volume 2.982806  x -0.000..2.000  z -0.000..1.000
+> move DriverRect (0,0,0.5)
+  move +z0.5                 DrivenBlock  F  7  volume 2.982806  x -0.000..2.000  z -0.000..1.000
