@@ -15,6 +15,7 @@
 #include "Sketch/SketchSolver.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <numbers>
@@ -335,7 +336,9 @@ void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureConditio
 {
     Document.Partition    = std::make_unique<ModelPartition>();
     Document.Regeneration = RegenerateFeatureTree(*Document.Partition, Document.Tree, CaptureCondition);
-    Document.Revision    += 1;
+    // 📝 One counter for every document in the process, so a staged preview never shares a scene key with its source.
+    static std::atomic<uint64_t> RevisionCounter{ 0 };
+    Document.Revision     = ++RevisionCounter;
 
     DraftingBodySummary& Summary = Document.Summary;
     Summary                      = {};
@@ -355,6 +358,16 @@ void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureConditio
     }
     KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Naming.Faces);
     KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Naming.Edges);
+}
+
+DraftingDocument CloneDraftingDocument(const DraftingDocument& Source)
+{
+    DraftingDocument Copy = CreateDraftingDocument(Source.Title);
+    Copy.Tree      = Source.Tree;
+    Copy.Captions  = Source.Captions;
+    Copy.Selection = Source.Selection;
+    RegenerateDraftingDocument(Copy);
+    return Copy;
 }
 
 DraftingCommandOutcome ConstructDraftingPrimitive(DraftingDocument& Document, const DraftingConstructRequest& Request)

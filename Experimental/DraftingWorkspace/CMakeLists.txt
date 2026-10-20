@@ -115,9 +115,11 @@ add_library(DraftingWorkspace STATIC
     Source/Document/DraftingDocument.cpp
     Source/Document/DraftingDocumentCodec.cpp
     Source/Document/DraftingScene.cpp
+    Source/Document/DraftingSpecimen.cpp
     Source/Viewport/DraftingCamera.cpp
     Source/Viewport/DraftingDevice.cpp
     Source/Viewport/DraftingRasterization.cpp
+    Source/Viewport/DraftingPortableImage.cpp
     Source/Interface/DraftingInterface.cpp
     Source/Interface/DraftingFrame.cpp
     Source/Interface/DraftingOptions.cpp
@@ -157,3 +159,24 @@ target_link_libraries(DraftingViewportValidation PRIVATE DraftingWorkspace)
 enable_testing()
 add_test(NAME DraftingDocumentValidation COMMAND DraftingDocumentValidation)
 add_test(NAME DraftingViewportValidation COMMAND DraftingViewportValidation)
+set_tests_properties(DraftingViewportValidation PROPERTIES SKIP_RETURN_CODE 77)
+
+# 📝 Interface walkthroughs: real ImGui input on the offscreen Vulkan frame (set DRAFTING_VULKAN_DRIVER for SwiftShader).
+#    Run from the repository root because the scripts name _ClaudeScratch/DraftingWorkspace/… files; the recovery
+#    walkthrough consumes the autosave the first one leaves behind.
+set(DRAFTING_WALKTHROUGH_CAPTURES "${CMAKE_CURRENT_BINARY_DIR}/WalkthroughCaptures")
+add_test(NAME DraftingWorkspaceWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/Recovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Bracket.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/WorkspaceWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME DraftingRecoveryWalkthrough
+         COMMAND DraftingWorkspaceCapture
+                 --options "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/RecoveryOptions.toml"
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/RecoveryWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingWorkspaceWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP DraftingAutosave)
+set_tests_properties(DraftingRecoveryWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED DraftingAutosave)

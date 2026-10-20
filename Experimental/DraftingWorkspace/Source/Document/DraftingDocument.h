@@ -119,6 +119,9 @@ struct DraftingDocument
 // Empty document (no steps, no body).
 [[nodiscard]] DraftingDocument CreateDraftingDocument(const std::string& Title = "Untitled");
 
+// Independent copy (tree, captions, selection; history not copied), regenerated into its own partition.
+[[nodiscard]] DraftingDocument CloneDraftingDocument(const DraftingDocument& Source);
+
 // 💡 Commands are atomic: the tree is snapshotted, changed and regenerated; if the step the command added is refused by
 //    the modeller (or the command cannot apply), the snapshot is restored and the refusal is returned. Parameter edits
 //    that make a *later* step refuse are kept — the tree marks the step and keeps the previous body (plan § 3).
