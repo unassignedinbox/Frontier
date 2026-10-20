@@ -45,7 +45,7 @@ const Scan = (Directory, Extensions) => fs.readdirSync(path.join(Root, Directory
 
 test("no user-facing label, comment or document calls the software BVH tracer 'RTX' (or the SDF renderer 'GTX') except to say it is the old name", () =>
 {
-    const Files = [...Scan("Source", [".js"]), ...Scan("Shader", [".wgsl"]), ...Scan("Tools", [".mjs", ".py", ".sh"]).filter((File) => !/RendererNames\.test\.mjs$/.test(File)), "README.md", "index.html",
+    const Files = [...Scan("Source", [".js"]), ...Scan("Shader", [".wgsl"]), ...Scan("Tools", [".mjs", ".py", ".sh"]).filter((File) => !/RendererNames\.test\.mjs$/.test(File)), "README.md", "COMBINED_PLAN.md", "Profiles/README.md", "index.html",
                    ...(fs.existsSync(path.join(Root, "Documentation")) ? Scan("Documentation", [".md"]) : []), ...(fs.existsSync(path.join(Root, "PLAN.md")) ? ["PLAN.md"] : [])]
         .filter((File) => fs.existsSync(path.join(Root, File)));
     const Offenders = [];
