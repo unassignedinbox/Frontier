@@ -6,6 +6,7 @@ import { LightingSystem, AutomotiveMode, RoofFixtureType } from "./LightingSyste
 import { LightClusterSpace } from "./LightClusterSpace.js";
 import { BenchmarkMetrics } from "./BenchmarkMetrics.js";
 import { TyreCarcassSolver, ResolveCarcassPose } from "./TyreCarcassSolver.js";
+import { RetrievePhotometricAtlas } from "./Photometry.js";
 //============================================================================================================================================
 //                                                           ILLUMINATIONHOST.JS
 //============================================================================================================================================
@@ -92,7 +93,7 @@ const FeatureBits = {
 };
 
 // 📝 Bits of Frame.Features2 (ExtendedFeature in SceneRecords.wgsl); tests/FeatureBits.test.mjs keeps the two in step.
-const ExtendedFeatureBits = { ScreenTraversal: 1, ScreenIndirect: 2, ScreenReflection: 4, LightGrid: 8, EmissiveLights: 16 };
+const ExtendedFeatureBits = { ScreenTraversal: 1, ScreenIndirect: 2, ScreenReflection: 4, LightGrid: 8, EmissiveLights: 16, IesProfiles: 32 };
 
 const TemporalRestartBit = 2048;   // [-] FeatureTemporalRestart in SceneRecords.wgsl
 const SmokeCompositeBit  = 4096;   // [-] FeatureSmokeComposite in SceneRecords.wgsl
@@ -139,7 +140,7 @@ class IlluminationHost
             FireflyFilter: true,
             MultiBounceNEE: true,
             Indirect: true, ScreenTraversal: Query.get("screentraces") === "1", ScreenIndirect: true, ScreenReflection: true,
-            LightGrid: Query.get("lightgrid") !== "0",
+            LightGrid: Query.get("lightgrid") !== "0", IesProfiles: Query.get("ies") !== "0",
             // 📝 The XPBD tyre carcass drives the tyres' vertical stiffness and contact patch (?tyres=analytic keeps the analytic carcass spring alone).
             TyreCarcass: Query.get("tyres") !== "analytic", TyreSubsteps: Math.max(8, Math.min(32, Number(Query.get("tyresubsteps") || 32))),
             TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
@@ -230,6 +231,7 @@ class IlluminationHost
         this.FrameRecords    = this.Exchange.ConstructRecords(FrameRecordExtent, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Frame record");
         this.LightClusters   = new LightClusterSpace(this.Exchange);
         this.LightRecords    = this.LightClusters.Records;
+        await this.AssignPhotometry();
         this.OccupantRecords = this.Exchange.ConstructRecords(this.Scene.Occupants.length * OccupantStride,
                                                               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Occupant records");
         this.Lighting        = new LightingSystem();
@@ -405,6 +407,13 @@ class IlluminationHost
         this.Fracture.OnBreak = (Prop) => this.Shell.Announce(`${Prop.Definition.Name} — ${Prop.Pieces.length} fragments`);
         if (this.PendingPreset)
             this.ApplyPreset(this.PendingPreset);
+    }
+
+    // 📝 The IES atlas: seven LM-63 files packed into the light record. A missing or malformed file leaves every light on its analytic beam shape.
+    async AssignPhotometry()
+    {
+        try { this.LightClusters.AssignPhotometry(this.Exchange.Device, await RetrievePhotometricAtlas()); }
+        catch (Failure) { console.warn("[lights] IES profiles unavailable, the analytic beam shapes stay:", Failure.message || Failure); }
     }
 
     // 📝 The XPBD tyre carcass: guarded, so a device that cannot build its pipelines (or a missing lattice) leaves the analytic carcass in charge instead of failing the exhibit.

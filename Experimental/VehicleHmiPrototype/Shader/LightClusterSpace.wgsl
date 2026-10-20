@@ -14,13 +14,19 @@ struct LightRecord
     Params          : vec4f, // x = inner angle cos, y = outer angle cos, z = profile variant, w = active
 }
 
+// 📝 The photometric atlas: 7 Type C profiles (IES LM-63, Photometry.js) of PhotometryAzimuthBins × PhotometryPolarBins bytes each, peak = 255, four to a u32.
+const PhotometryAzimuthBins      : u32 = 37u;    // 10° steps of C-plane around the optical axis
+const PhotometryPolarBins        : u32 = 91u;    // 2° steps from the axis
+const PhotometryTexelsPerProfile : u32 = 3367u;
+
 struct LightClusterRecords
 {
-    Minimum   : vec4f,            // xyz world minimum corner of the grid, w unused
+    Minimum   : vec4f,            // xyz world minimum corner of the grid, w = 1 once the photometric atlas is uploaded
     Extent    : vec4f,            // xyz world size of the grid, w unused
     Lights    : array<LightRecord, 32>,
     CellMasks : array<vec4u, 256>, // 16 × 16 × 4 cells, x fastest: bit i of cell c is bit (c & 3) of lane CellMasks[c >> 2]; vec4u keeps the
                                    // record legal as a UNIFORM too (array strides there are multiples of 16), with the memory of array<u32, 1024>
+    Atlas     : array<vec4u, 1474>, // 7 photometric profiles, one byte per texel (23 569 texels, padded to a vec4u)
 }
 
 const LightClusterResolution : vec3u = vec3u(16u, 16u, 4u);
@@ -43,12 +49,66 @@ fn ResolveLightCandidates(Position: vec3f) -> u32
     return SceneLights.CellMasks[Index >> 2u][Index & 3u];
 }
 
+// 📝 Which photometric profile a light follows: its type picks the luminaire (roadway, low beam, high beam, fog beam), the flood type's variant picks flood or spot pods.
+//    0 means none (an omnidirectional point, or a type without a file).
+fn ResolvePhotometricProfile(Light: LightRecord) -> u32
+{
+    let Type = u32(Light.PositionType.w + 0.5);
+    if (Type == 1u) { return 1u; }
+    if (Type == 2u) { return 3u; }
+    if (Type == 3u) { return 4u; }
+    if (Type == 4u) { return 5u; }
+    if (Type == 5u) { return select(6u, 7u, Light.Params.z > 0.5); }
+    return 0u;
+}
+
+fn LoadPhotometricTexel(Profile: u32, Azimuth: u32, Polar: u32) -> f32
+{
+    let Texel = (Profile - 1u) * PhotometryTexelsPerProfile + Azimuth * PhotometryPolarBins + Polar;
+    let Word  = SceneLights.Atlas[Texel >> 4u][(Texel >> 2u) & 3u];
+    return f32((Word >> ((Texel & 3u) * 8u)) & 255u) * (1.0 / 255.0);
+}
+
+// 📝 The profile's relative intensity towards FromFixture (unit, from the light to the point). Type C: the polar angle is measured from the optical axis; C0 is up around it
+//    (world +Z; +X for a fixture that looks straight up or down), C90 to its right. Bilinear reconstruction removes banding at a beam's cutoff.
+fn SamplePhotometry(Light: LightRecord, Profile: u32, FromFixture: vec3f) -> f32
+{
+    let Axis      = normalize(Light.DirectionReach.xyz);
+    let Reference = select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(Axis.z) > 0.99);
+    let Right     = normalize(cross(Axis, Reference));
+    let Up        = cross(Right, Axis);
+    let Polar     = acos(clamp(dot(FromFixture, Axis), -1.0, 1.0)) * (f32(PhotometryPolarBins - 1u) / 3.141592653589793);
+    var Angle     = atan2(dot(FromFixture, Right), dot(FromFixture, Up));
+    if (Angle < 0.0) { Angle += 6.283185307179586; }
+    let Azimuth = Angle * (f32(PhotometryAzimuthBins - 1u) / 6.283185307179586);
+    let H0 = min(u32(floor(Azimuth)), PhotometryAzimuthBins - 2u);
+    let V0 = min(u32(floor(Polar)), PhotometryPolarBins - 2u);
+    let H  = clamp(Azimuth - f32(H0), 0.0, 1.0);
+    let V  = clamp(Polar - f32(V0), 0.0, 1.0);
+    let A  = mix(LoadPhotometricTexel(Profile, H0, V0), LoadPhotometricTexel(Profile, H0, V0 + 1u), V);
+    let B  = mix(LoadPhotometricTexel(Profile, H0 + 1u, V0), LoadPhotometricTexel(Profile, H0 + 1u, V0 + 1u), V);
+    return mix(A, B, H);
+}
+
 fn EvaluateBeamProfile(Light: LightRecord, TowardPoint: vec3f, Distance: f32) -> f32
 {
     let Type = u32(Light.PositionType.w + 0.5);
     if (Type == 0u)
     {
         return 1.0; // Omnidirectional point
+    }
+
+    // 📝 Measured (or authored) photometry where the atlas is loaded and the switch is on: the file's shape, bounded by the same cone the analytic beams respect.
+    let Profile = ResolvePhotometricProfile(Light);
+    if (Profile != 0u && SceneLights.Minimum.w > 0.5 && ExtendedEnabled(Frame, ExtendedIesProfiles))
+    {
+        let FromFixture = TowardPoint / max(Distance, 1.0e-4);
+        let Shape = SamplePhotometry(Light, Profile, FromFixture);
+        if (Type == 5u)
+        {
+            return Shape * smoothstep(Light.Params.y, Light.Params.x, dot(FromFixture, normalize(Light.DirectionReach.xyz)));
+        }
+        return Shape;
     }
 
     let LDir = TowardPoint / max(Distance, 1.0e-4);

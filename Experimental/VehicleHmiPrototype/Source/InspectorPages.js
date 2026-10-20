@@ -231,6 +231,8 @@ function BuildRender(Host, C, Body)
     const Lights = C.Card(Body, "Clustered lights", "Lightbulb", { Accent: Accent.Render, Index: 6 });
     C.Switch(Lights, S, "LightGrid", { Label: "World light grid",
                                        Detail: "Each receiver tests only the lights whose reach touches its grid cell. Off tests every light (the reference; same image, slower)" });
+    C.Switch(Lights, S, "IesProfiles", { Label: "IES photometric profiles",
+                                         Detail: "Beams follow LM-63 Type C tables (Profiles/*.ies: authored demonstration curves; measured TILT=NONE files drop in). Off: the analytic beam shapes" });
     C.Muted(Lights, "Point, street, beam and flood lights are binned into a 16 x 16 x 4 world grid of 32-bit masks. The same grid serves the direct pass, the card relighting and every path vertex of the ray tracer.");
 
     const Screen = C.Card(Body, "Screen-space traces", "Scan", { Accent: Accent.Render, Index: 7 });

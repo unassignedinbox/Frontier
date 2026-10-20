@@ -78,6 +78,7 @@ const ExtendedScreenIndirect   : u32 = 2u;    // [-] screen traces for ReSTIR GI
 const ExtendedScreenReflection : u32 = 4u;    // [-] screen traces for reflection rays (needs the master gate)
 const ExtendedLightGrid        : u32 = 8u;    // [-] world light grid culling; off = every receiver tests every light (the reference)
 const ExtendedEmissiveLights   : u32 = 16u;   // [-] emissive-triangle clusters are sampled as lights (next-event estimation)
+const ExtendedIesProfiles      : u32 = 32u;   // [-] the light beams follow their IES (LM-63) photometric profiles instead of the analytic beam shapes
 
 fn ExtendedEnabled(Frame: FrameRecord, Bit: u32) -> bool
 {

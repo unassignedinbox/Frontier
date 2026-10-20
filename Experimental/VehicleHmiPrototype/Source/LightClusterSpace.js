@@ -5,6 +5,7 @@
 
 import { MaxSceneLights, LightRecordFloats } from "./LightingSystem.js";
 import { CourseConstants } from "./CourseStructure.js";
+import { PhotometryBytes } from "./Photometry.js";
 
 // 📝 The grid covers the asphalt pad the lights stand on (CourseStructure's pad). Points outside it take every light
 //    (LightClusterSpace.wgsl), so a light is never skipped; the cost is only the lost culling there.
@@ -19,9 +20,12 @@ export const LightClusterBounds = Object.freeze({
 const CellCount    = LightClusterBounds.Resolution[0] * LightClusterBounds.Resolution[1] * LightClusterBounds.Resolution[2];
 const HeaderFloats = 8;                                // Minimum and Extent, each a vec4f
 const LightFloats  = MaxSceneLights * LightRecordFloats;
-export const LightClusterBytes = (HeaderFloats + LightFloats + CellCount) * 4;
+const DynamicBytes = (HeaderFloats + LightFloats + CellCount) * 4;   // header, lights and masks: rewritten every frame
+export const PhotometryOffset = DynamicBytes;                         // the atlas follows, uploaded once
+export const LightClusterBytes = DynamicBytes + PhotometryBytes;
 
-// 📝 Layout of LightClusterRecords (LightClusterSpace.wgsl): Minimum, Extent, Lights[32], CellMasks[1024], as one buffer (uniform in the ray-tracing group, storage in the card relighting).
+// 📝 Layout of LightClusterRecords (LightClusterSpace.wgsl): Minimum, Extent, Lights[32], CellMasks[1024], the photometric Atlas — one buffer (uniform in the ray-tracing
+//    group, storage in the card relighting). Minimum.w is 1 once the atlas is uploaded.
 export class LightClusterSpace
 {
     constructor(Exchange)
@@ -72,6 +76,16 @@ export class LightClusterSpace
             }
             this.Masks[X + Resolution[0] * (Y + Resolution[1] * Z)] = Mask >>> 0;
         }
-        Device.queue.writeBuffer(this.Records, 0, this.Bytes);
+        Device.queue.writeBuffer(this.Records, 0, this.Bytes, 0, DynamicBytes);
+    }
+
+    // 📝 Uploads the packed photometric atlas (Photometry.js) once and raises the flag the shaders test; until then every light uses its analytic beam shape.
+    AssignPhotometry(Device, Atlas)
+    {
+        new Uint8Array(this.Bytes, PhotometryOffset, PhotometryBytes).set(Atlas);
+        this.Floats[3] = 1.0;
+        Device.queue.writeBuffer(this.Records, 0, this.Bytes, 0, 16);
+        Device.queue.writeBuffer(this.Records, PhotometryOffset, this.Bytes, PhotometryOffset, PhotometryBytes);
+        this.Photometric = true;
     }
 }
