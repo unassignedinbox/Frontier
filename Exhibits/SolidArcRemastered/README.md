@@ -1,6 +1,30 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (4.9 MB, no external resources) with 16 interactive kernel models, every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (4.9 MB, no external resources) with 16 interactive kernel models (now including P7 with its rolling-ball pipes), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
+**TL;DR (exact rolling-ball carrier, option C part B)**: Fillets on traced spines are now built on an exact procedural carrier. **P7 is 🟢**, so PatternStressValidation runs 64 rows: 🟢 63 · ⚠️ 1 · **🔴 0 wrong** (610 operations, 542 s). The only refusal left is P8, now refused honestly at a degree-8 singular vertex (setback, phase A). The new [`RollingBallValidation`](RollingBallValidation.md) passes all 10 gates, and ctest passes 12/12 (654 s).
+
+| Gate | Measures | Worst | Limit |
+|---|---|---|---|
+| R1 | ball: \|foot − C\| − r, \|P − C\| − r, (P − C)·T (relative) | 1.2e-13 | 1e-9 |
+| R2 · R3 | rails on their supports · G1 at the rails [rad] | 4.4e-16 · 1.4e-14 | 1e-9 · 1e-8 |
+| R4 · R5 | projection round trip · chart normal ∥ radial [rad] | 1.4e-15 · 2.8e-10 | 1e-9 · 1e-8 |
+| R6 | line spine ≡ cylinder, circle spine ≡ torus | 8.3e-16 | 1e-12 |
+| R7 | pipe ∩ normal plane closes on the section circle | 4.4e-16 | 1e-8 |
+| R8 | 3 bodies sound, \|V − V_polygon\| ≤ peak deviation × area | 3 / 3 | pass |
+| R9 | rotation · reflection · uniform scale there and back (V, vertices) | 8.1e-12 | 1e-9 |
+
+- 🧩 **Carrier:** P(𝑢, 𝑣) = C(𝑢) + r(cos 𝑣 E₁ + sin 𝑣 E₂). The spine C can be any curve (traced or ellipse). E₁ points to the foot on the guide support, and E₂ = h·(E₁ × T), where the handedness h flips under a mirror. Contact rails are the feet of the spine on each support (`ContactCurve`), because tangential SSI cannot trace them. Both are exact on their definition and evaluated on demand.
+- 🐞 **6 defects found and fixed** (4 of them by the new validation):
+  - **Mirror** (ΔV 2.3e-3): the image chart was M·P(𝑢, −𝑣), and `MapAnchor` flipped the spine parameter. Now: handedness plus an unchanged pipe anchor.
+  - **Asymmetric mouth refused:** the continuation's section went through the old vertex, off the seam. Now it sits where the rail crosses the seam (secant).
+  - **Knots:** the traced spine is only C¹, so the flux density jumps there. The inner Green integral is now split at the chart breakpoints (transforms improved from 6.8e-9 to 8.1e-12).
+  - **SSI missed wrap-around loops** on a pipe (no 𝑣-lattice). The second surface's interior lattice now also seeds when the first surface is a pipe; the SmallLoop negative control still fails as designed.
+  - **Hang:** adaptive quadrature chased round-off to depth 24. A gap inside the 10⁻⁹ noise band that shrinks by less than ¼ per level is now accepted.
+  - **Seam crossing:** the P7 mouths cross both cylinder seams at one vertex (degree 4), giving a new shared-section continuation.
+- Unchanged on closed-form carriers: BlendValidation B1 7.04e-16, B3 3.61e-15, B4 1.64e-15, B10 7.69e-14. The only stress-table side effect: B4 has 6 522 triangles instead of 6 518, with the same volume.
+- ⚠️ **Cost:** every pipe evaluation re-solves the traced spine, so the P7 row takes 197 s. Caching spine samples is the follow-up.
+- 🚧 **Still refused:** chamfers on traced or elliptical spines (needs a ruled procedural carrier) and setback vertices (P8, A: NURBS). Overflow comes after A.
 
 **TL;DR (robust blends)**: 6 of the 8 pattern-stress refusals are now built and pass every gate. A new T family (tangent chains) adds 8 rows, all 🟢. PatternStressValidation now runs 64 rows: 🟢 62 · ⚠️ 2 · **🔴 0 wrong** (610 operations, 469 s). The 2 remaining refusals are P7 (traced spine) and P8 (elliptical spine).
 
@@ -279,9 +303,9 @@ Harness fixes (no modeller change): edge criteria that also caught rib-top end e
 
 | Case | Today | Planned |
 |---|---|---|
-| Setback vertex (convex meets concave, `MixedConvexity`) | Refused at the vertex | Várady–Rockwood 2n-sided setback patch |
+| Setback vertex (convex meets concave, `MixedConvexity`; P8 degree-8 singular crossings) | Refused at the vertex | Várady–Rockwood 2n-sided setback patch (A: NURBS) |
 | Tangent-chain propagation | ✔️ Built: `GrowTangentChain` / `BlendSettings.TangentChainEnabled`; DraftingWorkspace Alt+click | — |
 | Overflow (blend wider than its face, `FilletRailsCross`) | Refused: "contact rail runs backwards" | Smooth / cliff / notch overflow strategies |
-| Traced spines | Spines only where SSI gives a line or circle (P7 traced, P8 ellipse). Caps and mitres on curved faces are built (traced sections allowed) | Marched spines with procedural rolling-ball carriers |
+| Traced spines | ✔️ Fillets built on the exact procedural rolling-ball carrier (P7, `RollingBallValidation`); chamfers on traced or elliptical spines refused | Ruled procedural carrier for chamfers |
 
 🚧 Known limitation (step 4): next to poles and apexes, triangle shape follows the chart's anisotropy. Sphere and Cone reach a minimum angle of 0.4–1.1°, with ≈ 21–25% of their triangles below 20° (`SphereQuality.png`). Specimens without singular points stay ≥ 14° (Torus 15.3°, Cylinder 20.9°, HollowBlock 14.0°). Boolean results also inherit their smallest *input* angle, where a section edge meets a boundary almost tangentially (DShaft 3.3°, RandomDrills 0.1°); no Delaunay refinement goes below the input angle. Every gate holds, so this is a shading-quality issue, not a correctness one. Rebuilding every star does not help. The cure is a pole-local chart (an azimuthal projection around the axis) for the singular rows.

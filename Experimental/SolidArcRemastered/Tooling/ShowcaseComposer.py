@@ -35,7 +35,7 @@ RepositoryRoot  = Path(__file__).resolve().parents[3]
 ExhibitRoot     = RepositoryRoot / "Exhibits"
 TemplatePath    = Path(__file__).resolve().parent / "ShowcaseTemplate.html"
 PayloadMarker   = "/*@ShowcasePayload@*/"
-Categories      = ["Plane", "Cylinder", "Cone", "Sphere", "Torus", "Other"]
+Categories      = ["Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall", "Other"]
 GalleryWidth    = 640                                                                     # [px] - Gallery panel width
 CaptureWidth    = 1280                                                                    # [px] - Walkthrough capture width
 ViewportWidth   = 640                                                                     # [px] - Viewport gate frame width
@@ -58,7 +58,7 @@ Models = [                                                                      
     ("B13", "Six blocks merged, all filleted", "needs maximal faces: 6 unit blocks fuse to one, then every edge r 0.2"),
     ("B18", "Cross-bores with rim fillets",   "M5 cross-bores + 12 bore entry rims r 0.05"),
     ("M5",  "3 × 3 Steinmetz cross-bores",    "9 equal-radius crossings, 18 singular points, genus 15"),
-    ("C6",  "Radial blind bores",             "8 traced cylinder ∩ cylinder bores into a disc"),
+    ("P7",  "Radial bore mouths, filleted",   "8 traced mouths r 0.03 on exact procedural rolling-ball pipes"),
 ]
 
 CaptureCaptions = {
