@@ -38,6 +38,9 @@ export class LightClusterSpace
     constructor(Exchange)
     {
         this.Exchange = Exchange;
+        // 📝 DIAGNOSTIC (?gridreach=): scales every light's reach in the cull. 1 is exact. Below 1 it deliberately drops light, which is how the executed tests prove that their
+        //    "grid on = grid off" comparison can fail at all.
+        this.ReachScale = 1.0;
         this.Bytes  = new ArrayBuffer(LightClusterBytes);
         this.Floats = new Float32Array(this.Bytes);
         this.Masks  = new Uint32Array(this.Bytes, (HeaderFloats + LightFloats) * 4, CellCount);
@@ -60,7 +63,7 @@ export class LightClusterSpace
             const Offset = Index * LightRecordFloats;
             if (LightData[Offset + 15] < 0.5)   // Params.w: active
                 continue;
-            Lights.push({ Index, Centre: [LightData[Offset], LightData[Offset + 1], LightData[Offset + 2]], Reach: LightData[Offset + 7] });
+            Lights.push({ Index, Centre: [LightData[Offset], LightData[Offset + 1], LightData[Offset + 2]], Reach: LightData[Offset + 7] * this.ReachScale });
         }
         for (let Z = 0; Z < Resolution[2]; ++Z)
         for (let Y = 0; Y < Resolution[1]; ++Y)

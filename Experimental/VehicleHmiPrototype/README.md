@@ -454,6 +454,7 @@ palette, glow, momentum) and the triggers.
 | `renderer=bvh\|sdf` | the BVH path tracer (default) or the distance-field renderer (`rtx` and `gtx` still work as the old names) |
 | `screentraces=1` | screen traces first (nearest-depth hierarchy walk), then the distance field (SDF mode) or the BVH tracer (BVH mode) |
 | `lightgrid=0` | test every light per pixel instead of the world light grid (an exact cull: the picture must not change) |
+| `gridreach=0.05…1` | diagnostic: scale every light's reach in the light grid cull. 1 is exact; below 1 deliberately drops light, so the tests can prove they would notice |
 | `ies=0` | analytic beam shapes instead of the IES photometric profiles |
 | `emissive=0` | no emissive-surface light sampling (BVH renderer): emitters are found by BSDF hits only |
 | `tyres=analytic` | the analytic tyre carcass spring instead of the XPBD carcass |

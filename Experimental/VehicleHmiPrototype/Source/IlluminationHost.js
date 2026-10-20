@@ -143,7 +143,7 @@ class IlluminationHost
             FireflyFilter: true,
             MultiBounceNEE: true,
             Indirect: true, ScreenTraversal: Query.get("screentraces") === "1", ScreenIndirect: true, ScreenReflection: true,
-            LightGrid: Query.get("lightgrid") !== "0", IesProfiles: Query.get("ies") !== "0", EmissiveLights: Query.get("emissive") !== "0",
+            LightGrid: Query.get("lightgrid") !== "0", LightGridReach: Math.max(0.05, Math.min(1.0, Number(Query.get("gridreach") || 1))), IesProfiles: Query.get("ies") !== "0", EmissiveLights: Query.get("emissive") !== "0",
             // 📝 The XPBD tyre carcass drives the tyres' vertical stiffness and contact patch (?tyres=analytic keeps the analytic carcass spring alone).
             TyreCarcass: Query.get("tyres") !== "analytic", TyreSubsteps: Math.max(8, Math.min(32, Number(Query.get("tyresubsteps") || 32))),
             TemporalReuse: true, SpatialReuse: true, VisibilityReuse: true, RadianceRefresh: true,
@@ -1291,6 +1291,7 @@ class IlluminationHost
         if (this.Lighting && this.LightRecords)
         {
             const LightData = this.Lighting.Update(this.Vehicle.QueryBodyTransform(), this.StreetLampPoles);
+            this.LightClusters.ReachScale = this.Settings.LightGridReach;
             this.LightClusters.Update(Device, LightData);
         }
         if (this.RayTracing)

@@ -133,18 +133,29 @@ test("executed: SDF frame is lit, finite and the tarmac stays tarmac through the
     assert.ok(Sky[2] > Sky[0] && Sky[2] > 120, `the sky is blue (${Sky.map((V) => V.toFixed(0))})`);
 });
 
-test("executed: the world light grid is an exact cull (SDF frame identical with every light tested)", { skip: !Enabled, timeout: 1800000 }, async (T) =>
+test("executed: the world light grid is an exact cull at night, and the same comparison catches a grid that is not", { skip: !Enabled, timeout: 1800000 }, async (T) =>
 {
-    const [On, Off] = await Pair(Once("sdf-grid", "renderer=sdf"), Once("sdf-nogrid", "renderer=sdf&lightgrid=0"));
-    const Difference = Compare(On.Image, Off.Image), Steps = Histogram(On.Image, Off.Image);
-    T.diagnostic(`light grid on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ, max ${Difference.Max} (8-bit steps), mean abs ${Difference.MeanAbs.toFixed(3)}; pixels differing by at least 2 / 4 / 8 steps: ${Steps.AtLeast(2)} / ${Steps.AtLeast(4)} / ${Steps.AtLeast(8)}`);
-    // 📝 What "exact" can mean here. Two IDENTICAL runs already differ in tens of pixels by one 8-bit step (unordered atomics in the card relighting, TAA), and a high-contrast edge
-    //    (a highlight on a cone) can move a few pixels by two or three steps: measured here, 82 of 20736 pixels differ, 79 by exactly one step and 3, in a cluster 4 pixels wide, by
-    //    2-3. A light the grid wrongly dropped would change whole beams, hundreds of pixels by tens of steps. So the test bounds the pixels that moved by more than the floor, and
-    //    bounds how far any pixel moves, rather than demanding that no single pixel ever moves by 3.
-    assert.ok(Difference.Different <= 0.02 * Difference.Pixels, `grid on vs off: ${Difference.Different} of ${Difference.Pixels} pixels differ (at most 2 % may)`);
-    assert.ok(Steps.AtLeast(2) <= 0.001 * Difference.Pixels, `grid on vs off: ${Steps.AtLeast(2)} pixels moved by 2 or more steps (at most 0.1 % = ${Math.floor(0.001 * Difference.Pixels)} may)`);
-    assert.ok(Difference.Max <= 8, `grid on vs off: the largest change is ${Difference.Max} steps (a dropped light changes beams by tens)`);
+    // 📝 Why night, analytic tyres, and a deliberately broken third frame. (1) In daylight the sun dominates and a grid that dropped half of every light's reach moves only ~1 % of the pixels by
+    //    a few steps (measured: 989 pixels, max 7, against a clean floor of 82 and 3), so a daylight comparison barely has teeth. At night the lamps and beams ARE the picture. (2) The XPBD
+    //    tyre readbacks arrive at frame-to-frame different moments on a slow software adapter, which varies the car's pose and ripples through reprojection at thin silhouettes: two
+    //    IDENTICAL night runs differ by mean 0.100 (max 103) with them and 0.011 (max 12) without. The tyres have nothing to do with the grid, so they are analytic here. (3) A comparison
+    //    that cannot fail proves nothing, so a third frame renders the grid with every reach halved (?gridreach=0.5, the diagnostic) and the test requires THAT to be caught.
+    //    Measured (SwiftShader, 320x180, 16 frames): clean grid vs all lights: mean abs 0.005-0.012, at most 20 pixels moved by 4 or more steps, none by 16;
+    //    halved reach vs all lights: mean abs 0.521, 693 pixels by 4 or more, 312 by 8 or more, 72 by 16 or more.
+    const Base = "renderer=sdf&preset=Night&tyres=analytic";
+    const [On, Off, Broken] = await Promise.all([Once("grid-on", Base), Once("grid-off", `${Base}&lightgrid=0`), Once("grid-broken", `${Base}&gridreach=0.5`)]);
+    const Exact = Compare(On.Image, Off.Image), ExactSteps = Histogram(On.Image, Off.Image);
+    const Wrong = Compare(Broken.Image, Off.Image), WrongSteps = Histogram(Broken.Image, Off.Image);
+    T.diagnostic(`night, light grid vs every light tested: ${Exact.Different} of ${Exact.Pixels} pixels differ, max ${Exact.Max}, mean abs ${Exact.MeanAbs.toFixed(4)}; pixels moved by >= 4 / 8 / 16 steps: ${ExactSteps.AtLeast(4)} / ${ExactSteps.AtLeast(8)} / ${ExactSteps.AtLeast(16)}`);
+    T.diagnostic(`night, grid with HALVED reach vs every light tested (must be caught): ${Wrong.Different} of ${Wrong.Pixels} pixels differ, max ${Wrong.Max}, mean abs ${Wrong.MeanAbs.toFixed(4)}; pixels moved by >= 4 / 8 / 16 steps: ${WrongSteps.AtLeast(4)} / ${WrongSteps.AtLeast(8)} / ${WrongSteps.AtLeast(16)}`);
+    for (const Run of [On, Off, Broken]) assert.match(Run.Log, /0 errors, 0 warnings/);
+    // the grid is exact: clean runs sit at the noise floor (thresholds 2.5-3x the worst clean measurement)
+    assert.ok(Exact.MeanAbs <= 0.03, `grid on vs all lights: mean abs ${Exact.MeanAbs.toFixed(4)} (clean floor 0.012)`);
+    assert.ok(ExactSteps.AtLeast(4) <= 0.003 * Exact.Pixels, `grid on vs all lights: ${ExactSteps.AtLeast(4)} pixels moved by 4 or more steps (at most ${Math.floor(0.003 * Exact.Pixels)})`);
+    assert.ok(ExactSteps.AtLeast(16) <= 5 && Exact.Max <= 24, `grid on vs all lights: ${ExactSteps.AtLeast(16)} pixels by 16 or more, largest change ${Exact.Max}`);
+    // and the comparison has teeth: a grid that drops half of every reach is far outside that floor
+    assert.ok(Wrong.MeanAbs >= 0.15 && Wrong.MeanAbs >= 10 * Math.max(Exact.MeanAbs, 0.005), `the broken grid must be caught: mean abs ${Wrong.MeanAbs.toFixed(4)} against ${Exact.MeanAbs.toFixed(4)} for the clean one`);
+    assert.ok(WrongSteps.AtLeast(8) >= 100 && WrongSteps.AtLeast(8) >= 10 * Math.max(ExactSteps.AtLeast(8), 5), `the broken grid moves ${WrongSteps.AtLeast(8)} pixels by 8 or more steps (the clean one ${ExactSteps.AtLeast(8)})`);
 });
 
 test("executed: screen traces are sane, finite and change the SDF image", { skip: !Enabled, timeout: 1800000 }, async (T) =>
