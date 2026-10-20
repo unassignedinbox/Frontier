@@ -987,6 +987,13 @@ namespace
             BlendStep(P, Built, [](Vector3 Start, Vector3 End, const CurveGeometry&) { return std::fabs(Start.X - End.X) < 1e-9 && std::fabs(Start.Y - End.Y) < 1e-9; }, 4,
                       BlendProfile::Fillet, 0.5);
             Built.Expected = 8.0 - 4.0 * EdgeFilletLoss(0.5, 1.0);
+            // 💡 The rounded block is modelled exactly (2 boxes ∪ 4 corner cylinders), so only the second blend needs a clearance.
+            Built.Oracle.Added = { BoxShape({ 0.5, 0, 0 }, { 3.5, 2, 1 }), BoxShape({ 0, 0.5, 0 }, { 4, 1.5, 1 }) };
+            for (const Vector3 Corner : { Vector3{ 0.5, 0.5, 0 }, Vector3{ 3.5, 0.5, 0 }, Vector3{ 0.5, 1.5, 0 }, Vector3{ 3.5, 1.5, 0 } })
+            {
+                Built.Oracle.Added.push_back(CylinderShape(Corner, { 0, 0, 1 }, 0.5, 1.0));
+            }
+            Built.OracleClearance = 1.0e-3;
             return Built;
         };
         const auto TopLoop = [](Vector3 Start, Vector3 End, const CurveGeometry&) { return std::fabs(Start.Z - 1.0) < 1e-9 && std::fabs(End.Z - 1.0) < 1e-9; };
