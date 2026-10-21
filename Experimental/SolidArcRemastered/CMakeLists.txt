@@ -49,6 +49,7 @@ add_library(SolidArcRemastered STATIC
     Source/Construction/BodyAssembly.cpp
     Source/Construction/BodyTransform.cpp
     Source/Blend/RollingBallGeometry.cpp
+    Source/Blend/FairPatch.cpp
     Source/Blend/EdgeBlend.cpp
     Source/Blend/BlendCatalogue.cpp
     Source/Local/FaceChange.cpp

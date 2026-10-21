@@ -628,11 +628,41 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
     for (FaceToken Face : Inventory.Faces) Domains.push_back(DescribeFaceDomain(Partition, Face));
     CurveSurfaceSettings Settings;
     Settings.Precision = Precision;
+    // 📝 Freeform carriers lie inside the box of their poles (convex hull property), so only the stretch of an edge that
+    //    comes near that box can meet the face: the costly freeform curve–surface scan is clipped to it, or skipped.
+    //    Analytic carriers are unbounded and keep the full test.
+    struct Bounds { Vector3 Low, High; bool Present = false; };
+    std::vector<Bounds> FaceBounds(Inventory.Faces.size());
+    for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index)
+    {
+        const auto* Freeform = std::get_if<NurbsSurface>(&Domains[Index].Surface);
+        if (Freeform == nullptr) continue;
+        Bounds& Box = FaceBounds[Index];
+        Box = { Freeform->Definition->Poles.front(), Freeform->Definition->Poles.front(), true };
+        for (const Vector3& Pole : Freeform->Definition->Poles)
+        {
+            Box.Low  = { std::min(Box.Low.X, Pole.X), std::min(Box.Low.Y, Pole.Y), std::min(Box.Low.Z, Pole.Z) };
+            Box.High = { std::max(Box.High.X, Pole.X), std::max(Box.High.Y, Pole.Y), std::max(Box.High.Z, Pole.Z) };
+        }
+    }
     for (EdgeToken Edge : Inventory.Edges)
     {
         const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
         const CurveGeometry& Curve   = Partition.Curves.Resolve(Profile.Curve);
         const Vector3        Ends[2] = { Partition.Vertices.Resolve(Profile.Start).Position, Partition.Vertices.Resolve(Profile.End).Position };
+        // Edge samples: a point of the edge lies within one sample step (plus the sagitta of an arc ≤ a turn between
+        //    129 samples, under a tenth of the step) of a sample, so a sample box widened by 1.5 steps holds the edge.
+        constexpr int        EdgeSamples = 128;
+        std::vector<Vector3> Points(EdgeSamples + 1);
+        double               Step = 0.0;                                                     // [len] - Largest sample spacing
+        for (int Sample = 0; Sample <= EdgeSamples; ++Sample)
+        {
+            Points[Sample] = EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Sample / EdgeSamples).Position;
+            if (Sample > 0) Step = std::max(Step, Distance(Points[Sample], Points[Sample - 1]));
+        }
+        const double Widen = 1.5 * Step + 1.0e3 * Precision;                                 // [len] - Sample → edge margin
+        double       Chord = 0.0;                                                            // [len] - Polyline length of the edge
+        for (int Sample = 1; Sample <= EdgeSamples; ++Sample) Chord += Distance(Points[Sample], Points[Sample - 1]);
         std::vector<uint32_t> Users;
         FinToken Fin = Profile.RadialFin;
         for (int Guard = 0; Fin.PresentCondition() && Guard < 8; ++Guard)
@@ -644,8 +674,31 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
         for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index)
         {
             if (std::find(Users.begin(), Users.end(), Inventory.Faces[Index].Slot) != Users.end()) continue;
+            // Freeform face: only the stretch of the edge whose samples come within Widen of the pole box can meet it.
+            double ClipLow = Profile.IntervalLow, ClipHigh = Profile.IntervalHigh;
+            if (FaceBounds[Index].Present)
+            {
+                const Bounds& Box = FaceBounds[Index];
+                int First = -1, Last = -1;
+                for (int Sample = 0; Sample <= EdgeSamples; ++Sample)
+                {
+                    const Vector3& Point = Points[Sample];
+                    const bool Near = Point.X >= Box.Low.X - Widen && Point.X <= Box.High.X + Widen && Point.Y >= Box.Low.Y - Widen && Point.Y <= Box.High.Y + Widen &&
+                                      Point.Z >= Box.Low.Z - Widen && Point.Z <= Box.High.Z + Widen;
+                    if (!Near) continue;
+                    if (First < 0) First = Sample;
+                    Last = Sample;
+                }
+                if (First < 0) continue;
+                const double Span = Profile.IntervalHigh - Profile.IntervalLow;
+                ClipLow  = Profile.IntervalLow + Span * std::max(First - 1, 0) / EdgeSamples;
+                ClipHigh = Profile.IntervalLow + Span * std::min(Last + 1, EdgeSamples) / EdgeSamples;
+            }
             const FaceDomain& Domain = Domains[Index];
-            const CurveSurfaceOutcome Outcome = IntersectCurveSurface(Curve, Profile.IntervalLow, Profile.IntervalHigh, Domain.Surface, Settings);
+            // The scan keeps the spacing the whole edge would get on this carrier (Chord/256, ≤ Extent/100).
+            CurveSurfaceSettings Clipped = Settings;
+            if (const auto* Freeform = std::get_if<NurbsSurface>(&Domain.Surface)) Clipped.ScanSpacing = std::min(Chord / 256.0, 1.0e-2 * Freeform->Definition->Extent);
+            const CurveSurfaceOutcome Outcome = IntersectCurveSurface(Curve, ClipLow, ClipHigh, Domain.Surface, Clipped);
             std::vector<Vector3> Probes;
             for (const CurveSurfaceCrossing& Crossing : Outcome.Crossings) Probes.push_back(Crossing.Position);
             for (const CoincidentInterval& Stretch : Outcome.Coincidences) Probes.push_back(EvaluateCurve(Curve, 0.5 * (Stretch.Low + Stretch.High)).Position);

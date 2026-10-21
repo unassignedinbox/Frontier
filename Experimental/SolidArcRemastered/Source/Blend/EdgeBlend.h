@@ -32,6 +32,7 @@ enum class VertexBlendCategory : uint8_t
     BallCorner   = 2,                                                                        // Three blended: sphere patch / chamfer apex
     Continuation = 3,                                                                        // Closed blended rim through its seam vertex
     Pinch        = 4,                                                                        // Every blend narrows to zero width at the vertex
+    Setback      = 5,                                                                        // Blends cut back, hole filled by fair quads
 };
 
 enum class BlendFaceOrigin : uint8_t
@@ -53,7 +54,7 @@ struct BlendFaceHistory
 struct BlendStatistics
 {
     int    BlendedEdges      = 0;                                                            // [-]   - Sheets resolved
-    int    Vertices[5]       = { 0, 0, 0, 0, 0 };                                            // [-]   - Per VertexBlendCategory
+    int    Vertices[6]       = { 0, 0, 0, 0, 0, 0 };                                         // [-]   - Per VertexBlendCategory
     int    CarrierPlanes     = 0;                                                            // [-]   - Exact carriers by type
     int    CarrierCylinders  = 0;                                                            // [-]
     int    CarrierCones      = 0;                                                            // [-]
@@ -63,6 +64,10 @@ struct BlendStatistics
     int    TracedSections    = 0;                                                            // [-]   - Mitres / caps on exact intersection curves
     double MaxSheetResidual  = 0.0;                                                          // [len] - Worst rolling-ball residual
     double MaxVertexResidual = 0.0;                                                          // [len] - Worst corner / mitre agreement
+    int    SetbackPatches    = 0;                                                            // [-]   - Fair quads in setback vertex blends
+    double MaxTangentBreak   = 0.0;                                                          // [rad] - Worst G1 break of a setback quad to its neighbours
+    double MaxSeamBreak      = 0.0;                                                          // [rad] - Worst G1 break across a spoke (quad to quad)
+    double MaxRimGap         = 0.0;                                                          // [len] - Worst G0 gap of a setback quad to its rims
     double Milliseconds      = 0.0;                                                          // [ms]  - Wall time
 };
 
@@ -87,7 +92,10 @@ struct BlendOutcome
 //       chamfers), BallCorner (sphere of the ball touching all three faces; chamfer: three lines to the apex where the
 //       three chamfer planes meet), Continuation (closed rim: the cross-section at its seam vertex becomes the blend
 //       face's seam), Pinch (the supports are tangent at the vertex — a Steinmetz singular point — so every blend's
-//       section shrinks to zero there and its two rails end on the vertex itself); anything else is refused (setback vertex blends need freeform patches, 🚧);
+//       section shrinks to zero there and its two rails end on the vertex itself), Setback (mixed convexity or degree ≠ 3
+//       with every edge blended: each blend is cut back at an exact section past its rail crossings, the rail ends on
+//       each planar face are joined by a tangent conic, and the 2n-sided hole is filled by 2n fair bicubic NURBS quads —
+//       exact rims, G1 solved and its worst break reported); anything else is refused;
 //    ③ sharp edges trimmed at resolved vertices, blended edges replaced by contact edges on both supports (refused if a
 //       contact rail runs backwards — blend wider than its face);
 //    ④ blueprint: trimmed faces (+ cap edges), blend faces, corner faces, SP-curves fitted with chart anchors;

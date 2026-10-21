@@ -56,6 +56,9 @@ struct CurveSurfaceSettings
 {
     double Precision          = SessionPrecision;                                            // [len] - Touch / accept distance
     double ParameterTolerance = 1.0e-13;                                                     // [-]   - Bézier-clip width on [0, 1]
+    double ScanSpacing        = 0.0;                                                         // [len] - Fixed scan spacing (0 = automatic; set when
+                                                                                             //         a caller clips the interval, so clipping keeps
+                                                                                             //         the density of the whole curve)
 };
 
 //------------------------------------------------------------------------------------------------------------------------

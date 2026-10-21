@@ -142,6 +142,11 @@ std::string EncodeBlend(const ModelPartition& Partition, const BlendSpecimen& Sp
     Writer.Integer("BallCorners", Statistics.Vertices[static_cast<int>(VertexBlendCategory::BallCorner)]);
     Writer.Integer("Continuations", Statistics.Vertices[static_cast<int>(VertexBlendCategory::Continuation)]);
     Writer.Integer("Pinches", Statistics.Vertices[static_cast<int>(VertexBlendCategory::Pinch)]);
+    Writer.Integer("Setbacks", Statistics.Vertices[static_cast<int>(VertexBlendCategory::Setback)]);
+    Writer.Integer("SetbackPatches", Statistics.SetbackPatches);
+    Writer.Number("MaxTangentBreak", Statistics.MaxTangentBreak);
+    Writer.Number("MaxSeamBreak", Statistics.MaxSeamBreak);
+    Writer.Number("MaxRimGap", Statistics.MaxRimGap);
     Writer.Integer("Planes", Statistics.CarrierPlanes);
     Writer.Integer("Cylinders", Statistics.CarrierCylinders);
     Writer.Integer("Cones", Statistics.CarrierCones);

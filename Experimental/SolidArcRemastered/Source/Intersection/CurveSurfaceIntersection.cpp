@@ -113,7 +113,9 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
         // 📝 On a NURBS carrier the distance is near-linear across a fraction of the smallest curvature radius.
         if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) Spacing = std::min(Spacing, 1.0e-2 * Spline->Definition->Extent);
         const int Knots = static_cast<int>(CollectCurveBreakpoints(Curve, Low, High).size());
-        const int Count = std::clamp(std::max(static_cast<int>(std::ceil(Chord / std::max(Spacing, 1.0e-300))), 16 * Knots), 64, 16384);
+        const int Floor = Settings.ScanSpacing > 0.0 ? 8 : 64;                               // [-] - Fewest samples
+        if (Settings.ScanSpacing > 0.0) Spacing = Settings.ScanSpacing;
+        const int Count = std::clamp(std::max(static_cast<int>(std::ceil(Chord / std::max(Spacing, 1.0e-300))), 16 * Knots), Floor, 16384);
         std::vector<double> Values(Count + 1);
         for (int Index = 0; Index <= Count; ++Index) Values[Index] = ProbeDistance(Curve, Surface, Low + (High - Low) * Index / Count).Distance;
         for (int Index = 0; Index <= Count; ++Index)

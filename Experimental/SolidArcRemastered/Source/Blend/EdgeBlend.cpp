@@ -5,6 +5,8 @@
 
 #include "Blend/EdgeBlend.h"
 
+#include "Blend/FairPatch.h"
+
 #include "Construction/BodyAssembly.h"
 #include "Containment/FaceDomain.h"
 #include "Geometry/ProjectedCurve.h"
@@ -120,6 +122,7 @@ namespace
         std::map<ContactKey, int>                  ContactVertices;                          // contact end → blueprint vertex
         std::map<EdgeEndKey, std::vector<ChainLink>> Terminations;                           // blend end, side 0 → side 1
         std::map<FaceVertexKey, int>               CapEdges;                                 // third face corner → cap edge
+        std::map<FaceVertexKey, std::vector<ChainLink>> SetbackLinks;                        // face corner → setback conic halves
         std::map<uint32_t, int>                    Pieces;                                   // sharp edge → blueprint edge
         std::map<std::pair<uint32_t, int>, int>    ContactPieces;                            // (edge, side) → blueprint edge
         std::vector<CornerPatch>                   Corners;
@@ -362,7 +365,9 @@ namespace
             const bool Convex = SheetOf(Blended.front().first)->ConvexCondition;
             for (const auto& End : Blended)
             {
-                if (SheetOf(End.first)->ConvexCondition != Convex) return "convex and concave blends meet (setback vertex blend, 🚧)";
+                if (SheetOf(End.first)->ConvexCondition == Convex) continue;
+                if (Sharp.empty()) return ResolveSetback(Vertex, Ends);
+                return "convex and concave blends meet beside a sharp edge (🚧)";
             }
             if (Blended.size() == 2 && Blended[0].first != Blended[1].first && !Sharp.empty())
             {
@@ -371,7 +376,11 @@ namespace
                 if (SeamsOnly) return ResolveSeamCrossing(Vertex, Blended[0], Blended[1], Sharp);
             }
             if (ResolvePinch(Vertex, Blended)) return {};
-            if (Ends.size() != 3) return "degree " + std::to_string(Ends.size()) + " vertex with blended edges (setback vertex blend, 🚧)";
+            if (Ends.size() != 3)
+            {
+                if (Sharp.empty()) return ResolveSetback(Vertex, Ends);
+                return "degree " + std::to_string(Ends.size()) + " vertex with blended and sharp edges (🚧)";
+            }
             if (Blended.size() == 2 && Blended[0].first == Blended[1].first) return ResolveContinuation(Vertex, Blended[0].first, Sharp[0].first);
             if (Blended.size() == 1) return ResolveCap(Vertex, Blended[0], Sharp[0].first, Sharp[1].first);
             if (Blended.size() == 2) return ResolveMitre(Vertex, Blended[0], Blended[1], Sharp[0].first);
@@ -402,6 +411,305 @@ namespace
             }
             ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Pinch)];
             return true;
+        }
+
+        // Spine-parameter crossing of two rails nearest a point (Gauss–Newton on C₁(a) − C₂(b)); empty if they miss.
+        [[nodiscard]] std::optional<std::pair<double, double>> MeetRails(const CurveGeometry& First, const CurveGeometry& Second, Vector3 Near) const
+        {
+            double ParameterA = ProjectOntoCurve(First, Near, 0.0), ParameterB = ProjectOntoCurve(Second, Near, 0.0);
+            for (int Iteration = 0; Iteration < 60; ++Iteration)
+            {
+                const CurveSample A = EvaluateCurve(First, ParameterA), B = EvaluateCurve(Second, ParameterB);
+                const Vector3 Gap = A.Position - B.Position;
+                const double  AA  = Dot(A.Derivative, A.Derivative), AB = -Dot(A.Derivative, B.Derivative), BB = Dot(B.Derivative, B.Derivative);
+                const double  RA  = -Dot(A.Derivative, Gap), RB = Dot(B.Derivative, Gap);
+                const double  Determinant = AA * BB - AB * AB;
+                if (std::fabs(Determinant) <= 1.0e-14 * std::max(AA * BB, 1.0e-300)) return std::nullopt;
+                const double StepA = (RA * BB - AB * RB) / Determinant, StepB = (AA * RB - AB * RA) / Determinant;
+                ParameterA += StepA;
+                ParameterB += StepB;
+                if (std::fabs(StepA) + std::fabs(StepB) <= 1.0e-15 * (1.0 + std::fabs(ParameterA) + std::fabs(ParameterB))) break;
+            }
+            if (Distance(EvaluateCurve(First, ParameterA).Position, EvaluateCurve(Second, ParameterB).Position) > Agreement) return std::nullopt;
+            return std::pair{ ParameterA, ParameterB };
+        }
+
+        // 📝 Varady–Rockwood setback vertex blend (research § I): every blend at the vertex is cut back past the crossings
+        //    of its rails with the neighbouring rails, plus one radius, at an exact cross-section (a circle of the ball); on
+        //    each face the two rail ends are joined by a conic tangent to both rails (middle pole at their crossing); the
+        //    2n-sided hole is filled by 2n fair bicubic quads about a centre (rim halves + cubic spokes, FairPatch). Rims
+        //    are exact (G0); G1 is solved for and its worst break reported. v1: fillets, every edge at the vertex blended,
+        //    planar faces around the vertex — anything else is refused.
+        [[nodiscard]] std::string ResolveSetback(VertexToken Vertex, const std::vector<std::pair<EdgeToken, int>>& Ends)
+        {
+            constexpr double SetbackRatio = 1.0;                                             // [-] - Margin past the crossings, in radii
+            constexpr int    QuadSpans    = 6;                                               // [-] - Fair quad spans per direction
+            if (Settings.Profile != BlendProfile::Fillet) return "setback vertex blend of chamfers (🚧)";
+            const size_t Count = Ends.size();
+            for (size_t First = 0; First < Count; ++First)
+            {
+                for (size_t Second = First + 1; Second < Count; ++Second)
+                {
+                    if (Ends[First].first == Ends[Second].first) return "setback vertex blend through a closed blended edge (🚧)";
+                }
+            }
+
+            // ① Ring: blend i lies between faces Before and After; After of blend i is Before of blend i + 1.
+            struct RingBlend
+            {
+                std::pair<EdgeToken, int> End        = {};                                   // [-]   - Blended edge end at the vertex
+                FaceToken                 Before     = {};                                   // [-]   - Support shared with the previous blend
+                FaceToken                 After      = {};                                   // [-]   - Support shared with the next blend
+                int                       SideBefore = 0;                                    // [-]   - Sheet side of Before
+                double                    Section    = 0.0;                                  // [-]   - Spine τ at the vertex
+                double                    Speed      = 1.0;                                  // [len] - |spine′| there
+                double                    Away       = 1.0;                                  // [-]   - ±1: τ direction leaving the vertex
+                double                    Reach      = 0.0;                                  // [len] - Farthest rail crossing along the spine
+                double                    Cut        = 0.0;                                  // [-]   - Spine τ of the setback section
+                int                       FootBefore = -1;                                   // [-]   - Blueprint vertex on Before
+                int                       FootAfter  = -1;                                   // [-]   - Blueprint vertex on After
+            };
+            std::vector<RingBlend> Ring;
+            std::vector<bool>      Used(Count, false);
+            Ring.push_back({ Ends[0], SheetOf(Ends[0].first)->Faces[0], SheetOf(Ends[0].first)->Faces[1], 0 });
+            Used[0] = true;
+            while (Ring.size() < Count)
+            {
+                bool Found = false;
+                for (size_t Index = 0; Index < Count && !Found; ++Index)
+                {
+                    if (Used[Index]) continue;
+                    const EdgeBlendSheet& Sheet = *SheetOf(Ends[Index].first);
+                    const int Side = SideOn(Sheet, Ring.back().After);
+                    if (Side < 0) continue;
+                    Ring.push_back({ Ends[Index], Sheet.Faces[Side], Sheet.Faces[1 - Side], Side });
+                    Used[Index] = true;
+                    Found       = true;
+                }
+                if (!Found) return "setback: the blended edges do not form a face ring";
+            }
+            if (Ring.back().After != Ring.front().Before) return "setback: the face ring does not close";
+            std::set<uint32_t> RingFaces;
+            for (const RingBlend& Blend : Ring) RingFaces.insert(Blend.After.Slot);
+            if (RingFaces.size() != Count) return "setback: a face meets the vertex twice (🚧)";
+            for (const RingBlend& Blend : Ring)
+            {
+                if (!std::holds_alternative<PlaneSurface>(SurfaceOf(Blend.After))) return "setback vertex blend on a curved face (🚧)";
+            }
+
+            // ② Cuts: past the farther rail crossing on either support, plus SetbackRatio radii, measured along the spine.
+            const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            const auto Rail = [&](const RingBlend& Blend, bool OnBefore) -> const CurveGeometry&
+            {
+                return SheetOf(Blend.End.first)->Contacts[OnBefore ? Blend.SideBefore : 1 - Blend.SideBefore];
+            };
+            for (RingBlend& Blend : Ring)
+            {
+                const EdgeBlendSheet& Sheet = *SheetOf(Blend.End.first);
+                Blend.Section = ProjectOntoCurve(Sheet.Spine, Position, 0.0);
+                Blend.Speed   = std::max(Length(EvaluateCurve(Sheet.Spine, Blend.Section).Derivative), 1.0e-12);
+                Blend.Away    = (Blend.End.second == 0 ? 1.0 : -1.0) * (Sheet.Alignment > 0.0 ? 1.0 : -1.0);
+            }
+            const auto Along = [&](const RingBlend& Blend, double τ)
+            {
+                double Step = τ - Blend.Section;                                             // [-] - τ offset from the vertex section
+                if (PeriodicCondition(SheetOf(Blend.End.first)->Spine)) Step -= 2.0 * std::numbers::pi * std::round(Step / (2.0 * std::numbers::pi));
+                return Step * Blend.Away * Blend.Speed;
+            };
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                RingBlend& Blend = Ring[Index];
+                RingBlend& Next  = Ring[(Index + 1) % Count];
+                const auto Meet  = MeetRails(Rail(Blend, false), Rail(Next, true), Position);
+                if (!Meet) continue;
+                Blend.Reach = std::max(Blend.Reach, Along(Blend, Meet->first));
+                Next.Reach  = std::max(Next.Reach, Along(Next, Meet->second));
+            }
+            for (RingBlend& Blend : Ring)
+            {
+                const EdgeBlendSheet& Sheet = *SheetOf(Blend.End.first);
+                Blend.Cut        = Blend.Section + Blend.Away * (Blend.Reach + SetbackRatio * Sheet.Radius) / Blend.Speed;
+                Blend.FootBefore = IssueVertex(EvaluateCurve(Rail(Blend, true), Blend.Cut).Position);
+                Blend.FootAfter  = IssueVertex(EvaluateCurve(Rail(Blend, false), Blend.Cut).Position);
+                ContactVertices[{ Blend.End.first.Slot, Blend.SideBefore, Blend.End.second }]     = Blend.FootBefore;
+                ContactVertices[{ Blend.End.first.Slot, 1 - Blend.SideBefore, Blend.End.second }] = Blend.FootAfter;
+            }
+
+            // ③ Rims in ring order: the section of blend i (Before → After), then the conic on its After face.
+            struct SetbackRim
+            {
+                RationalBezier         Halves[2] = {};                                       // [-] - Exact halves, Start → Middle → End
+                int                    Edges[2]  = { -1, -1 };                               // [-] - Blueprint edges of the halves
+                int                    Start     = -1;                                       // [-] - Blueprint vertices
+                int                    Middle    = -1;
+                int                    End       = -1;
+                const SurfaceGeometry* Support   = nullptr;                                  // [-] - Surface the rim lies on
+                Orientation            Sense     = Orientation::Forward;                     // [-] - Its outward sense
+                Vector2                Reference = {};                                       // [-] - Projection reference
+            };
+            std::vector<SetbackRim> Rims;
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                const RingBlend&      Blend = Ring[Index];
+                const RingBlend&      Next  = Ring[(Index + 1) % Count];
+                const EdgeBlendSheet& Sheet = *SheetOf(Blend.End.first);
+                const Vector3 Ball   = EvaluateCurve(Sheet.Spine, Blend.Cut).Position;         // [len] - Ball centre of the section
+                const Vector3 Before = PositionOf(Blend.FootBefore), After = PositionOf(Blend.FootAfter);
+                if (!Agree(std::fabs(Distance(Before, Ball) - Sheet.Radius)) || !Agree(std::fabs(Distance(After, Ball) - Sheet.Radius))) return "setback: section feet are off the ball";
+                const Vector3 Bisector = (Before - Ball) + (After - Ball);
+                if (Length(Bisector) <= 1.0e-6 * Sheet.Radius) return "setback: half-turn section (🚧)";
+                SetbackRim Section;
+                Section.Start     = Blend.FootBefore;
+                Section.End       = Blend.FootAfter;
+                Section.Middle    = IssueVertex(Ball + Normalize(Bisector) * Sheet.Radius);
+                Section.Halves[0] = ConstructArcBezier(Ball, Before, PositionOf(Section.Middle));
+                Section.Halves[1] = ConstructArcBezier(Ball, PositionOf(Section.Middle), After);
+                const CircularArc Circle{ ConstructFrame(Ball, Cross(Before - Ball, After - Ball), Before - Ball), Sheet.Radius };
+                Section.Edges[0]  = IssueConicArc(Circle, Section.Start, Section.Middle);
+                Section.Edges[1]  = IssueConicArc(Circle, Section.Middle, Section.End);
+                if (Section.Edges[0] < 0 || Section.Edges[1] < 0) return "setback: degenerate section";
+                Section.Support   = &Sheet.Surface;
+                Section.Sense     = Sheet.Sense;
+                Section.Reference = ResolveSheetChart(Sheet, Blend.Cut);
+                const ChainLink Near{ Section.Edges[0], Section.Start, Section.Middle }, Far{ Section.Edges[1], Section.Middle, Section.End };
+                Terminations[{ Blend.End.first.Slot, Blend.End.second }] = Blend.SideBefore == 0 ? std::vector<ChainLink>{ Near, Far }
+                                                                                               : std::vector<ChainLink>{ { Far.Edge, Far.To, Far.From }, { Near.Edge, Near.To, Near.From } };
+                Rims.push_back(Section);
+
+                // Conic on the After face, tangent to both rails at their feet (turning towards the vertex).
+                const Vector3 From = After, To = PositionOf(Next.FootBefore);
+                const Vector3 TangentFrom = Normalize(EvaluateCurve(Rail(Blend, false), Blend.Cut).Derivative * (-Blend.Away));
+                const Vector3 TangentTo   = Normalize(EvaluateCurve(Rail(Next, true), Next.Cut).Derivative * (-Next.Away));
+                const Vector3 Offset      = To - From;
+                const double  Cosine      = Dot(TangentFrom, TangentTo);
+                const double  Denominator = 1.0 - Cosine * Cosine;
+                RationalBezier Conic = ConstructConicBezier(From, (From + To) * 0.5, To, 1.0);
+                if (Denominator > 1.0e-10)
+                {
+                    const double  ReachFrom = (Dot(Offset, TangentFrom) - Cosine * Dot(Offset, TangentTo)) / Denominator;
+                    const double  ReachTo   = (Cosine * Dot(Offset, TangentFrom) - Dot(Offset, TangentTo)) / Denominator;
+                    const Vector3 Control   = From + TangentFrom * ReachFrom;
+                    if (ReachFrom > Tolerance && ReachTo > Tolerance && Distance(Control, To + TangentTo * ReachTo) <= Agreement)
+                    {
+                        const Vector3 LegFrom = Normalize(From - Control), LegTo = Normalize(To - Control);
+                        const double  Opening = std::atan2(Length(Cross(LegFrom, LegTo)), Dot(LegFrom, LegTo));  // [rad] - Angle at the crossing
+                        Conic = ConstructConicBezier(From, Control, To, std::sin(0.5 * Opening));
+                    }
+                }
+                const auto [Head, Tail] = SplitRationalBezier(Conic, 0.5);
+                SetbackRim Face;
+                Face.Start     = Blend.FootAfter;
+                Face.End       = Next.FootBefore;
+                Face.Middle    = IssueVertex(Head.Poles.back());
+                Face.Halves[0] = Head;
+                Face.Halves[1] = Tail;
+                const NurbsCurve Carrier = ConvertBezierToNurbs(Conic);
+                Face.Edges[0]  = IssueEdge(Carrier, 0.0, 0.5, Face.Start, Face.Middle);
+                Face.Edges[1]  = IssueEdge(Carrier, 0.5, 1.0, Face.Middle, Face.End);
+                Face.Support   = &SurfaceOf(Blend.After);
+                Face.Sense     = Partition.Faces.Resolve(Blend.After).Sense;
+                Face.Reference = ProjectOntoSurface(*Face.Support, Position, {});
+                SetbackLinks[{ Blend.After.Slot, Vertex.Slot }] = { { Face.Edges[0], Face.Start, Face.Middle }, { Face.Edges[1], Face.Middle, Face.End } };
+                Rims.push_back(Face);
+            }
+
+            // ④ Centre and spokes: each spoke leaves its rim middle across the rim inside the rim's tangent plane and
+            //    reaches the centre in the plane normal to the mean outward normal; the centre sits on that normal where
+            //    the spoke tangents pass closest.
+            const auto Outward = [&](const SetbackRim& Rim, Vector3 Point)
+            {
+                const Vector3 Normal = EvaluateSurfaceNormal(*Rim.Support, ProjectOntoSurface(*Rim.Support, Point, Rim.Reference));
+                return Rim.Sense == Orientation::Forward ? Normal : Normal * -1.0;
+            };
+            const size_t         Sides = Rims.size();
+            std::vector<Vector3> Middles(Sides), Normals(Sides), Inwards(Sides);
+            Vector3 Mean{}, Axis{};
+            for (size_t Index = 0; Index < Sides; ++Index)
+            {
+                Middles[Index] = PositionOf(Rims[Index].Middle);
+                Normals[Index] = Outward(Rims[Index], Middles[Index]);
+                Mean           = Mean + Middles[Index] * (1.0 / Sides);
+                Axis           = Axis + Normals[Index];
+            }
+            if (Length(Axis) <= 1.0e-6) return "setback: the rims share no outward direction";
+            Axis = Normalize(Axis);
+            double Height = 0.0, Spread = 0.0, Votes = 0.0;
+            for (size_t Index = 0; Index < Sides; ++Index)
+            {
+                const RationalBezier& Tail = Rims[Index].Halves[1];
+                Inwards[Index] = Normalize(Cross(Normals[Index], Tail.Poles[1] - Tail.Poles[0]));
+                if (Dot(Inwards[Index], Mean - Middles[Index]) < 0.0) Inwards[Index] = Inwards[Index] * -1.0;
+                Spread = std::max(Spread, Distance(Middles[Index], Mean));
+                const double Skew = Dot(Axis, Inwards[Index]);
+                const Vector3 Gap = Mean - Middles[Index];
+                if (1.0 - Skew * Skew <= 1.0e-6) continue;
+                Height += (Skew * Dot(Inwards[Index], Gap) - Dot(Axis, Gap)) / (1.0 - Skew * Skew);
+                Votes  += 1.0;
+            }
+            if (Votes > 0.0) Height = std::clamp(Height / Votes, -Spread, Spread);
+            const Vector3 Centre       = Mean + Axis * Height;
+            const int     CentreVertex = IssueVertex(Centre);
+            std::vector<RationalBezier> Spokes(Sides);
+            std::vector<int>            SpokeEdges(Sides);
+            for (size_t Index = 0; Index < Sides; ++Index)
+            {
+                const double  Lever  = 0.38 * Distance(Middles[Index], Centre);              // [len] - Tangent pole distance
+                const Vector3 Radial = (Middles[Index] - Centre) - Axis * Dot(Middles[Index] - Centre, Axis);
+                if (Length(Radial) <= 1.0e-9 * Scale) return "setback: a rim middle lies on the centre normal";
+                Spokes[Index]     = { { Middles[Index], Middles[Index] + Inwards[Index] * Lever, Centre + Normalize(Radial) * Lever, Centre }, { 1.0, 1.0, 1.0, 1.0 } };
+                SpokeEdges[Index] = IssueEdge(ConvertBezierToNurbs(Spokes[Index]), 0.0, 1.0, Rims[Index].Middle, CentreVertex);
+            }
+
+            // ⑤ Orientation: the neighbours use every rim in one rotational sense, the quads the other (checked per section).
+            std::optional<bool> RingForward;
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                const SetbackRim& Rim = Rims[2 * Index];
+                const ChainLink   Link = Ring[Index].SideBefore == 0 ? ChainLink{ Rim.Edges[0], Rim.Start, Rim.Middle } : ChainLink{ Rim.Edges[0], Rim.Middle, Rim.Start };
+                const bool        Forward = AgainstBlend(Ring[Index].End, Link).From == Rim.Start;
+                if (RingForward && *RingForward != Forward) return "setback: the ring is not consistently oriented";
+                RingForward = Forward;
+            }
+
+            // ⑥ Quads: P00 = middle of rim k, P10 = junction, P11 = middle of rim k + 1, P01 = centre.
+            // Spoke normal field: the blend of rim-middle and centre normals, made perpendicular to the spoke tangent so a G1
+            //    fill exists; both quads beside a spoke honour the same field, which makes them G1 to each other.
+            const auto SpokeNormal = [&](size_t Index, double 𝑡)
+            {
+                const Vector3 Blend   = Normals[Index] * (1.0 - 𝑡) + Axis * 𝑡;
+                const Vector3 Tangent = Normalize(EvaluateRationalBezier(Spokes[Index], std::min(𝑡 + 1.0e-6, 1.0)) - EvaluateRationalBezier(Spokes[Index], std::max(𝑡 - 1.0e-6, 0.0)));
+                return Normalize(Blend - Tangent * Dot(Blend, Tangent));
+            };
+            for (size_t Index = 0; Index < Sides; ++Index)
+            {
+                const size_t      Next = (Index + 1) % Sides;
+                const SetbackRim& Rim  = Rims[Index];
+                const SetbackRim& Following = Rims[Next];
+                FairSide Bottom{ Rim.Halves[1], [&, Index](double 𝑡) { return Outward(Rims[Index], EvaluateRationalBezier(Rims[Index].Halves[1], 𝑡)); } };
+                FairSide Right{ Following.Halves[0], [&, Next](double 𝑡) { return Outward(Rims[Next], EvaluateRationalBezier(Rims[Next].Halves[0], 𝑡)); } };
+                FairSide Top{ ReverseRationalBezier(Spokes[Next]), [&, Next](double 𝑡) { return SpokeNormal(Next, 1.0 - 𝑡); } };
+                FairSide Left{ Spokes[Index], [&, Index](double 𝑡) { return SpokeNormal(Index, 𝑡); } };
+                const FairQuadOutcome Quad = BuildFairQuad(Bottom, Right, Top, Left, QuadSpans);
+                if (!Quad.Surface) return "setback: " + Quad.Refusal;
+                Outcome.Statistics.MaxTangentBreak = std::max({ Outcome.Statistics.MaxTangentBreak, Quad.SideBreaks[0], Quad.SideBreaks[1] });
+                Outcome.Statistics.MaxSeamBreak    = std::max({ Outcome.Statistics.MaxSeamBreak, Quad.SideBreaks[2], Quad.SideBreaks[3] });
+                Outcome.Statistics.MaxRimGap       = std::max(Outcome.Statistics.MaxRimGap, Quad.RimGap);
+                const NurbsSurfaceDerivatives Probe = EvaluateNurbsSurfaceDerivatives(*Quad.Surface->Definition, { 0.5, 0.0 });
+                CornerPatch Patch;
+                Patch.Vertex    = Vertex;
+                Patch.Surface   = *Quad.Surface;
+                Patch.Sense     = Dot(Cross(Probe.U, Probe.V), Outward(Rim, Probe.Position)) > 0.0 ? Orientation::Forward : Orientation::Reversed;
+                Patch.Reference = { 0.5, 0.5 };
+                Patch.Links     = { { Rim.Edges[1], Rim.Middle, Rim.End }, { Following.Edges[0], Following.Start, Following.Middle }, { SpokeEdges[Next], Following.Middle, CentreVertex }, { SpokeEdges[Index], CentreVertex, Rim.Middle } };
+                if (!*RingForward)
+                {
+                    for (ChainLink& Link : Patch.Links) std::swap(Link.From, Link.To);
+                }
+                Corners.push_back(Patch);
+            }
+            Outcome.Statistics.SetbackPatches += static_cast<int>(Sides);
+            ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Setback)];
+            return {};
         }
 
         // 📝 Section where the rail on Side crosses a seam of its support (secant on the signed offset across the seam,
@@ -940,6 +1248,19 @@ namespace
                             const Vector2 Reference = EvaluateParameterCurve(*FinRecord.SurfaceCurve, Partition.FinParameterEnd(Fin)).Position;
                             Uses.push_back({ Link.Edge, LinkSense(Link), FitUse(Surface, Link.Edge, Reference) });
                         }
+                        const auto Setback = SetbackLinks.find({ Face.Slot, Partition.FinEnd(Fin).Slot });
+                        if (Setback != SetbackLinks.end())
+                        {
+                            std::vector<ChainLink> Chain = Setback->second;
+                            if (UseEnd(Uses.back()) == Chain.back().To)
+                            {
+                                std::reverse(Chain.begin(), Chain.end());
+                                for (ChainLink& Link : Chain) std::swap(Link.From, Link.To);
+                            }
+                            if (UseEnd(Uses.back()) != Chain.front().From) return "setback conic does not meet the rail on " + LabelToken("F", Face);
+                            const Vector2 Reference = EvaluateParameterCurve(*FinRecord.SurfaceCurve, Partition.FinParameterEnd(Fin)).Position;
+                            for (const ChainLink& Link : Chain) Uses.push_back({ Link.Edge, LinkSense(Link), FitUse(Surface, Link.Edge, Reference) });
+                        }
                     }
                     if (std::string Refusal = DiagnoseLoop(Uses, LabelToken("F", Face)); !Refusal.empty()) return Refusal;
                     Blue.Loops.push_back(std::move(Uses));
@@ -1075,6 +1396,7 @@ const char* VertexBlendCategoryLabel(VertexBlendCategory Category) noexcept
         case VertexBlendCategory::BallCorner:   return "BallCorner";
         case VertexBlendCategory::Continuation: return "Continuation";
         case VertexBlendCategory::Pinch:        return "Pinch";
+        case VertexBlendCategory::Setback:      return "Setback";
     }
     return "?";
 }
