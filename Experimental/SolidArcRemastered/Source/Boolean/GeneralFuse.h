@@ -30,6 +30,8 @@ enum class BooleanOperation : uint8_t
     Intersection       = 1,                                                                  // A ∩ B
     Difference         = 2,                                                                  // A − B
     ReversedDifference = 3,                                                                  // B − A
+    FirstInside        = 4,                                                                  // Faces of A inside B (sheet cut piece, no B caps)
+    FirstOutside       = 5,                                                                  // Faces of A outside B (sheet cut piece, no B caps)
 };
 
 // 📝 State of a split face relative to the OTHER argument (OCCT: IN / OUT / ON with same or opposite orientation).
@@ -47,6 +49,7 @@ struct GeneralFuseSettings
     SurfaceIntersectionSettings Intersection = {};                                           // [-]   - Face–face SSI
     WindingSettings             Containment  = {};                                           // [-]   - Fragment classification
     bool                        MaximalFacesEnabled = true;                                  // [-]   - Remove redundant topology after assembly
+    bool                        SecondClassificationEnabled = true;                          // [-]   - Classify B fragments against A (off: A open, B discarded)
 };
 
 struct GeneralFuseStatistics

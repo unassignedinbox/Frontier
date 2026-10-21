@@ -178,6 +178,50 @@ void ReverseProfileSegment(ProfileSegment& Segment) noexcept
     Segment.Sweep       = -Segment.Sweep;
 }
 
+ProfileSegment ResolveSketchCurveSegment(const SketchModel& Sketch, int CurveIndex, double Join, std::string& Refusal)
+{
+    const SketchCurve& Curve = Sketch.Curves[CurveIndex];
+    ProfileSegment Segment;
+    Segment.Curve = CurveIndex;
+    Segment.Name  = SketchCurveName(Curve);
+    if (Curve.Kind == SketchCurveKind::Circle)
+    {
+        if (!(Curve.Radius > Join)) { Refusal = "circle " + Segment.Name + " has no radius"; return Segment; }
+        Segment.Kind   = ProfileSegmentKind::Circle;
+        Segment.Centre = Sketch.Points[Curve.Centre].Position;
+        Segment.Radius = Curve.Radius;
+        Segment.Sweep  = FullTurn;
+        Segment.Start  = Segment.End = Segment.Centre + Vector2{ Curve.Radius, 0.0 };
+        return Segment;
+    }
+    if (Curve.Kind == SketchCurveKind::Spline)
+    {
+        const SketchSplineOutcome Resolved = ResolveSketchCurveSpline(Sketch, Curve);
+        if (!Resolved.Refusal.empty()) { Refusal = Resolved.Refusal; return Segment; }
+        Segment.Kind   = ProfileSegmentKind::Spline;
+        Segment.Spline = Resolved.Curve;
+        Segment.Start  = Resolved.Curve.Poles.front();
+        Segment.End    = Resolved.Curve.Poles.back();
+        return Segment;
+    }
+    Segment.Start = Sketch.Points[Curve.Start].Position;
+    Segment.End   = Sketch.Points[Curve.End].Position;
+    if (Distance(Segment.Start, Segment.End) <= Join) { Refusal = Segment.Name + " has zero length"; return Segment; }
+    if (Curve.Kind == SketchCurveKind::Arc)
+    {
+        Segment.Kind       = ProfileSegmentKind::Arc;
+        Segment.Centre     = Sketch.Points[Curve.Centre].Position;
+        Segment.Radius     = Distance(Segment.Start, Segment.Centre);
+        Segment.StartAngle = std::atan2(Segment.Start.Y - Segment.Centre.Y, Segment.Start.X - Segment.Centre.X);
+        double EndAngle    = std::atan2(Segment.End.Y - Segment.Centre.Y, Segment.End.X - Segment.Centre.X);
+        double Sweep       = std::fmod(EndAngle - Segment.StartAngle + 2.0 * FullTurn, FullTurn);
+        if (Sweep <= 1.0e-12) Sweep += FullTurn;
+        Segment.Sweep = Sweep;
+        Segment.End   = EvaluateProfileSegment(Segment, 1.0);                                 // Exactly on the circle
+    }
+    return Segment;
+}
+
 SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
 {
     SketchProfile Profile;
@@ -209,17 +253,11 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
     {
         const SketchCurve& Curve = Sketch.Curves[Index];
         if (Curve.Construction) continue;
-        ProfileSegment Segment;
-        Segment.Curve = Index;
-        Segment.Name  = SketchCurveName(Curve);
+        std::string Refusal;
+        ProfileSegment Segment = ResolveSketchCurveSegment(Sketch, Index, Join, Refusal);
+        if (!Refusal.empty()) { Profile.Refusal = Refusal; return Profile; }
         if (Curve.Kind == SketchCurveKind::Circle)
         {
-            if (!(Curve.Radius > Join)) { Profile.Refusal = "circle " + Segment.Name + " has no radius"; return Profile; }
-            Segment.Kind   = ProfileSegmentKind::Circle;
-            Segment.Centre = Sketch.Points[Curve.Centre].Position;
-            Segment.Radius = Curve.Radius;
-            Segment.Sweep  = FullTurn;
-            Segment.Start  = Segment.End = Segment.Centre + Vector2{ Curve.Radius, 0.0 };
             ProfileLoop Loop;
             Loop.Segments.push_back(Segment);
             Profile.Loops.push_back(Loop);
@@ -227,30 +265,9 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
         }
         if (Curve.Kind == SketchCurveKind::Spline)
         {
-            const SketchSplineOutcome Resolved = ResolveSketchCurveSpline(Sketch, Curve);
-            if (!Resolved.Refusal.empty()) { Profile.Refusal = Resolved.Refusal; return Profile; }
-            Segment.Kind   = ProfileSegmentKind::Spline;
-            Segment.Spline = Resolved.Curve;
-            Segment.Start  = Resolved.Curve.Poles.front();
-            Segment.End    = Resolved.Curve.Poles.back();
             Open.push_back(Segment);
             Ends.push_back({ FindRoot(Roots, Curve.Points.front()), FindRoot(Roots, Curve.Points.back()) });
             continue;
-        }
-        Segment.Start = Sketch.Points[Curve.Start].Position;
-        Segment.End   = Sketch.Points[Curve.End].Position;
-        if (Distance(Segment.Start, Segment.End) <= Join) { Profile.Refusal = Segment.Name + " has zero length"; return Profile; }
-        if (Curve.Kind == SketchCurveKind::Arc)
-        {
-            Segment.Kind       = ProfileSegmentKind::Arc;
-            Segment.Centre     = Sketch.Points[Curve.Centre].Position;
-            Segment.Radius     = Distance(Segment.Start, Segment.Centre);
-            Segment.StartAngle = std::atan2(Segment.Start.Y - Segment.Centre.Y, Segment.Start.X - Segment.Centre.X);
-            double EndAngle    = std::atan2(Segment.End.Y - Segment.Centre.Y, Segment.End.X - Segment.Centre.X);
-            double Sweep       = std::fmod(EndAngle - Segment.StartAngle + 2.0 * FullTurn, FullTurn);
-            if (Sweep <= 1.0e-12) Sweep += FullTurn;
-            Segment.Sweep = Sweep;
-            Segment.End   = EvaluateProfileSegment(Segment, 1.0);                             // Exactly on the circle
         }
         Open.push_back(Segment);
         Ends.push_back({ FindRoot(Roots, Curve.Start), FindRoot(Roots, Curve.End) });
@@ -290,6 +307,13 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
     }
     if (Profile.Loops.empty()) { Profile.Refusal = "sketch has no profile curves"; return Profile; }
 
+    ArrangeProfileLoops(Profile);
+    return Profile;
+}
+
+void ArrangeProfileLoops(SketchProfile& Profile)
+{
+    const double Join = 1.0e-9 * Profile.Scale;                                              // [len] - Touch distance
     // ④ No crossings between any two segments (adjacent ones may only touch at their shared end).
     std::vector<std::vector<Vector2>> Samples;
     std::vector<std::pair<int, int>>  Owners;
@@ -312,7 +336,7 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
             {
                 if (!PiecesCross(Samples[First][Low1], Samples[First][Low1 + 1], Samples[First][Low2], Samples[First][Low2 + 1], Join)) continue;
                 Profile.Refusal = "profile crosses itself: " + Own.Name + " × " + Own.Name;
-                return Profile;
+                return;
             }
         }
         for (size_t Second = First + 1; Second < Samples.size(); ++Second)
@@ -325,7 +349,7 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
                     const ProfileSegment& One = Profile.Loops[Owners[First].first].Segments[Owners[First].second];
                     const ProfileSegment& Two = Profile.Loops[Owners[Second].first].Segments[Owners[Second].second];
                     Profile.Refusal = "profile crosses itself: " + One.Name + " × " + Two.Name;
-                    return Profile;
+                    return;
                 }
             }
         }
@@ -360,7 +384,6 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
     }
     Profile.Area     = Area;
     Profile.Centroid = Area != 0.0 ? Vector2{ MomentX / Area, MomentY / Area } : Vector2{};
-    return Profile;
 }
 
 } // namespace Frontier::SolidArcRemastered

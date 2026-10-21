@@ -5,6 +5,7 @@
 
 #include "Feature/FeatureTree.h"
 
+#include "Feature/BodyCut.h"
 #include "Sketch/SketchProfile.h"
 #include "Surfacing/CurveNetwork.h"
 #include "Surfacing/PanelAssembly.h"
@@ -532,6 +533,78 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             }
             break;
         }
+        case FeatureStepKind::Cut:
+        {
+            // ⑪ Split a body (Plasticity C): the outside piece keeps the key, the inside piece becomes a body keyed by the step.
+            if (!Load(Step.Target)) { Refuse("Cut: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            const int        Source = Target;
+            OrthonormalFrame Plane;
+            SketchProfile    Profile;
+            double           Reach = 0.0;
+            if (!Step.Sections.empty())
+            {
+                // A SpaceCurve projected along the cut direction (character line seen from a view).
+                const auto Found = Outcome.Curves.find(Step.Sections.front());
+                if (Found == Outcome.Curves.end()) { Refuse("Cut: curve " + Step.Sections.front() + " is unavailable"); break; }
+                if (!(Length(Step.Plane.ZAxis) > 0.0)) { Refuse("Cut: the cut direction is zero"); break; }
+                Plane.Origin = Step.Plane.Origin;
+                Plane.ZAxis  = Normalize(Step.Plane.ZAxis);
+                Vector3 Reference = Step.Plane.XAxis - Plane.ZAxis * Dot(Step.Plane.XAxis, Plane.ZAxis);
+                if (!(Length(Reference) > 1.0e-9)) Reference = std::fabs(Plane.ZAxis.X) < 0.9 ? Vector3{ 1.0, 0.0, 0.0 } - Plane.ZAxis * Plane.ZAxis.X : Vector3{ 0.0, 1.0, 0.0 } - Plane.ZAxis * Plane.ZAxis.Y;
+                Plane.XAxis = Normalize(Reference);
+                Plane.YAxis = Cross(Plane.ZAxis, Plane.XAxis);
+                Reach = MeasureCutReach(Partition, Current, Plane);
+                const std::optional<ProfileSegment> Segment = ProjectCutCurve(Found->second.Curve, Plane, Step.Sections.front());
+                if (!Segment.has_value()) { Refuse("Cut: curve " + Step.Sections.front() + " is rational or periodic (🚧 polynomial curves only)"); break; }
+                if (Distance(Segment->Start, Segment->End) <= 1.0e-9 * std::max(Reach, 1.0))
+                {
+                    ProfileLoop Loop;
+                    Loop.Segments.push_back(*Segment);
+                    Profile.Loops.push_back(std::move(Loop));
+                    Profile.Scale = 2.0 * Reach;
+                    ArrangeProfileLoops(Profile);
+                }
+                else Profile = CloseCutChain({ *Segment }, Reach);
+            }
+            else
+            {
+                const auto Found = Sketches.find(Step.Profile);
+                if (Found == Sketches.end() || !Found->second.UsableCondition) { Refuse("Cut: cutting sketch " + Step.Profile + " is unavailable"); break; }
+                Plane   = Found->second.Plane;
+                Reach   = MeasureCutReach(Partition, Current, Plane);
+                Profile = BuildSketchCutProfile(Found->second.Model, Reach);
+            }
+            const BodyCutOutcome Cut = CutBody(Partition, Current, Profile, Plane, Reach);
+            if (!Cut.Refusal.empty()) { Refuse(Cut.Refusal); break; }
+            const BodyNaming ToolNaming = NameSweptBody(Partition, Cut.Tool, Step.Label);
+            const BodyNaming Original   = Naming;
+            Naming  = NameBooleanBody(Partition, Cut.Outside.Body, Cut.Outside, Original, ToolNaming);
+            Current = Cut.Outside.Body;
+            Store();
+            if (Source == PanelBody) ClosedBy = Step.Label;                                  // Its panels no longer re-sew
+            Naming  = NameBooleanBody(Partition, Cut.Inside.Body, Cut.Inside, Original, ToolNaming);
+            Current = Cut.Inside.Body;
+            Create();
+            break;
+        }
+        case FeatureStepKind::Remove:
+        {
+            // ⑫ Delete a body (Plasticity X); the last remaining body becomes active when the active one goes.
+            if (!Load(Step.Target)) { Refuse("Remove: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            const int Removed = Target;
+            if (Removed == PanelBody) ClosedBy = Step.Label;
+            Bodies.erase(Bodies.begin() + Removed);
+            for (int* Index : { &Target, &Active, &PanelBody })
+            {
+                if (*Index == Removed) *Index = -1;
+                else if (*Index > Removed) --*Index;
+            }
+            if (Active < 0) Active = static_cast<int>(Bodies.size()) - 1;
+            Target  = Active;
+            Current = Active >= 0 ? Bodies[Active].Body : BodyToken{};
+            Naming  = Active >= 0 ? Bodies[Active].Naming : BodyNaming{};
+            break;
+        }
         }
         Report.Body         = Current;
         Report.Naming       = Naming;
@@ -567,6 +640,8 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Mirror:        return "Mirror";
     case FeatureStepKind::Close:         return "Close";
     case FeatureStepKind::Combine:       return "Combine";
+    case FeatureStepKind::Cut:           return "Cut";
+    case FeatureStepKind::Remove:        return "Remove";
     }
     return "?";
 }

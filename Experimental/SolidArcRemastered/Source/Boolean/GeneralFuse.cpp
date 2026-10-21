@@ -1015,6 +1015,8 @@ namespace
             const BodyContainment Containment[2] = { PrepareBodyContainment(Partition, Arguments[0]), PrepareBodyContainment(Partition, Arguments[1]) };
             for (FuseFragment& Fragment : Outcome.Fragments)
             {
+                // 💡 Sheet cuts keep only A fragments: B's are never classified against the open A (no integral winding).
+                if (Fragment.Argument == 1 && !Settings.SecondClassificationEnabled) continue;
                 FaceDomain Domain;
                 Domain.Surface = Fragment.Surface;
                 Domain.Sense   = Fragment.Sense;
@@ -1086,6 +1088,8 @@ namespace
             case BooleanOperation::Intersection:       return { State == Inside || (First && State == OnSame), false };
             case BooleanOperation::Difference:         return First ? std::pair{ State == Outside || State == OnOpposite, false } : std::pair{ State == Inside, true };
             case BooleanOperation::ReversedDifference: return First ? std::pair{ State == Inside, true } : std::pair{ State == Outside || State == OnOpposite, false };
+            case BooleanOperation::FirstInside:        return { First && State == Inside, false };
+            case BooleanOperation::FirstOutside:       return { First && State == Outside, false };
         }
         return { false, false };
     }
@@ -1115,6 +1119,7 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
     }
     if (Kept.empty()) { Outcome.Refusal = "Boolean: empty result"; return Outcome; }
     BodyBlueprint Blueprint;
+    if (Operation == BooleanOperation::FirstInside || Operation == BooleanOperation::FirstOutside) Blueprint.Category = BodyCategory::Sheet;
     for (const FuseVertex& Vertex : Fuse.Vertices) Blueprint.Vertices.push_back({ Vertex.Position });
     for (const FuseEdge& Block : Fuse.Edges) Blueprint.Edges.push_back({ Block.Curve, Block.Low, Block.High, Block.Start, Block.End });
     for (const auto& [Index, Flip] : Kept)
@@ -1175,7 +1180,7 @@ BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyTo
 
 const char* BooleanOperationLabel(BooleanOperation Operation) noexcept
 {
-    constexpr const char* Labels[] = { "Union", "Intersection", "Difference", "ReversedDifference" };
+    constexpr const char* Labels[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside" };
     return Labels[static_cast<int>(Operation)];
 }
 

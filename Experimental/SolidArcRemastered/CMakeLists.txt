@@ -62,6 +62,7 @@ add_library(SolidArcRemastered STATIC
     Source/Sketch/SketchSpline.cpp
     Source/Sketch/SketchCatalogue.cpp
     Source/Feature/ProfileSweep.cpp
+    Source/Feature/BodyCut.cpp
     Source/Feature/PathSweep.cpp
     Source/Feature/TopologicalNaming.cpp
     Source/Feature/FeatureTree.cpp
@@ -147,6 +148,8 @@ add_executable(NurbsValidation Validation/NurbsValidation.cpp)
 target_link_libraries(NurbsValidation PRIVATE SolidArcRemastered)
 add_executable(SetbackValidation Validation/SetbackValidation.cpp)
 target_link_libraries(SetbackValidation PRIVATE SolidArcRemastered)
+add_executable(BodyCutValidation Validation/BodyCutValidation.cpp)
+target_link_libraries(BodyCutValidation PRIVATE SolidArcRemastered)
 
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
@@ -166,4 +169,5 @@ add_test(NAME SurfacingValidation COMMAND SurfacingValidation)
 add_test(NAME PanelSurfacingValidation COMMAND PanelSurfacingValidation)
 add_test(NAME NurbsValidation COMMAND NurbsValidation)
 add_test(NAME SetbackValidation COMMAND SetbackValidation)
+add_test(NAME BodyCutValidation COMMAND BodyCutValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

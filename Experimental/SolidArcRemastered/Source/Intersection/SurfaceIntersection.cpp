@@ -621,9 +621,19 @@ namespace
         return { Position, ProjectOntoSurface(Context.First, Position, FirstReference), ProjectOntoSurface(Context.Second, Position, SecondReference) };
     }
 
+    // 💡 NURBS feet are confined to the domain, so a point marched past a NURBS edge still projects inside the box (and
+    //    its signed distance there is ≈ 0, so the corrector accepts it): the point is on the face only when its foot
+    //    actually reaches it. Corrected points sit within 10⁻¹¹ of both surfaces; 10× the precision is the gate.
+    [[nodiscard]] bool FootReaches(const IntersectionContext& Context, const SurfaceGeometry& Surface, Vector2 Foot, Vector3 Position)
+    {
+        if (!std::holds_alternative<NurbsSurface>(Surface)) return true;
+        return Distance(EvaluateSurface(Surface, Foot).Position, Position) <= 10.0 * Context.Settings.Precision;
+    }
+
     [[nodiscard]] bool InsideBoxes(const IntersectionContext& Context, const IntersectionChartPoint& Point)
     {
-        return InsideParameterBox(Context.First, Context.FirstBox, Point.First, ParameterSlack) && InsideParameterBox(Context.Second, Context.SecondBox, Point.Second, ParameterSlack);
+        return InsideParameterBox(Context.First, Context.FirstBox, Point.First, ParameterSlack) && InsideParameterBox(Context.Second, Context.SecondBox, Point.Second, ParameterSlack)
+            && FootReaches(Context, Context.First, Point.First, Point.Position) && FootReaches(Context, Context.Second, Point.Second, Point.Position);
     }
 
     [[nodiscard]] HalfTrace TraceHalf(const IntersectionContext& Context, const IntersectionChartPoint& Seed, double Sign)

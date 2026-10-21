@@ -73,6 +73,11 @@ struct SketchProfile
 //    arcs and splines, a spline also against itself) and are oriented by nesting depth. Area and centroid are exact
 //    (Green's theorem; Gauss–Legendre per arc piece and per spline knot span, exact for the polynomial integrands).
 [[nodiscard]] SketchProfile ExtractSketchProfile(const SketchModel& Sketch);
+// One sketch curve as a segment in its natural direction (circles: a full turn from angle 0); Refusal set when degenerate.
+[[nodiscard]] ProfileSegment ResolveSketchCurveSegment(const SketchModel& Sketch, int CurveIndex, double Join, std::string& Refusal);
+// 💡 Steps ④–⑤ of ExtractSketchProfile on loops already chained (Profile.Loops, Profile.Scale): refuses crossings, then
+//    nests, orients (outer CCW, holes CW) and integrates area and centroid exactly. Profile.Refusal is set on a crossing.
+void ArrangeProfileLoops(SketchProfile& Profile);
 
 [[nodiscard]] Vector2 EvaluateProfileSegment(const ProfileSegment& Segment, double Fraction) noexcept;
 

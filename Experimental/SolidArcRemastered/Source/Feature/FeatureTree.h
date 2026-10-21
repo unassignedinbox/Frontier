@@ -40,6 +40,8 @@ enum class FeatureStepKind : uint8_t
     Mirror        = 8,                                                                       // Mirror image of every panel so far through a plane (V7)
     Close         = 9,                                                                       // Plane caps on the planar rim loops → solid (V7)
     Combine       = 10,                                                                      // Boolean between two bodies; the tool body is consumed
+    Cut           = 11,                                                                      // Split a body by a sketch profile / curve into two bodies (Plasticity C)
+    Remove        = 12,                                                                      // Delete a body (Plasticity X on a body)
 };
 
 enum class FeatureCombination : uint8_t
@@ -94,9 +96,9 @@ struct FeatureStep
     FeatureStepKind                Kind           = FeatureStepKind::Sketch;                 // [-]   - Step type
     std::string                    Label          = {};                                      // [-]   - Unique tag, prefix of the names it creates
     SketchModel                    Sketch         = {};                                      // [-]   - Sketch: unsolved model (constraints may bind parameters)
-    OrthonormalFrame               Plane          = {};                                      // [-]   - Sketch: plane frame
+    OrthonormalFrame               Plane          = {};                                      // [-]   - Sketch: plane frame · mirror: plane · cut by a curve: ZAxis = cut direction
     FeatureValue                   Elevation      = {};                                      // [len] - Sketch: plane shift along its normal
-    std::string                    Profile        = {};                                      // [-]   - Extrude / revolve: sketch step label
+    std::string                    Profile        = {};                                      // [-]   - Extrude / revolve / cut: sketch step label
     FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane)
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body
     int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch
@@ -113,9 +115,9 @@ struct FeatureStep
     bool                           PlanarCondition = false;                                  // [-]   - SpaceCurve: fit in the points' best plane (cap sections)
     FeatureValue                   Tolerance      = { 2.0e-4 };                              // [len] - SpaceCurve: fit tolerance (0.2 mm)
     std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit
-    std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve labels in order · Network: its curves
+    std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve labels in order · Network: its curves · Cut: the cutting curve
     int                            Continuity     = 0;                                       // [-]   - Loft: 0 G0 · 1 G1 · 2 G2 to panels sharing an end section
-    std::string                    Target         = {};                                      // [-]   - Extrude / revolve Boolean, blend, face operation, combine: body key (empty = active body)
+    std::string                    Target         = {};                                      // [-]   - Extrude / revolve Boolean, blend, face operation, combine, cut, remove: body key (empty = active body)
     std::string                    Tool           = {};                                      // [-]   - Combine: body key consumed by the Boolean
 };
 
