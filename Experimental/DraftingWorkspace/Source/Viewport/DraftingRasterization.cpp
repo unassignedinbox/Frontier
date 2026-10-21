@@ -219,7 +219,22 @@ bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& 
         PlaneLayoutRequest.pPushConstantRanges    = &Push;
         Require(vkCreatePipelineLayout(Device->Device, &PlaneLayoutRequest, nullptr, &PlaneLayout), "vkCreatePipelineLayout (pictures)");
 
+        // ④ matcaps: the surface program shares the image-plane layout; set 1 = the matcap array (own pool, so releasing
+        //    image-plane pictures never frees it)
+        const VkDescriptorPoolSize MatcapSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+        VkDescriptorPoolCreateInfo MatcapPoolRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        MatcapPoolRequest.maxSets       = 1;
+        MatcapPoolRequest.poolSizeCount = 1;
+        MatcapPoolRequest.pPoolSizes    = &MatcapSize;
+        Require(vkCreateDescriptorPool(Device->Device, &MatcapPoolRequest, nullptr, &MatcapPool), "vkCreateDescriptorPool (matcaps)");
+        VkDescriptorSetAllocateInfo MatcapRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        MatcapRequest.descriptorPool     = MatcapPool;
+        MatcapRequest.descriptorSetCount = 1;
+        MatcapRequest.pSetLayouts        = &PictureLayout;
+        Require(vkAllocateDescriptorSets(Device->Device, &MatcapRequest, &MatcapSet), "vkAllocateDescriptorSets (matcaps)");
+
         CreatePipelines();
+        UploadMatcaps({});
         ProbeReadback = Device->CreateBuffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         AssignStates({}, {});
         CreateTargets(64, 64);
@@ -252,7 +267,7 @@ void DraftingRasterization::CreatePipelines()
     Surface.FragmentEntry = DraftingSurfaceFragmentEntry;
     Surface.Bindings      = { { 0, sizeof(DraftingSceneCorner), VK_VERTEX_INPUT_RATE_VERTEX } };
     Surface.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
-    SurfacePipeline       = CreatePipeline(Device->Device, PipelineLayout, Surface);
+    SurfacePipeline       = CreatePipeline(Device->Device, PlaneLayout, Surface);
 
     PipelineRecipe Edge;
     Edge.Vertex        = EdgeVertex;
@@ -296,6 +311,11 @@ void DraftingRasterization::Destroy()
     DestroyTargets();
     for (DraftingBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer }) Device->DestroyBuffer(*Buffer);
     ReleasePictures();
+    Device->DestroyImage(MatcapArray);
+    if (MatcapPool) vkDestroyDescriptorPool(Device->Device, MatcapPool, nullptr);
+    MatcapPool   = VK_NULL_HANDLE;
+    MatcapSet    = VK_NULL_HANDLE;
+    MatcapLayers = 0;
     for (VkPipeline* Pipeline : { &SurfacePipeline, &EdgePipeline, &GridPipeline, &PlanePipeline })
     {
         if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
@@ -417,6 +437,58 @@ void DraftingRasterization::UploadPictures(const std::vector<DraftingPicture>& S
     }
 }
 
+void DraftingRasterization::UploadMatcaps(const std::vector<DraftingPicture>& Layers)
+{
+    vkDeviceWaitIdle(Device->Device);
+    Device->DestroyImage(MatcapArray);
+    // 📝 Every layer must match the first one's square extent; a mismatched or empty layer is filled mid grey.
+    const uint32_t Extent = Layers.empty() || Layers.front().Width == 0 ? 1u : Layers.front().Width;
+    const uint32_t Count  = std::max<uint32_t>(uint32_t(Layers.size()), 1u);
+    const size_t   LayerBytes = size_t(Extent) * Extent * 4;
+    DraftingBuffer Staging = Device->CreateBuffer(VkDeviceSize(LayerBytes) * Count, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+    for (uint32_t Layer = 0; Layer < Count; ++Layer)
+    {
+        uint8_t* Target = static_cast<uint8_t*>(Staging.Mapped) + LayerBytes * Layer;
+        const bool FitCondition = Layer < Layers.size() && Layers[Layer].Width == Extent && Layers[Layer].Height == Extent && Layers[Layer].Pixels.size() == LayerBytes;
+        if (FitCondition) std::memcpy(Target, Layers[Layer].Pixels.data(), LayerBytes);
+        else std::memset(Target, 128, LayerBytes);
+    }
+    MatcapArray = Device->CreateImage(Extent, Extent, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, Count);
+    Device->SubmitImmediately([&](VkCommandBuffer Commands)
+    {
+        VkImageMemoryBarrier2 Barrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2 };
+        Barrier.srcStageMask     = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        Barrier.srcAccessMask    = VK_ACCESS_2_MEMORY_WRITE_BIT;
+        Barrier.dstStageMask     = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        Barrier.dstAccessMask    = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        Barrier.oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED;
+        Barrier.newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        Barrier.image            = MatcapArray.Image;
+        Barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, Count };
+        VkDependencyInfo Dependency{ VK_STRUCTURE_TYPE_DEPENDENCY_INFO };
+        Dependency.imageMemoryBarrierCount = 1;
+        Dependency.pImageMemoryBarriers    = &Barrier;
+        vkCmdPipelineBarrier2(Commands, &Dependency);
+        VkBufferImageCopy Copy{};
+        Copy.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, Count };
+        Copy.imageExtent      = { Extent, Extent, 1 };
+        vkCmdCopyBufferToImage(Commands, Staging.Buffer, MatcapArray.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Copy);
+        Barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        Barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier2(Commands, &Dependency);
+    });
+    Device->DestroyBuffer(Staging);
+    const VkDescriptorImageInfo Target{ PictureSampler, MatcapArray.View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkWriteDescriptorSet Write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    Write.dstSet          = MatcapSet;
+    Write.dstBinding      = 0;
+    Write.descriptorCount = 1;
+    Write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    Write.pImageInfo      = &Target;
+    vkUpdateDescriptorSets(Device->Device, 1, &Write, 0, nullptr);
+    MatcapLayers = Layers.empty() ? 0u : Count;
+}
+
 void DraftingRasterization::AssignStates(const std::vector<uint32_t>& FaceStates, const std::vector<uint32_t>& EdgeStates)
 {
     // 📝 Reallocate only when the counts change (a new scene); otherwise overwrite through the persistent mapping.
@@ -504,10 +576,13 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
     const VkDeviceSize       Origin     = 0;
     if (Style.SurfacesEnabled && CornerCount)
     {
+        const VkDescriptorSet SurfaceSets[2] = { BufferSet, MatcapSet };
         vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, SurfacePipeline);
-        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
+        vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlaneLayout, 0, 2, SurfaceSets, 0, nullptr);
+        vkCmdPushConstants(Commands, PlaneLayout, PushStages, 0, sizeof(Projection), &Projection);
         vkCmdBindVertexBuffers(Commands, 0, 1, &CornerBuffer.Buffer, &Origin);
         vkCmdDraw(Commands, CornerCount, 1, 0, 0);
+        vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
     }
     if (Style.EdgesEnabled && SegmentCount)
     {

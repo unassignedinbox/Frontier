@@ -178,6 +178,7 @@ int main(int Count, char** Arguments)
             State.Document.Tree     = File.Tree;
             State.Document.Captions = File.Captions;
             State.Document.ImagePlanes = File.ImagePlanes;
+            State.Document.Appearance  = File.Appearance;
             RegenerateDraftingDocument(State.Document, true);
             RefreshDraftingScene(State, false);
             FitDraftingCamera(State.Camera, State.Scene);

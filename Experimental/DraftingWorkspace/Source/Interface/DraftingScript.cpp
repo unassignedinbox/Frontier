@@ -244,6 +244,21 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "zebra") return Numeric(State.ZebraEnabled ? 1 : 0);
     if (Field == "image-planes") return Numeric(double(State.Document.ImagePlanes.size()));
     if (Field == "image-planes-drawn") return Numeric(double(State.Pictures.Drawn));
+    if (Field == "body-matcap") { Text = Document.Appearance.BodyMatcap; Number = double(Text.size()); return true; }
+    if (Field == "face-matcaps") return Numeric(double(Document.Appearance.FaceMatcaps.size()));
+    if (Field == "selection-matcap")
+    {
+        // The matcap every selected face shows ("mixed" when they differ), the body's when no face is selected.
+        Text = Document.Selection.Faces.empty() ? Document.Appearance.BodyMatcap : DraftingFaceMatcap(Document.Appearance, Document.Selection.Faces.front());
+        for (const std::string& Face : Document.Selection.Faces)
+            if (DraftingFaceMatcap(Document.Appearance, Face) != Text) Text = "mixed";
+        Number = double(Text.size());
+        return true;
+    }
+    if (Field == "matcap-layers") return Numeric(double(State.Matcaps.Library.Names.size()));
+    if (Field == "matcap-thumbnails") return Numeric(double(std::count_if(State.Matcaps.Thumbnails.begin(), State.Matcaps.Thumbnails.end(), [](ImTextureID Id) { return Id != ImTextureID{}; })));
+    if (Field == "matcap-picker") return Numeric(State.Matcaps.PickerOpen ? 1 : 0);
+    if (Field == "matcap-dangling") return Numeric(double(CountDanglingMatcaps(State.Scene, Document.Appearance)));
     if (Field == "triangles") return Numeric(double(State.Scene.Corners.size() / 3));
     if (Field == "deviation-worst" || Field == "deviation-points")
     {

@@ -273,6 +273,58 @@ constexpr int64_t FormatVersion = 1;                                            
     return Sketch;
 }
 
+// 📝 [Appearance]: BodyMatcap, Faces = [{ Face, Matcap }], Matcaps = [{ Name, Path }]. Written only when it differs from the
+//    default (Studio, no faces, no pictures), so documents without matcaps keep their exact bytes.
+[[nodiscard]] bool DefaultAppearanceCondition(const DraftingAppearance& Appearance)
+{
+    return Appearance.BodyMatcap == DraftingStudioMatcap && Appearance.FaceMatcaps.empty() && Appearance.CustomMatcaps.empty();
+}
+
+[[nodiscard]] toml::table EncodeAppearance(const DraftingAppearance& Appearance)
+{
+    toml::array Faces;
+    for (const auto& [Face, Matcap] : Appearance.FaceMatcaps) Faces.push_back(toml::table{ { "Face", Face }, { "Matcap", Matcap } });
+    toml::array Matcaps;
+    for (const DraftingCustomMatcap& Custom : Appearance.CustomMatcaps) Matcaps.push_back(toml::table{ { "Name", Custom.Name }, { "Path", Custom.Path } });
+    toml::table Table{ { "BodyMatcap", Appearance.BodyMatcap } };
+    if (!Faces.empty()) Table.insert("Faces", std::move(Faces));
+    if (!Matcaps.empty()) Table.insert("Matcaps", std::move(Matcaps));
+    return Table;
+}
+
+// Refuses malformed entries and names that are neither Studio, a built-in nor one of the file's own pictures.
+[[nodiscard]] std::string DecodeAppearance(const toml::table* Table, DraftingAppearance& Appearance)
+{
+    Appearance = {};
+    if (!Table) return {};
+    if (const toml::array* Matcaps = (*Table)["Matcaps"].as_array())
+    {
+        for (const toml::node& Entry : *Matcaps)
+        {
+            const toml::node_view<const toml::node> View{ Entry };
+            DraftingCustomMatcap Custom{ View["Name"].value_or(std::string{}), View["Path"].value_or(std::string{}) };
+            if (Custom.Name.empty() || Custom.Path.empty()) return "Appearance: every matcap picture needs a Name and a Path";
+            if (DraftingMatcapKnownCondition(Appearance, Custom.Name)) return "Appearance: matcap " + Custom.Name + " is named twice";
+            Appearance.CustomMatcaps.push_back(std::move(Custom));
+        }
+    }
+    Appearance.BodyMatcap = (*Table)["BodyMatcap"].value_or(std::string(DraftingStudioMatcap));
+    if (!DraftingMatcapKnownCondition(Appearance, Appearance.BodyMatcap)) return "Appearance: no matcap named " + Appearance.BodyMatcap;
+    if (const toml::array* Faces = (*Table)["Faces"].as_array())
+    {
+        for (const toml::node& Entry : *Faces)
+        {
+            const toml::node_view<const toml::node> View{ Entry };
+            const std::string Face   = View["Face"].value_or(std::string{});
+            const std::string Matcap = View["Matcap"].value_or(std::string{});
+            if (Face.empty()) return "Appearance: a face entry has no Face name";
+            if (!DraftingMatcapKnownCondition(Appearance, Matcap)) return "Appearance: no matcap named " + Matcap + " (face " + Face + ")";
+            Appearance.FaceMatcaps[Face] = Matcap;
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -292,6 +344,7 @@ std::string EncodeDraftingDocument(const DraftingDocument& Document)
     toml::table Root{ { "Format", "DraftingWorkspace" }, { "FormatVersion", FormatVersion }, { "Title", Document.Title },
                       { "Description", Document.Tree.Description }, { "Parameters", std::move(Parameters) }, { "Steps", std::move(Steps) } };
     if (!Document.ImagePlanes.empty()) Root.insert("ImagePlanes", EncodeDraftingImagePlanes(Document.ImagePlanes));
+    if (!DefaultAppearanceCondition(Document.Appearance)) Root.insert("Appearance", EncodeAppearance(Document.Appearance));
     std::ostringstream Stream;
     Stream << "# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)\n";
     Stream << Root << "\n";
@@ -317,6 +370,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
     File.Tree.Name        = File.Title;
     File.Tree.Description = Root["Description"].value_or(std::string{});
     if (std::string Refusal = DecodeDraftingImagePlanes(Root["ImagePlanes"].as_array(), 1.0, File.ImagePlanes); !Refusal.empty()) { File.Refusal = Refusal; return File; }
+    if (std::string Refusal = DecodeAppearance(Root["Appearance"].as_table(), File.Appearance); !Refusal.empty()) { File.Refusal = Refusal; return File; }
     if (const toml::array* Parameters = Root["Parameters"].as_array())
     {
         for (const toml::node& Entry : *Parameters)
@@ -407,6 +461,7 @@ DraftingDocumentFile LoadDraftingDocumentFile(const std::string& Path)
     Text << Stream.rdbuf();
     DraftingDocumentFile File = DecodeDraftingDocument(Text.str());
     for (DraftingImagePlane& Plane : File.ImagePlanes) Plane.Path = ResolveDraftingImagePath(Plane.Path, Path);
+    for (DraftingCustomMatcap& Custom : File.Appearance.CustomMatcaps) Custom.Path = ResolveDraftingImagePath(Custom.Path, Path);
     return File;
 }
 

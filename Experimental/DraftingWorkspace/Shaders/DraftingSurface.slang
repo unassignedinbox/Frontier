@@ -1,12 +1,13 @@
 /*====================================================================================================================================
                                                      DRAFTINGSURFACE.SLANG
 ====================================================================================================================================*/
-// 🧩 B-rep face shading (studio matcap computed analytically) with selection tints and the R32 identity output
+// 🧩 B-rep face shading (analytic Studio or a matcap layer per face) with selection tints and the R32 identity output
 
 #include "DraftingProjection.slang"
 
 [[vk::push_constant]] ConstantBuffer<DraftingProjection> Projection;
 [[vk::binding(0, 0)]] StructuredBuffer<uint> FaceStates;
+[[vk::binding(0, 1)]] Sampler2DArray         Matcaps;                                       // Layer k − 1 = matcap layer k
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INPUT/OUTPUT STRUCTURES
@@ -47,6 +48,8 @@ SurfacePixel DraftingSurfaceVertex(SurfaceCorner Corner)
 }
 
 // 📝 View-space normal → studio lighting: soft key from the upper left, cool fill, hemispherical ambient and a rim term.
+//    Matcap layer k ≥ 1 (bits 8 … 15 of the face state) replaces it with Matcaps[k − 1] at uv = (½ + ½x, ½ − ½y) of the
+//    view-space normal (DraftingMatcap.h: pixel (i, j) holds normal x = 2(i + ½)/E − 1, y = 1 − 2(j + ½)/E).
 //    Back faces (open sheets, inside views) are shaded darker so the inside of a body never reads as its outside.
 [shader("fragment")]
 SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV_IsFrontFace)
@@ -57,9 +60,22 @@ SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
     float  Fill   = saturate(dot(View, normalize(float3(0.60, -0.10, 0.80))));
     float  Sky    = 0.5 + 0.5 * View.y;
     float  Rim    = pow(1.0 - saturate(View.z), 3.0);
-    float3 Albedo = float3(0.70, 0.72, 0.76);
-    float3 Colour = Albedo * (0.22 + 0.18 * Sky) + Albedo * Key * 0.62 + float3(0.62, 0.70, 0.82) * Fill * 0.16 + Rim * 0.10;
-    Colour       += pow(saturate(dot(reflect(float3(0.0, 0.0, -1.0), View), normalize(float3(-0.45, 0.55, 0.70)))), 24.0) * 0.18;
+    uint   State  = FaceStates[Pixel.Face];
+    uint   Layer  = (State >> 8u) & 0xFFu;
+    float3 Colour;
+    if (Layer == 0u)
+    {
+        float3 Albedo = float3(0.70, 0.72, 0.76);
+        Colour  = Albedo * (0.22 + 0.18 * Sky) + Albedo * Key * 0.62 + float3(0.62, 0.70, 0.82) * Fill * 0.16 + Rim * 0.10;
+        Colour += pow(saturate(dot(reflect(float3(0.0, 0.0, -1.0), View), normalize(float3(-0.45, 0.55, 0.70)))), 24.0) * 0.18;
+    }
+    else
+    {
+        float2 Across = View.xy;
+        float  Reach  = length(Across);
+        if (Reach > 0.995) Across *= 0.995 / Reach;                                          // Perspective can push |xy| past 1
+        Colour = Matcaps.Sample(float3(0.5 + 0.5 * Across.x, 0.5 - 0.5 * Across.y, float(Layer - 1u))).rgb;
+    }
     // 📝 Zebra (vehicle plan V8, ViewUp.w = stripe count): the view direction reflected in the normal, its angle to the
     //    camera up × count / π; stripe k covers phase [k, k + ½). Mirrors DraftingZebraPhase (DraftingScene.cpp).
     if (Projection.ViewUp.w > 0.0)
@@ -73,7 +89,6 @@ SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
         Colour = lerp(float3(0.05, 0.05, 0.06), float3(0.96, 0.96, 0.97), Light) * (0.80 + 0.20 * Key);
     }
 
-    uint State = FaceStates[Pixel.Face];
     if ((State & StateHovered) != 0u)  Colour = lerp(Colour, HoverTint, 0.28);
     if ((State & StateSelected) != 0u) Colour = lerp(Colour, SelectedTint * (0.55 + 0.45 * Key), 0.62);
     if ((State & StateActive) != 0u)   Colour = lerp(Colour, ActiveTint * (0.55 + 0.45 * Key), 0.62);

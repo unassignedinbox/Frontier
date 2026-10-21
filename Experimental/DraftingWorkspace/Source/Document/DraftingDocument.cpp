@@ -19,6 +19,7 @@
 #include "Surfacing/CurveNetwork.h"
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -269,14 +270,40 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
 
 [[nodiscard]] DraftingHistoryEntry Snapshot(const DraftingDocument& Document, const std::string& Label)
 {
-    return { Document.Tree, Document.Captions, Label };
+    return { Document.Tree, Document.Captions, Label, Document.Appearance, false };
 }
 
+// 📝 A matcap-only entry swaps the appearance back and keeps the body (and its Revision): no regeneration.
 void Restore(DraftingDocument& Document, DraftingHistoryEntry Entry)
 {
+    Document.Appearance = std::move(Entry.Appearance);
+    if (Entry.AppearanceCondition) return;
     Document.Tree     = std::move(Entry.Tree);
     Document.Captions = std::move(Entry.Captions);
     RegenerateDraftingDocument(Document);
+}
+
+// ① snapshot (flagged matcap-only) ② change the appearance (the callback returns a refusal or "") ③ keep or roll back.
+template <typename Change>
+DraftingCommandOutcome RunAppearanceCommand(DraftingDocument& Document, const std::string& Label, Change&& Apply)
+{
+    const auto           Start  = std::chrono::steady_clock::now();
+    DraftingHistoryEntry Before = Snapshot(Document, Label);
+    Before.AppearanceCondition  = true;
+    DraftingCommandOutcome Outcome;
+    Outcome.Label   = Label;
+    Outcome.Refusal = Apply();
+    if (!Outcome.Refusal.empty())
+    {
+        Document.Appearance  = std::move(Before.Appearance);
+        Outcome.Milliseconds = ElapsedMs(Start);
+        return Outcome;
+    }
+    Document.UndoEntries.push_back(std::move(Before));
+    Document.RedoEntries.clear();
+    Outcome.AcceptedCondition = true;
+    Outcome.Milliseconds      = ElapsedMs(Start);
+    return Outcome;
 }
 
 // 📝 First refusal among the steps at or after FirstNew (the steps this command appended).
@@ -383,6 +410,7 @@ DraftingDocument CloneDraftingDocument(const DraftingDocument& Source)
     Copy.Tree      = Source.Tree;
     Copy.Captions  = Source.Captions;
     Copy.Selection = Source.Selection;
+    Copy.Appearance = Source.Appearance;
     RegenerateDraftingDocument(Copy);
     return Copy;
 }
@@ -851,6 +879,7 @@ bool UndoDraftingCommand(DraftingDocument& Document)
     DraftingHistoryEntry Entry = std::move(Document.UndoEntries.back());
     Document.UndoEntries.pop_back();
     Document.RedoEntries.push_back(Snapshot(Document, Entry.Label));
+    Document.RedoEntries.back().AppearanceCondition = Entry.AppearanceCondition;
     Restore(Document, std::move(Entry));
     return true;
 }
@@ -861,8 +890,69 @@ bool RedoDraftingCommand(DraftingDocument& Document)
     DraftingHistoryEntry Entry = std::move(Document.RedoEntries.back());
     Document.RedoEntries.pop_back();
     Document.UndoEntries.push_back(Snapshot(Document, Entry.Label));
+    Document.UndoEntries.back().AppearanceCondition = Entry.AppearanceCondition;
     Restore(Document, std::move(Entry));
     return true;
+}
+
+DraftingCommandOutcome AssignDraftingMatcap(DraftingDocument& Document, const std::string& Matcap)
+{
+    const std::vector<std::string> Faces = Document.Selection.Faces;
+    const std::string Label = "Matcap " + Matcap + " → " + (Faces.empty() ? std::string("body") : std::to_string(Faces.size()) + " face(s)");
+    return RunAppearanceCommand(Document, Label, [&]() -> std::string
+    {
+        DraftingAppearance& Appearance = Document.Appearance;
+        if (!DraftingMatcapKnownCondition(Appearance, Matcap)) return "no matcap named " + Matcap;
+        if (Faces.empty())
+        {
+            if (Appearance.BodyMatcap == Matcap) return "the body already shows " + Matcap;
+            Appearance.BodyMatcap = Matcap;
+            return {};
+        }
+        bool ChangedCondition = false;
+        for (const std::string& Face : Faces)
+        {
+            std::string& Assigned = Appearance.FaceMatcaps[Face];
+            ChangedCondition = ChangedCondition || Assigned != Matcap;
+            Assigned = Matcap;
+        }
+        return ChangedCondition ? std::string{} : "the selected faces already show " + Matcap;
+    });
+}
+
+DraftingCommandOutcome RemoveDraftingMatcap(DraftingDocument& Document)
+{
+    const std::vector<std::string> Faces = Document.Selection.Faces;
+    const std::string Label = Faces.empty() ? std::string("Matcap removed → body Studio") : "Matcap removed → " + std::to_string(Faces.size()) + " face(s) show the body";
+    return RunAppearanceCommand(Document, Label, [&]() -> std::string
+    {
+        DraftingAppearance& Appearance = Document.Appearance;
+        if (Faces.empty())
+        {
+            if (Appearance.BodyMatcap == DraftingStudioMatcap) return "the body already shows Studio";
+            Appearance.BodyMatcap = DraftingStudioMatcap;
+            return {};
+        }
+        size_t Removed = 0;
+        for (const std::string& Face : Faces) Removed += Appearance.FaceMatcaps.erase(Face);
+        return Removed ? std::string{} : "the selected faces have no matcap of their own";
+    });
+}
+
+DraftingCommandOutcome AddDraftingMatcapPicture(DraftingDocument& Document, const std::string& Name, const std::string& Path)
+{
+    return RunAppearanceCommand(Document, "Matcap picture " + Name, [&]() -> std::string
+    {
+        DraftingAppearance& Appearance = Document.Appearance;
+        if (Name.empty() || std::any_of(Name.begin(), Name.end(), [](char Character) { return std::isspace(static_cast<unsigned char>(Character)) != 0; }))
+            return "a matcap name needs at least one character and no spaces";
+        if (DraftingMatcapKnownCondition(Appearance, Name)) return "a matcap named " + Name + " exists already";
+        if (Appearance.CustomMatcaps.size() + DraftingBuiltInMatcaps().size() >= DraftingMatcapLayerLimit) return "the matcap library is full";
+        const DraftingPicture Picture = DecodeDraftingPicture(Path);
+        if (!Picture.Refusal.empty()) return Picture.Refusal;
+        Appearance.CustomMatcaps.push_back({ Name, Path });
+        return {};
+    });
 }
 
 void SelectDraftingName(DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name, bool AdditiveCondition)

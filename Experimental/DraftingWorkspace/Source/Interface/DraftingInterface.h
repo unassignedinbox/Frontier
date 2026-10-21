@@ -155,6 +155,17 @@ struct DraftingPictureShelf
     int                      Drawn    = 0;                                                   // [-]  - Planes drawn last frame
 };
 
+// 📝 Matcap library as the interface last assembled it (Studio + built-ins + the document's pictures) and the Plasticity M
+//    picker. Generation changes with every assembly so the frame re-uploads the texture array and thumbnails only then.
+struct DraftingMatcapShelf
+{
+    DraftingMatcapLibrary    Library    = {};                                                // [-] - Layer order names / captions / pictures
+    uint64_t                 Generation = 0;                                                 // [-] - Bumped per assembly
+    std::vector<ImTextureID> Thumbnails = {};                                                // [-] - Per layer (frame-owned, may be empty)
+    bool                     PickerOpen = false;                                             // [-] - M: Set material popup
+    std::array<char, 260>    PicturePath = {};                                               // [-] - Add-picture path field
+};
+
 // 📝 Box selection (Plasticity viewport-selector drag): a left drag from empty viewport space in modes 1 / 2 / 5 selects
 //    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes).
 struct DraftingBoxSelection
@@ -184,6 +195,7 @@ struct DraftingWorkspaceState
     DraftingDeviationMap                  Deviation      = {};                               // [-]   - Cached per document revision
     bool                                  ImagePlanesEnabled = true;                         // [-]   - Blueprint image planes drawn (toolbar Images)
     DraftingPictureShelf                  Pictures       = {};                               // [-]   - Decoded image-plane pictures (frame-owned)
+    DraftingMatcapShelf                   Matcaps        = {};                               // [-]   - Matcap library + thumbnails + M picker
     DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
     std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
@@ -221,6 +233,9 @@ void InitialiseDraftingWorkspace(DraftingWorkspaceState& State, const DraftingOp
 // 💡 Builds the whole frame (between ImGui::NewFrame and ImGui::Render). ViewportTexture is the colour target of the
 //    previous viewport render. Serves every shortcut and viewport gesture; DeltaSeconds drives the autosave timer.
 void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds);
+
+// Reassembles the matcap library when the document's custom pictures changed (or on first use).
+void RefreshDraftingMatcaps(DraftingWorkspaceState& State);
 
 // The scene the viewport must show (the staged preview during a bevel session).
 [[nodiscard]] const DraftingScene& DisplayedDraftingScene(const DraftingWorkspaceState& State);

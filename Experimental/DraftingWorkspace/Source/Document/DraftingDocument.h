@@ -10,6 +10,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingImagePlane.h"
+#include "Document/DraftingMatcap.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
 #include "Topology/ModelPartition.h"
@@ -122,6 +123,8 @@ struct DraftingHistoryEntry
     Modeller::FeatureTree              Tree     = {};                                        // [-] - Tree before the command
     std::map<std::string, std::string> Captions = {};                                        // [-] - Step captions before the command
     std::string                        Label    = {};                                        // [-] - Command caption
+    DraftingAppearance                 Appearance = {};                                      // [-] - Matcaps before the command
+    bool                               AppearanceCondition = false;                          // [-] - Matcap-only entry: restore without regenerating
 };
 
 // 📝 Body figures shown by the Inspector (recomputed on every regeneration).
@@ -151,6 +154,7 @@ struct DraftingDocument
     std::vector<DraftingHistoryEntry>          RedoEntries  = {};                            // [-] - Most recent last
     uint64_t                                   Revision     = 0;                             // [-] - Bumped by every regeneration (scene cache key)
     std::vector<DraftingImagePlane>            ImagePlanes  = {};                            // [-] - Blueprint references (saved, not in the history)
+    DraftingAppearance                         Appearance   = {};                            // [-] - Body / face matcaps (saved, undoable)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -217,6 +221,13 @@ struct VehicleCurveFile;
 // Toggles a SpaceCurve in the curve selection (AdditiveCondition false: it becomes the only selected curve).
 void SelectDraftingCurve(DraftingDocument& Document, const std::string& Label, bool AdditiveCondition);
 
+// 💡 Matcaps (Plasticity M / Alt+M). Assign: the selected faces take Matcap, or the body when no face is selected. Remove:
+//    the selected faces fall back to the body matcap, or the body returns to Studio. Neither regenerates the body (the
+//    Revision stays); both are undo entries. Unknown matcap names refuse.
+[[nodiscard]] DraftingCommandOutcome AssignDraftingMatcap(DraftingDocument& Document, const std::string& Matcap);
+[[nodiscard]] DraftingCommandOutcome RemoveDraftingMatcap(DraftingDocument& Document);
+// A user picture under a new name (not Studio, a built-in or an existing custom name); refused when it does not decode.
+[[nodiscard]] DraftingCommandOutcome AddDraftingMatcapPicture(DraftingDocument& Document, const std::string& Name, const std::string& Path);
 bool UndoDraftingCommand(DraftingDocument& Document);
 bool RedoDraftingCommand(DraftingDocument& Document);
 

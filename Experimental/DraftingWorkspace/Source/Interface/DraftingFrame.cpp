@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace Frontier::DraftingWorkspace
 {
@@ -39,7 +40,7 @@ bool DraftingWorkspaceFrame::Create(const DraftingDevice& OpenDevice, VkFormat T
     Setup.Device              = OpenDevice.Device;
     Setup.QueueFamily         = OpenDevice.QueueFamily;
     Setup.Queue               = OpenDevice.Queue;
-    Setup.DescriptorPoolSize  = 64;
+    Setup.DescriptorPoolSize  = 64 + DraftingMatcapLayerLimit + 1;                           // font + viewport + matcap swatches
     Setup.MinImageCount       = std::max<uint32_t>(2, ImageCount);
     Setup.ImageCount          = std::max<uint32_t>(2, ImageCount);
     Setup.UseDynamicRendering = true;
@@ -59,6 +60,7 @@ void DraftingWorkspaceFrame::Destroy()
 {
     if (!Device) return;
     vkDeviceWaitIdle(Device->Device);
+    ReleaseThumbnails();
     if (Texture != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(Texture);
     Texture     = VK_NULL_HANDLE;
     TextureView = VK_NULL_HANDLE;
@@ -66,6 +68,64 @@ void DraftingWorkspaceFrame::Destroy()
     BackendReady = false;
     Raster.Destroy();
     Device = nullptr;
+}
+
+void DraftingWorkspaceFrame::ReleaseThumbnails()
+{
+    if (!Device) return;
+    for (VkDescriptorSet Set : ThumbnailSets)
+        if (Set != VK_NULL_HANDLE && BackendReady) ImGui_ImplVulkan_RemoveTexture(Set);
+    for (DraftingImage& Image : Thumbnails) Device->DestroyImage(Image);
+    ThumbnailSets.clear();
+    Thumbnails.clear();
+}
+
+// 📝 On a new library generation: the texture array (layers 1 … n → array layers 0 … n − 1) and one 64 × 64 swatch per layer
+//    (layer 0 = the Studio mirror) registered as ImGui textures for the Inspector and the M picker.
+void DraftingWorkspaceFrame::UploadMatcaps(DraftingWorkspaceState& State)
+{
+    RefreshDraftingMatcaps(State);
+    if (State.Matcaps.Generation == MatcapGeneration && Raster.MatcapLayerCount() > 0) return;
+    const DraftingMatcapLibrary& Library = State.Matcaps.Library;
+    Raster.UploadMatcaps(Library.Pictures);
+    vkDeviceWaitIdle(Device->Device);
+    ReleaseThumbnails();
+    State.Matcaps.Thumbnails.clear();
+    for (size_t Layer = 0; Layer < Library.Names.size(); ++Layer)
+    {
+        constexpr uint32_t Side = 64;
+        const DraftingPicture Swatch = FitDraftingMatcapPicture(Layer == 0 ? ComposeDraftingStudioMatcap(Side * 2) : Library.Pictures[Layer - 1], Side);
+        DraftingImage Image = Device->CreateImage(Side, Side, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        DraftingBuffer Staging = Device->CreateBuffer(VkDeviceSize(Side) * Side * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+        // 📝 Round swatch: outside the disc goes transparent (the ImGui pass blends), a one-pixel soft edge inside.
+        std::vector<uint8_t> Pixels = Swatch.Pixels;
+        for (uint32_t Row = 0; Row < Side; ++Row)
+        {
+            for (uint32_t Column = 0; Column < Side; ++Column)
+            {
+                const double Across = (double(Column) + 0.5) / Side * 2.0 - 1.0;
+                const double Down   = (double(Row) + 0.5) / Side * 2.0 - 1.0;
+                const double Edge   = std::clamp((1.0 - std::hypot(Across, Down)) * Side * 0.5, 0.0, 1.0);
+                Pixels[(size_t(Row) * Side + Column) * 4 + 3] = uint8_t(std::lround(Edge * 255.0));
+            }
+        }
+        std::memcpy(Staging.Mapped, Pixels.data(), Pixels.size());
+        Device->SubmitImmediately([&](VkCommandBuffer Commands)
+        {
+            TransitionDraftingImage(Commands, Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkBufferImageCopy Copy{};
+            Copy.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            Copy.imageExtent      = { Side, Side, 1 };
+            vkCmdCopyBufferToImage(Commands, Staging.Buffer, Image.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Copy);
+            TransitionDraftingImage(Commands, Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+        Device->DestroyBuffer(Staging);
+        const VkDescriptorSet Set = BackendReady ? ImGui_ImplVulkan_AddTexture(Image.View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) : VK_NULL_HANDLE;
+        Thumbnails.push_back(Image);
+        ThumbnailSets.push_back(Set);
+        State.Matcaps.Thumbnails.push_back(ImTextureID(Set));
+    }
+    MatcapGeneration = State.Matcaps.Generation;
 }
 
 void DraftingWorkspaceFrame::PrepareViewport(DraftingWorkspaceState& State)
@@ -126,6 +186,7 @@ void DraftingWorkspaceFrame::PrepareViewport(DraftingWorkspaceState& State)
         }
     }
     State.Pictures.Drawn = int(State.Style.ImagePlanes.size());
+    UploadMatcaps(State);
     const DraftingSceneStates States = DisplayedDraftingStates(State);
     Raster.AssignStates(States.Faces, States.Edges);
     State.Style.EdgeStroke = State.Options.EdgeStroke;

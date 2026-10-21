@@ -16,6 +16,7 @@
 #include <volk.h>
 
 #include <string>
+#include <vector>
 
 struct ImDrawData;
 
@@ -71,6 +72,11 @@ private:
     VkDescriptorSet       Texture      = VK_NULL_HANDLE;                                     // [-] - ImGui texture of the colour target
     VkImageView           TextureView  = VK_NULL_HANDLE;                                     // [-] - View it was registered with
     bool                  BackendReady = false;                                              // [-] - ImGui_ImplVulkan_Init succeeded
+    std::vector<DraftingImage>   Thumbnails      = {};                                       // [-] - Matcap swatches (64 × 64)
+    std::vector<VkDescriptorSet> ThumbnailSets   = {};                                       // [-] - Their ImGui textures
+    uint64_t                     MatcapGeneration = 0;                                       // [-] - Library generation uploaded
+    void ReleaseThumbnails();
+    void UploadMatcaps(DraftingWorkspaceState& State);
 };
 
 } // namespace Frontier::DraftingWorkspace

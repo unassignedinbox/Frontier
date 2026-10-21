@@ -261,6 +261,7 @@ bool OpenDocument(DraftingWorkspaceState& State, const std::string& Path, bool A
     Document.Tree     = File.Tree;
     Document.Captions = File.Captions;
     Document.ImagePlanes = File.ImagePlanes;
+    Document.Appearance  = File.Appearance;
     RegenerateDraftingDocument(Document, true);
     AdoptDocument(State, std::move(Document), true);
     if (AdoptPathCondition) State.DocumentPath = Path;
@@ -295,12 +296,21 @@ void StartNewDocument(DraftingWorkspaceState& State)
     Announce(State, "New document (previous recovery copy kept)");
 }
 
+void MarkDirty(DraftingWorkspaceState& State)
+{
+    State.DirtyCondition = true;
+    State.AutosaveTimer  = State.Options.AutosaveDelay;
+}
+
+// 📝 A matcap entry leaves the body (and its scene) as it is: only the state words change, so no re-tessellation.
 void Undo(DraftingWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition) return;
+    const bool AppearanceCondition = !State.Document.UndoEntries.empty() && State.Document.UndoEntries.back().AppearanceCondition;
     if (UndoDraftingCommand(State.Document))
     {
-        RefreshDraftingScene(State, true);
+        if (AppearanceCondition) MarkDirty(State);
+        else RefreshDraftingScene(State, true);
         Announce(State, "Undo");
     }
 }
@@ -308,11 +318,167 @@ void Undo(DraftingWorkspaceState& State)
 void Redo(DraftingWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition) return;
+    const bool AppearanceCondition = !State.Document.RedoEntries.empty() && State.Document.RedoEntries.back().AppearanceCondition;
     if (RedoDraftingCommand(State.Document))
     {
-        RefreshDraftingScene(State, true);
+        if (AppearanceCondition) MarkDirty(State);
+        else RefreshDraftingScene(State, true);
         Announce(State, "Redo");
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    MATCAPS
+//------------------------------------------------------------------------------------------------------------------------
+
+void ConcludeAppearance(DraftingWorkspaceState& State, const DraftingCommandOutcome& Outcome)
+{
+    if (Outcome.AcceptedCondition)
+    {
+        MarkDirty(State);
+        Announce(State, Outcome.Label);
+    }
+    else Announce(State, "Refused: " + Outcome.Refusal);
+}
+
+// M picker / swatch click: the selected faces (or the body) take the matcap.
+void AssignMatcap(DraftingWorkspaceState& State, const std::string& Name)
+{
+    ConcludeAppearance(State, AssignDraftingMatcap(State.Document, Name));
+}
+
+// Alt+M (Plasticity remove-material).
+void RemoveMatcap(DraftingWorkspaceState& State)
+{
+    ConcludeAppearance(State, RemoveDraftingMatcap(State.Document));
+}
+
+// A user picture: the file stem becomes the matcap name ("Shop steel.png" → "Shopsteel").
+void AddMatcapPicture(DraftingWorkspaceState& State, const std::string& Path)
+{
+    std::string Stem = Path.substr(Path.find_last_of("/\\") == std::string::npos ? 0 : Path.find_last_of("/\\") + 1);
+    Stem = Stem.substr(0, Stem.find_last_of('.'));
+    std::erase_if(Stem, [](char Character) { return std::isspace(static_cast<unsigned char>(Character)) != 0; });
+    ConcludeAppearance(State, AddDraftingMatcapPicture(State.Document, Stem, Path));
+    RefreshDraftingMatcaps(State);
+}
+
+// 📝 The matcap the selection shows: the body's when no face is selected, one name when all agree, else "mixed".
+std::string SelectionMatcap(const DraftingWorkspaceState& State)
+{
+    const DraftingAppearance& Appearance = State.Document.Appearance;
+    if (State.Document.Selection.Faces.empty()) return Appearance.BodyMatcap;
+    std::string Shown = DraftingFaceMatcap(Appearance, State.Document.Selection.Faces.front());
+    for (const std::string& Face : State.Document.Selection.Faces)
+        if (DraftingFaceMatcap(Appearance, Face) != Shown) return "mixed";
+    return Shown;
+}
+
+// 💡 Swatch grid (thumbnails when the frame registered them, else a flat colour from the sphere's lit side), grouped by
+//    category. Returns the clicked matcap name or "". Widget keys: Prefix + name ("MatcapBrass", "PickMatcapBrass").
+std::string DrawMatcapSwatches(DraftingWorkspaceState& State, const char* Prefix, int Columns, float Side)
+{
+    const DraftingMatcapLibrary& Library = State.Matcaps.Library;
+    const std::string Current = SelectionMatcap(State);
+    std::string Chosen;
+    std::vector<std::pair<std::string, std::vector<size_t>>> Groups = { { "Studio", { 0 } }, { "Metal", {} }, { "Plastic", {} }, { "Other", {} }, { "Pictures", {} } };
+    const std::vector<DraftingMatcapDescription>& BuiltIn = DraftingBuiltInMatcaps();
+    for (size_t Layer = 1; Layer < Library.Names.size(); ++Layer)
+    {
+        const size_t Group = Layer <= BuiltIn.size() ? (BuiltIn[Layer - 1].Category == "Metal" ? 1 : BuiltIn[Layer - 1].Category == "Plastic" ? 2 : 3) : 4;
+        Groups[Group].second.push_back(Layer);
+    }
+    for (const auto& [Title, Layers] : Groups)
+    {
+        if (Layers.empty()) continue;
+        ImGui::TextDisabled("%s", Title.c_str());
+        int Column = 0;
+        for (const size_t Layer : Layers)
+        {
+            if (Column++ % Columns != 0) ImGui::SameLine();
+            const std::string& Name  = Library.Names[Layer];
+            const std::string  Label = std::string("###") + Prefix + Name;
+            const bool CurrentCondition = Name == Current;
+            ImGui::PushStyleColor(ImGuiCol_Button, CurrentCondition ? Tint(SelectedColour) : ImVec4(0, 0, 0, 0));
+            bool Pressed = false;
+            if (Layer < State.Matcaps.Thumbnails.size() && State.Matcaps.Thumbnails[Layer])
+                Pressed = ImGui::ImageButton(Label.c_str(), State.Matcaps.Thumbnails[Layer], ImVec2(Side, Side));
+            else
+            {
+                ImVec4 Flat(0.7f, 0.72f, 0.76f, 1.0f);
+                if (Layer >= 1 && Layer - 1 < Library.Pictures.size() && !Library.Pictures[Layer - 1].Pixels.empty())
+                {
+                    const DraftingPicture& Picture = Library.Pictures[Layer - 1];
+                    const size_t Texel = (size_t(Picture.Height * 0.35) * Picture.Width + size_t(Picture.Width * 0.4)) * 4;
+                    Flat = ImVec4(Picture.Pixels[Texel] / 255.0f, Picture.Pixels[Texel + 1] / 255.0f, Picture.Pixels[Texel + 2] / 255.0f, 1.0f);
+                }
+                Pressed = ImGui::ColorButton(Label.c_str(), Flat, ImGuiColorEditFlags_NoTooltip, ImVec2(Side + 8, Side + 8));
+            }
+            ImGui::PopStyleColor();
+            RegisterWidget(State, Label.c_str());
+            if (ImGui::IsItemHovered())
+            {
+                const bool Refused = Layer < Library.Refusals.size() && !Library.Refusals[Layer].empty();
+                ImGui::SetTooltip("%s%s%s", Library.Captions[Layer].c_str(), Refused ? " — " : "", Refused ? Library.Refusals[Layer].c_str() : "");
+            }
+            if (Pressed) Chosen = Name;
+        }
+    }
+    return Chosen;
+}
+
+// 📝 Inspector card: what the selection shows, the library, Remove (Alt+M) and Add picture (a sphere image, e.g. a Blender
+//    matcap). Face assignments whose names left the body are counted, never re-targeted.
+void DrawAppearanceCard(DraftingWorkspaceState& State)
+{
+    if (!State.Document.Summary.PresentCondition) return;
+    BeginCard("Appearance");
+    const size_t Faces   = State.Document.Selection.Faces.size();
+    const std::string Shown = SelectionMatcap(State);
+    const size_t Layer   = DraftingMatcapLayer(State.Matcaps.Library, Shown);
+    const std::string Caption = Shown == "mixed" ? std::string("mixed") : Layer < State.Matcaps.Library.Captions.size() ? State.Matcaps.Library.Captions[Layer] : Shown;
+    if (Faces) ImGui::Text("%zu face(s) · %s", Faces, Caption.c_str());
+    else ImGui::Text("Body · %s", Caption.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%zu face override(s))", State.Document.Appearance.FaceMatcaps.size());
+    const std::string Chosen = DrawMatcapSwatches(State, "Matcap", 6, 34.0f);
+    if (!Chosen.empty()) AssignMatcap(State, Chosen);
+    if (PressButton(State, "Remove  (Alt+M)###MatcapRemove", ImVec2(130, 0))) RemoveMatcap(State);
+    ImGui::SameLine();
+    if (PressButton(State, "Set material  (M)###MatcapPickerOpen", ImVec2(150, 0))) State.Matcaps.PickerOpen = true;
+    std::array<char, 260>& PicturePath = State.Matcaps.PicturePath;
+    ImGui::SetNextItemWidth(206);
+    ImGui::InputTextWithHint("###MatcapPath", "matcap picture (.png / .jpg)", PicturePath.data(), PicturePath.size());
+    RegisterWidget(State, "###MatcapPath");
+    ImGui::SameLine();
+    if (PressButton(State, "Add###MatcapAdd", ImVec2(70, 0), PicturePath[0] != 0)) AddMatcapPicture(State, PicturePath.data());
+    if (const size_t Dangling = CountDanglingMatcaps(State.Scene, State.Document.Appearance))
+        ImGui::TextColored(Tint(RefusalColour), "%zu assignment(s) name faces no longer in the body", Dangling);
+    EndCard();
+}
+
+// 📝 Plasticity M (command:set-material): a floating picker over the viewport; a click applies and closes, Esc closes.
+void DrawMatcapPicker(DraftingWorkspaceState& State)
+{
+    if (!State.Matcaps.PickerOpen) return;
+    ImGui::SetNextWindowPos(ImVec2(State.ViewportRect[0] + 0.5f * State.ViewportRect[2], State.ViewportRect[1] + 56.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.96f);
+    bool Open = true;
+    const size_t Faces = State.Document.Selection.Faces.size();
+    const std::string Title = (Faces ? "Set material · " + std::to_string(Faces) + " face(s)" : std::string("Set material · body")) + "###MatcapPicker";
+    if (ImGui::Begin(Title.c_str(), &Open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove))
+    {
+        RegisterWidget(State, "###MatcapPicker");
+        const std::string Chosen = DrawMatcapSwatches(State, "PickMatcap", 7, 52.0f);
+        ImGui::TextDisabled("Click applies · Esc closes · Alt+M removes");
+        if (!Chosen.empty())
+        {
+            AssignMatcap(State, Chosen);
+            Open = false;
+        }
+    }
+    ImGui::End();
+    State.Matcaps.PickerOpen = Open;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -2317,6 +2483,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     DrawDrawingCard(State);
     DrawStepCard(State);
     DrawBodyCard(State);
+    DrawAppearanceCard(State);
     DrawImagePlaneCard(State);
     DrawHistoryCard(State);
     EndPanel();
@@ -2516,7 +2683,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         }
         if (Pressed(ImGuiKey_E)) Announce(State, "Evolution: not available");
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
-        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_M) || Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
+        if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
+        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
         return;
     }
     if (Shift)
@@ -2535,7 +2703,18 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         return;
     }
 
-    // body:not([gizmo]) — no command running.
+    // body:not([gizmo]) — no command running. The M picker takes Esc first.
+    if (State.Matcaps.PickerOpen && Pressed(ImGuiKey_Escape))
+    {
+        State.Matcaps.PickerOpen = false;
+        Announce(State, "Set material closed");
+        return;
+    }
+    if (Pressed(ImGuiKey_M))                                                                // set-material
+    {
+        State.Matcaps.PickerOpen = State.Document.Summary.PresentCondition;
+        if (!State.Matcaps.PickerOpen) Announce(State, "Set material needs a body");
+    }
     if (Pressed(ImGuiKey_1)) State.PickMode = DraftingPickMode::ControlPoint;
     if (Pressed(ImGuiKey_L)) LoftSelectedCurves(State);                                     // loft
     if (Pressed(ImGuiKey_2)) State.PickMode = DraftingPickMode::Edge;
@@ -2552,7 +2731,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_Q)) Announce(State, "Boolean (Q) needs two bodies: construct with Shift+C / V / X / Z, then Q / W / E");
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
     if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
-    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O) || Pressed(ImGuiKey_M))
+    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O))
         Announce(State, "Not available in this modeller");
     if (Pressed(ImGuiKey_Escape))
     {
@@ -2693,6 +2872,7 @@ void InitialiseDraftingWorkspace(DraftingWorkspaceState& State, const DraftingOp
 void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds)
 {
     State.Widgets.clear();
+    RefreshDraftingMatcaps(State);
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
     StageBevelPreview(State);
     DrawHeader(State, Frame);
@@ -2703,6 +2883,7 @@ void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTe
     DrawOutliner(State, ImVec2(PanelGap, Top), ImVec2(OutlinerWidth, Height));
     DrawViewport(State, ViewportTexture, ImVec2(2 * PanelGap + OutlinerWidth, Top), ImVec2(Middle, Height));
     DrawInspector(State, ImVec2(3 * PanelGap + OutlinerWidth + Middle, Top), ImVec2(InspectorWidth, Height));
+    DrawMatcapPicker(State);
     DrawWelcome(State);
     ApplyShortcuts(State);
     AdvanceAutosave(State, DeltaSeconds);
@@ -2716,11 +2897,23 @@ const DraftingScene& DisplayedDraftingScene(const DraftingWorkspaceState& State)
     return State.Scene;
 }
 
+void RefreshDraftingMatcaps(DraftingWorkspaceState& State)
+{
+    DraftingMatcapShelf& Shelf = State.Matcaps;
+    if (!Shelf.Library.Names.empty() && Shelf.Library.Key == DraftingMatcapKey(State.Document.Appearance)) return;
+    Shelf.Library = AssembleDraftingMatcaps(State.Document.Appearance);
+    Shelf.Generation += 1;
+}
+
 DraftingSceneStates DisplayedDraftingStates(const DraftingWorkspaceState& State)
 {
     const DraftingScene& Scene = DisplayedDraftingScene(State);
-    if (&Scene == &State.Bevel.PreviewScene) return ComposeDraftingStates(Scene, State.Bevel.Preview->Selection, State.HoverIdentity);
-    return ComposeDraftingStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
+    DraftingSceneStates States = &Scene == &State.Bevel.PreviewScene ? ComposeDraftingStates(Scene, State.Bevel.Preview->Selection, State.HoverIdentity)
+                                                                      : ComposeDraftingStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
+    // 📝 Matcap layers ride in bits 8 … 15 of each face word (DraftingSurface.slang).
+    const std::vector<uint32_t> Layers = ComposeDraftingMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);
+    for (size_t Index = 0; Index < States.Faces.size() && Index < Layers.size(); ++Index) States.Faces[Index] |= Layers[Index];
+    return States;
 }
 
 void RefreshDraftingScene(DraftingWorkspaceState& State, bool DirtyCondition)

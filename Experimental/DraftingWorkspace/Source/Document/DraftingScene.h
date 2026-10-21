@@ -145,6 +145,12 @@ struct DraftingDeviationMap
 
 // Selection names → state words; the last name of the most recently picked kind is the active operand.
 [[nodiscard]] DraftingSceneStates ComposeDraftingStates(const DraftingScene& Scene, const DraftingSelection& Selection, uint32_t HoverIdentity);
+// 📝 Matcap layer of every scene face (its own assignment, else the body matcap; unknown names → 0 = Studio), already
+//    shifted into bits 8 … 15 so the caller ORs it into the face state words.
+[[nodiscard]] std::vector<uint32_t> ComposeDraftingMatcapLayers(const DraftingScene& Scene, const DraftingAppearance& Appearance,
+                                                                const DraftingMatcapLibrary& Library);
+// Face assignments whose persistent name the current scene no longer has (kept in the document, reported in the Inspector).
+[[nodiscard]] size_t CountDanglingMatcaps(const DraftingScene& Scene, const DraftingAppearance& Appearance);
 
 // 📝 Closest approach of the ray to one scene edge: ray parameter and separation at the nearest of its segments.
 struct DraftingEdgeApproach

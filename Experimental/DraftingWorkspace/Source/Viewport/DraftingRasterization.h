@@ -115,6 +115,10 @@ public:
     // Replaces every image-plane texture (pictures with a refusal or no pixels get a 1 × 1 placeholder). Waits for the device.
     void UploadPictures(const std::vector<DraftingPicture>& Pictures);
     [[nodiscard]] size_t PictureCount() const { return Pictures.size(); }
+    // Replaces the matcap texture array: Layers[k] becomes layer k (the surface program samples layer = face layer − 1).
+    // Pictures must share one square extent; none → a 1-layer grey placeholder. Waits for the device.
+    void UploadMatcaps(const std::vector<DraftingPicture>& Layers);
+    [[nodiscard]] uint32_t MatcapLayerCount() const { return MatcapLayers; }
 
     // Records the viewport. ProbeX / ProbeY ≥ 0 copy that identity texel; ReadbackCondition copies both whole targets.
     void Record(VkCommandBuffer Commands, const DraftingCameraFrame& Frame, const DraftingViewportStyle& Style, bool ReadbackCondition,
@@ -173,6 +177,10 @@ private:
     VkPipelineLayout      PlaneLayout      = VK_NULL_HANDLE;
     VkPipeline            PlanePipeline    = VK_NULL_HANDLE;
     std::vector<PictureTexture> Pictures   = {};
+    DraftingImage         MatcapArray      = {};                                             // [-] - Matcap layers (2D array)
+    VkDescriptorPool      MatcapPool       = VK_NULL_HANDLE;                                 // [-] - Holds MatcapSet only
+    VkDescriptorSet       MatcapSet        = VK_NULL_HANDLE;                                 // [-] - Set 1 of the surface program
+    uint32_t              MatcapLayers     = 0;                                              // [-] - Uploaded layer count
 };
 
 } // namespace Frontier::DraftingWorkspace

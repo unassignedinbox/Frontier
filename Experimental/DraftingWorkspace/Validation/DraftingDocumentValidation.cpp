@@ -63,6 +63,7 @@ namespace
     GateTally PanelGate       = { "W12", "Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal", "sound · rel. ≤ 2·10⁻³" };
     GateTally EvaluationGate  = { "W13", "Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation", "≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe" };
     GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
+    GateTally MatcapGate      = { "W15", "Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals", "exact · 1 / 255" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -810,13 +811,214 @@ int main()
         }
     }
 
+    // ---- W15 matcaps: built-in library optics, picture fitting, per-face / body assignment without regeneration, undo,
+    //      persistence through regeneration, codec, refusals.
+    {
+        auto Compact = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3g", Value); return std::string(Text); };
+        auto Luminance = [](const DraftingPicture& Picture, size_t Texel)
+        {
+            return 0.2126 * Picture.Pixels[Texel * 4] + 0.7152 * Picture.Pixels[Texel * 4 + 1] + 0.0722 * Picture.Pixels[Texel * 4 + 2];
+        };
+        // Texels inside 0.9 of the disc radius.
+        auto Inside = [](const DraftingPicture& Picture, uint32_t Column, uint32_t Row)
+        {
+            const double X = 2.0 * (Column + 0.5) / Picture.Width - 1.0, Y = 2.0 * (Row + 0.5) / Picture.Height - 1.0;
+            return X * X + Y * Y < 0.81;
+        };
+        // Mean |∂L/∂x| over mean |∂L/∂y| inside the disc (brushed metal blurs along x).
+        auto Anisotropy = [&](const DraftingPicture& Picture)
+        {
+            double Across = 0.0, Down = 0.0;
+            for (uint32_t Row = 1; Row < Picture.Height; ++Row)
+                for (uint32_t Column = 1; Column < Picture.Width; ++Column)
+                {
+                    if (!Inside(Picture, Column, Row)) continue;
+                    const size_t Texel = size_t(Row) * Picture.Width + Column;
+                    Across += std::abs(Luminance(Picture, Texel) - Luminance(Picture, Texel - 1));
+                    Down   += std::abs(Luminance(Picture, Texel) - Luminance(Picture, Texel - Picture.Width));
+                }
+            return Across / std::max(Down, 1e-9);
+        };
+        // Colour of the brightest texel inside the disc.
+        auto Brightest = [&](const DraftingPicture& Picture)
+        {
+            size_t Best = 0; double Peak = -1.0;
+            for (uint32_t Row = 0; Row < Picture.Height; ++Row)
+                for (uint32_t Column = 0; Column < Picture.Width; ++Column)
+                    if (Inside(Picture, Column, Row) && Luminance(Picture, size_t(Row) * Picture.Width + Column) > Peak)
+                    {
+                        Peak = Luminance(Picture, size_t(Row) * Picture.Width + Column);
+                        Best = size_t(Row) * Picture.Width + Column;
+                    }
+            return std::array<double, 3>{ double(Picture.Pixels[Best * 4]), double(Picture.Pixels[Best * 4 + 1]), double(Picture.Pixels[Best * 4 + 2]) };
+        };
+        // Luminance spread (standard deviation) inside the disc: sharp reflections spread wide.
+        auto Spread = [&](const DraftingPicture& Picture)
+        {
+            double Sum = 0.0, Squares = 0.0; size_t Count = 0;
+            for (uint32_t Row = 0; Row < Picture.Height; ++Row)
+                for (uint32_t Column = 0; Column < Picture.Width; ++Column)
+                    if (Inside(Picture, Column, Row))
+                    {
+                        const double Value = Luminance(Picture, size_t(Row) * Picture.Width + Column);
+                        Sum += Value; Squares += Value * Value; ++Count;
+                    }
+            const double Mean = Sum / double(Count);
+            return std::sqrt(std::max(0.0, Squares / double(Count) - Mean * Mean));
+        };
+
+        // ① the library: 13 built-ins, square RGBA8, opaque, deterministic; unknown names refuse
+        const std::vector<DraftingMatcapDescription>& BuiltIn = DraftingBuiltInMatcaps();
+        bool Shaped = BuiltIn.size() == 13, Repeatable = true;
+        std::map<std::string, DraftingPicture> Composed;
+        for (const DraftingMatcapDescription& Description : BuiltIn)
+        {
+            const DraftingPicture Picture = ComposeDraftingMatcap(Description.Name);
+            Shaped = Shaped && Picture.Refusal.empty() && Picture.Width == DraftingMatcapExtent && Picture.Height == DraftingMatcapExtent
+                  && Picture.Pixels.size() == size_t(DraftingMatcapExtent) * DraftingMatcapExtent * 4;
+            for (size_t Index = 3; Shaped && Index < Picture.Pixels.size(); Index += 4) Shaped = Picture.Pixels[Index] == 255;
+            Repeatable = Repeatable && ComposeDraftingMatcap(Description.Name).Pixels == Picture.Pixels;
+            Composed[Description.Name] = Picture;
+        }
+        const DraftingPicture Unknown = ComposeDraftingMatcap("Unobtainium");
+        const DraftingMatcapLibrary Plain = AssembleDraftingMatcaps({});
+        Tally(MatcapGate, 0.0, Shaped && Repeatable && !Unknown.Refusal.empty() && Plain.Names.size() == 14 && Plain.Names[0] == DraftingStudioMatcap && Plain.Pictures.size() == 13
+                               && DraftingMatcapLayer(Plain, "Brass") == 5 && DraftingMatcapLayer(Plain, "Unobtainium") == 0,
+              "13 built-ins 256 × 256 RGBA8, opaque, composed twice bit-equal; library Studio + 13 (Brass = layer 5); unknown name refused / layer 0");
+
+        // ② optics: metal highlights carry the tint, plastic highlights stay white; brushed blurs along x; roughness spreads less
+        const std::array<double, 3> BrassPeak = Brightest(Composed["Brass"]);
+        const std::array<double, 3> RedPeak   = Brightest(Composed["RedPlastic"]);
+        const double BrassTint = BrassPeak[2] / BrassPeak[0];
+        const double RedWhite  = std::min({ RedPeak[0], RedPeak[1], RedPeak[2] }) / std::max({ RedPeak[0], RedPeak[1], RedPeak[2] });
+        Tally(MatcapGate, 0.0, BrassTint < 0.75 && RedWhite > 0.8,
+              "brightest texel: Brass blue / red " + Compact(BrassTint) + " (< 0.75, tinted metal) · Red plastic min / max " + Compact(RedWhite) + " (> 0.8, white Fresnel)");
+        const double Brushed = Anisotropy(Composed["BrushedSteel"]), Mirror = Anisotropy(Composed["Chrome"]);
+        Tally(MatcapGate, 0.0, Brushed < 0.6 * Mirror, "|∂L/∂x| / |∂L/∂y|: Brushed steel " + Compact(Brushed) + " < 0.6 × Chrome " + Compact(Mirror) + " (anisotropic)");
+        const double Sharp = Spread(Composed["Chrome"]), Satin = Spread(Composed["SatinAluminium"]), Matte = Spread(Composed["Clay"]);
+        Tally(MatcapGate, 0.0, Sharp > Satin && Satin > Matte,
+              "luminance spread inside the disc: Chrome " + Compact(Sharp) + " > Satin aluminium " + Compact(Satin) + " > Clay " + Compact(Matte));
+
+        // ③ user pictures: centre square crop + bilinear fit; a 4 × 2 picture keeps its middle two columns
+        const std::string Bitmap = (std::filesystem::temp_directory_path() / "DraftingMatcapValidation.bmp").string();
+        const uint8_t Columns[4][3] = { { 200, 0, 0 }, { 0, 200, 0 }, { 0, 0, 200 }, { 200, 200, 0 } };
+        {
+            std::vector<uint8_t> Bytes(54, 0);
+            const uint32_t Stride = 12, Size = 54 + Stride * 2;
+            auto Put = [&](size_t At, uint32_t Value, int Count) { for (int Index = 0; Index < Count; ++Index) Bytes[At + Index] = uint8_t(Value >> (8 * Index)); };
+            Bytes[0] = 'B'; Bytes[1] = 'M'; Put(2, Size, 4); Put(10, 54, 4); Put(14, 40, 4); Put(18, 4, 4); Put(22, 2, 4); Put(26, 1, 2); Put(28, 24, 2); Put(34, Stride * 2, 4);
+            for (int Row = 1; Row >= 0; --Row)
+                for (int Column = 0; Column < 4; ++Column) for (int Channel = 2; Channel >= 0; --Channel) Bytes.push_back(Columns[Column][Channel]);
+            std::ofstream(Bitmap, std::ios::binary).write(reinterpret_cast<const char*>(Bytes.data()), std::streamsize(Bytes.size()));
+        }
+        const DraftingPicture Fitted = FitDraftingMatcapPicture(DecodeDraftingPicture(Bitmap));
+        auto Near = [&](uint32_t Column, uint32_t Row, const uint8_t* Expected)
+        {
+            const uint8_t* Pixel = &Fitted.Pixels[(size_t(Row) * Fitted.Width + Column) * 4];
+            return std::abs(Pixel[0] - Expected[0]) <= 1 && std::abs(Pixel[1] - Expected[1]) <= 1 && std::abs(Pixel[2] - Expected[2]) <= 1 && Pixel[3] == 255;
+        };
+        Tally(MatcapGate, 0.0, Fitted.Refusal.empty() && Fitted.Width == 256 && Fitted.Height == 256 && Near(64, 10, Columns[1]) && Near(192, 200, Columns[2]),
+              "4 × 2 BMP → 256 × 256: quarter columns show source columns 2 and 3 (centre crop), within 1 / 255, opaque");
+
+        // ④ assignment on a block: two faces Brass, body Brushed steel — no regeneration, one undo entry each
+        DraftingDocument Shop = CreateDraftingDocument("Matcaps");
+        DraftingConstructRequest Stock;
+        Stock.Kind = DraftingConstructKind::Block; Stock.Width = 2.0; Stock.Depth = 1.0; Stock.Height = 0.5;
+        Expect(ConstructDraftingPrimitive(Shop, Stock));
+        DraftingScene ShopScene = BuildDraftingScene(Shop);
+        const std::string First = ShopScene.Faces.size() == 6 ? ShopScene.Faces[0].Name : "", Second = ShopScene.Faces.size() == 6 ? ShopScene.Faces[1].Name : "";
+        const uint64_t Revision = Shop.Revision;
+        const size_t   Entries  = Shop.UndoEntries.size();
+        SelectDraftingName(Shop, DraftingSelectionKind::Face, First, false);
+        SelectDraftingName(Shop, DraftingSelectionKind::Face, Second, true);
+        const DraftingCommandOutcome FaceOutcome = AssignDraftingMatcap(Shop, "Brass");
+        ClearDraftingSelection(Shop);
+        const DraftingCommandOutcome BodyOutcome = AssignDraftingMatcap(Shop, "BrushedSteel");
+        const DraftingMatcapLibrary Library = AssembleDraftingMatcaps(Shop.Appearance);
+        auto LayerCounts = [&](const DraftingScene& Scene)
+        {
+            std::map<uint32_t, int> Counts;
+            for (const uint32_t Word : ComposeDraftingMatcapLayers(Scene, Shop.Appearance, Library)) Counts[Word >> DraftingMatcapLayerShift] += 1;
+            return Counts;
+        };
+        std::map<uint32_t, int> Counts = LayerCounts(ShopScene);
+        const uint32_t BrassLayer = DraftingMatcapLayer(Library, "Brass"), SteelLayer = DraftingMatcapLayer(Library, "BrushedSteel");
+        Tally(MatcapGate, 0.0, FaceOutcome.AcceptedCondition && BodyOutcome.AcceptedCondition && Shop.Revision == Revision && Shop.UndoEntries.size() == Entries + 2
+                               && Shop.UndoEntries.back().AppearanceCondition && Counts[BrassLayer] == 2 && Counts[SteelLayer] == 4 && Counts.size() == 2,
+              "2 faces → Brass, body → Brushed steel: state words 2 × layer " + std::to_string(BrassLayer) + " + 4 × layer " + std::to_string(SteelLayer)
+              + "; revision unchanged (no regeneration); 2 matcap-only undo entries");
+
+        // ⑤ refusals leave the appearance and the history alone
+        const DraftingAppearance Kept = Shop.Appearance;
+        const DraftingCommandOutcome Unnamed = AssignDraftingMatcap(Shop, "Unobtainium");
+        const DraftingCommandOutcome Again   = AssignDraftingMatcap(Shop, "BrushedSteel");
+        const bool Untouched = Shop.Appearance.BodyMatcap == Kept.BodyMatcap && Shop.Appearance.FaceMatcaps == Kept.FaceMatcaps && Shop.UndoEntries.size() == Entries + 2;
+        Tally(MatcapGate, 0.0, !Unnamed.AcceptedCondition && !Again.AcceptedCondition && Untouched,
+              "unknown matcap refused (" + Unnamed.Refusal + ") · repeat refused (" + Again.Refusal + ") · appearance and history unchanged");
+
+        // ⑥ undo / redo restore the appearance exactly and never regenerate
+        UndoDraftingCommand(Shop);
+        const bool BodyUndone = Shop.Appearance.BodyMatcap == DraftingStudioMatcap && Shop.Appearance.FaceMatcaps.size() == 2;
+        UndoDraftingCommand(Shop);
+        const bool FacesUndone = Shop.Appearance.FaceMatcaps.empty() && Shop.Revision == Revision;
+        RedoDraftingCommand(Shop);
+        RedoDraftingCommand(Shop);
+        Tally(MatcapGate, 0.0, BodyUndone && FacesUndone && Shop.Appearance.BodyMatcap == Kept.BodyMatcap && Shop.Appearance.FaceMatcaps == Kept.FaceMatcaps && Shop.Revision == Revision,
+              "undo → body Studio, undo → no face matcaps, redo × 2 → identical appearance; revision unchanged throughout");
+
+        // ⑦ a parameter edit regenerates: assignments follow the persistent names (none dangling)
+        const DraftingCommandOutcome Deeper = AssignDraftingParameter(Shop, "Block1.Depth", 1.5);
+        ShopScene = BuildDraftingScene(Shop);
+        Counts    = LayerCounts(ShopScene);
+        Tally(MatcapGate, 0.0, Deeper.AcceptedCondition && Shop.Revision != Revision && Counts[BrassLayer] == 2 && Counts[SteelLayer] == 4 && CountDanglingMatcaps(ShopScene, Shop.Appearance) == 0,
+              "Block1.Depth 1 → 1.5 regenerates; still 2 Brass + 4 Brushed steel faces, 0 dangling assignments");
+
+        // ⑧ Alt+M: the selected face returns to the body matcap; with nothing selected the body returns to Studio
+        SelectDraftingName(Shop, DraftingSelectionKind::Face, First, false);
+        const DraftingCommandOutcome FaceRemoval = RemoveDraftingMatcap(Shop);
+        ClearDraftingSelection(Shop);
+        const DraftingCommandOutcome BodyRemoval = RemoveDraftingMatcap(Shop);
+        const DraftingCommandOutcome Nothing     = RemoveDraftingMatcap(Shop);
+        Tally(MatcapGate, 0.0, FaceRemoval.AcceptedCondition && BodyRemoval.AcceptedCondition && !Nothing.AcceptedCondition && Shop.Appearance.FaceMatcaps.size() == 1
+                               && Shop.Appearance.FaceMatcaps.count(Second) == 1 && Shop.Appearance.BodyMatcap == DraftingStudioMatcap,
+              "remove on 1 face → 1 override left; remove on the body → Studio; a third remove refused (" + Nothing.Refusal + ")");
+
+        // ⑨ user picture: added by name (layer 15), refused when missing / named twice; saved → loaded → saved byte-equal
+        const DraftingCommandOutcome Added     = AddDraftingMatcapPicture(Shop, "ShopStripes", Bitmap);
+        const DraftingCommandOutcome Twice     = AddDraftingMatcapPicture(Shop, "ShopStripes", Bitmap);
+        const DraftingCommandOutcome BuiltName = AddDraftingMatcapPicture(Shop, "Chrome", Bitmap);
+        const DraftingCommandOutcome Absent    = AddDraftingMatcapPicture(Shop, "Absent", Bitmap + ".missing");
+        ClearDraftingSelection(Shop);
+        const DraftingCommandOutcome Striped   = AssignDraftingMatcap(Shop, "ShopStripes");
+        const DraftingMatcapLibrary  Custom    = AssembleDraftingMatcaps(Shop.Appearance);
+        Tally(MatcapGate, 0.0, Added.AcceptedCondition && !Twice.AcceptedCondition && !BuiltName.AcceptedCondition && !Absent.AcceptedCondition && Striped.AcceptedCondition
+                               && Custom.Names.size() == 15 && DraftingMatcapLayer(Custom, "ShopStripes") == 14 && Custom.Refusals.back().empty() && Custom.Pictures.back().Pixels == Fitted.Pixels,
+              "picture ShopStripes → layer 14 of 15, fitted pixels equal; twice / built-in name / missing file refused (" + Absent.Refusal + ")");
+        const std::string Written = EncodeDraftingDocument(Shop);
+        const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+        DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+        Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+        RegenerateDraftingDocument(Copy, true);
+        DraftingDocument Bare = CreateDraftingDocument("Bare");
+        Expect(ConstructDraftingPrimitive(Bare, Stock));
+        Tally(MatcapGate, 0.0, Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Written.find("[Appearance]") != std::string::npos
+                               && Copy.Appearance.FaceMatcaps == Shop.Appearance.FaceMatcaps && EncodeDraftingDocument(Bare).find("Appearance") == std::string::npos,
+              "save → load → save byte-equal with [Appearance]; documents without matcaps write no Appearance key");
+        std::string Corrupt = Written;
+        const size_t Brass = Corrupt.find("Matcap = 'Brass'");
+        if (Brass != std::string::npos) Corrupt.replace(Brass, 16, "Matcap = 'Unobtainium'");
+        const DraftingDocumentFile Rejected = DecodeDraftingDocument(Corrupt);
+        Tally(MatcapGate, 0.0, Brass != std::string::npos && !Rejected.Refusal.empty(), "a file naming an unknown matcap is refused: " + Rejected.Refusal);
+        std::filesystem::remove(Bitmap);
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -265,7 +265,8 @@ void DraftingDevice::DestroyBuffer(DraftingBuffer& Buffer) const
     Buffer = {};
 }
 
-DraftingImage DraftingDevice::CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect) const
+DraftingImage DraftingDevice::CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect,
+                                         uint32_t ArrayLayers) const
 {
     DraftingImage Image;
     Image.Format = Format;
@@ -276,7 +277,7 @@ DraftingImage DraftingDevice::CreateImage(uint32_t Width, uint32_t Height, VkFor
     Request.format        = Format;
     Request.extent        = { Width, Height, 1 };
     Request.mipLevels     = 1;
-    Request.arrayLayers   = 1;
+    Request.arrayLayers   = std::max<uint32_t>(ArrayLayers, 1);
     Request.samples       = VK_SAMPLE_COUNT_1_BIT;
     Request.tiling        = VK_IMAGE_TILING_OPTIMAL;
     Request.usage         = Usage;
@@ -291,9 +292,9 @@ DraftingImage DraftingDevice::CreateImage(uint32_t Width, uint32_t Height, VkFor
     Require(vkBindImageMemory(Device, Image.Image, Image.Memory, 0), "vkBindImageMemory");
     VkImageViewCreateInfo ViewRequest{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
     ViewRequest.image            = Image.Image;
-    ViewRequest.viewType         = VK_IMAGE_VIEW_TYPE_2D;
+    ViewRequest.viewType         = ArrayLayers ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     ViewRequest.format           = Format;
-    ViewRequest.subresourceRange = { Aspect, 0, 1, 0, 1 };
+    ViewRequest.subresourceRange = { Aspect, 0, 1, 0, std::max<uint32_t>(ArrayLayers, 1) };
     Require(vkCreateImageView(Device, &ViewRequest, nullptr, &Image.View), "vkCreateImageView");
     return Image;
 }

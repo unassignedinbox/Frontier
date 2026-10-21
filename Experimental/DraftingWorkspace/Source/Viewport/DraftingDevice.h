@@ -74,7 +74,9 @@ public:
 
     [[nodiscard]] DraftingBuffer CreateBuffer(VkDeviceSize Size, VkBufferUsageFlags Usage, bool HostVisibleCondition) const;
     void                         DestroyBuffer(DraftingBuffer& Buffer) const;
-    [[nodiscard]] DraftingImage  CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect) const;
+    // ArrayLayers 0: a plain 2D image; ≥ 1: a 2D array with a 2D_ARRAY view over every layer (matcap library).
+    [[nodiscard]] DraftingImage  CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect,
+                                             uint32_t ArrayLayers = 0) const;
     void                         DestroyImage(DraftingImage& Image) const;
 
     VkInstance                       Instance       = VK_NULL_HANDLE;

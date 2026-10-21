@@ -20,6 +20,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <set>
 
 namespace Frontier::DraftingWorkspace
 {
@@ -331,6 +332,28 @@ std::string NameDraftingIdentity(const DraftingScene& Scene, uint32_t Identity)
 DraftingSelectionKind DraftingIdentityKind(uint32_t Identity) noexcept
 {
     return (Identity & IdentityEdgeBit) ? DraftingSelectionKind::Edge : DraftingSelectionKind::Face;
+}
+
+std::vector<uint32_t> ComposeDraftingMatcapLayers(const DraftingScene& Scene, const DraftingAppearance& Appearance, const DraftingMatcapLibrary& Library)
+{
+    std::vector<uint32_t> Layers(Scene.Faces.size(), 0u);
+    const uint32_t BodyLayer = DraftingMatcapLayer(Library, Appearance.BodyMatcap);
+    for (size_t Index = 0; Index < Scene.Faces.size(); ++Index)
+    {
+        const auto     Found = Appearance.FaceMatcaps.find(Scene.Faces[Index].Name);
+        const uint32_t Layer = Found != Appearance.FaceMatcaps.end() ? DraftingMatcapLayer(Library, Found->second) : BodyLayer;
+        Layers[Index] = Layer << DraftingMatcapLayerShift;
+    }
+    return Layers;
+}
+
+size_t CountDanglingMatcaps(const DraftingScene& Scene, const DraftingAppearance& Appearance)
+{
+    std::set<std::string> Present;
+    for (const DraftingSceneFace& Face : Scene.Faces) Present.insert(Face.Name);
+    size_t Dangling = 0;
+    for (const auto& Entry : Appearance.FaceMatcaps) Dangling += Present.contains(Entry.first) ? 0 : 1;
+    return Dangling;
 }
 
 } // namespace Frontier::DraftingWorkspace
