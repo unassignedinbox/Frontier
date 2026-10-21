@@ -11,6 +11,7 @@
 
 #include <toml++/toml.hpp>
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -137,6 +138,28 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
         Table.insert("Amount", EncodeValue(Step.Amount));
         break;
+    case FeatureStepKind::SpaceCurve:
+    {
+        toml::array Points;
+        for (const Vector3& Point : Step.Points) Points.push_back(EncodeVector(Point));
+        Table.insert("Points", std::move(Points));
+        Table.insert("Closed", Step.ClosedCondition);
+        Table.insert("Tolerance", EncodeValue(Step.Tolerance));
+        if (!Step.PoleEdits.empty())
+        {
+            toml::array Edits;
+            for (const FeaturePoleEdit& Edit : Step.PoleEdits) Edits.push_back(toml::table{ { "Index", static_cast<int64_t>(Edit.Index) }, { "Position", EncodeVector(Edit.Position) } });
+            Table.insert("PoleEdits", std::move(Edits));
+        }
+        break;
+    }
+    case FeatureStepKind::Loft:
+    {
+        toml::array Sections;
+        for (const std::string& Section : Step.Sections) Sections.push_back(Section);
+        Table.insert("Sections", std::move(Sections));
+        break;
+    }
     }
     if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
     return Table;
@@ -321,6 +344,24 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             {
                 Step.EndSize     = DecodeValue(View["EndSize"]);
                 Step.SizeAnchors = DecodeReferences(View["SizeAnchors"]);
+            }
+            if (const toml::array* Points = View["Points"].as_array())
+            {
+                for (const toml::node& Point : *Points) Step.Points.push_back(DecodeVector(toml::node_view<const toml::node>{ Point }, Vector3{ std::nan(""), 0.0, 0.0 }));
+            }
+            Step.ClosedCondition = View["Closed"].value_or(false);
+            Step.Tolerance       = DecodeValue(View["Tolerance"], Step.Tolerance);
+            if (const toml::array* Edits = View["PoleEdits"].as_array())
+            {
+                for (const toml::node& Edit : *Edits)
+                {
+                    const toml::node_view<const toml::node> Entry{ Edit };
+                    Step.PoleEdits.push_back({ static_cast<int>(Entry["Index"].value_or(int64_t{ -1 })), DecodeVector(Entry["Position"], Vector3{}) });
+                }
+            }
+            if (const toml::array* Sections = View["Sections"].as_array())
+            {
+                for (const toml::node& Section : *Sections) Step.Sections.push_back(Section.value_or(std::string{}));
             }
             File.Tree.Steps.push_back(std::move(Step));
         }

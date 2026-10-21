@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/VehicleCurveImport.h"
 
 #include "Audit/EnclosedVolume.h"
 #include "Audit/ModelAudit.h"
@@ -357,10 +358,12 @@ void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureConditio
         Summary.Edges            = static_cast<int>(Inventory.Edges.size());
         Summary.Vertices         = static_cast<int>(Inventory.Vertices.size());
         Summary.Genus            = Audit.Genus;
-        Summary.Volume           = Summary.PresentCondition ? IntegrateBodyVolume(*Document.Partition, Body) : 0.0;
+        Summary.SheetCondition   = Document.Partition->Bodies.Resolve(Body).Category == BodyCategory::Sheet;
+        Summary.Volume           = Summary.PresentCondition && !Summary.SheetCondition ? IntegrateBodyVolume(*Document.Partition, Body) : 0.0;
     }
     KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Naming.Faces);
     KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Naming.Edges);
+    std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label); });
 }
 
 DraftingDocument CloneDraftingDocument(const DraftingDocument& Source)
@@ -689,6 +692,88 @@ OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept
 bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std::string& SketchLabel)
 {
     return std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Profile == SketchLabel; });
+}
+
+DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const VehicleCurveFile& File, double Tolerance)
+{
+    const std::string Label = "Import " + std::to_string(File.Curves.size()) + " curve(s)";
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (!File.Refusal.empty()) return "import: " + File.Refusal;
+        if (File.Curves.empty()) return "import: the file holds no curves";
+        if (!(Tolerance > 0.0)) return "import: the fit tolerance must be positive";
+        for (const VehicleCurve& Curve : File.Curves)
+        {
+            FeatureStep Step;
+            Step.Kind            = FeatureStepKind::SpaceCurve;
+            Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Points          = Curve.Points;
+            Step.ClosedCondition = Curve.ClosedCondition;
+            Step.Tolerance       = FeatureValue{ Tolerance };
+            const bool Taken = std::any_of(Document.Captions.begin(), Document.Captions.end(), [&](const auto& Entry) { return Entry.second == Curve.Name; });
+            Document.Captions[Step.Label] = Taken ? NextCaption(Document, Curve.Name + ".") : Curve.Name;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        return {};
+    });
+}
+
+DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels)
+{
+    const std::string Caption = NextCaption(Document, "Loft");
+    const std::string Label   = Caption + " · " + std::to_string(Labels.size()) + " sections";
+    DraftingCommandOutcome Outcome = RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Labels.size() < 2) return "loft needs at least 2 curves (select them in section order)";
+        for (size_t Index = 0; Index < Labels.size(); ++Index)
+        {
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Labels[Index]; });
+            if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::SpaceCurve) return "no curve step labelled " + Labels[Index];
+            if (std::find(Labels.begin(), Labels.begin() + Index, Labels[Index]) != Labels.begin() + Index) return "curve " + Labels[Index] + " is selected twice";
+        }
+        FeatureStep Step;
+        Step.Kind     = FeatureStepKind::Loft;
+        Step.Label    = "Loft#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Sections = Labels;
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+    if (Outcome.AcceptedCondition) Document.Selection.Curves.clear();
+    return Outcome;
+}
+
+DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, Vector3 Position)
+{
+    const auto        Caption = Document.Captions.find(Label);
+    const std::string Command = "Move pole " + std::to_string(Pole) + " of " + (Caption != Document.Captions.end() ? Caption->second : Label);
+    return RunCommand(Document, Command, false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+        if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::SpaceCurve) return "no curve step labelled " + Label;
+        const auto Fitted = Document.Regeneration.Curves.find(Label);
+        if (Fitted == Document.Regeneration.Curves.end()) return "curve " + Label + " has no fitted poles (refused step)";
+        if (Pole < 0 || Pole >= static_cast<int>(Fitted->second.Curve.Definition->Poles.size())) return "pole " + std::to_string(Pole) + " does not exist";
+        if (!std::isfinite(Position.X) || !std::isfinite(Position.Y) || !std::isfinite(Position.Z)) return "pole position is not finite";
+        const auto Edit = std::find_if(Found->PoleEdits.begin(), Found->PoleEdits.end(), [&](const FeaturePoleEdit& Entry) { return Entry.Index == Pole; });
+        if (Edit != Found->PoleEdits.end()) Edit->Position = Position;
+        else Found->PoleEdits.push_back({ Pole, Position });
+        return {};
+    });
+}
+
+void SelectDraftingCurve(DraftingDocument& Document, const std::string& Label, bool AdditiveCondition)
+{
+    std::vector<std::string>& Curves = Document.Selection.Curves;
+    if (!AdditiveCondition)
+    {
+        Document.Selection = {};
+        Document.Selection.Curves.push_back(Label);
+        return;
+    }
+    const auto Found = std::find(Curves.begin(), Curves.end(), Label);
+    if (Found != Curves.end()) Curves.erase(Found);
+    else Curves.push_back(Label);
 }
 
 bool UndoDraftingCommand(DraftingDocument& Document)

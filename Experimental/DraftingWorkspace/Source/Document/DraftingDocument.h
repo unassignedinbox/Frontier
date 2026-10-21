@@ -91,6 +91,7 @@ struct DraftingSelection
 {
     std::vector<std::string> Faces = {};                                                     // [-] - Selected face names
     std::vector<std::string> Edges = {};                                                     // [-] - Selected edge names
+    std::vector<std::string> Curves = {};                                                    // [-] - Selected SpaceCurve labels, in pick order (loft order)
     DraftingSelectionKind    LastKind = DraftingSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
 };
 
@@ -130,7 +131,8 @@ struct DraftingBodySummary
     int    Edges            = 0;                                                             // [-]     - Edge count
     int    Vertices         = 0;                                                             // [-]     - Vertex count
     int    Genus            = -1;                                                            // [-]     - Euler–Poincaré genus
-    double Volume           = 0.0;                                                           // [len³]  - Enclosed volume
+    double Volume           = 0.0;                                                           // [len³]  - Enclosed volume (0 for a sheet)
+    bool   SheetCondition   = false;                                                         // [-]     - Open sheet body (a lofted panel)
     double RegenerationMs   = 0.0;                                                           // [ms]    - Last replay
 };
 
@@ -153,6 +155,8 @@ struct DraftingDocument
 //------------------------------------------------------------------------------------------------------------------------
 
 // Empty document (no steps, no body).
+struct VehicleCurveFile;
+
 [[nodiscard]] DraftingDocument CreateDraftingDocument(const std::string& Title = "Untitled");
 
 // Independent copy (tree, captions, selection; history not copied), regenerated into its own partition.
@@ -188,6 +192,19 @@ struct DraftingDocument
 [[nodiscard]] bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std::string& SketchLabel);
 
 // Undo / redo restore the tree snapshot and regenerate; false when the stack is empty.
+// 💡 Vehicle plan V1: every curve of the file becomes a SpaceCurve step ("Curve#n", captioned with the loop name) fitted
+//    at Tolerance — one undo entry, and all or nothing (a curve that cannot be fitted refuses the import).
+[[nodiscard]] DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const VehicleCurveFile& File, double Tolerance = 2.0e-4);
+
+// 💡 V4: a Loft step through the SpaceCurve steps in the given order (Plasticity L); the result is an open sheet.
+[[nodiscard]] DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels);
+
+// 💡 V3 (Plasticity mode 1): pole Pole of a SpaceCurve moves to Position; kept as a pole edit re-applied after every re-fit.
+[[nodiscard]] DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, Modeller::Vector3 Position);
+
+// Toggles a SpaceCurve in the curve selection (AdditiveCondition false: it becomes the only selected curve).
+void SelectDraftingCurve(DraftingDocument& Document, const std::string& Label, bool AdditiveCondition);
+
 bool UndoDraftingCommand(DraftingDocument& Document);
 bool RedoDraftingCommand(DraftingDocument& Document);
 

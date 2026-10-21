@@ -10,6 +10,7 @@
 #include "Document/DraftingDocument.h"
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingScene.h"
+#include "Document/VehicleCurveImport.h"
 
 #include "Blend/BlendCatalogue.h"
 #include "Sketch/SketchProfile.h"
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <numbers>
 #include <string>
@@ -53,6 +55,7 @@ namespace
     GateTally HistoryGate     = { "W7", "Undo / redo restore exact volumes; delete removes a whole tile", "≤ 10⁻¹²" };
     GateTally FileGate        = { "W8", "TOML save → load → save is byte-equal; reloaded body volume and names equal", "equal" };
     GateTally VariableGate    = { "W9", "Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload", "≤ 10⁻⁹" };
+    GateTally SurfacingGate   = { "W11", "Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload", "≤ 0.5 mm, equal" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -374,13 +377,134 @@ int main()
         }
     }
 
+    // ---- W11 vehicle surfacing (plan V1 import, V3 curve steps, V4 loft) on the synthetic bonnet sample.
+    {
+        const VehicleCurveFile Sample = ReadVehicleCurves(DRAFTING_VEHICLE_SAMPLE);
+        size_t PointCount = 0;
+        for (const VehicleCurve& Curve : Sample.Curves) PointCount += Curve.Points.size();
+        Tally(SurfacingGate, 0.0, Sample.Refusal.empty() && Sample.Curves.size() == 11, "SyntheticBonnet.toml decoded: " + std::to_string(Sample.Curves.size()) + " curves · "
+              + std::to_string(PointCount) + " points " + Sample.Refusal);
+        const VehicleCurveFile Again = DecodeVehicleCurves(EncodeVehicleCurves(Sample));
+        bool Equal = Again.Refusal.empty() && Again.Curves.size() == Sample.Curves.size();
+        for (size_t Index = 0; Equal && Index < Sample.Curves.size(); ++Index)
+        {
+            const VehicleCurve& First = Sample.Curves[Index];
+            const VehicleCurve& Second = Again.Curves[Index];
+            Equal = First.Name == Second.Name && First.ClosedCondition == Second.ClosedCondition && First.Points.size() == Second.Points.size()
+                 && std::memcmp(First.Points.data(), Second.Points.data(), First.Points.size() * sizeof(Vector3)) == 0;
+        }
+        Tally(SurfacingGate, 0.0, Equal, "V1 round trip decode → encode → decode: names, closed flags, every coordinate bit-equal");
+        const VehicleCurveFile Millimetres = DecodeVehicleCurves("Format = \"VehicleCurves\"\nUnits = \"mm\"\n[[Curves]]\nName = \"A\"\nPoints = [[1000.0, 0.0, 0.0], [0.0, 500.0, 0.0]]\n");
+        Tally(SurfacingGate, 0.0, Millimetres.Refusal.empty() && Millimetres.Curves.size() == 1 && Millimetres.Curves[0].Points[0].X == 1.0 && Millimetres.Curves[0].Points[1].Y == 0.5,
+              "Units = \"mm\" scaled to metres");
+        const std::pair<const char*, const char*> Malformed[] = {
+            { "Format = \"Mesh\"\n", "Format is not" },
+            { "Format = \"VehicleCurves\"\nUnits = \"in\"\n[[Curves]]\nName = \"A\"\nPoints = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]\n", "unknown Units" },
+            { "Format = \"VehicleCurves\"\n[[Curves]]\nName = \"A\"\nPoints = [[0.0, 0.0, 0.0]]\n", "needs at least 2 points" },
+            { "Format = \"VehicleCurves\"\n[[Curves]]\nName = \"A\"\nPoints = [[0.0, 0.0, 0.0], [1.0, \"x\", 0.0]]\n", "point 1 is not [x, y, z]" },
+            { "Format = \"VehicleCurves\"\n[[Curves]]\nPoints = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]\n", "has no Name" },
+        };
+        for (const auto& [Text, Expected] : Malformed)
+        {
+            const VehicleCurveFile Refused = DecodeVehicleCurves(Text);
+            Tally(SurfacingGate, 0.0, Refused.Refusal.find(Expected) != std::string::npos && Refused.Curves.empty(), "malformed file refused: " + Refused.Refusal);
+        }
+
+        // Import: 11 SpaceCurve steps in one undo entry, all within the 0.2 mm tolerance.
+        DraftingDocument Vehicle = CreateDraftingDocument("Bonnet");
+        const DraftingCommandOutcome Imported = ImportDraftingCurves(Vehicle, Sample);
+        double WorstFit = 0.0;
+        int    Poles = 0;
+        for (const auto& [Label, Fit] : Vehicle.Regeneration.Curves) { WorstFit = std::max(WorstFit, Fit.WorstDeviation); Poles += static_cast<int>(Fit.Curve.Definition->Poles.size()); }
+        Tally(SurfacingGate, WorstFit * 1000.0, Imported.AcceptedCondition && Vehicle.Tree.Steps.size() == 11 && Vehicle.Regeneration.Refused == 0 && Vehicle.UndoEntries.size() == 1
+              && Vehicle.Regeneration.Curves.size() == 11 && WorstFit <= 2.0e-4, "import → 11 SpaceCurve steps, 1 undo entry, " + std::to_string(PointCount) + " points → " + std::to_string(Poles)
+              + " poles, worst fit [mm] (value)");
+        const DraftingCommandOutcome Refused = ImportDraftingCurves(Vehicle, DecodeVehicleCurves("Format = \"Mesh\"\n"));
+        Tally(SurfacingGate, 0.0, !Refused.AcceptedCondition && Vehicle.Tree.Steps.size() == 11 && Vehicle.UndoEntries.size() == 1, "refused file leaves the document untouched: " + Refused.Refusal);
+
+        // Loft through the 6 sections (by caption) → one open NURBS sheet.
+        std::vector<std::string> Sections;
+        for (const FeatureStep& Step : Vehicle.Tree.Steps) if (Vehicle.Captions[Step.Label].rfind("Section", 0) == 0) Sections.push_back(Step.Label);
+        const DraftingCommandOutcome Single = LoftDraftingCurves(Vehicle, { Sections.front() });
+        Tally(SurfacingGate, 0.0, !Single.AcceptedCondition && Single.Refusal.find("at least 2") != std::string::npos, "loft through one curve refused: " + Single.Refusal);
+        const DraftingCommandOutcome Lofted = LoftDraftingCurves(Vehicle, Sections);
+        const DraftingBodySummary& Sheet = Vehicle.Summary;
+        Tally(SurfacingGate, 0.0, Lofted.AcceptedCondition && Sheet.PresentCondition && Sheet.SheetCondition && Sheet.SoundCondition && Sheet.Faces == 1 && Sheet.Edges == 4 && Sheet.Vertices == 4,
+              "loft 6 sections → sheet: " + std::to_string(Sheet.Faces) + " face · " + std::to_string(Sheet.Edges) + " edges · audit " + (Sheet.SoundCondition ? "sound" : "findings") + " " + Lofted.Refusal);
+        auto SheetSurface = [](const DraftingDocument& Document)
+        {
+            const FaceToken Face = Document.Partition->Faces.TokenAt(Document.Regeneration.Naming.Faces.begin()->first);
+            return Document.Partition->Surfaces.Resolve(Document.Partition->Faces.Resolve(Face).Surface);
+        };
+        if (Lofted.AcceptedCondition)
+        {
+            const SurfaceGeometry Surface = SheetSurface(Vehicle);
+            double WorstPoint = 0.0, WorstAnalytic = 0.0;
+            for (const VehicleCurve& Curve : Sample.Curves)
+            {
+                for (const Vector3& Point : Curve.Points)
+                {
+                    const Vector2 Foot = ProjectOntoSurface(Surface, Point, { Point.X / 0.75, Point.Y / 1.1 });
+                    WorstPoint = std::max(WorstPoint, Length(EvaluateSurface(Surface, Foot).Position - Point));
+                }
+            }
+            for (int First = 0; First <= 60; ++First)
+            {
+                for (int Second = 0; Second <= 60; ++Second)
+                {
+                    const Vector3 Point = EvaluateSurface(Surface, { First / 60.0, Second / 60.0 }).Position;
+                    const double  Xi = Point.X / 0.75, Eta = Point.Y / 1.1;
+                    const double  Height = 0.78 + 0.16 * Eta - 0.06 * Eta * Eta - 0.085 * Xi * Xi + 0.012 * std::sin(Pi * Eta) * (1.0 - Xi * Xi);
+                    const double  Across = (-0.17 * Xi - 0.024 * Xi * std::sin(Pi * Eta)) / 0.75;
+                    const double  Along  = (0.16 - 0.12 * Eta + 0.012 * Pi * std::cos(Pi * Eta) * (1.0 - Xi * Xi)) / 1.1;
+                    WorstAnalytic = std::max(WorstAnalytic, std::abs(Point.Z - Height) / std::sqrt(1.0 + Across * Across + Along * Along));
+                }
+            }
+            Tally(SurfacingGate, WorstPoint * 1000.0, WorstPoint <= 5.0e-4, "sheet vs all " + std::to_string(PointCount) + " limit points (6 sections + 5 loops never lofted), worst [mm] (value)");
+            Tally(SurfacingGate, WorstAnalytic * 1000.0, WorstAnalytic <= 5.0e-4, "sheet vs the analytic bonnet H(x, y), 61 × 61 normal distance, worst [mm] (value)");
+
+            // Reload: points and pole edits bit-equal, save → load → save byte-equal, same face name.
+            const std::string Text = EncodeDraftingDocument(Vehicle);
+            const DraftingDocumentFile File = DecodeDraftingDocument(Text);
+            DraftingDocument Reopened = CreateDraftingDocument(File.Title);
+            const DraftingCommandOutcome Opened = ReplaceDraftingTree(Reopened, File.Tree, File.Captions, "Open");
+            bool SameSteps = File.Tree.Steps.size() == Vehicle.Tree.Steps.size();
+            for (size_t Index = 0; SameSteps && Index < File.Tree.Steps.size(); ++Index)
+            {
+                const FeatureStep& First = Vehicle.Tree.Steps[Index];
+                const FeatureStep& Second = File.Tree.Steps[Index];
+                SameSteps = First.Kind == Second.Kind && First.Sections == Second.Sections && First.Points.size() == Second.Points.size()
+                         && std::memcmp(First.Points.data(), Second.Points.data(), First.Points.size() * sizeof(Vector3)) == 0;
+            }
+            Tally(SurfacingGate, 0.0, Opened.AcceptedCondition && SameSteps && EncodeDraftingDocument(Reopened) == Text && Reopened.Regeneration.Naming.Faces == Vehicle.Regeneration.Naming.Faces,
+                  "reload: points bit-equal, sections equal, save → load → save byte-equal, face name " + Vehicle.Regeneration.Naming.Faces.begin()->second);
+
+            // Pole move (mode 1 drag): +10 mm on the middle pole of Section3, then undo / redo.
+            const std::string Third = Sections[2];
+            const NurbsCurveDefinition Before = *Vehicle.Regeneration.Curves.at(Third).Curve.Definition;
+            const int     Pole   = static_cast<int>(Before.Poles.size()) / 2;
+            const Vector3 Middle = EvaluateSurface(Surface, { 0.5, 0.38 }).Position;
+            const DraftingCommandOutcome Moved = MoveDraftingPole(Vehicle, Third, Pole, Before.Poles[Pole] + Vector3{ 0.0, 0.0, 0.01 });
+            const double Shift = Moved.AcceptedCondition ? Length(EvaluateSurface(SheetSurface(Vehicle), { 0.5, 0.38 }).Position - Middle) : 0.0;
+            Tally(SurfacingGate, 0.0, Moved.AcceptedCondition && Vehicle.Summary.SheetCondition && Shift > 1.0e-3 && Vehicle.Regeneration.Naming.Faces == Reopened.Regeneration.Naming.Faces,
+                  "move pole " + std::to_string(Pole) + " of Section3 by +10 mm → loft regenerates, panel at (0.5, 0.38) moved " + std::to_string(Shift * 1000.0).substr(0, 5) + " mm, face name kept");
+            const DraftingCommandOutcome Missing = MoveDraftingPole(Vehicle, Third, 99, Vector3{});
+            Tally(SurfacingGate, 0.0, !Missing.AcceptedCondition && Missing.Refusal.find("does not exist") != std::string::npos, "pole 99 refused: " + Missing.Refusal);
+            const bool Undone = UndoDraftingCommand(Vehicle);
+            const double Back = Length(EvaluateSurface(SheetSurface(Vehicle), { 0.5, 0.38 }).Position - Middle);
+            const bool Redone = RedoDraftingCommand(Vehicle);
+            const double Reapplied = Length(EvaluateSurface(SheetSurface(Vehicle), { 0.5, 0.38 }).Position - Middle);
+            Tally(SurfacingGate, Back, Undone && Redone && Back == 0.0 && std::abs(Reapplied - Shift) <= 1.0e-15, "undo → panel exactly back · redo → moved again");
+        }
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
