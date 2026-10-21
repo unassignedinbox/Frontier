@@ -1,6 +1,30 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (4.9 MB, no external resources) with 16 interactive kernel models (now including P7 with its rolling-ball pipes), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (5.9 MB, no external resources) with 19 interactive kernel models (now including P7, P8 and the setback specimens V1 / V2), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
+**TL;DR (pinch and setback vertex blends, option C part A2)**: Every pattern-stress row is now built. PatternStressValidation runs 66 rows: **🟢 66 · ⚠️ 0 · 🔴 0** (616 operations, 819 s). P8 closes its degree-8 singular crossings with pinch vertices. A new V family adds setback vertex blends: where convex meets concave (L block), or where ≥ 4 blends meet (pyramid apex), the blends stop short and the hole is filled with fair rational quads. The new [`SetbackValidation`](SetbackValidation.md) passes all 6 gates, and ctest passes 14/14 (1173 s).
+
+| Gate | Measures (independent of the solver, through the B-rep) | Worst | Limit |
+|---|---|---|---|
+| S1 | every result edge on both face carriers | 2.4e-16 | 1e-9 |
+| S2 | G1 setback quad ↔ neighbouring blend or face [rad] | 2.9e-3 (0.17°) | 1e-2 |
+| S3 | G1 quad ↔ quad across a spoke [rad] | 2.1e-2 (1.2°) | 5e-2 |
+| S4 | audit, genus, watertight, \|V − V_polygon\| ≤ peak deviation × area, vertex categories | 4 / 4 | pass |
+| S5 | rebuilt twice → identical volume bits and polygon digest | 4 / 4 | identical |
+| S6 | chamfer setback and mixed-beside-sharp refuse atomically | 2 / 2 | all refused |
+
+| Specimen | Setback · Ball · Cap | Quads | F / E / V | V | Oracle |
+|---|---|---|---|---|---|
+| V1 L block, all 18 edges r 0.1 | 2 · 10 · 0 | 12 | 48 / 102 / 56 | 4.4561897029 | 0 / 300 |
+| V2 pyramid, all 8 edges r 0.1 | 1 · 4 · 0 | 8 | 25 / 52 / 29 | 1.2416687741 | 0 / 300 |
+| P8 cross-bores, 36 crossing edges r 0.03 | pinch | — | 66 / 120 / 38 | 26.5075467943 | 0 / 300 |
+
+- 🧩 **Construction (Várady–Rockwood):** each blend stops a setback distance short of the vertex. Its end section and the spokes between neighbouring blends bound a 2n-sided hole, which a centre point splits into n quads. Each quad is a rational Bézier patch fitted by least squares with exact G0 rims, G1 tangent rows (weight 1000) and tension rows. Rim gaps stay ≤ 1.3e-15.
+- 🐞 **Self-clash speed:** checking every NURBS quad edge against every face took 20.6 s on the pyramid. Edge intervals are now clipped to the pole box, and the scan keeps the whole-edge sample spacing. Total: 2.7 s for the pyramid, 4.5 s for the L block (was 59 s). Clipping without the fixed spacing was slower (19.5 s): the scanner spread its 256 samples over the short clip and polished every noisy minimum near the quad corners.
+- ⚠️ **Honest limit:** G1 across the spokes is a fit, not exact. It reaches 1.2° only next to the L block's centre point, where 6 spokes meet at irregular angles (the vertex-enclosure twist constraint). Pyramid spokes stay ≤ 0.54°.
+- 🚧 **Still refused:** setback chamfers, and mixed convexity beside a sharp edge (`MixedConvexity`).
+- 📝 **Timings:** all rows ran about 35–45% slower than the previous run, including untouched plane/cylinder rows (L2, C6, B5) and NurbsValidation (128 → 173 s). This is the sandbox CPU, not a regression.
+- 🚧 **Next:** overflow (blend wider than its face).
 
 **TL;DR (NURBS carriers, option C part A1)**: Rational B-spline curves and surfaces are now kernel carriers, with exact conversions of every analytic carrier. The new [`NurbsValidation`](NurbsValidation.md) passes all 7 gates, and ctest passes 13/13 (787 s). Non-uniform scale and shear, which used to be refused, now promote curved faces to NURBS and build exact bodies (V = det M · V*, to 1.5e-15).
 
@@ -17,7 +41,7 @@
 - 🧩 **Carrier:** rational, clamped knots and an optional periodic seam. Evaluation uses A2.1–A2.3 basis functions with rational Leibniz derivatives. Inversion is lattice-seeded Newton, clamped to the box. Bézier extraction is Boehm insertion in homogeneous form. Conics are rational quadratics with ≤ 90° pieces, and τ matches the analytic parameter at every joint. Quadrics are rational revolutions.
 - 🐞 **Quadrature:** the inner Green primitive started at 𝑢 = 0, which would extrapolate a patch whose domain excludes 0. It now starts at the patch's 𝑢-domain (valid because ∮ H(𝑣) d𝑣 = 0 on a closed loop). Fins are also split where they cross a 𝑣-knot, since the density is only C⁰ there.
 - 💡 **Honest refusals:** blends on NURBS supports name the missing exact rational offset instead of a wrong "curvature radius" message. A non-similar map refuses traced and contact edges (their chord-length τ does not stretch uniformly) and rolling-ball faces (not rational). `RollingBallValidation` R9 still refuses non-uniform scale, with the new reason.
-- 🚧 **Next (A2):** a Várady–Rockwood setback patch on these carriers for P8, then overflow.
+- ✔️ **A2 done:** pinch vertices for P8 and Várady–Rockwood setback patches (see the top section).
 
 **TL;DR (exact rolling-ball carrier, option C part B)**: Fillets on traced spines are now built on an exact procedural carrier. **P7 is 🟢**, so PatternStressValidation runs 64 rows: 🟢 63 · ⚠️ 1 · **🔴 0 wrong** (610 operations, 542 s). The only refusal left is P8, now refused honestly at a degree-8 singular vertex (setback, phase A). The new [`RollingBallValidation`](RollingBallValidation.md) passes all 10 gates, and ctest passes 12/12 (654 s).
 
@@ -155,7 +179,9 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `BooleanValidation.md` | B1 audit · B2 closed-form volume · B3 volume identities · B4 membership oracle · B5 shell/solid counts; 23 scenes, 5 random families, open-argument negative control; per-operation table | 🟢 PASS |
 | `BooleanGallery/*.png` | One render per scene (result hatch by origin, section edges, argument ghosts) + 3 winding-number slices. The 8 step-8 scenes (CrossUnequal, CrossOffset, SteinmetzSolid, SteinmetzOblique, BlockFlushHalf, BlockStep, BlockFlushSlot, BlockFlushCorner) are shaded 2 × 2 sheets of ∪ ∩ − −′: faces tinted by argument (A blue, B orange), section edges gold; a merged maximal face keeps one source tint | — |
 | `CorpusValidation.md` | R1 refusals · R2 closed-form V · R3 audit, category, sources untouched · R4 redundant edges (maximal faces) · R5 tessellation; one row per FeatureSuitability corpus command with the old kernel's verdict, plus section X (G4 / G5 scenes, mirror, full-turn pipe) | 🟢 79/79, 0 refused |
-| `PatternStressValidation.md` (64 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes; a refusal is ⚠️, a built wrong body 🔴 | 🟢 62 · ⚠️ 2 · 🔴 0 |
+| `SetbackValidation.md` | S1 rims on both carriers · S2 G1 quad ↔ neighbour · S3 G1 across spokes · S4 audit, genus, tessellation, vertex categories · S5 determinism · S6 refusals; per-specimen setback / ball / cap counts | 🟢 PASS |
+| `RollingBallValidation.md` | R1 ball law · R2 rails on supports · R3 G1 at rails · R4 projection · R5 chart normal and derivatives · R6 line/circle spines ≡ cylinder/torus · R7 section closure · R8 bodies · R9 transforms; 4 bodies (one with 2 pinch vertices) | 🟢 PASS |
+| `PatternStressValidation.md` (66 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes · V setback vertex blends; a refusal is ⚠️, a built wrong body 🔴 | 🟢 66 · ⚠️ 0 · 🔴 0 |
 | `ModelGallery/*.png` | Shaded step-8 specimens (PipeBend, LoftFrustum, SweptRing, MirroredCross, ArrayedPins), one hue per face, with V, error, audit and tessellation verdicts | — |
 | `TessellationValidation.md` | N1 closure · N2 deviation · N3 orientation · N4 volume · N5 Delaunay · N6 edge conformity · N7 quality, per corpus row with repair counts; N8 convergence (4 specimens × 5 ε); N9 determinism; N10 scale; N11 CDT regressions | 🟢 PASS |
 | `TessellationGallery/*.png` | 13 shaded PolygonComplex renders (6 specimens, 7 Boolean results) with gate figures; `SphereQuality.png` is coloured by minimum angle | — |
@@ -320,7 +346,7 @@ Harness fixes (no modeller change): edge criteria that also caught rib-top end e
 
 | Case | Today | Planned |
 |---|---|---|
-| Setback vertex (convex meets concave, `MixedConvexity`; P8 degree-8 singular crossings) | Refused at the vertex | Várady–Rockwood 2n-sided setback patch (A: NURBS) |
+| Setback vertex | ✔️ Fillets built: fair NURBS quads (V1, V2, `SetbackValidation`); P8 by pinch vertices. Chamfer setback and mixed convexity beside a sharp edge refused | Setback chamfers; a sharp spoke inside the patch |
 | Tangent-chain propagation | ✔️ Built: `GrowTangentChain` / `BlendSettings.TangentChainEnabled`; DraftingWorkspace Alt+click | — |
 | Overflow (blend wider than its face, `FilletRailsCross`) | Refused: "contact rail runs backwards" | Smooth / cliff / notch overflow strategies |
 | Traced spines | ✔️ Fillets built on the exact procedural rolling-ball carrier (P7, `RollingBallValidation`); chamfers on traced or elliptical spines refused | Ruled procedural carrier for chamfers |

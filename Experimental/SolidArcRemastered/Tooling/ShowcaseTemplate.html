@@ -135,7 +135,7 @@ ul.Tight li     { margin: 3px 0; }
     ImGui workspace that uses the Plasticity keymap. This page is one file with no external resources: the models below are
     real kernel tessellations, and the stills are the committed exhibits. Composed <span id="ComposedStamp"></span>.</p>
     <div class="Tiles">
-        <div class="Tile"><div class="Figure">0 🔴</div><div class="Caption">wrong bodies across 64 pattern-stress rows (63 🟢 · 1 ⚠️ refused)</div></div>
+        <div class="Tile"><div class="Figure">0 🔴</div><div class="Caption">wrong bodies across 66 pattern-stress rows (66 🟢 · 0 refused)</div></div>
         <div class="Tile"><div class="Figure">≤ 7.0e-16</div><div class="Caption">blend ΔV vs closed form (step 5); all 8 tangent-chain rows ≤ 8.5e-14</div></div>
         <div class="Tile"><div class="Figure">79 / 79</div><div class="Caption">corpus rows, 0 refusals (the old kernel refused 19)</div></div>
         <div class="Tile"><div class="Figure">668 918</div><div class="Caption">triangles over 305 bodies, all watertight, peak/ε ≤ 1.000</div></div>
@@ -215,6 +215,8 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>+</td><td>Pattern stress test</td><td>🟢 0 wrong</td><td>arrays → Boolean chains → blends · first run 56 rows (48 🟢 · 8 ⚠️) · 2 defects found and fixed</td><td><code>75c828c</code> <code>a07b72e</code></td></tr>
         <tr><td>+</td><td>Robust blends + tangent chains</td><td>🟢 6 of 8 refusals built</td><td>64 rows: 62 🟢 · 2 ⚠️ · 0 🔴 · T1–T8 ≤ 8.5e-14 · 3 defects fixed (Newton drift, tangent crossings, periodic fold)</td><td><code>680aff4</code> <code>e9678d6</code> <code>1b3f509</code> <code>c387bf2</code></td></tr>
         <tr><td>+</td><td>Exact procedural rolling-ball carrier (option C, part B)</td><td>🟢 ctest 12 / 12 · R1–R9</td><td>P7 traced mouths built · 64 rows: 63 🟢 · 1 ⚠️ · 0 🔴 · ball ≤ 1.2e-13 · G1 ≤ 1.4e-14 rad · transforms ≤ 8.1e-12 · 6 defects fixed</td><td><code>2c5a80a</code> <code>5ca1869</code> <code>e9b5e8e</code> <code>cba86c0</code></td></tr>
+        <tr><td>+</td><td>NURBS carriers (option C, part A1)</td><td>🟢 ctest 13 / 13 · N1–N7</td><td>rational B-spline curves and surfaces · exact conversions of every analytic carrier ≤ 1.7e-14 · non-uniform scale and shear now build (V = det M · V*, ≤ 1.5e-15)</td><td><code>ec0f926</code> <code>e2f0856</code></td></tr>
+        <tr><td>+</td><td>Pinch and setback vertex blends (part A2)</td><td>🟢 ctest 14 / 14 · S1–S6</td><td>P8 built (pinch vertices) · fair NURBS setback quads: rims 2.4e-16 · G1 to neighbours ≤ 2.9e-3 rad · spoke seams ≤ 2.1e-2 rad · 66 rows: 66 🟢 · 0 ⚠️ · 0 🔴</td><td><code>68e2340</code> <code>0f01823</code> <code>57f1aaf</code></td></tr>
     </table>
     </div>
 </section>
@@ -226,14 +228,14 @@ ul.Tight li     { margin: 3px 0; }
     <div class="Chips" id="StressChips"></div>
     <div class="TableFrame"><table id="StressTable"></table></div>
     <p class="Note">Families: L linear arrays · C circular arrays · M mixed Boolean chains · B blends on Boolean results ·
-    T tangent chains · P blend patterns. A refusal is an honest limit (⚠️); a built wrong body would be 🔴. Rows marked
+    T tangent chains · P blend patterns · V setback vertex blends. A refusal is an honest limit (⚠️); a built wrong body would be 🔴. Rows marked
     <span class="Badge">3D</span> open in the viewer.</p>
 </section>
 
 <!-- ============================================================================================================== -->
 <section id="Blends">
     <h2>Robust blends</h2>
-    <p class="Lead">Seven of the eight first-run refusals are now built and pass every gate (P7 on the exact procedural rolling-ball carrier); a new T family adds tangent chains. P8 remains an honest setback refusal.</p>
+    <p class="Lead">All eight first-run refusals are now built and pass every gate: P7 on the exact procedural rolling-ball carrier, P8 with pinch vertices. A T family adds tangent chains, and a V family adds setback vertex blends (fair NURBS quads).</p>
     <div class="TableFrame" style="max-height:none">
     <table>
         <tr><th>Row</th><th>Was refused</th><th>Construction now</th><th>Now</th></tr>
@@ -245,8 +247,20 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>T1–T6 slot rims · rounded block · boss foot</td><td>(new)</td><td>Smooth joint: the blends share their cross-section at the vertex (circle or chord)</td><td>🟢</td></tr>
         <tr><td>T7 / T8 one seed edge</td><td>(new)</td><td><code>GrowTangentChain</code> adds every sharp edge reached through a G1 vertex (1 → 4, 1 → 8); equals T1 / T5</td><td>🟢</td></tr>
         <tr><td>P7 radial bore mouths</td><td>spine is not a line or circle (traced)</td><td>Procedural pipe P(𝑢, 𝑣) = C(𝑢) + r(cos 𝑣 E₁ + sin 𝑣 E₂) on the traced spine; contact rails are feet of the spine; mouths cross both cylinder seams at one vertex (shared section)</td><td>🟢</td></tr>
+        <tr><td>P8 cross-bore crossings</td><td>spine is an ellipse; degree-8 singular vertex</td><td>Elliptical spines on the procedural pipe; where two crossing edges touch at a Steinmetz singular point the 4 blends pinch to one vertex (their rails meet there exactly)</td><td>🟢</td></tr>
+        <tr><td>V1 L block · V2 pyramid (new)</td><td>convex meets concave · ≥ 4 blends at one vertex</td><td>Várady–Rockwood setback: every blend stops a setback distance short of the vertex; the hole is split into 2n fair rational quads (G0 rims exact, G1 by tangent and tension rows)</td><td>🟢</td></tr>
     </table>
-    <h3 style="margin-top:18px">Rolling-ball carrier gates (<code>RollingBallValidation</code>, 3 bodies · 4 transforms)</h3>
+    <h3 style="margin-top:18px">Setback vertex blend gates (<code>SetbackValidation</code>, 4 bodies · 2 refusals)</h3>
+    <div class="TableFrame" style="max-height:none"><table>
+        <tr><th></th><th>Gate</th><th>Measures</th><th>Limit</th><th>Worst</th></tr>
+        <tr><td>🟢</td><td>S1</td><td>Every result edge on both face carriers (16 samples, relative to the model size)</td><td>≤ 1e-9</td><td>2.4e-16</td></tr>
+        <tr><td>🟢</td><td>S2</td><td>G1 setback quad ↔ neighbouring blend or face [rad]</td><td>≤ 1e-2</td><td>2.9e-3</td></tr>
+        <tr><td>🟢</td><td>S3</td><td>G1 quad ↔ quad across a spoke [rad]</td><td>≤ 5e-2</td><td>2.1e-2</td></tr>
+        <tr><td>🟢</td><td>S4</td><td>Audit, genus, watertight; |V − V_polygon| ≤ peak deviation × area; expected vertex categories</td><td>pass</td><td>4 / 4</td></tr>
+        <tr><td>🟢</td><td>S5</td><td>Rebuilt twice → identical volume bits and polygon digest</td><td>identical</td><td>4 / 4</td></tr>
+        <tr><td>🟢</td><td>S6</td><td>Chamfer setback and mixed-beside-sharp refuse atomically, source intact</td><td>all refused</td><td>2 / 2</td></tr>
+    </table></div>
+    <h3 style="margin-top:18px">Rolling-ball carrier gates (<code>RollingBallValidation</code>, 4 bodies · 4 transforms)</h3>
     <div class="TableFrame" style="max-height:none"><table>
         <tr><th></th><th>Gate</th><th>Measures</th><th>Limit</th><th>Worst</th></tr>
         <tr><td>🟢</td><td>R1</td><td>Ball: |foot − C(τ)| − r, |P − C| − r, (P − C)·T (relative to r)</td><td>≤ 1e-9</td><td>1.2e-13</td></tr>
@@ -256,7 +270,7 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>🟢</td><td>R5 · R5′</td><td>Chart normal ∥ radial [rad] · ∂𝑢 vs Richardson</td><td>≤ 1e-8 · ≤ 1e-6</td><td>2.8e-10 · 6.3e-7</td></tr>
         <tr><td>🟢</td><td>R6</td><td>Line spine ≡ cylinder, circle spine ≡ torus</td><td>≤ 1e-12</td><td>8.3e-16</td></tr>
         <tr><td>🟢</td><td>R7</td><td>Pipe ∩ normal plane closes on the section circle</td><td>≤ 1e-8</td><td>4.4e-16</td></tr>
-        <tr><td>🟢</td><td>R8</td><td>Bodies sound; |V − V_polygon| ≤ peak deviation × area; fillet removes material</td><td>pass</td><td>3 / 3</td></tr>
+        <tr><td>🟢</td><td>R8</td><td>Bodies sound; |V − V_polygon| ≤ peak deviation × area; fillet removes material</td><td>pass</td><td>4 / 4</td></tr>
         <tr><td>🟢</td><td>R9</td><td>Rotation, reflection, uniform scale there and back; non-uniform scale refuses</td><td>≤ 1e-9</td><td>8.1e-12</td></tr>
     </table></div>
     </div>
@@ -341,13 +355,14 @@ ul.Tight li     { margin: 3px 0; }
     <h2>Limits and next steps</h2>
     <div class="TableFrame" style="max-height:none"><table>
         <tr><th>Limit</th><th>Where it shows</th><th>Today</th><th>Plan</th></tr>
-        <tr><td>Traced blend spine</td><td>P7 radial bores</td><td>🟢 built (exact procedural carrier)</td><td>Done (B). Follow-up: cache spine evaluations (P7 takes 197 s)</td></tr>
+        <tr><td>Traced blend spine</td><td>P7 radial bores</td><td>🟢 built (exact procedural carrier)</td><td>Done (B). Follow-up: cache spine evaluations (P7 takes 197–278 s)</td></tr>
         <tr><td>Chamfer on a traced or elliptical spine</td><td>—</td><td>🚧 refused</td><td>Ruled procedural carrier between the two rails</td></tr>
-        <tr><td>Setback vertex blends</td><td>P8 degree-8 singular crossings · mixed convexity · degree ≠ 3</td><td>⚠️ refused, honest</td><td>A: NURBS n-sided corner patches on the procedural strips</td></tr>
+        <tr><td>Setback vertex blends</td><td>V1 · V2 · P8</td><td>🟢 fillets built (fair NURBS quads; P8 by pinch). Spoke seams reach 1.2° where 6 spokes meet at irregular angles</td><td>Chamfer setback (🚧 refused); exact G1 seams need a vertex-enclosure twist solve</td></tr>
+        <tr><td>Mixed convexity beside a sharp edge</td><td><code>MixedConvexity</code></td><td>🚧 refused</td><td>Setback patch with a sharp spoke</td></tr>
         <tr><td>Overflow (blend wider than its face)</td><td>walkthrough ⑥: chamfer beside a fillet</td><td>🚧 refused ("edge consumed")</td><td>Cliff overflow first, from existing section curves; then smooth / notch</td></tr>
     </table></div>
-    <p class="Note">Order agreed: C = B first (done: the exact rolling-ball carrier builds P7 and gives P8 its strips), then A (NURBS)
-    for corner patches and general freeform, then overflow.</p>
+    <p class="Note">Order agreed: C = B first (done: the exact rolling-ball carrier builds P7), then A (done: NURBS carriers, pinch
+    and setback corner patches), then overflow (next).</p>
 </section>
 
 </main>
