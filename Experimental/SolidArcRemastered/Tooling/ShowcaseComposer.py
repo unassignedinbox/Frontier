@@ -59,6 +59,9 @@ Models = [                                                                      
     ("B18", "Cross-bores with rim fillets",   "M5 cross-bores + 12 bore entry rims r 0.05"),
     ("M5",  "3 × 3 Steinmetz cross-bores",    "9 equal-radius crossings, 18 singular points, genus 15"),
     ("P7",  "Radial bore mouths, filleted",   "8 traced mouths r 0.03 on exact procedural rolling-ball pipes"),
+    ("P8",  "Cross-bore crossings, filleted",  "elliptical crossing edges r 0.03; degree-8 singular points closed by pinch vertices"),
+    ("V1",  "L block, every edge filleted",    "2 setback vertices where convex meets concave: fair rational quads, G1 to 0.17°"),
+    ("V2",  "Pyramid, every edge filleted",    "degree-4 apex closed by a setback patch of 8 fair NURBS quads"),
 ]
 
 CaptureCaptions = {

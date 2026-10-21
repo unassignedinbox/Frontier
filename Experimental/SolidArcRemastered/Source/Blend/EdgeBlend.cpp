@@ -421,11 +421,13 @@ namespace
             {
                 const CurveSample A = EvaluateCurve(First, ParameterA), B = EvaluateCurve(Second, ParameterB);
                 const Vector3 Gap = A.Position - B.Position;
-                const double  AA  = Dot(A.Derivative, A.Derivative), AB = -Dot(A.Derivative, B.Derivative), BB = Dot(B.Derivative, B.Derivative);
-                const double  RA  = -Dot(A.Derivative, Gap), RB = Dot(B.Derivative, Gap);
-                const double  Determinant = AA * BB - AB * AB;
-                if (std::fabs(Determinant) <= 1.0e-14 * std::max(AA * BB, 1.0e-300)) return std::nullopt;
-                const double StepA = (RA * BB - AB * RB) / Determinant, StepB = (AA * RB - AB * RA) / Determinant;
+                const double  SquareA     = Dot(A.Derivative, A.Derivative);                 // [len²] - Gauss–Newton normal matrix
+                const double  Mixed       = -Dot(A.Derivative, B.Derivative);
+                const double  SquareB     = Dot(B.Derivative, B.Derivative);
+                const double  GradientA   = -Dot(A.Derivative, Gap), GradientB = Dot(B.Derivative, Gap);
+                const double  Determinant = SquareA * SquareB - Mixed * Mixed;
+                if (std::fabs(Determinant) <= 1.0e-14 * std::max(SquareA * SquareB, 1.0e-300)) return std::nullopt;
+                const double StepA = (GradientA * SquareB - Mixed * GradientB) / Determinant, StepB = (SquareA * GradientB - Mixed * GradientA) / Determinant;
                 ParameterA += StepA;
                 ParameterB += StepB;
                 if (std::fabs(StepA) + std::fabs(StepB) <= 1.0e-15 * (1.0 + std::fabs(ParameterA) + std::fabs(ParameterB))) break;

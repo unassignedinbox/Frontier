@@ -58,8 +58,9 @@ namespace
     //    radius Extent.X about Frame.ZAxis from the origin up to height Extent.Z.
     enum class ShapeKind : uint8_t
     {
-        Box      = 0,
-        Cylinder = 1,
+        Box       = 0,
+        Cylinder  = 1,
+        HalfSpace = 2,                                                                        // oracle only: { local z < 0 }
     };
 
     struct AnalyticShape
@@ -92,10 +93,17 @@ namespace
         return { Dot(Offset, Shape.Frame.XAxis), Dot(Offset, Shape.Frame.YAxis), Dot(Offset, Shape.Frame.ZAxis) };
     }
 
-    // Signed distance (negative inside) — exact for the box and the finite cylinder.
+    // Half-space { (P − Origin) · ZAxis < 0 } — an oracle term only (never constructed).
+    [[nodiscard]] AnalyticShape HalfSpaceShape(Vector3 Origin, Vector3 Outward)
+    {
+        return { ShapeKind::HalfSpace, ConstructFrame(Origin, Outward, std::fabs(Outward.Z) > 0.9 ? Vector3{ 1, 0, 0 } : Vector3{ 0, 0, 1 }), {} };
+    }
+
+    // Signed distance (negative inside) — exact for the box, the finite cylinder and the half-space.
     [[nodiscard]] double SignedDistance(const AnalyticShape& Shape, Vector3 Point)
     {
         const Vector3 Local = LocalCoordinates(Shape, Point);
+        if (Shape.Kind == ShapeKind::HalfSpace) return Local.Z;
         if (Shape.Kind == ShapeKind::Box)
         {
             const Vector3 Half = Shape.Extent * 0.5;
@@ -1143,6 +1151,40 @@ namespace
             StressBuilt Built = PlateBosses(P, true);
             BlendStep(P, Built, CircleAt(1.0, 0.4), 6, BlendProfile::Fillet, 0.1);
             Built.Expected += 6.0 * BossFootFilletGain(0.4, 0.1);
+            return Built;
+        });
+        // 📝 V family: setback vertex blends (fair NURBS quads where convex and concave blends meet, or ≥ 4 blends at one vertex).
+        Add("V", "V1", "L block (prism) + fillet all 18 edges r 0.1 (2 setback vertices: 2 convex + 1 concave blend)", [](Partition& P)
+        {
+            StressBuilt Built;
+            Built.Oracle = { { BoxShape({ 0, 0, 0 }, { 2, 1.5, 1 }), BoxShape({ 1, 0, 1 }, { 2, 1.5, 2 }) }, {}, {}, { -0.5, -0.5, -0.5 }, { 2.5, 2.0, 2.5 } };
+            const auto Block = ConstructPrism(P, { { 0, 0, 1 }, { 1, 0, 1 }, { 1, 0, 2 }, { 2, 0, 2 }, { 2, 0, 0 }, { 0, 0, 0 } }, { 0, 1.5, 0 });
+            ++Built.Operations;
+            if (!Block.SucceededCondition()) { Built.Refusal = Block.Refusal; return Built; }
+            Built.Body          = Block.Value.Body;
+            Built.Expected      = std::nan("");
+            Built.ExpectedGenus = 0;
+            BlendStep(P, Built, [](Vector3, Vector3, const CurveGeometry&) { return true; }, 18, BlendProfile::Fillet, 0.1);
+            return Built;
+        });
+        Add("V", "V2", "Square pyramid (prism ∩ prism) + fillet all 8 edges r 0.1 (degree-4 apex → setback)", [](Partition& P)
+        {
+            StressBuilt Built;
+            const double Slant = 1.0 / std::numbers::sqrt2;
+            Built.Oracle = { { BoxShape({ -1, -1, 0 }, { 1, 1, 1 }) },
+                             { HalfSpaceShape({ 1, 0, 0 }, { -Slant, 0, -Slant }), HalfSpaceShape({ -1, 0, 0 }, { Slant, 0, -Slant }),
+                               HalfSpaceShape({ 0, 1, 0 }, { 0, -Slant, -Slant }), HalfSpaceShape({ 0, -1, 0 }, { 0, Slant, -Slant }) },
+                             {}, { -1.5, -1.5, -0.5 }, { 1.5, 1.5, 1.5 } };
+            const auto First  = ConstructPrism(P, { { 0, -1.5, 1 }, { 1, -1.5, 0 }, { -1, -1.5, 0 } }, { 0, 3, 0 });
+            const auto Second = ConstructPrism(P, { { -1.5, -1.5, -0.5 }, { -1.5, 1.5, -0.5 }, { -1.5, 0, 1 } }, { 3, 0, 0 });
+            Built.Operations += 3;
+            if (!First.SucceededCondition() || !Second.SucceededCondition()) { Built.Refusal = "prism construction refused"; return Built; }
+            const BooleanOutcome Pyramid = ComputeBoolean(P, First.Value.Body, Second.Value.Body, BooleanOperation::Intersection);
+            if (!Pyramid.Refusal.empty()) { Built.Refusal = Pyramid.Refusal; return Built; }
+            Built.Body          = Pyramid.Body;
+            Built.Expected      = std::nan("");
+            Built.ExpectedGenus = 0;
+            BlendStep(P, Built, [](Vector3, Vector3, const CurveGeometry&) { return true; }, 8, BlendProfile::Fillet, 0.1);
             return Built;
         });
         return Rows;

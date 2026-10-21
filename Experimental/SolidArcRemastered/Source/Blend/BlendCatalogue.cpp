@@ -346,7 +346,7 @@ namespace
                     const bool Rim   = A.Z > 0.99 && B.Z > 0.99 && std::fabs(A.X - 1.0) < 1e-9 && std::fabs(B.X - 1.0) < 1e-9;
                     return Inner || Rim;
                 };
-                return MakeRefusal("MixedConvexity", "Refusal", "Concave inner edge + convex top edge of an L block share a vertex (setback, 🚧)", Body, SelectEdges(Partition, Body, Pick), BlendProfile::Fillet, 0.2);
+                return MakeRefusal("MixedConvexity", "Refusal", "Concave inner edge + convex top edge of an L block meet beside a sharp edge (mixed convexity with a sharp edge, 🚧)", Body, SelectEdges(Partition, Body, Pick), BlendProfile::Fillet, 0.2);
             } },
         };
         return Table;
