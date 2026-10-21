@@ -181,6 +181,7 @@ namespace
         Vector3     BoreOrigin = {};                                                         // [len] - Bore cylinder base
         double      BoreRadius = 0.2;                                                        // [len] - Bore radius
         double      Radius     = 0.03;                                                       // [len] - Fillet radius
+        double      CrossAt    = 0.0;                                                        // [len] - x of an equal through-bore along y (0: none)
     };
 
     struct BodyRow
@@ -251,6 +252,7 @@ int main()
         { "Radial bore through the axis (crosses both seams), r 0.03", { 1.0, 0.0, 0.5 }, 0.2, 0.03 },
         { "Radial bore through the axis, r 0.06",                       { 1.0, 0.0, 0.5 }, 0.2, 0.06 },
         { "Offset bore (y 0.8, asymmetric mouth), r 0.04",              { 1.0, 0.8, 0.5 }, 0.25, 0.04 },
+        { "Equal crossing bore at x 2 (Steinmetz: 4 half-ellipses, 2 pinch vertices), r 0.03", { 1.0, 0.0, 0.5 }, 0.2, 0.03, 2.0 },
     };
     for (const BoreSpecimen& Specimen : Specimens)
     {
@@ -260,13 +262,22 @@ int main()
         const auto Disc = ConstructCylinder(Partition, ConstructFrame({ 0, 0, 0 }, { 0, 0, 1 }, { 1, 0, 0 }), 3.0, 1.0);
         const auto Bore = ConstructCylinder(Partition, ConstructFrame(Specimen.BoreOrigin, { 1, 0, 0 }, { 0, 0, 1 }), Specimen.BoreRadius, 2.5);
         if (!Disc.SucceededCondition() || !Bore.SucceededCondition()) { Row.Outcome = "primitive refused"; BodyRows.push_back(Row); continue; }
-        const BooleanOutcome Bored = ComputeBoolean(Partition, Disc.Value, Bore.Value, BooleanOperation::Difference);
+        BooleanOutcome Bored = ComputeBoolean(Partition, Disc.Value, Bore.Value, BooleanOperation::Difference);
+        if (Bored.Refusal.empty() && Specimen.CrossAt > 0.0)
+        {
+            // 📝 Equal radii: the crossing edges are exact half-ellipses meeting at two singular points where the bores are
+            //    tangent; only they are filleted (the traced mouths are covered by the rows above).
+            const auto Cross = ConstructCylinder(Partition, ConstructFrame({ Specimen.CrossAt, -2.6, Specimen.BoreOrigin.Z }, { 0, 1, 0 }, { 0, 0, 1 }), Specimen.BoreRadius, 5.2);
+            Bored = ComputeBoolean(Partition, Bored.Body, Cross.Value, BooleanOperation::Difference);
+        }
         if (!Bored.Refusal.empty()) { Row.Outcome = "boolean: " + Bored.Refusal; BodyRows.push_back(Row); continue; }
         std::vector<EdgeToken> Mouth;
         for (EdgeToken Edge : Partition.CollectInventory(Bored.Body).Edges)
         {
             const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
-            if (Profile.Curve.PresentCondition() && std::holds_alternative<IntersectionCurve>(Partition.Curves.Resolve(Profile.Curve))) Mouth.push_back(Edge);
+            if (!Profile.Curve.PresentCondition()) continue;
+            const CurveGeometry& Curve = Partition.Curves.Resolve(Profile.Curve);
+            if (Specimen.CrossAt > 0.0 ? std::holds_alternative<EllipticalArc>(Curve) : std::holds_alternative<IntersectionCurve>(Curve)) Mouth.push_back(Edge);
         }
         Row.Edges = static_cast<int>(Mouth.size());
         BlendSettings Settings;
@@ -274,6 +285,8 @@ int main()
         Settings.Size    = Specimen.Radius;
         const BlendOutcome Blended = BlendEdges(Partition, Bored.Body, Mouth, Settings);
         Row.Outcome = Blended.Refusal.empty() ? "blended" : Blended.Refusal;
+        const int Pinches = Blended.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Pinch)];
+        if (Blended.Refusal.empty() && Specimen.CrossAt > 0.0) Row.Outcome += " · " + std::to_string(Pinches) + " pinch vertices";
         if (Blended.Refusal.empty())
         {
             Row.Sheets = static_cast<int>(Blended.Sheets.size());
@@ -303,7 +316,7 @@ int main()
             const TessellationAuditReport Polygon = AuditTessellation(Partition, Blended.Body, Mesh);
             Row.PolygonGap   = std::fabs(Polygon.ExactVolume - Polygon.ComplexVolume);
             Row.PolygonBound = Polygon.PeakDeviation * Polygon.ComplexArea;
-            Row.PassedCondition = Row.Pipes > 0 && Audit.SoundCondition() && Mesh.Refusal.empty() && Polygon.UnpairedSides == 0 && Row.PolygonGap <= Row.PolygonBound && Row.Removed > 0.0;
+            Row.PassedCondition = Row.Pipes > 0 && (Specimen.CrossAt <= 0.0 || Pinches == 2) && Audit.SoundCondition() && Mesh.Refusal.empty() && Polygon.UnpairedSides == 0 && Row.PolygonGap <= Row.PolygonBound && Row.Removed > 0.0;
             if (!TransformSource.PresentCondition() && Row.PassedCondition) TransformSource = Blended.Body;
         }
         Tally(BodyGate, Row.PassedCondition ? 0.0 : 1.0, Row.PassedCondition);

@@ -31,6 +31,7 @@ enum class VertexBlendCategory : uint8_t
     Mitre        = 1,                                                                        // Two blended + one sharp: blends meet on a mitre
     BallCorner   = 2,                                                                        // Three blended: sphere patch / chamfer apex
     Continuation = 3,                                                                        // Closed blended rim through its seam vertex
+    Pinch        = 4,                                                                        // Every blend narrows to zero width at the vertex
 };
 
 enum class BlendFaceOrigin : uint8_t
@@ -52,7 +53,7 @@ struct BlendFaceHistory
 struct BlendStatistics
 {
     int    BlendedEdges      = 0;                                                            // [-]   - Sheets resolved
-    int    Vertices[4]       = { 0, 0, 0, 0 };                                               // [-]   - Per VertexBlendCategory
+    int    Vertices[5]       = { 0, 0, 0, 0, 0 };                                            // [-]   - Per VertexBlendCategory
     int    CarrierPlanes     = 0;                                                            // [-]   - Exact carriers by type
     int    CarrierCylinders  = 0;                                                            // [-]
     int    CarrierCones      = 0;                                                            // [-]
@@ -85,7 +86,8 @@ struct BlendOutcome
 //       Mitre (equal-size blends meet on the plane through the corner ball centre: ellipse for fillets, line for
 //       chamfers), BallCorner (sphere of the ball touching all three faces; chamfer: three lines to the apex where the
 //       three chamfer planes meet), Continuation (closed rim: the cross-section at its seam vertex becomes the blend
-//       face's seam); anything else is refused (setback vertex blends need freeform patches, 🚧);
+//       face's seam), Pinch (the supports are tangent at the vertex — a Steinmetz singular point — so every blend's
+//       section shrinks to zero there and its two rails end on the vertex itself); anything else is refused (setback vertex blends need freeform patches, 🚧);
 //    ③ sharp edges trimmed at resolved vertices, blended edges replaced by contact edges on both supports (refused if a
 //       contact rail runs backwards — blend wider than its face);
 //    ④ blueprint: trimmed faces (+ cap edges), blend faces, corner faces, SP-curves fitted with chart anchors;

@@ -370,11 +370,38 @@ namespace
                 for (const auto& End : Sharp) { const auto Faces = FacesOfEdge(End.first); SeamsOnly = SeamsOnly && Faces.first == Faces.second; }
                 if (SeamsOnly) return ResolveSeamCrossing(Vertex, Blended[0], Blended[1], Sharp);
             }
+            if (ResolvePinch(Vertex, Blended)) return {};
             if (Ends.size() != 3) return "degree " + std::to_string(Ends.size()) + " vertex with blended edges (setback vertex blend, 🚧)";
             if (Blended.size() == 2 && Blended[0].first == Blended[1].first) return ResolveContinuation(Vertex, Blended[0].first, Sharp[0].first);
             if (Blended.size() == 1) return ResolveCap(Vertex, Blended[0], Sharp[0].first, Sharp[1].first);
             if (Blended.size() == 2) return ResolveMitre(Vertex, Blended[0], Blended[1], Sharp[0].first);
             return ResolveBallCorner(Vertex, Blended);
+        }
+
+        // 📝 Pinch: where the two supports of a blended edge are tangent (a singular point of their intersection, e.g. equal
+        //    crossing bores), the dihedral flattens, the setback r·tan(θ/2) vanishes and the ball touches both supports at
+        //    the vertex itself. When that holds for every blended edge here, each blend simply ends on the vertex with a
+        //    zero-width section: both rails close on it, no termination edge, sharp edges (seams) keep their ends.
+        [[nodiscard]] bool ResolvePinch(VertexToken Vertex, const std::vector<std::pair<EdgeToken, int>>& Blended)
+        {
+            const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            double Worst = 0.0;                                                              // [len] - Largest rail miss
+            for (const auto& End : Blended)
+            {
+                const EdgeBlendSheet& Sheet = *SheetOf(End.first);
+                const double τ = ProjectOntoCurve(Sheet.Contacts[0], Position, 0.0);         // [-] - Spine τ of the pinch
+                Worst = std::max({ Worst, Distance(EvaluateCurve(Sheet.Contacts[0], τ).Position, Position), Distance(EvaluateCurve(Sheet.Contacts[1], τ).Position, Position) });
+                if (Worst > Agreement) return false;
+            }
+            Agree(Worst);
+            const int Pinched = MapOriginalVertex(Vertex);
+            for (const auto& End : Blended)
+            {
+                for (int Side = 0; Side < 2; ++Side) ContactVertices[{ End.first.Slot, Side, End.second }] = Pinched;
+                Terminations[{ End.first.Slot, End.second }] = {};
+            }
+            ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Pinch)];
+            return true;
         }
 
         // 📝 Section where the rail on Side crosses a seam of its support (secant on the signed offset across the seam,
@@ -1047,6 +1074,7 @@ const char* VertexBlendCategoryLabel(VertexBlendCategory Category) noexcept
         case VertexBlendCategory::Mitre:        return "Mitre";
         case VertexBlendCategory::BallCorner:   return "BallCorner";
         case VertexBlendCategory::Continuation: return "Continuation";
+        case VertexBlendCategory::Pinch:        return "Pinch";
     }
     return "?";
 }
