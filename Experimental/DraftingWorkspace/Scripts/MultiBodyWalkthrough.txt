@@ -101,7 +101,7 @@ frames 2
 expect body-matcaps == 3
 expect selection-matcap contains Brass
 expect body-matcap contains Studio
-expect steps == 10
+expect steps == 12
 key Escape
 frames 2
 capture 98MultiBodyMatcaps

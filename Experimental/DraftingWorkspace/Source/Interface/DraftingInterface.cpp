@@ -460,10 +460,14 @@ void DrawAppearanceCard(DraftingWorkspaceState& State)
     const std::string Shown = SelectionMatcap(State);
     const size_t Layer   = DraftingMatcapLayer(State.Matcaps.Library, Shown);
     const std::string Caption = Shown == "mixed" ? std::string("mixed") : Layer < State.Matcaps.Library.Captions.size() ? State.Matcaps.Library.Captions[Layer] : Shown;
+    const size_t Bodies  = State.Document.Selection.Bodies.size();
+    const DraftingAppearance& Appearance = State.Document.Appearance;
     if (Faces) ImGui::Text("%zu face(s) · %s", Faces, Caption.c_str());
-    else ImGui::Text("Body · %s", Caption.c_str());
+    else if (Bodies) ImGui::Text("%zu body(ies) · %s", Bodies, Caption.c_str());
+    else ImGui::Text("%s · %s", State.Document.Summary.Bodies.size() > 1 ? "Default" : "Body", Caption.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("· %zu override(s)", State.Document.Appearance.FaceMatcaps.size());
+    if (Appearance.BodyMatcaps.empty()) ImGui::TextDisabled("· %zu override(s)", Appearance.FaceMatcaps.size());
+    else ImGui::TextDisabled("· %zu body + %zu face override(s)", Appearance.BodyMatcaps.size(), Appearance.FaceMatcaps.size());
     const std::string Chosen = DrawMatcapSwatches(State, "Matcap", 0, 26.0f, false);
     if (!Chosen.empty()) AssignMatcap(State, Chosen);
     const float Spacing = ImGui::GetStyle().ItemSpacing.x;
@@ -478,7 +482,7 @@ void DrawAppearanceCard(DraftingWorkspaceState& State)
     ImGui::SameLine();
     if (PressButton(State, "Add###MatcapAdd", ImVec2(60, 0), PicturePath[0] != 0)) AddMatcapPicture(State, PicturePath.data());
     if (const size_t Dangling = CountDanglingMatcaps(State.Scene, State.Document.Appearance))
-        ImGui::TextColored(Tint(RefusalColour), "%zu assignment(s) name faces no longer in the body", Dangling);
+        ImGui::TextColored(Tint(RefusalColour), "%zu assignment(s) name faces / bodies no longer present (kept for undo)", Dangling);
     EndCard();
 }
 
@@ -882,12 +886,13 @@ void DrawBooleanCard(DraftingWorkspaceState& State)
     const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
     BeginCard("Boolean");
     static const struct { const char* Label; FeatureCombination Combination; } Choices[] = {
-        { "Union (Q)###BooleanUnion", FeatureCombination::Union }, { "Difference (W)###BooleanDifference", FeatureCombination::Difference },
-        { "Intersect (E)###BooleanIntersect", FeatureCombination::Intersection } };
+        { "Union###BooleanUnion", FeatureCombination::Union }, { "Difference###BooleanDifference", FeatureCombination::Difference },
+        { "Intersect###BooleanIntersect", FeatureCombination::Intersection } };
+    const float Third = std::floor((ImGui::GetContentRegionAvail().x - 2.0f * ImGui::GetStyle().ItemSpacing.x) / 3.0f);
     for (int Index = 0; Index < 3; ++Index)
     {
         if (Index > 0) ImGui::SameLine();
-        if (ToggleButton(State, Choices[Index].Label, State.Boolean.Combination == Choices[Index].Combination, ImVec2(118, 0)))
+        if (ToggleButton(State, Choices[Index].Label, State.Boolean.Combination == Choices[Index].Combination, ImVec2(Third, 0)))
             ChooseBooleanCombination(State, Choices[Index].Combination);
     }
     if (!Picked.empty())
@@ -897,7 +902,7 @@ void DrawBooleanCard(DraftingWorkspaceState& State)
             ImGui::TextDisabled("Tool %d  %s", int(Index), DraftingBodyCaption(State.Document, Picked[Index]).c_str());
     }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextWrapped("The tools are consumed; the target keeps its key, matcap and Boolean history. Enter applies · Esc cancels.");
+    ImGui::TextWrapped("Q union · W difference · E intersect · Enter applies · Esc cancels. The tools are consumed; the target keeps its key, matcap and history.");
     ImGui::PopStyleColor();
     if (PressButton(State, "Apply###BooleanApply", ImVec2(118, 0))) ApplyBooleanSession(State);
     ImGui::SameLine();
@@ -2115,6 +2120,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
         DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
+                                                            : Summary.Bodies.size() > 1
+                                                            ? Compose("%d bodies · %s", int(Summary.Bodies.size()), Summary.SoundCondition ? "sound" : "audit findings")
                                                             : Compose("%s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus),
                        Summary.SoundCondition ? ActiveColour : RefusalColour);
     if (!State.Document.Regeneration.Curves.empty())

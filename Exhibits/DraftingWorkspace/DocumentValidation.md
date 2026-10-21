@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14.84 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (16.89 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -19,6 +19,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W13 | Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation | ≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe | 0.076 | 6 | 🟢 |
 | W14 | Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders | ≤ 10⁻⁵ m · ≤ 10⁻⁹ | 2.16e-07 | 11 | 🟢 |
 | W15 | Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals | exact · 1 / 255 | 0 | 13 | 🟢 |
+| W16 | Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec | ≤ 10⁻⁹ · exact | 1.83e-15 | 10 | 🟢 |
 
 ## Walkthrough
 
@@ -45,7 +46,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W7 | redo → edited volume | 6.08e-16 | 🟢 |
 | W7 | delete Cylinder1 (sketch + extrude) → volume without the boss (V = 11.106445) | 4.8e-16 | 🟢 |
 | W7 | both steps and every Cylinder1.* parameter removed | 0 | 🟢 |
-| W8 | reloaded volume equal (5548 bytes of TOML) | 0 | 🟢 |
+| W8 | reloaded volume equal (5611 bytes of TOML) | 0 | 🟢 |
 | W8 | reloaded persistent names equal | 0 | 🟢 |
 | W8 | save → load → save byte-equal | 0 | 🟢 |
 | W8 | malformed file refused: a step has no label | 0 | 🟢 |
@@ -66,7 +67,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W10 | + closed line triangle, height 1 (Union; 1/3 outside the box) (V = 2.579351) | 1.72e-16 | 🟢 |
 | W10 | − closed Hermite pocket 0.5 (area 0.246, coplanar floor: closed spline section) (V = 2.456351) | 1.81e-16 | 🟢 |
 | W10 | reload of the drawn document: same volume bits, byte-equal re-save | 0 | 🟢 |
-| W10 | refused untouched: "Arc points are collinear" · "Spline1: Hermite points 1 and 2 coincide" · "a second body needs Union, Difference or Intersection" | 0 | 🟢 |
+| W10 | refused untouched: "Arc points are collinear" · "Spline1: Hermite points 1 and 2 coincide" · "a second body needs Union, Difference, Intersection or New body" | 0 | 🟢 |
 | W10 | open arc profile refused: "Extrude#10: Extrude: open profile: Arc1 ends at a point joined to 0 other curves" | 0 | 🟢 |
 | W10 | delete Curve1: its extrude goes with it (V = 2.579351) | 1.72e-16 | 🟢 |
 | W10 | centre rectangle about (1, 0.5) to (2, 1), extrude 1.5 (V = 3.000000) | 2.96e-16 | 🟢 |
@@ -140,6 +141,16 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W15 | picture ShopStripes → layer 14 of 15, fitted pixels equal; twice / built-in name / missing file refused (cannot read picture /tmp/DraftingMatcapValidation.bmp.missing (can't fopen)) | 0 | 🟢 |
 | W15 | save → load → save byte-equal with [Appearance]; documents without matcaps write no Appearance key | 0 | 🟢 |
 | W15 | a file naming an unknown matcap is refused: Appearance: no matcap named Unobtainium (face Extrude#2.Side(Line2)) | 0 | 🟢 |
+| W16 | 3 bodies Block1 (Extrude#2) · Cylinder1 (Extrude#4) · Block2 (Extrude#6): 8 · π/2 · 1 exact, overlapping solids stay separate, all sound, active = the last created | 1.33e-15 | 🟢 |
+| W16 | scene: 3 body spans in creation order, face counts equal the audit, every face tagged; body pick marks its 3 faces only | 0 | 🟢 |
+| W16 | Matcap BrushedSteel → 1 body(ies) · Matcap Brass → 1 body(ies) · Matcap RedPlastic → 1 face(s): 5 steel + 1 red + 3 brass + 6 Studio faces; revision unchanged | 0 | 🟢 |
+| W16 | Combine · Difference (Block1 − Cylinder1): Block1 = 8 − π/4 exact, 2 bodies, the hole wears Block1's steel; the tool's Brass override dangles (1) | 4.32e-16 | 🟢 |
+| W16 | delete Combine#7 → Cylinder1 returns (π/2, Brass, 0 dangling); undo → drilled again | 2.46e-16 | 🟢 |
+| W16 | fillet r 0.2 on Edge(Extrude#6.Side(Line1)|Extrude#6.Side(Line2)) (Target Extrude#6) + Cylinder boss with Target = Block2: 1 − 0.04(1 − π/4) + π/32 exact; Block1 untouched | 1.83e-15 | 🟢 |
+| W16 | refused: blend across bodies (the selection spans Block1 and Block2 (one body at a time)) · self-combine (Block1 is picked twice (the target cannot be a tool)) · no tool · unknown body (no body named Extrude#99) · Separate as Q · second New; untouched | 0 | 🟢 |
+| W16 | Combine · Intersection (Block2 ∩ Block3): Block2 = its lower half (V = 0.495708), the slab consumed | 1.12e-15 | 🟢 |
+| W16 | save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; 2 bodies, volumes bit-equal | 0 | 🟢 |
+| W16 | a step kind beyond Combine is refused: a step has an unknown kind 11 (newer DraftingWorkspace?) | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 
