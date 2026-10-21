@@ -166,6 +166,15 @@ struct DraftingMatcapShelf
     std::array<char, 260>    PicturePath = {};                                               // [-] - Add-picture path field
 };
 
+// 📝 Plasticity Q (command:boolean) on the bodies picked in mode 4: the first is the target, the rest are tools.
+//    Q union · W difference · E intersect · Enter applies · Esc cancels.
+struct DraftingBooleanSession
+{
+    bool                         ActiveCondition = false;                                    // [-] - Card open
+    Modeller::FeatureCombination Combination     = Modeller::FeatureCombination::Union;      // [-] - Chosen operation
+    int                          Commits         = 0;                                        // [-] - Booleans applied (script evidence)
+};
+
 // 📝 Box selection (Plasticity viewport-selector drag): a left drag from empty viewport space in modes 1 / 2 / 5 selects
 //    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes).
 struct DraftingBoxSelection
@@ -188,6 +197,7 @@ struct DraftingWorkspaceState
     DraftingDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
     DraftingPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
     DraftingBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
+    DraftingBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)

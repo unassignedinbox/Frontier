@@ -171,7 +171,12 @@ constexpr int64_t FormatVersion = 1;                                            
         break;
     case FeatureStepKind::Close:
         break;
+    case FeatureStepKind::Combine:
+        Table.insert("Combination", static_cast<int64_t>(Step.Combination));
+        Table.insert("Tool", Step.Tool);
+        break;
     }
+    if (!Step.Target.empty()) Table.insert("Target", Step.Target);                                // Absent: the active body (older files)
     if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
     return Table;
 }
@@ -273,20 +278,25 @@ constexpr int64_t FormatVersion = 1;                                            
     return Sketch;
 }
 
-// 📝 [Appearance]: BodyMatcap, Faces = [{ Face, Matcap }], Matcaps = [{ Name, Path }]. Written only when it differs from the
-//    default (Studio, no faces, no pictures), so documents without matcaps keep their exact bytes.
+// 📝 [Appearance]: BodyMatcap (default for every body), Bodies = [{ Body, Matcap }], Faces = [{ Face, Matcap }],
+//    Matcaps = [{ Name, Path }]. Written only when it differs from the default (Studio, no bodies, no faces, no pictures), so
+//    documents without matcaps keep their exact bytes.
 [[nodiscard]] bool DefaultAppearanceCondition(const DraftingAppearance& Appearance)
 {
-    return Appearance.BodyMatcap == DraftingStudioMatcap && Appearance.FaceMatcaps.empty() && Appearance.CustomMatcaps.empty();
+    return Appearance.BodyMatcap == DraftingStudioMatcap && Appearance.BodyMatcaps.empty() && Appearance.FaceMatcaps.empty()
+        && Appearance.CustomMatcaps.empty();
 }
 
 [[nodiscard]] toml::table EncodeAppearance(const DraftingAppearance& Appearance)
 {
+    toml::array Bodies;
+    for (const auto& [Body, Matcap] : Appearance.BodyMatcaps) Bodies.push_back(toml::table{ { "Body", Body }, { "Matcap", Matcap } });
     toml::array Faces;
     for (const auto& [Face, Matcap] : Appearance.FaceMatcaps) Faces.push_back(toml::table{ { "Face", Face }, { "Matcap", Matcap } });
     toml::array Matcaps;
     for (const DraftingCustomMatcap& Custom : Appearance.CustomMatcaps) Matcaps.push_back(toml::table{ { "Name", Custom.Name }, { "Path", Custom.Path } });
     toml::table Table{ { "BodyMatcap", Appearance.BodyMatcap } };
+    if (!Bodies.empty()) Table.insert("Bodies", std::move(Bodies));
     if (!Faces.empty()) Table.insert("Faces", std::move(Faces));
     if (!Matcaps.empty()) Table.insert("Matcaps", std::move(Matcaps));
     return Table;
@@ -310,6 +320,18 @@ constexpr int64_t FormatVersion = 1;                                            
     }
     Appearance.BodyMatcap = (*Table)["BodyMatcap"].value_or(std::string(DraftingStudioMatcap));
     if (!DraftingMatcapKnownCondition(Appearance, Appearance.BodyMatcap)) return "Appearance: no matcap named " + Appearance.BodyMatcap;
+    if (const toml::array* Bodies = (*Table)["Bodies"].as_array())
+    {
+        for (const toml::node& Entry : *Bodies)
+        {
+            const toml::node_view<const toml::node> View{ Entry };
+            const std::string Body   = View["Body"].value_or(std::string{});
+            const std::string Matcap = View["Matcap"].value_or(std::string{});
+            if (Body.empty()) return "Appearance: a body entry has no Body key";
+            if (!DraftingMatcapKnownCondition(Appearance, Matcap)) return "Appearance: no matcap named " + Matcap + " (body " + Body + ")";
+            Appearance.BodyMatcaps[Body] = Matcap;
+        }
+    }
     if (const toml::array* Faces = (*Table)["Faces"].as_array())
     {
         for (const toml::node& Entry : *Faces)
@@ -388,7 +410,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Close)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Combine)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -401,7 +423,15 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             Step.Sketch         = DecodeSketch(View["Sketch"]);
             Step.Profile        = View["Profile"].value_or(std::string{});
             Step.Extent         = DecodeValue(View["Extent"]);
-            Step.Combination    = static_cast<FeatureCombination>(View["Combination"].value_or(int64_t{ 0 }));
+            const int64_t Combination = View["Combination"].value_or(int64_t{ 0 });
+            if (Combination < 0 || Combination > static_cast<int64_t>(FeatureCombination::Separate))
+            {
+                File.Refusal = Step.Label + " has an unknown combination " + std::to_string(Combination);
+                return File;
+            }
+            Step.Combination    = static_cast<FeatureCombination>(Combination);
+            Step.Target         = View["Target"].value_or(std::string{});
+            Step.Tool           = View["Tool"].value_or(std::string{});
             Step.AxisIdentifier = static_cast<int>(View["AxisIdentifier"].value_or(int64_t{ -1 }));
             Step.Angle          = DecodeValue(View["Angle"], Step.Angle);
             Step.Shape          = static_cast<BlendProfile>(View["Shape"].value_or(int64_t{ 0 }));

@@ -508,10 +508,16 @@ uint32_t DraftingMatcapLayer(const DraftingMatcapLibrary& Library, const std::st
     return 0;
 }
 
-const std::string& DraftingFaceMatcap(const DraftingAppearance& Appearance, const std::string& FaceName)
+const std::string& DraftingBodyMatcap(const DraftingAppearance& Appearance, const std::string& BodyKey)
+{
+    const auto Found = Appearance.BodyMatcaps.find(BodyKey);
+    return Found != Appearance.BodyMatcaps.end() ? Found->second : Appearance.BodyMatcap;
+}
+
+const std::string& DraftingFaceMatcap(const DraftingAppearance& Appearance, const std::string& BodyKey, const std::string& FaceName)
 {
     const auto Found = Appearance.FaceMatcaps.find(FaceName);
-    return Found != Appearance.FaceMatcaps.end() ? Found->second : Appearance.BodyMatcap;
+    return Found != Appearance.FaceMatcaps.end() ? Found->second : DraftingBodyMatcap(Appearance, BodyKey);
 }
 
 bool DraftingMatcapKnownCondition(const DraftingAppearance& Appearance, const std::string& Name)

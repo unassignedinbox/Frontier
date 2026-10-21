@@ -46,7 +46,8 @@ struct DraftingCustomMatcap
 //    moved to another face.
 struct DraftingAppearance
 {
-    std::string                        BodyMatcap    = DraftingStudioMatcap;                 // [-] - Faces without their own matcap
+    std::string                        BodyMatcap    = DraftingStudioMatcap;                 // [-] - Default for every body without its own matcap
+    std::map<std::string, std::string> BodyMatcaps   = {};                                   // [-] - Body key (creating step label) → matcap
     std::map<std::string, std::string> FaceMatcaps   = {};                                   // [-] - Persistent face name → matcap
     std::vector<DraftingCustomMatcap>  CustomMatcaps = {};                                   // [-] - User pictures, in layer order
 };
@@ -99,7 +100,9 @@ struct DraftingMatcapLibrary
 [[nodiscard]] uint32_t DraftingMatcapLayer(const DraftingMatcapLibrary& Library, const std::string& Name) noexcept;
 
 // The matcap a face shows: its own assignment, else the body matcap.
-[[nodiscard]] const std::string& DraftingFaceMatcap(const DraftingAppearance& Appearance, const std::string& FaceName);
+// Resolution order: the face's own matcap → its body's → the default (BodyMatcap).
+[[nodiscard]] const std::string& DraftingBodyMatcap(const DraftingAppearance& Appearance, const std::string& BodyKey);
+[[nodiscard]] const std::string& DraftingFaceMatcap(const DraftingAppearance& Appearance, const std::string& BodyKey, const std::string& FaceName);
 
 // Built-in or custom name known to this appearance.
 [[nodiscard]] bool DraftingMatcapKnownCondition(const DraftingAppearance& Appearance, const std::string& Name);

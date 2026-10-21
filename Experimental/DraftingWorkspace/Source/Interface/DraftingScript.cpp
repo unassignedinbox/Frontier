@@ -182,6 +182,31 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "redo") return Numeric(double(Document.RedoEntries.size()));
     if (Field == "selected-faces") return Join(Document.Selection.Faces);
     if (Field == "selected-edges") return Join(Document.Selection.Edges);
+    if (Field == "selected-bodies") return Join(Document.Selection.Bodies);
+    if (Field == "bodies") return Numeric(double(Document.Summary.Bodies.size()));
+    if (Field == "active-body") { Text = Document.Regeneration.Active; Number = double(Text.size()); return true; }
+    if (Field == "body-captions")
+    {
+        std::vector<std::string> Captions;
+        for (const DraftingBodyFigures& Figures : Document.Summary.Bodies) Captions.push_back(Figures.Caption);
+        return Join(Captions);
+    }
+    if (Field == "body-volumes")
+    {
+        // "Block1 1.000000 · Cylinder1 0.392699" (creation order), Number = the count.
+        Text.clear();
+        for (const DraftingBodyFigures& Figures : Document.Summary.Bodies)
+        {
+            char Line[96];
+            std::snprintf(Line, sizeof(Line), "%s%s %.6f", Text.empty() ? "" : " · ", Figures.Caption.c_str(), Figures.Volume);
+            Text += Line;
+        }
+        Number = double(Document.Summary.Bodies.size());
+        return true;
+    }
+    if (Field == "body-matcaps") return Numeric(double(Document.Appearance.BodyMatcaps.size()));
+    if (Field == "boolean") return Numeric(State.Boolean.ActiveCondition ? 1 : 0);
+    if (Field == "boolean-commits") return Numeric(double(State.Boolean.Commits));
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
     if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
@@ -248,10 +273,20 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "face-matcaps") return Numeric(double(Document.Appearance.FaceMatcaps.size()));
     if (Field == "selection-matcap")
     {
-        // The matcap every selected face shows ("mixed" when they differ), the body's when no face is selected.
-        Text = Document.Selection.Faces.empty() ? Document.Appearance.BodyMatcap : DraftingFaceMatcap(Document.Appearance, Document.Selection.Faces.front());
-        for (const std::string& Face : Document.Selection.Faces)
-            if (DraftingFaceMatcap(Document.Appearance, Face) != Text) Text = "mixed";
+        // The matcap every selected face (else body) shows ("mixed" when they differ), the default when nothing is selected.
+        const auto FaceShows = [&](const std::string& Face)
+        { return DraftingFaceMatcap(Document.Appearance, DraftingBodyOfName(Document, DraftingSelectionKind::Face, Face), Face); };
+        if (!Document.Selection.Faces.empty())
+        {
+            Text = FaceShows(Document.Selection.Faces.front());
+            for (const std::string& Face : Document.Selection.Faces) if (FaceShows(Face) != Text) Text = "mixed";
+        }
+        else if (!Document.Selection.Bodies.empty())
+        {
+            Text = DraftingBodyMatcap(Document.Appearance, Document.Selection.Bodies.front());
+            for (const std::string& Key : Document.Selection.Bodies) if (DraftingBodyMatcap(Document.Appearance, Key) != Text) Text = "mixed";
+        }
+        else Text = Document.Appearance.BodyMatcap;
         Number = double(Text.size());
         return true;
     }

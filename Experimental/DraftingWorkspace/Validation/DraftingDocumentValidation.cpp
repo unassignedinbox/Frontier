@@ -64,6 +64,7 @@ namespace
     GateTally EvaluationGate  = { "W13", "Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation", "≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe" };
     GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
     GateTally MatcapGate      = { "W15", "Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals", "exact · 1 / 255" };
+    GateTally BodiesGate      = { "W16", "Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -1012,13 +1013,185 @@ int main()
         std::filesystem::remove(Bitmap);
     }
 
+    // ---- W16 multi-body: Plasticity R (new body) tiles, per-body matcaps, Q Boolean, targeted commands, refusals, codec.
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto Figures  = [](const DraftingDocument& Target, const std::string& Key) -> const DraftingBodyFigures*
+        {
+            for (const DraftingBodyFigures& Body : Target.Summary.Bodies) if (Body.Key == Key) return &Body;
+            return nullptr;
+        };
+        auto VolumeOf = [&](const DraftingDocument& Target, const std::string& Key) { const DraftingBodyFigures* Body = Figures(Target, Key); return Body ? Body->Volume : -1.0; };
+
+        // ① three bodies: Block1 4 × 2 × 1, Cylinder1 r 0.5 h 2 through it (New body), Block2 unit cube at x = 6 (New body)
+        DraftingDocument Parts = CreateDraftingDocument("Parts");
+        DraftingConstructRequest Request;
+        Request.Kind = DraftingConstructKind::Block; Request.Width = 4.0; Request.Depth = 2.0; Request.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Parts, Request));
+        Request = {};
+        Request.Kind = DraftingConstructKind::Cylinder; Request.Position = { 1.0, 1.0, -0.5 }; Request.Radius = 0.5; Request.Height = 2.0;
+        Request.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Parts, Request));
+        Request = {};
+        Request.Kind = DraftingConstructKind::Block; Request.Position = { 6.0, 0.0, 0.0 }; Request.Width = 1.0; Request.Depth = 1.0; Request.Height = 1.0;
+        Request.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Parts, Request));
+        const bool Three = Parts.Summary.Bodies.size() == 3;
+        const std::string BlockKey    = Three ? Parts.Summary.Bodies[0].Key : std::string{};
+        const std::string CylinderKey = Three ? Parts.Summary.Bodies[1].Key : std::string{};
+        const std::string CubeKey     = Three ? Parts.Summary.Bodies[2].Key : std::string{};
+        const double CylinderVolume = Pi * 0.25 * 2.0;
+        const double Worst = std::max({ Relative(VolumeOf(Parts, BlockKey), 8.0), Relative(VolumeOf(Parts, CylinderKey), CylinderVolume), Relative(VolumeOf(Parts, CubeKey), 1.0),
+                                        Relative(Parts.Summary.Volume, 9.0 + CylinderVolume) });
+        std::string Captions;
+        for (const DraftingBodyFigures& Body : Parts.Summary.Bodies) Captions += (Captions.empty() ? "" : " · ") + Body.Caption + " (" + Body.Key + ")";
+        Tally(BodiesGate, Worst, Three && Worst <= 1.0e-9 && Parts.Summary.SoundCondition && Parts.Regeneration.Active == CubeKey,
+              "3 bodies " + Captions + ": 8 · π/2 · 1 exact, overlapping solids stay separate, all sound, active = the last created");
+
+        // ② scene: one span per body, faces and edges tagged; picking the cylinder body marks exactly its faces
+        DraftingScene PartsScene = BuildDraftingScene(Parts);
+        bool Spans = PartsScene.Bodies.size() == 3;
+        uint32_t FaceSum = 0;
+        for (size_t Index = 0; Spans && Index < PartsScene.Bodies.size(); ++Index)
+        {
+            const DraftingSceneBody& Body = PartsScene.Bodies[Index];
+            Spans = Spans && Body.Key == Parts.Summary.Bodies[Index].Key && int(Body.FaceCount) == Parts.Summary.Bodies[Index].Faces && Body.FirstFace == FaceSum;
+            for (uint32_t Face = Body.FirstFace; Face < Body.FirstFace + Body.FaceCount; ++Face) Spans = Spans && PartsScene.Faces[Face].Body == Index;
+            FaceSum += Body.FaceCount;
+        }
+        SelectDraftingName(Parts, DraftingSelectionKind::Body, CylinderKey, false);
+        const DraftingSceneStates Picked = ComposeDraftingStates(PartsScene, Parts.Selection, 0u);
+        const long Marked = std::count_if(Picked.Faces.begin(), Picked.Faces.end(), [](uint32_t Word) { return (Word & 1u) != 0; });
+        Tally(BodiesGate, 0.0, Spans && FaceSum == PartsScene.Faces.size() && Three && Marked == Parts.Summary.Bodies[1].Faces,
+              "scene: 3 body spans in creation order, face counts equal the audit, every face tagged; body pick marks its " + std::to_string(Marked) + " faces only");
+
+        // ③ per-body matcaps: Block1 → Brushed steel, Cylinder1 → Brass, one Block1 face → Red plastic; Block2 keeps the default
+        const uint64_t Revision = Parts.Revision;
+        SelectDraftingName(Parts, DraftingSelectionKind::Body, BlockKey, false);
+        const DraftingCommandOutcome Steel = AssignDraftingMatcap(Parts, "BrushedSteel");
+        SelectDraftingName(Parts, DraftingSelectionKind::Body, CylinderKey, false);
+        const DraftingCommandOutcome Brass = AssignDraftingMatcap(Parts, "Brass");
+        const std::string RedFace = PartsScene.Faces[PartsScene.Bodies[0].FirstFace].Name;
+        SelectDraftingName(Parts, DraftingSelectionKind::Face, RedFace, false);
+        const DraftingCommandOutcome Red = AssignDraftingMatcap(Parts, "RedPlastic");
+        ClearDraftingSelection(Parts);
+        const DraftingMatcapLibrary Library = AssembleDraftingMatcaps(Parts.Appearance);
+        auto LayerCounts = [&](const DraftingScene& Scene)
+        {
+            std::map<std::string, int> Counts;
+            for (const uint32_t Word : ComposeDraftingMatcapLayers(Scene, Parts.Appearance, Library)) Counts[Library.Names[Word >> DraftingMatcapLayerShift]] += 1;
+            return Counts;
+        };
+        std::map<std::string, int> Counts = LayerCounts(PartsScene);
+        const int CylinderFaces = Parts.Summary.Bodies[1].Faces, CubeFaces = Parts.Summary.Bodies[2].Faces;
+        Tally(BodiesGate, 0.0, Steel.AcceptedCondition && Brass.AcceptedCondition && Red.AcceptedCondition && Parts.Revision == Revision && Counts["BrushedSteel"] == 5
+                               && Counts["RedPlastic"] == 1 && Counts["Brass"] == CylinderFaces && Counts[DraftingStudioMatcap] == CubeFaces && Parts.Appearance.BodyMatcaps.size() == 2
+                               && DraftingFaceMatcap(Parts.Appearance, BlockKey, RedFace) == "RedPlastic" && DraftingBodyMatcap(Parts.Appearance, CubeKey) == DraftingStudioMatcap,
+              Steel.Label + " · " + Brass.Label + " · " + Red.Label + ": 5 steel + 1 red + " + std::to_string(CylinderFaces) + " brass + " + std::to_string(CubeFaces)
+              + " Studio faces; revision unchanged");
+
+        // ④ Q Boolean: Block1 − Cylinder1. The tool is consumed (its Brass override is kept for undo / delete, so it dangles);
+        //    the hole faces belong to Block1 and show its matcap.
+        const DraftingCommandOutcome Drill = CombineDraftingBodies(Parts, BlockKey, { CylinderKey }, FeatureCombination::Difference);
+        PartsScene = BuildDraftingScene(Parts);
+        Counts = LayerCounts(PartsScene);
+        const double Drilled = 8.0 - Pi * 0.25;
+        const double DrillError = std::max(Relative(VolumeOf(Parts, BlockKey), Drilled), Relative(Parts.Summary.Volume, Drilled + 1.0));
+        Tally(BodiesGate, DrillError, Drill.AcceptedCondition && DrillError <= 1.0e-9 && Parts.Summary.Bodies.size() == 2 && !Figures(Parts, CylinderKey) && Parts.Summary.SoundCondition
+                                      && Parts.Tree.Steps.back().Kind == FeatureStepKind::Combine && Parts.Tree.Steps.back().Tool == CylinderKey && Parts.Regeneration.Active == BlockKey
+                                      && CountDanglingMatcaps(PartsScene, Parts.Appearance) == 1 && Counts["Brass"] == 0 && Counts["BrushedSteel"] == Parts.Summary.Bodies[0].Faces - 1,
+              Drill.Label + ": Block1 = 8 − π/4 exact, 2 bodies, the hole wears Block1's steel; the tool's Brass override dangles (1)");
+
+        // ⑤ deleting the Combine step brings Cylinder1 back with its Brass; undo re-applies the Boolean
+        const std::string CombineLabel = Parts.Tree.Steps.back().Label;
+        const DraftingCommandOutcome Restored = DeleteDraftingStep(Parts, CombineLabel);
+        PartsScene = BuildDraftingScene(Parts);
+        Counts = LayerCounts(PartsScene);
+        const bool Back = Restored.AcceptedCondition && Parts.Summary.Bodies.size() == 3 && Relative(VolumeOf(Parts, CylinderKey), CylinderVolume) <= 1.0e-9 && Counts["Brass"] == CylinderFaces && CountDanglingMatcaps(PartsScene, Parts.Appearance) == 0;
+        UndoDraftingCommand(Parts);
+        Tally(BodiesGate, Relative(VolumeOf(Parts, BlockKey), Drilled), Back && Parts.Summary.Bodies.size() == 2 && Relative(VolumeOf(Parts, BlockKey), Drilled) <= 1.0e-9,
+              "delete " + CombineLabel + " → Cylinder1 returns (π/2, Brass, 0 dangling); undo → drilled again");
+
+        // ⑥ targeted commands while Block1 is active: fillet one vertical Block2 edge (r 0.2, closed form), then a boss on
+        //    Block2 (Target). Vertical edges join two sides, so their names carry no "Cap".
+        std::string CubeEdge;
+        for (const RegeneratedBody& Body : Parts.Regeneration.Bodies)
+            if (Body.Key == CubeKey)
+                for (const auto& Entry : Body.Naming.Edges)
+                    if (CubeEdge.empty() && Entry.second.find("Cap") == std::string::npos) CubeEdge = Entry.second;
+        SelectDraftingName(Parts, DraftingSelectionKind::Edge, CubeEdge, false);
+        const DraftingCommandOutcome Rounded = BlendDraftingSelection(Parts, BlendProfile::Fillet, 0.2);
+        const double RoundedCube = 1.0 - 0.04 * (1.0 - Pi / 4.0);
+        Request = {};
+        Request.Kind = DraftingConstructKind::Cylinder; Request.Position = { 6.5, 0.5, 1.0 }; Request.Radius = 0.25; Request.Height = 0.5;
+        Request.Combination = FeatureCombination::Union; Request.Target = CubeKey;
+        const DraftingCommandOutcome Bossed = ConstructDraftingPrimitive(Parts, Request);
+        const double BossedCube = RoundedCube + Pi * 0.0625 * 0.5;
+        const double TargetError = std::max({ Relative(VolumeOf(Parts, CubeKey), BossedCube), Relative(VolumeOf(Parts, BlockKey), Drilled) });
+        const FeatureStep* Blend = nullptr;
+        for (const FeatureStep& Step : Parts.Tree.Steps) if (Step.Kind == FeatureStepKind::Blend) Blend = &Step;
+        Tally(BodiesGate, TargetError, Rounded.AcceptedCondition && Bossed.AcceptedCondition && TargetError <= 1.0e-9 && Blend && Blend->Target == CubeKey && Parts.Summary.SoundCondition,
+              "fillet r 0.2 on " + CubeEdge + " (Target " + CubeKey + ") + Cylinder boss with Target = Block2: 1 − 0.04(1 − π/4) + π/32 exact; Block1 untouched");
+
+        // ⑦ refusals leave tree, bodies and history untouched
+        const size_t Steps = Parts.Tree.Steps.size(), Entries = Parts.UndoEntries.size();
+        const double Volume = Parts.Summary.Volume;
+        PartsScene = BuildDraftingScene(Parts);
+        SelectDraftingName(Parts, DraftingSelectionKind::Edge, PartsScene.Edges[PartsScene.Bodies.front().FirstEdge].Name, false);
+        SelectDraftingName(Parts, DraftingSelectionKind::Edge, PartsScene.Edges[PartsScene.Bodies.back().FirstEdge].Name, true);
+        const DraftingCommandOutcome Spanning = BlendDraftingSelection(Parts, BlendProfile::Fillet, 0.1);
+        ClearDraftingSelection(Parts);
+        const DraftingCommandOutcome Self     = CombineDraftingBodies(Parts, BlockKey, { BlockKey }, FeatureCombination::Union);
+        const DraftingCommandOutcome Lonely   = CombineDraftingBodies(Parts, BlockKey, {}, FeatureCombination::Union);
+        const DraftingCommandOutcome Ghost    = CombineDraftingBodies(Parts, BlockKey, { "Extrude#99" }, FeatureCombination::Union);
+        const DraftingCommandOutcome Separate = CombineDraftingBodies(Parts, BlockKey, { CubeKey }, FeatureCombination::Separate);
+        Request = {};
+        Request.Kind = DraftingConstructKind::Sphere; Request.Radius = 0.3; Request.Combination = FeatureCombination::New;
+        const DraftingCommandOutcome Second = ConstructDraftingPrimitive(Parts, Request);
+        const bool Refused = !Spanning.AcceptedCondition && !Self.AcceptedCondition && !Lonely.AcceptedCondition && !Ghost.AcceptedCondition && !Separate.AcceptedCondition && !Second.AcceptedCondition;
+        Tally(BodiesGate, 0.0, Refused && Parts.Tree.Steps.size() == Steps && Parts.UndoEntries.size() == Entries && Parts.Summary.Volume == Volume,
+              "refused: blend across bodies (" + Spanning.Refusal + ") · self-combine (" + Self.Refusal + ") · no tool · unknown body (" + Ghost.Refusal + ") · Separate as Q · second New; untouched");
+
+        // ⑧ intersection keeps only the common part: Block2 ∩ a fresh New-body block overlapping its lower half
+        Request = {};
+        Request.Kind = DraftingConstructKind::Block; Request.Position = { 5.5, -0.5, -0.5 }; Request.Width = 2.0; Request.Depth = 2.0; Request.Height = 1.0;
+        Request.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Parts, Request));
+        const std::string SlabKey = Parts.Summary.Bodies.back().Key;
+        const DraftingCommandOutcome Common = CombineDraftingBodies(Parts, CubeKey, { SlabKey }, FeatureCombination::Intersection);
+        const double CommonVolume = 0.5 - 0.04 * (1.0 - Pi / 4.0) * 0.5;                    // Lower half of the cube with half the vertical fillet
+        const double CommonError  = Relative(VolumeOf(Parts, CubeKey), CommonVolume);
+        Tally(BodiesGate, CommonError, Common.AcceptedCondition && CommonError <= 1.0e-9 && Parts.Summary.Bodies.size() == 2 && Parts.Summary.SoundCondition,
+              Common.Label + ": Block2 = its lower half (V = " + std::to_string(VolumeOf(Parts, CubeKey)) + "), the slab consumed");
+        UndoDraftingCommand(Parts);
+        UndoDraftingCommand(Parts);
+
+        // ⑨ save → load → save byte-equal (Target / Tool / Combine / [[Appearance.Bodies]]); same body volumes after reload
+        const std::string Written = EncodeDraftingDocument(Parts);
+        const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+        DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+        Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+        RegenerateDraftingDocument(Copy, true);
+        bool SameBodies = Copy.Summary.Bodies.size() == Parts.Summary.Bodies.size();
+        for (size_t Index = 0; SameBodies && Index < Copy.Summary.Bodies.size(); ++Index)
+            SameBodies = Copy.Summary.Bodies[Index].Key == Parts.Summary.Bodies[Index].Key && Copy.Summary.Bodies[Index].Volume == Parts.Summary.Bodies[Index].Volume;
+        Tally(BodiesGate, 0.0, Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && SameBodies && Copy.Appearance.BodyMatcaps == Parts.Appearance.BodyMatcaps
+                               && Written.find("Tool = '") != std::string::npos && Written.find("Target = '") != std::string::npos && Written.find("[[Appearance.Bodies]]") != std::string::npos,
+              "save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; " + std::to_string(Copy.Summary.Bodies.size()) + " bodies, volumes bit-equal");
+        std::string Future = Written;
+        const size_t KindAt = Future.find("Kind = 10");
+        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 11");
+        const DraftingDocumentFile Newer = DecodeDraftingDocument(Future);
+        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Combine is refused: " + Newer.Refusal);
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

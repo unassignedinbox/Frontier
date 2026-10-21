@@ -160,6 +160,7 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
         Sweep.Profile      = SketchLabel;
         Sweep.Extent       = ParameterValue(Author.Named("Height"));
         Sweep.Combination  = Combination;
+        Sweep.Target       = Request.Target;
         break;
     }
     case DraftingConstructKind::Cylinder:
@@ -194,6 +195,7 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
         Sweep.Profile      = SketchLabel;
         Sweep.Extent       = ParameterValue(Author.Named("Height"), Axis == 1 ? -1.0 : 1.0);
         Sweep.Combination  = Combination;
+        Sweep.Target       = Request.Target;
         break;
     }
     case DraftingConstructKind::Sphere:
@@ -222,6 +224,7 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
         FeatureStep& Sweep    = Author.Step(FeatureStepKind::Revolve, "Revolve#" + std::to_string(Ordinal + 1));
         Sweep.Profile         = SketchLabel;
         Sweep.Combination     = Combination;
+        Sweep.Target          = Request.Target;
         Sweep.AxisIdentifier  = 1;
         Sweep.Angle           = LiteralValue(2.0 * Pi);
         break;
@@ -254,6 +257,7 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
         FeatureStep& Sweep    = Author.Step(FeatureStepKind::Revolve, "Revolve#" + std::to_string(Ordinal + 1));
         Sweep.Profile         = SketchLabel;
         Sweep.Combination     = Combination;
+        Sweep.Target          = Request.Target;
         Sweep.AxisIdentifier  = 1;
         Sweep.Angle           = LiteralValue(2.0 * Pi);
         break;
@@ -352,11 +356,34 @@ DraftingCommandOutcome RunCommand(DraftingDocument& Document, const std::string&
     return Text;
 }
 
-void KeepResolvedNames(std::vector<std::string>& Names, const std::map<uint32_t, std::string>& Table)
+// Keeps the names some body still carries (Faces or Edges member of every body's naming).
+void KeepResolvedNames(std::vector<std::string>& Names, const std::vector<RegeneratedBody>& Bodies, bool EdgeCondition)
 {
     std::set<std::string> Present;
-    for (const auto& Entry : Table) Present.insert(Entry.second);
+    for (const RegeneratedBody& Body : Bodies)
+        for (const auto& Entry : EdgeCondition ? Body.Naming.Edges : Body.Naming.Faces) Present.insert(Entry.second);
     std::erase_if(Names, [&](const std::string& Name) { return !Present.contains(Name); });
+}
+
+[[nodiscard]] const RegeneratedBody* FindRegeneratedBody(const DraftingDocument& Document, const std::string& Key)
+{
+    for (const RegeneratedBody& Body : Document.Regeneration.Bodies) if (Body.Key == Key) return &Body;
+    return nullptr;
+}
+
+// 📝 The one body carrying every name (faces or edges); refusal text when they span bodies or none carries one.
+[[nodiscard]] std::string CommonBody(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::vector<std::string>& Names, std::string& Key)
+{
+    Key.clear();
+    for (const std::string& Name : Names)
+    {
+        const std::string Owner = DraftingBodyOfName(Document, Kind, Name);
+        if (Owner.empty()) return (Kind == DraftingSelectionKind::Edge ? "edge " : "face ") + Name + " is on no body";
+        if (!Key.empty() && Owner != Key)
+            return "the selection spans " + DraftingBodyCaption(Document, Key) + " and " + DraftingBodyCaption(Document, Owner) + " (one body at a time)";
+        Key = Owner;
+    }
+    return {};
 }
 
 } // namespace
@@ -385,22 +412,38 @@ void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureConditio
     DraftingBodySummary& Summary = Document.Summary;
     Summary                      = {};
     Summary.RegenerationMs       = Document.Regeneration.Milliseconds;
-    const BodyToken Body         = Document.Regeneration.Body;
-    if (Body.PresentCondition() && Document.Partition->Bodies.Authenticate(Body))
+    Summary.SoundCondition       = true;
+    for (const RegeneratedBody& Regenerated : Document.Regeneration.Bodies)
     {
+        const BodyToken Body = Regenerated.Body;
+        if (!Body.PresentCondition() || !Document.Partition->Bodies.Authenticate(Body)) continue;
         const BodyInventory Inventory = Document.Partition->CollectInventory(Body);
+        if (Inventory.Faces.empty()) continue;
         const AuditReport   Audit     = AuditBody(*Document.Partition, Body);
-        Summary.PresentCondition = !Inventory.Faces.empty();
-        Summary.SoundCondition   = Audit.SoundCondition();
-        Summary.Faces            = static_cast<int>(Inventory.Faces.size());
-        Summary.Edges            = static_cast<int>(Inventory.Edges.size());
-        Summary.Vertices         = static_cast<int>(Inventory.Vertices.size());
-        Summary.Genus            = Audit.Genus;
-        Summary.SheetCondition   = Document.Partition->Bodies.Resolve(Body).Category == BodyCategory::Sheet;
-        Summary.Volume           = Summary.PresentCondition && !Summary.SheetCondition ? IntegrateBodyVolume(*Document.Partition, Body) : 0.0;
+        DraftingBodyFigures Figures;
+        Figures.Key            = Regenerated.Key;
+        Figures.Caption        = DraftingBodyCaption(Document, Regenerated.Key);
+        Figures.SoundCondition = Audit.SoundCondition();
+        Figures.SheetCondition = Document.Partition->Bodies.Resolve(Body).Category == BodyCategory::Sheet;
+        Figures.Faces          = static_cast<int>(Inventory.Faces.size());
+        Figures.Edges          = static_cast<int>(Inventory.Edges.size());
+        Figures.Vertices       = static_cast<int>(Inventory.Vertices.size());
+        Figures.Genus          = Audit.Genus;
+        Figures.Volume         = Figures.SheetCondition ? 0.0 : IntegrateBodyVolume(*Document.Partition, Body);
+        Summary.PresentCondition = true;
+        Summary.SoundCondition   = Summary.SoundCondition && Figures.SoundCondition;
+        Summary.SheetCondition   = Summary.SheetCondition || Figures.SheetCondition;
+        Summary.Faces           += Figures.Faces;
+        Summary.Edges           += Figures.Edges;
+        Summary.Vertices        += Figures.Vertices;
+        Summary.Genus            = (Summary.Genus < 0 ? 0 : Summary.Genus) + Figures.Genus;
+        Summary.Volume          += Figures.Volume;
+        Summary.Bodies.push_back(std::move(Figures));
     }
-    KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Naming.Faces);
-    KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Naming.Edges);
+    if (!Summary.PresentCondition) Summary.SoundCondition = false;
+    KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
+    KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
+    std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
     std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label); });
 }
 
@@ -419,15 +462,16 @@ DraftingCommandOutcome ConstructDraftingPrimitive(DraftingDocument& Document, co
 {
     const bool        FirstBodyCondition = !Document.Summary.PresentCondition;
     const std::string Label = NextCaption(Document, DraftingConstructLabel(Request.Kind)) + " · " +
-                              (FirstBodyCondition ? "New" : FeatureCombinationLabel(Request.Combination));
+                              (FirstBodyCondition && Request.Combination != FeatureCombination::Separate ? "New" : FeatureCombinationLabel(Request.Combination));
     return RunCommand(Document, Label, false, [&]() -> std::string
     {
         if (Request.Width <= 0.0 || Request.Depth <= 0.0 || Request.Height <= 0.0 || Request.Radius <= 0.0 ||
             Request.Minor <= 0.0 || Request.Major <= Request.Minor)
             return "every dimension must be positive (torus: Major > Minor)";
         if (!FirstBodyCondition && Request.Combination == FeatureCombination::New)
-            return "a second body needs Union, Difference or Intersection";
-        AuthorTile(Document, Request, FirstBodyCondition ? FeatureCombination::New : Request.Combination);
+            return "a second body needs Union, Difference, Intersection or New body";
+        if (!Request.Target.empty() && !FindRegeneratedBody(Document, Request.Target)) return "no body named " + Request.Target;
+        AuthorTile(Document, Request, FirstBodyCondition && Request.Combination != FeatureCombination::Separate ? FeatureCombination::New : Request.Combination);
         return {};
     });
 }
@@ -450,13 +494,16 @@ DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, const 
     {
         if (Document.Selection.Edges.empty()) return "select one or more edges first";
         if (Request.Size <= 0.0 || (VariableCondition && *Request.EndSize <= 0.0)) return "the blend size must be positive";
+        std::string Owner;
+        if (const std::string Problem = CommonBody(Document, DraftingSelectionKind::Edge, Document.Selection.Edges, Owner); !Problem.empty()) return Problem;
+        const RegeneratedBody* Target = FindRegeneratedBody(Document, Owner);
 
         // ① Variable: name each edge's anchor vertex on the current body (start, or end when reversed).
         std::vector<TopologyReference> Anchors;
         if (VariableCondition)
         {
-            if (!Document.Partition || !Document.Regeneration.Body.PresentCondition()) return "there is no body to blend";
-            const BodyNaming& Naming = Document.Regeneration.Naming;
+            if (!Document.Partition || !Target) return "there is no body to blend";
+            const BodyNaming& Naming = Target->Naming;
             for (const std::string& EdgeName : Document.Selection.Edges)
             {
                 const auto Edge = std::find_if(Naming.Edges.begin(), Naming.Edges.end(), [&](const auto& Entry) { return Entry.second == EdgeName; });
@@ -480,8 +527,9 @@ DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, const 
         FeatureStep Step;
         Step.Kind  = FeatureStepKind::Blend;
         Step.Label = StepLabel;
-        Step.Shape = Request.Shape;
-        Step.Size  = ParameterValue(Caption + ".Size");
+        Step.Shape  = Request.Shape;
+        Step.Size   = ParameterValue(Caption + ".Size");
+        Step.Target = Owner;
         for (const std::string& Name : Document.Selection.Edges) Step.References.push_back({ ReferenceKind::Edge, Name, {} });
         if (VariableCondition)
         {
@@ -504,6 +552,9 @@ DraftingCommandOutcome ChangeDraftingSelection(DraftingDocument& Document, FaceO
         const bool WholeBodyCondition = Operation == FaceOperationKind::OffsetBody || Operation == FaceOperationKind::Heal;
         if (Document.Selection.Faces.empty() && !WholeBodyCondition) return "select one or more faces first";
         if (!Document.Summary.PresentCondition) return "there is no body to change";
+        std::string Owner;
+        if (const std::string Problem = CommonBody(Document, DraftingSelectionKind::Face, Document.Selection.Faces, Owner); !Problem.empty()) return Problem;
+        if (Owner.empty() && !Document.Selection.Bodies.empty()) Owner = Document.Selection.Bodies.front();   // Whole-body verbs on a picked body
         const std::string Caption = NextCaption(Document, Stem);
         const std::string StepLabel = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
         const double      Span = std::max(1.0, 4.0 * std::abs(Amount));
@@ -514,6 +565,7 @@ DraftingCommandOutcome ChangeDraftingSelection(DraftingDocument& Document, FaceO
         Step.Label     = StepLabel;
         Step.Operation = Operation;
         Step.Amount    = ParameterValue(Caption + ".Amount");
+        Step.Target    = Owner;
         for (const std::string& Name : Document.Selection.Faces) Step.References.push_back({ ReferenceKind::Face, Name, {} });
         Document.Tree.Steps.push_back(std::move(Step));
         Document.Captions[StepLabel] = Caption;
@@ -688,9 +740,10 @@ DraftingCommandOutcome DrawDraftingSketch(DraftingDocument& Document, const Draf
     });
 }
 
-DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination)
+DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination,
+                                             const std::string& Target)
 {
-    const bool        FirstBodyCondition = !Document.Summary.PresentCondition;
+    const bool        FirstBodyCondition = !Document.Summary.PresentCondition && Combination != FeatureCombination::Separate;
     const std::string Caption = NextCaption(Document, "Extrude");
     const auto        Source  = Document.Captions.find(SketchLabel);
     const std::string Label   = Caption + " · " + (Source != Document.Captions.end() ? Source->second : SketchLabel) + " · " +
@@ -702,13 +755,15 @@ DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const s
         if (!(std::abs(Distance) > 1.0e-9)) return "extrude distance is zero";
         if (FirstBodyCondition && (Combination == FeatureCombination::Difference || Combination == FeatureCombination::Intersection))
             return std::string("nothing to ") + (Combination == FeatureCombination::Difference ? "subtract from" : "intersect with") + " yet (no body)";
-        if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference or Intersection";
+        if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference, Intersection or New body";
+        if (!Target.empty() && !FindRegeneratedBody(Document, Target)) return "no body named " + Target;
         FeatureStep Step;
         Step.Kind        = FeatureStepKind::Extrude;
         Step.Label       = "Extrude#" + std::to_string(NextStepOrdinal(Document.Tree));
         Step.Profile     = SketchLabel;
         Step.Extent      = FeatureValue{ Distance };
         Step.Combination = FirstBodyCondition ? FeatureCombination::New : Combination;
+        Step.Target      = Target;
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
         return {};
@@ -897,12 +952,25 @@ bool RedoDraftingCommand(DraftingDocument& Document)
 
 DraftingCommandOutcome AssignDraftingMatcap(DraftingDocument& Document, const std::string& Matcap)
 {
-    const std::vector<std::string> Faces = Document.Selection.Faces;
-    const std::string Label = "Matcap " + Matcap + " → " + (Faces.empty() ? std::string("body") : std::to_string(Faces.size()) + " face(s)");
+    const std::vector<std::string> Faces  = Document.Selection.Faces;
+    const std::vector<std::string> Bodies = Faces.empty() ? Document.Selection.Bodies : std::vector<std::string>{};
+    const std::string Label = "Matcap " + Matcap + " → " + (!Faces.empty() ? std::to_string(Faces.size()) + " face(s)"
+                                                         : !Bodies.empty() ? std::to_string(Bodies.size()) + " body(ies)" : std::string("body"));
     return RunAppearanceCommand(Document, Label, [&]() -> std::string
     {
         DraftingAppearance& Appearance = Document.Appearance;
         if (!DraftingMatcapKnownCondition(Appearance, Matcap)) return "no matcap named " + Matcap;
+        if (!Bodies.empty())
+        {
+            bool ChangedCondition = false;
+            for (const std::string& Key : Bodies)
+            {
+                std::string& Assigned = Appearance.BodyMatcaps[Key];
+                ChangedCondition = ChangedCondition || Assigned != Matcap;
+                Assigned = Matcap;
+            }
+            return ChangedCondition ? std::string{} : "the selected bodies already show " + Matcap;
+        }
         if (Faces.empty())
         {
             if (Appearance.BodyMatcap == Matcap) return "the body already shows " + Matcap;
@@ -922,11 +990,20 @@ DraftingCommandOutcome AssignDraftingMatcap(DraftingDocument& Document, const st
 
 DraftingCommandOutcome RemoveDraftingMatcap(DraftingDocument& Document)
 {
-    const std::vector<std::string> Faces = Document.Selection.Faces;
-    const std::string Label = Faces.empty() ? std::string("Matcap removed → body Studio") : "Matcap removed → " + std::to_string(Faces.size()) + " face(s) show the body";
+    const std::vector<std::string> Faces  = Document.Selection.Faces;
+    const std::vector<std::string> Bodies = Faces.empty() ? Document.Selection.Bodies : std::vector<std::string>{};
+    const std::string Label = !Faces.empty()  ? "Matcap removed → " + std::to_string(Faces.size()) + " face(s) show the body"
+                            : !Bodies.empty() ? "Matcap removed → " + std::to_string(Bodies.size()) + " body(ies) show the default"
+                                              : std::string("Matcap removed → body Studio");
     return RunAppearanceCommand(Document, Label, [&]() -> std::string
     {
         DraftingAppearance& Appearance = Document.Appearance;
+        if (!Bodies.empty())
+        {
+            size_t Removed = 0;
+            for (const std::string& Key : Bodies) Removed += Appearance.BodyMatcaps.erase(Key);
+            return Removed ? std::string{} : "the selected bodies have no matcap of their own";
+        }
         if (Faces.empty())
         {
             if (Appearance.BodyMatcap == DraftingStudioMatcap) return "the body already shows Studio";
@@ -957,7 +1034,8 @@ DraftingCommandOutcome AddDraftingMatcapPicture(DraftingDocument& Document, cons
 
 void SelectDraftingName(DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name, bool AdditiveCondition)
 {
-    std::vector<std::string>& Names = Kind == DraftingSelectionKind::Face ? Document.Selection.Faces : Document.Selection.Edges;
+    std::vector<std::string>& Names = Kind == DraftingSelectionKind::Face ? Document.Selection.Faces
+                                    : Kind == DraftingSelectionKind::Edge ? Document.Selection.Edges : Document.Selection.Bodies;
     if (!AdditiveCondition)
     {
         Document.Selection = {};
@@ -973,9 +1051,10 @@ void SelectDraftingName(DraftingDocument& Document, DraftingSelectionKind Kind, 
 
 std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, const std::string& Name)
 {
-    if (!Document.Partition || !Document.Regeneration.Body.PresentCondition()) return { Name };
-    const Modeller::BodyNaming&    Naming    = Document.Regeneration.Naming;
-    const Modeller::BodyInventory  Inventory = Document.Partition->CollectInventory(Document.Regeneration.Body);
+    const RegeneratedBody* Owner = FindRegeneratedBody(Document, DraftingBodyOfName(Document, DraftingSelectionKind::Edge, Name));
+    if (!Document.Partition || !Owner) return { Name };
+    const Modeller::BodyNaming&    Naming    = Owner->Naming;
+    const Modeller::BodyInventory  Inventory = Document.Partition->CollectInventory(Owner->Body);
     std::vector<Modeller::EdgeToken> Seeds;
     for (const Modeller::EdgeToken Edge : Inventory.Edges)
     {
@@ -984,12 +1063,64 @@ std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, 
     }
     if (Seeds.empty()) return { Name };
     std::vector<std::string> Names;
-    for (const Modeller::EdgeToken Edge : Modeller::GrowTangentChain(*Document.Partition, Document.Regeneration.Body, Seeds))
+    for (const Modeller::EdgeToken Edge : Modeller::GrowTangentChain(*Document.Partition, Owner->Body, Seeds))
     {
         const auto Found = Naming.Edges.find(Edge.Slot);
         if (Found != Naming.Edges.end()) Names.push_back(Found->second);
     }
     return Names;
+}
+
+DraftingCommandOutcome CombineDraftingBodies(DraftingDocument& Document, const std::string& Target, const std::vector<std::string>& Tools, FeatureCombination Combination)
+{
+    std::string Operands = DraftingBodyCaption(Document, Target);
+    const char* Sign = Combination == FeatureCombination::Difference ? " − " : Combination == FeatureCombination::Intersection ? " ∩ " : " ∪ ";
+    for (const std::string& Tool : Tools) Operands += Sign + DraftingBodyCaption(Document, Tool);
+    const std::string Label = std::string("Combine · ") + FeatureCombinationLabel(Combination) + " (" + Operands + ")";
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Combination != FeatureCombination::Union && Combination != FeatureCombination::Difference && Combination != FeatureCombination::Intersection)
+            return "choose Union, Difference or Intersection";
+        if (Tools.empty()) return "select two or more bodies (the first is the target)";
+        if (!FindRegeneratedBody(Document, Target)) return "no body named " + Target;
+        std::set<std::string> Seen{ Target };
+        for (const std::string& Tool : Tools)
+        {
+            if (!FindRegeneratedBody(Document, Tool)) return "no body named " + Tool;
+            if (!Seen.insert(Tool).second) return DraftingBodyCaption(Document, Tool) + " is picked twice (the target cannot be a tool)";
+        }
+        const std::string Caption = NextCaption(Document, "Combine");
+        for (const std::string& Tool : Tools)
+        {
+            FeatureStep Step;
+            Step.Kind        = FeatureStepKind::Combine;
+            Step.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Combination = Combination;
+            Step.Target      = Target;
+            Step.Tool        = Tool;
+            Document.Captions[Step.Label] = Caption;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        Document.Selection = {};
+        return {};
+    });
+}
+
+std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)
+{
+    for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+    {
+        if (Kind == DraftingSelectionKind::Body) { if (Body.Key == Name) return Body.Key; continue; }
+        const std::map<uint32_t, std::string>& Table = Kind == DraftingSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+        for (const auto& Entry : Table) if (Entry.second == Name) return Body.Key;
+    }
+    return {};
+}
+
+std::string DraftingBodyCaption(const DraftingDocument& Document, const std::string& Key)
+{
+    const auto Found = Document.Captions.find(Key);
+    return Found != Document.Captions.end() ? Found->second : Key;
 }
 
 void ClearDraftingSelection(DraftingDocument& Document)

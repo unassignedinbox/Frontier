@@ -244,6 +244,14 @@ add_test(NAME DraftingMatcapWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingMatcapWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME DraftingMultiBodyWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/MultiBodyRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/MultiBody.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/MultiBodyWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingMultiBodyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

@@ -363,15 +363,29 @@ void AddMatcapPicture(DraftingWorkspaceState& State, const std::string& Path)
     RefreshDraftingMatcaps(State);
 }
 
-// 📝 The matcap the selection shows: the body's when no face is selected, one name when all agree, else "mixed".
+// 📝 The matcap the selection shows: faces first, else picked bodies, else the default; one name when all agree, else "mixed".
 std::string SelectionMatcap(const DraftingWorkspaceState& State)
 {
-    const DraftingAppearance& Appearance = State.Document.Appearance;
-    if (State.Document.Selection.Faces.empty()) return Appearance.BodyMatcap;
-    std::string Shown = DraftingFaceMatcap(Appearance, State.Document.Selection.Faces.front());
-    for (const std::string& Face : State.Document.Selection.Faces)
-        if (DraftingFaceMatcap(Appearance, Face) != Shown) return "mixed";
+    const DraftingDocument&   Document   = State.Document;
+    const DraftingAppearance& Appearance = Document.Appearance;
+    const auto FaceShows = [&](const std::string& Face)
+    { return DraftingFaceMatcap(Appearance, DraftingBodyOfName(Document, DraftingSelectionKind::Face, Face), Face); };
+    if (!Document.Selection.Faces.empty())
+    {
+        const std::string Shown = FaceShows(Document.Selection.Faces.front());
+        for (const std::string& Face : Document.Selection.Faces) if (FaceShows(Face) != Shown) return "mixed";
+        return Shown;
+    }
+    if (Document.Selection.Bodies.empty()) return Appearance.BodyMatcap;
+    const std::string Shown = DraftingBodyMatcap(Appearance, Document.Selection.Bodies.front());
+    for (const std::string& Key : Document.Selection.Bodies) if (DraftingBodyMatcap(Appearance, Key) != Shown) return "mixed";
     return Shown;
+}
+
+// The body a Union / Difference / Intersection acts on: the first body picked in mode 4, else the active body (empty).
+std::string BooleanTarget(const DraftingWorkspaceState& State)
+{
+    return State.Document.Selection.Bodies.empty() ? std::string{} : State.Document.Selection.Bodies.front();
 }
 
 // 💡 Swatch grid (thumbnails when the frame registered them, else a flat colour from the sphere's lit side) in category
@@ -587,7 +601,7 @@ void StageBevelPreview(DraftingWorkspaceState& State)
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
     Bevel.Preview     = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
-    const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Profile ? ExtrudeDraftingSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination)
+    const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Profile ? ExtrudeDraftingSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
                                          : Bevel.Verb == DraftingSessionVerb::Extrude ? ChangeDraftingSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
                                                                                       : BlendDraftingSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
     if (Outcome.AcceptedCondition)
@@ -611,7 +625,7 @@ void ApplyBevelSession(DraftingWorkspaceState& State)
     State.Bevel.Preview.reset();
     if (State.Bevel.Verb == DraftingSessionVerb::Profile)
     {
-        const DraftingCommandOutcome Outcome = ExtrudeDraftingSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination);
+        const DraftingCommandOutcome Outcome = ExtrudeDraftingSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State));
         if (Outcome.AcceptedCondition) State.FocusedStep = {};
         Conclude(State, Outcome);
         return;
@@ -820,6 +834,75 @@ void OpenSketchExtrudeSession(DraftingWorkspaceState& State)
     if (State.FocusedStep.empty()) return false;
     for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == State.FocusedStep) return Step.Kind == FeatureStepKind::Sketch;
     return false;
+}
+
+// Plasticity Q (command:boolean): needs two or more bodies picked in mode 4 (first = target, rest = tools).
+void OpenBooleanSession(DraftingWorkspaceState& State)
+{
+    const size_t Picked = State.Document.Selection.Bodies.size();
+    if (State.Document.Summary.Bodies.size() < 2)
+    {
+        Announce(State, "Boolean (Q) needs two bodies: construct one with R (New body) in Shift+C / V / X / Z");
+        return;
+    }
+    if (Picked < 2)
+    {
+        Announce(State, "Boolean (Q): pick the target, then Shift-pick the tools in mode 4 (solid)");
+        return;
+    }
+    State.Boolean.ActiveCondition = true;
+    State.Boolean.Combination     = FeatureCombination::Union;
+    Announce(State, Compose("Boolean: %s with %d tool(s) · Q union · W difference · E intersect · Enter applies",
+                            DraftingBodyCaption(State.Document, State.Document.Selection.Bodies.front()).c_str(), int(Picked) - 1));
+}
+
+void ChooseBooleanCombination(DraftingWorkspaceState& State, FeatureCombination Combination)
+{
+    State.Boolean.Combination = Combination;
+    Announce(State, std::string("Boolean: ") + FeatureCombinationLabel(Combination));
+}
+
+void ApplyBooleanSession(DraftingWorkspaceState& State)
+{
+    const std::vector<std::string> Picked = State.Document.Selection.Bodies;
+    State.Boolean.ActiveCondition = false;
+    if (Picked.size() < 2) { Announce(State, "Boolean: pick two or more bodies"); return; }
+    const DraftingCommandOutcome Outcome = CombineDraftingBodies(State.Document, Picked.front(), std::vector<std::string>(Picked.begin() + 1, Picked.end()),
+                                                                 State.Boolean.Combination);
+    if (Outcome.AcceptedCondition)
+    {
+        ++State.Boolean.Commits;
+        SelectDraftingName(State.Document, DraftingSelectionKind::Body, Picked.front(), false);
+    }
+    Conclude(State, Outcome);
+}
+
+void DrawBooleanCard(DraftingWorkspaceState& State)
+{
+    const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+    BeginCard("Boolean");
+    static const struct { const char* Label; FeatureCombination Combination; } Choices[] = {
+        { "Union (Q)###BooleanUnion", FeatureCombination::Union }, { "Difference (W)###BooleanDifference", FeatureCombination::Difference },
+        { "Intersect (E)###BooleanIntersect", FeatureCombination::Intersection } };
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        if (Index > 0) ImGui::SameLine();
+        if (ToggleButton(State, Choices[Index].Label, State.Boolean.Combination == Choices[Index].Combination, ImVec2(118, 0)))
+            ChooseBooleanCombination(State, Choices[Index].Combination);
+    }
+    if (!Picked.empty())
+    {
+        ImGui::Text("Target  %s", DraftingBodyCaption(State.Document, Picked.front()).c_str());
+        for (size_t Index = 1; Index < Picked.size(); ++Index)
+            ImGui::TextDisabled("Tool %d  %s", int(Index), DraftingBodyCaption(State.Document, Picked[Index]).c_str());
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextWrapped("The tools are consumed; the target keeps its key, matcap and Boolean history. Enter applies · Esc cancels.");
+    ImGui::PopStyleColor();
+    if (PressButton(State, "Apply###BooleanApply", ImVec2(118, 0))) ApplyBooleanSession(State);
+    ImGui::SameLine();
+    if (PressButton(State, "Cancel###BooleanCancel", ImVec2(118, 0))) { State.Boolean.ActiveCondition = false; Announce(State, "Boolean cancelled"); }
+    EndCard();
 }
 
 void ChooseProfileCombination(DraftingWorkspaceState& State, FeatureCombination Combination)
@@ -1258,7 +1341,8 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
     if (Identity == 0)
     {
-        if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty() || !State.Document.Selection.Curves.empty()))
+        if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()
+                                                      || !State.Document.Selection.Curves.empty() || !State.Document.Selection.Bodies.empty()))
         {
             ClearDraftingSelection(State.Document);
             Announce(State, "Selection cleared");
@@ -1267,15 +1351,29 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
     if (State.PickMode == DraftingPickMode::Solid)
     {
-        if (Intent == DraftingPickIntent::Remove)
+        // Mode 4 (solid): the body under the pointer, by its key. Shift adds (pick order = Boolean order), Ctrl removes.
+        const uint32_t Index   = (Identity & ~IdentityEdgeBit) - 1u;
+        const uint32_t BodyAt  = (Identity & IdentityEdgeBit) ? (Index < State.Scene.Edges.size() ? State.Scene.Edges[Index].Body : ~0u)
+                                                              : (Index < State.Scene.Faces.size() ? State.Scene.Faces[Index].Body : ~0u);
+        if (BodyAt >= State.Scene.Bodies.size()) return;
+        const DraftingSceneBody&        Body     = State.Scene.Bodies[BodyAt];
+        const std::vector<std::string>& Picked   = State.Document.Selection.Bodies;
+        const bool                      Member   = std::find(Picked.begin(), Picked.end(), Body.Key) != Picked.end();
+        if (Intent == DraftingPickIntent::Replace)
         {
-            ClearDraftingSelection(State.Document);
-            Announce(State, "Body deselected");
-            return;
+            SelectDraftingName(State.Document, DraftingSelectionKind::Body, Body.Key, false);
+            Announce(State, Compose("Selected %s (%d faces)", Body.Caption.c_str(), int(Body.FaceCount)));
         }
-        ClearDraftingSelection(State.Document);
-        for (const DraftingSceneFace& Face : State.Scene.Faces) SelectDraftingName(State.Document, DraftingSelectionKind::Face, Face.Name, true);
-        Announce(State, Compose("Selected the body (%d faces)", int(State.Scene.Faces.size())));
+        else if (Intent == DraftingPickIntent::Add)
+        {
+            if (!Member) SelectDraftingName(State.Document, DraftingSelectionKind::Body, Body.Key, true);
+            Announce(State, Compose("Added %s · %d bodies picked", Body.Caption.c_str(), int(State.Document.Selection.Bodies.size())));
+        }
+        else
+        {
+            if (Member) SelectDraftingName(State.Document, DraftingSelectionKind::Body, Body.Key, true);
+            Announce(State, "Removed " + Body.Caption);
+        }
         return;
     }
     const std::string           Name = NameDraftingIdentity(State.Scene, Identity);
@@ -1480,7 +1578,8 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
     {
         const std::pair<FeatureCombination, const char*> Combinations[] = { { FeatureCombination::Union, "Union###CombinationUnion" },
                                                                             { FeatureCombination::Difference, "Difference###CombinationDifference" },
-                                                                            { FeatureCombination::Intersection, "Intersection###CombinationIntersection" } };
+                                                                            { FeatureCombination::Intersection, "Intersection###CombinationIntersection" },
+                                                                            { FeatureCombination::Separate, "New body###CombinationSeparate" } };
         for (const auto& [Combination, Label] : Combinations)
         {
             if (ToggleButton(State, Label, Form.Combination == Combination)) Form.Combination = Combination;
@@ -1531,7 +1630,7 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
         if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_Q, false)) Form.Combination = FeatureCombination::Union;
         if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_W, false)) Form.Combination = FeatureCombination::Difference;
         if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_E, false)) Form.Combination = FeatureCombination::Intersection;
-        if (ImGui::IsKeyPressed(ImGuiKey_R, false)) Announce(State, "New body (R): documents hold one body; use Q / W / E");
+        if (!FirstBody && ImGui::IsKeyPressed(ImGuiKey_R, false)) Form.Combination = FeatureCombination::Separate;
         CreateCondition = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
         {
@@ -1541,13 +1640,14 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
         }
     }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted("Q union · W difference · E intersect · Enter create · Esc cancel");
+    ImGui::TextUnformatted("Q union · W difference · E intersect · R new body · Enter create · Esc cancel");
     ImGui::PopStyleColor();
     ImGui::Spacing();
     if (PressButton(State, "Create###ConstructCreate", ImVec2(130, 0)) || CreateCondition)
     {
         DraftingConstructRequest Request = Form;
         if (FirstBody) Request.Combination = FeatureCombination::New;
+        Request.Target = Request.Combination == FeatureCombination::Separate || FirstBody ? std::string{} : BooleanTarget(State);
         const bool FitCondition = FirstBody;
         State.LastCommand = { DraftingRepeatKind::Construct, BlendProfile::Fillet, 0.0, FaceOperationKind::Extrude, 0.0, Request };
         Conclude(State, ConstructDraftingPrimitive(State.Document, Request));
@@ -1572,6 +1672,31 @@ void DrawOutliner(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     ImGui::SameLine(0, 8);
     DrawStatTile("Volume", !Summary.PresentCondition ? std::string("-") : Summary.SheetCondition ? std::string("Open sheet") : Compose("%.4f m³", Summary.Volume), Tile);
     ImGui::Spacing();
+
+    // Bodies (creation order): click picks (Shift adds, pick order = Boolean order), like mode 4 in the viewport.
+    if (Summary.Bodies.size() > 1)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextUnformatted("Bodies");
+        ImGui::PopStyleColor();
+        for (const DraftingBodyFigures& Figures : Summary.Bodies)
+        {
+            const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+            const auto Found = std::find(Picked.begin(), Picked.end(), Figures.Key);
+            const std::string Order = Found == Picked.end() ? std::string("   ") : Compose("%d  ", int(Found - Picked.begin()) + 1);
+            const std::string Row = Order + Figures.Caption + "  · " + DraftingBodyMatcap(State.Document.Appearance, Figures.Key) + "###Body:" + Figures.Key;
+            ImGui::PushStyleColor(ImGuiCol_Header, Tint(SelectedColour));
+            if (ImGui::Selectable(Row.c_str(), Found != Picked.end()))
+            {
+                SelectDraftingName(State.Document, DraftingSelectionKind::Body, Figures.Key, ImGui::GetIO().KeyShift);
+                State.PickMode = DraftingPickMode::Solid;
+                Announce(State, Compose("%s · %d bodies picked", Figures.Caption.c_str(), int(State.Document.Selection.Bodies.size())));
+            }
+            RegisterWidget(State, Row.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+    }
 
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
     ImGui::TextUnformatted("Feature tree");
@@ -2062,7 +2187,7 @@ void DrawBevelCard(DraftingWorkspaceState& State)
         // Plasticity extrude Boolean keys: q union · w difference · e intersect · r new body.
         static const struct { const char* Label; FeatureCombination Combination; } Choices[] = {
             { "Union (Q)###ProfileUnion", FeatureCombination::Union }, { "Difference (W)###ProfileDifference", FeatureCombination::Difference },
-            { "Intersect (E)###ProfileIntersect", FeatureCombination::Intersection }, { "New (R)###ProfileNew", FeatureCombination::New } };
+            { "Intersect (E)###ProfileIntersect", FeatureCombination::Intersection }, { "New body (R)###ProfileNew", FeatureCombination::Separate } };
         for (int Index = 0; Index < 4; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
@@ -2333,9 +2458,25 @@ void DrawBodyCard(DraftingWorkspaceState& State)
     }
     else
     {
-        ImGui::Text("Faces %d · Edges %d · Vertices %d", Summary.Faces, Summary.Edges, Summary.Vertices);
-        if (Summary.SheetCondition) ImGui::Text("Open sheet · %d face(s), no volume", Summary.Faces);
-        else ImGui::Text("Genus %d · Volume %.5f m³", Summary.Genus, Summary.Volume);
+        if (Summary.Bodies.size() > 1)
+        {
+            // One line per body (caption · matcap · figures), then the totals.
+            for (const DraftingBodyFigures& Figures : Summary.Bodies)
+            {
+                const bool Picked = std::find(State.Document.Selection.Bodies.begin(), State.Document.Selection.Bodies.end(), Figures.Key) != State.Document.Selection.Bodies.end();
+                ImGui::TextColored(Tint(Picked ? SelectedColour : (Figures.SoundCondition ? ActiveColour : RefusalColour)), "%s", Figures.Caption.c_str());
+                ImGui::SameLine();
+                if (Figures.SheetCondition) ImGui::TextDisabled("sheet · %d faces · %s", Figures.Faces, DraftingBodyMatcap(State.Document.Appearance, Figures.Key).c_str());
+                else ImGui::TextDisabled("%d faces · g%d · %.5f m³ · %s", Figures.Faces, Figures.Genus, Figures.Volume, DraftingBodyMatcap(State.Document.Appearance, Figures.Key).c_str());
+            }
+            ImGui::Text("%d bodies · Faces %d · Volume %.5f m³", int(Summary.Bodies.size()), Summary.Faces, Summary.Volume);
+        }
+        else
+        {
+            ImGui::Text("Faces %d · Edges %d · Vertices %d", Summary.Faces, Summary.Edges, Summary.Vertices);
+            if (Summary.SheetCondition) ImGui::Text("Open sheet · %d face(s), no volume", Summary.Faces);
+            else ImGui::Text("Genus %d · Volume %.5f m³", Summary.Genus, Summary.Volume);
+        }
         // Surface panels (V5–V7): mirror through x = 0, close with plane caps.
         const int Panels = static_cast<int>(State.Document.Regeneration.Panels.size());
         if (Panels > 0)
@@ -2489,7 +2630,8 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
     BeginPanel("Inspector", Position, Size);
     PanelHeading("Inspector");
-    if (State.Bevel.ActiveCondition) DrawBevelCard(State);
+    if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
+    else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
     DrawDrawingCard(State);
     DrawStepCard(State);
@@ -2639,6 +2781,20 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         return;
     }
 
+    // body[command='boolean'] — Q union · W difference · E intersect · Enter applies · Esc cancels.
+    if (State.Boolean.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyBooleanSession(State);
+        else if (Pressed(ImGuiKey_Escape)) { State.Boolean.ActiveCondition = false; Announce(State, "Boolean cancelled"); }
+        else if (!Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_Q)) ChooseBooleanCombination(State, FeatureCombination::Union);            // gizmo:boolean:union
+            if (Pressed(ImGuiKey_W)) ChooseBooleanCombination(State, FeatureCombination::Difference);       // gizmo:boolean:difference
+            if (Pressed(ImGuiKey_E)) ChooseBooleanCombination(State, FeatureCombination::Intersection);     // gizmo:boolean:intersect
+        }
+        return;
+    }
+
     // body[command] — a running command (fillet-solid, extrude).
     if (State.Bevel.ActiveCondition)
     {
@@ -2656,7 +2812,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             if (Pressed(ImGuiKey_Q)) ChooseProfileCombination(State, FeatureCombination::Union);        // keyboard:extrude:union
             if (Pressed(ImGuiKey_W)) ChooseProfileCombination(State, FeatureCombination::Difference);   // keyboard:extrude:difference
             if (Pressed(ImGuiKey_E)) ChooseProfileCombination(State, FeatureCombination::Intersection); // keyboard:extrude:intersect
-            if (Pressed(ImGuiKey_R)) ChooseProfileCombination(State, FeatureCombination::New);          // keyboard:extrude:new-body
+            if (Pressed(ImGuiKey_R)) ChooseProfileCombination(State, FeatureCombination::Separate);     // keyboard:extrude:new-body
         }
         return;
     }
@@ -2677,7 +2833,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         }
         if (Pressed(ImGuiKey_O)) State.PopupRequest = "Open document";
         if (Pressed(ImGuiKey_N)) StartNewDocument(State);
-        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) Announce(State, "Copy / paste: not available (one body per document)");
+        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) Announce(State, "Copy / paste: not available yet");
         if (Pressed(ImGuiKey_H)) Announce(State, "Invert hidden: not available (no per-face visibility)");
         if (Pressed(ImGuiKey_G)) Announce(State, "Group: not available");
         if (Pressed(ImGuiKey_D)) Announce(State, "Place: not available");
@@ -2704,7 +2860,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_X)) OpenConstruct(State, DraftingConstructKind::Cylinder);
         if (Pressed(ImGuiKey_Z)) OpenConstruct(State, DraftingConstructKind::Sphere);
         if (Pressed(ImGuiKey_R)) RepeatLastCommand(State);
-        if (Pressed(ImGuiKey_D)) Announce(State, "Duplicate: not available (one body per document)");
+        if (Pressed(ImGuiKey_D)) Announce(State, "Duplicate: not available yet");
         if (Pressed(ImGuiKey_A)) OpenDrawingSession(State, DraftingDrawingKind::Line);                  // line
         if (Pressed(ImGuiKey_S)) OpenDrawingSession(State, DraftingDrawingKind::Curve);                 // curve
         if (Pressed(ImGuiKey_Q)) OpenDrawingSession(State, DraftingDrawingKind::Rectangle);             // corner-rectangle
@@ -2739,7 +2895,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         else OpenExtrudeSession(State);
     }
     if (Pressed(ImGuiKey_Space)) FrameSelection(State);
-    if (Pressed(ImGuiKey_Q)) Announce(State, "Boolean (Q) needs two bodies: construct with Shift+C / V / X / Z, then Q / W / E");
+    if (Pressed(ImGuiKey_Q)) OpenBooleanSession(State);                                    // command:boolean
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
     if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
     if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O))

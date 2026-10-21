@@ -54,8 +54,9 @@ enum class DraftingDrawingKind : uint8_t
 
 enum class DraftingSelectionKind : uint8_t
 {
-    Face = 0,                                                                                // A face of the current body
-    Edge = 1,                                                                                // An edge of the current body
+    Face = 0,                                                                                // A face (persistent name)
+    Edge = 1,                                                                                // An edge (persistent name)
+    Body = 2,                                                                                // A whole body (key = creating step label)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -66,7 +67,8 @@ enum class DraftingSelectionKind : uint8_t
 struct DraftingConstructRequest
 {
     DraftingConstructKind        Kind        = DraftingConstructKind::Block;                 // [-]   - Tile
-    Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Union;           // [-]   - With the current body (first body: New)
+    Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Union;           // [-]   - With the target body (first body: New; Separate = new body)
+    std::string                  Target      = {};                                           // [-]   - Body key the Boolean acts on (empty: the active body)
     Modeller::Vector3            Position    = { 0.0, 0.0, 0.0 };                             // [len] - Placement
     double                       Width       = 2.0;                                          // [len] - Block x extent
     double                       Depth       = 1.5;                                          // [len] - Block y extent
@@ -95,6 +97,7 @@ struct DraftingSelection
     std::vector<std::string> Faces = {};                                                     // [-] - Selected face names
     std::vector<std::string> Edges = {};                                                     // [-] - Selected edge names
     std::vector<std::string> Curves = {};                                                    // [-] - Selected SpaceCurve labels, in pick order (loft order)
+    std::vector<std::string> Bodies = {};                                                    // [-] - Selected body keys, in pick order (first = Boolean target)
     DraftingSelectionKind    LastKind = DraftingSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
 };
 
@@ -127,18 +130,33 @@ struct DraftingHistoryEntry
     bool                               AppearanceCondition = false;                          // [-] - Matcap-only entry: restore without regenerating
 };
 
-// 📝 Body figures shown by the Inspector (recomputed on every regeneration).
+// 📝 Figures of one body (Inspector body list, Outliner).
+struct DraftingBodyFigures
+{
+    std::string Key            = {};                                                         // [-]    - Creating step label ("Extrude#2")
+    std::string Caption        = {};                                                         // [-]    - Shown name ("Block1")
+    bool        SoundCondition = false;                                                      // [-]    - Audit found nothing
+    bool        SheetCondition = false;                                                      // [-]    - Open sheet body (a lofted panel)
+    int         Faces          = 0;                                                          // [-]    - Face count
+    int         Edges          = 0;                                                          // [-]    - Edge count
+    int         Vertices       = 0;                                                          // [-]    - Vertex count
+    int         Genus          = -1;                                                         // [-]    - Euler–Poincaré genus
+    double      Volume         = 0.0;                                                        // [len³] - Enclosed volume (0 for a sheet)
+};
+
+// 📝 Part figures shown by the Inspector (recomputed on every regeneration): totals over every body, plus each body.
 struct DraftingBodySummary
 {
-    bool   PresentCondition = false;                                                         // [-]     - A body exists
-    bool   SoundCondition   = false;                                                         // [-]     - Audit found nothing
-    int    Faces            = 0;                                                             // [-]     - Face count
-    int    Edges            = 0;                                                             // [-]     - Edge count
-    int    Vertices         = 0;                                                             // [-]     - Vertex count
-    int    Genus            = -1;                                                            // [-]     - Euler–Poincaré genus
-    double Volume           = 0.0;                                                           // [len³]  - Enclosed volume (0 for a sheet)
-    bool   SheetCondition   = false;                                                         // [-]     - Open sheet body (a lofted panel)
+    bool   PresentCondition = false;                                                         // [-]     - At least one body exists
+    bool   SoundCondition   = false;                                                         // [-]     - Every body audits sound
+    int    Faces            = 0;                                                             // [-]     - Face count (all bodies)
+    int    Edges            = 0;                                                             // [-]     - Edge count (all bodies)
+    int    Vertices         = 0;                                                             // [-]     - Vertex count (all bodies)
+    int    Genus            = -1;                                                            // [-]     - Sum of the bodies' genera
+    double Volume           = 0.0;                                                           // [len³]  - Sum of the solid bodies' volumes
+    bool   SheetCondition   = false;                                                         // [-]     - Some body is an open sheet (a lofted panel)
     double RegenerationMs   = 0.0;                                                           // [ms]    - Last replay
+    std::vector<DraftingBodyFigures> Bodies = {};                                            // [-]     - One per body, in creation order
 };
 
 struct DraftingDocument
@@ -190,7 +208,18 @@ struct VehicleCurveFile;
 // Extrude a sketch step's profile by Distance along its plane normal; the first body is always New, a later one must
 // combine (Union, Difference, Intersection). Refused (document untouched) when the profile or the Boolean refuses.
 [[nodiscard]] DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance,
-                                                           Modeller::FeatureCombination Combination);
+                                                           Modeller::FeatureCombination Combination, const std::string& Target = {});
+
+// Plasticity Q (command:boolean): Combine steps merging each tool body into Target (Union / Difference / Intersection);
+// the tools are consumed. One undo entry; refused (document untouched) unless every Boolean succeeds.
+[[nodiscard]] DraftingCommandOutcome CombineDraftingBodies(DraftingDocument& Document, const std::string& Target,
+                                                           const std::vector<std::string>& Tools, Modeller::FeatureCombination Combination);
+
+// Key of the body carrying a face / edge name, or the key itself for Body; empty when no body has it.
+[[nodiscard]] std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);
+
+// Shown name of a body: the caption of its creating step ("Block1"), else the key.
+[[nodiscard]] std::string DraftingBodyCaption(const DraftingDocument& Document, const std::string& Key);
 
 // Construction plane frame: 0 XY (normal +z), 1 XZ (x → x, sketch y → z, normal −y), 2 YZ (y → x, z → y, normal +x).
 [[nodiscard]] Modeller::OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept;

@@ -161,100 +161,120 @@ DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRat
     Scene.Generation = ++BuildCounter;
     if (!Document.Summary.PresentCondition || !Document.Partition) return Scene;
     const ModelPartition& Partition = *Document.Partition;
-    const BodyToken       Body      = Document.Regeneration.Body;
 
     TessellationSettings Settings;
     Settings.SagRatio = SagRatio;
     if (FineCondition) Settings.EdgeLengthRatio = FineEdgeRatio;
-    const TessellationOutcome Outcome = TessellateBody(Partition, Body, Settings);
-    Scene.Sag     = Outcome.Sag;
-    Scene.Refusal = Outcome.Refusal;
-    const PolygonComplex& Complex = Outcome.Complex;
-
-    // ① faces: three corners per triangle, exact surface normals, facet normal where the chart normal disagrees
-    for (const PolygonComplexFace& Patch : Complex.Faces)
+    bool BoundsCondition = false;
+    for (const RegeneratedBody& Regenerated : Document.Regeneration.Bodies)
     {
-        DraftingSceneFace Face;
-        const auto Named  = Document.Regeneration.Naming.Faces.find(Patch.Face.Slot);
-        Face.Name         = Named != Document.Regeneration.Naming.Faces.end() ? Named->second : "Face" + std::to_string(Patch.Face.Slot);
-        Face.Slot         = Patch.Face.Slot;
-        Face.FirstCorner  = static_cast<uint32_t>(Scene.Corners.size());
-        const FaceProfile& Profile = Partition.Faces.Resolve(Patch.Face);
-        const bool CarrierCondition = Profile.Surface.PresentCondition();
-        const double Sense = Profile.Sense == Orientation::Forward ? 1.0 : -1.0;
-        if (CarrierCondition) Face.Surface = SurfaceCategoryLabel(Partition.Surfaces.Resolve(Profile.Surface));
-        const uint32_t FaceIndex = static_cast<uint32_t>(Scene.Faces.size());
-        for (int Triangle = Patch.FirstTriangle; Triangle < Patch.FirstTriangle + Patch.TriangleCount; ++Triangle)
+        if (!Regenerated.Body.PresentCondition() || !Partition.Bodies.Authenticate(Regenerated.Body)) continue;
+        const TessellationOutcome Outcome = TessellateBody(Partition, Regenerated.Body, Settings);
+        Scene.Sag = std::max(Scene.Sag, Outcome.Sag);
+        if (!Outcome.Refusal.empty()) Scene.Refusal += (Scene.Refusal.empty() ? "" : "; ") + Outcome.Refusal;
+        const PolygonComplex&  Complex   = Outcome.Complex;
+        const BodyNaming&      Naming    = Regenerated.Naming;
+        const uint32_t         BodyIndex = static_cast<uint32_t>(Scene.Bodies.size());
+        DraftingSceneBody      Listed;
+        Listed.Key       = Regenerated.Key;
+        Listed.Caption   = DraftingBodyCaption(Document, Regenerated.Key);
+        Listed.FirstFace = static_cast<uint32_t>(Scene.Faces.size());
+        Listed.FirstEdge = static_cast<uint32_t>(Scene.Edges.size());
+
+        // ① faces: three corners per triangle, exact surface normals, facet normal where the chart normal disagrees
+        for (const PolygonComplexFace& Patch : Complex.Faces)
         {
-            const std::array<int, 3>& Corner = Complex.Triangles[Triangle];
-            const Triple First  = Widen(Complex.Positions[Corner[0]]);
-            const Triple Second = Widen(Complex.Positions[Corner[1]]);
-            const Triple Third  = Widen(Complex.Positions[Corner[2]]);
-            const Triple Facet  = Cross(Difference(Second, First), Difference(Third, First));
-            Face.Area          += 0.5 * std::sqrt(Dot(Facet, Facet));
-            const Triple FacetNormal = Normalised(Facet);
-            for (int Index = 0; Index < 3; ++Index)
+            DraftingSceneFace Face;
+            const auto Named  = Naming.Faces.find(Patch.Face.Slot);
+            Face.Name         = Named != Naming.Faces.end() ? Named->second : "Face" + std::to_string(Patch.Face.Slot);
+            Face.Body         = BodyIndex;
+            Face.Slot         = Patch.Face.Slot;
+            Face.FirstCorner  = static_cast<uint32_t>(Scene.Corners.size());
+            const FaceProfile& Profile = Partition.Faces.Resolve(Patch.Face);
+            const bool CarrierCondition = Profile.Surface.PresentCondition();
+            const double Sense = Profile.Sense == Orientation::Forward ? 1.0 : -1.0;
+            if (CarrierCondition) Face.Surface = SurfaceCategoryLabel(Partition.Surfaces.Resolve(Profile.Surface));
+            const uint32_t FaceIndex = static_cast<uint32_t>(Scene.Faces.size());
+            for (int Triangle = Patch.FirstTriangle; Triangle < Patch.FirstTriangle + Patch.TriangleCount; ++Triangle)
             {
-                Triple Normal = FacetNormal;
-                if (CarrierCondition)
+                const std::array<int, 3>& Corner = Complex.Triangles[Triangle];
+                const Triple First  = Widen(Complex.Positions[Corner[0]]);
+                const Triple Second = Widen(Complex.Positions[Corner[1]]);
+                const Triple Third  = Widen(Complex.Positions[Corner[2]]);
+                const Triple Facet  = Cross(Difference(Second, First), Difference(Third, First));
+                Face.Area          += 0.5 * std::sqrt(Dot(Facet, Facet));
+                const Triple FacetNormal = Normalised(Facet);
+                for (int Index = 0; Index < 3; ++Index)
                 {
-                    const Vector2 Chart = Complex.TriangleCharts[Triangle][Index];
-                    Triple Exact = Widen(EvaluateSurfaceNormal(Partition.Surfaces.Resolve(Profile.Surface), Chart));
-                    Exact        = { Exact[0] * Sense, Exact[1] * Sense, Exact[2] * Sense };
-                    if (std::isfinite(Exact[0]) && Dot(Exact, FacetNormal) > 0.25) Normal = Normalised(Exact);
+                    Triple Normal = FacetNormal;
+                    if (CarrierCondition)
+                    {
+                        const Vector2 Chart = Complex.TriangleCharts[Triangle][Index];
+                        Triple Exact = Widen(EvaluateSurfaceNormal(Partition.Surfaces.Resolve(Profile.Surface), Chart));
+                        Exact        = { Exact[0] * Sense, Exact[1] * Sense, Exact[2] * Sense };
+                        if (std::isfinite(Exact[0]) && Dot(Exact, FacetNormal) > 0.25) Normal = Normalised(Exact);
+                    }
+                    DraftingSceneCorner Packed;
+                    Narrow(Widen(Complex.Positions[Corner[Index]]), Packed.Position);
+                    Narrow(Normal, Packed.Normal);
+                    Packed.Face = FaceIndex;
+                    Scene.Corners.push_back(Packed);
                 }
-                DraftingSceneCorner Packed;
-                Narrow(Widen(Complex.Positions[Corner[Index]]), Packed.Position);
-                Narrow(Normal, Packed.Normal);
-                Packed.Face = FaceIndex;
-                Scene.Corners.push_back(Packed);
             }
+            Face.CornerCount = static_cast<uint32_t>(Scene.Corners.size()) - Face.FirstCorner;
+            Scene.Faces.push_back(std::move(Face));
         }
-        Face.CornerCount = static_cast<uint32_t>(Scene.Corners.size()) - Face.FirstCorner;
-        Scene.Faces.push_back(std::move(Face));
-    }
 
-    // ② edges: the shared samplings, so edges sit exactly on the face boundaries
-    for (const PolygonComplexEdge& Sampled : Complex.Edges)
-    {
-        DraftingSceneEdge Edge;
-        const auto Named   = Document.Regeneration.Naming.Edges.find(Sampled.Edge.Slot);
-        Edge.Name          = Named != Document.Regeneration.Naming.Edges.end() ? Named->second : "Edge" + std::to_string(Sampled.Edge.Slot);
-        Edge.Slot          = Sampled.Edge.Slot;
-        Edge.FirstSegment  = static_cast<uint32_t>(Scene.Segments.size());
-        const EdgeProfile& Profile = Partition.Edges.Resolve(Sampled.Edge);
-        if (Profile.Curve.PresentCondition()) Edge.Curve = CurveCategoryLabel(Partition.Curves.Resolve(Profile.Curve));
-        const uint32_t EdgeIndex = static_cast<uint32_t>(Scene.Edges.size());
-        for (size_t Index = 1; Index < Sampled.Vertices.size(); ++Index)
+        // ② edges: the shared samplings, so edges sit exactly on the face boundaries
+        for (const PolygonComplexEdge& Sampled : Complex.Edges)
         {
-            const Triple From = Widen(Complex.Positions[Sampled.Vertices[Index - 1]]);
-            const Triple To   = Widen(Complex.Positions[Sampled.Vertices[Index]]);
-            const Triple Span = Difference(To, From);
-            Edge.Length      += std::sqrt(Dot(Span, Span));
-            DraftingSceneSegment Packed;
-            Narrow(From, Packed.Start);
-            Narrow(To, Packed.End);
-            Packed.Edge = EdgeIndex;
-            Scene.Segments.push_back(Packed);
-        }
-        Edge.SegmentCount = static_cast<uint32_t>(Scene.Segments.size()) - Edge.FirstSegment;
-        Scene.Edges.push_back(std::move(Edge));
-    }
-
-    // ③ bounds
-    if (!Complex.Positions.empty())
-    {
-        Scene.BoundsLow  = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() };
-        Scene.BoundsHigh = { std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
-        for (const Vector3& Position : Complex.Positions)
-        {
-            const Triple Point = Widen(Position);
-            for (int Axis = 0; Axis < 3; ++Axis)
+            DraftingSceneEdge Edge;
+            const auto Named   = Naming.Edges.find(Sampled.Edge.Slot);
+            Edge.Name          = Named != Naming.Edges.end() ? Named->second : "Edge" + std::to_string(Sampled.Edge.Slot);
+            Edge.Body          = BodyIndex;
+            Edge.Slot          = Sampled.Edge.Slot;
+            Edge.FirstSegment  = static_cast<uint32_t>(Scene.Segments.size());
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Sampled.Edge);
+            if (Profile.Curve.PresentCondition()) Edge.Curve = CurveCategoryLabel(Partition.Curves.Resolve(Profile.Curve));
+            const uint32_t EdgeIndex = static_cast<uint32_t>(Scene.Edges.size());
+            for (size_t Index = 1; Index < Sampled.Vertices.size(); ++Index)
             {
-                Scene.BoundsLow[Axis]  = std::min(Scene.BoundsLow[Axis], Point[Axis]);
-                Scene.BoundsHigh[Axis] = std::max(Scene.BoundsHigh[Axis], Point[Axis]);
+                const Triple From = Widen(Complex.Positions[Sampled.Vertices[Index - 1]]);
+                const Triple To   = Widen(Complex.Positions[Sampled.Vertices[Index]]);
+                const Triple Span = Difference(To, From);
+                Edge.Length      += std::sqrt(Dot(Span, Span));
+                DraftingSceneSegment Packed;
+                Narrow(From, Packed.Start);
+                Narrow(To, Packed.End);
+                Packed.Edge = EdgeIndex;
+                Scene.Segments.push_back(Packed);
+            }
+            Edge.SegmentCount = static_cast<uint32_t>(Scene.Segments.size()) - Edge.FirstSegment;
+            Scene.Edges.push_back(std::move(Edge));
+        }
+
+        // ③ bounds: the union over every body
+        if (!Complex.Positions.empty())
+        {
+            if (!BoundsCondition)
+            {
+                Scene.BoundsLow  = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() };
+                Scene.BoundsHigh = { std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest() };
+                BoundsCondition  = true;
+            }
+            for (const Vector3& Position : Complex.Positions)
+            {
+                const Triple Point = Widen(Position);
+                for (int Axis = 0; Axis < 3; ++Axis)
+                {
+                    Scene.BoundsLow[Axis]  = std::min(Scene.BoundsLow[Axis], Point[Axis]);
+                    Scene.BoundsHigh[Axis] = std::max(Scene.BoundsHigh[Axis], Point[Axis]);
+                }
             }
         }
+        Listed.FaceCount = static_cast<uint32_t>(Scene.Faces.size()) - Listed.FirstFace;
+        Listed.EdgeCount = static_cast<uint32_t>(Scene.Edges.size()) - Listed.FirstEdge;
+        Scene.Bodies.push_back(std::move(Listed));
     }
     Scene.Milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count();
     return Scene;
@@ -299,6 +319,14 @@ DraftingSceneStates ComposeDraftingStates(const DraftingScene& Scene, const Draf
     };
     Mark(Scene.Faces, States.Faces, Selection.Faces, Selection.LastKind == DraftingSelectionKind::Face);
     Mark(Scene.Edges, States.Edges, Selection.Edges, Selection.LastKind == DraftingSelectionKind::Edge);
+    for (const DraftingSceneBody& Body : Scene.Bodies)
+    {
+        const auto Found = std::find(Selection.Bodies.begin(), Selection.Bodies.end(), Body.Key);
+        if (Found == Selection.Bodies.end()) continue;
+        const uint32_t Word = 1u | (Selection.LastKind == DraftingSelectionKind::Body && Found == Selection.Bodies.end() - 1 ? 2u : 0u);
+        for (uint32_t Index = Body.FirstFace; Index < Body.FirstFace + Body.FaceCount; ++Index) States.Faces[Index] |= Word;
+        for (uint32_t Index = Body.FirstEdge; Index < Body.FirstEdge + Body.EdgeCount; ++Index) States.Edges[Index] |= Word;
+    }
     if (HoverIdentity != 0u)
     {
         const uint32_t Index = (HoverIdentity & ~IdentityEdgeBit) - 1u;
@@ -337,12 +365,11 @@ DraftingSelectionKind DraftingIdentityKind(uint32_t Identity) noexcept
 std::vector<uint32_t> ComposeDraftingMatcapLayers(const DraftingScene& Scene, const DraftingAppearance& Appearance, const DraftingMatcapLibrary& Library)
 {
     std::vector<uint32_t> Layers(Scene.Faces.size(), 0u);
-    const uint32_t BodyLayer = DraftingMatcapLayer(Library, Appearance.BodyMatcap);
     for (size_t Index = 0; Index < Scene.Faces.size(); ++Index)
     {
-        const auto     Found = Appearance.FaceMatcaps.find(Scene.Faces[Index].Name);
-        const uint32_t Layer = Found != Appearance.FaceMatcaps.end() ? DraftingMatcapLayer(Library, Found->second) : BodyLayer;
-        Layers[Index] = Layer << DraftingMatcapLayerShift;
+        const DraftingSceneFace& Face = Scene.Faces[Index];
+        const std::string&       Key  = Face.Body < Scene.Bodies.size() ? Scene.Bodies[Face.Body].Key : std::string{};
+        Layers[Index] = DraftingMatcapLayer(Library, DraftingFaceMatcap(Appearance, Key, Face.Name)) << DraftingMatcapLayerShift;
     }
     return Layers;
 }
@@ -353,6 +380,9 @@ size_t CountDanglingMatcaps(const DraftingScene& Scene, const DraftingAppearance
     for (const DraftingSceneFace& Face : Scene.Faces) Present.insert(Face.Name);
     size_t Dangling = 0;
     for (const auto& Entry : Appearance.FaceMatcaps) Dangling += Present.contains(Entry.first) ? 0 : 1;
+    std::set<std::string> Keys;
+    for (const DraftingSceneBody& Body : Scene.Bodies) Keys.insert(Body.Key);
+    for (const auto& Entry : Appearance.BodyMatcaps) Dangling += Keys.contains(Entry.first) ? 0 : 1;
     return Dangling;
 }
 

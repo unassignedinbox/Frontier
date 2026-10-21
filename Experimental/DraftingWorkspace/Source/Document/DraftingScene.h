@@ -55,6 +55,7 @@ struct DraftingSceneFace
     uint32_t    Slot        = 0;                                                             // [idx]  - Partition face slot
     uint32_t    FirstCorner = 0;                                                             // [idx]  - Span start in Corners
     uint32_t    CornerCount = 0;                                                             // [-]    - Span length (3 per triangle)
+    uint32_t    Body        = 0;                                                             // [idx]  - Scene body index
     double      Area        = 0.0;                                                           // [len²] - Facet area
 };
 
@@ -65,7 +66,19 @@ struct DraftingSceneEdge
     uint32_t    Slot         = 0;                                                            // [idx] - Partition edge slot
     uint32_t    FirstSegment = 0;                                                            // [idx] - Span start in Segments
     uint32_t    SegmentCount = 0;                                                            // [-]   - Span length
+    uint32_t    Body         = 0;                                                            // [idx] - Scene body index
     double      Length       = 0.0;                                                          // [len] - Polyline length
+};
+
+// 📝 One body's spans in the scene tables (faces and edges are grouped by body, in creation order).
+struct DraftingSceneBody
+{
+    std::string Key       = {};                                                              // [-]   - Creating step label ("Extrude#2")
+    std::string Caption   = {};                                                              // [-]   - Shown name ("Block1")
+    uint32_t    FirstFace = 0;                                                               // [idx] - Span start in Faces
+    uint32_t    FaceCount = 0;                                                               // [-]   - Span length
+    uint32_t    FirstEdge = 0;                                                               // [idx] - Span start in Edges
+    uint32_t    EdgeCount = 0;                                                               // [-]   - Span length
 };
 
 struct DraftingScene
@@ -74,6 +87,7 @@ struct DraftingScene
     std::vector<DraftingSceneSegment> Segments    = {};                                      // [-]   - Edge polylines as segments
     std::vector<DraftingSceneFace>    Faces       = {};                                      // [-]   - Scene face table
     std::vector<DraftingSceneEdge>    Edges       = {};                                      // [-]   - Scene edge table
+    std::vector<DraftingSceneBody>    Bodies      = {};                                      // [-]   - Scene body table
     std::array<double, 3>             BoundsLow   = { -1.0, -1.0, -1.0 };                    // [len] - Box corner
     std::array<double, 3>             BoundsHigh  = { 1.0, 1.0, 1.0 };                       // [len] - Box corner
     uint64_t                          Revision    = 0;                                       // [-]   - Document revision it was built from
