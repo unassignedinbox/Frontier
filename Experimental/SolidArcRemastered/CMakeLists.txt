@@ -66,6 +66,9 @@ add_library(SolidArcRemastered STATIC
     Source/Feature/TopologicalNaming.cpp
     Source/Feature/FeatureTree.cpp
     Source/Feature/FeatureCatalogue.cpp
+    Source/Surfacing/LinearSystem.cpp
+    Source/Surfacing/CurveFitting.cpp
+    Source/Surfacing/SectionLoft.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
     Source/Audit/ModelAudit.cpp
@@ -133,6 +136,8 @@ target_link_libraries(PatternStressValidation PRIVATE SolidArcRemastered)
 
 add_executable(RollingBallValidation Validation/RollingBallValidation.cpp)
 target_link_libraries(RollingBallValidation PRIVATE SolidArcRemastered)
+add_executable(SurfacingValidation Validation/SurfacingValidation.cpp)
+target_link_libraries(SurfacingValidation PRIVATE SolidArcRemastered)
 add_executable(NurbsValidation Validation/NurbsValidation.cpp)
 target_link_libraries(NurbsValidation PRIVATE SolidArcRemastered)
 add_executable(SetbackValidation Validation/SetbackValidation.cpp)
@@ -152,6 +157,7 @@ add_test(NAME SplineValidation COMMAND SplineValidation)
 add_test(NAME FeatureValidation COMMAND FeatureValidation)
 add_test(NAME CorpusValidation COMMAND CorpusValidation)
 add_test(NAME RollingBallValidation COMMAND RollingBallValidation)
+add_test(NAME SurfacingValidation COMMAND SurfacingValidation)
 add_test(NAME NurbsValidation COMMAND NurbsValidation)
 add_test(NAME SetbackValidation COMMAND SetbackValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

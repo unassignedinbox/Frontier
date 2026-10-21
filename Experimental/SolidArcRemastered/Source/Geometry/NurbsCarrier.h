@@ -12,6 +12,7 @@
 #include "Geometry/CurveGeometry.h"
 #include "Geometry/SurfaceGeometry.h"
 
+#include <array>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -126,6 +127,19 @@ struct NurbsBezierPiece
     double               PieceHigh = 0.0;                                                    // [-]   - τ at 𝑡 = 1
 };
 [[nodiscard]] std::vector<NurbsBezierPiece> DecomposeNurbsCurve(const NurbsCurveDefinition& Definition, double Low, double High);
+
+// 📝 Non-zero B-spline basis functions at τ (clamped vector, Count poles) and their first two derivatives:
+//    Values[k][r] = N⁽ᵏ⁾_{First + r, p}(τ) for r = 0 … p — the rows of fitting and interpolation systems.
+struct NurbsBasisSample
+{
+    int                                First  = 0;                                           // [-] - Index of the first non-zero function
+    std::array<std::vector<double>, 3> Values = {};                                          // [-] - Value, first, second derivative
+};
+[[nodiscard]] NurbsBasisSample EvaluateNurbsBasis(const std::vector<double>& Knots, int Degree, int Count, double τ);
+
+// 📝 Knot refinement (Boehm insertion of each value, A5.1, homogeneous so it stays exact): the same curve on more knots.
+//    Values must lie inside the domain; a value already present raises its multiplicity (capped at p).
+[[nodiscard]] NurbsCurveDefinition RefineNurbsCurveKnots(const NurbsCurveDefinition& Definition, const std::vector<double>& Inserted);
 
 // Exact conversions with the τ-domain [Low, High] kept: a line is degree 1 (τ unchanged), a circle or ellipse is
 // rational quadratic in ≤ π/2 pieces whose joints sit at the conic angles Low + k·Δ (τ matches the angle there).

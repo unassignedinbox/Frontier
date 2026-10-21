@@ -480,6 +480,47 @@ NurbsCurve MapNurbsCurve(const NurbsCurveDefinition& Definition, const PointMap&
     return NurbsCurve{ std::move(Image) };
 }
 
+NurbsBasisSample EvaluateNurbsBasis(const std::vector<double>& Knots, int Degree, int Count, double τ)
+{
+    NurbsBasisSample Sample;
+    const int Span = FindSpan(Knots, Degree, Count, τ);
+    BasisRows Rows;
+    ComputeBasisRows(Knots, Degree, Span, τ, 2, Rows);
+    Sample.First = Span - Degree;
+    for (int Order = 0; Order < 3; ++Order) Sample.Values[Order].assign(Rows[Order].begin(), Rows[Order].begin() + Degree + 1);
+    return Sample;
+}
+
+NurbsCurveDefinition RefineNurbsCurveKnots(const NurbsCurveDefinition& Definition, const std::vector<double>& Inserted)
+{
+    NurbsCurveDefinition Result = Definition;
+    const int Degree = Definition.Degree;
+    for (double Value : Inserted)
+    {
+        const int Count = static_cast<int>(Result.Poles.size());
+        if (!(Value > Result.Knots[Degree] && Value < Result.Knots[Count])) continue;          // Outside the open domain
+        const int Multiplicity = static_cast<int>(std::count(Result.Knots.begin(), Result.Knots.end(), Value));
+        if (Multiplicity >= Degree) continue;
+        const int Span = FindSpan(Result.Knots, Degree, Count, Value);
+        std::vector<Vector3> Poles(Count + 1);
+        std::vector<double>  Weights(Count + 1);
+        for (int Index = 0; Index <= Count; ++Index)
+        {
+            if (Index <= Span - Degree) { Poles[Index] = Result.Poles[Index]; Weights[Index] = Result.Weights[Index]; continue; }
+            if (Index > Span)           { Poles[Index] = Result.Poles[Index - 1]; Weights[Index] = Result.Weights[Index - 1]; continue; }
+            const double α = (Value - Result.Knots[Index]) / (Result.Knots[Index + Degree] - Result.Knots[Index]);
+            const double Weight = α * Result.Weights[Index] + (1.0 - α) * Result.Weights[Index - 1];
+            const Vector3 Homogeneous = Result.Poles[Index] * (α * Result.Weights[Index]) + Result.Poles[Index - 1] * ((1.0 - α) * Result.Weights[Index - 1]);
+            Poles[Index]   = Homogeneous * (1.0 / Weight);
+            Weights[Index] = Weight;
+        }
+        Result.Knots.insert(Result.Knots.begin() + Span + 1, Value);
+        Result.Poles   = std::move(Poles);
+        Result.Weights = std::move(Weights);
+    }
+    return Result;
+}
+
 std::vector<NurbsBezierPiece> DecomposeNurbsCurve(const NurbsCurveDefinition& Definition, double Low, double High)
 {
     std::vector<NurbsBezierPiece> Pieces;
