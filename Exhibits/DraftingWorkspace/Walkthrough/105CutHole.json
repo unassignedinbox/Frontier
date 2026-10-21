@@ -1,0 +1,22 @@
+{
+  "Frame": 176,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Cut#4", "Caption": "Cut1 · Cut", "Refused": false}, {"Label": "Remove#5", "Caption": "Remove1 · Remove", "Refused": false}, {"Label": "Sketch#6", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Cut#7", "Caption": "Cut2 · Cut", "Refused": false}, {"Label": "Remove#8", "Caption": "Remove2 · Remove", "Refused": false}],
+  "Body": {"Faces": 7, "Edges": 15, "Vertices": 10, "Genus": 1, "Volume": 1.117256661, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 3.857488827, "Target": [1, 0.5, 0.5], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
+  "Drawing": {"Active": false, "Kind": "Circle", "Plane": 0, "Form": "Hermite", "Centre": true, "Points": [[1.2, 0.5], [1.5, 0.5]], "Refusal": ""},
+  "Undo": 8,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Remove (Cut2) · 358 ms",
+  "Viewport": [320, 160, 930, 730]
+}

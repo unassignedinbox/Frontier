@@ -19,6 +19,7 @@
 
 ---
 - 🟢 **Status (2026-10-21): blueprint study (BMW M3 E90).** Built from an internet three-view to test the loft. Gaps hit and filled: image planes (B1), GIF pictures (B2), faired traced sections (B3: the fitter rightly refused a 31.8° kink), box selection (B4), Construct cylinder **Axis x / y** (B5), and a two-tier fragment winding in GeneralFuse (B6, 76 s → 12 s per freeform Boolean, same volume). Results: 24 sections → loft → mirror → close gives a sound 7.148 m³ solid; 4 wheel arches give a sound 6.790 m³ solid. Still open: incremental replay (B7), warm-started SSI marching (B8), tip / non-planar caps (B9), trim for details (B10). Gate W14; `BlueprintModellingWalkthrough.txt`; captures 80–88; table in `Experimental/VehicleSurfacing/README.md`.
+- 🟢 **Status (2026-10-21): trim / split (T1–T4).** The BMW study showed trimming was the missing tool. Built: Cut (Plasticity C) splits solids and sheets by a sketch or a SpaceCurve seen along the view axis, Remove (X) deletes a body, curve trim (T) removes the piece of a sketch curve between its crossings. The vehicle flow is now: loft a panel → C with a character line → X the unwanted piece. Gates: kernel BodyCutValidation K1–K7 · S1–S3 and SketchTrimValidation R1–R7; DraftingWorkspace W17, W18; `TrimSplitWalkthrough.txt` 54/54; captures 102–110. Still open: splitting a crossed spline (T refuses it), regions bounded by curves of several sketches, sewing trimmed panels to their neighbours.
 
 ## 1. Goal and constraints
 
@@ -139,7 +140,8 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 | `alt-x` mirror (gizmo x) | V7 mirror every panel through x = 0 |
 | `j` join-curves | join fitted pieces split at corners |
 | `o` offset-curve | offset a character line (shut lines) |
-| `t` trim | trim surfaces by curves |
+| `c` cut · `x` delete | 🟢 built: split a panel by a character line seen along the view axis, delete the unwanted piece (T1–T3) |
+| `t` trim | 🟢 built for sketch curves: the piece between crossings comes off (T4); surfaces are trimmed with `c` |
 | `p` pipe | exists as `PathSweep` |
 | `1` control-point mode | G9 pole editing |
 | Shift+S curve (Phase B) | hand-drawn planar guide curves next to the imported ones |
@@ -151,7 +153,7 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 - ⚠️ **Honest V5–V7 limits:**
   - Only lofts get G1 / G2 to a neighbour and a guaranteed G1 mirror seam. A network refits its curves, which drops the end tangent: on the bonnet net the mirror seam measures 2.75e-4 rad, reported in T3 but not gated.
   - Sewing needs boundaries that coincide point for point at equal τ. Panels built from the same SpaceCurve meet that; a reparametrised boundary is refused.
-  - Caps are plane faces only. Trim is not built.
+  - Caps are plane faces only. Panels are trimmed with Cut (C) by curves seen along an axis; a trimmed panel is not yet re-sewn to its neighbours.
   - A planar fit reports its deviation against the points after projection onto the plane. The true distance is at most `WorstDeviation + PlanarOffset`.
   - A lone network panel can face down (it renders in the back-face tint). Orientation is fixed only when Close closes the body.
 - ⚠️ **Honest V8 limits:**

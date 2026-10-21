@@ -1,0 +1,22 @@
+{
+  "Frame": 394,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Line1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[1, 0], [1.6, 1.9], [-0, 0.7], [2, 0.7], [0.4, 1.9]], "Refusal": ""},
+  "Undo": 1,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Trim: click the piece of a curve to remove (between its crossings) · Esc ends",
+  "Viewport": [320, 160, 930, 730]
+}

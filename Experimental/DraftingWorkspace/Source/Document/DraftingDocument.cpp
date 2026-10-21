@@ -1164,6 +1164,7 @@ DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const st
             Step.Kind   = FeatureStepKind::Remove;
             Step.Label  = "Remove#" + std::to_string(NextStepOrdinal(Document.Tree));
             Step.Target = Key;
+            Document.Captions[Step.Label] = NextCaption(Document, "Remove");
             Document.Tree.Steps.push_back(std::move(Step));
         }
         Document.Selection = {};

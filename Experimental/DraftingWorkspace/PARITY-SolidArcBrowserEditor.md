@@ -1,8 +1,8 @@
 # 🧩 DraftingWorkspace — UI parity checklist against the SolidArc browser editor
 
-**TL;DR**: 61 rows, scored against the SolidArc browser editor (`Experimental/SolidArc/WORKFLOW.md`: browser workflow, all-view grids, upright navigation, Interactive Bevel · B, face extrusion · E, shortcuts / multiselection) and its theme (`Experimental/SolidArc/src/WorkspacePanel.css`).
+**TL;DR**: 63 rows, scored against the SolidArc browser editor (`Experimental/SolidArc/WORKFLOW.md`: browser workflow, all-view grids, upright navigation, Interactive Bevel · B, face extrusion · E, shortcuts / multiselection) and its theme (`Experimental/SolidArc/src/WorkspacePanel.css`).
 - **Keymap: Plasticity** (decided 2026-10-20). The 3 open deviations (Ctrl+A, E immediate, no Alt-LMB) now follow Plasticity; § Plasticity keymap maps every default Plasticity key.
-- **🟢 57 at parity** (53 + box selection and image planes from the blueprint study + engineering matcaps + multi-body Outliner multiselection). 44 of them are driven by real ImGui input in the six walkthrough scripts (306 expectations) or by a viewport gate; the other 9 are visible in the captures or present in source only (see the Evidence column).
+- **🟢 59 at parity** (53 + box selection and image planes from the blueprint study + engineering matcaps + multi-body Outliner multiselection + split bodies / panels (C · X) + curve trim (T); `TrimSplitWalkthrough.txt` adds 54 expectations). 44 of them are driven by real ImGui input in the six walkthrough scripts (306 expectations) or by a viewport gate; the other 9 are visible in the captures or present in source only (see the Evidence column).
 - **⚠️ 1 deviation:** the GLFW host is compile-only here. **🚧 3 not built yet:** sketch-corner bevel, workplane offset, multi-document.
 - Every capture is a real Vulkan frame (SwiftShader Device (Subzero) · Vulkan 1.3.0). It is **not** evidence of physical-GPU performance or desktop window input.
 
@@ -121,6 +121,8 @@ Evidence key: **S** = asserted by a walkthrough script line (`Main` = `Workspace
 | 55 | Sketch Draw tools (Line, Rectangle, Circle, Arc, Slot, Polygon, Polyline…) on the workplane | Draw card + keys: Line (polyline; a click on the first point closes it), Rectangle (corner / centre), Circle (centre / two-point), 3-point Arc, Slot, Curve (Hermite · Bezier · NURBS · cubic spline). Clicks meet the active plane (XY / XZ / YZ), snap to 0.1 (Ctrl free); live preview; committed sketches drawn on their plane. E on the focused sketch extrudes it with Q / W / E / R (union, difference, intersect, new body). Polygon not built | 🟢 | S Sketch ①–⑧ (64 expectations, closed-form volumes) · W10 (20 checks) · C 30RectanglePreview, 32HermiteClosing, 33DrawnSolid |
 | 56 | Solid tiles open numeric controls (no random placement) | Construct tiles open position / size fields + Union / Difference / Intersection / New body (R), acting on the first picked body | 🟢 | S Main ⑪ (through hole: steps 12, genus 2, sound) · S Multi ① ② · W16 · C 12Construct†, 13Constructed, 96MultiBodyNew, 97MultiBodyThree |
 | 61 | Studio shading theme | 13 engineering matcaps (metal · plastic · other) + user matcap pictures, per face, per body (each of several bodies) and a document default: Appearance card (adaptive swatch grid), M picker, Alt+M remove; appearance-only (no regeneration), one undo entry each, kept by persistent face name, saved as `[Appearance]` | 🟢 | W15 (12 checks) · W16 (10) · V8 (7) · S Matcap ①–⑤ (30) · S Multi ③ · C 90–95, 98 |
+| 62 | Split bodies and panels (Plasticity C · X) | C cuts the picked body (else the active one) by the focused sketch (closed profile: cut out; open chain: split along it) or the selected curve seen along the view axis; the inside piece comes out picked in mode 4, so X deletes it; Cut / Remove steps, one undo entry each, step-card text | 🟢 | S Trim ①–⑧ · W17 · C 102CutLine–107PanelTrimmed |
+| 63 | Curve trim (Plasticity T) | T session: the hovered sketch curve previews in red the piece between its crossings (own sketch and coplanar sketches), a click removes it, Esc / T / right-click end; a trim that would break an extrude is refused. ⚠️ A crossed spline is refused (no exact split yet), and a region bounded by curves of *several* sketches cannot be extruded (extrude takes one sketch's profile) | 🟢 | S Trim ⑨–⑪ · W18 · C 108TrimHover–110StarExtruded |
 | 57 | Multi-document | Single document (also true of the native SolidArc editor) | 🚧 | — |
 
 ## Platform
@@ -158,11 +160,13 @@ Rows 24, 32 and 50 now follow the Plasticity default keymap (`nkallen/plasticity
 | Numpad 1 / 3 / 7 (+Ctrl) · Numpad 5 | front / right / top (back / left / bottom) · orthographic | Same | 🟢 | S Short ⑦ |
 | Alt+Z · Shift+Alt+Z | x-ray · overlays | Edges-only view · grid | ⚠️ | S Short ⑧ — no transparency in the rasterizer |
 | Shift+C / V / X / Z | corner box / centre box / cylinder / sphere | Construct dialog; Q / W / E pick union / difference / intersect, Enter creates, Esc closes | 🟢 | S Short ⑪ |
-| X / Delete / Backspace | delete | Focused step, else selected faces | 🟢 | S Short ⑥ |
+| X / Delete / Backspace | delete | Focused step, else picked bodies (Remove steps), else selected faces | 🟢 | S Short ⑥ · S Trim ④ ⑧ |
+| C | command:cut | Cut the picked / active body by the focused sketch or the selected curve (view axis) | 🟢 | S Trim ③ ⑤ ⑦ |
+| T | command:trim | Trim session: hover previews, click removes the piece between crossings | 🟢 | S Trim ⑨ ⑩ |
 | Esc · Alt+A | deselect all | Same | 🟢 | S Short ① ⑤ |
 | Shift+R | repeat last command | Same (blend, face edit, construct) | 🟢 | S Short ⑩ (second extrude, steps 10) |
 | Ctrl+Z · Ctrl+Shift+Z | undo · redo | Same | 🟢 | S Short ④ |
 | Ctrl+N · Ctrl+O · Ctrl+Shift+S | new · open · save as | Same (open / save-as dialogs) | 🟢 | Src; Ctrl+S saves (modern Plasticity) S Main ⑫ |
 | Q | command:boolean (gizmo q / w / e) | Boolean card on the mode 4 picks (first = target, rest = tools): Q union · W difference · E intersect · Enter applies · Esc cancels; Combine steps, the tools are consumed, one undo entry | 🟢 | S Multi ④ ⑤ · W16 · C 99MultiBodyBoolean, 100MultiBodyDrilled |
-| G / R / S · H family · C / J / P / T / O · Shift+D · Ctrl+C / V | move / rotate / scale · hide · curve edit tools (trim, join, offset…) · duplicate · clipboard | Announced as not available yet | 🚧 | Src |
+| G / R / S · H family · J / P / O · Shift+D · Ctrl+C / V | move / rotate / scale · hide · join, pipe, offset · duplicate · clipboard | Announced as not available yet | 🚧 | Src |
 | M · Alt+M | set material · remove material | Matcap picker over the viewport (click applies to the selected faces, else the picked bodies, else the default; Esc closes) · the selection back to its default | 🟢 | S Matcap ③ ④ ⑤ · C 92MatcapPicker |

@@ -1,9 +1,11 @@
 # DraftingWorkspace trim / split walkthrough — Plasticity C (command:cut) splits a body by the focused sketch or the
 # selected curve (curves are seen along the view axis); the inside piece comes out picked in mode 4, so X deletes it.
 # Vehicle flow from the BMW study: loft a panel → C with a character line → X the unwanted piece.
+# T (command:trim) removes the piece of a sketch curve under the pointer between its crossings (hover previews it in red).
 # Run: DraftingWorkspaceCapture --specimen --reset-files --recovery …/TrimSplitRecovery.drafting.toml
 #      --document …/TrimSplit.drafting.toml --script Experimental/DraftingWorkspace/Scripts/TrimSplitWalkthrough.txt
-# Closed forms: box 2 × 1 × 1 cut at x = 0.6 (line drawn upward: inside = left = x < 0.6) → 0.6 + 1.4; core r 0.3 → 0.09π.
+# Closed forms: box 2 × 1 × 1 cut at x = 0.6 (line drawn upward: inside = left = x < 0.6) → 0.6 + 1.4; core r 0.3 → 0.09π;
+# pentagram A(1,0) → C(1.6,1.9) → E(0,0.7) → B(2,0.7) → D(0.4,1.9) trimmed to its star: shoelace area 1.237928331467.
 
 # ① empty document, Top view: a 2 × 1 rectangle extruded 1 (New)
 key N Ctrl
@@ -94,7 +96,8 @@ frames 3
 expect refused == 0
 expect bodies == 2
 expect body-volumes contains Cut2 0.282743
-expect genus == 0
+# genus sums over the bodies: the core is genus 0, the holed block genus 1
+expect genus == 1
 click @ViewIsometric
 frames 2
 capture 104CutCore
@@ -168,3 +171,81 @@ expect bodies == 1
 expect sheet == 1
 expect sound == 1
 capture 107PanelTrimmed
+
+# ⑨ T on a sketch: a pentagram drawn as one closed Shift+A chain (it crosses itself, so it cannot be extruded yet)
+key N Ctrl
+frames 2
+key Keypad7
+frames 2
+key A Shift
+frames 2
+click world 1.0 0.0 0.0
+frames 2
+click world 1.6 1.9 0.0
+frames 2
+click world 0.0 0.7 0.0
+frames 2
+click world 2.0 0.7 0.0
+frames 2
+click world 0.4 1.9 0.0
+frames 2
+click world 1.0 0.0 0.0
+frames 2
+expect drawing == 0
+expect sketch-curves == 5
+key T
+frames 2
+expect trim == 1
+move world 1.3 0.95 0.0
+frames 3
+expect trim-hover contains Line1
+expect trim-refusal == 0
+capture 108TrimHover
+
+# ⑩ one click per inner piece (the chord midpoints): the five inner edges come off, the star outline is 10 lines
+click world 1.3 0.95 0.0
+frames 2
+move world 0.8 1.3 0.0
+frames 2
+click world 0.8 1.3 0.0
+frames 2
+move world 1.0 0.7 0.0
+frames 2
+click world 1.0 0.7 0.0
+frames 2
+move world 1.2 1.3 0.0
+frames 2
+click world 1.2 1.3 0.0
+frames 2
+move world 0.7 0.95 0.0
+frames 2
+click world 0.7 0.95 0.0
+frames 2
+expect trim-commits == 5
+expect sketch-curves == 10
+expect refused == 0
+move world 2.6 1.6 0.0
+frames 2
+capture 109TrimStar
+key Escape
+frames 2
+expect trim == 0
+expect focused-caption == Line1
+
+# ⑪ E extrudes the trimmed star: volume = shoelace area × 1
+key E
+frames 2
+click @BevelSize
+key A Ctrl
+type 1
+key Enter
+frames 2
+key Enter
+frames 2
+expect volume ~ 1.237928331467
+expect sound == 1
+click @ViewIsometric
+frames 2
+key Space
+frames 3
+capture 110StarExtruded
