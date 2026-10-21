@@ -5,6 +5,7 @@
 
 #include "Blend/BlendCatalogue.h"
 
+#include "Blend/EdgeBlend.h"
 #include "Boolean/GeneralFuse.h"
 #include "Construction/PrimitiveConstruction.h"
 
@@ -152,6 +153,40 @@ namespace
         };
     }
 
+    // Notch: the removed corner is the cliff's {p < r, q < t, outside the ball}, but the material past the far edge
+    // (q ≥ t) stays, so the kept body is Body \ (corner ∩ {q < t}). Inside = union of two boxes (step) or plate ∪ boss.
+    [[nodiscard]] double NotchCornerClearance(double Across, double Down, double Depth, double Size, BlendProfile Profile)
+    {
+        return std::max(CliffCornerClearance(Across, Down, Size, Profile), Down - Depth);
+    }
+
+    [[nodiscard]] double BoxClearance(Vector3 Point, Vector3 Low, Vector3 High)
+    {
+        return std::min({ Point.X - Low.X, High.X - Point.X, Point.Y - Low.Y, High.Y - Point.Y, Point.Z - Low.Z, High.Z - Point.Z });
+    }
+
+    // Step prism: ledge [0, 1] × [0, 1.5] × [0, 1] and block [1, 2] × [0, 1.5] × [0, 1.2]; riser x = 1, z 1 → 1.2.
+    [[nodiscard]] std::function<double(Vector3)> NotchStepClearance(double Size, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const double Body = std::max(BoxClearance(Point, { 0.0, 0.0, 0.0 }, { 1.0, 1.5, 1.0 }), BoxClearance(Point, { 1.0, 0.0, 0.0 }, { 2.0, 1.5, 1.2 }));
+            return std::min(Body, NotchCornerClearance(Point.X - 1.0, 1.2 - Point.Z, 0.2, Size, Profile));
+        };
+    }
+
+    // Plate [−1.5, 1.5]² × [0, 0.5] ∪ boss (axis Z, radius R, z 0.5 → 0.5 + t).
+    [[nodiscard]] std::function<double(Vector3)> NotchBossClearance(double CylinderRadius, double Height, double Size, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const double Reach = std::hypot(Point.X, Point.Y);                                // [len] - ρ
+            const double Boss  = std::min({ CylinderRadius - Reach, Point.Z - 0.25, 0.5 + Height - Point.Z });
+            const double Body  = std::max(BoxClearance(Point, { -1.5, -1.5, 0.0 }, { 1.5, 1.5, 0.5 }), Boss);
+            return std::min(Body, NotchCornerClearance(CylinderRadius - Reach, 0.5 + Height - Point.Z, Height, Size, Profile));
+        };
+    }
+
     using EdgeTest = std::function<bool(Vector3, Vector3, const CurveGeometry&)>;
 
     [[nodiscard]] std::vector<EdgeToken> SelectEdges(const ModelPartition& Partition, BodyToken Body, const EdgeTest& Test)
@@ -163,6 +198,11 @@ namespace
             if (Test(Partition.Vertices.Resolve(Profile.Start).Position, Partition.Vertices.Resolve(Profile.End).Position, Partition.Curves.Resolve(Profile.Curve))) Selection.push_back(Edge);
         }
         return Selection;
+    }
+
+    [[nodiscard]] EdgeTest RiserTop()
+    {
+        return [](Vector3 A, Vector3 B, const CurveGeometry&) { return std::fabs(A.X - 1.0) < 1e-9 && std::fabs(B.X - 1.0) < 1e-9 && A.Z > 1.19 && B.Z > 1.19; };
     }
 
     [[nodiscard]] EdgeTest RimAt(double Height)
@@ -457,12 +497,42 @@ namespace
                 return MakeRefusal("CliffOverlap", "Refusal", "Plate 0.2 thick, top AND bottom front edges r 0.3: both blends would consume the front face", Body,
                                    SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && std::fabs(A.Z - B.Z) < 1e-9; }), BlendProfile::Fillet, 0.3);
             } },
-            { "NotchOverflow", [](ModelPartition& Partition)
+            { "NotchStepFillet", [](ModelPartition& Partition)
             {
-                // Step: riser 0.2 high at x = 1 above a ledge; the riser's lower edge is concave.
+                // Step: riser 0.2 high at x = 1 above a ledge at z = 1; the riser's lower edge is concave.
                 const BodyToken Body = ConstructPrism(Partition, { { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 1.0 }, { 1.0, 0.0, 1.2 }, { 2.0, 0.0, 1.2 }, { 2.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 } }, { 0.0, 1.5, 0.0 }).Value.Body;
-                return MakeRefusal("NotchOverflow", "Refusal", "Riser 0.2 high, its top edge r 0.3: the blend would run off into a concave edge (notch overflow, 🚧)", Body,
-                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return std::fabs(A.X - 1.0) < 1e-9 && std::fabs(B.X - 1.0) < 1e-9 && A.Z > 1.19 && B.Z > 1.19; }), BlendProfile::Fillet, 0.3);
+                BlendSpecimen Specimen = Make("NotchStepFillet", "Overflow", "Riser 0.2 high, its top edge r 0.3: the riser is consumed, the ledge trims the blend and grows under it (notch)", Body,
+                                              SelectEdges(Partition, Body, RiserTop()), BlendProfile::Fillet, 0.3, -1.5 * CliffArea(0.3, 0.2, BlendProfile::Fillet), 8);
+                Specimen.Clearance = NotchStepClearance(0.3, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "NotchStepChamfer", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructPrism(Partition, { { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 1.0 }, { 1.0, 0.0, 1.2 }, { 2.0, 0.0, 1.2 }, { 2.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 } }, { 0.0, 1.5, 0.0 }).Value.Body;
+                BlendSpecimen Specimen = Make("NotchStepChamfer", "Overflow", "Riser 0.2 high, its top edge chamfer 0.3: the chamfer plane lands on the ledge (notch)", Body,
+                                              SelectEdges(Partition, Body, RiserTop()), BlendProfile::Chamfer, 0.3, -1.5 * CliffArea(0.3, 0.2, BlendProfile::Chamfer), 8);
+                Specimen.Clearance = NotchStepClearance(0.3, BlendProfile::Chamfer);
+                return Specimen;
+            } },
+            { "NotchBossFillet", [](ModelPartition& Partition)
+            {
+                // Boss R 0.8, 0.2 high on a plate; top rim r 0.3: the torus meets the plate top in a circle inside the boss foot.
+                const BodyToken Plate = ConstructBlock(Partition, { -1.5, -1.5, 0.0 }, { 3.0, 3.0, 0.5 }).Value;
+                const BodyToken Boss  = ConstructCylinder(Partition, UprightFrame({ 0.0, 0.0, 0.5 }), 0.8, 0.2).Value;
+                const BodyToken Body  = ComputeBoolean(Partition, Plate, Boss, BooleanOperation::Union).Body;
+                BlendSpecimen Specimen = Make("NotchBossFillet", "Overflow", "Boss 0.2 high, top rim r 0.3: the side band is consumed, the plate top grows inward to the torus (closed notch)", Body,
+                                              SelectEdges(Partition, Body, RimAt(0.7)), BlendProfile::Fillet, 0.3, -CliffRimLoss(0.8, 0.3, 0.2, BlendProfile::Fillet), 8);
+                Specimen.Clearance = NotchBossClearance(0.8, 0.2, 0.3, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "SmoothOverflow", [](ModelPartition& Partition)
+            {
+                // Front bottom edge already r 0.85 (front face flat for 0.15); top front edge r 0.3 must roll onto that fillet.
+                const BodyToken Box    = ConstructBlock(Partition, {}, { 4.0, 2.0, 1.0 }).Value;
+                const BodyToken Body   = BlendEdges(Partition, Box, SelectEdges(Partition, Box, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z < 1e-9 && B.Z < 1e-9; }),
+                                                    { BlendProfile::Fillet, 0.85 }).Body;
+                return MakeRefusal("SmoothOverflow", "Refusal", "Front face 0.15 tall above an r 0.85 fillet, top edge r 0.3: the ball rolls onto the fillet (smooth overflow)", Body,
+                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.99 && B.Z > 0.99; }), BlendProfile::Fillet, 0.3);
             } },
 
             // ---- Refusal: configurations the operation must refuse atomically.

@@ -59,6 +59,7 @@ namespace
         EdgeToken   FarEdge    = {};                                                         // [-] - Consumed support ∩ cliff face
         EdgeToken   Trimmed    = {};                                                         // [-] - End face ∩ cliff face (absent at a seam)
         int         TrimmedEnd = 0;                                                          // [-] - Its end at the far corner
+        bool        NotchCondition = false;                                                  // [-] - Far edge concave: the cliff face grows
         std::string Refusal    = {};                                                         // [-] - Overflow that v1 cannot build
     };
 
@@ -69,6 +70,7 @@ namespace
         FaceToken Cliff    = {};                                                             // [-] - Trimming face
         EdgeToken FarEdge  = {};                                                             // [-] - Replaced by the cliff section
         int       Ends     = 0;                                                              // [-] - Bit per blend end that saw it
+        bool      NotchCondition = false;                                                    // [-] - Concave far edge (notch)
     };
 
     using EdgeEndKey    = std::pair<uint32_t, int>;                                          // (edge slot, 0 = Start end / 1 = End end)
@@ -392,7 +394,8 @@ namespace
         //    4 edges (blended edge, two end edges or one seam, far edge), the far corner has degree 3 with no blend, and
         //    the far edge is convex: the support is consumed, and the face across the far edge (the cliff) trims the
         //    blend. Point = where the blend meets the cliff along the end face's edge (Section == nullptr) or along the
-        //    blend's cross-section at a seam. Concave, notch, partial and blend-on-blend overflows are named and refused;
+        //    blend's cross-section at a seam. A concave far edge is a notch (built the same way, the cliff face grows).
+        //    Concave-blend, smooth, partial and blend-on-blend overflows are named and refused;
         //    other shapes return Unmatched, so the trim step reports the consumed edge as before.
         [[nodiscard]] CliffCorner DetectCliff(const EdgeBlendSheet& Sheet, VertexToken Vertex, EdgeToken Sharp, FaceToken Support, Vector3 Foot, const CurveGeometry* Section)
         {
@@ -443,7 +446,11 @@ namespace
             bool FarSeen = false;                                                            // [-] - Far edge on that boundary
             Partition.EnumerateLoopFins(Consumed.Loops.front(), [&](FinToken Fin) { ++Fins; FarSeen = FarSeen || Partition.Fins.Resolve(Fin).Edge == Corner.FarEdge; });
             if (Fins != 4 || !FarSeen) return Unmatched;
-            if (!ConvexEdge(Corner.FarEdge)) return Refuse("notch overflow, the far edge is concave");
+            // 💡 Notch overflow (Parasolid): the far edge is concave, so the face across it lies on the material side. The
+            //    construction is the cliff's: that face trims the blend, but its edge to the end face now grows past the
+            //    far corner instead of shrinking (the section point lies beyond it), and the face extends under the blend.
+            if (SmoothEdgeCondition(Partition, Corner.FarEdge)) return Refuse("smooth overflow, the far edge is tangent");
+            Corner.NotchCondition = !ConvexEdge(Corner.FarEdge);
             std::optional<Vector3> Point;
             if (Section) Point = CrossCurveSurface(*Section, FarPosition, SurfaceOf(Corner.Cliff));
             else
@@ -455,7 +462,11 @@ namespace
                 {
                     const double τ = ProjectOntoCurve(Curve, *Point, Trimmed.IntervalLow);
                     const double Slack = Agreement / std::max(MeasureParameterScale(Curve), 1.0e-300);   // [-] - Agreement in τ
-                    if (!Agree(DistanceToCurve(Curve, *Point)) || τ < Trimmed.IntervalLow - Slack || τ > Trimmed.IntervalHigh + Slack) return Refuse("it also runs past the cliff face's edge");
+                    const bool Inside = τ >= Trimmed.IntervalLow - Slack && τ <= Trimmed.IntervalHigh + Slack;   // [-] - On the existing edge
+                    const bool Beyond = Corner.TrimmedEnd == 0 ? τ <= Trimmed.IntervalLow + Slack : τ >= Trimmed.IntervalHigh - Slack;   // [-] - Past the far corner
+                    if (!Agree(DistanceToCurve(Curve, *Point))) return Refuse("the blend misses the cliff face's edge");
+                    if (!Corner.NotchCondition && !Inside) return Refuse("it also runs past the cliff face's edge");
+                    if (Corner.NotchCondition && !Beyond) return Refuse("notch section falls short of the far corner");
                 }
             }
             if (!Point) return Refuse("the blend misses the cliff face");
@@ -470,6 +481,7 @@ namespace
             Overflow.Consumed = Support;
             Overflow.Cliff    = Corner.Cliff;
             Overflow.FarEdge  = Corner.FarEdge;
+            Overflow.NotchCondition = Corner.NotchCondition;
             Overflow.Ends    |= 1 << End;
             ConsumedEdges.insert(Sharp.Slot);
             ConsumedFaces.insert(Support.Slot);
@@ -514,7 +526,7 @@ namespace
             if (Dot(Middle.Derivative, EvaluateCurve(Sheet.Contacts[Side], τ).Derivative) < 0.0) FlippedContacts.insert({ Edge.Slot, Side });
             ContactPieces[{ Edge.Slot, Side }] = Section;
             Replacements[Overflow.FarEdge.Slot] = Section;
-            ++Outcome.Statistics.CliffOverflows;
+            ++(Overflow.NotchCondition ? Outcome.Statistics.NotchOverflows : Outcome.Statistics.CliffOverflows);
             return {};
         }
 
@@ -1042,6 +1054,7 @@ namespace
                 Feet[Side]     = Corner.Point;
                 Overflow[Side] = true;
                 TrimVertices[{ Corner.Trimmed.Slot, Corner.TrimmedEnd }] = Corner.Point;
+                if (Corner.NotchCondition) Extensions.insert({ Corner.Trimmed.Slot, Corner.TrimmedEnd });   // the ledge grows under the blend
             }
             // 📝 Cap = blend carrier ∩ third face between the feet. A cylinder on a plane is a closed-form conic; every
             //    other pair (torus or cone blends, curved third faces) goes through the exact section primitive.
