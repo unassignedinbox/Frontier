@@ -70,6 +70,7 @@ struct BlendStatistics
     double MaxRimGap         = 0.0;                                                          // [len] - Worst G0 gap of a setback quad to its rims
     int    CliffOverflows    = 0;                                                            // [-]   - Blend sides trimmed by a cliff face
     int    NotchOverflows    = 0;                                                            // [-]   - Blend sides trimmed by a face across a concave edge
+    int    SmoothOverflows   = 0;                                                            // [-]   - Blend sides rolled over a tangent edge onto the next face
     double Milliseconds      = 0.0;                                                          // [ms]  - Wall time
 };
 

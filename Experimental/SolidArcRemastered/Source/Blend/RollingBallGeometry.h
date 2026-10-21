@@ -75,7 +75,14 @@ struct EdgeBlendSheetOutcome
 //    the two offsets nearest the edge (Line / Circle only — traced spines need procedural carriers, 🚧); ⑤ contact
 //    curves from the feet of the spine; ⑥ carrier: line spine → cylinder (fillet) / plane (chamfer); circle spine →
 //    torus (fillet) / cone, cylinder or annulus plane (chamfer); ⑦ sampled residual |C(τ) − S(τ)| − r and foot distance.
-[[nodiscard]] EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings);
+//    Override (smooth overflow): support Side is replaced by Face, the face across a tangent edge of the original support;
+//    convexity and the wedge angle still come from the edge's own faces, the offsets, spine and contacts from Face.
+struct SupportOverride
+{
+    int       Side = -1;                                                                     // [-] - Replaced support (0 / 1)
+    FaceToken Face = {};                                                                     // [-] - Face the ball rolls onto
+};
+[[nodiscard]] EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings, const SupportOverride& Override = {});
 
 // Unwrapped chart reference of a sheet at spine parameter τ (anchor for SP-curve fitting on the blend face).
 [[nodiscard]] Vector2 ResolveSheetChart(const EdgeBlendSheet& Sheet, double τ) noexcept;

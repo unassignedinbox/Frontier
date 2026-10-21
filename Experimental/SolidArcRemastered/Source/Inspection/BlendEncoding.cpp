@@ -145,6 +145,7 @@ std::string EncodeBlend(const ModelPartition& Partition, const BlendSpecimen& Sp
     Writer.Integer("Setbacks", Statistics.Vertices[static_cast<int>(VertexBlendCategory::Setback)]);
     Writer.Integer("CliffOverflows", Statistics.CliffOverflows);
     Writer.Integer("NotchOverflows", Statistics.NotchOverflows);
+    Writer.Integer("SmoothOverflows", Statistics.SmoothOverflows);
     Writer.Integer("SetbackPatches", Statistics.SetbackPatches);
     Writer.Number("MaxTangentBreak", Statistics.MaxTangentBreak);
     Writer.Number("MaxSeamBreak", Statistics.MaxSeamBreak);

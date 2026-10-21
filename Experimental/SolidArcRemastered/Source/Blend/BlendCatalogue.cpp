@@ -187,6 +187,67 @@ namespace
         };
     }
 
+    // ---- Smooth overflow closed form ----------------------------------------------------------------------------------------
+    // 📝 Box 4 × 2 × H whose front bottom edge is already rounded r₀ (corner centre (r₀, r₀) in the (y, z) section), so the
+    //    front face is flat only for H − r₀. A top front blend of ball radius r wider than that rolls onto the r₀ fillet:
+    //    the ball touches z = H (centre height H − r) and the r₀ circle from inside, |c − (r₀, r₀)| = r₀ − r. The removed
+    //    section is bounded by the front face, the r₀ arc to the contact K, the ball arc (fillet) or the chord (chamfer) to
+    //    the top contact T, and the top line; its area is ½∮(y dz − z dy), exact for segments and circular arcs.
+    struct SmoothSection
+    {
+        double  Height = 1.0, Rounded = 0.85, Radius = 0.3;                                  // [len] - H, r₀, r
+        Vector2 Centre = {}, Contact = {}, Top = {};                                         // [len] - c, K, T in (y, z)
+    };
+
+    [[nodiscard]] SmoothSection MeasureSmoothSection(double Height, double Rounded, double Radius)
+    {
+        SmoothSection Section{ Height, Rounded, Radius };
+        const double Drop = Height - Radius - Rounded;                                       // [len] - c.z − r₀
+        Section.Centre  = { Rounded - std::sqrt((Rounded - Radius) * (Rounded - Radius) - Drop * Drop), Height - Radius };
+        const Vector2 Out = (Section.Centre - Vector2{ Rounded, Rounded }) * (1.0 / (Rounded - Radius));
+        Section.Contact = Vector2{ Rounded, Rounded } + Out * Rounded;
+        Section.Top     = { Section.Centre.X, Height };
+        return Section;
+    }
+
+    [[nodiscard]] double SmoothArea(const SmoothSection& Section, BlendProfile Profile)
+    {
+        const auto Segment = [](Vector2 P, Vector2 Q) { return 0.5 * (P.X * Q.Y - P.Y * Q.X); };
+        const auto Arc     = [](Vector2 Centre, double Radius, double From, double To)
+        {
+            return 0.5 * (Radius * Radius * (To - From) + Centre.X * Radius * (std::sin(To) - std::sin(From)) - Centre.Y * Radius * (std::cos(To) - std::cos(From)));
+        };
+        const Vector2 Corner{ Section.Rounded, Section.Rounded };
+        const double  AngleK = std::atan2(Section.Contact.Y - Corner.Y, Section.Contact.X - Corner.X) + 2.0 * π;   // [rad] - K about r₀ centre, in (π, 3π/2)
+        double Area = Segment({ 0.0, Section.Height }, { 0.0, Section.Rounded }) + Arc(Corner, Section.Rounded, π, AngleK);
+        if (Profile == BlendProfile::Chamfer) Area += Segment(Section.Contact, Section.Top);
+        else Area += Arc(Section.Centre, Section.Radius, AngleK, 0.5 * π);                  // clockwise round the corner side
+        return Area + Segment(Section.Top, { 0.0, Section.Height });
+    }
+
+    [[nodiscard]] std::function<double(Vector3)> SmoothClearance(const SmoothSection& Section, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const Vector2 P{ Point.Y, Point.Z };
+            const double  Box     = std::min({ Point.X, 4.0 - Point.X, Point.Y, 2.0 - Point.Y, Point.Z, Section.Height - Point.Z });
+            const double  Rounded = P.X < Section.Rounded && P.Y < Section.Rounded ? Section.Rounded - Length(P - Vector2{ Section.Rounded, Section.Rounded }) : 1.0e300;
+            double Kept = 0.0;                                                               // [len] - > 0 outside the removed region
+            if (Profile == BlendProfile::Chamfer)
+            {
+                const Vector2 Along = (Section.Top - Section.Contact) * (1.0 / Length(Section.Top - Section.Contact));
+                Kept = Dot(P - Section.Contact, Vector2{ Along.Y, -Along.X });                // away from the corner
+            }
+            else
+            {
+                const Vector2 ToTop = { 0.0, 1.0 }, ToContact = (Section.Contact - Section.Centre) * (1.0 / Section.Radius);
+                const double  Wedge = std::max(Dot(P - Section.Centre, Vector2{ ToTop.Y, -ToTop.X }), Dot(P - Section.Centre, Vector2{ -ToContact.Y, ToContact.X }));
+                Kept = std::max(Section.Radius - Length(P - Section.Centre), Wedge);
+            }
+            return std::min({ Box, Rounded, Kept });
+        };
+    }
+
     using EdgeTest = std::function<bool(Vector3, Vector3, const CurveGeometry&)>;
 
     [[nodiscard]] std::vector<EdgeToken> SelectEdges(const ModelPartition& Partition, BodyToken Body, const EdgeTest& Test)
@@ -198,6 +259,16 @@ namespace
             if (Test(Partition.Vertices.Resolve(Profile.Start).Position, Partition.Vertices.Resolve(Profile.End).Position, Partition.Curves.Resolve(Profile.Curve))) Selection.push_back(Edge);
         }
         return Selection;
+    }
+
+    [[nodiscard]] EdgeTest FrontBottom()
+    {
+        return [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z < 1e-9 && B.Z < 1e-9; };
+    }
+
+    [[nodiscard]] EdgeTest FrontTop()
+    {
+        return [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.99 && B.Z > 0.99; };
     }
 
     [[nodiscard]] EdgeTest RiserTop()
@@ -525,14 +596,34 @@ namespace
                 Specimen.Clearance = NotchBossClearance(0.8, 0.2, 0.3, BlendProfile::Fillet);
                 return Specimen;
             } },
-            { "SmoothOverflow", [](ModelPartition& Partition)
+            { "SmoothFillet", [](ModelPartition& Partition)
             {
-                // Front bottom edge already r 0.85 (front face flat for 0.15); top front edge r 0.3 must roll onto that fillet.
-                const BodyToken Box    = ConstructBlock(Partition, {}, { 4.0, 2.0, 1.0 }).Value;
-                const BodyToken Body   = BlendEdges(Partition, Box, SelectEdges(Partition, Box, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z < 1e-9 && B.Z < 1e-9; }),
-                                                    { BlendProfile::Fillet, 0.85 }).Body;
-                return MakeRefusal("SmoothOverflow", "Refusal", "Front face 0.15 tall above an r 0.85 fillet, top edge r 0.3: the ball rolls onto the fillet (smooth overflow)", Body,
-                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.99 && B.Z > 0.99; }), BlendProfile::Fillet, 0.3);
+                // Front bottom edge already r 0.85 (front face flat for 0.15); top front edge r 0.3 rolls onto that fillet.
+                const BodyToken Box  = ConstructBlock(Partition, {}, { 4.0, 2.0, 1.0 }).Value;
+                const BodyToken Body = BlendEdges(Partition, Box, SelectEdges(Partition, Box, FrontBottom()), { BlendProfile::Fillet, 0.85 }).Body;
+                const SmoothSection Section = MeasureSmoothSection(1.0, 0.85, 0.3);
+                BlendSpecimen Specimen = Make("SmoothFillet", "Overflow", "Front face 0.15 tall above an r 0.85 fillet, top edge r 0.3: the ball rolls onto the fillet (smooth overflow)", Body,
+                                              SelectEdges(Partition, Body, FrontTop()), BlendProfile::Fillet, 0.3, -4.0 * SmoothArea(Section, BlendProfile::Fillet), 7);
+                Specimen.Clearance = SmoothClearance(Section, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "SmoothChamfer", [](ModelPartition& Partition)
+            {
+                const BodyToken Box  = ConstructBlock(Partition, {}, { 4.0, 2.0, 1.0 }).Value;
+                const BodyToken Body = BlendEdges(Partition, Box, SelectEdges(Partition, Box, FrontBottom()), { BlendProfile::Fillet, 0.85 }).Body;
+                const SmoothSection Section = MeasureSmoothSection(1.0, 0.85, 0.3);                 // 90° edge: ball radius = setback
+                BlendSpecimen Specimen = Make("SmoothChamfer", "Overflow", "Same body, top edge chamfer 0.3: the chord of the ball lands on the fillet", Body,
+                                              SelectEdges(Partition, Body, FrontTop()), BlendProfile::Chamfer, 0.3, -4.0 * SmoothArea(Section, BlendProfile::Chamfer), 7);
+                Specimen.Clearance = SmoothClearance(Section, BlendProfile::Chamfer);
+                return Specimen;
+            } },
+            { "SmoothTight", [](ModelPartition& Partition)
+            {
+                // Ball r 0.9 cannot touch the r 0.85 fillet from inside: the smooth overflow refuses.
+                const BodyToken Box  = ConstructBlock(Partition, {}, { 4.0, 2.0, 1.0 }).Value;
+                const BodyToken Body = BlendEdges(Partition, Box, SelectEdges(Partition, Box, FrontBottom()), { BlendProfile::Fillet, 0.85 }).Body;
+                return MakeRefusal("SmoothTight", "Refusal", "Smooth overflow onto a fillet that the ball cannot touch from inside (r 0.9 > 0.85)", Body,
+                                   SelectEdges(Partition, Body, FrontTop()), BlendProfile::Fillet, 0.9);
             } },
 
             // ---- Refusal: configurations the operation must refuse atomically.

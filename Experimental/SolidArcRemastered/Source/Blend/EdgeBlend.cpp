@@ -73,6 +73,14 @@ namespace
         bool      NotchCondition = false;                                                    // [-] - Concave far edge (notch)
     };
 
+    // One side of a blend whose ball rolls over a tangent far edge onto the next face (smooth overflow).
+    struct SmoothOverflow
+    {
+        FaceToken Consumed = {};                                                             // [-] - Original support, narrower than the blend
+        FaceToken Next     = {};                                                             // [-] - Face the ball rolls onto
+        EdgeToken FarEdge  = {};                                                             // [-] - Tangent edge, replaced by the contact rail
+    };
+
     using EdgeEndKey    = std::pair<uint32_t, int>;                                          // (edge slot, 0 = Start end / 1 = End end)
     using ContactKey    = std::tuple<uint32_t, int, int>;                                    // (edge slot, side, end)
     using FaceVertexKey = std::pair<uint32_t, uint32_t>;                                     // (face slot, vertex slot)
@@ -113,6 +121,10 @@ namespace
             }
             if (Outcome.Sheets.empty()) return "no edges selected";
             Outcome.Statistics.BlendedEdges = static_cast<int>(Outcome.Sheets.size());
+            for (EdgeBlendSheet& Sheet : Outcome.Sheets)
+            {
+                if (std::string Refusal = ResolveSmoothOverflow(Sheet); !Refusal.empty()) return Refusal;
+            }
 
             // ② Vertex resolution, ③ pieces, ④ faces.
             for (VertexToken Vertex : Inventory.Vertices)
@@ -121,6 +133,7 @@ namespace
                 if (!Refusal.empty()) return "vertex " + LabelToken("V", Vertex) + ": " + Refusal;
             }
             if (std::string Refusal = ResolvePieces(); !Refusal.empty()) return Refusal;
+            for (const auto& [Key, Smooth] : Smooths) Replacements[Smooth.FarEdge.Slot] = ContactPieces[Key];   // the rail runs where the tangent edge ran
             if (std::string Refusal = ComposeFaces(); !Refusal.empty()) return Refusal;
             return {};
         }
@@ -154,6 +167,7 @@ namespace
         std::set<uint32_t>                         ConsumedFaces;                            // supports narrower than their blend
         std::map<uint32_t, int>                    Replacements;                             // far edge → cliff section (blueprint edge)
         std::set<std::pair<uint32_t, int>>         FlippedContacts;                          // cliff sections running against τ
+        std::map<std::pair<uint32_t, int>, SmoothOverflow> Smooths;                          // (blended edge, side) → smooth overflow
 
         //----------------------------------------------------------------------------------------------------------------
         //                                            BLUEPRINT RECORDS
@@ -322,6 +336,85 @@ namespace
         }
 
         [[nodiscard]] static int SideOn(const EdgeBlendSheet& Sheet, FaceToken Face) { return Sheet.Faces[0] == Face ? 0 : (Sheet.Faces[1] == Face ? 1 : -1); }
+
+        // Side of a support, including an original support consumed by smooth overflow (−1 otherwise).
+        [[nodiscard]] int SupportSide(const EdgeBlendSheet& Sheet, FaceToken Face) const
+        {
+            const int Side = SideOn(Sheet, Face);
+            if (Side >= 0) return Side;
+            for (int Other = 0; Other < 2; ++Other)
+            {
+                const auto Found = Smooths.find({ Sheet.Edge.Slot, Other });
+                if (Found != Smooths.end() && Found->second.Consumed == Face) return Other;
+            }
+            return -1;
+        }
+
+        [[nodiscard]] const SmoothOverflow* SmoothOf(const EdgeBlendSheet& Sheet, int Side) const
+        {
+            const auto Found = Smooths.find({ Sheet.Edge.Slot, Side });
+            return Found != Smooths.end() ? &Found->second : nullptr;
+        }
+
+        // 📝 Smooth overflow (Parasolid): a support that is a strip of 4 edges whose far edge is tangent (G1) to the next
+        //    face, with the ball's foot at or past that edge at both blend ends. The ball rolls over it: the sheet is
+        //    re-solved with the next face as its support, the strip and its two end edges are consumed, and the tangent
+        //    far edge is replaced by the new contact rail, so the blend meets the next face G1 exactly. Closed edges, one-
+        //    ended (partial) and two-sided overflows are named and refused.
+        [[nodiscard]] std::string ResolveSmoothOverflow(EdgeBlendSheet& Sheet)
+        {
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Sheet.Edge);
+            const std::string  Subject = "edge " + LabelToken("E", Sheet.Edge) + ": ";
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const FaceToken    Support = Sheet.Faces[Side];
+                const FaceProfile& Face    = Partition.Faces.Resolve(Support);
+                if (Face.Loops.size() != 1) continue;
+                std::vector<EdgeToken> Boundary;
+                Partition.EnumerateLoopFins(Face.Loops.front(), [&](FinToken Fin) { Boundary.push_back(Partition.Fins.Resolve(Fin).Edge); });
+                if (Boundary.size() != 4 || Profile.Start == Profile.End) continue;
+                EdgeToken Far = {}, Ends[2] = {};
+                for (EdgeToken Edge : Boundary)
+                {
+                    if (Edge == Sheet.Edge) continue;
+                    const EdgeProfile& Other   = Partition.Edges.Resolve(Edge);
+                    const bool         AtStart = Other.Start == Profile.Start || Other.End == Profile.Start;
+                    const bool         AtEnd   = Other.Start == Profile.End || Other.End == Profile.End;
+                    if (AtStart && !AtEnd) Ends[0] = Edge;
+                    else if (AtEnd && !AtStart) Ends[1] = Edge;
+                    else if (!AtStart && !AtEnd) Far = Edge;
+                }
+                if (!Far.PresentCondition() || !Ends[0].PresentCondition() || !Ends[1].PresentCondition() || !SmoothEdgeCondition(Partition, Far)) continue;
+                int Over = 0;                                                                // [-] - Blend ends past the far edge
+                for (int End = 0; End < 2; ++End)
+                {
+                    const VertexToken  Vertex = End == 0 ? Profile.Start : Profile.End;
+                    const EdgeProfile& Sharp  = Partition.Edges.Resolve(Ends[End]);
+                    if (!std::holds_alternative<StraightLine>(Partition.Curves.Resolve(Sharp.Curve))) return Subject + "smooth overflow past a curved end edge (🚧)";
+                    const Vector3 Near        = Partition.Vertices.Resolve(Vertex).Position;
+                    const Vector3 FarPosition = Partition.Vertices.Resolve(Sharp.Start == Vertex ? Sharp.End : Sharp.Start).Position;
+                    const double  Span        = Distance(Near, FarPosition);                // [len] - End edge length
+                    const Vector3 Foot        = EvaluateCurve(Sheet.Contacts[Side], ProjectOntoCurve(Sheet.Spine, Near, 0.0)).Position;
+                    if (Dot(Foot - Near, FarPosition - Near) / Span >= Span - Agreement) ++Over;
+                }
+                if (Over == 0) continue;
+                if (Over == 1) return Subject + "blend wider than its face at one end only (partial smooth overflow, 🚧)";
+                if (SmoothOf(Sheet, 1 - Side)) return Subject + "smooth overflow on both sides (🚧)";
+                const auto [FaceA, FaceB] = FacesOfEdge(Far);
+                const FaceToken Next = FaceA == Support ? FaceB : FaceA;
+                if (Next == Sheet.Faces[1 - Side]) return Subject + "smooth overflow onto the other support (🚧)";
+                EdgeBlendSheetOutcome Resolved = ResolveEdgeBlendSheet(Partition, Sheet.Edge, Settings, { Side, Next });
+                if (!Resolved.Sheet) return "smooth overflow: " + Resolved.Refusal;
+                Sheet = *Resolved.Sheet;
+                Outcome.Statistics.MaxSheetResidual = std::max(Outcome.Statistics.MaxSheetResidual, Sheet.MaxResidual);
+                Smooths[{ Sheet.Edge.Slot, Side }] = { Support, Next, Far };
+                ConsumedFaces.insert(Support.Slot);
+                ConsumedEdges.insert(Ends[0].Slot);
+                ConsumedEdges.insert(Ends[1].Slot);
+                ++Outcome.Statistics.SmoothOverflows;
+            }
+            return {};
+        }
 
         [[nodiscard]] int EndAt(EdgeToken Edge, VertexToken Vertex) const { return Partition.Edges.Resolve(Edge).Start == Vertex ? 0 : 1; }
 
@@ -1028,7 +1121,7 @@ namespace
             FaceToken Third = {};
             for (FaceToken Face : { FacesFirst.first, FacesFirst.second })
             {
-                if (Face != Sheet.Faces[0] && Face != Sheet.Faces[1]) Third = Face;
+                if (SupportSide(Sheet, Face) < 0) Third = Face;
             }
             if (!Third.PresentCondition() || (FacesSecond.first != Third && FacesSecond.second != Third)) return "cap: no common third face";
             const auto*   Plane    = std::get_if<PlaneSurface>(&SurfaceOf(Third));
@@ -1045,8 +1138,33 @@ namespace
             {
                 const auto      Faces   = FacesOfEdge(Sharp);
                 const FaceToken Support = Faces.first == Third ? Faces.second : Faces.first;
-                const int       Side    = SideOn(Sheet, Support);
+                const int       Side    = SupportSide(Sheet, Support);
                 if (Side < 0) return "cap: sharp edge not on a support";
+                if (const SmoothOverflow* Smooth = SmoothOf(Sheet, Side); Smooth && Smooth->Consumed == Support)
+                {
+                    // The consumed strip's end edge goes; the next face's edge on the third face is trimmed to the foot.
+                    const EdgeProfile& Consumed = Partition.Edges.Resolve(Sharp);
+                    const VertexToken  Far      = Consumed.Start == Vertex ? Consumed.End : Consumed.Start;
+                    EdgeToken Trimmed = {};
+                    int       TrimmedEnd = 0;
+                    for (EdgeToken Edge : Inventory.Edges)
+                    {
+                        const EdgeProfile& Other = Partition.Edges.Resolve(Edge);
+                        if (Other.Start != Far && Other.End != Far) continue;
+                        const auto Around = FacesOfEdge(Edge);
+                        if ((Around.first == Third && Around.second == Smooth->Next) || (Around.second == Third && Around.first == Smooth->Next)) { Trimmed = Edge; TrimmedEnd = Other.Start == Far ? 0 : 1; }
+                    }
+                    if (!Trimmed.PresentCondition()) return "smooth overflow: the next face does not meet the third face at the far corner";
+                    const EdgeProfile&   Range = Partition.Edges.Resolve(Trimmed);
+                    const CurveGeometry& Curve = Partition.Curves.Resolve(Range.Curve);
+                    const double τ     = ProjectOntoCurve(Curve, PositionOf(Feet[Side]), Range.IntervalLow);
+                    const double Slack = Agreement / std::max(MeasureParameterScale(Curve), 1.0e-300);   // [-] - Agreement in τ
+                    if (!Agree(DistanceToCurve(Curve, PositionOf(Feet[Side]))) || τ < Range.IntervalLow - Slack || τ > Range.IntervalHigh + Slack)
+                        return "blend wider than its face: smooth overflow runs past the next face too (🚧)";
+                    TrimVertices[{ Trimmed.Slot, TrimmedEnd }] = Feet[Side];
+                    Overflow[Side] = true;
+                    continue;
+                }
                 const CliffCorner Corner = DetectCliff(Sheet, Vertex, Sharp, Support, PositionOf(Feet[Side]), nullptr);
                 if (!Corner.Refusal.empty()) return Corner.Refusal;
                 if (Corner.Point < 0) continue;
@@ -1072,7 +1190,7 @@ namespace
             {
                 const auto Faces = FacesOfEdge(Sharp);
                 const FaceToken Support = Faces.first == Third ? Faces.second : Faces.first;
-                const int Side = SideOn(Sheet, Support);
+                const int Side = SupportSide(Sheet, Support);
                 if (Side < 0) return "cap: sharp edge not on a support";
                 if (Overflow[Side]) continue;                                                 // consumed with its support
                 TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Feet[Side];

@@ -121,7 +121,7 @@ std::optional<CurveGeometry> SectionCylinderByPlane(const CylinderSurface& Cylin
     return EllipticalArc{ { Centre, Major, Minor, Cross(Major, Minor) }, Cylinder.Radius / std::fabs(Cosine), Cylinder.Radius };
 }
 
-EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings)
+EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings, const SupportOverride& Override)
 {
     EdgeBlendSheetOutcome Outcome;
     const auto Refuse = [&](const std::string& Reason) { Outcome.Refusal = LabelToken("E", Edge) + ": " + Reason; return Outcome; };
@@ -179,6 +179,16 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
             if (std::fabs(Angle - Sheet.Dihedral) > 1.0e-9) return Refuse("chamfer on a variable-angle edge (setback-to-ball mapping not constant, 🚧)");
         }
         Sheet.Radius = Settings.Size * std::tan(0.5 * Sheet.Dihedral);
+    }
+
+    // ②′ Smooth overflow: the ball rolls onto the face across the support's tangent far edge.
+    if (Override.Side == 0 || Override.Side == 1)
+    {
+        const FaceProfile& Face = Partition.Faces.Resolve(Override.Face);
+        Sheet.Faces[Override.Side] = Override.Face;
+        Supports[Override.Side]    = Partition.Surfaces.Resolve(Face.Surface);
+        Senses[Override.Side]      = Face.Sense;
+        if (Sheet.Faces[0] == Sheet.Faces[1]) return Refuse("smooth overflow onto the other support");
     }
 
     // ③ Offsets towards the ball: inside the material for a convex edge, outside for a concave one.

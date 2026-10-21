@@ -220,8 +220,14 @@ namespace
                     }
                     else
                     {
-                        const double Setback  = Distance(Position, EvaluateCurve(Source, ProjectOntoCurve(Source, Position, Partition.Edges.Resolve(Sheet.Edge).IntervalLow)).Position);
-                        const double Residual = std::fabs(Setback - Settings.Size);
+                        // 📝 Equal setback holds while both supports are the edge's own faces. After a smooth overflow the
+                        //    chamfer is still the chord of the ball, so each contact lies on the ball: |P − C(τ)| = r.
+                        //    The ball itself moves when one side rolls over, so the setback on the kept face then differs from d.
+                        const FaceToken Own[2] = { Partition.Loops.Resolve(Partition.Fins.Resolve(Sheet.Fins[0]).Loop).Face, Partition.Loops.Resolve(Partition.Fins.Resolve(Sheet.Fins[1]).Loop).Face };
+                        const bool Original = Sheet.Faces[0] == Own[0] && Sheet.Faces[1] == Own[1];
+                        const double Setback  = Original ? Distance(Position, EvaluateCurve(Source, ProjectOntoCurve(Source, Position, Partition.Edges.Resolve(Sheet.Edge).IntervalLow)).Position)
+                                                         : Distance(Position, EvaluateCurve(Sheet.Spine, ProjectOntoCurve(Sheet.Spine, Position, 0.0)).Position);
+                        const double Residual = std::fabs(Setback - (Original ? Settings.Size : Sheet.Radius));
                         Tally(ContactGate, Residual / Scale, Residual <= Limit);
                         PassedCondition = PassedCondition && Residual <= Limit;
                     }
