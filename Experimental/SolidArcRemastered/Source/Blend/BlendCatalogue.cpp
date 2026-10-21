@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <numbers>
 
 namespace Frontier::SolidArcRemastered
@@ -371,6 +372,81 @@ namespace
             }
             return std::min(Box, std::max(-Envelope, Wedge));
         };
+    }
+
+    // 📝 Chamfer d on the rim where the plane z = 0 meets the cylinder of radius R about a = (sin α, 0, cos α) through the
+    //    origin — independent of the kernel's ball-law code: own analytic edge, normals, Newton and exact r′.
+    //    Side κ = −1: through-bore (material below z = 0 and outside the cylinder, convex rim, region removed);
+    //    κ = +1: boss base (block below z = 0, boss inside the cylinder, concave rim, region added).
+    //    Edge E(φ) = R·ρ̂(φ) + R·tan α·cos φ·a, ρ̂ = cos φ·e₁ + sin φ·e₂ (e₁ = (cos α, 0, −sin α), e₂ = ŷ); cos θ = −κ·ẑ·ρ̂;
+    //    r = d·tan(θ/2). Centre C: C·ẑ = κ·r, distance from the axis R + r, E′·(C − E) = 0; feet A on the plane, B on the
+    //    cylinder; ruled chamfer P = A + v(B − A). The divergence theorem about the origin (on the axis) over the region
+    //    between the old faces and the chamfer: the plane strip has X·n = 0, the cylinder strip X·n = −R, so
+    //        V = ⅓·(−R·Area_cyl + ∬ X·(P_φ × P_v) dv dφ)   (chamfer flux oriented towards C, i.e. out of the region)
+    //    Area_cyl = R·|∮ s dφ| between the edge (∮ s_E dφ = 0) and rail B (s = axial coordinate, φ_B its polar angle).
+    //    The flux is quadratic in v (2-point Gauss is exact) and periodic analytic in φ (the trapezoid rule converges
+    //    exponentially). Returns ΔV = κ·V.
+    [[nodiscard]] double MeasureTiltedRimChamferVolume(double Radius, double Tilt, double Setback, double Side)
+    {
+        const Vector3 Axis = { std::sin(Tilt), 0.0, std::cos(Tilt) };
+        const Vector3 First = { std::cos(Tilt), 0.0, -std::sin(Tilt) }, Second = { 0.0, 1.0, 0.0 }, Up = { 0.0, 0.0, 1.0 };
+        struct Ruling { Vector3 Near, Far, NearRate, FarRate, Centre; double AxialB, TurnB; };
+        const auto RulingAt = [&](double φ)
+        {
+            const Vector3 Radial = First * std::cos(φ) + Second * std::sin(φ), RadialRate = Second * std::cos(φ) - First * std::sin(φ);
+            const double  Lean   = Radius * std::tan(Tilt);                                     // [len] - R·tan α
+            const Vector3 Edge   = Radial * Radius + Axis * (Lean * std::cos(φ));
+            const Vector3 Speed  = RadialRate * Radius - Axis * (Lean * std::sin(φ));
+            const Vector3 Bend   = Radial * -Radius - Axis * (Lean * std::cos(φ));
+            const double  Cosine = -Side * Dot(Up, Radial), CosineRate = -Side * Dot(Up, RadialRate);   // [-] - cos θ and its φ-derivative
+            const double  Ball   = Setback * std::sqrt((1.0 - Cosine) / (1.0 + Cosine));       // [len] - r
+            const double  BallRate = -Setback * CosineRate / ((1.0 + Cosine) * std::sqrt(1.0 - Cosine * Cosine));
+            Vector3 Centre = Edge;
+            Vector3 Unit   = Radial;
+            for (int Iteration = 0; Iteration < 60; ++Iteration)
+            {
+                const Vector3 Across = Centre - Axis * Dot(Centre, Axis);                       // [len] - w
+                Unit = Normalize(Across);
+                const double  Residual[3] = { Dot(Centre, Up) - Side * Ball, Length(Across) - (Radius + Ball), Dot(Speed, Centre - Edge) };
+                const double  Determinant = Dot(Up, Cross(Unit, Speed));
+                const Vector3 Step = (Cross(Unit, Speed) * Residual[0] + Cross(Speed, Up) * Residual[1] + Cross(Up, Unit) * Residual[2]) * (1.0 / Determinant);
+                Centre = Centre - Step;
+                if (Length(Step) < 1.0e-17) break;
+            }
+            const Vector3 Across = Centre - Axis * Dot(Centre, Axis);
+            Unit = Normalize(Across);
+            const double  Third = Dot(Speed, Speed) - Dot(Bend, Centre - Edge);
+            const Vector3 Rate  = (Cross(Unit, Speed) * (Side * BallRate) + Cross(Speed, Up) * BallRate + Cross(Up, Unit) * Third) * (1.0 / Dot(Up, Cross(Unit, Speed)));
+            const Vector3 AcrossRate = Rate - Axis * Dot(Rate, Axis);
+            Ruling Entry;
+            Entry.Centre   = Centre;
+            Entry.Near     = Centre - Up * Dot(Centre, Up);
+            Entry.NearRate = Rate - Up * Dot(Rate, Up);
+            Entry.Far      = Axis * Dot(Centre, Axis) + Unit * Radius;
+            Entry.FarRate  = Axis * Dot(Rate, Axis) + (AcrossRate - Unit * Dot(Unit, AcrossRate)) * (Radius / Length(Across));
+            Entry.AxialB   = Dot(Centre, Axis);
+            Entry.TurnB    = Dot(Cross(Across, AcrossRate), Axis) / Dot(Across, Across);
+            return Entry;
+        };
+        constexpr int Samples = 4096;
+        const double  Gauss[2] = { 0.5 - 0.5 / std::sqrt(3.0), 0.5 + 0.5 / std::sqrt(3.0) };
+        double Flux = 0.0, Winding = 0.0, Orientation = 0.0;
+        for (int Index = 0; Index < Samples; ++Index)
+        {
+            const Ruling Entry = RulingAt(2.0 * π * Index / Samples);
+            for (double v : Gauss)
+            {
+                const Vector3 Point  = Entry.Near + (Entry.Far - Entry.Near) * v;
+                const Vector3 Normal = Cross(Entry.NearRate + (Entry.FarRate - Entry.NearRate) * v, Entry.Far - Entry.Near);
+                Flux += 0.5 * Dot(Point, Normal);
+                if (Index == 0) Orientation += Dot(Normal, Entry.Centre - Point);
+            }
+            Winding += Entry.AxialB * Entry.TurnB;
+        }
+        Flux    *= (2.0 * π / Samples) * (Orientation > 0.0 ? 1.0 : -1.0);
+        Winding *= 2.0 * π / Samples;
+        const double Area = Radius * std::fabs(Winding);                                       // [len²] - Cylinder strip
+        return Side * (-Radius * Area + Flux) / 3.0;
     }
 
     using EdgeTest = std::function<bool(Vector3, Vector3, const CurveGeometry&)>;
@@ -783,6 +859,25 @@ namespace
                                                      BlendProfile::Fillet, 0.1);
                 Specimen.Settings.EndSize = 0.3;
                 return Specimen;
+            } },
+            // ---- Curved-edge chamfers: ball-law spine on the exact edge, chord carrier between the rails.
+            { "TiltedBoreChamfer", [](ModelPartition& Partition)
+            {
+                const double Tilt = 20.0 * π / 180.0;
+                const Vector3 Axis = { std::sin(Tilt), 0.0, std::cos(Tilt) };
+                const OrthonormalFrame Frame{ Axis * -3.0, { std::cos(Tilt), 0.0, -std::sin(Tilt) }, { 0.0, 1.0, 0.0 }, Axis };
+                const BodyToken Body = Fuse(Partition, ConstructBlock(Partition, { -2.0, -2.0, -1.0 }, { 4.0, 4.0, 1.0 }).Value, ConstructCylinder(Partition, Frame, 0.5, 6.0).Value, BooleanOperation::Difference);
+                return Make("TiltedBoreChamfer", "CurvedChamfer", "Elliptical rim of a 20° tilted bore R 0.5, d 0.1: wedge 70°–110°, ball-law spine, chord carrier", Body, SelectEdges(Partition, Body, RimAt(0.0)),
+                            BlendProfile::Chamfer, 0.1, MeasureTiltedRimChamferVolume(0.5, Tilt, 0.1, -1.0), 8);
+            } },
+            { "TiltedBossChamfer", [](ModelPartition& Partition)
+            {
+                const double Tilt = 20.0 * π / 180.0;
+                const Vector3 Axis = { std::sin(Tilt), 0.0, std::cos(Tilt) };
+                const OrthonormalFrame Frame{ Axis * -0.5, { std::cos(Tilt), 0.0, -std::sin(Tilt) }, { 0.0, 1.0, 0.0 }, Axis };
+                const BodyToken Body = Fuse(Partition, ConstructBlock(Partition, { -2.0, -2.0, -1.0 }, { 4.0, 4.0, 1.0 }).Value, ConstructCylinder(Partition, Frame, 0.5, 1.5).Value, BooleanOperation::Union);
+                return Make("TiltedBossChamfer", "CurvedChamfer", "Concave base rim of a 20° tilted boss R 0.5, d 0.1: material added, ball outside", Body, SelectEdges(Partition, Body, RimAt(0.0)),
+                            BlendProfile::Chamfer, 0.1, MeasureTiltedRimChamferVolume(0.5, Tilt, 0.1, 1.0), 9);
             } },
             { "VariableRim", [](ModelPartition& Partition)
             {

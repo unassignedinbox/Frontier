@@ -58,7 +58,7 @@ IsoParameterCurve ExtractIsoParameterCurve(const SurfaceGeometry& Surface, IsoDi
     {
         // 📝 𝑢 = const is the exact cross-section circle (τ = 𝑣); 𝑣 = const has no exact carrier and is skipped.
         IsoParameterCurve Iso;
-        if (Direction == IsoDirection::FixedU) Iso.Curve = ExtractRollingBallSection(*Carrier, Value);
+        if (Direction == IsoDirection::FixedU && Carrier->Definition->Section == RollingBallSection::Circle) Iso.Curve = ExtractRollingBallSection(*Carrier, Value);
         else Iso.DegenerateCondition = true;
         return Iso;
     }

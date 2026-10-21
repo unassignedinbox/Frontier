@@ -12,6 +12,7 @@
 #include "Construction/PrimitiveConstruction.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/ImplicitSurface.h"
+#include "Intersection/IntersectionCurve.h"
 #include "Intersection/SurfaceIntersection.h"
 #include "Tessellation/BodyTessellation.h"
 
@@ -65,6 +66,8 @@ namespace
     GateTally SectionGate     { "R7", "Carrier ∩ normal plane: a closed branch on the section circle (distance)", "≤ 1e-8" };
     GateTally BodyGate        { "R8", "Bodies: audit sound, \\|V − V_polygon\\| ≤ peak deviation × area, fillet removes material", "pass" };
     GateTally TransformGate   { "R9", "Transforms there and back: audit sound, V·s³ (relative), vertices home", "≤ 1e-9" };
+    GateTally LawGate         { "R10", "Ball law on a constant wedge (cylinder rim, θ = 90°): spine ≡ circle (R − d, H − d), reversal C(−τ), chord ≡ cone, chord projection round trip (distance)", "≤ 1e-11" };
+    GateTally LawRateGate     { "R10′", "Ball law rates: C′ vs the circle's (relative), chord normal ∥ cone normal [rad]", "≤ 1e-8" };
 
     // ---- Carrier probes on one rolling-ball sheet -------------------------------------------------------------------------
 
@@ -148,6 +151,56 @@ namespace
             Best = std::min(Best, Worst);
         }
         return Best;
+    }
+
+    // 📝 Ball law on the top rim of a solid cylinder (R 1, H 2, setback d 0.3, tilted frame): the wedge is 90° everywhere,
+    //    so r = d and the law spine is the circle of radius R − d at height H − d (same angle τ as the rim); the chord
+    //    between the feet is the cone through the rails (R − d, H) and (R, H − d), slope −1. Positions → LawGate,
+    //    rates and normals → LawRateGate.
+    struct LawProbe
+    {
+        double Position = 0.0;                                                               // [len] - Worst distance
+        double Rate     = 0.0;                                                               // [-]   - Worst relative / angular
+    };
+
+    [[nodiscard]] LawProbe ProbeBallLaw(std::mt19937_64& Generator)
+    {
+        std::uniform_real_distribution<double> Fraction(0.0, 1.0);
+        const double Radius = 1.0, Height = 2.0, Setback = 0.3;
+        const OrthonormalFrame Frame = ConstructFrame({ 0.3, -0.2, 0.7 }, Normalize(Vector3{ 1, 2, 3 }), { 1, 0, 0 });
+        OrthonormalFrame Top = Frame;
+        Top.Origin = Frame.Origin + Frame.ZAxis * Height;
+        const PlaneSurface    Lid{ Top };
+        const CylinderSurface Wall{ Frame, Radius };
+        BallLaw Law;
+        Law.Edge      = CircularArc{ Top, Radius };
+        Law.Setback   = Setback;
+        Law.Signs[0]  = Law.Signs[1] = -1.0;                                                 // Convex: centre inside both
+        const std::optional<CurveGeometry> Spine = BuildBallLawCurve(Lid, Wall, Law, 0.0, FullTurn, true);
+        LawProbe Probe;
+        if (!Spine) { Probe.Position = Probe.Rate = INFINITY; return Probe; }
+        const TracedIntersection& Trace    = *std::get<IntersectionCurve>(*Spine).Trace;
+        const CurveGeometry       Reversed = ReverseIntersectionCurve(Trace);
+        const SurfaceGeometry     Chord    = ConstructRollingBallSurface(*Spine, Setback, Lid, 1.0, RollingBallSection::Chord, Wall);
+        const ConeSurface         Cone{ Top, Radius - Setback, -1.0 };
+        for (int Sample = 0; Sample < 400; ++Sample)
+        {
+            const double  τ        = FullTurn * Fraction(Generator), 𝑣 = Fraction(Generator);
+            const Vector3 Radial   = Frame.XAxis * std::cos(τ) + Frame.YAxis * std::sin(τ);
+            const Vector3 Expected = Top.Origin - Frame.ZAxis * Setback + Radial * (Radius - Setback);
+            const Vector3 Speed    = (Frame.YAxis * std::cos(τ) - Frame.XAxis * std::sin(τ)) * (Radius - Setback);
+            const CurveSample Centre = EvaluateCurve(*Spine, τ);
+            const CurveSample Back   = EvaluateCurve(Reversed, -τ);
+            Probe.Position = std::max({ Probe.Position, Distance(Centre.Position, Expected), Distance(Back.Position, Expected), std::fabs(MeasureBallLawRadius(Trace, τ) - Setback) });
+            Probe.Rate     = std::max({ Probe.Rate, Length(Centre.Derivative - Speed) / Length(Speed), Length(Back.Derivative + Speed) / Length(Speed) });
+            const Vector3 Point   = EvaluateSurface(Chord, { τ, 𝑣 }).Position;
+            const Vector2 Back2   = ProjectOntoSurface(Chord, Point, { τ + 0.3, 0.5 });
+            const SurfaceDistance OnCone = MeasureSurfaceDistance(Cone, Point);
+            const Vector3 Normal  = EvaluateSurfaceNormal(Chord, { τ, 𝑣 });
+            Probe.Position = std::max({ Probe.Position, std::fabs(OnCone.Distance), Distance(EvaluateSurface(Chord, Back2).Position, Point) });
+            Probe.Rate     = std::max(Probe.Rate, std::atan2(Length(Cross(Normal, OnCone.Normal)), std::fabs(Dot(Normal, OnCone.Normal))));
+        }
+        return Probe;
     }
 
     // Line spine on a plane guide is a cylinder; circle spine on a plane guide is a torus.
@@ -246,6 +299,12 @@ int main()
     // ---- R6 analytic reproduction.
     const double Reproduction = ProbeReproduction(Generator);
     Tally(ReproductionGate, Reproduction, Reproduction <= 1.0e-12);
+
+    // ---- R10 ball law and chord carrier against the constant-wedge closed form.
+    std::mt19937_64 LawGenerator(20261022);                                                  // Own stream: R1–R9 samples unchanged
+    const LawProbe  Law = ProbeBallLaw(LawGenerator);
+    Tally(LawGate, Law.Position, Law.Position <= 1.0e-11);
+    Tally(LawRateGate, Law.Rate, Law.Rate <= 1.0e-8);
 
     // ---- Bodies: disc r 3 × 1 minus one radial bore, fillet the traced mouth.
     const BoreSpecimen Specimens[] = {
@@ -365,7 +424,7 @@ int main()
     }
 
     // ---- Report.
-    const GateTally* Gates[] = { &BallGate, &ContactGate, &TangencyGate, &ProjectionGate, &NormalGate, &ChartGate, &ReproductionGate, &SectionGate, &BodyGate, &TransformGate };
+    const GateTally* Gates[] = { &BallGate, &ContactGate, &TangencyGate, &ProjectionGate, &NormalGate, &ChartGate, &ReproductionGate, &SectionGate, &BodyGate, &TransformGate, &LawGate, &LawRateGate };
     bool PassedCondition = true;
     for (const GateTally* Gate : Gates) PassedCondition = PassedCondition && Gate->Failures == 0 && Gate->Checks > 0;
     std::printf("# Rolling-ball carrier validation (procedural pipe on traced spines)\n\n");

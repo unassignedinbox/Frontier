@@ -63,6 +63,10 @@ struct EdgeBlendSheet
     // ⚠️ A variable sheet (RadiusRate ≠ 0) has a tilted line spine; its contact lines are unit-speed with their own τ, so
     //    Contacts[i](τ) is NOT the foot of Spine(τ) there. Every same-τ consumer refuses variable sheets.
     [[nodiscard]] bool VariableCondition() const noexcept { return RadiusRate != 0.0; }
+    // 💡 A ball-law sheet (chamfer on a traced or elliptical edge) runs on the edge's τ with r(τ) = d·tan(θ(τ)/2); its
+    //    contacts DO share the spine's τ, but Radius is only the mid-edge value and Offsets are reference loci at it, so
+    //    consumers that build constant-radius geometry refuse it (MeasureSheetRadius gives the exact r(τ)).
+    [[nodiscard]] bool LawCondition() const noexcept;
 };
 
 struct EdgeBlendSheetOutcome

@@ -113,8 +113,10 @@ namespace
             //    ∂𝑢 × ∂𝑣 (the natural normal) then flips relative to M·n, so the face sense flips with it.
             const MappedSurface Guide = MapSurface(Analysis, Ball->Definition->Guide);
             if (!Guide.Refusal.empty()) { Mapped.Refusal = Guide.Refusal; return Mapped; }
+            const MappedSurface Partner = MapSurface(Analysis, Ball->Definition->Partner);
+            if (!Partner.Refusal.empty()) { Mapped.Refusal = Partner.Refusal; return Mapped; }
             Mapped.Surface = ConstructRollingBallSurface(MapCurveImage(Analysis, Ball->Definition->Spine), Ball->Definition->Radius * Scale, Guide.Surface,
-                                                         Ball->Definition->Handedness * (Analysis.Determinant < 0.0 ? -1.0 : 1.0));
+                                                         Ball->Definition->Handedness * (Analysis.Determinant < 0.0 ? -1.0 : 1.0), Ball->Definition->Section, Partner.Surface);
             Mapped.Flip    = Analysis.Determinant < 0.0;
             return Mapped;
         }
@@ -167,6 +169,17 @@ namespace
             Image->First  = MapSurface(Analysis, Source.First).Surface;
             Image->Second = MapSurface(Analysis, Source.Second).Surface;
             Mapped.Stretch = Source.Closed ? 1.0 : Analysis.Scale;
+            if (Source.Law)
+            {
+                // 📝 A ball-law spine runs on its edge's τ, so it stretches like the mapped edge; the setback scales by s.
+                const MappedCurve Edge = MapCurve(Analysis, Source.Law->Edge);
+                if (!Edge.Refusal.empty()) { Mapped.Refusal = Edge.Refusal; return Mapped; }
+                auto Law = std::make_shared<BallLaw>(*Source.Law);
+                Law->Edge    = Edge.Curve;
+                Law->Setback *= Analysis.Scale;
+                Image->Law     = std::move(Law);
+                Mapped.Stretch = Edge.Stretch;
+            }
             for (Vector3& Point : Image->Points) Point = ApplyPoint(Analysis.Map, Point);
             for (Vector3& Tangent : Image->Tangents) Tangent = ApplyLinear(Analysis.Map, Tangent) * (1.0 / Mapped.Stretch);
             for (double& Knot : Image->Knots) Knot *= Mapped.Stretch;

@@ -386,6 +386,7 @@ namespace
                 }
                 if (!Far.PresentCondition() || !Ends[0].PresentCondition() || !Ends[1].PresentCondition() || !SmoothEdgeCondition(Partition, Far)) continue;
                 if (Sheet.VariableCondition()) return Subject + "variable size beside a tangent far edge (smooth overflow, 🚧)";
+                if (Sheet.LawCondition()) return Subject + "curved-edge chamfer beside a tangent far edge (smooth overflow, 🚧)";
                 int Over = 0;                                                                // [-] - Blend ends past the far edge
                 for (int End = 0; End < 2; ++End)
                 {
@@ -643,6 +644,8 @@ namespace
             for (const auto& End : Blended)
             {
                 if (SheetOf(End.first)->VariableCondition() && (Blended.size() != 1 || Ends.size() != 3)) return "variable size where blends meet or at a vertex of degree ≠ 3 (🚧)";
+                const bool Continuation = Blended.size() == 2 && Blended[0].first == Blended[1].first;   // [-] - Closed rim through a seam
+                if (SheetOf(End.first)->LawCondition() && (!(Blended.size() == 1 || Continuation) || Ends.size() != 3)) return "curved-edge chamfer where blends meet or at a vertex of degree ≠ 3 (🚧)";
             }
             const bool Convex = SheetOf(Blended.front().first)->ConvexCondition;
             for (const auto& End : Blended)
@@ -680,7 +683,7 @@ namespace
             for (const auto& End : Blended)
             {
                 const EdgeBlendSheet& Sheet = *SheetOf(End.first);
-                if (Sheet.VariableCondition()) return false;
+                if (Sheet.VariableCondition() || Sheet.LawCondition()) return false;
                 const double τ = ProjectOntoCurve(Sheet.Contacts[0], Position, 0.0);         // [-] - Spine τ of the pinch
                 Worst = std::max({ Worst, Distance(EvaluateCurve(Sheet.Contacts[0], τ).Position, Position), Distance(EvaluateCurve(Sheet.Contacts[1], τ).Position, Position) });
                 if (Worst > Agreement) return false;
@@ -1048,6 +1051,7 @@ namespace
             const CliffCorner Corner = DetectCliff(Sheet, Vertex, Seam, SeamFace, PositionOf(SeamFoot), &Across);
             if (!Corner.Refusal.empty()) return Corner.Refusal;
             const bool Overflow = Corner.Point >= 0;                                         // [-] - The seam's support is consumed
+            if (Overflow && Sheet.LawCondition()) return "curved-edge chamfer with a cliff overflow at a seam (🚧)";
             if (Overflow)
             {
                 if (!RecordCliff(Edge, 0, SeamSide, Seam, SeamFace, Corner) || !RecordCliff(Edge, 1, SeamSide, Seam, SeamFace, Corner)) return "cliff overflow: inconsistent cliff at the seam";
@@ -1176,6 +1180,7 @@ namespace
                 if (!Corner.Refusal.empty()) return Corner.Refusal;
                 if (Corner.Point < 0) continue;
                 if (Sheet.VariableCondition()) return "variable size with a cliff or notch overflow (🚧)";
+                if (Sheet.LawCondition()) return "curved-edge chamfer with a cliff or notch overflow (🚧)";
                 if (!RecordCliff(End.first, End.second, Side, Sharp, Support, Corner)) return "cliff overflow: the two blend ends see different cliffs";
                 Feet[Side]     = Corner.Point;
                 Overflow[Side] = true;
@@ -1696,6 +1701,7 @@ namespace
                 else if (std::holds_alternative<CylinderSurface>(Sheet.Surface)) ++Outcome.Statistics.CarrierCylinders;
                 else if (std::holds_alternative<ConeSurface>(Sheet.Surface))     ++Outcome.Statistics.CarrierCones;
                 else if (std::holds_alternative<TorusSurface>(Sheet.Surface))    ++Outcome.Statistics.CarrierTori;
+                else if (std::holds_alternative<RollingBallSurface>(Sheet.Surface)) ++Outcome.Statistics.CarrierProcedural;
             }
 
             // ③ Corner faces: the end sections chained into one loop.

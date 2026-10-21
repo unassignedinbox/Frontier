@@ -59,6 +59,7 @@ struct BlendStatistics
     int    CarrierCylinders  = 0;                                                            // [-]
     int    CarrierCones      = 0;                                                            // [-]
     int    CarrierTori       = 0;                                                            // [-]
+    int    CarrierProcedural = 0;                                                            // [-]   - Rolling-ball carriers (arc or chord section)
     int    CornerSpheres     = 0;                                                            // [-]   - Ball-corner patches
     int    EllipticalEdges   = 0;                                                            // [-]   - Mitres / caps that are ellipses
     int    TracedSections    = 0;                                                            // [-]   - Mitres / caps on exact intersection curves

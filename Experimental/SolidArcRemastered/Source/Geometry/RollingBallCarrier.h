@@ -26,6 +26,14 @@ namespace Frontier::SolidArcRemastered
 //    the two offset supports, so every ball touches both supports; the carrier is the envelope of those balls. Nothing
 //    is approximated: positions and normals are as exact as the spine (traced spines are Newton-corrected onto both
 //    offsets at every τ). Only ∂P/∂𝑢 is a central difference, used by Newton steps and charts, never by geometry.
+// 📝 Section of the carrier at 𝑢: the ball's arc (fillet) or the chord between the two contact feet (chamfer on a
+//    ball-law spine): P(𝑢, 𝑣) = A(𝑢) + 𝑣·(B(𝑢) − A(𝑢)), 𝑣 ∈ [0, 1], A = foot of C(𝑢) on Guide, B = foot on Partner.
+enum class RollingBallSection
+{
+    Circle,                                                                                  // Arc of radius r about C(𝑢)
+    Chord                                                                                    // Straight ruling A → B
+};
+
 struct RollingBallDefinition
 {
     CurveGeometry   Spine     = StraightLine{};                                              // [-]   - Ball-centre path C(𝑢)
@@ -36,6 +44,8 @@ struct RollingBallDefinition
     double          Period    = 0.0;                                                         // [-]   - 𝑢 period (0 when open)
     double          Handedness = 1.0;                                                        // [-]   - E₂ = ±(E₁ × T); a reflection flips it
     std::uint64_t   Serial    = 0;                                                           // [-]   - Section-memo identity (0 = not memoised)
+    RollingBallSection Section = RollingBallSection::Circle;                                 // [-]   - Arc or chord
+    SurfaceGeometry Partner   = PlaneSurface{};                                              // [-]   - Chord: support of contact B (𝑣 = 1)
 };
 
 struct ContactDefinition
@@ -55,7 +65,10 @@ struct ContactDefinition
 // ---- Carrier ----------------------------------------------------------------------------------------------------------
 
 // ⚠️ Handedness −1 is the mirror image: a reflection M maps the carrier to M·P(𝑢, 𝑣) only if E₂ flips with it.
-[[nodiscard]] RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness = 1.0);
+// 💡 Chord: Radius is only the reference size (curvature bound); ∂P/∂𝑣 = B − A is exact, ∂P/∂𝑢 is the foot-field central
+//    difference on the tangent line, the normal is ∂𝑢 × ∂𝑣 · Handedness, and there is no exact offset.
+[[nodiscard]] RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness = 1.0,
+                                                             RollingBallSection Section = RollingBallSection::Circle, const SurfaceGeometry& Partner = PlaneSurface{});
 [[nodiscard]] SurfaceSample      EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector3            EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector2            ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept;
@@ -71,7 +84,7 @@ inline constexpr double RollingBallDerivativeNoise = 1.0e-9;                    
 
 [[nodiscard]] double             MeasureRollingBallCurvature(const RollingBallSurface& Surface, double 𝑢) noexcept;
 
-// Iso-curve 𝑢 = const: the exact cross-section circle, parameterised by 𝑣 (centre C(𝑢), X = E₁, Y = E₂).
+// Iso-curve 𝑢 = const (Circle sections only; a chord carrier has no circle): the exact cross-section circle, parameterised by 𝑣 (centre C(𝑢), X = E₁, Y = E₂).
 [[nodiscard]] CircularArc        ExtractRollingBallSection(const RollingBallSurface& Surface, double 𝑢) noexcept;
 
 // Signed distance (positive away from the spine), its unit gradient and the foot: |X − C(𝑢*)| − r.

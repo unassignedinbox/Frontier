@@ -12,6 +12,8 @@
 #include "Geometry/CurveGeometry.h"
 #include "Geometry/SurfaceGeometry.h"
 
+#include <memory>
+#include <optional>
 #include <vector>
 
 namespace Frontier::SolidArcRemastered
@@ -29,6 +31,22 @@ namespace Frontier::SolidArcRemastered
 //        C′(τ) = σ·𝐭,  𝐭 = N₁ × N₂ / |N₁ × N₂| (oriented with H′),  σ = (|H′|² − (C − H)·H″) / (𝐭·H′)
 //    τ is chord length along the chart for an open curve, and 2π·chord / perimeter for a closed one, so closed curves
 //    share the 2π period of circles and ellipses everywhere a full turn is assumed.
+// 💡 Ball law (blend spines on curved edges, research § G): instead of S₁ ∩ S₂ the evaluation solves for the centre of
+//    the ball that touches both supports with the chamfer setback d on the exact edge E:
+//        d₁(X) = σ₁·r(τ),  d₂(X) = σ₂·r(τ),  E′(τ)·(X − E(τ)) = 0,     r(τ) = d·tan(θ(τ)/2)
+//    θ(τ) = atan2(|n₁ × n₂|, −n₁·n₂) from the outward normals at E(τ), so the contacts sit at the setback d of a
+//    constant-angle wedge and the chord between them is the chamfer ruling. Differentiating the three rows:
+//        N₁·C′ = σ₁·r′,  N₂·C′ = σ₂·r′,  E′·C′ = |E′|² − E″·(C − E)
+//    τ is the edge parameter (times Direction = −1 after reversal); First / Second are the supports themselves.
+struct BallLaw
+{
+    CurveGeometry Edge      = StraightLine{};                                               // [-]   - Exact edge carrier E
+    double        Setback   = 0.0;                                                          // [len] - Chamfer setback d
+    double        Signs[2]  = { 1.0, 1.0 };                                                 // [-]   - σᵢ: signed side of the centre
+    double        Senses[2] = { 1.0, 1.0 };                                                 // [-]   - Outward = Sense · natural normal
+    double        Direction = 1.0;                                                          // [-]   - Edge τ = Direction · τ
+};
+
 struct TracedIntersection
 {
     SurfaceGeometry      First    = PlaneSurface{};                                         // [-]   - S₁ (copy)
@@ -38,6 +56,7 @@ struct TracedIntersection
     std::vector<double>  Knots    = {};                                                     // [-]   - τ at the knots, ascending
     bool                 Closed   = false;                                                  // [-]   - Loop of period 2π
     double               Perimeter = 0.0;                                                   // [len] - Chord length of the guide
+    std::shared_ptr<const BallLaw> Law = {};                                                // [-]   - Present: ball-law spine
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -53,6 +72,13 @@ struct TracedIntersection
 
 // P_reversed(τ) = P(−τ), as ReverseCurve does for lines and conics.
 [[nodiscard]] CurveGeometry ReverseIntersectionCurve(const TracedIntersection& Trace);
+
+// 💡 Ball-law spine over the edge interval [Low, High] (closed: one 2π turn): the guide is exact spine samples, refined
+//    like a traced curve. nullopt where the solve fails anywhere (a wedge too tight for the setback, θ → 0 or π).
+[[nodiscard]] std::optional<CurveGeometry> BuildBallLawCurve(const SurfaceGeometry& First, const SurfaceGeometry& Second, const BallLaw& Law, double Low, double High, bool Closed);
+
+// r(τ) of a ball-law spine (τ in the spine's own parameter); 0 for an ordinary trace.
+[[nodiscard]] double MeasureBallLawRadius(const TracedIntersection& Trace, double τ) noexcept;
 
 // Largest distance of either surface from C(τ) over Samples uniform τ in [Low, High] (validation of the carrier).
 [[nodiscard]] double MeasureIntersectionCurveResidual(const TracedIntersection& Trace, double Low, double High, int Samples) noexcept;

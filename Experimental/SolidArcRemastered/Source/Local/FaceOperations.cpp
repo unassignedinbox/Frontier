@@ -81,7 +81,17 @@ namespace
         {
             const TracedIntersection& Source = *Traced->Trace;
             auto Image = std::make_shared<TracedIntersection>(Source);
-            const double Stretch = Source.Closed ? 1.0 : Motion.Scale;                        // [-] - τ′ = Stretch·τ
+            double Stretch = Source.Closed ? 1.0 : Motion.Scale;                              // [-] - τ′ = Stretch·τ
+            if (Source.Law)
+            {
+                // 📝 A ball-law spine runs on its edge's τ: it stretches like the edge (conics keep τ, open traces scale).
+                auto Law = std::make_shared<BallLaw>(*Source.Law);
+                Law->Edge    = MoveCurve(Source.Law->Edge, Motion);
+                Law->Setback *= Motion.Scale;
+                const auto* Edge = std::get_if<IntersectionCurve>(&Source.Law->Edge);
+                Stretch = Edge && !Edge->Trace->Closed ? Motion.Scale : 1.0;
+                Image->Law = std::move(Law);
+            }
             Image->First  = MoveSurface(Source.First, Motion);
             Image->Second = MoveSurface(Source.Second, Motion);
             for (Vector3& Point : Image->Points) Point = Motion.Move(Point);
@@ -100,7 +110,8 @@ namespace
         if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return MapNurbsSurface(*Spline->Definition, [&](Vector3 Point) { return Motion.Move(Point); });
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
-            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion), Ball->Definition->Handedness);
+            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion), Ball->Definition->Handedness,
+                                               Ball->Definition->Section, MoveSurface(Ball->Definition->Partner, Motion));
         }
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {

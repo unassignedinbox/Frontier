@@ -238,7 +238,16 @@ namespace
                             const double  Fraction = Dot(Position - Start, Finish - Start) / Dot(Finish - Start, Finish - Start);
                             Expected = Settings.Size + (*Settings.EndSize - Settings.Size) * Fraction;
                         }
-                        const double Residual = std::fabs(Setback - Expected);
+                        double Residual = std::fabs(Setback - Expected);
+                        if (Sheet.LawCondition())
+                        {
+                            // 📝 Ball law (curved edge): the contact is the foot of C(τ) at r(τ) = d·tan(θ(τ)/2), τ read
+                            //    off its own rail; a straight setback to the edge is not d on a curved support.
+                            const int    Rail  = Other.Face == Sheet.Faces[0] ? 0 : 1;
+                            const double τ     = ProjectOntoCurve(Sheet.Contacts[Rail], Position, 0.0);
+                            const Vector3 Ball = EvaluateCurve(Sheet.Spine, τ).Position;
+                            Residual = std::fabs(Distance(Position, Ball) - MeasureSheetRadius(Sheet, τ)) + Distance(Position, EvaluateCurve(Sheet.Contacts[Rail], τ).Position);
+                        }
                         Tally(ContactGate, Residual / Scale, Residual <= Limit);
                         PassedCondition = PassedCondition && Residual <= Limit;
                     }
@@ -319,7 +328,7 @@ int main(int ArgumentCount, char** Arguments)
         Tally(TopologyGate, TopologyCondition ? 0.0 : 1.0, TopologyCondition);
         const BlendStatistics& Statistics = Outcome.Statistics;
         char Text[160];
-        std::snprintf(Text, sizeof(Text), "%dP %dC %dK %dT %dS", Statistics.CarrierPlanes, Statistics.CarrierCylinders, Statistics.CarrierCones, Statistics.CarrierTori, Statistics.CornerSpheres);
+        std::snprintf(Text, sizeof(Text), "%dP %dC %dK %dT %dR %dS", Statistics.CarrierPlanes, Statistics.CarrierCylinders, Statistics.CarrierCones, Statistics.CarrierTori, Statistics.CarrierProcedural, Statistics.CornerSpheres);
         Row.Carriers = Text;
         std::snprintf(Text, sizeof(Text), "%d · %d · %d · %d", Statistics.Vertices[0], Statistics.Vertices[1], Statistics.Vertices[2], Statistics.Vertices[3]);
         Row.Vertices = Text;
@@ -485,7 +494,7 @@ int main(int ArgumentCount, char** Arguments)
     {
         std::printf("| %s | %s | %s | %s | %.2e | %ld | %ld |\n", Gate->Failures == 0 && Gate->Checks > 0 ? "🟢" : "🔴", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures);
     }
-    std::printf("\n## Specimens\n\nCarriers: P plane · C cylinder · K cone · T torus · S corner sphere. Vertices: cap · mitre · ball corner · continuation.\n\n");
+    std::printf("\n## Specimens\n\nCarriers: P plane · C cylinder · K cone · T torus · R procedural rolling ball (arc or chord) · S corner sphere. Vertices: cap · mitre · ball corner · continuation.\n\n");
     std::printf("| | Specimen | Family | Edges | Faces | Genus | ΔV | ΔV* (closed form) | \\|error\\| | Carriers | Vertices | Triangles | ms |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n");
     for (const SpecimenRow& Row : Rows)
     {

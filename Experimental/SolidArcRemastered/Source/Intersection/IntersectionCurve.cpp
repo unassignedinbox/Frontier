@@ -36,9 +36,10 @@ namespace
         Vector3 Second   = {};                                                               // [len] - H″(τ)
     };
 
-    // 📝 3D Newton on { d₁ = 0, d₂ = 0, Π·(X − Q) = 0 }: rows N₁, N₂, Π; inverse by the triple-product formula.
+    // 📝 3D Newton on { d₁ = ℓ₁, d₂ = ℓ₂, Π·(X − Q) = 0 }: rows N₁, N₂, Π; inverse by the triple-product formula.
     //    Normals receives N₁, N₂ at the returned Position (reused by the caller, so no surface is measured twice there).
-    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale, std::array<Vector3, 2>* Normals = nullptr) noexcept
+    //    Levels ℓᵢ are 0 for an intersection and σᵢ·r for a ball-law centre (the distance rows are shifted, nothing else).
+    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale, std::array<Vector3, 2>* Normals = nullptr, std::array<double, 2> Levels = { 0.0, 0.0 }) noexcept
     {
         const double Tolerance = 1.0e-13 * (1.0 + Scale);                                    // [len] - Acceptance
         SurfaceDistance OnFirst, OnSecond;                                                   // [-]   - Measured at Position when Current
@@ -47,6 +48,8 @@ namespace
         {
             OnFirst  = MeasureSurfaceDistance(First, Position);
             OnSecond = MeasureSurfaceDistance(Second, Position);
+            OnFirst.Distance  -= Levels[0];
+            OnSecond.Distance -= Levels[1];
             Current  = true;
             const Vector3& A = OnFirst.Normal;
             const Vector3& B = OnSecond.Normal;
@@ -66,6 +69,8 @@ namespace
         {
             OnFirst  = MeasureSurfaceDistance(First, Position);
             OnSecond = MeasureSurfaceDistance(Second, Position);
+            OnFirst.Distance  -= Levels[0];
+            OnSecond.Distance -= Levels[1];
         }
         if (Normals) *Normals = { OnFirst.Normal, OnSecond.Normal };
         return std::fabs(OnFirst.Distance) <= Tolerance && std::fabs(OnSecond.Distance) <= Tolerance;
@@ -109,6 +114,41 @@ namespace
         Sample.First    = (P0 * (6.0 * uu - 6.0 * u) + T0 * (3.0 * uu - 4.0 * u + 1.0) + P1 * (-6.0 * uu + 6.0 * u) + T1 * (3.0 * uu - 2.0 * u)) * (1.0 / Span);
         Sample.Second   = (P0 * (12.0 * u - 6.0) + T0 * (6.0 * u - 4.0) + P1 * (-12.0 * u + 6.0) + T1 * (6.0 * u - 2.0)) * (1.0 / (Span * Span));
         return Sample;
+    }
+
+    // ---- Ball law ---------------------------------------------------------------------------------------------------
+
+    // r = d·tan(θ/2) at the edge parameter t, θ the wedge angle between the outward normals at E(t).
+    [[nodiscard]] double LawRadiusAt(const TracedIntersection& Trace, double EdgeParameter) noexcept
+    {
+        const BallLaw& Law    = *Trace.Law;
+        const Vector3  Point  = EvaluateCurve(Law.Edge, EdgeParameter).Position;
+        const Vector3  First  = MeasureSurfaceDistance(Trace.First, Point).Normal * Law.Senses[0];
+        const Vector3  Second = MeasureSurfaceDistance(Trace.Second, Point).Normal * Law.Senses[1];
+        const double   Wedge  = std::atan2(Length(Cross(First, Second)), -Dot(First, Second));   // [rad] - θ
+        return Law.Setback * std::tan(0.5 * Wedge);
+    }
+
+    // 📝 Centre C(t) and dC/dt at the edge parameter t: Newton from E(t) (for planar supports the first step is exact),
+    //    then the 3×3 derivative rows; r′ and E″ by central differences (h = 5e-6, error ~1e-10, positions unaffected).
+    [[nodiscard]] bool SolveBallCentre(const TracedIntersection& Trace, double EdgeParameter, Vector3& Centre, Vector3& Derivative) noexcept
+    {
+        const BallLaw&    Law    = *Trace.Law;
+        const CurveSample Edge   = EvaluateCurve(Law.Edge, EdgeParameter);
+        const double      Radius = LawRadiusAt(Trace, EdgeParameter);                       // [len] - r(t)
+        if (!(Radius > 0.0) || !std::isfinite(Radius)) return false;
+        Centre = Edge.Position;
+        std::array<Vector3, 2> Normals;
+        if (!CorrectOntoBoth(Trace.First, Trace.Second, Centre, Edge.Derivative, Edge.Position, Trace.Perimeter, &Normals, { Law.Signs[0] * Radius, Law.Signs[1] * Radius })) return false;
+        const double  Step   = 5.0e-6 * (1.0 + std::fabs(EdgeParameter));                  // [-]   - h
+        const double  Rate   = (LawRadiusAt(Trace, EdgeParameter + Step) - LawRadiusAt(Trace, EdgeParameter - Step)) / (2.0 * Step);
+        const Vector3 Bend   = (EvaluateCurve(Law.Edge, EdgeParameter + Step).Derivative - EvaluateCurve(Law.Edge, EdgeParameter - Step).Derivative) * (0.5 / Step);
+        const Vector3 A = Normals[0], B = Normals[1], C = Edge.Derivative;
+        const double  Determinant = Dot(A, Cross(B, C));                                     // [len] - a·(b×c)
+        if (std::fabs(Determinant) <= 1.0e-14 * Length(C)) return false;
+        const double  Third = Dot(C, C) - Dot(Bend, Centre - Edge.Position);                 // [len²] - E′·C′
+        Derivative = (Cross(B, C) * (Law.Signs[0] * Rate) + Cross(C, A) * (Law.Signs[1] * Rate) + Cross(A, B) * Third) * (1.0 / Determinant);
+        return true;
     }
 
     [[nodiscard]] double SegmentDistance(Vector3 Position, Vector3 Start, Vector3 End, double& Fraction) noexcept
@@ -194,6 +234,12 @@ std::pair<double, double> MeasureIntersectionCurveRange(const TracedIntersection
 CurveGeometry ReverseIntersectionCurve(const TracedIntersection& Trace)
 {
     auto Reversed = std::make_shared<TracedIntersection>(Trace);
+    if (Trace.Law)
+    {
+        auto Law = std::make_shared<BallLaw>(*Trace.Law);
+        Law->Direction = -Law->Direction;
+        Reversed->Law  = std::move(Law);
+    }
     std::reverse(Reversed->Points.begin(), Reversed->Points.end());
     std::reverse(Reversed->Tangents.begin(), Reversed->Tangents.end());
     for (Vector3& Tangent : Reversed->Tangents) Tangent = -Tangent;
@@ -201,13 +247,77 @@ CurveGeometry ReverseIntersectionCurve(const TracedIntersection& Trace)
     return IntersectionCurve{ std::move(Reversed) };
 }
 
+std::optional<CurveGeometry> BuildBallLawCurve(const SurfaceGeometry& First, const SurfaceGeometry& Second, const BallLaw& Law, double Low, double High, bool Closed)
+{
+    auto Trace = std::make_shared<TracedIntersection>();
+    Trace->First  = First;
+    Trace->Second = Second;
+    Trace->Closed = Closed;
+    auto Owned = std::make_shared<BallLaw>(Law);
+    Owned->Direction = 1.0;
+    Trace->Law = Owned;
+    if (Closed) High = Low + FullTurn;
+    if (!(High > Low)) return std::nullopt;
+
+    // ---- Scale for the Newton acceptance: chord length of the edge.
+    constexpr int Coarse = 32;                                                               // [-] - Initial samples
+    for (int Index = 0; Index < Coarse; ++Index) Trace->Perimeter += Distance(EvaluateCurve(Law.Edge, Low + (High - Low) * Index / Coarse).Position, EvaluateCurve(Law.Edge, Low + (High - Low) * (Index + 1) / Coarse).Position);
+
+    // ---- Exact samples, bisected in τ wherever the spine tangent turns by more than TurnLimit.
+    struct Sample { double τ; Vector3 Position; Vector3 Derivative; };
+    std::vector<Sample> Samples;
+    for (int Index = 0; Index <= Coarse; ++Index)
+    {
+        Sample Entry{ Low + (High - Low) * Index / Coarse, {}, {} };
+        if (!SolveBallCentre(*Trace, Entry.τ, Entry.Position, Entry.Derivative)) return std::nullopt;
+        Samples.push_back(Entry);
+    }
+    for (int Round = 0; Round < RefineLimit; ++Round)
+    {
+        bool Inserted = false;
+        std::vector<Sample> Refined;
+        for (size_t Index = 0; Index < Samples.size(); ++Index)
+        {
+            Refined.push_back(Samples[Index]);
+            if (Index + 1 == Samples.size()) continue;
+            const Vector3 Start = Samples[Index].Derivative, End = Samples[Index + 1].Derivative;
+            if (std::atan2(Length(Cross(Start, End)), Dot(Start, End)) <= TurnLimit) continue;
+            Sample Middle{ 0.5 * (Samples[Index].τ + Samples[Index + 1].τ), {}, {} };
+            if (!SolveBallCentre(*Trace, Middle.τ, Middle.Position, Middle.Derivative)) return std::nullopt;
+            Refined.push_back(Middle);
+            Inserted = true;
+        }
+        Samples.swap(Refined);
+        if (!Inserted) break;
+    }
+    if (Closed) Samples.back().Position = Samples.front().Position, Samples.back().Derivative = Samples.front().Derivative;
+    Trace->Perimeter = 0.0;
+    for (size_t Index = 0; Index < Samples.size(); ++Index)
+    {
+        if (Index > 0) Trace->Perimeter += Distance(Samples[Index - 1].Position, Samples[Index].Position);
+        Trace->Points.push_back(Samples[Index].Position);
+        Trace->Tangents.push_back(Samples[Index].Derivative);
+        Trace->Knots.push_back(Samples[Index].τ);
+    }
+    return IntersectionCurve{ std::move(Trace) };
+}
+
+double MeasureBallLawRadius(const TracedIntersection& Trace, double τ) noexcept
+{
+    return Trace.Law ? LawRadiusAt(Trace, Trace.Law->Direction * FoldParameter(Trace, τ)) : 0.0;
+}
+
 double MeasureIntersectionCurveResidual(const TracedIntersection& Trace, double Low, double High, int Samples) noexcept
 {
     double Worst = 0.0;                                                                      // [len] - max |dᵢ(C(τ))|
     for (int Index = 0; Index <= Samples; ++Index)
     {
-        const Vector3 Position = EvaluateIntersectionCurve(Trace, Low + (High - Low) * Index / std::max(Samples, 1)).Position;
-        Worst = std::max({ Worst, std::fabs(MeasureSurfaceDistance(Trace.First, Position).Distance), std::fabs(MeasureSurfaceDistance(Trace.Second, Position).Distance) });
+        const double  τ        = Low + (High - Low) * Index / std::max(Samples, 1);
+        const Vector3 Position = EvaluateIntersectionCurve(Trace, τ).Position;
+        const double  Radius   = MeasureBallLawRadius(Trace, τ);                            // [len] - 0 for a plain trace
+        const double  First    = Trace.Law ? Trace.Law->Signs[0] * Radius : 0.0;
+        const double  Second   = Trace.Law ? Trace.Law->Signs[1] * Radius : 0.0;
+        Worst = std::max({ Worst, std::fabs(MeasureSurfaceDistance(Trace.First, Position).Distance - First), std::fabs(MeasureSurfaceDistance(Trace.Second, Position).Distance - Second) });
     }
     return Worst;
 }
@@ -218,6 +328,14 @@ double MeasureIntersectionCurveResidual(const TracedIntersection& Trace, double 
 
 CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ) noexcept
 {
+    if (Trace.Law)
+    {
+        const double Folded = FoldParameter(Trace, τ);                                       // [-] - Spine τ
+        Vector3 Centre, Derivative;
+        if (SolveBallCentre(Trace, Trace.Law->Direction * Folded, Centre, Derivative)) return { Centre, Derivative * Trace.Law->Direction };
+        const GuideSample Guide = EvaluateGuide(Trace, Folded);
+        return { Guide.Position, Guide.First };
+    }
     const GuideSample Guide = EvaluateGuide(Trace, FoldParameter(Trace, τ));
     Vector3 Position = Guide.Position;
     std::array<Vector3, 2> Normals;
@@ -284,6 +402,17 @@ double MeasureIntersectionCurveBulge(const TracedIntersection& Trace, double Low
 
 std::vector<double> CollectIntersectionCurveKnots(const TracedIntersection& Trace, double Low, double High)
 {
+    if (Trace.Law)
+    {
+        // ⚠️ A ball-law spine is as smooth as its edge's parametrisation: on a traced edge E(τ) is only C¹ at the edge's
+        //    knots (H″ jumps), so C′ (through E″) jumps there too. Its own guide knots are smooth points; report the edge's.
+        const double Direction = Trace.Law->Direction;                                       // [-] - Spine τ = Direction · edge τ
+        std::vector<double> Breakpoints;
+        for (double Knot : CollectCurveBreakpoints(Trace.Law->Edge, std::min(Direction * Low, Direction * High), std::max(Direction * Low, Direction * High)))
+            Breakpoints.push_back(Direction * Knot);
+        std::sort(Breakpoints.begin(), Breakpoints.end());
+        return Breakpoints;
+    }
     std::vector<double> Breakpoints;
     const double Slack = 1.0e-12 * (1.0 + std::fabs(High - Low));                            // [-] - Ends are not breakpoints
     const double Period = Trace.Closed ? FullTurn : 0.0;                                     // [-] - Knot repetition

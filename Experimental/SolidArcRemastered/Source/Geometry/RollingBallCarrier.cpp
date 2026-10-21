@@ -150,6 +150,56 @@ namespace
     }
 
     [[nodiscard]] double SpineParameter(const ContactDefinition& Definition, double τ) noexcept { return Definition.Direction * τ; }
+
+    // ---- Chord section --------------------------------------------------------------------------------------------
+
+    [[nodiscard]] bool ChordCondition(const RollingBallDefinition& Definition) noexcept { return Definition.Section == RollingBallSection::Chord; }
+
+    // 📝 P = A + 𝑣(B − A) with A, B the feet of C(𝑢); ∂P/∂𝑢 from the foot fields on the tangent line C ± h·C′ (the
+    //    symmetric stencil cancels the line's O(h²) offset from the spine, as for the traced frame field).
+    [[nodiscard]] SurfaceSample EvaluateChord(const RollingBallDefinition& Definition, Vector2 Parameter) noexcept
+    {
+        const SectionFrame Frame = ResolveSection(Definition, Parameter.X);
+        const Vector3 Near = FootOnSupport(Definition.Guide, Frame.Centre);                  // [len] - A
+        const Vector3 Far  = FootOnSupport(Definition.Partner, Frame.Centre);                // [len] - B
+        const double  Step = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        const Vector3 Reach = Frame.Velocity * Step;                                         // [len] - h·C′
+        const Vector3 NearTurn = FootOnSupport(Definition.Guide, Frame.Centre + Reach) - FootOnSupport(Definition.Guide, Frame.Centre - Reach);
+        const Vector3 FarTurn  = FootOnSupport(Definition.Partner, Frame.Centre + Reach) - FootOnSupport(Definition.Partner, Frame.Centre - Reach);
+        SurfaceSample Sample;
+        Sample.Position    = Near + (Far - Near) * Parameter.Y;
+        Sample.DerivativeV = Far - Near;
+        Sample.DerivativeU = (NearTurn * (1.0 - Parameter.Y) + FarTurn * Parameter.Y) * (1.0 / (2.0 * Step));
+        return Sample;
+    }
+
+    // 📝 Spine inversion seeds 𝑢 (exact when r′ = 0), the chord fraction seeds 𝑣; Gauss–Newton on |P(𝑢, 𝑣) − X|² polishes.
+    [[nodiscard]] Vector2 ProjectOntoChord(const RollingBallDefinition& Definition, Vector3 Position, Vector2 Reference) noexcept
+    {
+        const double SpineLow = Definition.Period > 0.0 ? Reference.X - 0.5 * Definition.Period : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
+        double 𝑢 = Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        double 𝑣 = 0.5;
+        {
+            const SectionFrame Frame = ResolveSection(Definition, 𝑢);
+            const Vector3 Near = FootOnSupport(Definition.Guide, Frame.Centre), Far = FootOnSupport(Definition.Partner, Frame.Centre);
+            const double  Square = Dot(Far - Near, Far - Near);                              // [len²] - |B − A|²
+            if (Square > 0.0) 𝑣 = Dot(Position - Near, Far - Near) / Square;
+        }
+        for (int Iteration = 0; Iteration < 30; ++Iteration)
+        {
+            const SurfaceSample Sample = EvaluateChord(Definition, { 𝑢, 𝑣 });
+            const Vector3 Offset = Sample.Position - Position;                               // [len] - P − X
+            const double  UU = Dot(Sample.DerivativeU, Sample.DerivativeU), UV = Dot(Sample.DerivativeU, Sample.DerivativeV), VV = Dot(Sample.DerivativeV, Sample.DerivativeV);
+            const double  GU = Dot(Offset, Sample.DerivativeU), GV = Dot(Offset, Sample.DerivativeV);
+            const double  Determinant = UU * VV - UV * UV;                                   // [len⁴]
+            if (!(Determinant > 1.0e-300)) break;
+            const double  StepU = (VV * GU - UV * GV) / Determinant, StepV = (UU * GV - UV * GU) / Determinant;
+            𝑢 = Clamp(𝑢 - StepU, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+            𝑣 -= StepV;
+            if (std::fabs(StepU) <= 1.0e-15 * (1.0 + std::fabs(𝑢)) && std::fabs(StepV) <= 1.0e-15) break;
+        }
+        return { Fold(𝑢, Reference.X - 0.5 * Definition.Period, Definition.Period), 𝑣 };
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -179,7 +229,7 @@ CarrierRange MeasureCarrierRange(const CurveGeometry& Curve) noexcept
 
 // ---- Carrier ----------------------------------------------------------------------------------------------------------
 
-RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness)
+RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness, RollingBallSection Section, const SurfaceGeometry& Partner)
 {
     auto Definition = std::make_shared<RollingBallDefinition>();
     const CarrierRange Range = MeasureCarrierRange(Spine);
@@ -191,12 +241,15 @@ RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, doubl
     Definition->Period    = Range.Period;
     Definition->Handedness = Handedness < 0.0 ? -1.0 : 1.0;
     Definition->Serial    = NextDefinitionSerial.fetch_add(1, std::memory_order_relaxed);
+    Definition->Section   = Section;
+    Definition->Partner   = Partner;
     return RollingBallSurface{ std::move(Definition) };
 }
 
 SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Parameter) noexcept
 {
     const RollingBallDefinition& Definition = *Surface.Definition;
+    if (ChordCondition(Definition)) return EvaluateChord(Definition, Parameter);
     const SectionFrame Frame  = ResolveSection(Definition, Parameter.X);
     const double       Cosine = std::cos(Parameter.Y), Sine = std::sin(Parameter.Y);           // [-] - cos 𝑣, sin 𝑣
     SurfaceSample Sample;
@@ -223,6 +276,11 @@ SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Par
 
 Vector3 EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Parameter) noexcept
 {
+    if (ChordCondition(*Surface.Definition))
+    {
+        const SurfaceSample Sample = EvaluateChord(*Surface.Definition, Parameter);
+        return Normalize(Cross(Sample.DerivativeU, Sample.DerivativeV)) * Surface.Definition->Handedness;
+    }
     const SectionFrame Frame = ResolveSection(*Surface.Definition, Parameter.X);
     // Exact radial direction; ∂𝑢 × ∂𝑣 points away from the spine for handedness +1, towards it for the mirror image.
     return (Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y)) * Surface.Definition->Handedness;
@@ -231,6 +289,7 @@ Vector3 EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Par
 Vector2 ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept
 {
     const RollingBallDefinition& Definition = *Surface.Definition;
+    if (ChordCondition(Definition)) return ProjectOntoChord(Definition, Position, Reference);
     // 📝 For a carrier point C(𝑢) + r·e with e ⟂ T, C(𝑢) is the nearest spine point (r below the spine's curvature
     //    radius), so the spine inversion gives 𝑢 exactly; 𝑣 is then the polar angle in (E₁, E₂).
     const double SpineLow = Definition.Period > 0.0 ? Reference.X - 0.5 * Definition.Period : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
@@ -244,12 +303,13 @@ Vector2 ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Positi
 
 SurfacePeriodicity ResolveRollingBallPeriodicity(const RollingBallSurface& Surface) noexcept
 {
-    return { Surface.Definition->Period, FullTurn };
+    return { Surface.Definition->Period, ChordCondition(*Surface.Definition) ? 0.0 : FullTurn };
 }
 
 std::optional<SurfaceGeometry> OffsetRollingBall(const RollingBallSurface& Surface, double Distance)
 {
     const RollingBallDefinition& Definition = *Surface.Definition;
+    if (ChordCondition(Definition)) return std::nullopt;                                     // Offset of a ruled chord: not this carrier
     const double Radius = Definition.Radius + Definition.Handedness * Distance;              // [len] - Along the natural normal
     if (!(Radius > 0.0)) return std::nullopt;
     auto Offset = std::make_shared<RollingBallDefinition>(Definition);
@@ -268,6 +328,7 @@ double MeasureRollingBallCurvature(const RollingBallSurface& Surface, double �
     const double  Speed = Length(Middle.Derivative) * (High - Low);                         // [len] - Arc length of the stencil
     const double  κ     = Speed > 0.0 ? Length(Turn) / Speed : 0.0;                          // [1/len] - Spine curvature
     const double  Along = 1.0 - Definition.Radius * κ;                                       // [-] - Inner-side stretch
+    if (ChordCondition(Definition)) return Along > 1.0e-12 ? κ / Along : INFINITY;           // Straight rulings: only the rails bend
     return std::max(1.0 / Definition.Radius, Along > 1.0e-12 ? κ / Along : INFINITY);
 }
 
@@ -280,6 +341,16 @@ CircularArc ExtractRollingBallSection(const RollingBallSurface& Surface, double 
 RollingBallDistance MeasureRollingBallDistance(const RollingBallSurface& Surface, Vector3 Position) noexcept
 {
     const RollingBallDefinition& Definition = *Surface.Definition;
+    if (ChordCondition(Definition))
+    {
+        const Vector2 Parameter = ProjectOntoChord(Definition, Position, { std::isfinite(Definition.SpineLow) ? Definition.SpineLow + 0.5 * Definition.Period : 0.0, 0.5 });
+        const SurfaceSample Sample = EvaluateChord(Definition, Parameter);
+        RollingBallDistance Outcome;
+        Outcome.Normal   = Normalize(Cross(Sample.DerivativeU, Sample.DerivativeV)) * Definition.Handedness;
+        Outcome.Distance = Dot(Position - Sample.Position, Outcome.Normal);
+        Outcome.Foot     = Sample.Position;
+        return Outcome;
+    }
     const double  SpineLow = Definition.Period > 0.0 ? 0.0 : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
     const double  𝑢        = Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
     const Vector3 Centre   = EvaluateCurve(Definition.Spine, 𝑢).Position;                    // [len] - Nearest ball centre

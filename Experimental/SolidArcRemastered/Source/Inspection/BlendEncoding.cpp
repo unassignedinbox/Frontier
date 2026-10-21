@@ -154,6 +154,7 @@ std::string EncodeBlend(const ModelPartition& Partition, const BlendSpecimen& Sp
     Writer.Integer("Cylinders", Statistics.CarrierCylinders);
     Writer.Integer("Cones", Statistics.CarrierCones);
     Writer.Integer("Tori", Statistics.CarrierTori);
+    Writer.Integer("Procedural", Statistics.CarrierProcedural);
     Writer.Integer("CornerSpheres", Statistics.CornerSpheres);
     Writer.Integer("EllipticalEdges", Statistics.EllipticalEdges);
     Writer.Number("MaxSheetResidual", Statistics.MaxSheetResidual);

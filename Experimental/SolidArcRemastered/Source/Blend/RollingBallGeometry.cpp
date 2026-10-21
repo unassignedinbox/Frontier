@@ -98,8 +98,15 @@ Vector3 ProjectPointOntoSurface(const SurfaceGeometry& Surface, Vector3 Position
     return EvaluateSurface(Surface, ProjectOntoSurface(Surface, Position, { 0.0, 0.0 })).Position;
 }
 
+bool EdgeBlendSheet::LawCondition() const noexcept
+{
+    const auto* Traced = std::get_if<IntersectionCurve>(&Spine);
+    return Traced && Traced->Trace && Traced->Trace->Law;
+}
+
 double MeasureSheetRadius(const EdgeBlendSheet& Sheet, double τ) noexcept
 {
+    if (Sheet.LawCondition()) return MeasureBallLawRadius(*std::get<IntersectionCurve>(Sheet.Spine).Trace, τ);
     return Sheet.Radius + Sheet.RadiusRate * τ;
 }
 
@@ -181,15 +188,16 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     if (Length(Cross(Normals[0], Normals[1])) < 1.0e-9) return Refuse("smooth (tangent-continuous) edge: nothing to blend");
     Sheet.ConvexCondition = Turn > 0.0;
 
-    // ② Ball radius; a chamfer needs a constant wedge angle along the edge.
+    // ② Ball radius; a chamfer on a constant wedge angle keeps r = d·tan(θ/2), a variable angle takes the ball law (②‴).
     Sheet.Radius = Settings.Size;
+    bool VariableWedge = false;                                                              // [-] - θ changes along the edge
     if (Settings.Profile == BlendProfile::Chamfer)
     {
-        for (int Sample = 0; Sample <= 8; ++Sample)
+        for (int Sample = 0; Sample <= 8 && !VariableWedge; ++Sample)
         {
             Vector3 Probe[2];
             const double Angle = WedgeAt(Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Sample / 8.0, Probe);
-            if (std::fabs(Angle - Sheet.Dihedral) > 1.0e-9) return Refuse("chamfer on a variable-angle edge (setback-to-ball mapping not constant, 🚧)");
+            VariableWedge = std::fabs(Angle - Sheet.Dihedral) > 1.0e-9;
         }
         Sheet.Radius = Settings.Size * std::tan(0.5 * Sheet.Dihedral);
     }
@@ -291,6 +299,66 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
         if (Sheet.Faces[0] == Sheet.Faces[1]) return Refuse("smooth overflow onto the other support");
     }
 
+    // ②‴ Chamfer on a traced or elliptical edge (or any variable wedge): the ball-law spine on the exact edge and the
+    //     chord carrier between its contact rails. Every ruling is the chamfer of the local wedge with setback d.
+    const bool ConicEdge = std::holds_alternative<StraightLine>(Carrier) || std::holds_alternative<CircularArc>(Carrier);   // [-] - Analytic path applies
+    if (Settings.Profile == BlendProfile::Chamfer && (VariableWedge || !ConicEdge))
+    {
+        if (Override.Side >= 0) return Refuse("chamfer on a curved edge with a smooth overflow (🚧)");
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            if (std::holds_alternative<NurbsSurface>(Supports[Side])) return Refuse("chamfer on a NURBS support (closed-form foot needed for the chord carrier, 🚧)");
+        }
+        const auto* EdgeTrace = std::get_if<IntersectionCurve>(&Carrier);
+        if (!std::holds_alternative<EllipticalArc>(Carrier) && !(EdgeTrace && !EdgeTrace->Trace->Law)) return Refuse("chamfer on a variable-angle edge of this carrier kind (🚧)");
+        BallLaw Law;
+        Law.Edge    = Carrier;
+        Law.Setback = Settings.Size;
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            Law.Senses[Side] = OrientationSign(Senses[Side]);
+            Law.Signs[Side]  = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]);
+        }
+        const CarrierRange EdgeRange = MeasureCarrierRange(Carrier);
+        const std::optional<CurveGeometry> Spine = BuildBallLawCurve(Supports[0], Supports[1], Law, EdgeRange.Low, EdgeRange.High, EdgeRange.Period > 0.0);
+        if (!Spine) return Refuse("chamfer: the ball law has no solution somewhere along the edge (setback does not fit the wedge)");
+        Sheet.Spine = *Spine;
+        const TracedIntersection& Trace = *std::get<IntersectionCurve>(Sheet.Spine).Trace;
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            Sheet.Contacts[Side] = ConstructContactCurve(Sheet.Spine, Supports[Side]);
+            const double Shift = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Sheet.Radius;
+            if (const std::optional<SurfaceGeometry> Offset = OffsetSurface(Supports[Side], Shift)) Sheet.Offsets[Side] = *Offset;   // Reference locus only
+        }
+        Sheet.Alignment   = Dot(EvaluateCurve(Sheet.Spine, Middle).Derivative, Tangent) >= 0.0 ? 1.0 : -1.0;
+        Sheet.Surface     = ConstructRollingBallSurface(Sheet.Spine, Sheet.Radius, Supports[0], 1.0, RollingBallSection::Chord, Supports[1]);
+        Sheet.SpineAxis   = 0;
+        Sheet.CrossCentre = 0.5;
+        // ⑦‴ Residuals over the edge: the law (feet at r(τ) from the centre, centre in the normal plane of E(τ)), feet on
+        //     their supports, contacts on the carrier.
+        for (int Sample = 0; Sample <= ResidualSamples; ++Sample)
+        {
+            const double      τ      = Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Sample / ResidualSamples;
+            const Vector3     Ball   = EvaluateCurve(Sheet.Spine, τ).Position;               // [len] - Ball centre
+            const CurveSample OnEdge = EvaluateCurve(Carrier, τ);
+            const double      Radius = MeasureBallLawRadius(Trace, τ);                       // [len] - r(τ)
+            Sheet.MaxResidual = std::max(Sheet.MaxResidual, std::fabs(Dot(Ball - OnEdge.Position, Normalize(OnEdge.Derivative))));
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const Vector3 Foot = EvaluateCurve(Sheet.Contacts[Side], τ).Position;        // [len] - Contact point
+                Sheet.MaxResidual = std::max({ Sheet.MaxResidual, std::fabs(Distance(Foot, Ball) - Radius), Distance(ProjectPointOntoSurface(Supports[Side], Ball), Foot),
+                                               Distance(EvaluateSurface(Sheet.Surface, ProjectOntoSurface(Sheet.Surface, Foot, { τ, 0.5 })).Position, Foot) });
+            }
+        }
+        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse("ball-law chamfer residual " + std::to_string(Sheet.MaxResidual) + " exceeds the allowance");
+        // ⑧‴ Orientation as in ⑧, probed at the mid-edge ruling.
+        const Vector3 Probe   = (EvaluateCurve(Sheet.Contacts[0], Middle).Position + EvaluateCurve(Sheet.Contacts[1], Middle).Position) * 0.5;
+        const Vector3 Natural = EvaluateSurfaceNormal(Sheet.Surface, ProjectOntoSurface(Sheet.Surface, Probe, { Middle, 0.5 }));
+        Sheet.Sense = ((Dot(Natural, Position - Probe) > 0.0) == Sheet.ConvexCondition) ? Orientation::Forward : Orientation::Reversed;
+        Outcome.Sheet = Sheet;
+        return Outcome;
+    }
+
     // ③ Offsets towards the ball: inside the material for a convex edge, outside for a concave one.
     for (int Side = 0; Side < 2; ++Side)
     {
@@ -325,7 +393,7 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     }
     if (Nearest == std::numeric_limits<double>::max()) return Refuse("offset supports do not meet (no spine)");
     const bool AnalyticCondition = std::holds_alternative<StraightLine>(Sheet.Spine) || std::holds_alternative<CircularArc>(Sheet.Spine);   // [-] - Analytic carrier
-    if (!AnalyticCondition && Settings.Profile == BlendProfile::Chamfer) return Refuse("chamfer on a traced or elliptical spine (ruled procedural carrier, 🚧)");
+    if (!AnalyticCondition && Settings.Profile == BlendProfile::Chamfer) return Refuse("chamfer whose offset spine is not a line or circle on a conic edge (🚧)");
 
     // ⑤ Contact curves (same τ as the spine).
     for (int Side = 0; Side < 2; ++Side)
