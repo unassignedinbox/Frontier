@@ -10,13 +10,16 @@
 #include "Document/DraftingScene.h"
 
 #include "Geometry/CurveGeometry.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/SurfaceGeometry.h"
 #include "Tessellation/BodyTessellation.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace Frontier::DraftingWorkspace
 {
@@ -100,17 +103,68 @@ void Narrow(const Triple& Source, float Target[3])
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRatio)
+DraftingDeviationMap MeasureDraftingDeviation(const DraftingDocument& Document)
+{
+    DraftingDeviationMap Map;
+    Map.Revision = Document.Revision;
+    if (Document.Regeneration.Panels.empty()) return Map;
+    constexpr int Grid = 8;                                                                  // 9 × 9 seeds per panel
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::SpaceCurve) continue;
+        for (const Vector3& Point : Step.Points)
+        {
+            DraftingDeviationNeedle Needle;
+            Needle.Point    = Point;
+            Needle.Distance = std::numeric_limits<double>::infinity();
+            for (const auto& [Name, Surface] : Document.Regeneration.Panels)
+            {
+                const NurbsDomain AlongU = MeasureNurbsSurfaceDomain(*Surface.Definition, true);
+                const NurbsDomain AlongV = MeasureNurbsSurfaceDomain(*Surface.Definition, false);
+                Vector2 Seed  = { 0.5, 0.5 };
+                double  Least = std::numeric_limits<double>::infinity();
+                for (int First = 0; First <= Grid; ++First)
+                {
+                    for (int Second = 0; Second <= Grid; ++Second)
+                    {
+                        const Vector2 Parameter = { AlongU.Low + (AlongU.High - AlongU.Low) * First / Grid, AlongV.Low + (AlongV.High - AlongV.Low) * Second / Grid };
+                        const double  Gap       = Length(EvaluateNurbsSurface(Surface, Parameter).Position - Point);
+                        if (Gap < Least) { Least = Gap; Seed = Parameter; }
+                    }
+                }
+                const Vector3 Foot = EvaluateNurbsSurface(Surface, ProjectOntoNurbsSurface(Surface, Point, Seed)).Position;
+                const double  Gap  = Length(Foot - Point);
+                if (Gap < Needle.Distance) { Needle.Distance = Gap; Needle.Foot = Foot; }
+            }
+            Map.Worst = std::max(Map.Worst, Needle.Distance);
+            Map.Mean += Needle.Distance;
+            Map.Needles.push_back(Needle);
+        }
+    }
+    if (!Map.Needles.empty()) Map.Mean /= double(Map.Needles.size());
+    return Map;
+}
+
+double DraftingZebraPhase(Vector3 Normal, Vector3 Forward, Vector3 Up, double Stripes) noexcept
+{
+    const Vector3 Reflected = Forward - Normal * (2.0 * Dot(Forward, Normal));
+    return Stripes * std::acos(std::clamp(Dot(Reflected, Up), -1.0, 1.0)) / std::numbers::pi;
+}
+
+DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRatio, bool FineCondition)
 {
     const auto    Start = std::chrono::steady_clock::now();
     DraftingScene Scene;
-    Scene.Revision = Document.Revision;
+    static std::atomic<uint64_t> BuildCounter{0};
+    Scene.Revision   = Document.Revision;
+    Scene.Generation = ++BuildCounter;
     if (!Document.Summary.PresentCondition || !Document.Partition) return Scene;
     const ModelPartition& Partition = *Document.Partition;
     const BodyToken       Body      = Document.Regeneration.Body;
 
     TessellationSettings Settings;
     Settings.SagRatio = SagRatio;
+    if (FineCondition) Settings.EdgeLengthRatio = FineEdgeRatio;
     const TessellationOutcome Outcome = TessellateBody(Partition, Body, Settings);
     Scene.Sag     = Outcome.Sag;
     Scene.Refusal = Outcome.Refusal;

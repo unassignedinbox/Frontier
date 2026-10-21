@@ -36,6 +36,8 @@ namespace
 
 // 📝 SolidArc WorkspacePanel.css: header + document bar, Outliner 300 px | viewport | Inspector 330 px, 10 px gaps.
 constexpr float PanelGap        = 10.0f;                                                     // [px] - Between panels and at the frame edge
+constexpr float  ZebraStripeCount = 64.0f;                                                  // [-]   - Zebra stripes over the reflection angle (V8)
+constexpr double DeviationLimit   = 2.0e-4;                                                 // [len] - Red end of the deviation scale (fit tolerance)
 constexpr float HeaderHeight    = 48.0f;                                                     // [px] - Title row
 constexpr float DocumentHeight  = 38.0f;                                                     // [px] - Document tab row
 constexpr float OutlinerWidth   = 300.0f;                                                    // [px] - Left column
@@ -895,6 +897,56 @@ void DrawCurveOverlays(DraftingWorkspaceState& State, ImDrawList* Canvas, const 
     }
 }
 
+// Zebra (V8): stripe count to the surface shader, and a finer tessellation so interpolated normals follow the surface.
+void ToggleZebra(DraftingWorkspaceState& State)
+{
+    State.ZebraEnabled       = !State.ZebraEnabled;
+    State.Style.ZebraStripes = State.ZebraEnabled ? ZebraStripeCount : 0.0f;
+    RefreshDraftingScene(State, false);
+    Announce(State, State.ZebraEnabled ? Compose("Zebra on · %d stripes · %d triangles", int(ZebraStripeCount), int(State.Scene.Corners.size() / 3)) : std::string("Zebra off"));
+}
+
+// Deviation colour: green at 0, yellow at half the limit, red at the limit and beyond.
+ImU32 DeviationColour(double Distance)
+{
+    const double Fraction = std::clamp(Distance / DeviationLimit, 0.0, 1.0);
+    const int    Red      = Fraction < 0.5 ? int(510.0 * Fraction) : 255;
+    const int    Green    = Fraction < 0.5 ? 220 : int(220.0 * (1.0 - Fraction) * 2.0);
+    return IM_COL32(Red, Green, 0x40, 0xff);
+}
+
+// 💡 V8 deviation map: every imported point gets a dot, and a needle along point → foot magnified so the worst needle
+//    is 5 % of the scene radius; legend bottom-left (colour scale 0 … 0.2 mm, measured worst / mean, magnification).
+void DrawDeviationOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    if (State.Deviation.Revision != State.Document.Revision || (State.Deviation.Needles.empty() && !State.Document.Regeneration.Panels.empty()))
+        State.Deviation = MeasureDraftingDeviation(State.Document);
+    const DraftingDeviationMap& Map = State.Deviation;
+    if (Map.Needles.empty()) return;
+    const double Gain = Map.Worst > 0.0 ? 0.05 * State.Camera.SceneRadius / Map.Worst : 1.0;
+    for (const DraftingDeviationNeedle& Needle : Map.Needles)
+    {
+        ImVec2 Start, Tip;
+        if (!ProjectWorldPoint(State, Frame, Needle.Point, Start)) continue;
+        const ImU32 Colour = DeviationColour(Needle.Distance);
+        if (ProjectWorldPoint(State, Frame, Needle.Point + (Needle.Foot - Needle.Point) * Gain, Tip)) Canvas->AddLine(Start, Tip, Colour, 1.6f);
+        Canvas->AddCircleFilled(Start, 2.4f, Colour);
+    }
+    (void)Frame;
+    const ImVec2 Corner(State.ViewportRect[0] + 16, State.ViewportRect[1] + State.ViewportRect[3] - 104);
+    Canvas->AddRectFilled(Corner, ImVec2(Corner.x + 300, Corner.y + 62), IM_COL32(0x10, 0x13, 0x19, 0xe0), 6.0f);
+    for (int Step = 0; Step < 100; ++Step)
+    {
+        const float Left = Corner.x + 10 + Step * 2.0f;
+        Canvas->AddRectFilled(ImVec2(Left, Corner.y + 10), ImVec2(Left + 2.0f, Corner.y + 22), DeviationColour(DeviationLimit * Step / 99.0));
+    }
+    Canvas->AddText(ImVec2(Corner.x + 8, Corner.y + 24), IM_COL32(0xc8, 0xd0, 0xdc, 0xff), "0");
+    Canvas->AddText(ImVec2(Corner.x + 92, Corner.y + 24), IM_COL32(0xc8, 0xd0, 0xdc, 0xff), "0.1");
+    Canvas->AddText(ImVec2(Corner.x + 178, Corner.y + 24), IM_COL32(0xc8, 0xd0, 0xdc, 0xff), "0.2 mm");
+    const std::string Summary = Compose("worst %.3f mm · mean %.3f mm · %d points · needles x%.0f", Map.Worst * 1000.0, Map.Mean * 1000.0, int(Map.Needles.size()), Gain);
+    Canvas->AddText(ImVec2(Corner.x + 8, Corner.y + 42), IM_COL32(0xe8, 0xec, 0xf2, 0xff), Summary.c_str());
+}
+
 // Import curves… / --curves: VehicleCurves.toml → one SpaceCurve step per curve (one undo entry), framed.
 void FrameSelection(DraftingWorkspaceState& State);
 
@@ -1528,6 +1580,10 @@ void DrawViewportBar(DraftingWorkspaceState& State)
     ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Combs###CombToggle", State.CombsEnabled)) State.CombsEnabled = !State.CombsEnabled;
     ImGui::SameLine(0, 4);
+    if (ToggleButton(State, "Zebra###ZebraToggle", State.ZebraEnabled)) ToggleZebra(State);
+    ImGui::SameLine(0, 4);
+    if (ToggleButton(State, "Deviation###DeviationToggle", State.DeviationEnabled)) State.DeviationEnabled = !State.DeviationEnabled;
+    ImGui::SameLine(0, 4);
     if (PressButton(State, "Fit###FitView") && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
     ImGui::SameLine(0, 16);
     const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::ControlPoint, "1 Point###Mode1" }, { DraftingPickMode::Edge, "2 Edge###Mode2" }, { DraftingPickMode::Face, "3 Face###Mode3" },
@@ -1683,6 +1739,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
+    if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
     Canvas->PopClipRect();
     ImVec2 Pill(Image.x + 12, Image.y + 12);
@@ -2553,7 +2610,7 @@ DraftingSceneStates DisplayedDraftingStates(const DraftingWorkspaceState& State)
 
 void RefreshDraftingScene(DraftingWorkspaceState& State, bool DirtyCondition)
 {
-    State.Scene = BuildDraftingScene(State.Document);
+    State.Scene = BuildDraftingScene(State.Document, 1.5e-3, State.ZebraEnabled);
     State.Camera.SceneRadius = std::max(1.0, 0.5 * std::hypot(State.Scene.BoundsHigh[0] - State.Scene.BoundsLow[0], State.Scene.BoundsHigh[1] - State.Scene.BoundsLow[1],
                                                               State.Scene.BoundsHigh[2] - State.Scene.BoundsLow[2]));
     State.HoverIdentity = 0;

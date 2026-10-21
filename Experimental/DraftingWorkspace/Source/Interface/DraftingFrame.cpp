@@ -81,7 +81,7 @@ void DraftingWorkspaceFrame::PrepareViewport(DraftingWorkspaceState& State)
         TextureView = Raster.ColourView();
     }
     const DraftingScene& Scene = DisplayedDraftingScene(State);
-    if (Scene.Revision != Raster.SceneRevision()) Raster.UploadScene(Scene);
+    if (Scene.Generation != Raster.SceneGeneration()) Raster.UploadScene(Scene);
     const DraftingSceneStates States = DisplayedDraftingStates(State);
     Raster.AssignStates(States.Faces, States.Edges);
     State.Style.EdgeStroke = State.Options.EdgeStroke;

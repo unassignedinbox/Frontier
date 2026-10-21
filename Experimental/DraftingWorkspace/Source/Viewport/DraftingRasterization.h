@@ -38,7 +38,7 @@ struct DraftingProjectionBlock
 {
     float ClipFromWorld[16] = {};                                                            // [-]  - Projection × view
     float ViewRight[4]      = {};                                                            // [-]  - w: orthographic flag
-    float ViewUp[4]         = {};                                                            // [-]  - Camera up
+    float ViewUp[4]         = {};                                                            // [-]  - Camera up, w: zebra stripe count (0 off)
     float ViewForward[4]    = {};                                                            // [-]  - Eye → target
     float DisplayStroke[4]  = {};                                                            // [px] - Width, height, stroke, depth bias
 };
@@ -63,6 +63,7 @@ struct DraftingViewportStyle
     int   GridPlane       = 0;                                                               // [-]   - 0 XY (Top/Bottom), 1 XZ (Front/Back), 2 YZ (Right/Left)
     bool  EdgesEnabled    = true;                                                            // [-]   - B-rep edges
     bool  SurfacesEnabled = true;                                                            // [-]   - B-rep faces
+    float ZebraStripes    = 0.0f;                                                            // [-]   - Zebra stripes over the reflection angle (0 off, V8)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -99,7 +100,7 @@ public:
     [[nodiscard]] VkImageView ColourView() const { return Colour.View; }
     [[nodiscard]] uint32_t    Width() const { return Colour.Width; }
     [[nodiscard]] uint32_t    Height() const { return Colour.Height; }
-    [[nodiscard]] uint64_t    SceneRevision() const { return UploadedRevision; }
+    [[nodiscard]] uint64_t    SceneGeneration() const { return UploadedGeneration; }
 
 private:
     void CreateTargets(uint32_t Width, uint32_t Height);
@@ -122,7 +123,7 @@ private:
     uint32_t       SegmentCount      = 0;
     uint32_t       FaceCount         = 0;
     uint32_t       EdgeCount         = 0;
-    uint64_t       UploadedRevision  = UINT64_MAX;
+    uint64_t       UploadedGeneration  = UINT64_MAX;
 
     VkDescriptorSetLayout BufferLayout     = VK_NULL_HANDLE;
     VkDescriptorPool      DescriptorPool   = VK_NULL_HANDLE;

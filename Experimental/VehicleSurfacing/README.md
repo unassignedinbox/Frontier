@@ -1,4 +1,4 @@
-# 🧩 VehicleSurfacing — Blender edge loops → fitted curves → CAD panels → mirrored sheet → solid (plan V1–V7)
+# 🧩 VehicleSurfacing — Blender edge loops → fitted curves → CAD panels → mirrored sheet → solid (plan V1–V8)
 
 **TL;DR** — Export the edge loops you already modelled in Blender as ordered limit points. In DraftingWorkspace, **Import curves…** fits each loop as a fair cubic B-spline within 0.2 mm. You then pick the sections in mode 1, press **L** to loft an exact NURBS sheet, and drag poles to reshape it; the loft regenerates. Tested on a synthetic bonnet: the panel lies within **0.076 mm** of all 286 limit points, including 5 loops the loft never saw, and within **0.053 mm** of the analytic surface.
 
@@ -17,7 +17,7 @@
 | V5 Gordon / Coons networks | 🟢 | PanelSurfacingValidation N1–N6 (bilinear 3.3e-16, bonnet net 0.065 mm vs H), W12, captures 66–67 |
 | V6 G1 / G2 across shared sections | 🟢 loft · 🚧 network | C1–C6, T1, captures 60–61 |
 | V7 Sew → mirror → close → solid | 🟢 · 🚧 trim | A1–A6 (cylinder and frustum 1.6e-15), T2–T4, W12, `PanelAssemblyWalkthrough.txt` 57 / 57, captures 62–65 |
-| V8 Zebra + deviation map | 🚧 | — |
+| V8 Zebra + deviation map | 🟢 | W13 (deviation 0.076 mm, closest-point residual 5.5e-8, G0 zebra jump 1.07 stripes vs G2 1.8e-13), `SurfaceEvaluationWalkthrough.txt` 28 / 28, captures 70–73 |
 
 ## Files
 
@@ -88,7 +88,7 @@ The add-on exports **limit points**: points on the evaluated Subdivision surface
 
 ## Limits (honest)
 
-- 🚧 V8 (zebra stripes, deviation map) is not built yet, and neither are trim, guide rails or N-sided corners.
+- 🚧 Trim, guide rails and N-sided corners are not built yet. Zebra stripes use interpolated exact vertex normals on a dense tessellation, not per-pixel evaluation.
 - ⚠️ G1 / G2 to a neighbour and the guaranteed G1 mirror seam apply to **lofts** only. A network refits its curves, which loses the end tangent: the bonnet net's mirror seam is 2.75e-4 rad (reported in T3).
 - ⚠️ Sewing needs boundaries that coincide point for point. Panels sharing one SpaceCurve meet that by construction; a differently parametrised boundary is refused (🚧 reparametrised sewing). Caps are planes only.
 - ⚠️ Adding a Mirror step refits the SpaceCurves that end on its plane, and they may get more poles. A pole edit whose index then no longer exists refuses the step rather than moving the wrong pole.

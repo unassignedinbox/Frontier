@@ -11,11 +11,11 @@
   },
   {
    "file": "Shaders/DraftingProjection.slang",
-   "sha256": "181c9d3afa5f0707780a61666b1ddaff2ade3a944a232a086d996d353de32266"
+   "sha256": "37fecf133bc10619bac918d7e19fd716d08b6bf4265a5de95a1b2735680f3571"
   },
   {
    "file": "Shaders/DraftingSurface.slang",
-   "sha256": "2bb13e1c4a0f0640e3beb76392c5f49f3ee0ed9f0b28b9de3e56b09bdb3b2796"
+   "sha256": "392ef418b20e56ed191c7698953f9f8d0a006135979044c80f7e6232d9892d7a"
   }
  ],
  "entries": [
@@ -951,8 +951,8 @@
   {
    "name": "DraftingSurfaceFragment",
    "entry": "main",
-   "words": 1267,
-   "sha256": "749fdb4068b53e17532910d9de18651616494f7ac4547e1616ee2403c4ad6662",
+   "words": 1558,
+   "sha256": "224fab3392d8fcfdc050aa81f32ec203a02d3d9ec090be948afa98d20f83eeb5",
    "reflection": {
     "version": "1.1",
     "parameters": [

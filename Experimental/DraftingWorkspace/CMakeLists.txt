@@ -215,7 +215,15 @@ add_test(NAME DraftingPanelAssemblyWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/PanelAssemblyWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME DraftingSurfaceEvaluationWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/EvaluationRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Evaluation.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/SurfaceEvaluationWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingVehicleSurfacingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

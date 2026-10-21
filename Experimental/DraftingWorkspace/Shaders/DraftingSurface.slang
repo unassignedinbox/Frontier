@@ -60,6 +60,18 @@ SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
     float3 Albedo = float3(0.70, 0.72, 0.76);
     float3 Colour = Albedo * (0.22 + 0.18 * Sky) + Albedo * Key * 0.62 + float3(0.62, 0.70, 0.82) * Fill * 0.16 + Rim * 0.10;
     Colour       += pow(saturate(dot(reflect(float3(0.0, 0.0, -1.0), View), normalize(float3(-0.45, 0.55, 0.70)))), 24.0) * 0.18;
+    // 📝 Zebra (vehicle plan V8, ViewUp.w = stripe count): the view direction reflected in the normal, its angle to the
+    //    camera up × count / π; stripe k covers phase [k, k + ½). Mirrors DraftingZebraPhase (DraftingScene.cpp).
+    if (Projection.ViewUp.w > 0.0)
+    {
+        float3 Forward   = Projection.ViewForward.xyz;
+        float3 Reflected = Forward - 2.0 * dot(Forward, Normal) * Normal;
+        float  Phase     = Projection.ViewUp.w * acos(clamp(dot(Reflected, Projection.ViewUp.xyz), -1.0, 1.0)) / 3.14159265;
+        float  Wave      = abs(frac(Phase) - 0.5) * 2.0;                                     // 1 at phase k, 0 at k + ½
+        float  Blur      = max(fwidth(Phase) * 2.0, 1.0e-4);                                 // Pixel-wide anti-aliasing
+        float  Light     = smoothstep(0.5 - Blur, 0.5 + Blur, Wave);
+        Colour = lerp(float3(0.05, 0.05, 0.06), float3(0.96, 0.96, 0.97), Light) * (0.80 + 0.20 * Key);
+    }
 
     uint State = FaceStates[Pixel.Face];
     if ((State & StateHovered) != 0u)  Colour = lerp(Colour, HoverTint, 0.28);

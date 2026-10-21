@@ -241,6 +241,13 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     }
     if (Field == "sheet") return Numeric(Document.Summary.SheetCondition ? 1 : 0);
     if (Field == "panels") return Numeric(double(Document.Regeneration.Panels.size()));
+    if (Field == "zebra") return Numeric(State.ZebraEnabled ? 1 : 0);
+    if (Field == "triangles") return Numeric(double(State.Scene.Corners.size() / 3));
+    if (Field == "deviation-worst" || Field == "deviation-points")
+    {
+        const DraftingDeviationMap Map = MeasureDraftingDeviation(Document);
+        return Numeric(Field == "deviation-worst" ? Map.Worst : double(Map.Needles.size()));
+    }
     if (Field == "loft-continuity") return Numeric(State.LoftContinuity);
     if (Field == "panel-names")
     {

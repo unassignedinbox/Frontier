@@ -157,6 +157,9 @@ struct DraftingWorkspaceState
     DraftingPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
+    bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)
+    bool                                  DeviationEnabled = false;                          // [-]   - Needles from imported points to the panels (V8)
+    DraftingDeviationMap                  Deviation      = {};                               // [-]   - Cached per document revision
     DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
     std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values

@@ -13,6 +13,7 @@
 #include "Document/VehicleCurveImport.h"
 
 #include "Blend/BlendCatalogue.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Sketch/SketchProfile.h"
 
 #include <algorithm>
@@ -57,6 +58,7 @@ namespace
     GateTally VariableGate    = { "W9", "Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload", "≤ 10⁻⁹" };
     GateTally SurfacingGate   = { "W11", "Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload", "≤ 0.5 mm, equal" };
     GateTally PanelGate       = { "W12", "Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal", "sound · rel. ≤ 2·10⁻³" };
+    GateTally EvaluationGate  = { "W13", "Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation", "≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -596,13 +598,103 @@ int main()
         Tally(PanelGate, 0.0, Reloads(Network), "network reload byte-equal");
     }
 
+    // ---- W13 surface evaluation (plan V8): deviation map and zebra phase through the document and scene functions.
+    {
+        auto Sections = [](DraftingDocument& Document)
+        {
+            std::vector<std::string> Labels;
+            for (const FeatureStep& Step : Document.Tree.Steps) if (Document.Captions[Step.Label].rfind("Section", 0) == 0) Labels.push_back(Step.Label);
+            return Labels;
+        };
+        auto Domain = [](const NurbsSurface& Surface, bool AlongU) { return MeasureNurbsSurfaceDomain(*Surface.Definition, AlongU); };
+        auto Compact = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3g", Value); return std::string(Text); };
+
+        // ① deviation map on the six-section bonnet: every imported point, closest-point residual, lattice bound.
+        DraftingDocument Fitted = CreateDraftingDocument("Deviation");
+        Expect(ImportDraftingCurves(Fitted, ReadVehicleCurves(DRAFTING_VEHICLE_SAMPLE)));
+        Expect(LoftDraftingCurves(Fitted, Sections(Fitted)));
+        const DraftingDeviationMap Map = MeasureDraftingDeviation(Fitted);
+        size_t Imported = 0;
+        for (const FeatureStep& Step : Fitted.Tree.Steps) if (Step.Kind == FeatureStepKind::SpaceCurve) Imported += Step.Points.size();
+        const NurbsSurface& Sheet = Fitted.Regeneration.Panels.begin()->second;
+        const NurbsDomain   AlongU = Domain(Sheet, true), AlongV = Domain(Sheet, false);
+        double WorstResidual = 0.0, WorstLattice = 0.0;
+        for (const DraftingDeviationNeedle& Needle : Map.Needles)
+        {
+            const Vector2 Foot   = ProjectOntoNurbsSurface(Sheet, Needle.Point, { 0.5 * (AlongU.Low + AlongU.High), 0.5 * (AlongV.Low + AlongV.High) });
+            const bool    Inside = Foot.X > AlongU.Low + 1.0e-9 && Foot.X < AlongU.High - 1.0e-9 && Foot.Y > AlongV.Low + 1.0e-9 && Foot.Y < AlongV.High - 1.0e-9;
+            const Vector3 Normal = EvaluateNurbsNormal(Sheet, Foot);
+            const Vector3 Gap    = Needle.Point - Needle.Foot;
+            if (Inside && Needle.Distance > 1.0e-12) WorstResidual = std::max(WorstResidual, Length(Cross(Gap, Normal)) / Needle.Distance);
+            double Lattice = std::numeric_limits<double>::infinity();
+            for (int First = 0; First <= 60; ++First)
+                for (int Second = 0; Second <= 60; ++Second)
+                    Lattice = std::min(Lattice, Distance(EvaluateNurbsSurface(Sheet, { AlongU.Low + (AlongU.High - AlongU.Low) * First / 60.0,
+                                                                                         AlongV.Low + (AlongV.High - AlongV.Low) * Second / 60.0 }).Position, Needle.Point));
+            WorstLattice = std::max(WorstLattice, Needle.Distance - Lattice);
+        }
+        Tally(EvaluationGate, Map.Worst * 1000.0, Map.Needles.size() == Imported && Imported == 286 && Map.Worst <= 2.0e-4 && Map.Revision == Fitted.Revision,
+              "deviation map, six-section loft: " + std::to_string(Map.Needles.size()) + " needles (one per imported point), worst [mm] (value), mean "
+              + std::to_string(Map.Mean * 1000.0) + " mm — W11 measures the same sheet");
+        Tally(EvaluationGate, 0.0, WorstResidual <= 1.0e-6, "interior needles run along the foot normal: |gap × N| / |gap| = " + Compact(WorstResidual) + " (≤ 10⁻⁶)");
+        Tally(EvaluationGate, 0.0, WorstLattice <= 1.0e-9, "no needle longer than the best of a 61 × 61 lattice: excess " + Compact(WorstLattice * 1000.0) + " mm");
+
+        // ② zebra: lift pole 2 of Section3 by 20 mm, front + rear lofts; phase across the shared Section3 at G0 and G2.
+        auto SeamJump = [&](const DraftingDocument& Document)
+        {
+            const Vector3 Forward = Normalize(Vector3{ -1.0, 1.0, -1.0 }), Up = Normalize(Vector3{ -1.0, 1.0, 2.0 });
+            std::vector<const NurbsSurface*> Panels;
+            for (const auto& [Name, Surface] : Document.Regeneration.Panels) Panels.push_back(&Surface);
+            if (Panels.size() != 2) return std::numeric_limits<double>::infinity();
+            double Worst = 0.0;
+            for (int Edge = 0; Edge < 2; ++Edge)
+            {
+                const NurbsDomain Across = Domain(*Panels[0], false), Along = Domain(*Panels[0], true);
+                const double      Fixed  = Edge ? Across.High : Across.Low;
+                const Vector3     Probe  = EvaluateNurbsSurface(*Panels[0], { 0.5 * (Along.Low + Along.High), Fixed }).Position;
+                const Vector2     Near   = ProjectOntoNurbsSurface(*Panels[1], Probe, { 0.5, 0.5 });
+                if (Distance(EvaluateNurbsSurface(*Panels[1], Near).Position, Probe) > 1.0e-6) continue;  // not the shared edge
+                for (int Index = 1; Index < 40; ++Index)
+                {
+                    const Vector2 Here  = { Along.Low + (Along.High - Along.Low) * Index / 40.0, Fixed };
+                    const Vector3 Point = EvaluateNurbsSurface(*Panels[0], Here).Position;
+                    const Vector2 There = ProjectOntoNurbsSurface(*Panels[1], Point, Near);
+                    Worst = std::max(Worst, std::abs(DraftingZebraPhase(EvaluateNurbsNormal(*Panels[0], Here), Forward, Up, 64.0)
+                                                   - DraftingZebraPhase(EvaluateNurbsNormal(*Panels[1], There), Forward, Up, 64.0)));
+                }
+            }
+            return Worst;
+        };
+        DraftingDocument Creased = CreateDraftingDocument("Zebra");
+        Expect(ImportDraftingCurves(Creased, ReadVehicleCurves(DRAFTING_VEHICLE_SAMPLE)));
+        const std::vector<std::string> Labels = Sections(Creased);
+        const Vector3 Pole = Creased.Regeneration.Curves.at(Labels[2]).Curve.Definition->Poles[2];
+        Expect(MoveDraftingPole(Creased, Labels[2], 2, Pole + Vector3{ 0.0, 0.0, 0.02 }));
+        Expect(LoftDraftingCurves(Creased, { Labels[0], Labels[1], Labels[2] }));
+        const DraftingCommandOutcome Plain = LoftDraftingCurves(Creased, { Labels[2], Labels[3], Labels[4], Labels[5] }, 0);
+        const double PlainJump = SeamJump(Creased);
+        Tally(EvaluationGate, 0.0, Plain.AcceptedCondition && PlainJump > 0.05 && PlainJump < 1.0e3,
+              "G0 rear loft on the lifted Section3: zebra phase jump across the seam " + Compact(PlainJump) + " stripes of 64 (> 0.05) — visibly broken stripes");
+        (void)UndoDraftingCommand(Creased);
+        const DraftingCommandOutcome Smooth = LoftDraftingCurves(Creased, { Labels[2], Labels[3], Labels[4], Labels[5] }, 2);
+        const double SmoothJump = SeamJump(Creased);
+        Tally(EvaluationGate, 0.0, Smooth.AcceptedCondition && SmoothJump <= 1.0e-6, "G2 rear loft: zebra phase jump " + Compact(SmoothJump) + " stripes of 64 (≤ 10⁻⁶) — continuous stripes");
+
+        // ③ zebra density tessellation: interpolated normals need short sides on the sheet.
+        const DraftingScene Coarse = BuildDraftingScene(Creased);
+        const DraftingScene Fine   = BuildDraftingScene(Creased, 1.5e-3, true);
+        const size_t CoarseCount = Coarse.Corners.size() / 3, FineCount = Fine.Corners.size() / 3;
+        Tally(EvaluationGate, 0.0, FineCount >= 20 * CoarseCount && Fine.Generation != Coarse.Generation && Fine.Revision == Coarse.Revision,
+              "zebra tessellation " + std::to_string(FineCount) + " vs " + std::to_string(CoarseCount) + " triangles (≥ 20×); distinct scene generation re-uploads the GPU buffers");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

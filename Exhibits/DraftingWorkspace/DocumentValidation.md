@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12.53 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (15.25 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -15,6 +15,8 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12
 | W9 | Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload | ≤ 10⁻⁹ | 3.57e-16 | 12 | 🟢 |
 | W10 | Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete | ≤ 10⁻⁹ | 4.45e-16 | 20 | 🟢 |
 | W11 | Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload | ≤ 0.5 mm, equal | 0.076 | 18 | 🟢 |
+| W12 | Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal | sound · rel. ≤ 2·10⁻³ | 0.0623 | 11 | 🟢 |
+| W13 | Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation | ≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe | 0.076 | 6 | 🟢 |
 
 ## Walkthrough
 
@@ -95,6 +97,23 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12
 | W11 | move pole 2 of Section3 by +10 mm → loft regenerates, panel at (0.5, 0.38) moved 3.728 mm, face name kept | 0 | 🟢 |
 | W11 | pole 99 refused: pole 99 does not exist | 0 | 🟢 |
 | W11 | undo → panel exactly back · redo → moved again | 0 | 🟢 |
+| W12 | front loft + rear loft G2 → 2 panels sewn on Section3, sheet sound  | 0 | 🟢 |
+| W12 | Alt+X → 4 panels, one sound sheet, face Mirror#14.Image(Loft#12.Side(Surface))  | 0 | 🟢 |
+| W12 | bonnet reload: continuity + mirror steps survive, save → load → save byte-equal, names equal | 0 | 🟢 |
+| W12 | Close on the open bonnet rim refused, document kept: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps 🚧) | 0 | 🟢 |
+| W12 | undo mirror → 2 panels | 0 | 🟢 |
+| W12 | pod: Planar = true round trip · loft → mirror → Close → solid V = 0.792802 vs 0.792411, rel. (value)  | 0.000494 | 🟢 |
+| W12 | second Close refused: Close#9: Close: the panels are already closed by Close#8 | 0 | 🟢 |
+| W12 | pod reload: planar flags + close step, byte-equal, same volume | 0 | 🟢 |
+| W12 | G1 on crossing curves refused: these curves cross (a network): G1 / G2 is available for section lofts only (🚧 networks) | 0 | 🟢 |
+| W12 | 10 crossing curves → Network step (Gordon), sheet sound, vs analytic H 61 × 61, worst [mm] (value)  | 0.0623 | 🟢 |
+| W12 | network reload byte-equal | 0 | 🟢 |
+| W13 | deviation map, six-section loft: 286 needles (one per imported point), worst [mm] (value), mean 0.017541 mm — W11 measures the same sheet | 0.076 | 🟢 |
+| W13 | interior needles run along the foot normal: |gap × N| / |gap| = 5.53e-08 (≤ 10⁻⁶) | 0 | 🟢 |
+| W13 | no needle longer than the best of a 61 × 61 lattice: excess 0 mm | 0 | 🟢 |
+| W13 | G0 rear loft on the lifted Section3: zebra phase jump across the seam 1.07 stripes of 64 (> 0.05) — visibly broken stripes | 0 | 🟢 |
+| W13 | G2 rear loft: zebra phase jump 1.76e-13 stripes of 64 (≤ 10⁻⁶) — continuous stripes | 0 | 🟢 |
+| W13 | zebra tessellation 5816 vs 94 triangles (≥ 20×); distinct scene generation re-uploads the GPU buffers | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

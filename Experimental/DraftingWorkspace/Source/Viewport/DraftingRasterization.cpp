@@ -264,7 +264,7 @@ void DraftingRasterization::Destroy()
     DescriptorPool   = VK_NULL_HANDLE;
     BufferLayout     = VK_NULL_HANDLE;
     BufferSet        = VK_NULL_HANDLE;
-    UploadedRevision = UINT64_MAX;
+    UploadedGeneration = UINT64_MAX;
     Device           = nullptr;
 }
 
@@ -310,7 +310,7 @@ void DraftingRasterization::UploadScene(const DraftingScene& Scene)
     SegmentBuffer = Device->CreateBuffer(sizeof(DraftingSceneSegment) * std::max<size_t>(SegmentCount, 1), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
     if (CornerCount) std::memcpy(CornerBuffer.Mapped, Scene.Corners.data(), sizeof(DraftingSceneCorner) * CornerCount);
     if (SegmentCount) std::memcpy(SegmentBuffer.Mapped, Scene.Segments.data(), sizeof(DraftingSceneSegment) * SegmentCount);
-    UploadedRevision = Scene.Revision;
+    UploadedGeneration = Scene.Generation;
     AssignStates(std::vector<uint32_t>(Scene.Faces.size(), 0u), std::vector<uint32_t>(Scene.Edges.size(), 0u));
 }
 
@@ -391,7 +391,7 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
     DraftingProjectionBlock Projection;
     Narrow(Frame.ClipFromWorld, Projection.ClipFromWorld);
     Narrow(Frame.Right, Projection.ViewRight, Frame.OrthographicEnabled ? 1.0f : 0.0f);
-    Narrow(Frame.Up, Projection.ViewUp, 0.0f);
+    Narrow(Frame.Up, Projection.ViewUp, Style.ZebraStripes);
     Narrow(Frame.Forward, Projection.ViewForward, 0.0f);
     Projection.DisplayStroke[0] = float(Colour.Width);
     Projection.DisplayStroke[1] = float(Colour.Height);

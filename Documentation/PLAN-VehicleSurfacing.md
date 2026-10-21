@@ -1,4 +1,4 @@
-# 📝 PLAN — Vehicle surfacing: Blender edge loops → fitted curves → CAD surfaces (V1–V7 built · V8 open)
+# 📝 PLAN — Vehicle surfacing: Blender edge loops → fitted curves → CAD surfaces (V1–V8 built)
 
 **TL;DR** — The vehicle already exists as a quad model in Blender. Its edge loops already carry the design intent: character lines, wheel arches, window outlines and sections. The plan reuses those loops instead of remodelling. Each chosen loop is exported as an ordered point chain, fitted with a fair B-spline in the kernel, and the curves are lofted or network-surfaced into exact NURBS faces that sew into a sheet body. The car is then mirrored and closed into a solid, ready for the fillets and features the kernel already has.
 - 🟢 **Already there:** NURBS curves / surfaces (construct, evaluate, project, iso-curves, Bezier decomposition), planar spline sketches (Hermite · Bezier · NURBS · cubic, Phase B), traced surface ∩ surface sections, Booleans with NURBS faces, `BodyCategory::Sheet`, the persistent-name feature tree, Plasticity keymap.
@@ -12,6 +12,10 @@
   - Mirror seam with the look-ahead tangent: 0 to 1e-15 rad.
   - Lofted half arcs, mirrored and capped, give a cylinder and a frustum to 1.6e-15 relative volume error.
   - The noisy pod becomes a solid within 4.8e-4 of ∫πab dy.
+- 🟢 **Status (2026-10-21): V8 built.** The **Zebra** toolbar toggle draws 64 reflection stripes in the Slang surface shader and switches to a dense tessellation (sides ≤ 2 % of the diagonal, about 60× the triangles). The **Deviation** toggle draws a needle from every imported limit point to its closest point on the panels, coloured green → red over 0 … 0.2 mm, with a legend (worst, mean, magnification). Gate W13 (6 checks) and `SurfaceEvaluationWalkthrough.txt` (28 checks, captures 70–73). Results:
+  - Deviation on the six-section bonnet: 286 needles, worst 0.076 mm, mean 0.018 mm — the same worst as W11. Needles are true closest points (|gap × N| / |gap| ≤ 5.5e-8) and never longer than the best of a 61 × 61 lattice.
+  - Zebra across Section3 after a 20 mm pole lift: G0 phase jump 1.07 stripes (visibly broken, capture 70), G2 1.8e-13 stripes (continuous, capture 71).
+  - Smooth data joins almost G1 by itself (8.5e-4 rad, C3), so the G0 / G2 comparison needs the pole lift to show anything.
 
 ---
 
@@ -107,7 +111,7 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 | G7 | Sew into a sheet / solid | 🟢 built: `AssemblePanels` (boundaries must match point for point), `MirrorPanel`, plane caps; `Mirror` / `Close` steps; 🚧 trim, reparametrised sewing, non-planar caps | stitch faces whose boundary curves coincide (tolerant edges) → sheet body → mirror → close with planar caps → solid | ⭐⭐⭐ |
 | G8 | Blends / offsets on NURBS faces | refused (no exact rational offset) | needed for panel gaps, shut lines, thickness — see decision D4 | ⭐⭐⭐⭐ |
 | G9 | Pole editing in the viewport | 🟢 built: mode 1 pole drag → `MoveDraftingPole` (V3) | Plasticity mode 1 (control points): pick and drag poles; the surfaces regenerate | ⭐⭐ |
-| G10 | Evaluation | 🟢 curvature combs and the limit-point deviation (W11) built; zebra and coloured deviation map open (V8) | curvature combs on curves; zebra / isophote Slang shader; deviation map (distance from each Blender limit point to the surface, coloured) | ⭐⭐ |
+| G10 | Evaluation | 🟢 curvature combs, limit-point deviation (W11), zebra stripes and the coloured deviation map (V8, W13) | curvature combs on curves; zebra / isophote Slang shader; deviation map (distance from each Blender limit point to the surface, coloured) | ⭐⭐ |
 
 ---
 
@@ -122,7 +126,7 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 | V5 | Gordon / Coons network surfaces | interpolates both curve families to 10⁻⁹; Coons of 4 lines reproduces a bilinear patch exactly | 🟢 N1–N6 (bilinear 3.3e-16 · Gordon 1.3e-15 · bonnet net 0.065 mm vs H) · W12 · captures 66–67 |
 | V6 | G1 / G2 across shared curves | normal angle ≤ 10⁻⁸ rad (G1) and relative curvature jump ≤ 10⁻⁶ (G2) sampled along every shared edge | 🟢 C1–C6 (1.9e-15 rad · 3e-12; the G0 control shows 8.5e-4 rad) · T1 · captures 60–61 |
 | V7 | Sew → sheet → mirror → solid | audit sound; volume of a closed lofted test body vs closed form; mirrored halves meet G1 at x = 0 | 🟢 A1–A6 (cylinder / frustum 1.6e-15 · seam ≤ 1.3e-15 rad · pod 4.8e-4) · T2–T4 · W12 · captures 62–65 · 🚧 trim |
-| V8 | Zebra shader + deviation map | rendered evidence on the bonnet: stripes continuous across a G2 joint, kinked across a G0 joint (both shown) | 🚧 |
+| V8 | Zebra shader + deviation map | rendered evidence on the bonnet: stripes continuous across a G2 joint, kinked across a G0 joint (both shown) | 🟢 W13 (deviation 0.076 mm · G0 jump 1.07 stripes · G2 1.8e-13) · captures 70–73 |
 
 ---
 
@@ -149,6 +153,11 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
   - Caps are plane faces only. Trim is not built.
   - A planar fit reports its deviation against the points after projection onto the plane. The true distance is at most `WorstDeviation + PlanarOffset`.
   - A lone network panel can face down (it renders in the back-face tint). Orientation is fixed only when Close closes the body.
+- ⚠️ **Honest V8 limits:**
+  - Zebra stripes come from the interpolated vertex normals of the dense tessellation, not a per-pixel surface evaluation. Each vertex carries the exact surface normal, so the error is the interpolation across a triangle side ≤ 2 % of the diagonal.
+  - Stripes are drawn against the view's up axis (they move with the camera, like Plasticity / Alias), not a fixed environment.
+  - The deviation map measures the imported points against the panels, not against the Blender mesh faces. Mirrored images are included as panels, so a point is measured against the nearest panel.
+  - The deviation map is recomputed on every toggle and regeneration (286 points × panels × 81 seeds + Newton, a few ms on the bonnet). A full car will need caching.
 - ⚠️ **G2 networks are research-grade.** Commercial modellers solve them with heavy machinery (Alias / ICEM class). Expect G1 everywhere first; G2 only on the main panels.
 - ⚠️ **N-sided corners** are where quad models hide their problems. Some corners will need a designer's choice of patch layout, not an algorithm.
 - ⚠️ **Exactness policy vs offsets.** The kernel refuses anything it cannot build exactly. Offsets of NURBS faces are not rational, so panel thickness and fillets between freeform panels need a tolerance-bounded approximation (decision D4).

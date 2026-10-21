@@ -77,6 +77,7 @@ struct DraftingScene
     std::array<double, 3>             BoundsLow   = { -1.0, -1.0, -1.0 };                    // [len] - Box corner
     std::array<double, 3>             BoundsHigh  = { 1.0, 1.0, 1.0 };                       // [len] - Box corner
     uint64_t                          Revision    = 0;                                       // [-]   - Document revision it was built from
+    uint64_t                          Generation  = 0;                                       // [-]   - Distinct per build (density changes re-upload)
     double                            Sag         = 0.0;                                     // [len] - Tessellation ε
     double                            Milliseconds = 0.0;                                    // [ms]  - Tessellation + packing
     std::string                       Refusal     = {};                                      // [-]   - Tessellation refusal (empty: fine)
@@ -106,7 +107,36 @@ struct DraftingPick
 //------------------------------------------------------------------------------------------------------------------------
 
 // Tessellates the document's body (SagRatio of the body diagonal) and packs the display arrays; empty without a body.
-[[nodiscard]] DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRatio = 1.5e-3);
+// FineCondition (zebra on): sides no longer than FineEdgeRatio of the diagonal, so interpolated normals follow the surface.
+[[nodiscard]] DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRatio = 1.5e-3, bool FineCondition = false);
+
+constexpr double FineEdgeRatio = 0.02;                                                       // [-] - Zebra tessellation: longest side / diagonal
+
+// 📝 Vehicle plan V8: one imported limit point and its foot on the nearest surface panel.
+struct DraftingDeviationNeedle
+{
+    Modeller::Vector3 Point    = {};                                                         // [len] - Imported point (SpaceCurve step)
+    Modeller::Vector3 Foot     = {};                                                         // [len] - Closest point on the panels
+    double            Distance = 0.0;                                                        // [len] - |Point − Foot|
+};
+
+struct DraftingDeviationMap
+{
+    uint64_t                             Revision = 0;                                       // [-]   - Document revision measured
+    std::vector<DraftingDeviationNeedle> Needles  = {};                                      // [-]   - One per imported point
+    double                               Worst    = 0.0;                                     // [len] - Largest distance
+    double                               Mean     = 0.0;                                     // [len] - Mean distance
+};
+
+// 💡 Distance from every SpaceCurve point (lofted or not — check loops count) to the nearest surface panel: best of a
+//    9 × 9 parameter grid per panel, then Newton projection (ProjectOntoNurbsSurface, clamped to the panel). Empty
+//    without panels.
+[[nodiscard]] DraftingDeviationMap MeasureDraftingDeviation(const DraftingDocument& Document);
+
+// 💡 Zebra phase (mirrors DraftingSurface.slang): the view direction reflected in the unit normal, its angle to the
+//    camera up axis × Stripes / π — stripe k covers phase [k, k + ½). A function of the normal alone (view fixed), so
+//    a G0 joint breaks the stripes, G1 kinks them and G2 keeps them smooth.
+[[nodiscard]] double DraftingZebraPhase(Modeller::Vector3 Normal, Modeller::Vector3 Forward, Modeller::Vector3 Up, double Stripes) noexcept;
 
 // 💡 CPU pick: nearest triangle hit (Möller–Trumbore); an edge wins over the face behind it when the ray passes within
 //    EdgeReach of the segment and no closer than the face hit minus EdgeReach (so silhouette and crease edges are
