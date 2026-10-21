@@ -10,10 +10,15 @@
 #include "Geometry/RollingBallCarrier.h"
 #include "Geometry/NurbsCarrier.h"
 
+#include "Intersection/ImplicitSurface.h"
 #include "Intersection/IntersectionCurve.h"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <numbers>
 
@@ -57,17 +62,77 @@ namespace
         Vector3 Tangent = {};                                                                // [-]   - T(𝑢)
         Vector3 First   = {};                                                                // [-]   - E₁(𝑢)
         Vector3 Second  = {};                                                                // [-]   - E₂(𝑢)
+        Vector3 Velocity = {};                                                               // [len] - C′(𝑢)
     };
+
+    // 📝 Section memo. Quadratures sweep 𝑣 at a fixed 𝑢 (and the ∂P/∂𝑢 difference revisits 𝑢 ± h), so the same section
+    //    is resolved many times; on a traced spine each one is a Newton solve onto both supports. The frame depends only on
+    //    Spine, Guide and range — copies sharing a Serial may differ only in Radius — and E₂ is rebuilt from Handedness on
+    //    every call. A hit returns the bit-identical frame, so results are unchanged.
+    struct SectionMemo
+    {
+        std::uint64_t Serial  = 0;                                                           // [-] - Definition identity (0 = empty)
+        double        𝑢       = 0.0;                                                         // [-] - Exact key
+        Vector3       Centre  = {};                                                          // [len]
+        Vector3       Tangent = {};                                                          // [-]
+        Vector3       First   = {};                                                          // [-]
+        Vector3       Velocity = {};                                                         // [len]
+    };
+
+    constexpr std::size_t SectionMemoSlots = 256;                                            // [-] - Direct-mapped, per thread
+
+    [[nodiscard]] std::size_t SectionMemoSlot(std::uint64_t Serial, double 𝑢) noexcept
+    {
+        std::uint64_t Bits = 0;
+        std::memcpy(&Bits, &𝑢, sizeof Bits);
+        std::uint64_t Mixed = (Bits ^ (Serial * 0x9E3779B97F4A7C15ull)) * 0xBF58476D1CE4E5B9ull;
+        Mixed ^= Mixed >> 31;
+        return static_cast<std::size_t>(Mixed % SectionMemoSlots);
+    }
+
+    std::atomic<std::uint64_t> NextDefinitionSerial{ 1 };                                    // [-] - Monotonic, never reused
 
     [[nodiscard]] SectionFrame ResolveSection(const RollingBallDefinition& Definition, double 𝑢) noexcept
     {
+        thread_local std::array<SectionMemo, SectionMemoSlots> Memo = {};
+        SectionMemo* Slot = nullptr;
+        if (Definition.Serial != 0)
+        {
+            Slot = &Memo[SectionMemoSlot(Definition.Serial, 𝑢)];
+            if (Slot->Serial == Definition.Serial && Slot->𝑢 == 𝑢)
+                return { Slot->Centre, Slot->Tangent, Slot->First, Cross(Slot->First, Slot->Tangent) * Definition.Handedness, Slot->Velocity };
+        }
         SectionFrame Frame;
         const CurveSample Sample = EvaluateCurve(Definition.Spine, Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period));
-        Frame.Centre  = Sample.Position;
-        Frame.Tangent = Normalize(Sample.Derivative);
+        Frame.Centre   = Sample.Position;
+        Frame.Velocity = Sample.Derivative;
+        Frame.Tangent  = Normalize(Sample.Derivative);
         const Vector3 Towards = FootOnSupport(Definition.Guide, Frame.Centre) - Frame.Centre;  // [len] - ≈ r·E₁
         Frame.First  = Normalize(Towards - Frame.Tangent * Dot(Towards, Frame.Tangent));
         Frame.Second = Cross(Frame.First, Frame.Tangent) * Definition.Handedness;
+        if (Slot) *Slot = { Definition.Serial, 𝑢, Frame.Centre, Frame.Tangent, Frame.First, Frame.Velocity };
+        return Frame;
+    }
+
+    // 📝 Section frame as a field of space for a traced spine C = S₁ ∩ S₂: T(X) = ±(N₁ × N₂)/|N₁ × N₂| from the two
+    //    support normals at X (signed like Reference), E₁, E₂ from the guide foot exactly as ResolveSection does. On the
+    //    spine it equals the section frame, so d/d𝑢 of the frame is its derivative along C′ — taken on the tangent line
+    //    C ± h·C′, which needs no Newton solve onto the curve. The symmetric stencil cancels the O(h²) offset of the
+    //    tangent line from the curve, so the quotient keeps the O(h²) truncation of the exact central difference.
+    struct FieldFrame
+    {
+        Vector3 First  = {};                                                                 // [-] - E₁(X)
+        Vector3 Second = {};                                                                 // [-] - E₂(X)
+    };
+
+    [[nodiscard]] FieldFrame ResolveFieldFrame(const RollingBallDefinition& Definition, const TracedIntersection& Trace, Vector3 Position, Vector3 Reference) noexcept
+    {
+        Vector3 Tangent = Normalize(Cross(MeasureSurfaceDistance(Trace.First, Position).Normal, MeasureSurfaceDistance(Trace.Second, Position).Normal));
+        if (Dot(Tangent, Reference) < 0.0) Tangent = -Tangent;
+        const Vector3 Towards = FootOnSupport(Definition.Guide, Position) - Position;      // [len] - ≈ r·E₁
+        FieldFrame Frame;
+        Frame.First  = Normalize(Towards - Tangent * Dot(Towards, Tangent));
+        Frame.Second = Cross(Frame.First, Tangent) * Definition.Handedness;
         return Frame;
     }
 
@@ -125,6 +190,7 @@ RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, doubl
     Definition->SpineHigh = Range.High;
     Definition->Period    = Range.Period;
     Definition->Handedness = Handedness < 0.0 ? -1.0 : 1.0;
+    Definition->Serial    = NextDefinitionSerial.fetch_add(1, std::memory_order_relaxed);
     return RollingBallSurface{ std::move(Definition) };
 }
 
@@ -138,6 +204,17 @@ SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Par
     Sample.DerivativeV = (Frame.Second * Cosine - Frame.First * Sine) * Definition.Radius;
     // 📝 ∂P/∂𝑢 by central difference (E₁′ would need the guide's curvature); h = 10⁻⁶·range, truncation O(h²).
     const double Step = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+    if (const auto* Traced = std::get_if<IntersectionCurve>(&Definition.Spine); Traced && Traced->Trace)
+    {
+        // 💡 Traced spine: C′ is exact and E₁′, E₂′ come from the frame field on the tangent line (one Newton solve per
+        //    sample instead of three).
+        const Vector3    Reach = Frame.Velocity * Step;                                      // [len] - h·C′
+        const FieldFrame Ahead = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre + Reach, Frame.Tangent);
+        const FieldFrame Back  = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre - Reach, Frame.Tangent);
+        const Vector3    Turn  = ((Ahead.First - Back.First) * Cosine + (Ahead.Second - Back.Second) * Sine) * (1.0 / (2.0 * Step));
+        Sample.DerivativeU = Frame.Velocity + Turn * Definition.Radius;
+        return Sample;
+    }
     const double Low  = Clamp(Parameter.X - Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
     const double High = Clamp(Parameter.X + Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
     Sample.DerivativeU = (EvaluatePosition(Definition, { High, Parameter.Y }) - EvaluatePosition(Definition, { Low, Parameter.Y })) * (1.0 / (High - Low));

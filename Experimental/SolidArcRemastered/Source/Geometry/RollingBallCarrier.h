@@ -12,6 +12,7 @@
 #include "Geometry/CurveGeometry.h"
 #include "Geometry/SurfaceGeometry.h"
 
+#include <cstdint>
 #include <optional>
 
 namespace Frontier::SolidArcRemastered
@@ -34,6 +35,7 @@ struct RollingBallDefinition
     double          SpineHigh = 0.0;                                                         // [-]
     double          Period    = 0.0;                                                         // [-]   - 𝑢 period (0 when open)
     double          Handedness = 1.0;                                                        // [-]   - E₂ = ±(E₁ × T); a reflection flips it
+    std::uint64_t   Serial    = 0;                                                           // [-]   - Section-memo identity (0 = not memoised)
 };
 
 struct ContactDefinition

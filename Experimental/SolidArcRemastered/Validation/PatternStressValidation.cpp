@@ -1334,7 +1334,9 @@ namespace
         Result.Genus     = Audit.Genus;
         Result.Solids    = static_cast<int>(Inventory.Regions.size()) - 1;
         Result.Redundant = CountRedundantEdges(Partition, Built.Body);
+        Moment = Clock::now();
         Result.Volume    = IntegrateBodyVolume(Partition, Built.Body);
+        Narrate("volume", Moment);
         Moment = Clock::now();
         if (Built.OracleEnabled) MeasureOracle(Partition, Built, Result);
         Narrate("membership oracle", Moment);

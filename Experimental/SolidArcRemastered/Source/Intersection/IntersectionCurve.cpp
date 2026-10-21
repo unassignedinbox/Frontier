@@ -12,6 +12,7 @@
 #include "Intersection/ImplicitSurface.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -36,13 +37,17 @@ namespace
     };
 
     // 📝 3D Newton on { d₁ = 0, d₂ = 0, Π·(X − Q) = 0 }: rows N₁, N₂, Π; inverse by the triple-product formula.
-    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale) noexcept
+    //    Normals receives N₁, N₂ at the returned Position (reused by the caller, so no surface is measured twice there).
+    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale, std::array<Vector3, 2>* Normals = nullptr) noexcept
     {
         const double Tolerance = 1.0e-13 * (1.0 + Scale);                                    // [len] - Acceptance
+        SurfaceDistance OnFirst, OnSecond;                                                   // [-]   - Measured at Position when Current
+        bool Current = false;                                                                // [-]   - Position unmoved since measured
         for (int Iteration = 0; Iteration < 24; ++Iteration)
         {
-            const SurfaceDistance OnFirst  = MeasureSurfaceDistance(First, Position);
-            const SurfaceDistance OnSecond = MeasureSurfaceDistance(Second, Position);
+            OnFirst  = MeasureSurfaceDistance(First, Position);
+            OnSecond = MeasureSurfaceDistance(Second, Position);
+            Current  = true;
             const Vector3& A = OnFirst.Normal;
             const Vector3& B = OnSecond.Normal;
             const double  PlaneResidual = Dot(PlaneNormal, Position - PlanePoint);            // [len²] - Off the plane
@@ -54,9 +59,16 @@ namespace
             if (std::fabs(Determinant) <= 1.0e-14 * Length(PlaneNormal)) return false;
             const Vector3 Step = (Cross(B, PlaneNormal) * OnFirst.Distance + Cross(PlaneNormal, A) * OnSecond.Distance + Cross(A, B) * PlaneResidual) * (1.0 / Determinant);
             Position = Position - Step;
+            Current  = false;
             if (Length(Step) <= 4.0e-16 * (1.0 + Length(Position))) break;
         }
-        return std::fabs(MeasureSurfaceDistance(First, Position).Distance) <= Tolerance && std::fabs(MeasureSurfaceDistance(Second, Position).Distance) <= Tolerance;
+        if (!Current)
+        {
+            OnFirst  = MeasureSurfaceDistance(First, Position);
+            OnSecond = MeasureSurfaceDistance(Second, Position);
+        }
+        if (Normals) *Normals = { OnFirst.Normal, OnSecond.Normal };
+        return std::fabs(OnFirst.Distance) <= Tolerance && std::fabs(OnSecond.Distance) <= Tolerance;
     }
 
     [[nodiscard]] Vector3 CurveDirection(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3 Position) noexcept
@@ -208,8 +220,9 @@ CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ
 {
     const GuideSample Guide = EvaluateGuide(Trace, FoldParameter(Trace, τ));
     Vector3 Position = Guide.Position;
-    if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter)) return { Guide.Position, Guide.First };
-    const Vector3 Direction = Cross(MeasureSurfaceDistance(Trace.First, Position).Normal, MeasureSurfaceDistance(Trace.Second, Position).Normal);
+    std::array<Vector3, 2> Normals;
+    if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter, &Normals)) return { Guide.Position, Guide.First };
+    const Vector3 Direction = Cross(Normals[0], Normals[1]);
     const double  Sine      = Length(Direction);                                             // [-] - |N₁ × N₂|
     if (Sine <= 1.0e-10) return { Position, Guide.First };
     Vector3 Unit = Direction * (1.0 / Sine);                                                 // [-] - 𝐭
