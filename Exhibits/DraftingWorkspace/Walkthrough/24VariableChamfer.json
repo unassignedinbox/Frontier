@@ -1,0 +1,18 @@
+{
+  "Frame": 78,
+  "Title": "Bracket",
+  "DocumentPath": "",
+  "Dirty": false,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cylinder2 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Cylinder2 · Extrude", "Refused": false}, {"Label": "Blend#7", "Caption": "Fillet1 · Blend", "Refused": false}, {"Label": "Blend#8", "Caption": "Chamfer1 · Blend", "Refused": false}],
+  "Body": {"Faces": 11, "Edges": 24, "Vertices": 16, "Genus": 1, "Volume": 10.22277375, "Sound": true},
+  "Selection": {"Faces": [], "Edges": ["Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))"]},
+  "PickMode": 2,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 0, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
+  "Bevel": {"Active": true, "Shape": "Chamfer", "Size": 0.3, "Pinned": true, "Variable": true, "EndSize": 0.1, "Flipped": true, "PreviewFaces": 12, "Refusal": ""},
+  "Undo": 5,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Anchor flipped: the start size is at each edge's end corner",
+  "Viewport": [320, 160, 930, 730]
+}

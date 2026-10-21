@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -31,13 +32,16 @@ enum class BlendProfile : uint8_t
 };
 
 // 📝 Size is the ball radius for a fillet and the equal setback along each face for a chamfer. EndSize makes the blend
-//    variable: the size runs linearly from Size at each edge's start vertex to EndSize at its end vertex.
+//    variable: the size runs linearly from Size at each edge's start vertex to EndSize at its end vertex. SizeAnchors
+//    pins that direction to vertices instead of edge senses (which a regeneration may reverse): each edge takes Size at
+//    the end listed there, and an edge with neither or both ends listed is refused.
 struct BlendSettings
 {
-    BlendProfile          Profile             = BlendProfile::Fillet;                        // [-]   - Cross-section
-    double                Size                = 0.1;                                         // [len] - Radius / setback (at the start vertex)
-    bool                  TangentChainEnabled = false;                                       // [-]   - Grow the edge set along G1 chains first
-    std::optional<double> EndSize             = {};                                          // [len] - Size at the end vertex (empty = constant)
+    BlendProfile             Profile             = BlendProfile::Fillet;                     // [-]   - Cross-section
+    double                   Size                = 0.1;                                      // [len] - Radius / setback (at the start vertex)
+    bool                     TangentChainEnabled = false;                                    // [-]   - Grow the edge set along G1 chains first
+    std::optional<double>    EndSize             = {};                                       // [len] - Size at the end vertex (empty = constant)
+    std::vector<VertexToken> SizeAnchors         = {};                                       // [-]   - Variable: vertices that take Size (empty = start vertices)
 };
 
 // 💡 Everything about one blended edge that does not depend on its neighbours. Spine and both contact curves share

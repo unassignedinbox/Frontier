@@ -189,6 +189,10 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-size") return Numeric(State.Bevel.Size);
     if (Field == "bevel-pinned") return Numeric(State.Bevel.PinnedCondition ? 1 : 0);
     if (Field == "bevel-chamfer") return Numeric(State.Bevel.Shape == Modeller::BlendProfile::Chamfer ? 1 : 0);
+    if (Field == "bevel-variable") return Numeric(State.Bevel.VariableEnabled ? 1 : 0);
+    if (Field == "bevel-end-size") return Numeric(State.Bevel.EndSize);
+    if (Field == "bevel-flipped") return Numeric(State.Bevel.ReversedCondition ? 1 : 0);
+    if (Field == "bevel-preview-volume") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Volume : 0.0);
     if (Field == "bevel-refusal") { Text = State.Bevel.Refusal; Number = double(Text.size()); return true; }
     if (Field == "preview-faces") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0);
     if (Field == "camera-yaw") return Numeric(State.Camera.Yaw);

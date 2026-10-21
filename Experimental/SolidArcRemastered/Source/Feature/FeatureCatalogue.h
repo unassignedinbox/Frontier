@@ -34,6 +34,7 @@ struct FeatureSpecimen
     std::function<double(const FeatureTree&)>                   ExpectedVolume   = {};      // [len³]  - Closed form
     std::function<std::vector<std::string>(const FeatureTree&)> ExpectedRefusals = {};      // [-]     - Step labels expected refused
     std::string                                                 Oracle           = {};      // [-]     - Formula text for the exhibit
+    std::function<std::vector<Vector3>(const FeatureTree&)>     ExpectedVertices = {};      // [len]   - Points that must be vertices of the final body
 };
 
 //------------------------------------------------------------------------------------------------------------------------

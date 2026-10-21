@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <set>
 #include <string>
@@ -56,6 +57,7 @@ namespace
     GateTally KeptGate        = { "F5", "Refused step keeps the previous body; later steps still run", "all hold" };
     GateTally ResolutionGate  = { "F6", "Expected resolution methods (exact · geometric rebind · ambiguous refusal · sketch refusal)", "all as expected" };
     GateTally DeterminismGate = { "F7", "Same tree twice in fresh partitions: identical names and volume bits", "equal" };
+    GateTally AnchorGate      = { "F8", "Variable blend sizes stay at their anchor vertices: expected cap vertices present", "≤ 10⁻⁹" };
 
     struct SweepRow
     {
@@ -272,6 +274,17 @@ int main(int ArgumentCount, char** Arguments)
                 const BodyInventory Inventory = Partition.CollectInventory(Outcome.Body);
                 Row.Faces = static_cast<int>(Inventory.Faces.size()); Row.Edges = static_cast<int>(Inventory.Edges.size()); Row.Vertices = static_cast<int>(Inventory.Vertices.size());
                 Row.PassedCondition = StatusCondition && Audit.SoundCondition() && Row.Error <= 1e-9;
+                if (Specimen.ExpectedVertices)
+                {
+                    // F8: every expected point is a vertex of the final body (nearest vertex distance).
+                    for (const Vector3& Point : Specimen.ExpectedVertices(Tree))
+                    {
+                        double Nearest = std::numeric_limits<double>::infinity();            // [len] - Closest vertex
+                        for (VertexToken Vertex : Inventory.Vertices) Nearest = std::min(Nearest, Distance(Partition.Vertices.Resolve(Vertex).Position, Point));
+                        Tally(AnchorGate, Nearest, Nearest <= 1e-9);
+                        Row.PassedCondition = Row.PassedCondition && Nearest <= 1e-9;
+                    }
+                }
                 if (!Audit.SoundCondition()) Row.Refused += " · audit: " + std::to_string(Audit.Findings.size()) + " findings";
             }
             else { Tally(StatusGate, 1.0, false); Tally(VolumeGate, 1.0, false); Row.PassedCondition = false; }
@@ -349,7 +362,7 @@ int main(int ArgumentCount, char** Arguments)
     }
 
     // ---- Report.
-    const GateTally* Gates[] = { &VolumeGate, &StatusGate, &CoverageGate, &SurvivorGate, &KeptGate, &ResolutionGate, &DeterminismGate };
+    const GateTally* Gates[] = { &VolumeGate, &StatusGate, &CoverageGate, &SurvivorGate, &KeptGate, &ResolutionGate, &DeterminismGate, &AnchorGate };
     bool PassedCondition = true;
     for (const GateTally* Gate : Gates) PassedCondition = PassedCondition && Gate->Failures == 0 && (Gate->Checks > 0 || !OnlyPrefix.empty());
     int Passed = 0;

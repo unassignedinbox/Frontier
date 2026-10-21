@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.64 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.75 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -12,6 +12,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.
 | W6 | Refused command (oversize fillet, empty selection) leaves tree, body and history untouched | all equal | 0 | 2 | 🟢 |
 | W7 | Undo / redo restore exact volumes; delete removes a whole tile | ≤ 10⁻¹² | 6.08e-16 | 4 | 🟢 |
 | W8 | TOML save → load → save is byte-equal; reloaded body volume and names equal | equal | 0 | 4 | 🟢 |
+| W9 | Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload | ≤ 10⁻⁹ | 3.57e-16 | 12 | 🟢 |
 
 ## Walkthrough
 
@@ -32,7 +33,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.
 | W5 | Block1.Depth = 2.5 → fillet, chamfer, push regenerate (V = 11.695493) | 6.08e-16 | 🟢 |
 | W5 | no step refused after the edit | 0 | 🟢 |
 | W5 | selection still names Extrude#2.Side(Line1) | 0 | 🟢 |
-| W6 | fillet r 5 on Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line3)) refused: Blend#8: Blend: vertex V57: blend ends on a curved face (🚧 cap on non-planar faces) | 0 | 🟢 |
+| W6 | fillet r 5 on Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line3)) refused: Blend#8: Blend: vertex V57: cap: contact curve misses the third face | 0 | 🟢 |
 | W6 | push with no faces refused: select one or more faces first | 0 | 🟢 |
 | W7 | undo Block1.Depth → exact earlier volume | 0 | 🟢 |
 | W7 | redo → edited volume | 6.08e-16 | 🟢 |
@@ -42,6 +43,18 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.
 | W8 | reloaded persistent names equal | 0 | 🟢 |
 | W8 | save → load → save byte-equal | 0 | 🟢 |
 | W8 | malformed file refused: a step has no label | 0 | 🟢 |
+| W9 | Fillet 0.1 → 0.3 on Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1)) (unflipped, anchor x = 0.0) (V = 7.962833) | 2.23e-16 | 🟢 |
+| W9 | rails 0.1 from the anchored corner, 0.3 from the far one (unflipped, anchor x = 0.0) | 0 | 🟢 |
+| W9 | history caption: Fillet 0.1 → 0.3 on 1 edge(s) | 0 | 🟢 |
+| W9 | Block1.Width = 5 regenerates the variable fillet (unflipped, anchor x = 0.0) (V = 9.953527) | 3.57e-16 | 🟢 |
+| W9 | after the edit 0.1 is still at its corner, x = 0.0 (unflipped, anchor x = 0.0) | 1.36e-16 | 🟢 |
+| W9 | reload: same volume bits, anchored rails, byte-equal re-save (unflipped, anchor x = 0.0) | 1.36e-16 | 🟢 |
+| W9 | Fillet 0.1 → 0.3 on Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1)) (flipped, anchor x = 4.0) (V = 7.962833) | 3.35e-16 | 🟢 |
+| W9 | rails 0.1 from the anchored corner, 0.3 from the far one (flipped, anchor x = 4.0) | 0 | 🟢 |
+| W9 | history caption: Fillet 0.1 → 0.3 on 1 edge(s) | 0 | 🟢 |
+| W9 | Block1.Width = 5 regenerates the variable fillet (flipped, anchor x = 4.0) (V = 9.953527) | 3.57e-16 | 🟢 |
+| W9 | after the edit 0.1 is still at its corner, x = 5.0 (flipped, anchor x = 4.0) | 1.36e-16 | 🟢 |
+| W9 | reload: same volume bits, anchored rails, byte-equal re-save (flipped, anchor x = 4.0) | 1.36e-16 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

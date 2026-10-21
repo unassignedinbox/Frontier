@@ -164,14 +164,28 @@ std::optional<CurveGeometry> SectionCylinderByPlane(const CylinderSurface& Cylin
     return EllipticalArc{ { Centre, Major, Minor, Cross(Major, Minor) }, Cylinder.Radius / std::fabs(Cosine), Cylinder.Radius };
 }
 
-EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings, const SupportOverride& Override)
+EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Requested, const SupportOverride& Override)
 {
     EdgeBlendSheetOutcome Outcome;
     const auto Refuse = [&](const std::string& Reason) { Outcome.Refusal = LabelToken("E", Edge) + ": " + Reason; return Outcome; };
-    if (!(Settings.Size > 0.0)) return Refuse("blend size must be positive");
+    if (!(Requested.Size > 0.0)) return Refuse("blend size must be positive");
+    const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+
+    // ⓪ Size anchors: an edge anchored at its end vertex swaps Size and EndSize, so below Size is always at the start.
+    BlendSettings Settings = Requested;
+    if (Settings.EndSize && !Settings.SizeAnchors.empty())
+    {
+        const auto Anchored = [&](VertexToken Vertex) { return std::find(Settings.SizeAnchors.begin(), Settings.SizeAnchors.end(), Vertex) != Settings.SizeAnchors.end(); };
+        const bool StartAnchored = Anchored(Profile.Start), EndAnchored = Anchored(Profile.End);
+        if (StartAnchored == EndAnchored)
+        {
+            return Refuse(StartAnchored ? "variable size anchored at both ends of the edge (which end takes the start size?)"
+                                        : "variable size with neither end of the edge anchored (which end takes the start size?)");
+        }
+        if (EndAnchored) std::swap(Settings.Size, *Settings.EndSize);
+    }
 
     // ① Supports, convexity and the wedge angle at mid-edge.
-    const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
     EdgeBlendSheet Sheet;
     Sheet.Edge    = Edge;
     Sheet.Fins[0] = Profile.RadialFin;

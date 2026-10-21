@@ -390,22 +390,61 @@ DraftingCommandOutcome ConstructDraftingPrimitive(DraftingDocument& Document, co
 
 DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, BlendProfile Shape, double Size)
 {
-    const std::string Stem  = Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer";
-    const std::string Label = Stem + " " + FormatAmount(Size) + " on " + std::to_string(Document.Selection.Edges.size()) + " edge(s)";
+    DraftingBlendRequest Request;
+    Request.Shape = Shape;
+    Request.Size  = Size;
+    return BlendDraftingSelection(Document, Request);
+}
+
+DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, const DraftingBlendRequest& Request)
+{
+    const bool        VariableCondition = Request.EndSize.has_value();
+    const std::string Stem  = Request.Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer";
+    const std::string Sizes = FormatAmount(Request.Size) + (VariableCondition ? " → " + FormatAmount(*Request.EndSize) : std::string());
+    const std::string Label = Stem + " " + Sizes + " on " + std::to_string(Document.Selection.Edges.size()) + " edge(s)";
     return RunCommand(Document, Label, true, [&]() -> std::string
     {
         if (Document.Selection.Edges.empty()) return "select one or more edges first";
-        if (Size <= 0.0) return "the blend size must be positive";
-        const std::string Caption = NextCaption(Document, Stem);
+        if (Request.Size <= 0.0 || (VariableCondition && *Request.EndSize <= 0.0)) return "the blend size must be positive";
+
+        // ① Variable: name each edge's anchor vertex on the current body (start, or end when reversed).
+        std::vector<TopologyReference> Anchors;
+        if (VariableCondition)
+        {
+            if (!Document.Partition || !Document.Regeneration.Body.PresentCondition()) return "there is no body to blend";
+            const BodyNaming& Naming = Document.Regeneration.Naming;
+            for (const std::string& EdgeName : Document.Selection.Edges)
+            {
+                const auto Edge = std::find_if(Naming.Edges.begin(), Naming.Edges.end(), [&](const auto& Entry) { return Entry.second == EdgeName; });
+                if (Edge == Naming.Edges.end()) return "edge " + EdgeName + " is not on the current body";
+                const EdgeProfile& Profile = Document.Partition->Edges.Resolve(Document.Partition->Edges.TokenAt(Edge->first));
+                if (Profile.Start == Profile.End) return "variable size on a closed edge (the size would jump at its only vertex)";
+                const VertexToken Anchor = Request.ReversedCondition ? Profile.End : Profile.Start;
+                const auto Vertex = Naming.Vertices.find(Anchor.Slot);
+                if (Vertex == Naming.Vertices.end()) return "the anchor vertex of " + EdgeName + " has no persistent name";
+                Anchors.push_back({ ReferenceKind::Vertex, Vertex->second, {} });
+            }
+        }
+
+        // ② Parameters and the step.
+        const std::string Caption   = NextCaption(Document, Stem);
         const std::string StepLabel = "Blend#" + std::to_string(NextStepOrdinal(Document.Tree));
-        Document.Tree.Parameters.push_back({ Caption + ".Size", Size, 0.0, std::max(1.0, 4.0 * Size),
-                                             Shape == BlendProfile::Fillet ? "fillet radius" : "chamfer setback" });
+        const double      Larger    = std::max(Request.Size, Request.EndSize.value_or(Request.Size));
+        const char*       Meaning   = Request.Shape == BlendProfile::Fillet ? "fillet radius" : "chamfer setback";
+        Document.Tree.Parameters.push_back({ Caption + ".Size", Request.Size, 0.0, std::max(1.0, 4.0 * Larger),
+                                             VariableCondition ? std::string(Meaning) + " at the anchor corners" : std::string(Meaning) });
         FeatureStep Step;
         Step.Kind  = FeatureStepKind::Blend;
         Step.Label = StepLabel;
-        Step.Shape = Shape;
+        Step.Shape = Request.Shape;
         Step.Size  = ParameterValue(Caption + ".Size");
         for (const std::string& Name : Document.Selection.Edges) Step.References.push_back({ ReferenceKind::Edge, Name, {} });
+        if (VariableCondition)
+        {
+            Document.Tree.Parameters.push_back({ Caption + ".EndSize", *Request.EndSize, 0.0, std::max(1.0, 4.0 * Larger), std::string(Meaning) + " at the far corners" });
+            Step.EndSize     = ParameterValue(Caption + ".EndSize");
+            Step.SizeAnchors = std::move(Anchors);
+        }
         Document.Tree.Steps.push_back(std::move(Step));
         Document.Captions[StepLabel] = Caption;
         return {};

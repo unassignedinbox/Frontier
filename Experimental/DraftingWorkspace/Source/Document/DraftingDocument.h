@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,17 @@ struct DraftingSelection
     std::vector<std::string> Faces = {};                                                     // [-] - Selected face names
     std::vector<std::string> Edges = {};                                                     // [-] - Selected edge names
     DraftingSelectionKind    LastKind = DraftingSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
+};
+
+// 📝 Variable when EndSize is set: Size at each edge's anchor end, EndSize at its other end. The anchor is the edge's
+//    start vertex on the current body, or its end vertex when ReversedCondition (Plasticity F flips it); it is stored as
+//    a persistent vertex name, so a regeneration that reverses the edge keeps each size at its corner.
+struct DraftingBlendRequest
+{
+    Modeller::BlendProfile Shape             = Modeller::BlendProfile::Fillet;               // [-]   - Cross-section
+    double                 Size              = 0.25;                                         // [len] - Radius / setback (at the anchors)
+    std::optional<double>  EndSize           = {};                                           // [len] - Size at the far ends (empty = constant)
+    bool                   ReversedCondition = false;                                        // [-]   - Anchor at each edge's end vertex
 };
 
 struct DraftingCommandOutcome
@@ -127,6 +139,7 @@ struct DraftingDocument
 //    that make a *later* step refuse are kept — the tree marks the step and keeps the previous body (plan § 3).
 [[nodiscard]] DraftingCommandOutcome ConstructDraftingPrimitive(DraftingDocument& Document, const DraftingConstructRequest& Request);
 [[nodiscard]] DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, Modeller::BlendProfile Shape, double Size);
+[[nodiscard]] DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, const DraftingBlendRequest& Request);
 [[nodiscard]] DraftingCommandOutcome ChangeDraftingSelection(DraftingDocument& Document, Modeller::FaceOperationKind Operation, double Amount);
 [[nodiscard]] DraftingCommandOutcome AssignDraftingParameter(DraftingDocument& Document, const std::string& Name, double Value);
 [[nodiscard]] DraftingCommandOutcome DeleteDraftingStep(DraftingDocument& Document, const std::string& Label);

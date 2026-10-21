@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                  DRAFTINGDOCUMENTVALIDATION.CPP
 ====================================================================================================================================*/
-// 🧩 Step 9: DraftingWorkspace document gates — construct tiles, picks, blends, face edits, parameters, undo, files
+// 🧩 Step 9: DraftingWorkspace document gates — construct tiles, picks, blends, face edits, parameters, undo, files, variable blends
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INCLUDES
@@ -11,10 +11,13 @@
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingScene.h"
 
+#include "Blend/BlendCatalogue.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -48,6 +51,7 @@ namespace
     GateTally AtomicGate      = { "W6", "Refused command (oversize fillet, empty selection) leaves tree, body and history untouched", "all equal" };
     GateTally HistoryGate     = { "W7", "Undo / redo restore exact volumes; delete removes a whole tile", "≤ 10⁻¹²" };
     GateTally FileGate        = { "W8", "TOML save → load → save is byte-equal; reloaded body volume and names equal", "equal" };
+    GateTally VariableGate    = { "W9", "Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
 
@@ -84,6 +88,34 @@ namespace
         const std::string Name = NameDraftingIdentity(Scene, Hit->Identity);
         SelectDraftingName(Document, DraftingIdentityKind(Hit->Identity), Name, AdditiveCondition);
         return Name;
+    }
+
+    // Position of an end of the named edge on the document's current body (start, or end when reversed).
+    [[nodiscard]] Vector3 EdgeEndPosition(const DraftingDocument& Document, const std::string& EdgeName, bool ReversedCondition)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges)
+        {
+            if (Name != EdgeName) continue;
+            const EdgeProfile& Profile = Document.Partition->Edges.Resolve(Document.Partition->Edges.TokenAt(Slot));
+            return Document.Partition->Vertices.Resolve(ReversedCondition ? Profile.End : Profile.Start).Position;
+        }
+        return { std::nan(""), std::nan(""), std::nan("") };
+    }
+
+    // Worst distance from the expected cap vertices of a variable fillet on the front-top edge (y = 0, z = Top) to the
+    // body's vertices: the rails end Size from the anchored corner (x = AnchorX) and EndSize from the far one.
+    [[nodiscard]] double MeasureCapGap(const DraftingDocument& Document, double AnchorX, double FarX, double Top, double Size, double EndSize)
+    {
+        const Vector3 Expected[4] = { { AnchorX, Size, Top }, { AnchorX, 0.0, Top - Size }, { FarX, EndSize, Top }, { FarX, 0.0, Top - EndSize } };
+        double Worst = 0.0;
+        for (const Vector3& Point : Expected)
+        {
+            double Nearest = std::numeric_limits<double>::infinity();
+            for (const auto& [Slot, Name] : Document.Regeneration.Naming.Vertices)
+                Nearest = std::min(Nearest, Distance(Document.Partition->Vertices.Resolve(Document.Partition->Vertices.TokenAt(Slot)).Position, Point));
+            Worst = std::max(Worst, Nearest);
+        }
+        return Worst;
     }
 
     void Expect(DraftingCommandOutcome Outcome)
@@ -207,13 +239,49 @@ int main()
     const DraftingDocumentFile Broken = DecodeDraftingDocument("Format = \"DraftingWorkspace\"\nSteps = [ { Kind = 0 } ]\n");
     Tally(FileGate, 0.0, !Broken.Refusal.empty(), "malformed file refused: " + Broken.Refusal);
 
+    // ---- W9 variable blend: pick the front-top edge (y = 0, z = 1) of a 4 × 2 × 1 block, fillet 0.1 → 0.3, flip, edit, reload
+    for (int Flip = 0; Flip < 2; ++Flip)
+    {
+        const bool       ReversedCondition = Flip == 1;
+        DraftingDocument Variable = CreateDraftingDocument("Variable");
+        Expect(ConstructDraftingPrimitive(Variable, Block));
+        const std::string FrontEdge = PickAndSelect(Variable, RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), false);
+        const double AnchorX = EdgeEndPosition(Variable, FrontEdge, ReversedCondition).X;      // [len] - Corner that takes Size
+        const double FarX    = 4.0 - AnchorX;
+        DraftingBlendRequest Request;
+        Request.Shape = BlendProfile::Fillet; Request.Size = 0.1; Request.EndSize = 0.3; Request.ReversedCondition = ReversedCondition;
+        const DraftingCommandOutcome Applied = BlendDraftingSelection(Variable, Request);
+        Expect(Applied);
+        const std::string Case = std::string(ReversedCondition ? "flipped" : "unflipped") + ", anchor x = " + std::to_string(AnchorX).substr(0, 3);
+        TallyVolume(VariableGate, Variable, 8.0 - MeasureVariableFilletLoss(4.0, 0.1, 0.3), "Fillet 0.1 → 0.3 on " + FrontEdge + " (" + Case + ")");
+        const double Gap = MeasureCapGap(Variable, AnchorX, FarX, 1.0, 0.1, 0.3);
+        Tally(VariableGate, Gap, Gap <= 1.0e-9, "rails 0.1 from the anchored corner, 0.3 from the far one (" + Case + ")");
+        Tally(VariableGate, 0.0, Applied.Label.find("0.1 → 0.3") != std::string::npos, "history caption: " + Applied.Label);
+
+        // Width 4 → 5: the anchor is a named vertex, so 0.1 stays at its corner (x = 0 stays, x = 4 moves to 5).
+        Expect(AssignDraftingParameter(Variable, "Block1.Width", 5.0));
+        const double MovedAnchor = AnchorX < 2.0 ? 0.0 : 5.0, MovedFar = 5.0 - MovedAnchor;
+        TallyVolume(VariableGate, Variable, 10.0 - MeasureVariableFilletLoss(5.0, 0.1, 0.3), "Block1.Width = 5 regenerates the variable fillet (" + Case + ")");
+        const double MovedGap = MeasureCapGap(Variable, MovedAnchor, MovedFar, 1.0, 0.1, 0.3);
+        Tally(VariableGate, MovedGap, MovedGap <= 1.0e-9 && Variable.Regeneration.Refused == 0, "after the edit 0.1 is still at its corner, x = " + std::to_string(MovedAnchor).substr(0, 3) + " (" + Case + ")");
+
+        // Save → load: the end size and the named anchor survive the TOML round trip.
+        const std::string Saved = EncodeDraftingDocument(Variable);
+        DraftingDocumentFile Loaded = DecodeDraftingDocument(Saved);
+        DraftingDocument Reloaded = CreateDraftingDocument(Loaded.Title);
+        const DraftingCommandOutcome Opened = ReplaceDraftingTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+        const double ReloadGap = Opened.AcceptedCondition ? MeasureCapGap(Reloaded, MovedAnchor, MovedFar, 1.0, 0.1, 0.3) : 1.0;
+        Tally(VariableGate, ReloadGap, Opened.AcceptedCondition && Reloaded.Summary.Volume == Variable.Summary.Volume && ReloadGap <= 1.0e-9 &&
+              Saved.find("SizeAnchors") != std::string::npos && EncodeDraftingDocument(Reloaded) == Saved, "reload: same volume bits, anchored rails, byte-equal re-save (" + Case + ")");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

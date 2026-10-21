@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace Frontier::SolidArcRemastered
@@ -538,6 +539,19 @@ namespace
         return Selection;
     }
 
+    // The body's vertex at Point (the nearest one; Point is always a corner in the specimens).
+    [[nodiscard]] VertexToken SelectVertex(const ModelPartition& Partition, BodyToken Body, Vector3 Point)
+    {
+        VertexToken Nearest  = {};
+        double      Shortest = std::numeric_limits<double>::infinity();                      // [len] - Best distance so far
+        for (VertexToken Vertex : Partition.CollectInventory(Body).Vertices)
+        {
+            const double Gap = Distance(Partition.Vertices.Resolve(Vertex).Position, Point);
+            if (Gap < Shortest) { Shortest = Gap; Nearest = Vertex; }
+        }
+        return Nearest;
+    }
+
     [[nodiscard]] EdgeTest FrontBottom()
     {
         return [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z < 1e-9 && B.Z < 1e-9; };
@@ -936,6 +950,28 @@ namespace
                 Specimen.Settings.EndSize = 0.3;
                 return Specimen;
             } },
+            // ---- Size anchors: the vertex that takes Size is named, so the result no longer depends on the edge sense.
+            { "VariableAnchored", [](ModelPartition& Partition)
+            {
+                const BodyToken Body  = ConstructBlock(Partition, {}, BoxExtent).Value;
+                const auto      Edges = SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; });
+                BlendSpecimen Specimen = Make("VariableAnchored", "Variable", "Front top edge r 0.1 anchored at x = 4 → 0.4 at x = 0: the anchor, not the edge sense, places the sizes", Body, Edges,
+                                              BlendProfile::Fillet, 0.1, -VariableFilletLoss(4.0, 0.4, 0.1), 7);
+                Specimen.Settings.EndSize     = 0.4;
+                Specimen.Settings.SizeAnchors = { SelectVertex(Partition, Body, { 4.0, 0.0, 2.0 }) };
+                Specimen.Clearance            = VariableClearance(4.0, 0.4, 0.1, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "VariableUnanchored", [](ModelPartition& Partition)
+            {
+                const BodyToken Body  = ConstructBlock(Partition, {}, BoxExtent).Value;
+                const auto      Edges = SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; });
+                BlendSpecimen Specimen = MakeRefusal("VariableUnanchored", "Refusal", "Front top edge r 0.1 → 0.4 anchored at a vertex off the edge: which end takes 0.1 is unknown", Body, Edges,
+                                                     BlendProfile::Fillet, 0.1);
+                Specimen.Settings.EndSize     = 0.4;
+                Specimen.Settings.SizeAnchors = { SelectVertex(Partition, Body, { 0.0, 3.0, 0.0 }) };
+                return Specimen;
+            } },
             // ---- Curved-edge chamfers: ball-law spine on the exact edge, chord carrier between the rails.
             { "TiltedBoreChamfer", [](ModelPartition& Partition)
             {
@@ -1039,6 +1075,12 @@ double MeasureRimBlendVolume(Vector2 Corner, Vector2 AlongFirst, Vector2 AlongSe
     const double Distance = 4.0 * Size * std::sin(0.5 * Sweep) / (3.0 * Sweep);              // [len]  - Centroid from the centre
     Moment -= Sector * (Centre - Bisector * Distance).X;
     return Sign * 2.0 * π * Moment;
+}
+
+double MeasureVariableFilletLoss(double Length, double Low, double High)
+{
+    if (std::fabs(High - Low) <= 1.0e-12 * std::max(Low, High)) return (1.0 - std::numbers::pi / 4.0) * Low * Low * Length;
+    return VariableFilletLoss(Length, Low, High);
 }
 
 std::vector<std::string> EnumerateBlendSpecimens()

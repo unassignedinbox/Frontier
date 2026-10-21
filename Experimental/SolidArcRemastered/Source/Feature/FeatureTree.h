@@ -14,6 +14,7 @@
 
 #include <map>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -85,7 +86,9 @@ struct FeatureStep
     int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch
     FeatureValue                   Angle          = { 2.0 * std::numbers::pi };              // [rad] - Revolve: turn angle in (0, 2π]
     BlendProfile                   Shape          = BlendProfile::Fillet;                    // [-]   - Blend cross-section
-    FeatureValue                   Size           = {};                                      // [len] - Blend radius / setback
+    FeatureValue                   Size           = {};                                      // [len] - Blend radius / setback (at the anchors)
+    std::optional<FeatureValue>    EndSize        = {};                                      // [len] - Blend: size at the far ends (empty = constant)
+    std::vector<TopologyReference> SizeAnchors    = {};                                      // [-]   - Blend (variable): vertices that take Size, one per edge
     FaceOperationKind              Operation      = FaceOperationKind::Push;                 // [-]   - Face-operation verb
     FeatureValue                   Amount         = {};                                      // [len|rad|-] - Distance / angle / factor (by verb)
     std::vector<TopologyReference> References     = {};                                      // [-]   - Blend: edges · face operation: faces

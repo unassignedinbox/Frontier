@@ -51,6 +51,24 @@ constexpr int64_t FormatVersion = 1;                                            
     return Table;
 }
 
+[[nodiscard]] toml::array EncodeReferences(const std::vector<TopologyReference>& References)
+{
+    toml::array Entries;
+    for (const TopologyReference& Reference : References)
+    {
+        toml::table Entry{ { "Kind", static_cast<int64_t>(Reference.Kind) }, { "Name", Reference.Name } };
+        if (Reference.Signature.CapturedCondition)
+        {
+            Entry.insert("Position", EncodeVector(Reference.Signature.Position));
+            Entry.insert("Direction", EncodeVector(Reference.Signature.Direction));
+            Entry.insert("Category", Reference.Signature.Category);
+            Entry.insert("Size", Reference.Signature.Size);
+        }
+        Entries.push_back(std::move(Entry));
+    }
+    return Entries;
+}
+
 [[nodiscard]] toml::table EncodeSketch(const SketchModel& Sketch)
 {
     toml::array Points;
@@ -100,29 +118,18 @@ constexpr int64_t FormatVersion = 1;                                            
     case FeatureStepKind::Blend:
         Table.insert("Shape", static_cast<int64_t>(Step.Shape));
         Table.insert("Size", EncodeValue(Step.Size));
+        if (Step.EndSize)
+        {
+            Table.insert("EndSize", EncodeValue(*Step.EndSize));
+            Table.insert("SizeAnchors", EncodeReferences(Step.SizeAnchors));
+        }
         break;
     case FeatureStepKind::FaceOperation:
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
         Table.insert("Amount", EncodeValue(Step.Amount));
         break;
     }
-    if (!Step.References.empty())
-    {
-        toml::array References;
-        for (const TopologyReference& Reference : Step.References)
-        {
-            toml::table Entry{ { "Kind", static_cast<int64_t>(Reference.Kind) }, { "Name", Reference.Name } };
-            if (Reference.Signature.CapturedCondition)
-            {
-                Entry.insert("Position", EncodeVector(Reference.Signature.Position));
-                Entry.insert("Direction", EncodeVector(Reference.Signature.Direction));
-                Entry.insert("Category", Reference.Signature.Category);
-                Entry.insert("Size", Reference.Signature.Size);
-            }
-            References.push_back(std::move(Entry));
-        }
-        Table.insert("References", std::move(References));
-    }
+    if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
     return Table;
 }
 
@@ -148,6 +155,30 @@ constexpr int64_t FormatVersion = 1;                                            
     Value.SecondParameter = View["SecondParameter"].value_or(std::string{});
     Value.SecondFactor    = View["SecondFactor"].value_or(0.0);
     return Value;
+}
+
+[[nodiscard]] std::vector<TopologyReference> DecodeReferences(const toml::node_view<const toml::node> View)
+{
+    std::vector<TopologyReference> References;
+    const toml::array* Entries = View.as_array();
+    if (!Entries) return References;
+    for (const toml::node& Entry : *Entries)
+    {
+        const toml::node_view<const toml::node> Reference{ Entry };
+        TopologyReference Decoded;
+        Decoded.Kind = static_cast<ReferenceKind>(Reference["Kind"].value_or(int64_t{ 1 }));
+        Decoded.Name = Reference["Name"].value_or(std::string{});
+        if (Reference["Position"])
+        {
+            Decoded.Signature.CapturedCondition = true;
+            Decoded.Signature.Position  = DecodeVector(Reference["Position"], {});
+            Decoded.Signature.Direction = DecodeVector(Reference["Direction"], {});
+            Decoded.Signature.Category  = Reference["Category"].value_or(std::string{});
+            Decoded.Signature.Size      = Reference["Size"].value_or(0.0);
+        }
+        References.push_back(std::move(Decoded));
+    }
+    return References;
 }
 
 [[nodiscard]] SketchModel DecodeSketch(const toml::node_view<const toml::node> View)
@@ -274,24 +305,11 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             Step.Size           = DecodeValue(View["Size"]);
             Step.Operation      = static_cast<FaceOperationKind>(View["Operation"].value_or(int64_t{ 1 }));
             Step.Amount         = DecodeValue(View["Amount"]);
-            if (const toml::array* References = View["References"].as_array())
+            Step.References = DecodeReferences(View["References"]);
+            if (View["EndSize"])
             {
-                for (const toml::node& ReferenceEntry : *References)
-                {
-                    const toml::node_view<const toml::node> Reference{ ReferenceEntry };
-                    TopologyReference Decoded;
-                    Decoded.Kind = static_cast<ReferenceKind>(Reference["Kind"].value_or(int64_t{ 1 }));
-                    Decoded.Name = Reference["Name"].value_or(std::string{});
-                    if (Reference["Position"])
-                    {
-                        Decoded.Signature.CapturedCondition = true;
-                        Decoded.Signature.Position  = DecodeVector(Reference["Position"], {});
-                        Decoded.Signature.Direction = DecodeVector(Reference["Direction"], {});
-                        Decoded.Signature.Category  = Reference["Category"].value_or(std::string{});
-                        Decoded.Signature.Size      = Reference["Size"].value_or(0.0);
-                    }
-                    Step.References.push_back(std::move(Decoded));
-                }
+                Step.EndSize     = DecodeValue(View["EndSize"]);
+                Step.SizeAnchors = DecodeReferences(View["SizeAnchors"]);
             }
             File.Tree.Steps.push_back(std::move(Step));
         }

@@ -1,0 +1,18 @@
+{
+  "Frame": 90,
+  "Title": "Bracket",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cylinder2 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Cylinder2 · Extrude", "Refused": false}, {"Label": "Blend#7", "Caption": "Fillet1 · Blend", "Refused": false}, {"Label": "Blend#8", "Caption": "Chamfer1 · Blend", "Refused": false}, {"Label": "Blend#9", "Caption": "Fillet2 · Blend", "Refused": false}],
+  "Body": {"Faces": 12, "Edges": 27, "Vertices": 18, "Genus": 1, "Volume": 10.18560673, "Sound": true},
+  "Selection": {"Faces": [], "Edges": []},
+  "PickMode": 2,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 0, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.3, "Pinned": true, "Variable": true, "EndSize": 0.1, "Flipped": true, "PreviewFaces": 0, "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Fillet 0.3 → 0.1 on 1 edge(s) · 372 ms",
+  "Viewport": [320, 160, 930, 730]
+}

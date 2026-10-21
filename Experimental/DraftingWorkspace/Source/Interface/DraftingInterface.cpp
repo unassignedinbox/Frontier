@@ -318,6 +318,43 @@ void Redo(DraftingWorkspaceState& State)
 void WriteBevelText(DraftingBevelSession& Bevel)
 {
     std::snprintf(Bevel.SizeText.data(), Bevel.SizeText.size(), "%.4g", Bevel.Size);
+    std::snprintf(Bevel.EndSizeText.data(), Bevel.EndSizeText.size(), "%.4g", Bevel.EndSize);
+}
+
+// The blend the session would apply (variable sizes and the flip only when V is on).
+[[nodiscard]] DraftingBlendRequest ComposeBlendRequest(const DraftingBevelSession& Bevel)
+{
+    DraftingBlendRequest Request;
+    Request.Shape = Bevel.Shape;
+    Request.Size  = Bevel.Size;
+    if (Bevel.VariableEnabled)
+    {
+        Request.EndSize           = Bevel.EndSize;
+        Request.ReversedCondition = Bevel.ReversedCondition;
+    }
+    return Request;
+}
+
+// V: variable size on / off; the far size starts at half the current size so the taper is visible at once (a typed far
+//    size is kept when V is pressed again).
+void ToggleBevelVariable(DraftingWorkspaceState& State)
+{
+    DraftingBevelSession& Bevel = State.Bevel;
+    if (!Bevel.ActiveCondition || Bevel.Verb != DraftingSessionVerb::Blend) return;
+    Bevel.VariableEnabled = !Bevel.VariableEnabled;
+    if (Bevel.VariableEnabled && !(Bevel.EndSize > 0.0)) Bevel.EndSize = std::round(0.5 * Bevel.Size * 1.0e4) * 1.0e-4;
+    WriteBevelText(Bevel);
+    Announce(State, Bevel.VariableEnabled ? Compose("Variable size: %s m at the anchor corner → %s m (F flips the anchor)", FormatLength(Bevel.Size).c_str(), FormatLength(Bevel.EndSize).c_str())
+                                          : std::string("Constant size"));
+}
+
+// F: anchor each edge at its other end (the start size moves to the opposite corner).
+void FlipBevelAnchor(DraftingWorkspaceState& State)
+{
+    DraftingBevelSession& Bevel = State.Bevel;
+    if (!Bevel.ActiveCondition || Bevel.Verb != DraftingSessionVerb::Blend || !Bevel.VariableEnabled) return;
+    Bevel.ReversedCondition = !Bevel.ReversedCondition;
+    Announce(State, Bevel.ReversedCondition ? "Anchor flipped: the start size is at each edge's end corner" : "Anchor: the start size is at each edge's start corner");
 }
 
 void OpenBevelSession(DraftingWorkspaceState& State, BlendProfile Shape)
@@ -334,7 +371,7 @@ void OpenBevelSession(DraftingWorkspaceState& State, BlendProfile Shape)
     State.Bevel.Shape           = Shape;
     State.Bevel.Size            = Previous > 0.0 ? Previous : 0.25;
     WriteBevelText(State.Bevel);
-    Announce(State, "Fillet (B): move horizontally · D fillet · C chamfer · click edits the edges · Enter / right-click applies · Esc aborts");
+    Announce(State, "Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts");
 }
 
 // Plasticity E: extrude the selected faces; the pointer sets the signed distance like the fillet size.
@@ -358,13 +395,17 @@ void StageBevelPreview(DraftingWorkspaceState& State)
 {
     DraftingBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
-    if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb) return;
-    Bevel.StagedSize  = Bevel.Size;
-    Bevel.StagedShape = Bevel.Shape;
-    Bevel.PreviewVerb  = Bevel.Verb;
+    if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
+        Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition) return;
+    Bevel.StagedSize     = Bevel.Size;
+    Bevel.StagedShape    = Bevel.Shape;
+    Bevel.PreviewVerb    = Bevel.Verb;
+    Bevel.StagedVariable = Bevel.VariableEnabled;
+    Bevel.StagedEndSize  = Bevel.EndSize;
+    Bevel.StagedReversed = Bevel.ReversedCondition;
     Bevel.Preview     = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
     const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Extrude ? ChangeDraftingSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
-                                                                                      : BlendDraftingSelection(*Bevel.Preview, Bevel.Shape, Bevel.Size);
+                                                                                      : BlendDraftingSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
     if (Outcome.AcceptedCondition)
     {
         Bevel.PreviewScene = BuildDraftingScene(*Bevel.Preview);
@@ -379,8 +420,9 @@ void StageBevelPreview(DraftingWorkspaceState& State)
 void ApplyBevelSession(DraftingWorkspaceState& State)
 {
     if (!State.Bevel.ActiveCondition || !State.Bevel.Refusal.empty()) return;
-    const BlendProfile Shape = State.Bevel.Shape;
-    const double       Size  = State.Bevel.Size;
+    const BlendProfile         Shape   = State.Bevel.Shape;
+    const double               Size    = State.Bevel.Size;
+    const DraftingBlendRequest Request = ComposeBlendRequest(State.Bevel);
     State.Bevel.ActiveCondition = false;
     State.Bevel.Preview.reset();
     if (State.Bevel.Verb == DraftingSessionVerb::Extrude)
@@ -390,8 +432,8 @@ void ApplyBevelSession(DraftingWorkspaceState& State)
         Conclude(State, Outcome);
         return;
     }
-    const DraftingCommandOutcome Outcome = BlendDraftingSelection(State.Document, Shape, Size);
-    if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Blend, Shape, Size, FaceOperationKind::Extrude, 0.0, {} };
+    const DraftingCommandOutcome Outcome = BlendDraftingSelection(State.Document, Request);
+    if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Blend, Shape, Size, FaceOperationKind::Extrude, 0.0, {}, Request };
     Conclude(State, Outcome);
 }
 
@@ -1050,12 +1092,15 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImVec2 Below(Image.x + 12, Image.y + 44);
         const bool Refused = !State.Bevel.Refusal.empty();
         const char* Caption = State.Bevel.Verb == DraftingSessionVerb::Extrude ? "Extrude d" : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
-        DrawStatusPill(Canvas, Below, Compose("%s %s m%s", Caption, FormatLength(State.Bevel.Size).c_str(),
+        const std::string Sizes = State.Bevel.VariableEnabled && State.Bevel.Verb == DraftingSessionVerb::Blend
+                                ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
+                                : FormatLength(State.Bevel.Size);
+        DrawStatusPill(Canvas, Below, Compose("%s %s m%s", Caption, Sizes.c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
     }
     const char* Hint = State.Bevel.ActiveCondition
-                           ? "Move: size (Shift fine) · D fillet · C chamfer · click edits selection · Enter / right-click finish · Esc abort"
+                           ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 2/3/4/5 modes · B fillet · E extrude · Space frame";
     Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, Hint);
 
@@ -1100,6 +1145,36 @@ void DrawBevelCard(DraftingWorkspaceState& State)
     RegisterWidget(State, "BevelSize");
     ImGui::SameLine();
     if (PressButton(State, "Mouse adjust###BevelMouse", ImVec2(0, 0), Bevel.PinnedCondition)) Bevel.PinnedCondition = false;
+    if (!Extrude)
+    {
+        // Variable size (V): the end size field and the anchor flip (F).
+        if (ToggleButton(State, "Variable  (V)###BevelVariable", Bevel.VariableEnabled, ImVec2(130, 0))) ToggleBevelVariable(State);
+        if (Bevel.VariableEnabled)
+        {
+            ImGui::SameLine();
+            if (PressButton(State, "Flip anchor  (F)###BevelFlip", ImVec2(130, 0))) FlipBevelAnchor(State);
+            ImGui::SetNextItemWidth(110);
+            if (ImGui::InputText("End size###BevelEndSize", Bevel.EndSizeText.data(), Bevel.EndSizeText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                double Parsed = 0.0;
+                if (ParseDraftingLength(Bevel.EndSizeText.data(), Parsed) && Parsed > 0.0)
+                {
+                    Bevel.EndSize = Parsed;
+                    Announce(State, Compose("Bevel end size %s m", FormatLength(Bevel.EndSize).c_str()));
+                }
+                else
+                {
+                    Announce(State, std::string("Unreadable end size: ") + Bevel.EndSizeText.data());
+                }
+                WriteBevelText(Bevel);
+            }
+            RegisterWidget(State, "BevelEndSize");
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+            ImGui::TextWrapped("%s m at each edge's %s corner → %s m at the other", FormatLength(Bevel.Size).c_str(), Bevel.ReversedCondition ? "end" : "start",
+                               FormatLength(Bevel.EndSize).c_str());
+            ImGui::PopStyleColor();
+        }
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
     const std::vector<std::string>& Operands = Extrude ? State.Document.Selection.Faces : State.Document.Selection.Edges;
     ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
@@ -1337,7 +1412,7 @@ void RepeatLastCommand(DraftingWorkspaceState& State)
     switch (Last.Kind)
     {
     case DraftingRepeatKind::None:      Announce(State, "Nothing to repeat yet"); return;
-    case DraftingRepeatKind::Blend:     Conclude(State, BlendDraftingSelection(State.Document, Last.Shape, Last.Size)); return;
+    case DraftingRepeatKind::Blend:     Conclude(State, BlendDraftingSelection(State.Document, Last.Blend)); return;
     case DraftingRepeatKind::Face:      Conclude(State, ChangeDraftingSelection(State.Document, Last.Operation, Last.Amount)); return;
     case DraftingRepeatKind::Construct: Conclude(State, ConstructDraftingPrimitive(State.Document, Last.Construct)); return;
     }
@@ -1370,6 +1445,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         {
             if (Pressed(ImGuiKey_D)) State.Bevel.Shape = BlendProfile::Fillet;                // gizmo:fillet-solid:fillet
             if (Pressed(ImGuiKey_C)) State.Bevel.Shape = BlendProfile::Chamfer;               // gizmo:fillet-solid:chamfer
+            if (Pressed(ImGuiKey_V)) ToggleBevelVariable(State);                              // gizmo:fillet-solid:add (variable size)
+            if (Pressed(ImGuiKey_F)) FlipBevelAnchor(State);                                  // as gizmo:place:flip
         }
         return;
     }
@@ -1700,7 +1777,8 @@ std::string DescribeDraftingWorkspace(const DraftingWorkspaceState& State)
            << (State.Camera.OrthographicEnabled ? "true" : "false") << "},\n";
     Stream << "  \"Bevel\": {\"Active\": " << (State.Bevel.ActiveCondition ? "true" : "false") << ", \"Shape\": \""
            << (State.Bevel.Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") << "\", \"Size\": " << State.Bevel.Size << ", \"Pinned\": "
-           << (State.Bevel.PinnedCondition ? "true" : "false") << ", \"PreviewFaces\": " << (State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0)
+           << (State.Bevel.PinnedCondition ? "true" : "false") << ", \"Variable\": " << (State.Bevel.VariableEnabled ? "true" : "false")
+           << ", \"EndSize\": " << State.Bevel.EndSize << ", \"Flipped\": " << (State.Bevel.ReversedCondition ? "true" : "false") << ", \"PreviewFaces\": " << (State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0)
            << ", \"Refusal\": ";
     AppendJsonText(Stream, State.Bevel.Refusal);
     Stream << "},\n  \"Undo\": " << Document.UndoEntries.size() << ",\n  \"Redo\": " << Document.RedoEntries.size() << ",\n  \"Welcome\": "

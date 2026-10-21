@@ -73,6 +73,7 @@ struct DraftingRepeat
     Modeller::FaceOperationKind Operation = Modeller::FaceOperationKind::Extrude;            // [-]   - Face verb
     double                      Amount    = 0.0;                                             // [-]   - Face amount (model units)
     DraftingConstructRequest    Construct = {};                                              // [-]   - Construct request
+    DraftingBlendRequest        Blend     = {};                                              // [-]   - Blend request (variable sizes, flip)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -81,6 +82,8 @@ struct DraftingRepeat
 
 // 📝 B / Shift+B session: a staged copy of the document carries the preview; the authored document is untouched
 //    until Apply (one undo entry). Positive pointer-adjusted size = fillet radius, negative = chamfer setback.
+//    V (Plasticity gizmo:fillet-solid:add) makes the size variable: Size at each edge's anchor corner, EndSize at its
+//    other end; F flips which corner is the anchor. The pointer adjusts Size; EndSize is typed.
 struct DraftingBevelSession
 {
     bool                              ActiveCondition = false;                               // [-]   - Session open
@@ -95,6 +98,13 @@ struct DraftingBevelSession
     std::string                       Refusal         = {};                                  // [-]   - Why Apply is disabled
     double                            StagedSize      = -1.0;                                // [len] - Size the preview was built at
     Modeller::BlendProfile            StagedShape     = Modeller::BlendProfile::Fillet;      // [-]   - Shape the preview was built at
+    bool                              VariableEnabled = false;                               // [-]   - V: size varies along each edge
+    double                            EndSize         = 0.0;                                 // [len] - Size at the far corners (0 = not chosen yet)
+    std::array<char, 32>              EndSizeText     = {};                                  // [-]   - Field text
+    bool                              ReversedCondition = false;                             // [-]   - F: anchor at each edge's end vertex
+    bool                              StagedVariable  = false;                               // [-]   - Variable state the preview was built at
+    double                            StagedEndSize   = -1.0;                                // [len] - EndSize the preview was built at
+    bool                              StagedReversed  = false;                               // [-]   - Flip the preview was built at
 };
 
 struct DraftingWorkspaceState

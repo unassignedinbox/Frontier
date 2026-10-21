@@ -1,6 +1,6 @@
 # 🧩 DraftingWorkspace — Vulkan + Slang + ImGui CAD workspace on the SolidArcRemastered kernel
 
-**TL;DR (step 9)**: The workspace runs the SolidArcRemastered feature tree behind an ImGui shell that mirrors the SolidArc browser editor. It uses Vulkan 1.3 (volk), SPIR-V compiled from Slang, a GLFW host without a client API, and TOML options. ctest passes **5 / 5** (90.6 s on SwiftShader).
+**TL;DR (step 9)**: The workspace runs the SolidArcRemastered feature tree behind an ImGui shell that mirrors the SolidArc browser editor. It uses Vulkan 1.3 (volk), SPIR-V compiled from Slang, a GLFW host without a client API, and TOML options. ctest passes **6 / 6** (110 s on SwiftShader). Variable fillets and chamfers run inside the B command: V makes the size variable (Plasticity `gizmo:fillet-solid:add`), F flips which corner takes the start size, and the anchor is stored as a persistent vertex name.
 - **Document gates W1–W8 🟢:** construct, pick, fillet / chamfer, push and parameter edit all match closed forms to ≤ 6.1e-16. Refusals are atomic, undo / redo is exact, and TOML save → load → save is byte-equal.
 - **Viewport gates V1–V7 🟢:** the GPU identity buffer equals the CPU ray pick (0 mismatched pixels over 14 views). 100 % of edge pixels are explained, hover probe = readback, selection colours hold, all 7 view presets are checked, and digests are deterministic.
 - **Walkthroughs:** **158 / 158** expectations pass (main 78, shortcuts 68, recovery 12), driven by real ImGui pointer and keyboard events on the offscreen Vulkan frame. They produce 22 captures.
@@ -22,7 +22,7 @@
 | `Source/Interface/` | `DraftingInterface` (header, Outliner, viewport, Inspector, bevel session, shortcuts, autosave / recovery), `DraftingFrame` (ImGui → Vulkan), `DraftingOptions` (toml++), `DraftingScript` (walkthrough language) |
 | `Source/Applications/` | `DraftingWorkspaceHost` (GLFW window + swapchain), `DraftingWorkspaceCapture` (offscreen frames driven by a script) |
 | `Validation/` | `DraftingDocumentValidation` (W1–W8), `DraftingViewportValidation` (V1–V7) |
-| `Scripts/` | `WorkspaceWalkthrough.txt`, `ShortcutWalkthrough.txt`, `RecoveryWalkthrough.txt` + `RecoveryOptions.toml` |
+| `Scripts/` | `WorkspaceWalkthrough.txt`, `ShortcutWalkthrough.txt`, `VariableBlendWalkthrough.txt`, `RecoveryWalkthrough.txt` + `RecoveryOptions.toml` |
 | `Tooling/` | `PrepareDraftingDependencies.py` (pinned, sha256-checked sources), `CompileDraftingShaders.mjs` (Slang → SPIR-V archive) |
 | `DraftingWorkspace.toml` | Every option with its default |
 
@@ -46,7 +46,7 @@ cmake -S Experimental/DraftingWorkspace -B Experimental/DraftingWorkspace/build 
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DDRAFTING_WINDOWED_HOST=OFF
 ninja -C Experimental/DraftingWorkspace/build
 
-# ④ the 5 tests (walkthroughs run from the repository root; without a Vulkan driver the GPU tests skip with code 77)
+# ④ the 6 tests (walkthroughs run from the repository root; without a Vulkan driver the GPU tests skip with code 77)
 cd Experimental/DraftingWorkspace/build && \
   DRAFTING_VULKAN_DRIVER=$PWD/../../../_ClaudeScratch/SwiftShaderDriver/libvk_swiftshader.so ctest --output-on-failure
 ```
@@ -68,6 +68,9 @@ $B/DraftingWorkspaceCapture --vulkan-driver $D --options Experimental/DraftingWo
 $B/DraftingWorkspaceCapture --vulkan-driver $D --specimen --reset-files \
     --recovery _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml --document _ClaudeScratch/DraftingWorkspace/Shortcut.drafting.toml \
     --script Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt --exhibits $E/Walkthrough > /dev/null
+$B/DraftingWorkspaceCapture --vulkan-driver $D --specimen --reset-files \
+    --recovery _ClaudeScratch/DraftingWorkspace/VariableRecovery.drafting.toml --document _ClaudeScratch/DraftingWorkspace/Variable.drafting.toml \
+    --script Experimental/DraftingWorkspace/Scripts/VariableBlendWalkthrough.txt --exhibits $E/Walkthrough > /dev/null
 ```
 
 The recovery run consumes the autosave the main walkthrough leaves behind, so keep that order. `DRAFTING_VULKAN_DRIVER` can replace `--vulkan-driver`.

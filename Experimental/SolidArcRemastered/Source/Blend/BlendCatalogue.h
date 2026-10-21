@@ -55,4 +55,8 @@ struct BlendSpecimen
 //    faces away from E, ball radius (fillet) or setback (chamfer); negative when material is removed (convex).
 [[nodiscard]] double MeasureRimBlendVolume(Vector2 Corner, Vector2 AlongFirst, Vector2 AlongSecond, double Size, BlendProfile Profile, bool ConvexCondition);
 
+// 📝 Material removed by a variable fillet on a 90° edge of length Length between two planes, radius Low at one end
+//    and High at the other (exact cone, divergence theorem about its apex; constant radius: (1 − π/4)·r²·Length).
+[[nodiscard]] double MeasureVariableFilletLoss(double Length, double Low, double High);
+
 } // namespace Frontier::SolidArcRemastered

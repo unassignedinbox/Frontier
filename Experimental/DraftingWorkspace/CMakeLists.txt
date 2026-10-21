@@ -185,6 +185,14 @@ add_test(NAME DraftingShortcutWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/ShortcutWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME DraftingVariableBlendWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/VariableRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Variable.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/VariableBlendWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(DraftingVariableBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingWorkspaceWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP DraftingAutosave)
 set_tests_properties(DraftingRecoveryWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED DraftingAutosave)

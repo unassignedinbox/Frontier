@@ -5,6 +5,7 @@
 
 #include "Feature/FeatureCatalogue.h"
 
+#include "Blend/BlendCatalogue.h"
 #include "Sketch/SketchCatalogue.h"
 
 #include <cmath>
@@ -139,6 +140,47 @@ namespace
         };
         Specimen.ExpectedRefusals = NoRefusals;
         Specimen.Oracle           = "W·D·H − (1 − π/4)·r²·W";
+        return Specimen;
+    }
+
+    // ①′ Block with a variable fillet on the top-front edge. StartRadius is anchored at the corner vertex on the right side
+    //     (x = Width), the edge's end vertex, so the kernel must swap the sizes: they stay at their corners whatever sense
+    //     the regenerated edge has (without the anchor they land at the wrong ends and F8 fails). Swapping the two radii
+    //     mirrors the body (same volume), so the anchor is checked by the cap vertices: each contact rail ends exactly
+    //     one radius from the corner on both faces of its end cap.
+    FeatureSpecimen BuildBlockVariableFillet()
+    {
+        FeatureSpecimen Specimen;
+        FeatureTree& Tree = Specimen.Tree;
+        Tree.Name        = "BlockVariableFillet";
+        Tree.Description = "sketch → extrude → variable fillet on the top-front edge, StartRadius anchored at the x = Width corner";
+        TreeAuthoring Author{ Tree };
+        Author.Parameter("Width", 3.0, 1.5, 6.0, "block length along x");
+        Author.Parameter("Depth", 2.0, 1.0, 3.0, "block depth along y");
+        Author.Parameter("Height", 1.0, -2.0, 2.0, "extrude distance (negative: below the sketch)");
+        Author.Parameter("StartRadius", 0.1, 0.05, 0.45, "fillet radius at the anchored x = Width corner");
+        Author.Parameter("EndRadius", 0.3, 0.05, 0.45, "fillet radius at the x = 0 corner");
+        Author.PlateSketch("Sketch#1", "Width", "Depth");
+        Author.Sweep(FeatureStepKind::Extrude, "Extrude#2", "Sketch#1", ParameterValue("Height"), FeatureCombination::New);
+        FeatureStep& Blended = Author.Blend("Blend#3", BlendProfile::Fillet, "StartRadius", { "Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1))" });
+        Blended.EndSize = ParameterValue("EndRadius");
+        Blended.SizeAnchors.push_back({ ReferenceKind::Vertex, "Vertex(Extrude#2.Cap(End)|Extrude#2.Side(Line1)|Extrude#2.Side(Line2))", {} });
+        Specimen.Sweep = { {}, { { "Width", 4.5 } }, { { "StartRadius", 0.4 }, { "EndRadius", 0.1 } }, { { "StartRadius", 0.2 }, { "EndRadius", 0.2 } },
+                           { { "Height", -1.0 } }, { { "Width", 1.5 }, { "Depth", 3.0 }, { "Height", 2.0 }, { "StartRadius", 0.45 }, { "EndRadius", 0.05 } } };
+        Specimen.ExpectedVolume = [](const FeatureTree& Tree)
+        {
+            const double W = FeatureParameterValue(Tree, "Width"), D = FeatureParameterValue(Tree, "Depth"), H = FeatureParameterValue(Tree, "Height");
+            return W * D * std::fabs(H) - MeasureVariableFilletLoss(W, FeatureParameterValue(Tree, "StartRadius"), FeatureParameterValue(Tree, "EndRadius"));
+        };
+        Specimen.ExpectedVertices = [](const FeatureTree& Tree)
+        {
+            const double W = FeatureParameterValue(Tree, "Width"), H = FeatureParameterValue(Tree, "Height");
+            const double Start = FeatureParameterValue(Tree, "StartRadius"), End = FeatureParameterValue(Tree, "EndRadius");
+            const double Inward = H > 0.0 ? -1.0 : 1.0;                                      // [-] - From the cap into the material
+            return std::vector<Vector3>{ { W, Start, H }, { W, 0.0, H + Inward * Start }, { 0.0, End, H }, { 0.0, 0.0, H + Inward * End } };
+        };
+        Specimen.ExpectedRefusals = NoRefusals;
+        Specimen.Oracle           = "W·D·|H| − ΔV(cone; W, r₀, r₁), cap rails r₀ / r₁ from their corners";
         return Specimen;
     }
 
@@ -431,12 +473,13 @@ namespace
 
 std::vector<std::string> EnumerateFeatureSpecimens()
 {
-    return { "BlockFillet", "BossFillet", "SteppedShaft", "SlotPocket", "TorusRing", "HoleLeavesPlate", "SplitFacePush" };
+    return { "BlockFillet", "BlockVariableFillet", "BossFillet", "SteppedShaft", "SlotPocket", "TorusRing", "HoleLeavesPlate", "SplitFacePush" };
 }
 
 FeatureSpecimen BuildFeatureSpecimen(const std::string& Name)
 {
     if (Name == "BlockFillet") return BuildBlockFillet();
+    if (Name == "BlockVariableFillet") return BuildBlockVariableFillet();
     if (Name == "BossFillet") return BuildBossFillet();
     if (Name == "SteppedShaft") return BuildSteppedShaft();
     if (Name == "SlotPocket") return BuildSlotPocket();

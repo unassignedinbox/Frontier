@@ -190,6 +190,20 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 Slots.push_back(Resolved.Slot);
                 if (CaptureCondition) Reference.Signature = CaptureSignature(Partition, Reference.Kind, Resolved.Slot);
             }
+            // ③′ A variable blend's anchors (the vertices taking Size) resolve like the edges, so a regeneration that
+            //    reverses an edge keeps each size at its vertex.
+            std::vector<VertexToken> Anchors;
+            if (Step.Kind == FeatureStepKind::Blend && Step.EndSize)
+            {
+                for (TopologyReference& Reference : Step.SizeAnchors)
+                {
+                    const ResolvedReference Resolved = ResolveReference(Partition, Current, Naming, Reference);
+                    Report.Resolutions.push_back(Resolved);
+                    if (Resolved.Method == ResolutionMethod::Refused) continue;
+                    Anchors.push_back(Partition.Vertices.TokenAt(Resolved.Slot));
+                    if (CaptureCondition) Reference.Signature = CaptureSignature(Partition, Reference.Kind, Resolved.Slot);
+                }
+            }
             for (const ResolvedReference& Resolved : Report.Resolutions)
             {
                 if (Resolved.Method != ResolutionMethod::Refused) continue;
@@ -209,7 +223,15 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             {
                 std::vector<EdgeToken> Edges;
                 for (uint32_t Slot : Slots) Edges.push_back(Partition.Edges.TokenAt(Slot));
-                const BlendOutcome Blend = BlendEdges(Partition, Current, Edges, { Step.Shape, Amount });
+                BlendSettings Settings;
+                Settings.Profile = Step.Shape;
+                Settings.Size    = Amount;
+                if (Step.EndSize)
+                {
+                    Settings.EndSize     = EvaluateFeatureValue(Tree, *Step.EndSize);
+                    Settings.SizeAnchors = Anchors;
+                }
+                const BlendOutcome Blend = BlendEdges(Partition, Current, Edges, Settings);
                 if (!Blend.Refusal.empty()) { Refuse(Blend.Refusal); break; }
                 Naming  = NameBlendedBody(Partition, Blend.Body, Blend, Naming, Step.Label);
                 Current = Blend.Body;
