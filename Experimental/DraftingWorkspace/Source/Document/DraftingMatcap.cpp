@@ -155,8 +155,8 @@ constexpr double DielectricLightGain = 60.0;                                    
 {
     const Colour Zenith        = { 0.50, 0.53, 0.58 };
     const Colour SkyHorizon    = { 0.78, 0.80, 0.83 };
-    const Colour GroundHorizon = { 0.34, 0.33, 0.32 };
-    const Colour Floor         = { 0.15, 0.15, 0.155 };
+    const Colour GroundHorizon = { 0.42, 0.41, 0.40 };
+    const Colour Floor         = { 0.30, 0.30, 0.31 };
     const double Band          = 0.03 + 0.45 * Roughness;
     const Colour Sky           = Mix(SkyHorizon, Zenith, Smooth(0.0, 0.9, Reflected.Y));
     const Colour Ground        = Mix(GroundHorizon, Floor, Smooth(0.0, 0.55, -Reflected.Y));

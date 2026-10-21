@@ -7,6 +7,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Document/DraftingMatcap.h"
 #include "Document/DraftingScene.h"
 #include "Document/DraftingSpecimen.h"
 #include "Viewport/DraftingCamera.h"
@@ -49,6 +50,7 @@ namespace
     GateTally TintGate        = { "V5", "Selected face blue (#4099ff), active edge green (#33ff73), hovered face lighter; others unchanged", "all hold" };
     GateTally ViewGate        = { "V6", "View presets: centre pixel names the expected face (Top → top cap, Front → front side, …)", "all equal" };
     GateTally DeterminismGate = { "V7", "Same frame twice → identical colour and identity digests", "equal" };
+    GateTally MatcapGate      = { "V8", "Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact", "≤ 2 / 255" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows
 
@@ -60,6 +62,13 @@ namespace
         char Row[600];
         std::snprintf(Row, sizeof(Row), "| %s | %s | %.4g | %s |", Gate.Code, Note.c_str(), Value, PassedCondition ? "🟢" : "🔴");
         Journal.push_back(Row);
+    }
+
+    [[nodiscard]] std::string Compact(double Value)
+    {
+        char Text[32];
+        std::snprintf(Text, sizeof(Text), "%.3g", Value);
+        return Text;
     }
 
     struct Rendered
@@ -291,6 +300,80 @@ int main(int ArgumentCount, char** Arguments)
         WriteExhibit(Exhibits, "ViewportSelection", Tinted, Width, Height);
     }
 
+    // ---- V8 matcaps: planar faces shade with exactly the texel their view-space normal addresses (bilinear, clamp)
+    {
+        Camera.OrthographicEnabled = false;
+        PresentDraftingView(Camera, DraftingViewPreset::Isometric);
+        const DraftingCameraFrame Frame = FrameDraftingCamera(Camera, Width, Height);
+        const Rendered Plain = RenderFrame(Device, Raster, Frame, Style);
+        DraftingAppearance Appearance;
+        Appearance.BodyMatcap                             = "BrushedSteel";
+        Appearance.FaceMatcaps["Extrude#2.Cap(End)"]      = "Brass";
+        Appearance.FaceMatcaps["Extrude#2.Side(Line2)"]   = "RedPlastic";
+        const DraftingMatcapLibrary Library = AssembleDraftingMatcaps(Appearance);
+        Raster.UploadMatcaps(Library.Pictures);
+        Raster.AssignStates(ComposeDraftingMatcapLayers(Scene, Appearance, Library), std::vector<uint32_t>(Scene.Edges.size(), 0u));
+        const Rendered Shaded = RenderFrame(Device, Raster, Frame, Style);
+
+        // Bilinear clamp-to-edge sample of a picture at uv, as the sampler does it (texel centres at (i + ½) / E).
+        auto Sample = [](const DraftingPicture& Picture, double U, double V)
+        {
+            const double X = std::clamp(U * Picture.Width - 0.5, 0.0, double(Picture.Width - 1));
+            const double Y = std::clamp(V * Picture.Height - 0.5, 0.0, double(Picture.Height - 1));
+            const uint32_t Left = uint32_t(X), Top = uint32_t(Y);
+            const uint32_t Right = std::min(Left + 1, Picture.Width - 1), Bottom = std::min(Top + 1, Picture.Height - 1);
+            const double Across = X - Left, Down = Y - Top;
+            std::array<double, 3> Value{};
+            for (int Channel = 0; Channel < 3; ++Channel)
+            {
+                auto At = [&](uint32_t Column, uint32_t Row) { return Picture.Pixels[(size_t(Row) * Picture.Width + Column) * 4 + Channel] / 255.0; };
+                Value[Channel] = (1 - Down) * ((1 - Across) * At(Left, Top) + Across * At(Right, Top)) + Down * ((1 - Across) * At(Left, Bottom) + Across * At(Right, Bottom));
+            }
+            return Value;
+        };
+        // Worst per-channel deviation over every pixel of the face from the expected colour, in 1 / 255.
+        auto Deviation = [&](const Rendered& Image, uint32_t Identity, const std::array<double, 3>& Expected, long& Count)
+        {
+            double Worst = 0.0;
+            Count = 0;
+            for (size_t Index = 0; Index < Image.Identity.size(); ++Index)
+            {
+                if (Image.Identity[Index] != Identity) continue;
+                const uint32_t Pixel = Image.Colour[Index];
+                for (int Channel = 0; Channel < 3; ++Channel) Worst = std::max(Worst, std::abs(((Pixel >> (8 * Channel)) & 0xff) - Expected[Channel] * 255.0));
+                ++Count;
+            }
+            return Worst;
+        };
+        const DraftingPicture Studio = ComposeDraftingStudioMatcap(DraftingMatcapExtent);
+        struct Probe { const char* Face; const char* Matcap; };
+        for (const Probe& Expect : { Probe{ "Extrude#2.Cap(End)", "Brass" }, Probe{ "Extrude#2.Side(Line2)", "RedPlastic" }, Probe{ "Extrude#2.Side(Line1)", "BrushedSteel" } })
+        {
+            const uint32_t Identity = IdentityNamed(Scene, Expect.Face, false);
+            const DraftingSceneCorner& Corner = Scene.Corners[Scene.Faces[Identity - 1].FirstCorner];
+            const double View[2] = { Corner.Normal[0] * Frame.Right[0] + Corner.Normal[1] * Frame.Right[1] + Corner.Normal[2] * Frame.Right[2],
+                                     Corner.Normal[0] * Frame.Up[0] + Corner.Normal[1] * Frame.Up[1] + Corner.Normal[2] * Frame.Up[2] };
+            const uint32_t Layer = DraftingMatcapLayer(Library, Expect.Matcap);
+            const std::array<double, 3> Expected = Sample(Library.Pictures[Layer - 1], 0.5 + 0.5 * View[0], 0.5 - 0.5 * View[1]);
+            long Count = 0;
+            const double Worst = Deviation(Shaded, Identity, Expected, Count);
+            char Note[300];
+            std::snprintf(Note, sizeof(Note), "%s → %s (layer %u): view normal (%.3f, %.3f), %ld pixels within %.2f / 255 of the texel (RGB %.0f %.0f %.0f)", Expect.Face, Expect.Matcap,
+                          Layer, View[0], View[1], Count, Worst, Expected[0] * 255, Expected[1] * 255, Expected[2] * 255);
+            Tally(MatcapGate, Worst, Count > 500 && Worst <= 2.0, Note);
+            // Studio (layer 0) is analytic in the shader; its CPU mirror sampled at the same normal must agree.
+            const std::array<double, 3> Analytic = Sample(Studio, 0.5 + 0.5 * View[0], 0.5 - 0.5 * View[1]);
+            const double StudioWorst = Deviation(Plain, Identity, Analytic, Count);
+            Tally(MatcapGate, StudioWorst, Count > 500 && StudioWorst <= 2.0, std::string(Expect.Face) + " without matcap: Studio shader = CPU Studio mirror within " + Compact(StudioWorst) + " / 255");
+        }
+        // Back to Studio: the frame is bit-identical to the one before any matcap.
+        Raster.AssignStates(std::vector<uint32_t>(Scene.Faces.size(), 0u), std::vector<uint32_t>(Scene.Edges.size(), 0u));
+        const Rendered Restored = RenderFrame(Device, Raster, Frame, Style);
+        Tally(MatcapGate, 0.0, Restored.Colour == Plain.Colour && Shaded.Identity == Plain.Identity,
+              "layers cleared → colour bit-identical to the Studio frame; identity unchanged by matcaps");
+        WriteExhibit(Exhibits, "ViewportMatcaps", Shaded, Width, Height);
+    }
+
     // ---- V7 determinism
     {
         PresentDraftingView(Camera, DraftingViewPreset::Isometric);
@@ -311,7 +394,7 @@ int main(int ArgumentCount, char** Arguments)
                 Device.Describe().c_str(), Scene.Faces.size(), Scene.Edges.size(), Scene.Corners.size() / 3, Width, Height, SlowestMs, Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate })
+    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate })
     {
         std::printf("| %s | %s | %s | %.4g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
