@@ -361,7 +361,23 @@ namespace
             return static_cast<int>(Outcome.Vertices.size()) - 1;
         }
 
-        // Pave block registration with coincidence merge (same end vertices, same midpoint) → common blocks.
+        // 💡 Same ends, another parametrisation (a traced section along a spline edge, or a spline edge along a circle):
+        //    the parameter midpoints are different points of one curve, so the block coincides when three interior
+        //    points of it lie on the existing block, inside that block's range.
+        [[nodiscard]] bool CoincidentBlock(const FuseEdge& Other, const CurveGeometry& Curve, double Low, double High) const
+        {
+            const double Slack = Settings.Precision / ParameterScale(Other.Curve);           // [-] - Parameter slack
+            for (const double Fraction : { 0.25, 0.5, 0.75 })
+            {
+                const Vector3 Point     = EvaluateCurve(Curve, Low + Fraction * (High - Low)).Position;
+                const double  Parameter = ProjectOntoCurve(Other.Curve, Point, Other.Low);
+                if (Parameter < Other.Low - Slack || Parameter > Other.High + Slack) return false;
+                if (Distance(EvaluateCurve(Other.Curve, Parameter).Position, Point) > 10.0 * Settings.Precision) return false;
+            }
+            return true;
+        }
+
+        // Pave block registration with coincidence merge (same end vertices, same midpoint or same points) → common blocks.
         int RegisterEdge(const CurveGeometry& Curve, double Low, double High, int Start, int End, int Argument, bool Section)
         {
             const Vector3 Middle = EvaluateCurve(Curve, 0.5 * (Low + High)).Position;        // [len] - Block midpoint
@@ -369,7 +385,8 @@ namespace
             for (int Existing : EdgesByEnds[{ Key.first, Key.second }])
             {
                 const FuseEdge& Other = Outcome.Edges[Existing];
-                if (Distance(EvaluateCurve(Other.Curve, 0.5 * (Other.Low + Other.High)).Position, Middle) <= 10.0 * Settings.Precision)
+                if (Distance(EvaluateCurve(Other.Curve, 0.5 * (Other.Low + Other.High)).Position, Middle) <= 10.0 * Settings.Precision ||
+                    CoincidentBlock(Other, Curve, Low, High))
                 {
                     if (Argument >= 0 && Other.Argument >= 0 && Other.Argument != Argument) ++Outcome.Statistics.CommonBlocks;
                     return Existing;

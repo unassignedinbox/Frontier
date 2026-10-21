@@ -1,0 +1,19 @@
+{
+  "Frame": 32,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": false,
+  "Steps": [],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": []},
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": true, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0, 0]], "Refusal": ""},
+  "Undo": 0,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts",
+  "Viewport": [320, 160, 930, 730]
+}

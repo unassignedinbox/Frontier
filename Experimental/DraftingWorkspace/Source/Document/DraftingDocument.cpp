@@ -14,10 +14,12 @@
 #include "Blend/RollingBallGeometry.h"
 #include "Sketch/SketchCatalogue.h"
 #include "Sketch/SketchSolver.h"
+#include "Sketch/SketchSpline.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <numbers>
 #include <set>
@@ -500,6 +502,7 @@ DraftingCommandOutcome DeleteDraftingStep(DraftingDocument& Document, const std:
             if (Step.Label == Label || (Entry != Document.Captions.end() && Entry->second == Caption)) Doomed.insert(Step.Label);
         }
         if (Doomed.empty()) return "no step labelled " + Label;
+        for (const FeatureStep& Step : Document.Tree.Steps) if (!Step.Profile.empty() && Doomed.contains(Step.Profile)) Doomed.insert(Step.Label);   // Sweeps of a deleted sketch go too
         std::erase_if(Document.Tree.Steps, [&](const FeatureStep& Step) { return Doomed.contains(Step.Label); });
         std::erase_if(Document.Tree.Parameters, [&](const FeatureParameter& Parameter) { return Parameter.Name.rfind(Caption + ".", 0) == 0; });
         for (const std::string& DoomedLabel : Doomed) Document.Captions.erase(DoomedLabel);
@@ -517,6 +520,175 @@ DraftingCommandOutcome ReplaceDraftingTree(DraftingDocument& Document, FeatureTr
         Document.Selection = {};
         return {};
     });
+}
+
+std::string ComposeDraftingSketch(const DraftingDrawingRequest& Request, SketchModel& Sketch)
+{
+    Sketch = {};
+    const std::vector<Vector2>& Points = Request.Points;
+    const char*  Tool    = DraftingDrawingLabel(Request.Kind);
+    double       Extent  = 0.0;                                                                // [len] - Click spread
+    for (const Vector2& First : Points) for (const Vector2& Second : Points) Extent = std::max(Extent, Distance(First, Second));
+    const double Join    = 1.0e-9 * std::max(Extent, 1.0);                                     // [len] - Coincidence distance
+    auto Needs = [&](size_t Count) -> std::string
+    {
+        return Points.size() < Count ? std::string(Tool) + " needs " + std::to_string(Count) + " points" : std::string{};
+    };
+    switch (Request.Kind)
+    {
+    case DraftingDrawingKind::Line:
+    {
+        if (std::string Refusal = Needs(Request.ClosedCondition ? 3 : 2); !Refusal.empty()) return Refusal;
+        std::vector<int> Indices;
+        for (const Vector2& Point : Points) Indices.push_back(AppendSketchPoint(Sketch, Point));
+        const size_t Count = Request.ClosedCondition ? Indices.size() : Indices.size() - 1;
+        for (size_t Index = 0; Index < Count; ++Index)
+        {
+            const int Start = Indices[Index], End = Indices[(Index + 1) % Indices.size()];
+            if (Distance(Points[Index], Points[(Index + 1) % Points.size()]) <= Join) return "Line points " + std::to_string(Index + 1) + " and " + std::to_string((Index + 1) % Points.size() + 1) + " coincide";
+            AppendSketchLine(Sketch, Start, End, static_cast<int>(Index) + 1);
+        }
+        return {};
+    }
+    case DraftingDrawingKind::Rectangle:
+    {
+        if (std::string Refusal = Needs(2); !Refusal.empty()) return Refusal;
+        const Vector2 First  = Request.CentreCondition ? Points[0] * 2.0 - Points[1] : Points[0];
+        const Vector2 Second = Points[1];
+        const Vector2 Low{ std::min(First.X, Second.X), std::min(First.Y, Second.Y) }, High{ std::max(First.X, Second.X), std::max(First.Y, Second.Y) };
+        if (High.X - Low.X <= Join || High.Y - Low.Y <= Join) return "Rectangle has no width or no height";
+        AppendSketchRectangle(Sketch, Low, High, 1);
+        return {};
+    }
+    case DraftingDrawingKind::Circle:
+    {
+        if (std::string Refusal = Needs(2); !Refusal.empty()) return Refusal;
+        const Vector2 Centre = Request.CentreCondition ? Points[0] : (Points[0] + Points[1]) * 0.5;
+        const double  Radius = Request.CentreCondition ? Distance(Points[0], Points[1]) : 0.5 * Distance(Points[0], Points[1]);
+        if (Radius <= Join) return "Circle has no radius";
+        AppendSketchCircle(Sketch, AppendSketchPoint(Sketch, Centre), Radius, 1);
+        return {};
+    }
+    case DraftingDrawingKind::Arc:
+    {
+        // Circle through start, end and the third click; counter-clockwise from start to end when start → third → end
+        // turns left (orientation > 0), else stored from end to start (the sketch arc is always counter-clockwise).
+        if (std::string Refusal = Needs(3); !Refusal.empty()) return Refusal;
+        const Vector2 Start = Points[0], End = Points[1], Through = Points[2];
+        const double  Turn  = (Through.X - Start.X) * (End.Y - Start.Y) - (Through.Y - Start.Y) * (End.X - Start.X);   // [len²] - orient(Start, Through, End)
+        if (std::abs(Turn) <= Join * std::max(Extent, 1.0)) return "Arc points are collinear";
+        const double  Scale = 2.0 * (Start.X * (Through.Y - End.Y) + Through.X * (End.Y - Start.Y) + End.X * (Start.Y - Through.Y));
+        const double  StartSquare = Start.X * Start.X + Start.Y * Start.Y, ThroughSquare = Through.X * Through.X + Through.Y * Through.Y, EndSquare = End.X * End.X + End.Y * End.Y;
+        const Vector2 Centre{ (StartSquare * (Through.Y - End.Y) + ThroughSquare * (End.Y - Start.Y) + EndSquare * (Start.Y - Through.Y)) / Scale,
+                              (StartSquare * (End.X - Through.X) + ThroughSquare * (Start.X - End.X) + EndSquare * (Through.X - Start.X)) / Scale };
+        const int CentreIndex = AppendSketchPoint(Sketch, Centre);
+        const int StartIndex  = AppendSketchPoint(Sketch, Start), EndIndex = AppendSketchPoint(Sketch, End);
+        if (Turn > 0.0) AppendSketchArc(Sketch, CentreIndex, StartIndex, EndIndex, 1);
+        else AppendSketchArc(Sketch, CentreIndex, EndIndex, StartIndex, 1);
+        return {};
+    }
+    case DraftingDrawingKind::Slot:
+    {
+        // Stadium: caps centred on the first two clicks, half-width = distance of the third click from their line.
+        if (std::string Refusal = Needs(3); !Refusal.empty()) return Refusal;
+        const Vector2 First = Points[0], Second = Points[1];
+        const double  Length = Distance(First, Second);
+        if (Length <= Join) return "Slot cap centres coincide";
+        const Vector2 Along  = (Second - First) * (1.0 / Length);
+        const Vector2 Left{ -Along.Y, Along.X };
+        const double  Radius = std::abs((Points[2].X - First.X) * Left.X + (Points[2].Y - First.Y) * Left.Y);
+        if (Radius <= Join) return "Slot has no width";
+        const int FirstCentre = AppendSketchPoint(Sketch, First), SecondCentre = AppendSketchPoint(Sketch, Second);
+        const int TopFirst    = AppendSketchPoint(Sketch, First + Left * Radius), TopSecond = AppendSketchPoint(Sketch, Second + Left * Radius);
+        const int BottomFirst = AppendSketchPoint(Sketch, First - Left * Radius), BottomSecond = AppendSketchPoint(Sketch, Second - Left * Radius);
+        const int Bottom = AppendSketchLine(Sketch, BottomFirst, BottomSecond, 1);
+        const int Cap    = AppendSketchArc(Sketch, SecondCentre, BottomSecond, TopSecond, 2);
+        const int Top    = AppendSketchLine(Sketch, TopSecond, TopFirst, 3);
+        const int Back   = AppendSketchArc(Sketch, FirstCentre, TopFirst, BottomFirst, 4);
+        AppendSketchConstraint(Sketch, Kind::Tangent, Bottom, Cap, -1, 0.0, "T1");
+        AppendSketchConstraint(Sketch, Kind::Tangent, Top, Cap, -1, 0.0, "T2");
+        AppendSketchConstraint(Sketch, Kind::Tangent, Top, Back, -1, 0.0, "T3");
+        AppendSketchConstraint(Sketch, Kind::Tangent, Bottom, Back, -1, 0.0, "T4");
+        return {};
+    }
+    case DraftingDrawingKind::Curve:
+    {
+        if (std::string Refusal = Needs(Request.ClosedCondition ? 3 : 2); !Refusal.empty()) return Refusal;
+        std::vector<int> Indices;
+        for (const Vector2& Point : Points) Indices.push_back(AppendSketchPoint(Sketch, Point));
+        if (Request.ClosedCondition) Indices.push_back(Indices.front());
+        const int Curve = AppendSketchSpline(Sketch, Indices, Request.Form, 1);
+        const SketchSplineOutcome Resolved = ResolveSketchCurveSpline(Sketch, Sketch.Curves[Curve]);
+        return Resolved.Refusal;
+    }
+    }
+    return "unknown drawing tool";
+}
+
+DraftingCommandOutcome DrawDraftingSketch(DraftingDocument& Document, const DraftingDrawingRequest& Request)
+{
+    const std::string Stem    = Request.Kind == DraftingDrawingKind::Curve ? std::string("Curve") : DraftingDrawingLabel(Request.Kind);
+    const std::string Caption = NextCaption(Document, Stem);
+    const char*       FormTag = Request.Kind == DraftingDrawingKind::Curve ? SketchSplineFormLabel(Request.Form) : nullptr;
+    return RunCommand(Document, Caption + (FormTag ? std::string(" · ") + FormTag : std::string{}), false, [&]() -> std::string
+    {
+        if (Request.GridPlane < 0 || Request.GridPlane > 2) return "construction plane must be XY, XZ or YZ";
+        SketchModel Sketch;
+        if (std::string Refusal = ComposeDraftingSketch(Request, Sketch); !Refusal.empty()) return Refusal;
+        FeatureStep Step;
+        Step.Kind   = FeatureStepKind::Sketch;
+        Step.Label  = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Plane  = DraftingSketchPlane(Request.GridPlane);
+        Step.Sketch = std::move(Sketch);
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination)
+{
+    const bool        FirstBodyCondition = !Document.Summary.PresentCondition;
+    const std::string Caption = NextCaption(Document, "Extrude");
+    const auto        Source  = Document.Captions.find(SketchLabel);
+    const std::string Label   = Caption + " · " + (Source != Document.Captions.end() ? Source->second : SketchLabel) + " · " +
+                                (FirstBodyCondition ? "New" : FeatureCombinationLabel(Combination));
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == SketchLabel; });
+        if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + SketchLabel;
+        if (!(std::abs(Distance) > 1.0e-9)) return "extrude distance is zero";
+        if (FirstBodyCondition && (Combination == FeatureCombination::Difference || Combination == FeatureCombination::Intersection))
+            return std::string("nothing to ") + (Combination == FeatureCombination::Difference ? "subtract from" : "intersect with") + " yet (no body)";
+        if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference or Intersection";
+        FeatureStep Step;
+        Step.Kind        = FeatureStepKind::Extrude;
+        Step.Label       = "Extrude#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Profile     = SketchLabel;
+        Step.Extent      = FeatureValue{ Distance };
+        Step.Combination = FirstBodyCondition ? FeatureCombination::New : Combination;
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept
+{
+    OrthonormalFrame Plane;
+    if (GridPlane == 1) return UprightPlane();
+    if (GridPlane == 2)
+    {
+        Plane.XAxis = { 0.0, 1.0, 0.0 };
+        Plane.YAxis = { 0.0, 0.0, 1.0 };
+        Plane.ZAxis = { 1.0, 0.0, 0.0 };
+    }
+    return Plane;
+}
+
+bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std::string& SketchLabel)
+{
+    return std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Profile == SketchLabel; });
 }
 
 bool UndoDraftingCommand(DraftingDocument& Document)
@@ -598,6 +770,20 @@ const char* DraftingConstructLabel(DraftingConstructKind Kind) noexcept
     case DraftingConstructKind::Torus:    return "Torus";
     }
     return "Construct";
+}
+
+const char* DraftingDrawingLabel(DraftingDrawingKind Kind) noexcept
+{
+    switch (Kind)
+    {
+    case DraftingDrawingKind::Line:      return "Line";
+    case DraftingDrawingKind::Rectangle: return "Rectangle";
+    case DraftingDrawingKind::Circle:    return "Circle";
+    case DraftingDrawingKind::Arc:       return "Arc";
+    case DraftingDrawingKind::Slot:      return "Slot";
+    case DraftingDrawingKind::Curve:     return "Curve";
+    }
+    return "Drawing";
 }
 
 const char* DraftingFaceOperationLabel(FaceOperationKind Operation) noexcept

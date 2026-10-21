@@ -396,7 +396,9 @@ void StageBevelPreview(DraftingWorkspaceState& State)
     DraftingBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
     if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
-        Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition) return;
+        Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
+        Bevel.StagedCombination == Bevel.Combination) return;
+    Bevel.StagedCombination = Bevel.Combination;
     Bevel.StagedSize     = Bevel.Size;
     Bevel.StagedShape    = Bevel.Shape;
     Bevel.PreviewVerb    = Bevel.Verb;
@@ -404,7 +406,8 @@ void StageBevelPreview(DraftingWorkspaceState& State)
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
     Bevel.Preview     = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
-    const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Extrude ? ChangeDraftingSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
+    const DraftingCommandOutcome Outcome = Bevel.Verb == DraftingSessionVerb::Profile ? ExtrudeDraftingSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination)
+                                         : Bevel.Verb == DraftingSessionVerb::Extrude ? ChangeDraftingSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
                                                                                       : BlendDraftingSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
     if (Outcome.AcceptedCondition)
     {
@@ -425,6 +428,13 @@ void ApplyBevelSession(DraftingWorkspaceState& State)
     const DraftingBlendRequest Request = ComposeBlendRequest(State.Bevel);
     State.Bevel.ActiveCondition = false;
     State.Bevel.Preview.reset();
+    if (State.Bevel.Verb == DraftingSessionVerb::Profile)
+    {
+        const DraftingCommandOutcome Outcome = ExtrudeDraftingSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination);
+        if (Outcome.AcceptedCondition) State.FocusedStep = {};
+        Conclude(State, Outcome);
+        return;
+    }
     if (State.Bevel.Verb == DraftingSessionVerb::Extrude)
     {
         const DraftingCommandOutcome Outcome = ChangeDraftingSelection(State.Document, FaceOperationKind::Extrude, Size);
@@ -449,7 +459,7 @@ void CancelBevelSession(DraftingWorkspaceState& State)
 void AdjustBevelSize(DraftingWorkspaceState& State, double Delta)
 {
     DraftingBevelSession& Bevel = State.Bevel;
-    if (Bevel.Verb == DraftingSessionVerb::Extrude)
+    if (Bevel.Verb == DraftingSessionVerb::Extrude || Bevel.Verb == DraftingSessionVerb::Profile)
     {
         double Distance = Bevel.Size + Delta;                                                // [len] - Signed extrusion
         if (std::abs(Distance) < 1.0e-3) Distance = Distance < 0.0 ? -1.0e-3 : 1.0e-3;
@@ -462,6 +472,240 @@ void AdjustBevelSize(DraftingWorkspaceState& State, double Delta)
     Bevel.Shape = Signed > 0.0 ? BlendProfile::Fillet : BlendProfile::Chamfer;
     Bevel.Size  = std::round(std::abs(Signed) * 1.0e4) * 1.0e-4;
     WriteBevelText(Bevel);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DRAWING
+//------------------------------------------------------------------------------------------------------------------------
+
+constexpr double DrawingSnap      = 0.1;                                                     // [len] - Construction grid step
+constexpr float  ClosingTolerance = 10.0f;                                                   // [px]  - Click on the first point closes
+
+DraftingCameraFrame ViewportFrame(const DraftingWorkspaceState& State);
+
+[[nodiscard]] Vector3 PlacePlanePoint(const OrthonormalFrame& Plane, Vector2 Point)
+{
+    return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
+}
+
+// World point → frame pixel (absolute); false behind the eye.
+bool ProjectWorldPoint(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, Vector3 Point, ImVec2& Pixel)
+{
+    const auto& Rect = State.ViewportRect;
+    double Clip[4] = {};
+    for (int Row = 0; Row < 4; ++Row)
+        Clip[Row] = Frame.ClipFromWorld[0 * 4 + Row] * Point.X + Frame.ClipFromWorld[1 * 4 + Row] * Point.Y + Frame.ClipFromWorld[2 * 4 + Row] * Point.Z + Frame.ClipFromWorld[3 * 4 + Row];
+    if (Clip[3] <= 1.0e-12) return false;
+    Pixel = ImVec2(Rect[0] + float((Clip[0] / Clip[3] * 0.5 + 0.5) * Rect[2]), Rect[1] + float((Clip[1] / Clip[3] * 0.5 + 0.5) * Rect[3]));
+    return true;
+}
+
+// Viewport pixel (local) → construction-plane coordinates; false when the ray runs parallel to the plane.
+bool IntersectConstructionPlane(const DraftingCameraFrame& Frame, ImVec2 Local, int GridPlane, Vector2& Point)
+{
+    const OrthonormalFrame Plane  = DraftingSketchPlane(GridPlane);
+    const DraftingRay      Ray    = CastDraftingRay(Frame, Local.x, Local.y);
+    const Vector3          Origin{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] }, Direction{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+    const double           Facing = Dot(Direction, Plane.ZAxis);
+    if (std::abs(Facing) < 1.0e-9) return false;
+    const Vector3 Hit = Origin + Direction * (Dot(Plane.Origin - Origin, Plane.ZAxis) / Facing);
+    Point = { Dot(Hit - Plane.Origin, Plane.XAxis), Dot(Hit - Plane.Origin, Plane.YAxis) };
+    return true;
+}
+
+[[nodiscard]] DraftingDrawingRequest ComposeDrawingRequest(const DraftingDrawingSession& Drawing, bool PointerCondition, bool ClosedCondition)
+{
+    DraftingDrawingRequest Request;
+    Request.Kind            = Drawing.Kind;
+    Request.GridPlane       = Drawing.GridPlane;
+    Request.Points          = Drawing.Points;
+    Request.CentreCondition = Drawing.CentreCondition;
+    Request.Form            = Drawing.Form;
+    Request.ClosedCondition = ClosedCondition;
+    if (PointerCondition && Drawing.PointerCondition) Request.Points.push_back(Drawing.Pointer);
+    return Request;
+}
+
+// Points that finish the tool on their last click (0: open-ended chain).
+[[nodiscard]] size_t DrawingClicks(DraftingDrawingKind Kind)
+{
+    switch (Kind)
+    {
+    case DraftingDrawingKind::Rectangle:
+    case DraftingDrawingKind::Circle: return 2;
+    case DraftingDrawingKind::Arc:
+    case DraftingDrawingKind::Slot:   return 3;
+    default:                          return 0;
+    }
+}
+
+[[nodiscard]] std::string DrawingCaption(const DraftingDrawingSession& Drawing)
+{
+    std::string Caption = DraftingDrawingLabel(Drawing.Kind);
+    if (Drawing.Kind == DraftingDrawingKind::Curve) Caption += std::string(" · ") + SketchSplineFormLabel(Drawing.Form);
+    if (Drawing.Kind == DraftingDrawingKind::Rectangle) Caption += Drawing.CentreCondition ? " · centre" : " · corner";
+    if (Drawing.Kind == DraftingDrawingKind::Circle) Caption += Drawing.CentreCondition ? " · centre" : " · two-point";
+    return Caption;
+}
+
+void OpenDrawingSession(DraftingWorkspaceState& State, DraftingDrawingKind Kind)
+{
+    if (State.Bevel.ActiveCondition) return;
+    const SketchSplineForm Form = State.Drawing.Form;
+    State.Drawing                 = {};
+    State.Drawing.ActiveCondition = true;
+    State.Drawing.Kind            = Kind;
+    State.Drawing.GridPlane       = std::clamp(State.Style.GridPlane, 0, 2);
+    State.Drawing.CentreCondition = Kind == DraftingDrawingKind::Circle;                     // Plasticity center-circle; V → two-point
+    State.Drawing.Form            = Form;
+    static const char* Hints[] = { "click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point",
+                                   "click two corners · Alt centre mode", "click centre and rim · V two-point mode", "click start, end, then a point on the arc",
+                                   "click both cap centres, then the rim", "click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point" };
+    static const char* Planes[] = { "XY", "XZ", "YZ" };
+    Announce(State, std::string(DraftingDrawingLabel(Kind)) + " on plane " + Planes[State.Drawing.GridPlane] + ": " + Hints[int(Kind)] + " · Esc aborts");
+}
+
+void CancelDrawingSession(DraftingWorkspaceState& State)
+{
+    if (!State.Drawing.ActiveCondition) return;
+    State.Drawing.ActiveCondition = false;
+    Announce(State, std::string(DraftingDrawingLabel(State.Drawing.Kind)) + " aborted (document untouched)");
+}
+
+// Commits the collected points as a sketch step; the new sketch becomes the focused step (E extrudes it).
+void FinishDrawingSession(DraftingWorkspaceState& State, bool ClosedCondition)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    if (!Drawing.ActiveCondition) return;
+    const DraftingDrawingRequest Request = ComposeDrawingRequest(Drawing, false, ClosedCondition);
+    SketchModel Probe;
+    const std::string Refusal = ComposeDraftingSketch(Request, Probe);
+    if (!Refusal.empty())
+    {
+        Drawing.Refusal = Legible(Refusal);
+        Announce(State, Drawing.Refusal);
+        return;
+    }
+    Drawing.ActiveCondition = false;
+    const size_t Before = State.Document.Tree.Steps.size();
+    const DraftingCommandOutcome Outcome = DrawDraftingSketch(State.Document, Request);
+    if (Outcome.AcceptedCondition && State.Document.Tree.Steps.size() > Before) State.FocusedStep = State.Document.Tree.Steps.back().Label;
+    Conclude(State, Outcome);
+}
+
+void AppendDrawingPoint(DraftingWorkspaceState& State, Vector2 Point, bool ClosingCondition)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    const bool Chain = DrawingClicks(Drawing.Kind) == 0;
+    if (Chain && ClosingCondition) { FinishDrawingSession(State, true); return; }
+    if (!Drawing.Points.empty() && Distance(Drawing.Points.back(), Point) <= 1.0e-12)
+    {
+        Announce(State, "Same point twice: ignored");
+        return;
+    }
+    Drawing.Points.push_back(Point);
+    Drawing.Refusal.clear();
+    if (!Chain && Drawing.Points.size() >= DrawingClicks(Drawing.Kind)) FinishDrawingSession(State, false);
+}
+
+void RetractDrawingPoint(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    if (Drawing.Points.empty()) { Announce(State, "No point to drop"); return; }
+    Drawing.Points.pop_back();
+    Drawing.Refusal.clear();
+    Announce(State, Compose("Point dropped · %d left", int(Drawing.Points.size())));
+}
+
+// Plasticity E on a sketch region: the focused sketch step's profile, pointer-adjusted distance, Q/W/E/R Boolean.
+void OpenSketchExtrudeSession(DraftingWorkspaceState& State)
+{
+    const std::string Label = State.FocusedStep;
+    const double Remembered = State.Bevel.Verb == DraftingSessionVerb::Profile && State.Bevel.Size != 0.0 ? State.Bevel.Size : 0.5;
+    State.Bevel                 = {};
+    State.Bevel.ActiveCondition = true;
+    State.Bevel.Verb            = DraftingSessionVerb::Profile;
+    State.Bevel.ProfileLabel    = Label;
+    State.Bevel.Combination     = State.Document.Summary.PresentCondition ? FeatureCombination::Union : FeatureCombination::New;
+    State.Bevel.Size            = Remembered;
+    WriteBevelText(State.Bevel);
+    const auto Caption = State.Document.Captions.find(Label);
+    Announce(State, "Extrude " + (Caption != State.Document.Captions.end() ? Caption->second : Label) +
+                    " (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts");
+}
+
+[[nodiscard]] bool FocusedSketchCondition(const DraftingWorkspaceState& State)
+{
+    if (State.FocusedStep.empty()) return false;
+    for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == State.FocusedStep) return Step.Kind == FeatureStepKind::Sketch;
+    return false;
+}
+
+void ChooseProfileCombination(DraftingWorkspaceState& State, FeatureCombination Combination)
+{
+    State.Bevel.Combination = Combination;
+    Announce(State, std::string("Extrude Boolean: ") + (Combination == FeatureCombination::New ? "New body" : FeatureCombinationLabel(Combination)));
+}
+
+// Polyline of every sketch step on its plane (solved positions), the focused one highlighted, used ones dimmed.
+void DrawSketchOverlays(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    const DraftingDocument& Document = State.Document;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
+        const SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
+        const bool  Focused  = Step.Label == State.FocusedStep;
+        const bool  Consumed = DraftingSketchConsumedCondition(Document, Step.Label);
+        const ImU32 Colour   = Focused ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : Consumed ? IM_COL32(0x7f, 0x9c, 0xbf, 0x90) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
+        OrthonormalFrame Plane = Step.Plane;
+        Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
+        for (const SketchCurve& Curve : Sketch.Curves)
+        {
+            std::vector<ImVec2> Pixels;
+            for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve))
+            {
+                ImVec2 Pixel;
+                if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel);
+            }
+            if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Curve.Construction ? 1.0f : Focused ? 2.5f : 1.8f);
+        }
+    }
+}
+
+// The drawing in progress: the shape through the pointer, its clicks, a spline's control polygon.
+void DrawDrawingPreview(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    const OrthonormalFrame  Plane   = DraftingSketchPlane(Drawing.GridPlane);
+    auto Pixel = [&](Vector2 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Point), Out); };
+    SketchModel Sketch;
+    const std::string Refusal = ComposeDraftingSketch(ComposeDrawingRequest(Drawing, true, false), Sketch);
+    if (Refusal.empty())
+    {
+        for (const SketchCurve& Curve : Sketch.Curves)
+        {
+            std::vector<ImVec2> Pixels;
+            for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) { ImVec2 Out; if (Pixel(Sample, Out)) Pixels.push_back(Out); }
+            if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), ActiveColour, 2.0f);
+        }
+    }
+    std::vector<Vector2> Marks = Drawing.Points;
+    if (Drawing.PointerCondition) Marks.push_back(Drawing.Pointer);
+    if (Drawing.Kind == DraftingDrawingKind::Curve && Drawing.Form != SketchSplineForm::Hermite && Drawing.Form != SketchSplineForm::CubicSpline && Marks.size() >= 2)
+    {
+        std::vector<ImVec2> Polygon;
+        for (const Vector2& Mark : Marks) { ImVec2 Out; if (Pixel(Mark, Out)) Polygon.push_back(Out); }
+        if (Polygon.size() >= 2) Canvas->AddPolyline(Polygon.data(), int(Polygon.size()), IM_COL32(0xaa, 0xaa, 0xaa, 0x90), 1.0f);
+    }
+    for (size_t Index = 0; Index < Marks.size(); ++Index)
+    {
+        ImVec2 Out;
+        if (!Pixel(Marks[Index], Out)) continue;
+        const bool Live = Index == Drawing.Points.size();
+        Canvas->AddCircleFilled(Out, Live ? 4.5f : 3.5f, Live ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ActiveColour);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1057,7 +1301,31 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     }
     if (Hovered && Io.MouseWheel != 0.0f) DollyDraftingCamera(State.Camera, Io.MouseWheel);
 
-    if (State.Bevel.ActiveCondition)
+    if (State.Drawing.ActiveCondition)
+    {
+        // 📝 Drawing: the pointer meets the construction plane, snaps to the 0.1 grid (Ctrl: free) and to the first point
+        //    of a chain (closes it); click places, right-click finishes an open chain.
+        DraftingDrawingSession& Drawing = State.Drawing;
+        Vector2 Point;
+        bool    Closing = false;
+        Drawing.PointerCondition = Hovered && IntersectConstructionPlane(Frame, Local, Drawing.GridPlane, Point);
+        if (Drawing.PointerCondition)
+        {
+            if (!Io.KeyCtrl) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
+            ImVec2 First;
+            const OrthonormalFrame Plane = DraftingSketchPlane(Drawing.GridPlane);
+            if (DrawingClicks(Drawing.Kind) == 0 && Drawing.Points.size() >= 2 && ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Drawing.Points.front()), First) &&
+                std::hypot(Io.MousePos.x - First.x, Io.MousePos.y - First.y) <= ClosingTolerance)
+            {
+                Point   = Drawing.Points.front();
+                Closing = true;
+            }
+            Drawing.Pointer = Point;
+        }
+        if (LeftClick && !OverCube && Drawing.PointerCondition) AppendDrawingPoint(State, Point, Closing);
+        if (RightClick && !OverCube && State.Drawing.ActiveCondition) FinishDrawingSession(State, false);
+    }
+    else if (State.Bevel.ActiveCondition)
     {
         const bool Idle = !ImGui::IsAnyMouseDown();
         if (Hovered && Idle && !State.Bevel.PinnedCondition && Io.MouseDelta.x != 0.0f)
@@ -1074,7 +1342,11 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         PickAtPointer(State, Local, PickIntentOf(Io));
     }
 
-    // Overlays: status pills (top-left), interaction hint (bottom-left).
+    // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
+    Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
+    DrawSketchOverlays(State, Canvas, Frame);
+    if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
+    Canvas->PopClipRect();
     ImVec2 Pill(Image.x + 12, Image.y + 12);
     static const char* ModeNames[] = { "", "", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
     DrawStatusPill(Canvas, Pill, ModeNames[int(State.PickMode)], SelectedColour);
@@ -1091,17 +1363,37 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     {
         ImVec2 Below(Image.x + 12, Image.y + 44);
         const bool Refused = !State.Bevel.Refusal.empty();
-        const char* Caption = State.Bevel.Verb == DraftingSessionVerb::Extrude ? "Extrude d" : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
+        const char* Caption = State.Bevel.Verb == DraftingSessionVerb::Profile ? "Extrude sketch d" : State.Bevel.Verb == DraftingSessionVerb::Extrude ? "Extrude d"
+                            : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
         const std::string Sizes = State.Bevel.VariableEnabled && State.Bevel.Verb == DraftingSessionVerb::Blend
                                 ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
                                 : FormatLength(State.Bevel.Size);
-        DrawStatusPill(Canvas, Below, Compose("%s %s m%s", Caption, Sizes.c_str(),
+        const std::string Boolean = State.Bevel.Verb != DraftingSessionVerb::Profile ? std::string{}
+                                  : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
+        DrawStatusPill(Canvas, Below, Compose("%s %s m%s%s", Caption, Sizes.c_str(), Boolean.c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
     }
-    const char* Hint = State.Bevel.ActiveCondition
+    if (State.Drawing.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        const DraftingDrawingSession& Drawing = State.Drawing;
+        const std::string Pointer = Drawing.PointerCondition ? Compose(" · (%s, %s)", FormatLength(Drawing.Pointer.X).c_str(), FormatLength(Drawing.Pointer.Y).c_str()) : std::string{};
+        DrawStatusPill(Canvas, Below, Compose("%s · %d point(s)%s", DrawingCaption(Drawing).c_str(), int(Drawing.Points.size()), Pointer.c_str()), ActiveColour);
+        if (!Drawing.Refusal.empty()) DrawStatusPill(Canvas, Below, Drawing.Refusal, RefusalColour);
+    }
+    const char* Hint = State.Drawing.ActiveCondition
+                           ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (Ctrl free) · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Line ? "Click points (Ctrl free) · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Rectangle ? "Click two corners (Ctrl free) · Alt centre / corner · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Circle ? "Click centre then rim (Ctrl free) · V two-point / centre · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Arc ? "Click start, end, then a point on the arc (Ctrl free) · Ctrl+Z drop · Esc abort"
+                              : "Click both cap centres, then the rim (Ctrl free) · Ctrl+Z drop · Esc abort")
+                       : State.Bevel.ActiveCondition && State.Bevel.Verb == DraftingSessionVerb::Profile
+                           ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
+                       : State.Bevel.ActiveCondition
                            ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
-                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 2/3/4/5 modes · B fillet · E extrude · Space frame";
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 2/3/4/5 modes · B fillet · E extrude · Shift+A line · Shift+S curve";
     Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, Hint);
 
     ImGui::End();
@@ -1116,8 +1408,21 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
 void DrawBevelCard(DraftingWorkspaceState& State)
 {
     DraftingBevelSession& Bevel   = State.Bevel;
-    const bool            Extrude = Bevel.Verb == DraftingSessionVerb::Extrude;
-    BeginCard(Extrude ? "Extrude" : "Bevel");
+    const bool            Profile = Bevel.Verb == DraftingSessionVerb::Profile;
+    const bool            Extrude = Bevel.Verb == DraftingSessionVerb::Extrude || Profile;
+    BeginCard(Profile ? "Extrude sketch" : Extrude ? "Extrude" : "Bevel");
+    if (Profile)
+    {
+        // Plasticity extrude Boolean keys: q union · w difference · e intersect · r new body.
+        static const struct { const char* Label; FeatureCombination Combination; } Choices[] = {
+            { "Union (Q)###ProfileUnion", FeatureCombination::Union }, { "Difference (W)###ProfileDifference", FeatureCombination::Difference },
+            { "Intersect (E)###ProfileIntersect", FeatureCombination::Intersection }, { "New (R)###ProfileNew", FeatureCombination::New } };
+        for (int Index = 0; Index < 4; ++Index)
+        {
+            if (Index % 2 == 1) ImGui::SameLine();
+            if (ToggleButton(State, Choices[Index].Label, Bevel.Combination == Choices[Index].Combination, ImVec2(130, 0))) ChooseProfileCombination(State, Choices[Index].Combination);
+        }
+    }
     if (!Extrude)
     {
         if (ToggleButton(State, "Fillet  (D)###BevelFillet", Bevel.Shape == BlendProfile::Fillet, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Fillet;
@@ -1177,7 +1482,12 @@ void DrawBevelCard(DraftingWorkspaceState& State)
     }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
     const std::vector<std::string>& Operands = Extrude ? State.Document.Selection.Faces : State.Document.Selection.Edges;
-    ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
+    if (Profile)
+    {
+        const auto Caption = State.Document.Captions.find(Bevel.ProfileLabel);
+        ImGui::TextWrapped("Profile: %s (%s)", Caption != State.Document.Captions.end() ? Caption->second.c_str() : "-", Bevel.ProfileLabel.c_str());
+    }
+    else ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
     ImGui::TextUnformatted("Units: 250mm, -25cm, 0.25m, 1in, 1ft");
     ImGui::PopStyleColor();
     if (!Bevel.Refusal.empty())
@@ -1353,12 +1663,83 @@ void DrawHistoryCard(DraftingWorkspaceState& State)
     EndCard();
 }
 
+// 📝 Drawing tools on the construction plane (the viewport bar's plane at open). Plasticity keys where it has them.
+void DrawDrawingCard(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    if (!Drawing.ActiveCondition)
+    {
+        BeginCard("Draw");
+        static const struct { const char* Label; DraftingDrawingKind Kind; } Tools[] = {
+            { "Line (Shift+A)###DrawLine", DraftingDrawingKind::Line }, { "Rectangle (Shift+Q)###DrawRectangle", DraftingDrawingKind::Rectangle },
+            { "Circle (Shift+W)###DrawCircle", DraftingDrawingKind::Circle }, { "Curve (Shift+S)###DrawCurve", DraftingDrawingKind::Curve },
+            { "Arc (3 points)###DrawArc", DraftingDrawingKind::Arc }, { "Slot###DrawSlot", DraftingDrawingKind::Slot } };
+        for (int Index = 0; Index < 6; ++Index)
+        {
+            if (Index % 2 == 1) ImGui::SameLine();
+            if (PressButton(State, Tools[Index].Label, ImVec2(140, 0), !State.Bevel.ActiveCondition)) OpenDrawingSession(State, Tools[Index].Kind);
+        }
+        if (FocusedSketchCondition(State))
+        {
+            const bool Consumed = DraftingSketchConsumedCondition(State.Document, State.FocusedStep);
+            if (PressButton(State, "Extrude sketch (E)###ExtrudeSketch", ImVec2(284, 0), !State.Bevel.ActiveCondition)) OpenSketchExtrudeSession(State);
+            if (Consumed)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+                ImGui::TextWrapped("This sketch already drives a feature; a second extrude reuses it.");
+                ImGui::PopStyleColor();
+            }
+        }
+        EndCard();
+        return;
+    }
+    BeginCard(DraftingDrawingLabel(Drawing.Kind));
+    static const char* Planes[] = { "XY", "XZ", "YZ" };
+    ImGui::Text("Plane %s · %d point(s)", Planes[std::clamp(Drawing.GridPlane, 0, 2)], int(Drawing.Points.size()));
+    if (Drawing.Kind == DraftingDrawingKind::Curve)
+    {
+        static const struct { const char* Label; SketchSplineForm Form; } Forms[] = {
+            { "Hermite (1)###FormHermite", SketchSplineForm::Hermite }, { "Bezier (2)###FormBezier", SketchSplineForm::Bezier },
+            { "NURBS (3)###FormNurbs", SketchSplineForm::Nurbs }, { "Cubic spline (4)###FormCubic", SketchSplineForm::CubicSpline } };
+        for (int Index = 0; Index < 4; ++Index)
+        {
+            if (Index % 2 == 1) ImGui::SameLine();
+            if (ToggleButton(State, Forms[Index].Label, Drawing.Form == Forms[Index].Form, ImVec2(140, 0))) { Drawing.Form = Forms[Index].Form; Drawing.Refusal.clear(); }
+        }
+    }
+    if (Drawing.Kind == DraftingDrawingKind::Rectangle || Drawing.Kind == DraftingDrawingKind::Circle)
+    {
+        const char* Off = Drawing.Kind == DraftingDrawingKind::Rectangle ? "Corner###ModeCorner" : "Two-point###ModeTwoPoint";
+        if (ToggleButton(State, Off, !Drawing.CentreCondition, ImVec2(140, 0))) Drawing.CentreCondition = false;
+        ImGui::SameLine();
+        if (ToggleButton(State, "Centre###ModeCentre", Drawing.CentreCondition, ImVec2(140, 0))) Drawing.CentreCondition = true;
+    }
+    const bool Chain = DrawingClicks(Drawing.Kind) == 0;
+    if (Chain)
+    {
+        if (PressButton(State, "Finish open (Enter)###DrawFinish", ImVec2(140, 0), Drawing.Points.size() >= 2)) FinishDrawingSession(State, false);
+        ImGui::SameLine();
+        if (PressButton(State, "Close###DrawClose", ImVec2(140, 0), Drawing.Points.size() >= 3)) FinishDrawingSession(State, true);
+    }
+    if (PressButton(State, "Drop point (Ctrl+Z)###DrawRetract", ImVec2(140, 0), !Drawing.Points.empty())) RetractDrawingPoint(State);
+    ImGui::SameLine();
+    if (PressButton(State, "Abort (Esc)###DrawAbort", ImVec2(140, 0))) CancelDrawingSession(State);
+    if (!Drawing.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Drawing.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    EndCard();
+}
+
 void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
     BeginPanel("Inspector", Position, Size);
     PanelHeading("Inspector");
     if (State.Bevel.ActiveCondition) DrawBevelCard(State);
-    else DrawSelectionCard(State);
+    else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
+    DrawDrawingCard(State);
     DrawStepCard(State);
     DrawBodyCard(State);
     DrawHistoryCard(State);
@@ -1436,6 +1817,38 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     const bool Alternate = Io.KeyAlt;
     auto Pressed = [](ImGuiKey Key) { return ImGui::IsKeyPressed(Key, false); };
 
+    // body[command] — a drawing command (line, curve, corner-rectangle, center-circle; arc and slot have no default key).
+    if (State.Drawing.ActiveCondition)
+    {
+        DraftingDrawingSession& Drawing = State.Drawing;
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) FinishDrawingSession(State, false);
+        else if (Pressed(ImGuiKey_Escape)) CancelDrawingSession(State);
+        else if (Control && Pressed(ImGuiKey_Z)) RetractDrawingPoint(State);               // gizmo:line:undo / gizmo:curve:undo
+        else if (Drawing.Kind == DraftingDrawingKind::Curve && !Control && !Alternate)
+        {
+            static const ImGuiKey Keys[] = { ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4 };
+            static const SketchSplineForm Forms[] = { SketchSplineForm::Hermite, SketchSplineForm::Bezier, SketchSplineForm::Nurbs, SketchSplineForm::CubicSpline };
+            for (int Index = 0; Index < 4; ++Index)
+                if (Pressed(Keys[Index]))                                                     // gizmo:curve:hermite / bezier / nurbs / cubic-spline
+                {
+                    Drawing.Form = Forms[Index];
+                    Drawing.Refusal.clear();
+                    Announce(State, std::string("Curve form: ") + SketchSplineFormLabel(Drawing.Form));
+                }
+        }
+        else if (Drawing.Kind == DraftingDrawingKind::Rectangle && (Pressed(ImGuiKey_LeftAlt) || Pressed(ImGuiKey_RightAlt)))
+        {
+            Drawing.CentreCondition = !Drawing.CentreCondition;                               // keyboard:rectangle:mode
+            Announce(State, Drawing.CentreCondition ? "Rectangle: centre mode (first click is the centre)" : "Rectangle: corner mode");
+        }
+        else if (Drawing.Kind == DraftingDrawingKind::Circle && !Control && !Alternate && Pressed(ImGuiKey_V))
+        {
+            Drawing.CentreCondition = !Drawing.CentreCondition;                               // gizmo:circle:mode
+            Announce(State, Drawing.CentreCondition ? "Circle: centre and rim" : "Circle: two diameter points");
+        }
+        return;
+    }
+
     // body[command] — a running command (fillet-solid, extrude).
     if (State.Bevel.ActiveCondition)
     {
@@ -1447,6 +1860,13 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             if (Pressed(ImGuiKey_C)) State.Bevel.Shape = BlendProfile::Chamfer;               // gizmo:fillet-solid:chamfer
             if (Pressed(ImGuiKey_V)) ToggleBevelVariable(State);                              // gizmo:fillet-solid:add (variable size)
             if (Pressed(ImGuiKey_F)) FlipBevelAnchor(State);                                  // as gizmo:place:flip
+        }
+        if (State.Bevel.Verb == DraftingSessionVerb::Profile && !Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_Q)) ChooseProfileCombination(State, FeatureCombination::Union);        // keyboard:extrude:union
+            if (Pressed(ImGuiKey_W)) ChooseProfileCombination(State, FeatureCombination::Difference);   // keyboard:extrude:difference
+            if (Pressed(ImGuiKey_E)) ChooseProfileCombination(State, FeatureCombination::Intersection); // keyboard:extrude:intersect
+            if (Pressed(ImGuiKey_R)) ChooseProfileCombination(State, FeatureCombination::New);          // keyboard:extrude:new-body
         }
         return;
     }
@@ -1494,7 +1914,10 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_Z)) OpenConstruct(State, DraftingConstructKind::Sphere);
         if (Pressed(ImGuiKey_R)) RepeatLastCommand(State);
         if (Pressed(ImGuiKey_D)) Announce(State, "Duplicate: not available (one body per document)");
-        if (Pressed(ImGuiKey_A) || Pressed(ImGuiKey_S) || Pressed(ImGuiKey_Q) || Pressed(ImGuiKey_W)) Announce(State, "Curves and sketches: use the outliner's sketch steps");
+        if (Pressed(ImGuiKey_A)) OpenDrawingSession(State, DraftingDrawingKind::Line);                  // line
+        if (Pressed(ImGuiKey_S)) OpenDrawingSession(State, DraftingDrawingKind::Curve);                 // curve
+        if (Pressed(ImGuiKey_Q)) OpenDrawingSession(State, DraftingDrawingKind::Rectangle);             // corner-rectangle
+        if (Pressed(ImGuiKey_W)) OpenDrawingSession(State, DraftingDrawingKind::Circle);                // center-circle
         if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_P)) Announce(State, "Not available in this modeller");
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Mode toggles: one mode at a time (2 / 3 / 4 / 5)");
         return;
@@ -1507,7 +1930,11 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_4)) State.PickMode = DraftingPickMode::Solid;
     if (Pressed(ImGuiKey_5) || Pressed(ImGuiKey_Tab)) State.PickMode = DraftingPickMode::Any;
     if (Pressed(ImGuiKey_B)) OpenBevelSession(State, BlendProfile::Fillet);
-    if (Pressed(ImGuiKey_E)) OpenExtrudeSession(State);
+    if (Pressed(ImGuiKey_E))
+    {
+        if (State.Document.Selection.Faces.empty() && FocusedSketchCondition(State)) OpenSketchExtrudeSession(State);
+        else OpenExtrudeSession(State);
+    }
     if (Pressed(ImGuiKey_Space)) FrameSelection(State);
     if (Pressed(ImGuiKey_Q)) Announce(State, "Boolean (Q) needs two bodies: construct with Shift+C / V / X / Z, then Q / W / E");
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
@@ -1781,6 +2208,18 @@ std::string DescribeDraftingWorkspace(const DraftingWorkspaceState& State)
            << ", \"EndSize\": " << State.Bevel.EndSize << ", \"Flipped\": " << (State.Bevel.ReversedCondition ? "true" : "false") << ", \"PreviewFaces\": " << (State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0)
            << ", \"Refusal\": ";
     AppendJsonText(Stream, State.Bevel.Refusal);
+    Stream << ", \"Verb\": " << int(State.Bevel.Verb) << ", \"Profile\": ";
+    AppendJsonText(Stream, State.Bevel.ProfileLabel);
+    Stream << ", \"Combination\": " << int(State.Bevel.Combination) << "},\n";
+    Stream << "  \"Drawing\": {\"Active\": " << (State.Drawing.ActiveCondition ? "true" : "false") << ", \"Kind\": ";
+    AppendJsonText(Stream, DraftingDrawingLabel(State.Drawing.Kind));
+    Stream << ", \"Plane\": " << State.Drawing.GridPlane << ", \"Form\": ";
+    AppendJsonText(Stream, SketchSplineFormLabel(State.Drawing.Form));
+    Stream << ", \"Centre\": " << (State.Drawing.CentreCondition ? "true" : "false") << ", \"Points\": [";
+    for (size_t Index = 0; Index < State.Drawing.Points.size(); ++Index)
+        Stream << (Index ? ", " : "") << "[" << State.Drawing.Points[Index].X << ", " << State.Drawing.Points[Index].Y << "]";
+    Stream << "], \"Refusal\": ";
+    AppendJsonText(Stream, State.Drawing.Refusal);
     Stream << "},\n  \"Undo\": " << Document.UndoEntries.size() << ",\n  \"Redo\": " << Document.RedoEntries.size() << ",\n  \"Welcome\": "
            << (State.WelcomeOpen ? "true" : "false") << ",\n  \"Status\": ";
     AppendJsonText(Stream, State.Status);

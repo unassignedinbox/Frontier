@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.75 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12.76 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -13,6 +13,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.
 | W7 | Undo / redo restore exact volumes; delete removes a whole tile | ≤ 10⁻¹² | 6.08e-16 | 4 | 🟢 |
 | W8 | TOML save → load → save is byte-equal; reloaded body volume and names equal | equal | 0 | 4 | 🟢 |
 | W9 | Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload | ≤ 10⁻⁹ | 3.57e-16 | 12 | 🟢 |
+| W10 | Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete | ≤ 10⁻⁹ | 4.45e-16 | 20 | 🟢 |
 
 ## Walkthrough
 
@@ -55,6 +56,26 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (2.
 | W9 | Block1.Width = 5 regenerates the variable fillet (flipped, anchor x = 4.0) (V = 9.953527) | 3.57e-16 | 🟢 |
 | W9 | after the edit 0.1 is still at its corner, x = 5.0 (flipped, anchor x = 4.0) | 1.36e-16 | 🟢 |
 | W9 | reload: same volume bits, anchored rails, byte-equal re-save (flipped, anchor x = 4.0) | 1.36e-16 | 🟢 |
+| W10 | Rectangle (0,0)–(2,1) on XY, extrude 1.5 (New) (V = 3.000000) | 2.96e-16 | 🟢 |
+| W10 | − centre circle r 0.4 through (Difference) (V = 2.246018) | 3.95e-16 | 🟢 |
+| W10 | + closed line triangle, height 1 (Union; 1/3 outside the box) (V = 2.579351) | 1.72e-16 | 🟢 |
+| W10 | − closed Hermite pocket 0.5 (area 0.246, coplanar floor: closed spline section) (V = 2.456351) | 1.81e-16 | 🟢 |
+| W10 | reload of the drawn document: same volume bits, byte-equal re-save | 0 | 🟢 |
+| W10 | refused untouched: "Arc points are collinear" · "Spline1: Hermite points 1 and 2 coincide" · "a second body needs Union, Difference or Intersection" | 0 | 🟢 |
+| W10 | open arc profile refused: "Extrude#10: Extrude: open profile: Arc1 ends at a point joined to 0 other curves" | 0 | 🟢 |
+| W10 | delete Curve1: its extrude goes with it (V = 2.579351) | 1.72e-16 | 🟢 |
+| W10 | centre rectangle about (1, 0.5) to (2, 1), extrude 1.5 (V = 3.000000) | 2.96e-16 | 🟢 |
+| W10 | − slot (0.4,0.5)–(1.2,0.5) r 0.2 through (V = 2.331504) | 1.9e-16 | 🟢 |
+| W10 | rectangle on XZ, extrude 0.5 (V = 1.000000) | 2.22e-16 | 🟢 |
+| W10 | − two-point circle (0.6,0.5)–(1.4,0.5) on XZ (V = 0.748673) | 4.45e-16 | 🟢 |
+| W10 | closed Hermite through 6 clicks, extrude 0.7 = area 4.510250 × 0.7 (V = 3.157175) | 2.81e-16 | 🟢 |
+| W10 |   − circle r 0.3 inside the Hermite (V = 2.959255) | 3e-16 | 🟢 |
+| W10 | closed Bezier through 6 clicks, extrude 0.7 = area 1.571429 × 0.7 (V = 1.100000) | 4.04e-16 | 🟢 |
+| W10 |   − circle r 0.3 inside the Bezier (V = 0.902080) | 1.23e-16 | 🟢 |
+| W10 | closed NURBS through 6 clicks, extrude 0.7 = area 3.065625 × 0.7 (V = 2.145938) | 0 | 🟢 |
+| W10 |   − circle r 0.3 inside the NURBS (V = 1.948017) | 0 | 🟢 |
+| W10 | closed Cubic spline through 6 clicks, extrude 0.7 = area 4.633720 × 0.7 (V = 3.243604) | 4.11e-16 | 🟢 |
+| W10 |   − circle r 0.3 inside the Cubic spline (V = 3.045684) | 4.37e-16 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

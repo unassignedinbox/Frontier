@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Interface/DraftingScript.h"
+#include "Sketch/SketchSpline.h"
 
 #include <algorithm>
 #include <cmath>
@@ -213,6 +214,47 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         Text   = State.HoverIdentity ? NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity) : std::string();
         Number = double(State.HoverIdentity);
+        return true;
+    }
+    if (Field == "drawing")
+    {
+        Text   = State.Drawing.ActiveCondition ? DraftingDrawingLabel(State.Drawing.Kind) : "";
+        Number = State.Drawing.ActiveCondition ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "drawing-points") return Numeric(double(State.Drawing.Points.size()));
+    if (Field == "drawing-form") { Text = Modeller::SketchSplineFormLabel(State.Drawing.Form); Number = double(int(State.Drawing.Form)); return true; }
+    if (Field == "drawing-centre") return Numeric(State.Drawing.CentreCondition ? 1 : 0);
+    if (Field == "drawing-plane") return Numeric(State.Drawing.GridPlane);
+    if (Field == "drawing-refusal") { Text = State.Drawing.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "sketches")
+    {
+        std::vector<std::string> Captions;
+        for (const Modeller::FeatureStep& Step : Document.Tree.Steps)
+        {
+            if (Step.Kind != Modeller::FeatureStepKind::Sketch) continue;
+            const auto Caption = Document.Captions.find(Step.Label);
+            Captions.push_back(Caption != Document.Captions.end() ? Caption->second : Step.Label);
+        }
+        return Join(Captions);
+    }
+    if (Field == "sketch-curves")
+    {
+        const auto Solved = Document.Regeneration.Sketches.find(State.FocusedStep);
+        return Numeric(Solved != Document.Regeneration.Sketches.end() ? double(Solved->second.Curves.size()) : 0.0);
+    }
+    if (Field == "focused-caption")
+    {
+        const auto Caption = Document.Captions.find(State.FocusedStep);
+        Text   = Caption != Document.Captions.end() ? Caption->second : std::string();
+        Number = double(Text.size());
+        return true;
+    }
+    if (Field == "bevel-verb") return Numeric(int(State.Bevel.Verb));
+    if (Field == "bevel-combination")
+    {
+        Text   = State.Bevel.Combination == Modeller::FeatureCombination::New ? "New" : Modeller::FeatureCombinationLabel(State.Bevel.Combination);
+        Number = double(int(State.Bevel.Combination));
         return true;
     }
     if (Field.rfind("file:", 0) == 0) return Numeric(std::filesystem::exists(Field.substr(5)) ? 1 : 0);

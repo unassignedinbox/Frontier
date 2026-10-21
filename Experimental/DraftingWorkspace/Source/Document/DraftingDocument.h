@@ -38,6 +38,18 @@ enum class DraftingConstructKind : uint8_t
     Torus    = 3,                                                                            // Circle on XZ, revolved about a construction axis
 };
 
+// 📝 Drawing tools on the construction plane (Plasticity: Shift+A line, Shift+Q corner rectangle, Shift+W centre circle,
+//    Shift+S curve; arc and slot from the Draw card). Each finished drawing becomes one editable sketch step.
+enum class DraftingDrawingKind : uint8_t
+{
+    Line      = 0,                                                                           // Polyline through the clicks (closes on its first point)
+    Rectangle = 1,                                                                           // Two corners, or centre + corner
+    Circle    = 2,                                                                           // Centre + rim, or two diameter ends
+    Arc       = 3,                                                                           // Start, end, a point on the arc
+    Slot      = 4,                                                                           // Two cap centres + a point on the rim
+    Curve     = 5,                                                                           // Spline through / on the clicks (form 1 … 4)
+};
+
 enum class DraftingSelectionKind : uint8_t
 {
     Face = 0,                                                                                // A face of the current body
@@ -60,6 +72,18 @@ struct DraftingConstructRequest
     double                       Radius      = 0.5;                                          // [len] - Cylinder / sphere radius
     double                       Major       = 1.5;                                          // [len] - Torus axis → tube centre
     double                       Minor       = 0.4;                                          // [len] - Torus tube radius
+};
+
+// 📝 Points are construction-plane coordinates (GridPlane 0 XY, 1 XZ, 2 YZ; see DraftingSketchPlane). Only the fields of
+//    the kind are read; a Line or Curve is closed when ClosedCondition (its last point joins its first).
+struct DraftingDrawingRequest
+{
+    DraftingDrawingKind            Kind            = DraftingDrawingKind::Line;              // [-]   - Tool
+    int                            GridPlane       = 0;                                      // [-]   - 0 XY · 1 XZ · 2 YZ
+    std::vector<Modeller::Vector2> Points          = {};                                     // [len] - Clicks in plane coordinates
+    bool                           ClosedCondition = false;                                  // [-]   - Line / curve: close the chain
+    bool                           CentreCondition = false;                                  // [-]   - Rectangle: centre + corner · circle: centre + rim (else two diameter ends)
+    Modeller::SketchSplineForm     Form            = Modeller::SketchSplineForm::CubicSpline; // [-]  - Curve form (Plasticity 1 … 4)
 };
 
 // 📝 Selection is stored as persistent names, so it survives regeneration whenever the names still resolve.
@@ -146,6 +170,23 @@ struct DraftingDocument
 [[nodiscard]] DraftingCommandOutcome ReplaceDraftingTree(DraftingDocument& Document, Modeller::FeatureTree Tree,
                                                          std::map<std::string, std::string> Captions, const std::string& Label);
 
+// 💡 Drawing → sketch: the request becomes one Sketch step on its construction plane (caption "Line1", "Curve2", …).
+//    ComposeDraftingSketch builds the same sketch without touching a document (live preview); a degenerate drawing
+//    (zero size, collinear arc, coincident spline points) is refused with the reason.
+[[nodiscard]] DraftingCommandOutcome DrawDraftingSketch(DraftingDocument& Document, const DraftingDrawingRequest& Request);
+[[nodiscard]] std::string            ComposeDraftingSketch(const DraftingDrawingRequest& Request, Modeller::SketchModel& Sketch);
+
+// Extrude a sketch step's profile by Distance along its plane normal; the first body is always New, a later one must
+// combine (Union, Difference, Intersection). Refused (document untouched) when the profile or the Boolean refuses.
+[[nodiscard]] DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance,
+                                                           Modeller::FeatureCombination Combination);
+
+// Construction plane frame: 0 XY (normal +z), 1 XZ (x → x, sketch y → z, normal −y), 2 YZ (y → x, z → y, normal +x).
+[[nodiscard]] Modeller::OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept;
+
+// A sketch step some extrude / revolve already uses as its profile.
+[[nodiscard]] bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std::string& SketchLabel);
+
 // Undo / redo restore the tree snapshot and regenerate; false when the stack is empty.
 bool UndoDraftingCommand(DraftingDocument& Document);
 bool RedoDraftingCommand(DraftingDocument& Document);
@@ -165,5 +206,6 @@ void ClearDraftingSelection(DraftingDocument& Document);
 
 [[nodiscard]] const char* DraftingConstructLabel(DraftingConstructKind Kind) noexcept;
 [[nodiscard]] const char* DraftingFaceOperationLabel(Modeller::FaceOperationKind Operation) noexcept;
+[[nodiscard]] const char* DraftingDrawingLabel(DraftingDrawingKind Kind) noexcept;
 
 } // namespace Frontier::DraftingWorkspace

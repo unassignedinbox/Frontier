@@ -1,0 +1,19 @@
+{
+  "Frame": 254,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Extrude2 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Extrude3 · Extrude", "Refused": false}],
+  "Body": {"Faces": 9, "Edges": 23, "Vertices": 16, "Genus": 1, "Volume": 2.579351096, "Sound": true},
+  "Selection": {"Faces": [], "Edges": []},
+  "PickMode": 5,
+  "Hover": "Extrude#2.Cap(End)",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#5", "Combination": 1},
+  "Drawing": {"Active": true, "Kind": "Curve", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.2, 0.2], [0.5, 0.2], [0.5, 0.8], [0.2, 0.8]], "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Curve form: Hermite",
+  "Viewport": [320, 160, 930, 730]
+}

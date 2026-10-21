@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                  DRAFTINGDOCUMENTVALIDATION.CPP
 ====================================================================================================================================*/
-// 🧩 Step 9: DraftingWorkspace document gates — construct tiles, picks, blends, face edits, parameters, undo, files, variable blends
+// 🧩 Step 9: DraftingWorkspace document gates — construct tiles, picks, blends, face edits, parameters, undo, files, variable blends, drawn sketches
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INCLUDES
@@ -12,6 +12,7 @@
 #include "Document/DraftingScene.h"
 
 #include "Blend/BlendCatalogue.h"
+#include "Sketch/SketchProfile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -52,6 +53,7 @@ namespace
     GateTally HistoryGate     = { "W7", "Undo / redo restore exact volumes; delete removes a whole tile", "≤ 10⁻¹²" };
     GateTally FileGate        = { "W8", "TOML save → load → save is byte-equal; reloaded body volume and names equal", "equal" };
     GateTally VariableGate    = { "W9", "Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload", "≤ 10⁻⁹" };
+    GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
 
@@ -116,6 +118,24 @@ namespace
             Worst = std::max(Worst, Nearest);
         }
         return Worst;
+    }
+
+    [[nodiscard]] DraftingDrawingRequest DrawingOf(DraftingDrawingKind Kind, int GridPlane, std::vector<Vector2> Points, bool ClosedCondition = false,
+                                                   bool CentreCondition = false, SketchSplineForm Form = SketchSplineForm::Hermite)
+    {
+        DraftingDrawingRequest Request;
+        Request.Kind = Kind; Request.GridPlane = GridPlane; Request.Points = std::move(Points);
+        Request.ClosedCondition = ClosedCondition; Request.CentreCondition = CentreCondition; Request.Form = Form;
+        return Request;
+    }
+
+    // Exact profile area of a drawing (Green's theorem on the solved sketch; independent of the solid's volume integral).
+    [[nodiscard]] double MeasureDrawingArea(const DraftingDrawingRequest& Request)
+    {
+        SketchModel Sketch;
+        if (!ComposeDraftingSketch(Request, Sketch).empty()) return std::nan("");
+        (void)SolveSketch(Sketch);
+        return ExtractSketchProfile(Sketch).Area;
     }
 
     void Expect(DraftingCommandOutcome Outcome)
@@ -275,13 +295,92 @@ int main()
               Saved.find("SizeAnchors") != std::string::npos && EncodeDraftingDocument(Reloaded) == Saved, "reload: same volume bits, anchored rails, byte-equal re-save (" + Case + ")");
     }
 
+    // ---- W10 drawing: the workspace tools as the viewport commits them, extruded with the Plasticity Boolean choices
+    {
+        using Kind = DraftingDrawingKind;
+        const FeatureCombination Union = FeatureCombination::Union, Difference = FeatureCombination::Difference, New = FeatureCombination::New;
+        auto DrawAndExtrude = [&](DraftingDocument& Target, const DraftingDrawingRequest& Request, double Distance, FeatureCombination Combination)
+        {
+            Expect(DrawDraftingSketch(Target, Request));
+            const DraftingCommandOutcome Outcome = ExtrudeDraftingSketch(Target, Target.Tree.Steps.back().Label, Distance, Combination);
+            Expect(Outcome);
+            return Outcome;
+        };
+        const DraftingDrawingRequest Box = DrawingOf(Kind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } });
+        const std::vector<Vector2> Square = { { 0.2, 0.2 }, { 0.5, 0.2 }, { 0.5, 0.8 }, { 0.2, 0.8 } };
+        {
+            DraftingDocument Drawn = CreateDraftingDocument("Drawn");
+            DrawAndExtrude(Drawn, Box, 1.5, New);
+            TallyVolume(DrawingGate, Drawn, 3.0, "Rectangle (0,0)–(2,1) on XY, extrude 1.5 (New)");
+            DrawAndExtrude(Drawn, DrawingOf(Kind::Circle, 0, { { 1.0, 0.5 }, { 1.4, 0.5 } }, false, true), 1.5, Difference);
+            TallyVolume(DrawingGate, Drawn, 3.0 - 0.24 * Pi, "− centre circle r 0.4 through (Difference)");
+            DrawAndExtrude(Drawn, DrawingOf(Kind::Line, 0, { { 1.5, 0.0 }, { 3.0, 0.0 }, { 1.5, 1.0 } }, true), 1.0, Union);
+            TallyVolume(DrawingGate, Drawn, 3.0 - 0.24 * Pi + 1.0 / 3.0, "+ closed line triangle, height 1 (Union; 1/3 outside the box)");
+            DrawAndExtrude(Drawn, DrawingOf(Kind::Curve, 0, Square, true), 0.5, Difference);
+            TallyVolume(DrawingGate, Drawn, 3.0 - 0.24 * Pi + 1.0 / 3.0 - 0.123, "− closed Hermite pocket 0.5 (area 0.246, coplanar floor: closed spline section)");
+
+            // Reload: spline points and forms round-trip; same volume bits, byte-equal re-save.
+            const std::string Saved = EncodeDraftingDocument(Drawn);
+            DraftingDocumentFile Loaded = DecodeDraftingDocument(Saved);
+            DraftingDocument Reloaded = CreateDraftingDocument(Loaded.Title);
+            const DraftingCommandOutcome Opened = ReplaceDraftingTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+            Tally(DrawingGate, std::abs(Reloaded.Summary.Volume - Drawn.Summary.Volume), Opened.AcceptedCondition && Reloaded.Summary.Volume == Drawn.Summary.Volume &&
+                  EncodeDraftingDocument(Reloaded) == Saved, "reload of the drawn document: same volume bits, byte-equal re-save");
+
+            // Refusals leave the document untouched.
+            const size_t Steps = Drawn.Tree.Steps.size();
+            const double Volume = Drawn.Summary.Volume;
+            const DraftingCommandOutcome Collinear = DrawDraftingSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 1.0, 2.0 }, { 2.0, 2.0 } }));
+            const DraftingCommandOutcome Coincident = DrawDraftingSketch(Drawn, DrawingOf(Kind::Curve, 0, { { 0.0, 2.0 }, { 0.0, 2.0 }, { 1.0, 2.0 } }));
+            const DraftingCommandOutcome SecondBody = ExtrudeDraftingSketch(Drawn, Drawn.Tree.Steps.front().Label, 1.0, New);
+            Tally(DrawingGate, 0.0, !Collinear.AcceptedCondition && !Coincident.AcceptedCondition && !SecondBody.AcceptedCondition && Drawn.Tree.Steps.size() == Steps &&
+                  Drawn.Summary.Volume == Volume, "refused untouched: \"" + Collinear.Refusal + "\" · \"" + Coincident.Refusal + "\" · \"" + SecondBody.Refusal + "\"");
+            Expect(DrawDraftingSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 2.0, 2.0 }, { 1.0, 2.5 } })));
+            const DraftingCommandOutcome OpenArc = ExtrudeDraftingSketch(Drawn, Drawn.Tree.Steps.back().Label, 1.0, Union);
+            Tally(DrawingGate, 0.0, !OpenArc.AcceptedCondition && Drawn.Summary.Volume == Volume, "open arc profile refused: \"" + OpenArc.Refusal + "\"");
+
+            // Delete the pocket's sketch: its extrude goes with it.
+            std::string CurveLabel;
+            for (const FeatureStep& Step : Drawn.Tree.Steps) if (Drawn.Captions[Step.Label] == "Curve1") CurveLabel = Step.Label;
+            Expect(DeleteDraftingStep(Drawn, CurveLabel));
+            TallyVolume(DrawingGate, Drawn, 3.0 - 0.24 * Pi + 1.0 / 3.0, "delete Curve1: its extrude goes with it");
+        }
+        {
+            DraftingDocument Slotted = CreateDraftingDocument("Slotted");
+            DrawAndExtrude(Slotted, DrawingOf(Kind::Rectangle, 0, { { 1.0, 0.5 }, { 2.0, 1.0 } }, false, true), 1.5, New);
+            TallyVolume(DrawingGate, Slotted, 3.0, "centre rectangle about (1, 0.5) to (2, 1), extrude 1.5");
+            DrawAndExtrude(Slotted, DrawingOf(Kind::Slot, 0, { { 0.4, 0.5 }, { 1.2, 0.5 }, { 0.8, 0.7 } }), 1.5, Difference);
+            TallyVolume(DrawingGate, Slotted, 3.0 - (0.8 * 0.4 + 0.04 * Pi) * 1.5, "− slot (0.4,0.5)–(1.2,0.5) r 0.2 through");
+        }
+        {
+            // Upright plane: rectangle on XZ extrudes along −y.
+            DraftingDocument Upright = CreateDraftingDocument("Upright");
+            DrawAndExtrude(Upright, DrawingOf(Kind::Rectangle, 1, { { 0.0, 0.0 }, { 2.0, 1.0 } }), 0.5, New);
+            TallyVolume(DrawingGate, Upright, 1.0, "rectangle on XZ, extrude 0.5");
+            DrawAndExtrude(Upright, DrawingOf(Kind::Circle, 1, { { 0.6, 0.5 }, { 1.4, 0.5 } }), 0.5, Difference);
+            TallyVolume(DrawingGate, Upright, 1.0 - 0.08 * Pi, "− two-point circle (0.6,0.5)–(1.4,0.5) on XZ");
+        }
+        // Each curve form alone: volume = exact profile area × height.
+        const std::vector<Vector2> Wave = { { 0.0, 0.0 }, { 1.0, -0.3 }, { 2.0, 0.4 }, { 2.2, 1.5 }, { 0.8, 1.9 }, { -0.4, 1.0 } };
+        for (const SketchSplineForm Form : { SketchSplineForm::Hermite, SketchSplineForm::Bezier, SketchSplineForm::Nurbs, SketchSplineForm::CubicSpline })
+        {
+            DraftingDocument Freeform = CreateDraftingDocument("Freeform");
+            const DraftingDrawingRequest Request = DrawingOf(Kind::Curve, 0, Wave, true, false, Form);
+            const double Area = MeasureDrawingArea(Request);
+            DrawAndExtrude(Freeform, Request, 0.7, New);
+            TallyVolume(DrawingGate, Freeform, Area * 0.7, std::string("closed ") + SketchSplineFormLabel(Form) + " through 6 clicks, extrude 0.7 = area " + std::to_string(Area) + " × 0.7");
+            DrawAndExtrude(Freeform, DrawingOf(Kind::Circle, 0, { { 1.0, 0.8 }, { 1.3, 0.8 } }, false, true), 0.7, Difference);
+            TallyVolume(DrawingGate, Freeform, (Area - 0.09 * Pi) * 0.7, std::string("  − circle r 0.3 inside the ") + SketchSplineFormLabel(Form));
+        }
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

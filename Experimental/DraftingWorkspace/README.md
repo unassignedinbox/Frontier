@@ -1,15 +1,16 @@
 # 🧩 DraftingWorkspace — Vulkan + Slang + ImGui CAD workspace on the SolidArcRemastered kernel
 
-**TL;DR (step 9)**: The workspace runs the SolidArcRemastered feature tree behind an ImGui shell that mirrors the SolidArc browser editor. It uses Vulkan 1.3 (volk), SPIR-V compiled from Slang, a GLFW host without a client API, and TOML options. ctest passes **6 / 6** (110 s on SwiftShader). Variable fillets and chamfers run inside the B command: V makes the size variable (Plasticity `gizmo:fillet-solid:add`), F flips which corner takes the start size, and the anchor is stored as a persistent vertex name.
-- **Document gates W1–W8 🟢:** construct, pick, fillet / chamfer, push and parameter edit all match closed forms to ≤ 6.1e-16. Refusals are atomic, undo / redo is exact, and TOML save → load → save is byte-equal.
+**TL;DR (step 9)**: The workspace runs the SolidArcRemastered feature tree behind an ImGui shell that mirrors the SolidArc browser editor. It uses Vulkan 1.3 (volk), SPIR-V compiled from Slang, a GLFW host without a client API, and TOML options. ctest passes **7 / 7** on SwiftShader. Sketch drawing (Phase B): Line, Rectangle, Circle, Arc, Slot and Curve (Hermite · Bezier · NURBS · cubic spline) on the active plane, then E extrudes the drawn profile with the Plasticity Boolean keys. Variable fillets and chamfers run inside the B command: V makes the size variable (Plasticity `gizmo:fillet-solid:add`), F flips which corner takes the start size, and the anchor is stored as a persistent vertex name.
+- **Document gates W1–W10 🟢:** construct, pick, fillet / chamfer, push and parameter edit all match closed forms to ≤ 6.1e-16. Refusals are atomic, undo / redo is exact, and TOML save → load → save is byte-equal. W9 checks variable blends; W10 checks drawn sketches → extrude / Boolean against closed forms and exact profile areas (worst 4.45e-16, 20 checks).
 - **Viewport gates V1–V7 🟢:** the GPU identity buffer equals the CPU ray pick (0 mismatched pixels over 14 views). 100 % of edge pixels are explained, hover probe = readback, selection colours hold, all 7 view presets are checked, and digests are deterministic.
-- **Walkthroughs:** **158 / 158** expectations pass (main 78, shortcuts 68, recovery 12), driven by real ImGui pointer and keyboard events on the offscreen Vulkan frame. They produce 22 captures.
+- **Walkthroughs:** **253 / 253** expectations pass (main 78, shortcuts 68, recovery 12, variable blend 31, sketch drawing 64), driven by real ImGui pointer and keyboard events on the offscreen Vulkan frame.
 - **Keymap: Plasticity** (`nkallen/plasticity` default keymap):
   - middle-drag orbits, right-drag pans; click replaces, Shift adds, Ctrl removes, Alt adds the tangent chain;
   - 2 / 3 / 4 / 5 (Tab) selection modes; B fillet (D / C inside), E extrude, Space frames;
-  - numpad views, Shift+C / V / X / Z construct, Shift+R repeat, Alt+A / Esc deselect, X / Delete delete.
+  - numpad views, Shift+C / V / X / Z construct, Shift+R repeat, Alt+A / Esc deselect, X / Delete delete;
+  - Shift+A line, Shift+Q corner rectangle, Shift+W centre circle, Shift+S curve (1–4 form, Ctrl+Z drops a point, Alt / V modes); E on a focused sketch with Q / W / E / R union / difference / intersect / new body.
   - Keys for tools this modeller lacks announce that, so no non-Plasticity shortcut remains.
-- **Parity gate:** `PARITY-SolidArcBrowserEditor.md` has 58 rows: 🟢 51 · ⚠️ 1 · 🚧 6 (sketch drawing, multi-document, workplane offset), plus the Plasticity keymap table.
+- **Parity gate:** `PARITY-SolidArcBrowserEditor.md` has 58 rows: 🟢 53 · ⚠️ 1 · 🚧 4 (sketch-corner bevel, workplane offset, Outliner multiselection, multi-document), plus the Plasticity keymap table.
 - **View-aligned grid:** Top / Bottom → XY, Front / Back → XZ, Right / Left → YZ, with X red, Y green, Z blue. Isometric keeps the active plane.
 
 ## Layout
@@ -21,8 +22,8 @@
 | `Source/Viewport/Generated/` | `DraftingShaderArchive.h` (SPIR-V words) + reflection JSON, generated from `Shaders/*.slang` |
 | `Source/Interface/` | `DraftingInterface` (header, Outliner, viewport, Inspector, bevel session, shortcuts, autosave / recovery), `DraftingFrame` (ImGui → Vulkan), `DraftingOptions` (toml++), `DraftingScript` (walkthrough language) |
 | `Source/Applications/` | `DraftingWorkspaceHost` (GLFW window + swapchain), `DraftingWorkspaceCapture` (offscreen frames driven by a script) |
-| `Validation/` | `DraftingDocumentValidation` (W1–W8), `DraftingViewportValidation` (V1–V7) |
-| `Scripts/` | `WorkspaceWalkthrough.txt`, `ShortcutWalkthrough.txt`, `VariableBlendWalkthrough.txt`, `RecoveryWalkthrough.txt` + `RecoveryOptions.toml` |
+| `Validation/` | `DraftingDocumentValidation` (W1–W10), `DraftingViewportValidation` (V1–V7) |
+| `Scripts/` | `WorkspaceWalkthrough.txt`, `ShortcutWalkthrough.txt`, `VariableBlendWalkthrough.txt`, `SketchDrawingWalkthrough.txt`, `RecoveryWalkthrough.txt` + `RecoveryOptions.toml` |
 | `Tooling/` | `PrepareDraftingDependencies.py` (pinned, sha256-checked sources), `CompileDraftingShaders.mjs` (Slang → SPIR-V archive) |
 | `DraftingWorkspace.toml` | Every option with its default |
 
@@ -46,7 +47,7 @@ cmake -S Experimental/DraftingWorkspace -B Experimental/DraftingWorkspace/build 
       -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DDRAFTING_WINDOWED_HOST=OFF
 ninja -C Experimental/DraftingWorkspace/build
 
-# ④ the 6 tests (walkthroughs run from the repository root; without a Vulkan driver the GPU tests skip with code 77)
+# ④ the 7 tests (walkthroughs run from the repository root; without a Vulkan driver the GPU tests skip with code 77)
 cd Experimental/DraftingWorkspace/build && \
   DRAFTING_VULKAN_DRIVER=$PWD/../../../_ClaudeScratch/SwiftShaderDriver/libvk_swiftshader.so ctest --output-on-failure
 ```
@@ -71,6 +72,9 @@ $B/DraftingWorkspaceCapture --vulkan-driver $D --specimen --reset-files \
 $B/DraftingWorkspaceCapture --vulkan-driver $D --specimen --reset-files \
     --recovery _ClaudeScratch/DraftingWorkspace/VariableRecovery.drafting.toml --document _ClaudeScratch/DraftingWorkspace/Variable.drafting.toml \
     --script Experimental/DraftingWorkspace/Scripts/VariableBlendWalkthrough.txt --exhibits $E/Walkthrough > /dev/null
+$B/DraftingWorkspaceCapture --vulkan-driver $D --specimen --reset-files \
+    --recovery _ClaudeScratch/DraftingWorkspace/SketchRecovery.drafting.toml --document _ClaudeScratch/DraftingWorkspace/Sketch.drafting.toml \
+    --script Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt --exhibits $E/Walkthrough > /dev/null
 ```
 
 The recovery run consumes the autosave the main walkthrough leaves behind, so keep that order. `DRAFTING_VULKAN_DRIVER` can replace `--vulkan-driver`.
@@ -106,7 +110,7 @@ Exit codes: 0 all expectations pass · 1 an expectation failed · 2 bad argument
 | `drag BUTTON T by DX DY STEPS [mods]` · `wheel T STEPS` | Drags and wheel |
 | `key NAME [Ctrl] [Shift]` · `type TEXT` | Keyboard |
 | `capture NAME` | Write the frame and a JSON state snapshot |
-| `expect FIELD OP VALUE` | OP one of `== != < > ~ contains lacks`; fields such as `faces`, `steps`, `volume`, `selected-edges`, `bevel-chamfer`, `camera-yaw`, `grid-plane`, `welcome`, `file:PATH` |
+| `expect FIELD OP VALUE` | OP one of `== != < > ~ contains lacks`; fields such as `faces`, `steps`, `volume`, `selected-edges`, `bevel-chamfer`, `bevel-combination`, `drawing`, `drawing-points`, `drawing-form`, `sketches`, `sketch-curves`, `focused-caption`, `camera-yaw`, `grid-plane`, `welcome`, `file:PATH` |
 
 Targets: `@Widget` (a registered widget's centre, e.g. `@BevelSize`, `@Step:Blend#9`), `world X Y Z` (projected), `viewport U V`, or `X Y` pixels, each with an optional `offset DX DY`.
 
@@ -114,5 +118,7 @@ Targets: `@Widget` (a registered widget's centre, e.g. `@BevelSize`, `@Step:Blen
 
 - The captures come from a software Vulkan driver (SwiftShader, Subzero). They prove the rendering, picking and interface paths. They are **not** evidence of physical-GPU performance or of desktop window input.
 - The GLFW host compiles and links on Linux (`-DDRAFTING_WINDOWED_HOST=ON`). On the headless null platform it exits 77 with a message. It has not been run in a real window here.
-- Not built yet: interactive sketch drawing tools, a workplane offset, multi-document state and docking (see 🚧 rows in the parity checklist).
+- Not built yet: sketch-corner bevel, polygon tool, a workplane offset, multi-document state and docking (see 🚧 rows in the parity checklist).
+- Drawing happens on the three base planes (XY / XZ / YZ through the origin), fixed when the command opens. Drawn sketches carry no dimensions yet (positions snap to 0.1; Ctrl places freely), and the sketch overlay is drawn on top of the body (no depth test).
+- Curves loft / surface from curves (the vehicle workflow) are planned in `Documentation/PLAN-VehicleSurfacing.md`, not built.
 - ⚠️ Known artefact: dotted depth fighting where the boss-top circle edge is seen exactly edge-on in Front parallel (capture 09FrontParallel).

@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                       DRAFTINGINTERFACE.H
 ====================================================================================================================================*/
-// 🧩 DraftingWorkspace ImGui shell: header, Outliner, viewport, Inspector, bevel session, shortcuts, autosave / recovery
+// 🧩 DraftingWorkspace ImGui shell: header, Outliner, viewport, Inspector, drawing and bevel sessions, shortcuts, autosave / recovery
 
 #pragma once
 
@@ -54,6 +54,7 @@ enum class DraftingSessionVerb : uint8_t
 {
     Blend   = 0,                                                                             // Fillet / chamfer on the selected edges
     Extrude = 1,                                                                             // Extrude the selected faces
+    Profile = 2,                                                                             // Extrude the focused sketch's profile (Q / W / E / R Boolean)
 };
 
 // Shift+R repeats the last applied command on the current selection.
@@ -105,6 +106,26 @@ struct DraftingBevelSession
     bool                              StagedVariable  = false;                               // [-]   - Variable state the preview was built at
     double                            StagedEndSize   = -1.0;                                // [len] - EndSize the preview was built at
     bool                              StagedReversed  = false;                               // [-]   - Flip the preview was built at
+    std::string                       ProfileLabel    = {};                                  // [-]   - Profile: sketch step extruded
+    Modeller::FeatureCombination      Combination     = Modeller::FeatureCombination::Union; // [-]   - Profile: Q union · W difference · E intersect · R new
+    Modeller::FeatureCombination      StagedCombination = Modeller::FeatureCombination::Union; // [-] - Combination the preview was built at
+};
+
+// 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):
+//    clicks on the construction plane (snapped to 0.1 unless Ctrl is held) collect points while the shape previews
+//    through the pointer. Rectangle and circle finish on their 2nd click, arc and slot on their 3rd; line and curve on
+//    Enter / right-click, or closed by a click on their first point. Ctrl+Z drops the last point, Esc aborts.
+struct DraftingDrawingSession
+{
+    bool                           ActiveCondition  = false;                                 // [-]   - Session open
+    DraftingDrawingKind            Kind             = DraftingDrawingKind::Line;             // [-]   - Tool
+    std::vector<Modeller::Vector2> Points           = {};                                    // [len] - Committed clicks (plane coordinates)
+    Modeller::Vector2              Pointer          = {};                                    // [len] - Pointer on the plane (snapped)
+    bool                           PointerCondition = false;                                 // [-]   - Pointer hits the plane
+    int                            GridPlane        = 0;                                     // [-]   - 0 XY · 1 XZ · 2 YZ (fixed at open)
+    bool                           CentreCondition  = false;                                 // [-]   - Rectangle: Alt centre mode · circle: V two-point mode off
+    Modeller::SketchSplineForm     Form             = Modeller::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
+    std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
 };
 
 struct DraftingWorkspaceState
@@ -116,6 +137,7 @@ struct DraftingWorkspaceState
     DraftingViewportStyle                 Style          = {};                               // [-]   - Viewport appearance
     DraftingPickMode                      PickMode       = DraftingPickMode::Any;            // [-]   - 2 / 3 / 4 / 5 (Plasticity)
     DraftingBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
+    DraftingDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
     DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
     std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
