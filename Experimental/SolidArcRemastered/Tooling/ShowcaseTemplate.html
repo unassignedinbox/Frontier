@@ -328,8 +328,9 @@ ul.Tight li     { margin: 3px 0; }
     shaders in Slang compiled to SPIR-V, a GLFW host without a client API, TOML options. Captures are SwiftShader frames
     produced by the scripted walkthroughs (real pointer and keyboard events).</p>
     <div class="Tiles">
-        <div class="Tile"><div class="Figure">5 / 5</div><div class="Caption">ctest (document W1–W8, viewport V1–V7, 3 walkthroughs)</div></div>
-        <div class="Tile"><div class="Figure">78 · 68 · 12</div><div class="Caption">expectations: main · shortcut · recovery walkthroughs</div></div>
+        <div class="Tile"><div class="Figure">8 / 8</div><div class="Caption">ctest (document W1–W11, viewport V1–V7, 6 walkthroughs)</div></div>
+        <div class="Tile"><div class="Figure">306 / 306</div><div class="Caption">walkthrough expectations: main 78 · shortcut 68 · recovery 12 · variable blend 31 · sketch 64 · vehicle 53</div></div>
+        <div class="Tile"><div class="Figure">0.076 mm</div><div class="Caption">lofted bonnet vs all 286 imported limit points (vehicle plan V1–V4, gate W11)</div></div>
         <div class="Tile"><div class="Figure">0 px</div><div class="Caption">GPU identity buffer vs CPU ray pick mismatch over 14 views</div></div>
         <div class="Tile"><div class="Figure">byte-equal</div><div class="Caption">TOML save → load → save round trip</div></div>
     </div>
@@ -376,6 +377,7 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>Traced blend spine</td><td>P7 radial bores</td><td>🟢 built (exact procedural carrier)</td><td>Done (B). Follow-up: cache spine evaluations (P7 takes 197–278 s)</td></tr>
         <tr><td>Chamfer on a traced or elliptical spine</td><td>—</td><td>🚧 refused</td><td>Ruled procedural carrier between the two rails</td></tr>
         <tr><td>Setback vertex blends</td><td>V1 · V2 · P8</td><td>🟢 fillets built (fair NURBS quads; P8 by pinch). Spoke seams reach 1.2° where 6 spokes meet at irregular angles</td><td>Chamfer setback (🚧 refused); exact G1 seams need a vertex-enclosure twist solve</td></tr>
+        <tr><td>Vehicle surfacing</td><td>W11 · <code>VehicleSurfacingWalkthrough</code></td><td>🟢 V1–V4: import Blender limit points, fit ≤ 0.2 mm, mode 1 pole drag, loft through sections (bonnet 0.076 mm). ⚠️ Blender add-on not run in Blender</td><td>V5 curve networks (Gordon / Coons), V6 G1 / G2 across panels, V7 sew → mirror → solid, V8 zebra + deviation map</td></tr>
         <tr><td>Mixed convexity beside a sharp edge</td><td><code>MixedConvexity</code></td><td>🚧 refused</td><td>Setback patch with a sharp spoke</td></tr>
         <tr><td>Overflow (blend wider than its face)</td><td>O1 · O2 · Overflow family</td><td>🟢 cliff overflow built (fillet and chamfer, straight and circular edges). 🚧 Refused by name: notch, partial, blend-on-blend, concave; walkthrough ⑥ still refuses ("edge consumed": the face is not a 4-edge strip)</td><td>Smooth overflow (roll onto the next face), notch caps, partial overflow by splitting the blend</td></tr>
     </table></div>

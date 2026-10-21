@@ -91,6 +91,13 @@ CaptureCaptions = {
     "19BevelSignChamfer": "Inside the bevel session C switches to chamfer, D back to fillet",
     "20ShortcutExtrude" : "E opens the extrude session; Enter commits",
     "21TangentChain"    : "Alt+click extends the edge selection along the tangent chain (5 edges)",
+    "50CurvesImported"  : "Import curves…: 11 bonnet loops (26 noisy limit points each) fitted within 0.2 mm, one undo entry",
+    "51ControlPoints"   : "Key 1, control-point mode: every fitted curve shows its poles and control polygon",
+    "52SectionsSelected": "Six sections picked in loft order (badges), curvature combs on the selection",
+    "53BonnetLoft"      : "L lofts an open NURBS sheet; the 5 check loops it never saw lie on it (0.076 mm)",
+    "54PoleDragLive"    : "Mode 1 pole drag: the curve previews live before the release commits",
+    "55PoleMoved"       : "The release refits Section3 and regenerates the loft; undo restores it bit-exactly",
+    "56SheetUnderside"  : "The open sheet seen from below: back faces render darker",
 }
 
 #------------------------------------------------------------------------------------------------------------------------
