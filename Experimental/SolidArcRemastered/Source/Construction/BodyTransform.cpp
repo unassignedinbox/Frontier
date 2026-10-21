@@ -342,7 +342,9 @@ namespace
         // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
         const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, PromoteAll ? "Promote" : "Transform");
         if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
-        Outcome.Body = Assembly.Body;
+        Outcome.Body        = Assembly.Body;
+        Outcome.SourceFaces = Inventory.Faces;
+        Outcome.Faces       = Assembly.Faces;
         return Outcome;
     }
 }

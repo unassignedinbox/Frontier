@@ -26,6 +26,7 @@
 #include <fstream>
 #include <limits>
 #include <numbers>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,10 @@ namespace
     GateTally BodiesGate      = { "W16", "Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec", "≤ 10⁻⁹ · exact" };
     GateTally TrimGate        = { "W18", "Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude is refused; an emptied sketch goes; codec", "≤ 10⁻¹² · ≤ 10⁻⁹ · exact" };
     GateTally CutGate         = { "W17", "Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec", "≤ 10⁻⁹ · exact" };
+    GateTally MoveGate        = { "W19", "Move / rotate / scale (G / R / S): Transform steps keep volume (×8 for scale 2), the scene and picking follow the body, face selection survives by name, undo exact; refusals untouched", "≤ 10⁻⁹ · exact" };
+    GateTally CopyGate        = { "W20", "Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals", "≤ 10⁻⁹ · exact" };
+    GateTally HideGate        = { "W21", "Hide family (H, Shift+H, Alt+H, Ctrl+H): scene bodies and picking follow, selection drops hidden bodies, undo, codec round trip, refusals", "exact" };
+    GateTally CurveGate       = { "W22", "Join (J) two open drawings into a closed square (extrudes to 1); offset (O) it by ¼ (2.25); pipe (P) along a drawn line (π r² L); refusals; codec byte-equal with kinds 13 / 14 / 15", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -1182,9 +1187,9 @@ int main()
               "save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; " + std::to_string(Copy.Summary.Bodies.size()) + " bodies, volumes bit-equal");
         std::string Future = Written;
         const size_t KindAt = Future.find("Kind = 10");
-        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 13");
+        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 16");
         const DraftingDocumentFile Newer = DecodeDraftingDocument(Future);
-        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Remove (13) is refused: " + Newer.Refusal);
+        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Pipe (16) is refused: " + Newer.Refusal);
     }
 
     // ---- W17 trim / split: Plasticity C (command:cut) and X on picked bodies.
@@ -1434,13 +1439,173 @@ int main()
         Tally(TrimGate, 0.0, RoundTrips, "save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal");
     }
 
+    // ---- W19 … W22: the editing keys (G / R / S, Shift+D, Ctrl+C / Ctrl+V, H family, J / O / P)
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto VolumeOf = [](const DraftingDocument& Target, const std::string& Key)
+        {
+            for (const DraftingBodyFigures& Body : Target.Summary.Bodies) if (Body.Key == Key) return Body.Volume;
+            return -1.0;
+        };
+        auto RoundTrip = [](const DraftingDocument& Source)
+        {
+            const std::string Written = EncodeDraftingDocument(Source);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            return Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Volume == Source.Summary.Volume && Copy.Appearance.HiddenBodies == Source.Appearance.HiddenBodies;
+        };
+        auto Draw = [](DraftingDocument& Target, DraftingDrawingKind Kind, std::vector<Vector2> Points)
+        {
+            DraftingDrawingRequest Drawing;
+            Drawing.Kind = Kind; Drawing.Points = std::move(Points);
+            const DraftingCommandOutcome Outcome = DrawDraftingSketch(Target, Drawing);
+            return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+        };
+        auto Hits = [](const DraftingDocument& Target, std::array<double, 3> At)
+        {
+            const DraftingScene Scene = BuildDraftingScene(Target);
+            const std::optional<DraftingPick> Hit = PickDraftingScene(Scene, RayBetween({ At[0], At[1], 20.0 }, At), 0.02);
+            if (!Hit) return std::string{};
+            const uint32_t Index = (Hit->Identity & ~IdentityEdgeBit) - 1u;
+            return Scene.Bodies[(Hit->Identity & IdentityEdgeBit) ? Scene.Edges[Index].Body : Scene.Faces[Index].Body].Key;
+        };
+
+        // W19 ① G: Block1 2 × 2 × 1 moved by (10, 0, 0): volume 4, the old spot is empty and the new one picks Block1
+        DraftingDocument Part = CreateDraftingDocument("Editing");
+        DraftingConstructRequest Request;
+        Request.Kind = DraftingConstructKind::Block; Request.Width = 2.0; Request.Depth = 2.0; Request.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Part, Request));
+        const std::string BlockKey = Part.Regeneration.Active;
+        const std::string TopFace  = PickAndSelect(Part, RayBetween({ 1.0, 1.0, 20.0 }, { 1.0, 1.0, 0.0 }), false);
+        const DraftingCommandOutcome Moved = TransformDraftingBodies(Part, { BlockKey }, TranslationMap({ 10.0, 0.0, 0.0 }), "Move");
+        const bool Followed = Hits(Part, { 1.0, 1.0, 0.0 }).empty() && Hits(Part, { 11.0, 1.0, 0.0 }) == BlockKey;
+        const bool Kept = Part.Selection.Faces.size() == 1 && Part.Selection.Faces.front() == TopFace;
+        Tally(MoveGate, Relative(Part.Summary.Volume, 4.0), Moved.AcceptedCondition && Relative(Part.Summary.Volume, 4.0) <= 1.0e-9 && Part.Summary.SoundCondition && Followed && Kept
+                                                            && Part.Tree.Steps.back().Kind == FeatureStepKind::Transform && DraftingBodyCaption(Part, Part.Tree.Steps.back().Label) == "Move1",
+              Moved.Label + ": V 4 kept, sound; (1, 1) now empty, (11, 1) picks Block1; the picked top face " + TopFace + " stays selected");
+
+        // W19 ② R 90° about z through (11, 1, 0), then S ×2 about the same point: V 4 → 32; undo → 4
+        const DraftingCommandOutcome Turned = TransformDraftingBodies(Part, { BlockKey }, RotationMap({ 11.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, Pi / 2.0), "Rotate");
+        const DraftingCommandOutcome Grown  = TransformDraftingBodies(Part, { BlockKey }, ScalingMap({ 11.0, 1.0, 0.0 }, { 2.0, 2.0, 2.0 }), "Scale");
+        const double GrownVolume = Part.Summary.Volume;
+        UndoDraftingCommand(Part);
+        const double UndoneVolume = Part.Summary.Volume;
+        RedoDraftingCommand(Part);
+        Tally(MoveGate, std::max(Relative(GrownVolume, 32.0), Relative(UndoneVolume, 4.0)), Turned.AcceptedCondition && Grown.AcceptedCondition && Relative(GrownVolume, 32.0) <= 1.0e-9 && Relative(UndoneVolume, 4.0) <= 1.0e-9
+                                                                                         && Part.Summary.SoundCondition && Hits(Part, { 11.0, 1.0, 0.0 }) == BlockKey,
+              Turned.Label + " + " + Grown.Label + ": V 32 = 8 × 4, sound; undo → 4, redo → 32");
+
+        // W19 ③ refusals leave the document alone
+        const std::string Before = EncodeDraftingDocument(Part);
+        const DraftingCommandOutcome Empty = TransformDraftingBodies(Part, {}, TranslationMap({ 1.0, 0.0, 0.0 }), "Move");
+        const DraftingCommandOutcome Ghost = TransformDraftingBodies(Part, { "Ghost#9" }, TranslationMap({ 1.0, 0.0, 0.0 }), "Move");
+        AffineMap Flat;
+        Flat.ColumnZ = {};
+        const DraftingCommandOutcome Singular = TransformDraftingBodies(Part, { BlockKey }, Flat, "Scale");
+        Tally(MoveGate, 0.0, !Empty.AcceptedCondition && !Ghost.AcceptedCondition && !Singular.AcceptedCondition && Singular.Refusal.find("singular") != std::string::npos && EncodeDraftingDocument(Part) == Before,
+              "refused: nothing picked · " + Ghost.Refusal + " · " + Singular.Refusal + " — document unchanged");
+
+        // W20 ① Shift+D: a copy moved by (0, 6, 0) is a new body, active and selected, captioned Block1Copy1
+        const DraftingCommandOutcome Copied = DuplicateDraftingBodies(Part, { BlockKey }, TranslationMap({ 0.0, 6.0, 0.0 }));
+        const std::string CopyKey = Copied.AcceptedCondition ? Part.Tree.Steps.back().Label : std::string{};
+        Tally(CopyGate, Relative(VolumeOf(Part, CopyKey), 32.0), Copied.AcceptedCondition && Part.Summary.Bodies.size() == 2 && Relative(VolumeOf(Part, CopyKey), 32.0) <= 1.0e-9 && Relative(VolumeOf(Part, BlockKey), 32.0) <= 1.0e-9
+                                                                 && Part.Regeneration.Active == CopyKey && Part.Selection.Bodies == std::vector<std::string>{ CopyKey } && DraftingBodyCaption(Part, CopyKey) == "Block1Copy1"
+                                                                 && Hits(Part, { 11.0, 7.0, 0.0 }) == CopyKey,
+              Copied.Label + ": 2 bodies of 32; " + CopyKey + " (Block1Copy1) active, selected and picked at (11, 7)");
+
+        // W20 ② Ctrl+C on Block1 (clipboard = key + the last step), X on Block1, Ctrl+V: the pasted copy is Block1 as copied
+        const std::string Clipboard = Part.Tree.Steps.back().Label;
+        Expect(RemoveDraftingBodies(Part, { BlockKey }));
+        const DraftingCommandOutcome Pasted = DuplicateDraftingBodies(Part, { BlockKey }, TranslationMap({}), Clipboard);
+        const std::string PasteKey = Pasted.AcceptedCondition ? Part.Tree.Steps.back().Label : std::string{};
+        Tally(CopyGate, Relative(VolumeOf(Part, PasteKey), 32.0), Pasted.AcceptedCondition && Part.Summary.Bodies.size() == 2 && Relative(VolumeOf(Part, PasteKey), 32.0) <= 1.0e-9 && Hits(Part, { 11.0, 1.0, 0.0 }) == PasteKey,
+              Pasted.Label + ": after X on Block1 the paste brings it back as " + PasteKey + " (V 32 at the copied place)");
+
+        // W20 ③ refusals
+        const DraftingCommandOutcome Stale = DuplicateDraftingBodies(Part, { BlockKey }, TranslationMap({}), "Nowhere#99");
+        const DraftingCommandOutcome None  = DuplicateDraftingBodies(Part, {}, TranslationMap({}));
+        Tally(CopyGate, 0.0, !Stale.AcceptedCondition && !None.AcceptedCondition && Stale.Refusal.find("gone") != std::string::npos, "refused: " + Stale.Refusal + " · " + None.Refusal);
+
+        // W21 H family on three bodies: Block1Copy1 (copy), the pasted body, and a new cylinder
+        DraftingConstructRequest Post;
+        Post.Kind = DraftingConstructKind::Cylinder; Post.Position = { -5.0, 0.0, 0.0 }; Post.Radius = 0.5; Post.Height = 1.0; Post.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Part, Post));
+        const std::string PostKey = Part.Regeneration.Active;
+        auto Shown = [](const DraftingDocument& Target) { std::set<std::string> Keys; for (const DraftingSceneBody& Body : BuildDraftingScene(Target).Bodies) Keys.insert(Body.Key); return Keys; };
+        ClearDraftingSelection(Part);
+        const DraftingCommandOutcome NoPick = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::HideSelected);
+        SelectDraftingName(Part, DraftingSelectionKind::Body, CopyKey, false);
+        const DraftingCommandOutcome Hide = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::HideSelected);
+        const bool HideOk = Hide.AcceptedCondition && Shown(Part) == std::set<std::string>{ PasteKey, PostKey } && Hits(Part, { 11.0, 7.0, 0.0 }).empty() && Part.Selection.Bodies.empty();
+        SelectDraftingName(Part, DraftingSelectionKind::Body, PostKey, false);
+        const DraftingCommandOutcome Isolate = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::HideUnselected);
+        const bool IsolateOk = Isolate.AcceptedCondition && Shown(Part) == std::set<std::string>{ PostKey };
+        const DraftingCommandOutcome Invert = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::InvertHidden);
+        const bool InvertOk = Invert.AcceptedCondition && Shown(Part) == std::set<std::string>{ CopyKey, PasteKey } && Part.Selection.Bodies.empty();
+        const bool Saved = RoundTrip(Part);
+        const DraftingCommandOutcome Reveal = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::UnhideAll);
+        const bool RevealOk = Reveal.AcceptedCondition && Shown(Part).size() == 3;
+        UndoDraftingCommand(Part);
+        const bool UndoOk = Shown(Part) == std::set<std::string>{ CopyKey, PasteKey } && Part.Summary.Bodies.size() == 3;
+        RedoDraftingCommand(Part);
+        const DraftingCommandOutcome Again = ChangeDraftingVisibility(Part, DraftingVisibilityVerb::UnhideAll);
+        Tally(HideGate, 0.0, HideOk && IsolateOk && InvertOk && RevealOk && UndoOk && Saved && !NoPick.AcceptedCondition && !Again.AcceptedCondition,
+              "H hides Block1Copy1 (scene 2, unpickable, deselected) · Shift+H on the cylinder leaves it alone · Ctrl+H swaps → 2 shown · saved with Hidden, reload equal · Alt+H shows 3; undo → 2 · refused: " + NoPick.Refusal + " · " + Again.Refusal);
+        Tally(HideGate, 0.0, Part.Summary.Bodies.size() == 3 && Relative(Part.Summary.Volume, 64.0 + Pi * 0.25) <= 1.0e-9, "hiding never touches the model: 3 bodies, V 64 + π/4 throughout");
+        Tally(MoveGate, 0.0, RoundTrip(Part) && EncodeDraftingDocument(Part).find("Kind = 13") != std::string::npos && EncodeDraftingDocument(Part).find("Kind = 14") != std::string::npos,
+              "save → load → save byte-equal with Transform (13) and Duplicate (14) steps (placements and the paste source kept)");
+
+        // W22 ① J: an L and its complement drawn as two sketches; the L alone cannot extrude, joined they make a unit square
+        DraftingDocument Plan = CreateDraftingDocument("Curves");
+        const std::string Lower = Draw(Plan, DraftingDrawingKind::Line, { { 0.0, 0.0 }, { 1.0, 0.0 }, { 1.0, 1.0 } });
+        const std::string Upper = Draw(Plan, DraftingDrawingKind::Line, { { 1.0, 1.0 }, { 0.0, 1.0 }, { 0.0, 0.0 } });
+        const DraftingCommandOutcome Open   = ExtrudeDraftingSketch(Plan, Lower, 1.0, FeatureCombination::Separate);
+        const size_t                 Steps  = Plan.Tree.Steps.size();
+        const DraftingCommandOutcome Joined = JoinDraftingSketches(Plan, { Lower, Upper });
+        const bool Merged = Joined.AcceptedCondition && Plan.Tree.Steps.size() == Steps - 1 && !Plan.Captions.contains(Upper);
+        const DraftingCommandOutcome Square = ExtrudeDraftingSketch(Plan, Lower, 1.0, FeatureCombination::Separate);
+        const std::string SquareKey = Square.AcceptedCondition ? Plan.Tree.Steps.back().Label : std::string{};
+        Tally(CurveGate, Relative(VolumeOf(Plan, SquareKey), 1.0), !Open.AcceptedCondition && Merged && Square.AcceptedCondition && Relative(VolumeOf(Plan, SquareKey), 1.0) <= 1.0e-9,
+              Joined.Label + ": the open L refuses to extrude; joined (one sketch fewer) the square extrudes to V 1");
+
+        // W22 ② O: the joined square offset by ¼ outward → 1.5 × 1.5 (mitred corners), extruded 1 → 2.25; preview is pure
+        const std::string BeforePreview = EncodeDraftingDocument(Plan);
+        const SketchOffsetOutcome Preview = PreviewDraftingOffset(Plan, Lower, 0.25);
+        const bool Pure = EncodeDraftingDocument(Plan) == BeforePreview && Preview.Refusal.empty() && Preview.Chains == 1;
+        const DraftingCommandOutcome Offset = OffsetDraftingSketch(Plan, Lower, 0.25);
+        const std::string OffsetSketch = Offset.AcceptedCondition ? Plan.Tree.Steps.back().Label : std::string{};
+        const DraftingCommandOutcome Grow = ExtrudeDraftingSketch(Plan, OffsetSketch, 1.0, FeatureCombination::Separate);
+        const std::string GrowKey = Grow.AcceptedCondition ? Plan.Tree.Steps.back().Label : std::string{};
+        Tally(CurveGate, Relative(VolumeOf(Plan, GrowKey), 2.25), Pure && Offset.AcceptedCondition && Grow.AcceptedCondition && Relative(VolumeOf(Plan, GrowKey), 2.25) <= 1.0e-9 && DraftingBodyCaption(Plan, OffsetSketch) == "Offset1",
+              Offset.Label + ": new sketch Offset1, extruded V 2.25 = 1.5²; the preview left the document alone");
+
+        // W22 ③ P: a drawn line (0, 3) → (2, 3) piped with r ¼ → new body π r² L
+        const std::string Rail = Draw(Plan, DraftingDrawingKind::Line, { { 0.0, 3.0 }, { 2.0, 3.0 } });
+        const DraftingCommandOutcome Piped = PipeDraftingPath(Plan, Rail, 0.25);
+        const std::string PipeKey = Piped.AcceptedCondition ? Plan.Tree.Steps.back().Label : std::string{};
+        Tally(CurveGate, Relative(VolumeOf(Plan, PipeKey), Pi * 0.0625 * 2.0), Piped.AcceptedCondition && Relative(VolumeOf(Plan, PipeKey), Pi * 0.0625 * 2.0) <= 1.0e-9 && Plan.Summary.SoundCondition && Plan.Regeneration.Active == PipeKey,
+              Piped.Label + ": tube V π r² L = π/8 exact, sound, active");
+
+        // W22 ④ refusals and codec
+        const DraftingCommandOutcome Lone     = JoinDraftingSketches(Plan, { Lower });
+        const DraftingCommandOutcome Consumed = JoinDraftingSketches(Plan, { Rail, Lower });
+        const DraftingCommandOutcome Vanish   = OffsetDraftingSketch(Plan, Lower, -0.6);
+        const DraftingCommandOutcome Fat      = PipeDraftingPath(Plan, Rail, 0.0);
+        const DraftingCommandOutcome NoPath   = PipeDraftingPath(Plan, PipeKey, 0.1);
+        Tally(CurveGate, 0.0, !Lone.AcceptedCondition && !Consumed.AcceptedCondition && !Vanish.AcceptedCondition && !Fat.AcceptedCondition && !NoPath.AcceptedCondition,
+              "refused: " + Lone.Refusal + " · " + Consumed.Refusal + " · " + Vanish.Refusal + " · " + Fat.Refusal + " · " + NoPath.Refusal);
+        Tally(CurveGate, 0.0, RoundTrip(Plan) && EncodeDraftingDocument(Plan).find("Kind = 15") != std::string::npos, "save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

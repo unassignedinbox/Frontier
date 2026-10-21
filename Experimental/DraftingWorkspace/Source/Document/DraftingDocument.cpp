@@ -1270,6 +1270,220 @@ DraftingCommandOutcome TrimDraftingSketch(DraftingDocument& Document, const Draf
     }, 0);
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    EDITING (G / R / S · SHIFT+D · CTRL+V · H · J · O · P)
+//------------------------------------------------------------------------------------------------------------------------
+
+namespace
+{
+    [[nodiscard]] std::string ListCaptions(const DraftingDocument& Document, const std::vector<std::string>& Keys)
+    {
+        std::string Operands;
+        for (const std::string& Key : Keys) Operands += (Operands.empty() ? "" : ", ") + DraftingBodyCaption(Document, Key);
+        return Operands;
+    }
+
+    [[nodiscard]] std::vector<std::string> UniqueKeys(const std::vector<std::string>& Keys)
+    {
+        std::vector<std::string> Unique;
+        for (const std::string& Key : Keys) if (std::find(Unique.begin(), Unique.end(), Key) == Unique.end()) Unique.push_back(Key);
+        return Unique;
+    }
+
+    [[nodiscard]] const FeatureStep* FindStep(const DraftingDocument& Document, const std::string& Label)
+    {
+        for (const FeatureStep& Step : Document.Tree.Steps) if (Step.Label == Label) return &Step;
+        return nullptr;
+    }
+}
+
+DraftingCommandOutcome TransformDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys, const AffineMap& Map, const std::string& Verb)
+{
+    const std::vector<std::string> Unique = UniqueKeys(Keys);
+    return RunCommand(Document, Verb + " (" + ListCaptions(Document, Unique) + ")", false, [&]() -> std::string
+    {
+        if (Unique.empty()) return "pick the bodies to " + Verb + " (mode 4)";
+        for (const std::string& Key : Unique) if (!FindRegeneratedBody(Document, Key)) return "no body named " + Key;
+        const std::string Caption = NextCaption(Document, Verb);
+        for (const std::string& Key : Unique)
+        {
+            FeatureStep Step;
+            Step.Kind      = FeatureStepKind::Transform;
+            Step.Label     = "Transform#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Target    = Key;
+            Step.Placement = Map;
+            Document.Captions[Step.Label] = Caption;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        return {};
+    });
+}
+
+DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys, const AffineMap& Map, const std::string& Source)
+{
+    const std::vector<std::string> Unique = UniqueKeys(Keys);
+    return RunCommand(Document, (Source.empty() ? "Duplicate (" : "Paste (") + ListCaptions(Document, Unique) + ")", false, [&]() -> std::string
+    {
+        if (Unique.empty()) return Source.empty() ? "pick the bodies to duplicate (mode 4)" : "the clipboard is empty (Ctrl+C copies the picked bodies)";
+        if (!Source.empty() && !FindStep(Document, Source)) return "the copied state is gone (step " + Source + " was deleted)";
+        if (Source.empty()) for (const std::string& Key : Unique) if (!FindRegeneratedBody(Document, Key)) return "no body named " + Key;
+        std::vector<std::string> Copies;
+        for (const std::string& Key : Unique)
+        {
+            FeatureStep Step;
+            Step.Kind      = FeatureStepKind::Duplicate;
+            Step.Label     = "Duplicate#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Target    = Key;
+            Step.Placement = Map;
+            Step.Source    = Source;
+            Document.Captions[Step.Label] = NextCaption(Document, DraftingBodyCaption(Document, Key) + "Copy");
+            Copies.push_back(Step.Label);
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        Document.Selection          = {};
+        Document.Selection.Bodies   = Copies;
+        Document.Selection.LastKind = DraftingSelectionKind::Body;
+        return {};
+    });
+}
+
+DraftingCommandOutcome ChangeDraftingVisibility(DraftingDocument& Document, DraftingVisibilityVerb Verb)
+{
+    // The picked bodies: body picks plus the owners of picked faces and edges.
+    std::set<std::string> Picked(Document.Selection.Bodies.begin(), Document.Selection.Bodies.end());
+    for (const std::string& Face : Document.Selection.Faces) if (const std::string Key = DraftingBodyOfName(Document, DraftingSelectionKind::Face, Face); !Key.empty()) Picked.insert(Key);
+    for (const std::string& Edge : Document.Selection.Edges) if (const std::string Key = DraftingBodyOfName(Document, DraftingSelectionKind::Edge, Edge); !Key.empty()) Picked.insert(Key);
+    static const char* const Labels[] = { "Hide selected", "Hide unselected", "Unhide all", "Invert hidden" };
+    return RunAppearanceCommand(Document, Labels[static_cast<int>(Verb)], [&]() -> std::string
+    {
+        std::set<std::string>& Hidden = Document.Appearance.HiddenBodies;
+        std::set<std::string>  Present;
+        for (const RegeneratedBody& Body : Document.Regeneration.Bodies) Present.insert(Body.Key);
+        std::erase_if(Hidden, [&](const std::string& Key) { return !Present.contains(Key); });       // Keys of removed bodies
+        const std::set<std::string> Before = Hidden;
+        switch (Verb)
+        {
+        case DraftingVisibilityVerb::HideSelected:
+            if (Picked.empty()) return "pick the bodies to hide";
+            Hidden.insert(Picked.begin(), Picked.end());
+            break;
+        case DraftingVisibilityVerb::HideUnselected:
+            if (Picked.empty()) return "pick the bodies to keep in view";
+            for (const std::string& Key : Present) if (!Picked.contains(Key)) Hidden.insert(Key);
+            break;
+        case DraftingVisibilityVerb::UnhideAll:
+            Hidden.clear();
+            break;
+        case DraftingVisibilityVerb::InvertHidden:
+        {
+            std::set<std::string> Swapped;
+            for (const std::string& Key : Present) if (!Before.contains(Key)) Swapped.insert(Key);
+            Hidden = std::move(Swapped);
+            break;
+        }
+        }
+        if (Hidden == Before) return Verb == DraftingVisibilityVerb::UnhideAll ? "nothing is hidden" : "nothing changes";
+        // Hidden bodies leave the selection.
+        std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return Hidden.contains(Key); });
+        std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return Hidden.contains(DraftingBodyOfName(Document, DraftingSelectionKind::Face, Name)); });
+        std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return Hidden.contains(DraftingBodyOfName(Document, DraftingSelectionKind::Edge, Name)); });
+        return {};
+    });
+}
+
+DraftingCommandOutcome JoinDraftingSketches(DraftingDocument& Document, const std::vector<std::string>& Sketches)
+{
+    std::vector<std::string> Captions;
+    for (const std::string& Label : Sketches) Captions.push_back(Label);
+    return RunCommand(Document, "Join (" + ListCaptions(Document, Captions) + ")", false, [&]() -> std::string
+    {
+        if (Sketches.size() < 2) return "pick two or more sketches to join";
+        const FeatureStep* First = FindStep(Document, Sketches.front());
+        if (!First || First->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Sketches.front();
+        const OrthonormalFrame Base   = ElevatedPlane(Document.Tree, *First);
+        SketchModel            Joined = SolvedSketch(Document, *First);
+        for (size_t Index = 1; Index < Sketches.size(); ++Index)
+        {
+            const FeatureStep* Other = FindStep(Document, Sketches[Index]);
+            if (!Other || Other->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Sketches[Index];
+            if (Sketches[Index] == Sketches.front()) return DraftingBodyCaption(Document, Sketches[Index]) + " is picked twice";
+            if (DraftingSketchConsumedCondition(Document, Other->Label)) return DraftingBodyCaption(Document, Other->Label) + " feeds a later step (join into it instead)";
+            const OrthonormalFrame Plane = ElevatedPlane(Document.Tree, *Other);
+            const Vector3          Apart = Plane.Origin - Base.Origin;
+            if (std::fabs(Dot(Plane.ZAxis, Base.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Base.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart)))
+                return DraftingBodyCaption(Document, Other->Label) + " is not in the plane of " + DraftingBodyCaption(Document, First->Label);
+            SketchPlacement Placement;
+            Placement.Origin = { Dot(Apart, Base.XAxis), Dot(Apart, Base.YAxis) };
+            Placement.XAxis  = { Dot(Plane.XAxis, Base.XAxis), Dot(Plane.XAxis, Base.YAxis) };
+            Placement.YAxis  = { Dot(Plane.YAxis, Base.XAxis), Dot(Plane.YAxis, Base.YAxis) };
+            const double Join = 1.0e-9 * std::max({ 1.0, MeasureSketchScale(Joined), MeasureSketchScale(SolvedSketch(Document, *Other)) });
+            const SketchJoinOutcome Outcome = JoinSketchModels(Joined, SolvedSketch(Document, *Other), Placement, Join);
+            if (!Outcome.Refusal.empty()) return Outcome.Refusal;
+            Joined = Outcome.Sketch;
+        }
+        const auto Keep = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketches.front(); });
+        Keep->Sketch = std::move(Joined);
+        for (size_t Index = 1; Index < Sketches.size(); ++Index)
+        {
+            std::erase_if(Document.Tree.Steps, [&](const FeatureStep& Step) { return Step.Label == Sketches[Index]; });
+            Document.Captions.erase(Sketches[Index]);
+        }
+        return {};
+    }, 0);
+}
+
+SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance)
+{
+    const FeatureStep* Found = FindStep(Document, Sketch);
+    if (!Found || Found->Kind != FeatureStepKind::Sketch)
+    {
+        SketchOffsetOutcome Outcome;
+        Outcome.Refusal = "no sketch step labelled " + Sketch;
+        return Outcome;
+    }
+    return OffsetSketchCurves(SolvedSketch(Document, *Found), Distance);
+}
+
+DraftingCommandOutcome OffsetDraftingSketch(DraftingDocument& Document, const std::string& Sketch, double Distance)
+{
+    return RunCommand(Document, "Offset " + DraftingBodyCaption(Document, Sketch) + " by " + FormatAmount(Distance), false, [&]() -> std::string
+    {
+        const SketchOffsetOutcome Outcome = PreviewDraftingOffset(Document, Sketch, Distance);
+        if (!Outcome.Refusal.empty()) return Outcome.Refusal;
+        const FeatureStep* Found = FindStep(Document, Sketch);
+        FeatureStep Step;
+        Step.Kind      = FeatureStepKind::Sketch;
+        Step.Label     = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Plane     = Found->Plane;
+        Step.Elevation = Found->Elevation;
+        Step.Sketch    = Outcome.Sketch;
+        Document.Captions[Step.Label] = NextCaption(Document, "Offset");
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+DraftingCommandOutcome PipeDraftingPath(DraftingDocument& Document, const std::string& Path, double Radius, FeatureCombination Combination, const std::string& Target)
+{
+    return RunCommand(Document, "Pipe r " + FormatAmount(Radius) + " along " + DraftingBodyCaption(Document, Path), false, [&]() -> std::string
+    {
+        const FeatureStep* Found = FindStep(Document, Path);
+        if (!Found || (Found->Kind != FeatureStepKind::Sketch && Found->Kind != FeatureStepKind::SpaceCurve)) return "choose the path: focus a sketch step or select a curve";
+        FeatureStep Step;
+        Step.Kind        = FeatureStepKind::Pipe;
+        Step.Label       = "Pipe#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Size        = FeatureValue{ Radius };
+        Step.Combination = Combination;
+        Step.Target      = Combination == FeatureCombination::Separate || Combination == FeatureCombination::New ? std::string{} : Target;
+        if (Found->Kind == FeatureStepKind::Sketch) Step.Profile = Path;
+        else Step.Sections = { Path };
+        Document.Captions[Step.Label] = NextCaption(Document, "Pipe");
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Selection = {};
+        return {};
+    });
+}
+
 std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)
 {
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)

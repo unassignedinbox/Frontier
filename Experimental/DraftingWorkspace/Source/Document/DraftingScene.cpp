@@ -169,6 +169,7 @@ DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRat
     for (const RegeneratedBody& Regenerated : Document.Regeneration.Bodies)
     {
         if (!Regenerated.Body.PresentCondition() || !Partition.Bodies.Authenticate(Regenerated.Body)) continue;
+        if (Document.Appearance.HiddenBodies.contains(Regenerated.Key)) continue;                // Plasticity H: out of view and picking
         const TessellationOutcome Outcome = TessellateBody(Partition, Regenerated.Body, Settings);
         Scene.Sag = std::max(Scene.Sag, Outcome.Sag);
         if (!Outcome.Refusal.empty()) Scene.Refusal += (Scene.Refusal.empty() ? "" : "; ") + Outcome.Refusal;

@@ -10,9 +10,38 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Feature/ProfileSweep.h"
+#include "Geometry/SurfaceGeometry.h"
+
+#include <string>
+#include <vector>
 
 namespace Frontier::SolidArcRemastered
 {
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    STRUCTS
+//------------------------------------------------------------------------------------------------------------------------
+
+struct PipeSettings
+{
+    double ToleranceRatio = 1.0e-4;                                                          // [-] - Allowed radial deviation / radius
+    int    SectionLimit   = 513;                                                             // [-] - Most sections before refusing
+    int    FirstSections  = 9;                                                               // [-] - Sections of the first attempt (doubles)
+};
+
+// 📝 A tube along a free-form path: one NURBS side face skinned through section circles, two plane caps.
+struct PipeOutcome
+{
+    BodyToken              Body      = {};                                                   // [-]   - Closed solid
+    FaceToken              Side      = {};                                                   // [-]   - The skinned face
+    std::vector<FaceToken> Caps      = {};                                                   // [-]   - Start cap, end cap
+    NurbsSurface           Surface   = {};                                                   // [-]   - Side carrier
+    int                    Sections  = 0;                                                    // [-]   - Circles skinned
+    double                 Deviation = 0.0;                                                  // [len] - Largest | |S − C(τ*)| − r | measured
+    double                 Length    = 0.0;                                                  // [len] - Path length
+    double                 Bend      = 0.0;                                                  // [-]   - r · κmax (must stay < 1)
+    std::string            Refusal   = {};                                                   // [-]   - "Pipe: …" when refused
+};
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS
@@ -21,6 +50,14 @@ namespace Frontier::SolidArcRemastered
 // 💡 Circle of Radius swept along Path over τ ∈ [Low, High], the section ⟂ the path: a line gives a cylinder, an arc a
 //    partial torus (= the section circle revolved about the arc axis by High − Low; plan G2). Other paths 🚧.
 [[nodiscard]] SweepOutcome PipeAlongPath(ModelPartition& Partition, const CurveGeometry& Path, double Low, double High, double Radius);
+
+// 💡 Circle of Radius swept along a free-form NURBS path (Plasticity P on a curve). The section frames are rotation
+//    minimising (double reflection, Wang et al. 2008, on 4096 path samples), so the tube does not twist; section
+//    circles (exact rational) at equal arc-length stations are skinned (LoftSectionSurface) and the station count
+//    doubles until the radial deviation between stations is within ToleranceRatio·r — the side is a NURBS
+//    approximation of the true canal surface, the caps are exact plane discs ⟂ the path. Refused for closed paths
+//    (🚧), a non-positive radius, r·κ ≥ 1 anywhere (the tube would fold over itself) or no convergence.
+[[nodiscard]] PipeOutcome PipeAlongCurve(ModelPartition& Partition, const NurbsCurve& Path, double Radius, const PipeSettings& Settings = {});
 
 // Profile on Plane swept along Displacement: a displacement ∥ the plane normal is an extrude; oblique ones 🚧.
 [[nodiscard]] SweepOutcome SweepProfileAlongLine(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector3 Displacement);

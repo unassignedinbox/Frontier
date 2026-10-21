@@ -2587,6 +2587,22 @@ void DrawStepCard(DraftingWorkspaceState& State)
                            DraftingBodyCaption(State.Document, Step->Label).c_str());
     }
     if (Step->Kind == FeatureStepKind::Remove) ImGui::Text("Deletes %s", DraftingBodyCaption(State.Document, Step->Target).c_str());
+    if (Step->Kind == FeatureStepKind::Transform || Step->Kind == FeatureStepKind::Duplicate)
+    {
+        const AffineMap& Map = Step->Placement;
+        const Vector3 Factors{ Length(Map.ColumnX), Length(Map.ColumnY), Length(Map.ColumnZ) };
+        const double Trace = Map.ColumnX.X / Factors.X + Map.ColumnY.Y / Factors.Y + Map.ColumnZ.Z / Factors.Z;
+        const double Turn  = std::acos(std::clamp((Trace - 1.0) * 0.5, -1.0, 1.0)) * 180.0 / std::numbers::pi;   // [°] - Rotation part (uniform scale)
+        const std::string Subject = DraftingBodyCaption(State.Document, Step->Target.empty() ? std::string("the active body") : Step->Target);
+        ImGui::TextWrapped("%s %s · shift (%.3f, %.3f, %.3f) · turn %.2f° · scale (%.3f, %.3f, %.3f)%s", Step->Kind == FeatureStepKind::Transform ? "Moves" : "Copies", Subject.c_str(),
+                           Map.Shift.X, Map.Shift.Y, Map.Shift.Z, Turn, Factors.X, Factors.Y, Factors.Z,
+                           Step->Source.empty() ? "" : (" · as it stood after " + CaptionOf(State.Document, Step->Source)).c_str());
+    }
+    if (Step->Kind == FeatureStepKind::Pipe)
+    {
+        const std::string Path = Step->Sections.empty() ? CaptionOf(State.Document, Step->Profile) : CaptionOf(State.Document, Step->Sections.front());
+        ImGui::TextWrapped("Tube of radius %.4f along %s", EvaluateFeatureValue(State.Document.Tree, Step->Size), Path.c_str());
+    }
     const auto Caption = State.Document.Captions.find(Label);
     const std::string Prefix = Caption == State.Document.Captions.end() ? Label + "." : Caption->second + ".";
     std::vector<FeatureParameter> Parameters;

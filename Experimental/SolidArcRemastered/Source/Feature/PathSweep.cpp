@@ -6,7 +6,11 @@
 #include "Feature/PathSweep.h"
 
 #include "Construction/PrimitiveConstruction.h"
+#include "Geometry/NurbsCarrier.h"
+#include "Surfacing/PanelAssembly.h"
+#include "Surfacing/SectionLoft.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -36,6 +40,89 @@ namespace
         SweepOutcome Outcome;
         Outcome.Refusal = std::move(Reason);
         return Outcome;
+    }
+
+    constexpr int    PathSamples     = 4096;                                                 // [-] - Dense samples for length, bend and frames
+    constexpr int    DeviationAround = 16;                                                   // [-] - Samples around each mid-station circle
+    constexpr int    FootIterations  = 30;                                                   // [-] - Newton steps for the path foot
+
+    // 📝 Dense path table: parameter, point, unit tangent, rotation-minimising normal and cumulative length.
+    struct PathTable
+    {
+        std::vector<double>  Parameters = {};                                                // [-]
+        std::vector<Vector3> Points     = {};                                                // [len]
+        std::vector<Vector3> Tangents   = {};                                                // [-]
+        std::vector<Vector3> Normals    = {};                                                // [-]
+        std::vector<double>  Lengths    = {};                                                // [len]
+        double               Bend       = 0.0;                                               // [1/len] - κmax
+    };
+
+    [[nodiscard]] PathTable TabulatePath(const NurbsCurveDefinition& Path)
+    {
+        PathTable Table;
+        const NurbsDomain Domain = MeasureNurbsCurveDomain(Path);
+        for (int Sample = 0; Sample <= PathSamples; ++Sample)
+        {
+            const double Parameter = Domain.Low + (Domain.High - Domain.Low) * Sample / PathSamples;
+            const NurbsCurveDerivatives Derivatives = EvaluateNurbsCurveDerivatives(Path, Parameter);
+            const double Speed = Length(Derivatives.First);
+            Table.Parameters.push_back(Parameter);
+            Table.Points.push_back(Derivatives.Position);
+            Table.Tangents.push_back(Speed > 0.0 ? Derivatives.First * (1.0 / Speed) : Vector3{});
+            if (Speed > 0.0) Table.Bend = std::max(Table.Bend, Length(Cross(Derivatives.First, Derivatives.Second)) / (Speed * Speed * Speed));
+            Table.Lengths.push_back(Sample == 0 ? 0.0 : Table.Lengths.back() + Distance(Table.Points[Sample - 1], Derivatives.Position));
+        }
+        // ② Double reflection (Wang, Jüttler, Zheng, Liu 2008): reflect across the chord bisector, then across the
+        //    plane swapping the reflected tangent into the next one — fourth-order rotation-minimising frames.
+        const Vector3 First = Table.Tangents.front();
+        const Vector3 Seed  = std::fabs(First.Z) < 0.9 ? Vector3{ 0.0, 0.0, 1.0 } : Vector3{ 1.0, 0.0, 0.0 };
+        Table.Normals.push_back(Normalize(Seed - First * Dot(Seed, First)));
+        for (int Sample = 0; Sample < PathSamples; ++Sample)
+        {
+            const Vector3 Chord = Table.Points[Sample + 1] - Table.Points[Sample];
+            const double  ChordSquare = Dot(Chord, Chord);
+            Vector3 Normal = Table.Normals.back(), Tangent = Table.Tangents[Sample];
+            if (ChordSquare > 0.0)
+            {
+                Normal  = Normal - Chord * (2.0 / ChordSquare * Dot(Chord, Normal));
+                Tangent = Tangent - Chord * (2.0 / ChordSquare * Dot(Chord, Tangent));
+            }
+            const Vector3 Swap = Table.Tangents[Sample + 1] - Tangent;
+            const double  SwapSquare = Dot(Swap, Swap);
+            if (SwapSquare > 1.0e-300) Normal = Normal - Swap * (2.0 / SwapSquare * Dot(Swap, Normal));
+            const Vector3 Next = Table.Tangents[Sample + 1];
+            Table.Normals.push_back(Normalize(Normal - Next * Dot(Normal, Next)));
+        }
+        return Table;
+    }
+
+    // Path parameter and frame normal at arc length Along (linear in the table, then the normal re-squared to the exact tangent).
+    void LocateStation(const PathTable& Table, double Along, double& Parameter, Vector3& Normal)
+    {
+        const auto Upper = std::lower_bound(Table.Lengths.begin(), Table.Lengths.end(), Along);
+        const size_t High = std::clamp<size_t>(static_cast<size_t>(Upper - Table.Lengths.begin()), 1, Table.Lengths.size() - 1), Low = High - 1;
+        const double Span = Table.Lengths[High] - Table.Lengths[Low];
+        const double Blend = Span > 0.0 ? std::clamp((Along - Table.Lengths[Low]) / Span, 0.0, 1.0) : 0.0;
+        Parameter = Table.Parameters[Low] + (Table.Parameters[High] - Table.Parameters[Low]) * Blend;
+        Normal    = Table.Normals[Low] * (1.0 - Blend) + Table.Normals[High] * Blend;
+    }
+
+    // Foot of Point on the path by Newton on (C(τ) − X)·C′(τ) = 0 from Seed, clamped to the domain.
+    [[nodiscard]] double FindPathFoot(const NurbsCurveDefinition& Path, Vector3 Point, double Seed)
+    {
+        const NurbsDomain Domain = MeasureNurbsCurveDomain(Path);
+        double Parameter = Seed;
+        for (int Iteration = 0; Iteration < FootIterations; ++Iteration)
+        {
+            const NurbsCurveDerivatives Derivatives = EvaluateNurbsCurveDerivatives(Path, Parameter);
+            const Vector3 Offset = Derivatives.Position - Point;
+            const double  Slope  = Dot(Derivatives.First, Derivatives.First) + Dot(Offset, Derivatives.Second);
+            if (!(std::fabs(Slope) > 0.0)) break;
+            const double Step = Dot(Offset, Derivatives.First) / Slope;
+            Parameter = std::clamp(Parameter - Step, Domain.Low, Domain.High);
+            if (std::fabs(Step) <= 1.0e-15 * (Domain.High - Domain.Low)) break;
+        }
+        return Parameter;
     }
 }
 
@@ -81,6 +168,83 @@ SweepOutcome PipeAlongPath(ModelPartition& Partition, const CurveGeometry& Path,
         return Outcome;
     }
     return Refuse(std::string("Pipe: 🚧 path kind ") + CurveCategoryLabel(Path) + " (lines and arcs are exact)");
+}
+
+PipeOutcome PipeAlongCurve(ModelPartition& Partition, const NurbsCurve& Path, double Radius, const PipeSettings& Settings)
+{
+    PipeOutcome Outcome;
+    if (!Path.Definition) { Outcome.Refusal = "Pipe: the path has no carrier"; return Outcome; }
+    if (!(Radius > 0.0)) { Outcome.Refusal = "Pipe: radius must be positive"; return Outcome; }
+    const NurbsCurveDefinition& Definition = *Path.Definition;
+    const PathTable Table = TabulatePath(Definition);
+    Outcome.Length = Table.Lengths.back();
+    Outcome.Bend   = Radius * Table.Bend;
+    if (!(Outcome.Length > 0.0)) { Outcome.Refusal = "Pipe: the path has no length"; return Outcome; }
+    if (Distance(Table.Points.front(), Table.Points.back()) <= 1.0e-9 * Outcome.Length) { Outcome.Refusal = "Pipe: the path is closed (🚧 closed tubes; open the curve or pipe a part of it)"; return Outcome; }
+    for (const Vector3& Tangent : Table.Tangents) if (!(Length(Tangent) > 0.0)) { Outcome.Refusal = "Pipe: the path has a cusp (zero speed)"; return Outcome; }
+    if (Outcome.Bend >= 1.0)
+    {
+        Outcome.Refusal = "Pipe: radius " + std::to_string(Radius) + " exceeds the tightest bend radius " + std::to_string(1.0 / Table.Bend) + " (the tube would fold over itself)";
+        return Outcome;
+    }
+    const double Tolerance = Settings.ToleranceRatio * Radius;                               // [len] - Allowed radial deviation
+
+    for (int Count = std::max(Settings.FirstSections, 2); Count <= Settings.SectionLimit; Count = 2 * Count - 1)
+    {
+        // ① Section circles at equal arc-length stations, frames from the rotation-minimising table.
+        std::vector<NurbsCurve> Sections;
+        std::vector<double>     Stations;
+        for (int Station = 0; Station < Count; ++Station)
+        {
+            double  Parameter = 0.0;
+            Vector3 Normal;
+            LocateStation(Table, Outcome.Length * Station / (Count - 1), Parameter, Normal);
+            const NurbsCurveDerivatives Derivatives = EvaluateNurbsCurveDerivatives(Definition, Parameter);
+            const Vector3 Tangent = Normalize(Derivatives.First);
+            Normal = Normalize(Normal - Tangent * Dot(Normal, Tangent));
+            const Vector3 Binormal = Cross(Tangent, Normal);
+            Sections.push_back(ConvertConicToNurbs({ Derivatives.Position, Normal * Radius, Binormal * Radius, Tangent }, 0.0, 2.0 * std::numbers::pi));
+            Stations.push_back(Parameter);
+        }
+        LoftSettings Loft;
+        Loft.DegreeAcross   = 3;
+        Loft.AlignCondition = false;
+        const LoftSurfaceOutcome Skin = LoftSectionSurface(Sections, Loft);
+        if (!Skin.Refusal.empty()) { Outcome.Refusal = "Pipe: " + Skin.Refusal; return Outcome; }
+
+        // ② Radial deviation midway between stations (where the skin is furthest from its interpolated circles).
+        double Worst = 0.0;
+        const NurbsDomain AroundDomain = MeasureNurbsSurfaceDomain(*Skin.Surface.Definition, true);
+        for (int Station = 0; Station + 1 < Count; ++Station)
+        {
+            const double Across = 0.5 * (Skin.SectionParameters[Station] + Skin.SectionParameters[Station + 1]);
+            const double Seed   = 0.5 * (Stations[Station] + Stations[Station + 1]);
+            for (int Around = 0; Around < DeviationAround; ++Around)
+            {
+                const double  AroundParameter = AroundDomain.Low + (AroundDomain.High - AroundDomain.Low) * (Around + 0.5) / DeviationAround;
+                const Vector3 Point = EvaluateNurbsSurface(Skin.Surface, { AroundParameter, Across }).Position;
+                const double  Foot  = FindPathFoot(Definition, Point, Seed);
+                Worst = std::max(Worst, std::fabs(Distance(Point, EvaluateNurbsCurveDerivatives(Definition, Foot).Position) - Radius));
+            }
+        }
+        Outcome.Sections  = Count;
+        Outcome.Deviation = Worst;
+        Outcome.Surface   = Skin.Surface;
+        if (Worst > Tolerance) continue;
+
+        // ③ One NURBS side, plane caps on the two rim circles → closed solid.
+        PanelAssemblySettings Assembly;
+        Assembly.CapCondition = true;
+        const PanelAssemblyOutcome Assembled = AssemblePanels(Partition, { SurfacePanel{ Skin.Surface } }, Assembly, "Pipe");
+        if (!Assembled.Refusal.empty()) { Outcome.Refusal = "Pipe: " + Assembled.Refusal; return Outcome; }
+        if (!Assembled.SolidCondition || Assembled.Faces.size() != 1 || Assembled.Caps.size() != 2) { Outcome.Refusal = "Pipe: the tube did not close (" + std::to_string(Assembled.LaminarEdges) + " open rim edges)"; return Outcome; }
+        Outcome.Body = Assembled.Body;
+        Outcome.Side = Assembled.Faces.front();
+        Outcome.Caps = Assembled.Caps;
+        return Outcome;
+    }
+    Outcome.Refusal = "Pipe: " + std::to_string(Settings.SectionLimit) + " sections still deviate " + std::to_string(Outcome.Deviation) + " from the true tube (allowed " + std::to_string(Tolerance) + ")";
+    return Outcome;
 }
 
 SweepOutcome SweepProfileAlongLine(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector3 Displacement)

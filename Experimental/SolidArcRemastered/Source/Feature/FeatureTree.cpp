@@ -6,7 +6,11 @@
 #include "Feature/FeatureTree.h"
 
 #include "Feature/BodyCut.h"
+#include "Feature/PathSweep.h"
+#include "Geometry/NurbsCarrier.h"
+#include "Local/FaceOperations.h"
 #include "Sketch/SketchProfile.h"
+#include "Sketch/SketchSpline.h"
 #include "Surfacing/CurveNetwork.h"
 #include "Surfacing/PanelAssembly.h"
 #include "Surfacing/SectionLoft.h"
@@ -61,6 +65,41 @@ namespace
     };
 
     constexpr double MirrorSnapFraction = 1.0;                                               // [-] - End points within this × fit tolerance of a mirror plane snap onto it
+
+    // Names of a transformed copy: each image face takes its source face's name (Prefix empty) or "Prefix.Copy(name)".
+    [[nodiscard]] BodyNaming CarryNaming(const ModelPartition& Partition, const TransformOutcome& Transform, const BodyNaming& Source, const std::string& Prefix)
+    {
+        BodyNaming Naming;
+        for (size_t Index = 0; Index < Transform.SourceFaces.size() && Index < Transform.Faces.size(); ++Index)
+        {
+            const auto Found = Source.Faces.find(Transform.SourceFaces[Index].Slot);
+            if (Found == Source.Faces.end()) continue;
+            Naming.Faces[Transform.Faces[Index].Slot] = Prefix.empty() ? Found->second : Prefix + ".Copy(" + Found->second + ")";
+        }
+        CompleteNaming(Partition, Transform.Body, Naming);
+        return Naming;
+    }
+
+    // Pipe faces: plane faces are caps (Start: the one nearer the path start, else End), the rest Side(Path).
+    [[nodiscard]] BodyNaming NamePipeBody(const ModelPartition& Partition, BodyToken Body, const std::string& Label, Vector3 PathStart)
+    {
+        const BodyInventory Inventory = Partition.CollectInventory(Body);
+        std::vector<FaceToken> Caps, Sides;
+        for (FaceToken Face : Inventory.Faces)
+        {
+            const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface);
+            (std::holds_alternative<PlaneSurface>(Surface) ? Caps : Sides).push_back(Face);
+        }
+        std::sort(Caps.begin(), Caps.end(), [&](FaceToken First, FaceToken Second)
+        {
+            return Distance(MeasureFaceBoundaryCentre(Partition, First), PathStart) < Distance(MeasureFaceBoundaryCentre(Partition, Second), PathStart);
+        });
+        std::vector<FaceToken>   Faces;
+        std::vector<std::string> Names;
+        for (FaceToken Face : Sides) { Faces.push_back(Face); Names.push_back(Label + ".Side(Path)"); }
+        for (size_t Index = 0; Index < Caps.size(); ++Index) { Faces.push_back(Caps[Index]); Names.push_back(Label + (Index == 0 ? ".Cap(Start)" : ".Cap(End)")); }
+        return NamePanelBody(Partition, Body, Faces, Names);
+    }
 
     void ApplySettingsAmount(FaceOperationSettings& Settings, double Amount)
     {
@@ -159,6 +198,14 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Bodies.push_back({ StepLabel, Current, Naming });
         Target = Active = static_cast<int>(Bodies.size()) - 1;
     };
+
+    // Duplicate snapshots ahead of time: the bodies some later Duplicate copies as they stood after a given step.
+    std::map<std::string, std::vector<std::string>> SnapshotRequests;                        // Step label → body keys
+    std::map<std::pair<std::string, std::string>, RegeneratedBody> Snapshots;                // (step, key) → body then
+    for (const FeatureStep& Step : Tree.Steps)
+    {
+        if (Step.Kind == FeatureStepKind::Duplicate && !Step.Source.empty()) SnapshotRequests[Step.Source].push_back(Step.Target);
+    }
 
     // Mirror planes ahead of time: SpaceCurves ending on one leave it perpendicularly (the halves then meet G1).
     std::vector<MirrorPlane> Planes;
@@ -605,6 +652,127 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Naming  = Active >= 0 ? Bodies[Active].Naming : BodyNaming{};
             break;
         }
+        case FeatureStepKind::Transform:
+        {
+            // ⑬ Move / rotate / scale a body in place (Plasticity G / R / S): exact image, every name kept.
+            if (!Load(Step.Target)) { Refuse("Transform: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            const TransformOutcome Moved = TransformBody(Partition, Current, Step.Placement);
+            if (!Moved.Refusal.empty()) { Refuse(Moved.Refusal); break; }
+            Naming  = CarryNaming(Partition, Moved, Naming, {});
+            Current = Moved.Body;
+            if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would undo the move
+            Store();
+            break;
+        }
+        case FeatureStepKind::Duplicate:
+        {
+            // ⑭ Copy of a body (Plasticity Shift+D / Ctrl+V) as it is now, or as it stood after step Source.
+            RegeneratedBody Original;
+            if (Step.Source.empty())
+            {
+                if (!Load(Step.Target)) { Refuse("Duplicate: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+                Original = Bodies[Target];
+            }
+            else
+            {
+                const auto Found = Snapshots.find({ Step.Source, Step.Target });
+                if (Found == Snapshots.end()) { Refuse("Duplicate: " + (Step.Target.empty() ? std::string("(active)") : Step.Target) + " did not exist after " + Step.Source); break; }
+                Original = Found->second;
+            }
+            const TransformOutcome Copy = TransformBody(Partition, Original.Body, Step.Placement);
+            if (!Copy.Refusal.empty()) { Refuse("Duplicate: " + Copy.Refusal); break; }
+            Naming  = CarryNaming(Partition, Copy, Original.Naming, Step.Label);
+            Current = Copy.Body;
+            Create();
+            break;
+        }
+        case FeatureStepKind::Pipe:
+        {
+            // ⑮ Circle of radius Size along a path (Plasticity P): lines / arcs / circles exact, free-form paths a NURBS tube.
+            const double Radius = EvaluateFeatureValue(Tree, Step.Size);
+            BodyToken Tube;
+            Vector3   PathStart;
+            if (!Step.Sections.empty())
+            {
+                const auto Found = Outcome.Curves.find(Step.Sections.front());
+                if (Found == Outcome.Curves.end()) { Refuse("Pipe: path curve " + Step.Sections.front() + " is unavailable"); break; }
+                const PipeOutcome Swept = PipeAlongCurve(Partition, Found->second.Curve, Radius);
+                if (!Swept.Refusal.empty()) { Refuse(Swept.Refusal); break; }
+                Tube      = Swept.Body;
+                PathStart = EvaluateNurbsCurve(*Found->second.Curve.Definition, MeasureNurbsCurveDomain(*Found->second.Curve.Definition).Low).Position;
+            }
+            else
+            {
+                const auto Found = Sketches.find(Step.Profile);
+                if (Found == Sketches.end() || !Found->second.UsableCondition) { Refuse("Pipe: path sketch " + Step.Profile + " is unavailable"); break; }
+                const SolvedSketch& Solved = Found->second;
+                std::vector<int> Drawn;
+                for (size_t Index = 0; Index < Solved.Model.Curves.size(); ++Index) if (!Solved.Model.Curves[Index].Construction) Drawn.push_back(static_cast<int>(Index));
+                if (Drawn.size() != 1) { Refuse("Pipe: path sketch " + Step.Profile + " has " + std::to_string(Drawn.size()) + " curves (🚧 one line, arc, circle or spline; chains with corners need mitred joints)"); break; }
+                std::string Problem;
+                const ProfileSegment Segment = ResolveSketchCurveSegment(Solved.Model, Drawn.front(), 1.0e-12, Problem);
+                if (!Problem.empty()) { Refuse("Pipe: " + Problem); break; }
+                const OrthonormalFrame& Plane = Solved.Plane;
+                const auto Lift = [&](Vector2 Point) { return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y; };
+                PathStart = Lift(Segment.Start);
+                if (Segment.Kind == ProfileSegmentKind::Spline)
+                {
+                    std::vector<Vector3> Poles;
+                    for (const Vector2& Pole : Segment.Spline.Poles) Poles.push_back(Lift(Pole));
+                    const std::optional<NurbsCurve> Path = ConstructNurbsCurve(Segment.Spline.Degree, Segment.Spline.Knots, Poles, std::vector<double>(Poles.size(), 1.0));
+                    if (!Path) { Refuse("Pipe: the spline path has invalid knots"); break; }
+                    const PipeOutcome Swept = PipeAlongCurve(Partition, *Path, Radius);
+                    if (!Swept.Refusal.empty()) { Refuse(Swept.Refusal); break; }
+                    Tube = Swept.Body;
+                }
+                else
+                {
+                    SweepOutcome Swept;
+                    if (Segment.Kind == ProfileSegmentKind::Line)
+                    {
+                        const Vector3 Start = Lift(Segment.Start), End = Lift(Segment.End);
+                        Swept = PipeAlongPath(Partition, StraightLine{ Start, Normalize(End - Start) }, 0.0, Distance(Start, End), Radius);
+                    }
+                    else
+                    {
+                        CircularArc Arc;
+                        Arc.Frame  = { Lift(Segment.Centre), Plane.XAxis, Plane.YAxis, Plane.ZAxis };
+                        Arc.Radius = Segment.Radius;
+                        Swept = PipeAlongPath(Partition, Arc, Segment.StartAngle, Segment.StartAngle + Segment.Sweep, Radius);
+                    }
+                    if (!Swept.Refusal.empty()) { Refuse(Swept.Refusal); break; }
+                    Tube = Swept.Body;
+                }
+            }
+            const BodyNaming ToolNaming = NamePipeBody(Partition, Tube, Step.Label, PathStart);
+            const bool SeparateCondition = Step.Combination == FeatureCombination::Separate || Step.Combination == FeatureCombination::New;
+            if (SeparateCondition || Bodies.empty())
+            {
+                if (!SeparateCondition && Step.Combination != FeatureCombination::Union) { Refuse(std::string("Pipe: nothing to ") + FeatureCombinationLabel(Step.Combination) + " with"); break; }
+                Current = Tube;
+                Naming  = ToolNaming;
+                Create();
+                break;
+            }
+            if (!Load(Step.Target)) { Refuse("Pipe: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet) { Refuse("Pipe: the target is a sheet (🚧 close the panels first, or pipe as a new body)"); break; }
+            const BooleanOperation Operation = Step.Combination == FeatureCombination::Difference ? BooleanOperation::Difference
+                                             : Step.Combination == FeatureCombination::Intersection ? BooleanOperation::Intersection : BooleanOperation::Union;
+            const BooleanOutcome Boolean = ComputeBoolean(Partition, Current, Tube, Operation);
+            if (!Boolean.Refusal.empty()) { Refuse(Boolean.Refusal); break; }
+            Naming  = NameBooleanBody(Partition, Boolean.Body, Boolean, Naming, ToolNaming);
+            Current = Boolean.Body;
+            Store();
+            break;
+        }
+        }
+        if (const auto Requested = SnapshotRequests.find(Step.Label); Requested != SnapshotRequests.end())
+        {
+            for (const std::string& Key : Requested->second)
+            {
+                const int Index = Key.empty() ? Active : FindBody(Key);
+                if (Index >= 0) Snapshots[{ Step.Label, Key }] = Bodies[Index];
+            }
         }
         Report.Body         = Current;
         Report.Naming       = Naming;
@@ -642,6 +810,9 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Combine:       return "Combine";
     case FeatureStepKind::Cut:           return "Cut";
     case FeatureStepKind::Remove:        return "Remove";
+    case FeatureStepKind::Transform:     return "Transform";
+    case FeatureStepKind::Duplicate:     return "Duplicate";
+    case FeatureStepKind::Pipe:          return "Pipe";
     }
     return "?";
 }

@@ -9,6 +9,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Construction/BodyTransform.h"
 #include "Feature/TopologicalNaming.h"
 #include "Sketch/SketchSolver.h"
 #include "Surfacing/CurveFitting.h"
@@ -42,6 +43,9 @@ enum class FeatureStepKind : uint8_t
     Combine       = 10,                                                                      // Boolean between two bodies; the tool body is consumed
     Cut           = 11,                                                                      // Split a body by a sketch profile / curve into two bodies (Plasticity C)
     Remove        = 12,                                                                      // Delete a body (Plasticity X on a body)
+    Transform     = 13,                                                                      // Move / rotate / scale a body in place (Plasticity G / R / S)
+    Duplicate     = 14,                                                                      // Copy of a body as a new body (Plasticity Shift+D, Ctrl+C / Ctrl+V)
+    Pipe          = 15,                                                                      // Circle swept along a SpaceCurve or a one-curve sketch (Plasticity P)
 };
 
 enum class FeatureCombination : uint8_t
@@ -119,6 +123,8 @@ struct FeatureStep
     int                            Continuity     = 0;                                       // [-]   - Loft: 0 G0 · 1 G1 · 2 G2 to panels sharing an end section
     std::string                    Target         = {};                                      // [-]   - Extrude / revolve Boolean, blend, face operation, combine, cut, remove: body key (empty = active body)
     std::string                    Tool           = {};                                      // [-]   - Combine: body key consumed by the Boolean
+    AffineMap                      Placement      = {};                                      // [-]   - Transform / duplicate: x ↦ M·x + Shift (identity: none)
+    std::string                    Source         = {};                                      // [-]   - Duplicate: step after which Target is copied (empty: as it is now)
 };
 
 struct FeatureTree
@@ -177,7 +183,11 @@ struct RegenerationOutcome
 //    signature in the tree so later regenerations can rebind geometrically.
 //    Bodies: the first sweep (or a Separate one) starts a body keyed by its step label; Booleans, blends and face
 //    operations act on Step.Target (empty: the active body, the last one built or changed); panels form one body of their
-//    own; Combine merges Step.Tool into Step.Target and consumes the tool.
+//    own; Combine merges Step.Tool into Step.Target and consumes the tool. Transform replaces Step.Target by its image
+//    under Step.Placement (names kept); Duplicate copies Step.Target — as it stood after step Step.Source, so a copy
+//    survives the later removal of its original — into a body keyed by its own label, every face renamed
+//    "Label.Copy(name)"; Pipe sweeps a circle of radius Step.Size along a SpaceCurve (Step.Sections) or the single curve
+//    of a sketch (Step.Profile) — lines and arcs exactly, free-form paths as a NURBS tube — and combines like an extrude.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false);
 
 [[nodiscard]] double EvaluateFeatureValue(const FeatureTree& Tree, const FeatureValue& Value);

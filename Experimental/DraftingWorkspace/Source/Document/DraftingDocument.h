@@ -13,6 +13,7 @@
 #include "Document/DraftingMatcap.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
+#include "Sketch/SketchEditing.h"
 #include "Sketch/SketchTrim.h"
 #include "Topology/ModelPartition.h"
 
@@ -115,6 +116,15 @@ struct DraftingTrimRequest
     std::string       Sketch = {};                                                           // [-]   - Sketch step label
     int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
     Modeller::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
+};
+
+// Plasticity H family: H hides the selected bodies, Shift+H every other body, Alt+H shows all, Ctrl+H swaps shown and hidden.
+enum class DraftingVisibilityVerb : uint8_t
+{
+    HideSelected   = 0,
+    HideUnselected = 1,
+    UnhideAll      = 2,
+    InvertHidden   = 3,
 };
 
 // 📝 Variable when EndSize is set: Size at each edge's anchor end, EndSize at its other end. The anchor is the edge's
@@ -247,6 +257,32 @@ struct VehicleCurveFile;
 
 // Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
 [[nodiscard]] DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys);
+
+// Plasticity G / R / S: one Transform step per body applying Map (x′ = X·x + Y·y + Z·z + Shift); Verb captions the steps
+// ("Move", "Rotate", "Scale"). Names, selection and every later step that references the bodies follow them.
+[[nodiscard]] DraftingCommandOutcome TransformDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys,
+                                                             const Modeller::AffineMap& Map, const std::string& Verb);
+
+// Shift+D / Ctrl+V: one Duplicate step per body, placed by Map; each copy is a new body (key = its step label), the last
+// one active, the copies selected. Source (paste) copies each body as it stood right after that step — the clipboard.
+[[nodiscard]] DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys,
+                                                             const Modeller::AffineMap& Map, const std::string& Source = {});
+
+// Plasticity H / Shift+H / Alt+H / Ctrl+H (appearance: undoable, saved, no regeneration).
+[[nodiscard]] DraftingCommandOutcome ChangeDraftingVisibility(DraftingDocument& Document, DraftingVisibilityVerb Verb);
+
+// Plasticity J: the coplanar sketches merge into the first (ends welded, frame constraints carried); the others are
+// removed. Refused when a merged sketch feeds a later step.
+[[nodiscard]] DraftingCommandOutcome JoinDraftingSketches(DraftingDocument& Document, const std::vector<std::string>& Sketches);
+
+// Plasticity O: a new sketch step holding the exact offset of every chain of Sketch (Distance > 0: outward / left).
+[[nodiscard]] DraftingCommandOutcome OffsetDraftingSketch(DraftingDocument& Document, const std::string& Sketch, double Distance);
+[[nodiscard]] Modeller::SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance);
+
+// Plasticity P: a tube of Radius along a one-curve sketch or a SpaceCurve, combined with Target (Separate: a new body).
+[[nodiscard]] DraftingCommandOutcome PipeDraftingPath(DraftingDocument& Document, const std::string& Path, double Radius,
+                                                      Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                      const std::string& Target = {});
 
 // Key of the body carrying a face / edge name, or the key itself for Body; empty when no body has it.
 [[nodiscard]] std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);

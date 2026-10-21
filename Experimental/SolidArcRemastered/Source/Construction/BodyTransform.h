@@ -32,8 +32,10 @@ struct AffineMap
 
 struct TransformOutcome
 {
-    BodyToken   Body    = {};                                                                // [-] - New body (the source is untouched)
-    std::string Refusal = {};                                                                // [-] - "Transform: …" when refused
+    BodyToken              Body        = {};                                                 // [-] - New body (the source is untouched)
+    std::string            Refusal     = {};                                                 // [-] - "Transform: …" when refused
+    std::vector<FaceToken> SourceFaces = {};                                                 // [-] - Source faces, in copy order
+    std::vector<FaceToken> Faces       = {};                                                 // [-] - Their images (same order: names carry over)
 };
 
 //------------------------------------------------------------------------------------------------------------------------

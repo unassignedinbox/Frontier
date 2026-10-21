@@ -190,6 +190,27 @@ constexpr int64_t FormatVersion = 1;                                            
         break;
     case FeatureStepKind::Remove:
         break;
+    case FeatureStepKind::Transform:
+    case FeatureStepKind::Duplicate:
+        // The affine map as its three linear columns and the shift (x′ = X·x + Y·y + Z·z + Shift).
+        Table.insert("PlacementX", EncodeVector(Step.Placement.ColumnX));
+        Table.insert("PlacementY", EncodeVector(Step.Placement.ColumnY));
+        Table.insert("PlacementZ", EncodeVector(Step.Placement.ColumnZ));
+        Table.insert("PlacementShift", EncodeVector(Step.Placement.Shift));
+        if (!Step.Source.empty()) Table.insert("Source", Step.Source);                     // Paste: the copy-time step
+        break;
+    case FeatureStepKind::Pipe:
+        // The path: a sketch (Profile) or a SpaceCurve (Sections); the radius is Size.
+        if (!Step.Profile.empty()) Table.insert("Profile", Step.Profile);
+        if (!Step.Sections.empty())
+        {
+            toml::array Sections;
+            for (const std::string& Section : Step.Sections) Sections.push_back(Section);
+            Table.insert("Sections", std::move(Sections));
+        }
+        Table.insert("Size", EncodeValue(Step.Size));
+        Table.insert("Combination", static_cast<int64_t>(Step.Combination));
+        break;
     }
     if (!Step.Target.empty()) Table.insert("Target", Step.Target);                                // Absent: the active body (older files)
     if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
@@ -298,7 +319,7 @@ constexpr int64_t FormatVersion = 1;                                            
 //    documents without matcaps keep their exact bytes.
 [[nodiscard]] bool DefaultAppearanceCondition(const DraftingAppearance& Appearance)
 {
-    return Appearance.BodyMatcap == DraftingStudioMatcap && Appearance.BodyMatcaps.empty() && Appearance.FaceMatcaps.empty()
+    return Appearance.BodyMatcap == DraftingStudioMatcap && Appearance.BodyMatcaps.empty() && Appearance.FaceMatcaps.empty() && Appearance.HiddenBodies.empty()
         && Appearance.CustomMatcaps.empty();
 }
 
@@ -314,6 +335,12 @@ constexpr int64_t FormatVersion = 1;                                            
     if (!Bodies.empty()) Table.insert("Bodies", std::move(Bodies));
     if (!Faces.empty()) Table.insert("Faces", std::move(Faces));
     if (!Matcaps.empty()) Table.insert("Matcaps", std::move(Matcaps));
+    if (!Appearance.HiddenBodies.empty())
+    {
+        toml::array Hidden;
+        for (const std::string& Key : Appearance.HiddenBodies) Hidden.push_back(Key);
+        Table.insert("Hidden", std::move(Hidden));
+    }
     return Table;
 }
 
@@ -357,6 +384,15 @@ constexpr int64_t FormatVersion = 1;                                            
             if (Face.empty()) return "Appearance: a face entry has no Face name";
             if (!DraftingMatcapKnownCondition(Appearance, Matcap)) return "Appearance: no matcap named " + Matcap + " (face " + Face + ")";
             Appearance.FaceMatcaps[Face] = Matcap;
+        }
+    }
+    if (const toml::array* Hidden = (*Table)["Hidden"].as_array())
+    {
+        for (const toml::node& Entry : *Hidden)
+        {
+            const std::string Key = Entry.value_or(std::string{});
+            if (Key.empty()) return "Appearance: a hidden entry is not a body key";
+            Appearance.HiddenBodies.insert(Key);
         }
     }
     return {};
@@ -425,7 +461,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Remove)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Pipe)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -453,6 +489,11 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             Step.Size           = DecodeValue(View["Size"]);
             Step.Operation      = static_cast<FaceOperationKind>(View["Operation"].value_or(int64_t{ 1 }));
             Step.Amount         = DecodeValue(View["Amount"]);
+            Step.Placement.ColumnX = DecodeVector(View["PlacementX"], Step.Placement.ColumnX);
+            Step.Placement.ColumnY = DecodeVector(View["PlacementY"], Step.Placement.ColumnY);
+            Step.Placement.ColumnZ = DecodeVector(View["PlacementZ"], Step.Placement.ColumnZ);
+            Step.Placement.Shift   = DecodeVector(View["PlacementShift"], Step.Placement.Shift);
+            Step.Source            = View["Source"].value_or(std::string{});
             Step.References = DecodeReferences(View["References"]);
             if (View["EndSize"])
             {

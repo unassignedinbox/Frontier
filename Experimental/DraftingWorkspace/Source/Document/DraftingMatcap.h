@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,7 @@ struct DraftingAppearance
     std::map<std::string, std::string> BodyMatcaps   = {};                                   // [-] - Body key (creating step label) → matcap
     std::map<std::string, std::string> FaceMatcaps   = {};                                   // [-] - Persistent face name → matcap
     std::vector<DraftingCustomMatcap>  CustomMatcaps = {};                                   // [-] - User pictures, in layer order
+    std::set<std::string>              HiddenBodies  = {};                                   // [-] - Body keys out of view and picking (Plasticity H)
 };
 
 // One built-in matcap: its name, caption and the look it was composed for.
