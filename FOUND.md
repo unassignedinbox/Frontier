@@ -47,13 +47,13 @@ Key commits:
 - `a8db8b9` *The expanded Fluid editor, natively: the page the gas card's arrow opens*
 - `e5a33a8` *Add scene emitters to the browser editor and import the Frontier engine tree* (import of the browser editors)
 
-Recovered from this branch (now under `editors/`):
+Recovered from this branch (now under `Exhibits/`):
 `ProjectZeroEditor/` (prebuilt self-contained `index.html`, 4.9 MB — no external assets),
 `FractureEditor/` (prebuilt `index.html` + sources + `Captures/*.png` proof screenshots),
 `Fluid/` (source; `dist/` built here), `ParticleEditor/` (no build step),
 `FrontierEditor/` (source; `dist/` built here — the older editor, also on `Frontier-` main @ `28ec065`,
 **without** fracture), plus `Docs/{BrowserEditorHistory,ParticleEditor,FrontierEditorComponents,
-BaseGeometryAndFractureEditorNotes,MainEditorIntegration}.md` (copied to `editors/Docs/`).
+BaseGeometryAndFractureEditorNotes,MainEditorIntegration}.md` (copied to `Exhibits/Docs/`).
 
 Note: branch `main` (2026-09-27) has `FrontierEditor` only — no ProjectZero/Fracture/Fluid/Particle apps.
 Also on the arena branches are the **native C++ ports**, not runnable in a browser:
@@ -70,15 +70,15 @@ proof galleries under `Exhibits/Gallery/{FractureEditorNative,FluidEditorNative,
   `dee73c2a` *Bind fracture authoring to scene objects and preserve closed fragment geometry* (2026-10-05).
   This is an **earlier copy** of the same apps recovered newer from `Frontier-` above.
 - Branch `arena/06b26e41-slate`: **`particle-editor/` = Flux Particle Studio** (`609de1c5`, 2026-10-08),
-  a separate AE-style GPU particle editor with a prebuilt `dist/`. → copied to `editors/FluxParticleStudio/`.
+  a separate AE-style GPU particle editor with a prebuilt `dist/`. → copied to `Exhibits/FluxParticleStudio/`.
 - Branch `arena/01a102c5-slate`: **`WebFluidLab/`** (`215549b3` *Realtime Fluid Lab: WebGPU/WebGL2 SPH*,
-  2026-10-03). → copied to `editors/WebFluidLab/`, `dist/` built here.
+  2026-10-03). → copied to `Exhibits/WebFluidLab/`, `dist/` built here.
   (This branch also has an older `WebFluid/` snapshot in its history; the Lab superseded it.)
 
 ### 3. `SultanAladin/Frontier` — one related prototype
 - `Documentation/Prototypes/FluidNodeEditor/FluidNodeEditor.html` is on `master`, but its JS
   (`FluidEditorEntry.js`, `Fluid/`, `Graph/`, `Presentation/`) is **missing there** — recovered complete
-  (12 files) from branch **`smrt-soft-shadows`**. → `editors/FluidNodeEditor/`.
+  (12 files) from branch **`smrt-soft-shadows`**. → `Exhibits/FluidNodeEditor/`.
   It loads three.js from `unpkg.com` via import map, so it needs internet in the browser.
 - Its native `Internal/EngineContext/Interface/Workspaces/Simulation/` is a small C++ panel only;
   `Experimental/SlateReference/.../FractureSequence.js` on other branches is vehicle-proving-ground code,
@@ -92,23 +92,42 @@ prototypes (`References/UVeditor`, asset browsers, etc.), but no simulation edit
 ### 5. `unassignedinbox/Frontier` (this repo) — was empty ❌
 Single initial commit (`66a97d3`, just `# Frontier`). Everything recovered above now lives here.
 
-## What's in this repo now
+## What's in this repo now — everything under `Exhibits/` (one reference place)
+
+Catalog with open-URLs + origins: [`Exhibits/README.md`](Exhibits/README.md).
 
 ```
 index.html                     launcher (open this)
 FOUND.md                       this file
-editors/
+Exhibits/
+  README.md                    ★ catalog — every exhibit, its URL and origin
   ProjectZeroEditor/           ★ the editor UI (prebuilt index.html)
   FractureEditor/              standalone fracture editor (prebuilt index.html, three.js render)
   Fluid/                       gas/smoke fluid editor — dist/ built here
   ParticleEditor/              standalone particle editor (no build)
   FrontierEditor/              older browser editor — dist/ built here
+  RoadEditor/                  spline road editor from Slate (prebuilt dist/)
+  SolidArc/                    geometry workspace from Frontier-
   FluxParticleStudio/          Flux particle editor from Slate (prebuilt dist/)
-  FluidNodeEditor/             node-editor prototype from SultanAladin/Frontier (needs CDN at runtime)
+  FluidNodeEditor/             fluid node-editor from SultanAladin/Frontier (needs CDN at runtime)
+  NodeFlowEditor/              node-flow editor + terrain from SultanAladin/Frontier (needs CDN at runtime)
   WebFluidLab/                 SPH fluid lab from Slate — dist/ built here
+  CliffSequence/  Ocean/  DeformationIntegrator/  DistanceIntegrator/
+  RadianceIntegrator/  RadianceProjection/  RadianceSequence/  SpatialHud/
+                               remaining browser apps from the same Frontier- branch
+  NativeSurfaces/              16 native C++ editor-surface headers (reference only, not runnable here)
   EngineContent/Fonts/         DM Sans TTFs the built Fluid CSS expects at ../../../EngineContent/…
   Docs/                        the editor docs copied from Frontier-
+Docs/                          3 upstream review pages the Deform/Distance/Radiance exhibits link to
+EngineContent/                 root font copy read by FractureEditor/Build.mjs (../../EngineContent)
 ```
+
+Also from the same branches, added when consolidating into `Exhibits/`:
+`road-editor/` (unassignedinbox/Slate `arena/06b26e41-slate`) → `RoadEditor/`;
+`Documentation/Prototypes/NodeFlowEditor` (SultanAladin/Frontier `smrt-soft-shadows`, 11 files) → `NodeFlowEditor/`;
+the rest of `Experimental/*` with an HTML entry (Frontier- `arena/10e50e56-frontier`) → the 9 folders above
+(`Experimental/Liquid` + `Experimental/Water` are README-only stubs upstream, not copied); and
+`Engine/Editor/*Surface.h` (+2 `*Controls.h`, 16 files, same branch) → `NativeSurfaces/` for reference.
 
 **Layout is load-bearing:** Project-Zero opens `../FractureEditor/index.html?object=…`,
 iframes `../Fluid/dist/index.html` and `../ParticleEditor/index.html`. Keep those four folders as siblings.
@@ -123,16 +142,16 @@ Everything is static once built. From this repo's root:
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
 # → http://localhost:8080/                      (launcher)
-# → http://localhost:8080/editors/ProjectZeroEditor/index.html
+# → http://localhost:8080/Exhibits/ProjectZeroEditor/index.html
 ```
 
 Rebuild the built ones (Node ≥ 22) if you change sources:
 
 ```bash
-cd editors/Fluid          && npm install && npm run build   # → dist/ (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 to skip browser download)
-cd editors/FrontierEditor && npm install && npm run build   # → dist/
-cd editors/WebFluidLab    && npm install && npx tsc && npx vite build --base ./   # --base ./ so dist works when served from a subfolder (its config has no base)
-cd editors/FractureEditor && npm install && npm run build   # node Build.mjs → regenerates index.html (esbuild + three)
+cd Exhibits/Fluid          && npm install && npm run build   # → dist/ (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 to skip browser download)
+cd Exhibits/FrontierEditor && npm install && npm run build   # → dist/
+cd Exhibits/WebFluidLab    && npm install && npx tsc && npx vite build --base ./   # --base ./ so dist works when served from a subfolder (its config has no base)
+cd Exhibits/FractureEditor && npm install && npm run build   # node Build.mjs → regenerates index.html (esbuild + three)
 # ProjectZeroEditor/index.html is prebuilt; rebuilding it needs the full Frontier- tree
 # (Build.mjs reads EngineContent/, Engine/, Exhibits/ from the original repo root).
 ```
@@ -149,7 +168,7 @@ Proof the fix is exact: `node CheckGeometry.mjs` passes, and `npm run build` now
 `FractureEditor/index.html` **byte-identical** (same md5) to the committed prebuilt.
 No other recovered file contains sweep-renamed three.js names (scanned).
 Fonts were also copied to `EngineContent/Fonts/SunReference/` at this repo's root (what
-`FractureEditor/Build.mjs` reads via `../../`) and kept under `editors/EngineContent/…` (what the built
+`FractureEditor/Build.mjs` reads via `../../`) and kept under `Exhibits/EngineContent/…` (what the built
 Fluid CSS requests at runtime).
 
 ## Verification done here
@@ -157,12 +176,12 @@ Fluid CSS requests at runtime).
 - All launcher targets served `200` with correct JS/CSS MIME types; every asset referenced by the built
   apps (Fluid, FrontierEditor, WebFluidLab, Flux) resolves; ParticleEditor's full ES-module graph resolves;
   Project-Zero's `../FractureEditor/`, `../Fluid/dist/`, `../ParticleEditor/` targets all resolve.
-- `editors/ParticleEditor: node CheckForceFields.mjs` → **PASS 91**.
-- `editors/Fluid: npm test` → **22/22 pass**; `npm run build` clean.
-- `editors/FractureEditor: node CheckGeometry.mjs` → **passed (168 material/primitive/seed cases…)** after the fix above.
+- `Exhibits/ParticleEditor: node CheckForceFields.mjs` → **PASS 91**.
+- `Exhibits/Fluid: npm test` → **22/22 pass**; `npm run build` clean.
+- `Exhibits/FractureEditor: node CheckGeometry.mjs` → **passed (168 material/primitive/seed cases…)** after the fix above.
 - `FrontierEditor` and `WebFluidLab` production builds clean (WebFluidLab rebuilt with `--base ./`).
 - Not run: the Playwright/Chromium screenshot checks (`CheckBrowser.mjs` etc.) — no browser binary in
-  this sandbox. Their earlier evidence is preserved in `editors/FractureEditor/Captures/`.
+  this sandbox. Their earlier evidence is preserved in `Exhibits/FractureEditor/Captures/`.
 
 ## Suggested next step (not done here)
 
