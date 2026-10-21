@@ -11,6 +11,7 @@
 
 #include "Feature/TopologicalNaming.h"
 #include "Sketch/SketchSolver.h"
+#include "Surfacing/CurveFitting.h"
 
 #include <map>
 #include <numbers>
@@ -32,6 +33,8 @@ enum class FeatureStepKind : uint8_t
     Revolve       = 2,                                                                       // Sketch profile revolved (360° default)
     Blend         = 3,                                                                       // Fillet / chamfer on referenced edges
     FaceOperation = 4,                                                                       // Push, offset, draft, … on referenced faces
+    SpaceCurve    = 5,                                                                       // 3D curve fitted to imported points (vehicle plan V3)
+    Loft          = 6,                                                                       // Sheet skinned through SpaceCurve sections (V4)
 };
 
 enum class FeatureCombination : uint8_t
@@ -73,6 +76,13 @@ struct FeatureParameter
 };
 
 // 📝 One step; only the fields of its kind are read. Label is the stable naming tag ("Extrude#2").
+// 📝 A dragged pole of a SpaceCurve: replaces pole Index of the fitted curve after every re-fit (mode 1 edit).
+struct FeaturePoleEdit
+{
+    int     Index    = 0;                                                                    // [-]   - Pole index in the fitted curve
+    Vector3 Position = {};                                                                   // [len] - New pole position
+};
+
 struct FeatureStep
 {
     FeatureStepKind                Kind           = FeatureStepKind::Sketch;                 // [-]   - Step type
@@ -92,6 +102,11 @@ struct FeatureStep
     FaceOperationKind              Operation      = FaceOperationKind::Push;                 // [-]   - Face-operation verb
     FeatureValue                   Amount         = {};                                      // [len|rad|-] - Distance / angle / factor (by verb)
     std::vector<TopologyReference> References     = {};                                      // [-]   - Blend: edges · face operation: faces
+    std::vector<Vector3>           Points         = {};                                      // [len] - SpaceCurve: imported points in order
+    bool                           ClosedCondition = false;                                  // [-]   - SpaceCurve: the loop closes (last joins first)
+    FeatureValue                   Tolerance      = { 2.0e-4 };                              // [len] - SpaceCurve: fit tolerance (0.2 mm)
+    std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit
+    std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve step labels in section order
 };
 
 struct FeatureTree
@@ -121,6 +136,7 @@ struct RegenerationOutcome
     BodyNaming                         Naming       = {};                                    // [-]  - Its persistent names
     std::vector<FeatureStepReport>     Steps        = {};                                    // [-]  - One per step
     std::map<std::string, SketchModel> Sketches     = {};                                    // [-]  - Solved sketch per label
+    std::map<std::string, CurveFitOutcome> Curves   = {};                                    // [-]  - Fitted (and edited) curve per SpaceCurve label
     int                                Refused      = 0;                                     // [-]  - Steps refused
     double                             Milliseconds = 0.0;                                   // [ms] - Whole replay
 };

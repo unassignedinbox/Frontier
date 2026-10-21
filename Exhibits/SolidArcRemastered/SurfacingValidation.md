@@ -15,6 +15,7 @@
 | 🟢 | L2 | Lofted circles reproduce a cylinder and a cone, two lines a bilinear patch (41 × 41 samples) | ≤ 10⁻¹² | 3.40e-16 | 3 | 0 |
 | 🟢 | L3 | Sheet body: audit sound · 1 face · every unpaired side on the laminar rim · tessellation conforming · area (quadrature) vs closed form | rel. ≤ 10⁻⁹ | 9.30e-12 | 5 | 0 |
 | 🟢 | L4 | Synthetic bonnet: 6 fitted sections lofted; deviation from all limit points and from the analytic surface | ≤ 0.5 mm | 5.45e-05 | 3 | 0 |
+| 🟢 | L6 | Feature tree: 6 SpaceCurve steps + Loft regenerate; a pole edit moves the panel locally; names persist; edits beyond the poles and sheet blends refused | all hold | 0.00e+00 | 5 | 0 |
 | 🟢 | L5 | Same input twice → bit-identical fitted poles and loft poles | equal | 0.00e+00 | 1 | 0 |
 
 ## Fitting (S1 S2) · tolerance 0.2 mm · fairing λ ≤ 10⁻⁷ (lowered by decades only when it would cost tolerance)
@@ -76,3 +77,13 @@
 | 🟢 | Limit points of the 6 section loops (fitted, 0.05 mm noise) | 156 | 0.0382 | 0.0157 |
 | 🟢 | Limit points of 5 loops between the sections (never seen by the loft) | 130 | 0.0545 | 0.0184 |
 | 🟢 | Analytic surface H(x, y), normal distance at 61 × 61 (𝑢, 𝑣) | 3721 | 0.0334 | 0.0106 |
+
+## Feature tree (L6)
+
+| | Check | Detail |
+|---|---|---|
+| 🟢 | 6 SpaceCurve + Loft regenerate (0 refused) | face Loft#1.Side(Surface) · 6 curves |
+| 🟢 | Pole edit (+10 mm, Section3 pole 2) regenerates the panel | pole moved exactly · panel near 𝑣 = 0.38 moved 4.413 mm · end sections moved 0.0e+00 |
+| 🟢 | Persistent face name survives the edit | Loft#1.Side(Surface) → Loft#1.Side(Surface) |
+| 🟢 | Pole edit beyond the fitted poles refuses (and the loft after it) | SpaceCurve: pole edit 99 is beyond the 4 fitted poles (tolerance changed?) · loft: Loft: section Section3 is unavailable |
+| 🟢 | Blend on the sheet refuses | Blend: the body is a sheet (🚧 blends / face operations on sheets) |

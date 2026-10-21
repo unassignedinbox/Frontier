@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Audit/ModelAudit.h"
+#include "Feature/FeatureTree.h"
 #include "Audit/TessellationAudit.h"
 #include "Surfacing/CurveFitting.h"
 #include "Surfacing/SectionLoft.h"
@@ -62,6 +63,7 @@ namespace
     GateTally QuadricGate     = { "L2", "Lofted circles reproduce a cylinder and a cone, two lines a bilinear patch (41 × 41 samples)", "≤ 10⁻¹²" };
     GateTally SheetGate       = { "L3", "Sheet body: audit sound · 1 face · every unpaired side on the laminar rim · tessellation conforming · area (quadrature) vs closed form", "rel. ≤ 10⁻⁹" };
     GateTally PanelGate       = { "L4", "Synthetic bonnet: 6 fitted sections lofted; deviation from all limit points and from the analytic surface", "≤ 0.5 mm" };
+    GateTally TreeGate        = { "L6", "Feature tree: 6 SpaceCurve steps + Loft regenerate; a pole edit moves the panel locally; names persist; edits beyond the poles and sheet blends refused", "all hold" };
     GateTally DeterminismGate = { "L5", "Same input twice → bit-identical fitted poles and loft poles", "equal" };
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -579,8 +581,86 @@ int main()
         Tally(DeterminismGate, Same ? 0.0 : 1.0, Same);
     }
 
+    // ---- L6 feature tree: SpaceCurve + Loft steps, pole edit regeneration, persistent names, refusals.
+    struct TreeRow { std::string Name, Detail; bool PassedCondition = false; };
+    std::vector<TreeRow> TreeRows;
+    {
+        FeatureTree Tree;
+        Tree.Name = "Bonnet";
+        for (size_t Index = 0; Index < BonnetLoops.size(); ++Index)
+        {
+            FeatureStep Step;
+            Step.Kind   = FeatureStepKind::SpaceCurve;
+            Step.Label  = "Section" + std::to_string(Index + 1);
+            Step.Points = BonnetLoops[Index];
+            Tree.Steps.push_back(Step);
+        }
+        FeatureStep Loft;
+        Loft.Kind  = FeatureStepKind::Loft;
+        Loft.Label = "Loft#1";
+        for (size_t Index = 0; Index < BonnetLoops.size(); ++Index) Loft.Sections.push_back("Section" + std::to_string(Index + 1));
+        Tree.Steps.push_back(Loft);
+        auto Regenerate = [&](ModelPartition& Partition) { return RegenerateFeatureTree(Partition, Tree, false); };
+        // Each regeneration runs in a fresh partition holding only the loft sheet: its one named face.
+        auto FaceName = [](const ModelPartition&, const RegenerationOutcome& Outcome)
+        {
+            return Outcome.Naming.Faces.empty() ? std::string("?") : Outcome.Naming.Faces.begin()->second;
+        };
+        auto Sample = [](const ModelPartition& Partition, const RegenerationOutcome& Outcome, Vector2 Parameter)
+        {
+            const FaceToken Face = Partition.Faces.TokenAt(Outcome.Naming.Faces.begin()->first);
+            return EvaluateSurface(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface), Parameter).Position;
+        };
+        ModelPartition First;
+        const RegenerationOutcome Before = Regenerate(First);
+        const bool Built = Before.Refused == 0 && Before.Body.PresentCondition() && Before.Curves.size() == BonnetLoops.size();
+        TreeRows.push_back({ "6 SpaceCurve + Loft regenerate (0 refused)", "face " + FaceName(First, Before) + " · " + std::to_string(Before.Curves.size()) + " curves", Built });
+        if (Built)
+        {
+            // Pole edit: lift the middle pole of section 3 by 10 mm.
+            const NurbsCurveDefinition& Middle = *Before.Curves.at("Section3").Curve.Definition;
+            const int Pole = static_cast<int>(Middle.Poles.size()) / 2;
+            Tree.Steps[2].PoleEdits.push_back({ Pole, Middle.Poles[Pole] + Vector3{ 0.0, 0.0, 0.01 } });
+            ModelPartition Second;
+            const RegenerationOutcome After = Regenerate(Second);
+            const Vector3 Old = Middle.Poles[Pole], New = After.Curves.count("Section3") ? After.Curves.at("Section3").Curve.Definition->Poles[Pole] : Vector3{};
+            const bool    Edited = After.Refused == 0 && Length(New - Old - Vector3{ 0.0, 0.0, 0.01 }) <= 1.0e-15;
+            // The panel moves near section 3 and stays put on the first and last sections (they are interpolated).
+            double MovedMiddle = 0.0, MovedEnds = 0.0;
+            if (After.Refused == 0)
+            {
+                for (int Index = 0; Index <= 20; ++Index)
+                {
+                    const double U = Index / 20.0;
+                    MovedEnds   = std::max({ MovedEnds, Length(Sample(First, Before, { U, 0.0 }) - Sample(Second, After, { U, 0.0 })), Length(Sample(First, Before, { U, 1.0 }) - Sample(Second, After, { U, 1.0 })) });
+                    MovedMiddle = std::max(MovedMiddle, Length(Sample(First, Before, { U, 0.38 }) - Sample(Second, After, { U, 0.38 })));
+                }
+            }
+            TreeRows.push_back({ "Pole edit (+10 mm, Section3 pole " + std::to_string(Pole) + ") regenerates the panel", "pole moved exactly · panel near 𝑣 = 0.38 moved " + std::to_string(MovedMiddle * 1000.0).substr(0, 5)
+                                 + " mm · end sections moved " + Scientific(MovedEnds), Edited && MovedMiddle > 1.0e-3 && MovedEnds <= 1.0e-12 });
+            TreeRows.push_back({ "Persistent face name survives the edit", FaceName(First, Before) + " → " + FaceName(Second, After), FaceName(First, Before) == FaceName(Second, After) && FaceName(Second, After) != "?" });
+            Tree.Steps[2].PoleEdits.back().Index = 99;
+            ModelPartition Third;
+            const RegenerationOutcome Beyond = Regenerate(Third);
+            const std::string Refusal = Beyond.Steps[2].Refusal;
+            TreeRows.push_back({ "Pole edit beyond the fitted poles refuses (and the loft after it)", Refusal + " · loft: " + Beyond.Steps[6].Refusal,
+                                 Refusal.find("pole edit 99 is beyond") != std::string::npos && Beyond.Steps[6].Refusal.find("Section3 is unavailable") != std::string::npos });
+            Tree.Steps[2].PoleEdits.clear();
+            FeatureStep Blend;
+            Blend.Kind  = FeatureStepKind::Blend;
+            Blend.Label = "Blend#1";
+            Blend.Size  = LiteralValue(0.01);
+            Blend.References.push_back({});
+            Tree.Steps.push_back(Blend);
+            ModelPartition Fourth;
+            const RegenerationOutcome Sheet = Regenerate(Fourth);
+            TreeRows.push_back({ "Blend on the sheet refuses", Sheet.Steps.back().Refusal, Sheet.Steps.back().Refusal.find("the body is a sheet") != std::string::npos });
+        }
+        for (const TreeRow& Row : TreeRows) Tally(TreeGate, Row.PassedCondition ? 0.0 : 1.0, Row.PassedCondition);
+    }
+
     // ---- Report.
-    const GateTally* Gates[] = { &ToleranceGate, &FairnessGate, &RecoveryGate, &CornerGate, &RefusalGate, &SectionGate, &QuadricGate, &SheetGate, &PanelGate, &DeterminismGate };
+    const GateTally* Gates[] = { &ToleranceGate, &FairnessGate, &RecoveryGate, &CornerGate, &RefusalGate, &SectionGate, &QuadricGate, &SheetGate, &PanelGate, &TreeGate, &DeterminismGate };
     bool PassedCondition = true;
     for (const GateTally* Gate : Gates) PassedCondition = PassedCondition && Gate->Failures == 0 && Gate->Checks > 0;
     std::printf("# Surfacing validation\n\n%s Vehicle plan V2 (curve fitting) and V4 (loft): points → fair B-splines within 0.2 mm → exact skinned NURBS sheet\n\n", PassedCondition ? "🟢" : "🔴");
@@ -609,5 +689,7 @@ int main()
     }
     std::printf("\n## Bonnet panel (L4) · %s\n\n| | Measured against | Samples | worst [mm] | mean [mm] |\n|---|---|---|---|---|\n", PanelDetail.c_str());
     for (const PanelRow& Row : PanelRows) std::printf("| %s | %s | %d | %.4f | %.4f |\n", Row.PassedCondition ? "🟢" : "🔴", Row.Name.c_str(), Row.Samples, Row.Worst * 1000.0, Row.Mean * 1000.0);
+    std::printf("\n## Feature tree (L6)\n\n| | Check | Detail |\n|---|---|---|\n");
+    for (const TreeRow& Row : TreeRows) std::printf("| %s | %s | %s |\n", Row.PassedCondition ? "🟢" : "🔴", Row.Name.c_str(), Row.Detail.c_str());
     return PassedCondition ? 0 : 1;
 }

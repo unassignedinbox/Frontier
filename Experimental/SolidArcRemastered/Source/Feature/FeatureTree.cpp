@@ -6,6 +6,7 @@
 #include "Feature/FeatureTree.h"
 
 #include "Sketch/SketchProfile.h"
+#include "Surfacing/SectionLoft.h"
 
 #include <chrono>
 #include <cmath>
@@ -181,6 +182,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         {
             // ③ Resolve references on the current body; any refusal refuses the step (never a partial selection).
             if (!Current.PresentCondition()) { Refuse(std::string(Verb) + ": no body yet"); break; }
+            if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet) { Refuse(std::string(Verb) + ": the body is a sheet (🚧 blends / face operations on sheets)"); break; }
             std::vector<uint32_t> Slots;
             for (TopologyReference& Reference : Step.References)
             {
@@ -247,6 +249,53 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Current = Change.Body;
             break;
         }
+        case FeatureStepKind::SpaceCurve:
+        {
+            // ④ Re-fit the imported points at the step tolerance, then re-apply the dragged poles (no body change).
+            std::vector<Vector3> Points = Step.Points;
+            if (Step.ClosedCondition && Points.size() > 2 && Length(Points.back() - Points.front()) > 0.0) Points.push_back(Points.front());
+            CurveFitSettings Settings;
+            Settings.Tolerance = EvaluateFeatureValue(Tree, Step.Tolerance);
+            CurveFitOutcome Fit = FitSpaceCurve(Points, Settings);
+            if (!Fit.Refusal.empty()) { Refuse("SpaceCurve: " + Fit.Refusal); break; }
+            if (!Step.PoleEdits.empty())
+            {
+                NurbsCurveDefinition Edited = *Fit.Curve.Definition;
+                bool InsideCondition = true;
+                for (const FeaturePoleEdit& Edit : Step.PoleEdits)
+                {
+                    if (Edit.Index < 0 || Edit.Index >= static_cast<int>(Edited.Poles.size()))
+                    {
+                        Refuse("SpaceCurve: pole edit " + std::to_string(Edit.Index) + " is beyond the " + std::to_string(Edited.Poles.size()) + " fitted poles (tolerance changed?)");
+                        InsideCondition = false;
+                        break;
+                    }
+                    Edited.Poles[Edit.Index] = Edit.Position;
+                }
+                if (!InsideCondition) break;
+                Fit.Curve = NurbsCurve{ std::make_shared<NurbsCurveDefinition>(std::move(Edited)) };
+            }
+            Outcome.Curves[Step.Label] = std::move(Fit);
+            break;
+        }
+        case FeatureStepKind::Loft:
+        {
+            // ⑤ Skin a sheet through the named SpaceCurve results, in order.
+            std::vector<NurbsCurve> Sections;
+            for (const std::string& Section : Step.Sections)
+            {
+                const auto Found = Outcome.Curves.find(Section);
+                if (Found == Outcome.Curves.end()) { Refuse("Loft: section " + Section + " is unavailable"); break; }
+                Sections.push_back(Found->second.Curve);
+            }
+            if (Report.Status == FeatureStepStatus::Refused) break;
+            if (Current.PresentCondition()) { Refuse("Loft: a sheet cannot join the current body yet (🚧 sewing, vehicle plan V7)"); break; }
+            const LoftSheetOutcome Loft = LoftSectionSheet(Partition, Sections, LoftSettings{});
+            if (!Loft.Sheet.Refusal.empty()) { Refuse(Loft.Sheet.Refusal); break; }
+            Naming  = NameSweptBody(Partition, Loft.Sheet, Step.Label);
+            Current = Loft.Sheet.Body;
+            break;
+        }
         }
         Report.Body         = Current;
         Report.Naming       = Naming;
@@ -269,6 +318,8 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Revolve:       return "Revolve";
     case FeatureStepKind::Blend:         return "Blend";
     case FeatureStepKind::FaceOperation: return "FaceOperation";
+    case FeatureStepKind::SpaceCurve:    return "SpaceCurve";
+    case FeatureStepKind::Loft:          return "Loft";
     }
     return "?";
 }

@@ -188,6 +188,23 @@ std::string EncodeFeature(const ModelPartition& Partition, const FeatureSpecimen
         }
         if (Report.Kind == FeatureStepKind::Blend) Writer.String("Detail", std::string(Step.Shape == BlendProfile::Fillet ? "fillet " : "chamfer ") + std::to_string(EvaluateFeatureValue(Tree, Step.Size)).substr(0, 6));
         if (Report.Kind == FeatureStepKind::FaceOperation) Writer.String("Detail", std::string(FaceOperationLabel(Step.Operation)) + " " + std::to_string(EvaluateFeatureValue(Tree, Step.Amount)).substr(0, 6));
+        if (Report.Kind == FeatureStepKind::SpaceCurve)
+        {
+            const auto Found = Outcome.Curves.find(Step.Label);
+            std::string Detail = std::to_string(Step.Points.size()) + " points";
+            if (Found != Outcome.Curves.end())
+            {
+                Detail += " → " + std::to_string(Found->second.Curve.Definition->Poles.size()) + " poles · worst " + std::to_string(Found->second.WorstDeviation * 1000.0).substr(0, 5) + " mm";
+            }
+            if (!Step.PoleEdits.empty()) Detail += " · " + std::to_string(Step.PoleEdits.size()) + " pole edits";
+            Writer.String("Detail", Detail);
+        }
+        if (Report.Kind == FeatureStepKind::Loft)
+        {
+            std::string Detail;
+            for (size_t Section = 0; Section < Step.Sections.size(); ++Section) Detail += (Section ? " · " : "") + Step.Sections[Section];
+            Writer.String("Detail", Detail);
+        }
         Writer.OpenArray("References");
         for (size_t Reference = 0; Reference < Step.References.size(); ++Reference)
         {
