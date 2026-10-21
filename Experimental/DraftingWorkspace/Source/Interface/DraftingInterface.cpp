@@ -10,6 +10,7 @@
 #include "Interface/DraftingInterface.h"
 
 #include "Document/DraftingDocumentCodec.h"
+#include "Document/VehicleCurveImport.h"
 
 #include <algorithm>
 #include <cctype>
@@ -709,6 +710,240 @@ void DrawDrawingPreview(DraftingWorkspaceState& State, ImDrawList* Canvas, const
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    VEHICLE CURVES
+//------------------------------------------------------------------------------------------------------------------------
+
+constexpr int   CurveSamples = 96;                                                           // [-]  - Polyline points per fitted curve
+constexpr float CurveReach   = 6.0f;                                                         // [px] - Click distance that picks a curve
+constexpr float PoleReach    = 8.0f;                                                         // [px] - Press distance that grabs a pole
+
+// Fitted SpaceCurve of a step (nullptr when the step is refused or not a curve).
+const CurveFitOutcome* FindFittedCurve(const DraftingDocument& Document, const std::string& Label)
+{
+    const auto Found = Document.Regeneration.Curves.find(Label);
+    return Found != Document.Regeneration.Curves.end() && Found->second.Curve.Definition ? &Found->second : nullptr;
+}
+
+std::string CaptionOf(const DraftingDocument& Document, const std::string& Label)
+{
+    const auto Found = Document.Captions.find(Label);
+    return Found != Document.Captions.end() ? Found->second : Label;
+}
+
+// 1-based loft order of a selected curve, 0 when unselected.
+int CurveOrder(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    const std::vector<std::string>& Curves = State.Document.Selection.Curves;
+    const auto Found = std::find(Curves.begin(), Curves.end(), Label);
+    return Found == Curves.end() ? 0 : int(Found - Curves.begin()) + 1;
+}
+
+// Poles show on the selected curves, and on every curve in mode 1.
+bool PolesShownCondition(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    return State.PickMode == DraftingPickMode::ControlPoint || CurveOrder(State, Label) > 0;
+}
+
+bool CurveConsumedCondition(const DraftingDocument& Document, const std::string& Label)
+{
+    for (const FeatureStep& Step : Document.Tree.Steps)
+        if (Step.Kind == FeatureStepKind::Loft && std::find(Step.Sections.begin(), Step.Sections.end(), Label) != Step.Sections.end()) return true;
+    return false;
+}
+
+// The definition as displayed: during a pole drag the grabbed pole follows the pointer.
+NurbsCurveDefinition DisplayedDefinition(const DraftingWorkspaceState& State, const std::string& Label, const NurbsCurveDefinition& Definition)
+{
+    NurbsCurveDefinition Shown = Definition;
+    const DraftingPoleDrag& Drag = State.PoleDrag;
+    if (Drag.ActiveCondition && Drag.Label == Label && Drag.Pole >= 0 && Drag.Pole < int(Shown.Poles.size())) Shown.Poles[Drag.Pole] = Drag.Position;
+    return Shown;
+}
+
+std::vector<ImVec2> ProjectFittedCurve(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, const NurbsCurveDefinition& Definition)
+{
+    const NurbsDomain   Domain = MeasureNurbsCurveDomain(Definition);
+    std::vector<ImVec2> Pixels;
+    for (int Index = 0; Index <= CurveSamples; ++Index)
+    {
+        ImVec2 Pixel;
+        const double τ = Domain.Low + (Domain.High - Domain.Low) * Index / CurveSamples;
+        if (ProjectWorldPoint(State, Frame, EvaluateNurbsCurve(Definition, τ).Position, Pixel)) Pixels.push_back(Pixel);
+    }
+    return Pixels;
+}
+
+float DistanceToPolyline(const std::vector<ImVec2>& Pixels, ImVec2 Pointer)
+{
+    float Nearest = 1.0e9f;
+    for (size_t Index = 1; Index < Pixels.size(); ++Index)
+    {
+        const ImVec2 Start = Pixels[Index - 1], Span(Pixels[Index].x - Start.x, Pixels[Index].y - Start.y);
+        const float  Square = Span.x * Span.x + Span.y * Span.y;
+        const float  Along  = Square > 0.0f ? std::clamp(((Pointer.x - Start.x) * Span.x + (Pointer.y - Start.y) * Span.y) / Square, 0.0f, 1.0f) : 0.0f;
+        Nearest = std::min(Nearest, std::hypot(Pointer.x - Start.x - Along * Span.x, Pointer.y - Start.y - Along * Span.y));
+    }
+    return Nearest;
+}
+
+// Nearest curve within CurveReach of the pointer (frame pixels); empty when none.
+std::string FindCurveNear(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Pointer)
+{
+    std::string Nearest;
+    float       Best = CurveReach;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(State.Document, Step.Label) : nullptr;
+        if (!Fit) continue;
+        const float Distance = DistanceToPolyline(ProjectFittedCurve(State, Frame, *Fit->Curve.Definition), Pointer);
+        if (Distance <= Best) { Best = Distance; Nearest = Step.Label; }
+    }
+    return Nearest;
+}
+
+// Nearest shown pole within PoleReach of the pointer.
+bool FindPoleNear(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Pointer, std::string& Label, int& Pole)
+{
+    float Best = PoleReach;
+    Pole = -1;
+    for (const auto& [Candidate, Fit] : State.Document.Regeneration.Curves)
+    {
+        if (!Fit.Curve.Definition || !PolesShownCondition(State, Candidate)) continue;
+        const std::vector<Vector3>& Poles = Fit.Curve.Definition->Poles;
+        for (int Index = 0; Index < int(Poles.size()); ++Index)
+        {
+            ImVec2 Pixel;
+            if (!ProjectWorldPoint(State, Frame, Poles[Index], Pixel)) continue;
+            const float Distance = std::hypot(Pointer.x - Pixel.x, Pointer.y - Pixel.y);
+            if (Distance <= Best) { Best = Distance; Label = Candidate; Pole = Index; }
+        }
+    }
+    return Pole >= 0;
+}
+
+// 📝 Curvature comb (Plasticity / Alias style): teeth along −N with length κ·scale, N toward the centre of curvature,
+//    κ = |C′ × C″| / |C′|³; the scale makes the longest tooth 15 % of the chord so every curve reads at any zoom.
+void DrawCurvatureComb(const DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame, const NurbsCurveDefinition& Definition)
+{
+    constexpr int       Teeth  = 72;
+    const NurbsDomain   Domain = MeasureNurbsCurveDomain(Definition);
+    std::vector<Vector3> Bases, Tips;
+    std::vector<double>  Curvatures;
+    double               Peak = 0.0;
+    for (int Index = 0; Index <= Teeth; ++Index)
+    {
+        const NurbsCurveDerivatives Sample = EvaluateNurbsCurveDerivatives(Definition, Domain.Low + (Domain.High - Domain.Low) * Index / Teeth);
+        const Vector3 Binormal = Cross(Sample.First, Sample.Second);
+        const double  Speed    = Length(Sample.First);
+        const double  κ        = Speed > 1.0e-12 ? Length(Binormal) / (Speed * Speed * Speed) : 0.0;
+        const Vector3 Inward   = Length(Binormal) > 1.0e-14 ? Normalize(Cross(Binormal, Sample.First)) : Vector3{};
+        Bases.push_back(Sample.Position);
+        Tips.push_back(Inward);
+        Curvatures.push_back(κ);
+        Peak = std::max(Peak, κ);
+    }
+    const double Chord = Distance(Bases.front(), Bases.back()) > 1.0e-9 ? Distance(Bases.front(), Bases.back()) : MeasureNurbsCurveScale(Definition);
+    if (Peak <= 1.0e-12 || Chord <= 1.0e-12) return;
+    const double        Scale = 0.15 * Chord / Peak;
+    std::vector<ImVec2> Envelope;
+    for (size_t Index = 0; Index < Bases.size(); ++Index)
+    {
+        ImVec2 Base, Tip;
+        if (!ProjectWorldPoint(State, Frame, Bases[Index], Base) || !ProjectWorldPoint(State, Frame, Bases[Index] - Tips[Index] * (Curvatures[Index] * Scale), Tip)) continue;
+        Canvas->AddLine(Base, Tip, IM_COL32(0xff, 0x8a, 0x5c, 0x70), 1.0f);
+        Envelope.push_back(Tip);
+    }
+    if (Envelope.size() >= 2) Canvas->AddPolyline(Envelope.data(), int(Envelope.size()), IM_COL32(0xff, 0x8a, 0x5c, 0xd0), 1.4f);
+}
+
+// Every fitted SpaceCurve: polyline (selected: blue with its loft order, lofted: dimmed), combs on selected curves,
+// poles and control polygon where shown, the dragged pole live.
+void DrawCurveOverlays(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    const DraftingDocument& Document = State.Document;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(Document, Step.Label) : nullptr;
+        if (!Fit) continue;
+        const NurbsCurveDefinition Shown  = DisplayedDefinition(State, Step.Label, *Fit->Curve.Definition);
+        const int                  Order  = CurveOrder(State, Step.Label);
+        const bool                 Moving = State.PoleDrag.ActiveCondition && State.PoleDrag.Label == Step.Label;
+        const std::vector<ImVec2>  Pixels = ProjectFittedCurve(State, Frame, Shown);
+        const ImU32 Colour = Moving ? ActiveColour : Order > 0 ? SelectedColour : CurveConsumedCondition(Document, Step.Label) ? IM_COL32(0x7f, 0x9c, 0xbf, 0xb0) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
+        if (Order > 0 && State.CombsEnabled) DrawCurvatureComb(State, Canvas, Frame, Shown);
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Order > 0 || Moving ? 2.6f : 1.6f);
+        if (Order > 0 && !Pixels.empty())
+        {
+            const std::string Badge = std::to_string(Order);
+            Canvas->AddCircleFilled(ImVec2(Pixels.front().x - 12, Pixels.front().y - 12), 8.0f, SelectedColour);
+            Canvas->AddText(ImVec2(Pixels.front().x - 15, Pixels.front().y - 20), IM_COL32_WHITE, Badge.c_str());
+        }
+        if (!PolesShownCondition(State, Step.Label)) continue;
+        std::vector<ImVec2> Polygon;
+        for (const Vector3& Pole : Shown.Poles) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Pole, Pixel)) Polygon.push_back(Pixel); }
+        if (Polygon.size() >= 2) Canvas->AddPolyline(Polygon.data(), int(Polygon.size()), IM_COL32(0xc8, 0xc8, 0xc8, 0x80), 1.0f);
+        for (int Index = 0; Index < int(Shown.Poles.size()); ++Index)
+        {
+            ImVec2 Pixel;
+            if (!ProjectWorldPoint(State, Frame, Shown.Poles[Index], Pixel)) continue;
+            const bool  Grabbed = Moving && State.PoleDrag.Pole == Index;
+            const bool  Hover   = !State.PoleDrag.ActiveCondition && State.PoleDrag.HoverLabel == Step.Label && State.PoleDrag.HoverPole == Index;
+            const float Half    = Grabbed || Hover ? 5.0f : 3.5f;
+            Canvas->AddRectFilled(ImVec2(Pixel.x - Half, Pixel.y - Half), ImVec2(Pixel.x + Half, Pixel.y + Half), Grabbed ? ActiveColour : Hover ? IM_COL32_WHITE : IM_COL32(0xff, 0xd2, 0x4d, 0xff));
+            Canvas->AddRect(ImVec2(Pixel.x - Half, Pixel.y - Half), ImVec2(Pixel.x + Half, Pixel.y + Half), IM_COL32(0x10, 0x10, 0x10, 0xff));
+        }
+    }
+}
+
+// Import curves… / --curves: VehicleCurves.toml → one SpaceCurve step per curve (one undo entry), framed.
+void FrameSelection(DraftingWorkspaceState& State);
+
+void ImportCurves(DraftingWorkspaceState& State, const std::string& Path)
+{
+    const VehicleCurveFile       File    = ReadVehicleCurves(Path);
+    const DraftingCommandOutcome Outcome = ImportDraftingCurves(State.Document, File);
+    Conclude(State, Outcome);
+    if (!Outcome.AcceptedCondition) return;
+    double Worst = 0.0;
+    int    Poles = 0;
+    for (const auto& [Label, Fit] : State.Document.Regeneration.Curves) { Worst = std::max(Worst, Fit.WorstDeviation); Poles += int(Fit.Curve.Definition->Poles.size()); }
+    FrameSelection(State);
+    Announce(State, Compose("Imported %d curve(s) from %s · %d poles · worst fit %.3f mm", int(File.Curves.size()), Path.c_str(), Poles, Worst * 1000.0));
+}
+
+// L (Plasticity loft): the selected curves, in pick order, become one sheet.
+void LoftSelectedCurves(DraftingWorkspaceState& State)
+{
+    const std::vector<std::string> Curves = State.Document.Selection.Curves;
+    const DraftingCommandOutcome   Outcome = LoftDraftingCurves(State.Document, Curves);
+    Conclude(State, Outcome);
+    if (Outcome.AcceptedCondition) Announce(State, Compose("Lofted %d curve(s) → sheet (%s) · %.0f ms", int(Curves.size()), State.Document.Summary.SoundCondition ? "sound" : "audit findings", Outcome.Milliseconds));
+}
+
+void PickCurve(DraftingWorkspaceState& State, const std::string& Label, DraftingPickIntent Intent)
+{
+    const bool        Member  = CurveOrder(State, Label) > 0;
+    const std::string Caption = CaptionOf(State.Document, Label);
+    switch (Intent)
+    {
+    case DraftingPickIntent::Replace:
+        SelectDraftingCurve(State.Document, Label, false);
+        State.FocusedStep = Label;
+        break;
+    case DraftingPickIntent::Add:
+    case DraftingPickIntent::Extend:
+        if (!Member) SelectDraftingCurve(State.Document, Label, true);
+        break;
+    case DraftingPickIntent::Remove:
+        if (Member) SelectDraftingCurve(State.Document, Label, true);
+        break;
+    }
+    const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Label);
+    Announce(State, Compose("%s curve %s · %d poles · fit %.3f mm · %d selected", Intent == DraftingPickIntent::Remove ? "Removed" : "Selected", Caption.c_str(),
+                            Fit ? int(Fit->Curve.Definition->Poles.size()) : 0, Fit ? Fit->WorstDeviation * 1000.0 : 0.0, int(State.Document.Selection.Curves.size())));
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    VIEWPORT PICKING
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -740,6 +975,25 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     const DraftingCameraFrame Frame = ViewportFrame(State);
     const DraftingRay         Ray   = CastDraftingRay(Frame, Local.x, Local.y);
     uint32_t                  Identity = State.HoverIdentity;
+    if (State.PickMode == DraftingPickMode::ControlPoint || State.PickMode == DraftingPickMode::Edge || State.PickMode == DraftingPickMode::Any)
+    {
+        // Curves are overlays: within CurveReach they win over the face / edge underneath.
+        const std::string Curve = FindCurveNear(State, Frame, ImVec2(State.ViewportRect[0] + Local.x, State.ViewportRect[1] + Local.y));
+        if (!Curve.empty())
+        {
+            PickCurve(State, Curve, Intent);
+            return;
+        }
+        if (State.PickMode == DraftingPickMode::ControlPoint)
+        {
+            if (Intent == DraftingPickIntent::Replace && !State.Document.Selection.Curves.empty())
+            {
+                ClearDraftingSelection(State.Document);
+                Announce(State, "Selection cleared");
+            }
+            return;
+        }
+    }
     if (State.PickMode == DraftingPickMode::Edge && (Identity == 0 || !(Identity & IdentityEdgeBit)))
     {
         const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel);
@@ -752,7 +1006,7 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
     if (Identity == 0)
     {
-        if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()))
+        if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty() || !State.Document.Selection.Curves.empty()))
         {
             ClearDraftingSelection(State.Document);
             Announce(State, "Selection cleared");
@@ -839,6 +1093,8 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     }
     ImGui::SameLine();
     if (PressButton(State, "Save as…###HeaderSaveAs")) ImGui::OpenPopup("Save document");
+    ImGui::SameLine();
+    if (PressButton(State, "Import curves…###HeaderImport")) ImGui::OpenPopup("Import curves");
     if (!State.PopupRequest.empty())
     {
         ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Ctrl+O / Ctrl+Shift+S (same ID stack as the buttons)
@@ -855,20 +1111,24 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     ImGui::TextUnformatted(Device.c_str());
     ImGui::PopStyleColor();
 
-    for (const char* Title : { "Open document", "Save document" })
+    for (const char* Title : { "Open document", "Save document", "Import curves" })
     {
-        const bool OpenCondition = std::strcmp(Title, "Open document") == 0;
+        const bool OpenCondition   = std::strcmp(Title, "Open document") == 0;
+        const bool ImportCondition = std::strcmp(Title, "Import curves") == 0;
         if (ImGui::IsPopupOpen(Title) && State.PathText[0] == 0)
-            std::snprintf(State.PathText.data(), State.PathText.size(), "%s", (State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath).c_str());
+            std::snprintf(State.PathText.data(), State.PathText.size(), "%s",
+                          (ImportCondition ? State.Options.CurvesPath : State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath).c_str());
         if (ImGui::BeginPopupModal(Title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::TextUnformatted(OpenCondition ? "Open a .drafting.toml document" : "Save the document as .drafting.toml");
+            ImGui::TextUnformatted(ImportCondition ? "Import VehicleCurves.toml (Blender ExportVehicleCurves add-on): each curve is fitted within 0.2 mm"
+                                   : OpenCondition ? "Open a .drafting.toml document" : "Save the document as .drafting.toml");
             ImGui::SetNextItemWidth(420);
             const bool Entered = ImGui::InputText("##Path", State.PathText.data(), State.PathText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
             RegisterWidget(State, "PathField");
-            if (PressButton(State, OpenCondition ? "Open###PathOpen" : "Save###PathSave", ImVec2(120, 0)) || Entered)
+            if (PressButton(State, ImportCondition ? "Import###PathImport" : OpenCondition ? "Open###PathOpen" : "Save###PathSave", ImVec2(120, 0)) || Entered)
             {
-                if (OpenCondition) OpenDocument(State, State.PathText.data(), true);
+                if (ImportCondition) ImportCurves(State, State.PathText.data());
+                else if (OpenCondition) OpenDocument(State, State.PathText.data(), true);
                 else SaveDocument(State, State.PathText.data());
                 State.PathText[0] = 0;
                 ImGui::CloseCurrentPopup();
@@ -1027,7 +1287,7 @@ void DrawOutliner(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     DrawStatTile("Edges", std::to_string(Summary.Edges), Tile);
     DrawStatTile("Steps", Compose("%d  (%d refused)", int(State.Document.Tree.Steps.size()), State.Document.Regeneration.Refused), Tile);
     ImGui::SameLine(0, 8);
-    DrawStatTile("Volume", Summary.PresentCondition ? Compose("%.4f m³", Summary.Volume) : std::string("-"), Tile);
+    DrawStatTile("Volume", !Summary.PresentCondition ? std::string("-") : Summary.SheetCondition ? std::string("Open sheet") : Compose("%.4f m³", Summary.Volume), Tile);
     ImGui::Spacing();
 
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
@@ -1244,9 +1504,11 @@ void DrawViewportBar(DraftingWorkspaceState& State)
     ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Edges###EdgeToggle", State.Style.EdgesEnabled)) State.Style.EdgesEnabled = !State.Style.EdgesEnabled;
     ImGui::SameLine(0, 4);
+    if (ToggleButton(State, "Combs###CombToggle", State.CombsEnabled)) State.CombsEnabled = !State.CombsEnabled;
+    ImGui::SameLine(0, 4);
     if (PressButton(State, "Fit###FitView") && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
     ImGui::SameLine(0, 16);
-    const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::Edge, "2 Edge###Mode2" }, { DraftingPickMode::Face, "3 Face###Mode3" },
+    const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::ControlPoint, "1 Point###Mode1" }, { DraftingPickMode::Edge, "2 Edge###Mode2" }, { DraftingPickMode::Face, "3 Face###Mode3" },
                                                                { DraftingPickMode::Solid, "4 Solid###Mode4" }, { DraftingPickMode::Any, "5 All###Mode5" } };
     for (const auto& [Mode, Label] : Modes)
     {
@@ -1301,7 +1563,60 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     }
     if (Hovered && Io.MouseWheel != 0.0f) DollyDraftingCamera(State.Camera, Io.MouseWheel);
 
-    if (State.Drawing.ActiveCondition)
+    // 📝 Mode 1 (Plasticity control-point mode): press on a shown pole grabs it, the pole follows the pointer in the
+    //    screen-parallel plane through its start, the release commits one MoveDraftingPole; a press-release without
+    //    movement is an ordinary click (selects the curve).
+    DraftingPoleDrag& Drag = State.PoleDrag;
+    bool PoleGesture = false;
+    if (State.PickMode == DraftingPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition)
+    {
+        if (!Drag.ActiveCondition)
+        {
+            Drag.HoverPole = -1;
+            if (Hovered && !OverCube) FindPoleNear(State, Frame, Io.MousePos, Drag.HoverLabel, Drag.HoverPole);
+            if (Hovered && !OverCube && Drag.HoverPole >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+                const DraftingRay Ray = CastDraftingRay(Frame, Local.x, Local.y);
+                Drag.ActiveCondition = true;
+                Drag.Label           = Drag.HoverLabel;
+                Drag.Pole            = Drag.HoverPole;
+                Drag.Origin          = FindFittedCurve(State.Document, Drag.Label)->Curve.Definition->Poles[Drag.Pole];
+                Drag.Position        = Drag.Origin;
+                Drag.Facing          = { Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+            }
+        }
+        if (Drag.ActiveCondition)
+        {
+            PoleGesture = true;
+            const DraftingRay Ray = CastDraftingRay(Frame, Local.x, Local.y);
+            const Vector3     Origin{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] }, Direction{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+            const double      Facing = Dot(Direction, Drag.Facing);
+            const bool        Moved  = Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance;
+            if (std::abs(Facing) > 1.0e-9 && Moved) Drag.Position = Origin + Direction * (Dot(Drag.Origin - Origin, Drag.Facing) / Facing);
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                Drag.ActiveCondition = false;
+                if (Moved)
+                {
+                    const std::string            Caption = CaptionOf(State.Document, Drag.Label);
+                    const DraftingCommandOutcome Outcome = MoveDraftingPole(State.Document, Drag.Label, Drag.Pole, Drag.Position);
+                    Conclude(State, Outcome);
+                    if (Outcome.AcceptedCondition)
+                    {
+                        ++Drag.Commits;
+                        Announce(State, Compose("Moved pole %d of %s by %.2f mm · %.0f ms", Drag.Pole, Caption.c_str(), Distance(Drag.Position, Drag.Origin) * 1000.0, Outcome.Milliseconds));
+                    }
+                }
+                else PickCurve(State, Drag.Label, PickIntentOf(Io));                         // A click on a pole selects its curve
+            }
+        }
+    }
+
+    if (PoleGesture)
+    {
+        // The pole drag owns the left button this frame.
+    }
+    else if (State.Drawing.ActiveCondition)
     {
         // 📝 Drawing: the pointer meets the construction plane, snaps to the 0.1 grid (Ctrl: free) and to the first point
         //    of a chain (closes it); click places, right-click finishes an open chain.
@@ -1345,18 +1660,22 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
+    DrawCurveOverlays(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
     Canvas->PopClipRect();
     ImVec2 Pill(Image.x + 12, Image.y + 12);
-    static const char* ModeNames[] = { "", "", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
+    static const char* ModeNames[] = { "", "Mode 1 · control points", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
     DrawStatusPill(Canvas, Pill, ModeNames[int(State.PickMode)], SelectedColour);
     DrawStatusPill(Canvas, Pill, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective", MutedColour);
     static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
     DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
-        DrawStatusPill(Canvas, Pill, Compose("%s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus),
+        DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
+                                                            : Compose("%s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus),
                        Summary.SoundCondition ? ActiveColour : RefusalColour);
+    if (!State.Document.Regeneration.Curves.empty())
+        DrawStatusPill(Canvas, Pill, Compose("%d curve(s) · %d selected", int(State.Document.Regeneration.Curves.size()), int(State.Document.Selection.Curves.size())), IM_COL32(0x9f, 0xd8, 0xff, 0xff));
     if (State.HoverIdentity != 0 && Hovered)
         DrawStatusPill(Canvas, Pill, NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity), IM_COL32(0xff, 0xd2, 0x4d, 0xff));
     if (State.Bevel.ActiveCondition)
@@ -1373,6 +1692,13 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         DrawStatusPill(Canvas, Below, Compose("%s %s m%s%s", Caption, Sizes.c_str(), Boolean.c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
+    }
+    if (Drag.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        const Vector3 Shift = Drag.Position - Drag.Origin;
+        DrawStatusPill(Canvas, Below, Compose("Pole %d of %s · moved %.2f mm (%.2f, %.2f, %.2f)", Drag.Pole, CaptionOf(State.Document, Drag.Label).c_str(), Length(Shift) * 1000.0,
+                                              Shift.X * 1000.0, Shift.Y * 1000.0, Shift.Z * 1000.0), ActiveColour);
     }
     if (State.Drawing.ActiveCondition)
     {
@@ -1393,7 +1719,9 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition
                            ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
-                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 2/3/4/5 modes · B fillet · E extrude · Shift+A line · Shift+S curve";
+                       : State.PickMode == DraftingPickMode::ControlPoint
+                           ? "Mode 1: drag a pole (release commits, Esc drops) · click a curve (Shift add in loft order, Ctrl remove) · L loft · Ctrl+Z undo · 2/3/4/5 modes"
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, Hint);
 
     ImGui::End();
@@ -1510,10 +1838,10 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
 {
     const DraftingSelection& Selection = State.Document.Selection;
     BeginCard("Selection");
-    if (Selection.Faces.empty() && Selection.Edges.empty())
+    if (Selection.Faces.empty() && Selection.Edges.empty() && Selection.Curves.empty())
     {
         ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-        ImGui::TextWrapped("Nothing selected. Click a face or an edge (1 any · 2 edges · 3 faces).");
+        ImGui::TextWrapped("Nothing selected. Click a curve, an edge or a face (1 control points · 2 edges · 3 faces · 4 solid · 5 all).");
         ImGui::PopStyleColor();
     }
     int Shown = 0;
@@ -1533,8 +1861,16 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
         ImGui::SameLine();
         ImGui::TextWrapped("%s · %s · %.4f m", Edge.Name.c_str(), Edge.Curve.c_str(), Edge.Length);
     }
+    for (size_t Index = 0; Index < Selection.Curves.size(); ++Index)
+    {
+        const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Selection.Curves[Index]);
+        if (!Fit || ++Shown > 8) continue;
+        ImGui::TextColored(Tint(Index + 1 == Selection.Curves.size() ? ActiveColour : SelectedColour), "Curve %d", int(Index + 1));
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s · %d poles · fit %.3f mm", CaptionOf(State.Document, Selection.Curves[Index]).c_str(), int(Fit->Curve.Definition->Poles.size()), Fit->WorstDeviation * 1000.0);
+    }
     if (Shown > 8) ImGui::Text("… %d more", Shown - 8);
-    if (!Selection.Faces.empty() || !Selection.Edges.empty())
+    if (!Selection.Faces.empty() || !Selection.Edges.empty() || !Selection.Curves.empty())
     {
         if (PressButton(State, "Clear selection###SelectionClear"))
         {
@@ -1544,6 +1880,17 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
     }
     EndCard();
 
+    if (!Selection.Curves.empty())
+    {
+        BeginCard("Curves");
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextWrapped("Loft runs through the curves in the order picked (badges 1, 2, …). Mode 1 shows the poles: drag one to reshape.");
+        ImGui::PopStyleColor();
+        if (PressButton(State, "Loft  (L)###CurveLoft", ImVec2(140, 0), Selection.Curves.size() >= 2)) LoftSelectedCurves(State);
+        ImGui::SameLine();
+        if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, ImVec2(140, 0))) State.CombsEnabled = !State.CombsEnabled;
+        EndCard();
+    }
     if (!Selection.Edges.empty())
     {
         BeginCard("Edges");
@@ -1607,6 +1954,18 @@ void DrawStepCard(DraftingWorkspaceState& State)
         ImGui::TextWrapped("Refused: %s", Legible(Report->Refusal).c_str());
         ImGui::PopStyleColor();
     }
+    if (const CurveFitOutcome* Fit = Step->Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(State.Document, Label) : nullptr)
+    {
+        ImGui::Text("%d points → %d poles · degree %d · %d span(s)", int(Step->Points.size()), int(Fit->Curve.Definition->Poles.size()), Fit->Curve.Definition->Degree, Fit->Spans);
+        ImGui::Text("Fit worst %.4f mm · mean %.4f mm (≤ %.2f mm)", Fit->WorstDeviation * 1000.0, Fit->MeanDeviation * 1000.0, EvaluateFeatureValue(State.Document.Tree, Step->Tolerance) * 1000.0);
+        ImGui::Text("Fairing %.0e · curvature extrema %d · %d pole edit(s)%s", Fit->Fairing, Fit->Extrema, int(Step->PoleEdits.size()), Step->ClosedCondition ? " · closed" : "");
+    }
+    if (Step->Kind == FeatureStepKind::Loft)
+    {
+        std::string Sections;
+        for (const std::string& Section : Step->Sections) Sections += (Sections.empty() ? "" : " → ") + CaptionOf(State.Document, Section);
+        ImGui::TextWrapped("Sections: %s", Sections.c_str());
+    }
     const auto Caption = State.Document.Captions.find(Label);
     const std::string Prefix = Caption == State.Document.Captions.end() ? Label + "." : Caption->second + ".";
     std::vector<FeatureParameter> Parameters;
@@ -1644,7 +2003,8 @@ void DrawBodyCard(DraftingWorkspaceState& State)
     else
     {
         ImGui::Text("Faces %d · Edges %d · Vertices %d", Summary.Faces, Summary.Edges, Summary.Vertices);
-        ImGui::Text("Genus %d · Volume %.5f m³", Summary.Genus, Summary.Volume);
+        if (Summary.SheetCondition) ImGui::Text("Open sheet · %d face(s), no volume", Summary.Faces);
+        else ImGui::Text("Genus %d · Volume %.5f m³", Summary.Genus, Summary.Volume);
         ImGui::TextColored(Tint(Summary.SoundCondition ? ActiveColour : RefusalColour), "%s", Summary.SoundCondition ? "Audit: sound" : "Audit: findings");
         ImGui::SameLine();
         ImGui::TextDisabled("· replay %.1f ms · %d triangles", Summary.RegenerationMs, int(State.Scene.Corners.size() / 3));
@@ -1753,8 +2113,8 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 // Plasticity Space (viewport:navigate:selection): frame the selected faces and edges, or the whole body.
 void FrameSelection(DraftingWorkspaceState& State)
 {
-    if (State.Scene.Faces.empty()) return;
     const DraftingSelection& Selection = State.Document.Selection;
+    if (State.Scene.Faces.empty() && State.Document.Regeneration.Curves.empty()) return;
     DraftingScene Bounds;
     Bounds.BoundsLow  = { 1.0e300, 1.0e300, 1.0e300 };
     Bounds.BoundsHigh = { -1.0e300, -1.0e300, -1.0e300 };
@@ -1782,8 +2142,33 @@ void FrameSelection(DraftingWorkspaceState& State)
             Include(State.Scene.Segments[Segment].End);
         }
     }
-    FitDraftingCamera(State.Camera, Found ? Bounds : State.Scene);
-    Announce(State, Found ? "Framed the selection (Space)" : "Framed the body (Space)");
+    const auto IncludeCurve = [&](const std::string& Label)
+    {
+        const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Label);
+        if (!Fit) return;
+        for (const Vector3& Pole : Fit->Curve.Definition->Poles)
+        {
+            const float Point[3] = { float(Pole.X), float(Pole.Y), float(Pole.Z) };
+            Include(Point);
+        }
+    };
+    for (const std::string& Label : Selection.Curves) IncludeCurve(Label);
+    const bool Selected = Found;
+    if (!Found)
+    {
+        // Nothing selected: the body and every curve.
+        if (!State.Scene.Faces.empty())
+        {
+            const float Low[3]  = { float(State.Scene.BoundsLow[0]), float(State.Scene.BoundsLow[1]), float(State.Scene.BoundsLow[2]) };
+            const float High[3] = { float(State.Scene.BoundsHigh[0]), float(State.Scene.BoundsHigh[1]), float(State.Scene.BoundsHigh[2]) };
+            Include(Low);
+            Include(High);
+        }
+        for (const auto& [Label, Fit] : State.Document.Regeneration.Curves) IncludeCurve(Label);
+    }
+    FitDraftingCamera(State.Camera, Bounds);
+    State.Camera.SceneRadius = std::max(State.Camera.SceneRadius, 1.0);
+    Announce(State, Selected ? "Framed the selection (Space)" : "Framed the document (Space)");
 }
 
 // Plasticity Shift+R (edit:repeat-last-command) on the current selection.
@@ -1816,6 +2201,17 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     const bool Shift     = Io.KeyShift;
     const bool Alternate = Io.KeyAlt;
     auto Pressed = [](ImGuiKey Key) { return ImGui::IsKeyPressed(Key, false); };
+
+    // Mode 1 pole drag in progress: Esc drops it (no edit).
+    if (State.PoleDrag.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Escape))
+        {
+            State.PoleDrag.ActiveCondition = false;
+            Announce(State, "Pole drag dropped");
+        }
+        return;
+    }
 
     // body[command] — a drawing command (line, curve, corner-rectangle, center-circle; arc and slot have no default key).
     if (State.Drawing.ActiveCondition)
@@ -1924,7 +2320,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     }
 
     // body:not([gizmo]) — no command running.
-    if (Pressed(ImGuiKey_1)) Announce(State, "Control-point mode: not available (exact B-rep, no control points)");
+    if (Pressed(ImGuiKey_1)) State.PickMode = DraftingPickMode::ControlPoint;
+    if (Pressed(ImGuiKey_L)) LoftSelectedCurves(State);                                     // loft
     if (Pressed(ImGuiKey_2)) State.PickMode = DraftingPickMode::Edge;
     if (Pressed(ImGuiKey_3)) State.PickMode = DraftingPickMode::Face;
     if (Pressed(ImGuiKey_4)) State.PickMode = DraftingPickMode::Solid;
@@ -1939,7 +2336,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_Q)) Announce(State, "Boolean (Q) needs two bodies: construct with Shift+C / V / X / Z, then Q / W / E");
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
     if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
-    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O) || Pressed(ImGuiKey_L) || Pressed(ImGuiKey_M))
+    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O) || Pressed(ImGuiKey_M))
         Announce(State, "Not available in this modeller");
     if (Pressed(ImGuiKey_Escape))
     {
@@ -2197,7 +2594,24 @@ std::string DescribeDraftingWorkspace(const DraftingWorkspaceState& State)
         Stream << (Index ? ", " : "");
         AppendJsonText(Stream, Document.Selection.Edges[Index]);
     }
-    Stream << "]},\n  \"PickMode\": " << int(State.PickMode) << ",\n  \"Hover\": ";
+    Stream << "], \"Curves\": [";
+    for (size_t Index = 0; Index < Document.Selection.Curves.size(); ++Index)
+    {
+        Stream << (Index ? ", " : "");
+        AppendJsonText(Stream, CaptionOf(Document, Document.Selection.Curves[Index]));
+    }
+    Stream << "]},\n  \"Curves\": [";
+    size_t Written = 0;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(Document, Step.Label) : nullptr;
+        if (!Fit) continue;
+        Stream << (Written++ ? ", " : "") << "{\"Caption\": ";
+        AppendJsonText(Stream, CaptionOf(Document, Step.Label));
+        Stream << ", \"Points\": " << Step.Points.size() << ", \"Poles\": " << Fit->Curve.Definition->Poles.size() << ", \"WorstDeviation\": " << Fit->WorstDeviation
+               << ", \"PoleEdits\": " << Step.PoleEdits.size() << "}";
+    }
+    Stream << "],\n  \"Sheet\": " << (Summary.SheetCondition ? "true" : "false") << ",\n  \"PoleDrags\": " << State.PoleDrag.Commits << ",\n  \"PickMode\": " << int(State.PickMode) << ",\n  \"Hover\": ";
     AppendJsonText(Stream, State.HoverIdentity ? NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity) : std::string());
     Stream << ",\n  \"Camera\": {\"Yaw\": " << State.Camera.Yaw << ", \"Pitch\": " << State.Camera.Pitch << ", \"Distance\": " << State.Camera.Distance
            << ", \"Target\": [" << State.Camera.Target[0] << ", " << State.Camera.Target[1] << ", " << State.Camera.Target[2] << "], \"Orthographic\": "

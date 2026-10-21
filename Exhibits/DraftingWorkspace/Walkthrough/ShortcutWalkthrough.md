@@ -1,8 +1,8 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 31.3374 s · slowest frame 1175.22 ms
-- Script: Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt
+- Frame: 1600 x 900 · 256 frames · 28.8019 s · slowest frame 896.489 ms
+- Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt
 - Expectations: 68 / 68 passed
 
 | Line | Expectation | Observed | Result |
@@ -15,7 +15,7 @@
 | 18 | `selected-faces == 11` | Extrude#2.Side(Line1),Extrude#2.Side(Line2),Extrude#2.Side(Line3),Extrude#2.Side(Line4)... | 🟢 |
 | 20 | `selected-faces == 0` |  | 🟢 |
 | 22 | `pick-mode == 5` | 5 | 🟢 |
-| 24 | `pick-mode == 5` | 5 | 🟢 |
+| 24 | `pick-mode == 1` | 1 | 🟢 |
 | 26 | `pick-mode == 5` | 5 | 🟢 |
 | 34 | `selected-edges == 1` | Edge(Extrude#2.Cap(Start)/Extrude#2.Side(Line1)) | 🟢 |
 | 35 | `undo == 5` | 5 | 🟢 |
@@ -78,21 +78,20 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `97817a7b8a4238d4` |
-| 21TangentChain | 144 | `57251a4a752ac111` |
-| 20ShortcutExtrude | 224 | `16509b83920ab07d` |
+| 19BevelSignChamfer | 64 | `e9532bc20a75faf9` |
+| 21TangentChain | 144 | `9b57d08577a87410` |
+| 20ShortcutExtrude | 224 | `3ee60081793df5e0` |
 
 ## Journal
 
 - Selected the body (11 faces)
 - Selection cleared
-- Control-point mode: not available (exact B-rep, no control points)
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))
-- Fillet (B): move horizontally · D fillet · C chamfer · click edits the edges · Enter / right-click applies · Esc aborts
+- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel cancelled (document untouched)
-- Fillet (B): move horizontally · D fillet · C chamfer · click edits the edges · Enter / right-click applies · Esc aborts
+- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 462 ms
+- Fillet 0.3 on 1 edge(s) · 358 ms
 - Undo
 - Redo
 - Selection cleared
@@ -103,17 +102,17 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 349 ms
+- Delete Fillet2 · 260 ms
 - Selection cleared
-- Framed the body (Space)
+- Framed the document (Space)
 - X-ray on (edges only)
 - X-ray off
 - Autosaved _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 433 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 310 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 566 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 374 ms
 - Selection cleared

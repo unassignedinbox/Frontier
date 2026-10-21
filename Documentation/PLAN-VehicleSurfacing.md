@@ -1,10 +1,11 @@
-# 📝 PLAN — Vehicle surfacing: Blender edge loops → fitted curves → CAD surfaces (document only, not started)
+# 📝 PLAN — Vehicle surfacing: Blender edge loops → fitted curves → CAD surfaces (V1–V4 built · V5–V8 open)
 
 **TL;DR** — The vehicle already exists as a quad model in Blender. Its edge loops already carry the design intent: character lines, wheel arches, window outlines and sections. The plan reuses those loops instead of remodelling. Each chosen loop is exported as an ordered point chain, fitted with a fair B-spline in the kernel, and the curves are lofted or network-surfaced into exact NURBS faces that sew into a sheet body. The car is then mirrored and closed into a solid, ready for the fillets and features the kernel already has.
 - 🟢 **Already there:** NURBS curves / surfaces (construct, evaluate, project, iso-curves, Bezier decomposition), planar spline sketches (Hermite · Bezier · NURBS · cubic, Phase B), traced surface ∩ surface sections, Booleans with NURBS faces, `BodyCategory::Sheet`, the persistent-name feature tree, Plasticity keymap.
 - 🚧 **Missing (this plan):** point import, 3D (non-planar) curves, curve fitting with a tolerance, loft, curve-network surfaces, continuity across patches, sewing sheets, mirror, evaluation tools (curvature combs, zebra, deviation from the Blender mesh).
 - ⚠️ **Hard parts:** G2 across patch boundaries, N-sided corners (5 or more curves meeting), and blends / offsets on NURBS supports, which are refused today because an exact rational offset does not exist.
 - 🏁 **First useful result (V1–V4):** import → fit → loft one panel (the bonnet / hood) and measure its deviation from the Blender surface.
+- 🟢 **Status (2026-10-21): V1–V4 built.** Synthetic bonnet: 286 noisy limit points fit into 44 poles (worst 0.056 mm). The 6-section loft lies within 0.076 mm of every limit point, including 5 loops it never saw, and within 0.053 mm of the analytic surface. Mode 1 pole drag regenerates the panel, and undo restores it bit-identically. Gates: SurfacingValidation S1–S5, L1–L6 · DraftingDocumentValidation W11 · `VehicleSurfacingWalkthrough.txt` 53 / 53 with frames. ⚠️ The Blender add-on has not been run in Blender (no Blender in the sandbox). Usage: `Experimental/VehicleSurfacing/README.md`.
 
 ---
 
@@ -91,31 +92,31 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 
 | # | Gap | Today | Needed | Effort |
 |---|---|---|---|---|
-| G1 | 3D curve feature | sketches are planar (2D on a frame) | `SpaceCurve` feature step: a NURBS curve in world space, poles stored in the document | ⭐⭐ |
-| G2 | Point import + fitting | — | `ImportVehicleCurves`, `FitSpaceCurve(points, tolerance)` | ⭐⭐ |
-| G3 | Loft (skinning) | only `LoftCircles` | make sections compatible (common degree, merged knots), interpolate across them (P&T §10.3); optional guide rails | ⭐⭐⭐ |
+| G1 | 3D curve feature | 🟢 built: `FeatureStepKind::SpaceCurve` (points + tolerance + pole edits in the document) | `SpaceCurve` feature step: a NURBS curve in world space, poles stored in the document | ⭐⭐ |
+| G2 | Point import + fitting | 🟢 built: `ReadVehicleCurves` / `ImportDraftingCurves`, `FitSpaceCurve` | `ImportVehicleCurves`, `FitSpaceCurve(points, tolerance)` | ⭐⭐ |
+| G3 | Loft (skinning) | 🟢 built: `LoftSectionSheet`, `FeatureStepKind::Loft` (guide rails open) | make sections compatible (common degree, merged knots), interpolate across them (P&T §10.3); optional guide rails | ⭐⭐⭐ |
 | G4 | Curve-network surface | — | Gordon surface (P&T §10.5) for a grid of two curve families; Coons patch for 4-sided holes | ⭐⭐⭐ |
 | G5 | Continuity across patches | — | G1 by sharing tangent ribbons (aligned pole rows); G2 adds the second row; a gate measuring the normal angle and curvature jump along each shared edge | ⭐⭐⭐⭐ |
 | G6 | N-sided corners | — | 5- or 6-sided holes (headlight corners, A-pillar roots): split into 4-sided patches, or Gregory-style patches | ⭐⭐⭐⭐ |
 | G7 | Sew into a sheet / solid | Booleans only; `Sheet` category exists | stitch faces whose boundary curves coincide (tolerant edges) → sheet body → mirror → close with planar caps → solid | ⭐⭐⭐ |
 | G8 | Blends / offsets on NURBS faces | refused (no exact rational offset) | needed for panel gaps, shut lines, thickness — see decision D4 | ⭐⭐⭐⭐ |
-| G9 | Pole editing in the viewport | mode 1 announced as unavailable | Plasticity mode 1 (control points): pick and drag poles; the surfaces regenerate | ⭐⭐ |
-| G10 | Evaluation | — | curvature combs on curves; zebra / isophote Slang shader; deviation map (distance from each Blender limit point to the surface, coloured) | ⭐⭐ |
+| G9 | Pole editing in the viewport | 🟢 built: mode 1 pole drag → `MoveDraftingPole` (V3) | Plasticity mode 1 (control points): pick and drag poles; the surfaces regenerate | ⭐⭐ |
+| G10 | Evaluation | 🟢 curvature combs and the limit-point deviation (W11) built; zebra and coloured deviation map open (V8) | curvature combs on curves; zebra / isophote Slang shader; deviation map (distance from each Blender limit point to the surface, coloured) | ⭐⭐ |
 
 ---
 
 ## 6. Milestones (each gated, in this order)
 
-| # | Milestone | Gate (validation) |
-|---|---|---|
-| V1 | Blender add-on + `VehicleCurves.toml` import | round trip: counts, names and closed flags equal; points bit-equal |
-| V2 | `FitSpaceCurve` | synthetic curves with known noise: max deviation ≤ tolerance; exact recovery of a B-spline sampled without noise; corners split where seeded; refusal names the worst point |
-| V3 | `SpaceCurve` steps in the workspace: display, combs, mode 1 pole drag | regeneration after a pole edit; persistent names survive; walkthrough with rendered evidence |
-| V4 | Loft through 3–8 section curves (bonnet first) | surface interpolates every section to 10⁻⁹; analytic check: lofting circles reproduces a cone or cylinder exactly; **deviation from the Blender limit points** reported (target ≤ 0.5 mm) |
-| V5 | Gordon / Coons network surfaces | interpolates both curve families to 10⁻⁹; Coons of 4 lines reproduces a bilinear patch exactly |
-| V6 | G1 / G2 across shared curves | normal angle ≤ 10⁻⁸ rad (G1) and relative curvature jump ≤ 10⁻⁶ (G2) sampled along every shared edge |
-| V7 | Sew → sheet → mirror → solid | audit sound; volume of a closed lofted test body vs closed form; mirrored halves meet G1 at x = 0 |
-| V8 | Zebra shader + deviation map | rendered evidence on the bonnet: stripes continuous across a G2 joint, kinked across a G0 joint (both shown) |
+| # | Milestone | Gate (validation) | Status |
+|---|---|---|---|
+| V1 | Blender add-on + `VehicleCurves.toml` import | round trip: counts, names and closed flags equal; points bit-equal | 🟢 import gate W11 (round trip bit-equal, 5 refusals) · ⚠️ add-on untested in Blender |
+| V2 | `FitSpaceCurve` | synthetic curves with known noise: max deviation ≤ tolerance; exact recovery of a B-spline sampled without noise; corners split where seeded; refusal names the worst point | 🟢 S1–S5 (worst 0.158 mm ≤ 0.2 mm; exact recovery 1.0e-14) |
+| V3 | `SpaceCurve` steps in the workspace: display, combs, mode 1 pole drag | regeneration after a pole edit; persistent names survive; walkthrough with rendered evidence | 🟢 L6 + W11 + walkthrough 53 / 53 (C 50–56) |
+| V4 | Loft through 3–8 section curves (bonnet first) | surface interpolates every section to 10⁻⁹; analytic check: lofting circles reproduces a cone or cylinder exactly; **deviation from the Blender limit points** reported (target ≤ 0.5 mm) | 🟢 L1–L5 (sections 7e-16, cylinder exact) · W11 bonnet 0.076 mm ≤ 0.5 mm |
+| V5 | Gordon / Coons network surfaces | interpolates both curve families to 10⁻⁹; Coons of 4 lines reproduces a bilinear patch exactly | 🚧 |
+| V6 | G1 / G2 across shared curves | normal angle ≤ 10⁻⁸ rad (G1) and relative curvature jump ≤ 10⁻⁶ (G2) sampled along every shared edge | 🚧 |
+| V7 | Sew → sheet → mirror → solid | audit sound; volume of a closed lofted test body vs closed form; mirrored halves meet G1 at x = 0 | 🚧 |
+| V8 | Zebra shader + deviation map | rendered evidence on the bonnet: stripes continuous across a G2 joint, kinked across a G0 joint (both shown) | 🚧 |
 
 ---
 

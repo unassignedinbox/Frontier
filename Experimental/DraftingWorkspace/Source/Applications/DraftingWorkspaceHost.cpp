@@ -143,15 +143,18 @@ int main(int Count, char** Arguments)
 {
     std::string OptionsPath = "DraftingWorkspace.toml";
     std::string OpenPath;
+    std::string CurvesPath;
     bool        Specimen = false;
     for (int Index = 1; Index < Count; ++Index)
     {
         const std::string Flag = Arguments[Index];
         if (Flag == "--options" && Index + 1 < Count) OptionsPath = Arguments[++Index];
         else if (Flag == "--open" && Index + 1 < Count) OpenPath = Arguments[++Index];
+        else if (Flag == "--curves" && Index + 1 < Count) CurvesPath = Arguments[++Index];
         else if (Flag == "--specimen") Specimen = true;
     }
-    const DraftingOptions Options = LoadDraftingOptions(OptionsPath);
+    DraftingOptions Options = LoadDraftingOptions(OptionsPath);
+    if (!CurvesPath.empty()) Options.CurvesPath = CurvesPath;                                // Import curves… starts here
 
     // ① window without a client API (Vulkan presents), instance extensions from GLFW
     glfwSetErrorCallback(ReportGlfwFailure);

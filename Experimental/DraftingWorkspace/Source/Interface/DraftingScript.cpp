@@ -40,7 +40,7 @@ ImGuiKey KeyByName(const std::string& Name)
 {
     static const std::map<std::string, ImGuiKey> Keys = {
         { "A", ImGuiKey_A }, { "B", ImGuiKey_B }, { "C", ImGuiKey_C }, { "D", ImGuiKey_D }, { "E", ImGuiKey_E }, { "F", ImGuiKey_F },
-        { "G", ImGuiKey_G }, { "H", ImGuiKey_H }, { "N", ImGuiKey_N }, { "O", ImGuiKey_O }, { "Q", ImGuiKey_Q }, { "R", ImGuiKey_R },
+        { "G", ImGuiKey_G }, { "H", ImGuiKey_H }, { "J", ImGuiKey_J }, { "K", ImGuiKey_K }, { "L", ImGuiKey_L }, { "M", ImGuiKey_M }, { "N", ImGuiKey_N }, { "O", ImGuiKey_O }, { "Q", ImGuiKey_Q }, { "R", ImGuiKey_R },
         { "S", ImGuiKey_S }, { "V", ImGuiKey_V }, { "W", ImGuiKey_W }, { "X", ImGuiKey_X }, { "Y", ImGuiKey_Y }, { "Z", ImGuiKey_Z },
         { "1", ImGuiKey_1 }, { "2", ImGuiKey_2 }, { "3", ImGuiKey_3 }, { "4", ImGuiKey_4 }, { "5", ImGuiKey_5 },
         { "Keypad1", ImGuiKey_Keypad1 }, { "Keypad3", ImGuiKey_Keypad3 }, { "Keypad5", ImGuiKey_Keypad5 }, { "Keypad7", ImGuiKey_Keypad7 },
@@ -227,6 +227,33 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "drawing-centre") return Numeric(State.Drawing.CentreCondition ? 1 : 0);
     if (Field == "drawing-plane") return Numeric(State.Drawing.GridPlane);
     if (Field == "drawing-refusal") { Text = State.Drawing.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "curves" || Field == "selected-curves")
+    {
+        std::vector<std::string> Captions;
+        auto CaptionOf = [&](const std::string& Label)
+        {
+            const auto Caption = Document.Captions.find(Label);
+            return Caption != Document.Captions.end() ? Caption->second : Label;
+        };
+        if (Field == "selected-curves") for (const std::string& Label : Document.Selection.Curves) Captions.push_back(CaptionOf(Label));
+        else for (const auto& [Label, Fit] : Document.Regeneration.Curves) Captions.push_back(CaptionOf(Label));
+        return Join(Captions);
+    }
+    if (Field == "sheet") return Numeric(Document.Summary.SheetCondition ? 1 : 0);
+    if (Field == "pole-drags") return Numeric(State.PoleDrag.Commits);
+    if (Field == "pole-drag-active") return Numeric(State.PoleDrag.ActiveCondition ? 1 : 0);
+    if (Field == "pole-edits")
+    {
+        size_t Edits = 0;
+        for (const Modeller::FeatureStep& Step : Document.Tree.Steps) Edits += Step.PoleEdits.size();
+        return Numeric(double(Edits));
+    }
+    if (Field == "curve-fit-worst")
+    {
+        double Worst = 0.0;
+        for (const auto& [Label, Fit] : Document.Regeneration.Curves) Worst = std::max(Worst, Fit.WorstDeviation);
+        return Numeric(Worst);
+    }
     if (Field == "sketches")
     {
         std::vector<std::string> Captions;
@@ -345,7 +372,18 @@ DraftingScript ParseDraftingScript(const std::string& Text)
         }
         else if (Verb == "move")
         {
+            // move TARGET (remembered as the anchor) · move offset DX DY (pixels from the last anchor, e.g. mid-drag)
             DraftingScriptStep Step{ DraftingStepKind::Move };
+            if (Words.size() == 4 && Words[1] == "offset")
+            {
+                Step.Anchored       = true;
+                Step.Target.OffsetX = std::stof(Words[2]);
+                Step.Target.OffsetY = std::stof(Words[3]);
+                Push(Step);
+                Push({});
+                continue;
+            }
+            Step.Anchoring = true;
             if (!ReadTarget(Words, Index, Step.Target)) { Refuse("move target"); continue; }
             Push(Step);
             Push({});

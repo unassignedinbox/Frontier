@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12.76 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12.53 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -14,6 +14,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12
 | W8 | TOML save → load → save is byte-equal; reloaded body volume and names equal | equal | 0 | 4 | 🟢 |
 | W9 | Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload | ≤ 10⁻⁹ | 3.57e-16 | 12 | 🟢 |
 | W10 | Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete | ≤ 10⁻⁹ | 4.45e-16 | 20 | 🟢 |
+| W11 | Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload | ≤ 0.5 mm, equal | 0.076 | 18 | 🟢 |
 
 ## Walkthrough
 
@@ -76,6 +77,24 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (12
 | W10 |   − circle r 0.3 inside the NURBS (V = 1.948017) | 0 | 🟢 |
 | W10 | closed Cubic spline through 6 clicks, extrude 0.7 = area 4.633720 × 0.7 (V = 3.243604) | 4.11e-16 | 🟢 |
 | W10 |   − circle r 0.3 inside the Cubic spline (V = 3.045684) | 4.37e-16 | 🟢 |
+| W11 | SyntheticBonnet.toml decoded: 11 curves · 286 points  | 0 | 🟢 |
+| W11 | V1 round trip decode → encode → decode: names, closed flags, every coordinate bit-equal | 0 | 🟢 |
+| W11 | Units = "mm" scaled to metres | 0 | 🟢 |
+| W11 | malformed file refused: Format is not "VehicleCurves" | 0 | 🟢 |
+| W11 | malformed file refused: unknown Units "in" (m or mm) | 0 | 🟢 |
+| W11 | malformed file refused: curve 1 (A) needs at least 2 points | 0 | 🟢 |
+| W11 | malformed file refused: curve 1 (A): point 1 is not [x, y, z] | 0 | 🟢 |
+| W11 | malformed file refused: curve 1 has no Name | 0 | 🟢 |
+| W11 | import → 11 SpaceCurve steps, 1 undo entry, 286 points → 44 poles, worst fit [mm] (value) | 0.0558 | 🟢 |
+| W11 | refused file leaves the document untouched: import: Format is not "VehicleCurves" | 0 | 🟢 |
+| W11 | loft through one curve refused: loft needs at least 2 curves (select them in section order) | 0 | 🟢 |
+| W11 | loft 6 sections → sheet: 1 face · 4 edges · audit sound  | 0 | 🟢 |
+| W11 | sheet vs all 286 limit points (6 sections + 5 loops never lofted), worst [mm] (value) | 0.076 | 🟢 |
+| W11 | sheet vs the analytic bonnet H(x, y), 61 × 61 normal distance, worst [mm] (value) | 0.0525 | 🟢 |
+| W11 | reload: points bit-equal, sections equal, save → load → save byte-equal, face name Loft#12.Side(Surface) | 0 | 🟢 |
+| W11 | move pole 2 of Section3 by +10 mm → loft regenerates, panel at (0.5, 0.38) moved 3.728 mm, face name kept | 0 | 🟢 |
+| W11 | pole 99 refused: pole 99 does not exist | 0 | 🟢 |
+| W11 | undo → panel exactly back · redo → moved again | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

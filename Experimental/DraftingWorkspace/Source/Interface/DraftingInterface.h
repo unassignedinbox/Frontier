@@ -31,9 +31,10 @@ namespace Frontier::DraftingWorkspace
 //                                                    ENUMS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 SolidArc selection modes: 1 picks whatever is under the pointer, 2 edges only, 3 faces only.
+// 📝 Plasticity selection modes: 1 control points (curves and their poles), 2 edges, 3 faces, 4 solids, 5 everything.
 enum class DraftingPickMode : uint8_t
 {
+    ControlPoint = 1,                                                                        // Plasticity 1: curves, pole drag
     Edge  = 2,                                                                               // Plasticity 2
     Face  = 3,                                                                               // Plasticity 3
     Solid = 4,                                                                               // Plasticity 4: a click selects the whole body
@@ -128,6 +129,21 @@ struct DraftingDrawingSession
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
 };
 
+// 📝 Mode 1 pole drag: pressing on a shown pole grabs it; the pole follows the pointer in the screen-parallel plane
+//    through its start; the release commits one MoveDraftingPole (one undo entry), Esc / right-click drops it.
+struct DraftingPoleDrag
+{
+    bool              ActiveCondition = false;                                               // [-]   - Pole grabbed
+    std::string       Label           = {};                                                  // [-]   - SpaceCurve step
+    int               Pole            = -1;                                                  // [-]   - Pole index
+    Modeller::Vector3 Origin          = {};                                                  // [len] - Pole at the press
+    Modeller::Vector3 Position        = {};                                                  // [len] - Pole under the pointer
+    Modeller::Vector3 Facing          = {};                                                  // [-]   - Drag plane normal (view ray at the press)
+    std::string       HoverLabel      = {};                                                  // [-]   - Pole under the pointer (mode 1)
+    int               HoverPole       = -1;                                                  // [-]   - Its index
+    int               Commits         = 0;                                                   // [-]   - Accepted drags (script evidence)
+};
+
 struct DraftingWorkspaceState
 {
     DraftingOptions                       Options        = {};                               // [-]   - Loaded options
@@ -138,6 +154,8 @@ struct DraftingWorkspaceState
     DraftingPickMode                      PickMode       = DraftingPickMode::Any;            // [-]   - 2 / 3 / 4 / 5 (Plasticity)
     DraftingBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
     DraftingDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
+    DraftingPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
+    bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
     std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values

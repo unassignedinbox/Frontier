@@ -1,0 +1,22 @@
+{
+  "Frame": 140,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Curve#1", "Caption": "Section1 · SpaceCurve", "Refused": false}, {"Label": "Curve#2", "Caption": "Section2 · SpaceCurve", "Refused": false}, {"Label": "Curve#3", "Caption": "Section3 · SpaceCurve", "Refused": false}, {"Label": "Curve#4", "Caption": "Section4 · SpaceCurve", "Refused": false}, {"Label": "Curve#5", "Caption": "Section5 · SpaceCurve", "Refused": false}, {"Label": "Curve#6", "Caption": "Section6 · SpaceCurve", "Refused": false}, {"Label": "Curve#7", "Caption": "Between1 · SpaceCurve", "Refused": false}, {"Label": "Curve#8", "Caption": "Between2 · SpaceCurve", "Refused": false}, {"Label": "Curve#9", "Caption": "Between3 · SpaceCurve", "Refused": false}, {"Label": "Curve#10", "Caption": "Between4 · SpaceCurve", "Refused": false}, {"Label": "Curve#11", "Caption": "Between5 · SpaceCurve", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": ["Section1", "Section2", "Section3", "Section4", "Section5", "Section6"]},
+  "Curves": [{"Caption": "Section1", "Points": 26, "Poles": 4, "WorstDeviation": 4.525552963e-05, "PoleEdits": 0}, {"Caption": "Section2", "Points": 26, "Poles": 4, "WorstDeviation": 4.870778403e-05, "PoleEdits": 0}, {"Caption": "Section3", "Points": 26, "Poles": 4, "WorstDeviation": 4.158601521e-05, "PoleEdits": 0}, {"Caption": "Section4", "Points": 26, "Poles": 4, "WorstDeviation": 4.929978431e-05, "PoleEdits": 0}, {"Caption": "Section5", "Points": 26, "Poles": 4, "WorstDeviation": 4.525652276e-05, "PoleEdits": 0}, {"Caption": "Section6", "Points": 26, "Poles": 4, "WorstDeviation": 4.633527935e-05, "PoleEdits": 0}, {"Caption": "Between1", "Points": 26, "Poles": 4, "WorstDeviation": 4.523875702e-05, "PoleEdits": 0}, {"Caption": "Between2", "Points": 26, "Poles": 4, "WorstDeviation": 5.582644671e-05, "PoleEdits": 0}, {"Caption": "Between3", "Points": 26, "Poles": 4, "WorstDeviation": 3.899777668e-05, "PoleEdits": 0}, {"Caption": "Between4", "Points": 26, "Poles": 4, "WorstDeviation": 4.003689691e-05, "PoleEdits": 0}, {"Caption": "Between5", "Points": 26, "Poles": 4, "WorstDeviation": 4.019623858e-05, "PoleEdits": 0}],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 1,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 2.116909979, "Target": [0.3750122786, 0.5500062928, 0.7875294089], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Undo": 1,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected",
+  "Viewport": [320, 160, 930, 730]
+}

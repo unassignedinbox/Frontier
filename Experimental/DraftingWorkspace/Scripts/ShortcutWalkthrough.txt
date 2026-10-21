@@ -2,7 +2,7 @@
 # Run: DraftingWorkspaceCapture --specimen --reset-files --recovery …/ShortcutRecovery.drafting.toml --script Scripts/ShortcutWalkthrough.txt
 # Own recovery / document files, so the main walkthrough → recovery fixture is untouched.
 
-# ① selection modes 2 / 3 / 4 / 5 (Tab); 1 (control points) is announced, not mapped; mode 4 selects the body; Alt+A deselects
+# ① selection modes 2 / 3 / 4 / 5 (Tab) and 1 (control points: curves and poles); mode 4 selects the body; Alt+A deselects
 frames 2
 expect faces == 11
 expect steps == 8
@@ -21,7 +21,7 @@ expect selected-faces == 0
 key Tab
 expect pick-mode == 5
 key 1
-expect pick-mode == 5
+expect pick-mode == 1
 key 5
 expect pick-mode == 5
 

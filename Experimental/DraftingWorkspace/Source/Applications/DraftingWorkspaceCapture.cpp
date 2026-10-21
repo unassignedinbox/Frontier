@@ -47,6 +47,7 @@ struct CaptureSettings
     std::string RecoveryPath = {};                                                           // [-]  - Override of the autosave path
     std::string OpenPath     = {};                                                           // [-]  - Document opened at start
     std::string DocumentPath = {};                                                           // [-]  - Override of the default Save path
+    std::string CurvesPath   = {};                                                           // [-]  - Override of the Import curves path
     bool        Specimen     = false;                                                        // [-]  - Start with the Bracket specimen
     bool        ResetFiles   = false;                                                        // [-]  - Delete document / recovery files first
     int         Width        = 0;                                                            // [px] - Override of the frame width
@@ -87,6 +88,7 @@ CaptureSettings ReadArguments(int Count, char** Arguments)
         else if (Flag == "--recovery") Settings.RecoveryPath = Value();
         else if (Flag == "--open") Settings.OpenPath = Value();
         else if (Flag == "--document") Settings.DocumentPath = Value();
+        else if (Flag == "--curves") Settings.CurvesPath = Value();
         else if (Flag == "--specimen") Settings.Specimen = true;
         else if (Flag == "--reset-files") Settings.ResetFiles = true;
         else if (Flag == "--width") Settings.Width = std::atoi(Value().c_str());
@@ -110,6 +112,7 @@ int main(int Count, char** Arguments)
     if (!Settings.RecoveryPath.empty()) Options.RecoveryPath = Settings.RecoveryPath;
     if (!Settings.DriverPath.empty()) Options.DriverPath = Settings.DriverPath;
     if (!Settings.DocumentPath.empty()) Options.DocumentPath = Settings.DocumentPath;
+    if (!Settings.CurvesPath.empty()) Options.CurvesPath = Settings.CurvesPath;
 
     if (Settings.ResetFiles)
     {
