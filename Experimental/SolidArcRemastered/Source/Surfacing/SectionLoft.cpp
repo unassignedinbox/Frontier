@@ -9,9 +9,11 @@
 
 #include "Surfacing/SectionLoft.h"
 #include "Surfacing/LinearSystem.h"
+#include "Surfacing/SurfaceAlgebra.h"
 #include "Construction/BodyAssembly.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 
@@ -24,7 +26,8 @@ namespace Frontier::SolidArcRemastered
 
 namespace
 {
-    constexpr double ClosureGap = 1.0e-9;                                                    // [len] - First = last pole: a closed section
+    constexpr double ClosureGap      = 1.0e-9;                                               // [len] - First = last pole: a closed section
+    constexpr double ContinuityMatch = 1.0e-9;                                               // [len] - Shared section vs reference boundary (relative)
 
     // Affine τ′ = (τ − Low) / (High − Low): the same curve on [0, 1] (knots move, poles and weights stay).
     [[nodiscard]] NurbsCurveDefinition MapOntoUnit(const NurbsCurveDefinition& Definition)
@@ -41,32 +44,9 @@ namespace
         return Result;
     }
 
-    // Interior knots with multiplicity, value → count.
-    [[nodiscard]] std::map<double, int> InteriorKnots(const NurbsCurveDefinition& Definition)
-    {
-        std::map<double, int> Counts;
-        for (size_t Index = Definition.Degree + 1; Index + Definition.Degree + 1 < Definition.Knots.size(); ++Index) ++Counts[Definition.Knots[Index]];
-        return Counts;
-    }
-
     [[nodiscard]] bool ClosedSection(const NurbsCurveDefinition& Definition)
     {
         return Length(Definition.Poles.front() - Definition.Poles.back()) <= ClosureGap;
-    }
-
-    // P&T (9.8): 𝑣-knots by averaging q consecutive parameters (clamped, Schoenberg–Whitney holds by construction).
-    [[nodiscard]] std::vector<double> AveragedKnots(const std::vector<double>& Parameters, int Degree)
-    {
-        const int Count = static_cast<int>(Parameters.size());
-        std::vector<double> Knots(Degree + 1, 0.0);
-        for (int Index = 1; Index <= Count - Degree - 1; ++Index)
-        {
-            double Sum = 0.0;
-            for (int Offset = Index; Offset < Index + Degree; ++Offset) Sum += Parameters[Offset];
-            Knots.push_back(Sum / Degree);
-        }
-        Knots.insert(Knots.end(), Degree + 1, 1.0);
-        return Knots;
     }
 
     [[nodiscard]] ParameterLine IsoLine(Vector2 Origin, Vector2 Direction) { return ParameterLine{ Origin, Direction }; }
@@ -82,7 +62,7 @@ LoftSurfaceOutcome LoftSectionSurface(const std::vector<NurbsCurve>& Sections, c
     auto Refuse = [&](const std::string& Reason) { Outcome.Refusal = "Loft: " + Reason; return Outcome; };
     if (Sections.size() < 2) return Refuse("needs at least 2 sections");
 
-    // ① Each section on [0, 1]; same degree; all open or all closed; open ones aligned with the first.
+    // ① Each section on [0, 1]; all open or all closed; open ones aligned with the first; lower degrees raised exactly.
     std::vector<NurbsCurveDefinition> Mapped;
     for (size_t Index = 0; Index < Sections.size(); ++Index)
     {
@@ -94,12 +74,6 @@ LoftSurfaceOutcome LoftSectionSurface(const std::vector<NurbsCurve>& Sections, c
         if (Definition.Period > 0.0 && !Clamped) return Refuse("section " + std::to_string(Index) + " is periodic with unclamped knots (🚧)");
         Mapped.push_back(MapOntoUnit(Definition));
         Mapped.back().Period = 0.0;
-    }
-    const int Degree = Mapped.front().Degree;
-    for (size_t Index = 1; Index < Mapped.size(); ++Index)
-    {
-        if (Mapped[Index].Degree != Degree)
-            return Refuse("sections of degree " + std::to_string(Degree) + " and " + std::to_string(Mapped[Index].Degree) + " (degree elevation 🚧)");
     }
     Outcome.ClosedCondition = ClosedSection(Mapped.front());
     for (size_t Index = 1; Index < Mapped.size(); ++Index)
@@ -118,37 +92,99 @@ LoftSurfaceOutcome LoftSectionSurface(const std::vector<NurbsCurve>& Sections, c
         }
     }
 
-    // ② Merge the knot vectors: every section gets the union (largest multiplicity of each value).
-    std::map<double, int> Union;
-    for (const NurbsCurveDefinition& Definition : Mapped)
+    // ①′ Continuity references: turned so the end section is their 𝑣 = 0 or 𝑣 = 1 row running with 𝑢 (transposed /
+    //     reversed as needed); σ records the side. A reference that does not carry the section as a boundary refuses.
+    struct ContinuityEnd
     {
-        for (const auto& [Value, Count] : InteriorKnots(Definition)) Union[Value] = std::max(Union[Value], Count);
+        int                    Order     = 0;
+        NurbsSurfaceDefinition Reference = {};
+        double                 Boundary  = 0.0;                                              // [-] - 𝑣 of the shared row on the reference
+    };
+    std::array<ContinuityEnd, 2> Ends;
+    for (int Side = 0; Side < 2; ++Side)
+    {
+        const LoftContinuity& Continuity = Side == 0 ? Settings.Start : Settings.End;
+        if (Continuity.Order <= 0) continue;
+        const char* Name = Side == 0 ? "start" : "end";
+        if (Continuity.Order > 2) return Refuse(std::string(Name) + " continuity G" + std::to_string(Continuity.Order) + " (only G0 / G1 / G2)");
+        if (!Continuity.Reference.Definition) return Refuse(std::string(Name) + " continuity has no reference panel");
+        if (Outcome.ClosedCondition) return Refuse(std::string(Name) + " continuity on closed sections (🚧)");
+        for (double Weight : Continuity.Reference.Definition->Weights)
+        {
+            if (Weight != 1.0) return Refuse(std::string(Name) + " continuity with a rational reference panel (🚧)");
+        }
+        const NurbsCurveDefinition& Section = Side == 0 ? Mapped.front() : Mapped.back();
+        double Scale = 0.0;
+        for (const Vector3& Pole : Section.Poles) Scale = std::max(Scale, Length(Pole));
+        const double Match = ContinuityMatch * std::max(1.0, Scale);
+        bool Found = false;
+        for (int Variant = 0; Variant < 8 && !Found; ++Variant)
+        {
+            // Variant bits: 1 transpose, 2 reverse 𝑢, 4 boundary 𝑣 = 1.
+            NurbsSurfaceDefinition Candidate = *Continuity.Reference.Definition;
+            if (Variant & 1) Candidate = TransposeNurbsSurface(Candidate);
+            if (Variant & 2) Candidate = ReverseNurbsSurface(Candidate, true);
+            const double Boundary = (Variant & 4) ? 1.0 : 0.0;
+            double Worst = 0.0;
+            for (int Sample = 0; Sample <= 16 && Worst <= Match; ++Sample)
+            {
+                const double U = Sample / 16.0;
+                Worst = std::max(Worst, Length(EvaluateNurbsSurfaceDerivatives(Candidate, { U, Boundary }).Position - EvaluateNurbsCurveDerivatives(Section, U).Position));
+            }
+            if (Worst > Match) continue;
+            Ends[Side] = { Continuity.Order, Candidate, Boundary };
+            Found = true;
+        }
+        if (!Found) return Refuse(std::string(Name) + " section is not a boundary of the continuity reference panel");
     }
+
+    // ①″ One degree along 𝑢 for the sections and the references (exact elevation).
+    int Degree = 1;
+    for (const NurbsCurveDefinition& Definition : Mapped) Degree = std::max(Degree, Definition.Degree);
+    for (const ContinuityEnd& End : Ends) if (End.Order > 0) Degree = std::max(Degree, End.Reference.DegreeU);
     for (NurbsCurveDefinition& Definition : Mapped)
     {
-        const std::map<double, int> Present = InteriorKnots(Definition);
-        std::vector<double> Missing;
-        for (const auto& [Value, Count] : Union)
-        {
-            const auto Found = Present.find(Value);
-            for (int Copy = Found == Present.end() ? 0 : Found->second; Copy < Count; ++Copy) Missing.push_back(Value);
-        }
-        Definition = RefineNurbsCurveKnots(Definition, Missing);
+        if (Definition.Degree == Degree) continue;
+        std::optional<NurbsCurveDefinition> Elevated = ElevateNurbsCurveDegree(Definition, Degree);
+        if (!Elevated) return Refuse("degree elevation of a section to " + std::to_string(Degree) + " failed");
+        Definition = std::move(*Elevated);
+        ++Outcome.Elevated;
     }
+    for (ContinuityEnd& End : Ends)
+    {
+        if (End.Order <= 0 || End.Reference.DegreeU == Degree) continue;
+        std::optional<NurbsSurfaceDefinition> Elevated = ElevateNurbsSurfaceDegree(End.Reference, Degree, End.Reference.DegreeV);
+        if (!Elevated) return Refuse("degree elevation of a continuity reference failed");
+        End.Reference = std::move(*Elevated);
+    }
+
+    // ② Merge the knot vectors: every section (and reference) gets the union (largest multiplicity of each value).
+    std::vector<std::vector<double>> KnotVectors;
+    for (const NurbsCurveDefinition& Definition : Mapped) KnotVectors.push_back(Definition.Knots);
+    for (const ContinuityEnd& End : Ends) if (End.Order > 0) KnotVectors.push_back(End.Reference.KnotsU);
+    const std::vector<double> Union = UniteKnotVectors(KnotVectors, Degree);
+    for (NurbsCurveDefinition& Definition : Mapped) Definition = RefineNurbsCurveKnots(Definition, MissingInteriorKnots(Definition.Knots, Union, Degree));
+    for (ContinuityEnd& End : Ends) if (End.Order > 0) End.Reference = RefineNurbsSurfaceKnots(End.Reference, MissingInteriorKnots(End.Reference.KnotsU, Union, Degree), {});
     const int CountU = static_cast<int>(Mapped.front().Poles.size());
     for (const NurbsCurveDefinition& Definition : Mapped)
     {
         if (static_cast<int>(Definition.Poles.size()) != CountU) return Refuse("knot merging failed (a knot exceeds multiplicity p)");
+    }
+    for (const ContinuityEnd& End : Ends)
+    {
+        if (End.Order > 0 && End.Reference.CountU != CountU) return Refuse("knot merging with a continuity reference failed");
     }
 
     // ③ 𝑣ₖ: chord length along each pole column, normalised and averaged over the columns that move.
     const int CountV = static_cast<int>(Mapped.size());
     std::vector<double> Parameters(CountV, 0.0);
     int Columns = 0;
+    double Across = 0.0;
     for (int Column = 0; Column < CountU; ++Column)
     {
         std::vector<double> Cumulative(CountV, 0.0);
         for (int Row = 1; Row < CountV; ++Row) Cumulative[Row] = Cumulative[Row - 1] + Length(Mapped[Row].Poles[Column] - Mapped[Row - 1].Poles[Column]);
+        Across += Cumulative.back() / CountU;
         if (!(Cumulative.back() > ClosureGap)) continue;
         for (int Row = 1; Row < CountV; ++Row) Parameters[Row] += Cumulative[Row] / Cumulative.back();
         ++Columns;
@@ -161,40 +197,48 @@ LoftSurfaceOutcome LoftSectionSurface(const std::vector<NurbsCurve>& Sections, c
         if (!(Parameters[Row] > Parameters[Row - 1] + 1.0e-12)) return Refuse("sections " + std::to_string(Row - 1) + " and " + std::to_string(Row) + " coincide");
     }
 
-    // ④ Interpolate every pole column through the sections in homogeneous form (w·P, w).
-    const int DegreeV = std::clamp(Settings.DegreeAcross, 1, std::min(NurbsDegreeLimit, CountV - 1));
-    const std::vector<double> KnotsV = AveragedKnots(Parameters, DegreeV);
-    DenseMatrix Matrix(CountV, CountV), RightSides(CountV, 4 * CountU);
-    for (int Row = 0; Row < CountV; ++Row)
+    // ③′ End conditions per pole column: ∂𝑣 = σ·α·R𝑣, ∂𝑣𝑣 = α²·R𝑣𝑣 at the shared row (α = across-chord ratio).
+    FamilySkinning Skinning;
+    Skinning.Degree     = Settings.DegreeAcross;
+    Skinning.Parameters = Parameters;
+    for (int Side = 0; Side < 2; ++Side)
     {
-        const NurbsBasisSample Basis = EvaluateNurbsBasis(KnotsV, DegreeV, CountV, Parameters[Row]);
-        for (int Column = 0; Column <= DegreeV; ++Column) Matrix.At(Row, Basis.First + Column) = Basis.Values[0][Column];
-        for (int Pole = 0; Pole < CountU; ++Pole)
+        const ContinuityEnd& End = Ends[Side];
+        if (End.Order <= 0) continue;
+        double ReferenceAcross = 0.0;
+        for (int Column = 0; Column < CountU; ++Column)
         {
-            const double  Weight = Mapped[Row].Weights[Pole];
-            const Vector3 Point  = Mapped[Row].Poles[Pole];
-            RightSides.At(Row, 4 * Pole + 0) = Weight * Point.X;
-            RightSides.At(Row, 4 * Pole + 1) = Weight * Point.Y;
-            RightSides.At(Row, 4 * Pole + 2) = Weight * Point.Z;
-            RightSides.At(Row, 4 * Pole + 3) = Weight;
+            const NurbsCurveDefinition Pillar = ExtractPoleColumn(End.Reference, Column);
+            for (size_t Pole = 1; Pole < Pillar.Poles.size(); ++Pole) ReferenceAcross += Length(Pillar.Poles[Pole] - Pillar.Poles[Pole - 1]) / CountU;
         }
-    }
-    const std::optional<DenseMatrix> Solution = SolveDenseSystem(std::move(Matrix), std::move(RightSides));
-    if (!Solution) return Refuse("singular interpolation across the sections");
-    std::vector<Vector3> Poles(static_cast<size_t>(CountU) * CountV);
-    std::vector<double>  Weights(Poles.size());
-    for (int Pole = 0; Pole < CountU; ++Pole)
-    {
-        for (int Row = 0; Row < CountV; ++Row)
+        if (!(ReferenceAcross > ClosureGap)) return Refuse("the continuity reference panel has no extent across");
+        const double Scale = Across / ReferenceAcross;
+        // Start meets the reference's 𝑣 = 1 row, or end meets its 𝑣 = 0 row: the loft continues the reference (σ = +1).
+        const double Sign = (Side == 0) == (End.Boundary == 1.0) ? 1.0 : -1.0;
+        FamilyEndCondition& Condition = Side == 0 ? Skinning.Start : Skinning.End;
+        for (int Column = 0; Column < CountU; ++Column)
         {
-            const double Weight = Solution->At(Row, 4 * Pole + 3);
-            if (!(Weight > 0.0)) return Refuse("interpolated weight ≤ 0 at pole column " + std::to_string(Pole) + " (sections with very different weights)");
-            const size_t Index = static_cast<size_t>(Pole) * CountV + Row;
-            Poles[Index]   = Vector3{ Solution->At(Row, 4 * Pole + 0), Solution->At(Row, 4 * Pole + 1), Solution->At(Row, 4 * Pole + 2) } * (1.0 / Weight);
-            Weights[Index] = Weight;
+            const NurbsCurveDerivatives Pillar = EvaluateNurbsCurveDerivatives(ExtractPoleColumn(End.Reference, Column), End.Boundary);
+            Condition.First.push_back(Pillar.First * (Sign * Scale));
+            if (End.Order >= 2) Condition.Second.push_back(Pillar.Second * (Scale * Scale));
         }
+        (Side == 0 ? Outcome.StartScale : Outcome.EndScale) = Scale;
+        // The shared section takes the reference's boundary row so both panels hold bit-identical poles there.
+        NurbsCurveDefinition& Section = Side == 0 ? Mapped.front() : Mapped.back();
+        const int Row = End.Boundary == 1.0 ? End.Reference.CountV - 1 : 0;
+        const NurbsCurveDefinition Shared = ExtractPoleRow(End.Reference, Row);
+        for (int Column = 0; Column < CountU; ++Column)
+        {
+            if (Length(Shared.Poles[Column] - Section.Poles[Column]) > 1.0e-6) return Refuse("the shared section and the reference boundary differ after knot merging");
+        }
+        Section.Poles = Shared.Poles;
     }
-    const std::optional<NurbsSurface> Surface = ConstructNurbsSurface(Degree, DegreeV, CountU, CountV, Mapped.front().Knots, KnotsV, std::move(Poles), std::move(Weights));
+
+    // ④ Interpolate every pole column through the sections in homogeneous form (w·P, w), with the end conditions.
+    std::string Reason;
+    const std::optional<NurbsSurfaceDefinition> Skin = SkinCurveFamily(Mapped, Skinning, Reason);
+    if (!Skin) return Refuse(Reason);
+    const std::optional<NurbsSurface> Surface = FinishNurbsSurface(*Skin);
     if (!Surface) return Refuse("surface construction refused the skinned net");
     Outcome.Surface           = *Surface;
     Outcome.SectionParameters = Parameters;

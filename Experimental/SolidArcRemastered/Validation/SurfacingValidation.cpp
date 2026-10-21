@@ -401,7 +401,7 @@ int main()
         Limited.SpanLimit = 4;
         ExpectRefusal("20 mm outlier at point 37, span limit 4", FitSpaceCurve(Spiked, Limited).Refusal, "point 37 stays");
         ExpectRefusal("Loft of one section", LoftSectionSurface({ CircleSection(0.0, 1.0) }, LoftSettings{}).Refusal, "needs at least 2 sections");
-        ExpectRefusal("Cubic + circle (degree 2)", LoftSectionSurface({ FitSpaceCurve(std::vector<Vector3>(Spiked.begin(), Spiked.begin() + 30), CurveFitSettings{}).Curve, CircleSection(0.0, 1.0) }, LoftSettings{}).Refusal, "degree elevation");
+        ExpectRefusal("Open cubic + closed circle", LoftSectionSurface({ FitSpaceCurve(std::vector<Vector3>(Spiked.begin(), Spiked.begin() + 30), CurveFitSettings{}).Curve, CircleSection(0.0, 1.0) }, LoftSettings{}).Refusal, "open and closed sections mixed");
         ExpectRefusal("Closed circle + open arc", LoftSectionSurface({ CircleSection(0.0, 1.0), ConvertConicToNurbs({ { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, 0.0, 3.0) }, LoftSettings{}).Refusal, "open and closed sections mixed");
         ExpectRefusal("Same section twice", LoftSectionSurface({ CircleSection(0.0, 1.0), CircleSection(0.0, 1.0) }, LoftSettings{}).Refusal, "coincide");
     }
