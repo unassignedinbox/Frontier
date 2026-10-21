@@ -64,6 +64,10 @@ Models = [                                                                      
     ("V2",  "Pyramid, every edge filleted",    "degree-4 apex closed by a setback patch of 8 fair NURBS quads"),
     ("O1",  "Thin plate, cliff fillet",        "r 0.3 on a 0.2 plate: the front face is consumed, the bottom face trims the blend"),
     ("O2",  "Thin plate, cliff chamfer",       "c 0.3 on a 0.2 plate: the chamfer plane runs off the front face onto the bottom"),
+    ("NotchBossFillet", "Boss rim, notch overflow", "r 0.3 on a boss rim wider than its wall: the ledge trims the torus and grows under it"),
+    ("SmoothFillet",    "Smooth overflow",          "r 0.3 rolls over the tangent edge onto an r 0.85 fillet: the strip is consumed"),
+    ("VariableFillet",  "Variable fillet",          "r 0.1 → 0.4 along one edge: the exact cone of the balls, elliptical caps"),
+    ("VariableChamfer", "Variable chamfer",         "d 0.1 → 0.4: the contact lines meet at the apex, so the chamfer is one plane"),
 ]
 
 CaptureCaptions = {

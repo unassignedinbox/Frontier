@@ -11,6 +11,7 @@
 #include "Construction/PrimitiveConstruction.h"
 #include "Containment/WindingNumber.h"
 #include "Tessellation/BodyTessellation.h"
+#include "TessellationExport.h"
 
 #include <algorithm>
 #include <chrono>
@@ -120,6 +121,7 @@ namespace
     GateTally BooleanGate     = { "B7", "Booleans downstream of blends (volume, audit)", "rel. ≤ 10⁻⁷, sound" };
     GateTally RefusalGate     = { "B8", "Refusals: atomic, prefixed, source intact", "all refused" };
     GateTally DeterminismGate = { "B9", "Same specimen twice → identical tessellation digest", "equal" };
+    std::string ExportDirectory;                                                             // [-] - --export: tessellation JSON per built specimen
     std::string OnlyPrefix;                                                                  // [-] - --only filter (specimen prefix; "Scale" selects B10)
     [[nodiscard]] bool Selected(const std::string& Name) { return OnlyPrefix.empty() || Name.rfind(OnlyPrefix, 0) == 0; }
 
@@ -269,6 +271,7 @@ int main(int ArgumentCount, char** Arguments)
     {
         const std::string Argument = Arguments[Index];
         if (Argument == "--only" && Index + 1 < ArgumentCount) OnlyPrefix = Arguments[++Index];
+        if (Argument == "--export" && Index + 1 < ArgumentCount) ExportDirectory = Arguments[++Index];
     }
     const Clock::time_point Start = Clock::now();
     std::vector<SpecimenRow> Rows;
@@ -322,6 +325,7 @@ int main(int ArgumentCount, char** Arguments)
         Row.Vertices = Text;
         const bool TessellationCondition = MeasureTessellation(Partition, Outcome.Body, Row.Triangles);
         const TessellationOutcome Tessellation = TessellateBody(Partition, Outcome.Body, {});
+        if (!ExportDirectory.empty()) ExportTessellation(Partition, Tessellation, ExportDirectory, Specimen.Name);
         const bool LawCondition = MeasureBlendLaws(Partition, Specimen.Body, Outcome, Specimen.Settings, Tessellation, Scale);
         bool MembershipCondition = true;
         if (Specimen.Clearance)

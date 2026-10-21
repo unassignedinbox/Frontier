@@ -1,6 +1,42 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (5.95 MB, no external resources) with 21 interactive kernel models (now including P7, P8, the setback specimens V1 / V2 and the cliff-overflow plates O1 / O2), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.05 MB, no external resources) with 25 interactive kernel models (now including P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
+**TL;DR (notch and smooth overflow, variable-radius blends, P7 speed-up)**: Three more overflow and size cases are now built instead of refused, each matching an independent closed form. A notch overflow is trimmed by the ledge, which grows under the blend. In a smooth overflow the ball rolls over a tangent far edge onto the next face. A variable-radius fillet or chamfer runs linearly along a straight edge. The traced-spine carrier also got 35% faster: P7 went from 278 s to 182 s with identical results. [`BlendValidation`](BlendValidation.md) passes all 10 gates over 44 specimens (35 built, 9 refusals).
+
+| Specimen | Setting | Faces | Carrier | ΔV (kernel = closed form) | Error |
+|---|---|---|---|---|---|
+| NotchStepFillet | step ledge across a concave far edge, r 0.3 | 8 | cylinder | −0.028123442765 | 3.1e-16 |
+| NotchStepChamfer | same step, c 0.3 | 8 | plane | −0.060000000000 | 5.6e-17 |
+| NotchBossFillet | closed boss rim over a ledge, r 0.3 | 8 | torus | −0.086128737121 | 2.2e-15 |
+| SmoothFillet | box 4 × 2 × 1, front bottom r 0.85, top front r 0.3: the ball rolls onto the fillet | 7 | cylinder | −0.100448113101 | 3.0e-15 |
+| SmoothChamfer | same body, top front c 0.3: the chord of the moved ball | 7 | plane | −0.259735796010 | 3.6e-15 |
+| VariableFillet | box top front edge, r 0.1 → 0.4 | 7 | **cone** | −0.059977332307 | 2.1e-17 |
+| VariableChamfer | same edge, d 0.1 → 0.4 | 7 | plane | −0.140000000000 | 5.3e-16 |
+
+| Closed form | Method |
+|---|---|
+| Smooth (fillet, chamfer) | Section area by Green's theorem along the exact moved-ball profile × 4 |
+| VariableFillet | The balls' envelope is the cone with apex P on the edge line. By the divergence theorem about P, the cone and both box faces contribute 0, so ΔV = −(x*·A₀ + (L − x*)·A_L)/3. Each cap area A integrates the exact cone ∩ end-plane arc with 64-point Gauss–Legendre on an analytic integrand. |
+| VariableChamfer | The two contact lines meet at the apex, so the chamfer is a plane: ΔV = −L(d₀² + d₀d₁ + d₁²)/6 |
+
+| Speed-up (traced spines) | Before | After |
+|---|---|---|
+| P7 (8 traced bore mouths) | 278 s | **182 s**: 28 / 47 / 28, V 26.2631980227, oracle 0 / 300 (identical) |
+| P8 · RollingBallValidation | 44.3 s · 126 s | 44.2 s · 79 s (volumes shift ≤ 3·10⁻¹², R5 normal angle 2.8 → 2.5·10⁻¹⁰ rad) |
+
+| Smooth overflow (showcase) | Variable fillet (showcase) |
+|---|---|
+| ![SmoothFillet: the front face is consumed and the r 0.3 blend meets the r 0.85 fillet on one tangent rail](SmoothOverflow.png) | ![VariableFillet: one cone face from r 0.1 at the far end to r 0.4 at the near end](VariableFillet.png) |
+
+- 🔍 **Profiling found the cost:** about 590 M spine solves per P7 run, 98.6% of them converging in exactly 2 Newton iterations. So better warm starts could not help. Two changes did:
+  - **One spine solve per carrier sample instead of three:** ∂P/∂𝑢 now comes from the section-frame field (support normals plus guide foot) on the tangent line C ± h·C′. The symmetric stencil cancels the line's O(h²) offset from the curve, so the derivative stays O(h²) accurate.
+  - **Half the surface-distance calls:** the Newton corrector hands back its last normals instead of re-measuring them.
+- 🧩 **Smooth overflow:** where the support ends in a tangent (G1) far edge, the sheet is re-solved against the next face. The strip is consumed and the tangent edge is replaced by the new G1 rail. Chamfers stay the chord of the moved ball, so their setback on the kept face is 0.3209 rather than 0.3, and gate B3 then checks the ball law on both contacts.
+- 🧩 **Variable size:** `BlendSettings::EndSize` runs the size linearly from each edge's start vertex to its end vertex. On a straight edge between planes the ball centres form a line, so the fillet is an exact cone, tangent (G1) to both faces along the contact lines.
+  - Gate B4 checks the envelope law in closed form: ρ·√(1 − r′²) − r(τ) = 0.
+- 💡 **Honest refusals, named:** smooth overflow onto a fillet that the ball cannot touch (`SmoothTight`), smooth overflow at one end only or on both sides, variable sizes meeting at a vertex (`VariableShared`), and variable size on curved edges or supports (`VariableRim`). Variable size beside an overflow is also refused.
+- 🚧 **Still refused:** chamfers on traced or elliptical spines, variable size on curved edges, partial or blend-on-blend overflow, setback chamfers, and mixed convexity beside a sharp edge.
 
 **TL;DR (cliff overflow)**: A blend wider than its face is now built when the overflow is a cliff. The blend consumes the face, and the face beyond its far edge trims the blend with an exact section. This works for fillets and chamfers, on straight and circular edges. Six new [`BlendValidation`](BlendValidation.md) specimens match their closed forms, and all 10 gates pass over 35 specimens. PatternStressValidation adds an O family: **68 rows · 🟢 68 · ⚠️ 0 · 🔴 0** (628 operations, 822 s). ctest passes 14/14 (1202 s).
 
