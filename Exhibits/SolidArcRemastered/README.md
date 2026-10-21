@@ -35,6 +35,7 @@
 - 🧩 **Smooth overflow:** where the support ends in a tangent (G1) far edge, the sheet is re-solved against the next face. The strip is consumed and the tangent edge is replaced by the new G1 rail. Chamfers stay the chord of the moved ball, so their setback on the kept face is 0.3209 rather than 0.3, and gate B3 then checks the ball law on both contacts.
 - 🧩 **Variable size:** `BlendSettings::EndSize` runs the size linearly from each edge's start vertex to its end vertex. On a straight edge between planes the ball centres form a line, so the fillet is an exact cone, tangent (G1) to both faces along the contact lines.
   - Gate B4 checks the envelope law in closed form: ρ·√(1 − r′²) − r(τ) = 0.
+- ✔️ **No regressions:** ctest 14 / 14 🟢 in 1112 s (was 1202 s). PatternStress 68 / 68 🟢 in 716.6 s (was 821.9 s), and every row matches the previous run in status, topology, V, oracle, triangles and finding.
 - 💡 **Honest refusals, named:** smooth overflow onto a fillet that the ball cannot touch (`SmoothTight`), smooth overflow at one end only or on both sides, variable sizes meeting at a vertex (`VariableShared`), and variable size on curved edges or supports (`VariableRim`). Variable size beside an overflow is also refused.
 - 🚧 **Still refused:** chamfers on traced or elliptical spines, variable size on curved edges, partial or blend-on-blend overflow, setback chamfers, and mixed convexity beside a sharp edge.
 
