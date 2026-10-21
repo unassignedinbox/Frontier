@@ -1106,6 +1106,59 @@ DraftingCommandOutcome CombineDraftingBodies(DraftingDocument& Document, const s
     });
 }
 
+DraftingCommandOutcome CutDraftingBody(DraftingDocument& Document, const DraftingCutRequest& Request)
+{
+    const std::string Target = Request.Target.empty() ? Document.Regeneration.Active : Request.Target;
+    const std::string Label  = "Cut (" + DraftingBodyCaption(Document, Target) + " by " + DraftingBodyCaption(Document, Request.Cutter) + ")";
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Target.empty()) return "pick the body to cut (mode 4), or build one first";
+        if (!FindRegeneratedBody(Document, Target)) return "no body named " + Target;
+        const FeatureStep* Cutter = nullptr;
+        for (const FeatureStep& Step : Document.Tree.Steps) if (Step.Label == Request.Cutter) Cutter = &Step;
+        if (!Cutter || (Cutter->Kind != FeatureStepKind::Sketch && Cutter->Kind != FeatureStepKind::SpaceCurve))
+            return "choose the cutter: focus a sketch step or select a curve";
+        FeatureStep Step;
+        Step.Kind   = FeatureStepKind::Cut;
+        Step.Label  = "Cut#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Target = Target;
+        if (Cutter->Kind == FeatureStepKind::Sketch) Step.Profile = Cutter->Label;
+        else
+        {
+            Step.Sections    = { Cutter->Label };
+            Step.Plane.ZAxis = Request.Direction;
+            Step.Plane.XAxis = std::fabs(Request.Direction.X) < 0.9 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 1.0, 0.0 };
+        }
+        Document.Captions[Step.Label] = NextCaption(Document, "Cut");
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Selection = {};
+        return {};
+    });
+}
+
+DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys)
+{
+    std::string Operands;
+    for (const std::string& Key : Keys) Operands += (Operands.empty() ? "" : ", ") + DraftingBodyCaption(Document, Key);
+    return RunCommand(Document, "Remove (" + Operands + ")", false, [&]() -> std::string
+    {
+        if (Keys.empty()) return "pick the bodies to remove (mode 4)";
+        std::set<std::string> Seen;
+        for (const std::string& Key : Keys)
+        {
+            if (!FindRegeneratedBody(Document, Key)) return "no body named " + Key;
+            if (!Seen.insert(Key).second) continue;
+            FeatureStep Step;
+            Step.Kind   = FeatureStepKind::Remove;
+            Step.Label  = "Remove#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Target = Key;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        Document.Selection = {};
+        return {};
+    });
+}
+
 std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)
 {
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)

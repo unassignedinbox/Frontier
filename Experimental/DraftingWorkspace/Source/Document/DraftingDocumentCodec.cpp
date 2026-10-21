@@ -175,6 +175,21 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Combination", static_cast<int64_t>(Step.Combination));
         Table.insert("Tool", Step.Tool);
         break;
+    case FeatureStepKind::Cut:
+        // A sketch cutter (Profile), or a SpaceCurve projected along PlaneZAxis (Sections).
+        if (!Step.Profile.empty()) Table.insert("Profile", Step.Profile);
+        if (!Step.Sections.empty())
+        {
+            toml::array Sections;
+            for (const std::string& Section : Step.Sections) Sections.push_back(Section);
+            Table.insert("Sections", std::move(Sections));
+            Table.insert("PlaneOrigin", EncodeVector(Step.Plane.Origin));
+            Table.insert("PlaneXAxis", EncodeVector(Step.Plane.XAxis));
+            Table.insert("PlaneZAxis", EncodeVector(Step.Plane.ZAxis));
+        }
+        break;
+    case FeatureStepKind::Remove:
+        break;
     }
     if (!Step.Target.empty()) Table.insert("Target", Step.Target);                                // Absent: the active body (older files)
     if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
@@ -410,7 +425,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Combine)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Remove)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }

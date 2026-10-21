@@ -101,6 +101,13 @@ struct DraftingSelection
     DraftingSelectionKind    LastKind = DraftingSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
 };
 
+struct DraftingCutRequest
+{
+    std::string       Target    = {};                                                        // [-] - Body key (empty = active body)
+    std::string       Cutter    = {};                                                        // [-] - Sketch step or SpaceCurve label
+    Modeller::Vector3 Direction = { 0.0, 0.0, -1.0 };                                        // [-] - SpaceCurve cutters: projection direction
+};
+
 // 📝 Variable when EndSize is set: Size at each edge's anchor end, EndSize at its other end. The anchor is the edge's
 //    start vertex on the current body, or its end vertex when ReversedCondition (Plasticity F flips it); it is stored as
 //    a persistent vertex name, so a regeneration that reverses the edge keeps each size at its corner.
@@ -214,6 +221,15 @@ struct VehicleCurveFile;
 // the tools are consumed. One undo entry; refused (document untouched) unless every Boolean succeeds.
 [[nodiscard]] DraftingCommandOutcome CombineDraftingBodies(DraftingDocument& Document, const std::string& Target,
                                                            const std::vector<std::string>& Tools, Modeller::FeatureCombination Combination);
+
+// 💡 Plasticity C (command:cut): one Cut step splitting Target (empty = the active body) by Cutter, which is a sketch step
+//    (its closed profile cuts out its interior, an open chain splits along itself) or a SpaceCurve projected along
+//    Direction (the view axis). The outside piece keeps its key; the inside piece becomes body "Cut#n" (caption Cut1 …).
+//    Refused (document untouched) when the cut misses or cannot be closed.
+[[nodiscard]] DraftingCommandOutcome CutDraftingBody(DraftingDocument& Document, const DraftingCutRequest& Request);
+
+// Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
+[[nodiscard]] DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys);
 
 // Key of the body carrying a face / edge name, or the key itself for Body; empty when no body has it.
 [[nodiscard]] std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);

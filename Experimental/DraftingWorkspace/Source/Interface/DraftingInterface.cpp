@@ -881,6 +881,35 @@ void ApplyBooleanSession(DraftingWorkspaceState& State)
     Conclude(State, Outcome);
 }
 
+// 💡 Plasticity C (command:cut): splits the picked body (mode 4; else the active body) by the focused sketch step or the
+//    selected curve, a curve being projected along the view axis snapped to x / y / z (character line from the Top
+//    view). The inside piece comes out picked in mode 4, so X deletes it right away (the loft → C → X panel flow).
+void ApplyCut(DraftingWorkspaceState& State)
+{
+    DraftingCutRequest Request;
+    if (!State.Document.Selection.Bodies.empty()) Request.Target = State.Document.Selection.Bodies.front();
+    if (FocusedSketchCondition(State)) Request.Cutter = State.FocusedStep;
+    else if (!State.Document.Selection.Curves.empty()) Request.Cutter = State.Document.Selection.Curves.front();
+    else
+    {
+        Announce(State, "Cut (C): focus a sketch step or select a curve (the cutter), pick the body in mode 4 (else the active body)");
+        return;
+    }
+    const DraftingCameraFrame Frame = ViewportFrame(State);
+    int Axis = 0;
+    for (int Index = 1; Index < 3; ++Index) if (std::fabs(Frame.Forward[Index]) > std::fabs(Frame.Forward[Axis])) Axis = Index;
+    const double Sign = Frame.Forward[Axis] < 0.0 ? -1.0 : 1.0;
+    Request.Direction = { Axis == 0 ? Sign : 0.0, Axis == 1 ? Sign : 0.0, Axis == 2 ? Sign : 0.0 };
+    const DraftingCommandOutcome Outcome = CutDraftingBody(State.Document, Request);
+    if (Outcome.AcceptedCondition)
+    {
+        State.FocusedStep = {};
+        State.PickMode    = DraftingPickMode::Solid;
+        SelectDraftingName(State.Document, DraftingSelectionKind::Body, State.Document.Tree.Steps.back().Label, false);
+    }
+    Conclude(State, Outcome);
+}
+
 void DrawBooleanCard(DraftingWorkspaceState& State)
 {
     const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
@@ -2429,6 +2458,14 @@ void DrawStepCard(DraftingWorkspaceState& State)
     if (Step->Kind == FeatureStepKind::Mirror) ImGui::Text("Plane through (%.3f, %.3f, %.3f), normal (%.0f, %.0f, %.0f)", Step->Plane.Origin.X, Step->Plane.Origin.Y, Step->Plane.Origin.Z,
                                                            Step->Plane.ZAxis.X, Step->Plane.ZAxis.Y, Step->Plane.ZAxis.Z);
     if (Step->Kind == FeatureStepKind::Close) ImGui::TextUnformatted("Plane caps on the planar rim loops of the panels");
+    if (Step->Kind == FeatureStepKind::Cut)
+    {
+        const std::string Cutter = Step->Sections.empty() ? CaptionOf(State.Document, Step->Profile) : CaptionOf(State.Document, Step->Sections.front());
+        ImGui::TextWrapped("Splits %s by %s%s · inside piece → %s", DraftingBodyCaption(State.Document, Step->Target).c_str(), Cutter.c_str(),
+                           Step->Sections.empty() ? "" : Compose(" seen along (%.0f, %.0f, %.0f)", Step->Plane.ZAxis.X, Step->Plane.ZAxis.Y, Step->Plane.ZAxis.Z).c_str(),
+                           DraftingBodyCaption(State.Document, Step->Label).c_str());
+    }
+    if (Step->Kind == FeatureStepKind::Remove) ImGui::Text("Deletes %s", DraftingBodyCaption(State.Document, Step->Target).c_str());
     const auto Caption = State.Document.Captions.find(Label);
     const std::string Prefix = Caption == State.Document.Captions.end() ? Label + "." : Caption->second + ".";
     std::vector<FeatureParameter> Parameters;
@@ -2905,7 +2942,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_Q)) OpenBooleanSession(State);                                    // command:boolean
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
     if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
-    if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O))
+    if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
+    if (Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O))
         Announce(State, "Not available in this modeller");
     if (Pressed(ImGuiKey_Escape))
     {
@@ -2920,13 +2958,17 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             Conclude(State, DeleteDraftingStep(State.Document, State.FocusedStep));
             State.FocusedStep = {};
         }
+        else if (!State.Document.Selection.Bodies.empty())
+        {
+            Conclude(State, RemoveDraftingBodies(State.Document, State.Document.Selection.Bodies));          // delete picked bodies (mode 4)
+        }
         else if (!State.Document.Selection.Faces.empty())
         {
             const DraftingCommandOutcome Outcome = ChangeDraftingSelection(State.Document, FaceOperationKind::Delete, 0.0);
             if (Outcome.AcceptedCondition) State.LastCommand = { DraftingRepeatKind::Face, BlendProfile::Fillet, 0.0, FaceOperationKind::Delete, 0.0, {} };
             Conclude(State, Outcome);
         }
-        else Announce(State, "Delete needs selected faces or a focused feature step");
+        else Announce(State, "Delete needs picked bodies (mode 4), selected faces or a focused feature step");
     }
 }
 

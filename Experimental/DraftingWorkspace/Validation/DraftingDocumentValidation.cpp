@@ -65,6 +65,7 @@ namespace
     GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
     GateTally MatcapGate      = { "W15", "Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals", "exact · 1 / 255" };
     GateTally BodiesGate      = { "W16", "Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec", "≤ 10⁻⁹ · exact" };
+    GateTally CutGate         = { "W17", "Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -1180,9 +1181,141 @@ int main()
               "save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; " + std::to_string(Copy.Summary.Bodies.size()) + " bodies, volumes bit-equal");
         std::string Future = Written;
         const size_t KindAt = Future.find("Kind = 10");
-        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 11");
+        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 13");
         const DraftingDocumentFile Newer = DecodeDraftingDocument(Future);
-        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Combine is refused: " + Newer.Refusal);
+        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Remove (13) is refused: " + Newer.Refusal);
+    }
+
+    // ---- W17 trim / split: Plasticity C (command:cut) and X on picked bodies.
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto Figures  = [](const DraftingDocument& Target, const std::string& Key) -> const DraftingBodyFigures*
+        {
+            for (const DraftingBodyFigures& Body : Target.Summary.Bodies) if (Body.Key == Key) return &Body;
+            return nullptr;
+        };
+        auto VolumeOf = [&](const DraftingDocument& Target, const std::string& Key) { const DraftingBodyFigures* Body = Figures(Target, Key); return Body ? Body->Volume : -1.0; };
+        auto Draw = [](DraftingDocument& Target, DraftingDrawingKind Kind, std::vector<Vector2> Points, bool CentreCondition = false)
+        {
+            DraftingDrawingRequest Drawing;
+            Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.CentreCondition = CentreCondition;
+            const DraftingCommandOutcome Outcome = DrawDraftingSketch(Target, Drawing);
+            return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+        };
+
+        // ① Block1 4 × 2 × 1 (Brass) cut by a drawn line x = 1 drawn upward: the inside piece (left, x < 1) is 2, the rest 6
+        DraftingDocument Part = CreateDraftingDocument("Cut");
+        DraftingConstructRequest Request;
+        Request.Kind = DraftingConstructKind::Block; Request.Width = 4.0; Request.Depth = 2.0; Request.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Part, Request));
+        const std::string BlockKey = Part.Regeneration.Active;
+        SelectDraftingName(Part, DraftingSelectionKind::Body, BlockKey, false);
+        Expect(AssignDraftingMatcap(Part, "Brass"));
+        const std::string LineSketch = Draw(Part, DraftingDrawingKind::Line, { { 1.0, -1.0 }, { 1.0, 3.0 } });
+        DraftingCutRequest Cut;
+        Cut.Target = BlockKey; Cut.Cutter = LineSketch;
+        const DraftingCommandOutcome Split = CutDraftingBody(Part, Cut);
+        const std::string PieceKey = Split.AcceptedCondition ? Part.Tree.Steps.back().Label : std::string{};
+        const double SplitError = std::max(Relative(VolumeOf(Part, PieceKey), 2.0), Relative(VolumeOf(Part, BlockKey), 6.0));
+        Tally(CutGate, SplitError, Split.AcceptedCondition && SplitError <= 1.0e-9 && Part.Summary.Bodies.size() == 2 && Part.Summary.SoundCondition && Part.Regeneration.Active == PieceKey
+                                   && DraftingBodyCaption(Part, PieceKey) == "Cut1" && DraftingBodyMatcap(Part.Appearance, BlockKey) == "Brass" && DraftingBodyMatcap(Part.Appearance, PieceKey) == DraftingStudioMatcap,
+              Split.Label + ": " + PieceKey + " (Cut1) = 2, Block1 = 6 exact, both sound; Block1 keeps its key and Brass, the piece wears Studio");
+
+        // ② X on the picked piece removes it; undo brings it back, redo removes it again
+        const DraftingCommandOutcome Removed = RemoveDraftingBodies(Part, { PieceKey });
+        const bool Gone = Removed.AcceptedCondition && Part.Summary.Bodies.size() == 1 && !Figures(Part, PieceKey) && Relative(VolumeOf(Part, BlockKey), 6.0) <= 1.0e-9
+                       && Part.Tree.Steps.back().Kind == FeatureStepKind::Remove && Part.Regeneration.Active == BlockKey;
+        UndoDraftingCommand(Part);
+        const bool Undone = Part.Summary.Bodies.size() == 2 && Relative(VolumeOf(Part, PieceKey), 2.0) <= 1.0e-9;
+        RedoDraftingCommand(Part);
+        Tally(CutGate, 0.0, Gone && Undone && Part.Summary.Bodies.size() == 1, Removed.Label + ": 1 body left (6), Block1 active; undo → 2 bodies, redo → 1");
+
+        // ③ a drawn circle r ½ at (2, 1) cuts a cylinder out of what is left: π/4 inside, 6 − π/4 outside
+        const std::string CircleSketch = Draw(Part, DraftingDrawingKind::Circle, { { 2.0, 1.0 }, { 2.5, 1.0 } }, true);
+        Cut = {};
+        Cut.Cutter = CircleSketch;                                                           // Target empty → the active body
+        const DraftingCommandOutcome Core = CutDraftingBody(Part, Cut);
+        const std::string CoreKey = Core.AcceptedCondition ? Part.Tree.Steps.back().Label : std::string{};
+        const double CoreError = std::max(Relative(VolumeOf(Part, CoreKey), Pi / 4.0), Relative(VolumeOf(Part, BlockKey), 6.0 - Pi / 4.0));
+        Tally(CutGate, CoreError, Core.AcceptedCondition && CoreError <= 1.0e-9 && Part.Summary.Bodies.size() == 2 && Part.Summary.SoundCondition && Figures(Part, BlockKey) && Figures(Part, BlockKey)->Genus == 1,
+              Core.Label + ": core π/4 and the holed block 6 − π/4 exact (genus 1), cut from the active body");
+
+        // ④ vehicle flow: 3 parabolic sections lofted into a sheet, a wavy character line seen from the Top view (−z)
+        //    splits it into two sound sheets, X removes one (the BMW workflow: panel → C → X)
+        DraftingDocument Bonnet = CreateDraftingDocument("Bonnet");
+        VehicleCurveFile Curves;
+        for (int Section = 0; Section < 3; ++Section)
+        {
+            VehicleCurve Curve;
+            Curve.Name = "Section" + std::to_string(Section + 1);
+            for (int Index = 0; Index <= 10; ++Index)
+            {
+                const double X = -1.0 + 0.2 * Index, Y = 0.5 * Section;
+                Curve.Points.push_back({ X, Y, 0.25 * (1.0 - X * X) + 0.08 * Y * Y });
+            }
+            Curves.Curves.push_back(Curve);
+        }
+        VehicleCurve Character;
+        Character.Name = "CharacterLine";
+        for (int Index = 0; Index <= 12; ++Index)
+        {
+            const double X = -1.6 + 3.2 * Index / 12.0;
+            Character.Points.push_back({ X, 0.5 + 0.18 * std::sin(2.2 * X / 1.6), 1.0 });
+        }
+        Curves.Curves.push_back(Character);
+        Expect(ImportDraftingCurves(Bonnet, Curves));
+        std::vector<std::string> Labels;
+        for (const FeatureStep& Step : Bonnet.Tree.Steps) if (Step.Kind == FeatureStepKind::SpaceCurve) Labels.push_back(Step.Label);
+        const bool Imported = Labels.size() == 4;
+        if (Imported) Expect(LoftDraftingCurves(Bonnet, { Labels[0], Labels[1], Labels[2] }));
+        const std::string PanelKey = Bonnet.Regeneration.Active;
+        Cut = {};
+        Cut.Target = PanelKey; Cut.Cutter = Imported ? Labels[3] : std::string{}; Cut.Direction = { 0.0, 0.0, -1.0 };
+        const DraftingCommandOutcome Trim = CutDraftingBody(Bonnet, Cut);
+        const std::string TrimKey = Trim.AcceptedCondition ? Bonnet.Tree.Steps.back().Label : std::string{};
+        const DraftingBodyFigures* Kept  = Figures(Bonnet, PanelKey);
+        const DraftingBodyFigures* Piece = Figures(Bonnet, TrimKey);
+        const bool Sheets = Trim.AcceptedCondition && Kept && Piece && Kept->SheetCondition && Piece->SheetCondition && Kept->SoundCondition && Piece->SoundCondition && Bonnet.Summary.Bodies.size() == 2;
+        const DraftingCommandOutcome Discard = RemoveDraftingBodies(Bonnet, { TrimKey });
+        Tally(CutGate, 0.0, Imported && Sheets && Discard.AcceptedCondition && Bonnet.Summary.Bodies.size() == 1 && Figures(Bonnet, PanelKey) && Figures(Bonnet, PanelKey)->SheetCondition,
+              Trim.Label + " seen along −z: 2 sound sheets (" + std::to_string(Kept ? Kept->Faces : 0) + " + " + std::to_string(Piece ? Piece->Faces : 0) + " faces); " + Discard.Label + " keeps the trimmed panel");
+
+        // ⑤ refusals leave tree, bodies and history untouched
+        const size_t Steps = Part.Tree.Steps.size(), Entries = Part.UndoEntries.size();
+        const double Volume = Part.Summary.Volume;
+        Cut = {};
+        const DraftingCommandOutcome NoCutter = CutDraftingBody(Part, Cut);
+        const std::string Beside = Draw(Part, DraftingDrawingKind::Line, { { 9.0, -1.0 }, { 9.0, 3.0 } });
+        const size_t StepsWithBeside = Part.Tree.Steps.size(), EntriesWithBeside = Part.UndoEntries.size();
+        Cut.Target = BlockKey; Cut.Cutter = Beside;
+        const DraftingCommandOutcome Misses = CutDraftingBody(Part, Cut);
+        Cut.Target = "Extrude#99";
+        const DraftingCommandOutcome Ghost = CutDraftingBody(Part, Cut);
+        Cut.Target = BlockKey; Cut.Cutter = BlockKey;                                         // An extrude step is no cutter
+        const DraftingCommandOutcome Wrong = CutDraftingBody(Part, Cut);
+        const DraftingCommandOutcome Phantom = RemoveDraftingBodies(Part, { "Ghost#1" });
+        const bool Refused = !NoCutter.AcceptedCondition && !Misses.AcceptedCondition && !Ghost.AcceptedCondition && !Wrong.AcceptedCondition && !Phantom.AcceptedCondition;
+        Tally(CutGate, 0.0, Refused && Part.Tree.Steps.size() == StepsWithBeside && Part.UndoEntries.size() == EntriesWithBeside && Part.Summary.Volume == Volume && StepsWithBeside == Steps + 1 && EntriesWithBeside == Entries + 1,
+              "refused: no cutter (" + NoCutter.Refusal + ") · misses (" + Misses.Refusal + ") · unknown body (" + Ghost.Refusal + ") · extrude as cutter · Remove unknown (" + Phantom.Refusal + "); untouched");
+        Expect(DeleteDraftingStep(Part, Beside));
+
+        // ⑥ save → load → save byte-equal with Cut (Profile) / Remove and a curve Cut (Sections + plane); volumes bit-equal
+        bool RoundTrips = true;
+        std::string Notes;
+        for (DraftingDocument* Source : { &Part, &Bonnet })
+        {
+            const std::string Written = EncodeDraftingDocument(*Source);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            bool Same = Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Bodies.size() == Source->Summary.Bodies.size();
+            for (size_t Index = 0; Same && Index < Copy.Summary.Bodies.size(); ++Index)
+                Same = Copy.Summary.Bodies[Index].Key == Source->Summary.Bodies[Index].Key && Copy.Summary.Bodies[Index].Volume == Source->Summary.Bodies[Index].Volume;
+            RoundTrips = RoundTrips && Same && Written.find("Kind = 11") != std::string::npos && Written.find("Kind = 12") != std::string::npos;
+            Notes += (Notes.empty() ? "" : " · ") + Source->Title + " " + std::to_string(Copy.Summary.Bodies.size()) + " bodies";
+        }
+        Tally(CutGate, 0.0, RoundTrips, "save → load → save byte-equal with Cut (11) and Remove (12): " + Notes + ", volumes bit-equal");
     }
 
     // ---- report
@@ -1191,7 +1324,7 @@ int main()
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
