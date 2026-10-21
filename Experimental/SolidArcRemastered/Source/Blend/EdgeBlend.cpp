@@ -644,8 +644,13 @@ namespace
             for (const auto& End : Blended)
             {
                 if (SheetOf(End.first)->VariableCondition() && (Blended.size() != 1 || Ends.size() != 3)) return "variable size where blends meet or at a vertex of degree ≠ 3 (🚧)";
+                if (!SheetOf(End.first)->LawCondition()) continue;
+                // 📝 A ball-law sheet ends in a cap, runs through a seam (continuation) or meets its own curve's next edge at
+                //    a seams-only vertex (the law is geometric, so both sheets share the section ball); elsewhere it refuses.
                 const bool Continuation = Blended.size() == 2 && Blended[0].first == Blended[1].first;   // [-] - Closed rim through a seam
-                if (SheetOf(End.first)->LawCondition() && (!(Blended.size() == 1 || Continuation) || Ends.size() != 3)) return "curved-edge chamfer where blends meet or at a vertex of degree ≠ 3 (🚧)";
+                bool SeamsOnly = Blended.size() == 2 && !Continuation && !Sharp.empty();             // [-] - Every sharp edge is a seam
+                for (const auto& Other : Sharp) { const auto Faces = FacesOfEdge(Other.first); SeamsOnly = SeamsOnly && Faces.first == Faces.second; }
+                if (!SeamsOnly && (!(Blended.size() == 1 || Continuation) || Ends.size() != 3)) return "curved-edge chamfer where blends meet or at a vertex of degree ≠ 3 (🚧)";
             }
             const bool Convex = SheetOf(Blended.front().first)->ConvexCondition;
             for (const auto& End : Blended)

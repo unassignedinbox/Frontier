@@ -79,7 +79,9 @@ namespace
         Vector3       Velocity = {};                                                         // [len]
     };
 
-    constexpr std::size_t SectionMemoSlots = 256;                                            // [-] - Direct-mapped, per thread
+    // ⚠️ One inner row of the flux quadrature over a traced chord face spans ~90 knot pieces × 8 nodes; 256 slots thrashed
+    //    (3.2 M law solves for one volume), 32768 (~3.7 MB per thread, heap) leave ~0.2 M.
+    constexpr std::size_t SectionMemoSlots = 32768;                                          // [-] - Direct-mapped, per thread
 
     [[nodiscard]] std::size_t SectionMemoSlot(std::uint64_t Serial, double 𝑢) noexcept
     {
@@ -94,7 +96,7 @@ namespace
 
     [[nodiscard]] SectionFrame ResolveSection(const RollingBallDefinition& Definition, double 𝑢) noexcept
     {
-        thread_local std::array<SectionMemo, SectionMemoSlots> Memo = {};
+        thread_local std::vector<SectionMemo> Memo(SectionMemoSlots);                          // Heap, not static TLS
         SectionMemo* Slot = nullptr;
         if (Definition.Serial != 0)
         {
@@ -155,49 +157,104 @@ namespace
 
     [[nodiscard]] bool ChordCondition(const RollingBallDefinition& Definition) noexcept { return Definition.Section == RollingBallSection::Chord; }
 
-    // 📝 P = A + 𝑣(B − A) with A, B the feet of C(𝑢); ∂P/∂𝑢 from the foot fields on the tangent line C ± h·C′ (the
-    //    symmetric stencil cancels the line's O(h²) offset from the spine, as for the traced frame field).
+    // 📝 One ruling at 𝑢: the feet A, B of C(𝑢) and their 𝑢-rates from the foot fields on the tangent line C ± h·C′
+    //    (the symmetric stencil cancels the line's O(h²) offset from the spine, as for the traced frame field).
+    struct ChordRuling
+    {
+        Vector3 Near     = {};                                                               // [len] - A(𝑢)
+        Vector3 Far      = {};                                                               // [len] - B(𝑢)
+        Vector3 NearRate = {};                                                               // [len] - A′(𝑢)
+        Vector3 FarRate  = {};                                                               // [len] - B′(𝑢)
+    };
+
+    [[nodiscard]] ChordRuling ResolveRuling(const RollingBallDefinition& Definition, double 𝑢) noexcept
+    {
+        const SectionFrame Frame = ResolveSection(Definition, 𝑢);
+        const double  Step  = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        const Vector3 Reach = Frame.Velocity * Step;                                         // [len] - h·C′
+        ChordRuling Ruling;
+        Ruling.Near     = FootOnSupport(Definition.Guide, Frame.Centre);
+        Ruling.Far      = FootOnSupport(Definition.Partner, Frame.Centre);
+        Ruling.NearRate = (FootOnSupport(Definition.Guide, Frame.Centre + Reach) - FootOnSupport(Definition.Guide, Frame.Centre - Reach)) * (1.0 / (2.0 * Step));
+        Ruling.FarRate  = (FootOnSupport(Definition.Partner, Frame.Centre + Reach) - FootOnSupport(Definition.Partner, Frame.Centre - Reach)) * (1.0 / (2.0 * Step));
+        return Ruling;
+    }
+
+    // P = A + 𝑣(B − A): ∂P/∂𝑣 = B − A exactly, ∂P/∂𝑢 = A′(1 − 𝑣) + B′𝑣.
     [[nodiscard]] SurfaceSample EvaluateChord(const RollingBallDefinition& Definition, Vector2 Parameter) noexcept
     {
-        const SectionFrame Frame = ResolveSection(Definition, Parameter.X);
-        const Vector3 Near = FootOnSupport(Definition.Guide, Frame.Centre);                  // [len] - A
-        const Vector3 Far  = FootOnSupport(Definition.Partner, Frame.Centre);                // [len] - B
-        const double  Step = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
-        const Vector3 Reach = Frame.Velocity * Step;                                         // [len] - h·C′
-        const Vector3 NearTurn = FootOnSupport(Definition.Guide, Frame.Centre + Reach) - FootOnSupport(Definition.Guide, Frame.Centre - Reach);
-        const Vector3 FarTurn  = FootOnSupport(Definition.Partner, Frame.Centre + Reach) - FootOnSupport(Definition.Partner, Frame.Centre - Reach);
+        const ChordRuling Ruling = ResolveRuling(Definition, Parameter.X);
         SurfaceSample Sample;
-        Sample.Position    = Near + (Far - Near) * Parameter.Y;
-        Sample.DerivativeV = Far - Near;
-        Sample.DerivativeU = (NearTurn * (1.0 - Parameter.Y) + FarTurn * Parameter.Y) * (1.0 / (2.0 * Step));
+        Sample.Position    = Ruling.Near + (Ruling.Far - Ruling.Near) * Parameter.Y;
+        Sample.DerivativeV = Ruling.Far - Ruling.Near;
+        Sample.DerivativeU = Ruling.NearRate * (1.0 - Parameter.Y) + Ruling.FarRate * Parameter.Y;
         return Sample;
     }
 
-    // 📝 Spine inversion seeds 𝑢 (exact when r′ = 0), the chord fraction seeds 𝑣; Gauss–Newton on |P(𝑢, 𝑣) − X|² polishes.
+    // 📝 Projection. P is linear in 𝑣, so for fixed 𝑢 the nearest point of the ruling is closed-form,
+    //        𝑣*(𝑢) = (X − A)·(B − A) / |B − A|²,
+    //    and the foot solves one equation, f(𝑢) = (P(𝑢, 𝑣*) − X)·∂P/∂𝑢 = 0, by the secant method (first step Gauss–Newton).
+    //    𝑢 is seeded from the spine's guide polyline (exact spine samples, no solve) or by spine inversion.
+    // ⚠️ Plain Gauss–Newton on (𝑢, 𝑣) drops the residual × curvature term: for points ~1 away (overlap scans) its 𝑢
+    //    steps alternate with ratio ≈ −½ and ran to the iteration cap on every projection of a P10 run. Steps stop on
+    //    displacement (law spines carry ~10⁻¹³ of Newton-acceptance jitter, so 10⁻¹⁵ parameter steps never come).
     [[nodiscard]] Vector2 ProjectOntoChord(const RollingBallDefinition& Definition, Vector3 Position, Vector2 Reference) noexcept
     {
         const double SpineLow = Definition.Period > 0.0 ? Reference.X - 0.5 * Definition.Period : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
-        double 𝑢 = Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
-        double 𝑣 = 0.5;
+        double 𝑢 = 0.0;
+        const auto* Traced = std::get_if<IntersectionCurve>(&Definition.Spine);
+        if (Traced && Traced->Trace && Traced->Trace->Points.size() >= 2)
         {
-            const SectionFrame Frame = ResolveSection(Definition, 𝑢);
-            const Vector3 Near = FootOnSupport(Definition.Guide, Frame.Centre), Far = FootOnSupport(Definition.Partner, Frame.Centre);
-            const double  Square = Dot(Far - Near, Far - Near);                              // [len²] - |B − A|²
-            if (Square > 0.0) 𝑣 = Dot(Position - Near, Far - Near) / Square;
+            const TracedIntersection& Trace = *Traced->Trace;
+            double Nearest = INFINITY;                                                       // [len] - Best segment distance
+            for (size_t Index = 0; Index + 1 < Trace.Points.size(); ++Index)
+            {
+                const Vector3 Along  = Trace.Points[Index + 1] - Trace.Points[Index];        // [len] - Segment chord
+                const double  Square = Dot(Along, Along);
+                const double  Fraction = Square > 0.0 ? std::clamp(Dot(Position - Trace.Points[Index], Along) / Square, 0.0, 1.0) : 0.0;
+                const double  Gap    = Distance(Position, Trace.Points[Index] + Along * Fraction);
+                if (Gap < Nearest) { Nearest = Gap; 𝑢 = Trace.Knots[Index] + Fraction * (Trace.Knots[Index + 1] - Trace.Knots[Index]); }
+            }
+            𝑢 = Fold(𝑢, SpineLow, Definition.Period);
         }
+        else 𝑢 = ProjectOntoCurve(Definition.Spine, Position, SpineLow);
+        𝑢 = Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        double 𝑣 = 0.5, Speed = 0.0, Offset = 0.0;                                           // [-], [len], [len] - 𝑣*, |∂P/∂𝑢|, |P − X|
+        const auto Measure = [&](double At) -> double
+        {
+            const ChordRuling Ruling = ResolveRuling(Definition, At);
+            const Vector3 Along  = Ruling.Far - Ruling.Near;                                 // [len] - B − A
+            const double  Square = Dot(Along, Along);
+            𝑣 = Square > 0.0 ? Dot(Position - Ruling.Near, Along) / Square : 0.0;
+            const Vector3 Point = Ruling.Near + Along * 𝑣;
+            const Vector3 Rate  = Ruling.NearRate * (1.0 - 𝑣) + Ruling.FarRate * 𝑣;           // [len] - ∂P/∂𝑢 at 𝑣*
+            Speed  = Length(Rate);
+            Offset = Distance(Point, Position);
+            return Dot(Point - Position, Rate);                                              // [len²] - f(𝑢)
+        };
+        const double Floor = 1.0e-14 * (1.0 + Length(Position));                             // [len] - Round-off displacement
+        double Before = 𝑢, Gradient = Measure(𝑢), Previous = INFINITY;
+        if (!(Speed > 0.0)) return { Fold(𝑢, Reference.X - 0.5 * Definition.Period, Definition.Period), 𝑣 };
+        𝑢 = Clamp(𝑢 - Gradient / (Speed * Speed), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
         for (int Iteration = 0; Iteration < 30; ++Iteration)
         {
-            const SurfaceSample Sample = EvaluateChord(Definition, { 𝑢, 𝑣 });
-            const Vector3 Offset = Sample.Position - Position;                               // [len] - P − X
-            const double  UU = Dot(Sample.DerivativeU, Sample.DerivativeU), UV = Dot(Sample.DerivativeU, Sample.DerivativeV), VV = Dot(Sample.DerivativeV, Sample.DerivativeV);
-            const double  GU = Dot(Offset, Sample.DerivativeU), GV = Dot(Offset, Sample.DerivativeV);
-            const double  Determinant = UU * VV - UV * UV;                                   // [len⁴]
-            if (!(Determinant > 1.0e-300)) break;
-            const double  StepU = (VV * GU - UV * GV) / Determinant, StepV = (UU * GV - UV * GU) / Determinant;
-            𝑢 = Clamp(𝑢 - StepU, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
-            𝑣 -= StepV;
-            if (std::fabs(StepU) <= 1.0e-15 * (1.0 + std::fabs(𝑢)) && std::fabs(StepV) <= 1.0e-15) break;
+            const double Current = Measure(𝑢);                                               // [len²] - f(𝑢)
+            if (!(Speed > 0.0)) break;
+            const double Slope = (Current - Gradient) / (𝑢 - Before);                        // [len²] - Secant f′
+            const double Newton = Current / (Speed * Speed);                                 // [-]    - Gauss–Newton step
+            // Near the foot the secant's difference quotient is jitter over a 10⁻¹² step: Gauss–Newton (quadratic on the
+            // carrier, where the residual term vanishes) finishes instead.
+            const bool   SecantCondition = std::fabs(𝑢 - Before) > 1.0e-8 * (1.0 + std::fabs(𝑢)) && std::isfinite(Slope) && Slope > 0.0;
+            const double Step = SecantCondition ? Current / Slope : Newton;
+            Before = 𝑢; Gradient = Current;
+            𝑢 = Clamp(𝑢 - Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+            const double Moved = std::fabs(Step) * Speed;                                    // [len] - |ΔP| along the carrier
+            // A point off the carrier: steps below 10⁻⁹ of its distance leave the foot as good as the distance it serves.
+            if (Moved <= Floor + 1.0e-9 * Offset) break;
+            if (Moved <= 1.0e-12 * (1.0 + Length(Position)) && Moved >= 0.5 * Previous) break;   // Jitter floor on the carrier
+            Previous = Moved;
         }
+        (void)Measure(𝑢);                                                                    // 𝑣* at the final 𝑢
         return { Fold(𝑢, Reference.X - 0.5 * Definition.Period, Definition.Period), 𝑣 };
     }
 }

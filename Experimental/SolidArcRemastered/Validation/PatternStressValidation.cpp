@@ -1147,6 +1147,13 @@ namespace
                       BlendProfile::Fillet, 0.03);
             return Built;
         });
+        Add("P", "P10", "C6 radial bores + chamfer the 8 traced bore mouths d 0.03 (ball-law spine, chord carrier)", [](Partition& P)
+        {
+            StressBuilt Built = RadialBores(P);
+            Built.Expected = std::nan("");
+            BlendStep(P, Built, [](Vector3, Vector3, const CurveGeometry& Curve) { return std::holds_alternative<IntersectionCurve>(Curve); }, -1, BlendProfile::Chamfer, 0.03);
+            return Built;
+        });
         Add("P", "P9", "L5b touching bosses + fillet 6 foot circles r 0.1", [](Partition& P)
         {
             StressBuilt Built = PlateBosses(P, true);

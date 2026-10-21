@@ -1,6 +1,40 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.05 MB, no external resources) with 25 interactive kernel models (now including P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.26 MB, no external resources) with 28 interactive kernel models (now including the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
+**TL;DR (chamfers on curved edges, 2.5–4.6× faster procedural carriers)**: A chamfer on a traced or elliptical edge between curved faces is now built instead of refused. Examples are a bore mouth on a tilted or radial bore, or a boss foot. The dihedral angle varies along such an edge, so equal setbacks d need a ball whose radius follows the edge: r(t) = d·tan(θ(t)/2). The chamfer is the ruled chord between that ball's two contact rails. Both specimens match an independent closed form to 4·10⁻¹², and P10 (8 radial bore mouths) passes the CSG oracle. Profiling also made the procedural carriers much faster: P10 went from 434 s to 172 s, P7 from 182 s to 126 s, and RollingBallValidation from 163 s to 53 s, all with identical results. [`BlendValidation`](BlendValidation.md) passes all 10 gates over 46 specimens (37 built, 9 refusals). PatternStressValidation: **69 rows · 🟢 69 · ⚠️ 0 · 🔴 0** (638 operations, 779 s). ctest passes 14/14 (1094 s).
+
+| Specimen | Setting | Faces | Carrier | ΔV (kernel) | ΔV* (closed form) | Error |
+|---|---|---|---|---|---|---|
+| TiltedBoreChamfer | block 4 × 4 × 1 minus a bore R 0.5 tilted 20°, mouth d 0.1 (traced rim, 93 knots) | 8 | R (chord) | −0.016460987609 | −0.016460987612 | 3.8e-12 |
+| TiltedBossChamfer | the same cylinder as a boss, concave foot d 0.1 | 9 | R (chord) | +0.016460987608 | +0.016460987612 | 4.4e-12 |
+| P10 | C6 radial bores, chamfer the 8 traced bore mouths d 0.03 (9 edges after seam splits) | 28 / 47 / 28 | 9 R (chord) | V 26.2606040829 | CSG oracle 0 / 300 wrong | — |
+
+| Closed form | Method |
+|---|---|
+| Tilted bore / boss | V = ⅓(−R·A_cyl + F_chamfer) by the divergence theorem about the bore axis: the removed (or added) ring is bounded by the cylinder strip, the top plane and the chamfer. At α = 0 it reduces to Pappus, πd²(R + d/3). `MeasureTiltedRimChamferVolume` (BlendCatalogue) shares no code with the kernel's ball law: its own analytic edge, normals, Newton and exact r′. The flux is quadratic in 𝑣 (2-point Gauss is exact) and periodic in φ (the trapezoid rule converges exponentially). It was also cross-checked by a separate Python integration |
+
+| Speed-up (procedural carriers) | Before | After |
+|---|---|---|
+| P10 (8 chamfered traced mouths) | 434 s | **172 s**: 28 / 47 / 28, V 26.2606040829, oracle 0 / 300 (identical) |
+| P7 (8 filleted traced mouths) | 182 s | **126 s**: V 26.2631980227 (identical) |
+| RollingBallValidation (with the new R9 chamfer journey) | 163 s | **53 s**: every gate's worst value identical |
+| TiltedBoreChamfer `BlendEdges` | 12.7 s | **2.8 s**: ΔV bit-identical |
+
+| Tilted bore, chamfered mouth (showcase) | P10, 8 chamfered radial bore mouths (showcase) |
+|---|---|
+| ![TiltedBoreChamfer: the chamfer band is wider where the bore leans away, since the ball radius follows d·tan(θ/2)](TiltedBoreChamfer.png) | ![P10: 8 traced mouths chamfered d 0.03, 9 ruled chord faces](RadialBoreChamferP10.png) |
+
+- 🧩 **Ball-law spine:** `BuildBallLawCurve` wraps the traced edge. At each edge parameter t, the ball centre C(t) is solved by Newton against both supports, offset by r(t) = d·tan(θ(t)/2). C′(t) comes from the 3 × 3 derivative rows. The law spine shares its edge's parameter and knots, which fixed an early 10⁻⁸ volume error.
+- 🧩 **Chord carrier:** P(𝑢, 𝑣) = A + 𝑣(B − A), where A and B are the feet of C(𝑢) on both supports. ∂P/∂𝑣 is exact; ∂P/∂𝑢 is a symmetric difference of the foot fields on the tangent line. The carrier survives rotation, scaling and reflection (new R9 journey: V 1.2·10⁻¹³, vertices home 1.2·10⁻¹⁵).
+- 🧩 **Seam crossings:** a radial mouth crosses its bore's seam, so it is split into 2 edges meeting at a vertex whose other edges are all seams. Both sheets share the section ball there, so the vertex is now allowed (P10 refused at V97 before this).
+- 🔍 **Profiling found the cost** (counter probe on TiltedBoreChamfer):
+  - **Projections ran to their cap.** Law spines carry ~10⁻¹³ of Newton-acceptance jitter, so the 10⁻¹⁵ parameter-step test never passed: every chord projection took 30 Gauss–Newton iterations, plus a 40-iteration spine inversion. Points far from the face (overlap scans) also made plain Gauss–Newton overshoot (ratio ≈ −½). Now the seed comes from the spine's guide polyline. For fixed 𝑢 the nearest 𝑣 on the ruling is closed-form, which leaves one equation f(𝑢) = 0, solved by the secant method. It stops on displacement: about 7 iterations instead of 30.
+  - **The section memo thrashed.** One inner row of the exact-volume quadrature spans about 90 knot pieces × 8 nodes, more than the 256 direct-mapped slots. 32768 slots (~3.7 MB per thread, on the heap) cut one volume from 3.2 M to 0.2 M law solves. A hit is bit-identical, so this also sped up the circle carrier (P7, RollingBallValidation).
+  - **Smaller wins:** each shell's volume is integrated once instead of twice in `BodyAssembly`, and a law solve evaluates the traced edge 3 times instead of 6.
+- ✔️ **No regressions:** the 68 earlier stress rows match the previous run in status, topology, V, oracle, triangles and finding. Every earlier BlendValidation row and every RollingBallValidation gate value is unchanged apart from timings.
+- 💡 **Honest refusals, named:** curved-edge chamfers with smooth, cliff or notch overflow; chamfers on a NURBS support (the chord needs a closed-form foot); a variable-angle straight edge; and curved-edge chamfers where blends meet or at a vertex of degree ≠ 3 (seams-only crossings excepted).
+- 🚧 **Still refused:** variable size on curved edges (next: the canal surface on the same law spine), variable sizes meeting at a vertex, partial or blend-on-blend overflow, setback chamfers, and mixed convexity beside a sharp edge.
 
 **TL;DR (notch and smooth overflow, variable-radius blends, P7 speed-up)**: Three more overflow and size cases are now built instead of refused, each matching an independent closed form. A notch overflow is trimmed by the ledge, which grows under the blend. In a smooth overflow the ball rolls over a tangent far edge onto the next face. A variable-radius fillet or chamfer runs linearly along a straight edge. The traced-spine carrier also got 35% faster: P7 went from 278 s to 182 s with identical results. [`BlendValidation`](BlendValidation.md) passes all 10 gates over 44 specimens (35 built, 9 refusals).
 
@@ -37,7 +71,7 @@
   - Gate B4 checks the envelope law in closed form: ρ·√(1 − r′²) − r(τ) = 0.
 - ✔️ **No regressions:** ctest 14 / 14 🟢 in 1112 s (was 1202 s). PatternStress 68 / 68 🟢 in 716.6 s (was 821.9 s), and every row matches the previous run in status, topology, V, oracle, triangles and finding.
 - 💡 **Honest refusals, named:** smooth overflow onto a fillet that the ball cannot touch (`SmoothTight`), smooth overflow at one end only or on both sides, variable sizes meeting at a vertex (`VariableShared`), and variable size on curved edges or supports (`VariableRim`). Variable size beside an overflow is also refused.
-- 🚧 **Still refused:** chamfers on traced or elliptical spines, variable size on curved edges, partial or blend-on-blend overflow, setback chamfers, and mixed convexity beside a sharp edge.
+- 🚧 **Still refused:** chamfers on traced or elliptical spines (✔️ since built, see the top section), variable size on curved edges, partial or blend-on-blend overflow, setback chamfers, and mixed convexity beside a sharp edge.
 
 **TL;DR (cliff overflow)**: A blend wider than its face is now built when the overflow is a cliff. The blend consumes the face, and the face beyond its far edge trims the blend with an exact section. This works for fillets and chamfers, on straight and circular edges. Six new [`BlendValidation`](BlendValidation.md) specimens match their closed forms, and all 10 gates pass over 35 specimens. PatternStressValidation adds an O family: **68 rows · 🟢 68 · ⚠️ 0 · 🔴 0** (628 operations, 822 s). ctest passes 14/14 (1202 s).
 
@@ -65,7 +99,7 @@
 - 🧩 **Detection:** the cliff test runs where a blend's foot on a support lands at or past the far end of the sharp edge it trims. The v1 shape: the support is a strip of 4 edges (blended edge, two end edges or one seam, far edge), the far corner has degree 3 with no blend, and the far edge is convex. The support is consumed, its rail is dropped, and the cliff face trims the blend. The section is exact: a line or arc for planes, a circle for a closed rim section, otherwise the general A ∩ B section. Both endpoints must lie on the blend and on the cliff (≤ 1e-9).
 - 💡 **Honest refusals, named:** "partial overflow" (wider at one end only), "runs onto another blended edge at the far corner", "notch overflow, the far edge is concave", "concave blend overflow", and "wider than both supports". Any other shape (not a strip, holes, degree ≠ 3) falls through to the earlier "consumed by the blend" refusal. So DraftingWorkspace walkthrough ⑥ still refuses with its expected text, checked by replaying its scene against the kernel ("consumed by the blend … overshoot 0.141").
 - ✔️ **No regressions:** the 66 earlier stress rows match the previous run in status, topology, V, oracle and triangles. Every earlier BlendValidation row is unchanged apart from timings.
-- 🚧 **Still refused:** smooth overflow (rolling onto the next face), notch caps, partial overflow (split the blend), setback chamfers, mixed convexity beside a sharp edge, and chamfers on traced or elliptical spines.
+- 🚧 **Still refused (at the time):** smooth overflow (rolling onto the next face), notch caps, partial overflow (split the blend), setback chamfers, mixed convexity beside a sharp edge, and chamfers on traced or elliptical spines. ✔️ Since built: smooth overflow, notch overflow and curved-edge chamfers.
 
 **TL;DR (pinch and setback vertex blends, option C part A2)**: Every pattern-stress row is now built. PatternStressValidation runs 66 rows: **🟢 66 · ⚠️ 0 · 🔴 0** (616 operations, 819 s). P8 closes its degree-8 singular crossings with pinch vertices. A new V family adds setback vertex blends: where convex meets concave (L block), or where ≥ 4 blends meet (pyramid apex), the blends stop short and the hole is filled with fair rational quads. The new [`SetbackValidation`](SetbackValidation.md) passes all 6 gates, and ctest passes 14/14 (1173 s).
 
@@ -414,7 +448,7 @@ Harness fixes (no modeller change): edge criteria that also caught rib-top end e
 |---|---|---|
 | Setback vertex | ✔️ Fillets built: fair NURBS quads (V1, V2, `SetbackValidation`); P8 by pinch vertices. Chamfer setback and mixed convexity beside a sharp edge refused | Setback chamfers; a sharp spoke inside the patch |
 | Tangent-chain propagation | ✔️ Built: `GrowTangentChain` / `BlendSettings.TangentChainEnabled`; DraftingWorkspace Alt+click | — |
-| Overflow (blend wider than its face) | ✔️ Cliff overflow built (Overflow family, O1 / O2). `FilletRailsCross` (rails cross on a 2-high box) correctly refused; notch, partial, blend-on-blend and concave overflow refused by name | Smooth overflow, notch caps, partial overflow |
-| Traced spines | ✔️ Fillets built on the exact procedural rolling-ball carrier (P7, `RollingBallValidation`); chamfers on traced or elliptical spines refused | Ruled procedural carrier for chamfers |
+| Overflow (blend wider than its face) | ✔️ Cliff, notch and smooth overflow built (O1 / O2, Notch…, Smooth… specimens). `FilletRailsCross` (rails cross on a 2-high box) correctly refused; partial, blend-on-blend and concave overflow refused by name | Partial overflow, blend-on-blend overflow |
+| Traced spines | ✔️ Fillets on the exact procedural rolling-ball carrier (P7, `RollingBallValidation`); ✔️ chamfers on the ruled chord carrier over a ball-law spine (TiltedBore/BossChamfer, P10). NURBS supports, variable-angle straight edges and overflow beside them refused | Variable size on curved edges (canal surface) |
 
 🚧 Known limitation (step 4): next to poles and apexes, triangle shape follows the chart's anisotropy. Sphere and Cone reach a minimum angle of 0.4–1.1°, with ≈ 21–25% of their triangles below 20° (`SphereQuality.png`). Specimens without singular points stay ≥ 14° (Torus 15.3°, Cylinder 20.9°, HollowBlock 14.0°). Boolean results also inherit their smallest *input* angle, where a section edge meets a boundary almost tangentially (DShaft 3.3°, RandomDrills 0.1°); no Delaunay refinement goes below the input angle. Every gate holds, so this is a shading-quality issue, not a correctness one. Rebuilding every star does not help. The cure is a pole-local chart (an azimuthal projection around the axis) for the singular rows.

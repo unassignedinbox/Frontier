@@ -118,15 +118,19 @@ namespace
 
     // ---- Ball law ---------------------------------------------------------------------------------------------------
 
-    // r = d·tan(θ/2) at the edge parameter t, θ the wedge angle between the outward normals at E(t).
-    [[nodiscard]] double LawRadiusAt(const TracedIntersection& Trace, double EdgeParameter) noexcept
+    // r = d·tan(θ/2) at the edge point E(t), θ the wedge angle between the outward normals there.
+    [[nodiscard]] double LawRadiusAtPoint(const TracedIntersection& Trace, Vector3 Point) noexcept
     {
         const BallLaw& Law    = *Trace.Law;
-        const Vector3  Point  = EvaluateCurve(Law.Edge, EdgeParameter).Position;
         const Vector3  First  = MeasureSurfaceDistance(Trace.First, Point).Normal * Law.Senses[0];
         const Vector3  Second = MeasureSurfaceDistance(Trace.Second, Point).Normal * Law.Senses[1];
         const double   Wedge  = std::atan2(Length(Cross(First, Second)), -Dot(First, Second));   // [rad] - θ
         return Law.Setback * std::tan(0.5 * Wedge);
+    }
+
+    [[nodiscard]] double LawRadiusAt(const TracedIntersection& Trace, double EdgeParameter) noexcept
+    {
+        return LawRadiusAtPoint(Trace, EvaluateCurve(Trace.Law->Edge, EdgeParameter).Position);
     }
 
     // 📝 Centre C(t) and dC/dt at the edge parameter t: Newton from E(t) (for planar supports the first step is exact),
@@ -135,14 +139,17 @@ namespace
     {
         const BallLaw&    Law    = *Trace.Law;
         const CurveSample Edge   = EvaluateCurve(Law.Edge, EdgeParameter);
-        const double      Radius = LawRadiusAt(Trace, EdgeParameter);                       // [len] - r(t)
+        const double      Radius = LawRadiusAtPoint(Trace, Edge.Position);                  // [len] - r(t)
         if (!(Radius > 0.0) || !std::isfinite(Radius)) return false;
         Centre = Edge.Position;
         std::array<Vector3, 2> Normals;
         if (!CorrectOntoBoth(Trace.First, Trace.Second, Centre, Edge.Derivative, Edge.Position, Trace.Perimeter, &Normals, { Law.Signs[0] * Radius, Law.Signs[1] * Radius })) return false;
-        const double  Step   = 5.0e-6 * (1.0 + std::fabs(EdgeParameter));                  // [-]   - h
-        const double  Rate   = (LawRadiusAt(Trace, EdgeParameter + Step) - LawRadiusAt(Trace, EdgeParameter - Step)) / (2.0 * Step);
-        const Vector3 Bend   = (EvaluateCurve(Law.Edge, EdgeParameter + Step).Derivative - EvaluateCurve(Law.Edge, EdgeParameter - Step).Derivative) * (0.5 / Step);
+        // One edge evaluation per stencil point serves both r′ and E″ (a traced edge costs a Newton solve each).
+        const double      Step   = 5.0e-6 * (1.0 + std::fabs(EdgeParameter));              // [-]   - h
+        const CurveSample Ahead  = EvaluateCurve(Law.Edge, EdgeParameter + Step);
+        const CurveSample Behind = EvaluateCurve(Law.Edge, EdgeParameter - Step);
+        const double  Rate   = (LawRadiusAtPoint(Trace, Ahead.Position) - LawRadiusAtPoint(Trace, Behind.Position)) / (2.0 * Step);
+        const Vector3 Bend   = (Ahead.Derivative - Behind.Derivative) * (0.5 / Step);
         const Vector3 A = Normals[0], B = Normals[1], C = Edge.Derivative;
         const double  Determinant = Dot(A, Cross(B, C));                                     // [len] - a·(b×c)
         if (std::fabs(Determinant) <= 1.0e-14 * Length(C)) return false;

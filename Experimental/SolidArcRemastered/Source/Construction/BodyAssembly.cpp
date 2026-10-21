@@ -153,16 +153,21 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     }
 
     //    Solid: outer shells (positive volume) → solid regions; cavities → the smallest solid region containing them.
+    //    ⚠️ One volume per shell: a procedural carrier's flux is the costliest integral here, so it is never taken twice.
     std::vector<SolidShellToken> OuterShells, CavityShells;
-    for (SolidShellToken SolidShell : ShellOrder) (IntegrateShellVolume(Partition, SolidShell) > 0.0 ? OuterShells : CavityShells).push_back(SolidShell);
+    std::vector<double>          OuterVolumes;
+    for (SolidShellToken SolidShell : ShellOrder)
+    {
+        const double Volume = IntegrateShellVolume(Partition, SolidShell);                   // [len³] - Signed
+        if (Volume > 0.0) { OuterShells.push_back(SolidShell); OuterVolumes.push_back(Volume); }
+        else CavityShells.push_back(SolidShell);
+    }
     std::vector<RegionToken> Regions = { Exterior };
-    std::vector<double>      OuterVolumes;
     for (SolidShellToken SolidShell : OuterShells)
     {
         const RegionToken Region = Partition.Regions.Issue({ Body, RegionMaterial::Solid, { SolidShell } });
         Partition.Shells.Resolve(SolidShell).Region = Region;
         Regions.push_back(Region);
-        OuterVolumes.push_back(IntegrateShellVolume(Partition, SolidShell));
     }
     for (SolidShellToken Cavity : CavityShells)
     {

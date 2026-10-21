@@ -68,6 +68,9 @@ Models = [                                                                      
     ("SmoothFillet",    "Smooth overflow",          "r 0.3 rolls over the tangent edge onto an r 0.85 fillet: the strip is consumed"),
     ("VariableFillet",  "Variable fillet",          "r 0.1 → 0.4 along one edge: the exact cone of the balls, elliptical caps"),
     ("VariableChamfer", "Variable chamfer",         "d 0.1 → 0.4: the contact lines meet at the apex, so the chamfer is one plane"),
+    ("TiltedBoreChamfer", "Tilted bore, chamfered mouth", "d 0.1 on a bore tilted 20°: the dihedral varies along the traced rim, so the ball radius follows d·tan(θ/2)"),
+    ("TiltedBossChamfer", "Tilted boss, chamfered foot",  "the concave twin: d 0.1 on the traced foot of a tilted boss, one ruled chord face"),
+    ("P10", "Radial bore mouths, chamfered",               "8 traced mouths d 0.03 on ruled chord carriers between ball-law contact rails"),
 ]
 
 CaptureCaptions = {

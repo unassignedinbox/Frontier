@@ -6,6 +6,7 @@
 #include "Audit/EnclosedVolume.h"
 #include "Audit/ModelAudit.h"
 #include "Audit/TessellationAudit.h"
+#include "Blend/BlendCatalogue.h"
 #include "Blend/EdgeBlend.h"
 #include "Boolean/GeneralFuse.h"
 #include "Construction/BodyTransform.h"
@@ -409,6 +410,31 @@ int main()
                 Row.Volume = std::fabs(std::fabs(IntegrateBodyVolume(Partition, There.Body)) - Expected) / Expected;
                 Row.Home   = VertexHomeGap(Partition, TransformSource, Back.Body);
                 Row.PassedCondition = AuditBody(Partition, There.Body).SoundCondition() && AuditBody(Partition, Back.Body).SoundCondition() && Row.Volume <= 1.0e-9 && Row.Home <= 1.0e-9;
+            }
+            Tally(TransformGate, std::max(Row.Volume, Row.Home), Row.PassedCondition);
+            TransformRows.push_back(Row);
+        }
+        // 📝 Ball-law chamfer (chord carrier on the tilted bore's traced rim): the law's edge and setback map with the body.
+        {
+            TransformRow Row;
+            Row.Name = "Curved-edge chamfer (tilted bore, d 0.1): rotation + scale × 2 + skew reflection";
+            const BlendSpecimen Specimen = ConstructBlendSpecimen(Partition, "TiltedBoreChamfer");
+            const BlendOutcome  Chamfered = BlendEdges(Partition, Specimen.Body, Specimen.Edges, Specimen.Settings);
+            Row.Outcome = Chamfered.Refusal;
+            if (Chamfered.Refusal.empty())
+            {
+                const AffineMap Turn = RotationMap(AxisPoint, AxisDirection, 0.6457718232379019), Grow = ScalingMap({ 1, 1, 1 }, { 2.0, 2.0, 2.0 });
+                const AffineMap Mirror = ReflectionMap({ 0.2, 0.1, 0.5 }, Normalize(Vector3{ 1, 1, 0.5 }));
+                const TransformOutcome There = ApplyMaps(Partition, Chamfered.Body, { Turn, Grow, Mirror });
+                const TransformOutcome Back  = There.Refusal.empty() ? ApplyMaps(Partition, There.Body, { Mirror, ScalingMap({ 1, 1, 1 }, { 0.5, 0.5, 0.5 }), RotationMap(AxisPoint, AxisDirection, -0.6457718232379019) }) : There;
+                Row.Outcome = Back.Refusal.empty() ? "round trip" : Back.Refusal;
+                if (Back.Refusal.empty())
+                {
+                    const double Expected = IntegrateBodyVolume(Partition, Chamfered.Body) * 8.0;
+                    Row.Volume = std::fabs(std::fabs(IntegrateBodyVolume(Partition, There.Body)) - Expected) / Expected;
+                    Row.Home   = VertexHomeGap(Partition, Chamfered.Body, Back.Body);
+                    Row.PassedCondition = AuditBody(Partition, There.Body).SoundCondition() && AuditBody(Partition, Back.Body).SoundCondition() && Row.Volume <= 1.0e-9 && Row.Home <= 1.0e-9;
+                }
             }
             Tally(TransformGate, std::max(Row.Volume, Row.Home), Row.PassedCondition);
             TransformRows.push_back(Row);
