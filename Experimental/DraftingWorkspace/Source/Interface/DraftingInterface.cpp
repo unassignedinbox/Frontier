@@ -307,10 +307,11 @@ void Undo(DraftingWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition) return;
     const bool AppearanceCondition = !State.Document.UndoEntries.empty() && State.Document.UndoEntries.back().AppearanceCondition;
+    const std::set<std::string> Hidden = State.Document.Appearance.HiddenBodies;
     if (UndoDraftingCommand(State.Document))
     {
-        if (AppearanceCondition) MarkDirty(State);
-        else RefreshDraftingScene(State, true);
+        if (AppearanceCondition && Hidden == State.Document.Appearance.HiddenBodies) MarkDirty(State);
+        else RefreshDraftingScene(State, true);                                              // Geometry or visibility changed
         Announce(State, "Undo");
     }
 }
@@ -319,10 +320,11 @@ void Redo(DraftingWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition) return;
     const bool AppearanceCondition = !State.Document.RedoEntries.empty() && State.Document.RedoEntries.back().AppearanceCondition;
+    const std::set<std::string> Hidden = State.Document.Appearance.HiddenBodies;
     if (RedoDraftingCommand(State.Document))
     {
-        if (AppearanceCondition) MarkDirty(State);
-        else RefreshDraftingScene(State, true);
+        if (AppearanceCondition && Hidden == State.Document.Appearance.HiddenBodies) MarkDirty(State);
+        else RefreshDraftingScene(State, true);                                              // Geometry or visibility changed
         Announce(State, "Redo");
     }
 }
@@ -1013,6 +1015,385 @@ void DrawTrimPreview(DraftingWorkspaceState& State, ImDrawList* Canvas, const Dr
     std::vector<ImVec2> Pixels;
     for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
     if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0xff, 0x4d, 0x4d, 0xff), 4.0f);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    EDITING SESSIONS (G / R / S · SHIFT+D · O / P · J · H · CTRL+C / V)
+//------------------------------------------------------------------------------------------------------------------------
+
+std::string CaptionOf(const DraftingDocument& Document, const std::string& Label);
+
+constexpr double MoveSnap   = 0.1;                                                           // [len] - G step
+constexpr double TurnSnap   = 5.0;                                                           // [°]   - R step
+constexpr double FactorSnap = 0.1;                                                           // [-]   - S step
+constexpr double SweepSnap  = 0.01;                                                          // [len] - O / P step
+
+[[nodiscard]] const char* TransformVerbLabel(DraftingTransformVerb Verb) noexcept
+{
+    return Verb == DraftingTransformVerb::Move ? "Move" : Verb == DraftingTransformVerb::Rotate ? "Rotate" : "Scale";
+}
+
+// The bodies a session acts on: body picks, else the owners of picked faces / edges.
+[[nodiscard]] std::vector<std::string> PickedBodies(const DraftingDocument& Document)
+{
+    std::vector<std::string> Keys = Document.Selection.Bodies;
+    auto Add = [&](const std::string& Key) { if (!Key.empty() && std::find(Keys.begin(), Keys.end(), Key) == Keys.end()) Keys.push_back(Key); };
+    for (const std::string& Face : Document.Selection.Faces) Add(DraftingBodyOfName(Document, DraftingSelectionKind::Face, Face));
+    for (const std::string& Edge : Document.Selection.Edges) Add(DraftingBodyOfName(Document, DraftingSelectionKind::Edge, Edge));
+    return Keys;
+}
+
+// Bounds centre of the bodies in the shown scene (their tessellation corners).
+[[nodiscard]] Vector3 MeasureBodiesCentre(const DraftingScene& Scene, const std::vector<std::string>& Keys)
+{
+    Vector3 Low{ 1.0e300, 1.0e300, 1.0e300 }, High{ -1.0e300, -1.0e300, -1.0e300 };
+    for (const DraftingSceneBody& Body : Scene.Bodies)
+    {
+        if (std::find(Keys.begin(), Keys.end(), Body.Key) == Keys.end()) continue;
+        for (uint32_t Face = Body.FirstFace; Face < Body.FirstFace + Body.FaceCount; ++Face)
+            for (uint32_t Corner = Scene.Faces[Face].FirstCorner; Corner < Scene.Faces[Face].FirstCorner + Scene.Faces[Face].CornerCount; ++Corner)
+            {
+                const float* Position = Scene.Corners[Corner].Position;
+                Low  = { std::min(Low.X, double(Position[0])), std::min(Low.Y, double(Position[1])), std::min(Low.Z, double(Position[2])) };
+                High = { std::max(High.X, double(Position[0])), std::max(High.Y, double(Position[1])), std::max(High.Z, double(Position[2])) };
+            }
+    }
+    return Low.X > High.X ? Vector3{} : (Low + High) * 0.5;
+}
+
+// Typed digits / point / minus from this frame's characters; false when nothing numeric was typed.
+bool CollectTypedAmount(std::string& Typed)
+{
+    bool ChangedCondition = false;
+    for (const ImWchar Character : ImGui::GetIO().InputQueueCharacters)
+    {
+        if ((Character >= '0' && Character <= '9') || Character == '.' || (Character == '-' && Typed.empty())) { Typed.push_back(char(Character)); ChangedCondition = true; }
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !Typed.empty()) { Typed.pop_back(); ChangedCondition = true; }
+    return ChangedCondition;
+}
+
+[[nodiscard]] bool ParseTypedAmount(const std::string& Typed, double& Value)
+{
+    if (Typed.empty() || Typed == "-" || Typed == ".") return false;
+    char* End = nullptr;
+    Value = std::strtod(Typed.c_str(), &End);
+    return End && *End == '\0' && std::isfinite(Value);
+}
+
+void OpenTransformSession(DraftingWorkspaceState& State, DraftingTransformVerb Verb, bool DuplicateCondition)
+{
+    const std::vector<std::string> Keys = PickedBodies(State.Document);
+    if (Keys.empty()) { Announce(State, std::string(DuplicateCondition ? "Duplicate" : TransformVerbLabel(Verb)) + " needs picked bodies (mode 4, or a face / edge of the body)"); return; }
+    DraftingTransformSession& Transform = State.Transform;
+    const int Commits = Transform.Commits;
+    Transform                    = {};
+    Transform.Commits            = Commits;
+    Transform.ActiveCondition    = true;
+    Transform.Verb               = Verb;
+    Transform.DuplicateCondition = DuplicateCondition;
+    Transform.Keys               = Keys;
+    Transform.Pivot              = MeasureBodiesCentre(State.Scene, Keys);
+    State.Drawing.ActiveCondition = false;
+    State.Trim.ActiveCondition    = false;
+    Announce(State, Compose("%s%s %d body(ies) · X / Y / Z axis%s · type a value · click / Enter commits · Esc cancels", DuplicateCondition ? "Duplicate + " : "",
+                            TransformVerbLabel(Verb), int(Keys.size()), Verb == DraftingTransformVerb::Move ? " · Shift+X / Y / Z plane" : ""));
+}
+
+void CancelTransformSession(DraftingWorkspaceState& State)
+{
+    State.Transform.ActiveCondition = false;
+    State.Transform.Preview.reset();
+    Announce(State, std::string(TransformVerbLabel(State.Transform.Verb)) + " cancelled");
+}
+
+[[nodiscard]] bool IdentityMapCondition(const AffineMap& Map)
+{
+    return Length(Map.ColumnX - Vector3{ 1.0, 0.0, 0.0 }) + Length(Map.ColumnY - Vector3{ 0.0, 1.0, 0.0 }) + Length(Map.ColumnZ - Vector3{ 0.0, 0.0, 1.0 }) + Length(Map.Shift) < 1.0e-12;
+}
+
+void ApplyTransformSession(DraftingWorkspaceState& State)
+{
+    DraftingTransformSession& Transform = State.Transform;
+    if (!Transform.Refusal.empty()) { Announce(State, "Refused: " + Transform.Refusal); return; }
+    if (!Transform.DuplicateCondition && IdentityMapCondition(Transform.Map)) { Transform.ActiveCondition = false; Transform.Preview.reset(); Announce(State, std::string(TransformVerbLabel(Transform.Verb)) + ": nothing changed"); return; }
+    const DraftingCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateDraftingBodies(State.Document, Transform.Keys, Transform.Map)
+                                                                        : TransformDraftingBodies(State.Document, Transform.Keys, Transform.Map, TransformVerbLabel(Transform.Verb));
+    if (Outcome.AcceptedCondition)
+    {
+        ++Transform.Commits;
+        Transform.ActiveCondition = false;
+        Transform.Preview.reset();
+        State.PickMode = DraftingPickMode::Solid;
+    }
+    Conclude(State, Outcome);
+}
+
+// Pointer → affine map (see DraftingTransformSession), then the staged preview when the map changed.
+void DriveTransformSession(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local)
+{
+    DraftingTransformSession& Transform = State.Transform;
+    ImGuiIO& Io = ImGui::GetIO();
+    if (!Transform.StartCondition) { Transform.Start = Io.MousePos; Transform.StartLocal = Local; Transform.StartCondition = true; }
+    const Vector3 Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
+    const Vector3 Axes[3] = { { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    static const char* AxisNames[] = { "x", "y", "z" };
+    const bool   SnapCondition = !Io.KeyCtrl;
+    double       Typed         = 0.0;
+    const bool   TypedCondition = ParseTypedAmount(Transform.Typed, Typed);
+    auto Snap = [&](double Value, double Step) { return SnapCondition ? std::round(Value / Step) * Step : Value; };
+    ImVec2 PivotPixel;
+    const bool PivotCondition = ProjectWorldPoint(State, Frame, Transform.Pivot, PivotPixel);
+    switch (Transform.Verb)
+    {
+    case DraftingTransformVerb::Move:
+    {
+        Vector3 Shift;
+        if (TypedCondition)
+        {
+            Shift = Axes[std::max(0, Transform.Axis)] * Typed;                                 // Typed: along the axis (x when free)
+        }
+        else
+        {
+            // The pointer's two rays meet a plane through the pivot: facing the eye (free), containing the axis, or normal to it.
+            Vector3 Normal = Forward;
+            if (Transform.Axis >= 0)
+            {
+                const Vector3 Axis = Axes[Transform.Axis];
+                Normal = Transform.PlaneCondition ? Axis : Forward - Axis * Dot(Forward, Axis);
+                if (Length(Normal) < 1.0e-6) Normal = Vector3{ Frame.Up[0], Frame.Up[1], Frame.Up[2] };
+                Normal = Normal * (1.0 / Length(Normal));
+            }
+            auto Meet = [&](ImVec2 At, Vector3& Hit)
+            {
+                const DraftingRay Ray = CastDraftingRay(Frame, At.x, At.y);
+                const Vector3 Origin{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] }, Direction{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+                const double Facing = Dot(Direction, Normal);
+                if (std::abs(Facing) < 1.0e-9) return false;
+                Hit = Origin + Direction * (Dot(Transform.Pivot - Origin, Normal) / Facing);
+                return true;
+            };
+            Vector3 From, To;
+            if (Meet(Transform.StartLocal, From) && Meet(Local, To))
+            {
+                Shift = To - From;
+                if (Transform.Axis >= 0 && !Transform.PlaneCondition) Shift = Axes[Transform.Axis] * Dot(Shift, Axes[Transform.Axis]);
+            }
+            Shift = { Snap(Shift.X, MoveSnap), Snap(Shift.Y, MoveSnap), Snap(Shift.Z, MoveSnap) };
+        }
+        Transform.Map     = TranslationMap(Shift);
+        Transform.Readout = Compose("Move%s%s (%s, %s, %s)", Transform.Axis < 0 ? " screen" : Transform.PlaneCondition ? " plane ⊥" : " ", Transform.Axis < 0 ? "" : AxisNames[Transform.Axis],
+                                    FormatLength(Shift.X).c_str(), FormatLength(Shift.Y).c_str(), FormatLength(Shift.Z).c_str());
+        break;
+    }
+    case DraftingTransformVerb::Rotate:
+    {
+        // Screen sweep about the pivot (counter-clockwise on screen = about the axis towards the eye).
+        Vector3 Axis = Transform.Axis < 0 ? Forward * -1.0 : Axes[Transform.Axis];
+        double Degrees = Typed;
+        if (!TypedCondition)
+        {
+            const double FirstX = Transform.Start.x - PivotPixel.x, FirstY = Transform.Start.y - PivotPixel.y;
+            const double NowX   = Io.MousePos.x - PivotPixel.x, NowY = Io.MousePos.y - PivotPixel.y;
+            Degrees = PivotCondition && std::hypot(FirstX, FirstY) > 4.0 && std::hypot(NowX, NowY) > 4.0
+                    ? std::atan2(-(FirstX * NowY - FirstY * NowX), FirstX * NowX + FirstY * NowY) * 180.0 / std::numbers::pi : 0.0;
+            if (Dot(Axis, Forward) > 0.0) Degrees = -Degrees;                                 // Axis points away from the eye
+            Degrees = Snap(Degrees, TurnSnap);
+        }
+        Transform.Map     = RotationMap(Transform.Pivot, Axis, Degrees * std::numbers::pi / 180.0);
+        Transform.Readout = Compose("Rotate %s %s°", Transform.Axis < 0 ? "screen" : AxisNames[Transform.Axis], FormatLength(Degrees).c_str());
+        break;
+    }
+    case DraftingTransformVerb::Scale:
+    {
+        double Factor = Typed;
+        if (!TypedCondition)
+        {
+            const double First = std::hypot(Transform.Start.x - PivotPixel.x, Transform.Start.y - PivotPixel.y);
+            const double Now   = std::hypot(Io.MousePos.x - PivotPixel.x, Io.MousePos.y - PivotPixel.y);
+            Factor = PivotCondition && First > 4.0 ? Snap(Now / First, FactorSnap) : 1.0;
+        }
+        Vector3 Factors{ Factor, Factor, Factor };
+        if (Transform.Axis >= 0) Factors = { Transform.Axis == 0 ? Factor : 1.0, Transform.Axis == 1 ? Factor : 1.0, Transform.Axis == 2 ? Factor : 1.0 };
+        Transform.Map     = ScalingMap(Transform.Pivot, Factors);
+        Transform.Readout = Compose("Scale %s ×%s", Transform.Axis < 0 ? "xyz" : AxisNames[Transform.Axis], FormatLength(Factor).c_str());
+        break;
+    }
+    }
+    if (!Transform.Typed.empty()) Transform.Readout += " · typed " + Transform.Typed;
+    // Staged preview (one regeneration per distinct map).
+    const AffineMap& Map = Transform.Map;
+    const bool Same = Transform.StagedCondition && Length(Map.ColumnX - Transform.StagedMap.ColumnX) + Length(Map.ColumnY - Transform.StagedMap.ColumnY) + Length(Map.ColumnZ - Transform.StagedMap.ColumnZ)
+                                                   + Length(Map.Shift - Transform.StagedMap.Shift) == 0.0;
+    if (Same) return;
+    Transform.StagedMap       = Map;
+    Transform.StagedCondition = true;
+    Transform.Refusal.clear();
+    if (!Transform.DuplicateCondition && IdentityMapCondition(Map)) { Transform.Preview.reset(); return; }
+    Transform.Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
+    const DraftingCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateDraftingBodies(*Transform.Preview, Transform.Keys, Map)
+                                                                        : TransformDraftingBodies(*Transform.Preview, Transform.Keys, Map, TransformVerbLabel(Transform.Verb));
+    if (!Outcome.AcceptedCondition) { Transform.Refusal = Legible(Outcome.Refusal); Transform.Preview.reset(); return; }
+    Transform.PreviewScene = BuildDraftingScene(*Transform.Preview);
+}
+
+// The path O / P act on: the focused sketch step, else (P) the first selected curve, else the newest sketch step.
+[[nodiscard]] std::string SweepPath(const DraftingWorkspaceState& State, DraftingSweepVerb Verb)
+{
+    if (FocusedSketchCondition(State)) return State.FocusedStep;
+    if (Verb == DraftingSweepVerb::Pipe && !State.Document.Selection.Curves.empty()) return State.Document.Selection.Curves.front();
+    for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend(); ++Step) if (Step->Kind == FeatureStepKind::Sketch) return Step->Label;
+    return {};
+}
+
+void OpenSweepSession(DraftingWorkspaceState& State, DraftingSweepVerb Verb)
+{
+    const std::string Path = SweepPath(State, Verb);
+    if (Path.empty()) { Announce(State, Verb == DraftingSweepVerb::Offset ? "Offset (O) needs a sketch: draw one first" : "Pipe (P) needs a path: draw a line / arc / curve or select a curve"); return; }
+    DraftingSweepSession& Sweep = State.Sweep;
+    const int Commits = Sweep.Commits;
+    Sweep                 = {};
+    Sweep.Commits         = Commits;
+    Sweep.ActiveCondition = true;
+    Sweep.Verb            = Verb;
+    Sweep.Path            = Path;
+    Sweep.Amount          = Verb == DraftingSweepVerb::Offset ? 0.1 : 0.05;
+    Sweep.Drift           = Sweep.Amount;
+    Sweep.Combination     = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : FeatureCombination::Separate;
+    State.Drawing.ActiveCondition = false;
+    State.Trim.ActiveCondition    = false;
+    Announce(State, Compose("%s %s · move sideways (Shift fine, Ctrl free) or type a value%s · click / Enter commits · Esc cancels", Verb == DraftingSweepVerb::Offset ? "Offset" : "Pipe",
+                            CaptionOf(State.Document, Path).c_str(), Verb == DraftingSweepVerb::Pipe ? " · Q union · W difference · E intersect · R new body" : ""));
+}
+
+void CancelSweepSession(DraftingWorkspaceState& State)
+{
+    State.Sweep.ActiveCondition = false;
+    State.Sweep.Preview.reset();
+    Announce(State, State.Sweep.Verb == DraftingSweepVerb::Offset ? "Offset cancelled" : "Pipe cancelled");
+}
+
+void ChooseSweepCombination(DraftingWorkspaceState& State, FeatureCombination Combination)
+{
+    if (State.Sweep.Verb != DraftingSweepVerb::Pipe) return;
+    State.Sweep.Combination = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : Combination;
+    Announce(State, std::string("Pipe: ") + (State.Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Sweep.Combination)));
+}
+
+void ApplySweepSession(DraftingWorkspaceState& State)
+{
+    DraftingSweepSession& Sweep = State.Sweep;
+    if (!Sweep.Refusal.empty()) { Announce(State, "Refused: " + Sweep.Refusal); return; }
+    const DraftingCommandOutcome Outcome = Sweep.Verb == DraftingSweepVerb::Offset ? OffsetDraftingSketch(State.Document, Sweep.Path, Sweep.Amount)
+                                                                                   : PipeDraftingPath(State.Document, Sweep.Path, Sweep.Amount, Sweep.Combination, BooleanTarget(State));
+    if (Outcome.AcceptedCondition)
+    {
+        ++Sweep.Commits;
+        Sweep.ActiveCondition = false;
+        Sweep.Preview.reset();
+        if (Sweep.Verb == DraftingSweepVerb::Offset) State.FocusedStep = State.Document.Tree.Steps.back().Label;   // O again offsets the offset
+        else
+        {
+            State.FocusedStep = {};
+            State.PickMode    = DraftingPickMode::Solid;
+            if (State.Document.Tree.Steps.back().Combination == FeatureCombination::Separate || State.Document.Tree.Steps.back().Combination == FeatureCombination::New)
+                SelectDraftingName(State.Document, DraftingSelectionKind::Body, State.Document.Tree.Steps.back().Label, false);
+        }
+    }
+    Conclude(State, Outcome);
+}
+
+void DriveSweepSession(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, bool HoveredCondition)
+{
+    DraftingSweepSession& Sweep = State.Sweep;
+    ImGuiIO& Io = ImGui::GetIO();
+    double Typed = 0.0;
+    if (ParseTypedAmount(Sweep.Typed, Typed)) Sweep.Amount = Typed;
+    else
+    {
+        if (HoveredCondition && !ImGui::IsAnyMouseDown() && Io.MouseDelta.x != 0.0f) Sweep.Drift += Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5;
+        Sweep.Amount = Io.KeyCtrl ? Sweep.Drift : std::round(Sweep.Drift / SweepSnap) * SweepSnap;
+    }
+    if (Sweep.Verb == DraftingSweepVerb::Pipe) Sweep.Amount = std::max(Sweep.Amount, 0.001);
+    if (Sweep.Amount == Sweep.StagedAmount && Sweep.Combination == Sweep.StagedCombination) return;
+    Sweep.StagedAmount      = Sweep.Amount;
+    Sweep.StagedCombination = Sweep.Combination;
+    Sweep.Refusal.clear();
+    Sweep.Outline.clear();
+    if (Sweep.Verb == DraftingSweepVerb::Offset)
+    {
+        const SketchOffsetOutcome Outcome = PreviewDraftingOffset(State.Document, Sweep.Path, Sweep.Amount);
+        if (!Outcome.Refusal.empty()) { Sweep.Refusal = Legible(Outcome.Refusal); return; }
+        const FeatureStep* Step = nullptr;
+        for (const FeatureStep& Each : State.Document.Tree.Steps) if (Each.Label == Sweep.Path) Step = &Each;
+        if (!Step) return;
+        const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
+        for (const SketchCurve& Curve : Outcome.Sketch.Curves)
+        {
+            std::vector<Vector3> Line;
+            for (const Vector2& Sample : SampleSketchCurve(Outcome.Sketch, Curve)) Line.push_back(PlacePlanePoint(Plane, Sample));
+            Sweep.Outline.push_back(std::move(Line));
+        }
+        return;
+    }
+    Sweep.Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
+    const DraftingCommandOutcome Outcome = PipeDraftingPath(*Sweep.Preview, Sweep.Path, Sweep.Amount, Sweep.Combination, BooleanTarget(State));
+    if (!Outcome.AcceptedCondition) { Sweep.Refusal = Legible(Outcome.Refusal); Sweep.Preview.reset(); return; }
+    Sweep.PreviewScene = BuildDraftingScene(*Sweep.Preview);
+}
+
+void DrawSweepOutline(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    if (!State.Sweep.ActiveCondition) return;
+    for (const std::vector<Vector3>& Line : State.Sweep.Outline)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector3& Point : Line) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x4d, 0xff, 0x9f, 0xff), 3.0f);
+    }
+}
+
+// J: the focused sketch (else the newest) welds with every coplanar sketch touching it.
+void JoinSketches(DraftingWorkspaceState& State)
+{
+    std::string Base = FocusedSketchCondition(State) ? State.FocusedStep : std::string{};
+    if (Base.empty()) for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend() && Base.empty(); ++Step) if (Step->Kind == FeatureStepKind::Sketch) Base = Step->Label;
+    if (Base.empty()) { Announce(State, "Join (J) needs sketches: draw some first"); return; }
+    const std::vector<std::string> Group = DraftingJoinCandidates(State.Document, Base);
+    if (Group.size() < 2) { Announce(State, "Join (J): no other sketch touches " + CaptionOf(State.Document, Base) + " (draw from its ends, or across it)"); return; }
+    const DraftingCommandOutcome Outcome = JoinDraftingSketches(State.Document, Group);
+    if (Outcome.AcceptedCondition) State.FocusedStep = Base;
+    Conclude(State, Outcome);
+}
+
+// H / Shift+H / Alt+H / Ctrl+H: visibility is appearance (no regeneration) but the scene drops hidden bodies.
+void ChangeVisibility(DraftingWorkspaceState& State, DraftingVisibilityVerb Verb)
+{
+    const DraftingCommandOutcome Outcome = ChangeDraftingVisibility(State.Document, Verb);
+    if (Outcome.AcceptedCondition)
+    {
+        RefreshDraftingScene(State, true);
+        Announce(State, Compose("%s · %d hidden", Outcome.Label.c_str(), int(State.Document.Appearance.HiddenBodies.size())));
+    }
+    else Announce(State, "Refused: " + Outcome.Refusal);
+}
+
+// Ctrl+C: remember the picked bodies and the step they stand after; Ctrl+V pastes them in place as they stood then.
+void CopyBodies(DraftingWorkspaceState& State)
+{
+    const std::vector<std::string> Keys = PickedBodies(State.Document);
+    if (Keys.empty() || State.Document.Tree.Steps.empty()) { Announce(State, "Copy (Ctrl+C) needs picked bodies (mode 4)"); return; }
+    State.Clipboard = { Keys, State.Document.Tree.Steps.back().Label };
+    std::string Captions;
+    for (const std::string& Key : Keys) Captions += (Captions.empty() ? "" : ", ") + DraftingBodyCaption(State.Document, Key);
+    Announce(State, "Copied " + Captions);
+}
+
+void PasteBodies(DraftingWorkspaceState& State)
+{
+    const DraftingCommandOutcome Outcome = DuplicateDraftingBodies(State.Document, State.Clipboard.Keys, TranslationMap({}), State.Clipboard.Source.empty() ? std::string("—") : State.Clipboard.Source);
+    if (Outcome.AcceptedCondition) State.PickMode = DraftingPickMode::Solid;
+    Conclude(State, Outcome);
 }
 
 void DrawBooleanCard(DraftingWorkspaceState& State)
@@ -2193,6 +2574,18 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (LeftClick && !OverCube && Drawing.PointerCondition) AppendDrawingPoint(State, Point, Closing);
         if (RightClick && !OverCube && State.Drawing.ActiveCondition) FinishDrawingSession(State, false);
     }
+    else if (State.Transform.ActiveCondition)
+    {
+        DriveTransformSession(State, Frame, Local);
+        if (LeftClick && !OverCube) ApplyTransformSession(State);
+        else if (RightClick && !OverCube) CancelTransformSession(State);
+    }
+    else if (State.Sweep.ActiveCondition)
+    {
+        DriveSweepSession(State, Frame, Hovered);
+        if (LeftClick && !OverCube) ApplySweepSession(State);
+        else if (RightClick && !OverCube) CancelSweepSession(State);
+    }
     else if (State.Trim.ActiveCondition)
     {
         HoverTrimPiece(State, Frame, Local, Hovered && !OverCube);
@@ -2241,6 +2634,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
     DrawTrimPreview(State, Canvas, Frame);
+    DrawSweepOutline(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
@@ -2306,7 +2700,30 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
-    const char* Hint = State.Drawing.ActiveCondition
+    if (State.Transform.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        const DraftingTransformSession& Transform = State.Transform;
+        DrawStatusPill(Canvas, Below, Compose("%s%s · %d body(ies)", Transform.DuplicateCondition ? "Duplicate · " : "", Transform.Readout.c_str(), int(Transform.Keys.size())), Transform.Refusal.empty() ? ActiveColour : RefusalColour);
+        if (!Transform.Refusal.empty()) DrawStatusPill(Canvas, Below, Transform.Refusal, RefusalColour);
+    }
+    if (State.Sweep.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        const DraftingSweepSession& Sweep = State.Sweep;
+        const std::string Boolean = Sweep.Verb == DraftingSweepVerb::Pipe ? std::string(" · ") + (Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(Sweep.Combination)) : std::string{};
+        DrawStatusPill(Canvas, Below, Compose("%s %s %s m%s%s", Sweep.Verb == DraftingSweepVerb::Offset ? "Offset" : "Pipe", CaptionOf(State.Document, Sweep.Path).c_str(), FormatLength(Sweep.Amount).c_str(), Boolean.c_str(),
+                                              Sweep.Typed.empty() ? "" : (" · typed " + Sweep.Typed).c_str()), Sweep.Refusal.empty() ? ActiveColour : RefusalColour);
+        if (!Sweep.Refusal.empty()) DrawStatusPill(Canvas, Below, Sweep.Refusal, RefusalColour);
+    }
+    const char* Hint = State.Transform.ActiveCondition
+                           ? (State.Transform.Verb == DraftingTransformVerb::Move ? "Move: pointer (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / Enter commit · Esc / right-click cancel"
+                              : State.Transform.Verb == DraftingTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / Enter commit · Esc / right-click cancel"
+                              : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / Enter commit · Esc / right-click cancel")
+                       : State.Sweep.ActiveCondition
+                           ? (State.Sweep.Verb == DraftingSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / Enter commit · Esc / right-click cancel"
+                              : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
+                       : State.Drawing.ActiveCondition
                            ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (Ctrl free) · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == DraftingDrawingKind::Line ? "Click points (Ctrl free) · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == DraftingDrawingKind::Rectangle ? "Click two corners (Ctrl free) · Alt centre / corner · Ctrl+Z drop · Esc abort"
@@ -2998,6 +3415,45 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         return;
     }
 
+    // [command='move' | 'rotate' | 'scale' | 'duplicate'] — X / Y / Z axis, Shift+X / Y / Z plane (move), the verb's own key
+    // returns to screen / uniform, digits type the amount, Enter commits, Esc cancels.
+    if (State.Transform.ActiveCondition)
+    {
+        DraftingTransformSession& Transform = State.Transform;
+        if (CollectTypedAmount(Transform.Typed)) Transform.StagedCondition = false;
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyTransformSession(State);
+        else if (Pressed(ImGuiKey_Escape)) CancelTransformSession(State);
+        else if (!Control && !Alternate)
+        {
+            static const ImGuiKey AxisKeys[] = { ImGuiKey_X, ImGuiKey_Y, ImGuiKey_Z };
+            for (int Axis = 0; Axis < 3; ++Axis)
+                if (Pressed(AxisKeys[Axis]))                                                  // gizmo:move:x … · shift-z → xy plane …
+                {
+                    Transform.Axis           = Axis;
+                    Transform.PlaneCondition = Shift && Transform.Verb == DraftingTransformVerb::Move;
+                }
+            const ImGuiKey Own = Transform.Verb == DraftingTransformVerb::Move ? ImGuiKey_G : Transform.Verb == DraftingTransformVerb::Rotate ? ImGuiKey_R : ImGuiKey_S;
+            if (Pressed(Own)) { Transform.Axis = -1; Transform.PlaneCondition = false; }       // gizmo:move:screen · rotate:screen · scale:xyz
+        }
+        return;
+    }
+
+    // [command='offset-curve' | 'pipe'] — digits type the amount, Q / W / E / R combine (pipe), Enter commits, Esc cancels.
+    if (State.Sweep.ActiveCondition)
+    {
+        if (CollectTypedAmount(State.Sweep.Typed)) State.Sweep.StagedAmount = -1.0e300;
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplySweepSession(State);
+        else if (Pressed(ImGuiKey_Escape)) CancelSweepSession(State);
+        else if (!Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_Q)) ChooseSweepCombination(State, FeatureCombination::Union);        // keyboard:pipe:union
+            if (Pressed(ImGuiKey_W)) ChooseSweepCombination(State, FeatureCombination::Difference);   // keyboard:pipe:difference
+            if (Pressed(ImGuiKey_E)) ChooseSweepCombination(State, FeatureCombination::Intersection); // keyboard:pipe:intersect
+            if (Pressed(ImGuiKey_R)) ChooseSweepCombination(State, FeatureCombination::Separate);     // keyboard:pipe:new-body
+        }
+        return;
+    }
+
     // Viewport navigation (any modifier state the keymap names).
     if (Pressed(ImGuiKey_Keypad1)) PresentView(State, Control ? DraftingViewPreset::Back : DraftingViewPreset::Front);
     if (Pressed(ImGuiKey_Keypad3)) PresentView(State, Control ? DraftingViewPreset::Left : DraftingViewPreset::Right);
@@ -3021,8 +3477,9 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         }
         if (Pressed(ImGuiKey_O)) State.PopupRequest = "Open document";
         if (Pressed(ImGuiKey_N)) StartNewDocument(State);
-        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) Announce(State, "Copy / paste: not available yet");
-        if (Pressed(ImGuiKey_H)) Announce(State, "Invert hidden: not available (no per-face visibility)");
+        if (Pressed(ImGuiKey_C)) CopyBodies(State);                                         // edit:copy
+        if (Pressed(ImGuiKey_V)) PasteBodies(State);                                        // edit:paste
+        if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::InvertHidden);   // invert-hidden
         if (Pressed(ImGuiKey_G)) Announce(State, "Group: not available");
         if (Pressed(ImGuiKey_D)) Announce(State, "Place: not available");
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Selection convert: not available yet");
@@ -3039,7 +3496,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_E)) Announce(State, "Evolution: not available");
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
-        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
+        if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::UnhideAll);       // unhide-all
+        if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
         return;
     }
     if (Shift)
@@ -3048,12 +3506,13 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_X)) OpenConstruct(State, DraftingConstructKind::Cylinder);
         if (Pressed(ImGuiKey_Z)) OpenConstruct(State, DraftingConstructKind::Sphere);
         if (Pressed(ImGuiKey_R)) RepeatLastCommand(State);
-        if (Pressed(ImGuiKey_D)) Announce(State, "Duplicate: not available yet");
+        if (Pressed(ImGuiKey_D)) OpenTransformSession(State, DraftingTransformVerb::Move, true);        // duplicate (then move)
         if (Pressed(ImGuiKey_A)) OpenDrawingSession(State, DraftingDrawingKind::Line);                  // line
         if (Pressed(ImGuiKey_S)) OpenDrawingSession(State, DraftingDrawingKind::Curve);                 // curve
         if (Pressed(ImGuiKey_Q)) OpenDrawingSession(State, DraftingDrawingKind::Rectangle);             // corner-rectangle
         if (Pressed(ImGuiKey_W)) OpenDrawingSession(State, DraftingDrawingKind::Circle);                // center-circle
-        if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_P)) Announce(State, "Not available in this modeller");
+        if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::HideUnselected);       // hide-unselected
+        if (Pressed(ImGuiKey_P)) Announce(State, "Not available in this modeller");
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Mode toggles: one mode at a time (2 / 3 / 4 / 5)");
         return;
     }
@@ -3084,12 +3543,15 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     }
     if (Pressed(ImGuiKey_Space)) FrameSelection(State);
     if (Pressed(ImGuiKey_Q)) OpenBooleanSession(State);                                    // command:boolean
-    if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
-    if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
+    if (Pressed(ImGuiKey_G)) OpenTransformSession(State, DraftingTransformVerb::Move, false);       // command:move
+    if (Pressed(ImGuiKey_R)) OpenTransformSession(State, DraftingTransformVerb::Rotate, false);     // command:rotate
+    if (Pressed(ImGuiKey_S)) OpenTransformSession(State, DraftingTransformVerb::Scale, false);      // command:scale
+    if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::HideSelected);         // hide-selected
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
-    if (Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_O))
-        Announce(State, "Not available in this modeller");
+    if (Pressed(ImGuiKey_J)) JoinSketches(State);                                          // command:join-curves
+    if (Pressed(ImGuiKey_O)) OpenSweepSession(State, DraftingSweepVerb::Offset);           // command:offset-curve
+    if (Pressed(ImGuiKey_P)) OpenSweepSession(State, DraftingSweepVerb::Pipe);             // command:pipe
     if (Pressed(ImGuiKey_Escape))
     {
         ClearDraftingSelection(State.Document);
@@ -3255,6 +3717,8 @@ void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTe
 const DraftingScene& DisplayedDraftingScene(const DraftingWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
+    if (State.Transform.ActiveCondition && State.Transform.Preview && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
+    if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
     return State.Scene;
 }
 
@@ -3270,6 +3734,8 @@ DraftingSceneStates DisplayedDraftingStates(const DraftingWorkspaceState& State)
 {
     const DraftingScene& Scene = DisplayedDraftingScene(State);
     DraftingSceneStates States = &Scene == &State.Bevel.PreviewScene ? ComposeDraftingStates(Scene, State.Bevel.Preview->Selection, State.HoverIdentity)
+                               : &Scene == &State.Transform.PreviewScene ? ComposeDraftingStates(Scene, State.Transform.Preview->Selection, 0)
+                               : &Scene == &State.Sweep.PreviewScene ? ComposeDraftingStates(Scene, State.Sweep.Preview->Selection, 0)
                                                                       : ComposeDraftingStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
     // 📝 Matcap layers ride in bits 8 … 15 of each face word (DraftingSurface.slang).
     const std::vector<uint32_t> Layers = ComposeDraftingMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);

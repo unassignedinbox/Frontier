@@ -138,11 +138,12 @@ Planned algorithm (Piegl & Tiller, *The NURBS Book*, ch. 9):
 |---|---|
 | `l` loft | ④ loft through the selected curves; crossing curves → network (V5); G0 / G1 / G2 buttons (V6) |
 | `alt-x` mirror (gizmo x) | V7 mirror every panel through x = 0 |
-| `j` join-curves | join fitted pieces split at corners |
-| `o` offset-curve | offset a character line (shut lines) |
+| `j` join-curves | 🟢 built for sketches: touching coplanar sketches weld into one (`JoinSketchModels`, W22); joining fitted SpaceCurves is not built 🚧 |
+| `o` offset-curve | 🟢 built for planar sketches (exact for lines / arcs, refused when a piece would vanish or turn inside out); offsetting a SpaceCurve on a panel (shut lines) is not built 🚧 |
 | `c` cut · `x` delete | 🟢 built: split a panel by a character line seen along the view axis, delete the unwanted piece (T1–T3) |
 | `t` trim | 🟢 built for sketch curves: the piece between crossings comes off (T4); surfaces are trimmed with `c` |
-| `p` pipe | exists as `PathSweep` |
+| `p` pipe | 🟢 built: P on a sketch line / curve or a selected SpaceCurve (`PipeAlongCurve`, swept NURBS side within 10⁻⁴ · r) |
+| `g` / `r` / `s` · Shift+D · `h` | 🟢 built: move / rotate / scale and duplicate whole bodies (Transform / Duplicate steps keep the persistent names), hide to look behind a panel |
 | `1` control-point mode | G9 pole editing |
 | Shift+S curve (Phase B) | hand-drawn planar guide curves next to the imported ones |
 

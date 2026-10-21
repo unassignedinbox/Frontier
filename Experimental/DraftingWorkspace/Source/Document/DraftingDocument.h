@@ -275,6 +275,10 @@ struct VehicleCurveFile;
 // removed. Refused when a merged sketch feeds a later step.
 [[nodiscard]] DraftingCommandOutcome JoinDraftingSketches(DraftingDocument& Document, const std::vector<std::string>& Sketches);
 
+// J from one sketch: Sketch first, then every coplanar sketch no later step uses that touches the group (end to end or
+// crossing), transitively, in tree order — what Plasticity's join-curves would weld.
+[[nodiscard]] std::vector<std::string> DraftingJoinCandidates(const DraftingDocument& Document, const std::string& Sketch);
+
 // Plasticity O: a new sketch step holding the exact offset of every chain of Sketch (Distance > 0: outward / left).
 [[nodiscard]] DraftingCommandOutcome OffsetDraftingSketch(DraftingDocument& Document, const std::string& Sketch, double Distance);
 [[nodiscard]] Modeller::SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance);

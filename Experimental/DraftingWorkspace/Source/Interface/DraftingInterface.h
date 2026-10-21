@@ -189,6 +189,75 @@ struct DraftingTrimSession
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
 };
 
+enum class DraftingTransformVerb : uint8_t
+{
+    Move   = 0,                                                                              // G
+    Rotate = 1,                                                                              // R
+    Scale  = 2,                                                                              // S
+};
+
+// 📝 Plasticity G / R / S on the picked bodies (Shift+D: duplicate, then move). The pointer drives the map from where
+//    the session opened: move along the screen plane, an axis (X / Y / Z) or the plane normal to one (Shift+X / Y / Z);
+//    rotate by the pointer's sweep about the pivot (screen axis or X / Y / Z); scale by its distance ratio to the pivot
+//    (uniform or one axis). Snaps 0.1 / 5° / ×0.1 unless Ctrl is held; typed digits override the pointer (m, °, ×).
+//    A staged document shows the result; click / Enter commits one command (one undo entry), Esc / right-click drops it.
+struct DraftingTransformSession
+{
+    bool                              ActiveCondition    = false;                            // [-]   - Session open
+    DraftingTransformVerb             Verb               = DraftingTransformVerb::Move;      // [-]   - G / R / S
+    bool                              DuplicateCondition = false;                            // [-]   - Shift+D: commit copies
+    std::vector<std::string>          Keys               = {};                               // [-]   - Bodies moved
+    int                               Axis               = -1;                               // [-]   - −1 screen · 0 x · 1 y · 2 z
+    bool                              PlaneCondition     = false;                            // [-]   - Move in the plane normal to Axis
+    bool                              StartCondition     = false;                            // [-]   - Pointer anchor taken
+    ImVec2                            Start              = {};                               // [px]  - Anchor (screen)
+    ImVec2                            StartLocal         = {};                               // [px]  - Anchor (viewport)
+    Modeller::Vector3                 Pivot              = {};                               // [len] - Bounds centre of the bodies
+    std::string                       Typed              = {};                               // [-]   - Typed amount
+    Modeller::AffineMap               Map                = {};                               // [-]   - Current map
+    Modeller::AffineMap               StagedMap          = {};                               // [-]   - Map the preview shows
+    bool                              StagedCondition    = false;                            // [-]   - A preview was built
+    std::unique_ptr<DraftingDocument> Preview            = {};                               // [-]   - Staged document
+    DraftingScene                     PreviewScene       = {};                               // [-]   - Its display arrays
+    std::string                       Readout            = {};                               // [-]   - "Move x 0.3"
+    std::string                       Refusal            = {};                               // [-]   - Why commit is refused
+    int                               Commits            = 0;                                // [-]   - Committed (script evidence)
+};
+
+enum class DraftingSweepVerb : uint8_t
+{
+    Offset = 0,                                                                              // O: offset-curve
+    Pipe   = 1,                                                                              // P: pipe
+};
+
+// 📝 Plasticity O (offset the focused sketch: a new sketch) and P (a tube along the focused sketch or the selected curve):
+//    horizontal pointer motion sets the distance / radius (Shift fine, snapped 0.01 unless Ctrl), typed digits override;
+//    P takes Q / W / E / R like extrude. The offset previews as an outline, the pipe as a staged document.
+struct DraftingSweepSession
+{
+    bool                                        ActiveCondition   = false;                   // [-]   - Session open
+    DraftingSweepVerb                           Verb              = DraftingSweepVerb::Offset; // [-] - O / P
+    std::string                                 Path              = {};                      // [-]   - Sketch step / curve label
+    double                                      Amount            = 0.1;                     // [len] - Offset distance / pipe radius
+    double                                      Drift             = 0.0;                     // [len] - Unsnapped pointer amount
+    std::string                                 Typed             = {};                      // [-]   - Typed amount
+    Modeller::FeatureCombination                Combination       = Modeller::FeatureCombination::Separate; // [-] - Pipe: Q / W / E / R
+    double                                      StagedAmount      = -1.0e300;                // [len] - Amount the preview shows
+    Modeller::FeatureCombination                StagedCombination = Modeller::FeatureCombination::Separate; // [-] - Its combination
+    std::unique_ptr<DraftingDocument>           Preview           = {};                      // [-]   - Pipe: staged document
+    DraftingScene                               PreviewScene      = {};                      // [-]   - Its display arrays
+    std::vector<std::vector<Modeller::Vector3>> Outline           = {};                      // [len] - Offset: preview curves (world)
+    std::string                                 Refusal           = {};                      // [-]   - Why commit is refused
+    int                                         Commits           = 0;                       // [-]   - Committed (script evidence)
+};
+
+// 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).
+struct DraftingClipboard
+{
+    std::vector<std::string> Keys   = {};                                                    // [-] - Copied body keys
+    std::string              Source = {};                                                    // [-] - Last step at copy time
+};
+
 // 📝 Box selection (Plasticity viewport-selector drag): a left drag from empty viewport space in modes 1 / 2 / 5 selects
 //    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes).
 struct DraftingBoxSelection
@@ -213,6 +282,9 @@ struct DraftingWorkspaceState
     DraftingBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     DraftingBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
     DraftingTrimSession                   Trim           = {};                               // [-]   - T: curve trim session
+    DraftingTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
+    DraftingSweepSession                  Sweep          = {};                               // [-]   - O / P session
+    DraftingClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)

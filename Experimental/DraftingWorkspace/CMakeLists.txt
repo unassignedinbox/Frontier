@@ -261,6 +261,15 @@ add_test(NAME DraftingTrimSplitWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingTrimSplitWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME DraftingEditingWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/EditingRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Editing.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/EditingWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingEditingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

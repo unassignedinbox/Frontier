@@ -207,6 +207,18 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "body-matcaps") return Numeric(double(Document.Appearance.BodyMatcaps.size()));
     if (Field == "boolean") return Numeric(State.Boolean.ActiveCondition ? 1 : 0);
     if (Field == "boolean-commits") return Numeric(double(State.Boolean.Commits));
+    if (Field == "transform") return Numeric(State.Transform.ActiveCondition ? 1 : 0);
+    if (Field == "transform-commits") return Numeric(double(State.Transform.Commits));
+    if (Field == "transform-readout") { Text = State.Transform.Readout; Number = double(Text.size()); return true; }
+    if (Field == "transform-preview-volume") return Numeric(State.Transform.Preview ? State.Transform.Preview->Summary.Volume : 0.0);
+    if (Field == "sweep") return Numeric(State.Sweep.ActiveCondition ? 1 : 0);
+    if (Field == "sweep-commits") return Numeric(double(State.Sweep.Commits));
+    if (Field == "sweep-amount") return Numeric(State.Sweep.Amount);
+    if (Field == "sweep-refusal") { Text = State.Sweep.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "sweep-outline") return Numeric(double(State.Sweep.Outline.size()));
+    if (Field == "hidden") return Numeric(double(Document.Appearance.HiddenBodies.size()));
+    if (Field == "scene-bodies") return Numeric(double(State.Scene.Bodies.size()));
+    if (Field == "clipboard") return Numeric(double(State.Clipboard.Keys.size()));
     if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
     if (Field == "trim-refusal")

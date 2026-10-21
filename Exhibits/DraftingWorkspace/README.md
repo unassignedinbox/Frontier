@@ -17,6 +17,7 @@
 | `Walkthrough/MatcapWalkthrough.md` | 30 / 30: Studio + 13 thumbnails; nothing selected → Brushed steel swatch dresses the body (steps stay 8); top cap + boss top → M picker → Brass (2 overrides, picker closes); M picker → front face Red plastic, boss side Chrome; three faces read `mixed`; 0 dangling; Alt+M on a face → body matcap, Alt+M on nothing → Studio; Ctrl+Z / Ctrl+Shift+Z |
 | `Walkthrough/MultiBodyWalkthrough.md` | 32 / 32: Construct · Block · New body (Block2 = 3 m³), Space; Construct · Cylinder · R (Cylinder3 through Block2, 3 bodies, sound); mode 4 + M picker: Block1 Brushed steel, Block2 Blue paint, Cylinder3 Brass (3 body overrides, steps unchanged); pick Block2, Shift-pick Cylinder3, Q → card, W, Enter → 2 bodies, Block2 = 2.497345 m³, 1 dangling override; Ctrl+Z → Cylinder3 back (0 dangling), Ctrl+Shift+Z |
 | `Walkthrough/TrimSplitWalkthrough.md` | 54 / 54: C with no cutter explains itself; Shift+A line x = 0.6 → C splits the 2 × 1 × 1 box into Cut1 0.6 + 1.4 (piece picked, mode 4); X / Ctrl+Z / Ctrl+Shift+Z; Shift+W circle r 0.3 → C → core 0.09π, X → holed block (genus 1, 2 − 0.09π); bonnet loft + Shift+S character curve in Top view → C → 2 sound sheets, X keeps the front panel; pentagram as one Shift+A chain, T hover previews the inner piece in red, 5 clicks → 10-line star, E 1 → V = 1.237928 (shoelace) |
+| `Walkthrough/EditingWalkthrough.md` | 76 / 76: G with nothing picked explains itself; mode 4 pick, G · X, pointer drag → staged copy `Move x (1, 0, 0)`, click commits (V 2); R · Z · 45 typed; S · Z · 2 → V 4, a second S cancelled by Esc; Shift+D · Y · 3 → `Extrude1Copy1` (V 8); Ctrl+C, X, Ctrl+V pastes it back; H / Alt+H / Shift+H / Ctrl+H with scene body counts, undo; L + complement → J → one 4-curve sketch → E → V 1; O 0.25 → 4-curve green outline → `Offset1`; P 0.2 · R → `Pipe1` 0.251327 (π · 0.04 · 2), sound |
 | `Walkthrough/VariableBlendWalkthrough.md` | 31 / 31: B, numeric 0.3, V (end size starts at 0.15, typed 0.1), Front view, F flips the anchor, C variable chamfer, D, Enter (one undo entry, caption `0.3 → 0.1`), Ctrl+Z / Ctrl+Shift+Z; preview and applied volumes equal the closed form to 10⁻⁶ |
 
 ## Key frames (`Walkthrough/`)
@@ -47,6 +48,12 @@
 | `104CutCore` · `105CutHole` | C with a drawn circle: the core comes out as its own body (0.09π); X leaves the holed block (genus 1) |
 | `106PanelCut` · `107PanelTrimmed` | Vehicle flow: bonnet loft cut along a Shift+S character curve seen from the top → two sound sheets; X leaves the trimmed front panel |
 | `108TrimHover` · `109TrimStar` · `110StarExtruded` | T on a self-crossing pentagram: the hovered inner piece previews in red; five clicks leave the star outline; E extrudes it (sound, genus 0, V = shoelace area) |
+| `111MovePreview` | G · X with the pointer: the staged copy stands 1 along x over the untouched sketch; the pill reads `Move x (1, 0, 0)` and the hint bar lists the session keys |
+| `112Rotate` · `113Scale` | R · Z · 45 typed turns the box about its centre; S · Z · 2 doubles its height (V 4) |
+| `114Duplicate` · `115Paste` | Shift+D · Y · 3: the copy, picked and active; Ctrl+C, X, Ctrl+V brings it back |
+| `116Hide` · `117InvertHidden` | H hides the picked copy (one body drawn, two in the document); Shift+H then Ctrl+H swap which one is shown |
+| `118Join` · `119OffsetPreview` | Two touching line sketches joined by J into one square; O · 0.25 previews the offset outline in green |
+| `120PipePreview` · `121Pipe` | P · 0.2 · R along a drawn line: the staged tube, then `Pipe1` as a second body (π · 0.04 · 2) |
 | `16WelcomeBack` · `17Recovered` | Recovery modal, then the continued document |
 | `19BevelSignChamfer` | Pointer moved left past zero: the session became a chamfer (0.8514 m, refused as wider than the edge) |
 | `20ShortcutExtrude` | E on the boss top: V 10.2228 → 10.6155 m³ |

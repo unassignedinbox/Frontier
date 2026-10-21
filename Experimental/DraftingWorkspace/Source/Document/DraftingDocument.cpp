@@ -1336,7 +1336,11 @@ DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const
             Step.Target    = Key;
             Step.Placement = Map;
             Step.Source    = Source;
-            Document.Captions[Step.Label] = NextCaption(Document, DraftingBodyCaption(Document, Key) + "Copy");
+            // "Block1" → "Block1Copy1"; a copy of a copy stays in the family ("Block1Copy1" → "Block1Copy2").
+            std::string Stem = DraftingBodyCaption(Document, Key);
+            const size_t Digits = Stem.find_last_not_of("0123456789");
+            if (Digits != std::string::npos && Digits + 1 < Stem.size() && Digits >= 3 && Stem.compare(Digits - 3, 4, "Copy") == 0) Stem.erase(Digits - 3);
+            Document.Captions[Step.Label] = NextCaption(Document, Stem + "Copy");
             Copies.push_back(Step.Label);
             Document.Tree.Steps.push_back(std::move(Step));
         }
@@ -1430,6 +1434,52 @@ DraftingCommandOutcome JoinDraftingSketches(DraftingDocument& Document, const st
         }
         return {};
     }, 0);
+}
+
+std::vector<std::string> DraftingJoinCandidates(const DraftingDocument& Document, const std::string& Sketch)
+{
+    std::vector<std::string> Group;
+    const FeatureStep* First = FindStep(Document, Sketch);
+    if (!First || First->Kind != FeatureStepKind::Sketch) return Group;
+    const OrthonormalFrame   Base = ElevatedPlane(Document.Tree, *First);
+    std::vector<SketchModel> Members{ SolvedSketch(Document, *First) };
+    Group.push_back(Sketch);
+    // Every other candidate, placed in the base plane's coordinates.
+    std::vector<std::pair<std::string, SketchModel>> Pending;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch || Step.Label == Sketch || DraftingSketchConsumedCondition(Document, Step.Label)) continue;
+        const OrthonormalFrame Plane = ElevatedPlane(Document.Tree, Step);
+        const Vector3          Apart = Plane.Origin - Base.Origin;
+        if (std::fabs(Dot(Plane.ZAxis, Base.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Base.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart))) continue;
+        SketchPlacement Placement;
+        Placement.Origin = { Dot(Apart, Base.XAxis), Dot(Apart, Base.YAxis) };
+        Placement.XAxis  = { Dot(Plane.XAxis, Base.XAxis), Dot(Plane.XAxis, Base.YAxis) };
+        Placement.YAxis  = { Dot(Plane.YAxis, Base.XAxis), Dot(Plane.YAxis, Base.YAxis) };
+        Pending.emplace_back(Step.Label, PlaceSketchModel(SolvedSketch(Document, Step), Placement));
+    }
+    for (bool GrownCondition = true; GrownCondition;)
+    {
+        GrownCondition = false;
+        for (auto Candidate = Pending.begin(); Candidate != Pending.end(); ++Candidate)
+        {
+            const double Join = 1.0e-9 * std::max(1.0, MeasureSketchScale(Candidate->second));
+            const bool Touching = std::any_of(Members.begin(), Members.end(), [&](const SketchModel& Member) { return SketchContactCondition(Member, Candidate->second, std::max(Join, 1.0e-9 * MeasureSketchScale(Member))); });
+            if (!Touching) continue;
+            Group.push_back(Candidate->first);
+            Members.push_back(Candidate->second);
+            Pending.erase(Candidate);
+            GrownCondition = true;
+            break;
+        }
+    }
+    // Tree order after the first (the join appends in that order).
+    std::stable_sort(Group.begin() + 1, Group.end(), [&](const std::string& A, const std::string& B)
+    {
+        const auto Position = [&](const std::string& Label) { return std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; }); };
+        return Position(A) < Position(B);
+    });
+    return Group;
 }
 
 SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance)
