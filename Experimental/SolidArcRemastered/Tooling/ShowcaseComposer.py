@@ -98,6 +98,17 @@ CaptureCaptions = {
     "54PoleDragLive"    : "Mode 1 pole drag: the curve previews live before the release commits",
     "55PoleMoved"       : "The release refits Section3 and regenerates the loft; undo restores it bit-exactly",
     "56SheetUnderside"  : "The open sheet seen from below: back faces render darker",
+    "111MovePreview"    : "G · X with the pointer: the staged copy moves 1 along x before the click commits a Transform step",
+    "112Rotate"         : "R · Z · 45 typed: the box turns about its centre, names and picks unchanged",
+    "113Scale"          : "S · Z · 2: the height doubles (V 4); a second S is cancelled by Esc",
+    "114Duplicate"      : "Shift+D · Y · 3: the copy stands 3 along y, picked and active",
+    "115Paste"          : "Ctrl+C, X, Ctrl+V: the copy comes back as it stood when copied",
+    "116Hide"           : "H hides the picked body: one drawn, two in the document",
+    "117InvertHidden"   : "Shift+H then Ctrl+H swap which body is shown",
+    "118Join"           : "J welds two touching line sketches into one closed square",
+    "119OffsetPreview"  : "O · 0.25: the green outline previews the offset sketch",
+    "120PipePreview"    : "P · 0.2 · R along a drawn line: the staged tube",
+    "121Pipe"           : "Pipe1 as a second body: π · 0.04 · 2 exact, audit sound",
 }
 
 #------------------------------------------------------------------------------------------------------------------------
