@@ -2,7 +2,9 @@
 
 This folder is the **single reference** for all editor UIs recovered from the commit history of
 `SultanAladin/Frontier-`, `SultanAladin/Frontier`, `SultanAladin/Slate` and `unassignedinbox/Slate`
-(search method + full provenance: [`../FOUND.md`](../FOUND.md)). Launcher: [`../index.html`](../index.html).
+(search method + full provenance: [`../FOUND.md`](../FOUND.md)). It also hosts the newly-built
+**MaterialLayerStack** (clearly marked below — created here, not recovered).
+Launcher: [`../index.html`](../index.html).
 
 Serve from the repo root (`python3 -m http.server 8080 --bind 0.0.0.0`), then open the paths below.
 
@@ -18,6 +20,12 @@ Serve from the repo root (`python3 -m http.server 8080 --bind 0.0.0.0`), then op
 ⚠️ **Keep `ProjectZeroEditor/`, `FractureEditor/`, `Fluid/`, `ParticleEditor/` as siblings** — they
 cross-open `../FractureEditor/index.html`, `../Fluid/dist/index.html`, `../ParticleEditor/index.html`.
 (`CliffSequence/` also reads `../Fluid/src/ThemeSpecification.css`.)
+
+## New exhibit built here — in Project-Zero's card language
+
+| Exhibit | Open | Origin | Notes |
+|---|---|---|---|
+| ★ **MaterialLayerStack** | `MaterialLayerStack/index.html` | **New/local — not recovered** | Cards-only layered procedural material editor modelled on Unreal Substrate slabs. Outer→base slabs with XYZ IOR/extinction/F0, thickness, normal/micro-normal vectors, transmission/Beer, subsurface, sheen, thin film and emission; procedural routing; composite sphere/swatches; presets, JSON import/export and browser autosave. Model/checks in its [README](MaterialLayerStack/README.md). |
 
 ## Other editors from those repos
 
@@ -62,5 +70,6 @@ cd Exhibits/Fluid          && npm install && npm run build
 cd Exhibits/FrontierEditor && npm install && npm run build
 cd Exhibits/WebFluidLab    && npm install && npx tsc && npx vite build --base ./
 cd Exhibits/FractureEditor && npm install && npm run build   # regenerates index.html
+cd Exhibits/MaterialLayerStack && node CheckMaterialStack.mjs # no build; verifies the pure model
 # ProjectZeroEditor/index.html is prebuilt; rebuilding needs the full upstream Frontier- tree.
 ```

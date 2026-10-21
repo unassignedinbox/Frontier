@@ -105,6 +105,7 @@ Exhibits/
   FractureEditor/              standalone fracture editor (prebuilt index.html, three.js render)
   Fluid/                       gas/smoke fluid editor — dist/ built here
   ParticleEditor/              standalone particle editor (no build)
+  MaterialLayerStack/          ★ NEW — cards-only layered procedural material slabs (created here)
   FrontierEditor/              older browser editor — dist/ built here
   RoadEditor/                  spline road editor from Slate (prebuilt dist/)
   SolidArc/                    geometry workspace from Frontier-
@@ -128,6 +129,10 @@ Also from the same branches, added when consolidating into `Exhibits/`:
 the rest of `Experimental/*` with an HTML entry (Frontier- `arena/10e50e56-frontier`) → the 9 folders above
 (`Experimental/Liquid` + `Experimental/Water` are README-only stubs upstream, not copied); and
 `Engine/Editor/*Surface.h` (+2 `*Controls.h`, 16 files, same branch) → `NativeSurfaces/` for reference.
+
+**New, not recovered:** `MaterialLayerStack/` was authored in this repo in Project-Zero's card language —
+a Substrate-style slab editor for layered procedural materials (outer coat → colour/metal film → base substrate,
+with XYZ IOR/F0/normals/transmission, thickness, procedural routing and a live composite preview).
 
 **Layout is load-bearing:** Project-Zero opens `../FractureEditor/index.html?object=…`,
 iframes `../Fluid/dist/index.html` and `../ParticleEditor/index.html`. Keep those four folders as siblings.
@@ -180,6 +185,9 @@ Fluid CSS requests at runtime).
 - `Exhibits/Fluid: npm test` → **22/22 pass**; `npm run build` clean.
 - `Exhibits/FractureEditor: node CheckGeometry.mjs` → **passed (168 material/primitive/seed cases…)** after the fix above.
 - `FrontierEditor` and `WebFluidLab` production builds clean (WebFluidLab rebuilt with `--base ./`).
+- New exhibit: `Exhibits/MaterialLayerStack: node CheckMaterialStack.mjs` → **PASS 566** (optics identities,
+  deterministic pattern ranges, normalization clamps, finite composite shading for all presets and JSON round-trip);
+  preview spheres were also rendered headlessly from the same model and inspected.
 - Not run: the Playwright/Chromium screenshot checks (`CheckBrowser.mjs` etc.) — no browser binary in
   this sandbox. Their earlier evidence is preserved in `Exhibits/FractureEditor/Captures/`.
 

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content="Layered procedural material stack — Substrate-style slabs as Project-Zero cards. Browser-local, no engine connection." />
+    <title>Material Layer Stack · Project-Zero</title>
+    <link rel="stylesheet" href="./MaterialLayerStack.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <a href="../ProjectZeroEditor/index.html" title="Return to Project-Zero">◈ <b>Frontier</b></a>
+      <span class="divider"></span><span>Project-Zero</span>
+      <span class="divider"></span><span>Material / Layer Stack</span>
+      <span class="title-tail">SLAB AUTHORING · CARDS ONLY</span>
+    </header>
+
+    <main class="wall">
+      <!-- ══════════ the stack (outermost slab first — light hits the top card first) ══════════ -->
+      <section aria-label="Material layer stack">
+        <div class="col-head">
+          <h2>Layer stack</h2>
+          <span>☀ LIGHT / CAMERA ↓ &nbsp;·&nbsp; TOP CARD = OUTERMOST FILM &nbsp;·&nbsp; BOTTOM CARD = BASE SUBSTRATE</span>
+        </div>
+        <div id="stack"></div>
+        <p class="state-line" style="margin-left:6px"><i></i><span id="stack-foot">Autosaves to this browser. Export JSON to keep a material.</span></p>
+      </section>
+
+      <!-- ══════════ side cards ══════════ -->
+      <aside aria-label="Material controls and composite">
+        <div class="col-head"><h2>Material</h2><span>ONE SLAB GRAPH</span></div>
+
+        <section class="generic-card" aria-label="Material">
+          <header class="layer-card" style="padding:0">
+            <div>
+              <h3>Material</h3>
+              <small style="font-size:9px;letter-spacing:1.2px;color:#686868">FRONTIER.LAYERSTACK/1</small>
+            </div>
+          </header>
+          <label class="field"><span>Material name</span>
+            <input id="material-name" class="material-name" type="text" maxlength="64" />
+          </label>
+
+          <h4 class="tiny-label" style="margin:16px 0 4px">PRESETS — COMPLETE STACKS</h4>
+          <div id="presets" class="preset-grid"></div>
+
+          <h4 class="tiny-label" style="margin:18px 0 4px">ADD SLAB (INSERTED AS NEW OUTER FILM)</h4>
+          <div id="add-layer" class="add-grid"></div>
+          <p>Every slab carries the full parameter set — a type is only a starting
+             template, like an Unreal Substrate slab. Reorder with ↑ ↓ on each card.</p>
+        </section>
+
+        <section class="generic-card" aria-label="Composite">
+          <header class="layer-card" style="padding:0">
+            <div>
+              <h3>Composite</h3>
+              <small style="font-size:9px;letter-spacing:1.2px;color:#686868">APPROXIMATE PREVIEW · SCHLICK + BEER</small>
+            </div>
+          </header>
+          <div class="preview-visual"><canvas id="preview" width="340" height="300" aria-label="Composite material preview"></canvas></div>
+          <div class="segmented" id="preview-mode" role="group" aria-label="Preview shape" style="margin-top:10px">
+            <button data-mode="sphere" aria-pressed="true">Sphere</button>
+            <button data-mode="flat" aria-pressed="false">Flat swatch</button>
+          </div>
+          <div id="composite-state"></div>
+          <h4 class="tiny-label" style="margin:16px 0 2px">CROSS-SECTION (LOG THICKNESS)</h4>
+          <svg id="cross" class="cross-svg" viewBox="0 0 340 110" role="img" aria-label="Layer cross-section"></svg>
+          <div id="composite-readouts"></div>
+          <div id="composite-warnings"></div>
+        </section>
+
+        <section class="generic-card" aria-label="Slab graph">
+          <header class="layer-card" style="padding:0">
+            <div>
+              <h3>Slab graph</h3>
+              <small style="font-size:9px;letter-spacing:1.2px;color:#686868">READ-ONLY SUMMARY</small>
+            </div>
+          </header>
+          <pre id="slab-graph" class="slab-graph"></pre>
+          <div class="row-btns"><button id="copy-graph">Copy summary</button></div>
+        </section>
+
+        <section class="generic-card" aria-label="Data">
+          <header class="layer-card" style="padding:0">
+            <div>
+              <h3>Data</h3>
+              <small style="font-size:9px;letter-spacing:1.2px;color:#686868">JSON · LOCAL ONLY</small>
+            </div>
+          </header>
+          <div class="row-btns">
+            <button id="export-json">Download JSON</button>
+            <button id="copy-json">Copy JSON</button>
+            <button id="reset-stack">Reset</button>
+          </div>
+          <label class="field"><span>Import — paste a frontier.layerstack/1 export</span>
+            <textarea id="import-text" rows="6" spellcheck="false" placeholder="{ &quot;schema&quot;: &quot;frontier.layerstack/1&quot;, &quot;layers&quot;: [ … ] }"></textarea>
+          </label>
+          <div class="row-btns">
+            <button id="import-apply">Apply import</button>
+            <button id="import-file-btn">Load file…</button>
+            <input id="import-file" type="file" accept="application/json,.json" hidden />
+          </div>
+          <p id="data-note">Autosave: <code>localStorage frontier.layerstack.v1</code>. Nothing leaves the browser.</p>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="./MaterialLayerStack.js"></script>
+  </body>
+</html>
