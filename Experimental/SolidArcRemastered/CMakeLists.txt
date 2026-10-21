@@ -61,6 +61,7 @@ add_library(SolidArcRemastered STATIC
     Source/Sketch/SketchProfile.cpp
     Source/Sketch/SketchSpline.cpp
     Source/Sketch/SketchCatalogue.cpp
+    Source/Sketch/SketchTrim.cpp
     Source/Feature/ProfileSweep.cpp
     Source/Feature/BodyCut.cpp
     Source/Feature/PathSweep.cpp
@@ -129,6 +130,8 @@ target_link_libraries(FeatureValidation PRIVATE SolidArcRemastered)
 
 add_executable(SketchValidation Validation/SketchValidation.cpp)
 target_link_libraries(SketchValidation PRIVATE SolidArcRemastered)
+add_executable(SketchTrimValidation Validation/SketchTrimValidation.cpp)
+target_link_libraries(SketchTrimValidation PRIVATE SolidArcRemastered)
 add_executable(SplineValidation Validation/SplineValidation.cpp)
 target_link_libraries(SplineValidation PRIVATE SolidArcRemastered)
 
@@ -161,6 +164,7 @@ add_test(NAME TessellationValidation COMMAND TessellationValidation)
 add_test(NAME BlendValidation COMMAND BlendValidation)
 add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)
 add_test(NAME SketchValidation COMMAND SketchValidation)
+add_test(NAME SketchTrimValidation COMMAND SketchTrimValidation)
 add_test(NAME SplineValidation COMMAND SplineValidation)
 add_test(NAME FeatureValidation COMMAND FeatureValidation)
 add_test(NAME CorpusValidation COMMAND CorpusValidation)

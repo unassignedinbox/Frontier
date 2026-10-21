@@ -207,6 +207,34 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "body-matcaps") return Numeric(double(Document.Appearance.BodyMatcaps.size()));
     if (Field == "boolean") return Numeric(State.Boolean.ActiveCondition ? 1 : 0);
     if (Field == "boolean-commits") return Numeric(double(State.Boolean.Commits));
+    if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
+    if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
+    if (Field == "trim-refusal")
+    {
+        Text   = State.Trim.Refusal;
+        Number = double(Text.size());
+        return true;
+    }
+    if (Field == "trim-hover")
+    {
+        Text.clear();
+        if (State.Trim.HoverCondition)
+        {
+            const auto Caption = Document.Captions.find(State.Trim.Sketch);
+            const auto Solved  = Document.Regeneration.Sketches.find(State.Trim.Sketch);
+            Text = (Caption != Document.Captions.end() ? Caption->second : State.Trim.Sketch);
+            if (Solved != Document.Regeneration.Sketches.end() && State.Trim.Curve >= 0 && State.Trim.Curve < int(Solved->second.Curves.size()))
+                Text += " · " + Modeller::SketchCurveName(Solved->second.Curves[State.Trim.Curve]);
+        }
+        Number = double(Text.size());
+        return true;
+    }
+    if (Field == "sketch-curve-total")
+    {
+        double Total = 0.0;
+        for (const auto& [Label, Sketch] : Document.Regeneration.Sketches) Total += double(Sketch.Curves.size());
+        return Numeric(Total);
+    }
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
     if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);

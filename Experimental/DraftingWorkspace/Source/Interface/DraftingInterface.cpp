@@ -700,9 +700,8 @@ bool ProjectWorldPoint(const DraftingWorkspaceState& State, const DraftingCamera
 }
 
 // Viewport pixel (local) → construction-plane coordinates; false when the ray runs parallel to the plane.
-bool IntersectConstructionPlane(const DraftingCameraFrame& Frame, ImVec2 Local, int GridPlane, Vector2& Point)
+bool IntersectSketchPlane(const DraftingCameraFrame& Frame, ImVec2 Local, const OrthonormalFrame& Plane, Vector2& Point)
 {
-    const OrthonormalFrame Plane  = DraftingSketchPlane(GridPlane);
     const DraftingRay      Ray    = CastDraftingRay(Frame, Local.x, Local.y);
     const Vector3          Origin{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] }, Direction{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
     const double           Facing = Dot(Direction, Plane.ZAxis);
@@ -710,6 +709,11 @@ bool IntersectConstructionPlane(const DraftingCameraFrame& Frame, ImVec2 Local, 
     const Vector3 Hit = Origin + Direction * (Dot(Plane.Origin - Origin, Plane.ZAxis) / Facing);
     Point = { Dot(Hit - Plane.Origin, Plane.XAxis), Dot(Hit - Plane.Origin, Plane.YAxis) };
     return true;
+}
+
+bool IntersectConstructionPlane(const DraftingCameraFrame& Frame, ImVec2 Local, int GridPlane, Vector2& Point)
+{
+    return IntersectSketchPlane(Frame, Local, DraftingSketchPlane(GridPlane), Point);
 }
 
 [[nodiscard]] DraftingDrawingRequest ComposeDrawingRequest(const DraftingDrawingSession& Drawing, bool PointerCondition, bool ClosedCondition)
@@ -908,6 +912,107 @@ void ApplyCut(DraftingWorkspaceState& State)
         SelectDraftingName(State.Document, DraftingSelectionKind::Body, State.Document.Tree.Steps.back().Label, false);
     }
     Conclude(State, Outcome);
+}
+
+[[nodiscard]] OrthonormalFrame ElevatedSketchPlane(const DraftingDocument& Document, const FeatureStep& Step)
+{
+    OrthonormalFrame Plane = Step.Plane;
+    Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
+    return Plane;
+}
+
+void OpenTrimSession(DraftingWorkspaceState& State)
+{
+    const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
+    if (!SketchCondition) { Announce(State, "Trim needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
+    State.Trim = { true, false, {}, -1, {}, {}, {}, State.Trim.Commits };
+    State.Drawing.ActiveCondition = false;
+    Announce(State, "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
+}
+
+void CloseTrimSession(DraftingWorkspaceState& State)
+{
+    State.Trim.ActiveCondition = false;
+    State.Trim.HoverCondition  = false;
+    State.Trim.Preview.clear();
+    Announce(State, "Trim ended");
+}
+
+// 📝 The sketch curve nearest the pointer in pixels (≤ 8 px; later steps win ties), the pointer on its plane, and the
+//    piece that would come off (red preview) — recomputed every frame from the solved sketches.
+void HoverTrimPiece(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
+{
+    DraftingTrimSession& Trim = State.Trim;
+    Trim.HoverCondition = false;
+    Trim.Preview.clear();
+    Trim.Refusal.clear();
+    if (!PointerCondition) return;
+    const ImVec2       Mouse   = ImGui::GetIO().MousePos;
+    double             Nearest = 8.0;                                                        // [px] - Pick radius
+    const FeatureStep* Chosen  = nullptr;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        const auto Solved = State.Document.Regeneration.Sketches.find(Step.Label);
+        if (Solved == State.Document.Regeneration.Sketches.end()) continue;
+        const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, Step);
+        for (int Curve = 0; Curve < int(Solved->second.Curves.size()); ++Curve)
+        {
+            std::vector<ImVec2> Pixels;
+            for (const Vector2& Sample : SampleSketchCurve(Solved->second, Solved->second.Curves[Curve]))
+            {
+                ImVec2 Pixel;
+                if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel);
+            }
+            for (size_t Index = 0; Index + 1 < Pixels.size(); ++Index)
+            {
+                const double AlongX = Pixels[Index + 1].x - Pixels[Index].x, AlongY = Pixels[Index + 1].y - Pixels[Index].y;
+                const double Square = AlongX * AlongX + AlongY * AlongY;
+                const double Share  = Square > 0.0 ? std::clamp(((Mouse.x - Pixels[Index].x) * AlongX + (Mouse.y - Pixels[Index].y) * AlongY) / Square, 0.0, 1.0) : 0.0;
+                const double Gap    = std::hypot(Pixels[Index].x + AlongX * Share - Mouse.x, Pixels[Index].y + AlongY * Share - Mouse.y);
+                if (Gap <= Nearest)
+                {
+                    Nearest    = Gap;
+                    Chosen     = &Step;
+                    Trim.Curve = Curve;
+                }
+            }
+        }
+    }
+    if (!Chosen) return;
+    const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Chosen);
+    Vector2 Pick;
+    if (!IntersectSketchPlane(Frame, Local, Plane, Pick)) return;
+    Trim.Sketch         = Chosen->Label;
+    Trim.Pick           = Pick;
+    Trim.HoverCondition = true;
+    const SketchTrimOutcome Outcome = PreviewDraftingTrim(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick });
+    Trim.Refusal = Outcome.Refusal;
+    if (Outcome.Refusal.empty()) for (const Vector2& Point : Outcome.Removed) Trim.Preview.push_back(PlacePlanePoint(Plane, Point));
+}
+
+void ApplyTrim(DraftingWorkspaceState& State)
+{
+    DraftingTrimSession& Trim = State.Trim;
+    if (!Trim.HoverCondition) { Announce(State, "Trim: no curve under the pointer"); return; }
+    const DraftingCommandOutcome Outcome = TrimDraftingSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick });
+    if (Outcome.AcceptedCondition)
+    {
+        ++Trim.Commits;
+        Trim.HoverCondition = false;
+        Trim.Preview.clear();
+        const bool FocusedCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == State.FocusedStep; });
+        if (!FocusedCondition) State.FocusedStep = {};
+    }
+    Conclude(State, Outcome);
+}
+
+void DrawTrimPreview(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    if (!State.Trim.ActiveCondition || State.Trim.Preview.size() < 2) return;
+    std::vector<ImVec2> Pixels;
+    for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
+    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0xff, 0x4d, 0x4d, 0xff), 4.0f);
 }
 
 void DrawBooleanCard(DraftingWorkspaceState& State)
@@ -2088,6 +2193,12 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (LeftClick && !OverCube && Drawing.PointerCondition) AppendDrawingPoint(State, Point, Closing);
         if (RightClick && !OverCube && State.Drawing.ActiveCondition) FinishDrawingSession(State, false);
     }
+    else if (State.Trim.ActiveCondition)
+    {
+        HoverTrimPiece(State, Frame, Local, Hovered && !OverCube);
+        if (LeftClick && !OverCube) ApplyTrim(State);
+        if (RightClick && !OverCube) CloseTrimSession(State);
+    }
     else if (State.Bevel.ActiveCondition)
     {
         const bool Idle = !ImGui::IsAnyMouseDown();
@@ -2129,6 +2240,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
+    DrawTrimPreview(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
@@ -2187,6 +2299,13 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         DrawStatusPill(Canvas, Below, Compose("%s · %d point(s)%s", DrawingCaption(Drawing).c_str(), int(Drawing.Points.size()), Pointer.c_str()), ActiveColour);
         if (!Drawing.Refusal.empty()) DrawStatusPill(Canvas, Below, Drawing.Refusal, RefusalColour);
     }
+    if (State.Trim.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        const DraftingTrimSession& Trim = State.Trim;
+        if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
+        else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
+    }
     const char* Hint = State.Drawing.ActiveCondition
                            ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (Ctrl free) · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == DraftingDrawingKind::Line ? "Click points (Ctrl free) · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
@@ -2194,6 +2313,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Drawing.Kind == DraftingDrawingKind::Circle ? "Click centre then rim (Ctrl free) · V two-point / centre · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == DraftingDrawingKind::Arc ? "Click start, end, then a point on the arc (Ctrl free) · Ctrl+Z drop · Esc abort"
                               : "Click both cap centres, then the rim (Ctrl free) · Ctrl+Z drop · Esc abort")
+                       : State.Trim.ActiveCondition
+                           ? "Trim: hover a curve (the red piece comes off between its crossings) · click removes it · Esc / T / right-click end"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == DraftingSessionVerb::Profile
                            ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition
@@ -2867,6 +2988,13 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_Keypad7)) PresentView(State, Control ? DraftingViewPreset::Bottom : DraftingViewPreset::Top);
     if (Pressed(ImGuiKey_Keypad5)) State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
 
+    // body[command='trim'] — click pieces to remove · Esc / T ends (the view keys above stay live).
+    if (State.Trim.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_T)) CloseTrimSession(State);
+        return;
+    }
+
     if (Control)
     {
         if (Pressed(ImGuiKey_Z)) { if (Shift) Redo(State); else Undo(State); }
@@ -2943,7 +3071,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_R) || Pressed(ImGuiKey_S)) Announce(State, "Move / rotate / scale bodies: not available (face edits: Face edit card)");
     if (Pressed(ImGuiKey_H)) Announce(State, "Hide: not available (no per-face visibility)");
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
-    if (Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_O))
+    if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
+    if (Pressed(ImGuiKey_J) || Pressed(ImGuiKey_P) || Pressed(ImGuiKey_O))
         Announce(State, "Not available in this modeller");
     if (Pressed(ImGuiKey_Escape))
     {

@@ -13,6 +13,7 @@
 #include "Document/DraftingMatcap.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
+#include "Sketch/SketchTrim.h"
 #include "Topology/ModelPartition.h"
 
 #include <cstdint>
@@ -106,6 +107,14 @@ struct DraftingCutRequest
     std::string       Target    = {};                                                        // [-] - Body key (empty = active body)
     std::string       Cutter    = {};                                                        // [-] - Sketch step or SpaceCurve label
     Modeller::Vector3 Direction = { 0.0, 0.0, -1.0 };                                        // [-] - SpaceCurve cutters: projection direction
+};
+
+// 📝 Pick is in the sketch's plane coordinates (the pointer met that plane).
+struct DraftingTrimRequest
+{
+    std::string       Sketch = {};                                                           // [-]   - Sketch step label
+    int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
+    Modeller::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
 };
 
 // 📝 Variable when EndSize is set: Size at each edge's anchor end, EndSize at its other end. The anchor is the edge's
@@ -227,6 +236,14 @@ struct VehicleCurveFile;
 //    Direction (the view axis). The outside piece keeps its key; the inside piece becomes body "Cut#n" (caption Cut1 …).
 //    Refused (document untouched) when the cut misses or cannot be closed.
 [[nodiscard]] DraftingCommandOutcome CutDraftingBody(DraftingDocument& Document, const DraftingCutRequest& Request);
+
+// 💡 Plasticity T (command:trim): the piece of the curve under Pick, between its crossings with the sketch's other curves
+//    and with every coplanar sketch, comes off (Modeller::TrimSketchCurve); one undo entry. A sketch left without
+//    curves is deleted when nothing uses it. Refused (document untouched) when a step that regenerated before now refuses
+//    (e.g. an extrude losing its closed profile), or when the trim itself refuses.
+[[nodiscard]] DraftingCommandOutcome TrimDraftingSketch(DraftingDocument& Document, const DraftingTrimRequest& Request);
+// The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
+[[nodiscard]] Modeller::SketchTrimOutcome PreviewDraftingTrim(const DraftingDocument& Document, const DraftingTrimRequest& Request);
 
 // Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
 [[nodiscard]] DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys);

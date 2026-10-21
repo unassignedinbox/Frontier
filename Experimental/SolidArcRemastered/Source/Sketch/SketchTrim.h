@@ -1,0 +1,75 @@
+/*====================================================================================================================================
+                                                           SKETCHTRIM.H
+====================================================================================================================================*/
+// 🧩 Curve trim (Plasticity T): the piece of a sketch curve under the pointer, between its neighbouring crossings, is removed
+
+#pragma once
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    INCLUDES
+//------------------------------------------------------------------------------------------------------------------------
+
+#include "Sketch/SketchProfile.h"
+#include "Sketch/SketchSolver.h"
+
+#include <string>
+#include <vector>
+
+namespace Frontier::SolidArcRemastered
+{
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    STRUCTS
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 One crossing of two oriented segments: fractions on both (EvaluateProfileSegment), and the meeting point.
+struct SegmentCrossing
+{
+    double  TargetFraction = 0.0;                                                            // [-]   - On the trimmed segment
+    double  CutterFraction = 0.0;                                                            // [-]   - On the cutting segment
+    Vector2 Position       = {};                                                             // [len] - Where they meet
+};
+
+// 📝 The trimmed sketch and what came off. Pieces counts what is left of the curve: 0 (erased whole: nothing crossed it,
+//    or a circle crossed once), 1 (an end piece came off, or a circle became an arc) or 2 (a middle piece came off, the
+//    curve keeps the first part and a new curve carries the second). Removed samples the piece that came off.
+struct SketchTrimOutcome
+{
+    SketchModel          Sketch        = {};                                                 // [-]   - After the trim
+    int                  Pieces        = 0;                                                  // [-]   - Left of the curve (0, 1, 2)
+    int                  Crossings     = 0;                                                  // [-]   - Distinct crossings found on the curve
+    double               FromFraction  = 0.0;                                                // [-]   - Removed piece start (target fraction)
+    double               ToFraction    = 1.0;                                                // [-]   - Removed piece end (circle: may exceed 1)
+    std::vector<Vector2> Removed       = {};                                                 // [len] - Removed piece polyline
+    std::string          Refusal       = {};                                                 // [-]   - Why nothing changed (empty: trimmed)
+};
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    PUBLIC FUNCTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+// 💡 Every crossing of Target with Cutter: polyline seeds (knot spans / ≤ 45° arc pieces, 24 samples each) refined by
+//    Newton on Target(s) − Cutter(t) = 0 over the exact curves, kept within Join; touching ends count. Sorted by
+//    TargetFraction, duplicates (≤ 10⁻⁹) merged. Overlapping collinear pieces have no isolated crossing and are skipped.
+[[nodiscard]] std::vector<SegmentCrossing> IntersectProfileSegments(const ProfileSegment& Target, const ProfileSegment& Cutter, double Join);
+
+// Fraction of the point of Segment nearest to Point (dense samples, then Newton on the tangent).
+[[nodiscard]] double LocateProfileFraction(const ProfileSegment& Segment, Vector2 Point);
+
+// 💡 Plasticity T on curve CurveIndex of a solved sketch: the crossings come from the sketch's other curves (all, also
+//    construction) and from Foreign (curves of coplanar sketches, already in this sketch's plane coordinates). The piece
+//    holding Pick between neighbouring crossings comes off:
+//      line / arc → shortened, or split in two (the second part is a new curve with the next identifier);
+//      circle     → the complementary arc (needs ≥ 2 crossings);
+//      no crossing on an open curve, or < 2 on a circle → the curve is erased (Plasticity behaviour);
+//      spline with crossings → refused (the point-defined forms have no exact split).
+//    Constraints: those on an erased curve drop and later curve references shift; a shortened line drops Length,
+//    EqualLength, Midpoint and Symmetric; a split line copies Horizontal, Vertical, Parallel, Perpendicular and Angle to
+//    its new part, a split arc copies Radius and EqualRadius. A new end made by a line, circle or arc of the same sketch
+//    is pinned to it (PointOnLine / PointOnCircle) so later solves keep the trim.
+[[nodiscard]] SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, const std::vector<ProfileSegment>& Foreign = {});
+
+// Curve CurveIndex erased: constraints on it dropped, later curve references shifted down. Points stay.
+void EraseSketchCurve(SketchModel& Sketch, int CurveIndex);
+
+} // namespace Frontier::SolidArcRemastered

@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstdio>
 #include <numbers>
+#include <limits>
 #include <set>
 
 namespace Frontier::DraftingWorkspace
@@ -310,31 +311,42 @@ DraftingCommandOutcome RunAppearanceCommand(DraftingDocument& Document, const st
     return Outcome;
 }
 
-// 📝 First refusal among the steps at or after FirstNew (the steps this command appended).
-[[nodiscard]] std::string RefusalFrom(const DraftingDocument& Document, size_t FirstNew)
+// 📝 First refusal among the steps at or after First that did not already refuse before the command (RefusedBefore:
+//    labels; the steps a command appends are never in it).
+[[nodiscard]] std::string RefusalFrom(const DraftingDocument& Document, size_t First, const std::set<std::string>& RefusedBefore)
 {
-    for (size_t Index = FirstNew; Index < Document.Regeneration.Steps.size(); ++Index)
+    for (size_t Index = First; Index < Document.Regeneration.Steps.size(); ++Index)
     {
         const FeatureStepReport& Report = Document.Regeneration.Steps[Index];
-        if (Report.Status == FeatureStepStatus::Refused) return Report.Label + ": " + Report.Refusal;
+        if (Report.Status == FeatureStepStatus::Refused && !RefusedBefore.contains(Report.Label)) return Report.Label + ": " + Report.Refusal;
     }
     return {};
 }
 
-// ① snapshot ② change (the callback returns a refusal or "") ③ regenerate ④ roll back when a new step refused.
-template <typename Change>
-DraftingCommandOutcome RunCommand(DraftingDocument& Document, const std::string& Label, bool CaptureCondition, Change&& Apply)
+[[nodiscard]] std::set<std::string> RefusedLabels(const DraftingDocument& Document)
 {
-    const auto           Start      = std::chrono::steady_clock::now();
-    DraftingHistoryEntry Before     = Snapshot(Document, Label);
-    const size_t         FirstNew   = Document.Tree.Steps.size();
+    std::set<std::string> Labels;
+    for (const FeatureStepReport& Report : Document.Regeneration.Steps) if (Report.Status == FeatureStepStatus::Refused) Labels.insert(Report.Label);
+    return Labels;
+}
+
+// ① snapshot ② change (the callback returns a refusal or "") ③ regenerate ④ roll back when a new step refused, or (edits
+//    of existing steps: WatchFrom) a step at or after WatchFrom that regenerated before now refuses.
+template <typename Change>
+DraftingCommandOutcome RunCommand(DraftingDocument& Document, const std::string& Label, bool CaptureCondition, Change&& Apply,
+                                  size_t WatchFrom = std::numeric_limits<size_t>::max())
+{
+    const auto                  Start         = std::chrono::steady_clock::now();
+    DraftingHistoryEntry        Before        = Snapshot(Document, Label);
+    const size_t                FirstNew      = std::min(Document.Tree.Steps.size(), WatchFrom);
+    const std::set<std::string> RefusedBefore = RefusedLabels(Document);
     DraftingCommandOutcome Outcome;
     Outcome.Label = Label;
     Outcome.Refusal = Apply();
     if (Outcome.Refusal.empty())
     {
         RegenerateDraftingDocument(Document, CaptureCondition);
-        Outcome.Refusal = RefusalFrom(Document, FirstNew);
+        Outcome.Refusal = RefusalFrom(Document, FirstNew, RefusedBefore);
     }
     if (!Outcome.Refusal.empty())
     {
@@ -1157,6 +1169,104 @@ DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const st
         Document.Selection = {};
         return {};
     });
+}
+
+namespace
+{
+    [[nodiscard]] OrthonormalFrame ElevatedPlane(const FeatureTree& Tree, const FeatureStep& Step)
+    {
+        OrthonormalFrame Plane = Step.Plane;
+        Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Tree, Step.Elevation);
+        return Plane;
+    }
+
+    [[nodiscard]] const SketchModel& SolvedSketch(const DraftingDocument& Document, const FeatureStep& Step)
+    {
+        const auto Found = Document.Regeneration.Sketches.find(Step.Label);
+        return Found != Document.Regeneration.Sketches.end() ? Found->second : Step.Sketch;
+    }
+
+    // 📝 A segment of a sketch on plane From, re-expressed in the coordinates of the coplanar plane To (rotation, offset,
+    //    and a mirror when the normals oppose: arcs then run the other way). Exact for lines, arcs, circles and B-splines.
+    [[nodiscard]] ProfileSegment MapSegment(ProfileSegment Segment, const OrthonormalFrame& From, const OrthonormalFrame& To)
+    {
+        auto Map = [&](Vector2 Point)
+        {
+            const Vector3 Offset = From.Origin + From.XAxis * Point.X + From.YAxis * Point.Y - To.Origin;
+            return Vector2{ Dot(Offset, To.XAxis), Dot(Offset, To.YAxis) };
+        };
+        const double Turn = Dot(From.XAxis, To.XAxis) * Dot(From.YAxis, To.YAxis) - Dot(From.YAxis, To.XAxis) * Dot(From.XAxis, To.YAxis);
+        Segment.Start = Map(Segment.Start);
+        Segment.End   = Map(Segment.End);
+        if (Segment.Kind == ProfileSegmentKind::Line) return Segment;
+        if (Segment.Kind == ProfileSegmentKind::Spline)
+        {
+            for (Vector2& Pole : Segment.Spline.Poles) Pole = Map(Pole);
+            return Segment;
+        }
+        const Vector2 Origin = Map(Segment.Centre);
+        const Vector2 Rim    = Map(Segment.Centre + Vector2{ std::cos(Segment.StartAngle), std::sin(Segment.StartAngle) } * Segment.Radius);
+        Segment.Centre     = Origin;
+        Segment.StartAngle = std::atan2(Rim.Y - Origin.Y, Rim.X - Origin.X);
+        if (Turn < 0.0) Segment.Sweep = -Segment.Sweep;
+        return Segment;
+    }
+}
+
+SketchTrimOutcome PreviewDraftingTrim(const DraftingDocument& Document, const DraftingTrimRequest& Request)
+{
+    const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Request.Sketch; });
+    if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch)
+    {
+        SketchTrimOutcome Outcome;
+        Outcome.Refusal = "no sketch step labelled " + Request.Sketch;
+        return Outcome;
+    }
+    const OrthonormalFrame      Plane = ElevatedPlane(Document.Tree, *Found);
+    std::vector<ProfileSegment> Foreign;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch || Step.Label == Request.Sketch) continue;
+        const OrthonormalFrame Other = ElevatedPlane(Document.Tree, Step);
+        const Vector3          Apart = Other.Origin - Plane.Origin;
+        if (std::fabs(Dot(Other.ZAxis, Plane.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Plane.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart))) continue;
+        const SketchModel& Sketch = SolvedSketch(Document, Step);
+        for (int Curve = 0; Curve < static_cast<int>(Sketch.Curves.size()); ++Curve)
+        {
+            std::string    Refusal;
+            ProfileSegment Segment = ResolveSketchCurveSegment(Sketch, Curve, 1.0e-9, Refusal);
+            if (Refusal.empty()) Foreign.push_back(MapSegment(std::move(Segment), Other, Plane));
+        }
+    }
+    return TrimSketchCurve(SolvedSketch(Document, *Found), Request.Curve, Request.Pick, Foreign);
+}
+
+DraftingCommandOutcome TrimDraftingSketch(DraftingDocument& Document, const DraftingTrimRequest& Request)
+{
+    const auto  Caption = Document.Captions.find(Request.Sketch);
+    const std::string Owner = Caption != Document.Captions.end() ? Caption->second : Request.Sketch;
+    std::string CurveName = "curve " + std::to_string(Request.Curve);
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Label != Request.Sketch || Step.Kind != FeatureStepKind::Sketch) continue;
+        const SketchModel& Sketch = SolvedSketch(Document, Step);
+        if (Request.Curve >= 0 && Request.Curve < static_cast<int>(Sketch.Curves.size())) CurveName = SketchCurveName(Sketch.Curves[Request.Curve]);
+    }
+    return RunCommand(Document, "Trim " + CurveName + " of " + Owner, false, [&]() -> std::string
+    {
+        const SketchTrimOutcome Trim = PreviewDraftingTrim(Document, Request);
+        if (!Trim.Refusal.empty()) return Trim.Refusal;
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Request.Sketch; });
+        if (!Trim.Sketch.Curves.empty())
+        {
+            Found->Sketch = Trim.Sketch;
+            return {};
+        }
+        if (DraftingSketchConsumedCondition(Document, Request.Sketch)) return "the trim would leave " + Owner + " without curves, and a later step uses it";
+        Document.Tree.Steps.erase(Found);
+        Document.Captions.erase(Request.Sketch);
+        return {};
+    }, 0);
 }
 
 std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)

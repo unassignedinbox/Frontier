@@ -65,6 +65,7 @@ namespace
     GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
     GateTally MatcapGate      = { "W15", "Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals", "exact · 1 / 255" };
     GateTally BodiesGate      = { "W16", "Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec", "≤ 10⁻⁹ · exact" };
+    GateTally TrimGate        = { "W18", "Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude is refused; an emptied sketch goes; codec", "≤ 10⁻¹² · ≤ 10⁻⁹ · exact" };
     GateTally CutGate         = { "W17", "Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -1318,13 +1319,128 @@ int main()
         Tally(CutGate, 0.0, RoundTrips, "save → load → save byte-equal with Cut (11) and Remove (12): " + Notes + ", volumes bit-equal");
     }
 
+    // ---- W18: curve trim (Plasticity T) on sketches
+    {
+        auto Format = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.12g", Value); return std::string(Text); };
+        auto Draw = [](DraftingDocument& Target, DraftingDrawingKind Kind, std::vector<Vector2> Points, bool ClosedCondition = false, bool CentreCondition = false)
+        {
+            DraftingDrawingRequest Drawing;
+            Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.ClosedCondition = ClosedCondition; Drawing.CentreCondition = CentreCondition;
+            const DraftingCommandOutcome Outcome = DrawDraftingSketch(Target, Drawing);
+            return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+        };
+        auto CurvesOf = [](const DraftingDocument& Target, const std::string& Label)
+        {
+            const auto Solved = Target.Regeneration.Sketches.find(Label);
+            return Solved != Target.Regeneration.Sketches.end() ? Solved->second.Curves.size() : size_t(0);
+        };
+        auto Meet = [](Vector2 First, Vector2 FirstEnd, Vector2 Second, Vector2 SecondEnd)
+        {
+            const Vector2 Along = FirstEnd - First, Across = SecondEnd - Second;
+            const double  Share = Cross(Second - First, Across) / Cross(Along, Across);
+            return First + Along * Share;
+        };
+
+        // ① pentagram A → C → E → B → D → A as one closed Line chain: the crossing chain cannot be extruded
+        const std::vector<Vector2> Tips = { { 1.0, 0.0 }, { 1.6, 1.9 }, { 0.0, 0.7 }, { 2.0, 0.7 }, { 0.4, 1.9 } };
+        DraftingDocument Star = CreateDraftingDocument("Star");
+        const std::string StarSketch = Draw(Star, DraftingDrawingKind::Line, Tips, true);
+        const DraftingCommandOutcome Early = ExtrudeDraftingSketch(Star, StarSketch, 1.0, FeatureCombination::New);
+        std::vector<Vector2> Outline = Tips;                                                 // Independent star: 5 tips + 5 inner crossings
+        for (int Chord = 0; Chord < 5; ++Chord)
+        {
+            const Vector2 From = Tips[Chord], To = Tips[(Chord + 1) % 5];
+            const Vector2 Next = Tips[(Chord + 2) % 5], NextEnd = Tips[(Chord + 3) % 5];
+            Outline.push_back(Meet(From, To, Next, NextEnd));
+        }
+        Vector2 Middle = {};
+        for (const Vector2& Tip : Tips) Middle = Middle + Tip * 0.2;
+        std::sort(Outline.begin(), Outline.end(), [&](Vector2 Left, Vector2 Right) { return std::atan2(Left.Y - Middle.Y, Left.X - Middle.X) < std::atan2(Right.Y - Middle.Y, Right.X - Middle.X); });
+        double StarArea = 0.0;
+        for (size_t Index = 0; Index < Outline.size(); ++Index) StarArea += 0.5 * Cross(Outline[Index], Outline[(Index + 1) % Outline.size()]);
+
+        // ② preview of the first trim: removed ends on the two crossings of chord A → C, the document untouched
+        const std::string BeforePreview = EncodeDraftingDocument(Star);
+        const SketchTrimOutcome Preview = PreviewDraftingTrim(Star, { StarSketch, 0, (Tips[0] + Tips[1]) * 0.5 });
+        Vector2 FirstCrossing  = Meet(Tips[0], Tips[1], Tips[3], Tips[4]);                   // A → C meets B → D and E → B,
+        Vector2 SecondCrossing = Meet(Tips[0], Tips[1], Tips[2], Tips[3]);                   // ordered along A → C
+        if (Dot(FirstCrossing - Tips[0], Tips[1] - Tips[0]) > Dot(SecondCrossing - Tips[0], Tips[1] - Tips[0])) std::swap(FirstCrossing, SecondCrossing);
+        const double  PreviewError   = Preview.Removed.size() >= 2 ? std::max(Length(Preview.Removed.front() - FirstCrossing), Length(Preview.Removed.back() - SecondCrossing)) : 1.0;
+        Tally(TrimGate, PreviewError, Preview.Refusal.empty() && PreviewError <= 1.0e-12 && EncodeDraftingDocument(Star) == BeforePreview && Preview.Pieces == 2,
+              "preview T on Line1 of the pentagram: removed piece between its two crossings (off " + Format(PreviewError) + "), 2 pieces left; document unchanged");
+
+        // ③ T on the five inner pieces: the star outline (10 lines) is one loop of the shoelace area; extrude 1 is exact
+        bool Trimmed = true;
+        for (int Chord = 0; Chord < 5; ++Chord)
+            Trimmed = Trimmed && TrimDraftingSketch(Star, { StarSketch, Chord, (Tips[Chord] + Tips[(Chord + 1) % 5]) * 0.5 }).AcceptedCondition;
+        const auto   Solved      = Star.Regeneration.Sketches.find(StarSketch);
+        const SketchProfile Loop = Solved != Star.Regeneration.Sketches.end() ? ExtractSketchProfile(Solved->second) : SketchProfile{};
+        const double AreaError   = std::abs(Loop.Area - StarArea);
+        const DraftingCommandOutcome Raised = ExtrudeDraftingSketch(Star, StarSketch, 1.0, FeatureCombination::New);
+        const double VolumeError = std::abs(Star.Summary.Volume - StarArea) / StarArea;
+        Tally(TrimGate, std::max(AreaError, VolumeError), !Early.AcceptedCondition && Trimmed && CurvesOf(Star, StarSketch) == 10 && Loop.Refusal.empty() && Loop.Loops.size() == 1
+              && AreaError <= 1.0e-12 && Raised.AcceptedCondition && VolumeError <= 1.0e-9 && Star.Summary.SoundCondition && Star.UndoEntries.size() == 7,
+              "pentagram: extrude refused first (" + Early.Refusal.substr(0, 60) + "…); 5 × T → 10 lines, area " + Format(Loop.Area) + " vs shoelace " + Format(StarArea) + ", extrude 1 → V " + Format(Star.Summary.Volume) + ", sound");
+
+        // ④ a trim that would open the extruded star is refused, document untouched
+        const std::string BeforeBreak = EncodeDraftingDocument(Star);
+        const size_t      Entries     = Star.UndoEntries.size();
+        const DraftingCommandOutcome Break = TrimDraftingSketch(Star, { StarSketch, 0, Tips[0] + (Tips[1] - Tips[0]) * 0.1 });
+        Tally(TrimGate, 0.0, !Break.AcceptedCondition && Break.Refusal.find("Extrude") != std::string::npos && EncodeDraftingDocument(Star) == BeforeBreak && Star.UndoEntries.size() == Entries,
+              "T on a star tip after the extrude: refused (" + Break.Refusal + "); untouched");
+
+        // ⑤ cross-sketch: circle r 0.3 at (2, 0.5) over the right side of a 2 × 1 rectangle (two sketches)
+        DraftingDocument Plan = CreateDraftingDocument("Plan");
+        const std::string Box    = Draw(Plan, DraftingDrawingKind::Rectangle, { { 0.0, 0.0 }, { 2.0, 1.0 } });
+        const std::string Circle = Draw(Plan, DraftingDrawingKind::Circle, { { 2.0, 0.5 }, { 2.3, 0.5 } }, false, true);
+        const DraftingCommandOutcome Outer = TrimDraftingSketch(Plan, { Circle, 0, { 2.3, 0.5 } });
+        const auto   Arc      = Plan.Regeneration.Sketches.find(Circle);
+        const bool   ArcCondition = Arc != Plan.Regeneration.Sketches.end() && Arc->second.Curves.size() == 1 && Arc->second.Curves[0].Kind == SketchCurveKind::Arc;
+        double ArcError = 1.0;
+        if (ArcCondition)
+        {
+            const SketchModel& Model = Arc->second;
+            ArcError = std::max(Length(Model.Points[Model.Curves[0].Start].Position - Vector2{ 2.0, 0.8 }), Length(Model.Points[Model.Curves[0].End].Position - Vector2{ 2.0, 0.2 }));
+        }
+        UndoDraftingCommand(Plan);
+        const bool Restored = Plan.Regeneration.Sketches.at(Circle).Curves[0].Kind == SketchCurveKind::Circle;
+        RedoDraftingCommand(Plan);
+        const DraftingCommandOutcome Side = TrimDraftingSketch(Plan, { Box, 1, { 2.0, 0.5 } });
+        Tally(TrimGate, ArcError, Outer.AcceptedCondition && ArcCondition && ArcError <= 1.0e-12 && Restored && Plan.Regeneration.Sketches.at(Circle).Curves[0].Kind == SketchCurveKind::Arc
+              && Side.AcceptedCondition && CurvesOf(Plan, Box) == 5,
+              Outer.Label + ": the circle (another sketch than the rectangle) becomes the arc (2, 0.8) → (2, 0.2) inside it (off " + Format(ArcError) + "); undo → circle, redo → arc; " + Side.Label + " splits the right side (5 curves)");
+
+        // ⑥ a lone unused line with nothing crossing it: T erases it and its sketch step goes; undo brings it back
+        const std::string Lone  = Draw(Plan, DraftingDrawingKind::Line, { { 5.0, 5.0 }, { 6.0, 5.0 } });
+        const size_t      Steps = Plan.Tree.Steps.size();
+        const DraftingCommandOutcome Erase = TrimDraftingSketch(Plan, { Lone, 0, { 5.5, 5.0 } });
+        const bool Gone = Erase.AcceptedCondition && Plan.Tree.Steps.size() == Steps - 1 && !Plan.Captions.contains(Lone);
+        UndoDraftingCommand(Plan);
+        const bool Back = Plan.Tree.Steps.size() == Steps && CurvesOf(Plan, Lone) == 1;
+        Tally(TrimGate, 0.0, Gone && Back, Erase.Label + ": nothing crosses it → the curve and its emptied sketch step go; undo restores");
+
+        // ⑦ save → load → save byte-equal with the trimmed sketches (new points, PointOnLine pins = constraint kind 14)
+        bool RoundTrips = true;
+        for (DraftingDocument* Source : { &Star, &Plan })
+        {
+            const std::string Written = EncodeDraftingDocument(*Source);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            RoundTrips = RoundTrips && Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Volume == Source->Summary.Volume;
+        }
+        RoundTrips = RoundTrips && EncodeDraftingDocument(Star).find("Kind = 14") != std::string::npos;
+        Tally(TrimGate, 0.0, RoundTrips, "save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
