@@ -51,6 +51,7 @@ VehicleCurveFile DecodeVehicleCurves(const std::string& Text)
         VehicleCurve Curve;
         Curve.Name            = View["Name"].value_or(std::string{});
         Curve.ClosedCondition = View["Closed"].value_or(false);
+        Curve.PlanarCondition = View["Planar"].value_or(false);
         const std::string Where = "curve " + std::to_string(Index + 1) + (Curve.Name.empty() ? "" : " (" + Curve.Name + ")");
         if (Curve.Name.empty()) { File.Refusal = Where + " has no Name"; return File; }
         const toml::array* Points = View["Points"].as_array();
@@ -88,7 +89,9 @@ std::string EncodeVehicleCurves(const VehicleCurveFile& File)
     {
         toml::array Points;
         for (const Vector3& Point : Curve.Points) Points.push_back(toml::array{ Point.X, Point.Y, Point.Z });
-        Curves.push_back(toml::table{ { "Name", Curve.Name }, { "Closed", Curve.ClosedCondition }, { "Points", std::move(Points) } });
+        toml::table Entry{ { "Name", Curve.Name }, { "Closed", Curve.ClosedCondition }, { "Points", std::move(Points) } };
+        if (Curve.PlanarCondition) Entry.insert("Planar", true);
+        Curves.push_back(std::move(Entry));
     }
     toml::table Root{ { "Format", "VehicleCurves" }, { "Units", "m" }, { "Curves", std::move(Curves) } };
     if (!File.Source.empty()) Root.insert("Source", File.Source);

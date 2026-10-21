@@ -16,6 +16,7 @@
 #include "Sketch/SketchCatalogue.h"
 #include "Sketch/SketchSolver.h"
 #include "Sketch/SketchSpline.h"
+#include "Surfacing/CurveNetwork.h"
 
 #include <algorithm>
 #include <atomic>
@@ -709,6 +710,7 @@ DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const Ve
             Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));
             Step.Points          = Curve.Points;
             Step.ClosedCondition = Curve.ClosedCondition;
+            Step.PlanarCondition = Curve.PlanarCondition;
             Step.Tolerance       = FeatureValue{ Tolerance };
             const bool Taken = std::any_of(Document.Captions.begin(), Document.Captions.end(), [&](const auto& Entry) { return Entry.second == Curve.Name; });
             Document.Captions[Step.Label] = Taken ? NextCaption(Document, Curve.Name + ".") : Curve.Name;
@@ -718,10 +720,19 @@ DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const Ve
     });
 }
 
-DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels)
+DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels, int Continuity)
 {
-    const std::string Caption = NextCaption(Document, "Loft");
-    const std::string Label   = Caption + " · " + std::to_string(Labels.size()) + " sections";
+    // Curves that meet each other make a network; otherwise they are sections.
+    std::vector<NurbsCurve> Fitted;
+    for (const std::string& Name : Labels)
+    {
+        const auto Found = Document.Regeneration.Curves.find(Name);
+        if (Found != Document.Regeneration.Curves.end()) Fitted.push_back(Found->second.Curve);
+    }
+    const bool        NetworkCondition = Fitted.size() == Labels.size() && Fitted.size() >= 4 && DetectCurveNetwork(Fitted, NetworkSettings{});
+    const std::string Caption = NextCaption(Document, NetworkCondition ? "Network" : "Loft");
+    const std::string Label   = Caption + " · " + std::to_string(Labels.size()) + (NetworkCondition ? " curves" : " sections")
+                              + (Continuity > 0 ? " · G" + std::to_string(Continuity) : std::string());
     DraftingCommandOutcome Outcome = RunCommand(Document, Label, false, [&]() -> std::string
     {
         if (Labels.size() < 2) return "loft needs at least 2 curves (select them in section order)";
@@ -731,16 +742,53 @@ DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std:
             if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::SpaceCurve) return "no curve step labelled " + Labels[Index];
             if (std::find(Labels.begin(), Labels.begin() + Index, Labels[Index]) != Labels.begin() + Index) return "curve " + Labels[Index] + " is selected twice";
         }
+        if (Continuity < 0 || Continuity > 2) return "continuity must be G0, G1 or G2";
+        if (NetworkCondition && Continuity > 0) return "these curves cross (a network): G1 / G2 is available for section lofts only (🚧 networks)";
         FeatureStep Step;
-        Step.Kind     = FeatureStepKind::Loft;
-        Step.Label    = "Loft#" + std::to_string(NextStepOrdinal(Document.Tree));
-        Step.Sections = Labels;
+        Step.Kind       = NetworkCondition ? FeatureStepKind::Network : FeatureStepKind::Loft;
+        Step.Label      = (NetworkCondition ? "Network#" : "Loft#") + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Sections   = Labels;
+        Step.Continuity = Continuity;
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
         return {};
     });
     if (Outcome.AcceptedCondition) Document.Selection.Curves.clear();
     return Outcome;
+}
+
+DraftingCommandOutcome MirrorDraftingPanels(DraftingDocument& Document, int Axis)
+{
+    const char*       AxisName = Axis == 0 ? "x" : Axis == 1 ? "y" : "z";
+    const std::string Caption  = NextCaption(Document, "Mirror");
+    return RunCommand(Document, Caption + " · plane " + AxisName + " = 0", false, [&]() -> std::string
+    {
+        if (Axis < 0 || Axis > 2) return "mirror axis must be x, y or z";
+        FeatureStep Step;
+        Step.Kind         = FeatureStepKind::Mirror;
+        Step.Label        = "Mirror#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Plane.Origin = { 0.0, 0.0, 0.0 };
+        Step.Plane.ZAxis  = { Axis == 0 ? 1.0 : 0.0, Axis == 1 ? 1.0 : 0.0, Axis == 2 ? 1.0 : 0.0 };
+        Step.Plane.XAxis  = { Axis == 0 ? 0.0 : 1.0, Axis == 0 ? 1.0 : 0.0, 0.0 };
+        Step.Plane.YAxis  = Cross(Step.Plane.ZAxis, Step.Plane.XAxis);
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+DraftingCommandOutcome CloseDraftingPanels(DraftingDocument& Document)
+{
+    const std::string Caption = NextCaption(Document, "Close");
+    return RunCommand(Document, Caption + " · plane caps", false, [&]() -> std::string
+    {
+        FeatureStep Step;
+        Step.Kind  = FeatureStepKind::Close;
+        Step.Label = "Close#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
 }
 
 DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, Vector3 Position)

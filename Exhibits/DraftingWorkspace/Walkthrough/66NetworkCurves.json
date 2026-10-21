@@ -1,0 +1,22 @@
+{
+  "Frame": 344,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Curve#1", "Caption": "Section1 · SpaceCurve", "Refused": false}, {"Label": "Curve#2", "Caption": "Section2 · SpaceCurve", "Refused": false}, {"Label": "Curve#3", "Caption": "Section3 · SpaceCurve", "Refused": false}, {"Label": "Curve#4", "Caption": "Section4 · SpaceCurve", "Refused": false}, {"Label": "Curve#5", "Caption": "Section5 · SpaceCurve", "Refused": false}, {"Label": "Curve#6", "Caption": "Section6 · SpaceCurve", "Refused": false}, {"Label": "Curve#7", "Caption": "Spine1 · SpaceCurve", "Refused": false}, {"Label": "Curve#8", "Caption": "Spine2 · SpaceCurve", "Refused": false}, {"Label": "Curve#9", "Caption": "Spine3 · SpaceCurve", "Refused": false}, {"Label": "Curve#10", "Caption": "Spine4 · SpaceCurve", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": ["Spine2", "Section1", "Section4", "Spine1", "Section2", "Spine3", "Section6", "Section3", "Spine4", "Section5"]},
+  "Curves": [{"Caption": "Section1", "Points": 26, "Poles": 4, "WorstDeviation": 3.58694534e-05, "PoleEdits": 0}, {"Caption": "Section2", "Points": 26, "Poles": 4, "WorstDeviation": 4.207856762e-05, "PoleEdits": 0}, {"Caption": "Section3", "Points": 26, "Poles": 4, "WorstDeviation": 4.387724184e-05, "PoleEdits": 0}, {"Caption": "Section4", "Points": 26, "Poles": 4, "WorstDeviation": 4.567743038e-05, "PoleEdits": 0}, {"Caption": "Section5", "Points": 26, "Poles": 4, "WorstDeviation": 4.51787008e-05, "PoleEdits": 0}, {"Caption": "Section6", "Points": 26, "Poles": 4, "WorstDeviation": 4.215564404e-05, "PoleEdits": 0}, {"Caption": "Spine1", "Points": 30, "Poles": 5, "WorstDeviation": 7.122452915e-05, "PoleEdits": 0}, {"Caption": "Spine2", "Points": 30, "Poles": 5, "WorstDeviation": 6.424250102e-05, "PoleEdits": 0}, {"Caption": "Spine3", "Points": 30, "Poles": 5, "WorstDeviation": 4.971852769e-05, "PoleEdits": 0}, {"Caption": "Spine4", "Points": 30, "Poles": 4, "WorstDeviation": 4.917767287e-05, "PoleEdits": 0}],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 1,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 2.116898008, "Target": [0.3750138283, 0.5500002783, 0.7875602245], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Undo": 1,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Selected curve Section5 · 4 poles · fit 0.045 mm · 10 selected",
+  "Viewport": [320, 160, 930, 730]
+}

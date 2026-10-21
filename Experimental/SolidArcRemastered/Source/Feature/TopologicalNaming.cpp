@@ -173,6 +173,15 @@ BodyNaming NameSweptBody(const ModelPartition& Partition, const SweepOutcome& Sw
     return Naming;
 }
 
+BodyNaming NamePanelBody(const ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, const std::vector<std::string>& FaceNames)
+{
+    BodyNaming Naming;
+    for (size_t Index = 0; Index < Faces.size() && Index < FaceNames.size(); ++Index) Naming.Faces[Faces[Index].Slot] = FaceNames[Index];
+    DisambiguateFaces(Partition, Body, Naming);
+    CompleteNaming(Partition, Body, Naming);
+    return Naming;
+}
+
 BodyNaming NameBooleanBody(const ModelPartition& Partition, BodyToken Body, const BooleanOutcome& Boolean, const BodyNaming& First, const BodyNaming& Second)
 {
     BodyNaming Naming;

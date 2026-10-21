@@ -96,6 +96,10 @@ struct ResolvedReference
 // Face-operation result: Unchanged / Trimmed / Replaced keep their name; Generated → Prefix.Generated(edge or face name).
 [[nodiscard]] BodyNaming NameChangedBody(const ModelPartition& Partition, BodyToken Body, const FaceOperationOutcome& Change, const BodyNaming& Source, const std::string& Prefix);
 
+// Assembled panels (vehicle plan V7): Faces[k] takes FaceNames[k] ("Loft#4.Side(Surface)", "Mirror#5.Image(…)",
+// "Close#6.Cap(0)"); duplicates get /1, /2, …; edges and vertices completed.
+[[nodiscard]] BodyNaming NamePanelBody(const ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, const std::vector<std::string>& FaceNames);
+
 // Recomputes edge and vertex names of Body from its face names (called by every Name… function).
 void CompleteNaming(const ModelPartition& Partition, BodyToken Body, BodyNaming& Naming);
 

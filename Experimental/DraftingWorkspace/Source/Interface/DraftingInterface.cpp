@@ -747,7 +747,7 @@ bool PolesShownCondition(const DraftingWorkspaceState& State, const std::string&
 bool CurveConsumedCondition(const DraftingDocument& Document, const std::string& Label)
 {
     for (const FeatureStep& Step : Document.Tree.Steps)
-        if (Step.Kind == FeatureStepKind::Loft && std::find(Step.Sections.begin(), Step.Sections.end(), Label) != Step.Sections.end()) return true;
+        if ((Step.Kind == FeatureStepKind::Loft || Step.Kind == FeatureStepKind::Network) && std::find(Step.Sections.begin(), Step.Sections.end(), Label) != Step.Sections.end()) return true;
     return false;
 }
 
@@ -911,13 +911,35 @@ void ImportCurves(DraftingWorkspaceState& State, const std::string& Path)
     Announce(State, Compose("Imported %d curve(s) from %s · %d poles · worst fit %.3f mm", int(File.Curves.size()), Path.c_str(), Poles, Worst * 1000.0));
 }
 
-// L (Plasticity loft): the selected curves, in pick order, become one sheet.
+// L (Plasticity loft): the selected curves, in pick order, become a panel (crossing curves: a Gordon network).
 void LoftSelectedCurves(DraftingWorkspaceState& State)
 {
     const std::vector<std::string> Curves = State.Document.Selection.Curves;
-    const DraftingCommandOutcome   Outcome = LoftDraftingCurves(State.Document, Curves);
+    const DraftingCommandOutcome   Outcome = LoftDraftingCurves(State.Document, Curves, State.LoftContinuity);
     Conclude(State, Outcome);
-    if (Outcome.AcceptedCondition) Announce(State, Compose("Lofted %d curve(s) → sheet (%s) · %.0f ms", int(Curves.size()), State.Document.Summary.SoundCondition ? "sound" : "audit findings", Outcome.Milliseconds));
+    if (!Outcome.AcceptedCondition) return;
+    const bool NetworkCondition = !State.Document.Tree.Steps.empty() && State.Document.Tree.Steps.back().Kind == FeatureStepKind::Network;
+    const char* Order = State.LoftContinuity == 2 ? " · G2" : State.LoftContinuity == 1 ? " · G1" : "";
+    Announce(State, Compose("%s %d curve(s) → panel%s (%s) · %d panel(s) · %.0f ms", NetworkCondition ? "Network of" : "Lofted", int(Curves.size()), NetworkCondition ? "" : Order,
+                            State.Document.Summary.SoundCondition ? "sound" : "audit findings", int(State.Document.Regeneration.Panels.size()), Outcome.Milliseconds));
+}
+
+// Alt+X (Plasticity mirror, gizmo x): every panel gets its image through x = 0; halves sew along the plane.
+void MirrorPanels(DraftingWorkspaceState& State)
+{
+    const DraftingCommandOutcome Outcome = MirrorDraftingPanels(State.Document, 0);
+    Conclude(State, Outcome);
+    if (Outcome.AcceptedCondition) Announce(State, Compose("Mirrored through x = 0 → %d panel(s), %s · %.0f ms", int(State.Document.Regeneration.Panels.size()),
+                                                           State.Document.Summary.SoundCondition ? "sound" : "audit findings", Outcome.Milliseconds));
+}
+
+// Close: plane caps on the planar rim loops → solid.
+void ClosePanels(DraftingWorkspaceState& State)
+{
+    const DraftingCommandOutcome Outcome = CloseDraftingPanels(State.Document);
+    Conclude(State, Outcome);
+    if (Outcome.AcceptedCondition) Announce(State, Compose("Closed → solid · volume %.5f m³ · %s · %.0f ms", State.Document.Summary.Volume, State.Document.Summary.SoundCondition ? "sound" : "audit findings",
+                                                           Outcome.Milliseconds));
 }
 
 void PickCurve(DraftingWorkspaceState& State, const std::string& Label, DraftingPickIntent Intent)
@@ -1884,11 +1906,20 @@ void DrawSelectionCard(DraftingWorkspaceState& State)
     {
         BeginCard("Curves");
         ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-        ImGui::TextWrapped("Loft runs through the curves in the order picked (badges 1, 2, …). Mode 1 shows the poles: drag one to reshape.");
+        ImGui::TextWrapped("Loft runs through the curves in the order picked (badges 1, 2, …); curves that cross make a network. Mode 1 shows the poles: drag one to reshape.");
         ImGui::PopStyleColor();
         if (PressButton(State, "Loft  (L)###CurveLoft", ImVec2(140, 0), Selection.Curves.size() >= 2)) LoftSelectedCurves(State);
         ImGui::SameLine();
         if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, ImVec2(140, 0))) State.CombsEnabled = !State.CombsEnabled;
+        // Continuity of the next loft to the panel it meets at its first / last section (V6).
+        static const char* const ContinuityLabels[] = { "G0###LoftG0", "G1###LoftG1", "G2###LoftG2" };
+        for (int Order = 0; Order < 3; ++Order)
+        {
+            if (Order) ImGui::SameLine();
+            if (ToggleButton(State, ContinuityLabels[Order], State.LoftContinuity == Order, ImVec2(44, 0))) State.LoftContinuity = Order;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("to the panel it meets");
         EndCard();
     }
     if (!Selection.Edges.empty())
@@ -1960,12 +1991,16 @@ void DrawStepCard(DraftingWorkspaceState& State)
         ImGui::Text("Fit worst %.4f mm · mean %.4f mm (≤ %.2f mm)", Fit->WorstDeviation * 1000.0, Fit->MeanDeviation * 1000.0, EvaluateFeatureValue(State.Document.Tree, Step->Tolerance) * 1000.0);
         ImGui::Text("Fairing %.0e · curvature extrema %d · %d pole edit(s)%s", Fit->Fairing, Fit->Extrema, int(Step->PoleEdits.size()), Step->ClosedCondition ? " · closed" : "");
     }
-    if (Step->Kind == FeatureStepKind::Loft)
+    if (Step->Kind == FeatureStepKind::Loft || Step->Kind == FeatureStepKind::Network)
     {
         std::string Sections;
-        for (const std::string& Section : Step->Sections) Sections += (Sections.empty() ? "" : " → ") + CaptionOf(State.Document, Section);
-        ImGui::TextWrapped("Sections: %s", Sections.c_str());
+        for (const std::string& Section : Step->Sections) Sections += (Sections.empty() ? "" : Step->Kind == FeatureStepKind::Loft ? " → " : " · ") + CaptionOf(State.Document, Section);
+        ImGui::TextWrapped("%s: %s", Step->Kind == FeatureStepKind::Loft ? "Sections" : "Network curves", Sections.c_str());
+        if (Step->Kind == FeatureStepKind::Loft) ImGui::Text("Continuity G%d to the neighbouring panel", Step->Continuity);
     }
+    if (Step->Kind == FeatureStepKind::Mirror) ImGui::Text("Plane through (%.3f, %.3f, %.3f), normal (%.0f, %.0f, %.0f)", Step->Plane.Origin.X, Step->Plane.Origin.Y, Step->Plane.Origin.Z,
+                                                           Step->Plane.ZAxis.X, Step->Plane.ZAxis.Y, Step->Plane.ZAxis.Z);
+    if (Step->Kind == FeatureStepKind::Close) ImGui::TextUnformatted("Plane caps on the planar rim loops of the panels");
     const auto Caption = State.Document.Captions.find(Label);
     const std::string Prefix = Caption == State.Document.Captions.end() ? Label + "." : Caption->second + ".";
     std::vector<FeatureParameter> Parameters;
@@ -2005,6 +2040,15 @@ void DrawBodyCard(DraftingWorkspaceState& State)
         ImGui::Text("Faces %d · Edges %d · Vertices %d", Summary.Faces, Summary.Edges, Summary.Vertices);
         if (Summary.SheetCondition) ImGui::Text("Open sheet · %d face(s), no volume", Summary.Faces);
         else ImGui::Text("Genus %d · Volume %.5f m³", Summary.Genus, Summary.Volume);
+        // Surface panels (V5–V7): mirror through x = 0, close with plane caps.
+        const int Panels = static_cast<int>(State.Document.Regeneration.Panels.size());
+        if (Panels > 0)
+        {
+            ImGui::Text("%d surface panel(s)", Panels);
+            if (PressButton(State, "Mirror x  (Alt+X)###PanelMirror", ImVec2(140, 0), Summary.SheetCondition)) MirrorPanels(State);
+            ImGui::SameLine();
+            if (PressButton(State, "Close → solid###PanelClose", ImVec2(140, 0), Summary.SheetCondition)) ClosePanels(State);
+        }
         ImGui::TextColored(Tint(Summary.SoundCondition ? ActiveColour : RefusalColour), "%s", Summary.SoundCondition ? "Audit: sound" : "Audit: findings");
         ImGui::SameLine();
         ImGui::TextDisabled("· replay %.1f ms · %d triangles", Summary.RegenerationMs, int(State.Scene.Corners.size() / 3));
@@ -2299,7 +2343,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             else { State.Style.SurfacesEnabled = !State.Style.SurfacesEnabled; Announce(State, State.Style.SurfacesEnabled ? "X-ray off" : "X-ray on (edges only)"); }
         }
         if (Pressed(ImGuiKey_E)) Announce(State, "Evolution: not available");
-        if (Pressed(ImGuiKey_X)) Announce(State, "Mirror: not available");
+        if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_H) || Pressed(ImGuiKey_M) || Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
         return;
     }

@@ -1,0 +1,22 @@
+{
+  "Frame": 220,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Curve#1", "Caption": "Hoop1 · SpaceCurve", "Refused": false}, {"Label": "Curve#2", "Caption": "Hoop2 · SpaceCurve", "Refused": false}, {"Label": "Curve#3", "Caption": "Hoop3 · SpaceCurve", "Refused": false}, {"Label": "Curve#4", "Caption": "Hoop4 · SpaceCurve", "Refused": false}, {"Label": "Curve#5", "Caption": "Hoop5 · SpaceCurve", "Refused": false}, {"Label": "Loft#6", "Caption": "Loft1 · Loft", "Refused": false}, {"Label": "Mirror#7", "Caption": "Mirror1 · Mirror", "Refused": false}],
+  "Body": {"Faces": 2, "Edges": 6, "Vertices": 4, "Genus": 0, "Volume": 0, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [{"Caption": "Hoop1", "Points": 28, "Poles": 7, "WorstDeviation": 0.0001287796024, "PoleEdits": 0}, {"Caption": "Hoop2", "Points": 28, "Poles": 7, "WorstDeviation": 0.0001842866688, "PoleEdits": 0}, {"Caption": "Hoop3", "Points": 28, "Poles": 7, "WorstDeviation": 0.0001762584258, "PoleEdits": 0}, {"Caption": "Hoop4", "Points": 28, "Poles": 7, "WorstDeviation": 0.0001447419036, "PoleEdits": 0}, {"Caption": "Hoop5", "Points": 28, "Poles": 7, "WorstDeviation": 9.854124982e-05, "PoleEdits": 0}],
+  "Sheet": true,
+  "PoleDrags": 0,
+  "PickMode": 1,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 2.918125927, "Target": [0.27202183, 0.8000035177, -6.556510925e-07], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Undo": 3,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Mirrored through x = 0 → 2 panel(s), sound · 9 ms",
+  "Viewport": [320, 160, 930, 730]
+}

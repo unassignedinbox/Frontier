@@ -144,6 +144,7 @@ constexpr int64_t FormatVersion = 1;                                            
         for (const Vector3& Point : Step.Points) Points.push_back(EncodeVector(Point));
         Table.insert("Points", std::move(Points));
         Table.insert("Closed", Step.ClosedCondition);
+        if (Step.PlanarCondition) Table.insert("Planar", true);
         Table.insert("Tolerance", EncodeValue(Step.Tolerance));
         if (!Step.PoleEdits.empty())
         {
@@ -154,12 +155,20 @@ constexpr int64_t FormatVersion = 1;                                            
         break;
     }
     case FeatureStepKind::Loft:
+    case FeatureStepKind::Network:
     {
         toml::array Sections;
         for (const std::string& Section : Step.Sections) Sections.push_back(Section);
         Table.insert("Sections", std::move(Sections));
+        if (Step.Continuity != 0) Table.insert("Continuity", static_cast<int64_t>(Step.Continuity));
         break;
     }
+    case FeatureStepKind::Mirror:
+        Table.insert("PlaneOrigin", EncodeVector(Step.Plane.Origin));
+        Table.insert("PlaneZAxis", EncodeVector(Step.Plane.ZAxis));
+        break;
+    case FeatureStepKind::Close:
+        break;
     }
     if (!Step.References.empty()) Table.insert("References", EncodeReferences(Step.References));
     return Table;
@@ -320,7 +329,9 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
         {
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
-            Step.Kind  = static_cast<FeatureStepKind>(View["Kind"].value_or(int64_t{ 0 }));
+            const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Close)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
             if (const auto Caption = View["Caption"].value<std::string>()) File.Captions[Step.Label] = *Caption;
@@ -350,6 +361,8 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
                 for (const toml::node& Point : *Points) Step.Points.push_back(DecodeVector(toml::node_view<const toml::node>{ Point }, Vector3{ std::nan(""), 0.0, 0.0 }));
             }
             Step.ClosedCondition = View["Closed"].value_or(false);
+            Step.PlanarCondition = View["Planar"].value_or(false);
+            Step.Continuity      = static_cast<int>(View["Continuity"].value_or(int64_t{ 0 }));
             Step.Tolerance       = DecodeValue(View["Tolerance"], Step.Tolerance);
             if (const toml::array* Edits = View["PoleEdits"].as_array())
             {

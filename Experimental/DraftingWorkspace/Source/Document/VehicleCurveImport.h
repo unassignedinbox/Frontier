@@ -26,6 +26,7 @@ struct VehicleCurve
 {
     std::string                    Name            = {};                                     // [-]   - Loop name from Blender ("ShoulderLine")
     bool                           ClosedCondition = false;                                  // [-]   - Last point joins the first
+    bool                           PlanarCondition = false;                                  // [-]   - Fit in the points' best plane (Planar = true)
     std::vector<Modeller::Vector3> Points          = {};                                     // [len] - Ordered limit points (metres)
 };
 
@@ -40,7 +41,7 @@ struct VehicleCurveFile
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 💡 Format = "VehicleCurves", Units = "m" | "mm", [[Curves]] { Name, Closed, Points = [[x, y, z], …] }. Refuses a wrong
+// 💡 Format = "VehicleCurves", Units = "m" | "mm", [[Curves]] { Name, Closed, Planar, Points = [[x, y, z], …] }. Refuses a wrong
 //    format tag, unknown units, a curve without a name or with fewer than 2 points, and any non-numeric coordinate —
 //    never a partial import. Millimetre files are scaled to metres.
 [[nodiscard]] VehicleCurveFile DecodeVehicleCurves(const std::string& Text);

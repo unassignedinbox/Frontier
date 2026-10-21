@@ -199,11 +199,17 @@ std::string EncodeFeature(const ModelPartition& Partition, const FeatureSpecimen
             if (!Step.PoleEdits.empty()) Detail += " · " + std::to_string(Step.PoleEdits.size()) + " pole edits";
             Writer.String("Detail", Detail);
         }
-        if (Report.Kind == FeatureStepKind::Loft)
+        if (Report.Kind == FeatureStepKind::Loft || Report.Kind == FeatureStepKind::Network)
         {
             std::string Detail;
             for (size_t Section = 0; Section < Step.Sections.size(); ++Section) Detail += (Section ? " · " : "") + Step.Sections[Section];
+            if (Step.Continuity > 0) Detail += " · G" + std::to_string(Step.Continuity);
             Writer.String("Detail", Detail);
+        }
+        if (Report.Kind == FeatureStepKind::Mirror)
+        {
+            const Vector3 Normal = Step.Plane.ZAxis;
+            Writer.String("Detail", "normal (" + std::to_string(Normal.X).substr(0, 5) + ", " + std::to_string(Normal.Y).substr(0, 5) + ", " + std::to_string(Normal.Z).substr(0, 5) + ")");
         }
         Writer.OpenArray("References");
         for (size_t Reference = 0; Reference < Step.References.size(); ++Reference)

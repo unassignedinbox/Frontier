@@ -56,6 +56,7 @@ namespace
     GateTally FileGate        = { "W8", "TOML save → load → save is byte-equal; reloaded body volume and names equal", "equal" };
     GateTally VariableGate    = { "W9", "Variable blend (V / F): volume vs closed form; each size at its anchored corner through flip, parameter edit and reload", "≤ 10⁻⁹" };
     GateTally SurfacingGate   = { "W11", "Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload", "≤ 0.5 mm, equal" };
+    GateTally PanelGate       = { "W12", "Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal", "sound · rel. ≤ 2·10⁻³" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -498,13 +499,110 @@ int main()
         }
     }
 
+    // ---- W12 vehicle panels (plan V5–V7): continuity, mirror, close, network through the document commands.
+    {
+        auto SamplePath = [](const char* FileName)
+        {
+            std::string Path = DRAFTING_VEHICLE_SAMPLE;
+            return Path.substr(0, Path.rfind('/') + 1) + FileName;
+        };
+        auto ByCaption = [](DraftingDocument& Document, const std::string& Stem)
+        {
+            std::vector<std::string> Labels;
+            for (const FeatureStep& Step : Document.Tree.Steps) if (Document.Captions[Step.Label].rfind(Stem, 0) == 0) Labels.push_back(Step.Label);
+            return Labels;
+        };
+        auto Reloads = [](const DraftingDocument& Document)
+        {
+            const std::string Text = EncodeDraftingDocument(Document);
+            const DraftingDocumentFile File = DecodeDraftingDocument(Text);
+            DraftingDocument Reopened = CreateDraftingDocument(File.Title);
+            const DraftingCommandOutcome Opened = ReplaceDraftingTree(Reopened, File.Tree, File.Captions, "Open");
+            return Opened.AcceptedCondition && EncodeDraftingDocument(Reopened) == Text && Reopened.Regeneration.Naming.Faces == Document.Regeneration.Naming.Faces
+                && Reopened.Summary.Volume == Document.Summary.Volume;
+        };
+
+        // Bonnet: front loft, rear loft G2 to it, mirror through x = 0.
+        DraftingDocument Bonnet = CreateDraftingDocument("Bonnet panels");
+        Expect(ImportDraftingCurves(Bonnet, ReadVehicleCurves(DRAFTING_VEHICLE_SAMPLE)));
+        const std::vector<std::string> Sections = ByCaption(Bonnet, "Section");
+        const DraftingCommandOutcome Front = LoftDraftingCurves(Bonnet, { Sections[0], Sections[1], Sections[2] });
+        const DraftingCommandOutcome Rear  = LoftDraftingCurves(Bonnet, { Sections[2], Sections[3], Sections[4], Sections[5] }, 2);
+        Tally(PanelGate, 0.0, Front.AcceptedCondition && Rear.AcceptedCondition && Bonnet.Regeneration.Panels.size() == 2 && Bonnet.Summary.SheetCondition && Bonnet.Summary.SoundCondition
+              && Bonnet.Summary.Faces == 2, "front loft + rear loft G2 → 2 panels sewn on Section3, sheet sound " + Front.Refusal + Rear.Refusal);
+        const DraftingCommandOutcome Mirrored = MirrorDraftingPanels(Bonnet, 0);
+        const auto& Names = Bonnet.Regeneration.Panels;
+        const std::string FrontName = Bonnet.Tree.Steps[11].Label + ".Side(Surface)";
+        const std::string ImageName = Bonnet.Tree.Steps.back().Label + ".Image(" + FrontName + ")";
+        Tally(PanelGate, 0.0, Mirrored.AcceptedCondition && Names.size() == 4 && Names.contains(ImageName) && Bonnet.Summary.SheetCondition && Bonnet.Summary.SoundCondition && Bonnet.Summary.Faces == 4,
+              "Alt+X → 4 panels, one sound sheet, face " + ImageName + " " + Mirrored.Refusal);
+        Tally(PanelGate, 0.0, Reloads(Bonnet), "bonnet reload: continuity + mirror steps survive, save → load → save byte-equal, names equal");
+        const DraftingCommandOutcome Capped = CloseDraftingPanels(Bonnet);
+        Tally(PanelGate, 0.0, !Capped.AcceptedCondition && Capped.Refusal.find("not planar") != std::string::npos && Names.size() == 4, "Close on the open bonnet rim refused, document kept: " + Capped.Refusal);
+        const bool Undone = UndoDraftingCommand(Bonnet);
+        Tally(PanelGate, 0.0, Undone && Bonnet.Regeneration.Panels.size() == 2 && Bonnet.Summary.Faces == 2, "undo mirror → 2 panels");
+
+        // Pod: planar hoops, loft, mirror, close → solid.
+        DraftingDocument Pod = CreateDraftingDocument("Pod");
+        const VehicleCurveFile Hoops = ReadVehicleCurves(SamplePath("SyntheticPod.toml"));
+        const bool Planar = !Hoops.Curves.empty() && std::all_of(Hoops.Curves.begin(), Hoops.Curves.end(), [](const VehicleCurve& Curve) { return Curve.PlanarCondition; })
+                         && DecodeVehicleCurves(EncodeVehicleCurves(Hoops)).Curves.front().PlanarCondition;
+        Expect(ImportDraftingCurves(Pod, Hoops));
+        const DraftingCommandOutcome Loft = LoftDraftingCurves(Pod, ByCaption(Pod, "Hoop"));
+        const DraftingCommandOutcome Image = MirrorDraftingPanels(Pod, 0);
+        const DraftingCommandOutcome Closed = CloseDraftingPanels(Pod);
+        double Exact = 0.0;
+        for (int Index = 0; Index <= 2000; ++Index)
+        {
+            const double Y = 1.6 * Index / 2000.0, Weight = (Index == 0 || Index == 2000) ? 1.0 : (Index % 2 ? 4.0 : 2.0);
+            Exact += Weight * Pi * (0.4 + 0.1 * std::sin(Pi * Y / 1.6)) * (0.3 + 0.05 * Y) * 1.6 / 6000.0;
+        }
+        const double Relative = std::abs(Pod.Summary.Volume - Exact) / Exact;
+        Tally(PanelGate, Relative, Planar && Loft.AcceptedCondition && Image.AcceptedCondition && Closed.AcceptedCondition && !Pod.Summary.SheetCondition && Pod.Summary.SoundCondition && Relative <= 2.0e-3
+              && Pod.Summary.Faces == 4, "pod: Planar = true round trip · loft → mirror → Close → solid V = " + std::to_string(Pod.Summary.Volume).substr(0, 8) + " vs " + std::to_string(Exact).substr(0, 8)
+              + ", rel. (value) " + Loft.Refusal + Image.Refusal + Closed.Refusal);
+        const DraftingCommandOutcome Again = CloseDraftingPanels(Pod);
+        Tally(PanelGate, 0.0, !Again.AcceptedCondition && Again.Refusal.find("already closed") != std::string::npos, "second Close refused: " + Again.Refusal);
+        Tally(PanelGate, 0.0, Reloads(Pod), "pod reload: planar flags + close step, byte-equal, same volume");
+
+        // Network: 6 sections + 4 spines cross → L makes a Gordon panel; G1 on a network refuses.
+        DraftingDocument Network = CreateDraftingDocument("Network");
+        Expect(ImportDraftingCurves(Network, ReadVehicleCurves(SamplePath("SyntheticBonnetNetwork.toml"))));
+        std::vector<std::string> Curves;
+        for (const FeatureStep& Step : Network.Tree.Steps) Curves.push_back(Step.Label);
+        const DraftingCommandOutcome Refused = LoftDraftingCurves(Network, Curves, 1);
+        Tally(PanelGate, 0.0, !Refused.AcceptedCondition && Refused.Refusal.find("network") != std::string::npos, "G1 on crossing curves refused: " + Refused.Refusal);
+        const DraftingCommandOutcome Gordon = LoftDraftingCurves(Network, Curves);
+        double WorstAnalytic = 0.0;
+        if (Gordon.AcceptedCondition)
+        {
+            const NurbsSurface& Surface = Network.Regeneration.Panels.begin()->second;
+            for (int First = 0; First <= 60; ++First)
+            {
+                for (int Second = 0; Second <= 60; ++Second)
+                {
+                    const Vector3 Point = EvaluateNurbsSurface(Surface, { First / 60.0, Second / 60.0 }).Position;
+                    const double  Xi = Point.X / 0.75, Eta = Point.Y / 1.1;
+                    const double  Height = 0.78 + 0.16 * Eta - 0.06 * Eta * Eta - 0.085 * Xi * Xi + 0.012 * std::sin(Pi * Eta) * (1.0 - Xi * Xi);
+                    const double  Across = (-0.17 * Xi - 0.024 * Xi * std::sin(Pi * Eta)) / 0.75;
+                    const double  Along  = (0.16 - 0.12 * Eta + 0.012 * Pi * std::cos(Pi * Eta) * (1.0 - Xi * Xi)) / 1.1;
+                    WorstAnalytic = std::max(WorstAnalytic, std::abs(Point.Z - Height) / std::sqrt(1.0 + Across * Across + Along * Along));
+                }
+            }
+        }
+        const bool NetworkStep = !Network.Tree.Steps.empty() && Network.Tree.Steps.back().Kind == FeatureStepKind::Network;
+        Tally(PanelGate, WorstAnalytic * 1000.0, Gordon.AcceptedCondition && NetworkStep && Network.Summary.SheetCondition && Network.Summary.SoundCondition && Network.Summary.Faces == 1 && WorstAnalytic <= 5.0e-4,
+              "10 crossing curves → Network step (Gordon), sheet sound, vs analytic H 61 × 61, worst [mm] (value) " + Gordon.Refusal);
+        Tally(PanelGate, 0.0, Reloads(Network), "network reload byte-equal");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

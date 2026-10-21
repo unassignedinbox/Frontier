@@ -240,6 +240,14 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         return Join(Captions);
     }
     if (Field == "sheet") return Numeric(Document.Summary.SheetCondition ? 1 : 0);
+    if (Field == "panels") return Numeric(double(Document.Regeneration.Panels.size()));
+    if (Field == "loft-continuity") return Numeric(State.LoftContinuity);
+    if (Field == "panel-names")
+    {
+        std::vector<std::string> Names;
+        for (const auto& [Name, Surface] : Document.Regeneration.Panels) Names.push_back(Name);
+        return Join(Names);
+    }
     if (Field == "pole-drags") return Numeric(State.PoleDrag.Commits);
     if (Field == "pole-drag-active") return Numeric(State.PoleDrag.ActiveCondition ? 1 : 0);
     if (Field == "pole-edits")

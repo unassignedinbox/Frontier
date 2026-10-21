@@ -6,8 +6,11 @@
 #include "Feature/FeatureTree.h"
 
 #include "Sketch/SketchProfile.h"
+#include "Surfacing/CurveNetwork.h"
+#include "Surfacing/PanelAssembly.h"
 #include "Surfacing/SectionLoft.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
@@ -40,6 +43,23 @@ namespace
         }
         return Text;
     }
+
+    // 📝 A surface panel of the tree: its face name and the SpaceCurve labels that lie on its boundary (continuity lookup).
+    struct TreePanel
+    {
+        SurfacePanel             Panel      = {};                                            // [-] - Carrier on [0, 1]²
+        std::string              Name       = {};                                            // [-] - Face name
+        std::vector<std::string> Boundaries = {};                                            // [-] - Section labels carried as boundaries
+        bool                     ImageCondition = false;                                     // [-] - Made by a Mirror step
+    };
+
+    struct MirrorPlane
+    {
+        Vector3 Point  = {};                                                                 // [len] - On the plane
+        Vector3 Normal = {};                                                                 // [-]   - Unit normal
+    };
+
+    constexpr double MirrorSnapFraction = 1.0;                                               // [-] - End points within this × fit tolerance of a mirror plane snap onto it
 
     void ApplySettingsAmount(FaceOperationSettings& Settings, double Amount)
     {
@@ -103,6 +123,46 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     std::map<std::string, SolvedSketch> Sketches;
     BodyToken  Current;
     BodyNaming Naming;
+    std::vector<TreePanel> Panels;                                                           // Panels of the current body (when it is panel-built)
+    std::string            ClosedBy;                                                         // Close step that capped them
+
+    // Mirror planes ahead of time: SpaceCurves ending on one leave it perpendicularly (the halves then meet G1).
+    std::vector<MirrorPlane> Planes;
+    for (const FeatureStep& Step : Tree.Steps)
+    {
+        if (Step.Kind == FeatureStepKind::Mirror && Length(Step.Plane.ZAxis) > 0.0) Planes.push_back({ Step.Plane.Origin, Normalize(Step.Plane.ZAxis) });
+    }
+
+    // Sews Panels (with plane caps when Capped) into a new current body named per panel; refusal text or empty.
+    auto Reassemble = [&](const std::string& Label, bool Capped) -> std::string
+    {
+        std::vector<SurfacePanel> Surfaces;
+        for (const TreePanel& Panel : Panels) Surfaces.push_back(Panel.Panel);
+        PanelAssemblySettings Settings;
+        Settings.CapCondition = Capped;
+        const PanelAssemblyOutcome Assembly = AssemblePanels(Partition, Surfaces, Settings, Capped ? "Close" : "Sew");
+        if (!Assembly.Refusal.empty()) return Assembly.Refusal;
+        if (Capped && !Assembly.SolidCondition) return "Close: the panels do not close (" + std::to_string(Assembly.LaminarEdges) + " rim edges remain open)";
+        std::vector<FaceToken>   Faces = Assembly.Faces;
+        std::vector<std::string> Names;
+        for (const TreePanel& Panel : Panels) Names.push_back(Panel.Name);
+        for (size_t Cap = 0; Cap < Assembly.Caps.size(); ++Cap)
+        {
+            Faces.push_back(Assembly.Caps[Cap]);
+            Names.push_back(Label + ".Cap(" + std::to_string(Cap) + ")");
+        }
+        Naming  = NamePanelBody(Partition, Assembly.Body, Faces, Names);
+        Current = Assembly.Body;
+        return {};
+    };
+
+    // A new panel may join only a panel-built, still open body.
+    auto PanelJoinRefusal = [&](const char* Verb) -> std::string
+    {
+        if (!ClosedBy.empty()) return std::string(Verb) + ": the panels are already closed by " + ClosedBy;
+        if (Current.PresentCondition() && Panels.empty()) return std::string(Verb) + ": panels cannot join a body built from sketch features yet (🚧)";
+        return {};
+    };
 
     for (FeatureStep& Step : Tree.Steps)
     {
@@ -256,6 +316,25 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (Step.ClosedCondition && Points.size() > 2 && Length(Points.back() - Points.front()) > 0.0) Points.push_back(Points.front());
             CurveFitSettings Settings;
             Settings.Tolerance = EvaluateFeatureValue(Tree, Step.Tolerance);
+            Settings.PlanarCondition = Step.PlanarCondition;
+            // An end on a later Mirror plane (within the fit tolerance) snaps onto it and leaves it along its normal.
+            if (!Step.ClosedCondition && Points.size() >= 3)
+            {
+                for (const MirrorPlane& Plane : Planes)
+                {
+                    double Excursion = 0.0;                                                  // [len] - A curve lying in the plane gets no tangent
+                    for (const Vector3& Point : Points) Excursion = std::max(Excursion, std::fabs(Dot(Point - Plane.Point, Plane.Normal)));
+                    if (Excursion <= MirrorSnapFraction * Settings.Tolerance) continue;
+                    for (int End = 0; End < 2; ++End)
+                    {
+                        Vector3& Point = End == 0 ? Points.front() : Points.back();
+                        const double Offset = Dot(Point - Plane.Point, Plane.Normal);
+                        if (std::fabs(Offset) > MirrorSnapFraction * Settings.Tolerance) continue;
+                        Point = Point - Plane.Normal * Offset;
+                        (End == 0 ? Settings.StartTangent : Settings.EndTangent) = Plane.Normal;
+                    }
+                }
+            }
             CurveFitOutcome Fit = FitSpaceCurve(Points, Settings);
             if (!Fit.Refusal.empty()) { Refuse("SpaceCurve: " + Fit.Refusal); break; }
             if (!Step.PoleEdits.empty())
@@ -289,11 +368,80 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 Sections.push_back(Found->second.Curve);
             }
             if (Report.Status == FeatureStepStatus::Refused) break;
-            if (Current.PresentCondition()) { Refuse("Loft: a sheet cannot join the current body yet (🚧 sewing, vehicle plan V7)"); break; }
-            const LoftSheetOutcome Loft = LoftSectionSheet(Partition, Sections, LoftSettings{});
-            if (!Loft.Sheet.Refusal.empty()) { Refuse(Loft.Sheet.Refusal); break; }
-            Naming  = NameSweptBody(Partition, Loft.Sheet, Step.Label);
-            Current = Loft.Sheet.Body;
+            if (const std::string Blocked = PanelJoinRefusal("Loft"); !Blocked.empty()) { Refuse(Blocked); break; }
+            // ⑥ G1 / G2 to the latest panel carrying an end section as its boundary (V6).
+            LoftSettings Settings;
+            if (Step.Continuity < 0 || Step.Continuity > 2) { Refuse("Loft: continuity must be 0 (G0), 1 (G1) or 2 (G2)"); break; }
+            if (Step.Continuity > 0 && !Step.Sections.empty())
+            {
+                auto Neighbour = [&](const std::string& Section) -> const TreePanel*
+                {
+                    for (auto Panel = Panels.rbegin(); Panel != Panels.rend(); ++Panel)
+                    {
+                        if (!Panel->ImageCondition && std::find(Panel->Boundaries.begin(), Panel->Boundaries.end(), Section) != Panel->Boundaries.end()) return &*Panel;
+                    }
+                    return nullptr;
+                };
+                const TreePanel* Before = Neighbour(Step.Sections.front());
+                const TreePanel* After  = Neighbour(Step.Sections.back());
+                if (!Before && !After) { Refuse("Loft: G" + std::to_string(Step.Continuity) + " needs a panel ending on " + Step.Sections.front() + " or " + Step.Sections.back()); break; }
+                if (Before) Settings.Start = { Step.Continuity, Before->Panel.Surface };
+                if (After)  Settings.End   = { Step.Continuity, After->Panel.Surface };
+            }
+            const LoftSurfaceOutcome Loft = LoftSectionSurface(Sections, Settings);
+            if (!Loft.Refusal.empty()) { Refuse(Loft.Refusal); break; }
+            Panels.push_back({ SurfacePanel{ Loft.Surface }, Step.Label + ".Side(Surface)", { Step.Sections.front(), Step.Sections.back() }, false });
+            if (const std::string Problem = Reassemble("Sew", false); !Problem.empty()) { Panels.pop_back(); Refuse(Problem); }
+            break;
+        }
+        case FeatureStepKind::Network:
+        {
+            // ⑦ Gordon / Coons panel through the named curves (families found by meeting, V5).
+            std::vector<NurbsCurve> Curves;
+            for (const std::string& Section : Step.Sections)
+            {
+                const auto Found = Outcome.Curves.find(Section);
+                if (Found == Outcome.Curves.end()) { Refuse("Network: curve " + Section + " is unavailable"); break; }
+                Curves.push_back(Found->second.Curve);
+            }
+            if (Report.Status == FeatureStepStatus::Refused) break;
+            if (Step.Continuity != 0) { Refuse("Network: G1 / G2 to a neighbour is not available for networks yet (🚧)"); break; }
+            if (const std::string Blocked = PanelJoinRefusal("Network"); !Blocked.empty()) { Refuse(Blocked); break; }
+            const NetworkSurfaceOutcome Network = ConstructNetworkSurface(Curves, NetworkSettings{}, Step.Sections);
+            if (!Network.Refusal.empty()) { Refuse(Network.Refusal); break; }
+            std::vector<std::string> Boundaries;
+            for (const std::vector<int>* Order : { &Network.FirstOrder, &Network.SecondOrder })
+            {
+                if (Order->empty()) continue;
+                Boundaries.push_back(Step.Sections[Order->front()]);
+                Boundaries.push_back(Step.Sections[Order->back()]);
+            }
+            Panels.push_back({ SurfacePanel{ Network.Surface }, Step.Label + ".Side(Surface)", Boundaries, false });
+            if (const std::string Problem = Reassemble("Sew", false); !Problem.empty()) { Panels.pop_back(); Refuse(Problem); }
+            break;
+        }
+        case FeatureStepKind::Mirror:
+        {
+            // ⑧ Mirror image of every panel so far; halves sharing a boundary on the plane sew into one body (V7).
+            if (Panels.empty()) { Refuse("Mirror: there are no surface panels to mirror"); break; }
+            if (!ClosedBy.empty()) { Refuse("Mirror: the panels are already closed by " + ClosedBy); break; }
+            if (!(Length(Step.Plane.ZAxis) > 0.0)) { Refuse("Mirror: the plane has no normal"); break; }
+            const Vector3 Normal = Normalize(Step.Plane.ZAxis);
+            const size_t  Count  = Panels.size();
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                Panels.push_back({ MirrorPanel(Panels[Index].Panel, Step.Plane.Origin, Normal), Step.Label + ".Image(" + Panels[Index].Name + ")", {}, true });
+            }
+            if (const std::string Problem = Reassemble("Sew", false); !Problem.empty()) { Panels.resize(Count); Refuse("Mirror: " + Problem); }
+            break;
+        }
+        case FeatureStepKind::Close:
+        {
+            // ⑨ Plane caps on the planar rim loops; the closed panel body becomes a solid (V7).
+            if (Panels.empty()) { Refuse("Close: there are no surface panels to close"); break; }
+            if (!ClosedBy.empty()) { Refuse("Close: the panels are already closed by " + ClosedBy); break; }
+            if (const std::string Problem = Reassemble(Step.Label, true); !Problem.empty()) { Refuse(Problem); break; }
+            ClosedBy = Step.Label;
             break;
         }
         }
@@ -305,6 +453,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     }
     Outcome.Body         = Current;
     Outcome.Naming       = Naming;
+    for (const TreePanel& Panel : Panels) Outcome.Panels[Panel.Name] = Panel.Panel.Surface;
     Outcome.Milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - Started).count();
     return Outcome;
 }
@@ -320,6 +469,9 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::FaceOperation: return "FaceOperation";
     case FeatureStepKind::SpaceCurve:    return "SpaceCurve";
     case FeatureStepKind::Loft:          return "Loft";
+    case FeatureStepKind::Network:       return "Network";
+    case FeatureStepKind::Mirror:        return "Mirror";
+    case FeatureStepKind::Close:         return "Close";
     }
     return "?";
 }

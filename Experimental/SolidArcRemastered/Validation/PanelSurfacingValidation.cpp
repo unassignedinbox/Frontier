@@ -76,11 +76,17 @@ namespace
     GateTally PodSolidGate     = { "A5", "Pod: 5 noisy half sections fitted planar + mirror tangent → loft → mirror → caps → solid; volume vs ∫ πab dy", "rel. ≤ 2·10⁻³" };
     GateTally AssemblyRefuseGate = { "A6", "Assembly refusals: non-planar rim cap, boundary parametrised differently, boundary claimed by 3 panels, constraint on a line", "all named" };
 
+    GateTally TreeBonnetGate   = { "T1", "Tree: 6 SpaceCurves → Loft → Loft (G2) → Mirror x = 0 → sheet sound · 4 named faces · seam G1 (look-ahead tangents) · G2 kept", "≤ 10⁻⁸ rad · ≤ 10⁻⁶" };
+    GateTally TreePodGate      = { "T2", "Tree: 5 planar SpaceCurves → Loft → Mirror → Close → solid · Close#8.Cap(0/1) · volume vs ∫ πab dy", "rel. ≤ 2·10⁻³" };
+    GateTally TreeNetworkGate  = { "T3", "Tree: 10 SpaceCurves → Network → Mirror → sheet sound, 2 faces sewn on x = 0 (curves lying in the plane get no tangent)", "sound" };
+    GateTally TreeRefuseGate   = { "T4", "Tree refusals: G1 without a neighbour, Close twice, Loft after Close, Mirror without panels, Close on an open rim, network G1", "all named" };
+
     std::vector<GateTally*> AllGates()
     {
         return { &CoonsGate, &GordonGate, &SortingGate, &BonnetNetGate, &NetworkRefuseGate, &NetworkSheetGate,
                  &TangentGate, &CurvatureGate, &DiscriminateGate, &SharedRowGate, &ElevationGate, &ContinuityRefuseGate,
-                 &ExactSolidGate, &SolidBodyGate, &MirrorSeamGate, &BonnetSheetGate, &PodSolidGate, &AssemblyRefuseGate };
+                 &ExactSolidGate, &SolidBodyGate, &MirrorSeamGate, &BonnetSheetGate, &PodSolidGate, &AssemblyRefuseGate,
+                 &TreeBonnetGate, &TreePodGate, &TreeNetworkGate, &TreeRefuseGate };
     }
 
     struct DetailRow
@@ -877,6 +883,188 @@ namespace
     }
 }
 
+namespace
+{
+    //--------------------------------------------------------------------------------------------------------------------
+    //                                                T1–T4 FEATURE TREE
+    //--------------------------------------------------------------------------------------------------------------------
+
+    [[nodiscard]] FeatureStep CurveStep(const std::string& Label, const std::vector<Vector3>& Points, bool Planar = false)
+    {
+        FeatureStep Step;
+        Step.Kind            = FeatureStepKind::SpaceCurve;
+        Step.Label           = Label;
+        Step.Points          = Points;
+        Step.PlanarCondition = Planar;
+        return Step;
+    }
+
+    [[nodiscard]] FeatureStep SurfaceStep(FeatureStepKind Kind, const std::string& Label, const std::vector<std::string>& Sections = {}, int Continuity = 0)
+    {
+        FeatureStep Step;
+        Step.Kind       = Kind;
+        Step.Label      = Label;
+        Step.Sections   = Sections;
+        Step.Continuity = Continuity;
+        Step.Plane.Origin = { 0.0, 0.0, 0.0 };
+        Step.Plane.ZAxis  = { 1.0, 0.0, 0.0 };
+        return Step;
+    }
+
+    [[nodiscard]] std::string RefusalsText(const RegenerationOutcome& Outcome)
+    {
+        std::string Text;
+        for (const FeatureStepReport& Step : Outcome.Steps) if (Step.Status == FeatureStepStatus::Refused) Text += (Text.empty() ? "" : " | ") + Step.Label + ": " + Step.Refusal;
+        return Text;
+    }
+
+    [[nodiscard]] bool NamedFace(const RegenerationOutcome& Outcome, const std::string& Name)
+    {
+        for (const auto& [Slot, FaceName] : Outcome.Naming.Faces) if (FaceName == Name) return true;
+        return false;
+    }
+
+    [[nodiscard]] std::vector<Vector3> PodSectionPoints(double Y, std::mt19937_64& Generator)
+    {
+        const double HalfWidth = 0.4 + 0.1 * std::sin(std::numbers::pi * Y / 1.6), HalfHeight = 0.3 + 0.05 * Y;
+        std::vector<Vector3> Points;
+        for (double Station : IrregularStations(28))
+        {
+            const double θ = 0.5 * std::numbers::pi - std::numbers::pi * Station;
+            Vector3 Point = Vector3{ HalfWidth * std::cos(θ), Y, HalfHeight * std::sin(θ) } + Jitter(Generator, 5.0e-5);
+            if (Station == 0.0 || Station == 1.0) Point.X = 0.0;
+            Points.push_back(Point);
+        }
+        return Points;
+    }
+
+    [[nodiscard]] FeatureTree PodTree()
+    {
+        FeatureTree Tree;
+        std::mt19937_64 Generator(0x90D5ULL);
+        std::vector<std::string> Sections;
+        for (int Index = 0; Index < 5; ++Index)
+        {
+            Sections.push_back("Hoop" + std::to_string(Index + 1));
+            Tree.Steps.push_back(CurveStep(Sections.back(), PodSectionPoints(1.6 * Index / 4.0, Generator), true));
+        }
+        Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#6", Sections));
+        Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Mirror, "Mirror#7"));
+        Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Close, "Close#8"));
+        return Tree;
+    }
+
+    void ValidateTree()
+    {
+        // ---- T1 bonnet: the Mirror step's plane reaches back into the SpaceCurve fits (tangent ∥ x̂ at x = 0).
+        {
+            FeatureTree Tree;
+            std::mt19937_64 Generator(0xB0AA37ULL);
+            for (int Index = 0; Index < 6; ++Index) Tree.Steps.push_back(CurveStep("Section" + std::to_string(Index + 1), BonnetSectionPoints(BonnetSectionStations[Index], Generator)));
+            Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#7", { "Section1", "Section2", "Section3" }));
+            Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#8", { "Section3", "Section4", "Section5", "Section6" }, 2));
+            Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Mirror, "Mirror#9"));
+            ModelPartition Partition;
+            const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree);
+            const std::string Front = "Loft#7.Side(Surface)", Rear = "Loft#8.Side(Surface)";
+            const std::string FrontImage = "Mirror#9.Image(" + Front + ")", RearImage = "Mirror#9.Image(" + Rear + ")";
+            if (Outcome.Refused || Outcome.Panels.size() != 4) Report(TreeBonnetGate, "Bonnet tree", RefusalsText(Outcome) + " · panels " + std::to_string(Outcome.Panels.size()), 1.0, false);
+            else
+            {
+                const AuditReport Audit = AuditBody(Partition, Outcome.Body);
+                const bool Named = NamedFace(Outcome, Front) && NamedFace(Outcome, Rear) && NamedFace(Outcome, FrontImage) && NamedFace(Outcome, RearImage);
+                const bool Sound = Audit.SoundCondition() && Named && Partition.CollectInventory(Outcome.Body).Faces.size() == 4;
+                Report(TreeBonnetGate, "Sheet and names", AuditText(Audit) + " · " + (Named ? Front + " · " + FrontImage + " …" : std::string("names missing")), Sound ? 0.0 : 1.0, Sound);
+                const double Seam = std::max(MeasureMirrorSeam(SurfacePanel{ Outcome.Panels.at(Front) }, SurfacePanel{ Outcome.Panels.at(FrontImage) }, 0.0),
+                                             MeasureMirrorSeam(SurfacePanel{ Outcome.Panels.at(Rear) }, SurfacePanel{ Outcome.Panels.at(RearImage) }, 0.0));
+                Report(TreeBonnetGate, "Mirror seam (no tangent authored: the Mirror step supplies it)", "angle " + Scientific(Seam) + " rad", Seam, Seam <= 1.0e-8);
+                const double Across = MeasureSeam(Outcome.Panels.at(Front), 1.0, Outcome.Panels.at(Rear), 0.0, false).Curvature;
+                Report(TreeBonnetGate, "Loft#8 G2 to Loft#7 (found by the shared Section3)", "curvature jump " + Scientific(Across), Across, Across <= 1.0e-6);
+            }
+        }
+
+        // ---- T2 pod: planar SpaceCurves → solid with named caps.
+        {
+            FeatureTree Tree = PodTree();
+            ModelPartition Partition;
+            const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree);
+            if (Outcome.Refused) Report(TreePodGate, "Pod tree", RefusalsText(Outcome), 1.0, false);
+            else
+            {
+                double Exact = 0.0;
+                for (int Index = 0; Index <= 2000; ++Index)
+                {
+                    const double Y = 1.6 * Index / 2000.0, Weight = (Index == 0 || Index == 2000) ? 1.0 : (Index % 2 ? 4.0 : 2.0);
+                    Exact += Weight * std::numbers::pi * (0.4 + 0.1 * std::sin(std::numbers::pi * Y / 1.6)) * (0.3 + 0.05 * Y) * 1.6 / 6000.0;
+                }
+                const double Integral = IntegrateBodyVolume(Partition, Outcome.Body);
+                const double Error = std::abs(Integral - Exact) / Exact;
+                const AuditReport Audit = AuditBody(Partition, Outcome.Body);
+                const bool Named = NamedFace(Outcome, "Close#8.Cap(0)") && NamedFace(Outcome, "Close#8.Cap(1)") && NamedFace(Outcome, "Mirror#7.Image(Loft#6.Side(Surface))");
+                const bool Passed = Error <= 2.0e-3 && Audit.SoundCondition() && Named && Partition.Bodies.Resolve(Outcome.Body).Category == BodyCategory::Solid;
+                Report(TreePodGate, "Pod solid from the tree", "volume " + std::to_string(Integral).substr(0, 8) + " vs " + std::to_string(Exact).substr(0, 8) + " · rel. " + Scientific(Error) + " · "
+                       + AuditText(Audit) + (Named ? " · Close#8.Cap(0) · Close#8.Cap(1)" : " · cap names missing"), Error, Passed);
+            }
+        }
+
+        // ---- T3 network tree: Spine1 lies in x = 0 (no tangent), the sections leave it (tangent).
+        {
+            FeatureTree Tree;
+            const BonnetNetwork Network = ComposeBonnetNetwork(0xB0AA37ULL);
+            for (size_t Index = 0; Index < Network.Names.size(); ++Index) Tree.Steps.push_back(CurveStep(Network.Names[Index], Network.Points[Index]));
+            Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Network, "Network#11", Network.Names));
+            Tree.Steps.push_back(SurfaceStep(FeatureStepKind::Mirror, "Mirror#12"));
+            ModelPartition Partition;
+            const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree);
+            if (Outcome.Refused) Report(TreeNetworkGate, "Network tree", RefusalsText(Outcome), 1.0, false);
+            else
+            {
+                const AuditReport Audit = AuditBody(Partition, Outcome.Body);
+                const bool Named = NamedFace(Outcome, "Network#11.Side(Surface)") && NamedFace(Outcome, "Mirror#12.Image(Network#11.Side(Surface))");
+                const bool Sound = Audit.SoundCondition() && Named && Partition.CollectInventory(Outcome.Body).Faces.size() == 2;
+                const double Seam = MeasureMirrorSeam(SurfacePanel{ Outcome.Panels.at("Network#11.Side(Surface)") }, SurfacePanel{ Outcome.Panels.at("Mirror#12.Image(Network#11.Side(Surface))") }, 0.0);
+                Report(TreeNetworkGate, "Network + mirror sheet", AuditText(Audit) + " · 2 faces · seam angle " + Scientific(Seam) + " rad (networks: G1 at the mirror 🚧, reported only)", Sound ? 0.0 : 1.0, Sound);
+            }
+        }
+
+        // ---- T4 refusals, each through a whole regeneration.
+        auto Expect = [&](const std::string& Name, FeatureTree Tree, const std::string& Label, const std::string& Expected)
+        {
+            ModelPartition Partition;
+            const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree);
+            std::string Refusal;
+            for (const FeatureStepReport& Step : Outcome.Steps) if (Step.Label == Label) Refusal = Step.Refusal;
+            const bool Named = Refusal.find(Expected) != std::string::npos;
+            Report(TreeRefuseGate, Name, Refusal.empty() ? "(built — expected a refusal)" : Label + ": " + Refusal, Named ? 0.0 : 1.0, Named);
+        };
+        {
+            FeatureTree Lone = PodTree();
+            Lone.Steps.resize(5);
+            Lone.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#6", { "Hoop1", "Hoop2" }, 1));
+            Expect("G1 with no neighbouring panel", Lone, "Loft#6", "needs a panel ending on");
+            FeatureTree Twice = PodTree();
+            Twice.Steps.push_back(SurfaceStep(FeatureStepKind::Close, "Close#9"));
+            Expect("Close after Close", Twice, "Close#9", "already closed by Close#8");
+            FeatureTree After = PodTree();
+            After.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#9", { "Hoop4", "Hoop5" }));
+            Expect("Loft after Close", After, "Loft#9", "already closed by Close#8");
+            FeatureTree Empty;
+            Empty.Steps.push_back(SurfaceStep(FeatureStepKind::Mirror, "Mirror#1"));
+            Expect("Mirror without panels", Empty, "Mirror#1", "no surface panels");
+            FeatureTree Open;
+            std::mt19937_64 Generator(0xB0AA37ULL);
+            for (int Index = 0; Index < 3; ++Index) Open.Steps.push_back(CurveStep("Section" + std::to_string(Index + 1), BonnetSectionPoints(BonnetSectionStations[Index], Generator)));
+            Open.Steps.push_back(SurfaceStep(FeatureStepKind::Loft, "Loft#4", { "Section1", "Section2", "Section3" }));
+            Open.Steps.push_back(SurfaceStep(FeatureStepKind::Close, "Close#5"));
+            Expect("Close on an open, non-planar rim", Open, "Close#5", "not planar");
+            FeatureTree Net = Open;
+            Net.Steps.resize(3);
+            Net.Steps.push_back(SurfaceStep(FeatureStepKind::Network, "Network#4", { "Section1", "Section2", "Section3" }, 1));
+            Expect("Network with G1", Net, "Network#4", "🚧");
+        }
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    ENTRY
 //------------------------------------------------------------------------------------------------------------------------
@@ -887,10 +1075,11 @@ int main(int Count, char** Arguments)
     if (Only.empty() || Only == "networks")   ValidateNetworks();
     if (Only.empty() || Only == "continuity") ValidateContinuity();
     if (Only.empty() || Only == "assembly")   ValidateAssembly();
+    if (Only.empty() || Only == "tree")       ValidateTree();
 
     bool PassedCondition = true;
     for (const GateTally* Gate : AllGates()) PassedCondition = PassedCondition && Gate->Failures == 0 && (Gate->Checks > 0 || !Only.empty());
-    std::printf("# Panel surfacing validation\n\n%s Vehicle plan V5–V7: curve networks, G1 / G2 across shared sections, sewing → mirror → caps → solid\n\n", PassedCondition ? "🟢" : "🔴");
+    std::printf("# Panel surfacing validation\n\n%s Vehicle plan V5–V7: curve networks, G1 / G2 across shared sections, sewing → mirror → caps → solid, feature-tree steps\n\n", PassedCondition ? "🟢" : "🔴");
     std::printf("## Gates\n\n| | Gate | Measures | Limit | Worst | Checks | Failures |\n|---|---|---|---|---|---|---|\n");
     for (const GateTally* Gate : AllGates())
     {

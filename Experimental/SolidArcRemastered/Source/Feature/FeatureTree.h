@@ -12,6 +12,7 @@
 #include "Feature/TopologicalNaming.h"
 #include "Sketch/SketchSolver.h"
 #include "Surfacing/CurveFitting.h"
+#include "Geometry/SurfaceGeometry.h"
 
 #include <map>
 #include <numbers>
@@ -34,7 +35,10 @@ enum class FeatureStepKind : uint8_t
     Blend         = 3,                                                                       // Fillet / chamfer on referenced edges
     FaceOperation = 4,                                                                       // Push, offset, draft, … on referenced faces
     SpaceCurve    = 5,                                                                       // 3D curve fitted to imported points (vehicle plan V3)
-    Loft          = 6,                                                                       // Sheet skinned through SpaceCurve sections (V4)
+    Loft          = 6,                                                                       // Panel skinned through SpaceCurve sections (V4, G1/G2 V6)
+    Network       = 7,                                                                       // Panel through a SpaceCurve network, Gordon / Coons (V5)
+    Mirror        = 8,                                                                       // Mirror image of every panel so far through a plane (V7)
+    Close         = 9,                                                                       // Plane caps on the planar rim loops → solid (V7)
 };
 
 enum class FeatureCombination : uint8_t
@@ -104,9 +108,11 @@ struct FeatureStep
     std::vector<TopologyReference> References     = {};                                      // [-]   - Blend: edges · face operation: faces
     std::vector<Vector3>           Points         = {};                                      // [len] - SpaceCurve: imported points in order
     bool                           ClosedCondition = false;                                  // [-]   - SpaceCurve: the loop closes (last joins first)
+    bool                           PlanarCondition = false;                                  // [-]   - SpaceCurve: fit in the points' best plane (cap sections)
     FeatureValue                   Tolerance      = { 2.0e-4 };                              // [len] - SpaceCurve: fit tolerance (0.2 mm)
     std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit
-    std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve step labels in section order
+    std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve labels in order · Network: its curves
+    int                            Continuity     = 0;                                       // [-]   - Loft: 0 G0 · 1 G1 · 2 G2 to panels sharing an end section
 };
 
 struct FeatureTree
@@ -137,6 +143,7 @@ struct RegenerationOutcome
     std::vector<FeatureStepReport>     Steps        = {};                                    // [-]  - One per step
     std::map<std::string, SketchModel> Sketches     = {};                                    // [-]  - Solved sketch per label
     std::map<std::string, CurveFitOutcome> Curves   = {};                                    // [-]  - Fitted (and edited) curve per SpaceCurve label
+    std::map<std::string, NurbsSurface> Panels      = {};                                    // [-]  - Carrier per panel face name (zebra / deviation)
     int                                Refused      = 0;                                     // [-]  - Steps refused
     double                             Milliseconds = 0.0;                                   // [ms] - Whole replay
 };

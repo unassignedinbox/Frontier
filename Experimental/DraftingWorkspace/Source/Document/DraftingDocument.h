@@ -196,8 +196,17 @@ struct VehicleCurveFile;
 //    at Tolerance — one undo entry, and all or nothing (a curve that cannot be fitted refuses the import).
 [[nodiscard]] DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const VehicleCurveFile& File, double Tolerance = 2.0e-4);
 
-// 💡 V4: a Loft step through the SpaceCurve steps in the given order (Plasticity L); the result is an open sheet.
-[[nodiscard]] DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels);
+// 💡 V4–V6: a Loft step through the SpaceCurve steps in the given order (Plasticity L), G0 / G1 / G2 (Continuity 0–2) to a
+//    panel already ending on its first or last section; when the picked curves cross each other (DetectCurveNetwork)
+//    a Network step (Gordon / Coons, V5) is made instead — order does not matter there, and G1 / G2 refuses (🚧).
+[[nodiscard]] DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels, int Continuity = 0);
+
+// 💡 V7 (Plasticity Alt+X, gizmo x / y / z): Mirror step through the world plane normal to Axis (0 x · 1 y · 2 z) at the
+//    origin; SpaceCurves ending on that plane are re-fitted to leave it along its normal, so lofted halves meet G1.
+[[nodiscard]] DraftingCommandOutcome MirrorDraftingPanels(DraftingDocument& Document, int Axis = 0);
+
+// 💡 V7: Close step — plane caps on the planar rim loops of the sewn panels; the result is a solid (or a named refusal).
+[[nodiscard]] DraftingCommandOutcome CloseDraftingPanels(DraftingDocument& Document);
 
 // 💡 V3 (Plasticity mode 1): pole Pole of a SpaceCurve moves to Position; kept as a pole edit re-applied after every re-fit.
 [[nodiscard]] DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, Modeller::Vector3 Position);
