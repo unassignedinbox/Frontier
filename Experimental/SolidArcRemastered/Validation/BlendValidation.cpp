@@ -376,12 +376,17 @@ int main(int ArgumentCount, char** Arguments)
                BooleanOperation::Difference, [](double Blend) { return Blend - π * 0.16 * 2.0; });
     Downstream("BoxAllChamfer ∪ block on the top flat", "BoxAllChamfer", [](ModelPartition& P) { return ConstructBlock(P, { 1.5, 1.0, 1.5 }, { 1.0, 1.0, 1.0 }).Value; },
                BooleanOperation::Union, [](double Blend) { return Blend + 0.5; });
+    Downstream("CliffPlateFillet − drill r 0.3 (through the kept flat)", "CliffPlateFillet", [&](ModelPartition& P) { return ConstructCylinder(P, At({ 2.0, 1.2, -1.0 }), 0.3, 3.0).Value; },
+               BooleanOperation::Difference, [](double Blend) { return Blend - π * 0.09 * 0.2; });
+    Downstream("CliffDiscFillet − coaxial bore r 0.4", "CliffDiscFillet", [&](ModelPartition& P) { return ConstructCylinder(P, At({ 0.0, 0.0, -1.0 }), 0.4, 3.0).Value; },
+               BooleanOperation::Difference, [](double Blend) { return Blend - π * 0.16 * 0.2; });
 
-    // ---- B9: determinism on BevelLab.
+    // ---- B9: determinism on BevelLab and the overflow family.
     for (const std::string& Name : EnumerateBlendSpecimens())
     {
         ModelPartition Probe;
-        if (!Selected(Name) || ConstructBlendSpecimen(Probe, Name).Family != "BevelLab") continue;
+        const std::string Family = Selected(Name) ? ConstructBlendSpecimen(Probe, Name).Family : std::string();
+        if (Family != "BevelLab" && Family != "Overflow") continue;
         uint64_t Digests[2] = {};
         for (uint64_t& Digest : Digests)
         {
@@ -394,7 +399,7 @@ int main(int ArgumentCount, char** Arguments)
     }
 
     // ---- B10: scale invariance (rounded box and rim fillet scaled by s, sizes scaled by s).
-    struct ScaleRow { double Scale = 1.0; double Box = 0.0, Rim = 0.0; };
+    struct ScaleRow { double Scale = 1.0; double Box = 0.0, Rim = 0.0, Cliff = 0.0; };
     std::vector<ScaleRow> ScaleRows;
     for (double Factor : { 1.0e-3, 1.0e-1, 1.0e1, 1.0e3 })
     {
@@ -420,7 +425,24 @@ int main(int ArgumentCount, char** Arguments)
             const double       Expected = MeasureRimBlendVolume({ Factor, 2.0 * Factor }, { -1.0, 0.0 }, { 0.0, -1.0 }, 0.3 * Factor, BlendProfile::Fillet, true);
             Row.Rim = Outcome.Refusal.empty() ? std::fabs(IntegrateBodyVolume(Partition, Outcome.Body) - IntegrateBodyVolume(Partition, Body) - Expected) / std::fabs(Expected) : 1.0;
         }
-        Tally(ScaleGate, std::max(Row.Box, Row.Rim), std::max(Row.Box, Row.Rim) <= 1.0e-9);
+        {
+            // Cliff overflow: plate t = 0.2 s, front top edge r = 0.3 s; removed section r·t − ∫_{r−t}^{r} √(r² − w²) dw per unit length.
+            ModelPartition  Partition;
+            const BodyToken Body = ConstructBlock(Partition, {}, { 4.0 * Factor, 2.0 * Factor, 0.2 * Factor }).Value;
+            std::vector<EdgeToken> Front;
+            for (EdgeToken Edge : Partition.CollectInventory(Body).Edges)
+            {
+                const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+                const Vector3 Start = Partition.Vertices.Resolve(Profile.Start).Position, End = Partition.Vertices.Resolve(Profile.End).Position;
+                if (std::fabs(Start.Y) <= 1.0e-12 * Factor && std::fabs(End.Y) <= 1.0e-12 * Factor && Start.Z > 0.1 * Factor && End.Z > 0.1 * Factor) Front.push_back(Edge);
+            }
+            const BlendOutcome Outcome   = BlendEdges(Partition, Body, Front, { BlendProfile::Fillet, 0.3 * Factor });
+            const auto         Primitive = [](double Level) { return 0.5 * (Level * std::sqrt(0.09 - Level * Level) + 0.09 * std::asin(Level / 0.3)); };
+            const double       Expected  = -4.0 * (0.3 * 0.2 - (Primitive(0.3) - Primitive(0.1))) * Factor * Factor * Factor;
+            Row.Cliff = Outcome.Refusal.empty() ? std::fabs(IntegrateBodyVolume(Partition, Outcome.Body) - IntegrateBodyVolume(Partition, Body) - Expected) / std::fabs(Expected) : 1.0;
+        }
+        const double Worst = std::max({ Row.Box, Row.Rim, Row.Cliff });
+        Tally(ScaleGate, Worst, Worst <= 1.0e-9);
         ScaleRows.push_back(Row);
     }
 
@@ -466,10 +488,10 @@ int main(int ArgumentCount, char** Arguments)
     {
         std::printf("| %s | %s | %.12f | %.12f | %.1e |\n", Row.PassedCondition ? "🟢" : "🔴", Row.Name.c_str(), Row.Volume, Row.Expected, Row.Expected != 0.0 ? std::fabs(Row.Volume - Row.Expected) / Row.Expected : 0.0);
     }
-    std::printf("\n## Scale (B10)\n\n| | s | Rounded box rel. error | Rim fillet rel. error |\n|---|---|---|---|\n");
+    std::printf("\n## Scale (B10)\n\n| | s | Rounded box rel. error | Rim fillet rel. error | Cliff plate rel. error |\n|---|---|---|---|---|\n");
     for (const ScaleRow& Row : ScaleRows)
     {
-        std::printf("| %s | %.0e | %.1e | %.1e |\n", std::max(Row.Box, Row.Rim) <= 1.0e-9 ? "🟢" : "🔴", Row.Scale, Row.Box, Row.Rim);
+        std::printf("| %s | %.0e | %.1e | %.1e | %.1e |\n", std::max({ Row.Box, Row.Rim, Row.Cliff }) <= 1.0e-9 ? "🟢" : "🔴", Row.Scale, Row.Box, Row.Rim, Row.Cliff);
     }
     return PassedCondition ? 0 : 1;
 }

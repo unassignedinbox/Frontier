@@ -1187,6 +1187,42 @@ namespace
             BlendStep(P, Built, [](Vector3, Vector3, const CurveGeometry&) { return true; }, 8, BlendProfile::Fillet, 0.1);
             return Built;
         });
+        // 📝 O family: cliff overflow. A thin plate (t 0.2) − an arrayed row of drills, then its front top edge blended wider
+        //    than the front face: the front face is consumed and the bottom face trims the blend. The oracle is exact
+        //    (kept box ∪ the fillet cylinder, or the plate minus the chamfer half-space), so its clearance returns to 10⁻³.
+        const auto ThinPlate = [](Partition& P, StressBuilt& Built)
+        {
+            const AnalyticShape Plate = BoxShape({ 0, 0, 0 }, { 4, 2, 0.2 });
+            const BodyToken     Body  = ConstructShape(P, Plate, Built.Refusal);
+            const PatternInstances Holes = LinearPattern(P, Bore({ 0.5, 1.2, 0 }, 0.2), { 1, 0, 0 }, 4, Built.Operations);
+            if (!Holes.Refusal.empty()) { Built.Refusal = Holes.Refusal; return; }
+            Built.Oracle        = { {}, Holes.Shapes, { Plate }, { -0.5, -0.5, -0.5 }, { 4.5, 2.5, 0.7 } };
+            Built.Body          = ChainBooleans(P, Body, Holes.Bodies, BooleanOperation::Difference, Built);
+            Built.ExpectedGenus = 4;
+        };
+        const auto FrontTop = [](Vector3 Start, Vector3 End, const CurveGeometry&) { return Start.Y < 1e-9 && End.Y < 1e-9 && Start.Z > 0.19 && End.Z > 0.19; };
+        Add("O", "O1", "Thin plate t 0.2 − 4 arrayed drills + fillet the front top edge r 0.3 (cliff overflow onto the bottom face)", [=](Partition& P)
+        {
+            StressBuilt Built;
+            ThinPlate(P, Built);
+            BlendStep(P, Built, FrontTop, 1, BlendProfile::Fillet, 0.3);
+            const auto Primitive = [](double Level) { return 0.5 * (Level * std::sqrt(0.09 - Level * Level) + 0.09 * std::asin(Level / 0.3)); };
+            Built.Expected        = 1.6 - 4.0 * π * 0.04 * 0.2 - 4.0 * (0.3 * 0.2 - (Primitive(0.3) - Primitive(0.1)));
+            Built.Oracle.Added    = { BoxShape({ 0, 0.3, 0 }, { 4, 2, 0.2 }), CylinderShape({ 0, 0.3, -0.1 }, { 1, 0, 0 }, 0.3, 4.0) };
+            Built.OracleClearance = 1.0e-3;
+            return Built;
+        });
+        Add("O", "O2", "Thin plate t 0.2 − 4 arrayed drills + chamfer the front top edge c 0.3 (cliff overflow, plane trimmed by the bottom)", [=](Partition& P)
+        {
+            StressBuilt Built;
+            ThinPlate(P, Built);
+            BlendStep(P, Built, FrontTop, 1, BlendProfile::Chamfer, 0.3);
+            Built.Expected        = 1.6 - 4.0 * π * 0.04 * 0.2 - 4.0 * 0.5 * (0.09 - 0.01);
+            Built.Oracle.Added    = { BoxShape({ 0, 0, 0 }, { 4, 2, 0.2 }) };
+            Built.Oracle.Removed.push_back(HalfSpaceShape({ 0, 0.1, 0 }, { 0, 1.0 / std::numbers::sqrt2, -1.0 / std::numbers::sqrt2 }));
+            Built.OracleClearance = 1.0e-3;
+            return Built;
+        });
         return Rows;
     }
 

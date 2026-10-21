@@ -51,6 +51,26 @@ namespace
         Vector2                Reference = {};                                               // [-] - Chart anchor reference
     };
 
+    // Far corner of a support the blend is wider than (cliff overflow), as seen from one blend end.
+    struct CliffCorner
+    {
+        int         Point      = -1;                                                         // [-] - Blend ∩ cliff edge (−1: no overflow)
+        FaceToken   Cliff      = {};                                                         // [-] - Face across the far edge
+        EdgeToken   FarEdge    = {};                                                         // [-] - Consumed support ∩ cliff face
+        EdgeToken   Trimmed    = {};                                                         // [-] - End face ∩ cliff face (absent at a seam)
+        int         TrimmedEnd = 0;                                                          // [-] - Its end at the far corner
+        std::string Refusal    = {};                                                         // [-] - Overflow that v1 cannot build
+    };
+
+    // One side of a blend that runs off its support: the support is consumed and the cliff face trims the blend.
+    struct CliffOverflow
+    {
+        FaceToken Consumed = {};                                                             // [-] - Support narrower than the blend
+        FaceToken Cliff    = {};                                                             // [-] - Trimming face
+        EdgeToken FarEdge  = {};                                                             // [-] - Replaced by the cliff section
+        int       Ends     = 0;                                                              // [-] - Bit per blend end that saw it
+    };
+
     using EdgeEndKey    = std::pair<uint32_t, int>;                                          // (edge slot, 0 = Start end / 1 = End end)
     using ContactKey    = std::tuple<uint32_t, int, int>;                                    // (edge slot, side, end)
     using FaceVertexKey = std::pair<uint32_t, uint32_t>;                                     // (face slot, vertex slot)
@@ -127,6 +147,11 @@ namespace
         std::map<std::pair<uint32_t, int>, int>    ContactPieces;                            // (edge, side) → blueprint edge
         std::vector<CornerPatch>                   Corners;
         std::set<EdgeEndKey>                       Extensions;                               // sharp edge ends a concave blend may lengthen
+        std::map<std::pair<uint32_t, int>, CliffOverflow> Cliffs;                            // (blended edge, side) → cliff overflow
+        std::set<uint32_t>                         ConsumedEdges;                            // sharp edges inside a consumed support
+        std::set<uint32_t>                         ConsumedFaces;                            // supports narrower than their blend
+        std::map<uint32_t, int>                    Replacements;                             // far edge → cliff section (blueprint edge)
+        std::set<std::pair<uint32_t, int>>         FlippedContacts;                          // cliff sections running against τ
 
         //----------------------------------------------------------------------------------------------------------------
         //                                            BLUEPRINT RECORDS
@@ -345,6 +370,152 @@ namespace
         {
             Outcome.Statistics.MaxVertexResidual = std::max(Outcome.Statistics.MaxVertexResidual, Gap);
             return Gap <= Agreement;
+        }
+
+        //----------------------------------------------------------------------------------------------------------------
+        //                                            OVERFLOW
+        //----------------------------------------------------------------------------------------------------------------
+
+        // Convex edge: the outward normals turn the same way as the sheet convention (N₀ × N₁ · T > 0, T along fin 0).
+        [[nodiscard]] bool ConvexEdge(EdgeToken Edge) const
+        {
+            const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
+            const CurveSample    Sample  = EvaluateCurve(Partition.Curves.Resolve(Profile.Curve), 0.5 * (Profile.IntervalLow + Profile.IntervalHigh));
+            const FinToken       Fin     = Profile.RadialFin;
+            const Vector3        NormalA = EvaluateOutwardNormal(Partition, FaceOfFin(Fin), Sample.Position);
+            const Vector3        NormalB = EvaluateOutwardNormal(Partition, FaceOfFin(Partition.RadialMate(Fin)), Sample.Position);
+            return Dot(Cross(NormalA, NormalB), Normalize(Sample.Derivative) * (Partition.Fins.Resolve(Fin).Sense == Orientation::Forward ? 1.0 : -1.0)) > 0.0;
+        }
+
+        // 📝 Cliff overflow (Parasolid's term): the foot of the blend on a support lies at or past the far end of the
+        //    sharp edge it trims, so the blend is wider than that support. v1 builds it when the support is a strip of
+        //    4 edges (blended edge, two end edges or one seam, far edge), the far corner has degree 3 with no blend, and
+        //    the far edge is convex: the support is consumed, and the face across the far edge (the cliff) trims the
+        //    blend. Point = where the blend meets the cliff along the end face's edge (Section == nullptr) or along the
+        //    blend's cross-section at a seam. Concave, notch, partial and blend-on-blend overflows are named and refused;
+        //    other shapes return Unmatched, so the trim step reports the consumed edge as before.
+        [[nodiscard]] CliffCorner DetectCliff(const EdgeBlendSheet& Sheet, VertexToken Vertex, EdgeToken Sharp, FaceToken Support, Vector3 Foot, const CurveGeometry* Section)
+        {
+            CliffCorner        Corner;
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Sharp);
+            if (!std::holds_alternative<StraightLine>(Partition.Curves.Resolve(Profile.Curve))) return Corner;
+            const VertexToken Far         = Profile.Start == Vertex ? Profile.End : Profile.Start;
+            const Vector3     Near        = Partition.Vertices.Resolve(Vertex).Position;
+            const Vector3     FarPosition = Partition.Vertices.Resolve(Far).Position;
+            const double      Span        = Distance(Near, FarPosition);                     // [len] - Sharp edge length
+            if (Span <= Tolerance || Far == Vertex) return Corner;
+            const double Reach = Dot(Foot - Near, FarPosition - Near) / Span;                // [len] - Foot along the edge
+            if (Reach < Span - Agreement) return Corner;
+            const auto Refuse = [&](const std::string& Reason) { Corner.Refusal = "blend wider than its face: " + Reason + " (🚧)"; return Corner; };
+            const CliffCorner Unmatched;                                                     // not a v1 cliff: the trim refusal names it
+            if (!Sheet.ConvexCondition) return Refuse("concave blend overflow");
+            std::vector<std::pair<EdgeToken, int>> Around;
+            for (EdgeToken Edge : Inventory.Edges)
+            {
+                const EdgeProfile& Other = Partition.Edges.Resolve(Edge);
+                if (Other.Start == Far) Around.push_back({ Edge, 0 });
+                if (Other.End == Far)   Around.push_back({ Edge, 1 });
+            }
+            if (Around.size() != 3) return Unmatched;
+            for (const auto& [Edge, EndIndex] : Around)
+            {
+                if (SheetOf(Edge)) return Refuse("it runs onto another blended edge at the far corner");
+                if (Edge == Sharp) continue;
+                const auto [FaceA, FaceB] = FacesOfEdge(Edge);
+                if (FaceA == Support || FaceB == Support)
+                {
+                    if (FaceA == FaceB) return Unmatched;
+                    Corner.FarEdge = Edge;
+                    Corner.Cliff   = FaceA == Support ? FaceB : FaceA;
+                }
+                else
+                {
+                    Corner.Trimmed    = Edge;
+                    Corner.TrimmedEnd = EndIndex;
+                }
+            }
+            if (!Corner.FarEdge.PresentCondition()) return Unmatched;
+            if (Corner.Cliff == Sheet.Faces[0] || Corner.Cliff == Sheet.Faces[1]) return Refuse("wider than both supports");
+            if (!Section && !Corner.Trimmed.PresentCondition()) return Unmatched;
+            const FaceProfile& Consumed = Partition.Faces.Resolve(Support);
+            if (Consumed.Loops.size() != 1) return Unmatched;
+            int  Fins    = 0;                                                                // [-] - Support boundary size
+            bool FarSeen = false;                                                            // [-] - Far edge on that boundary
+            Partition.EnumerateLoopFins(Consumed.Loops.front(), [&](FinToken Fin) { ++Fins; FarSeen = FarSeen || Partition.Fins.Resolve(Fin).Edge == Corner.FarEdge; });
+            if (Fins != 4 || !FarSeen) return Unmatched;
+            if (!ConvexEdge(Corner.FarEdge)) return Refuse("notch overflow, the far edge is concave");
+            std::optional<Vector3> Point;
+            if (Section) Point = CrossCurveSurface(*Section, FarPosition, SurfaceOf(Corner.Cliff));
+            else
+            {
+                const EdgeProfile&   Trimmed = Partition.Edges.Resolve(Corner.Trimmed);
+                const CurveGeometry& Curve   = Partition.Curves.Resolve(Trimmed.Curve);
+                Point = CrossCurveSurface(Curve, FarPosition, Sheet.Surface);
+                if (Point)
+                {
+                    const double τ = ProjectOntoCurve(Curve, *Point, Trimmed.IntervalLow);
+                    const double Slack = Agreement / std::max(MeasureParameterScale(Curve), 1.0e-300);   // [-] - Agreement in τ
+                    if (!Agree(DistanceToCurve(Curve, *Point)) || τ < Trimmed.IntervalLow - Slack || τ > Trimmed.IntervalHigh + Slack) return Refuse("it also runs past the cliff face's edge");
+                }
+            }
+            if (!Point) return Refuse("the blend misses the cliff face");
+            Corner.Point = IssueVertex(*Point);
+            return Corner;
+        }
+
+        [[nodiscard]] bool RecordCliff(EdgeToken Edge, int End, int Side, EdgeToken Sharp, FaceToken Support, const CliffCorner& Corner)
+        {
+            CliffOverflow& Overflow = Cliffs[{ Edge.Slot, Side }];
+            if (Overflow.Ends != 0 && (Overflow.Consumed != Support || Overflow.Cliff != Corner.Cliff || Overflow.FarEdge != Corner.FarEdge)) return false;
+            Overflow.Consumed = Support;
+            Overflow.Cliff    = Corner.Cliff;
+            Overflow.FarEdge  = Corner.FarEdge;
+            Overflow.Ends    |= 1 << End;
+            ConsumedEdges.insert(Sharp.Slot);
+            ConsumedFaces.insert(Support.Slot);
+            return true;
+        }
+
+        [[nodiscard]] static std::optional<OrthonormalFrame> AxisOf(const SurfaceGeometry& Surface)
+        {
+            if (const auto* Torus = std::get_if<TorusSurface>(&Surface))       return Torus->Frame;
+            if (const auto* Cone = std::get_if<ConeSurface>(&Surface))         return Cone->Frame;
+            if (const auto* Cylinder = std::get_if<CylinderSurface>(&Surface)) return Cylinder->Frame;
+            return std::nullopt;
+        }
+
+        // 📝 The blend side trimmed by the cliff: blend ∩ cliff face between the two cliff points (open edges), or the
+        //    full circle through the single point when a rim blend of revolution meets a plane square to its axis.
+        [[nodiscard]] std::string IssueCliffSection(const EdgeBlendSheet& Sheet, EdgeToken Edge, int Side, const CliffOverflow& Overflow, bool Closed)
+        {
+            const std::string Subject = "edge " + LabelToken("E", Edge) + ": ";
+            if (Overflow.Ends != 3) return Subject + "blend wider than its face at one end only (partial overflow, 🚧)";
+            const int              From  = ContactVertices[{ Edge.Slot, Side, 0 }];
+            const int              To    = ContactVertices[{ Edge.Slot, Side, 1 }];
+            const SurfaceGeometry& Cliff = SurfaceOf(Overflow.Cliff);
+            int Section = -1;
+            if (Closed)
+            {
+                const auto*                     Plane = std::get_if<PlaneSurface>(&Cliff);
+                const std::optional<OrthonormalFrame> Axis = AxisOf(Sheet.Surface);
+                if (!Plane || !Axis || Length(Cross(Plane->Frame.ZAxis, Axis->ZAxis)) > 1.0e-12) return Subject + "closed cliff section off a plane square to the blend axis (🚧)";
+                const Vector3 Point  = PositionOf(From);
+                const Vector3 Centre = Axis->Origin + Axis->ZAxis * Dot(Point - Axis->Origin, Axis->ZAxis);
+                const double  Radius = Distance(Point, Centre);                             // [len] - Section circle radius
+                if (Radius <= Tolerance) return Subject + "cliff section collapses onto the blend axis";
+                Section = IssueEdge(CircularArc{ ConstructFrame(Centre, Axis->ZAxis, Point - Centre), Radius }, 0.0, 2.0 * std::numbers::pi, From, From);
+            }
+            else Section = IssueSection(Sheet.Surface, Cliff, From, To);
+            if (Section < 0) return Subject + "no exact section of the " + SurfaceCategoryLabel(Sheet.Surface) + " blend and the cliff face";
+            if (!Agree(MeasureEdgeDeparture(Section, Sheet.Surface, 9)) || !Agree(MeasureEdgeDeparture(Section, Cliff, 9))) return Subject + "cliff section leaves the blend or the cliff face";
+            const BlueprintEdge& Block  = Blueprint.Edges[Section];
+            const CurveSample    Middle = EvaluateCurve(Block.Curve, 0.5 * (Block.Low + Block.High));
+            const double         τ      = ProjectOntoCurve(Sheet.Contacts[Side], Middle.Position, 0.0);
+            if (Dot(Middle.Derivative, EvaluateCurve(Sheet.Contacts[Side], τ).Derivative) < 0.0) FlippedContacts.insert({ Edge.Slot, Side });
+            ContactPieces[{ Edge.Slot, Side }] = Section;
+            Replacements[Overflow.FarEdge.Slot] = Section;
+            ++Outcome.Statistics.CliffOverflows;
+            return {};
         }
 
         //----------------------------------------------------------------------------------------------------------------
@@ -750,17 +921,28 @@ namespace
             if (SeamSide < 0) return "seam is not on a support of the blended rim";
             const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
             const double  τ        = ResolveSeamSection(Sheet, SeamSide, Seam, ProjectOntoCurve(Sheet.Spine, Position, 0.0));
-            const int     FootA    = IssueVertex(EvaluateCurve(Sheet.Contacts[0], τ).Position);
-            const int     FootB    = IssueVertex(EvaluateCurve(Sheet.Contacts[1], τ).Position);
+            int           FootA    = IssueVertex(EvaluateCurve(Sheet.Contacts[0], τ).Position);
+            int           FootB    = IssueVertex(EvaluateCurve(Sheet.Contacts[1], τ).Position);
             const CurveGeometry& SeamCurve = Partition.Curves.Resolve(Partition.Edges.Resolve(Seam).Curve);
             if (!Agree(DistanceToCurve(SeamCurve, PositionOf(SeamSide == 0 ? FootA : FootB)))) return "seam does not cross the contact rail";
-            int Section = -1;
+            const Vector3 Ball = EvaluateCurve(Sheet.Spine, τ).Position;                     // [len] - Ball centre
+            CurveGeometry Across = StraightLine{ PositionOf(FootA), Normalize(PositionOf(FootB) - PositionOf(FootA)) };
             if (Settings.Profile == BlendProfile::Fillet)
             {
-                const Vector3 Ball = EvaluateCurve(Sheet.Spine, τ).Position;                 // [len] - Ball centre
-                const Vector3 Out  = PositionOf(FootA) - Ball;                               // [len] - To contact A
-                Section = IssueConicArc(CircularArc{ ConstructFrame(Ball, Cross(Out, PositionOf(FootB) - Ball), Out), Sheet.Radius }, FootA, FootB);
+                const Vector3 Out = PositionOf(FootA) - Ball;                                // [len] - To contact A
+                Across = CircularArc{ ConstructFrame(Ball, Cross(Out, PositionOf(FootB) - Ball), Out), Sheet.Radius };
             }
+            int& SeamFoot = SeamSide == 0 ? FootA : FootB;
+            const CliffCorner Corner = DetectCliff(Sheet, Vertex, Seam, SeamFace, PositionOf(SeamFoot), &Across);
+            if (!Corner.Refusal.empty()) return Corner.Refusal;
+            const bool Overflow = Corner.Point >= 0;                                         // [-] - The seam's support is consumed
+            if (Overflow)
+            {
+                if (!RecordCliff(Edge, 0, SeamSide, Seam, SeamFace, Corner) || !RecordCliff(Edge, 1, SeamSide, Seam, SeamFace, Corner)) return "cliff overflow: inconsistent cliff at the seam";
+                SeamFoot = Corner.Point;
+            }
+            int Section = -1;
+            if (Settings.Profile == BlendProfile::Fillet) Section = IssueConicArc(Across, FootA, FootB);
             else Section = IssueSegment(FootA, FootB);
             if (Section < 0) return "degenerate cross-section at the seam";
             for (int End = 0; End < 2; ++End)
@@ -769,7 +951,7 @@ namespace
                 ContactVertices[{ Edge.Slot, 1, End }] = FootB;
                 Terminations[{ Edge.Slot, End }]       = { { Section, FootA, FootB } };
             }
-            TrimVertices[{ Seam.Slot, EndAt(Seam, Vertex) }] = SeamSide == 0 ? FootA : FootB;
+            if (!Overflow) TrimVertices[{ Seam.Slot, EndAt(Seam, Vertex) }] = SeamFoot;
             ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Continuation)];
             return {};
         }
@@ -846,6 +1028,21 @@ namespace
                 if (!Foot) return "cap: contact curve misses the third face";
                 Feet[Side] = IssueVertex(*Foot);
             }
+            bool Overflow[2] = { false, false };                                             // [-] - Side runs off its support
+            for (EdgeToken Sharp : { First, Second })
+            {
+                const auto      Faces   = FacesOfEdge(Sharp);
+                const FaceToken Support = Faces.first == Third ? Faces.second : Faces.first;
+                const int       Side    = SideOn(Sheet, Support);
+                if (Side < 0) return "cap: sharp edge not on a support";
+                const CliffCorner Corner = DetectCliff(Sheet, Vertex, Sharp, Support, PositionOf(Feet[Side]), nullptr);
+                if (!Corner.Refusal.empty()) return Corner.Refusal;
+                if (Corner.Point < 0) continue;
+                if (!RecordCliff(End.first, End.second, Side, Sharp, Support, Corner)) return "cliff overflow: the two blend ends see different cliffs";
+                Feet[Side]     = Corner.Point;
+                Overflow[Side] = true;
+                TrimVertices[{ Corner.Trimmed.Slot, Corner.TrimmedEnd }] = Corner.Point;
+            }
             // 📝 Cap = blend carrier ∩ third face between the feet. A cylinder on a plane is a closed-form conic; every
             //    other pair (torus or cone blends, curved third faces) goes through the exact section primitive.
             int Cap = -1;
@@ -864,6 +1061,7 @@ namespace
                 const FaceToken Support = Faces.first == Third ? Faces.second : Faces.first;
                 const int Side = SideOn(Sheet, Support);
                 if (Side < 0) return "cap: sharp edge not on a support";
+                if (Overflow[Side]) continue;                                                 // consumed with its support
                 TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Feet[Side];
                 if (!Sheet.ConvexCondition) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });   // added material may run past the edge's end
             }
@@ -1132,10 +1330,19 @@ namespace
                 const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
                 const CurveGeometry& Curve   = Partition.Curves.Resolve(Profile.Curve);
                 const bool           Closed  = Profile.Start == Profile.End;
+                if (ConsumedEdges.count(Edge.Slot) != 0) continue;                           // inside a consumed support
+                bool FarEdge = false;                                                        // [-] - Replaced by a cliff section
+                for (const auto& [Key, Overflow] : Cliffs) FarEdge = FarEdge || Overflow.FarEdge == Edge;
+                if (FarEdge) continue;
                 if (const EdgeBlendSheet* Sheet = SheetOf(Edge))
                 {
                     for (int Side = 0; Side < 2; ++Side)
                     {
+                        if (const auto Cliff = Cliffs.find({ Edge.Slot, Side }); Cliff != Cliffs.end())
+                        {
+                            if (std::string Refusal = IssueCliffSection(*Sheet, Edge, Side, Cliff->second, Closed); !Refusal.empty()) return Refusal;
+                            continue;
+                        }
                         const auto StartFound = ContactVertices.find({ Edge.Slot, Side, 0 });
                         const auto EndFound   = ContactVertices.find({ Edge.Slot, Side, 1 });
                         if (StartFound == ContactVertices.end() || EndFound == ContactVertices.end()) return "edge " + LabelToken("E", Edge) + ": unresolved blend end";
@@ -1217,6 +1424,7 @@ namespace
             // ① Original faces: contacts replace blended fins, sharp fins become their trimmed pieces, caps fill corners.
             for (FaceToken Face : Inventory.Faces)
             {
+                if (ConsumedFaces.count(Face.Slot) != 0) continue;                           // narrower than its blend (cliff overflow)
                 const FaceProfile&     Profile = Partition.Faces.Resolve(Face);
                 const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
                 BlueprintFace Blue{ Surface, Profile.Sense, {} };
@@ -1240,6 +1448,19 @@ namespace
                             const Vector3 Middle = EvaluateCurve(Block.Curve, 0.5 * (Block.Low + Block.High)).Position;
                             const double  Along  = std::clamp(ProjectOntoCurve(Original, Middle, Range.IntervalLow), Range.IntervalLow, Range.IntervalHigh);
                             Uses.push_back({ Piece, Sense, FitUse(Surface, Piece, EvaluateParameterCurve(*FinRecord.SurfaceCurve, Along).Position) });
+                        }
+                        else if (ConsumedEdges.count(FinRecord.Edge.Slot) != 0) {}               // gone with a consumed support
+                        else if (const auto Replaced = Replacements.find(FinRecord.Edge.Slot); Replaced != Replacements.end())
+                        {
+                            // The cliff section runs where the far edge ran; its sense follows the fin's direction.
+                            const BlueprintEdge& Block    = Blueprint.Edges[Replaced->second];
+                            const CurveSample    Middle   = EvaluateCurve(Block.Curve, 0.5 * (Block.Low + Block.High));
+                            const EdgeProfile&   Range    = Partition.Edges.Resolve(FinRecord.Edge);
+                            const CurveGeometry& Original = Partition.Curves.Resolve(Range.Curve);
+                            const double         Along    = std::clamp(ProjectOntoCurve(Original, Middle.Position, Range.IntervalLow), Range.IntervalLow, Range.IntervalHigh);
+                            const Vector3        Heading  = EvaluateCurve(Original, Along).Derivative * (FinRecord.Sense == Orientation::Forward ? 1.0 : -1.0);
+                            const Orientation    Sense    = Dot(Middle.Derivative, Heading) > 0.0 ? Orientation::Forward : Orientation::Reversed;
+                            Uses.push_back({ Replaced->second, Sense, FitUse(Surface, Replaced->second, EvaluateParameterCurve(*FinRecord.SurfaceCurve, Along).Position) });
                         }
                         else Uses.push_back({ Pieces[FinRecord.Edge.Slot], FinRecord.Sense, *FinRecord.SurfaceCurve });
                         const auto Cap = CapEdges.find({ Face.Slot, Partition.FinEnd(Fin).Slot });
@@ -1278,11 +1499,31 @@ namespace
                 const int XEnd = Partition.FinStart(Sheet.Fins[0]) == Profile.Start ? 0 : 1;
                 const int YEnd = 1 - XEnd;
                 const int PieceA = ContactPieces[{ Sheet.Edge.Slot, 0 }], PieceB = ContactPieces[{ Sheet.Edge.Slot, 1 }];
-                const Orientation SenseA = Sheet.Alignment > 0.0 ? Partition.Fins.Resolve(Sheet.Fins[0]).Sense : InvertOrientation(Partition.Fins.Resolve(Sheet.Fins[0]).Sense);
-                const Orientation SenseB = Sheet.Alignment > 0.0 ? Partition.Fins.Resolve(Sheet.Fins[1]).Sense : InvertOrientation(Partition.Fins.Resolve(Sheet.Fins[1]).Sense);
+                const Orientation NaturalA = Sheet.Alignment > 0.0 ? Partition.Fins.Resolve(Sheet.Fins[0]).Sense : InvertOrientation(Partition.Fins.Resolve(Sheet.Fins[0]).Sense);
+                const Orientation NaturalB = Sheet.Alignment > 0.0 ? Partition.Fins.Resolve(Sheet.Fins[1]).Sense : InvertOrientation(Partition.Fins.Resolve(Sheet.Fins[1]).Sense);
+                const Orientation SenseA   = FlippedContacts.count({ Sheet.Edge.Slot, 0 }) != 0 ? InvertOrientation(NaturalA) : NaturalA;
+                const Orientation SenseB   = FlippedContacts.count({ Sheet.Edge.Slot, 1 }) != 0 ? InvertOrientation(NaturalB) : NaturalB;
+                const bool        CliffA   = Cliffs.count({ Sheet.Edge.Slot, 0 }) != 0;
+                const bool        CliffB   = Cliffs.count({ Sheet.Edge.Slot, 1 }) != 0;
                 const BlueprintEdge& BlockA = Blueprint.Edges[PieceA];
-                const double SpineX = SenseA == Orientation::Forward ? BlockA.Low : BlockA.High;   // [-] - τ of the X end
-                const double SpineY = SenseA == Orientation::Forward ? BlockA.High : BlockA.Low;   // [-] - τ of the Y end
+                const BlueprintEdge& BlockB = Blueprint.Edges[PieceB];
+                // 📝 Spine τ of the ends from a contact piece (parameterised by τ); a cliff section is not, so use the other
+                //    side, or project the end vertices when both sides run off their supports (open edges only).
+                double SpineX = NaturalA == Orientation::Forward ? BlockA.Low : BlockA.High;   // [-] - τ of the X end
+                double SpineY = NaturalA == Orientation::Forward ? BlockA.High : BlockA.Low;   // [-] - τ of the Y end
+                if (CliffA && !CliffB)
+                {
+                    SpineX = NaturalB == Orientation::Forward ? BlockB.High : BlockB.Low;
+                    SpineY = NaturalB == Orientation::Forward ? BlockB.Low : BlockB.High;
+                }
+                else if (CliffA && CliffB)
+                {
+                    if (Profile.Start == Profile.End) return "blend of " + LabelToken("E", Sheet.Edge) + ": closed rim wider than both supports (🚧)";
+                    SpineX = ProjectOntoCurve(Sheet.Spine, PositionOf(ContactVertices[{ Sheet.Edge.Slot, 0, XEnd }]), 0.0);
+                    SpineY = ProjectOntoCurve(Sheet.Spine, PositionOf(ContactVertices[{ Sheet.Edge.Slot, 0, YEnd }]), 0.0);
+                }
+                const double MidA = CliffA ? 0.5 * (SpineX + SpineY) : 0.5 * (BlockA.Low + BlockA.High);   // [-] - Chart reference τ
+                const double MidB = CliffB ? 0.5 * (SpineX + SpineY) : 0.5 * (BlockB.Low + BlockB.High);
                 const auto Unwrap = [&](Vector3 Point, double Expected)
                 {
                     double τ = ProjectOntoCurve(Sheet.Spine, Point, 0.0);
@@ -1296,13 +1537,12 @@ namespace
                 };
                 BlueprintFace Blue{ Sheet.Surface, Sheet.Sense, {} };
                 std::vector<BlueprintUse> Uses;
-                Uses.push_back({ PieceA, InvertOrientation(SenseA), FitUse(Sheet.Surface, PieceA, ResolveSheetChart(Sheet, 0.5 * (BlockA.Low + BlockA.High))) });
+                Uses.push_back({ PieceA, InvertOrientation(SenseA), FitUse(Sheet.Surface, PieceA, ResolveSheetChart(Sheet, MidA)) });
                 for (const ChainLink& Link : Terminations[{ Sheet.Edge.Slot, XEnd }])
                 {
                     Uses.push_back({ Link.Edge, LinkSense(Link), FitUse(Sheet.Surface, Link.Edge, Reference(Link.Edge, SpineX)) });
                 }
-                const BlueprintEdge& BlockB = Blueprint.Edges[PieceB];
-                Uses.push_back({ PieceB, InvertOrientation(SenseB), FitUse(Sheet.Surface, PieceB, ResolveSheetChart(Sheet, 0.5 * (BlockB.Low + BlockB.High))) });
+                Uses.push_back({ PieceB, InvertOrientation(SenseB), FitUse(Sheet.Surface, PieceB, ResolveSheetChart(Sheet, MidB)) });
                 const std::vector<ChainLink>& Back = Terminations[{ Sheet.Edge.Slot, YEnd }];
                 for (auto Link = Back.rbegin(); Link != Back.rend(); ++Link)
                 {

@@ -90,6 +90,68 @@ namespace
         };
     }
 
+    // ---- Cliff overflow closed forms ---------------------------------------------------------------------------------------
+    // 📝 A convex blend wider than the face it rests on (depth t < blend reach) runs off the far edge and is trimmed by the
+    //    cliff face. In the cross-section (p = depth from the consumed face, q = depth from the kept face) the removed
+    //    region is the corner {p < r, q < t, outside the ball} for a fillet, {p + q < c, q < t} for a chamfer. With
+    //    w = r − q: b(w) = r − √(r² − w²) is its width, A = ∫ b = r·t − ΔF, F(w) = ½(w√(r² − w²) + r² asin(w/r)).
+
+    [[nodiscard]] double CliffCircleIntegral(double Radius, double Depth)
+    {
+        const auto Primitive = [&](double Level) { return 0.5 * (Level * std::sqrt(std::max(Radius * Radius - Level * Level, 0.0)) + Radius * Radius * std::asin(std::clamp(Level / Radius, -1.0, 1.0))); };
+        return Primitive(Radius) - Primitive(Radius - Depth);                               // ∫_{r−t}^{r} √(r² − w²) dw
+    }
+
+    // Removed cross-section area: fillet r·t − ΔF, chamfer ½(c² − (c − t)²).
+    [[nodiscard]] double CliffArea(double Size, double Depth, BlendProfile Profile)
+    {
+        if (Profile == BlendProfile::Chamfer) return 0.5 * (Size * Size - (Size - Depth) * (Size - Depth));
+        return Size * Depth - CliffCircleIntegral(Size, Depth);
+    }
+
+    // ∫ b² over the removed cross-section (second moment along p): fillet 2r²t − 2rΔF − (r³ − (r − t)³)/3, chamfer (c³ − (c − t)³)/3.
+    [[nodiscard]] double CliffSquareIntegral(double Size, double Depth, BlendProfile Profile)
+    {
+        const double Lower = Size - Depth;                                                   // [len] - r − t
+        if (Profile == BlendProfile::Chamfer) return (Size * Size * Size - Lower * Lower * Lower) / 3.0;
+        return 2.0 * Size * Size * Depth - 2.0 * Size * CliffCircleIntegral(Size, Depth) - (Size * Size * Size - Lower * Lower * Lower) / 3.0;
+    }
+
+    // Rim of revolution (outer radius R): Pappus over the removed region, ΔV = −2π ∫∫ (R − p) dA = −2π (R·A − ½∫b²).
+    [[nodiscard]] double CliffRimLoss(double CylinderRadius, double Size, double Depth, BlendProfile Profile)
+    {
+        return 2.0 * π * (CylinderRadius * CliffArea(Size, Depth, Profile) - 0.5 * CliffSquareIntegral(Size, Depth, Profile));
+    }
+
+    // Corner term of the clearance in cross-section depths (p, q): negative inside the removed region.
+    [[nodiscard]] double CliffCornerClearance(double Across, double Down, double Size, BlendProfile Profile)
+    {
+        if (Profile == BlendProfile::Chamfer) return (Across + Down - Size) / std::sqrt(2.0);
+        if (Across < Size && Down < Size) return Size - std::hypot(Across - Size, Down - Size);
+        return 1.0e300;
+    }
+
+    // Box [0, Extent] with its top front edge (y = 0, z = Extent.Z) blended past the front face.
+    [[nodiscard]] std::function<double(Vector3)> CliffBoxClearance(Vector3 Extent, double Size, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const double Box = std::min({ Point.X, Extent.X - Point.X, Point.Y, Extent.Y - Point.Y, Point.Z, Extent.Z - Point.Z });
+            return std::min(Box, CliffCornerClearance(Point.Y, Extent.Z - Point.Z, Size, Profile));
+        };
+    }
+
+    // Disc (axis Z, radius R, height t) with its top rim blended past the side face.
+    [[nodiscard]] std::function<double(Vector3)> CliffDiscClearance(double CylinderRadius, double Height, double Size, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const double Reach = std::hypot(Point.X, Point.Y);                                // [len] - ρ
+            const double Disc  = std::min({ CylinderRadius - Reach, Point.Z, Height - Point.Z });
+            return std::min(Disc, CliffCornerClearance(CylinderRadius - Reach, Height - Point.Z, Size, Profile));
+        };
+    }
+
     using EdgeTest = std::function<bool(Vector3, Vector3, const CurveGeometry&)>;
 
     [[nodiscard]] std::vector<EdgeToken> SelectEdges(const ModelPartition& Partition, BodyToken Body, const EdgeTest& Test)
@@ -325,13 +387,85 @@ namespace
                             BlendProfile::Fillet, 0.3, -StraightFilletLoss(0.3, 4.0), 7);
             } },
 
-            // ---- Refusal: configurations the operation must refuse atomically.
-            { "FilletWiderThanFace", [](ModelPartition& Partition)
+            // ---- Overflow: blends wider than a support run off its far edge and are trimmed by the cliff face (Parasolid
+            //      cliff overflow); partial, notch and overlapping overflows must still refuse.
+            { "CliffBoxFillet", [](ModelPartition& Partition)
             {
                 const BodyToken Body = ConstructBlock(Partition, {}, BoxExtent).Value;
-                return MakeRefusal("FilletWiderThanFace", "Refusal", "Top edge r 2.5 on a box 2 high: the side contact leaves the face", Body,
-                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; }), BlendProfile::Fillet, 2.5);
+                BlendSpecimen Specimen = Make("CliffBoxFillet", "Overflow", "Top edge r 2.5 on a box 2 high: front face consumed, the bottom face trims the blend", Body,
+                                              SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; }),
+                                              BlendProfile::Fillet, 2.5, -BoxExtent.X * CliffArea(2.5, BoxExtent.Z, BlendProfile::Fillet), 6);
+                Specimen.Clearance = CliffBoxClearance(BoxExtent, 2.5, BlendProfile::Fillet);
+                return Specimen;
             } },
+            { "CliffPlateFillet", [](ModelPartition& Partition)
+            {
+                const Vector3   Plate = { 4.0, 2.0, 0.2 };
+                const BodyToken Body  = ConstructBlock(Partition, {}, Plate).Value;
+                BlendSpecimen Specimen = Make("CliffPlateFillet", "Overflow", "Plate 0.2 thick, front top edge r 0.3: the blend runs off the front face onto the bottom", Body,
+                                              SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.19 && B.Z > 0.19; }),
+                                              BlendProfile::Fillet, 0.3, -Plate.X * CliffArea(0.3, Plate.Z, BlendProfile::Fillet), 6);
+                Specimen.Clearance = CliffBoxClearance(Plate, 0.3, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "CliffPlateChamfer", [](ModelPartition& Partition)
+            {
+                const Vector3   Plate = { 4.0, 2.0, 0.2 };
+                const BodyToken Body  = ConstructBlock(Partition, {}, Plate).Value;
+                BlendSpecimen Specimen = Make("CliffPlateChamfer", "Overflow", "Plate 0.2 thick, front top edge chamfer 0.3: the chamfer plane is trimmed by the bottom face", Body,
+                                              SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.19 && B.Z > 0.19; }),
+                                              BlendProfile::Chamfer, 0.3, -Plate.X * CliffArea(0.3, Plate.Z, BlendProfile::Chamfer), 6);
+                Specimen.Clearance = CliffBoxClearance(Plate, 0.3, BlendProfile::Chamfer);
+                return Specimen;
+            } },
+            { "CliffPlateFlush", [](ModelPartition& Partition)
+            {
+                const Vector3   Plate = { 4.0, 2.0, 0.2 };
+                const BodyToken Body  = ConstructBlock(Partition, {}, Plate).Value;
+                BlendSpecimen Specimen = Make("CliffPlateFlush", "Overflow", "Plate 0.2 thick, front top edge r 0.2 exactly: the rail lands on the far edge (boundary case)", Body,
+                                              SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.19 && B.Z > 0.19; }),
+                                              BlendProfile::Fillet, 0.2, -StraightFilletLoss(0.2, Plate.X), 6);
+                Specimen.Clearance = CliffBoxClearance(Plate, 0.2, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "CliffDiscFillet", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructCylinder(Partition, UprightFrame({}), 1.0, 0.2).Value;
+                BlendSpecimen Specimen = Make("CliffDiscFillet", "Overflow", "Disc 0.2 thick, top rim r 0.3: the side band is consumed, the torus meets the bottom in a circle", Body,
+                                              SelectEdges(Partition, Body, RimAt(0.2)), BlendProfile::Fillet, 0.3, -CliffRimLoss(1.0, 0.3, 0.2, BlendProfile::Fillet), 3);
+                Specimen.Clearance = CliffDiscClearance(1.0, 0.2, 0.3, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "CliffDiscChamfer", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructCylinder(Partition, UprightFrame({}), 1.0, 0.2).Value;
+                BlendSpecimen Specimen = Make("CliffDiscChamfer", "Overflow", "Disc 0.2 thick, top rim chamfer 0.3: the cone meets the bottom in a circle", Body,
+                                              SelectEdges(Partition, Body, RimAt(0.2)), BlendProfile::Chamfer, 0.3, -CliffRimLoss(1.0, 0.3, 0.2, BlendProfile::Chamfer), 3);
+                Specimen.Clearance = CliffDiscClearance(1.0, 0.2, 0.3, BlendProfile::Chamfer);
+                return Specimen;
+            } },
+            { "CliffPartial", [](ModelPartition& Partition)
+            {
+                // Front face 0.45 high at x = 0 and 0.1 high at x = 4: r 0.3 runs off it at one end only.
+                const BodyToken Body = ConstructPrism(Partition, { { 0.0, 0.0, 0.5 }, { 4.0, 0.0, 0.5 }, { 4.0, 0.0, 0.4 }, { 0.0, 0.0, 0.05 } }, { 0.0, 2.0, 0.0 }).Value.Body;
+                return MakeRefusal("CliffPartial", "Refusal", "Tapering front face, top edge r 0.3: wider than the face at one end only (partial overflow, 🚧)", Body,
+                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 0.49 && B.Z > 0.49; }), BlendProfile::Fillet, 0.3);
+            } },
+            { "CliffOverlap", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructBlock(Partition, {}, { 4.0, 2.0, 0.2 }).Value;
+                return MakeRefusal("CliffOverlap", "Refusal", "Plate 0.2 thick, top AND bottom front edges r 0.3: both blends would consume the front face", Body,
+                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && std::fabs(A.Z - B.Z) < 1e-9; }), BlendProfile::Fillet, 0.3);
+            } },
+            { "NotchOverflow", [](ModelPartition& Partition)
+            {
+                // Step: riser 0.2 high at x = 1 above a ledge; the riser's lower edge is concave.
+                const BodyToken Body = ConstructPrism(Partition, { { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 1.0 }, { 1.0, 0.0, 1.2 }, { 2.0, 0.0, 1.2 }, { 2.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 } }, { 0.0, 1.5, 0.0 }).Value.Body;
+                return MakeRefusal("NotchOverflow", "Refusal", "Riser 0.2 high, its top edge r 0.3: the blend would run off into a concave edge (notch overflow, 🚧)", Body,
+                                   SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return std::fabs(A.X - 1.0) < 1e-9 && std::fabs(B.X - 1.0) < 1e-9 && A.Z > 1.19 && B.Z > 1.19; }), BlendProfile::Fillet, 0.3);
+            } },
+
+            // ---- Refusal: configurations the operation must refuse atomically.
             { "FilletRailsCross", [](ModelPartition& Partition)
             {
                 const BodyToken Body = ConstructBlock(Partition, {}, BoxExtent).Value;

@@ -68,6 +68,7 @@ struct BlendStatistics
     double MaxTangentBreak   = 0.0;                                                          // [rad] - Worst G1 break of a setback quad to its neighbours
     double MaxSeamBreak      = 0.0;                                                          // [rad] - Worst G1 break across a spoke (quad to quad)
     double MaxRimGap         = 0.0;                                                          // [len] - Worst G0 gap of a setback quad to its rims
+    int    CliffOverflows    = 0;                                                            // [-]   - Blend sides trimmed by a cliff face
     double Milliseconds      = 0.0;                                                          // [ms]  - Wall time
 };
 
