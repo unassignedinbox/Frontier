@@ -27,6 +27,17 @@ enum class SketchCurveKind : uint8_t
     Line   = 0,                                                                              // Start → End
     Circle = 1,                                                                              // Centre + own radius unknown
     Arc    = 2,                                                                              // Centre, Start → End counter-clockwise; |CS| = |CE| implied
+    Spline = 3,                                                                              // Points (Start = first, End = last), Form
+};
+
+// 📝 Freeform sketch curves, numbered as Plasticity's curve command keys (1 … 4). Every form resolves to an exact
+//    polynomial clamped B-spline (Sketch/SketchSpline.h); the defining points are ordinary solver unknowns.
+enum class SketchSplineForm : uint8_t
+{
+    Hermite     = 1,                                                                         // Through the points, Catmull–Rom tangents · C¹
+    Bezier      = 2,                                                                         // One Bézier on the control points · degree n
+    Nurbs       = 3,                                                                         // Uniform clamped B-spline on the control points · degree ≤ 3
+    CubicSpline = 4,                                                                         // Through the points, cubic · C² (natural or periodic ends)
 };
 
 // 📝 References per kind (First / Second / Third): P = point index, L = line, C = circle or arc.
@@ -61,6 +72,7 @@ enum class SketchConstraintStatus : uint8_t
     Redundant   = 1,                                                                         // Dependent on others, consistent
     Conflicting = 2,                                                                         // Dependent on others, inconsistent
     Unmet       = 3,                                                                         // Independent but not met (no convergence)
+    Unsupported = 4,                                                                         // A reference of the wrong kind (spline as line / circle) · left out
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -81,6 +93,8 @@ struct SketchCurve
     int             Centre       = -1;                                                       // [-]   - Point index (circle, arc)
     double          Radius       = 1.0;                                                      // [len] - Circle radius unknown
     bool            Construction = false;                                                    // [-]   - Reference only, not profile
+    SketchSplineForm Form        = SketchSplineForm::CubicSpline;                            // [-]   - Spline form
+    std::vector<int> Points      = {};                                                       // [-]   - Spline defining point indices (closed: first = last)
 };
 
 struct SketchConstraint
@@ -158,16 +172,18 @@ int AppendSketchPoint(SketchModel& Sketch, Vector2 Position);
 int AppendSketchLine(SketchModel& Sketch, int Start, int End, int Identifier, bool Construction = false);
 int AppendSketchCircle(SketchModel& Sketch, int Centre, double Radius, int Identifier, bool Construction = false);
 int AppendSketchArc(SketchModel& Sketch, int Centre, int Start, int End, int Identifier, bool Construction = false);
+int AppendSketchSpline(SketchModel& Sketch, std::vector<int> Points, SketchSplineForm Form, int Identifier, bool Construction = false);
 int AppendSketchConstraint(SketchModel& Sketch, SketchConstraintKind Kind, int First, int Second = -1, int Third = -1, double Value = 0.0,
                            const std::string& Label = {}, double SecondValue = 0.0);
 
 // Arc / circle radius as currently placed (arc: |Centre − Start|).
 [[nodiscard]] double MeasureSketchRadius(const SketchModel& Sketch, const SketchCurve& Curve) noexcept;
 
-// "Line7", "Arc3", "Circle2".
+// "Line7", "Arc3", "Circle2", "Spline4".
 [[nodiscard]] std::string SketchCurveName(const SketchCurve& Curve);
 
 [[nodiscard]] const char* SketchConstraintLabel(SketchConstraintKind Kind) noexcept;
 [[nodiscard]] const char* SketchConstraintStatusLabel(SketchConstraintStatus Status) noexcept;
+[[nodiscard]] const char* SketchSplineFormLabel(SketchSplineForm Form) noexcept;
 
 } // namespace Frontier::SolidArcRemastered

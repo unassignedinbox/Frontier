@@ -6,6 +6,7 @@
 #include "Inspection/FeatureEncoding.h"
 
 #include "Inspection/InspectionEncoding.h"
+#include "Sketch/SketchSpline.h"
 
 #include <cmath>
 #include <numbers>
@@ -19,41 +20,16 @@ namespace Frontier::SolidArcRemastered
 
 namespace
 {
-    constexpr int CircleSamples = 64;                                                        // [-] - Polyline samples per full turn
-
     [[nodiscard]] Vector3 PlacePoint(const OrthonormalFrame& Plane, Vector2 Position)
     {
         return Plane.Origin + Plane.XAxis * Position.X + Plane.YAxis * Position.Y;
     }
 
-    // Curve polyline in the plane (arcs counter-clockwise from Start to End).
+    // Curve polyline in the plane (arcs counter-clockwise from Start to End, splines per knot span).
     void WriteSketchCurve(JsonWriter& Writer, const SketchModel& Sketch, const SketchCurve& Curve, const OrthonormalFrame& Plane)
     {
         Writer.OpenArray("Polyline");
-        if (Curve.Kind == SketchCurveKind::Line)
-        {
-            Writer.Point(nullptr, PlacePoint(Plane, Sketch.Points[Curve.Start].Position));
-            Writer.Point(nullptr, PlacePoint(Plane, Sketch.Points[Curve.End].Position));
-        }
-        else
-        {
-            const Vector2 Centre = Sketch.Points[Curve.Centre].Position;
-            const double  Radius = MeasureSketchRadius(Sketch, Curve);
-            double First = 0.0, Sweep = 2.0 * std::numbers::pi;
-            if (Curve.Kind == SketchCurveKind::Arc)
-            {
-                const Vector2 Start = Sketch.Points[Curve.Start].Position - Centre, End = Sketch.Points[Curve.End].Position - Centre;
-                First = std::atan2(Start.Y, Start.X);
-                Sweep = std::atan2(End.Y, End.X) - First;
-                while (Sweep <= 0.0) Sweep += 2.0 * std::numbers::pi;
-            }
-            const int Count = std::max(4, static_cast<int>(std::ceil(CircleSamples * Sweep / (2.0 * std::numbers::pi))));
-            for (int Sample = 0; Sample <= Count; ++Sample)
-            {
-                const double Angle = First + Sweep * Sample / Count;
-                Writer.Point(nullptr, PlacePoint(Plane, { Centre.X + Radius * std::cos(Angle), Centre.Y + Radius * std::sin(Angle) }));
-            }
-        }
+        for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) Writer.Point(nullptr, PlacePoint(Plane, Sample));
         Writer.CloseArray();
     }
 
@@ -343,7 +319,7 @@ std::string EncodeSketch(const SketchSpecimen& Specimen, const SketchModel& Solv
         const SketchCurve& Curve = Solved.Curves[Index];
         Writer.OpenObject();
         Writer.String("Token", SketchCurveName(Curve));
-        Writer.String("Curve", Curve.Kind == SketchCurveKind::Line ? "Line" : Curve.Kind == SketchCurveKind::Arc ? "Arc" : "Circle");
+        Writer.String("Curve", Curve.Kind == SketchCurveKind::Line ? "Line" : Curve.Kind == SketchCurveKind::Arc ? "Arc" : Curve.Kind == SketchCurveKind::Spline ? SketchSplineFormLabel(Curve.Form) : "Circle");
         Writer.Boolean("Construction", Curve.Construction);
         Writer.Boolean("Fixed", Index < Solve.CurveFixed.size() && Solve.CurveFixed[Index]);
         WriteSketchCurve(Writer, Solved, Curve, Plane);

@@ -20,11 +20,20 @@ namespace
 {
     constexpr double FullTurn = 2.0 * std::numbers::pi;                                      // [rad] - 2π
 
-    // Polyline through a segment: one piece per line, ≥ 4 and ~64 per turn for arcs.
+    // Polyline through a segment: one piece per line, ≥ 4 and ~64 per turn for arcs, 16 per spline knot span.
     [[nodiscard]] std::vector<Vector2> SampleSegment(const ProfileSegment& Segment)
     {
-        const int Pieces = Segment.Kind == ProfileSegmentKind::Line ? 1 : std::max(4, static_cast<int>(std::ceil(std::fabs(Segment.Sweep) / FullTurn * 64.0)));
         std::vector<Vector2> Samples;
+        if (Segment.Kind == ProfileSegmentKind::Spline)
+        {
+            const std::vector<double> Breaks = CollectProfileBreaks(Segment);
+            for (size_t Piece = 0; Piece + 1 < Breaks.size(); ++Piece)
+            {
+                for (int Index = Piece == 0 ? 0 : 1; Index <= 16; ++Index) Samples.push_back(EvaluateProfileSegment(Segment, Breaks[Piece] + (Breaks[Piece + 1] - Breaks[Piece]) * Index / 16.0));
+            }
+            return Samples;
+        }
+        const int Pieces = Segment.Kind == ProfileSegmentKind::Line ? 1 : std::max(4, static_cast<int>(std::ceil(std::fabs(Segment.Sweep) / FullTurn * 64.0)));
         for (int Index = 0; Index <= Pieces; ++Index) Samples.push_back(EvaluateProfileSegment(Segment, static_cast<double>(Index) / Pieces));
         return Samples;
     }
@@ -75,23 +84,17 @@ namespace
                                                0.7554044083550030, 0.8656312023878318, 0.9445750230732326, 0.9894009349916499 };
         static constexpr double Weights[8] = { 0.1894506104550685, 0.1826034150449236, 0.1691565193950025, 0.1495959888165767,
                                                0.1246289712555339, 0.0951585116824928, 0.0622535239386479, 0.0271524594117541 };
-        const int Pieces = Segment.Kind == ProfileSegmentKind::Line ? 1 : std::max(1, static_cast<int>(std::ceil(std::fabs(Segment.Sweep) / (std::numbers::pi / 4.0))));
-        for (int Piece = 0; Piece < Pieces; ++Piece)
+        const std::vector<double> Breaks = CollectProfileBreaks(Segment);
+        for (size_t Piece = 0; Piece + 1 < Breaks.size(); ++Piece)
         {
-            const double Low = static_cast<double>(Piece) / Pieces, High = static_cast<double>(Piece + 1) / Pieces;
+            const double Low = Breaks[Piece], High = Breaks[Piece + 1];
             for (int GaussIndex = 0; GaussIndex < 16; ++GaussIndex)
             {
                 const double Abscissa = (GaussIndex < 8 ? -Nodes[7 - GaussIndex] : Nodes[GaussIndex - 8]);
                 const double Weight   = (GaussIndex < 8 ? Weights[7 - GaussIndex] : Weights[GaussIndex - 8]) * 0.5 * (High - Low);
                 const double Fraction = Low + (Abscissa + 1.0) * 0.5 * (High - Low);
                 const Vector2 Point   = EvaluateProfileSegment(Segment, Fraction);
-                Vector2 Tangent;
-                if (Segment.Kind == ProfileSegmentKind::Line) Tangent = Segment.End - Segment.Start;
-                else
-                {
-                    const double Phi = Segment.StartAngle + Fraction * Segment.Sweep;
-                    Tangent = Vector2{ -std::sin(Phi), std::cos(Phi) } * (Segment.Radius * Segment.Sweep);
-                }
+                const Vector2 Tangent = EvaluateProfileTangent(Segment, Fraction);
                 Area    += Weight * 0.5 * (Point.X * Tangent.Y - Point.Y * Tangent.X);
                 MomentX += Weight * 0.5 * Point.X * Point.X * Tangent.Y;
                 MomentY -= Weight * 0.5 * Point.Y * Point.Y * Tangent.X;
@@ -128,12 +131,48 @@ namespace
 Vector2 EvaluateProfileSegment(const ProfileSegment& Segment, double Fraction) noexcept
 {
     if (Segment.Kind == ProfileSegmentKind::Line) return Segment.Start + (Segment.End - Segment.Start) * Fraction;
+    if (Segment.Kind == ProfileSegmentKind::Spline)
+    {
+        if (Fraction <= 0.0) return Segment.Start;
+        if (Fraction >= 1.0) return Segment.End;
+        const double Low = Segment.Spline.Knots.front(), High = Segment.Spline.Knots.back();
+        return EvaluateSketchSpline(Segment.Spline, Low + Fraction * (High - Low)).Position;
+    }
     const double Phi = Segment.StartAngle + Fraction * Segment.Sweep;                        // [rad] - Angle at Fraction
     return Segment.Centre + Vector2{ std::cos(Phi), std::sin(Phi) } * Segment.Radius;
 }
 
+Vector2 EvaluateProfileTangent(const ProfileSegment& Segment, double Fraction) noexcept
+{
+    if (Segment.Kind == ProfileSegmentKind::Line) return Segment.End - Segment.Start;
+    if (Segment.Kind == ProfileSegmentKind::Spline)
+    {
+        const double Low = Segment.Spline.Knots.front(), High = Segment.Spline.Knots.back();
+        return EvaluateSketchSpline(Segment.Spline, Low + Fraction * (High - Low)).First * (High - Low);
+    }
+    const double Phi = Segment.StartAngle + Fraction * Segment.Sweep;                        // [rad] - Angle at Fraction
+    return Vector2{ -std::sin(Phi), std::cos(Phi) } * (Segment.Radius * Segment.Sweep);
+}
+
+std::vector<double> CollectProfileBreaks(const ProfileSegment& Segment)
+{
+    std::vector<double> Breaks;
+    if (Segment.Kind == ProfileSegmentKind::Spline)
+    {
+        const double Low = Segment.Spline.Knots.front(), High = Segment.Spline.Knots.back();
+        for (double Knot : CollectSketchSplineBreaks(Segment.Spline)) Breaks.push_back((Knot - Low) / (High - Low));
+        Breaks.front() = 0.0;
+        Breaks.back()  = 1.0;
+        return Breaks;
+    }
+    const int Pieces = Segment.Kind == ProfileSegmentKind::Line ? 1 : std::max(1, static_cast<int>(std::ceil(std::fabs(Segment.Sweep) / (std::numbers::pi / 4.0))));
+    for (int Piece = 0; Piece <= Pieces; ++Piece) Breaks.push_back(static_cast<double>(Piece) / Pieces);
+    return Breaks;
+}
+
 void ReverseProfileSegment(ProfileSegment& Segment) noexcept
 {
+    if (Segment.Kind == ProfileSegmentKind::Spline) ReverseSketchSpline(Segment.Spline);
     std::swap(Segment.Start, Segment.End);
     Segment.StartAngle += Segment.Sweep;
     Segment.Sweep       = -Segment.Sweep;
@@ -184,6 +223,18 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
             ProfileLoop Loop;
             Loop.Segments.push_back(Segment);
             Profile.Loops.push_back(Loop);
+            continue;
+        }
+        if (Curve.Kind == SketchCurveKind::Spline)
+        {
+            const SketchSplineOutcome Resolved = ResolveSketchCurveSpline(Sketch, Curve);
+            if (!Resolved.Refusal.empty()) { Profile.Refusal = Resolved.Refusal; return Profile; }
+            Segment.Kind   = ProfileSegmentKind::Spline;
+            Segment.Spline = Resolved.Curve;
+            Segment.Start  = Resolved.Curve.Poles.front();
+            Segment.End    = Resolved.Curve.Poles.back();
+            Open.push_back(Segment);
+            Ends.push_back({ FindRoot(Roots, Curve.Points.front()), FindRoot(Roots, Curve.Points.back()) });
             continue;
         }
         Segment.Start = Sketch.Points[Curve.Start].Position;
@@ -252,6 +303,18 @@ SketchProfile ExtractSketchProfile(const SketchModel& Sketch)
     }
     for (size_t First = 0; First < Samples.size(); ++First)
     {
+        // A spline against itself: non-neighbouring pieces must not cross (a closed spline's two end pieces touch).
+        const ProfileSegment& Own = Profile.Loops[Owners[First].first].Segments[Owners[First].second];
+        const size_t Pieces = Samples[First].size() - 1;
+        for (size_t Low1 = 0; Own.Kind == ProfileSegmentKind::Spline && Low1 < Pieces; ++Low1)
+        {
+            for (size_t Low2 = Low1 + 2; Low2 < Pieces; ++Low2)
+            {
+                if (!PiecesCross(Samples[First][Low1], Samples[First][Low1 + 1], Samples[First][Low2], Samples[First][Low2 + 1], Join)) continue;
+                Profile.Refusal = "profile crosses itself: " + Own.Name + " × " + Own.Name;
+                return Profile;
+            }
+        }
         for (size_t Second = First + 1; Second < Samples.size(); ++Second)
         {
             for (size_t Low1 = 0; Low1 + 1 < Samples[First].size(); ++Low1)

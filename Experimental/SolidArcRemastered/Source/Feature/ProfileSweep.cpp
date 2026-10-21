@@ -5,9 +5,11 @@
 
 #include "Feature/ProfileSweep.h"
 
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/ProjectedCurve.h"
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <numbers>
 #include <optional>
@@ -137,14 +139,16 @@ namespace
     // Right of travel (outward for an outer CCW / hole CW profile) at a segment fraction, in sketch coordinates.
     [[nodiscard]] Vector2 OutwardAt(const ProfileSegment& Segment, double Fraction)
     {
-        Vector2 Tangent;
-        if (Segment.Kind == ProfileSegmentKind::Line) Tangent = Segment.End - Segment.Start;
-        else
-        {
-            const double Phi = Segment.StartAngle + Fraction * Segment.Sweep;
-            Tangent = Vector2{ -std::sin(Phi), std::cos(Phi) } * (Segment.Sweep > 0.0 ? 1.0 : -1.0);
-        }
+        const Vector2 Tangent = EvaluateProfileTangent(Segment, Fraction);
         return Normalize(Vector2{ Tangent.Y, -Tangent.X });
+    }
+
+    // Spline lifted onto the sketch plane at one elevation: an exact polynomial NURBS curve (unit weights).
+    [[nodiscard]] std::optional<NurbsCurve> LiftSpline(const SketchSplineCurve& Spline, const std::function<Vector3(Vector2)>& Place)
+    {
+        std::vector<Vector3> Poles;
+        for (const Vector2& Pole : Spline.Poles) Poles.push_back(Place(Pole));
+        return ConstructNurbsCurve(Spline.Degree, Spline.Knots, std::move(Poles), std::vector<double>(Spline.Poles.size(), 1.0));
     }
 }
 
@@ -184,7 +188,17 @@ SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Prof
             const int Next = (Index + 1) % Count;
             int Bottom = -1, Top = -1;
             Orientation Sense = Orientation::Forward;
-            if (Segment.Kind == ProfileSegmentKind::Line)
+            std::optional<NurbsCurve> LowRim, HighRim;
+            if (Segment.Kind == ProfileSegmentKind::Spline)
+            {
+                LowRim  = LiftSpline(Segment.Spline, [&](Vector2 Point) { return Place(Point, Floor); });
+                HighRim = LiftSpline(Segment.Spline, [&](Vector2 Point) { return Place(Point, Floor + Height); });
+                if (!LowRim || !HighRim) { Refused.Refusal = "Extrude: " + Segment.Name + " has no valid B-spline form"; return Refused; }
+                const double LowTau = Segment.Spline.Knots.front(), HighTau = Segment.Spline.Knots.back();
+                Bottom = Writer.AddEdge(*LowRim, LowTau, HighTau, Low[Index], Low[Next]);
+                Top    = Writer.AddEdge(*HighRim, LowTau, HighTau, High[Index], High[Next]);
+            }
+            else if (Segment.Kind == ProfileSegmentKind::Line)
             {
                 const double  Length    = Distance(Segment.Start, Segment.End);
                 const Vector3 Direction = Lift(Normalize(Segment.End - Segment.Start));
@@ -217,6 +231,22 @@ SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Prof
                 const PlaneSurface Surface{ ConstructFrame(Place(Segment.Start, Floor), Cross(Direction, Axis), Direction) };
                 Plan.Uses = { { Bottom, Sense }, { Rise[Next], Orientation::Forward }, { Top, Opposite(Sense) }, { Rise[Index], Orientation::Reversed } };
                 Writer.AddFace(Surface, Probe, Outward, { Plan }, Role);
+                continue;
+            }
+            if (Segment.Kind == ProfileSegmentKind::Spline)
+            {
+                // Exact ruled side: poles of the rim at 𝑣 = 0 and 𝑣 = H, degree (p, 1); a closed single spline reuses
+                // its one rise as the seam (𝑢 = a and 𝑢 = b), as the circle does.
+                const SketchSplineCurve& Spline = Segment.Spline;
+                std::vector<Vector3> Poles;
+                for (const Vector2& Pole : Spline.Poles) { Poles.push_back(Place(Pole, Floor)); Poles.push_back(Place(Pole, Floor + Height)); }
+                const std::optional<NurbsSurface> Surface = ConstructNurbsSurface(Spline.Degree, 1, static_cast<int>(Spline.Poles.size()), 2, Spline.Knots,
+                                                                                  { 0.0, 0.0, Height, Height }, std::move(Poles), std::vector<double>(2 * Spline.Poles.size(), 1.0));
+                if (!Surface) { Refused.Refusal = "Extrude: " + Segment.Name + " side has no valid NURBS form"; return Refused; }
+                const double LowTau = Spline.Knots.front(), HighTau = Spline.Knots.back(), MiddleTau = 0.5 * (LowTau + HighTau);
+                Plan.Uses = { { Bottom, Orientation::Forward, Vector2{ MiddleTau, 0.0 } }, { Rise[Next], Orientation::Forward, Vector2{ HighTau, 0.5 * Height } },
+                              { Top, Orientation::Reversed, Vector2{ MiddleTau, Height } }, { Rise[Index], Orientation::Reversed, Vector2{ LowTau, 0.5 * Height } } };
+                Writer.AddFace(*Surface, Probe, Outward, { Plan }, Role);
                 continue;
             }
             if (Segment.Kind == ProfileSegmentKind::Circle)
@@ -273,6 +303,15 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Revolve: " + Profile.Refusal; return Refused; }
     if (!(Angle > 1.0e-9) || Angle > FullTurn + 1.0e-12) { Refused.Refusal = "Revolve: sweep angle must lie in (0, 2π]"; return Refused; }
+    for (const ProfileLoop& Loop : Profile.Loops)
+    {
+        for (const ProfileSegment& Segment : Loop.Segments)
+        {
+            if (Segment.Kind != ProfileSegmentKind::Spline) continue;
+            Refused.Refusal = "Revolve: 🚧 " + Segment.Name + " is a spline (rational surface of revolution not built yet)";
+            return Refused;
+        }
+    }
     const double Tolerance = 1.0e-9 * Profile.Scale;                                         // [len] - On-axis distance
     const Vector2 Along = Normalize(AxisDirection);
     Vector2 Radial = { -Along.Y, Along.X };                                                  // [-] - Sketch direction away from the axis

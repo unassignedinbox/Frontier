@@ -76,9 +76,18 @@ constexpr int64_t FormatVersion = 1;                                            
     toml::array Curves;
     for (const SketchCurve& Curve : Sketch.Curves)
     {
-        Curves.push_back(toml::table{ { "Kind", static_cast<int64_t>(Curve.Kind) }, { "Identifier", Curve.Identifier },
-                                      { "Start", Curve.Start }, { "End", Curve.End }, { "Centre", Curve.Centre },
-                                      { "Radius", Curve.Radius }, { "Construction", Curve.Construction } });
+        toml::table Entry{ { "Kind", static_cast<int64_t>(Curve.Kind) }, { "Identifier", Curve.Identifier },
+                           { "Start", Curve.Start }, { "End", Curve.End }, { "Centre", Curve.Centre },
+                           { "Radius", Curve.Radius }, { "Construction", Curve.Construction } };
+        if (Curve.Kind == SketchCurveKind::Spline)
+        {
+            toml::array Indices;
+            for (int Index : Curve.Points) Indices.push_back(Index);
+            Entry.insert("Form", static_cast<int64_t>(Curve.Form));
+            Entry.insert("FormLabel", SketchSplineFormLabel(Curve.Form));
+            Entry.insert("Points", std::move(Indices));
+        }
+        Curves.push_back(std::move(Entry));
     }
     toml::array Constraints;
     for (const SketchConstraint& Constraint : Sketch.Constraints)
@@ -205,6 +214,8 @@ constexpr int64_t FormatVersion = 1;                                            
             Decoded.Centre       = static_cast<int>(Curve["Centre"].value_or(int64_t{ -1 }));
             Decoded.Radius       = Curve["Radius"].value_or(1.0);
             Decoded.Construction = Curve["Construction"].value_or(false);
+            Decoded.Form         = static_cast<SketchSplineForm>(Curve["Form"].value_or(int64_t{ 4 }));
+            if (const toml::array* Indices = Curve["Points"].as_array()) for (const toml::node& Index : *Indices) Decoded.Points.push_back(static_cast<int>(Index.value_or(int64_t{ -1 })));
             Sketch.Curves.push_back(Decoded);
         }
     }

@@ -465,6 +465,98 @@ namespace
         Specimen.Oracle = "groove misses: W·D·(H + p); off-centre: W·D·H − 2h·D·s + p·max(piece)·D; centred: push refused";
         return Specimen;
     }
+
+    // Natural cubic interpolation through Points on unit spans (dense elimination, independent of Sketch/SketchSpline),
+    // then ½∮(x dy − y dx) along it, exact on the power-basis pieces.
+    [[nodiscard]] double NaturalSplineGreen(const std::vector<Vector2>& Points)
+    {
+        const int Size = static_cast<int>(Points.size()), Last = Size - 1;
+        std::vector<std::vector<double>> Matrix(Size, std::vector<double>(Size + 2, 0.0));          // [A | bx | by]
+        for (int Row = 0; Row < Size; ++Row)
+        {
+            const int Before = std::max(Row - 1, 0), After = std::min(Row + 1, Last);
+            Matrix[Row][Row] = (Row == 0 || Row == Last) ? 2.0 : 4.0;
+            if (Row > 0) Matrix[Row][Row - 1] = 1.0;
+            if (Row < Last) Matrix[Row][Row + 1] = 1.0;
+            Matrix[Row][Size]     = 3.0 * (Points[After].X - Points[Before].X);
+            Matrix[Row][Size + 1] = 3.0 * (Points[After].Y - Points[Before].Y);
+        }
+        for (int Column = 0; Column < Size; ++Column)
+        {
+            for (int Row = Column + 1; Row < Size; ++Row)
+            {
+                const double Factor = Matrix[Row][Column] / Matrix[Column][Column];
+                for (int Inner = Column; Inner < Size + 2; ++Inner) Matrix[Row][Inner] -= Factor * Matrix[Column][Inner];
+            }
+        }
+        std::vector<Vector2> Tangents(Size);
+        for (int Row = Last; Row >= 0; --Row)
+        {
+            double X = Matrix[Row][Size], Y = Matrix[Row][Size + 1];
+            for (int Inner = Row + 1; Inner < Size; ++Inner) { X -= Matrix[Row][Inner] * Tangents[Inner].X; Y -= Matrix[Row][Inner] * Tangents[Inner].Y; }
+            Tangents[Row] = { X / Matrix[Row][Row], Y / Matrix[Row][Row] };
+        }
+        double Green = 0.0;
+        for (int Span = 0; Span < Last; ++Span)
+        {
+            const Vector2 Q0 = Points[Span], Q1 = Points[Span + 1], T0 = Tangents[Span], T1 = Tangents[Span + 1];
+            const Vector2 C[4] = { Q0, T0, (Q1 - Q0) * 3.0 - T0 * 2.0 - T1, (Q0 - Q1) * 2.0 + T0 + T1 };
+            for (int Low = 0; Low < 4; ++Low)                                                // ∫ cₗ·k·cₖ t^{l+k−1} over x dy − y dx
+            {
+                for (int High = 1; High < 4; ++High) Green += 0.5 * High * (C[Low].X * C[High].Y - C[Low].Y * C[High].X) / (Low + High);
+            }
+        }
+        return Green;
+    }
+
+    // ⑨ Phase B: cubic-spline arch on a base line, extruded, with a round hole cut through it. The dimensions move the
+    //    spline's defining points through the solver; the side is one exact NURBS face whose name follows the curve.
+    FeatureSpecimen BuildSplineArch()
+    {
+        FeatureSpecimen Specimen;
+        FeatureTree& Tree = Specimen.Tree;
+        Tree.Name        = "SplineArch";
+        Tree.Description = "cubic-spline arch sketch → extrude → round hole; Crown / Shoulder / Span re-solve the spline points";
+        TreeAuthoring Author{ Tree };
+        Author.Parameter("Span", 4.0, 3.6, 6.0, "base length along x");
+        Author.Parameter("Crown", 2.5, 1.8, 4.0, "apex height (spline point 3)");
+        Author.Parameter("Shoulder", 1.8, 1.2, 3.0, "height of spline points 2 and 4");
+        Author.Parameter("Height", 1.5, 0.5, 3.0, "extrude distance");
+        FeatureStep& Sketch = Author.Step(FeatureStepKind::Sketch, "Sketch#1");
+        SketchModel& Model = Sketch.Sketch;
+        const double Span = Author.Value("Span"), Crown = Author.Value("Crown"), Shoulder = Author.Value("Shoulder");
+        const int P0 = AppendSketchPoint(Model, { 0.0, 0.0 }), P1 = AppendSketchPoint(Model, { 1.0, Shoulder }), P2 = AppendSketchPoint(Model, { 2.0, Crown });
+        const int P3 = AppendSketchPoint(Model, { 3.0, Shoulder }), P4 = AppendSketchPoint(Model, { Span, 0.0 });
+        AppendSketchSpline(Model, { P0, P1, P2, P3, P4 }, SketchSplineForm::CubicSpline, 1);
+        AppendSketchLine(Model, P4, P0, 2);
+        AppendSketchConstraint(Model, Kind::Fixed, P0, -1, -1, 0.0, "Origin", 0.0);
+        AppendSketchConstraint(Model, Kind::HorizontalDistance, P0, P1, -1, 1.0, "Point2X");
+        AppendSketchConstraint(Model, Kind::HorizontalDistance, P0, P2, -1, 2.0, "Point3X");
+        AppendSketchConstraint(Model, Kind::HorizontalDistance, P0, P3, -1, 3.0, "Point4X");
+        AppendSketchConstraint(Model, Kind::Horizontal, 1, -1, -1, 0.0, "Base");
+        Author.Bound(Model, Kind::HorizontalDistance, P0, P4, "Span");
+        Author.Bound(Model, Kind::VerticalDistance, P0, P1, "Shoulder");
+        Author.Bound(Model, Kind::VerticalDistance, P0, P2, "Crown");
+        Author.Bound(Model, Kind::VerticalDistance, P0, P3, "Shoulder");
+        Author.Sweep(FeatureStepKind::Extrude, "Extrude#2", "Sketch#1", ParameterValue("Height"), FeatureCombination::New);
+        FeatureStep& Hole = Author.Step(FeatureStepKind::Sketch, "Sketch#3");
+        const int Centre = AppendSketchPoint(Hole.Sketch, { 2.0, 1.0 });
+        AppendSketchCircle(Hole.Sketch, Centre, 0.4, 1);
+        AppendSketchConstraint(Hole.Sketch, Kind::Fixed, Centre, -1, -1, 2.0, "Centre", 1.0);
+        AppendSketchConstraint(Hole.Sketch, Kind::Radius, 0, -1, -1, 0.4, "HoleRadius");
+        Author.Sweep(FeatureStepKind::Extrude, "Extrude#4", "Sketch#3", FeatureValue{ 4.0 }, FeatureCombination::Difference);
+        Specimen.Sweep = { {}, { { "Crown", 3.4 } }, { { "Span", 5.5 }, { "Shoulder", 1.3 } }, { { "Height", 0.6 }, { "Crown", 1.9 } }, { { "Span", 3.6 }, { "Shoulder", 2.9 }, { "Height", 3.0 } } };
+        Specimen.ExpectedVolume = [](const FeatureTree& Tree)
+        {
+            const double Span = FeatureParameterValue(Tree, "Span"), Crown = FeatureParameterValue(Tree, "Crown");
+            const double Shoulder = FeatureParameterValue(Tree, "Shoulder"), Height = FeatureParameterValue(Tree, "Height");
+            const double Area = -NaturalSplineGreen({ { 0.0, 0.0 }, { 1.0, Shoulder }, { 2.0, Crown }, { 3.0, Shoulder }, { Span, 0.0 } });
+            return (Area - Pi * 0.4 * 0.4) * Height;
+        };
+        Specimen.ExpectedRefusals = NoRefusals;
+        Specimen.Oracle           = "(A − π·0.4²)·H, A = −½∮ natural cubic through (0,0) (1,s) (2,c) (3,s) (S,0) (own dense solve)";
+        return Specimen;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -473,7 +565,7 @@ namespace
 
 std::vector<std::string> EnumerateFeatureSpecimens()
 {
-    return { "BlockFillet", "BlockVariableFillet", "BossFillet", "SteppedShaft", "SlotPocket", "TorusRing", "HoleLeavesPlate", "SplitFacePush" };
+    return { "BlockFillet", "BlockVariableFillet", "BossFillet", "SteppedShaft", "SlotPocket", "TorusRing", "HoleLeavesPlate", "SplitFacePush", "SplineArch" };
 }
 
 FeatureSpecimen BuildFeatureSpecimen(const std::string& Name)
@@ -486,6 +578,7 @@ FeatureSpecimen BuildFeatureSpecimen(const std::string& Name)
     if (Name == "TorusRing") return BuildTorusRing();
     if (Name == "HoleLeavesPlate") return BuildHoleLeavesPlate();
     if (Name == "SplitFacePush") return BuildSplitFacePush();
+    if (Name == "SplineArch") return BuildSplineArch();
     return {};
 }
 

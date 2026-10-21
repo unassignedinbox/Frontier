@@ -421,6 +421,44 @@ namespace
         return Conditioning;
     }
 
+    // Every reference exists and has the kind its slot expects (P point · L line · C circle or arc); a spline is never a
+    // line or circle reference (🚧 point-on-spline and tangent-to-spline rows).
+    [[nodiscard]] bool ReferenceCondition(const SketchModel& Sketch, const SketchConstraint& Constraint)
+    {
+        const int PointCount = static_cast<int>(Sketch.Points.size()), CurveCount = static_cast<int>(Sketch.Curves.size());
+        auto PointSlot  = [&](int Index) { return Index >= 0 && Index < PointCount; };
+        auto LineSlot   = [&](int Index) { return Index >= 0 && Index < CurveCount && Sketch.Curves[Index].Kind == SketchCurveKind::Line; };
+        auto CircleSlot = [&](int Index)
+        {
+            return Index >= 0 && Index < CurveCount && (Sketch.Curves[Index].Kind == SketchCurveKind::Circle || Sketch.Curves[Index].Kind == SketchCurveKind::Arc);
+        };
+        switch (Constraint.Kind)
+        {
+        case SketchConstraintKind::Coincident:
+        case SketchConstraintKind::Distance:
+        case SketchConstraintKind::HorizontalDistance:
+        case SketchConstraintKind::VerticalDistance:   return PointSlot(Constraint.First) && PointSlot(Constraint.Second);
+        case SketchConstraintKind::Fixed:              return PointSlot(Constraint.First);
+        case SketchConstraintKind::Horizontal:
+        case SketchConstraintKind::Vertical:
+        case SketchConstraintKind::Length:             return LineSlot(Constraint.First);
+        case SketchConstraintKind::Parallel:
+        case SketchConstraintKind::Perpendicular:
+        case SketchConstraintKind::Angle:
+        case SketchConstraintKind::EqualLength:        return LineSlot(Constraint.First) && LineSlot(Constraint.Second);
+        case SketchConstraintKind::Radius:             return CircleSlot(Constraint.First);
+        case SketchConstraintKind::EqualRadius:
+        case SketchConstraintKind::Concentric:         return CircleSlot(Constraint.First) && CircleSlot(Constraint.Second);
+        case SketchConstraintKind::PointOnLine:
+        case SketchConstraintKind::Midpoint:           return PointSlot(Constraint.First) && LineSlot(Constraint.Second);
+        case SketchConstraintKind::PointOnCircle:      return PointSlot(Constraint.First) && CircleSlot(Constraint.Second);
+        case SketchConstraintKind::Tangent:            return (LineSlot(Constraint.First) || CircleSlot(Constraint.First)) && CircleSlot(Constraint.Second);
+        case SketchConstraintKind::Symmetric:          return PointSlot(Constraint.First) && PointSlot(Constraint.Second) && LineSlot(Constraint.Third);
+        case SketchConstraintKind::ArcRule:            return CircleSlot(Constraint.First);
+        }
+        return false;
+    }
+
     //--------------------------------------------------------------------------------------------------------------------
     //                                                SYSTEM ASSEMBLY
     //--------------------------------------------------------------------------------------------------------------------
@@ -430,7 +468,7 @@ namespace
     class ScaledEquationDivision
     {
     public:
-        ScaledEquationDivision(const SketchModel& Sketch, const std::vector<SketchConstraint>& Constraints, double Scale)
+        ScaledEquationDivision(const SketchModel& Sketch, const std::vector<SketchConstraint>& Constraints, double Scale, const std::vector<bool>& Excluded)
             : Sketch(Sketch), Constraints(Constraints), Scale(Scale)
         {
             Unknowns = 2 * static_cast<int>(Sketch.Points.size());
@@ -438,6 +476,7 @@ namespace
             std::vector<double> Probe = Pack();
             for (int Index = 0; Index < static_cast<int>(Constraints.size()); ++Index)
             {
+                if (Index < static_cast<int>(Excluded.size()) && Excluded[Index]) continue;
                 for (int Row = 0; Row < EquationCount(Constraints[Index].Kind); ++Row)
                 {
                     SketchEquation Equation;
@@ -582,8 +621,10 @@ SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& S
         Rule.Label = "ArcRule(" + SketchCurveName(Sketch.Curves[Curve]) + ")";
         Constraints.push_back(Rule);
     }
+    std::vector<bool> Excluded(Constraints.size(), false);
+    for (int Index = 0; Index < UserConstraints; ++Index) Excluded[Index] = !ReferenceCondition(Sketch, Constraints[Index]);
     const double Scale = MeasureScale(Sketch, Constraints);
-    const ScaledEquationDivision Division(Sketch, Constraints, Scale);
+    const ScaledEquationDivision Division(Sketch, Constraints, Scale, Excluded);
     Outcome.Scale     = Scale;
     Outcome.Unknowns  = Division.Unknowns;
     Outcome.Equations = static_cast<int>(Division.Equations.size());
@@ -701,6 +742,7 @@ SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& S
         SketchConstraintReport& Report = Outcome.Constraints[Index];
         Report.Status = Severity[Index] == 3 ? SketchConstraintStatus::Conflicting : Severity[Index] == 2 ? SketchConstraintStatus::Unmet
                       : Severity[Index] == 1 ? SketchConstraintStatus::Redundant : SketchConstraintStatus::Satisfied;
+        if (Excluded[Index]) Report.Status = SketchConstraintStatus::Unsupported;
         for (int Partner : PartnerSets[Index]) if (Partner < UserConstraints) Report.Partners.push_back(Partner);
         std::sort(Report.Partners.begin(), Report.Partners.end());
         Report.Partners.erase(std::unique(Report.Partners.begin(), Report.Partners.end()), Report.Partners.end());
@@ -724,6 +766,7 @@ SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& S
         const SketchCurve& Shape = Sketch.Curves[Curve];
         bool Fixed = true;
         for (int Point : { Shape.Start, Shape.End, Shape.Centre }) if (Point >= 0) Fixed = Fixed && Outcome.PointFixed[Point];
+        for (int Point : Shape.Points) if (Point >= 0) Fixed = Fixed && Outcome.PointFixed[Point];
         if (Shape.Kind == SketchCurveKind::Circle) Fixed = Fixed && UnknownFixed[RadiusCursor++];
         Outcome.CurveFixed[Curve] = Fixed;
     }
@@ -786,6 +829,17 @@ int AppendSketchArc(SketchModel& Sketch, int Centre, int Start, int End, int Ide
     return static_cast<int>(Sketch.Curves.size()) - 1;
 }
 
+int AppendSketchSpline(SketchModel& Sketch, std::vector<int> Points, SketchSplineForm Form, int Identifier, bool Construction)
+{
+    SketchCurve Curve;
+    Curve.Kind = SketchCurveKind::Spline; Curve.Identifier = Identifier; Curve.Form = Form; Curve.Construction = Construction;
+    Curve.Start  = Points.empty() ? -1 : Points.front();
+    Curve.End    = Points.empty() ? -1 : Points.back();
+    Curve.Points = std::move(Points);
+    Sketch.Curves.push_back(Curve);
+    return static_cast<int>(Sketch.Curves.size()) - 1;
+}
+
 int AppendSketchConstraint(SketchModel& Sketch, SketchConstraintKind Kind, int First, int Second, int Third, double Value, const std::string& Label, double SecondValue)
 {
     SketchConstraint Constraint;
@@ -803,7 +857,7 @@ double MeasureSketchRadius(const SketchModel& Sketch, const SketchCurve& Curve) 
 
 std::string SketchCurveName(const SketchCurve& Curve)
 {
-    const char* Prefix = Curve.Kind == SketchCurveKind::Line ? "Line" : Curve.Kind == SketchCurveKind::Arc ? "Arc" : "Circle";
+    const char* Prefix = Curve.Kind == SketchCurveKind::Line ? "Line" : Curve.Kind == SketchCurveKind::Arc ? "Arc" : Curve.Kind == SketchCurveKind::Spline ? "Spline" : "Circle";
     return Prefix + std::to_string(Curve.Identifier);
 }
 
@@ -844,8 +898,21 @@ const char* SketchConstraintStatusLabel(SketchConstraintStatus Status) noexcept
     case SketchConstraintStatus::Redundant:   return "Redundant";
     case SketchConstraintStatus::Conflicting: return "Conflicting";
     case SketchConstraintStatus::Unmet:       return "Unmet";
+    case SketchConstraintStatus::Unsupported: return "Unsupported";
     }
     return "?";
+}
+
+const char* SketchSplineFormLabel(SketchSplineForm Form) noexcept
+{
+    switch (Form)
+    {
+    case SketchSplineForm::Hermite:     return "Hermite";
+    case SketchSplineForm::Bezier:      return "Bezier";
+    case SketchSplineForm::Nurbs:       return "NURBS";
+    case SketchSplineForm::CubicSpline: return "Cubic spline";
+    }
+    return "Spline";
 }
 
 } // namespace Frontier::SolidArcRemastered

@@ -10,6 +10,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Sketch/SketchSolver.h"
+#include "Sketch/SketchSpline.h"
 
 #include <string>
 #include <vector>
@@ -26,10 +27,12 @@ enum class ProfileSegmentKind : uint8_t
     Line   = 0,                                                                              // Start → End
     Arc    = 1,                                                                              // Centre, StartAngle + Sweep
     Circle = 2,                                                                              // Full turn from angle 0
+    Spline = 3,                                                                              // Spline, traversed over its knot domain
 };
 
 // 📝 One oriented piece of a loop, in traversal order. Arcs: P(φ) = Centre + r·(cos φ, sin φ), φ from StartAngle by
-//    Sweep (Sweep > 0: counter-clockwise traversal).
+//    Sweep (Sweep > 0: counter-clockwise traversal). Splines: the fraction maps linearly onto the knot domain and the
+//    curve is stored already in traversal order (reversal mirrors its knots).
 struct ProfileSegment
 {
     ProfileSegmentKind Kind       = ProfileSegmentKind::Line;                                // [-]   - Piece type
@@ -41,6 +44,7 @@ struct ProfileSegment
     double             Sweep      = 0.0;                                                     // [rad] - Signed angular extent
     int                Curve      = -1;                                                      // [-]   - Sketch curve index
     std::string        Name       = {};                                                      // [-]   - Sketch curve name (Line7)
+    SketchSplineCurve  Spline     = {};                                                      // [-]   - Spline carrier (Kind = Spline)
 };
 
 struct ProfileLoop
@@ -66,10 +70,17 @@ struct SketchProfile
 
 // 💡 Chains the non-construction curves of a solved sketch into closed loops: endpoints within 1e-9·L join, every
 //    junction must join exactly two curves (else refused: open or branching), loops must not cross (polyline test on
-//    arcs) and are oriented by nesting depth. Area and centroid are exact (Green's theorem; Gauss–Legendre on arcs).
+//    arcs and splines, a spline also against itself) and are oriented by nesting depth. Area and centroid are exact
+//    (Green's theorem; Gauss–Legendre per arc piece and per spline knot span, exact for the polynomial integrands).
 [[nodiscard]] SketchProfile ExtractSketchProfile(const SketchModel& Sketch);
 
 [[nodiscard]] Vector2 EvaluateProfileSegment(const ProfileSegment& Segment, double Fraction) noexcept;
+
+// d/dFraction of EvaluateProfileSegment.
+[[nodiscard]] Vector2 EvaluateProfileTangent(const ProfileSegment& Segment, double Fraction) noexcept;
+
+// Polynomial pieces of a segment as fraction breaks [0 … 1] (one piece for lines; knot spans for splines; ≤ 45° for arcs).
+[[nodiscard]] std::vector<double> CollectProfileBreaks(const ProfileSegment& Segment);
 
 // Segment reversed in place (start ↔ end, sweep negated).
 void ReverseProfileSegment(ProfileSegment& Segment) noexcept;
