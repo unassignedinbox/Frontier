@@ -1,8 +1,8 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 358 frames · 47.4532 s · slowest frame 826.773 ms
-- Script: Experimental/DraftingWorkspace/Scripts/PanelAssemblyWalkthrough.txt
+- Frame: 1600 x 900 · 358 frames · 27.4959 s · slowest frame 732.025 ms
+- Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
 | Line | Expectation | Observed | Result |
@@ -54,7 +54,7 @@
 | 131 | `sound == 1` | 1 | 🟢 |
 | 132 | `volume > 0.791` | 0.7928018098 | 🟢 |
 | 133 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 42 ms | 🟢 |
+| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 41 ms | 🟢 |
 | 149 | `steps == 10` | 10 | 🟢 |
 | 167 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
 | 173 | `steps == 11` | 11 | 🟢 |
@@ -67,14 +67,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 93 | `5ffcd3dea6286d50` |
-| 61FrontRearG2 | 101 | `0b24c685a6b67fd2` |
-| 62BonnetMirrored | 115 | `3f7cc2c4746dc311` |
-| 63CloseRefused | 125 | `b783c4d790a7e844` |
-| 64PodHalves | 220 | `69263850dc7517cc` |
-| 65PodSolid | 236 | `33a0a9bcb431abe7` |
-| 66NetworkCurves | 344 | `411581e3bcaa7201` |
-| 67NetworkPanel | 352 | `5f856a0bd0950d66` |
+| 60RearSectionsG2 | 93 | `be7f5072338afd31` |
+| 61FrontRearG2 | 101 | `0ab0b24544bfa615` |
+| 62BonnetMirrored | 115 | `6282401f0caf4be7` |
+| 63CloseRefused | 125 | `150c2001d23c41ce` |
+| 64PodHalves | 220 | `5ebb210ed7fb7b2e` |
+| 65PodSolid | 236 | `d9ad358a64161090` |
+| 66NetworkCurves | 344 | `6a5e8c0491ee078e` |
+| 67NetworkPanel | 352 | `dbf7cd704750efd3` |
 
 ## Journal
 
@@ -115,10 +115,10 @@
 - Selected curve Hoop5 · 10 poles · fit 0.066 mm · 5 selected
 - Loft1 · 5 sections · 8 ms
 - Lofted 5 curve(s) → panel (sound) · 1 panel(s) · 8 ms
-- Mirror1 · plane x = 0 · 9 ms
-- Mirrored through x = 0 → 2 panel(s), sound · 9 ms
-- Close1 · plane caps · 42 ms
-- Closed → solid · volume 0.79280 m³ · sound · 42 ms
+- Mirror1 · plane x = 0 · 8 ms
+- Mirrored through x = 0 → 2 panel(s), sound · 8 ms
+- Close1 · plane caps · 41 ms
+- Closed → solid · volume 0.79280 m³ · sound · 41 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms

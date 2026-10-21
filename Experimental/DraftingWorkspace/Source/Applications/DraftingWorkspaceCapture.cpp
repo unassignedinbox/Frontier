@@ -19,6 +19,7 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -241,7 +242,10 @@ int main(int Count, char** Arguments)
     Report << "| Line | Expectation | Observed | Result |\n|-----:|-------------|----------|--------|\n";
     for (const DraftingExpectation& Expectation : Script.Expectations)
     {
-        std::string Observed = Expectation.Observed.size() > 90 ? Expectation.Observed.substr(0, 87) + "..." : Expectation.Observed;
+        // Cut on a code-point boundary: back off over UTF-8 continuation bytes (10xxxxxx) so "→" or "²" is never split.
+        size_t Cut = std::min<size_t>(87, Expectation.Observed.size());
+        while (Cut > 0 && Cut < Expectation.Observed.size() && (static_cast<unsigned char>(Expectation.Observed[Cut]) & 0xC0u) == 0x80u) --Cut;
+        std::string Observed = Expectation.Observed.size() > 90 ? Expectation.Observed.substr(0, Cut) + "..." : Expectation.Observed;
         for (char& Character : Observed) if (Character == '|') Character = '/';
         Report << "| " << Expectation.Line << " | `" << Expectation.Text << "` | " << Observed << " | " << (Expectation.Passed ? "🟢" : "🔴") << " |\n";
     }

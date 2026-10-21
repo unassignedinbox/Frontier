@@ -1,6 +1,6 @@
 # DraftingViewportValidation
 
-Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 94.5 ms (14.2 s total).
+Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 88.0 ms (13.0 s total).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -11,6 +11,7 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V5 | Selected face blue (#4099ff), active edge green (#33ff73), hovered face lighter; others unchanged | all hold | 0.7207 | 4 | 🟢 |
 | V6 | View presets: centre pixel names the expected face (Top → top cap, Front → front side, …) | all equal | 0 | 8 | 🟢 |
 | V7 | Same frame twice → identical colour and identity digests | equal | 0 | 1 | 🟢 |
+| V8 | Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact | ≤ 2 / 255 | 0.5139 | 7 | 🟢 |
 
 ## Walkthrough
 
@@ -49,4 +50,11 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V5 | active fillet edge: mean RGB (0.231759, 0.954158, 0.466995) | 0.7207 | 🟢 |
 | V5 | hovered front face brightened by 0.376471 | 0.3765 | 🟢 |
 | V5 | unselected right side unchanged (Σ|ΔRGB|) | 5.551e-17 | 🟢 |
+| V8 | Extrude#2.Cap(End) → Brass (layer 5): view normal (0.000, 0.816), 54214 pixels within 0.42 / 255 of the texel (RGB 241 202 118) | 0.4248 | 🟢 |
+| V8 | Extrude#2.Cap(End) without matcap: Studio shader = CPU Studio mirror within 0.506 / 255 | 0.5058 | 🟢 |
+| V8 | Extrude#2.Side(Line2) → RedPlastic (layer 9): view normal (0.707, -0.408), 10315 pixels within 0.00 / 255 of the texel (RGB 79 11 9) | 0 | 🟢 |
+| V8 | Extrude#2.Side(Line2) without matcap: Studio shader = CPU Studio mirror within 0.244 / 255 | 0.2442 | 🟢 |
+| V8 | Extrude#2.Side(Line1) → BrushedSteel (layer 2): view normal (-0.707, -0.408), 25351 pixels within 0.51 / 255 of the texel (RGB 58 58 61) | 0.5139 | 🟢 |
+| V8 | Extrude#2.Side(Line1) without matcap: Studio shader = CPU Studio mirror within 0.244 / 255 | 0.2442 | 🟢 |
+| V8 | layers cleared → colour bit-identical to the Studio frame; identity unchanged by matcaps | 0 | 🟢 |
 | V7 | colour 98dff767c0c745d2 · identity edc87526f403b936 | 0 | 🟢 |

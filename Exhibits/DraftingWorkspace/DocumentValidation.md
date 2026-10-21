@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14.58 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14.84 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -18,6 +18,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W12 | Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal | sound · rel. ≤ 2·10⁻³ | 0.0623 | 11 | 🟢 |
 | W13 | Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation | ≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe | 0.076 | 6 | 🟢 |
 | W14 | Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders | ≤ 10⁻⁵ m · ≤ 10⁻⁹ | 2.16e-07 | 11 | 🟢 |
+| W15 | Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals | exact · 1 / 255 | 0 | 13 | 🟢 |
 
 ## Walkthrough
 
@@ -126,6 +127,19 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14
 | W14 | zero-area plane refused (image plane Side: Right and Down span no area) · opacity 1.5 refused — no curves kept | 0 | 🟢 |
 | W14 | Axis x cylinder r 0.37 h 0.5: |V − πr²h| / V (value); 0.62 … 1.12 along the axis, Ø 0.74 in z | 1.29e-15 | 🟢 |
 | W14 | Axis y cylinder r 0.37 h 0.5: |V − πr²h| / V (value); 0.805 … 1.31 along the axis, Ø 0.74 in z | 0 | 🟢 |
+| W15 | 13 built-ins 256 × 256 RGBA8, opaque, composed twice bit-equal; library Studio + 13 (Brass = layer 5); unknown name refused / layer 0 | 0 | 🟢 |
+| W15 | brightest texel: Brass blue / red 0.514 (< 0.75, tinted metal) · Red plastic min / max 0.914 (> 0.8, white Fresnel) | 0 | 🟢 |
+| W15 | |∂L/∂x| / |∂L/∂y|: Brushed steel 0.347 < 0.6 × Chrome 0.745 (anisotropic) | 0 | 🟢 |
+| W15 | luminance spread inside the disc: Chrome 63.1 > Satin aluminium 47.8 > Clay 45.6 | 0 | 🟢 |
+| W15 | 4 × 2 BMP → 256 × 256: quarter columns show source columns 2 and 3 (centre crop), within 1 / 255, opaque | 0 | 🟢 |
+| W15 | 2 faces → Brass, body → Brushed steel: state words 2 × layer 5 + 4 × layer 2; revision unchanged (no regeneration); 2 matcap-only undo entries | 0 | 🟢 |
+| W15 | unknown matcap refused (no matcap named Unobtainium) · repeat refused (the body already shows BrushedSteel) · appearance and history unchanged | 0 | 🟢 |
+| W15 | undo → body Studio, undo → no face matcaps, redo × 2 → identical appearance; revision unchanged throughout | 0 | 🟢 |
+| W15 | Block1.Depth 1 → 1.5 regenerates; still 2 Brass + 4 Brushed steel faces, 0 dangling assignments | 0 | 🟢 |
+| W15 | remove on 1 face → 1 override left; remove on the body → Studio; a third remove refused (the body already shows Studio) | 0 | 🟢 |
+| W15 | picture ShopStripes → layer 14 of 15, fitted pixels equal; twice / built-in name / missing file refused (cannot read picture /tmp/DraftingMatcapValidation.bmp.missing (can't fopen)) | 0 | 🟢 |
+| W15 | save → load → save byte-equal with [Appearance]; documents without matcaps write no Appearance key | 0 | 🟢 |
+| W15 | a file naming an unknown matcap is refused: Appearance: no matcap named Unobtainium (face Extrude#2.Side(Line2)) | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

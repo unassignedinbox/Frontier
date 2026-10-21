@@ -1,8 +1,8 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 339 frames · 48.9872 s · slowest frame 1488.99 ms
-- Script: Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt
+- Frame: 1600 x 900 · 339 frames · 27.8548 s · slowest frame 1090.59 ms
+- Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
 | Line | Expectation | Observed | Result |
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `6582593051759cf0` |
-| 31CurveForms | 243 | `8af69be164c9c25f` |
-| 32HermiteClosing | 254 | `3c6675dea2ca41fc` |
-| 33DrawnSolid | 339 | `6c416e375b210002` |
+| 30RectanglePreview | 32 | `e940e6a03230c0db` |
+| 31CurveForms | 243 | `d22fccb85e7bb8e6` |
+| 32HermiteClosing | 254 | `9c40745b3a180387` |
+| 33DrawnSolid | 339 | `c4e8c8b3a9824b80` |
 
 ## Journal
 
@@ -86,20 +86,20 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1.5 m (pinned)
-- Extrude1 · Rectangle1 · New · 10 ms
+- Extrude1 · Rectangle1 · New · 9 ms
 - Circle on plane XY: click centre and rim · V two-point mode · Esc aborts
-- Circle1 · 15 ms
+- Circle1 · 9 ms
 - Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 1.5 m (pinned)
-- Extrude2 · Circle1 · Difference · 74 ms
+- Extrude2 · Circle1 · Difference · 36 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 52 ms
+- Line1 · 38 ms
 - Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 125 ms
+- Extrude3 · Line1 · Union · 75 ms
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Point dropped · 2 left
 - Autosaved _ClaudeScratch/DraftingWorkspace/SketchRecovery.drafting.toml
@@ -107,11 +107,11 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 104 ms
+- Curve1 · Hermite · 72 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 946 ms
+- Extrude4 · Curve1 · Difference · 746 ms
 - Arc on plane XY: click start, end, then a point on the arc · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left

@@ -236,6 +236,14 @@ if(EXISTS "${FRONTIER_ROOT}/_ClaudeScratch/Blueprint/BmwM3E90.jpg")
              WORKING_DIRECTORY "${FRONTIER_ROOT}")
     set_tests_properties(DraftingBlueprintModellingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+add_test(NAME DraftingMatcapWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/MatcapRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Matcap.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/MatcapWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingMatcapWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

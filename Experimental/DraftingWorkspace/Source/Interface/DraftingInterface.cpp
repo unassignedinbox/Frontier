@@ -374,9 +374,11 @@ std::string SelectionMatcap(const DraftingWorkspaceState& State)
     return Shown;
 }
 
-// 💡 Swatch grid (thumbnails when the frame registered them, else a flat colour from the sphere's lit side), grouped by
-//    category. Returns the clicked matcap name or "". Widget keys: Prefix + name ("MatcapBrass", "PickMatcapBrass").
-std::string DrawMatcapSwatches(DraftingWorkspaceState& State, const char* Prefix, int Columns, float Side)
+// 💡 Swatch grid (thumbnails when the frame registered them, else a flat colour from the sphere's lit side) in category
+//    order Studio · Metal · Plastic · Other · Pictures. TitledCondition writes the category above each group (the picker);
+//    otherwise one compact flow fills the available width (the Inspector). Columns = 0 fits as many as the width allows.
+//    Returns the clicked matcap name or "". Widget keys: Prefix + name ("MatcapBrass", "PickMatcapBrass").
+std::string DrawMatcapSwatches(DraftingWorkspaceState& State, const char* Prefix, int Columns, float Side, bool TitledCondition)
 {
     const DraftingMatcapLibrary& Library = State.Matcaps.Library;
     const std::string Current = SelectionMatcap(State);
@@ -388,11 +390,18 @@ std::string DrawMatcapSwatches(DraftingWorkspaceState& State, const char* Prefix
         const size_t Group = Layer <= BuiltIn.size() ? (BuiltIn[Layer - 1].Category == "Metal" ? 1 : BuiltIn[Layer - 1].Category == "Plastic" ? 2 : 3) : 4;
         Groups[Group].second.push_back(Layer);
     }
+    const ImGuiStyle& Style = ImGui::GetStyle();
+    if (Columns <= 0)
+        Columns = std::max(1, int((ImGui::GetContentRegionAvail().x + Style.ItemSpacing.x) / (Side + 2.0f * Style.FramePadding.x + Style.ItemSpacing.x)));
+    int Column = 0;
     for (const auto& [Title, Layers] : Groups)
     {
         if (Layers.empty()) continue;
-        ImGui::TextDisabled("%s", Title.c_str());
-        int Column = 0;
+        if (TitledCondition)
+        {
+            ImGui::TextDisabled("%s", Title.c_str());
+            Column = 0;
+        }
         for (const size_t Layer : Layers)
         {
             if (Column++ % Columns != 0) ImGui::SameLine();
@@ -440,18 +449,20 @@ void DrawAppearanceCard(DraftingWorkspaceState& State)
     if (Faces) ImGui::Text("%zu face(s) · %s", Faces, Caption.c_str());
     else ImGui::Text("Body · %s", Caption.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("(%zu face override(s))", State.Document.Appearance.FaceMatcaps.size());
-    const std::string Chosen = DrawMatcapSwatches(State, "Matcap", 6, 34.0f);
+    ImGui::TextDisabled("· %zu override(s)", State.Document.Appearance.FaceMatcaps.size());
+    const std::string Chosen = DrawMatcapSwatches(State, "Matcap", 0, 26.0f, false);
     if (!Chosen.empty()) AssignMatcap(State, Chosen);
-    if (PressButton(State, "Remove  (Alt+M)###MatcapRemove", ImVec2(130, 0))) RemoveMatcap(State);
+    const float Spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float Half    = std::floor(0.5f * (ImGui::GetContentRegionAvail().x - Spacing));
+    if (PressButton(State, "Remove (Alt+M)###MatcapRemove", ImVec2(Half, 0))) RemoveMatcap(State);
     ImGui::SameLine();
-    if (PressButton(State, "Set material  (M)###MatcapPickerOpen", ImVec2(150, 0))) State.Matcaps.PickerOpen = true;
+    if (PressButton(State, "Picker (M)###MatcapPickerOpen", ImVec2(Half, 0))) State.Matcaps.PickerOpen = true;
     std::array<char, 260>& PicturePath = State.Matcaps.PicturePath;
-    ImGui::SetNextItemWidth(206);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 60.0f - Spacing);
     ImGui::InputTextWithHint("###MatcapPath", "matcap picture (.png / .jpg)", PicturePath.data(), PicturePath.size());
     RegisterWidget(State, "###MatcapPath");
     ImGui::SameLine();
-    if (PressButton(State, "Add###MatcapAdd", ImVec2(70, 0), PicturePath[0] != 0)) AddMatcapPicture(State, PicturePath.data());
+    if (PressButton(State, "Add###MatcapAdd", ImVec2(60, 0), PicturePath[0] != 0)) AddMatcapPicture(State, PicturePath.data());
     if (const size_t Dangling = CountDanglingMatcaps(State.Scene, State.Document.Appearance))
         ImGui::TextColored(Tint(RefusalColour), "%zu assignment(s) name faces no longer in the body", Dangling);
     EndCard();
@@ -469,7 +480,7 @@ void DrawMatcapPicker(DraftingWorkspaceState& State)
     if (ImGui::Begin(Title.c_str(), &Open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove))
     {
         RegisterWidget(State, "###MatcapPicker");
-        const std::string Chosen = DrawMatcapSwatches(State, "PickMatcap", 7, 52.0f);
+        const std::string Chosen = DrawMatcapSwatches(State, "PickMatcap", 7, 52.0f, true);
         ImGui::TextDisabled("Click applies · Esc closes · Alt+M removes");
         if (!Chosen.empty())
         {

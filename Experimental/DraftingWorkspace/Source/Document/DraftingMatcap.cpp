@@ -175,7 +175,9 @@ constexpr double DielectricLightGain = 60.0;                                    
         const double Mask = Smooth(Panel.HalfWidth + Soft, Panel.HalfWidth - Soft, std::abs(U)) * Smooth(Panel.HalfTall + Soft, Panel.HalfTall - Soft, std::abs(V));
         if (Mask <= 0.0) continue;
         const double Spread = (Panel.HalfWidth * Panel.HalfTall) / ((Panel.HalfWidth + Soft) * (Panel.HalfTall + Soft));
-        Radiance = Add(Radiance, Scale(Panel.Light, Mask * Panel.Power * Spread * Gain));
+        // Only real lights are HDR; the dim floor bounce card (power < 0.5) stays at room level for every finish.
+        const double Boost = Panel.Power >= 0.5 ? Gain : 1.0;
+        Radiance = Add(Radiance, Scale(Panel.Light, Mask * Panel.Power * Spread * Boost));
     }
     return Radiance;
 }

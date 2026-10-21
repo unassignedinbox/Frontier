@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 316 frames · 33.4318 s · slowest frame 2295.17 ms
+- Frame: 1600 x 900 · 316 frames · 29.9491 s · slowest frame 2289.56 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -38,10 +38,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 134 | `5868479a2ec5685b` |
-| 71ZebraG2 | 188 | `8bd342287344a34d` |
-| 72DeviationMap | 213 | `1459e18a1969c5f7` |
-| 73ZebraMirrored | 316 | `7892bd89c4a7e213` |
+| 70ZebraG0 | 134 | `a2d3fe0d37b8d759` |
+| 71ZebraG2 | 188 | `a153b368e94c29b9` |
+| 72DeviationMap | 213 | `18066dc7daeb4a52` |
+| 73ZebraMirrored | 316 | `b7cb3645a1ab0cc9` |
 
 ## Journal
 
@@ -62,8 +62,8 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · 4 ms
-- Lofted 4 curve(s) → panel (sound) · 2 panel(s) · 4 ms
+- Loft2 · 4 sections · 3 ms
+- Lofted 4 curve(s) → panel (sound) · 2 panel(s) · 3 ms
 - Selection cleared
 - Zebra on · 64 stripes · 5766 triangles
 - View Top
@@ -80,7 +80,7 @@
 - View Isometric
 - Autosaved _ClaudeScratch/DraftingWorkspace/EvaluationRecovery.drafting.toml
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 2 ms
+- Import 11 curve(s) · 3 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - Selected curve Section1 · 4 poles · fit 0.045 mm · 1 selected
