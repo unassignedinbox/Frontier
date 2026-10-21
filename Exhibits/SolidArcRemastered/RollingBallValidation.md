@@ -1,6 +1,6 @@
 # Rolling-ball carrier validation (procedural pipe on traced spines)
 
-**🟢 PASS** · 3 bodies · 4 transforms · 89318 ms
+**🟢 PASS** · 3 bodies · 4 transforms · 83416 ms
 
 ## Gates
 
@@ -21,9 +21,9 @@
 
 | | Specimen | Edges | Sheets | Pipes | Faces | Genus | V | Removed | \|V − V_polygon\| | Bound | ms | Outcome |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 🟢 | Radial bore through the axis (crosses both seams), r 0.03 | 2 | 2 | 2 | 7 | 0 | 28.022941899773 | 2.741e-04 | 8.7e-04 | 1.3e-02 | 10434 | blended |
-| 🟢 | Radial bore through the axis, r 0.06 | 2 | 2 | 2 | 7 | 0 | 28.022072222397 | 1.144e-03 | 8.7e-04 | 1.3e-02 | 10658 | blended |
-| 🟢 | Offset bore (y 0.8, asymmetric mouth), r 0.04 | 1 | 1 | 1 | 6 | 0 | 27.902839245929 | 6.976e-04 | 8.4e-04 | 1.3e-02 | 16719 | blended |
+| 🟢 | Radial bore through the axis (crosses both seams), r 0.03 | 2 | 2 | 2 | 7 | 0 | 28.022941899773 | 2.741e-04 | 8.7e-04 | 1.3e-02 | 9916 | blended |
+| 🟢 | Radial bore through the axis, r 0.06 | 2 | 2 | 2 | 7 | 0 | 28.022072222397 | 1.144e-03 | 8.7e-04 | 1.3e-02 | 11082 | blended |
+| 🟢 | Offset bore (y 0.8, asymmetric mouth), r 0.04 | 1 | 1 | 1 | 6 | 0 | 27.902839245929 | 6.976e-04 | 8.4e-04 | 1.3e-02 | 15029 | blended |
 
 ## Transforms
 
@@ -32,4 +32,4 @@
 | 🟢 | Rotation 37° about a skew axis + translation | 8.1e-12 | 1.5e-15 | round trip |
 | 🟢 | Reflection in a skew plane | 2.7e-12 | 5.7e-16 | round trip |
 | 🟢 | Uniform scale × 2.5 about (1, 1, 1) | 7.1e-14 | 4.7e-16 | round trip |
-| 🟢 | Non-uniform scale (1, 1, 2) — must refuse | 0.0e+00 | 0.0e+00 | Transform: a non-similar map turns circles into curves outside the carrier kinds |
+| 🟢 | Non-uniform scale (1, 1, 2) — must refuse | 0.0e+00 | 0.0e+00 | Transform: a non-similar map on a traced or contact edge (its chord-length τ does not stretch uniformly, 🚧) |

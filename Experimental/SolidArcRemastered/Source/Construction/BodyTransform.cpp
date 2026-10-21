@@ -104,7 +104,7 @@ namespace
             Mapped.Flip    = Analysis.Determinant < 0.0;
             return Mapped;
         }
-        if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map turns curved faces into surfaces outside the carrier kinds"; return Mapped; }
+        if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map has no exact rolling-ball image (the procedural carrier is not rational; NURBS promotion would approximate it)"; return Mapped; }
         const double Scale = Analysis.Scale;                                                 // [-] - s
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
@@ -156,7 +156,7 @@ namespace
             Mapped.Curve   = StraightLine{ ApplyPoint(Analysis.Map, Line->Origin), Image * (1.0 / Mapped.Stretch) };
             return Mapped;
         }
-        if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map turns circles into curves outside the carrier kinds"; return Mapped; }
+        if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map on a traced or contact edge (its chord-length τ does not stretch uniformly, 🚧)"; return Mapped; }
         if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve))
         {
             // 📝 The carrier is geometric (Newton onto both surfaces in the guide's normal plane, 𝐭 oriented with H′), so a

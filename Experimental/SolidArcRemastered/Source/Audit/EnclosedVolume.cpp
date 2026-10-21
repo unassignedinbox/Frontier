@@ -144,17 +144,17 @@ namespace
         const ParameterCurve& Curve = *Use.SurfaceCurve;
         // 📝 Any constant base works (∮ H(𝑣) d𝑣 = 0 on a closed chart loop); a NURBS patch starts at its 𝑢-domain so the
         //    inner integral never extrapolates the patch.
-        double Base = 0.0;                                                                   // [-] - Inner lower limit
-        if (Chart != nullptr) if (const auto* Spline = std::get_if<NurbsSurface>(Chart)) Base = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
+        double LowerLimit = 0.0;                                                             // [-] - Inner lower limit
+        if (Chart != nullptr) if (const auto* Spline = std::get_if<NurbsSurface>(Chart)) LowerLimit = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
         const auto Integrand = [&](double τ)
         {
             const ParameterSample Sample = EvaluateParameterCurve(Curve, τ);
             if (Sample.Derivative.Y == 0.0) return 0.0;
             const auto   Row   = [&](double s) { return Function(Vector2{ s, Sample.Position.Y }); };
             const double Reach = Sample.Position.X;                                          // [-] - Inner upper limit
-            std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(Base, Reach), std::max(Base, Reach)) : std::vector<double>{};
-            if (Reach < Base) std::reverse(Knots.begin(), Knots.end());
-            double Primitive = 0.0, From = Base;                                             // [-] - ∫_base^𝑢 density, running piece start
+            std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(LowerLimit, Reach), std::max(LowerLimit, Reach)) : std::vector<double>{};
+            if (Reach < LowerLimit) std::reverse(Knots.begin(), Knots.end());
+            double Primitive = 0.0, From = LowerLimit;                                             // [-] - ∫_lower^𝑢 density, running piece start
             for (double Knot : Knots) { Primitive += IntegrateComposite(From, Knot, PanelSpan, Row); From = Knot; }
             Primitive += IntegrateComposite(From, Reach, PanelSpan, Row);
             return Primitive * Sample.Derivative.Y;

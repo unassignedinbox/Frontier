@@ -2,6 +2,23 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (4.9 MB, no external resources) with 16 interactive kernel models (now including P7 with its rolling-ball pipes), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
+**TL;DR (NURBS carriers, option C part A1)**: Rational B-spline curves and surfaces are now kernel carriers, with exact conversions of every analytic carrier. The new [`NurbsValidation`](NurbsValidation.md) passes all 7 gates, and ctest passes 13/13 (787 s). Non-uniform scale and shear, which used to be refused, now promote curved faces to NURBS and build exact bodies (V = det M · V*, to 1.5e-15).
+
+| Gate | Measures | Worst | Limit |
+|---|---|---|---|
+| N1 | circle / ellipse / line / plane / cylinder / cone / sphere / torus reproduced (distance · normal angle) | 8.5e-16 · 1.7e-14 rad | 1e-14 · 1e-13 |
+| N2 | C′, C″, S𝑢 … S𝑣𝑣 vs Richardson inside a knot span (random rational, degree 2–5) | 4.1e-9 | 1e-8 |
+| N3 | inversion round trip, on and off the surface | 1.2e-13 | 1e-12 |
+| N4 | iso-curves · Bézier pieces (independent de Casteljau) · reversal | 6.7e-16 | 1e-14 |
+| N5 | affine images on the poles; elliptic cylinder, ellipsoid, squashed torus, sheared cone there and back | 1.5e-15 | 1e-12 · 1e-9 |
+| N6 | 8 promoted bodies: closed-form V, audit, watertight tessellation, 0 of 500 oracle points wrong | 9.6e-16 | 1e-9 |
+| N7 | 5 Booleans with NURBS operands (sphere − bore in closed form, including all-NURBS) | 1.7e-15 | 1e-9 |
+
+- 🧩 **Carrier:** rational, clamped knots and an optional periodic seam. Evaluation uses A2.1–A2.3 basis functions with rational Leibniz derivatives. Inversion is lattice-seeded Newton, clamped to the box. Bézier extraction is Boehm insertion in homogeneous form. Conics are rational quadratics with ≤ 90° pieces, and τ matches the analytic parameter at every joint. Quadrics are rational revolutions.
+- 🐞 **Quadrature:** the inner Green primitive started at 𝑢 = 0, which would extrapolate a patch whose domain excludes 0. It now starts at the patch's 𝑢-domain (valid because ∮ H(𝑣) d𝑣 = 0 on a closed loop). Fins are also split where they cross a 𝑣-knot, since the density is only C⁰ there.
+- 💡 **Honest refusals:** blends on NURBS supports name the missing exact rational offset instead of a wrong "curvature radius" message. A non-similar map refuses traced and contact edges (their chord-length τ does not stretch uniformly) and rolling-ball faces (not rational). `RollingBallValidation` R9 still refuses non-uniform scale, with the new reason.
+- 🚧 **Next (A2):** a Várady–Rockwood setback patch on these carriers for P8, then overflow.
+
 **TL;DR (exact rolling-ball carrier, option C part B)**: Fillets on traced spines are now built on an exact procedural carrier. **P7 is 🟢**, so PatternStressValidation runs 64 rows: 🟢 63 · ⚠️ 1 · **🔴 0 wrong** (610 operations, 542 s). The only refusal left is P8, now refused honestly at a degree-8 singular vertex (setback, phase A). The new [`RollingBallValidation`](RollingBallValidation.md) passes all 10 gates, and ctest passes 12/12 (654 s).
 
 | Gate | Measures | Worst | Limit |

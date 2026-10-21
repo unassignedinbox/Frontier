@@ -74,7 +74,7 @@ namespace
         {
             using Kind = std::decay_t<decltype(SurfaceA)>;
             const Kind& SurfaceB = std::get<Kind>(Second);
-            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return false;   // Handled above
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return false;   // Compared above
             else
             {
             if (!SameFrame(SurfaceA.Frame, SurfaceB.Frame, Precision)) return false;

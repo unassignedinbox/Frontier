@@ -361,8 +361,8 @@ ul.Tight li     { margin: 3px 0; }
 //  PAYLOAD
 // ---------------------------------------------------------------------------------------------------------------------
 const Payload    = JSON.parse(document.getElementById("ShowcasePayload").textContent);
-const Categories = ["Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall", "Other"];  // Same order as ShowcaseComposer.Categories
-const Palette    = { Plane: [0.50, 0.56, 0.65], Cylinder: [0.23, 0.80, 0.72], Cone: [0.74, 0.52, 0.95], Sphere: [0.94, 0.72, 0.29], Torus: [0.36, 0.78, 0.93], RollingBall: [0.96, 0.55, 0.62], Other: [0.95, 0.45, 0.45] };
+const Categories = ["Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall", "Nurbs", "Other"];  // Same order as ShowcaseComposer.Categories
+const Palette    = { Plane: [0.50, 0.56, 0.65], Cylinder: [0.23, 0.80, 0.72], Cone: [0.74, 0.52, 0.95], Sphere: [0.94, 0.72, 0.29], Torus: [0.36, 0.78, 0.93], RollingBall: [0.96, 0.55, 0.62], Nurbs: [0.62, 0.85, 0.38], Other: [0.95, 0.45, 0.45] };
 document.getElementById("ComposedStamp").textContent = "from commit " + Payload.Commit + " (" + Payload.Composed + ")";
 
 function DecodeTransport(Text)

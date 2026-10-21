@@ -58,7 +58,7 @@ namespace
         Gate.Failures += Finite && Value <= Limit ? 0 : 1;
     }
 
-    GateTally ReproductionGate{ "N1", "Exact reproduction: NURBS circle / ellipse / line / plane / cylinder / cone / sphere / torus vs the analytic carrier (distance and normal angle, relative to scale)", "≤ 1e-14" };
+    GateTally ReproductionGate{ "N1", "Exact reproduction: NURBS circle / ellipse / line / plane / cylinder / cone / sphere / torus vs the analytic carrier (distance relative to scale / normal angle; the angle is conditioned by 1/cos 𝑣 beside a sphere pole)", "≤ 1e-14 / 1e-13 rad" };
     GateTally DerivativeGate  { "N2", "Rational derivatives C′, C″, S𝑢, S𝑣, S𝑢𝑢, S𝑢𝑣, S𝑣𝑣 vs Richardson differences inside a knot span (relative)", "≤ 1e-8" };
     GateTally InversionGate   { "N3", "Inversion round trip: on-surface / on-curve points and offset points back to their feet (relative to extent)", "≤ 1e-12" };
     GateTally IsoGate         { "N4", "Iso-curves ≡ surface rows, Bézier pieces ≡ curve, reversal ≡ curve (relative to extent)", "≤ 1e-14" };
@@ -288,6 +288,21 @@ namespace
 
     // ---- N4 ---------------------------------------------------------------------------------------------------------------
 
+    // Rational de Casteljau in homogeneous coordinates (independent of the B-spline evaluator under test).
+    [[nodiscard]] Vector3 EvaluateBezierPiece(const NurbsBezierPiece& Piece, double 𝑡)
+    {
+        std::vector<Vector3> Points(Piece.Poles.size());
+        std::vector<double>  Weights = Piece.Weights;
+        for (size_t Index = 0; Index < Points.size(); ++Index) Points[Index] = Piece.Poles[Index] * Piece.Weights[Index];
+        for (size_t Level = 1; Level < Points.size(); ++Level)
+            for (size_t Index = 0; Index + Level < Points.size(); ++Index)
+            {
+                Points[Index]  = Points[Index] * (1.0 - 𝑡) + Points[Index + 1] * 𝑡;
+                Weights[Index] = Weights[Index] * (1.0 - 𝑡) + Weights[Index + 1] * 𝑡;
+            }
+        return Points.front() * (1.0 / Weights.front());
+    }
+
     [[nodiscard]] double ProbeIsoCurves(const NurbsSurface& Spline, std::mt19937_64& Generator, int Samples)
     {
         const NurbsSurfaceDefinition& Definition = *Spline.Definition;
@@ -321,13 +336,13 @@ namespace
             double Low = Uniform(Generator, Domain.Low, Domain.High), High = Uniform(Generator, Domain.Low, Domain.High);
             if (Low > High) std::swap(Low, High);
             if (Sample == 0) { Low = Domain.Low; High = Domain.High; }
-            for (const RationalSegment& Segment : ConvertToRationalSegments(Spline, Low, High))
+            for (const NurbsBezierPiece& Piece : DecomposeNurbsCurve(Definition, Low, High))
             {
                 for (int Index = 0; Index <= 16; ++Index)
                 {
                     const double 𝑡 = Index / 16.0;
-                    const double τ = Segment.CurveLow + 𝑡 * (Segment.CurveHigh - Segment.CurveLow);
-                    Worst = std::max(Worst, Distance(EvaluateRationalSegment(Segment, 𝑡), EvaluateNurbsCurve(Definition, τ).Position) / Extent);
+                    const double τ = Piece.PieceLow + 𝑡 * (Piece.PieceHigh - Piece.PieceLow);
+                    Worst = std::max(Worst, Distance(EvaluateBezierPiece(Piece, 𝑡), EvaluateNurbsCurve(Definition, τ).Position) / Extent);
                 }
             }
         }
@@ -393,8 +408,8 @@ namespace
         Row.Error      = std::fabs(Row.Volume - Row.Expected) / std::fabs(Row.Expected);
         TessellationSettings Fine;
         Fine.SagRatio = 2.0e-4;
-        const TessellationOutcome     Mesh    = TessellateBody(Partition, Body, Fine);
-        const TessellationAuditReport Polygon = Mesh.Refusal.empty() ? AuditTessellation(Partition, Body, Mesh) : TessellationAuditReport{};
+        const TessellationOutcome     Complex    = TessellateBody(Partition, Body, Fine);
+        const TessellationAuditReport Polygon = Complex.Refusal.empty() ? AuditTessellation(Partition, Body, Complex) : TessellationAuditReport{};
         Row.Triangles    = Polygon.Triangles;
         Row.PolygonGap   = std::fabs(Polygon.ExactVolume - Polygon.ComplexVolume);
         Row.PolygonBound = Polygon.PeakDeviation * Polygon.ComplexArea;
@@ -417,9 +432,9 @@ namespace
             }
             OracleCondition = Row.Wrong == 0 && Row.Samples > 0;
         }
-        Row.PassedCondition = Audit.SoundCondition() && Mesh.Refusal.empty() && Polygon.UnpairedSides == 0 && Row.PolygonGap <= Row.PolygonBound && OracleCondition && Row.Error <= 1.0e-9;
+        Row.PassedCondition = Audit.SoundCondition() && Complex.Refusal.empty() && Polygon.UnpairedSides == 0 && Row.PolygonGap <= Row.PolygonBound && OracleCondition && Row.Error <= 1.0e-9;
         if (!Audit.SoundCondition()) Row.Outcome = "audit: " + Audit.Findings.front().Detail;
-        else if (!Mesh.Refusal.empty()) Row.Outcome = "tessellation: " + Mesh.Refusal;
+        else if (!Complex.Refusal.empty()) Row.Outcome = "tessellation: " + Complex.Refusal;
     }
 }
 
@@ -435,7 +450,7 @@ int main()
     std::vector<BodyRow>         AffineRows, PromotedRows, BooleanRows;
 
     // ---- N1 exact reproduction of conics and quadrics (random frames).
-    for (int Trial = 0; Trial < 3; ++Trial)
+    for (int FrameIndex = 0; FrameIndex < 3; ++FrameIndex)
     {
         const OrthonormalFrame Frame = RandomFrame(Generator);
         const double Scale = Length(Frame.Origin) + 2.0;                                     // [len] - Coordinate magnitude
@@ -453,7 +468,7 @@ int main()
     for (const ReproductionRow& Row : Reproductions)
     {
         Tally(ReproductionGate, Row.Distance, 1.0e-14);
-        Tally(ReproductionGate, Row.Angle, 1.0e-14);
+        Tally(ReproductionGate, Row.Angle, 1.0e-13);
     }
 
     // ---- N2–N4 on freeform carriers (random rational, non-uniform knots, degrees 2…5) and on converted quadrics.

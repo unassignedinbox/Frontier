@@ -185,6 +185,7 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     for (int Side = 0; Side < 2; ++Side)
     {
         const double Distance = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Sheet.Radius;
+        if (std::holds_alternative<NurbsSurface>(Supports[Side])) return Refuse("blend on a NURBS support (no exact rational offset carrier yet, 🚧)");
         const std::optional<SurfaceGeometry> Offset = OffsetSurface(Supports[Side], Distance);
         if (!Offset) return Refuse(std::string("size exceeds the curvature radius of the ") + SurfaceCategoryLabel(Supports[Side]) + " support");
         Sheet.Offsets[Side] = *Offset;
