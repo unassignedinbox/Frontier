@@ -19,6 +19,32 @@
 | V7 Sew → mirror → close → solid | 🟢 · 🚧 trim | A1–A6 (cylinder and frustum 1.6e-15), T2–T4, W12, `PanelAssemblyWalkthrough.txt` 57 / 57, captures 62–65 |
 | V8 Zebra + deviation map | 🟢 | W13 (deviation 0.076 mm, closest-point residual 5.5e-8, G0 zebra jump 1.07 stripes vs G2 1.8e-13), `SurfaceEvaluationWalkthrough.txt` 28 / 28, captures 70–73 |
 
+## Blueprint study — BMW M3 (E90) from an internet three-view
+
+**TL;DR** — A three-view line drawing from the web is calibrated (one scale, 2.0771 mm/px) and traced into 24 faired half sections. The planes carry the drawing behind the curves in the viewport. A box drag picks all 24 sections, **L** lofts them, **Alt+X** mirrors and **Close** caps the ends: a sound solid of 7.148 m³. Four **Axis x** cylinders then cut the wheel arches (sound, 6.790 m³). The drawing itself is third-party and **not committed**: put a copy at `_ClaudeScratch/Blueprint/BmwM3E90.jpg`. Without it the planes refuse and the geometry stays the same.
+
+| Gap hit while modelling | Symptom | Filled |
+|---|---|---|
+| B1 Image planes | No way to see the blueprint behind the curves | 🟢 `[[ImagePlanes]]` in curves files and documents; Slang textured quad (line-art ink, depth-tested, not pickable); Inspector card (Visible · ink · Remove); toolbar **Images** |
+| B2 GIF pictures | The downloaded "`.jpg`" was a GIF; the plane refused | 🟢 stb GIF (first frame) enabled |
+| B3 Kinked traced sections | Import refused: `point 18 stays 6.13 mm away at 34 spans` (31.8° beltline corner) | 🟢 the tracer fairs each section (arc-length Gaussian, σ 60 mm, mirrored loop keeps x = 0 ends horizontal); worst fit 0.193 mm |
+| B4 Selecting 24 sections | One Shift+click per section | 🟢 Plasticity left-drag box: curves wholly inside, in feature-tree (station) order, Shift adds, Ctrl removes |
+| B5 Wheel-arch cylinders | Construct cylinder only along z | 🟢 **Axis x / y / z** (Position = base centre, Height along +axis) |
+| B6 Boolean speed on freeform | One arch took 76 s (39 fragment winding numbers × 5.7 M NURBS evaluations) | 🟢 two-tier winding in GeneralFuse (coarse screen, strict only when not integral): 12 s, same volume |
+| B7 Replay cost | Every command replays the whole tree, so arch n repeats arches 1 … n−1 | 🚧 incremental regeneration (next) |
+| B8 SSI marching | `CorrectOntoBoth` re-inverts the NURBS globally at every Newton step | 🚧 warm-start (u, v) along the march (next) |
+| B9 Blunt nose / tail | Planar caps at the first / last station (0.03 m inside the bumpers) | 🚧 tip sections / non-planar caps |
+| B10 Details | No shut lines, glass, lamps, mirrors, trim | 🚧 needs trim + curves-on-surface |
+
+```sh
+# Re-trace (writes the sections + image planes; the overlay shows every traced edge on the drawing)
+_ClaudeScratch/.venv/bin/python Experimental/VehicleSurfacing/Tooling/TraceBlueprintSections.py \
+    Experimental/VehicleSurfacing/Samples/BmwM3E90Calibration.toml Experimental/VehicleSurfacing/Samples/BmwM3E90Sections.toml \
+    _ClaudeScratch/Blueprint/TraceOverlay.png
+```
+
+Evidence: W14 (planes, picture decode, codec, refusals, axis cylinders), `BlueprintModellingWalkthrough.txt`, captures 80–88.
+
 ## Files
 
 | Path | What |
@@ -27,6 +53,9 @@
 | `Samples/SyntheticBonnet.toml` | 11 curves × 26 points (6 sections + 5 check loops) on an analytic bonnet, ±0.05 mm noise |
 | `Samples/SyntheticBonnetNetwork.toml` | V5: 6 sections + 4 spines that cross them (seed 0xB0AA38) |
 | `Samples/SyntheticPod.toml` | V7: 5 half hoops with `Planar = true`, from the top of x = 0 round to the bottom (seed 0x90D5) |
+| `Samples/BmwM3E90Calibration.toml` | Blueprint study: pixel rows / columns of the three views, car dimensions, fairing σ, plane offsets |
+| `Samples/BmwM3E90Sections.toml` | 24 traced half sections (48 points each, `Planar = true`) + 3 `[[ImagePlanes]]` |
+| `Tooling/TraceBlueprintSections.py` | Calibration → silhouettes (side roof / underside, plan width, front width) → faired sections + image planes |
 | `Tooling/ComposeSyntheticBonnet.py` | Regenerates all three samples (SyntheticBonnet.toml stays bit-identical) |
 | `../DraftingWorkspace/Source/Document/VehicleCurveImport.*` | `DecodeVehicleCurves` · `ReadVehicleCurves` · `EncodeVehicleCurves` |
 | `../SolidArcRemastered/Source/Surfacing/` | `CurveFitting` (V2, plus end tangents and planar fits), `SectionLoft` (V4, V6), `CurveNetwork` (V5), `PanelAssembly` (V7), `SurfaceAlgebra`, `LinearSystem` |
@@ -96,3 +125,4 @@ The add-on exports **limit points**: points on the evaluated Subdivision surface
 - ⚠️ A pole edit is an absolute position stored on the step, applied after the fit by pole index. A refit with fewer poles (different points or tolerance) refuses the step and names the edit, rather than moving the wrong pole. Re-importing makes new steps without the edits.
 - ⚠️ Blends, face edits and offsets on the sheet are refused; NURBS offsets are not exact (plan decision D4).
 - 📝 Overlay curves are drawn on top of the shaded body with no depth test, so a curve behind the sheet stays visible.
+- ⚠️ Blueprint study: section shapes between the silhouettes are designer intent (the drawing gives only outlines), and fairing moves a convex corner inward by about 0.4·σ·turn. The drawing's three views agree to about one pixel (2 mm). Image planes are not undo entries (reference pictures, not geometry), and they decode from disk when the set of paths changes.

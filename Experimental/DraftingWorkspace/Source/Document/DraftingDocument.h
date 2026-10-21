@@ -9,6 +9,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Document/DraftingImagePlane.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
 #include "Topology/ModelPartition.h"
@@ -72,6 +73,7 @@ struct DraftingConstructRequest
     double                       Radius      = 0.5;                                          // [len] - Cylinder / sphere radius
     double                       Major       = 1.5;                                          // [len] - Torus axis → tube centre
     double                       Minor       = 0.4;                                          // [len] - Torus tube radius
+    int                          Axis        = 2;                                            // [-]   - Cylinder axis: 0 x · 1 y · 2 z (Height runs along +axis)
 };
 
 // 📝 Points are construction-plane coordinates (GridPlane 0 XY, 1 XZ, 2 YZ; see DraftingSketchPlane). Only the fields of
@@ -148,6 +150,7 @@ struct DraftingDocument
     std::vector<DraftingHistoryEntry>          UndoEntries  = {};                            // [-] - Most recent last
     std::vector<DraftingHistoryEntry>          RedoEntries  = {};                            // [-] - Most recent last
     uint64_t                                   Revision     = 0;                             // [-] - Bumped by every regeneration (scene cache key)
+    std::vector<DraftingImagePlane>            ImagePlanes  = {};                            // [-] - Blueprint references (saved, not in the history)
 };
 
 //------------------------------------------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (15.25 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (14.58 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -17,6 +17,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (15
 | W11 | Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload | ≤ 0.5 mm, equal | 0.076 | 18 | 🟢 |
 | W12 | Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal | sound · rel. ≤ 2·10⁻³ | 0.0623 | 11 | 🟢 |
 | W13 | Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation | ≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe | 0.076 | 6 | 🟢 |
+| W14 | Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders | ≤ 10⁻⁵ m · ≤ 10⁻⁹ | 2.16e-07 | 11 | 🟢 |
 
 ## Walkthrough
 
@@ -114,6 +115,17 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (15
 | W13 | G0 rear loft on the lifted Section3: zebra phase jump across the seam 1.07 stripes of 64 (> 0.05) — visibly broken stripes | 0 | 🟢 |
 | W13 | G2 rear loft: zebra phase jump 1.76e-13 stripes of 64 (≤ 10⁻⁶) — continuous stripes | 0 | 🟢 |
 | W13 | zebra tessellation 5816 vs 94 triangles (≥ 20×); distinct scene generation re-uploads the GPU buffers | 0 | 🟢 |
+| W14 | BMW trace: 24 sections + 3 planes; side bumper / ground pixels → y 0, y 4.58, z 0, worst [m] (value) | 2.16e-07 | 🟢 |
+| W14 | top nose / tail / centre line and front centre / ground pixels → world within 2.08 mm (sheet alignment, ≤ 1.5 px) | 0 | 🟢 |
+| W14 | Side ⟂ x at x = −1.2 (behind, seen from Right) · Top ⟂ z under the ground · Front ⟂ y behind the tail | 0 | 🟢 |
+| W14 | 3 × 2 BMP → RGBA8, every pixel exact, top row first, alpha 255 | 0 | 🟢 |
+| W14 | missing picture refused (no throw) | 0 | 🟢 |
+| W14 | import → 24 curves + 3 planes; re-import adds curves, replaces planes by Name (still 3) | 0 | 🟢 |
+| W14 | document with planes (one hidden, one at ink 0.3): save → load → save byte-equal | 0 | 🟢 |
+| W14 | documents without planes write no ImagePlanes key (older files unchanged) | 0 | 🟢 |
+| W14 | zero-area plane refused (image plane Side: Right and Down span no area) · opacity 1.5 refused — no curves kept | 0 | 🟢 |
+| W14 | Axis x cylinder r 0.37 h 0.5: |V − πr²h| / V (value); 0.62 … 1.12 along the axis, Ø 0.74 in z | 1.29e-15 | 🟢 |
+| W14 | Axis y cylinder r 0.37 h 0.5: |V − πr²h| / V (value); 0.805 … 1.31 along the axis, Ø 0.74 in z | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

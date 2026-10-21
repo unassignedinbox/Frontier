@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingImagePlane.h"
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingScene.h"
 #include "Document/VehicleCurveImport.h"
@@ -21,6 +22,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <numbers>
 #include <string>
@@ -59,6 +62,7 @@ namespace
     GateTally SurfacingGate   = { "W11", "Vehicle curves: VehicleCurves.toml round trip (bit-equal) → SpaceCurve steps → loft sheet vs analytic bonnet and limit points; pole move + undo; reload", "≤ 0.5 mm, equal" };
     GateTally PanelGate       = { "W12", "Vehicle panels: loft + loft (G2) → Alt+X mirror → 4-panel sheet; pod loft → mirror → Close → solid vs ∫ πab dy; crossing curves → network; reload byte-equal", "sound · rel. ≤ 2·10⁻³" };
     GateTally EvaluationGate  = { "W13", "Surface evaluation: deviation needles are true closest points (residual ∥ normal, ≤ 61² lattice) and ≤ 0.2 mm on the fitted bonnet; zebra phase jumps at a G0 crease and is continuous at G2; zebra density tessellation", "≤ 0.2 mm · G2 ≤ 10⁻⁶ stripe" };
+    GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -688,13 +692,131 @@ int main()
               "zebra tessellation " + std::to_string(FineCount) + " vs " + std::to_string(CoarseCount) + " triangles (≥ 20×); distinct scene generation re-uploads the GPU buffers");
     }
 
+    // ---- W14 blueprint study: image planes from the committed BMW trace, picture decode, codec, refusals, axis cylinders.
+    {
+        auto Compact = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3g", Value); return std::string(Text); };
+        auto Find    = [](const std::vector<DraftingImagePlane>& Planes, const std::string& Name) -> const DraftingImagePlane*
+        {
+            for (const DraftingImagePlane& Plane : Planes) if (Plane.Name == Name) return &Plane;
+            return nullptr;
+        };
+        // Crop pixel (column, row) → world through the plane's parallelogram.
+        auto Pixel = [](const DraftingImagePlane& Plane, double Column, double Row)
+        {
+            return LocateDraftingImagePoint(Plane, (Column - Plane.Crop[0]) / double(Plane.Crop[2] - Plane.Crop[0]), (Row - Plane.Crop[1]) / double(Plane.Crop[3] - Plane.Crop[1]));
+        };
+
+        // ① landmarks of BmwM3E90Calibration.toml land on the car frame (nose y 0, tail y 4.58, ground z 0, mirror plane x 0).
+        std::string Sample = DRAFTING_VEHICLE_SAMPLE;
+        Sample = Sample.substr(0, Sample.find_last_of("/\\") + 1) + "BmwM3E90Sections.toml";
+        const VehicleCurveFile Bmw = ReadVehicleCurves(Sample);
+        const DraftingImagePlane* Side  = Find(Bmw.ImagePlanes, "Side");
+        const DraftingImagePlane* Top   = Find(Bmw.ImagePlanes, "Top");
+        const DraftingImagePlane* Front = Find(Bmw.ImagePlanes, "Front");
+        // The side view sets the scale (4580 mm over its bumper lines), so its landmarks are exact; the top / front views of
+        // the sheet agree with it to about one pixel (2.08 mm) — the drawing's own alignment, gated at 1.5 px.
+        constexpr double Millimetre = 2.0771e-3;                                             // [m/px] - Calibration scale
+        double Landmark = INFINITY, Alignment = INFINITY;
+        if (Side && Top && Front)
+        {
+            Landmark  = std::max({ std::abs(Pixel(*Side, 30, 1642).Y - 0.0), std::abs(Pixel(*Side, 2235, 1642).Y - 4.58), std::abs(Pixel(*Side, 30, 1642).Z) });
+            Alignment = std::max({ std::abs(Pixel(*Top, 25, 2388).Y), std::abs(Pixel(*Top, 2231, 2388).Y - 4.58), std::abs(Pixel(*Top, 25, 2388).X),
+                                   std::abs(Pixel(*Front, 510, 727).X), std::abs(Pixel(*Front, 510, 727).Z) });
+        }
+        Tally(BlueprintGate, Landmark, Bmw.Refusal.empty() && Bmw.Curves.size() == 24 && Bmw.ImagePlanes.size() == 3 && Landmark <= 1.0e-5,
+              "BMW trace: 24 sections + 3 planes; side bumper / ground pixels → y 0, y 4.58, z 0, worst [m] (value)");
+        Tally(BlueprintGate, 0.0, Alignment <= 1.5 * Millimetre,
+              "top nose / tail / centre line and front centre / ground pixels → world within " + Compact(Alignment * 1000.0) + " mm (sheet alignment, ≤ 1.5 px)");
+        const bool Facing = Side && Top && Front && std::abs(Side->Corner.X + 1.2) <= 1.0e-12 && Side->Right.X == 0.0 && Side->Down.X == 0.0
+                         && Top->Right.Z == 0.0 && Top->Down.Z == 0.0 && Front->Right.Y == 0.0 && Front->Down.Y == 0.0 && Top->Corner.Z < 0.0 && Front->Corner.Y > 4.58;
+        Tally(BlueprintGate, 0.0, Facing, "Side ⟂ x at x = −1.2 (behind, seen from Right) · Top ⟂ z under the ground · Front ⟂ y behind the tail");
+
+        // ② picture decode: a 3 × 2 24-bit BMP written here (bottom-up rows) → RGBA8, top row first; a missing file refuses.
+        const std::string Bitmap = (std::filesystem::temp_directory_path() / "DraftingImagePlaneValidation.bmp").string();
+        {
+            const uint8_t Colours[2][3][3] = { { { 255, 0, 0 }, { 0, 255, 0 }, { 0, 0, 255 } }, { { 10, 20, 30 }, { 40, 50, 60 }, { 70, 80, 90 } } };   // [row][column] RGB, top row first
+            std::vector<uint8_t> Bytes(54, 0);
+            const uint32_t Stride = 12, Size = 54 + Stride * 2;
+            auto Put = [&](size_t At, uint32_t Value, int Count) { for (int Index = 0; Index < Count; ++Index) Bytes[At + Index] = uint8_t(Value >> (8 * Index)); };
+            Bytes[0] = 'B'; Bytes[1] = 'M'; Put(2, Size, 4); Put(10, 54, 4); Put(14, 40, 4); Put(18, 3, 4); Put(22, 2, 4); Put(26, 1, 2); Put(28, 24, 2); Put(34, Stride * 2, 4);
+            for (int Row = 1; Row >= 0; --Row)
+            {
+                for (int Column = 0; Column < 3; ++Column) for (int Channel = 2; Channel >= 0; --Channel) Bytes.push_back(Colours[Row][Column][Channel]);
+                for (uint32_t Pad = 9; Pad < Stride; ++Pad) Bytes.push_back(0);
+            }
+            std::ofstream(Bitmap, std::ios::binary).write(reinterpret_cast<const char*>(Bytes.data()), std::streamsize(Bytes.size()));
+            const DraftingPicture Picture = DecodeDraftingPicture(Bitmap);
+            bool Exact = Picture.Refusal.empty() && Picture.Width == 3 && Picture.Height == 2 && Picture.Pixels.size() == 24;
+            for (int Row = 0; Exact && Row < 2; ++Row)
+                for (int Column = 0; Column < 3; ++Column)
+                    for (int Channel = 0; Channel < 3; ++Channel) Exact = Exact && Picture.Pixels[(Row * 3 + Column) * 4 + Channel] == Colours[Row][Column][Channel];
+            Tally(BlueprintGate, 0.0, Exact && Picture.Pixels[3] == 255, "3 × 2 BMP → RGBA8, every pixel exact, top row first, alpha 255");
+            std::filesystem::remove(Bitmap);
+            const DraftingPicture Missing = DecodeDraftingPicture(Bitmap);
+            Tally(BlueprintGate, 0.0, !Missing.Refusal.empty() && Missing.Pixels.empty(), "missing picture refused (no throw)");
+        }
+
+        // ③ import keeps the planes beside the curves; a second import replaces planes by Name; codec round trip byte-equal.
+        DraftingDocument Study = CreateDraftingDocument("Blueprint");
+        const DraftingCommandOutcome First  = ImportDraftingCurves(Study, Bmw);
+        const size_t                 Steps  = Study.Tree.Steps.size();
+        const DraftingCommandOutcome Second = ImportDraftingCurves(Study, Bmw);
+        Tally(BlueprintGate, 0.0, First.AcceptedCondition && Second.AcceptedCondition && Steps == 24 && Study.Tree.Steps.size() == 48 && Study.ImagePlanes.size() == 3,
+              "import → 24 curves + 3 planes; re-import adds curves, replaces planes by Name (still 3)");
+        Study.ImagePlanes[1].VisibleCondition = false;
+        Study.ImagePlanes[2].Opacity          = 0.3;
+        const std::string            Encoded = EncodeDraftingDocument(Study);
+        const DraftingDocumentFile   Decoded = DecodeDraftingDocument(Encoded);
+        DraftingDocument             Again   = CreateDraftingDocument(Decoded.Title);
+        const DraftingCommandOutcome Opened  = ReplaceDraftingTree(Again, Decoded.Tree, Decoded.Captions, "Open");
+        Again.ImagePlanes = Decoded.ImagePlanes;
+        Tally(BlueprintGate, 0.0, Decoded.Refusal.empty() && Opened.AcceptedCondition && Decoded.ImagePlanes.size() == 3 && !Decoded.ImagePlanes[1].VisibleCondition
+              && Decoded.ImagePlanes[2].Opacity == 0.3 && EncodeDraftingDocument(Again) == Encoded, "document with planes (one hidden, one at ink 0.3): save → load → save byte-equal");
+        const std::string Plain = EncodeDraftingDocument(CreateDraftingDocument("Plain"));
+        Tally(BlueprintGate, 0.0, Plain.find("ImagePlanes") == std::string::npos, "documents without planes write no ImagePlanes key (older files unchanged)");
+
+        // ④ refusals: a degenerate plane or an opacity outside [0, 1] rejects the whole curves file (no partial import).
+        const std::string Curve = "Format = \"VehicleCurves\"\nUnits = \"m\"\n[[Curves]]\nName = \"Line\"\nPoints = [[0, 0, 0], [1, 0, 0], [2, 0, 0.5]]\n";
+        auto PlaneRow = [](const std::string& Right, double Opacity)
+        {
+            return "[[ImagePlanes]]\nName = \"Side\"\nPath = \"Side.png\"\nCorner = [0, 0, 1]\nRight = " + Right + "\nDown = [0, 0, -1]\nOpacity = " + std::to_string(Opacity) + "\n";
+        };
+        const VehicleCurveFile Fine     = DecodeVehicleCurves(Curve + PlaneRow("[0, 4, 0]", 0.5));
+        const VehicleCurveFile Flat     = DecodeVehicleCurves(Curve + PlaneRow("[0, 0, -2]", 0.5));
+        const VehicleCurveFile Overdone = DecodeVehicleCurves(Curve + PlaneRow("[0, 4, 0]", 1.5));
+        Tally(BlueprintGate, 0.0, Fine.Refusal.empty() && Fine.ImagePlanes.size() == 1 && !Flat.Refusal.empty() && Flat.Curves.empty() && !Overdone.Refusal.empty() && Overdone.Curves.empty(),
+              "zero-area plane refused (" + Flat.Refusal + ") · opacity 1.5 refused — no curves kept");
+
+        // ⑤ Construct · Cylinder · Axis x / y (wheel arches): exact volume πr²h and the extent along +axis from Position.
+        for (int Axis = 0; Axis < 2; ++Axis)
+        {
+            DraftingDocument Wheel = CreateDraftingDocument("Wheel");
+            DraftingConstructRequest Request;
+            Request.Kind     = DraftingConstructKind::Cylinder;
+            Request.Axis     = Axis;
+            Request.Position = { 0.62, 0.805, 0.33 };
+            Request.Radius   = 0.37;
+            Request.Height   = 0.5;
+            const DraftingCommandOutcome Built = ConstructDraftingPrimitive(Wheel, Request);
+            const double Exact    = std::numbers::pi * 0.37 * 0.37 * 0.5;
+            const double Relative = std::abs(Wheel.Summary.Volume - Exact) / Exact;
+            const DraftingScene Scene = BuildDraftingScene(Wheel, 1.5e-3);
+            const double Base   = Axis == 0 ? 0.62 : 0.805;
+            const double Low    = Scene.BoundsLow[Axis], High = Scene.BoundsHigh[Axis];
+            const double Across = Scene.BoundsHigh[2] - Scene.BoundsLow[2];
+            const double Extent = std::max({ std::abs(Low - Base), std::abs(High - Base - 0.5), std::abs(Across - 0.74) });
+            Tally(BlueprintGate, Relative, Built.AcceptedCondition && Wheel.Summary.SoundCondition && Relative <= 1.0e-9 && Extent <= 2.0e-3,
+                  std::string(Axis == 0 ? "Axis x" : "Axis y") + " cylinder r 0.37 h 0.5: |V − πr²h| / V (value); " + Compact(Low) + " … " + Compact(High) + " along the axis, Ø " + Compact(Across) + " in z");
+        }
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

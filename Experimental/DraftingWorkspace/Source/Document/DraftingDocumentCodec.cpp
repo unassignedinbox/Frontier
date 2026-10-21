@@ -9,6 +9,8 @@
 
 #include "Document/DraftingDocumentCodec.h"
 
+#include "Document/DraftingImagePlaneToml.h"
+
 #include <toml++/toml.hpp>
 
 #include <cmath>
@@ -287,8 +289,9 @@ std::string EncodeDraftingDocument(const DraftingDocument& Document)
     }
     toml::array Steps;
     for (const FeatureStep& Step : Document.Tree.Steps) Steps.push_back(EncodeStep(Step, Document.Captions));
-    const toml::table Root{ { "Format", "DraftingWorkspace" }, { "FormatVersion", FormatVersion }, { "Title", Document.Title },
-                            { "Description", Document.Tree.Description }, { "Parameters", std::move(Parameters) }, { "Steps", std::move(Steps) } };
+    toml::table Root{ { "Format", "DraftingWorkspace" }, { "FormatVersion", FormatVersion }, { "Title", Document.Title },
+                      { "Description", Document.Tree.Description }, { "Parameters", std::move(Parameters) }, { "Steps", std::move(Steps) } };
+    if (!Document.ImagePlanes.empty()) Root.insert("ImagePlanes", EncodeDraftingImagePlanes(Document.ImagePlanes));
     std::ostringstream Stream;
     Stream << "# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)\n";
     Stream << Root << "\n";
@@ -313,6 +316,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
     File.Title            = Root["Title"].value_or(std::string{ "Untitled" });
     File.Tree.Name        = File.Title;
     File.Tree.Description = Root["Description"].value_or(std::string{});
+    if (std::string Refusal = DecodeDraftingImagePlanes(Root["ImagePlanes"].as_array(), 1.0, File.ImagePlanes); !Refusal.empty()) { File.Refusal = Refusal; return File; }
     if (const toml::array* Parameters = Root["Parameters"].as_array())
     {
         for (const toml::node& Entry : *Parameters)
@@ -401,7 +405,9 @@ DraftingDocumentFile LoadDraftingDocumentFile(const std::string& Path)
     }
     std::ostringstream Text;
     Text << Stream.rdbuf();
-    return DecodeDraftingDocument(Text.str());
+    DraftingDocumentFile File = DecodeDraftingDocument(Text.str());
+    for (DraftingImagePlane& Plane : File.ImagePlanes) Plane.Path = ResolveDraftingImagePath(Plane.Path, Path);
+    return File;
 }
 
 } // namespace Frontier::DraftingWorkspace

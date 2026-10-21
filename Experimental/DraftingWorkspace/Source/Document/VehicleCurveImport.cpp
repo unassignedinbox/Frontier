@@ -9,6 +9,8 @@
 
 #include "Document/VehicleCurveImport.h"
 
+#include "Document/DraftingImagePlaneToml.h"
+
 #include <toml++/toml.hpp>
 
 #include <cmath>
@@ -70,6 +72,11 @@ VehicleCurveFile DecodeVehicleCurves(const std::string& Text)
         }
         File.Curves.push_back(std::move(Curve));
     }
+    if (std::string Refusal = DecodeDraftingImagePlanes(Root["ImagePlanes"].as_array(), Scale, File.ImagePlanes); !Refusal.empty())
+    {
+        File.Curves.clear();
+        File.Refusal = Refusal;
+    }
     return File;
 }
 
@@ -79,7 +86,9 @@ VehicleCurveFile ReadVehicleCurves(const std::string& Path)
     if (!Stream) { VehicleCurveFile File; File.Refusal = "cannot open " + Path; return File; }
     std::ostringstream Text;
     Text << Stream.rdbuf();
-    return DecodeVehicleCurves(Text.str());
+    VehicleCurveFile File = DecodeVehicleCurves(Text.str());
+    for (DraftingImagePlane& Plane : File.ImagePlanes) Plane.Path = ResolveDraftingImagePath(Plane.Path, Path);
+    return File;
 }
 
 std::string EncodeVehicleCurves(const VehicleCurveFile& File)
@@ -95,6 +104,7 @@ std::string EncodeVehicleCurves(const VehicleCurveFile& File)
     }
     toml::table Root{ { "Format", "VehicleCurves" }, { "Units", "m" }, { "Curves", std::move(Curves) } };
     if (!File.Source.empty()) Root.insert("Source", File.Source);
+    if (!File.ImagePlanes.empty()) Root.insert("ImagePlanes", EncodeDraftingImagePlanes(File.ImagePlanes));
     std::ostringstream Stream;
     Stream << Root << "\n";
     return Stream.str();

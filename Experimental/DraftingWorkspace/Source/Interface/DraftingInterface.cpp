@@ -260,6 +260,7 @@ bool OpenDocument(DraftingWorkspaceState& State, const std::string& Path, bool A
     DraftingDocument Document = CreateDraftingDocument(File.Title);
     Document.Tree     = File.Tree;
     Document.Captions = File.Captions;
+    Document.ImagePlanes = File.ImagePlanes;
     RegenerateDraftingDocument(Document, true);
     AdoptDocument(State, std::move(Document), true);
     if (AdoptPathCondition) State.DocumentPath = Path;
@@ -1134,6 +1135,29 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
 }
 
+// Curves wholly inside the screen box, appended in feature-tree order (the import order of sections).
+void SelectCurvesInBox(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Corner, ImVec2 Opposite, DraftingPickIntent Intent)
+{
+    const ImVec2 Low(std::min(Corner.x, Opposite.x), std::min(Corner.y, Opposite.y));
+    const ImVec2 High(std::max(Corner.x, Opposite.x), std::max(Corner.y, Opposite.y));
+    if (Intent == DraftingPickIntent::Replace) ClearDraftingSelection(State.Document);
+    int Count = 0;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(State.Document, Step.Label) : nullptr;
+        if (!Fit) continue;
+        const std::vector<ImVec2> Pixels = ProjectFittedCurve(State, Frame, *Fit->Curve.Definition);
+        if (int(Pixels.size()) != CurveSamples + 1) continue;                               // Partly off screen / behind the eye
+        const bool Inside = std::all_of(Pixels.begin(), Pixels.end(), [&](ImVec2 Pixel) { return Pixel.x >= Low.x && Pixel.x <= High.x && Pixel.y >= Low.y && Pixel.y <= High.y; });
+        if (!Inside) continue;
+        const bool Member = CurveOrder(State, Step.Label) > 0;
+        if (Intent == DraftingPickIntent::Remove ? Member : !Member) SelectDraftingCurve(State.Document, Step.Label, true);
+        ++Count;
+    }
+    ++State.Box.Commits;
+    Announce(State, Compose("Box %s %d curve(s) · %d selected", Intent == DraftingPickIntent::Remove ? "removed" : "selected", Count, int(State.Document.Selection.Curves.size())));
+}
+
 DraftingPickIntent PickIntentOf(const ImGuiIO& Io)
 {
     if (Io.KeyAlt) return DraftingPickIntent::Extend;
@@ -1304,9 +1328,17 @@ void DrawConstructDialog(DraftingWorkspaceState& State)
         Field("Height [m]###ConstructHeight", Form.Height);
         break;
     case DraftingConstructKind::Cylinder:
+    {
         Field("Radius [m]###ConstructRadius", Form.Radius);
         Field("Height [m]###ConstructHeight", Form.Height);
+        const char* Axes[3] = { "Axis x###ConstructAxisX", "Axis y###ConstructAxisY", "Axis z###ConstructAxisZ" };
+        for (int Axis = 0; Axis < 3; ++Axis)
+        {
+            if (ToggleButton(State, Axes[Axis], Form.Axis == Axis, ImVec2(70, 0))) Form.Axis = Axis;
+            if (Axis < 2) ImGui::SameLine(0, 4);
+        }
         break;
+    }
     case DraftingConstructKind::Sphere:
         Field("Radius [m]###ConstructRadius", Form.Radius);
         break;
@@ -1584,6 +1616,8 @@ void DrawViewportBar(DraftingWorkspaceState& State)
     ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Deviation###DeviationToggle", State.DeviationEnabled)) State.DeviationEnabled = !State.DeviationEnabled;
     ImGui::SameLine(0, 4);
+    if (ToggleButton(State, "Images###ImagesToggle", State.ImagePlanesEnabled)) State.ImagePlanesEnabled = !State.ImagePlanesEnabled;
+    ImGui::SameLine(0, 4);
     if (PressButton(State, "Fit###FitView") && !State.Scene.Faces.empty()) FitDraftingCamera(State.Camera, State.Scene);
     ImGui::SameLine(0, 16);
     const std::pair<DraftingPickMode, const char*> Modes[] = { { DraftingPickMode::ControlPoint, "1 Point###Mode1" }, { DraftingPickMode::Edge, "2 Edge###Mode2" }, { DraftingPickMode::Face, "3 Face###Mode3" },
@@ -1730,9 +1764,30 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
         if (RightClick && !OverCube) ApplyBevelSession(State);
     }
-    else if (LeftClick && !OverCube)
+    else
     {
-        PickAtPointer(State, Local, PickIntentOf(Io));
+        DraftingBoxSelection& Box = State.Box;
+        const bool BoxModeCondition = State.PickMode == DraftingPickMode::ControlPoint || State.PickMode == DraftingPickMode::Edge || State.PickMode == DraftingPickMode::Any;
+        if (BoxModeCondition && Hovered && !OverCube && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            Box.ActiveCondition = true;
+            Box.Start           = Io.MousePos;
+        }
+        const bool Moved = Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance;
+        if (Box.ActiveCondition)
+        {
+            Box.End = Io.MousePos;
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                Box.ActiveCondition = false;
+                if (Moved) SelectCurvesInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io));
+                else if (LeftClick && !OverCube) PickAtPointer(State, Local, PickIntentOf(Io));
+            }
+        }
+        else if (LeftClick && !OverCube)
+        {
+            PickAtPointer(State, Local, PickIntentOf(Io));
+        }
     }
 
     // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
@@ -1741,6 +1796,13 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
+    if (State.Box.ActiveCondition && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance)
+    {
+        const ImVec2 Low(std::min(State.Box.Start.x, State.Box.End.x), std::min(State.Box.Start.y, State.Box.End.y));
+        const ImVec2 High(std::max(State.Box.Start.x, State.Box.End.x), std::max(State.Box.Start.y, State.Box.End.y));
+        Canvas->AddRectFilled(Low, High, IM_COL32(0x4d, 0x9f, 0xff, 0x22));
+        Canvas->AddRect(Low, High, IM_COL32(0x4d, 0x9f, 0xff, 0xcc));
+    }
     Canvas->PopClipRect();
     ImVec2 Pill(Image.x + 12, Image.y + 12);
     static const char* ModeNames[] = { "", "Mode 1 · control points", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
@@ -2113,6 +2175,58 @@ void DrawBodyCard(DraftingWorkspaceState& State)
     EndCard();
 }
 
+// 📝 Blueprint image planes (from a curves file's [[ImagePlanes]] or the document). Edits mark the document dirty; they are
+//    not undo entries (reference pictures, not geometry).
+void DrawImagePlaneCard(DraftingWorkspaceState& State)
+{
+    std::vector<DraftingImagePlane>& Planes = State.Document.ImagePlanes;
+    if (Planes.empty()) return;
+    BeginCard("Image planes");
+    bool   EditedCondition = false;
+    size_t Removal         = Planes.size();
+    for (size_t Index = 0; Index < Planes.size(); ++Index)
+    {
+        DraftingImagePlane& Plane = Planes[Index];
+        ImGui::PushID(int(Index));
+        const std::string VisibleLabel = Plane.Name + "###PlaneVisible" + std::to_string(Index);
+        if (ImGui::Checkbox(VisibleLabel.c_str(), &Plane.VisibleCondition)) EditedCondition = true;
+        RegisterWidget(State, VisibleLabel.c_str());
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(110);
+        float Opacity = float(Plane.Opacity);
+        const std::string OpacityLabel = "###PlaneOpacity" + std::to_string(Index);
+        if (ImGui::SliderFloat(OpacityLabel.c_str(), &Opacity, 0.05f, 1.0f, "ink %.2f"))
+        {
+            Plane.Opacity   = double(Opacity);
+            EditedCondition = true;
+        }
+        RegisterWidget(State, OpacityLabel.c_str());
+        ImGui::SameLine();
+        const std::string RemoveLabel = "Remove###PlaneRemove" + std::to_string(Index);
+        if (PressButton(State, RemoveLabel.c_str())) Removal = Index;
+        const auto Found = std::find(State.Pictures.Paths.begin(), State.Pictures.Paths.end(), Plane.Path);
+        if (Found != State.Pictures.Paths.end())
+        {
+            const size_t Picture = size_t(Found - State.Pictures.Paths.begin());
+            if (!State.Pictures.Refusals[Picture].empty()) ImGui::TextColored(Tint(RefusalColour), "%s", State.Pictures.Refusals[Picture].c_str());
+            else ImGui::TextDisabled("%u × %u px · %.3f × %.3f m", State.Pictures.Widths[Picture], State.Pictures.Heights[Picture], Modeller::Length(Plane.Right), Modeller::Length(Plane.Down));
+        }
+        ImGui::PopID();
+    }
+    if (Removal < Planes.size())
+    {
+        Announce(State, "Image plane removed: " + Planes[Removal].Name);
+        Planes.erase(Planes.begin() + std::ptrdiff_t(Removal));
+        EditedCondition = true;
+    }
+    if (EditedCondition)
+    {
+        State.DirtyCondition = true;
+        State.AutosaveTimer  = State.Options.AutosaveDelay;
+    }
+    EndCard();
+}
+
 void DrawHistoryCard(DraftingWorkspaceState& State)
 {
     BeginCard("History");
@@ -2203,6 +2317,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     DrawDrawingCard(State);
     DrawStepCard(State);
     DrawBodyCard(State);
+    DrawImagePlaneCard(State);
     DrawHistoryCard(State);
     EndPanel();
 }

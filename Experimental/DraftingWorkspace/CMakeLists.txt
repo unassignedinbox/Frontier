@@ -115,6 +115,7 @@ add_library(DraftingWorkspace STATIC
     Source/Document/DraftingDocument.cpp
     Source/Document/DraftingDocumentCodec.cpp
     Source/Document/VehicleCurveImport.cpp
+    Source/Document/DraftingImagePlane.cpp
     Source/Document/DraftingScene.cpp
     Source/Document/DraftingSpecimen.cpp
     Source/Viewport/DraftingCamera.cpp
@@ -222,6 +223,18 @@ add_test(NAME DraftingSurfaceEvaluationWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/SurfaceEvaluationWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+# 📝 Blueprint study: the BMW three-view is third-party and never committed; the walkthrough runs only where a copy sits at
+#    _ClaudeScratch/Blueprint/BmwM3E90.jpg (see Experimental/VehicleSurfacing/Samples/BmwM3E90Calibration.toml).
+if(EXISTS "${FRONTIER_ROOT}/_ClaudeScratch/Blueprint/BmwM3E90.jpg")
+    add_test(NAME DraftingBlueprintModellingWalkthrough
+             COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                     --recovery _ClaudeScratch/DraftingWorkspace/BlueprintRecovery.drafting.toml
+                     --document _ClaudeScratch/DraftingWorkspace/Blueprint.drafting.toml
+                     --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/BlueprintModellingWalkthrough.txt"
+                     --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+             WORKING_DIRECTORY "${FRONTIER_ROOT}")
+    set_tests_properties(DraftingBlueprintModellingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

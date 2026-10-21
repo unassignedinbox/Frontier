@@ -10,8 +10,12 @@
    "sha256": "a03a2ce84cb83deb29ea7234c8a1c5333ce02af402040325d2597b0e986c4f30"
   },
   {
+   "file": "Shaders/DraftingImagePlane.slang",
+   "sha256": "c132c5a2ceedc8d8601510f35a24d6774a20674799c8253482e01b392fd0d15e"
+  },
+  {
    "file": "Shaders/DraftingProjection.slang",
-   "sha256": "37fecf133bc10619bac918d7e19fd716d08b6bf4265a5de95a1b2735680f3571"
+   "sha256": "a66efdd2eda78d6c7d0490cc125befe24bb511520b24ade38c846d87d46407b7"
   },
   {
    "file": "Shaders/DraftingSurface.slang",
@@ -5170,6 +5174,1593 @@
            "sizes": []
           },
           "semanticName": "SV_DEPTH"
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "varyingOutput",
+          "value": 1
+         }
+        ]
+       }
+      }
+     }
+    ],
+    "bindlessSpaceIndex": 0
+   }
+  },
+  {
+   "name": "DraftingImagePlaneVertex",
+   "entry": "main",
+   "words": 543,
+   "sha256": "60511068f84fda1abd054d00e1e7dc1c5a75964b14d2a2ef659967556f042594",
+   "reflection": {
+    "version": "1.1",
+    "parameters": [
+     {
+      "name": "Projection",
+      "binding": {
+       "kind": "pushConstantBuffer",
+       "index": 0
+      },
+      "type": {
+       "kind": "constantBuffer",
+       "elementType": {
+        "kind": "struct",
+        "name": "DraftingImagePlaneProjection",
+        "fields": [
+         {
+          "name": "ClipFromWorld",
+          "type": {
+           "kind": "matrix",
+           "rowCount": 4,
+           "columnCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 64,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 0,
+           "size": 64,
+           "elementStride": 0
+          }
+         },
+         {
+          "name": "Corner",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 64,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Right",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 80,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Down",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 96,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Crop",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 112,
+           "size": 16,
+           "elementStride": 4
+          }
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 128,
+          "alignment": 16
+         }
+        ]
+       },
+       "containerVarLayout": {
+        "binding": {
+         "kind": "pushConstantBuffer",
+         "index": 0
+        }
+       },
+       "elementVarLayout": {
+        "type": {
+         "kind": "struct",
+         "name": "DraftingImagePlaneProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "Corner",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Right",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Down",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Crop",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "binding": {
+         "kind": "uniform",
+         "offset": 0,
+         "size": 128,
+         "elementStride": 0
+        }
+       },
+       "sizes": [
+        {
+         "kind": "pushConstantBuffer",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Picture",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "space": 1,
+       "index": 0
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "texture2D",
+       "combined": true,
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        }
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     }
+    ],
+    "globalScope": {
+     "kind": "none",
+     "parameters": [
+      {
+       "name": "Projection",
+       "binding": {
+        "kind": "pushConstantBuffer",
+        "index": 0
+       },
+       "type": {
+        "kind": "constantBuffer",
+        "elementType": {
+         "kind": "struct",
+         "name": "DraftingImagePlaneProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "Corner",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Right",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Down",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Crop",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "containerVarLayout": {
+         "binding": {
+          "kind": "pushConstantBuffer",
+          "index": 0
+         }
+        },
+        "elementVarLayout": {
+         "type": {
+          "kind": "struct",
+          "name": "DraftingImagePlaneProjection",
+          "fields": [
+           {
+            "name": "ClipFromWorld",
+            "type": {
+             "kind": "matrix",
+             "rowCount": 4,
+             "columnCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 64,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 0,
+             "size": 64,
+             "elementStride": 0
+            }
+           },
+           {
+            "name": "Corner",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 64,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Right",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 80,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Down",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 96,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Crop",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 112,
+             "size": 16,
+             "elementStride": 4
+            }
+           }
+          ],
+          "sizes": [
+           {
+            "kind": "uniform",
+            "value": 128,
+            "alignment": 16
+           }
+          ]
+         },
+         "binding": {
+          "kind": "uniform",
+          "offset": 0,
+          "size": 128,
+          "elementStride": 0
+         }
+        },
+        "sizes": [
+         {
+          "kind": "pushConstantBuffer",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Picture",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "space": 1,
+        "index": 0
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "texture2D",
+        "combined": true,
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         }
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      }
+     ]
+    },
+    "entryPoints": [
+     {
+      "name": "DraftingImagePlaneVertex",
+      "stage": "vertex",
+      "scope": {
+       "kind": "none",
+       "parameters": [
+        {
+         "name": "VertexIndex",
+         "semanticName": "SV_VULKANVERTEXID",
+         "type": {
+          "kind": "scalar",
+          "scalarType": "uint32",
+          "sizes": []
+         }
+        }
+       ]
+      },
+      "parameters": [
+       {
+        "name": "VertexIndex",
+        "semanticName": "SV_VULKANVERTEXID",
+        "type": {
+         "kind": "scalar",
+         "scalarType": "uint32",
+         "sizes": []
+        }
+       }
+      ],
+      "result": {
+       "stage": "vertex",
+       "binding": {
+        "kind": "varyingOutput",
+        "index": 0
+       },
+       "type": {
+        "kind": "struct",
+        "name": "PlanePixel",
+        "fields": [
+         {
+          "name": "Position",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": []
+          },
+          "semanticName": "SV_POSITION"
+         },
+         {
+          "name": "Texel",
+          "type": {
+           "kind": "vector",
+           "elementCount": 2,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "varyingOutput",
+             "value": 1
+            }
+           ]
+          },
+          "stage": "vertex",
+          "binding": {
+           "kind": "varyingOutput",
+           "index": 0
+          },
+          "semanticName": "TEXCOORD"
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "varyingOutput",
+          "value": 1
+         }
+        ]
+       }
+      }
+     }
+    ],
+    "bindlessSpaceIndex": 0
+   }
+  },
+  {
+   "name": "DraftingImagePlaneFragment",
+   "entry": "main",
+   "words": 548,
+   "sha256": "f830a1b519b8030a4a4f9ae71d7992e8d6b8f051e99c7c238720dfffb116001a",
+   "reflection": {
+    "version": "1.1",
+    "parameters": [
+     {
+      "name": "Projection",
+      "binding": {
+       "kind": "pushConstantBuffer",
+       "index": 0
+      },
+      "type": {
+       "kind": "constantBuffer",
+       "elementType": {
+        "kind": "struct",
+        "name": "DraftingImagePlaneProjection",
+        "fields": [
+         {
+          "name": "ClipFromWorld",
+          "type": {
+           "kind": "matrix",
+           "rowCount": 4,
+           "columnCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 64,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 0,
+           "size": 64,
+           "elementStride": 0
+          }
+         },
+         {
+          "name": "Corner",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 64,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Right",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 80,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Down",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 96,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "Crop",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 112,
+           "size": 16,
+           "elementStride": 4
+          }
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 128,
+          "alignment": 16
+         }
+        ]
+       },
+       "containerVarLayout": {
+        "binding": {
+         "kind": "pushConstantBuffer",
+         "index": 0
+        }
+       },
+       "elementVarLayout": {
+        "type": {
+         "kind": "struct",
+         "name": "DraftingImagePlaneProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "Corner",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Right",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Down",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Crop",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "binding": {
+         "kind": "uniform",
+         "offset": 0,
+         "size": 128,
+         "elementStride": 0
+        }
+       },
+       "sizes": [
+        {
+         "kind": "pushConstantBuffer",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Picture",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "space": 1,
+       "index": 0
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "texture2D",
+       "combined": true,
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        }
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     }
+    ],
+    "globalScope": {
+     "kind": "none",
+     "parameters": [
+      {
+       "name": "Projection",
+       "binding": {
+        "kind": "pushConstantBuffer",
+        "index": 0
+       },
+       "type": {
+        "kind": "constantBuffer",
+        "elementType": {
+         "kind": "struct",
+         "name": "DraftingImagePlaneProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "Corner",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Right",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Down",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "Crop",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "containerVarLayout": {
+         "binding": {
+          "kind": "pushConstantBuffer",
+          "index": 0
+         }
+        },
+        "elementVarLayout": {
+         "type": {
+          "kind": "struct",
+          "name": "DraftingImagePlaneProjection",
+          "fields": [
+           {
+            "name": "ClipFromWorld",
+            "type": {
+             "kind": "matrix",
+             "rowCount": 4,
+             "columnCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 64,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 0,
+             "size": 64,
+             "elementStride": 0
+            }
+           },
+           {
+            "name": "Corner",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 64,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Right",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 80,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Down",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 96,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "Crop",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 112,
+             "size": 16,
+             "elementStride": 4
+            }
+           }
+          ],
+          "sizes": [
+           {
+            "kind": "uniform",
+            "value": 128,
+            "alignment": 16
+           }
+          ]
+         },
+         "binding": {
+          "kind": "uniform",
+          "offset": 0,
+          "size": 128,
+          "elementStride": 0
+         }
+        },
+        "sizes": [
+         {
+          "kind": "pushConstantBuffer",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Picture",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "space": 1,
+        "index": 0
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "texture2D",
+        "combined": true,
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         }
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      }
+     ]
+    },
+    "entryPoints": [
+     {
+      "name": "DraftingImagePlaneFragment",
+      "stage": "fragment",
+      "scope": {
+       "kind": "none",
+       "parameters": [
+        {
+         "name": "Pixel",
+         "stage": "fragment",
+         "binding": {
+          "kind": "varyingInput",
+          "index": 0
+         },
+         "type": {
+          "kind": "struct",
+          "name": "PlanePixel",
+          "fields": [
+           {
+            "name": "Position",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": []
+            },
+            "semanticName": "SV_POSITION"
+           },
+           {
+            "name": "Texel",
+            "type": {
+             "kind": "vector",
+             "elementCount": 2,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "varyingInput",
+               "value": 1
+              }
+             ]
+            },
+            "stage": "fragment",
+            "binding": {
+             "kind": "varyingInput",
+             "index": 0
+            },
+            "semanticName": "TEXCOORD"
+           }
+          ],
+          "sizes": [
+           {
+            "kind": "varyingInput",
+            "value": 1
+           }
+          ]
+         }
+        }
+       ]
+      },
+      "parameters": [
+       {
+        "name": "Pixel",
+        "stage": "fragment",
+        "binding": {
+         "kind": "varyingInput",
+         "index": 0
+        },
+        "type": {
+         "kind": "struct",
+         "name": "PlanePixel",
+         "fields": [
+          {
+           "name": "Position",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": []
+           },
+           "semanticName": "SV_POSITION"
+          },
+          {
+           "name": "Texel",
+           "type": {
+            "kind": "vector",
+            "elementCount": 2,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "varyingInput",
+              "value": 1
+             }
+            ]
+           },
+           "stage": "fragment",
+           "binding": {
+            "kind": "varyingInput",
+            "index": 0
+           },
+           "semanticName": "TEXCOORD"
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "varyingInput",
+           "value": 1
+          }
+         ]
+        }
+       }
+      ],
+      "result": {
+       "stage": "fragment",
+       "binding": {
+        "kind": "varyingOutput",
+        "index": 0
+       },
+       "type": {
+        "kind": "struct",
+        "name": "PlaneTargets",
+        "fields": [
+         {
+          "name": "Colour",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "varyingOutput",
+             "value": 1
+            }
+           ]
+          },
+          "stage": "fragment",
+          "binding": {
+           "kind": "varyingOutput",
+           "index": 0
+          },
+          "semanticName": "SV_TARGET"
          }
         ],
         "sizes": [

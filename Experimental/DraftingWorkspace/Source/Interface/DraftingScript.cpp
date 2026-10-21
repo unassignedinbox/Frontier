@@ -242,6 +242,8 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "sheet") return Numeric(Document.Summary.SheetCondition ? 1 : 0);
     if (Field == "panels") return Numeric(double(Document.Regeneration.Panels.size()));
     if (Field == "zebra") return Numeric(State.ZebraEnabled ? 1 : 0);
+    if (Field == "image-planes") return Numeric(double(State.Document.ImagePlanes.size()));
+    if (Field == "image-planes-drawn") return Numeric(double(State.Pictures.Drawn));
     if (Field == "triangles") return Numeric(double(State.Scene.Corners.size() / 3));
     if (Field == "deviation-worst" || Field == "deviation-points")
     {
@@ -256,6 +258,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         return Join(Names);
     }
     if (Field == "pole-drags") return Numeric(State.PoleDrag.Commits);
+    if (Field == "box-selections") return Numeric(State.Box.Commits);
     if (Field == "pole-drag-active") return Numeric(State.PoleDrag.ActiveCondition ? 1 : 0);
     if (Field == "pole-edits")
     {

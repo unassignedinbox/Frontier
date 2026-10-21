@@ -1,8 +1,8 @@
 # 🧩 DraftingWorkspace — UI parity checklist against the SolidArc browser editor
 
-**TL;DR**: 58 rows, scored against the SolidArc browser editor (`Experimental/SolidArc/WORKFLOW.md`: browser workflow, all-view grids, upright navigation, Interactive Bevel · B, face extrusion · E, shortcuts / multiselection) and its theme (`Experimental/SolidArc/src/WorkspacePanel.css`).
+**TL;DR**: 60 rows, scored against the SolidArc browser editor (`Experimental/SolidArc/WORKFLOW.md`: browser workflow, all-view grids, upright navigation, Interactive Bevel · B, face extrusion · E, shortcuts / multiselection) and its theme (`Experimental/SolidArc/src/WorkspacePanel.css`).
 - **Keymap: Plasticity** (decided 2026-10-20). The 3 open deviations (Ctrl+A, E immediate, no Alt-LMB) now follow Plasticity; § Plasticity keymap maps every default Plasticity key.
-- **🟢 53 at parity.** 44 of them are driven by real ImGui input in the six walkthrough scripts (306 expectations) or by a viewport gate; the other 9 are visible in the captures or present in source only (see the Evidence column).
+- **🟢 55 at parity** (53 + box selection and image planes from the blueprint study). 44 of them are driven by real ImGui input in the six walkthrough scripts (306 expectations) or by a viewport gate; the other 9 are visible in the captures or present in source only (see the Evidence column).
 - **⚠️ 1 deviation:** the GLFW host is compile-only here. **🚧 4 not built yet:** sketch-corner bevel, workplane offset, Outliner multiselection, multi-document.
 - Every capture is a real Vulkan frame (SwiftShader Device (Subzero) · Vulkan 1.3.0). It is **not** evidence of physical-GPU performance or desktop window input.
 
@@ -150,6 +150,8 @@ Rows 24, 32 and 50 now follow the Plasticity default keymap (`nkallen/plasticity
 | Alt (inside rectangle) · V (inside circle) | keyboard:rectangle:mode · gizmo:circle:mode | Corner ↔ centre · centre ↔ two-point | 🟢 | Src · W10 (centre rectangle, two-point circle) |
 | Enter / right-click · Esc | command finish · abort | Same | 🟢 | S Short ② ③ ⑨ |
 | click · Shift · Ctrl · Alt | replace · add · remove · extend | Same; extend = the edge's tangent chain (kernel `GrowTangentChain`) | 🟢 | S Short ⑤ · C 21TangentChain |
+| left drag on empty space | viewport-selector box | Curves wholly inside, in feature-tree order (Shift adds, Ctrl removes); modes 1 / 2 / 5 | 🟢 | S Blueprint ④ · C 83SectionsBoxed |
+| (reference images) | image planes | `[[ImagePlanes]]` from curves files / documents; Images toggle; Inspector Visible · ink · Remove | 🟢 | W14 · S Blueprint ② ③ · C 80–82 |
 | middle drag · right drag · wheel | orbit · pan · dolly | Same | 🟢 | S Main ⑦, Short ⑦ |
 | Space | navigate to selection | Same (the body when nothing is selected) | 🟢 | S Short ⑦ |
 | Numpad 1 / 3 / 7 (+Ctrl) · Numpad 5 | front / right / top (back / left / bottom) · orthographic | Same | 🟢 | S Short ⑦ |

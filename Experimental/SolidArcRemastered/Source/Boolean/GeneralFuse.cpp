@@ -28,6 +28,9 @@ namespace Frontier::SolidArcRemastered
 namespace
 {
     constexpr double IntegralTolerance = 1.0e-3;                                     // [-]   - Max |w − round(w)| for a fragment probe
+    constexpr double ScreenResidual    = 1.0e-4;                                     // [-]   - Coarse winding accepted within this of an integer
+    constexpr double ScreenOuter       = 1.0e-5;                                     // [sr]  - Coarse Kronrod tolerance along loops
+    constexpr double ScreenInner       = 1.0e-6;                                     // [-]   - Coarse Kronrod tolerance along 𝑢
     constexpr double FullTurn          = 2.0 * std::numbers::pi;                     // [rad] - 2π
     constexpr double JunctionGap       = 1.0e-7;                                     // [-]   - Chart distance of one junction
 
@@ -1030,7 +1033,21 @@ namespace
                 }
                 Fragment.Probe = EvaluateSurface(Fragment.Surface, *Interior).Position;
                 const BodyContainment& Other = Containment[1 - Fragment.Argument];
-                const SolidPointClass  Class = ClassifySolidPoint(Other, Fragment.Probe, Settings.Containment);
+                // 💡 Two-tier winding: membership needs only the nearest integer, so a coarse quadrature (10⁻⁵ / 10⁻⁶ per panel)
+                //    screens first; a result within ScreenResidual of an integer (10× inside the refusal gate, 5000× inside
+                //    the ½ decision margin) is kept, anything else is recomputed at the strict settings, so an open argument
+                //    still shows its true residual and is refused. Freeform faces near the probe made the strict pass cost
+                //    ~6·10⁶ evaluations per fragment (BMW wheel arch: 76 s).
+                WindingSettings Screen = Settings.Containment;
+                Screen.OuterTolerance  = std::max(Screen.OuterTolerance, ScreenOuter);
+                Screen.InnerTolerance  = std::max(Screen.InnerTolerance, ScreenInner);
+                SolidPointClass Class  = ClassifySolidPoint(Other, Fragment.Probe, Screen);
+                if (Class.Method == ContainmentMethod::Winding && Class.IntegerResidual > ScreenResidual)
+                {
+                    const int64_t Screened = Class.Evaluations;
+                    Class = ClassifySolidPoint(Other, Fragment.Probe, Settings.Containment);
+                    Class.Evaluations += Screened;
+                }
                 // ⚠️ A closed argument gives an integral winding off its boundary; anything else (open argument, probe on an
                 //    unmerged boundary) is refused rather than rounded.
                 if (Class.Method == ContainmentMethod::Winding && Class.IntegerResidual > IntegralTolerance)

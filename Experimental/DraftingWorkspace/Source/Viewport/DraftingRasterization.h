@@ -9,10 +9,12 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Document/DraftingImagePlane.h"
 #include "Document/DraftingScene.h"
 #include "Viewport/DraftingCamera.h"
 #include "Viewport/DraftingDevice.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -54,6 +56,28 @@ struct DraftingGridBlock
 };
 static_assert(sizeof(DraftingGridBlock) == 128, "DraftingGridProjection push constant must stay 128 bytes");
 
+struct DraftingImagePlaneBlock
+{
+    float ClipFromWorld[16] = {};                                                            // [-]   - Projection × view
+    float Corner[4]         = {};                                                            // [len] - Crop top-left, w: opacity
+    float Right[4]          = {};                                                            // [len] - Crop width span, w: mode (0 line art)
+    float Down[4]           = {};                                                            // [len] - Crop height span
+    float Crop[4]           = {};                                                            // [0-1] - u0, v0, u1, v1
+};
+static_assert(sizeof(DraftingImagePlaneBlock) == 128, "DraftingImagePlaneProjection push constant must stay 128 bytes");
+
+// One image plane to draw this frame: the uploaded picture it samples and its world parallelogram.
+struct DraftingImagePlaneDraw
+{
+    uint32_t              Picture = 0;                                                       // [idx] - Into the last UploadPictures list
+    std::array<double, 3> Corner  = {};                                                      // [len] - Crop top-left (world)
+    std::array<double, 3> Right   = {};                                                      // [len] - Crop width span
+    std::array<double, 3> Down    = {};                                                      // [len] - Crop height span
+    std::array<float, 4>  Crop    = { 0.0f, 0.0f, 1.0f, 1.0f };                              // [0-1] - Picture uv rectangle
+    float                 Opacity = 0.6f;                                                    // [0-1] - Ink opacity
+    float                 Mode    = 0.0f;                                                    // [-]   - 0 line art, 1 photograph
+};
+
 struct DraftingViewportStyle
 {
     float Background[4]   = { 0.090f, 0.106f, 0.137f, 1.0f };                                // [0-1] - SolidArc viewport #171b23
@@ -64,6 +88,7 @@ struct DraftingViewportStyle
     bool  EdgesEnabled    = true;                                                            // [-]   - B-rep edges
     bool  SurfacesEnabled = true;                                                            // [-]   - B-rep faces
     float ZebraStripes    = 0.0f;                                                            // [-]   - Zebra stripes over the reflection angle (0 off, V8)
+    std::vector<DraftingImagePlaneDraw> ImagePlanes = {};                                    // [-]   - Blueprint references, depth-tested behind the model
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -87,6 +112,9 @@ public:
     void Resize(uint32_t Width, uint32_t Height);
     void UploadScene(const DraftingScene& Scene);
     void AssignStates(const std::vector<uint32_t>& FaceStates, const std::vector<uint32_t>& EdgeStates);
+    // Replaces every image-plane texture (pictures with a refusal or no pixels get a 1 × 1 placeholder). Waits for the device.
+    void UploadPictures(const std::vector<DraftingPicture>& Pictures);
+    [[nodiscard]] size_t PictureCount() const { return Pictures.size(); }
 
     // Records the viewport. ProbeX / ProbeY ≥ 0 copy that identity texel; ReadbackCondition copies both whole targets.
     void Record(VkCommandBuffer Commands, const DraftingCameraFrame& Frame, const DraftingViewportStyle& Style, bool ReadbackCondition,
@@ -106,6 +134,13 @@ private:
     void CreateTargets(uint32_t Width, uint32_t Height);
     void DestroyTargets();
     void CreatePipelines();
+    void ReleasePictures();
+
+    struct PictureTexture
+    {
+        DraftingImage   Image = {};                                                          // [-] - RGBA8 sampled texture
+        VkDescriptorSet Set   = VK_NULL_HANDLE;                                              // [-] - Set 1, binding 0
+    };
 
     const DraftingDevice* Device = nullptr;
 
@@ -132,6 +167,12 @@ private:
     VkPipeline            SurfacePipeline  = VK_NULL_HANDLE;
     VkPipeline            EdgePipeline     = VK_NULL_HANDLE;
     VkPipeline            GridPipeline     = VK_NULL_HANDLE;
+    VkDescriptorSetLayout PictureLayout    = VK_NULL_HANDLE;
+    VkDescriptorPool      PicturePool      = VK_NULL_HANDLE;
+    VkSampler             PictureSampler   = VK_NULL_HANDLE;
+    VkPipelineLayout      PlaneLayout      = VK_NULL_HANDLE;
+    VkPipeline            PlanePipeline    = VK_NULL_HANDLE;
+    std::vector<PictureTexture> Pictures   = {};
 };
 
 } // namespace Frontier::DraftingWorkspace

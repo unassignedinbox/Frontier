@@ -18,6 +18,7 @@
   - Smooth data joins almost G1 by itself (8.5e-4 rad, C3), so the G0 / G2 comparison needs the pole lift to show anything.
 
 ---
+- 🟢 **Status (2026-10-21): blueprint study (BMW M3 E90).** Built from an internet three-view to test the loft. Gaps hit and filled: image planes (B1), GIF pictures (B2), faired traced sections (B3: the fitter rightly refused a 31.8° kink), box selection (B4), Construct cylinder **Axis x / y** (B5), and a two-tier fragment winding in GeneralFuse (B6, 76 s → 12 s per freeform Boolean, same volume). Results: 24 sections → loft → mirror → close gives a sound 7.148 m³ solid; 4 wheel arches give a sound 6.790 m³ solid. Still open: incremental replay (B7), warm-started SSI marching (B8), tip / non-planar caps (B9), trim for details (B10). Gate W14; `BlueprintModellingWalkthrough.txt`; captures 80–88; table in `Experimental/VehicleSurfacing/README.md`.
 
 ## 1. Goal and constraints
 

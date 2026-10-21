@@ -30,6 +30,17 @@ struct DraftingGridProjection
     float4                ReservedSecond;                                                    // [-]   - Keeps the block at 128 bytes
 };
 
+// 📝 Image-plane program: the crop of a picture on the world parallelogram Corner + s·Right + t·Down. Corner.w = opacity,
+//    Right.w = mode (0 line art: dark ink drawn light on the viewport, 1 photograph as is), Crop = picture uv rectangle.
+struct DraftingImagePlaneProjection
+{
+    column_major float4x4 ClipFromWorld;                                                     // [-]    - Projection × view
+    float4                Corner;                                                            // [len]  - Crop top-left (world), w: opacity
+    float4                Right;                                                             // [len]  - Crop width span (world), w: mode
+    float4                Down;                                                              // [len]  - Crop height span (world), w: unused
+    float4                Crop;                                                              // [0-1]  - u0, v0, u1, v1 in the picture
+};
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
 //------------------------------------------------------------------------------------------------------------------------

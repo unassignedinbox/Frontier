@@ -189,6 +189,36 @@ bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& 
         PipelineLayoutRequest.pPushConstantRanges    = &Push;
         Require(vkCreatePipelineLayout(Device->Device, &PipelineLayoutRequest, nullptr, &PipelineLayout), "vkCreatePipelineLayout");
 
+        // ③ image planes: set 1 = one combined picture sampler; up to PictureLimit pictures
+        constexpr uint32_t PictureLimit = 16;
+        const VkDescriptorSetLayoutBinding PictureBinding{ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+        VkDescriptorSetLayoutCreateInfo PictureLayoutRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        PictureLayoutRequest.bindingCount = 1;
+        PictureLayoutRequest.pBindings    = &PictureBinding;
+        Require(vkCreateDescriptorSetLayout(Device->Device, &PictureLayoutRequest, nullptr, &PictureLayout), "vkCreateDescriptorSetLayout (pictures)");
+        const VkDescriptorPoolSize PictureSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, PictureLimit };
+        VkDescriptorPoolCreateInfo PicturePoolRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+        PicturePoolRequest.maxSets       = PictureLimit;
+        PicturePoolRequest.poolSizeCount = 1;
+        PicturePoolRequest.pPoolSizes    = &PictureSize;
+        Require(vkCreateDescriptorPool(Device->Device, &PicturePoolRequest, nullptr, &PicturePool), "vkCreateDescriptorPool (pictures)");
+        VkSamplerCreateInfo SamplerRequest{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+        SamplerRequest.magFilter    = VK_FILTER_LINEAR;
+        SamplerRequest.minFilter    = VK_FILTER_LINEAR;
+        SamplerRequest.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        SamplerRequest.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        SamplerRequest.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        SamplerRequest.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        SamplerRequest.maxLod       = 0.0f;
+        Require(vkCreateSampler(Device->Device, &SamplerRequest, nullptr, &PictureSampler), "vkCreateSampler");
+        const VkDescriptorSetLayout PlaneSets[2] = { BufferLayout, PictureLayout };
+        VkPipelineLayoutCreateInfo PlaneLayoutRequest{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        PlaneLayoutRequest.setLayoutCount         = 2;
+        PlaneLayoutRequest.pSetLayouts            = PlaneSets;
+        PlaneLayoutRequest.pushConstantRangeCount = 1;
+        PlaneLayoutRequest.pPushConstantRanges    = &Push;
+        Require(vkCreatePipelineLayout(Device->Device, &PlaneLayoutRequest, nullptr, &PlaneLayout), "vkCreatePipelineLayout (pictures)");
+
         CreatePipelines();
         ProbeReadback = Device->CreateBuffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         AssignStates({}, {});
@@ -212,6 +242,8 @@ void DraftingRasterization::CreatePipelines()
     const VkShaderModule EdgeFragment    = CreateModule(Device->Device, DraftingEdgeFragmentCode);
     const VkShaderModule GridVertex      = CreateModule(Device->Device, DraftingGridVertexCode);
     const VkShaderModule GridFragment    = CreateModule(Device->Device, DraftingGridFragmentCode);
+    const VkShaderModule PlaneVertex     = CreateModule(Device->Device, DraftingImagePlaneVertexCode);
+    const VkShaderModule PlaneFragment   = CreateModule(Device->Device, DraftingImagePlaneFragmentCode);
 
     PipelineRecipe Surface;
     Surface.Vertex        = SurfaceVertex;
@@ -242,7 +274,18 @@ void DraftingRasterization::CreatePipelines()
     Grid.IdentityWrite = false;
     GridPipeline       = CreatePipeline(Device->Device, PipelineLayout, Grid);
 
-    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, GridVertex, GridFragment })
+    // 📝 Image planes: depth-tested (the model hides them), never written to depth or to the identity target (not pickable).
+    PipelineRecipe Plane;
+    Plane.Vertex        = PlaneVertex;
+    Plane.Fragment      = PlaneFragment;
+    Plane.VertexEntry   = DraftingImagePlaneVertexEntry;
+    Plane.FragmentEntry = DraftingImagePlaneFragmentEntry;
+    Plane.DepthWrite    = false;
+    Plane.ColourBlend   = true;
+    Plane.IdentityWrite = false;
+    PlanePipeline       = CreatePipeline(Device->Device, PlaneLayout, Plane);
+
+    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, GridVertex, GridFragment, PlaneVertex, PlaneFragment })
         vkDestroyShaderModule(Device->Device, Module, nullptr);
 }
 
@@ -252,7 +295,8 @@ void DraftingRasterization::Destroy()
     vkDeviceWaitIdle(Device->Device);
     DestroyTargets();
     for (DraftingBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer }) Device->DestroyBuffer(*Buffer);
-    for (VkPipeline* Pipeline : { &SurfacePipeline, &EdgePipeline, &GridPipeline })
+    ReleasePictures();
+    for (VkPipeline* Pipeline : { &SurfacePipeline, &EdgePipeline, &GridPipeline, &PlanePipeline })
     {
         if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
         *Pipeline = VK_NULL_HANDLE;
@@ -260,6 +304,14 @@ void DraftingRasterization::Destroy()
     if (PipelineLayout) vkDestroyPipelineLayout(Device->Device, PipelineLayout, nullptr);
     if (DescriptorPool) vkDestroyDescriptorPool(Device->Device, DescriptorPool, nullptr);
     if (BufferLayout) vkDestroyDescriptorSetLayout(Device->Device, BufferLayout, nullptr);
+    if (PlaneLayout) vkDestroyPipelineLayout(Device->Device, PlaneLayout, nullptr);
+    if (PicturePool) vkDestroyDescriptorPool(Device->Device, PicturePool, nullptr);
+    if (PictureLayout) vkDestroyDescriptorSetLayout(Device->Device, PictureLayout, nullptr);
+    if (PictureSampler) vkDestroySampler(Device->Device, PictureSampler, nullptr);
+    PlaneLayout    = VK_NULL_HANDLE;
+    PicturePool    = VK_NULL_HANDLE;
+    PictureLayout  = VK_NULL_HANDLE;
+    PictureSampler = VK_NULL_HANDLE;
     PipelineLayout   = VK_NULL_HANDLE;
     DescriptorPool   = VK_NULL_HANDLE;
     BufferLayout     = VK_NULL_HANDLE;
@@ -312,6 +364,57 @@ void DraftingRasterization::UploadScene(const DraftingScene& Scene)
     if (SegmentCount) std::memcpy(SegmentBuffer.Mapped, Scene.Segments.data(), sizeof(DraftingSceneSegment) * SegmentCount);
     UploadedGeneration = Scene.Generation;
     AssignStates(std::vector<uint32_t>(Scene.Faces.size(), 0u), std::vector<uint32_t>(Scene.Edges.size(), 0u));
+}
+
+void DraftingRasterization::ReleasePictures()
+{
+    if (!Device || !Device->Device) return;
+    for (PictureTexture& Texture : Pictures) Device->DestroyImage(Texture.Image);
+    Pictures.clear();
+    if (PicturePool) vkResetDescriptorPool(Device->Device, PicturePool, 0);
+}
+
+void DraftingRasterization::UploadPictures(const std::vector<DraftingPicture>& Sources)
+{
+    vkDeviceWaitIdle(Device->Device);
+    ReleasePictures();
+    for (const DraftingPicture& Source : Sources)
+    {
+        if (Pictures.size() >= 16) break;
+        // 📝 A missing picture still takes its slot (1 × 1 white: drawn as faint paper) so draw indices stay aligned.
+        const bool     ReadyCondition = Source.Refusal.empty() && Source.Width > 0 && Source.Height > 0 && Source.Pixels.size() == size_t(Source.Width) * Source.Height * 4;
+        const uint32_t Width  = ReadyCondition ? Source.Width : 1;
+        const uint32_t Height = ReadyCondition ? Source.Height : 1;
+        static const uint8_t Placeholder[4] = { 255, 255, 255, 255 };
+        PictureTexture Texture;
+        Texture.Image = Device->CreateImage(Width, Height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        DraftingBuffer Staging = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+        std::memcpy(Staging.Mapped, ReadyCondition ? Source.Pixels.data() : Placeholder, size_t(Width) * Height * 4);
+        Device->SubmitImmediately([&](VkCommandBuffer Commands)
+        {
+            TransitionDraftingImage(Commands, Texture.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            VkBufferImageCopy Copy{};
+            Copy.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            Copy.imageExtent      = { Width, Height, 1 };
+            vkCmdCopyBufferToImage(Commands, Staging.Buffer, Texture.Image.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Copy);
+            TransitionDraftingImage(Commands, Texture.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+        Device->DestroyBuffer(Staging);
+        VkDescriptorSetAllocateInfo Request{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        Request.descriptorPool     = PicturePool;
+        Request.descriptorSetCount = 1;
+        Request.pSetLayouts        = &PictureLayout;
+        Require(vkAllocateDescriptorSets(Device->Device, &Request, &Texture.Set), "vkAllocateDescriptorSets (picture)");
+        const VkDescriptorImageInfo Target{ PictureSampler, Texture.Image.View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+        VkWriteDescriptorSet Write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        Write.dstSet          = Texture.Set;
+        Write.dstBinding      = 0;
+        Write.descriptorCount = 1;
+        Write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        Write.pImageInfo      = &Target;
+        vkUpdateDescriptorSets(Device->Device, 1, &Write, 0, nullptr);
+        Pictures.push_back(Texture);
+    }
 }
 
 void DraftingRasterization::AssignStates(const std::vector<uint32_t>& FaceStates, const std::vector<uint32_t>& EdgeStates)
@@ -412,6 +515,25 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
         vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
         vkCmdBindVertexBuffers(Commands, 0, 1, &SegmentBuffer.Buffer, &Origin);
         vkCmdDraw(Commands, 6, SegmentCount, 0, 0);
+    }
+    if (!Style.ImagePlanes.empty() && PlanePipeline)
+    {
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlanePipeline);
+        vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlaneLayout, 0, 1, &BufferSet, 0, nullptr);
+        for (const DraftingImagePlaneDraw& Draw : Style.ImagePlanes)
+        {
+            if (Draw.Picture >= Pictures.size()) continue;
+            DraftingImagePlaneBlock Block;
+            Narrow(Frame.ClipFromWorld, Block.ClipFromWorld);
+            Narrow(Draw.Corner, Block.Corner, Draw.Opacity);
+            Narrow(Draw.Right, Block.Right, Draw.Mode);
+            Narrow(Draw.Down, Block.Down, 0.0f);
+            std::memcpy(Block.Crop, Draw.Crop.data(), sizeof(Block.Crop));
+            vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlaneLayout, 1, 1, &Pictures[Draw.Picture].Set, 0, nullptr);
+            vkCmdPushConstants(Commands, PlaneLayout, PushStages, 0, sizeof(Block), &Block);
+            vkCmdDraw(Commands, 6, 1, 0, 0);
+        }
+        vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
     }
     if (Style.GridEnabled)
     {

@@ -82,6 +82,50 @@ void DraftingWorkspaceFrame::PrepareViewport(DraftingWorkspaceState& State)
     }
     const DraftingScene& Scene = DisplayedDraftingScene(State);
     if (Scene.Generation != Raster.SceneGeneration()) Raster.UploadScene(Scene);
+    // 📝 Image planes: decode + upload when the set of picture paths changes; rebuild the draw list every frame.
+    std::string Key;
+    std::vector<std::string> Paths;
+    for (const DraftingImagePlane& Plane : State.Document.ImagePlanes)
+    {
+        if (std::find(Paths.begin(), Paths.end(), Plane.Path) == Paths.end()) Paths.push_back(Plane.Path);
+    }
+    for (const std::string& Path : Paths) Key += Path + "\n";
+    if (Key != State.Pictures.Key)
+    {
+        std::vector<DraftingPicture> Pictures;
+        State.Pictures = {};
+        State.Pictures.Key = Key;
+        for (const std::string& Path : Paths)
+        {
+            Pictures.push_back(DecodeDraftingPicture(Path));
+            State.Pictures.Paths.push_back(Path);
+            State.Pictures.Widths.push_back(Pictures.back().Width);
+            State.Pictures.Heights.push_back(Pictures.back().Height);
+            State.Pictures.Refusals.push_back(Pictures.back().Refusal);
+        }
+        Raster.UploadPictures(Pictures);
+    }
+    State.Style.ImagePlanes.clear();
+    if (State.ImagePlanesEnabled)
+    {
+        for (const DraftingImagePlane& Plane : State.Document.ImagePlanes)
+        {
+            const size_t Index = size_t(std::find(State.Pictures.Paths.begin(), State.Pictures.Paths.end(), Plane.Path) - State.Pictures.Paths.begin());
+            if (!Plane.VisibleCondition || Index >= State.Pictures.Paths.size() || !State.Pictures.Refusals[Index].empty()) continue;
+            const float Width  = float(State.Pictures.Widths[Index]);
+            const float Height = float(State.Pictures.Heights[Index]);
+            const bool  WholeCondition = Plane.Crop[2] <= Plane.Crop[0] || Plane.Crop[3] <= Plane.Crop[1];
+            DraftingImagePlaneDraw Draw;
+            Draw.Picture = uint32_t(Index);
+            Draw.Corner  = { Plane.Corner.X, Plane.Corner.Y, Plane.Corner.Z };
+            Draw.Right   = { Plane.Right.X, Plane.Right.Y, Plane.Right.Z };
+            Draw.Down    = { Plane.Down.X, Plane.Down.Y, Plane.Down.Z };
+            if (!WholeCondition) Draw.Crop = { Plane.Crop[0] / Width, Plane.Crop[1] / Height, Plane.Crop[2] / Width, Plane.Crop[3] / Height };
+            Draw.Opacity = float(Plane.Opacity);
+            State.Style.ImagePlanes.push_back(Draw);
+        }
+    }
+    State.Pictures.Drawn = int(State.Style.ImagePlanes.size());
     const DraftingSceneStates States = DisplayedDraftingStates(State);
     Raster.AssignStates(States.Faces, States.Edges);
     State.Style.EdgeStroke = State.Options.EdgeStroke;

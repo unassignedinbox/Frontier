@@ -48,10 +48,12 @@ const CompilerBinary = Fs.readFileSync(Path.join(Path.dirname(Path.resolve(Compi
 
 const ProjectionFields = [['ClipFromWorld', 0, 64], ['ViewRight', 64, 16], ['ViewUp', 80, 16], ['ViewForward', 96, 16], ['DisplayStroke', 112, 16]];
 const GridFields       = [['PlaneFromClip', 0, 64], ['AlongU', 64, 16], ['AlongV', 80, 16], ['Reserved', 96, 16], ['ReservedSecond', 112, 16]];
+const PlaneFields      = [['ClipFromWorld', 0, 64], ['Corner', 64, 16], ['Right', 80, 16], ['Down', 96, 16], ['Crop', 112, 16]];
 const Programs = [
     ['DraftingSurface.slang', ['DraftingSurfaceVertex', 'DraftingSurfaceFragment'], ProjectionFields, [['FaceStates', 0]]],
     ['DraftingEdge.slang',    ['DraftingEdgeVertex', 'DraftingEdgeFragment'],       ProjectionFields, [['EdgeStates', 1]]],
     ['DraftingGrid.slang',    ['DraftingGridVertex', 'DraftingGridFragment'],       GridFields,       []],
+    ['DraftingImagePlane.slang', ['DraftingImagePlaneVertex', 'DraftingImagePlaneFragment'], PlaneFields, [['Picture', 0, 1]]],
 ];
 const Entries = [];
 for (const [File, Names, Fields, Buffers] of Programs)
@@ -78,12 +80,12 @@ for (const [File, Names, Fields, Buffers] of Programs)
             Assert.equal(Push?.binding.kind, 'pushConstantBuffer', Name + ': push constant');
             Assert.deepEqual(Push.type.elementType.fields.map(Field => [Field.name, Field.binding.offset, Field.binding.size]), Fields, Name + ': push layout');
             Assert.equal(Push.type.elementType.sizes.find(Size => Size.kind === 'uniform').value, 128, Name + ': push size');
-            for (const [Resource, Index] of Buffers)
+            for (const [Resource, Index, Space = 0] of Buffers)
             {
                 const Parameter = Reflection.parameters.find(Candidate => Candidate.name === Resource);
                 Assert.equal(Parameter?.binding.kind, 'descriptorTableSlot', Name + ': ' + Resource);
                 Assert.equal(Parameter.binding.index, Index, Name + ': ' + Resource + ' binding');
-                Assert.equal(Parameter.binding.space ?? 0, 0, Name + ': ' + Resource + ' set');
+                Assert.equal(Parameter.binding.space ?? 0, Space, Name + ': ' + Resource + ' set');
             }
             // 📝 The OpEntryPoint name is what vkCreateGraphicsPipelines must receive.
             let EntryName = null;

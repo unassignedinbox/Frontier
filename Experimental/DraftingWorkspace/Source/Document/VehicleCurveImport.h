@@ -10,6 +10,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingImagePlane.h"
 
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@ struct VehicleCurveFile
 {
     std::string               Source  = {};                                                  // [-] - Exporter note ("Blender 4.2 · Body.001")
     std::vector<VehicleCurve> Curves  = {};                                                  // [-] - In file order
+    std::vector<DraftingImagePlane> ImagePlanes = {};                                        // [-] - Blueprint references ([[ImagePlanes]], optional)
     std::string               Refusal = {};                                                  // [-] - Why the file was rejected (empty: fine)
 };
 
@@ -41,7 +43,8 @@ struct VehicleCurveFile
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 💡 Format = "VehicleCurves", Units = "m" | "mm", [[Curves]] { Name, Closed, Planar, Points = [[x, y, z], …] }. Refuses a wrong
+// 💡 Format = "VehicleCurves", Units = "m" | "mm", [[Curves]] { Name, Closed, Planar, Points = [[x, y, z], …] }, optional
+//    [[ImagePlanes]] { Name, Path, Crop, Corner, Right, Down, Opacity } (relative paths resolve beside the file). Refuses a wrong
 //    format tag, unknown units, a curve without a name or with fewer than 2 points, and any non-numeric coordinate —
 //    never a partial import. Millimetre files are scaled to metres.
 [[nodiscard]] VehicleCurveFile DecodeVehicleCurves(const std::string& Text);

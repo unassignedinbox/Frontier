@@ -144,6 +144,27 @@ struct DraftingPoleDrag
     int               Commits         = 0;                                                   // [-]   - Accepted drags (script evidence)
 };
 
+// 📝 Pictures behind the document's image planes as the frame last decoded them (one entry per distinct path).
+struct DraftingPictureShelf
+{
+    std::string              Key      = {};                                                  // [-]  - Joined paths of the last upload
+    std::vector<std::string> Paths    = {};                                                  // [-]  - Distinct resolved paths, upload order
+    std::vector<uint32_t>    Widths   = {};                                                  // [px] - Per path (0: unreadable)
+    std::vector<uint32_t>    Heights  = {};                                                  // [px] - Per path
+    std::vector<std::string> Refusals = {};                                                  // [-]  - Per path (empty: read)
+    int                      Drawn    = 0;                                                   // [-]  - Planes drawn last frame
+};
+
+// 📝 Box selection (Plasticity viewport-selector drag): a left drag from empty viewport space in modes 1 / 2 / 5 selects
+//    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes).
+struct DraftingBoxSelection
+{
+    bool   ActiveCondition = false;                                                          // [-]  - Left button held after a press on empty space
+    ImVec2 Start           = {};                                                             // [px] - Press position (screen)
+    ImVec2 End             = {};                                                             // [px] - Pointer (screen)
+    int    Commits         = 0;                                                              // [-]  - Box selections applied (script evidence)
+};
+
 struct DraftingWorkspaceState
 {
     DraftingOptions                       Options        = {};                               // [-]   - Loaded options
@@ -155,11 +176,14 @@ struct DraftingWorkspaceState
     DraftingBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
     DraftingDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
     DraftingPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
+    DraftingBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)
     bool                                  DeviationEnabled = false;                          // [-]   - Needles from imported points to the panels (V8)
     DraftingDeviationMap                  Deviation      = {};                               // [-]   - Cached per document revision
+    bool                                  ImagePlanesEnabled = true;                         // [-]   - Blueprint image planes drawn (toolbar Images)
+    DraftingPictureShelf                  Pictures       = {};                               // [-]   - Decoded image-plane pictures (frame-owned)
     DraftingRepeat                        LastCommand    = {};                               // [-]   - Shift+R
     std::string                           PopupRequest   = {};                               // [-]   - Header popup a shortcut asked for
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values

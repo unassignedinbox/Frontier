@@ -163,25 +163,35 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
     }
     case DraftingConstructKind::Cylinder:
     {
-        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, "axis x");
-        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, "axis y");
-        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, "base z (sketch elevation)");
+        // 📝 Axis z: floor sketch at elevation Z, circle at (X, Y). Axis x: YZ sketch (normal +x) at elevation X, circle at
+        //    (Y, Z). Axis y: upright sketch (normal −y) at elevation −Y, circle at (X, Z), extent negated so Height runs +y.
+        //    Position is the centre of the base circle in every case (wheel arches: Axis x at the wheel centre).
+        const int   Axis      = std::clamp(Request.Axis, 0, 2);
+        const char* Along[3]  = { "base x (sketch elevation)", "base y (sketch elevation)", "base z (sketch elevation)" };
+        const char* Extents[3] = { "extent along +x (extrude)", "extent along +y (extrude)", "extent along +z (extrude)" };
+        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, Axis == 0 ? Along[0] : "axis x");
+        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, Axis == 1 ? Along[1] : "axis y");
+        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, Axis == 2 ? Along[2] : "axis z");
         Author.Parameter("Radius", Request.Radius, 0.05, 5.0, "radius");
-        Author.Parameter("Height", Request.Height, 0.1, 10.0, "extent along z (extrude)");
+        Author.Parameter("Height", Request.Height, 0.1, 10.0, Extents[Axis]);
+        const char* Elevation = Axis == 0 ? "X" : Axis == 1 ? "Y" : "Z";
+        const char* First     = Axis == 0 ? "Y" : "X";
+        const char* Second    = Axis == 2 ? "Y" : "Z";
+        const Modeller::Vector2 Place = Axis == 0 ? Modeller::Vector2{ Spot.Y, Spot.Z } : Axis == 1 ? Modeller::Vector2{ Spot.X, Spot.Z } : Modeller::Vector2{ Spot.X, Spot.Y };
         FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
-        Section.Plane        = FloorPlane();
-        Section.Elevation    = ParameterValue(Author.Named("Z"));
+        Section.Plane        = Axis == 0 ? DraftingSketchPlane(2) : Axis == 1 ? UprightPlane() : FloorPlane();
+        Section.Elevation    = ParameterValue(Author.Named(Elevation), Axis == 1 ? -1.0 : 1.0);
         SketchModel& Sketch  = Section.Sketch;
         const int Origin     = AppendSketchPoint(Sketch, { 0.0, 0.0 });
-        const int Centre     = AppendSketchPoint(Sketch, { Spot.X, Spot.Y });
+        const int Centre     = AppendSketchPoint(Sketch, Place);
         const int Circle     = AppendSketchCircle(Sketch, Centre, Request.Radius, 1);
         AppendSketchConstraint(Sketch, Kind::Fixed, Origin, -1, -1, 0.0, "Origin", 0.0);
-        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Centre, "X");
-        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Centre, "Y");
+        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Centre, First);
+        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Centre, Second);
         Author.Bound(Sketch, Kind::Radius, Circle, -1, "Radius");
         FeatureStep& Sweep = Author.Step(FeatureStepKind::Extrude, "Extrude#" + std::to_string(Ordinal + 1));
         Sweep.Profile      = SketchLabel;
-        Sweep.Extent       = ParameterValue(Author.Named("Height"));
+        Sweep.Extent       = ParameterValue(Author.Named("Height"), Axis == 1 ? -1.0 : 1.0);
         Sweep.Combination  = Combination;
         break;
     }
@@ -698,7 +708,7 @@ bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std
 DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const VehicleCurveFile& File, double Tolerance)
 {
     const std::string Label = "Import " + std::to_string(File.Curves.size()) + " curve(s)";
-    return RunCommand(Document, Label, false, [&]() -> std::string
+    DraftingCommandOutcome Outcome = RunCommand(Document, Label, false, [&]() -> std::string
     {
         if (!File.Refusal.empty()) return "import: " + File.Refusal;
         if (File.Curves.empty()) return "import: the file holds no curves";
@@ -718,6 +728,17 @@ DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const Ve
         }
         return {};
     });
+    // 📝 Image planes ride along with an accepted import (replaced by name); they are references, not history.
+    if (Outcome.AcceptedCondition)
+    {
+        for (const DraftingImagePlane& Plane : File.ImagePlanes)
+        {
+            const auto Same = std::find_if(Document.ImagePlanes.begin(), Document.ImagePlanes.end(), [&](const DraftingImagePlane& Held) { return Held.Name == Plane.Name; });
+            if (Same != Document.ImagePlanes.end()) *Same = Plane;
+            else Document.ImagePlanes.push_back(Plane);
+        }
+    }
+    return Outcome;
 }
 
 DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels, int Continuity)
