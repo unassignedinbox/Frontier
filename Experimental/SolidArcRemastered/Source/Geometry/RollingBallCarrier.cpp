@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Geometry/RollingBallCarrier.h"
+#include "Geometry/NurbsCarrier.h"
 
 #include "Intersection/IntersectionCurve.h"
 
@@ -102,6 +103,11 @@ CarrierRange MeasureCarrierRange(const CurveGeometry& Curve) noexcept
     {
         const ContactDefinition& Definition = *Contact->Definition;
         return { Definition.SpineLow, Definition.SpineHigh, Definition.Period };
+    }
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve))
+    {
+        const NurbsDomain Domain = MeasureNurbsCurveDomain(*Spline->Definition);
+        return { Domain.Low, Domain.High, Spline->Definition->Period };
     }
     return { 0.0, FullTurn, FullTurn };
 }

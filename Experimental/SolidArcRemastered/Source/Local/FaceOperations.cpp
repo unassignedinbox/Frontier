@@ -11,6 +11,7 @@
 
 #include "Boolean/GeneralFuse.h"
 #include "Local/TopologyRebuild.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/IntersectionCurve.h"
 
@@ -75,6 +76,7 @@ namespace
         if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ Motion.Move(Line->Origin), Motion.Turn(Line->Direction) };
         if (const auto* Arc = std::get_if<CircularArc>(&Curve)) return CircularArc{ Motion.MoveFrame(Arc->Frame), Arc->Radius * Motion.Scale };
         if (const auto* Ellipse = std::get_if<EllipticalArc>(&Curve)) return EllipticalArc{ Motion.MoveFrame(Ellipse->Frame), Ellipse->MajorRadius * Motion.Scale, Ellipse->MinorRadius * Motion.Scale };
+        if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return MapNurbsCurve(*Spline->Definition, [&](Vector3 Point) { return Motion.Move(Point); });
         if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve))
         {
             const TracedIntersection& Source = *Traced->Trace;
@@ -95,6 +97,7 @@ namespace
 
     SurfaceGeometry MoveSurface(const SurfaceGeometry& Surface, const SimilarityMotion& Motion)
     {
+        if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return MapNurbsSurface(*Spline->Definition, [&](Vector3 Point) { return Motion.Move(Point); });
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
             return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion), Ball->Definition->Handedness);
@@ -102,7 +105,7 @@ namespace
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {
             using Type  = std::decay_t<decltype(Carrier)>;
-            if constexpr (std::is_same_v<Type, RollingBallSurface>) return Carrier;           // Moved above
+            if constexpr (std::is_same_v<Type, RollingBallSurface> || std::is_same_v<Type, NurbsSurface>) return Carrier;   // Moved above
             else
             {
             auto Moved  = Carrier;

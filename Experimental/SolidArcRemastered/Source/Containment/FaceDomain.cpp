@@ -5,6 +5,8 @@
 
 #include "Containment/FaceDomain.h"
 
+#include "Geometry/NurbsCarrier.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -134,6 +136,13 @@ void CompleteFaceDomain(FaceDomain& Domain)
         {
             Low.Y  = std::max(Low.Y, -0.5 * std::numbers::pi);
             High.Y = std::min(High.Y, 0.5 * std::numbers::pi);
+        }
+        if (const auto* Spline = std::get_if<NurbsSurface>(&Domain.Surface))
+        {
+            // A NURBS patch ends at its knot domain: the window never reaches past it in an open direction.
+            const NurbsDomain U = MeasureNurbsSurfaceDomain(*Spline->Definition, true), V = MeasureNurbsSurfaceDomain(*Spline->Definition, false);
+            if (Period.PeriodU <= 0.0) { Low.X = std::max(Low.X, U.Low); High.X = std::min(High.X, U.High); }
+            if (Period.PeriodV <= 0.0) { Low.Y = std::max(Low.Y, V.Low); High.Y = std::min(High.Y, V.High); }
         }
     }
     Domain.Window = { Low, High };

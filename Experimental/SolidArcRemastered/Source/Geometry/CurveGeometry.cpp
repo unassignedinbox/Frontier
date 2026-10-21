@@ -5,6 +5,7 @@
 
 #include "Geometry/CurveGeometry.h"
 
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
@@ -39,6 +40,7 @@ CurveSample EvaluateCurve(const CurveGeometry& Curve, double τ) noexcept
     }
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return EvaluateIntersectionCurve(*Traced->Trace, τ);
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return EvaluateContactCurve(*Contact->Definition, τ);
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return EvaluateNurbsCurve(*Spline->Definition, τ);
     const ConicForm Conic  = *ResolveConicForm(Curve);
     const double    Cosine = std::cos(τ);                                                    // [-] - cos τ
     const double    Sine   = std::sin(τ);                                                    // [-] - sin τ
@@ -53,6 +55,7 @@ double ProjectOntoCurve(const CurveGeometry& Curve, Vector3 Position, double Int
     }
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return ProjectOntoIntersectionCurve(*Traced->Trace, Position, IntervalLow);
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return ProjectOntoContactCurve(*Contact->Definition, Position, IntervalLow);
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return ProjectOntoNurbsCurve(*Spline->Definition, Position, IntervalLow);
     const ConicForm Conic  = *ResolveConicForm(Curve);
     const Vector3   Offset = Position - Conic.Centre;                                        // [len] - From the centre
     const double    Major  = Length(Conic.CosineAxis);                                       // [len] - a
@@ -87,6 +90,7 @@ bool PeriodicCondition(const CurveGeometry& Curve) noexcept
 {
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return IntersectionCurveClosedCondition(*Traced->Trace);
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return Contact->Definition->Period > 0.0;
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return Spline->Definition->Period > 0.0;
     return !std::holds_alternative<StraightLine>(Curve);
 }
 
@@ -95,6 +99,7 @@ const char* CurveCategoryLabel(const CurveGeometry& Curve) noexcept
     if (std::holds_alternative<StraightLine>(Curve))      return "Line";
     if (std::holds_alternative<IntersectionCurve>(Curve)) return "Intersection";
     if (std::holds_alternative<ContactCurve>(Curve))      return "Contact";
+    if (std::holds_alternative<NurbsCurve>(Curve))        return "Nurbs";
     return std::holds_alternative<CircularArc>(Curve) ? "Circle" : "Ellipse";
 }
 
@@ -102,6 +107,7 @@ double MeasureCurveBulge(const CurveGeometry& Curve, double Low, double High, in
 {
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return MeasureIntersectionCurveBulge(*Traced->Trace, Low, High, Pieces);
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return MeasureContactCurveBulge(*Contact->Definition, Low, High, Pieces);
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return MeasureNurbsCurveBulge(*Spline->Definition, Low, High, Pieces);
     const std::optional<ConicForm> Conic = ResolveConicForm(Curve);
     if (!Conic) return 0.0;
     const double Largest = std::max(Length(Conic->CosineAxis), Length(Conic->SineAxis));    // [len] - Largest semi-axis
@@ -116,6 +122,7 @@ double MeasureParameterScale(const CurveGeometry& Curve) noexcept
 {
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return MeasureIntersectionCurveScale(*Traced->Trace);
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return MeasureParameterScale(Contact->Definition->Spine);
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return MeasureNurbsCurveScale(*Spline->Definition);
     const std::optional<ConicForm> Conic = ResolveConicForm(Curve);
     return Conic ? std::max(Length(Conic->CosineAxis), Length(Conic->SineAxis)) : 1.0;
 }
@@ -124,6 +131,7 @@ std::vector<double> CollectCurveBreakpoints(const CurveGeometry& Curve, double L
 {
     if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return CollectIntersectionCurveKnots(*Traced->Trace, std::min(Low, High), std::max(Low, High));
     if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return CollectContactCurveBreakpoints(*Contact->Definition, Low, High);
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return CollectNurbsCurveKnots(*Spline->Definition, Low, High);
     return {};
 }
 

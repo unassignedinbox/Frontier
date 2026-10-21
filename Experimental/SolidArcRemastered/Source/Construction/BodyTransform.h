@@ -48,13 +48,18 @@ struct TransformOutcome
 // 💡 Copies Source through Map into a new body (blueprint assembly). Similarities (M = s·Q, Q orthogonal) are exact on
 //    every analytic carrier: frames become X′ = Q·X, Y′ = ±Q·Y (sign of det M), so Z′ = Q·Z, face senses are kept and
 //    circle / ellipse parameters are unchanged (line parameters scale by s). A mirror (det M < 0) reverses every loop.
-//    Other affine maps are exact on planes and lines only (curved carriers are refused: an ellipse-section cylinder is
-//    not a carrier kind). Intersection-curve edges map exactly under similarities (guide, surfaces and knots mapped).
+//    Other affine maps (non-uniform scale, shear) promote curved analytic faces and conic edges to their exact NURBS
+//    form first and map its poles — exact as well. NURBS carriers map by their poles under any affine map.
+//    Intersection-curve edges and rolling-ball faces map exactly under similarities only (refused otherwise).
 [[nodiscard]] TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map);
 
 // As TransformBody, reading Source from Partition and assembling the copy into Target (Map = TranslationMap({}) is a
 // plain transfer): composite constructions can be built in a scratch partition and only the result kept.
 [[nodiscard]] TransformOutcome TransformBodyAcross(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map);
+
+// Exact NURBS copy: every analytic face becomes its rational B-spline form (covering the face chart), every line and
+// conic edge its NURBS curve over the same τ interval. Traced edges and rolling-ball faces are kept as they are.
+[[nodiscard]] TransformOutcome PromoteBodyToNurbs(ModelPartition& Partition, BodyToken Source);
 
 // Mirror copy across the plane through PlanePoint with normal PlaneNormal.
 [[nodiscard]] TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal);

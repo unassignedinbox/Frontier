@@ -5,6 +5,8 @@
 
 #include "Local/RedundantTopology.h"
 
+#include "Geometry/NurbsCarrier.h"
+
 #include "Geometry/ProjectedCurve.h"
 #include "Topology/EulerEdits.h"
 
@@ -53,6 +55,17 @@ namespace
             return FirstSense == SecondSense && SameFrame(PlaneA->Frame, PlaneB.Frame, Precision) ? CarrierMatch::Identical : CarrierMatch::Coplanar;
         }
         if (FirstSense != SecondSense) return CarrierMatch::Distinct;
+        if (const auto* SplineA = std::get_if<NurbsSurface>(&First))
+        {
+            // 📝 Same chart: equal degrees, counts and knots, poles within precision, equal weights (conservative).
+            const NurbsSurfaceDefinition& A = *SplineA->Definition;
+            const NurbsSurfaceDefinition& B = *std::get<NurbsSurface>(Second).Definition;
+            if (&A == &B) return CarrierMatch::Identical;
+            if (A.DegreeU != B.DegreeU || A.DegreeV != B.DegreeV || A.CountU != B.CountU || A.CountV != B.CountV || A.KnotsU != B.KnotsU || A.KnotsV != B.KnotsV) return CarrierMatch::Distinct;
+            for (size_t Index = 0; Index < A.Poles.size(); ++Index)
+                if (Distance(A.Poles[Index], B.Poles[Index]) > Precision || std::fabs(A.Weights[Index] - B.Weights[Index]) > 1.0e-12 * A.Weights[Index]) return CarrierMatch::Distinct;
+            return CarrierMatch::Identical;
+        }
         if (const auto* BallA = std::get_if<RollingBallSurface>(&First))                     // Same definition only (conservative)
         {
             return BallA->Definition == std::get<RollingBallSurface>(Second).Definition ? CarrierMatch::Identical : CarrierMatch::Distinct;
@@ -61,7 +74,7 @@ namespace
         {
             using Kind = std::decay_t<decltype(SurfaceA)>;
             const Kind& SurfaceB = std::get<Kind>(Second);
-            if constexpr (std::is_same_v<Kind, RollingBallSurface>) return false;             // Handled above
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return false;   // Handled above
             else
             {
             if (!SameFrame(SurfaceA.Frame, SurfaceB.Frame, Precision)) return false;

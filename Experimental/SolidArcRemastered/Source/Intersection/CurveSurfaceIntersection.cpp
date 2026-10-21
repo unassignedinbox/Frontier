@@ -6,6 +6,7 @@
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/ImplicitSurface.h"
 #include "Intersection/IntersectionCurve.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
@@ -71,7 +72,8 @@ namespace
     // Curve parameter of a point produced by a rational segment (arcs fold into the segment's own interval).
     [[nodiscard]] double SegmentParameter(const CurveGeometry& Curve, const RationalSegment& Segment, double 𝑡)
     {
-        if (std::holds_alternative<StraightLine>(Curve)) return Segment.CurveLow + 𝑡 * (Segment.CurveHigh - Segment.CurveLow);
+        // Lines and Bézier pieces of a NURBS curve are linear in 𝑡 (extraction keeps the parameterisation).
+        if (std::holds_alternative<StraightLine>(Curve) || std::holds_alternative<NurbsCurve>(Curve)) return Segment.CurveLow + 𝑡 * (Segment.CurveHigh - Segment.CurveLow);
         return ProjectOntoCurve(Curve, EvaluateRationalSegment(Segment, 𝑡), Segment.CurveLow - 1.0e-9);
     }
 
@@ -90,9 +92,10 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
 {
     CurveSurfaceOutcome    Outcome;
     std::vector<Candidate> Candidates;
-    // 💡 No rational form on one side (traced curve, contact rail) or no implicit form on the other (rolling-ball
-    //    carrier): scan the exact signed distance instead of composing a polynomial.
-    const bool ScanCondition = std::holds_alternative<IntersectionCurve>(Curve) || std::holds_alternative<ContactCurve>(Curve) || std::holds_alternative<RollingBallSurface>(Surface);
+    // 💡 No rational form on one side (traced curve, contact rail) or no implicit form on the other (rolling-ball or
+    //    NURBS carrier): scan the exact signed distance instead of composing a polynomial.
+    const bool ScanCondition = std::holds_alternative<IntersectionCurve>(Curve) || std::holds_alternative<ContactCurve>(Curve)
+                            || std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface);
     if (ScanCondition && !std::holds_alternative<IntersectionCurve>(Curve))
     {
         // 📝 Spacing ≤ r/10 on a rolling-ball carrier (d is near-linear across a fraction of the tube radius) and ≤ 1/256
@@ -107,6 +110,8 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
         }
         double Spacing = Chord / 256.0;                                                      // [len] - Target sample spacing
         if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) Spacing = std::min(Spacing, 0.1 * Carrier->Definition->Radius);
+        // 📝 On a NURBS carrier the distance is near-linear across a fraction of the smallest curvature radius.
+        if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) Spacing = std::min(Spacing, 1.0e-2 * Spline->Definition->Extent);
         const int Knots = static_cast<int>(CollectCurveBreakpoints(Curve, Low, High).size());
         const int Count = std::clamp(std::max(static_cast<int>(std::ceil(Chord / std::max(Spacing, 1.0e-300))), 16 * Knots), 64, 16384);
         std::vector<double> Values(Count + 1);

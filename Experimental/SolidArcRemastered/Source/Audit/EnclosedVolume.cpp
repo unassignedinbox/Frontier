@@ -5,6 +5,8 @@
 
 #include "Audit/EnclosedVolume.h"
 
+#include "Geometry/NurbsCarrier.h"
+
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -140,15 +142,19 @@ namespace
         const FinProfile& Use = Partition.Fins.Resolve(Fin);
         if (!Use.SurfaceCurve.has_value()) return std::nan("");
         const ParameterCurve& Curve = *Use.SurfaceCurve;
+        // 📝 Any constant base works (∮ H(𝑣) d𝑣 = 0 on a closed chart loop); a NURBS patch starts at its 𝑢-domain so the
+        //    inner integral never extrapolates the patch.
+        double Base = 0.0;                                                                   // [-] - Inner lower limit
+        if (Chart != nullptr) if (const auto* Spline = std::get_if<NurbsSurface>(Chart)) Base = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
         const auto Integrand = [&](double τ)
         {
             const ParameterSample Sample = EvaluateParameterCurve(Curve, τ);
             if (Sample.Derivative.Y == 0.0) return 0.0;
             const auto   Row   = [&](double s) { return Function(Vector2{ s, Sample.Position.Y }); };
             const double Reach = Sample.Position.X;                                          // [-] - Inner upper limit
-            std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(0.0, Reach), std::max(0.0, Reach)) : std::vector<double>{};
-            if (Reach < 0.0) std::reverse(Knots.begin(), Knots.end());
-            double Primitive = 0.0, From = 0.0;                                              // [-] - ∫₀^𝑢 density, running piece start
+            std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(Base, Reach), std::max(Base, Reach)) : std::vector<double>{};
+            if (Reach < Base) std::reverse(Knots.begin(), Knots.end());
+            double Primitive = 0.0, From = Base;                                             // [-] - ∫_base^𝑢 density, running piece start
             for (double Knot : Knots) { Primitive += IntegrateComposite(From, Knot, PanelSpan, Row); From = Knot; }
             Primitive += IntegrateComposite(From, Reach, PanelSpan, Row);
             return Primitive * Sample.Derivative.Y;
@@ -163,6 +169,31 @@ namespace
             std::vector<double> Breakpoints = CollectCurveBreakpoints(Partition.Curves.Resolve(Edge.Curve), Start, End);
             if (Start > End) std::reverse(Breakpoints.begin(), Breakpoints.end());
             Stops.insert(Stops.end(), Breakpoints.begin(), Breakpoints.end());
+        }
+        if (Chart != nullptr && std::holds_alternative<NurbsSurface>(*Chart))
+        {
+            // ⚠️ The density is only C⁰ across a 𝑣-knot: stop where the SP-curve crosses one (64 samples, bisection).
+            constexpr int Samples = 64;
+            const auto Height = [&](double τ) { return EvaluateParameterCurve(Curve, τ).Position.Y; };
+            double LowV = INFINITY, HighV = -INFINITY;
+            for (int Index = 0; Index <= Samples; ++Index) { const double 𝑣 = Height(Start + (End - Start) * Index / Samples); LowV = std::min(LowV, 𝑣); HighV = std::max(HighV, 𝑣); }
+            for (double Knot : CollectSurfaceBreakpointsAlongV(*Chart, LowV, HighV))
+            {
+                for (int Index = 0; Index < Samples; ++Index)
+                {
+                    double Left = Start + (End - Start) * Index / Samples, Right = Start + (End - Start) * (Index + 1) / Samples;
+                    double LeftGap = Height(Left) - Knot;
+                    const double RightGap = Height(Right) - Knot;
+                    if (LeftGap == 0.0 || LeftGap * RightGap >= 0.0) continue;
+                    for (int Halving = 0; Halving < 60; ++Halving)
+                    {
+                        const double Middle = 0.5 * (Left + Right), MiddleGap = Height(Middle) - Knot;
+                        if (MiddleGap * LeftGap > 0.0) { Left = Middle; LeftGap = MiddleGap; } else Right = Middle;
+                    }
+                    Stops.push_back(0.5 * (Left + Right));
+                }
+            }
+            std::sort(Stops.begin() + 1, Stops.end(), [&](double First, double Second) { return Start <= End ? First < Second : First > Second; });
         }
         Stops.push_back(End);
         double Total = 0.0;

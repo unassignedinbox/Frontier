@@ -29,6 +29,7 @@ add_library(SolidArcRemastered STATIC
     Source/Geometry/CurveGeometry.cpp
     Source/Geometry/SurfaceGeometry.cpp
     Source/Geometry/RollingBallCarrier.cpp
+    Source/Geometry/NurbsCarrier.cpp
     Source/Geometry/ProjectedCurve.cpp
     Source/Containment/FaceDomain.cpp
     Source/Containment/WindingNumber.cpp

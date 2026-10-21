@@ -5,8 +5,10 @@
 
 #include "Intersection/IsoParameterCurve.h"
 
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Frontier::SolidArcRemastered
@@ -58,6 +60,17 @@ IsoParameterCurve ExtractIsoParameterCurve(const SurfaceGeometry& Surface, IsoDi
         IsoParameterCurve Iso;
         if (Direction == IsoDirection::FixedU) Iso.Curve = ExtractRollingBallSection(*Carrier, Value);
         else Iso.DegenerateCondition = true;
+        return Iso;
+    }
+    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))
+    {
+        // 📝 Exact NURBS iso-curve (τ = running parameter); a collapsed pole row (sphere pole, cone apex) is a point.
+        IsoParameterCurve Iso;
+        const NurbsCurve  Curve = ExtractNurbsIsoCurve(*Spline, Direction == IsoDirection::FixedU, Value);
+        double Spread = 0.0;
+        for (const Vector3& Pole : Curve.Definition->Poles) Spread = std::max(Spread, Distance(Pole, Curve.Definition->Poles.front()));
+        Iso.Curve               = Curve;
+        Iso.DegenerateCondition = Spread <= 1.0e-12 * Spline->Definition->Extent;
         return Iso;
     }
     const bool FixedU = Direction == IsoDirection::FixedU;                                   // [-] - 𝑣 runs along the curve

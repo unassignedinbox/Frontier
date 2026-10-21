@@ -5,6 +5,7 @@
 
 #include "Intersection/ImplicitSurface.h"
 
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
@@ -31,7 +32,8 @@ namespace
     {
         return std::visit([](const auto& Typed) -> const OrthonormalFrame&
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(Typed)>, RollingBallSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // No frame: handled first
+            using Kind = std::decay_t<decltype(Typed)>;
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // No frame: handled first
             else return Typed.Frame;
         }, Surface);
     }
@@ -79,6 +81,15 @@ SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 P
     {
         const RollingBallDistance Measure = MeasureRollingBallDistance(*Carrier, Position);   // |X − C(𝑢*)| − r, exact
         return { Measure.Distance, Measure.Normal, Measure.Foot };
+    }
+    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))
+    {
+        // 📝 Foot by global inversion; d = (X − S)·n is the signed distance (exact at interior feet, where X − S ∥ n).
+        const NurbsDomain U = MeasureNurbsSurfaceDomain(*Spline->Definition, true), V = MeasureNurbsSurfaceDomain(*Spline->Definition, false);
+        const Vector2 Parameter = ProjectOntoNurbsSurface(*Spline, Position, { 0.5 * (U.Low + U.High), 0.5 * (V.Low + V.High) });
+        const Vector3 Foot      = EvaluateNurbsSurface(*Spline, Parameter).Position;
+        const Vector3 Normal    = EvaluateNurbsNormal(*Spline, Parameter);
+        return { Dot(Position - Foot, Normal), Normal, Foot };
     }
     const OrthonormalFrame& Frame = FrameOf(Surface);
     const Vector3           Local = LocalCoordinates(Frame, Position);                       // [len] - Frame coordinates
@@ -140,6 +151,13 @@ std::vector<RationalSegment> ConvertToRationalSegments(const CurveGeometry& Curv
         Segments.push_back({ { Line->Origin + Line->Direction * Low, Line->Origin + Line->Direction * High }, { 1.0, 1.0 }, Low, High });
         return Segments;
     }
+    if (const auto* Spline = std::get_if<NurbsCurve>(&Curve))
+    {
+        // 📝 Bézier extraction is exact and keeps τ linear in 𝑡 on every piece.
+        for (NurbsBezierPiece& Piece : DecomposeNurbsCurve(*Spline->Definition, Low, High))
+            Segments.push_back({ std::move(Piece.Poles), std::move(Piece.Weights), Piece.PieceLow, Piece.PieceHigh });
+        return Segments;
+    }
     // 📝 Arc of sweep Δ ≤ π/2: P₀, P₂ on the circle, P₁ at the tangent intersection, w₁ = cos(Δ/2) — exact conic.
     //    An ellipse is the affine image of a circle and rational Bézier form is affine invariant: same weights.
     const ConicForm Conic   = *ResolveConicForm(Curve);
@@ -161,18 +179,25 @@ std::vector<RationalSegment> ConvertToRationalSegments(const CurveGeometry& Curv
 
 Vector3 EvaluateRationalSegment(const RationalSegment& Segment, double 𝑡)
 {
-    const int Degree = static_cast<int>(Segment.ControlPoints.size()) - 1;                   // [-] - 1 or 2
+    const int Degree = static_cast<int>(Segment.ControlPoints.size()) - 1;                   // [-] - Any degree
     if (Degree == 1) return Segment.ControlPoints[0] * (1.0 - 𝑡) + Segment.ControlPoints[1] * 𝑡;
-    const double B0 = (1.0 - 𝑡) * (1.0 - 𝑡) * Segment.Weights[0];                             // [-] - Weighted basis
-    const double B1 = 2.0 * 𝑡 * (1.0 - 𝑡) * Segment.Weights[1];
-    const double B2 = 𝑡 * 𝑡 * Segment.Weights[2];
-    return (Segment.ControlPoints[0] * B0 + Segment.ControlPoints[1] * B1 + Segment.ControlPoints[2] * B2) * (1.0 / (B0 + B1 + B2));
+    // de Casteljau on the homogeneous points (wᵢPᵢ, wᵢ).
+    std::vector<Vector3> Points(Segment.ControlPoints.size());
+    std::vector<double>  Weights = Segment.Weights;
+    for (size_t Index = 0; Index < Points.size(); ++Index) Points[Index] = Segment.ControlPoints[Index] * Segment.Weights[Index];
+    for (int Level = 1; Level <= Degree; ++Level)
+        for (int Index = 0; Index + Level <= Degree; ++Index)
+        {
+            Points[Index]  = Points[Index] * (1.0 - 𝑡) + Points[Index + 1] * 𝑡;
+            Weights[Index] = Weights[Index] * (1.0 - 𝑡) + Weights[Index + 1] * 𝑡;
+        }
+    return Points[0] * (1.0 / Weights[0]);
 }
 
 BernsteinPolynomial ComposeImplicitEquation(const SurfaceGeometry& Surface, const RationalSegment& Segment)
 {
-    // ⚠️ The rolling-ball carrier has no polynomial implicit form; IntersectCurveSurface scans its exact distance instead.
-    if (std::holds_alternative<RollingBallSurface>(Surface)) return BernsteinPolynomial{ { 1.0 } };
+    // ⚠️ The rolling-ball and NURBS carriers have no polynomial implicit form; IntersectCurveSurface scans their distance instead.
+    if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return BernsteinPolynomial{ { 1.0 } };
     const HomogeneousCoordinates H = ComposeHomogeneous(FrameOf(Surface), Segment);
     if (std::holds_alternative<PlaneSurface>(Surface)) return H.Z;                             // z
     const BernsteinPolynomial Planar = AddBernstein(Square(H.X), Square(H.Y));               // x² + y²
@@ -212,6 +237,7 @@ double ImplicitMagnitude(const SurfaceGeometry& Surface, const RationalSegment& 
         if constexpr (std::is_same_v<Kind, ConeSurface>) Scale = std::max(Scale, std::fabs(Typed.OriginRadius));
         if constexpr (std::is_same_v<Kind, TorusSurface>) Scale = std::max(Scale, Typed.MajorRadius + Typed.MinorRadius);
     }, Surface);
+    if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return 1.0;   // Scanned, never composed
     const int Degree = std::holds_alternative<PlaneSurface>(Surface) ? 1 : std::holds_alternative<TorusSurface>(Surface) ? 4 : 2;
     return std::pow(std::max(Scale, 1.0e-300), Degree);
 }

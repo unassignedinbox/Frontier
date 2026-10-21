@@ -64,7 +64,15 @@ struct ContactCurve
     std::shared_ptr<const ContactDefinition> Definition = {};                                // [-] - Shared, immutable
 };
 
-using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc, IntersectionCurve, ContactCurve>;
+// 📝 Rational B-spline curve (Geometry/NurbsCarrier.h): exact conics, affine images and freeform rims; τ is the knot
+//    parameter, periodic when the curve closes with matching derivatives.
+struct NurbsCurveDefinition;
+struct NurbsCurve
+{
+    std::shared_ptr<const NurbsCurveDefinition> Definition = {};                             // [-] - Shared, immutable
+};
+
+using CurveGeometry = std::variant<StraightLine, CircularArc, EllipticalArc, IntersectionCurve, ContactCurve, NurbsCurve>;
 
 // 📝 Common form of the periodic carriers: P(τ) = Centre + cos τ·CosineAxis + sin τ·SineAxis (axes orthogonal).
 struct ConicForm

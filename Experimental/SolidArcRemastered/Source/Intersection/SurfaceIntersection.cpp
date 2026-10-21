@@ -33,7 +33,8 @@ namespace
     {
         return std::visit([](const auto& Typed) -> const OrthonormalFrame&
         {
-            if constexpr (std::is_same_v<std::decay_t<decltype(Typed)>, RollingBallSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Never an axis candidate
+            using Kind = std::decay_t<decltype(Typed)>;
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Never an axis candidate
             else return Typed.Frame;
         }, Surface);
     }
@@ -273,7 +274,7 @@ namespace
     {
         const auto OnAxis = [&](Vector3 Point) { return Length(Cross(Point - Axis.Origin, Axis.ZAxis)) <= Precision; };
         const auto Height = [&](Vector3 Point) { return Dot(Point - Axis.Origin, Axis.ZAxis); };
-        if (std::holds_alternative<RollingBallSurface>(Surface)) return std::nullopt;        // Not a surface of revolution
+        if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return std::nullopt;   // Not an analytic revolution
         if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
         {
             if (Length(Cross(Plane->Frame.ZAxis, Axis.ZAxis)) > ParallelSine) return std::nullopt;

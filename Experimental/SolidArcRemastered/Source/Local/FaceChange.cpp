@@ -14,6 +14,7 @@
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/IntersectionCurve.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/IsoParameterCurve.h"
 
@@ -42,6 +43,7 @@ namespace
         if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ Line->Origin, -Line->Direction };
         if (const auto* Traced = std::get_if<IntersectionCurve>(&Curve)) return ReverseIntersectionCurve(*Traced->Trace);
         if (const auto* Contact = std::get_if<ContactCurve>(&Curve)) return ReverseContactCurve(*Contact->Definition);
+        if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return ReverseNurbsCurve(*Spline->Definition);
         if (const auto* Circle = std::get_if<CircularArc>(&Curve))
         {
             CircularArc Reversed = *Circle;

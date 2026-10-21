@@ -8,6 +8,7 @@
 #include "Construction/BodyAssembly.h"
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/IntersectionCurve.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <cmath>
@@ -84,6 +85,14 @@ namespace
     [[nodiscard]] MappedSurface MapSurface(const MapAnalysis& Analysis, const SurfaceGeometry& Surface)
     {
         MappedSurface Mapped;
+        if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))
+        {
+            // 📝 Any affine map acts exactly on the poles; the chart is kept, so S𝑢 × S𝑣 maps to det·M⁻ᵀ·n and the face
+            //    sense flips exactly when det M < 0.
+            Mapped.Surface = MapNurbsSurface(*Spline->Definition, [&](Vector3 Point) { return ApplyPoint(Analysis.Map, Point); });
+            Mapped.Flip    = Analysis.Determinant < 0.0;
+            return Mapped;
+        }
         if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
         {
             if (Analysis.Similar) { Mapped.Surface = PlaneSurface{ MapSurfaceFrame(Analysis, Plane->Frame) }; return Mapped; }
@@ -112,7 +121,7 @@ namespace
         std::visit([&](const auto& Carrier)
         {
             using Kind = std::decay_t<decltype(Carrier)>;
-            if constexpr (std::is_same_v<Kind, RollingBallSurface>) return;                  // Mapped above
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return;   // Mapped above
             else
             {
             const OrthonormalFrame Frame = MapSurfaceFrame(Analysis, Carrier.Frame);
@@ -135,6 +144,11 @@ namespace
     [[nodiscard]] MappedCurve MapCurve(const MapAnalysis& Analysis, const CurveGeometry& Curve)
     {
         MappedCurve Mapped;
+        if (const auto* Spline = std::get_if<NurbsCurve>(&Curve))
+        {
+            Mapped.Curve = MapNurbsCurve(*Spline->Definition, [&](Vector3 Point) { return ApplyPoint(Analysis.Map, Point); });
+            return Mapped;                                                                   // τ kept exactly
+        }
         if (const auto* Line = std::get_if<StraightLine>(&Curve))
         {
             const Vector3 Image = ApplyLinear(Analysis.Map, Line->Direction);                // [-] - M·d
@@ -188,9 +202,129 @@ namespace
     {
         if (std::holds_alternative<PlaneSurface>(Surface)) return Parameter;                // No periodic image to choose
         if (std::holds_alternative<RollingBallSurface>(Surface)) return Parameter;          // Chart carried exactly (handedness)
+        if (std::holds_alternative<NurbsSurface>(Surface)) return Parameter;                // Poles mapped, chart kept
         const double U = Analysis.Determinant > 0.0 ? Parameter.X : -Parameter.X;
         const bool   Linear = std::holds_alternative<CylinderSurface>(Surface) || std::holds_alternative<ConeSurface>(Surface);
         return { U, Linear ? Parameter.Y * Analysis.Scale : Parameter.Y };
+    }
+
+    // Chart box of a face from its SP-curves (periodic images are already unwrapped per loop).
+    [[nodiscard]] std::pair<Vector2, Vector2> MeasureFaceChartBox(const ModelPartition& Partition, FaceToken Face)
+    {
+        Vector2 Low{ INFINITY, INFINITY }, High{ -INFINITY, -INFINITY };
+        for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+        {
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+            {
+                const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+                const EdgeProfile& Edge = Partition.Edges.Resolve(Use.Edge);
+                if (!Use.SurfaceCurve) return;
+                for (int Sample = 0; Sample <= 32; ++Sample)
+                {
+                    const Vector2 Point = EvaluateParameterCurve(*Use.SurfaceCurve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / 32.0).Position;
+                    Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) };
+                    High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) };
+                }
+            });
+        }
+        return { Low, High };
+    }
+
+    // Curved analytic carriers (and conic edges) have no exact image under a non-similar map, but their NURBS form has.
+    [[nodiscard]] bool PromotableSurface(const SurfaceGeometry& Surface) noexcept
+    {
+        return !std::holds_alternative<PlaneSurface>(Surface) && !std::holds_alternative<NurbsSurface>(Surface) && !std::holds_alternative<RollingBallSurface>(Surface);
+    }
+
+    // 💡 One blueprint walk for both transforms and NURBS promotion: PromoteAll converts every analytic face and every
+    //    line / conic edge before mapping; a non-similar map promotes the curved ones it could not otherwise carry.
+    [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll)
+    {
+        TransformOutcome Outcome;
+        const MapAnalysis Analysis = AnalyseMap(Map);
+        if (!(std::fabs(Analysis.Determinant) > 1.0e-12)) { Outcome.Refusal = "Transform: the map is singular"; return Outcome; }
+        const BodyInventory Inventory = Partition.CollectInventory(Source);
+        BodyBlueprint Blueprint;
+        Blueprint.Category = Partition.Bodies.Resolve(Source).Category;
+
+        // ① Vertices and edges (line intervals stretch by |M·d|; circle / ellipse / NURBS parameters are kept).
+        std::map<uint32_t, int> VertexIndex, EdgeIndex;                                      // [-] - Source slot → blueprint index
+        for (VertexToken Vertex : Inventory.Vertices)
+        {
+            VertexIndex[Vertex.Slot] = static_cast<int>(Blueprint.Vertices.size());
+            Blueprint.Vertices.push_back({ ApplyPoint(Map, Partition.Vertices.Resolve(Vertex).Position) });
+        }
+        for (EdgeToken Edge : Inventory.Edges)
+        {
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+            if (!Profile.Curve.PresentCondition()) { Outcome.Refusal = "Transform: edge without a carrier"; return Outcome; }
+            CurveGeometry Curve = Partition.Curves.Resolve(Profile.Curve);
+            const bool Promote = PromoteAll ? !std::holds_alternative<NurbsCurve>(Curve) : (!Analysis.Similar && ResolveConicForm(Curve).has_value());
+            if (Promote)
+            {
+                // 📝 Exact conversion over the edge interval with τ kept, so vertices and SP-curve parameters still agree.
+                if (const std::optional<NurbsCurve> Spline = ConvertCurveToNurbs(Curve, Profile.IntervalLow, Profile.IntervalHigh)) Curve = *Spline;
+            }
+            const MappedCurve Mapped = MapCurve(Analysis, Curve);
+            if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
+            EdgeIndex[Edge.Slot] = static_cast<int>(Blueprint.Edges.size());
+            Blueprint.Edges.push_back({ Mapped.Curve, Profile.IntervalLow * Mapped.Stretch, Profile.IntervalHigh * Mapped.Stretch, VertexIndex.at(Profile.Start.Slot), VertexIndex.at(Profile.End.Slot) });
+        }
+
+        // ② Faces: mapped carrier, sense kept (flipped only for mirrored general-affine planes and NURBS), SP-curves
+        //    re-fitted with the mapped chart midpoint as the periodic anchor; a mirror reverses every loop.
+        for (FaceToken Face : Inventory.Faces)
+        {
+            const FaceProfile& Profile = Partition.Faces.Resolve(Face);
+            SurfaceGeometry Surface = Partition.Surfaces.Resolve(Profile.Surface);
+            const bool Promote = PromoteAll ? !std::holds_alternative<NurbsSurface>(Surface) && !std::holds_alternative<RollingBallSurface>(Surface)
+                                            : !Analysis.Similar && PromotableSurface(Surface);
+            if (Promote)
+            {
+                // 📝 The NURBS image keeps the analytic chart up to the rational reparameterisation of angles, so the old
+                //    SP-curve midpoints remain valid periodic anchors.
+                const auto [BoxLow, BoxHigh] = MeasureFaceChartBox(Partition, Face);
+                if (const std::optional<NurbsSurface> Spline = ConvertSurfaceToNurbs(Surface, BoxLow, BoxHigh)) Surface = *Spline;
+            }
+            const MappedSurface Mapped = MapSurface(Analysis, Surface);
+            if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
+            BlueprintFace Image;
+            Image.Surface = Mapped.Surface;
+            Image.Sense   = Mapped.Flip ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
+            for (LoopToken Loop : Profile.Loops)
+            {
+                std::vector<BlueprintUse> Uses;
+                bool Valid = true;
+                Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+                {
+                    const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+                    const int          Edge = EdgeIndex.at(Use.Edge.Slot);
+                    const BlueprintEdge& EdgeImage = Blueprint.Edges[Edge];
+                    const EdgeProfile& UsedEdge = Partition.Edges.Resolve(Use.Edge);
+                    if (!Use.SurfaceCurve) { Valid = false; return; }
+                    const Vector2 Middle = EvaluateParameterCurve(*Use.SurfaceCurve, 0.5 * (UsedEdge.IntervalLow + UsedEdge.IntervalHigh)).Position;
+                    const Vector2 Anchor = MapAnchor(Analysis, Surface, Middle);
+                    BlueprintUse Placement;
+                    Placement.Edge         = Edge;
+                    Placement.Sense        = Use.Sense;
+                    Placement.SurfaceCurve = FitSurfaceCurve(Image.Surface, EdgeImage.Curve, EdgeImage.Low, EdgeImage.High, { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } }, Anchor);
+                    Uses.push_back(std::move(Placement));
+                });
+                if (!Valid) { Outcome.Refusal = "Transform: fin without an SP-curve"; return Outcome; }
+                if (Analysis.Determinant < 0.0)
+                {
+                    std::reverse(Uses.begin(), Uses.end());
+                    for (BlueprintUse& Placement : Uses) Placement.Sense = Placement.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
+                }
+                Image.Loops.push_back(std::move(Uses));
+            }
+            Blueprint.Faces.push_back(std::move(Image));
+        }
+        // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
+        const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, PromoteAll ? "Promote" : "Transform");
+        if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
+        Outcome.Body = Assembly.Body;
+        return Outcome;
     }
 }
 
@@ -233,75 +367,12 @@ AffineMap ScalingMap(Vector3 Centre, Vector3 Factors) noexcept
 
 TransformOutcome TransformBodyAcross(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map)
 {
-    TransformOutcome Outcome;
-    const MapAnalysis Analysis = AnalyseMap(Map);
-    if (!(std::fabs(Analysis.Determinant) > 1.0e-12)) { Outcome.Refusal = "Transform: the map is singular"; return Outcome; }
-    const BodyInventory Inventory = Partition.CollectInventory(Source);
-    BodyBlueprint Blueprint;
-    Blueprint.Category = Partition.Bodies.Resolve(Source).Category;
+    return TransformBodyWith(Partition, Source, Target, Map, false);
+}
 
-    // ① Vertices and edges (line intervals stretch by |M·d|; circle / ellipse parameters are kept).
-    std::map<uint32_t, int> VertexIndex, EdgeIndex;                                          // [-] - Source slot → blueprint index
-    for (VertexToken Vertex : Inventory.Vertices)
-    {
-        VertexIndex[Vertex.Slot] = static_cast<int>(Blueprint.Vertices.size());
-        Blueprint.Vertices.push_back({ ApplyPoint(Map, Partition.Vertices.Resolve(Vertex).Position) });
-    }
-    for (EdgeToken Edge : Inventory.Edges)
-    {
-        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
-        if (!Profile.Curve.PresentCondition()) { Outcome.Refusal = "Transform: edge without a carrier"; return Outcome; }
-        const MappedCurve Mapped = MapCurve(Analysis, Partition.Curves.Resolve(Profile.Curve));
-        if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
-        EdgeIndex[Edge.Slot] = static_cast<int>(Blueprint.Edges.size());
-        Blueprint.Edges.push_back({ Mapped.Curve, Profile.IntervalLow * Mapped.Stretch, Profile.IntervalHigh * Mapped.Stretch, VertexIndex.at(Profile.Start.Slot), VertexIndex.at(Profile.End.Slot) });
-    }
-
-    // ② Faces: mapped carrier, sense kept (flipped only for mirrored general-affine planes), SP-curves re-fitted with the
-    //    mapped chart midpoint as the periodic anchor; a mirror reverses every loop (orientation about the normal flips).
-    for (FaceToken Face : Inventory.Faces)
-    {
-        const FaceProfile& Profile = Partition.Faces.Resolve(Face);
-        const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
-        const MappedSurface Mapped = MapSurface(Analysis, Surface);
-        if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
-        BlueprintFace Image;
-        Image.Surface = Mapped.Surface;
-        Image.Sense   = Mapped.Flip ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
-        for (LoopToken Loop : Profile.Loops)
-        {
-            std::vector<BlueprintUse> Uses;
-            bool Valid = true;
-            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
-            {
-                const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
-                const int          Edge = EdgeIndex.at(Use.Edge.Slot);
-                const BlueprintEdge& EdgeImage = Blueprint.Edges[Edge];
-                const EdgeProfile& UsedEdge = Partition.Edges.Resolve(Use.Edge);
-                if (!Use.SurfaceCurve) { Valid = false; return; }
-                const Vector2 Middle = EvaluateParameterCurve(*Use.SurfaceCurve, 0.5 * (UsedEdge.IntervalLow + UsedEdge.IntervalHigh)).Position;
-                const Vector2 Anchor = MapAnchor(Analysis, Surface, Middle);
-                BlueprintUse Placement;
-                Placement.Edge         = Edge;
-                Placement.Sense        = Use.Sense;
-                Placement.SurfaceCurve = FitSurfaceCurve(Image.Surface, EdgeImage.Curve, EdgeImage.Low, EdgeImage.High, { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } }, Anchor);
-                Uses.push_back(std::move(Placement));
-            });
-            if (!Valid) { Outcome.Refusal = "Transform: fin without an SP-curve"; return Outcome; }
-            if (Analysis.Determinant < 0.0)
-            {
-                std::reverse(Uses.begin(), Uses.end());
-                for (BlueprintUse& Placement : Uses) Placement.Sense = Placement.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
-            }
-            Image.Loops.push_back(std::move(Uses));
-        }
-        Blueprint.Faces.push_back(std::move(Image));
-    }
-    // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
-    const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, "Transform");
-    if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
-    Outcome.Body = Assembly.Body;
-    return Outcome;
+TransformOutcome PromoteBodyToNurbs(ModelPartition& Partition, BodyToken Source)
+{
+    return TransformBodyWith(Partition, Source, Partition, TranslationMap({}), true);
 }
 
 TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map)

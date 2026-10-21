@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                        SURFACEGEOMETRY.H
 ====================================================================================================================================*/
-// 🧩 Analytic surfaces (plane, cylinder, cone, sphere, torus) + the procedural rolling-ball carrier: evaluation, normals, inversion
+// 🧩 Analytic surfaces (plane, cylinder, cone, sphere, torus), the procedural rolling-ball carrier and NURBS: evaluation, normals, inversion
 
 #pragma once
 
@@ -24,7 +24,7 @@ namespace Frontier::SolidArcRemastered
 //------------------------------------------------------------------------------------------------------------------------
 
 // 💡 Analytic types first (research § D): every pair of them has closed-form or low-degree intersections, and their
-//    normals and inversions are exact. B-spline surfaces join the variant when the salvaged NURBS organ is transplanted.
+//    normals and inversions are exact. Rational B-spline surfaces (the transplanted SolidArc NURBS organ) close the variant.
 //    In every type the natural normal is ∂P/∂𝑢 × ∂P/∂𝑣 and points AWAY from the frame axis / centre.
 
 // 📝 P(𝑢, 𝑣) = Origin + 𝑢·XAxis + 𝑣·YAxis; normal = ZAxis.
@@ -72,7 +72,15 @@ struct RollingBallSurface
     std::shared_ptr<const RollingBallDefinition> Definition = {};                            // [-] - Shared, immutable
 };
 
-using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface, RollingBallSurface>;
+// 📝 Rational B-spline surface (Geometry/NurbsCarrier.h): exact quadrics and tori, affine images of any carrier, freeform
+//    vertex patches. Natural normal S𝑢 × S𝑣; a direction is periodic when its end pole rows coincide with matching ∂P.
+struct NurbsSurfaceDefinition;
+struct NurbsSurface
+{
+    std::shared_ptr<const NurbsSurfaceDefinition> Definition = {};                           // [-] - Shared, immutable
+};
+
+using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface, RollingBallSurface, NurbsSurface>;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
@@ -105,8 +113,11 @@ struct SurfacePeriodicity
 
 [[nodiscard]] SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept;
 
-// Interior 𝑢 values in [Low, High] where the chart is only C¹ (the knots of a traced rolling-ball spine); empty otherwise.
+// Interior 𝑢 values in [Low, High] where the chart is only C¹ (traced rolling-ball spine knots, NURBS 𝑢-knots); empty otherwise.
 [[nodiscard]] std::vector<double> CollectSurfaceBreakpoints(const SurfaceGeometry& Surface, double Low, double High);
+
+// Interior 𝑣 values in [Low, High] where the chart is only C¹ (NURBS 𝑣-knots); empty otherwise.
+[[nodiscard]] std::vector<double> CollectSurfaceBreakpointsAlongV(const SurfaceGeometry& Surface, double Low, double High);
 
 // Relative accuracy of the chart derivatives: 0 for closed-form carriers, the finite-difference noise for procedural ones.
 [[nodiscard]] double             MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept;

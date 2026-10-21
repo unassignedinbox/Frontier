@@ -10,6 +10,7 @@
 #include "Local/TopologyRebuild.h"
 
 #include "Construction/BodyAssembly.h"
+#include "Geometry/NurbsCarrier.h"
 #include "Geometry/ProjectedCurve.h"
 
 #include <algorithm>
@@ -259,6 +260,7 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
                     using Type = std::decay_t<decltype(Carrier)>;
                     if constexpr (std::is_same_v<Type, StraightLine>) Carrier.Origin = Carrier.Origin + Lift;
                     else if constexpr (std::is_same_v<Type, IntersectionCurve> || std::is_same_v<Type, ContactCurve>) {}   // Refused above
+                    else if constexpr (std::is_same_v<Type, NurbsCurve>) Carrier = MapNurbsCurve(*Carrier.Definition, [&](Vector3 Point) { return Point + Lift; });
                     else Carrier.Frame.Origin = Carrier.Frame.Origin + Lift;
                 }, Lifted);
                 const int UpperStart = RaisedVertex(Lower.Start);                             // Issues rise edges first
