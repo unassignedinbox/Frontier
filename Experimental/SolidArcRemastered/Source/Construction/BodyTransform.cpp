@@ -81,6 +81,7 @@ namespace
     };
 
     [[nodiscard]] CurveGeometry MapCurveImage(const MapAnalysis& Analysis, const CurveGeometry& Curve);   // MapCurve(...).Curve
+    [[nodiscard]] double        MapCurveStretch(const MapAnalysis& Analysis, const CurveGeometry& Curve); // MapCurve(...).Stretch
 
     [[nodiscard]] MappedSurface MapSurface(const MapAnalysis& Analysis, const SurfaceGeometry& Surface)
     {
@@ -115,8 +116,10 @@ namespace
             if (!Guide.Refusal.empty()) { Mapped.Refusal = Guide.Refusal; return Mapped; }
             const MappedSurface Partner = MapSurface(Analysis, Ball->Definition->Partner);
             if (!Partner.Refusal.empty()) { Mapped.Refusal = Partner.Refusal; return Mapped; }
+            // A canal's r(𝑢) = Radius + RadiusRate·𝑢 on the stretched 𝑢′ = Stretch·𝑢: RadiusRate′ = s·RadiusRate / Stretch.
+            const double Rate = Ball->Definition->RadiusRate == 0.0 ? 0.0 : Ball->Definition->RadiusRate * Scale / MapCurveStretch(Analysis, Ball->Definition->Spine);
             Mapped.Surface = ConstructRollingBallSurface(MapCurveImage(Analysis, Ball->Definition->Spine), Ball->Definition->Radius * Scale, Guide.Surface,
-                                                         Ball->Definition->Handedness * (Analysis.Determinant < 0.0 ? -1.0 : 1.0), Ball->Definition->Section, Partner.Surface);
+                                                         Ball->Definition->Handedness * (Analysis.Determinant < 0.0 ? -1.0 : 1.0), Ball->Definition->Section, Partner.Surface, Rate);
             Mapped.Flip    = Analysis.Determinant < 0.0;
             return Mapped;
         }
@@ -171,12 +174,14 @@ namespace
             Mapped.Stretch = Source.Closed ? 1.0 : Analysis.Scale;
             if (Source.Law)
             {
-                // 📝 A ball-law spine runs on its edge's τ, so it stretches like the mapped edge; the setback scales by s.
+                // 📝 A ball-law spine runs on its edge's τ, so it stretches like the mapped edge; the size scales by s.
                 const MappedCurve Edge = MapCurve(Analysis, Source.Law->Edge);
                 if (!Edge.Refusal.empty()) { Mapped.Refusal = Edge.Refusal; return Mapped; }
                 auto Law = std::make_shared<BallLaw>(*Source.Law);
-                Law->Edge    = Edge.Curve;
-                Law->Setback *= Analysis.Scale;
+                // Size(t) = Size + SizeRate·t on the stretched t′ = Stretch·t: Size′ = s·Size, SizeRate′ = s·SizeRate / Stretch.
+                Law->Edge     = Edge.Curve;
+                Law->Size    *= Analysis.Scale;
+                Law->SizeRate = Law->SizeRate * Analysis.Scale / Edge.Stretch;
                 Image->Law     = std::move(Law);
                 Mapped.Stretch = Edge.Stretch;
             }
@@ -209,6 +214,7 @@ namespace
     }
 
     CurveGeometry MapCurveImage(const MapAnalysis& Analysis, const CurveGeometry& Curve) { return MapCurve(Analysis, Curve).Curve; }
+    double        MapCurveStretch(const MapAnalysis& Analysis, const CurveGeometry& Curve) { return MapCurve(Analysis, Curve).Stretch; }
 
     // Chart image of a point for the periodic-image choice: 𝑢 → ±𝑢 (mirror), 𝑣 scales with s on cylinders / cones only.
     [[nodiscard]] Vector2 MapAnchor(const MapAnalysis& Analysis, const SurfaceGeometry& Surface, Vector2 Parameter)

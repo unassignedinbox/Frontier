@@ -10,6 +10,7 @@
 #include "Construction/BodyAssembly.h"
 #include "Containment/FaceDomain.h"
 #include "Geometry/ProjectedCurve.h"
+#include "Geometry/RollingBallCarrier.h"
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/IntersectionCurve.h"
 #include "Intersection/SurfaceIntersection.h"
@@ -18,7 +19,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -145,6 +145,9 @@ namespace
         ModelPartition&      Partition;
         BodyToken            Body;
         const BlendSettings& Settings;
+
+        // A ball-law sheet is a chamfer on a curved edge or a variable-size blend off the planar line.
+        [[nodiscard]] std::string LawSubject() const { return Settings.Profile == BlendProfile::Chamfer ? "curved-edge chamfer" : "variable fillet"; }
         BlendOutcome&        Outcome;
         BodyInventory        Inventory;
         double               Scale     = 1.0;                                                // [len] - Model size
@@ -386,7 +389,7 @@ namespace
                 }
                 if (!Far.PresentCondition() || !Ends[0].PresentCondition() || !Ends[1].PresentCondition() || !SmoothEdgeCondition(Partition, Far)) continue;
                 if (Sheet.VariableCondition()) return Subject + "variable size beside a tangent far edge (smooth overflow, 🚧)";
-                if (Sheet.LawCondition()) return Subject + "curved-edge chamfer beside a tangent far edge (smooth overflow, 🚧)";
+                if (Sheet.LawCondition()) return Subject + LawSubject() + " beside a tangent far edge (smooth overflow, 🚧)";
                 int Over = 0;                                                                // [-] - Blend ends past the far edge
                 for (int End = 0; End < 2; ++End)
                 {
@@ -429,6 +432,11 @@ namespace
                 const double Centre = ProjectOntoCurve(Curve, Near, 0.0);                     // [-] - τ nearest the vertex
                 Low  = Centre - 4.0 * Scale;
                 High = Centre + 4.0 * Scale;
+                // An open traced or contact carrier exists only over its knots (a ball-law spine past the edge ends is
+                // extended by a margin, not indefinitely): keep the window inside its range.
+                const CarrierRange Range = MeasureCarrierRange(Curve);
+                if (std::isfinite(Range.Low))  Low  = std::max(Low, Range.Low);
+                if (std::isfinite(Range.High)) High = std::min(High, Range.High);
             }
             const CurveSurfaceOutcome Crossing = IntersectCurveSurface(Curve, Low, High, Surface);
             std::optional<Vector3> Best;
@@ -650,7 +658,7 @@ namespace
                 const bool Continuation = Blended.size() == 2 && Blended[0].first == Blended[1].first;   // [-] - Closed rim through a seam
                 bool SeamsOnly = Blended.size() == 2 && !Continuation && !Sharp.empty();             // [-] - Every sharp edge is a seam
                 for (const auto& Other : Sharp) { const auto Faces = FacesOfEdge(Other.first); SeamsOnly = SeamsOnly && Faces.first == Faces.second; }
-                if (!SeamsOnly && (!(Blended.size() == 1 || Continuation) || Ends.size() != 3)) return "curved-edge chamfer where blends meet or at a vertex of degree ≠ 3 (🚧)";
+                if (!SeamsOnly && (!(Blended.size() == 1 || Continuation) || Ends.size() != 3)) return LawSubject() + " where blends meet or at a vertex of degree ≠ 3 (🚧)";
             }
             const bool Convex = SheetOf(Blended.front().first)->ConvexCondition;
             for (const auto& End : Blended)
@@ -1056,7 +1064,7 @@ namespace
             const CliffCorner Corner = DetectCliff(Sheet, Vertex, Seam, SeamFace, PositionOf(SeamFoot), &Across);
             if (!Corner.Refusal.empty()) return Corner.Refusal;
             const bool Overflow = Corner.Point >= 0;                                         // [-] - The seam's support is consumed
-            if (Overflow && Sheet.LawCondition()) return "curved-edge chamfer with a cliff overflow at a seam (🚧)";
+            if (Overflow && Sheet.LawCondition()) return LawSubject() + " with a cliff overflow at a seam (🚧)";
             if (Overflow)
             {
                 if (!RecordCliff(Edge, 0, SeamSide, Seam, SeamFace, Corner) || !RecordCliff(Edge, 1, SeamSide, Seam, SeamFace, Corner)) return "cliff overflow: inconsistent cliff at the seam";
@@ -1185,7 +1193,7 @@ namespace
                 if (!Corner.Refusal.empty()) return Corner.Refusal;
                 if (Corner.Point < 0) continue;
                 if (Sheet.VariableCondition()) return "variable size with a cliff or notch overflow (🚧)";
-                if (Sheet.LawCondition()) return "curved-edge chamfer with a cliff or notch overflow (🚧)";
+                if (Sheet.LawCondition()) return LawSubject() + " with a cliff or notch overflow (🚧)";
                 if (!RecordCliff(End.first, End.second, Side, Sharp, Support, Corner)) return "cliff overflow: the two blend ends see different cliffs";
                 Feet[Side]     = Corner.Point;
                 Overflow[Side] = true;

@@ -6,6 +6,7 @@
 #include "Audit/EnclosedVolume.h"
 
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/RollingBallCarrier.h"
 
 #include <array>
 #include <algorithm>
@@ -146,6 +147,10 @@ namespace
         //    inner integral never extrapolates the patch.
         double LowerLimit = 0.0;                                                             // [-] - Inner lower limit
         if (Chart != nullptr) if (const auto* Spline = std::get_if<NurbsSurface>(Chart)) LowerLimit = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
+        // ⚠️ An open rolling-ball spine (a ball-law spine extended past its edge) exists only over its range: below it the
+        //    chart clamps 𝑢, so the inner integral starts at the spine's low end.
+        if (Chart != nullptr) if (const auto* Ball = std::get_if<RollingBallSurface>(Chart); Ball && Ball->Definition->Period == 0.0 && std::isfinite(Ball->Definition->SpineLow))
+            LowerLimit = Ball->Definition->SpineLow;
         const auto Integrand = [&](double τ)
         {
             const ParameterSample Sample = EvaluateParameterCurve(Curve, τ);

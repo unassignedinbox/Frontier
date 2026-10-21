@@ -374,6 +374,82 @@ namespace
         };
     }
 
+    // 📝 Variable blend on the top half-rim of a D (cylinder R, axis ẑ, top z = H, cut by the plane x = 0; ψ ∈ [−π/2, π/2]
+    //    the polar angle, x = ρ·cos ψ). The size runs linearly in ψ (∝ arc length) from Low at ψ = −π/2 to High at +π/2;
+    //    the volume is symmetric under ψ → −ψ, so the edge direction does not matter. Origin O = (0, 0, H): the top face and
+    //    both end faces (x = 0) contain O, so only the cylinder strip (X·n = R) and the blend face carry flux:
+    //        V = ⅓·(R·A_cyl + ∬ (P − O)·n dA),   A_cyl = R·∫ r dψ   (removed region, n out of it, towards the balls).
+    //    Chamfer: every ruling lies in its meridian plane (centre in the edge's normal plane), so the section is the
+    //    triangle of legs d and Pappus per unit ψ gives V = ∫ ½d²·(R − d/3) dψ, a polynomial in ψ.
+    //    Fillet: the canal of the balls C(ψ) = (R − r)·ρ̂ − r·ẑ (relative to O). Its characteristic circles lean out of the
+    //    meridian planes (n·T = −ρ′), so the face meets x = 0 along a curve of the chart P(ψ, w) = C + r·n(ψ, w·α_B(ψ)),
+    //    w ∈ [0, 1] from the top foot (n = ẑ) to the cylinder foot (n = ρ̂). For each w the ψ-limits are the roots of
+    //    x(P) = 0 near ±π/2; the integrand is analytic in both, so 64 × 64 Gauss–Legendre reaches rounding; P_ψ by a
+    //    sixth-order central difference (h = 5·10⁻³: truncation ~10⁻¹⁶, rounding ~10⁻¹⁴). r constant gives Pappus.
+    [[nodiscard]] double MeasureVariableArcChamferVolume(double Radius, double Low, double High)
+    {
+        // d(ψ) = Low + k·(ψ + π/2), k = (High − Low)/π; ∫ d² dψ = (High³ − Low³)/(3k), ∫ d³ dψ = (High⁴ − Low⁴)/(4k).
+        const double Rate = (High - Low) / π;
+        const double Square = std::fabs(Rate) < 1.0e-15 ? π * Low * Low : (High * High * High - Low * Low * Low) / (3.0 * Rate);
+        const double Cube   = std::fabs(Rate) < 1.0e-15 ? π * Low * Low * Low : (High * High * High * High - Low * Low * Low * Low) / (4.0 * Rate);
+        return -(0.5 * Radius * Square - Cube / 6.0);
+    }
+
+    [[nodiscard]] double MeasureVariableArcFilletVolume(double Radius, double Low, double High)
+    {
+        const Vector3 Up = { 0.0, 0.0, 1.0 };
+        const double  Rate = (High - Low) / π;                                               // [len] - r′ = dr/dψ
+        const auto Ball = [&](double ψ) { return Low + Rate * (ψ + 0.5 * π); };
+        const auto Chart = [&](double ψ, double w, Vector3* Across)
+        {
+            const double  r = Ball(ψ);
+            const Vector3 Radial = { std::cos(ψ), std::sin(ψ), 0.0 }, Around = { -std::sin(ψ), std::cos(ψ), 0.0 };
+            const Vector3 Centre = Radial * (Radius - r) - Up * r;
+            const Vector3 Speed  = Radial * -Rate + Around * (Radius - r) - Up * Rate;       // C′
+            const Vector3 Tangent = Normalize(Speed);
+            const double  Slope = Rate / Length(Speed), Lean = std::sqrt(1.0 - Slope * Slope);   // ρ′, √(1 − ρ′²)
+            const Vector3 First  = Normalize(Up - Tangent * Dot(Up, Tangent));
+            const Vector3 Planar = Radial - Tangent * Dot(Radial, Tangent);
+            const Vector3 Second = Normalize(Planar - First * Dot(Planar, First));
+            const double  Sweep  = std::atan2(Dot(Planar, Second), Dot(Planar, First));      // α_B
+            const double  α = w * Sweep;
+            if (Across) *Across = (Second * std::cos(α) - First * std::sin(α)) * (r * Lean * Sweep);   // P_w
+            return Centre + (Tangent * -Slope + (First * std::cos(α) + Second * std::sin(α)) * Lean) * r;
+        };
+        const auto Limit = [&](double w, double Seed)
+        {
+            double Before = Seed, Lower = Chart(Before, w, nullptr).X, ψ = Seed + 1.0e-3;
+            for (int Iteration = 0; Iteration < 60; ++Iteration)
+            {
+                const double Current = Chart(ψ, w, nullptr).X;
+                if (Current == Lower) break;
+                const double Next = ψ - Current * (ψ - Before) / (Current - Lower);
+                Before = ψ; Lower = Current; ψ = Next;
+                if (std::fabs(ψ - Before) < 1.0e-16) break;
+            }
+            return ψ;
+        };
+        // Sign making P_ψ × P_w point at the ball centre (out of the removed region), probed mid-face.
+        Vector3 Probe;
+        const Vector3 Middle = Chart(0.0, 0.5, &Probe);
+        const Vector3 Along  = (Chart(1.0e-6, 0.5, nullptr) - Chart(-1.0e-6, 0.5, nullptr)) * 0.5e6;
+        const double  Orientation = Dot(Cross(Along, Probe), Vector3{ Radius - Ball(0.0), 0.0, -Ball(0.0) } - Middle) > 0.0 ? 1.0 : -1.0;
+        const double Flux = IntegrateGaussLegendre(0.0, 1.0, [&](double w)
+        {
+            return IntegrateGaussLegendre(Limit(w, -0.5 * π), Limit(w, 0.5 * π), [&](double ψ)
+            {
+                constexpr double h = 5.0e-3;
+                Vector3 Across;
+                const Vector3 Point = Chart(ψ, w, &Across);
+                const auto Difference = [&](int k) { return Chart(ψ + k * h, w, nullptr) - Chart(ψ - k * h, w, nullptr); };
+                const Vector3 Along = (Difference(1) * 45.0 - Difference(2) * 9.0 + Difference(3)) * (1.0 / (60.0 * h));
+                return Dot(Point, Cross(Along, Across));
+            });
+        }) * Orientation;
+        const double Strip = Radius * Radius * π * 0.5 * (Low + High);                        // [len³] - R·A_cyl
+        return -(Strip + Flux) / 3.0;
+    }
+
     // 📝 Chamfer d on the rim where the plane z = 0 meets the cylinder of radius R about a = (sin α, 0, cos α) through the
     //    origin — independent of the kernel's ball-law code: own analytic edge, normals, Newton and exact r′.
     //    Side κ = −1: through-bore (material below z = 0 and outside the cylinder, convex rim, region removed);
@@ -882,8 +958,28 @@ namespace
             { "VariableRim", [](ModelPartition& Partition)
             {
                 const BodyToken Body = ConstructCylinder(Partition, UprightFrame({}), 1.0, 2.0).Value;
-                BlendSpecimen Specimen = MakeRefusal("VariableRim", "Refusal", "Cylinder top rim r 0.1 → 0.3: variable size on a curved edge (🚧)", Body, SelectEdges(Partition, Body, RimAt(2.0)),
-                                                     BlendProfile::Fillet, 0.1);
+                BlendSpecimen Specimen = MakeRefusal("VariableRim", "Refusal", "Cylinder top rim r 0.1 → 0.3: variable size on a closed edge (the size would jump at its only vertex)", Body,
+                                                     SelectEdges(Partition, Body, RimAt(2.0)), BlendProfile::Fillet, 0.1);
+                Specimen.Settings.EndSize = 0.3;
+                return Specimen;
+            } },
+            // ---- Variable size on a curved edge: ball-law spine with r(t) linear, canal (fillet) or chord (chamfer) carrier.
+            //      D body: cylinder R 1, H 1 cut by x = 0, seam at x = −1 (removed); the top half-rim ends on two plane caps.
+            { "VariableArcFillet", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = Fuse(Partition, ConstructCylinder(Partition, { {}, { -1.0, 0.0, 0.0 }, { 0.0, -1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, 1.0, 1.0).Value,
+                                            ConstructBlock(Partition, { 0.0, -2.0, -1.0 }, { 2.0, 4.0, 3.0 }).Value, BooleanOperation::Intersection);
+                BlendSpecimen Specimen = Make("VariableArcFillet", "Variable", "Half-rim of a D, r 0.1 → 0.3: canal surface of the balls (circles lean by dr/ds), plane caps", Body,
+                                              SelectEdges(Partition, Body, RimAt(1.0)), BlendProfile::Fillet, 0.1, MeasureVariableArcFilletVolume(1.0, 0.1, 0.3), 5);
+                Specimen.Settings.EndSize = 0.3;
+                return Specimen;
+            } },
+            { "VariableArcChamfer", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = Fuse(Partition, ConstructCylinder(Partition, { {}, { -1.0, 0.0, 0.0 }, { 0.0, -1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, 1.0, 1.0).Value,
+                                            ConstructBlock(Partition, { 0.0, -2.0, -1.0 }, { 2.0, 4.0, 3.0 }).Value, BooleanOperation::Intersection);
+                BlendSpecimen Specimen = Make("VariableArcChamfer", "Variable", "Half-rim of a D, d 0.1 → 0.3: ball-law spine, chord carrier, every ruling in its meridian plane", Body,
+                                              SelectEdges(Partition, Body, RimAt(1.0)), BlendProfile::Chamfer, 0.1, MeasureVariableArcChamferVolume(1.0, 0.1, 0.3), 5);
                 Specimen.Settings.EndSize = 0.3;
                 return Specimen;
             } },

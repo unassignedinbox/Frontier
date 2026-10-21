@@ -69,6 +69,8 @@ namespace
     GateTally TransformGate   { "R9", "Transforms there and back: audit sound, V·s³ (relative), vertices home", "≤ 1e-9" };
     GateTally LawGate         { "R10", "Ball law on a constant wedge (cylinder rim, θ = 90°): spine ≡ circle (R − d, H − d), reversal C(−τ), chord ≡ cone, chord projection round trip (distance)", "≤ 1e-11" };
     GateTally LawRateGate     { "R10′", "Ball law rates: C′ vs the circle's (relative), chord normal ∥ cone normal [rad]", "≤ 1e-8" };
+    GateTally CanalGate       { "R11", "Canal (r = r₀ + k·𝑢) on a line spine ≡ cone of sin β = k: chart, projection round trip, signed distance, offset (distance)", "≤ 1e-11" };
+    GateTally CanalRateGate   { "R11′", "Canal rates: normal ∥ cone normal [rad], ∂𝑢 vs a sixth-order difference (relative)", "≤ 1e-9" };
 
     // ---- Carrier probes on one rolling-ball sheet -------------------------------------------------------------------------
 
@@ -175,7 +177,7 @@ namespace
         const CylinderSurface Wall{ Frame, Radius };
         BallLaw Law;
         Law.Edge      = CircularArc{ Top, Radius };
-        Law.Setback   = Setback;
+        Law.Size      = Setback;
         Law.Signs[0]  = Law.Signs[1] = -1.0;                                                 // Convex: centre inside both
         const std::optional<CurveGeometry> Spine = BuildBallLawCurve(Lid, Wall, Law, 0.0, FullTurn, true);
         LawProbe Probe;
@@ -200,6 +202,53 @@ namespace
             const Vector3 Normal  = EvaluateSurfaceNormal(Chord, { τ, 𝑣 });
             Probe.Position = std::max({ Probe.Position, std::fabs(OnCone.Distance), Distance(EvaluateSurface(Chord, Back2).Position, Point) });
             Probe.Rate     = std::max(Probe.Rate, std::atan2(Length(Cross(Normal, OnCone.Normal)), std::fabs(Dot(Normal, OnCone.Normal))));
+        }
+        return Probe;
+    }
+
+    // 📝 Canal on a line spine C(𝑢) = O + 𝑢·Z (unit speed), r(𝑢) = r₀ + k·𝑢: the envelope of the balls is the cone of
+    //    axis Z with half-angle β, sin β = k (each characteristic circle sits at z = 𝑢 − r·k, radius r·√(1 − k²)), i.e.
+    //    radius r₀/√(1 − k²) at z = 0 and slope tan β. The guide is a plane parallel to the axis (E₁ constant). Points
+    //    off the carrier by δ along the cone normal test the canal's signed distance; the canal of r + δ is the offset.
+    struct CanalProbe
+    {
+        double Position = 0.0;                                                               // [len] - Worst distance
+        double Rate     = 0.0;                                                               // [-]   - Worst angle / relative
+    };
+
+    [[nodiscard]] CanalProbe ProbeCanal(std::mt19937_64& Generator)
+    {
+        std::uniform_real_distribution<double> Fraction(0.0, 1.0);
+        const double Start = 0.5, Rate = 0.2;                                                // [len], [-] - r₀, k
+        const OrthonormalFrame Frame = ConstructFrame({ 0.3, -0.2, 0.7 }, Normalize(Vector3{ 1, 2, 3 }), { 1, 0, 0 });
+        const PlaneSurface     Guide{ ConstructFrame(Frame.Origin + Frame.XAxis * 3.0, Frame.XAxis, Frame.YAxis) };
+        const SurfaceGeometry  Canal = ConstructRollingBallSurface(StraightLine{ Frame.Origin, Frame.ZAxis }, Start, Guide, 1.0, RollingBallSection::Circle, PlaneSurface{}, Rate);
+        const double           Lean  = std::sqrt(1.0 - Rate * Rate);                         // [-] - cos β
+        const ConeSurface      Cone{ Frame, Start / Lean, Rate / Lean };
+        const double           Shift = 0.04;                                                 // [len] - Offset δ
+        const std::optional<SurfaceGeometry> Offset = OffsetSurface(Canal, Shift);
+        CanalProbe Probe;
+        if (!Offset) { Probe.Position = Probe.Rate = INFINITY; return Probe; }
+        for (int Sample = 0; Sample < 400; ++Sample)
+        {
+            const Vector2 At{ -1.0 + 2.0 * Fraction(Generator), FullTurn * Fraction(Generator) };
+            const SurfaceSample   Point  = EvaluateSurface(Canal, At);
+            const SurfaceDistance OnCone = MeasureSurfaceDistance(Cone, Point.Position);
+            const Vector3         Normal = EvaluateSurfaceNormal(Canal, At);
+            const double          Align  = Dot(Normal, OnCone.Normal) > 0.0 ? 1.0 : -1.0;     // [-] - Natural normals agree?
+            const double          Off    = Shift * (2.0 * Fraction(Generator) - 1.0);         // [len] - Signed probe offset
+            const Vector3         Away   = Point.Position + Normal * Off;
+            const SurfaceDistance CanalAway = MeasureSurfaceDistance(Canal, Away);
+            const Vector2         Back   = ProjectOntoSurface(Canal, Point.Position, { At.X + 0.2, 0.5 });
+            const Vector3         Lifted = EvaluateSurface(*Offset, At).Position;            // On the canal of r + δ
+            Probe.Position = std::max({ Probe.Position, std::fabs(OnCone.Distance), Distance(EvaluateSurface(Canal, Back).Position, Point.Position),
+                                        std::fabs(CanalAway.Distance - Off), std::fabs(MeasureSurfaceDistance(Cone, Away).Distance - Align * Off),
+                                        std::fabs(MeasureSurfaceDistance(Cone, Lifted).Distance - Align * Shift) });
+            constexpr double Step = 2.0e-3;
+            const auto Pair = [&](int k) { return EvaluateSurface(Canal, { At.X + k * Step, At.Y }).Position - EvaluateSurface(Canal, { At.X - k * Step, At.Y }).Position; };
+            const Vector3 Along = (Pair(1) * 45.0 - Pair(2) * 9.0 + Pair(3)) * (1.0 / (60.0 * Step));
+            Probe.Rate = std::max({ Probe.Rate, std::atan2(Length(Cross(Normal, OnCone.Normal)), std::fabs(Dot(Normal, OnCone.Normal))), Length(Along - Point.DerivativeU) / Length(Along),
+                                    std::atan2(Length(Cross(Normal, Normalize(Cross(Point.DerivativeU, Point.DerivativeV)))), Dot(Normal, Normalize(Cross(Point.DerivativeU, Point.DerivativeV)))) });
         }
         return Probe;
     }
@@ -306,6 +355,12 @@ int main()
     const LawProbe  Law = ProbeBallLaw(LawGenerator);
     Tally(LawGate, Law.Position, Law.Position <= 1.0e-11);
     Tally(LawRateGate, Law.Rate, Law.Rate <= 1.0e-8);
+
+    // ---- R11 canal carrier against the cone of its balls.
+    std::mt19937_64  CanalGenerator(20261021);                                               // Own stream: earlier samples unchanged
+    const CanalProbe Canal = ProbeCanal(CanalGenerator);
+    Tally(CanalGate, Canal.Position, Canal.Position <= 1.0e-11);
+    Tally(CanalRateGate, Canal.Rate, Canal.Rate <= 1.0e-9);
 
     // ---- Bodies: disc r 3 × 1 minus one radial bore, fillet the traced mouth.
     const BoreSpecimen Specimens[] = {
@@ -450,7 +505,7 @@ int main()
     }
 
     // ---- Report.
-    const GateTally* Gates[] = { &BallGate, &ContactGate, &TangencyGate, &ProjectionGate, &NormalGate, &ChartGate, &ReproductionGate, &SectionGate, &BodyGate, &TransformGate, &LawGate, &LawRateGate };
+    const GateTally* Gates[] = { &BallGate, &ContactGate, &TangencyGate, &ProjectionGate, &NormalGate, &ChartGate, &ReproductionGate, &SectionGate, &BodyGate, &TransformGate, &LawGate, &LawRateGate, &CanalGate, &CanalRateGate };
     bool PassedCondition = true;
     for (const GateTally* Gate : Gates) PassedCondition = PassedCondition && Gate->Failures == 0 && Gate->Checks > 0;
     std::printf("# Rolling-ball carrier validation (procedural pipe on traced spines)\n\n");

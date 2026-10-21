@@ -61,11 +61,13 @@ struct EdgeBlendSheet
     double          MaxResidual     = 0.0;                                                   // [len] - Worst ball / foot residual sampled
     double          RadiusRate      = 0.0;                                                   // [-]   - dr/dτ: r(τ) = Radius + RadiusRate·τ (variable)
     // ⚠️ A variable sheet (RadiusRate ≠ 0) has a tilted line spine; its contact lines are unit-speed with their own τ, so
-    //    Contacts[i](τ) is NOT the foot of Spine(τ) there. Every same-τ consumer refuses variable sheets.
+    //    Contacts[i](τ) is NOT the foot of Spine(τ) there. Every same-τ consumer refuses variable sheets. Only a straight
+    //    edge between planes takes this form; a variable size anywhere else is a ball-law sheet (RadiusRate = 0 here).
     [[nodiscard]] bool VariableCondition() const noexcept { return RadiusRate != 0.0; }
-    // 💡 A ball-law sheet (chamfer on a traced or elliptical edge) runs on the edge's τ with r(τ) = d·tan(θ(τ)/2); its
-    //    contacts DO share the spine's τ, but Radius is only the mid-edge value and Offsets are reference loci at it, so
-    //    consumers that build constant-radius geometry refuse it (MeasureSheetRadius gives the exact r(τ)).
+    // 💡 A ball-law sheet runs on the edge's τ with a law radius: r(τ) = d(τ)·tan(θ(τ)/2) for a chamfer on a traced or
+    //    elliptical edge (or any variable chamfer off the planar line), r(τ) linear for a variable fillet there (canal
+    //    carrier). Its contacts DO share the spine's τ, but Radius is only the mid-edge value and Offsets are reference
+    //    loci at it, so consumers that build constant-radius geometry refuse it (MeasureSheetRadius gives the exact r(τ)).
     [[nodiscard]] bool LawCondition() const noexcept;
 };
 

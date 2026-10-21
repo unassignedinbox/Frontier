@@ -138,10 +138,76 @@ namespace
         return Frame;
     }
 
+    // ---- Canal section (variable radius) ---------------------------------------------------------------------------
+
+    [[nodiscard]] bool CanalCondition(const RollingBallDefinition& Definition) noexcept { return Definition.RadiusRate != 0.0 && Definition.Section == RollingBallSection::Circle; }
+
+    [[nodiscard]] double RadiusAt(const RollingBallDefinition& Definition, double 𝑢) noexcept { return Definition.Radius + Definition.RadiusRate * 𝑢; }
+
+    // 📝 Characteristic circle of the ball at 𝑢: centre C − r·ρ′·T, radius r·√(1 − ρ′²), axes E₁, E₂ (ρ′ = r′ / |C′|).
+    struct CanalSection
+    {
+        Vector3 Centre = {};                                                                 // [len] - Circle centre
+        double  Radius = 0.0;                                                                // [len] - Circle radius
+        double  Lean   = 1.0;                                                                // [-]   - √(1 − ρ′²)
+        double  Slope  = 0.0;                                                                // [-]   - ρ′ = dr/ds
+        double  Ball   = 0.0;                                                                // [len] - r(𝑢)
+    };
+
+    [[nodiscard]] CanalSection ResolveCanal(const RollingBallDefinition& Definition, const SectionFrame& Frame, double 𝑢) noexcept
+    {
+        CanalSection Section;
+        Section.Ball  = RadiusAt(Definition, 𝑢);
+        const double Speed = Length(Frame.Velocity);                                         // [len] - |C′|
+        Section.Slope = Speed > 0.0 ? Definition.RadiusRate / Speed : 0.0;
+        Section.Lean  = std::sqrt(std::max(0.0, 1.0 - Section.Slope * Section.Slope));
+        Section.Centre = Frame.Centre - Frame.Tangent * (Section.Ball * Section.Slope);
+        Section.Radius = Section.Ball * Section.Lean;
+        return Section;
+    }
+
     [[nodiscard]] Vector3 EvaluatePosition(const RollingBallDefinition& Definition, Vector2 Parameter) noexcept
     {
         const SectionFrame Frame = ResolveSection(Definition, Parameter.X);
-        return Frame.Centre + (Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y)) * Definition.Radius;
+        const Vector3 Around = Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y);   // [-] - In-plane direction
+        if (!CanalCondition(Definition)) return Frame.Centre + Around * Definition.Radius;
+        const CanalSection Section = ResolveCanal(Definition, Frame, Parameter.X);
+        return Section.Centre + Around * Section.Radius;
+    }
+
+    // 📝 Canal foot: X − C(𝑢) ∥ n(𝑢, 𝑣) exactly when f(𝑢) = (X − C)·C′ + |X − C|·r′ = 0 (n·C′ = −r′), on or off the carrier;
+    //    seeded by the spine inversion (the root for r′ = 0), Gauss–Newton first step (f′ ≈ −|C′|²), then secant. Stops on
+    //    displacement (law spines carry ~10⁻¹³ of Newton-acceptance jitter).
+    [[nodiscard]] double SolveCanalFoot(const RollingBallDefinition& Definition, Vector3 Position, double SpineLow) noexcept
+    {
+        double 𝑢 = Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        double Speed = 0.0;                                                                  // [len] - |C′|
+        const auto Measure = [&](double At) -> double
+        {
+            const CurveSample Sample = EvaluateCurve(Definition.Spine, Clamp(At, Definition.SpineLow, Definition.SpineHigh, Definition.Period));
+            const Vector3 Offset = Position - Sample.Position;                               // [len] - X − C
+            Speed = Length(Sample.Derivative);
+            return Dot(Offset, Sample.Derivative) + Length(Offset) * Definition.RadiusRate;   // [len²] - f(𝑢)
+        };
+        const double Floor = 1.0e-14 * (1.0 + Length(Position));                             // [len] - Round-off displacement
+        double Before = 𝑢, Gradient = Measure(𝑢), Previous = INFINITY;
+        if (!(Speed > 0.0)) return 𝑢;
+        𝑢 = Clamp(𝑢 + Gradient / (Speed * Speed), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        for (int Iteration = 0; Iteration < 40; ++Iteration)
+        {
+            const double Current = Measure(𝑢);
+            if (!(Speed > 0.0)) break;
+            const double Slope = (Current - Gradient) / (𝑢 - Before);                        // [len²] - Secant f′ (< 0)
+            const bool   SecantCondition = std::fabs(𝑢 - Before) > 1.0e-8 * (1.0 + std::fabs(𝑢)) && std::isfinite(Slope) && Slope < 0.0;
+            const double Step = SecantCondition ? -Current / Slope : Current / (Speed * Speed);
+            Before = 𝑢; Gradient = Current;
+            𝑢 = Clamp(𝑢 + Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+            const double Moved = std::fabs(Step) * Speed;                                    // [len] - Along the spine
+            if (Moved <= Floor) break;
+            if (Moved <= 1.0e-12 * (1.0 + Length(Position)) && Moved >= 0.5 * Previous) break;
+            Previous = Moved;
+        }
+        return 𝑢;
     }
 
     // Step for central differences in τ: 10⁻⁶ of the range (or of 2π for unbounded carriers).
@@ -286,7 +352,8 @@ CarrierRange MeasureCarrierRange(const CurveGeometry& Curve) noexcept
 
 // ---- Carrier ----------------------------------------------------------------------------------------------------------
 
-RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness, RollingBallSection Section, const SurfaceGeometry& Partner)
+RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness, RollingBallSection Section, const SurfaceGeometry& Partner,
+                                               double RadiusRate)
 {
     auto Definition = std::make_shared<RollingBallDefinition>();
     const CarrierRange Range = MeasureCarrierRange(Spine);
@@ -300,6 +367,7 @@ RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, doubl
     Definition->Serial    = NextDefinitionSerial.fetch_add(1, std::memory_order_relaxed);
     Definition->Section   = Section;
     Definition->Partner   = Partner;
+    Definition->RadiusRate = RadiusRate;
     return RollingBallSurface{ std::move(Definition) };
 }
 
@@ -310,11 +378,43 @@ SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Par
     const SectionFrame Frame  = ResolveSection(Definition, Parameter.X);
     const double       Cosine = std::cos(Parameter.Y), Sine = std::sin(Parameter.Y);           // [-] - cos 𝑣, sin 𝑣
     SurfaceSample Sample;
-    Sample.Position    = Frame.Centre + (Frame.First * Cosine + Frame.Second * Sine) * Definition.Radius;
-    Sample.DerivativeV = (Frame.Second * Cosine - Frame.First * Sine) * Definition.Radius;
+    if (CanalCondition(Definition))
+    {
+        const CanalSection Section = ResolveCanal(Definition, Frame, Parameter.X);
+        Sample.Position    = Section.Centre + (Frame.First * Cosine + Frame.Second * Sine) * Section.Radius;
+        Sample.DerivativeV = (Frame.Second * Cosine - Frame.First * Sine) * Section.Radius;
+    }
+    else
+    {
+        Sample.Position    = Frame.Centre + (Frame.First * Cosine + Frame.Second * Sine) * Definition.Radius;
+        Sample.DerivativeV = (Frame.Second * Cosine - Frame.First * Sine) * Definition.Radius;
+    }
     // 📝 ∂P/∂𝑢 by central difference (E₁′ would need the guide's curvature); h = 10⁻⁶·range, truncation O(h²).
     const double Step = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
-    if (const auto* Traced = std::get_if<IntersectionCurve>(&Definition.Spine); Traced && Traced->Trace)
+    if (CanalCondition(Definition))
+    {
+        // 📝 P = C + r·n: ∂P/∂𝑢 = C′ + r′·n + r·∂n/∂𝑢 with C′ and r′ exact; only the unit normal is differenced. Differencing
+        //    positions would amplify a ball-law spine's Newton jitter (~10⁻¹³) by 1/h; directions barely see it.
+        const auto NormalAt = [&](double At)
+        {
+            const SectionFrame Near = ResolveSection(Definition, At);
+            const CanalSection Canal = ResolveCanal(Definition, Near, At);
+            return Near.Tangent * -Canal.Slope + (Near.First * Cosine + Near.Second * Sine) * Canal.Lean;
+        };
+        const CanalSection Section = ResolveCanal(Definition, Frame, Parameter.X);
+        // One-sided at (or clamped beyond) a range end: the stencil never collapses to 0/0.
+        double Low  = Clamp(Parameter.X - Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        double High = Clamp(Parameter.X + Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+        if (!(High - Low > 0.5 * Step)) { if (Low <= Definition.SpineLow) High = Low + Step; else Low = High - Step; }
+        const Vector3 Normal = Frame.Tangent * -Section.Slope + (Frame.First * Cosine + Frame.Second * Sine) * Section.Lean;
+        const Vector3 Turn   = (NormalAt(High) - NormalAt(Low)) * (1.0 / (High - Low));      // [1/τ] - ∂n/∂𝑢
+        Sample.DerivativeU = Frame.Velocity + Normal * Definition.RadiusRate + Turn * Section.Ball;
+        return Sample;
+    }
+    // ⚠️ The frame-field shortcut needs T = N₁ × N₂ along the spine: true for an offset intersection, false for a ball-law
+    //    spine (its centres follow r(t)) and for a canal (the section moves along T with r·ρ′).
+    const auto* Traced = std::get_if<IntersectionCurve>(&Definition.Spine);
+    if (Traced && Traced->Trace && !Traced->Trace->Law && !CanalCondition(Definition))
     {
         // 💡 Traced spine: C′ is exact and E₁′, E₂′ come from the frame field on the tangent line (one Newton solve per
         //    sample instead of three).
@@ -340,7 +440,10 @@ Vector3 EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Par
     }
     const SectionFrame Frame = ResolveSection(*Surface.Definition, Parameter.X);
     // Exact radial direction; ∂𝑢 × ∂𝑣 points away from the spine for handedness +1, towards it for the mirror image.
-    return (Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y)) * Surface.Definition->Handedness;
+    const Vector3 Around = Frame.First * std::cos(Parameter.Y) + Frame.Second * std::sin(Parameter.Y);   // [-] - In-plane direction
+    if (!CanalCondition(*Surface.Definition)) return Around * Surface.Definition->Handedness;
+    const CanalSection Section = ResolveCanal(*Surface.Definition, Frame, Parameter.X);
+    return (Frame.Tangent * -Section.Slope + Around * Section.Lean) * Surface.Definition->Handedness;
 }
 
 Vector2 ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept
@@ -350,7 +453,7 @@ Vector2 ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Positi
     // 📝 For a carrier point C(𝑢) + r·e with e ⟂ T, C(𝑢) is the nearest spine point (r below the spine's curvature
     //    radius), so the spine inversion gives 𝑢 exactly; 𝑣 is then the polar angle in (E₁, E₂).
     const double SpineLow = Definition.Period > 0.0 ? Reference.X - 0.5 * Definition.Period : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
-    double       𝑢        = ProjectOntoCurve(Definition.Spine, Position, SpineLow);
+    double       𝑢        = CanalCondition(Definition) ? SolveCanalFoot(Definition, Position, SpineLow) : ProjectOntoCurve(Definition.Spine, Position, SpineLow);
     𝑢 = Fold(Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period), Reference.X - 0.5 * Definition.Period, Definition.Period);
     const SectionFrame Frame  = ResolveSection(Definition, 𝑢);
     const Vector3      Offset = Position - Frame.Centre;                                     // [len] - From the ball centre
@@ -369,6 +472,12 @@ std::optional<SurfaceGeometry> OffsetRollingBall(const RollingBallSurface& Surfa
     if (ChordCondition(Definition)) return std::nullopt;                                     // Offset of a ruled chord: not this carrier
     const double Radius = Definition.Radius + Definition.Handedness * Distance;              // [len] - Along the natural normal
     if (!(Radius > 0.0)) return std::nullopt;
+    if (CanalCondition(Definition))
+    {
+        // The canal of r + δ: positive over the whole spine range (linear, so both ends decide).
+        for (double End : { Definition.SpineLow, Definition.SpineHigh })
+            if (std::isfinite(End) && !(Radius + Definition.RadiusRate * End > 0.0)) return std::nullopt;
+    }
     auto Offset = std::make_shared<RollingBallDefinition>(Definition);
     Offset->Radius = Radius;
     return SurfaceGeometry{ RollingBallSurface{ std::move(Offset) } };
@@ -384,14 +493,20 @@ double MeasureRollingBallCurvature(const RollingBallSurface& Surface, double �
     const Vector3 Turn  = Normalize(EvaluateCurve(Definition.Spine, High).Derivative) - Normalize(EvaluateCurve(Definition.Spine, Low).Derivative);
     const double  Speed = Length(Middle.Derivative) * (High - Low);                         // [len] - Arc length of the stencil
     const double  κ     = Speed > 0.0 ? Length(Turn) / Speed : 0.0;                          // [1/len] - Spine curvature
-    const double  Along = 1.0 - Definition.Radius * κ;                                       // [-] - Inner-side stretch
+    const double  Ball  = CanalCondition(Definition) ? RadiusAt(Definition, Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period)) : Definition.Radius;   // [len] - r(𝑢)
+    const double  Along = 1.0 - Ball * κ;                                                    // [-] - Inner-side stretch
     if (ChordCondition(Definition)) return Along > 1.0e-12 ? κ / Along : INFINITY;           // Straight rulings: only the rails bend
-    return std::max(1.0 / Definition.Radius, Along > 1.0e-12 ? κ / Along : INFINITY);
+    return std::max(1.0 / Ball, Along > 1.0e-12 ? κ / Along : INFINITY);
 }
 
 CircularArc ExtractRollingBallSection(const RollingBallSurface& Surface, double 𝑢) noexcept
 {
     const SectionFrame Frame = ResolveSection(*Surface.Definition, 𝑢);
+    if (CanalCondition(*Surface.Definition))
+    {
+        const CanalSection Section = ResolveCanal(*Surface.Definition, Frame, 𝑢);              // The characteristic circle
+        return CircularArc{ OrthonormalFrame{ Section.Centre, Frame.First, Frame.Second, Cross(Frame.First, Frame.Second) }, Section.Radius };
+    }
     return CircularArc{ OrthonormalFrame{ Frame.Centre, Frame.First, Frame.Second, Cross(Frame.First, Frame.Second) }, Surface.Definition->Radius };
 }
 
@@ -408,16 +523,19 @@ RollingBallDistance MeasureRollingBallDistance(const RollingBallSurface& Surface
         Outcome.Foot     = Sample.Position;
         return Outcome;
     }
+    // 📝 Canal: X − C(𝑢*) is normal to the carrier at the foot (SolveCanalFoot), so the distance is |X − C| − r(𝑢*) exactly.
     const double  SpineLow = Definition.Period > 0.0 ? 0.0 : (std::isfinite(Definition.SpineLow) ? Definition.SpineLow : 0.0);
-    const double  𝑢        = Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
+    const double  𝑢        = CanalCondition(Definition) ? SolveCanalFoot(Definition, Position, SpineLow)
+                                                        : Clamp(ProjectOntoCurve(Definition.Spine, Position, SpineLow), Definition.SpineLow, Definition.SpineHigh, Definition.Period);
     const Vector3 Centre   = EvaluateCurve(Definition.Spine, 𝑢).Position;                    // [len] - Nearest ball centre
     const Vector3 Offset   = Position - Centre;
     const double  Reach    = Length(Offset);                                                 // [len] - Distance to the spine
+    const double  Ball     = CanalCondition(Definition) ? RadiusAt(Definition, 𝑢) : Definition.Radius;   // [len] - r(𝑢)
     RollingBallDistance Outcome;
     const Vector3 Radial = Reach > 0.0 ? Offset * (1.0 / Reach) : ResolveSection(Definition, 𝑢).First;
     Outcome.Normal   = Radial * Definition.Handedness;                                       // Signed like the natural normal
-    Outcome.Distance = (Reach - Definition.Radius) * Definition.Handedness;
-    Outcome.Foot     = Centre + Radial * Definition.Radius;
+    Outcome.Distance = (Reach - Ball) * Definition.Handedness;
+    Outcome.Foot     = Centre + Radial * Ball;
     return Outcome;
 }
 

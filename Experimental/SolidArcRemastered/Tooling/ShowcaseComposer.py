@@ -70,6 +70,8 @@ Models = [                                                                      
     ("VariableChamfer", "Variable chamfer",         "d 0.1 → 0.4: the contact lines meet at the apex, so the chamfer is one plane"),
     ("TiltedBoreChamfer", "Tilted bore, chamfered mouth", "d 0.1 on a bore tilted 20°: the dihedral varies along the traced rim, so the ball radius follows d·tan(θ/2)"),
     ("TiltedBossChamfer", "Tilted boss, chamfered foot",  "the concave twin: d 0.1 on the traced foot of a tilted boss, one ruled chord face"),
+    ("VariableArcFillet",  "Variable fillet on a curved edge",  "r 0.1 → 0.3 around a half-rim: the canal surface of the balls, whose circles lean by dr/ds, ending on plane caps"),
+    ("VariableArcChamfer", "Variable chamfer on a curved edge", "d 0.1 → 0.3 around the same half-rim: a ball-law spine with a chord carrier, every ruling in its meridian plane"),
     ("P10", "Radial bore mouths, chamfered",               "8 traced mouths d 0.03 on ruled chord carriers between ball-law contact rails"),
 ]
 

@@ -47,6 +47,7 @@ namespace
             const DistanceProbe Probe = ProbeDistance(Curve, Surface, τ);
             if (std::fabs(Probe.Slope) <= 1.0e-14 * Probe.Speed) break;
             const double Step = Probe.Distance / Probe.Slope;                                // [-] - Newton correction
+            if (!std::isfinite(Step)) break;                                                 // Probe left the carrier's range
             τ = std::clamp(τ - Step, Low, High);
             if (std::fabs(Step) <= 1.0e-16 * (1.0 + std::fabs(τ))) break;
         }
@@ -63,6 +64,7 @@ namespace
             const double Curvature = (ProbeDistance(Curve, Surface, τ + Increment).Slope - ProbeDistance(Curve, Surface, τ - Increment).Slope) / (2.0 * Increment);
             if (std::fabs(Curvature) <= 1.0e-300) break;
             const double Step = Slope / Curvature;                                           // [-] - Newton correction
+            if (!std::isfinite(Step)) break;                                                 // A difference probe left the range
             τ = std::clamp(τ - Step, Low, High);
             if (std::fabs(Step) <= 1.0e-15 * (1.0 + std::fabs(τ))) break;
         }
@@ -183,7 +185,7 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
     {
         const CurveSample     Sample  = EvaluateCurve(Curve, τ);
         const SurfaceDistance Measure = MeasureSurfaceDistance(Surface, Sample.Position);
-        if (std::fabs(Measure.Distance) > Settings.Precision) return;
+        if (!(std::fabs(Measure.Distance) <= Settings.Precision)) return;                    // NaN-safe: never accept a non-finite probe
         for (const CoincidentInterval& Interval : Outcome.Coincidences) if (τ >= Interval.Low - 1.0e-12 && τ <= Interval.High + 1.0e-12) return;
         const double Sine = std::fabs(Dot(Measure.Normal, Sample.Derivative)) / std::max(Length(Sample.Derivative), 1.0e-300);
         CurveSurfaceCrossing Crossing{ τ, ProjectOntoSurface(Surface, Measure.Foot, { 0.0, 0.0 }), Sample.Position,

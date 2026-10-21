@@ -12,6 +12,7 @@
 #include "Geometry/CurveGeometry.h"
 #include "Geometry/SurfaceGeometry.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -38,10 +39,21 @@ namespace Frontier::SolidArcRemastered
 //    constant-angle wedge and the chord between them is the chamfer ruling. Differentiating the three rows:
 //        N₁·C′ = σ₁·r′,  N₂·C′ = σ₂·r′,  E′·C′ = |E′|² − E″·(C − E)
 //    τ is the edge parameter (times Direction = −1 after reversal); First / Second are the supports themselves.
+// 📝 Ball size along the edge parameter t: Size(t) = Size + SizeRate·t (linear; SizeRate = 0 for a constant size).
+//    WedgeSetback (chamfer): r(t) = Size(t)·tan(θ(t)/2), θ the local wedge — equal setbacks Size(t) on both faces.
+//    Radius (variable fillet): r(t) = Size(t), the balls' envelope is a canal surface.
+enum class BallLawForm : std::uint8_t
+{
+    WedgeSetback = 0,                                                                        // r = d(t)·tan(θ/2)
+    Radius       = 1,                                                                        // r = r(t)
+};
+
 struct BallLaw
 {
     CurveGeometry Edge      = StraightLine{};                                               // [-]   - Exact edge carrier E
-    double        Setback   = 0.0;                                                          // [len] - Chamfer setback d
+    BallLawForm   Form      = BallLawForm::WedgeSetback;                                    // [-]   - Meaning of Size
+    double        Size      = 0.0;                                                          // [len] - Setback d or radius r at t = 0
+    double        SizeRate  = 0.0;                                                          // [len] - d(Size)/dt (0: constant)
     double        Signs[2]  = { 1.0, 1.0 };                                                 // [-]   - σᵢ: signed side of the centre
     double        Senses[2] = { 1.0, 1.0 };                                                 // [-]   - Outward = Sense · natural normal
     double        Direction = 1.0;                                                          // [-]   - Edge τ = Direction · τ

@@ -86,10 +86,11 @@ namespace
             {
                 // 📝 A ball-law spine runs on its edge's τ: it stretches like the edge (conics keep τ, open traces scale).
                 auto Law = std::make_shared<BallLaw>(*Source.Law);
-                Law->Edge    = MoveCurve(Source.Law->Edge, Motion);
-                Law->Setback *= Motion.Scale;
                 const auto* Edge = std::get_if<IntersectionCurve>(&Source.Law->Edge);
                 Stretch = Edge && !Edge->Trace->Closed ? Motion.Scale : 1.0;
+                Law->Edge      = MoveCurve(Source.Law->Edge, Motion);
+                Law->Size     *= Motion.Scale;
+                Law->SizeRate *= Motion.Scale / Stretch;                                     // Size(t) on t′ = Stretch·t
                 Image->Law = std::move(Law);
             }
             Image->First  = MoveSurface(Source.First, Motion);
@@ -110,8 +111,16 @@ namespace
         if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return MapNurbsSurface(*Spline->Definition, [&](Vector3 Point) { return Motion.Move(Point); });
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
-            return ConstructRollingBallSurface(MoveCurve(Ball->Definition->Spine, Motion), Ball->Definition->Radius * Motion.Scale, MoveSurface(Ball->Definition->Guide, Motion), Ball->Definition->Handedness,
-                                               Ball->Definition->Section, MoveSurface(Ball->Definition->Partner, Motion));
+            // A canal's RadiusRate scales by s / Stretch with its spine's τ (conic edges keep τ, open traces stretch by s).
+            const RollingBallDefinition& Source = *Ball->Definition;
+            double Stretch = 1.0;                                                            // [-] - Spine τ′ = Stretch·τ
+            if (const auto* Traced = std::get_if<IntersectionCurve>(&Source.Spine))
+            {
+                const auto* Edge = Traced->Trace->Law ? std::get_if<IntersectionCurve>(&Traced->Trace->Law->Edge) : nullptr;
+                Stretch = Traced->Trace->Law ? (Edge && !Edge->Trace->Closed ? Motion.Scale : 1.0) : (Traced->Trace->Closed ? 1.0 : Motion.Scale);
+            }
+            return ConstructRollingBallSurface(MoveCurve(Source.Spine, Motion), Source.Radius * Motion.Scale, MoveSurface(Source.Guide, Motion), Source.Handedness,
+                                               Source.Section, MoveSurface(Source.Partner, Motion), Source.RadiusRate * Motion.Scale / Stretch);
         }
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {

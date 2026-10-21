@@ -46,6 +46,7 @@ struct RollingBallDefinition
     std::uint64_t   Serial    = 0;                                                           // [-]   - Section-memo identity (0 = not memoised)
     RollingBallSection Section = RollingBallSection::Circle;                                 // [-]   - Arc or chord
     SurfaceGeometry Partner   = PlaneSurface{};                                              // [-]   - Chord: support of contact B (𝑣 = 1)
+    double          RadiusRate = 0.0;                                                        // [len] - Canal: r(𝑢) = Radius + RadiusRate·𝑢
 };
 
 struct ContactDefinition
@@ -67,8 +68,13 @@ struct ContactDefinition
 // ⚠️ Handedness −1 is the mirror image: a reflection M maps the carrier to M·P(𝑢, 𝑣) only if E₂ flips with it.
 // 💡 Chord: Radius is only the reference size (curvature bound); ∂P/∂𝑣 = B − A is exact, ∂P/∂𝑢 is the foot-field central
 //    difference on the tangent line, the normal is ∂𝑢 × ∂𝑣 · Handedness, and there is no exact offset.
+// 💡 Canal (circle section, RadiusRate ≠ 0): the envelope of balls of radius r(𝑢) = Radius + RadiusRate·𝑢 on the spine.
+//    Each characteristic circle lies in the plane (X − C)·C′ = −r·r′, so P = C + r·n with
+//        n(𝑢, 𝑣) = −ρ′·T + √(1 − ρ′²)·(cos 𝑣·E₁ + sin 𝑣·E₂),   ρ′ = r′ / |C′| (dr/ds),
+//    n the exact unit normal; 𝑣 = 0 on contact A as for the constant ball. The offset by δ is the canal of r + δ.
 [[nodiscard]] RollingBallSurface ConstructRollingBallSurface(const CurveGeometry& Spine, double Radius, const SurfaceGeometry& Guide, double Handedness = 1.0,
-                                                             RollingBallSection Section = RollingBallSection::Circle, const SurfaceGeometry& Partner = PlaneSurface{});
+                                                             RollingBallSection Section = RollingBallSection::Circle, const SurfaceGeometry& Partner = PlaneSurface{},
+                                                             double RadiusRate = 0.0);
 [[nodiscard]] SurfaceSample      EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector3            EvaluateRollingBallNormal(const RollingBallSurface& Surface, Vector2 Parameter) noexcept;
 [[nodiscard]] Vector2            ProjectOntoRollingBall(const RollingBallSurface& Surface, Vector3 Position, Vector2 Reference) noexcept;

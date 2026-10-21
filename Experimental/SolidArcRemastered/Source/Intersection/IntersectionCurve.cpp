@@ -118,19 +118,23 @@ namespace
 
     // ---- Ball law ---------------------------------------------------------------------------------------------------
 
-    // r = d·tan(θ/2) at the edge point E(t), θ the wedge angle between the outward normals there.
-    [[nodiscard]] double LawRadiusAtPoint(const TracedIntersection& Trace, Vector3 Point) noexcept
+    // r(t) at the edge point E(t): Size(t) for a radius law, Size(t)·tan(θ/2) for a wedge setback, θ the wedge angle between
+    // the outward normals there.
+    [[nodiscard]] double LawRadiusAtPoint(const TracedIntersection& Trace, double EdgeParameter, Vector3 Point) noexcept
     {
-        const BallLaw& Law    = *Trace.Law;
+        const BallLaw& Law  = *Trace.Law;
+        const double   Size = Law.Size + Law.SizeRate * EdgeParameter;                       // [len] - d(t) or r(t)
+        if (Law.Form == BallLawForm::Radius) return Size;
         const Vector3  First  = MeasureSurfaceDistance(Trace.First, Point).Normal * Law.Senses[0];
         const Vector3  Second = MeasureSurfaceDistance(Trace.Second, Point).Normal * Law.Senses[1];
         const double   Wedge  = std::atan2(Length(Cross(First, Second)), -Dot(First, Second));   // [rad] - θ
-        return Law.Setback * std::tan(0.5 * Wedge);
+        return Size * std::tan(0.5 * Wedge);
     }
 
     [[nodiscard]] double LawRadiusAt(const TracedIntersection& Trace, double EdgeParameter) noexcept
     {
-        return LawRadiusAtPoint(Trace, EvaluateCurve(Trace.Law->Edge, EdgeParameter).Position);
+        if (Trace.Law->Form == BallLawForm::Radius) return Trace.Law->Size + Trace.Law->SizeRate * EdgeParameter;
+        return LawRadiusAtPoint(Trace, EdgeParameter, EvaluateCurve(Trace.Law->Edge, EdgeParameter).Position);
     }
 
     // 📝 Centre C(t) and dC/dt at the edge parameter t: Newton from E(t) (for planar supports the first step is exact),
@@ -139,7 +143,7 @@ namespace
     {
         const BallLaw&    Law    = *Trace.Law;
         const CurveSample Edge   = EvaluateCurve(Law.Edge, EdgeParameter);
-        const double      Radius = LawRadiusAtPoint(Trace, Edge.Position);                  // [len] - r(t)
+        const double      Radius = LawRadiusAtPoint(Trace, EdgeParameter, Edge.Position);                  // [len] - r(t)
         if (!(Radius > 0.0) || !std::isfinite(Radius)) return false;
         Centre = Edge.Position;
         std::array<Vector3, 2> Normals;
@@ -148,8 +152,13 @@ namespace
         const double      Step   = 5.0e-6 * (1.0 + std::fabs(EdgeParameter));              // [-]   - h
         const CurveSample Ahead  = EvaluateCurve(Law.Edge, EdgeParameter + Step);
         const CurveSample Behind = EvaluateCurve(Law.Edge, EdgeParameter - Step);
-        const double  Rate   = (LawRadiusAtPoint(Trace, Ahead.Position) - LawRadiusAtPoint(Trace, Behind.Position)) / (2.0 * Step);
-        const Vector3 Bend   = (Ahead.Derivative - Behind.Derivative) * (0.5 / Step);
+        const double  Rate   = Law.Form == BallLawForm::Radius ? Law.SizeRate                // [len] - r′ (exact for a radius law)
+                             : (LawRadiusAtPoint(Trace, EdgeParameter + Step, Ahead.Position) - LawRadiusAtPoint(Trace, EdgeParameter - Step, Behind.Position)) / (2.0 * Step);
+        // E″ exact on lines and conics (E″ = centre − E): a difference leaves ~10⁻¹² of rounding in C′, which a canal
+        // carrier's ∂n/∂𝑢 (through T = C′/|C′|) amplifies by 1/h. Traced edges keep the difference.
+        Vector3 Bend = (Ahead.Derivative - Behind.Derivative) * (0.5 / Step);                // [len] - E″
+        if (std::holds_alternative<StraightLine>(Law.Edge)) Bend = {};
+        else if (const std::optional<ConicForm> Conic = ResolveConicForm(Law.Edge)) Bend = Conic->Centre - Edge.Position;
         const Vector3 A = Normals[0], B = Normals[1], C = Edge.Derivative;
         const double  Determinant = Dot(A, Cross(B, C));                                     // [len] - a·(b×c)
         if (std::fabs(Determinant) <= 1.0e-14 * Length(C)) return false;
