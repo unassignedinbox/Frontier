@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (16.89 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (24.16 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -20,6 +20,12 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (16
 | W14 | Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders | ≤ 10⁻⁵ m · ≤ 10⁻⁹ | 2.16e-07 | 11 | 🟢 |
 | W15 | Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals | exact · 1 / 255 | 0 | 13 | 🟢 |
 | W16 | Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec | ≤ 10⁻⁹ · exact | 1.83e-15 | 10 | 🟢 |
+| W17 | Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec | ≤ 10⁻⁹ · exact | 3.25e-15 | 6 | 🟢 |
+| W18 | Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude is refused; an emptied sketch goes; codec | ≤ 10⁻¹² · ≤ 10⁻⁹ · exact | 1.11e-15 | 6 | 🟢 |
+| W19 | Move / rotate / scale (G / R / S): Transform steps keep volume (×8 for scale 2), the scene and picking follow the body, face selection survives by name, undo exact; refusals untouched | ≤ 10⁻⁹ · exact | 3.22e-15 | 4 | 🟢 |
+| W20 | Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals | ≤ 10⁻⁹ · exact | 1.89e-15 | 3 | 🟢 |
+| W21 | Hide family (H, Shift+H, Alt+H, Ctrl+H): scene bodies and picking follow, selection drops hidden bodies, undo, codec round trip, refusals | exact | 0 | 2 | 🟢 |
+| W22 | Join (J) two open drawings into a closed square (extrudes to 1); offset (O) it by ¼ (2.25); pipe (P) along a drawn line (π r² L); refusals; codec byte-equal with kinds 13 / 14 / 15 | ≤ 10⁻⁹ · exact | 5.65e-16 | 5 | 🟢 |
 
 ## Walkthrough
 
@@ -150,7 +156,33 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (16
 | W16 | refused: blend across bodies (the selection spans Block1 and Block2 (one body at a time)) · self-combine (Block1 is picked twice (the target cannot be a tool)) · no tool · unknown body (no body named Extrude#99) · Separate as Q · second New; untouched | 0 | 🟢 |
 | W16 | Combine · Intersection (Block2 ∩ Block3): Block2 = its lower half (V = 0.495708), the slab consumed | 1.12e-15 | 🟢 |
 | W16 | save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; 2 bodies, volumes bit-equal | 0 | 🟢 |
-| W16 | a step kind beyond Combine is refused: a step has an unknown kind 11 (newer DraftingWorkspace?) | 0 | 🟢 |
+| W16 | a step kind beyond Pipe (16) is refused: a step has an unknown kind 16 (newer DraftingWorkspace?) | 0 | 🟢 |
+| W17 | Cut (Block1 by Line1): Cut#4 (Cut1) = 2, Block1 = 6 exact, both sound; Block1 keeps its key and Brass, the piece wears Studio | 6.66e-16 | 🟢 |
+| W17 | Remove (Cut1): 1 body left (6), Block1 active; undo → 2 bodies, redo → 1 | 0 | 🟢 |
+| W17 | Cut (Block1 by Circle1): core π/4 and the holed block 6 − π/4 exact (genus 1), cut from the active body | 3.25e-15 | 🟢 |
+| W17 | Cut (Loft1 by CharacterLine) seen along −z: 2 sound sheets (1 + 1 faces); Remove (Cut1) keeps the trimmed panel | 0 | 🟢 |
+| W17 | refused: no cutter (choose the cutter: focus a sketch step or select a curve) · misses (Cut#9: Cut: the cut misses the body (nothing on the outside)) · unknown body (no body named Extrude#99) · extrude as cutter · Remove unknown (no body named Ghost#1); untouched | 0 | 🟢 |
+| W17 | save → load → save byte-equal with Cut (11) and Remove (12): Cut 2 bodies · Bonnet 1 bodies, volumes bit-equal | 0 | 🟢 |
+| W18 | preview T on Line1 of the pentagram: removed piece between its two crossings (off 2.22044604925e-16), 2 pieces left; document unchanged | 2.22e-16 | 🟢 |
+| W18 | pentagram: extrude refused first (Extrude#2: Extrude: profile crosses itself: Line1 × Line3…); 5 × T → 10 lines, area 1.23792833147 vs shoelace 1.23792833147, extrude 1 → V 1.23792833147, sound | 1.11e-15 | 🟢 |
+| W18 | T on a star tip after the extrude: refused (Extrude#2: Extrude: open profile: Line10 ends at a point joined to 0 other curves); untouched | 0 | 🟢 |
+| W18 | Trim Circle1 of Circle1: the circle (another sketch than the rectangle) becomes the arc (2, 0.8) → (2, 0.2) inside it (off 2.22044604925e-16); undo → circle, redo → arc; Trim Line2 of Rectangle1 splits the right side (5 curves) | 2.22e-16 | 🟢 |
+| W18 | Trim Line1 of Line1: nothing crosses it → the curve and its emptied sketch step go; undo restores | 0 | 🟢 |
+| W18 | save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal | 0 | 🟢 |
+| W19 | Move (Block1): V 4 kept, sound; (1, 1) now empty, (11, 1) picks Block1; the picked top face Extrude#2.Cap(End) stays selected | 3.11e-15 | 🟢 |
+| W19 | Rotate (Block1) + Scale (Block1): V 32 = 8 × 4, sound; undo → 4, redo → 32 | 3.22e-15 | 🟢 |
+| W19 | refused: nothing picked · no body named Ghost#9 · Transform#6: Transform: the map is singular — document unchanged | 0 | 🟢 |
+| W20 | Duplicate (Block1): 2 bodies of 32; Duplicate#6 (Block1Copy1) active, selected and picked at (11, 7) | 1.89e-15 | 🟢 |
+| W20 | Paste (Block1): after X on Block1 the paste brings it back as Duplicate#8 (V 32 at the copied place) | 1.33e-15 | 🟢 |
+| W20 | refused: the copied state is gone (step Nowhere#99 was deleted) · pick the bodies to duplicate (mode 4) | 0 | 🟢 |
+| W21 | H hides Block1Copy1 (scene 2, unpickable, deselected) · Shift+H on the cylinder leaves it alone · Ctrl+H swaps → 2 shown · saved with Hidden, reload equal · Alt+H shows 3; undo → 2 · refused: pick the bodies to hide · nothing is hidden | 0 | 🟢 |
+| W21 | hiding never touches the model: 3 bodies, V 64 + π/4 throughout | 0 | 🟢 |
+| W19 | save → load → save byte-equal with Transform (13) and Duplicate (14) steps (placements and the paste source kept) | 0 | 🟢 |
+| W22 | Join (Line1, Line2): the open L refuses to extrude; joined (one sketch fewer) the square extrudes to V 1 | 0 | 🟢 |
+| W22 | Offset Line1 by 0.25: new sketch Offset1, extruded V 2.25 = 1.5²; the preview left the document alone | 1.97e-16 | 🟢 |
+| W22 | Pipe r 0.25 along Line2: tube V π r² L = π/8 exact, sound, active | 5.65e-16 | 🟢 |
+| W22 | refused: pick two or more sketches to join · Line1 feeds a later step (join into it instead) · Offset: the offset turns Line1 inside out (🚧 no loop clean-up) · Pipe#7: Pipe: radius must be positive · choose the path: focus a sketch step or select a curve | 0 | 🟢 |
+| W22 | save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

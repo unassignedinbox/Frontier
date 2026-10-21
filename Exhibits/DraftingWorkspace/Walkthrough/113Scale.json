@@ -1,0 +1,22 @@
+{
+  "Frame": 180,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Transform#3", "Caption": "Move1 · Transform", "Refused": false}, {"Label": "Transform#4", "Caption": "Rotate1 · Transform", "Refused": false}, {"Label": "Transform#5", "Caption": "Scale1 · Transform", "Refused": false}],
+  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 4, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 4.979996585, "Target": [1.99999997, 0.4999999702, 0.5], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0, 0], [2, 1]], "Refusal": ""},
+  "Undo": 5,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Scale cancelled",
+  "Viewport": [320, 160, 930, 730]
+}

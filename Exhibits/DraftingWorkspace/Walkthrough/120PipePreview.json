@@ -1,0 +1,22 @@
+{
+  "Frame": 462,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#2", "Caption": "Line2 · Sketch", "Refused": false}, {"Label": "Extrude#3", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#4", "Caption": "Offset1 · Sketch", "Refused": false}, {"Label": "Sketch#5", "Caption": "Line1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 1, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#2", "Combination": 0},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0, 2], [2, 2]], "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "View Isometric",
+  "Viewport": [320, 160, 930, 730]
+}
