@@ -39,14 +39,16 @@ enum class FeatureStepKind : uint8_t
     Network       = 7,                                                                       // Panel through a SpaceCurve network, Gordon / Coons (V5)
     Mirror        = 8,                                                                       // Mirror image of every panel so far through a plane (V7)
     Close         = 9,                                                                       // Plane caps on the planar rim loops → solid (V7)
+    Combine       = 10,                                                                      // Boolean between two bodies; the tool body is consumed
 };
 
 enum class FeatureCombination : uint8_t
 {
-    New          = 0,                                                                        // First body (later: union)
-    Union        = 1,                                                                        // Current ∪ tool
-    Difference   = 2,                                                                        // Current − tool
-    Intersection = 3,                                                                        // Current ∩ tool
+    New          = 0,                                                                        // First body (later: union with the target)
+    Union        = 1,                                                                        // Target ∪ tool
+    Difference   = 2,                                                                        // Target − tool
+    Intersection = 3,                                                                        // Target ∩ tool
+    Separate     = 4,                                                                        // A new body of its own (Plasticity "new body")
 };
 
 enum class FeatureStepStatus : uint8_t
@@ -113,6 +115,8 @@ struct FeatureStep
     std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit
     std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve labels in order · Network: its curves
     int                            Continuity     = 0;                                       // [-]   - Loft: 0 G0 · 1 G1 · 2 G2 to panels sharing an end section
+    std::string                    Target         = {};                                      // [-]   - Extrude / revolve Boolean, blend, face operation, combine: body key (empty = active body)
+    std::string                    Tool           = {};                                      // [-]   - Combine: body key consumed by the Boolean
 };
 
 struct FeatureTree
@@ -133,13 +137,25 @@ struct FeatureStepReport
     SketchSolveOutcome             Solve        = {};                                        // [-]  - Sketch steps
     BodyToken                      Body         = {};                                        // [-]  - Body after the step (kept one when refused)
     BodyNaming                     Naming       = {};                                        // [-]  - Names of that body
+    std::string                    Target       = {};                                        // [-]  - Key of that body (empty before any body)
     double                         Milliseconds = 0.0;                                       // [ms] - Step time
+};
+
+// 📝 One body of the regenerated part. Key = label of the step that created it ("Extrude#2", "Loft#12"): stable across
+//    regenerations, so appearance and selections can name bodies the way they name faces.
+struct RegeneratedBody
+{
+    std::string Key    = {};                                                                 // [-] - Creating step label
+    BodyToken   Body   = {};                                                                 // [-] - Body token
+    BodyNaming  Naming = {};                                                                 // [-] - Its persistent names
 };
 
 struct RegenerationOutcome
 {
-    BodyToken                          Body         = {};                                    // [-]  - Final body
+    BodyToken                          Body         = {};                                    // [-]  - Active body (the one the last body step built or changed)
     BodyNaming                         Naming       = {};                                    // [-]  - Its persistent names
+    std::vector<RegeneratedBody>       Bodies       = {};                                    // [-]  - Every body, in creation order
+    std::string                        Active       = {};                                    // [-]  - Key of the active body
     std::vector<FeatureStepReport>     Steps        = {};                                    // [-]  - One per step
     std::map<std::string, SketchModel> Sketches     = {};                                    // [-]  - Solved sketch per label
     std::map<std::string, CurveFitOutcome> Curves   = {};                                    // [-]  - Fitted (and edited) curve per SpaceCurve label
@@ -157,6 +173,9 @@ struct RegenerationOutcome
 //    exact → source → geometric. A refused step (no solution, unresolvable reference, modeller refusal) is marked and the
 //    previous body is kept; later steps still run. CaptureCondition (authoring): store each resolved reference's
 //    signature in the tree so later regenerations can rebind geometrically.
+//    Bodies: the first sweep (or a Separate one) starts a body keyed by its step label; Booleans, blends and face
+//    operations act on Step.Target (empty: the active body, the last one built or changed); panels form one body of their
+//    own; Combine merges Step.Tool into Step.Target and consumes the tool.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false);
 
 [[nodiscard]] double EvaluateFeatureValue(const FeatureTree& Tree, const FeatureValue& Value);

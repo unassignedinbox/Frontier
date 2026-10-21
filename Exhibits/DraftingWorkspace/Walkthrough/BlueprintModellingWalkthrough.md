@@ -12,7 +12,7 @@
 | 24 | `undo == 1` | 1 | 🟢 |
 | 25 | `image-planes == 3` | 3 | 🟢 |
 | 26 | `curve-fit-worst < 0.0002` | 0.0001931273581 | 🟢 |
-| 27 | `status contains Imported 24 curve(s)` | Imported 24 curve(s) from Experimental/VehicleSurfacing/Samples/BmwM3E90Sections.toml �... | 🟢 |
+| 27 | `status contains Imported 24 curve(s)` | Imported 24 curve(s) from Experimental/VehicleSurfacing/Samples/BmwM3E90Sections.toml ... | 🟢 |
 | 30 | `orthographic == 1` | 1 | 🟢 |
 | 37 | `image-planes-drawn == 3` | 3 | 🟢 |
 | 53 | `image-planes-drawn == 0` | 0 | 🟢 |

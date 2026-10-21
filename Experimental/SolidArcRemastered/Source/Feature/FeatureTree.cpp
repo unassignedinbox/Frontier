@@ -121,10 +121,43 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     const auto Started = Clock::now();
     RegenerationOutcome Outcome;
     std::map<std::string, SolvedSketch> Sketches;
-    BodyToken  Current;
-    BodyNaming Naming;
-    std::vector<TreePanel> Panels;                                                           // Panels of the current body (when it is panel-built)
-    std::string            ClosedBy;                                                         // Close step that capped them
+    std::vector<RegeneratedBody> Bodies;                                                     // Every body so far, in creation order
+    int         Active    = -1;                                                              // Index of the active body (−1: none yet)
+    int         PanelBody = -1;                                                              // Index of the panel-built body (−1: none)
+    int         Target    = -1;                                                              // Index Current / Naming were loaded from
+    BodyToken   Current;                                                                     // Working copy of the step's body
+    BodyNaming  Naming;                                                                      // Its names
+    std::string StepLabel;                                                                   // Label of the step being replayed
+    std::vector<TreePanel> Panels;                                                           // Panels of the panel-built body
+    std::string            ClosedBy;                                                         // Close / Combine step that ended them
+
+    auto FindBody = [&](const std::string& Key) -> int
+    {
+        for (size_t Index = 0; Index < Bodies.size(); ++Index) if (Bodies[Index].Key == Key) return static_cast<int>(Index);
+        return -1;
+    };
+    // Loads the body a step acts on (empty key → the active body) into Current / Naming; false when there is none.
+    auto Load = [&](const std::string& Key) -> bool
+    {
+        Target = Key.empty() ? Active : FindBody(Key);
+        if (Target < 0) return false;
+        Current = Bodies[Target].Body;
+        Naming  = Bodies[Target].Naming;
+        return true;
+    };
+    // Writes the working copy back; the changed body becomes the active one.
+    auto Store = [&]()
+    {
+        Bodies[Target].Body   = Current;
+        Bodies[Target].Naming = Naming;
+        Active = Target;
+    };
+    // The working copy becomes a new body keyed by the current step label, and the active one.
+    auto Create = [&]()
+    {
+        Bodies.push_back({ StepLabel, Current, Naming });
+        Target = Active = static_cast<int>(Bodies.size()) - 1;
+    };
 
     // Mirror planes ahead of time: SpaceCurves ending on one leave it perpendicularly (the halves then meet G1).
     std::vector<MirrorPlane> Planes;
@@ -153,14 +186,23 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         }
         Naming  = NamePanelBody(Partition, Assembly.Body, Faces, Names);
         Current = Assembly.Body;
+        if (PanelBody < 0)
+        {
+            Create();
+            PanelBody = Target;
+        }
+        else
+        {
+            Target = PanelBody;
+            Store();
+        }
         return {};
     };
 
-    // A new panel may join only a panel-built, still open body.
+    // A new panel joins the panel-built body (its own body beside any sketch-built ones) while that is still open.
     auto PanelJoinRefusal = [&](const char* Verb) -> std::string
     {
         if (!ClosedBy.empty()) return std::string(Verb) + ": the panels are already closed by " + ClosedBy;
-        if (Current.PresentCondition() && Panels.empty()) return std::string(Verb) + ": panels cannot join a body built from sketch features yet (🚧)";
         return {};
     };
 
@@ -172,6 +214,11 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Report.Kind  = Step.Kind;
         auto Refuse = [&](const std::string& Reason) { Report.Status = FeatureStepStatus::Refused; Report.Refusal = Reason; };
         const char* Verb = FeatureStepKindLabel(Step.Kind);
+        StepLabel = Step.Label;
+        // Steps that touch no body report the active one.
+        Target  = Active;
+        Current = Active >= 0 ? Bodies[Active].Body : BodyToken{};
+        Naming  = Active >= 0 ? Bodies[Active].Naming : BodyNaming{};
 
         switch (Step.Kind)
         {
@@ -222,26 +269,32 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             }
             if (!Sweep.Refusal.empty()) { Refuse(Sweep.Refusal); break; }
             const BodyNaming ToolNaming = NameSweptBody(Partition, Sweep, Step.Label);
-            if (!Current.PresentCondition())
+            // A separate sweep (Plasticity "new body"), or the first body of the part, starts a body of its own.
+            const bool SeparateCondition = Step.Combination == FeatureCombination::Separate;
+            if (SeparateCondition || Bodies.empty())
             {
-                if (Step.Combination != FeatureCombination::New && Step.Combination != FeatureCombination::Union) { Refuse(std::string(Verb) + ": nothing to " + FeatureCombinationLabel(Step.Combination) + " with"); break; }
+                if (!SeparateCondition && Step.Combination != FeatureCombination::New && Step.Combination != FeatureCombination::Union) { Refuse(std::string(Verb) + ": nothing to " + FeatureCombinationLabel(Step.Combination) + " with"); break; }
                 Current = Sweep.Body;
                 Naming  = ToolNaming;
+                Create();
                 break;
             }
+            if (!Load(Step.Target)) { Refuse(std::string(Verb) + ": no body named " + Step.Target); break; }
             const BooleanOperation Operation = Step.Combination == FeatureCombination::Difference ? BooleanOperation::Difference
                                              : Step.Combination == FeatureCombination::Intersection ? BooleanOperation::Intersection : BooleanOperation::Union;
             const BooleanOutcome Boolean = ComputeBoolean(Partition, Current, Sweep.Body, Operation);
             if (!Boolean.Refusal.empty()) { Refuse(Boolean.Refusal); break; }
             Naming  = NameBooleanBody(Partition, Boolean.Body, Boolean, Naming, ToolNaming);
             Current = Boolean.Body;
+            Store();
             break;
         }
         case FeatureStepKind::Blend:
         case FeatureStepKind::FaceOperation:
         {
             // ③ Resolve references on the current body; any refusal refuses the step (never a partial selection).
-            if (!Current.PresentCondition()) { Refuse(std::string(Verb) + ": no body yet"); break; }
+            if (Bodies.empty()) { Refuse(std::string(Verb) + ": no body yet"); break; }
+            if (!Load(Step.Target)) { Refuse(std::string(Verb) + ": no body named " + Step.Target); break; }
             if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet) { Refuse(std::string(Verb) + ": the body is a sheet (🚧 blends / face operations on sheets)"); break; }
             std::vector<uint32_t> Slots;
             for (TopologyReference& Reference : Step.References)
@@ -297,6 +350,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 if (!Blend.Refusal.empty()) { Refuse(Blend.Refusal); break; }
                 Naming  = NameBlendedBody(Partition, Blend.Body, Blend, Naming, Step.Label);
                 Current = Blend.Body;
+                Store();
                 break;
             }
             FaceOperationSettings Settings;
@@ -307,6 +361,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (!Change.Refusal.empty()) { Refuse(Change.Refusal); break; }
             Naming  = NameChangedBody(Partition, Change.Body, Change, Naming, Step.Label);
             Current = Change.Body;
+            Store();
             break;
         }
         case FeatureStepKind::SpaceCurve:
@@ -444,15 +499,54 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             ClosedBy = Step.Label;
             break;
         }
+        case FeatureStepKind::Combine:
+        {
+            // ⑩ Boolean between two bodies of the part (Plasticity Q): the target keeps its key, the tool is consumed.
+            if (Step.Combination != FeatureCombination::Union && Step.Combination != FeatureCombination::Difference && Step.Combination != FeatureCombination::Intersection)
+            {
+                Refuse("Combine: choose Union, Difference or Intersection");
+                break;
+            }
+            const int ToolIndex = FindBody(Step.Tool);
+            if (!Load(Step.Target)) { Refuse("Combine: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            if (ToolIndex < 0) { Refuse("Combine: no body named " + Step.Tool); break; }
+            if (ToolIndex == Target) { Refuse("Combine: " + Step.Tool + " cannot combine with itself"); break; }
+            if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet || Partition.Bodies.Resolve(Bodies[ToolIndex].Body).Category == BodyCategory::Sheet)
+            {
+                Refuse("Combine: sheet bodies cannot combine yet (🚧 close the panels first)");
+                break;
+            }
+            const BooleanOperation Operation = Step.Combination == FeatureCombination::Difference ? BooleanOperation::Difference
+                                             : Step.Combination == FeatureCombination::Intersection ? BooleanOperation::Intersection : BooleanOperation::Union;
+            const BooleanOutcome Boolean = ComputeBoolean(Partition, Current, Bodies[ToolIndex].Body, Operation);
+            if (!Boolean.Refusal.empty()) { Refuse(Boolean.Refusal); break; }
+            Naming  = NameBooleanBody(Partition, Boolean.Body, Boolean, Naming, Bodies[ToolIndex].Naming);
+            Current = Boolean.Body;
+            Store();
+            if (ToolIndex == PanelBody) ClosedBy = Step.Label;
+            Bodies.erase(Bodies.begin() + ToolIndex);
+            for (int* Index : { &Target, &Active, &PanelBody })
+            {
+                if (*Index == ToolIndex) *Index = -1;
+                else if (*Index > ToolIndex) --*Index;
+            }
+            break;
+        }
         }
         Report.Body         = Current;
         Report.Naming       = Naming;
+        Report.Target       = Target >= 0 ? Bodies[Target].Key : std::string();
         Report.Milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - StepStarted).count();
         Outcome.Refused    += Report.Status == FeatureStepStatus::Refused ? 1 : 0;
         Outcome.Steps.push_back(std::move(Report));
     }
-    Outcome.Body         = Current;
-    Outcome.Naming       = Naming;
+    if (Active >= 0)
+    {
+        Outcome.Body   = Bodies[Active].Body;
+        Outcome.Naming = Bodies[Active].Naming;
+        Outcome.Active = Bodies[Active].Key;
+    }
+    Outcome.Bodies       = Bodies;
     for (const TreePanel& Panel : Panels) Outcome.Panels[Panel.Name] = Panel.Panel.Surface;
     Outcome.Milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - Started).count();
     return Outcome;
@@ -472,6 +566,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Network:       return "Network";
     case FeatureStepKind::Mirror:        return "Mirror";
     case FeatureStepKind::Close:         return "Close";
+    case FeatureStepKind::Combine:       return "Combine";
     }
     return "?";
 }
@@ -484,6 +579,7 @@ const char* FeatureCombinationLabel(FeatureCombination Combination) noexcept
     case FeatureCombination::Union:        return "Union";
     case FeatureCombination::Difference:   return "Difference";
     case FeatureCombination::Intersection: return "Intersection";
+    case FeatureCombination::Separate:     return "New body";
     }
     return "?";
 }
