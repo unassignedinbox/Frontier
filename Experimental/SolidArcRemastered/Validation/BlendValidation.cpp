@@ -146,7 +146,7 @@ namespace
                 const Vector3 Centre = EvaluateCurve(Sheet.Spine, Foot).Position;
                 for (int Side = 0; Side < 2; ++Side)
                 {
-                    const double Residual = std::fabs(SurfaceDistance(FaceSurface(Partition, Sheet.Faces[Side]), Centre) - Sheet.Radius);
+                    const double Residual = std::fabs(SurfaceDistance(FaceSurface(Partition, Sheet.Faces[Side]), Centre) - MeasureSheetRadius(Sheet, Foot));
                     Tally(BallGate, Residual / Scale, Residual <= Limit);
                     PassedCondition = PassedCondition && Residual <= Limit;
                 }
@@ -169,7 +169,7 @@ namespace
                     for (int Corner : Complex.Triangles[Triangle])
                     {
                         const Vector3 Position = Complex.Positions[Corner];
-                        const double  Residual = std::fabs(Distance(Position, EvaluateCurve(Sheet.Spine, ProjectOntoCurve(Sheet.Spine, Position, 0.0)).Position) - Sheet.Radius);
+                        const double  Residual = std::fabs(MeasureEnvelopeResidual(Sheet, Position));   // variable: distance to the cone of balls
                         Tally(BallGate, Residual / Scale, Residual <= Limit);
                         PassedCondition = PassedCondition && Residual <= Limit;
                     }
@@ -227,7 +227,16 @@ namespace
                         const bool Original = Sheet.Faces[0] == Own[0] && Sheet.Faces[1] == Own[1];
                         const double Setback  = Original ? Distance(Position, EvaluateCurve(Source, ProjectOntoCurve(Source, Position, Partition.Edges.Resolve(Sheet.Edge).IntervalLow)).Position)
                                                          : Distance(Position, EvaluateCurve(Sheet.Spine, ProjectOntoCurve(Sheet.Spine, Position, 0.0)).Position);
-                        const double Residual = std::fabs(Setback - (Original ? Settings.Size : Sheet.Radius));
+                        // Variable chamfer: the setback interpolates linearly from Size (start vertex) to EndSize (end vertex).
+                        double Expected = Original ? Settings.Size : Sheet.Radius;                     // [len]
+                        if (Original && Settings.EndSize)
+                        {
+                            const EdgeProfile& Range = Partition.Edges.Resolve(Sheet.Edge);
+                            const Vector3 Start = Partition.Vertices.Resolve(Range.Start).Position, Finish = Partition.Vertices.Resolve(Range.End).Position;
+                            const double  Fraction = Dot(Position - Start, Finish - Start) / Dot(Finish - Start, Finish - Start);
+                            Expected = Settings.Size + (*Settings.EndSize - Settings.Size) * Fraction;
+                        }
+                        const double Residual = std::fabs(Setback - Expected);
                         Tally(ContactGate, Residual / Scale, Residual <= Limit);
                         PassedCondition = PassedCondition && Residual <= Limit;
                     }

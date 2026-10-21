@@ -30,12 +30,14 @@ enum class BlendProfile : uint8_t
     Chamfer = 1,                                                                             // Chord of the same ball (ruled)
 };
 
-// 📝 Size is the ball radius for a fillet and the equal setback along each face for a chamfer.
+// 📝 Size is the ball radius for a fillet and the equal setback along each face for a chamfer. EndSize makes the blend
+//    variable: the size runs linearly from Size at each edge's start vertex to EndSize at its end vertex.
 struct BlendSettings
 {
-    BlendProfile Profile             = BlendProfile::Fillet;                                 // [-]   - Cross-section
-    double       Size                = 0.1;                                                  // [len] - Radius / setback
-    bool         TangentChainEnabled = false;                                                // [-]   - Grow the edge set along G1 chains first
+    BlendProfile          Profile             = BlendProfile::Fillet;                        // [-]   - Cross-section
+    double                Size                = 0.1;                                         // [len] - Radius / setback (at the start vertex)
+    bool                  TangentChainEnabled = false;                                       // [-]   - Grow the edge set along G1 chains first
+    std::optional<double> EndSize             = {};                                          // [len] - Size at the end vertex (empty = constant)
 };
 
 // 💡 Everything about one blended edge that does not depend on its neighbours. Spine and both contact curves share
@@ -57,6 +59,10 @@ struct EdgeBlendSheet
     double          CrossCentre     = 0.0;                                                   // [-]   - Other chart coordinate at mid-section
     double          Alignment       = 1.0;                                                   // [-]   - +1 if τ runs along the edge, −1 against
     double          MaxResidual     = 0.0;                                                   // [len] - Worst ball / foot residual sampled
+    double          RadiusRate      = 0.0;                                                   // [-]   - dr/dτ: r(τ) = Radius + RadiusRate·τ (variable)
+    // ⚠️ A variable sheet (RadiusRate ≠ 0) has a tilted line spine; its contact lines are unit-speed with their own τ, so
+    //    Contacts[i](τ) is NOT the foot of Spine(τ) there. Every same-τ consumer refuses variable sheets.
+    [[nodiscard]] bool VariableCondition() const noexcept { return RadiusRate != 0.0; }
 };
 
 struct EdgeBlendSheetOutcome
@@ -83,6 +89,14 @@ struct SupportOverride
     FaceToken Face = {};                                                                     // [-] - Face the ball rolls onto
 };
 [[nodiscard]] EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, EdgeToken Edge, const BlendSettings& Settings, const SupportOverride& Override = {});
+
+// Ball radius at spine parameter τ: Radius + RadiusRate·τ.
+[[nodiscard]] double MeasureSheetRadius(const EdgeBlendSheet& Sheet, double τ) noexcept;
+
+// 📝 Distance of Position from the envelope of the sheet's balls, min_τ (|X − C(τ)| − r(τ)); 0 on a fillet carrier. For
+//    a line spine with |r′| < 1 the minimum is closed-form: ρ·√(1 − r′²) − r(τ_X), ρ the distance from the spine and
+//    τ_X the foot parameter (constant radius: ρ − r).
+[[nodiscard]] double MeasureEnvelopeResidual(const EdgeBlendSheet& Sheet, Vector3 Position) noexcept;
 
 // Unwrapped chart reference of a sheet at spine parameter τ (anchor for SP-curve fitting on the blend face).
 [[nodiscard]] Vector2 ResolveSheetChart(const EdgeBlendSheet& Sheet, double τ) noexcept;

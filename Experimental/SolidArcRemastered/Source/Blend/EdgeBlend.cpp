@@ -385,6 +385,7 @@ namespace
                     else if (!AtStart && !AtEnd) Far = Edge;
                 }
                 if (!Far.PresentCondition() || !Ends[0].PresentCondition() || !Ends[1].PresentCondition() || !SmoothEdgeCondition(Partition, Far)) continue;
+                if (Sheet.VariableCondition()) return Subject + "variable size beside a tangent far edge (smooth overflow, 🚧)";
                 int Over = 0;                                                                // [-] - Blend ends past the far edge
                 for (int End = 0; End < 2; ++End)
                 {
@@ -638,6 +639,11 @@ namespace
             }
             for (const auto& End : Ends) (SheetOf(End.first) ? Blended : Sharp).push_back(End);
             if (Blended.empty()) return {};
+            // ⚠️ A variable sheet only ends in a plain cap (its contacts do not share the spine's τ, see VariableCondition).
+            for (const auto& End : Blended)
+            {
+                if (SheetOf(End.first)->VariableCondition() && (Blended.size() != 1 || Ends.size() != 3)) return "variable size where blends meet or at a vertex of degree ≠ 3 (🚧)";
+            }
             const bool Convex = SheetOf(Blended.front().first)->ConvexCondition;
             for (const auto& End : Blended)
             {
@@ -674,6 +680,7 @@ namespace
             for (const auto& End : Blended)
             {
                 const EdgeBlendSheet& Sheet = *SheetOf(End.first);
+                if (Sheet.VariableCondition()) return false;
                 const double τ = ProjectOntoCurve(Sheet.Contacts[0], Position, 0.0);         // [-] - Spine τ of the pinch
                 Worst = std::max({ Worst, Distance(EvaluateCurve(Sheet.Contacts[0], τ).Position, Position), Distance(EvaluateCurve(Sheet.Contacts[1], τ).Position, Position) });
                 if (Worst > Agreement) return false;
@@ -1168,6 +1175,7 @@ namespace
                 const CliffCorner Corner = DetectCliff(Sheet, Vertex, Sharp, Support, PositionOf(Feet[Side]), nullptr);
                 if (!Corner.Refusal.empty()) return Corner.Refusal;
                 if (Corner.Point < 0) continue;
+                if (Sheet.VariableCondition()) return "variable size with a cliff or notch overflow (🚧)";
                 if (!RecordCliff(End.first, End.second, Side, Sharp, Support, Corner)) return "cliff overflow: the two blend ends see different cliffs";
                 Feet[Side]     = Corner.Point;
                 Overflow[Side] = true;

@@ -98,6 +98,19 @@ Vector3 ProjectPointOntoSurface(const SurfaceGeometry& Surface, Vector3 Position
     return EvaluateSurface(Surface, ProjectOntoSurface(Surface, Position, { 0.0, 0.0 })).Position;
 }
 
+double MeasureSheetRadius(const EdgeBlendSheet& Sheet, double τ) noexcept
+{
+    return Sheet.Radius + Sheet.RadiusRate * τ;
+}
+
+double MeasureEnvelopeResidual(const EdgeBlendSheet& Sheet, Vector3 Position) noexcept
+{
+    const double τ     = ProjectOntoCurve(Sheet.Spine, Position, 0.0);                       // [-]   - Foot on the spine
+    const double Reach = Distance(Position, EvaluateCurve(Sheet.Spine, τ).Position);         // [len] - ρ
+    if (!Sheet.VariableCondition()) return Reach - Sheet.Radius;
+    return Reach * std::sqrt(1.0 - Sheet.RadiusRate * Sheet.RadiusRate) - MeasureSheetRadius(Sheet, τ);
+}
+
 Vector2 ResolveSheetChart(const EdgeBlendSheet& Sheet, double τ) noexcept
 {
     if (Sheet.SpineAxis == 0) return { τ, Sheet.CrossCentre };
@@ -179,6 +192,93 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
             if (std::fabs(Angle - Sheet.Dihedral) > 1.0e-9) return Refuse("chamfer on a variable-angle edge (setback-to-ball mapping not constant, 🚧)");
         }
         Sheet.Radius = Settings.Size * std::tan(0.5 * Sheet.Dihedral);
+    }
+
+    // ②″ Variable size: r runs linearly from the start vertex to the end vertex (straight edge between planes only).
+    if (Settings.EndSize && !(*Settings.EndSize > 0.0)) return Refuse("blend end size must be positive");
+    if (Settings.EndSize && std::fabs(*Settings.EndSize - Settings.Size) > 1.0e-12 * Scale)
+    {
+        // 📝 r(s) linear along the edge makes the ball centres C(s) — r(s) from both planes, in the normal plane of E(s) —
+        //    a line, and the envelope of the balls the exact cone tangent to both planes along the contact lines, which
+        //    meet at the apex (r = 0) on the edge line. A chamfer (r = d·tan(θ/2), θ constant between planes) is the plane
+        //    through the two contact lines. The spine τ is arc length from the start centre; the contact lines are
+        //    unit-speed with their own τ (see EdgeBlendSheet::VariableCondition).
+        if (Override.Side >= 0) return Refuse("variable size with a smooth overflow (🚧)");
+        const auto* Line = std::get_if<StraightLine>(&Carrier);
+        const PlaneSurface* Planes[2] = { std::get_if<PlaneSurface>(&Supports[0]), std::get_if<PlaneSurface>(&Supports[1]) };
+        if (!Line || !Planes[0] || !Planes[1]) return Refuse("variable size on a curved edge or a curved support (🚧)");
+        const double  Factor   = Settings.Profile == BlendProfile::Chamfer ? std::tan(0.5 * Sheet.Dihedral) : 1.0;   // [-] - r / size
+        const double  Radii[2] = { Settings.Size * Factor, *Settings.EndSize * Factor };     // [len] - r at start, end vertex
+        const Vector3 Ends[2]  = { Partition.Vertices.Resolve(Profile.Start).Position, Partition.Vertices.Resolve(Profile.End).Position };
+        const Vector3 Along    = Normalize(Ends[1] - Ends[0]);                                // [-]   - Edge direction, start → end
+        // Ball centre: n₀·X = ℓ₀, n₁·X = ℓ₁ (offset planes), t·X = t·E (normal plane), by the triple-product inverse.
+        const auto CentreAt = [&](Vector3 Point, double Radius)
+        {
+            double Levels[2];
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const double Shift = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Radius;   // [len]
+                Levels[Side] = Dot(Planes[Side]->Frame.ZAxis, Planes[Side]->Frame.Origin) + Shift;
+            }
+            const Vector3& A = Planes[0]->Frame.ZAxis;
+            const Vector3& B = Planes[1]->Frame.ZAxis;
+            return (Cross(B, Along) * Levels[0] + Cross(Along, A) * Levels[1] + Cross(A, B) * Dot(Along, Point)) * (1.0 / Dot(A, Cross(B, Along)));
+        };
+        const Vector3 Centres[2] = { CentreAt(Ends[0], Radii[0]), CentreAt(Ends[1], Radii[1]) };
+        const double  Span       = Distance(Centres[0], Centres[1]);                         // [len] - Spine length
+        Sheet.Radius     = Radii[0];
+        Sheet.RadiusRate = (Radii[1] - Radii[0]) / Span;
+        if (!(std::fabs(Sheet.RadiusRate) < 1.0 - 1.0e-9)) return Refuse("size changes faster than the edge allows (|dr/ds| ≥ 1)");
+        const StraightLine Spine{ Centres[0], (Centres[1] - Centres[0]) * (1.0 / Span) };
+        Sheet.Spine = Spine;
+        Vector3 Feet[2][2];                                                                  // [len] - [side][end] contact points
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            for (int End = 0; End < 2; ++End) Feet[Side][End] = ProjectPointOntoSurface(Supports[Side], Centres[End]);
+            Sheet.Contacts[Side] = StraightLine{ Feet[Side][0], Normalize(Feet[Side][1] - Feet[Side][0]) };
+            const double Shift = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Radii[0];
+            if (const std::optional<SurfaceGeometry> Offset = OffsetSurface(Supports[Side], Shift)) Sheet.Offsets[Side] = *Offset;
+        }
+        Sheet.Alignment = Dot(Spine.Direction, Along) >= 0.0 ? 1.0 : -1.0;
+        const Vector3 Middle  = (Centres[0] + Centres[1]) * 0.5;                              // [len] - Mid-section ball centre
+        const Vector3 MiddleA = (Feet[0][0] + Feet[0][1]) * 0.5, MiddleB = (Feet[1][0] + Feet[1][1]) * 0.5;
+        const Vector3 Towards = Normalize(MiddleA + MiddleB - Middle * 2.0);                 // [-] - Towards the edge side
+        Sheet.SpineAxis = -1;
+        if (Settings.Profile == BlendProfile::Fillet)
+        {
+            // Cone about the spine: half-angle β with sin β = r′, radius at the start centre r₀ / cos β, slope tan β; the
+            // frame's X faces the edge so the face sits around 𝑢 = 0 (chart reference (0, 0)).
+            const double Cosine = std::sqrt(1.0 - Sheet.RadiusRate * Sheet.RadiusRate);      // [-] - cos β
+            const Vector3 Facing = Normalize(Towards - Spine.Direction * Dot(Towards, Spine.Direction));
+            Sheet.Surface = ConeSurface{ ConstructFrame(Centres[0], Spine.Direction, Facing), Radii[0] / Cosine, Sheet.RadiusRate / Cosine };
+        }
+        else
+        {
+            const Vector3 Normal = Cross(Feet[0][1] - Feet[0][0], Feet[1][0] - Feet[0][0]);   // [len²] - Both contact lines lie in it
+            Sheet.Surface = PlaneSurface{ ConstructFrame(Feet[0][0], Normal, Feet[0][1] - Feet[0][0]) };
+        }
+        // ⑦″ Residuals: feet on their supports at distance r(τ) from the ball, both contact lines on the carrier, the
+        //    carrier tangent to the balls (fillet: on the envelope).
+        for (int Sample = 0; Sample <= ResidualSamples; ++Sample)
+        {
+            const double  τ    = Span * Sample / ResidualSamples;
+            const Vector3 Ball = EvaluateCurve(Spine, τ).Position;
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const Vector3 Foot = ProjectPointOntoSurface(Supports[Side], Ball);
+                Sheet.MaxResidual = std::max({ Sheet.MaxResidual, std::fabs(Distance(Foot, Ball) - MeasureSheetRadius(Sheet, τ)), Distance(EvaluateCurve(Sheet.Contacts[Side], ProjectOntoCurve(Sheet.Contacts[Side], Foot, 0.0)).Position, Foot),
+                                               Distance(ProjectPointOntoSurface(Sheet.Surface, Foot), Foot) });
+                if (Settings.Profile == BlendProfile::Fillet) Sheet.MaxResidual = std::max(Sheet.MaxResidual, std::fabs(MeasureEnvelopeResidual(Sheet, Foot)));
+            }
+        }
+        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse("variable rolling-ball residual " + std::to_string(Sheet.MaxResidual) + " exceeds the allowance");
+        // ⑧″ Orientation as in ⑧, probed at the mid-section.
+        const Vector3 Probe   = Settings.Profile == BlendProfile::Fillet ? ProjectPointOntoSurface(Sheet.Surface, Middle + Towards * MeasureSheetRadius(Sheet, 0.5 * Span))
+                                                                         : (MiddleA + MiddleB) * 0.5;
+        const Vector3 Natural = EvaluateSurfaceNormal(Sheet.Surface, ProjectOntoSurface(Sheet.Surface, Probe, { 0.0, 0.0 }));
+        Sheet.Sense = ((Dot(Natural, Position - Probe) > 0.0) == Sheet.ConvexCondition) ? Orientation::Forward : Orientation::Reversed;
+        Outcome.Sheet = Sheet;
+        return Outcome;
     }
 
     // ②′ Smooth overflow: the ball rolls onto the face across the support's tangent far edge.

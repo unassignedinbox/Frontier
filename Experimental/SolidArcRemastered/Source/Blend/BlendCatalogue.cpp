@@ -10,6 +10,7 @@
 #include "Construction/PrimitiveConstruction.h"
 
 #include <algorithm>
+#include <array>
 #include <numbers>
 
 namespace Frontier::SolidArcRemastered
@@ -245,6 +246,130 @@ namespace
                 Kept = std::max(Section.Radius - Length(P - Section.Centre), Wedge);
             }
             return std::min({ Box, Rounded, Kept });
+        };
+    }
+
+    // ---- Variable blends ---------------------------------------------------------------------------------------------
+    // 📝 Front top edge of the 4 × 3 × 2 box (y = 0, z = 2, x ∈ [0, L]), size linear from Low at x = 0 to High at x = L. The
+    //    ball centres C(x) = (x, r, 2 − r) form a line; the fillet is the cone of the balls with apex P = (x*, 0, 2),
+    //    x* = −Low·L/(High − Low), on the edge line. By the divergence theorem with the origin at P the cone (generators
+    //    through P) and both box faces (they contain P) contribute nothing, so ΔV = −(x*·A₀ + (L − x*)·A_L)/3 with A the
+    //    corner area of each end cap. A is ½|∫ x̂·((Q − E) × Q′) dψ| along the exact cone ∩ end-plane arc, Q(ψ) on the
+    //    generator of angle ψ — an analytic integrand, integrated by 64-point Gauss–Legendre to rounding.
+    struct VariableCone
+    {
+        Vector3 Apex = {}, Axis = {}, First = {}, Second = {};                               // [len], [-] - Apex, axis, ⟂ basis
+        double  Sine = 0.0, Cosine = 1.0;                                                    // [-]        - sin β, cos β
+    };
+
+    [[nodiscard]] VariableCone MeasureVariableCone(double Length, double Low, double High)
+    {
+        VariableCone Cone;
+        const double Rise = High - Low;                                                      // [len] - Radius change
+        Cone.Apex   = { -Low * Length / Rise, 0.0, 2.0 };
+        Cone.Axis   = Normalize(Vector3{ Length, Rise, -Rise }) * (Rise > 0.0 ? 1.0 : -1.0); // towards growing radius
+        Cone.Sine   = std::fabs(Rise) / std::sqrt(Length * Length + 2.0 * Rise * Rise);
+        Cone.Cosine = std::sqrt(1.0 - Cone.Sine * Cone.Sine);
+        Cone.First  = Normalize(Cross(Cone.Axis, Vector3{ 1.0, 0.0, 0.0 }));
+        Cone.Second = Cross(Cone.Axis, Cone.First);
+        return Cone;
+    }
+
+    template <typename Integrand>
+    [[nodiscard]] double IntegrateGaussLegendre(double Low, double High, const Integrand& Function)
+    {
+        constexpr int Order = 64;
+        static const auto Rule = []
+        {
+            std::array<std::pair<double, double>, Order> Nodes{};                            // (abscissa, weight)
+            for (int Index = 0; Index < Order; ++Index)
+            {
+                double X = std::cos(std::numbers::pi * (Index + 0.75) / (Order + 0.5));      // [-] - Tricomi start
+                double Slope = 0.0;
+                for (int Step = 0; Step < 100; ++Step)
+                {
+                    double Previous = 1.0, Current = X;                                      // P₀, P₁
+                    for (int Degree = 2; Degree <= Order; ++Degree)
+                    {
+                        const double Next = ((2.0 * Degree - 1.0) * X * Current - (Degree - 1.0) * Previous) / Degree;
+                        Previous = Current; Current = Next;
+                    }
+                    Slope = Order * (X * Current - Previous) / (X * X - 1.0);
+                    const double Shift = Current / Slope;
+                    X -= Shift;
+                    if (std::fabs(Shift) < 1.0e-16) break;
+                }
+                Nodes[Index] = { X, 2.0 / ((1.0 - X * X) * Slope * Slope) };
+            }
+            return Nodes;
+        }();
+        double Total = 0.0;
+        for (const auto& [Abscissa, Weight] : Rule) Total += Weight * Function(0.5 * (Low + High) + 0.5 * (High - Low) * Abscissa);
+        return 0.5 * (High - Low) * Total;
+    }
+
+    // Corner area of the end cap at x = Plane, radius Radius there.
+    [[nodiscard]] double VariableCapArea(const VariableCone& Cone, double Plane, double Radius)
+    {
+        const Vector3 Corner = { Plane, 0.0, 2.0 };
+        const auto Angle = [&](Vector3 Point) { const Vector3 Offset = Point - Cone.Apex; return std::atan2(Dot(Offset, Cone.Second), Dot(Offset, Cone.First)); };
+        double Start = Angle({ Plane, 0.0, 2.0 - Radius }), End = Angle({ Plane, Radius, 2.0 });   // contact generators
+        const double Facing = Angle(Cone.Apex + Vector3{ 0.0, -1.0, 1.0 });                  // towards the corner
+        // Unwrap so that [Start, End] runs through the facing direction.
+        const auto Wrap = [](double Value, double Reference) { while (Value - Reference > std::numbers::pi) Value -= 2.0 * std::numbers::pi; while (Value - Reference < -std::numbers::pi) Value += 2.0 * std::numbers::pi; return Value; };
+        Start = Wrap(Start, Facing);
+        End   = Wrap(End, Facing);
+        const double Swept = IntegrateGaussLegendre(Start, End, [&](double ψ)
+        {
+            const Vector3 Turn  = Cone.First * std::cos(ψ) + Cone.Second * std::sin(ψ);
+            const Vector3 Spin  = Cone.Second * std::cos(ψ) - Cone.First * std::sin(ψ);
+            const Vector3 Ray   = Cone.Axis * Cone.Cosine + Turn * Cone.Sine;                 // g(ψ)
+            const Vector3 Bend  = Spin * Cone.Sine;                                          // g′(ψ)
+            const double  Reach = (Plane - Cone.Apex.X) / Ray.X;                             // t(ψ)
+            const double  Pace  = -Reach * Bend.X / Ray.X;                                   // t′(ψ)
+            const Vector3 Point = Cone.Apex + Ray * Reach;
+            const Vector3 Speed = Ray * Pace + Bend * Reach;
+            return Cross(Point - Corner, Speed).X;
+        });
+        return 0.5 * std::fabs(Swept);
+    }
+
+    [[nodiscard]] double VariableFilletLoss(double Length, double Low, double High)
+    {
+        const VariableCone Cone = MeasureVariableCone(Length, Low, High);
+        return (Cone.Apex.X * VariableCapArea(Cone, 0.0, Low) + (Length - Cone.Apex.X) * VariableCapArea(Cone, Length, High)) / 3.0;
+    }
+
+    // Box 4 × 3 × 2 minus the removed corner: cone (fillet) or plane y + (2 − z) = d(x) (chamfer).
+    [[nodiscard]] std::function<double(Vector3)> VariableClearance(double Length, double Low, double High, BlendProfile Profile)
+    {
+        return [=](Vector3 Point)
+        {
+            const double Box  = std::min({ Point.X, Length - Point.X, Point.Y, 3.0 - Point.Y, Point.Z, 2.0 - Point.Z });
+            const double Size = Low + (High - Low) * Point.X / Length;                       // [len] - d(x) or r(x)
+            if (Profile == BlendProfile::Chamfer)
+            {
+                const double Slope = (High - Low) / Length;
+                return std::min(Box, (Point.Y + 2.0 - Point.Z - Size) / std::sqrt(2.0 + Slope * Slope));
+            }
+            // Envelope distance ρ·cos β − r(τ) from the spine line; the wedge between the planes through the spine and each
+            // contact line bounds the removed region.
+            const Vector3 Start = { 0.0, Low, 2.0 - Low }, Finish = { Length, High, 2.0 - High };
+            const Vector3 Along = Normalize(Finish - Start);
+            const double  Rate  = (High - Low) / Distance(Start, Finish);
+            const double  τ     = Dot(Point - Start, Along);
+            const double  Reach = Distance(Point, Start + Along * τ);
+            const double  Envelope = Reach * std::sqrt(1.0 - Rate * Rate) - (Low + Rate * τ);   // > 0 outside the cone
+            const Vector3 Apex = { -Low * Length / (High - Low), 0.0, 2.0 };
+            const Vector3 Middle = { 0.5 * Length, 0.0, 2.0 };
+            double Wedge = -1.0e300;
+            for (const Vector3 Contact : { Vector3{ Length, 0.0, 2.0 - High }, Vector3{ Length, High, 2.0 } })
+            {
+                Vector3 Normal = Normalize(Cross(Contact - Apex, Along));
+                if (Dot(Normal, Middle - Apex) > 0.0) Normal = -Normal;                       // positive away from the corner
+                Wedge = std::max(Wedge, Dot(Point - Apex, Normal));
+            }
+            return std::min(Box, std::max(-Envelope, Wedge));
         };
     }
 
@@ -624,6 +749,48 @@ namespace
                 const BodyToken Body = BlendEdges(Partition, Box, SelectEdges(Partition, Box, FrontBottom()), { BlendProfile::Fillet, 0.85 }).Body;
                 return MakeRefusal("SmoothTight", "Refusal", "Smooth overflow onto a fillet that the ball cannot touch from inside (r 0.9 > 0.85)", Body,
                                    SelectEdges(Partition, Body, FrontTop()), BlendProfile::Fillet, 0.9);
+            } },
+
+            // ---- Variable: size linear along the edge (start vertex → end vertex).
+            { "VariableFillet", [](ModelPartition& Partition)
+            {
+                const BodyToken Body  = ConstructBlock(Partition, {}, BoxExtent).Value;
+                const auto      Edges = SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; });
+                const bool   Forward = !Edges.empty() && Partition.Vertices.Resolve(Partition.Edges.Resolve(Edges.front()).Start).Position.X < 2.0;
+                const double Low = Forward ? 0.1 : 0.4, High = Forward ? 0.4 : 0.1;          // [len] - r at x = 0, x = 4
+                BlendSpecimen Specimen = Make("VariableFillet", "Variable", "Front top edge r 0.1 → 0.4: exact cone tangent to both faces, elliptical caps", Body, Edges,
+                                              BlendProfile::Fillet, 0.1, -VariableFilletLoss(4.0, Low, High), 7);
+                Specimen.Settings.EndSize = 0.4;
+                Specimen.Clearance        = VariableClearance(4.0, Low, High, BlendProfile::Fillet);
+                return Specimen;
+            } },
+            { "VariableChamfer", [](ModelPartition& Partition)
+            {
+                const BodyToken Body  = ConstructBlock(Partition, {}, BoxExtent).Value;
+                const auto      Edges = SelectEdges(Partition, Body, [](Vector3 A, Vector3 B, const CurveGeometry&) { return A.Y < 1e-9 && B.Y < 1e-9 && A.Z > 1.99 && B.Z > 1.99; });
+                const bool   Forward = !Edges.empty() && Partition.Vertices.Resolve(Partition.Edges.Resolve(Edges.front()).Start).Position.X < 2.0;
+                const double Low = Forward ? 0.1 : 0.4, High = Forward ? 0.4 : 0.1;          // [len] - d at x = 0, x = 4
+                BlendSpecimen Specimen = Make("VariableChamfer", "Variable", "Front top edge d 0.1 → 0.4: the contact lines meet at the apex, so the chamfer is a plane", Body, Edges,
+                                              BlendProfile::Chamfer, 0.1, -4.0 * (Low * Low + Low * High + High * High) / 6.0, 7);
+                Specimen.Settings.EndSize = 0.4;
+                Specimen.Clearance        = VariableClearance(4.0, Low, High, BlendProfile::Chamfer);
+                return Specimen;
+            } },
+            { "VariableShared", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructBlock(Partition, {}, BoxExtent).Value;
+                BlendSpecimen Specimen = MakeRefusal("VariableShared", "Refusal", "Four top edges r 0.1 → 0.3: variable sizes meeting at a vertex (🚧)", Body, SelectEdges(Partition, Body, TopEdges(2.0)),
+                                                     BlendProfile::Fillet, 0.1);
+                Specimen.Settings.EndSize = 0.3;
+                return Specimen;
+            } },
+            { "VariableRim", [](ModelPartition& Partition)
+            {
+                const BodyToken Body = ConstructCylinder(Partition, UprightFrame({}), 1.0, 2.0).Value;
+                BlendSpecimen Specimen = MakeRefusal("VariableRim", "Refusal", "Cylinder top rim r 0.1 → 0.3: variable size on a curved edge (🚧)", Body, SelectEdges(Partition, Body, RimAt(2.0)),
+                                                     BlendProfile::Fillet, 0.1);
+                Specimen.Settings.EndSize = 0.3;
+                return Specimen;
             } },
 
             // ---- Refusal: configurations the operation must refuse atomically.
