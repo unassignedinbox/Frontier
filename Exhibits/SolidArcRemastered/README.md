@@ -1,6 +1,34 @@
 # 🧩 SolidArcRemastered — evidence for steps 1–8 and the pattern stress test
 
-> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (5.9 MB, no external resources) with 19 interactive kernel models (now including P7, P8 and the setback specimens V1 / V2), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+> 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (5.95 MB, no external resources) with 21 interactive kernel models (now including P7, P8, the setback specimens V1 / V2 and the cliff-overflow plates O1 / O2), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
+
+**TL;DR (cliff overflow)**: A blend wider than its face is now built when the overflow is a cliff. The blend consumes the face, and the face beyond its far edge trims the blend with an exact section. This works for fillets and chamfers, on straight and circular edges. Six new [`BlendValidation`](BlendValidation.md) specimens match their closed forms, and all 10 gates pass over 35 specimens. PatternStressValidation adds an O family: **68 rows · 🟢 68 · ⚠️ 0 · 🔴 0** (628 operations, 822 s). ctest passes 14/14 (1202 s).
+
+| Specimen | Setting | Faces | ΔV (kernel = closed form) | Error |
+|---|---|---|---|---|
+| CliffBoxFillet | box 4 × 3 × 2, top front edge r 2.5 (was `FilletWiderThanFace`, refused) | 6 | −5.331509667726 | 1.8e-14 |
+| CliffPlateFillet | plate t 0.2, front top edge r 0.3 | 6 | −0.074995847374 | 6.7e-16 |
+| CliffPlateChamfer | plate t 0.2, front top edge c 0.3 | 6 | −0.160000000000 | 8.3e-17 |
+| CliffPlateFlush | r = t = 0.2: the cliff section meets the rail | 6 | −0.034336293856 | 4.9e-16 |
+| CliffDiscFillet | disc R 1, t 0.2, rim r 0.3 (closed section) | 3 | −0.109689377437 | 1.9e-16 |
+| CliffDiscChamfer | disc R 1, t 0.2, rim c 0.3 | 3 | −0.224100275956 | 5.6e-17 |
+| O1 · O2 | plate − 4 arrayed drills, front edge r 0.3 / c 0.3 | 10 | V 1.4244731877 · 1.3394690351 | 1.1e-15 · 8.9e-16 |
+
+| Gate | Overflow coverage | Worst |
+|---|---|---|
+| B1 · B2 | closed-form ΔV · audit, genus, face count, source untouched | 7.4e-16 (normalised) · 6 / 6 |
+| B3 · B4 | G1 at the kept rail · rolling-ball law | 2.8e-16 rad · 2.8e-16 |
+| B6 | winding number vs analytic clearance oracle (all 28 built specimens) | 0 / 6 000 wrong |
+| B7 | drill through a cliff plate · coaxial bore through a cliff disc | 4.0e-16 |
+| B8 | partial, blend-on-blend and notch overflow refuse atomically | 7 / 7 refusals |
+| B9 · B10 | rebuilt twice → identical digest · cliff plate at s = 10⁻³ … 10³ | 12 / 12 · 1.4e-14 |
+
+![O1 in the showcase viewer: the fillet runs past the consumed front face and the bottom face trims it](CliffOverflowO1.png)
+
+- 🧩 **Detection:** the cliff test runs where a blend's foot on a support lands at or past the far end of the sharp edge it trims. The v1 shape: the support is a strip of 4 edges (blended edge, two end edges or one seam, far edge), the far corner has degree 3 with no blend, and the far edge is convex. The support is consumed, its rail is dropped, and the cliff face trims the blend. The section is exact: a line or arc for planes, a circle for a closed rim section, otherwise the general A ∩ B section. Both endpoints must lie on the blend and on the cliff (≤ 1e-9).
+- 💡 **Honest refusals, named:** "partial overflow" (wider at one end only), "runs onto another blended edge at the far corner", "notch overflow, the far edge is concave", "concave blend overflow", and "wider than both supports". Any other shape (not a strip, holes, degree ≠ 3) falls through to the earlier "consumed by the blend" refusal. So DraftingWorkspace walkthrough ⑥ still refuses with its expected text, checked by replaying its scene against the kernel ("consumed by the blend … overshoot 0.141").
+- ✔️ **No regressions:** the 66 earlier stress rows match the previous run in status, topology, V, oracle and triangles. Every earlier BlendValidation row is unchanged apart from timings.
+- 🚧 **Still refused:** smooth overflow (rolling onto the next face), notch caps, partial overflow (split the blend), setback chamfers, mixed convexity beside a sharp edge, and chamfers on traced or elliptical spines.
 
 **TL;DR (pinch and setback vertex blends, option C part A2)**: Every pattern-stress row is now built. PatternStressValidation runs 66 rows: **🟢 66 · ⚠️ 0 · 🔴 0** (616 operations, 819 s). P8 closes its degree-8 singular crossings with pinch vertices. A new V family adds setback vertex blends: where convex meets concave (L block), or where ≥ 4 blends meet (pyramid apex), the blends stop short and the hole is filled with fair rational quads. The new [`SetbackValidation`](SetbackValidation.md) passes all 6 gates, and ctest passes 14/14 (1173 s).
 
@@ -24,7 +52,7 @@
 - ⚠️ **Honest limit:** G1 across the spokes is a fit, not exact. It reaches 1.2° only next to the L block's centre point, where 6 spokes meet at irregular angles (the vertex-enclosure twist constraint). Pyramid spokes stay ≤ 0.54°.
 - 🚧 **Still refused:** setback chamfers, and mixed convexity beside a sharp edge (`MixedConvexity`).
 - 📝 **Timings:** all rows ran about 35–45% slower than the previous run, including untouched plane/cylinder rows (L2, C6, B5) and NurbsValidation (128 → 173 s). This is the sandbox CPU, not a regression.
-- 🚧 **Next:** overflow (blend wider than its face).
+- ✔️ **Next (done):** cliff overflow, see the top section.
 
 **TL;DR (NURBS carriers, option C part A1)**: Rational B-spline curves and surfaces are now kernel carriers, with exact conversions of every analytic carrier. The new [`NurbsValidation`](NurbsValidation.md) passes all 7 gates, and ctest passes 13/13 (787 s). Non-uniform scale and shear, which used to be refused, now promote curved faces to NURBS and build exact bodies (V = det M · V*, to 1.5e-15).
 
@@ -349,7 +377,7 @@ Harness fixes (no modeller change): edge criteria that also caught rib-top end e
 |---|---|---|
 | Setback vertex | ✔️ Fillets built: fair NURBS quads (V1, V2, `SetbackValidation`); P8 by pinch vertices. Chamfer setback and mixed convexity beside a sharp edge refused | Setback chamfers; a sharp spoke inside the patch |
 | Tangent-chain propagation | ✔️ Built: `GrowTangentChain` / `BlendSettings.TangentChainEnabled`; DraftingWorkspace Alt+click | — |
-| Overflow (blend wider than its face, `FilletRailsCross`) | Refused: "contact rail runs backwards" | Smooth / cliff / notch overflow strategies |
+| Overflow (blend wider than its face) | ✔️ Cliff overflow built (Overflow family, O1 / O2). `FilletRailsCross` (rails cross on a 2-high box) correctly refused; notch, partial, blend-on-blend and concave overflow refused by name | Smooth overflow, notch caps, partial overflow |
 | Traced spines | ✔️ Fillets built on the exact procedural rolling-ball carrier (P7, `RollingBallValidation`); chamfers on traced or elliptical spines refused | Ruled procedural carrier for chamfers |
 
 🚧 Known limitation (step 4): next to poles and apexes, triangle shape follows the chart's anisotropy. Sphere and Cone reach a minimum angle of 0.4–1.1°, with ≈ 21–25% of their triangles below 20° (`SphereQuality.png`). Specimens without singular points stay ≥ 14° (Torus 15.3°, Cylinder 20.9°, HollowBlock 14.0°). Boolean results also inherit their smallest *input* angle, where a section edge meets a boundary almost tangentially (DShaft 3.3°, RandomDrills 0.1°); no Delaunay refinement goes below the input angle. Every gate holds, so this is a shading-quality issue, not a correctness one. Rebuilding every star does not help. The cure is a pole-local chart (an azimuthal projection around the axis) for the singular rows.

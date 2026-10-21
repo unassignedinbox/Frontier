@@ -135,7 +135,7 @@ ul.Tight li     { margin: 3px 0; }
     ImGui workspace that uses the Plasticity keymap. This page is one file with no external resources: the models below are
     real kernel tessellations, and the stills are the committed exhibits. Composed <span id="ComposedStamp"></span>.</p>
     <div class="Tiles">
-        <div class="Tile"><div class="Figure">0 🔴</div><div class="Caption">wrong bodies across 66 pattern-stress rows (66 🟢 · 0 refused)</div></div>
+        <div class="Tile"><div class="Figure">0 🔴</div><div class="Caption">wrong bodies across 68 pattern-stress rows (68 🟢 · 0 refused)</div></div>
         <div class="Tile"><div class="Figure">≤ 7.0e-16</div><div class="Caption">blend ΔV vs closed form (step 5); all 8 tangent-chain rows ≤ 8.5e-14</div></div>
         <div class="Tile"><div class="Figure">79 / 79</div><div class="Caption">corpus rows, 0 refusals (the old kernel refused 19)</div></div>
         <div class="Tile"><div class="Figure">668 918</div><div class="Caption">triangles over 305 bodies, all watertight, peak/ε ≤ 1.000</div></div>
@@ -217,6 +217,7 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>+</td><td>Exact procedural rolling-ball carrier (option C, part B)</td><td>🟢 ctest 12 / 12 · R1–R9</td><td>P7 traced mouths built · 64 rows: 63 🟢 · 1 ⚠️ · 0 🔴 · ball ≤ 1.2e-13 · G1 ≤ 1.4e-14 rad · transforms ≤ 8.1e-12 · 6 defects fixed</td><td><code>2c5a80a</code> <code>5ca1869</code> <code>e9b5e8e</code> <code>cba86c0</code></td></tr>
         <tr><td>+</td><td>NURBS carriers (option C, part A1)</td><td>🟢 ctest 13 / 13 · N1–N7</td><td>rational B-spline curves and surfaces · exact conversions of every analytic carrier ≤ 1.7e-14 · non-uniform scale and shear now build (V = det M · V*, ≤ 1.5e-15)</td><td><code>ec0f926</code> <code>e2f0856</code></td></tr>
         <tr><td>+</td><td>Pinch and setback vertex blends (part A2)</td><td>🟢 ctest 14 / 14 · S1–S6</td><td>P8 built (pinch vertices) · fair NURBS setback quads: rims 2.4e-16 · G1 to neighbours ≤ 2.9e-3 rad · spoke seams ≤ 2.1e-2 rad · 66 rows: 66 🟢 · 0 ⚠️ · 0 🔴</td><td><code>68e2340</code> <code>0f01823</code> <code>57f1aaf</code></td></tr>
+        <tr><td>+</td><td>Cliff overflow (blends wider than their face)</td><td>🟢 ctest 14 / 14 · B1–B10</td><td>6 overflow specimens built, ΔV vs closed form ≤ 1.8e-14 · ΔV ∝ s³ from 10⁻³ to 10³ (≤ 1.4e-14) · notch, partial and blend-on-blend overflow refused by name · 68 rows: 68 🟢 · 0 ⚠️ · 0 🔴</td><td><code>0597afc</code></td></tr>
     </table>
     </div>
 </section>
@@ -228,14 +229,14 @@ ul.Tight li     { margin: 3px 0; }
     <div class="Chips" id="StressChips"></div>
     <div class="TableFrame"><table id="StressTable"></table></div>
     <p class="Note">Families: L linear arrays · C circular arrays · M mixed Boolean chains · B blends on Boolean results ·
-    T tangent chains · P blend patterns · V setback vertex blends. A refusal is an honest limit (⚠️); a built wrong body would be 🔴. Rows marked
+    T tangent chains · P blend patterns · V setback vertex blends · O cliff overflow. A refusal is an honest limit (⚠️); a built wrong body would be 🔴. Rows marked
     <span class="Badge">3D</span> open in the viewer.</p>
 </section>
 
 <!-- ============================================================================================================== -->
 <section id="Blends">
     <h2>Robust blends</h2>
-    <p class="Lead">All eight first-run refusals are now built and pass every gate: P7 on the exact procedural rolling-ball carrier, P8 with pinch vertices. A T family adds tangent chains, and a V family adds setback vertex blends (fair NURBS quads).</p>
+    <p class="Lead">All eight first-run refusals are now built and pass every gate: P7 on the exact procedural rolling-ball carrier, P8 with pinch vertices. A T family adds tangent chains, a V family adds setback vertex blends (fair NURBS quads), and an O family adds cliff overflow.</p>
     <div class="TableFrame" style="max-height:none">
     <table>
         <tr><th>Row</th><th>Was refused</th><th>Construction now</th><th>Now</th></tr>
@@ -260,6 +261,23 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>🟢</td><td>S5</td><td>Rebuilt twice → identical volume bits and polygon digest</td><td>identical</td><td>4 / 4</td></tr>
         <tr><td>🟢</td><td>S6</td><td>Chamfer setback and mixed-beside-sharp refuse atomically, source intact</td><td>all refused</td><td>2 / 2</td></tr>
     </table></div>
+    <h3 style="margin-top:18px">Cliff overflow (<code>BlendValidation</code> Overflow family · PatternStress O1 / O2)</h3>
+    <p class="Note">When the blend's foot on a support lands at or past the far end of the edge it trims, the blend is wider
+    than that face (Parasolid: cliff overflow). If the support is a strip of 4 edges and its far edge is convex, the support
+    is consumed: the face across the far edge (the cliff) trims the blend with an exact section, and the blend's rail on the
+    consumed face is dropped. Fillets and chamfers, on straight and circular edges.</p>
+    <div class="TableFrame" style="max-height:none"><table>
+        <tr><th>Specimen</th><th>Setting</th><th>Faces</th><th>ΔV (kernel = closed form)</th><th>Error</th></tr>
+        <tr><td>CliffBoxFillet</td><td>box 4 × 3 × 2, top front edge r 2.5</td><td>6</td><td>−5.331509667726</td><td>1.8e-14</td></tr>
+        <tr><td>CliffPlateFillet</td><td>plate t 0.2, front top edge r 0.3</td><td>6</td><td>−0.074995847374</td><td>6.7e-16</td></tr>
+        <tr><td>CliffPlateChamfer</td><td>plate t 0.2, front top edge c 0.3</td><td>6</td><td>−0.160000000000</td><td>8.3e-17</td></tr>
+        <tr><td>CliffPlateFlush</td><td>r = t = 0.2: the cliff section meets the rail</td><td>6</td><td>−0.034336293856</td><td>4.9e-16</td></tr>
+        <tr><td>CliffDiscFillet</td><td>disc R 1, t 0.2, rim r 0.3 (closed section)</td><td>3</td><td>−0.109689377437</td><td>1.9e-16</td></tr>
+        <tr><td>CliffDiscChamfer</td><td>disc R 1, t 0.2, rim c 0.3</td><td>3</td><td>−0.224100275956</td><td>5.6e-17</td></tr>
+        <tr><td>CliffPartial · CliffOverlap · NotchOverflow</td><td>tapered plate · both front edges · step riser</td><td>–</td><td>🚧 refused: partial overflow · runs onto another blended edge · notch overflow</td><td>–</td></tr>
+    </table></div>
+    <p class="Note">B6 classifies 6 000 points over all 28 built specimens, overflow included, against the analytic clearance oracle (0 wrong); B7 drills through a cliff plate and
+    bores a cliff disc downstream (≤ 4.0e-16); B9 rebuilds every overflow specimen to an identical tessellation digest.</p>
     <h3 style="margin-top:18px">Rolling-ball carrier gates (<code>RollingBallValidation</code>, 4 bodies · 4 transforms)</h3>
     <div class="TableFrame" style="max-height:none"><table>
         <tr><th></th><th>Gate</th><th>Measures</th><th>Limit</th><th>Worst</th></tr>
@@ -359,10 +377,10 @@ ul.Tight li     { margin: 3px 0; }
         <tr><td>Chamfer on a traced or elliptical spine</td><td>—</td><td>🚧 refused</td><td>Ruled procedural carrier between the two rails</td></tr>
         <tr><td>Setback vertex blends</td><td>V1 · V2 · P8</td><td>🟢 fillets built (fair NURBS quads; P8 by pinch). Spoke seams reach 1.2° where 6 spokes meet at irregular angles</td><td>Chamfer setback (🚧 refused); exact G1 seams need a vertex-enclosure twist solve</td></tr>
         <tr><td>Mixed convexity beside a sharp edge</td><td><code>MixedConvexity</code></td><td>🚧 refused</td><td>Setback patch with a sharp spoke</td></tr>
-        <tr><td>Overflow (blend wider than its face)</td><td>walkthrough ⑥: chamfer beside a fillet</td><td>🚧 refused ("edge consumed")</td><td>Cliff overflow first, from existing section curves; then smooth / notch</td></tr>
+        <tr><td>Overflow (blend wider than its face)</td><td>O1 · O2 · Overflow family</td><td>🟢 cliff overflow built (fillet and chamfer, straight and circular edges). 🚧 Refused by name: notch, partial, blend-on-blend, concave; walkthrough ⑥ still refuses ("edge consumed": the face is not a 4-edge strip)</td><td>Smooth overflow (roll onto the next face), notch caps, partial overflow by splitting the blend</td></tr>
     </table></div>
     <p class="Note">Order agreed: C = B first (done: the exact rolling-ball carrier builds P7), then A (done: NURBS carriers, pinch
-    and setback corner patches), then overflow (next).</p>
+    and setback corner patches), then overflow (done: cliff overflow; smooth and notch overflow remain).</p>
 </section>
 
 </main>

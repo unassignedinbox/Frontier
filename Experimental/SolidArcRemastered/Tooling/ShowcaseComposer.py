@@ -62,6 +62,8 @@ Models = [                                                                      
     ("P8",  "Cross-bore crossings, filleted",  "elliptical crossing edges r 0.03; degree-8 singular points closed by pinch vertices"),
     ("V1",  "L block, every edge filleted",    "2 setback vertices where convex meets concave: fair rational quads, G1 to 0.17°"),
     ("V2",  "Pyramid, every edge filleted",    "degree-4 apex closed by a setback patch of 8 fair NURBS quads"),
+    ("O1",  "Thin plate, cliff fillet",        "r 0.3 on a 0.2 plate: the front face is consumed, the bottom face trims the blend"),
+    ("O2",  "Thin plate, cliff chamfer",       "c 0.3 on a 0.2 plate: the chamfer plane runs off the front face onto the bottom"),
 ]
 
 CaptureCaptions = {
@@ -69,7 +71,7 @@ CaptureCaptions = {
     "02FacesSelected"   : "Face mode (3), Shift adds a second cap face",
     "04BevelPreview"    : "B opens the bevel session; the live preview adds 1 face before committing",
     "05FilletApplied"   : "Fillet 0.3 committed: 12 faces, audit sound, undo depth 6",
-    "06BevelRefusal"    : "An honest refusal: a chamfer beside the fillet would consume its edge (overflow is next)",
+    "06BevelRefusal"    : "An honest refusal: the chamfer would consume the corner chamfer's edge, a shape cliff overflow does not cover",
     "07Navigated"       : "Plasticity navigation: middle orbit, right pan, wheel dolly",
     "09FrontParallel"   : "Front view, orthographic (Numpad 1, Numpad 5)",
     "09RightParallel"   : "Right view, orthographic (Numpad 3)",
