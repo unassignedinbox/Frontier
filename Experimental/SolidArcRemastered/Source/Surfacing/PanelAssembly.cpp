@@ -28,7 +28,8 @@ namespace Frontier::SolidArcRemastered
 namespace
 {
     constexpr int    BoundarySamples = 17;                                                   // [-]   - Points compared along two boundaries
-    constexpr int    RimSamples      = 64;                                                   // [-]   - Points per rim edge (planarity, area)
+    constexpr int    RimSamples      = 64;                                                   // [-]   - Points per rim edge (planarity)
+    constexpr int    QuadraturePieces = 4;                                                   // [-]   - Gauss panels per knot span (rational carriers)
     constexpr double SeamGap         = 1.0e-9;                                               // [len] - First = last pole column: closed in 𝑢
     constexpr std::array<double, 6> GaussAbscissae = { -0.9324695142031521, -0.6612093864662645, -0.2386191860831969, 0.2386191860831969, 0.6612093864662645, 0.9324695142031521 };
     constexpr std::array<double, 6> GaussWeights   = { 0.1713244923791704, 0.3607615730481386, 0.4679139345726910, 0.4679139345726910, 0.3607615730481386, 0.1713244923791704 };
@@ -60,15 +61,23 @@ namespace
 
     [[nodiscard]] Vector3 CurvePoint(const NurbsCurve& Curve, double Parameter) { return EvaluateNurbsCurveDerivatives(*Curve.Definition, Parameter).Position; }
 
+    // Distinct knots, each span cut into QuadraturePieces equal panels.
+    [[nodiscard]] std::vector<double> QuadratureBreaks(const std::vector<double>& Knots)
+    {
+        std::vector<double> Distinct, Values;
+        for (double Knot : Knots) if (Distinct.empty() || Knot > Distinct.back()) Distinct.push_back(Knot);
+        for (size_t Span = 0; Span + 1 < Distinct.size(); ++Span)
+        {
+            for (int Piece = 0; Piece < QuadraturePieces; ++Piece) Values.push_back(Distinct[Span] + (Distinct[Span + 1] - Distinct[Span]) * Piece / QuadraturePieces);
+        }
+        Values.push_back(Distinct.back());
+        return Values;
+    }
+
     // ∫∫ ⅓ S·(S𝑢 × S𝑣) d𝑢 d𝑣 over the panel (6-point Gauss per knot span): its share of the enclosed volume.
     [[nodiscard]] double PanelFlux(const NurbsSurfaceDefinition& Definition)
     {
-        auto Breaks = [](const std::vector<double>& Knots)
-        {
-            std::vector<double> Values;
-            for (double Knot : Knots) if (Values.empty() || Knot > Values.back()) Values.push_back(Knot);
-            return Values;
-        };
+        auto Breaks = [](const std::vector<double>& Knots) { return QuadratureBreaks(Knots); };
         const std::vector<double> BreaksU = Breaks(Definition.KnotsU), BreaksV = Breaks(Definition.KnotsV);
         double Flux = 0.0;
         for (size_t SpanU = 0; SpanU + 1 < BreaksU.size(); ++SpanU)
@@ -88,6 +97,23 @@ namespace
             }
         }
         return Flux;
+    }
+
+    // ½∫ C × C′ dτ over the curve (6-point Gauss per knot span): its share of a planar loop's area vector.
+    [[nodiscard]] Vector3 AreaMoment(const NurbsCurve& Curve)
+    {
+        const std::vector<double> Breaks = QuadratureBreaks(Curve.Definition->Knots);
+        Vector3 Moment = {};
+        for (size_t Span = 0; Span + 1 < Breaks.size(); ++Span)
+        {
+            const double Half = 0.5 * (Breaks[Span + 1] - Breaks[Span]);
+            for (size_t Index = 0; Index < GaussAbscissae.size(); ++Index)
+            {
+                const NurbsCurveDerivatives Sample = EvaluateNurbsCurveDerivatives(*Curve.Definition, Breaks[Span] + Half * (1.0 + GaussAbscissae[Index]));
+                Moment = Moment + Cross(Sample.Position, Sample.First) * (0.5 * Half * GaussWeights[Index]);
+            }
+        }
+        return Moment;
     }
 
     struct RimLoop
@@ -312,12 +338,14 @@ PanelAssemblyOutcome AssemblePanels(ModelPartition& Partition, const std::vector
         for (size_t Index = 0; Index < Rims.size(); ++Index)
         {
             const RimLoop& Rim = Rims[Index];
+            // Exact area vector ½∮ p × dp of the cap-direction loop (a side walked against its τ counts negatively).
             Vector3 Area = {}, Centre = {};
-            for (size_t Point = 0; Point < Rim.Points.size(); ++Point)
+            for (int SideIndex : Rim.Sides)
             {
-                Area   = Area + Cross(Rim.Points[Point], Rim.Points[(Point + 1) % Rim.Points.size()]) * 0.5;
-                Centre = Centre + Rim.Points[Point] * (1.0 / Rim.Points.size());
+                const Vector3 Moment = AreaMoment(Sides[SideIndex].Curve);
+                Area = Area + Moment * (Sides[SideIndex].LoopSense == Orientation::Forward ? -1.0 : 1.0);
             }
+            for (const Vector3& Point : Rim.Points) Centre = Centre + Point * (1.0 / Rim.Points.size());
             if (!(Length(Area) > 0.0)) return Refuse("rim loop " + std::to_string(Index) + " encloses no area");
             const Vector3 Normal = Area * (1.0 / Length(Area));
             double OffPlane = 0.0;

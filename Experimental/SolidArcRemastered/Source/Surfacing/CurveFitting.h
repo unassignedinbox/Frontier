@@ -11,6 +11,7 @@
 
 #include "Geometry/NurbsCarrier.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,9 @@ struct CurveFitSettings
     int    SpanLimit        = 64;                                                            // [-]   - Refuse beyond this many knot spans
     int    CorrectionRounds = 8;                                                             // [-]   - Foot-point parameter corrections per knot vector
     double CornerAngle      = 0.5235987755982988;                                            // [rad] - Turning angle that marks a crease (30°)
+    std::optional<Vector3> StartTangent = {};                                                // [-]   - The curve leaves its first point along ±d (P₁ − P₀ ∥ d)
+    std::optional<Vector3> EndTangent   = {};                                                // [-]   - The curve reaches its last point along ±d (Pₙ − Pₙ₋₁ ∥ d)
+    bool   PlanarCondition  = false;                                                         // [-]   - Points projected onto their best plane first (curve exactly planar)
 };
 
 struct CurveFitOutcome
@@ -43,6 +47,8 @@ struct CurveFitOutcome
     int                 Spans          = 0;                                                  // [-]   - Knot spans used
     int                 Extrema        = 0;                                                  // [-]   - Interior maxima of κ (fairness score)
     double              Fairing        = 0.0;                                                // [-]   - λ actually used (lowered when λ would cost tolerance)
+    double              PlanarOffset   = 0.0;                                                // [len] - Largest point offset from the best plane (planar fits)
+    Vector3             PlaneNormal    = {};                                                 // [-]   - Unit normal of that plane (planar fits)
     std::string         Refusal        = {};                                                 // [-]   - "Fit: …" when refused
 };
 
@@ -54,6 +60,11 @@ struct CurveFitOutcome
 //    Gram matrix → foot-point parameter correction (Hoschek) → when the faired fit misses, λ is lowered by decades if
 //    the unfaired fit passes, otherwise a knot goes at the middle of every span whose worst point is beyond tolerance. Refuses below 2 distinct points, on a singular system, or at the
 //    span limit (the refusal names the worst point and its deviation). Consecutive duplicate points are merged.
+//    End tangents (vehicle plan V7, mirror G1): P₁ = P₀ + 𝑡·d (and Pₙ₋₁ = Pₙ + 𝑡′·d′) with the scalars solved inside the
+//    same least squares — the fit stays linear and the direction holds exactly. Planar: the points are projected onto
+//    their best plane (smallest-eigenvalue normal of the covariance) when every point lies within Tolerance of it, so
+//    a planar section caps exactly; farther points refuse, naming the offset (deviations are then measured against the
+//    projected points: the distance to an original point is at most WorstDeviation + PlanarOffset).
 [[nodiscard]] CurveFitOutcome FitSpaceCurve(const std::vector<Vector3>& Points, const CurveFitSettings& Settings);
 
 // Fit on a prescribed clamped knot vector and prescribed parameters (no refinement, no correction): the least-squares

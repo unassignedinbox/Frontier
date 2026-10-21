@@ -9,6 +9,8 @@
 
 #include "Audit/EnclosedVolume.h"
 #include "Audit/ModelAudit.h"
+#include "Audit/TessellationAudit.h"
+#include "Tessellation/BodyTessellation.h"
 #include "Feature/FeatureTree.h"
 #include "Surfacing/CurveFitting.h"
 #include "Surfacing/CurveNetwork.h"
@@ -67,10 +69,18 @@ namespace
     GateTally ElevationGate    = { "C5", "Mixed-degree loft (line + quadratic + cubic): exact elevation, sections interpolated", "≤ 10⁻⁹" };
     GateTally ContinuityRefuseGate = { "C6", "Continuity refusals: reference without the section, rational reference, G3, closed sections", "all named" };
 
+    GateTally ExactSolidGate   = { "A1", "Exact solids: half arcs lofted → mirror x = 0 → plane caps → cylinder πr²L and frustum πL(r₀² + r₀r₁ + r₁²)/3 (two integrators)", "rel. ≤ 10⁻⁹" };
+    GateTally SolidBodyGate    = { "A2", "Closed bodies: audit sound · 4 faces · 2 sewn + caps · tessellation watertight (no unpaired side)", "sound · 0" };
+    GateTally MirrorSeamGate   = { "A3", "Mirror seam G1: halves meet with normal angle ≤ 10⁻⁸ when the sections leave x = 0 perpendicularly (fit constraint); unconstrained fits show a break", "≤ 10⁻⁸ rad" };
+    GateTally BonnetSheetGate  = { "A4", "Bonnet sheet: front + rear (G2) + mirrored pair → 4 panels, 4 sewn, 8 rim edges, audit sound, tessellation conforming", "sound" };
+    GateTally PodSolidGate     = { "A5", "Pod: 5 noisy half sections fitted planar + mirror tangent → loft → mirror → caps → solid; volume vs ∫ πab dy", "rel. ≤ 2·10⁻³" };
+    GateTally AssemblyRefuseGate = { "A6", "Assembly refusals: non-planar rim cap, boundary parametrised differently, boundary claimed by 3 panels, constraint on a line", "all named" };
+
     std::vector<GateTally*> AllGates()
     {
         return { &CoonsGate, &GordonGate, &SortingGate, &BonnetNetGate, &NetworkRefuseGate, &NetworkSheetGate,
-                 &TangentGate, &CurvatureGate, &DiscriminateGate, &SharedRowGate, &ElevationGate, &ContinuityRefuseGate };
+                 &TangentGate, &CurvatureGate, &DiscriminateGate, &SharedRowGate, &ElevationGate, &ContinuityRefuseGate,
+                 &ExactSolidGate, &SolidBodyGate, &MirrorSeamGate, &BonnetSheetGate, &PodSolidGate, &AssemblyRefuseGate };
     }
 
     struct DetailRow
@@ -659,6 +669,214 @@ namespace
     }
 }
 
+namespace
+{
+    //--------------------------------------------------------------------------------------------------------------------
+    //                                                V7 · ASSEMBLY
+    //--------------------------------------------------------------------------------------------------------------------
+
+    // Half circle in the plane y = Y from (0, Y, −r) through (r, Y, 0) to (0, Y, r): exact rational arc.
+    [[nodiscard]] NurbsCurve HalfArc(double Y, double Radius)
+    {
+        const ConicForm Circle = { { 0.0, Y, 0.0 }, { Radius, 0.0, 0.0 }, { 0.0, 0.0, Radius }, { 0.0, -1.0, 0.0 } };
+        return ConvertConicToNurbs(Circle, -0.5 * std::numbers::pi, 0.5 * std::numbers::pi);
+    }
+
+    // The mirror seam of a panel and its mirror image: the panel's 𝑢 = Side boundary is the image's 𝑢 = 1 − Side boundary.
+    [[nodiscard]] double MeasureMirrorSeam(const SurfacePanel& Panel, const SurfacePanel& Image, double Side)
+    {
+        const NurbsSurface A = *FinishNurbsSurface(TransposeNurbsSurface(*Panel.Surface.Definition));
+        const NurbsSurface B = *FinishNurbsSurface(TransposeNurbsSurface(*Image.Surface.Definition));
+        return MeasureSeam(A, Side, B, 1.0 - Side, false).Angle;
+    }
+
+    struct MeshCheck { bool Watertight = false; bool Conforming = false; std::string Detail; };
+
+    [[nodiscard]] MeshCheck CheckTessellation(const ModelPartition& Partition, BodyToken Body)
+    {
+        const TessellationOutcome Mesh = TessellateBody(Partition, Body, TessellationSettings{});
+        const TessellationAuditReport Audit = AuditTessellation(Partition, Body, Mesh);
+        MeshCheck Check;
+        const bool Clean = Mesh.Refusal.empty() && Audit.MissingEdgeSides == 0 && Audit.Inverted == 0 && Audit.Degenerate == 0;
+        Check.Watertight = Clean && Audit.UnpairedSides == 0;
+        Check.Conforming = Clean && Audit.UnpairedSides == Audit.LaminarSides;
+        Check.Detail = Mesh.Refusal.empty() ? "unpaired " + std::to_string(Audit.UnpairedSides) + " · laminar " + std::to_string(Audit.LaminarSides) + " · inverted " + std::to_string(Audit.Inverted)
+                                            : Mesh.Refusal;
+        return Check;
+    }
+
+    [[nodiscard]] std::string AuditText(const AuditReport& Audit)
+    {
+        return Audit.SoundCondition() ? "sound" : "UNSOUND: " + std::string(Audit.Findings.front().Code) + " " + Audit.Findings.front().Detail;
+    }
+
+    void ValidateAssembly()
+    {
+        // ---- A1 / A2 exact solids.
+        struct SolidCase { const char* Name; double Start; double Finish; double Span; };
+        for (const SolidCase& Case : { SolidCase{ "Cylinder r 0.3 · L 1.2", 0.3, 0.3, 1.2 }, SolidCase{ "Frustum r 0.4 → 0.15 · L 0.9", 0.4, 0.15, 0.9 } })
+        {
+            std::vector<NurbsCurve> Arcs;
+            for (int Index = 0; Index <= 2; ++Index) Arcs.push_back(HalfArc(Case.Span * Index / 2.0, Case.Start + (Case.Finish - Case.Start) * Index / 2.0));
+            const LoftSurfaceOutcome Loft = LoftSectionSurface(Arcs, LoftSettings{});
+            if (!Loft.Refusal.empty()) { Report(ExactSolidGate, Case.Name, Loft.Refusal, 1.0, false); continue; }
+            const SurfacePanel Half{ Loft.Surface }, Image = MirrorPanel(Half, {}, { 1.0, 0.0, 0.0 });
+            PanelAssemblySettings Settings;
+            Settings.CapCondition = true;
+            ModelPartition Partition;
+            const PanelAssemblyOutcome Solid = AssemblePanels(Partition, { Half, Image }, Settings, "Close");
+            if (!Solid.Refusal.empty()) { Report(ExactSolidGate, Case.Name, Solid.Refusal, 1.0, false); continue; }
+            const double Exact    = std::numbers::pi * Case.Span * (Case.Start * Case.Start + Case.Start * Case.Finish + Case.Finish * Case.Finish) / 3.0;
+            const double Integral = IntegrateBodyVolume(Partition, Solid.Body);
+            const double Error    = std::max(std::abs(Integral - Exact), std::abs(Solid.Volume - Exact)) / Exact;
+            Report(ExactSolidGate, Case.Name, "body integral " + std::to_string(Integral).substr(0, 10) + " · panel quadrature rel. " + Scientific(std::abs(Solid.Volume - Exact) / Exact) + " · exact "
+                   + std::to_string(Exact).substr(0, 10) + " · rel. " + Scientific(Error) + (Solid.FlippedCondition ? " · panels turned outward" : ""), Error, Error <= 1.0e-9);
+            const AuditReport Audit = AuditBody(Partition, Solid.Body);
+            const BodyInventory Inventory = Partition.CollectInventory(Solid.Body);
+            const MeshCheck Mesh = CheckTessellation(Partition, Solid.Body);
+            const bool Sound = Audit.SoundCondition() && Solid.SolidCondition && Inventory.Faces.size() == 4 && Solid.SewnEdges == 2 && Solid.Caps.size() == 2 && Mesh.Watertight;
+            Report(SolidBodyGate, Case.Name, AuditText(Audit) + " · " + std::to_string(Inventory.Faces.size()) + " faces · sewn " + std::to_string(Solid.SewnEdges) + " · caps " + std::to_string(Solid.Caps.size())
+                   + " · mesh " + Mesh.Detail, Sound ? 0.0 : 1.0, Sound);
+            const double Seam = std::max(MeasureMirrorSeam(Half, Image, 0.0), MeasureMirrorSeam(Half, Image, 1.0));
+            Report(MirrorSeamGate, std::string(Case.Name) + " (arcs meet x = 0 perpendicularly)", "angle " + Scientific(Seam) + " rad", Seam, Seam <= 1.0e-8);
+        }
+
+        // ---- A3 / A4 bonnet: constrained and unconstrained section fits.
+        for (int Constrained = 1; Constrained >= 0; --Constrained)
+        {
+            std::mt19937_64 Generator(0xB0AA37ULL);
+            std::vector<NurbsCurve> Sections;
+            for (double η : BonnetSectionStations)
+            {
+                CurveFitSettings Settings;
+                if (Constrained) Settings.StartTangent = Vector3{ 1.0, 0.0, 0.0 };
+                const CurveFitOutcome Fit = FitSpaceCurve(BonnetSectionPoints(η, Generator), Settings);
+                Sections.push_back(Fit.Curve);
+            }
+            const LoftSurfaceOutcome Front = LoftSectionSurface({ Sections[0], Sections[1], Sections[2] }, LoftSettings{});
+            LoftSettings RearSettings;
+            RearSettings.Start = { 2, Front.Surface };
+            const LoftSurfaceOutcome Rear = LoftSectionSurface({ Sections[2], Sections[3], Sections[4], Sections[5] }, RearSettings);
+            if (!Front.Refusal.empty() || !Rear.Refusal.empty()) { Report(BonnetSheetGate, "Bonnet lofts", Front.Refusal + Rear.Refusal, 1.0, false); continue; }
+            const SurfacePanel FrontPanel{ Front.Surface }, RearPanel{ Rear.Surface };
+            const SurfacePanel FrontImage = MirrorPanel(FrontPanel, {}, { 1.0, 0.0, 0.0 }), RearImage = MirrorPanel(RearPanel, {}, { 1.0, 0.0, 0.0 });
+            const double Seam = std::max(MeasureMirrorSeam(FrontPanel, FrontImage, 0.0), MeasureMirrorSeam(RearPanel, RearImage, 0.0));
+            if (Constrained)
+            {
+                Report(MirrorSeamGate, "Bonnet front + rear, sections fitted with P₁ − P₀ ∥ x̂", "angle " + Scientific(Seam) + " rad", Seam, Seam <= 1.0e-8);
+                ModelPartition Partition;
+                const PanelAssemblyOutcome Sheet = AssemblePanels(Partition, { FrontPanel, RearPanel, FrontImage, RearImage }, PanelAssemblySettings{}, "Sew");
+                if (!Sheet.Refusal.empty()) { Report(BonnetSheetGate, "Bonnet sheet", Sheet.Refusal, 1.0, false); continue; }
+                const AuditReport Audit = AuditBody(Partition, Sheet.Body);
+                const MeshCheck Mesh = CheckTessellation(Partition, Sheet.Body);
+                const bool Sound = Audit.SoundCondition() && !Sheet.SolidCondition && Sheet.SewnEdges == 4 && Sheet.LaminarEdges == 8 && Mesh.Conforming;
+                Report(BonnetSheetGate, "4 panels sewn into one sheet", AuditText(Audit) + " · sewn " + std::to_string(Sheet.SewnEdges) + " · rim " + std::to_string(Sheet.LaminarEdges) + " · mesh " + Mesh.Detail,
+                       Sound ? 0.0 : 1.0, Sound);
+                // G2 across the front / rear seam survives the mirror on both halves.
+                const double Across = std::max(MeasureSeam(Front.Surface, 1.0, Rear.Surface, 0.0, false).Curvature, MeasureSeam(*FinishNurbsSurface(*FrontImage.Surface.Definition), 1.0,
+                                                                                                                                 *FinishNurbsSurface(*RearImage.Surface.Definition), 0.0, false).Curvature);
+                Report(BonnetSheetGate, "Front / rear G2 on both halves", "curvature jump " + Scientific(Across), Across, Across <= 1.0e-6);
+                // ---- A6 a non-planar rim refuses the caps.
+                PanelAssemblySettings Caps;
+                Caps.CapCondition = true;
+                ModelPartition Other;
+                const PanelAssemblyOutcome Closed = AssemblePanels(Other, { FrontPanel, RearPanel, FrontImage, RearImage }, Caps, "Close");
+                const bool Named = Closed.Refusal.find("is not planar") != std::string::npos || Closed.Refusal.find("does not close") != std::string::npos;
+                Report(AssemblyRefuseGate, "Caps on the open bonnet rim", Closed.Refusal.empty() ? "(built — expected a refusal)" : Closed.Refusal, Named ? 0.0 : 1.0, Named);
+            }
+            else Report(MirrorSeamGate, "Unconstrained fits show the break (gate discriminates)", "angle " + Scientific(Seam) + " rad", 0.0, Seam > 1.0e-5);
+        }
+
+        // ---- A5 pod: noisy half sections (top x = 0 → side → bottom x = 0), planar + mirror tangent fits.
+        {
+            const double Length = 1.6;
+            auto HalfWidth  = [&](double Y) { return 0.4 + 0.1 * std::sin(std::numbers::pi * Y / Length); };
+            auto HalfHeight = [&](double Y) { return 0.3 + 0.05 * Y; };
+            std::mt19937_64 Generator(0x90D5ULL);
+            std::vector<NurbsCurve> Sections;
+            double PlanarOffset = 0.0;
+            std::string Problem;
+            for (int Index = 0; Index < 5; ++Index)
+            {
+                const double Y = Length * Index / 4.0;
+                std::vector<Vector3> Points;
+                for (double Station : IrregularStations(28))
+                {
+                    const double θ = 0.5 * std::numbers::pi - std::numbers::pi * Station;
+                    Vector3 Point = Vector3{ HalfWidth(Y) * std::cos(θ), Y, HalfHeight(Y) * std::sin(θ) } + Jitter(Generator, 5.0e-5);
+                    if (Station == 0.0 || Station == 1.0) Point.X = 0.0;
+                    Points.push_back(Point);
+                }
+                CurveFitSettings Settings;
+                Settings.PlanarCondition = true;
+                Settings.StartTangent = Settings.EndTangent = Vector3{ 1.0, 0.0, 0.0 };
+                const CurveFitOutcome Fit = FitSpaceCurve(Points, Settings);
+                if (!Fit.Refusal.empty()) Problem = Fit.Refusal;
+                PlanarOffset = std::max(PlanarOffset, Fit.PlanarOffset);
+                Sections.push_back(Fit.Curve);
+            }
+            const LoftSurfaceOutcome Loft = Problem.empty() ? LoftSectionSurface(Sections, LoftSettings{}) : LoftSurfaceOutcome{};
+            if (!Problem.empty() || !Loft.Refusal.empty()) Report(PodSolidGate, "Pod", Problem + Loft.Refusal, 1.0, false);
+            else
+            {
+                const SurfacePanel Half{ Loft.Surface }, Image = MirrorPanel(Half, {}, { 1.0, 0.0, 0.0 });
+                PanelAssemblySettings Settings;
+                Settings.CapCondition = true;
+                ModelPartition Partition;
+                const PanelAssemblyOutcome Solid = AssemblePanels(Partition, { Half, Image }, Settings, "Close");
+                if (!Solid.Refusal.empty()) Report(PodSolidGate, "Pod solid", Solid.Refusal, 1.0, false);
+                else
+                {
+                    double Exact = 0.0;                                                      // ∫ π·a·b dy, composite Simpson
+                    for (int Index = 0; Index <= 2000; ++Index)
+                    {
+                        const double Y = Length * Index / 2000.0, Weight = (Index == 0 || Index == 2000) ? 1.0 : (Index % 2 ? 4.0 : 2.0);
+                        Exact += Weight * std::numbers::pi * HalfWidth(Y) * HalfHeight(Y) * Length / 6000.0;
+                    }
+                    const double Integral = IntegrateBodyVolume(Partition, Solid.Body);
+                    const double Error = std::abs(Integral - Exact) / Exact;
+                    const AuditReport Audit = AuditBody(Partition, Solid.Body);
+                    const MeshCheck Mesh = CheckTessellation(Partition, Solid.Body);
+                    const double Seam = std::max(MeasureMirrorSeam(Half, Image, 0.0), MeasureMirrorSeam(Half, Image, 1.0));
+                    const bool Passed = Error <= 2.0e-3 && Audit.SoundCondition() && Solid.SolidCondition && Mesh.Watertight && Seam <= 1.0e-8;
+                    Report(PodSolidGate, "Pod solid (5 sections, 0.05 mm noise)", "volume " + std::to_string(Integral).substr(0, 8) + " vs " + std::to_string(Exact).substr(0, 8) + " · rel. " + Scientific(Error)
+                           + " · " + AuditText(Audit) + " · mesh " + Mesh.Detail + " · seam " + Scientific(Seam) + " rad · plane offset ≤ " + Millimetres(PlanarOffset), Error, Passed);
+                }
+            }
+        }
+
+        // ---- A6 refusals.
+        auto Expect = [&](const std::string& Name, const std::string& Refusal, const std::string& Expected)
+        {
+            const bool Named = Refusal.find(Expected) != std::string::npos;
+            Report(AssemblyRefuseGate, Name, Refusal.empty() ? "(built — expected a refusal)" : Refusal, Named ? 0.0 : 1.0, Named);
+        };
+        {
+            const NurbsCurve A = CubicCurve({ 0.0, 0.0, 0.0 }, { 0.3, 0.0, 0.1 }, { 0.7, 0.0, 0.1 }, { 1.0, 0.0, 0.0 });
+            const NurbsCurve B = CubicCurve({ 0.0, 0.5, 0.1 }, { 0.3, 0.5, 0.2 }, { 0.7, 0.5, 0.2 }, { 1.0, 0.5, 0.1 });
+            const NurbsCurve C = CubicCurve({ 0.0, 1.0, 0.0 }, { 0.3, 1.0, 0.1 }, { 0.7, 1.0, 0.1 }, { 1.0, 1.0, 0.0 });
+            const NurbsCurve D = CubicCurve({ 0.0, 0.5, 0.6 }, { 0.3, 0.5, 0.7 }, { 0.7, 0.5, 0.7 }, { 1.0, 0.5, 0.6 });
+            // B reparametrised exactly (weights λⁱ: same points, different τ).
+            NurbsCurveDefinition Moved = *B.Definition;
+            for (size_t Index = 0; Index < Moved.Weights.size(); ++Index) Moved.Weights[Index] = std::pow(1.6, static_cast<double>(Index));
+            const NurbsCurve Reparametrised{ std::make_shared<NurbsCurveDefinition>(Moved) };
+            const SurfacePanel First{ LoftSectionSurface({ A, B }, LoftSettings{}).Surface }, Second{ LoftSectionSurface({ Reparametrised, C }, LoftSettings{}).Surface };
+            ModelPartition Partition;
+            Expect("Shared boundary parametrised differently", AssemblePanels(Partition, { First, Second }, PanelAssemblySettings{}, "Sew").Refusal, "parametrised differently");
+            const SurfacePanel Plain{ LoftSectionSurface({ B, C }, LoftSettings{}).Surface }, Third{ LoftSectionSurface({ B, D }, LoftSettings{}).Surface };
+            Expect("One boundary claimed by 3 panels", AssemblePanels(Partition, { First, Plain, Third }, PanelAssemblySettings{}, "Sew").Refusal, "third panel");
+            CurveFitSettings Settings;
+            Settings.StartTangent = Vector3{ 1.0, 0.0, 0.0 };
+            Expect("End tangent on a 2-point line", FitSpaceCurve({ { 0.0, 0.0, 0.0 }, { 1.0, 1.0, 0.0 } }, Settings).Refusal, "degree ≥ 2");
+            CurveFitSettings Planar;
+            Planar.PlanarCondition = true;
+            std::vector<Vector3> Twisted;
+            for (int Index = 0; Index <= 20; ++Index) { const double T = Index / 20.0; Twisted.push_back({ T, std::sin(3.0 * T) * 0.2, 0.05 * T * T * T }); }
+            Expect("Planar fit of a twisted curve", FitSpaceCurve(Twisted, Planar).Refusal, "off their best plane");
+        }
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    ENTRY
 //------------------------------------------------------------------------------------------------------------------------
@@ -668,6 +886,7 @@ int main(int Count, char** Arguments)
     std::string Only = Count > 2 && std::string(Arguments[1]) == "--only" ? Arguments[2] : "";
     if (Only.empty() || Only == "networks")   ValidateNetworks();
     if (Only.empty() || Only == "continuity") ValidateContinuity();
+    if (Only.empty() || Only == "assembly")   ValidateAssembly();
 
     bool PassedCondition = true;
     for (const GateTally* Gate : AllGates()) PassedCondition = PassedCondition && Gate->Failures == 0 && (Gate->Checks > 0 || !Only.empty());
