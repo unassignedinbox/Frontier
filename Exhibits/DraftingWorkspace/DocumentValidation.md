@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (20.07 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (27.58 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -32,6 +32,8 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (20
 | W26 | Reference dimensions (Shift+D / E): a driven diagonal reads √13 then 5 without moving anything (DOF, positions, volume bit-equal); editing it or making it driving while implied is refused; E makes it driving at its reading and back; undo / redo; codec | ≤ 10⁻¹² · exact | 2.96e-16 | 4 | 🟢 |
 | W27 | Spline constraints: a line and a NURBS curve joined → L (G1) → C (G2, replaces the G1) → H on the far end, each solve ≤ 10⁻¹² with DOF −1 / −1 / −1; undo restores the G1; G2 on a natural cubic refused; codec | ≤ 10⁻¹² · exact | 5.14e-16 | 4 | 🟢 |
 | W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
+| W29 | Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line | ≤ 10⁻⁹ · exact | 1.88e-16 | 5 | 🟢 |
+| W30 | Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path | ≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin | 5.28e-09 | 5 | 🟢 |
 
 ## Walkthrough
 
@@ -162,7 +164,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (20
 | W16 | refused: blend across bodies (the selection spans Block1 and Block2 (one body at a time)) · self-combine (Block1 is picked twice (the target cannot be a tool)) · no tool · unknown body (no body named Extrude#99) · Separate as Q · second New; untouched | 0 | 🟢 |
 | W16 | Combine · Intersection (Block2 ∩ Block3): Block2 = its lower half (V = 0.495708), the slab consumed | 1.12e-15 | 🟢 |
 | W16 | save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; 2 bodies, volumes bit-equal | 0 | 🟢 |
-| W16 | a step kind beyond Pipe (16) is refused: a step has an unknown kind 16 (newer DraftingWorkspace?) | 0 | 🟢 |
+| W16 | a future step kind (25, beyond Evolution 16) is refused: a step has an unknown kind 25 (newer DraftingWorkspace?) | 0 | 🟢 |
 | W17 | Cut (Block1 by Line1): Cut#4 (Cut1) = 2, Block1 = 6 exact, both sound; Block1 keeps its key and Brass, the piece wears Studio | 6.66e-16 | 🟢 |
 | W17 | Remove (Cut1): 1 body left (6), Block1 active; undo → 2 bodies, redo → 1 | 0 | 🟢 |
 | W17 | Cut (Block1 by Circle1): core π/4 and the holed block 6 − π/4 exact (genus 1), cut from the active body | 3.25e-15 | 🟢 |
@@ -213,6 +215,16 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (20
 | W28 | refused: Sketch#3 comes after Sketch#1 (link to earlier sketches only) · Drag: Line2.Start is linked to Sketch#1 (move it there) · Sketch#1 has no point 40; file and history untouched | 0 | 🟢 |
 | W28 | save → load → save byte-equal with [[Steps.Sketch.Links]] { Point, Sketch, Index } and the construction line's LinkSketch / LinkIndex | 0 | 🟢 |
 | W28 | Unlink Line2.Start of Line1: DOF 3, start stays at (4, 2) when D1 = 5 (gap 0.000e+00); undo relinks | 0 | 🟢 |
+| W29 | Revolve1 · Rectangle1 · 360° about sketch y-axis · New: proposed axis sketch y-axis, V 3π (rel. 0.000e+00), New, sound | 0 | 🟢 |
+| W29 | Revolve2 · Rectangle2 · 360° about Line4 · Union: axis by line identifier 4, V 4.625π (rel. 1.223e-16), one sound body; undo / redo bit-equal | 1.22e-16 | 🟢 |
+| W29 | Revolve1 · Rectangle1 · 90° about sketch x-axis · New body: proposed sketch x-axis, V 3π/2 (rel. 1.885e-16), sound | 1.88e-16 | 🟢 |
+| W29 | refused: the angle must lie in (0°, 360°] · the angle must lie in (0°, 360°] · Revolve#2: Revolve: profile crosses the axis · choose the profile: focus a sketch step · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
+| W29 | save → load → save byte-equal; AxisOrigin / AxisDirection only on the y- / x-axis revolves (1 in the union file) | 0 | 🟢 |
+| W30 | Evolution1 · Rectangle1 along Line1 · New: path proposed Sketch#2, V 1 (rel. 0.000e+00), New, sound | 0 | 🟢 |
+| W30 | Evolution1 · Circle1 along Arc1 · New body: the arc is stored from (2, 2) (counter-clockwise), the sweep starts at its end nearer the profile; V π²/16 (rel. 5.276e-09), sound | 5.28e-09 | 🟢 |
+| W30 | Evolution1 · Rectangle2 along Line1 · Difference: block 2 → 1.875000 vs 1.875 (rel. 1.184e-16), one sound body | 1.18e-16 | 🟢 |
+| W30 | refused: the path must be another sketch than the profile · choose the path: click a one-curve sketch or select a curve · Evolution#5: Evolution: path sketch Sketch#1 has 4 curves (🚧 one line, arc or spline; J joins a chain into a spline first) · Evolution#5: Evolution: the path starts along the profile plane (it must leave the plane) · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
+| W30 | save → load → save byte-equal with the Evolution (16) steps and Path = 'Sketch#2' | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

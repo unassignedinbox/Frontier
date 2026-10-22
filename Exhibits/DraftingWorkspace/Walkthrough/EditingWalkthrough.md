@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 476 frames · 47.7404 s · slowest frame 413.65 ms
+- Frame: 1600 x 900 · 476 frames · 25.9096 s · slowest frame 267.202 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -23,7 +23,7 @@
 | 66 | `steps == 3` | 3 | 🟢 |
 | 67 | `volume ~ 2` | 2 | 🟢 |
 | 68 | `sound == 1` | 1 | 🟢 |
-| 69 | `status contains Move` | Move (Extrude1) · 9 ms | 🟢 |
+| 69 | `status contains Move` | Move (Extrude1) · 7 ms | 🟢 |
 | 78 | `transform-readout contains Rotate z 45` | Rotate z 45° · typed 45 | 🟢 |
 | 81 | `transform-commits == 2` | 2 | 🟢 |
 | 82 | `steps == 4` | 4 | 🟢 |
@@ -48,7 +48,7 @@
 | 142 | `bodies == 1` | 1 | 🟢 |
 | 145 | `bodies == 2` | 2 | 🟢 |
 | 146 | `volume ~ 8` | 8 | 🟢 |
-| 147 | `status contains Paste` | Paste (Extrude1Copy1) · 29 ms | 🟢 |
+| 147 | `status contains Paste` | Paste (Extrude1Copy1) · 23 ms | 🟢 |
 | 148 | `selected-bodies contains Duplicate#` | Duplicate#8 | 🟢 |
 | 154 | `hidden == 1` | 1 | 🟢 |
 | 155 | `scene-bodies == 1` | 1 | 🟢 |
@@ -86,17 +86,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `52bcaf5a166c1fed` |
-| 112Rotate | 142 | `382e0e8ab29b9ff9` |
-| 113Scale | 180 | `3cfca7a307a84ec9` |
-| 114Duplicate | 209 | `cd0e9f5e9ae483a7` |
-| 115Paste | 228 | `7b132efe982f285d` |
-| 116Hide | 236 | `1114b1a2491e866b` |
-| 117InvertHidden | 273 | `f5ae985ec6cb0130` |
-| 118Join | 365 | `2c40da38fd2fa749` |
-| 119OffsetPreview | 407 | `5c079377b2922250` |
-| 120PipePreview | 462 | `59938b9e1c6e3ad2` |
-| 121Pipe | 476 | `e1d56fa82f49c475` |
+| 111MovePreview | 98 | `1e04cd2d6d61cdcc` |
+| 112Rotate | 142 | `a6ef1e5c25e80716` |
+| 113Scale | 180 | `d77fe6adc456ee84` |
+| 114Duplicate | 209 | `582de22e97f350c7` |
+| 115Paste | 228 | `83613d5830730c8a` |
+| 116Hide | 236 | `d6f05247139f12c0` |
+| 117InvertHidden | 273 | `088fbf64e1d0300e` |
+| 118Join | 365 | `75f7d751bba1c230` |
+| 119OffsetPreview | 407 | `214a25e5c65f147b` |
+| 120PipePreview | 462 | `6c8de829ce34b14d` |
+| 121Pipe | 476 | `415da6f7582b4bc2` |
 
 ## Journal
 
@@ -111,22 +111,22 @@
 - Selected Extrude1 (6 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/DraftingWorkspace/EditingRecovery.drafting.toml
-- Move (Extrude1) · 9 ms
+- Move (Extrude1) · 7 ms
 - Rotate 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
-- Rotate (Extrude1) · 12 ms
+- Rotate (Extrude1) · 9 ms
 - View Isometric
 - Framed the document (Space)
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
-- Scale (Extrude1) · 16 ms
+- Scale (Extrude1) · 14 ms
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Scale cancelled
 - Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/DraftingWorkspace/EditingRecovery.drafting.toml
-- Duplicate (Extrude1) · 31 ms
+- Duplicate (Extrude1) · 21 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
-- Remove (Extrude1Copy1) · 21 ms
-- Paste (Extrude1Copy1) · 29 ms
+- Remove (Extrude1Copy1) · 16 ms
+- Paste (Extrude1Copy1) · 23 ms
 - Hide selected · 1 hidden
 - Unhide all · 0 hidden
 - Selected Extrude1Copy2 (6 faces)
@@ -145,11 +145,11 @@
 - Bevel size 1 m (pinned)
 - Extrude1 · Line2 · New · 4 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
-- Offset Line2 by 0.25 · 5 ms
+- Offset Line2 by 0.25 · 4 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Line1 · 4 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric
-- Pipe r 0.2 along Line1 · 11 ms
+- Pipe r 0.2 along Line1 · 9 ms
 - Framed the document (Space)

@@ -1,0 +1,22 @@
+{
+  "Frame": 171,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#3", "Caption": "Line2 · Sketch", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "Edge(Revolve#4.Side(Line3)|Revolve#4.Side(Line4))",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 11.46663532, "Target": [1.720129574, 1.376103659, 8.426204708e-17], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[0.6, 2], [-0, 2], [-0, 0]], "Refusal": ""},
+  "Undo": 4,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Revolve Line2 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels",
+  "Viewport": [320, 160, 930, 730]
+}

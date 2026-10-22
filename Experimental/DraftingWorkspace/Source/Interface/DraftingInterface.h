@@ -259,18 +259,28 @@ struct DraftingTransformSession
 enum class DraftingSweepVerb : uint8_t
 {
     Offset = 0,                                                                              // O: offset-curve
-    Pipe   = 1,                                                                              // P: pipe
+    Pipe      = 1,                                                                           // P: pipe
+    Revolve   = 2,                                                                           // Alt+R: revolution (no Plasticity default key)
+    Evolution = 3,                                                                           // Shift+P / Alt+E: evolution
 };
 
 // 📝 Plasticity O (offset the focused sketch: a new sketch) and P (a tube along the focused sketch or the selected curve):
 //    horizontal pointer motion sets the distance / radius (Shift fine, snapped 0.01 unless Ctrl), typed digits override;
 //    P takes Q / W / E / R like extrude. The offset previews as an outline, the pipe as a staged document.
+//    Alt+R turns the focused sketch about an axis (typed degrees, default 360; X / Y sketch axes; a click on one of its
+//    lines makes that the axis). Shift+P / Alt+E sweeps the focused sketch along a path (the selected curve or the newest
+//    one-curve sketch; a click on another sketch's curve picks it). Both stage the result and take Q / W / E / R.
 struct DraftingSweepSession
 {
     bool                                        ActiveCondition   = false;                   // [-]   - Session open
     DraftingSweepVerb                           Verb              = DraftingSweepVerb::Offset; // [-] - O / P
-    std::string                                 Path              = {};                      // [-]   - Sketch step / curve label
-    double                                      Amount            = 0.1;                     // [len] - Offset distance / pipe radius
+    std::string                                 Path              = {};                      // [-]   - Sketch step / curve label (Revolve: profile; Evolution: path)
+    std::string                                 Profile           = {};                      // [-]   - Evolution: profile sketch
+    DraftingRevolveAxis                         Axis              = {};                      // [-]   - Revolve: axis
+    std::string                                 StagedKey         = {};                      // [-]   - Revolve / Evolution: axis / path the preview shows
+    std::string                                 HoverSketch       = {};                      // [-]   - Revolve / Evolution: sketch under the pointer
+    int                                         HoverCurve        = -1;                      // [-]   - Its curve index (−1: none)
+    double                                      Amount            = 0.1;                     // [len] - Offset distance / pipe radius ([°] revolve angle)
     double                                      Drift             = 0.0;                     // [len] - Unsnapped pointer amount
     std::string                                 Typed             = {};                      // [-]   - Typed amount
     Modeller::FeatureCombination                Combination       = Modeller::FeatureCombination::Separate; // [-] - Pipe: Q / W / E / R

@@ -72,6 +72,8 @@ namespace
     GateTally CopyGate        = { "W20", "Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals", "≤ 10⁻⁹ · exact" };
     GateTally HideGate        = { "W21", "Hide family (H, Shift+H, Alt+H, Ctrl+H): scene bodies and picking follow, selection drops hidden bodies, undo, codec round trip, refusals", "exact" };
     GateTally CurveGate       = { "W22", "Join (J) two open drawings into a closed square (extrudes to 1); offset (O) it by ¼ (2.25); pipe (P) along a drawn line (π r² L); refusals; codec byte-equal with kinds 13 / 14 / 15", "≤ 10⁻⁹ · exact" };
+    GateTally RevolveGate     = { "W29", "Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line", "≤ 10⁻⁹ · exact" };
+    GateTally EvolutionGate   = { "W30", "Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path", "≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -1187,9 +1189,9 @@ int main()
               "save → load → save byte-equal with Combine Tool / Target and [[Appearance.Bodies]]; " + std::to_string(Copy.Summary.Bodies.size()) + " bodies, volumes bit-equal");
         std::string Future = Written;
         const size_t KindAt = Future.find("Kind = 10");
-        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 16");
+        if (KindAt != std::string::npos) Future.replace(KindAt, 9, "Kind = 25");
         const DraftingDocumentFile Newer = DecodeDraftingDocument(Future);
-        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a step kind beyond Pipe (16) is refused: " + Newer.Refusal);
+        Tally(BodiesGate, 0.0, KindAt != std::string::npos && !Newer.Refusal.empty(), "a future step kind (25, beyond Evolution 16) is refused: " + Newer.Refusal);
     }
 
     // ---- W17 trim / split: Plasticity C (command:cut) and X on picked bodies.
@@ -1933,13 +1935,159 @@ int main()
               Unlink.Label + ": DOF " + std::to_string(Freed) + ", start stays at (4, 2) when D1 = 5 (gap " + Scientific(StayGap) + "); undo relinks");
     }
 
+    // ---- W29 … W30: Revolve (Alt+R) and Evolution (Shift+P / Alt+E)
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto Figures  = [](const DraftingDocument& Target, const std::string& Key) -> const DraftingBodyFigures*
+        {
+            for (const DraftingBodyFigures& Body : Target.Summary.Bodies) if (Body.Key == Key) return &Body;
+            return nullptr;
+        };
+        auto VolumeOf = [&](const DraftingDocument& Target, const std::string& Key) { const DraftingBodyFigures* Body = Figures(Target, Key); return Body ? Body->Volume : -1.0; };
+        auto Draw = [](DraftingDocument& Target, DraftingDrawingKind Kind, std::vector<Vector2> Points, int GridPlane = 0)
+        {
+            DraftingDrawingRequest Drawing;
+            Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.GridPlane = GridPlane;
+            return DrawDraftingSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+        };
+        auto RoundTrip = [](const DraftingDocument& Source)
+        {
+            const std::string Written = EncodeDraftingDocument(Source);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            return Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Volume == Source.Summary.Volume;
+        };
+        auto Scientific = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3e", Value); return std::string(Text); };
+        auto Verdict = [](const DraftingCommandOutcome& Outcome) { return Outcome.AcceptedCondition ? Outcome.Label : Outcome.Label + " REFUSED (" + Outcome.Refusal + ")"; };
+        auto Occurrences = [](const std::string& Text, const std::string& Word) { int Count = 0; for (size_t At = Text.find(Word); At != std::string::npos; At = Text.find(Word, At + 1)) ++Count; return Count; };
+
+        // W29 ① a 1 × 1 square at x ∈ [1, 2] on XY: the proposed axis is the sketch y-axis (the profile lies right of it);
+        //        a full turn → the first body (New) is an annulus π(R² − r²)h = 3π
+        DraftingDocument Turned = CreateDraftingDocument("Revolve");
+        const std::string Ring = Draw(Turned, DraftingDrawingKind::Rectangle, { { 1.0, 0.0 }, { 2.0, 1.0 } });
+        const DraftingRevolveAxis Proposed = ProposeDraftingRevolveAxis(Turned, Ring);
+        const DraftingCommandOutcome Annulus = RevolveDraftingSketch(Turned, Ring, Proposed, 2.0 * Pi, FeatureCombination::New);
+        const std::string RingKey = Annulus.AcceptedCondition ? Turned.Tree.Steps.back().Label : std::string{};
+        const double RingVolume = VolumeOf(Turned, RingKey);
+        Tally(RevolveGate, Relative(RingVolume, 3.0 * Pi),
+              Annulus.AcceptedCondition && Proposed.Line < 0 && Proposed.Direction.X == 0.0 && Proposed.Direction.Y == 1.0 && Turned.Tree.Steps.back().Combination == FeatureCombination::New
+                  && Relative(RingVolume, 3.0 * Pi) <= 1.0e-9 && Turned.Summary.SoundCondition,
+              Verdict(Annulus) + ": proposed axis " + DescribeDraftingRevolveAxis(Turned, Ring, Proposed) + ", V 3π (rel. " + Scientific(Relative(RingVolume, 3.0 * Pi)) + "), New, sound");
+
+        // W29 ② a 1.5 × 1 plate on the y-axis (x ∈ [0, 1.5], y ∈ [−½, ½]) turned about its own left edge (a line of the
+        //        sketch, by identifier) and united with the annulus: 3π + 2.25π − overlap 0.625π = 4.625π; undo / redo exact
+        const std::string Plate = Draw(Turned, DraftingDrawingKind::Rectangle, { { 0.0, -0.5 }, { 1.5, 0.5 } });
+        DraftingRevolveAxis Edge;
+        for (const SketchCurve& Curve : Turned.Regeneration.Sketches.at(Plate).Curves)
+        {
+            const SketchModel& Model = Turned.Regeneration.Sketches.at(Plate);
+            if (Curve.Kind == SketchCurveKind::Line && Model.Points[Curve.Start].Position.X == 0.0 && Model.Points[Curve.End].Position.X == 0.0) Edge.Line = Curve.Identifier;
+        }
+        const DraftingCommandOutcome United = RevolveDraftingSketch(Turned, Plate, Edge, 2.0 * Pi, FeatureCombination::Union, RingKey);
+        const double UnionVolume = VolumeOf(Turned, RingKey);
+        const bool   Rewound = UndoDraftingCommand(Turned) && VolumeOf(Turned, RingKey) == RingVolume && RedoDraftingCommand(Turned) && VolumeOf(Turned, RingKey) == UnionVolume;
+        Tally(RevolveGate, Relative(UnionVolume, 4.625 * Pi),
+              United.AcceptedCondition && Edge.Line >= 0 && Relative(UnionVolume, 4.625 * Pi) <= 1.0e-9 && Turned.Summary.Bodies.size() == 1 && Turned.Summary.SoundCondition && Rewound,
+              Verdict(United) + ": axis by line identifier " + std::to_string(Edge.Line) + ", V 4.625π (rel. " + Scientific(Relative(UnionVolume, 4.625 * Pi)) + "), one sound body; undo / redo bit-equal");
+
+        // W29 ③ a 2 × 1 plate across the y-axis (x ∈ [−1, 1], y ∈ [1, 2]): the proposal falls back to the sketch x-axis;
+        //        a quarter turn → (θ/2)(R² − r²)w = 3π/2
+        DraftingDocument Quarter = CreateDraftingDocument("Quarter");
+        const std::string Bar = Draw(Quarter, DraftingDrawingKind::Rectangle, { { -1.0, 1.0 }, { 1.0, 2.0 } });
+        const DraftingRevolveAxis Across = ProposeDraftingRevolveAxis(Quarter, Bar);
+        const DraftingCommandOutcome Bent = RevolveDraftingSketch(Quarter, Bar, Across, 0.5 * Pi, FeatureCombination::Separate);
+        const double BentVolume = VolumeOf(Quarter, Bent.AcceptedCondition ? Quarter.Tree.Steps.back().Label : std::string{});
+        Tally(RevolveGate, Relative(BentVolume, 1.5 * Pi),
+              Bent.AcceptedCondition && Across.Line < 0 && Across.Direction.X == 1.0 && Across.Direction.Y == 0.0 && Relative(BentVolume, 1.5 * Pi) <= 1.0e-9 && Quarter.Summary.SoundCondition,
+              Verdict(Bent) + ": proposed " + DescribeDraftingRevolveAxis(Quarter, Bar, Across) + ", V 3π/2 (rel. " + Scientific(Relative(BentVolume, 1.5 * Pi)) + "), sound");
+
+        // W29 ④ refusals leave file and history alone: no angle, more than a turn, a profile across the axis, no sketch,
+        //        Difference with nothing to subtract from
+        DraftingDocument Empty = CreateDraftingDocument("Refusals");
+        const std::string Across2 = Draw(Empty, DraftingDrawingKind::Rectangle, { { -1.0, 0.0 }, { 1.0, 1.0 } });
+        const std::string Before  = EncodeDraftingDocument(Empty);
+        const DraftingRevolveAxis YAxis{ -1, { 0.0, 0.0 }, { 0.0, 1.0 } };
+        const DraftingCommandOutcome Nothing  = RevolveDraftingSketch(Empty, Across2, Across, 0.0);
+        const DraftingCommandOutcome Overturn = RevolveDraftingSketch(Empty, Across2, Across, 2.5 * Pi);
+        const DraftingCommandOutcome Crossing = RevolveDraftingSketch(Empty, Across2, YAxis, Pi);
+        const DraftingCommandOutcome Missing  = RevolveDraftingSketch(Empty, "Sketch#99", YAxis, Pi);
+        const DraftingCommandOutcome Subtract = RevolveDraftingSketch(Empty, Across2, Across, Pi, FeatureCombination::Difference);
+        Tally(RevolveGate, 0.0, !Nothing.AcceptedCondition && !Overturn.AcceptedCondition && !Crossing.AcceptedCondition && !Missing.AcceptedCondition && !Subtract.AcceptedCondition
+                                && EncodeDraftingDocument(Empty) == Before && Crossing.Refusal.find("crosses the axis") != std::string::npos,
+              "refused: " + Nothing.Refusal + " · " + Overturn.Refusal + " · " + Crossing.Refusal + " · " + Missing.Refusal + " · " + Subtract.Refusal + "; file untouched");
+
+        // W29 ⑤ codec: the point + direction axis is written only without a line (older files stay byte-equal)
+        const std::string TurnedFile = EncodeDraftingDocument(Turned), QuarterFile = EncodeDraftingDocument(Quarter);
+        Tally(RevolveGate, 0.0, RoundTrip(Turned) && RoundTrip(Quarter) && Occurrences(TurnedFile, "AxisDirection") == 1 && QuarterFile.find("AxisDirection = [ 1.0, 0.0 ]") != std::string::npos,
+              "save → load → save byte-equal; AxisOrigin / AxisDirection only on the y- / x-axis revolves (" + std::to_string(Occurrences(TurnedFile, "AxisDirection")) + " in the union file)");
+
+        // W30 ① a 1 × ½ rectangle on XY and a line (0, 0) → (0, 2) on XZ (world +z): the proposal takes the line sketch;
+        //        the rigid sweep is a prism A·L = 1
+        DraftingDocument Swept = CreateDraftingDocument("Evolution");
+        const std::string Slab = Draw(Swept, DraftingDrawingKind::Rectangle, { { 0.0, 0.0 }, { 1.0, 0.5 } });
+        const std::string Rail = Draw(Swept, DraftingDrawingKind::Line, { { 0.0, 0.0 }, { 0.0, 2.0 } }, 1);
+        const std::string Chosen = ProposeDraftingEvolutionPath(Swept, Slab);
+        const DraftingCommandOutcome Prism = EvolveDraftingProfile(Swept, Slab, Chosen, FeatureCombination::New);
+        const std::string PrismKey = Prism.AcceptedCondition ? Swept.Tree.Steps.back().Label : std::string{};
+        Tally(EvolutionGate, Relative(VolumeOf(Swept, PrismKey), 1.0),
+              Prism.AcceptedCondition && Chosen == Rail && Relative(VolumeOf(Swept, PrismKey), 1.0) <= 1.0e-9 && Swept.Summary.SoundCondition && Swept.Tree.Steps.back().Combination == FeatureCombination::New,
+              Verdict(Prism) + ": path proposed " + Chosen + ", V 1 (rel. " + Scientific(Relative(VolumeOf(Swept, PrismKey), 1.0)) + "), New, sound");
+
+        // W30 ② a circle r ¼ about the origin swept along a quarter arc of radius 2 on XZ (start ⟂ the profile): Pappus
+        //        πr² · Rπ/2 = π²/16 (the side is a NURBS skin within 10⁻⁶ of the canal)
+        DraftingDocument Bend = CreateDraftingDocument("Bend");
+        const std::string Disc = Draw(Bend, DraftingDrawingKind::Circle, { { -0.25, 0.0 }, { 0.25, 0.0 } });
+        const std::string Arc  = Draw(Bend, DraftingDrawingKind::Arc, { { 0.0, 0.0 }, { 2.0, 2.0 }, { 2.0 - std::sqrt(2.0), std::sqrt(2.0) } }, 1);
+        const DraftingCommandOutcome Elbow = EvolveDraftingProfile(Bend, Disc, Arc, FeatureCombination::Separate);
+        const double ElbowVolume = VolumeOf(Bend, Elbow.AcceptedCondition ? Bend.Tree.Steps.back().Label : std::string{});
+        Tally(EvolutionGate, Relative(ElbowVolume, Pi * Pi / 16.0),
+              Elbow.AcceptedCondition && Relative(ElbowVolume, Pi * Pi / 16.0) <= 1.0e-6 && Bend.Summary.SoundCondition,
+              Verdict(Elbow) + ": the arc is stored from (2, 2) (counter-clockwise), the sweep starts at its end nearer the profile; V π²/16 (rel. " + Scientific(Relative(ElbowVolume, Pi * Pi / 16.0)) + "), sound");
+
+        // W30 ③ groove: a 2 × 1 × 1 block (XZ rectangle x ∈ [−1, 1], z ∈ [½, 1½] extruded 1 along −y) minus a ½ × ½
+        //        square swept along +z through it: the block keeps 2 − ½ · ¼ · 1 = 1.875 (the square straddles y = 0)
+        DraftingDocument Groove = CreateDraftingDocument("Groove");
+        const std::string Face = Draw(Groove, DraftingDrawingKind::Rectangle, { { -1.0, 0.5 }, { 1.0, 1.5 } }, 1);
+        Expect(ExtrudeDraftingSketch(Groove, Face, 1.0, FeatureCombination::Separate));
+        const std::string BlockKey = Groove.Tree.Steps.back().Label;
+        const double BlockVolume = VolumeOf(Groove, BlockKey);
+        const std::string Square = Draw(Groove, DraftingDrawingKind::Rectangle, { { -0.25, -0.25 }, { 0.25, 0.25 } });
+        const std::string Spine  = Draw(Groove, DraftingDrawingKind::Line, { { 0.0, 0.0 }, { 0.0, 2.0 } }, 1);
+        const DraftingCommandOutcome Cut = EvolveDraftingProfile(Groove, Square, Spine, FeatureCombination::Difference, BlockKey);
+        const double GrooveVolume = VolumeOf(Groove, BlockKey);
+        const double GrooveExpected = BlockVolume - 0.125;
+        Tally(EvolutionGate, Relative(GrooveVolume, GrooveExpected),
+              Cut.AcceptedCondition && Relative(BlockVolume, 2.0) <= 1.0e-12 && Relative(GrooveVolume, GrooveExpected) <= 1.0e-6 && Groove.Summary.Bodies.size() == 1 && Groove.Summary.SoundCondition,
+              Verdict(Cut) + ": block 2 → " + std::to_string(GrooveVolume) + " vs 1.875 (rel. " + Scientific(Relative(GrooveVolume, GrooveExpected)) + "), one sound body");
+
+        // W30 ④ refusals (path = profile, no path, a 4-curve path, a path leaving along the profile plane, Difference with
+        //        no body) leave the file alone; codec byte-equal with Kind 16 and its Path
+        const std::string Flat = Draw(Swept, DraftingDrawingKind::Line, { { 3.0, 0.0 }, { 5.0, 0.0 } });
+        const std::string SweptBefore = EncodeDraftingDocument(Swept);
+        const DraftingCommandOutcome Self   = EvolveDraftingProfile(Swept, Slab, Slab);
+        const DraftingCommandOutcome NoPath = EvolveDraftingProfile(Swept, Slab, "");
+        const DraftingCommandOutcome Many   = EvolveDraftingProfile(Swept, Rail, Slab);
+        const DraftingCommandOutcome InPlane = EvolveDraftingProfile(Swept, Slab, Flat);
+        DraftingDocument Bare = CreateDraftingDocument("Bare");
+        const std::string BareSlab = Draw(Bare, DraftingDrawingKind::Rectangle, { { 0.0, 0.0 }, { 1.0, 0.5 } });
+        const std::string BareRail = Draw(Bare, DraftingDrawingKind::Line, { { 0.0, 0.0 }, { 0.0, 2.0 } }, 1);
+        const DraftingCommandOutcome Hollow = EvolveDraftingProfile(Bare, BareSlab, BareRail, FeatureCombination::Difference);
+        const std::string SweptAfter = EncodeDraftingDocument(Swept);
+        Tally(EvolutionGate, 0.0, !Self.AcceptedCondition && !NoPath.AcceptedCondition && !Many.AcceptedCondition && !InPlane.AcceptedCondition && !Hollow.AcceptedCondition && SweptAfter == SweptBefore,
+              "refused: " + Self.Refusal + " · " + NoPath.Refusal + " · " + Many.Refusal + " · " + InPlane.Refusal + " · " + Hollow.Refusal + "; file untouched");
+        Tally(EvolutionGate, 0.0, RoundTrip(Swept) && RoundTrip(Bend) && RoundTrip(Groove) && SweptAfter.find("Kind = 16") != std::string::npos && SweptAfter.find("Path = '" + Rail + "'") != std::string::npos,
+              "save → load → save byte-equal with the Evolution (16) steps and Path = '" + Rail + "'");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

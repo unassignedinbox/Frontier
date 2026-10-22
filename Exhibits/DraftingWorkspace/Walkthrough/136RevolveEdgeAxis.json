@@ -1,0 +1,22 @@
+{
+  "Frame": 258,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#3", "Caption": "Line2 · Sketch", "Refused": false}, {"Label": "Revolve#4", "Caption": "Revolve1 · Revolve", "Refused": false}, {"Label": "Sketch#5", "Caption": "Rectangle1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 4, "Edges": 5, "Vertices": 3, "Genus": 0, "Volume": 4.10109489, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 11.46663532, "Target": [1.720129574, 1.376103659, 8.426204708e-17], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[1.6, 0.6], [1.9, 1.4]], "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "View Isometric",
+  "Viewport": [320, 160, 930, 730]
+}

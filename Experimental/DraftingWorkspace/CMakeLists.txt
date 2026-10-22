@@ -288,6 +288,16 @@ add_test(NAME DraftingLinkedConstraintsWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingLinkedConstraintsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+# DraftingWorkspace revolve / sweep walkthrough — Alt+R revolve (proposed y-axis, X / Y keys, a clicked profile line as
+# the axis, typed degrees) and Shift+P / Alt+E evolution (proposed path, a clicked curve switches it), staged previews.
+add_test(NAME DraftingRevolveSweepWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/RevolveSweepRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/RevolveSweep.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/RevolveSweepWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingRevolveSweepWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

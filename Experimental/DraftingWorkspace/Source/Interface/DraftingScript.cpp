@@ -217,6 +217,12 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "sweep-amount") return Numeric(State.Sweep.Amount);
     if (Field == "sweep-refusal") { Text = State.Sweep.Refusal; Number = double(Text.size()); return true; }
     if (Field == "sweep-outline") return Numeric(double(State.Sweep.Outline.size()));
+    if (Field == "sweep-verb") { Text = State.Sweep.Verb == DraftingSweepVerb::Offset ? "Offset" : State.Sweep.Verb == DraftingSweepVerb::Pipe ? "Pipe" : State.Sweep.Verb == DraftingSweepVerb::Revolve ? "Revolve" : "Evolution"; Number = double(int(State.Sweep.Verb)); return true; }
+    if (Field == "sweep-axis") { Text = DescribeDraftingRevolveAxis(State.Document, State.Sweep.Path, State.Sweep.Axis); Number = double(State.Sweep.Axis.Line); return true; }
+    if (Field == "sweep-path") { Text = State.Sweep.Path; Number = double(Text.size()); return true; }
+    if (Field == "sweep-profile") { Text = State.Sweep.Profile; Number = double(Text.size()); return true; }
+    if (Field == "sweep-hover") { Text = State.Sweep.HoverSketch; Number = double(State.Sweep.HoverCurve); return true; }
+    if (Field == "sweep-preview") return Numeric(State.Sweep.Preview ? 1 : 0);
     if (Field == "hidden") return Numeric(double(Document.Appearance.HiddenBodies.size()));
     if (Field == "scene-bodies") return Numeric(double(State.Scene.Bodies.size()));
     if (Field == "clipboard") return Numeric(double(State.Clipboard.Keys.size()));

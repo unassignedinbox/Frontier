@@ -1,0 +1,22 @@
+{
+  "Frame": 400,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#3", "Caption": "Line2 · Sketch", "Refused": false}, {"Label": "Revolve#4", "Caption": "Revolve1 · Revolve", "Refused": false}, {"Label": "Sketch#5", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Revolve#6", "Caption": "Revolve2 · Revolve", "Refused": false}, {"Label": "Sketch#7", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Sketch#8", "Caption": "Curve1 · Sketch", "Refused": false}, {"Label": "Sketch#9", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Evolution#10", "Caption": "Evolution1 · Evolution", "Refused": false}],
+  "Body": {"Faces": 12, "Edges": 17, "Vertices": 11, "Genus": 0, "Volume": 4.476723549, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "Evolution#10.Side(Circle1)",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 11.17880538, "Target": [2.024253607, 0.8999999985, 0.4970142245], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 1, "Form": "Bezier", "Centre": false, "Points": [[3.5, 0], [3.5, 1.5]], "Refusal": ""},
+  "Undo": 11,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Framed the document (Space)",
+  "Viewport": [320, 160, 930, 730]
+}

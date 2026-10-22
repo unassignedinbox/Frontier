@@ -121,6 +121,12 @@ CaptureCaptions = {
     "131ConstrainReferenceFollows": "D2 = 2: the reference reads (2.5); E is refused because H1, V1, D1, D2 already imply it",
     "132ConstrainLinkPick"       : "K on a later sketch: the plate's sketch is drawn dashed and its far corner is pickable",
     "133ConstrainLinked"         : "Linked corner and top line in amber: the plate's D1 = 2 carries the later line's start to (2, 2)",
+    "134RevolvePreview"          : "Alt+R on a vase profile (polylines + Bezier): the proposed sketch y-axis dashed amber, the staged full turn",
+    "135RevolvePreviewIsometric" : "The staged revolve from the isometric view: spline profile turned exactly about the y-axis",
+    "136RevolveEdgeAxis"         : "A plate turned 90 degrees about its own left edge (a click picked Line4 as the axis), new body",
+    "137EvolutionProposed"       : "Shift+P: a circle swept along the proposed path, the newest one-curve sketch",
+    "138EvolutionPath"           : "A click on the Bezier switches the path: the circle sweeps along it by rotation-minimising frames",
+    "139Evolution"               : "Revolve1 4.10109, Revolve2 0.05655, Evolution1 0.31908 m3 (pi r^2 L): three sound bodies",
 }
 
 #------------------------------------------------------------------------------------------------------------------------

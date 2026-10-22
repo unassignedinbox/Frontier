@@ -289,6 +289,36 @@ struct VehicleCurveFile;
                                                       Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
                                                       const std::string& Target = {});
 
+// 📝 Revolve axis (Alt+R): a line of the sketch by identifier (construction or profile edge), else a point + direction
+//    in sketch coordinates (the sketch x- / y-axis).
+struct DraftingRevolveAxis
+{
+    int               Line      = -1;                                                        // [-] - Sketch line identifier (−1: Origin + t·Direction)
+    Modeller::Vector2 Origin    = {};                                                        // [len] - A point of the axis
+    Modeller::Vector2 Direction = { 0.0, 1.0 };                                              // [-]   - Axis direction
+};
+
+// The axis Alt+R starts with: the sketch's first construction line, else the sketch y-axis when the profile lies on one
+// side of it (touching allowed), else the x-axis when that one is clear, else the y-axis (the revolve then refuses).
+[[nodiscard]] DraftingRevolveAxis ProposeDraftingRevolveAxis(const DraftingDocument& Document, const std::string& Sketch);
+// "Line3", "sketch y-axis", "sketch x-axis" or "axis (x, y) + t·(dx, dy)".
+[[nodiscard]] std::string DescribeDraftingRevolveAxis(const DraftingDocument& Document, const std::string& Sketch, const DraftingRevolveAxis& Axis);
+
+// Alt+R (Plasticity revolution, no default key): the profile of Sketch turned by Angle (0, 2π] about Axis, combined like
+// an extrude (the first body is New; later ones Union / Difference / Intersection with Target, or New body).
+[[nodiscard]] DraftingCommandOutcome RevolveDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const DraftingRevolveAxis& Axis, double Angle,
+                                                           Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                           const std::string& Target = {});
+
+// Plasticity Evolution (Shift+P / Alt+E): the profile of sketch Profile swept along Path (a one-curve sketch or a
+// SpaceCurve), combined like an extrude.
+[[nodiscard]] DraftingCommandOutcome EvolveDraftingProfile(DraftingDocument& Document, const std::string& Profile, const std::string& Path,
+                                                           Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                           const std::string& Target = {});
+// The path Evolution starts with: the first selected curve, else the newest other sketch holding exactly one drawn open
+// curve (empty: none).
+[[nodiscard]] std::string ProposeDraftingEvolutionPath(const DraftingDocument& Document, const std::string& Profile);
+
 // 📝 Constraint commands on a sketch step (the K session). Each one solves the edited sketch first, with its parameters
 //    bound as regeneration binds them: a redundant or conflicting constraint is refused naming the constraints it
 //    duplicates or contradicts, and on success the solved positions are written back into the step, so the sketch stays

@@ -2130,19 +2130,70 @@ void DriveTransformSession(DraftingWorkspaceState& State, const DraftingCameraFr
     Transform.PreviewScene = BuildDraftingScene(*Transform.Preview);
 }
 
+[[nodiscard]] const char* SweepVerbName(DraftingSweepVerb Verb)
+{
+    switch (Verb)
+    {
+    case DraftingSweepVerb::Offset:    return "Offset";
+    case DraftingSweepVerb::Pipe:      return "Pipe";
+    case DraftingSweepVerb::Revolve:   return "Revolve";
+    case DraftingSweepVerb::Evolution: return "Evolution";
+    }
+    return "Sweep";
+}
+
+[[nodiscard]] const FeatureStep* SweepStep(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == Label) return &Step;
+    return nullptr;
+}
+
+[[nodiscard]] const SketchModel* SweepSketch(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+    return Solved == State.Document.Regeneration.Sketches.end() ? nullptr : &Solved->second;
+}
+
+// A sketch holding exactly one drawn open curve: a path, never a profile.
+[[nodiscard]] bool SingleOpenCurveCondition(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    const SketchModel* Sketch = SweepSketch(State, Label);
+    if (!Sketch) return false;
+    int  Drawn = 0;
+    bool Open  = true;
+    for (const SketchCurve& Curve : Sketch->Curves)
+    {
+        if (Curve.Construction) continue;
+        ++Drawn;
+        Open = Open && Curve.Kind != SketchCurveKind::Circle && !(Curve.Kind == SketchCurveKind::Spline && Curve.Points.size() > 1 && Curve.Points.front() == Curve.Points.back());
+    }
+    return Drawn == 1 && Open;
+}
+
 // The path O / P act on: the focused sketch step, else (P) the first selected curve, else the newest sketch step.
+// Revolve / Evolution take the profile: the focused sketch, else the newest sketch that is not a lone open curve (a
+// focused lone open curve is Evolution's path instead).
 [[nodiscard]] std::string SweepPath(const DraftingWorkspaceState& State, DraftingSweepVerb Verb)
 {
-    if (FocusedSketchCondition(State)) return State.FocusedStep;
+    const bool ProfileCondition = Verb == DraftingSweepVerb::Revolve || Verb == DraftingSweepVerb::Evolution;
+    if (FocusedSketchCondition(State) && !(ProfileCondition && SingleOpenCurveCondition(State, State.FocusedStep))) return State.FocusedStep;
     if (Verb == DraftingSweepVerb::Pipe && !State.Document.Selection.Curves.empty()) return State.Document.Selection.Curves.front();
-    for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend(); ++Step) if (Step->Kind == FeatureStepKind::Sketch) return Step->Label;
+    for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend(); ++Step)
+        if (Step->Kind == FeatureStepKind::Sketch && !(ProfileCondition && SingleOpenCurveCondition(State, Step->Label))) return Step->Label;
     return {};
 }
 
 void OpenSweepSession(DraftingWorkspaceState& State, DraftingSweepVerb Verb)
 {
     const std::string Path = SweepPath(State, Verb);
-    if (Path.empty()) { Announce(State, Verb == DraftingSweepVerb::Offset ? "Offset (O) needs a sketch: draw one first" : "Pipe (P) needs a path: draw a line / arc / curve or select a curve"); return; }
+    if (Path.empty())
+    {
+        Announce(State, Verb == DraftingSweepVerb::Offset ? "Offset (O) needs a sketch: draw one first"
+                        : Verb == DraftingSweepVerb::Pipe ? "Pipe (P) needs a path: draw a line / arc / curve or select a curve"
+                        : Verb == DraftingSweepVerb::Revolve ? "Revolve (Alt+R) needs a profile: draw a closed sketch first"
+                                                             : "Evolution (Shift+P) needs a profile: draw a closed sketch first");
+        return;
+    }
     DraftingSweepSession& Sweep = State.Sweep;
     const int Commits = Sweep.Commits;
     Sweep                 = {};
@@ -2150,36 +2201,72 @@ void OpenSweepSession(DraftingWorkspaceState& State, DraftingSweepVerb Verb)
     Sweep.ActiveCondition = true;
     Sweep.Verb            = Verb;
     Sweep.Path            = Path;
-    Sweep.Amount          = Verb == DraftingSweepVerb::Offset ? 0.1 : 0.05;
+    Sweep.Amount          = Verb == DraftingSweepVerb::Offset ? 0.1 : Verb == DraftingSweepVerb::Revolve ? 360.0 : 0.05;
     Sweep.Drift           = Sweep.Amount;
     Sweep.Combination     = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : FeatureCombination::Separate;
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
     State.Constrain.ActiveCondition = false;
-    Announce(State, Compose("%s %s · move sideways (Shift fine, Ctrl free) or type a value%s · click / Enter commits · Esc cancels", Verb == DraftingSweepVerb::Offset ? "Offset" : "Pipe",
-                            CaptionOf(State.Document, Path).c_str(), Verb == DraftingSweepVerb::Pipe ? " · Q union · W difference · E intersect · R new body" : ""));
+    const char* Booleans = " · Q union · W difference · E intersect · R new body";
+    if (Verb == DraftingSweepVerb::Revolve)
+    {
+        Sweep.Axis = ProposeDraftingRevolveAxis(State.Document, Path);
+        Announce(State, Compose("Revolve %s about %s · type degrees (360) · X / Y sketch axis · click one of its lines for the axis%s · click / Enter commits · Esc cancels",
+                                CaptionOf(State.Document, Path).c_str(), DescribeDraftingRevolveAxis(State.Document, Path, Sweep.Axis).c_str(), Booleans));
+        return;
+    }
+    if (Verb == DraftingSweepVerb::Evolution)
+    {
+        Sweep.Profile = Path;
+        Sweep.Path    = FocusedSketchCondition(State) && SingleOpenCurveCondition(State, State.FocusedStep) ? State.FocusedStep : ProposeDraftingEvolutionPath(State.Document, Path);
+        Announce(State, Compose("Evolution %s along %s · click another sketch's curve for the path%s · click / Enter commits · Esc cancels", CaptionOf(State.Document, Path).c_str(),
+                                Sweep.Path.empty() ? "? (no path yet)" : CaptionOf(State.Document, Sweep.Path).c_str(), Booleans));
+        return;
+    }
+    Announce(State, Compose("%s %s · move sideways (Shift fine, Ctrl free) or type a value%s · click / Enter commits · Esc cancels", SweepVerbName(Verb),
+                            CaptionOf(State.Document, Path).c_str(), Verb == DraftingSweepVerb::Pipe ? Booleans : ""));
 }
 
 void CancelSweepSession(DraftingWorkspaceState& State)
 {
     State.Sweep.ActiveCondition = false;
     State.Sweep.Preview.reset();
-    Announce(State, State.Sweep.Verb == DraftingSweepVerb::Offset ? "Offset cancelled" : "Pipe cancelled");
+    Announce(State, std::string(SweepVerbName(State.Sweep.Verb)) + " cancelled");
 }
 
 void ChooseSweepCombination(DraftingWorkspaceState& State, FeatureCombination Combination)
 {
-    if (State.Sweep.Verb != DraftingSweepVerb::Pipe) return;
+    if (State.Sweep.Verb == DraftingSweepVerb::Offset) return;
     State.Sweep.Combination = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : Combination;
-    Announce(State, std::string("Pipe: ") + (State.Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Sweep.Combination)));
+    Announce(State, std::string(SweepVerbName(State.Sweep.Verb)) + ": " + (State.Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Sweep.Combination)));
+}
+
+// Revolve: X / Y turn about the sketch x- / y-axis.
+void ChooseRevolveAxis(DraftingWorkspaceState& State, Vector2 Direction)
+{
+    if (State.Sweep.Verb != DraftingSweepVerb::Revolve) return;
+    State.Sweep.Axis = { -1, { 0.0, 0.0 }, Direction };
+    Announce(State, "Revolve about the " + DescribeDraftingRevolveAxis(State.Document, State.Sweep.Path, State.Sweep.Axis));
+}
+
+[[nodiscard]] DraftingCommandOutcome RunSweepVerb(const DraftingWorkspaceState& State, DraftingDocument& Document)
+{
+    const DraftingSweepSession& Sweep = State.Sweep;
+    switch (Sweep.Verb)
+    {
+    case DraftingSweepVerb::Offset:    return OffsetDraftingSketch(Document, Sweep.Path, Sweep.Amount);
+    case DraftingSweepVerb::Pipe:      return PipeDraftingPath(Document, Sweep.Path, Sweep.Amount, Sweep.Combination, BooleanTarget(State));
+    case DraftingSweepVerb::Revolve:   return RevolveDraftingSketch(Document, Sweep.Path, Sweep.Axis, Sweep.Amount * std::numbers::pi / 180.0, Sweep.Combination, BooleanTarget(State));
+    case DraftingSweepVerb::Evolution: return EvolveDraftingProfile(Document, Sweep.Profile, Sweep.Path, Sweep.Combination, BooleanTarget(State));
+    }
+    return {};
 }
 
 void ApplySweepSession(DraftingWorkspaceState& State)
 {
     DraftingSweepSession& Sweep = State.Sweep;
     if (!Sweep.Refusal.empty()) { Announce(State, "Refused: " + Sweep.Refusal); return; }
-    const DraftingCommandOutcome Outcome = Sweep.Verb == DraftingSweepVerb::Offset ? OffsetDraftingSketch(State.Document, Sweep.Path, Sweep.Amount)
-                                                                                   : PipeDraftingPath(State.Document, Sweep.Path, Sweep.Amount, Sweep.Combination, BooleanTarget(State));
+    const DraftingCommandOutcome Outcome = RunSweepVerb(State, State.Document);
     if (Outcome.AcceptedCondition)
     {
         ++Sweep.Commits;
@@ -2197,11 +2284,90 @@ void ApplySweepSession(DraftingWorkspaceState& State)
     Conclude(State, Outcome);
 }
 
+// Revolve / Evolution left-click: a line of the profile under the pointer becomes the axis, another sketch's curve the
+// path; a click anywhere else commits.
+void ClickSweepSession(DraftingWorkspaceState& State)
+{
+    DraftingSweepSession& Sweep = State.Sweep;
+    const SketchModel* Sketch = Sweep.HoverCurve >= 0 ? SweepSketch(State, Sweep.HoverSketch) : nullptr;
+    if (Sketch && Sweep.HoverCurve < int(Sketch->Curves.size()))
+    {
+        const SketchCurve& Curve = Sketch->Curves[Sweep.HoverCurve];
+        if (Sweep.Verb == DraftingSweepVerb::Revolve)
+        {
+            Sweep.Axis = { Curve.Identifier, {}, { 0.0, 1.0 } };
+            Announce(State, "Revolve about " + SketchCurveName(Curve));
+            return;
+        }
+        if (Sweep.Verb == DraftingSweepVerb::Evolution)
+        {
+            Sweep.Path = Sweep.HoverSketch;
+            Announce(State, "Evolution along " + CaptionOf(State.Document, Sweep.Path));
+            return;
+        }
+    }
+    ApplySweepSession(State);
+}
+
+// The curve under the pointer (≤ 8 px) that a click would take: Revolve the profile's lines, Evolution the drawn curves
+// of the other sketches.
+void HoverSweepCurve(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, bool HoveredCondition)
+{
+    DraftingSweepSession& Sweep = State.Sweep;
+    Sweep.HoverSketch.clear();
+    Sweep.HoverCurve = -1;
+    if (!HoveredCondition) return;
+    const ImVec2 Mouse   = ImGui::GetIO().MousePos;
+    double       Nearest = 8.0;                                                              // [px] - Pick radius
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        const bool Candidate = Sweep.Verb == DraftingSweepVerb::Revolve ? Step.Label == Sweep.Path : Step.Label != Sweep.Profile;
+        const SketchModel* Sketch = Candidate ? SweepSketch(State, Step.Label) : nullptr;
+        if (!Sketch) continue;
+        const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, Step);
+        for (int Curve = 0; Curve < int(Sketch->Curves.size()); ++Curve)
+        {
+            const SketchCurve& Each = Sketch->Curves[Curve];
+            if (Sweep.Verb == DraftingSweepVerb::Revolve ? Each.Kind != SketchCurveKind::Line : Each.Construction) continue;
+            std::vector<ImVec2> Pixels;
+            for (const Vector2& Sample : SampleSketchCurve(*Sketch, Each))
+            {
+                ImVec2 Pixel;
+                if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel);
+            }
+            for (size_t Index = 0; Index + 1 < Pixels.size(); ++Index)
+            {
+                const double AlongX = Pixels[Index + 1].x - Pixels[Index].x, AlongY = Pixels[Index + 1].y - Pixels[Index].y;
+                const double Square = AlongX * AlongX + AlongY * AlongY;
+                const double Share  = Square > 0.0 ? std::clamp(((Mouse.x - Pixels[Index].x) * AlongX + (Mouse.y - Pixels[Index].y) * AlongY) / Square, 0.0, 1.0) : 0.0;
+                const double Gap    = std::hypot(Pixels[Index].x + AlongX * Share - Mouse.x, Pixels[Index].y + AlongY * Share - Mouse.y);
+                if (Gap <= Nearest) { Nearest = Gap; Sweep.HoverSketch = Step.Label; Sweep.HoverCurve = Curve; }
+            }
+        }
+    }
+}
+
 void DriveSweepSession(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, bool HoveredCondition)
 {
     DraftingSweepSession& Sweep = State.Sweep;
     ImGuiIO& Io = ImGui::GetIO();
     double Typed = 0.0;
+    if (Sweep.Verb == DraftingSweepVerb::Revolve || Sweep.Verb == DraftingSweepVerb::Evolution)
+    {
+        HoverSweepCurve(State, Frame, HoveredCondition);                                    // As trim: the click frame keeps its hover
+        if (Sweep.Verb == DraftingSweepVerb::Revolve) Sweep.Amount = ParseTypedAmount(Sweep.Typed, Typed) ? Typed : 360.0;
+        const std::string Key = Compose("%.17g|%d|%d|%.17g|%.17g|%.17g|%.17g|%s|%s|%s", Sweep.Amount, int(Sweep.Combination), Sweep.Axis.Line, Sweep.Axis.Origin.X, Sweep.Axis.Origin.Y,
+                                        Sweep.Axis.Direction.X, Sweep.Axis.Direction.Y, Sweep.Path.c_str(), Sweep.Profile.c_str(), BooleanTarget(State).c_str());
+        if (Key == Sweep.StagedKey) return;
+        Sweep.StagedKey = Key;
+        Sweep.Refusal.clear();
+        Sweep.Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
+        const DraftingCommandOutcome Outcome = RunSweepVerb(State, *Sweep.Preview);
+        if (!Outcome.AcceptedCondition) { Sweep.Refusal = Legible(Outcome.Refusal); Sweep.Preview.reset(); return; }
+        Sweep.PreviewScene = BuildDraftingScene(*Sweep.Preview);
+        return;
+    }
     if (ParseTypedAmount(Sweep.Typed, Typed)) Sweep.Amount = Typed;
     else
     {
@@ -2218,8 +2384,7 @@ void DriveSweepSession(DraftingWorkspaceState& State, const DraftingCameraFrame&
     {
         const SketchOffsetOutcome Outcome = PreviewDraftingOffset(State.Document, Sweep.Path, Sweep.Amount);
         if (!Outcome.Refusal.empty()) { Sweep.Refusal = Legible(Outcome.Refusal); return; }
-        const FeatureStep* Step = nullptr;
-        for (const FeatureStep& Each : State.Document.Tree.Steps) if (Each.Label == Sweep.Path) Step = &Each;
+        const FeatureStep* Step = SweepStep(State, Sweep.Path);
         if (!Step) return;
         const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
         for (const SketchCurve& Curve : Outcome.Sketch.Curves)
@@ -2231,19 +2396,78 @@ void DriveSweepSession(DraftingWorkspaceState& State, const DraftingCameraFrame&
         return;
     }
     Sweep.Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
-    const DraftingCommandOutcome Outcome = PipeDraftingPath(*Sweep.Preview, Sweep.Path, Sweep.Amount, Sweep.Combination, BooleanTarget(State));
+    const DraftingCommandOutcome Outcome = RunSweepVerb(State, *Sweep.Preview);
     if (!Outcome.AcceptedCondition) { Sweep.Refusal = Legible(Outcome.Refusal); Sweep.Preview.reset(); return; }
     Sweep.PreviewScene = BuildDraftingScene(*Sweep.Preview);
+}
+
+// One sketch curve in screen pixels (empty when the step or curve is gone).
+[[nodiscard]] std::vector<ImVec2> SweepCurvePixels(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, const std::string& Label, int Curve)
+{
+    std::vector<ImVec2> Pixels;
+    const FeatureStep* Step   = SweepStep(State, Label);
+    const SketchModel* Sketch = SweepSketch(State, Label);
+    if (!Step || !Sketch) return Pixels;
+    const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
+    for (int Index = 0; Index < int(Sketch->Curves.size()); ++Index)
+    {
+        if (Curve >= 0 ? Index != Curve : Sketch->Curves[Index].Construction) continue;
+        for (const Vector2& Sample : SampleSketchCurve(*Sketch, Sketch->Curves[Index])) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel); }
+    }
+    return Pixels;
 }
 
 void DrawSweepOutline(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
 {
     if (!State.Sweep.ActiveCondition) return;
-    for (const std::vector<Vector3>& Line : State.Sweep.Outline)
+    const DraftingSweepSession& Sweep = State.Sweep;
+    for (const std::vector<Vector3>& Line : Sweep.Outline)
     {
         std::vector<ImVec2> Pixels;
         for (const Vector3& Point : Line) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
         if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x4d, 0xff, 0x9f, 0xff), 3.0f);
+    }
+    constexpr ImU32 AxisColour  = IM_COL32(0xff, 0xc8, 0x3d, 0xff);                         // Amber: axis / path
+    constexpr ImU32 HoverColour = IM_COL32(0x4d, 0xd2, 0xff, 0xff);                         // Cyan: what a click takes
+    if (Sweep.Verb == DraftingSweepVerb::Revolve)
+    {
+        const FeatureStep* Step   = SweepStep(State, Sweep.Path);
+        const SketchModel* Sketch = SweepSketch(State, Sweep.Path);
+        if (Step && Sketch)
+        {
+            Vector2 Origin = Sweep.Axis.Origin, Direction = Sweep.Axis.Direction;
+            for (const SketchCurve& Curve : Sketch->Curves)
+                if (Sweep.Axis.Line >= 0 && Curve.Identifier == Sweep.Axis.Line && Curve.Kind == SketchCurveKind::Line)
+                {
+                    Origin    = Sketch->Points[Curve.Start].Position;
+                    Direction = Sketch->Points[Curve.End].Position - Origin;
+                }
+            const double Norm = std::hypot(Direction.X, Direction.Y);
+            double Reach = 0.5;                                                              // [len] - Half length drawn: past the profile
+            for (const SketchPoint& Point : Sketch->Points) Reach = std::max(Reach, 1.5 * std::hypot(Point.Position.X - Origin.X, Point.Position.Y - Origin.Y));
+            if (Norm > 0.0)
+            {
+                const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
+                std::vector<ImVec2> Pixels;
+                for (int Index = 0; Index <= 32; ++Index)
+                {
+                    const double Along = Reach * (Index / 16.0 - 1.0) / Norm;
+                    ImVec2 Pixel;
+                    if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, { Origin.X + Direction.X * Along, Origin.Y + Direction.Y * Along }), Pixel)) Pixels.push_back(Pixel);
+                }
+                if (Pixels.size() >= 2) DrawDashedPolyline(Canvas, Pixels, AxisColour, 2.0f);
+            }
+        }
+    }
+    if (Sweep.Verb == DraftingSweepVerb::Evolution && !Sweep.Path.empty())
+    {
+        const std::vector<ImVec2> Pixels = SweepCurvePixels(State, Frame, Sweep.Path, -1);
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), AxisColour, 3.0f);
+    }
+    if (Sweep.HoverCurve >= 0)
+    {
+        const std::vector<ImVec2> Pixels = SweepCurvePixels(State, Frame, Sweep.HoverSketch, Sweep.HoverCurve);
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), HoverColour, 4.0f);
     }
 }
 
@@ -3477,7 +3701,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     else if (State.Sweep.ActiveCondition)
     {
         DriveSweepSession(State, Frame, Hovered);
-        if (LeftClick && !OverCube) ApplySweepSession(State);
+        if (LeftClick && !OverCube) ClickSweepSession(State);
         else if (RightClick && !OverCube) CancelSweepSession(State);
     }
     else if (State.Constrain.ActiveCondition)
@@ -3622,9 +3846,23 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     {
         ImVec2 Below(Image.x + 12, Image.y + 44);
         const DraftingSweepSession& Sweep = State.Sweep;
-        const std::string Boolean = Sweep.Verb == DraftingSweepVerb::Pipe ? std::string(" · ") + (Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(Sweep.Combination)) : std::string{};
-        DrawStatusPill(Canvas, Below, Compose("%s %s %s m%s%s", Sweep.Verb == DraftingSweepVerb::Offset ? "Offset" : "Pipe", CaptionOf(State.Document, Sweep.Path).c_str(), FormatLength(Sweep.Amount).c_str(), Boolean.c_str(),
-                                              Sweep.Typed.empty() ? "" : (" · typed " + Sweep.Typed).c_str()), Sweep.Refusal.empty() ? ActiveColour : RefusalColour);
+        const std::string Boolean = Sweep.Verb != DraftingSweepVerb::Offset ? std::string(" · ") + (Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(Sweep.Combination)) : std::string{};
+        const std::string Typed   = Sweep.Typed.empty() ? std::string{} : " · typed " + Sweep.Typed;
+        if (Sweep.Verb == DraftingSweepVerb::Revolve)
+            DrawStatusPill(Canvas, Below, Compose("Revolve %s %s° about %s%s%s", CaptionOf(State.Document, Sweep.Path).c_str(), FormatLength(Sweep.Amount).c_str(),
+                                                  DescribeDraftingRevolveAxis(State.Document, Sweep.Path, Sweep.Axis).c_str(), Boolean.c_str(), Typed.c_str()), Sweep.Refusal.empty() ? ActiveColour : RefusalColour);
+        else if (Sweep.Verb == DraftingSweepVerb::Evolution)
+            DrawStatusPill(Canvas, Below, Compose("Evolution %s along %s%s", CaptionOf(State.Document, Sweep.Profile).c_str(), Sweep.Path.empty() ? "?" : CaptionOf(State.Document, Sweep.Path).c_str(), Boolean.c_str()),
+                           Sweep.Refusal.empty() ? ActiveColour : RefusalColour);
+        else
+            DrawStatusPill(Canvas, Below, Compose("%s %s %s m%s%s", SweepVerbName(Sweep.Verb), CaptionOf(State.Document, Sweep.Path).c_str(), FormatLength(Sweep.Amount).c_str(), Boolean.c_str(), Typed.c_str()),
+                           Sweep.Refusal.empty() ? ActiveColour : RefusalColour);
+        if (Sweep.HoverCurve >= 0)
+        {
+            const SketchModel* Sketch = SweepSketch(State, Sweep.HoverSketch);
+            if (Sketch && Sweep.HoverCurve < int(Sketch->Curves.size()))
+                DrawStatusPill(Canvas, Below, Sweep.Verb == DraftingSweepVerb::Revolve ? "click: axis = " + SketchCurveName(Sketch->Curves[Sweep.HoverCurve]) : "click: path = " + CaptionOf(State.Document, Sweep.HoverSketch), ActiveColour);
+        }
         if (!Sweep.Refusal.empty()) DrawStatusPill(Canvas, Below, Sweep.Refusal, RefusalColour);
     }
     const char* Hint = State.Transform.ActiveCondition
@@ -3633,6 +3871,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / Enter commit · Esc / right-click cancel")
                        : State.Sweep.ActiveCondition
                            ? (State.Sweep.Verb == DraftingSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / Enter commit · Esc / right-click cancel"
+                              : State.Sweep.Verb == DraftingSweepVerb::Revolve ? "Revolve: type degrees (360) · X / Y sketch axis · click a profile line for the axis · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
+                              : State.Sweep.Verb == DraftingSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
                        : State.Drawing.ActiveCondition
                            ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (Ctrl free) · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
@@ -3928,6 +4168,14 @@ void DrawStepCard(DraftingWorkspaceState& State)
                            Map.Shift.X, Map.Shift.Y, Map.Shift.Z, Turn, Factors.X, Factors.Y, Factors.Z,
                            Step->Source.empty() ? "" : (" · as it stood after " + CaptionOf(State.Document, Step->Source)).c_str());
     }
+    if (Step->Kind == FeatureStepKind::Revolve && !Step->Profile.empty() && CaptionOf(State.Document, Label).rfind("Revolve", 0) == 0)   // Alt+R revolves (not the sphere / torus tiles)
+    {
+        const DraftingRevolveAxis Axis{ Step->AxisIdentifier, Step->AxisOrigin, Step->AxisDirection };
+        ImGui::TextWrapped("Turns %s %.2f° about %s", CaptionOf(State.Document, Step->Profile).c_str(), EvaluateFeatureValue(State.Document.Tree, Step->Angle) * 180.0 / std::numbers::pi,
+                           DescribeDraftingRevolveAxis(State.Document, Step->Profile, Axis).c_str());
+    }
+    if (Step->Kind == FeatureStepKind::Evolution)
+        ImGui::TextWrapped("Sweeps %s along %s (rotation-minimizing frames)", CaptionOf(State.Document, Step->Profile).c_str(), CaptionOf(State.Document, Step->Path).c_str());
     if (Step->Kind == FeatureStepKind::Pipe)
     {
         const std::string Path = Step->Sections.empty() ? CaptionOf(State.Document, Step->Profile) : CaptionOf(State.Document, Step->Sections.front());
@@ -4364,6 +4612,10 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             if (Pressed(ImGuiKey_W)) ChooseSweepCombination(State, FeatureCombination::Difference);   // keyboard:pipe:difference
             if (Pressed(ImGuiKey_E)) ChooseSweepCombination(State, FeatureCombination::Intersection); // keyboard:pipe:intersect
             if (Pressed(ImGuiKey_R)) ChooseSweepCombination(State, FeatureCombination::Separate);     // keyboard:pipe:new-body
+            if (Pressed(ImGuiKey_X)) ChooseRevolveAxis(State, { 1.0, 0.0 });                    // revolve: sketch x-axis
+            if (Pressed(ImGuiKey_Y)) ChooseRevolveAxis(State, { 0.0, 1.0 });                    // revolve: sketch y-axis
+            if (Pressed(ImGuiKey_A) && State.Sweep.Verb != DraftingSweepVerb::Offset && State.Sweep.Verb != DraftingSweepVerb::Pipe)
+                Announce(State, "Angle: type degrees (gizmo:revolution:angle)");
         }
         return;
     }
@@ -4414,7 +4666,8 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             if (Shift) { State.Style.GridEnabled = !State.Style.GridEnabled; Announce(State, State.Style.GridEnabled ? "Overlays on" : "Overlays off"); }
             else { State.Style.SurfacesEnabled = !State.Style.SurfacesEnabled; Announce(State, State.Style.SurfacesEnabled ? "X-ray off" : "X-ray on (edges only)"); }
         }
-        if (Pressed(ImGuiKey_E)) Announce(State, "Evolution: not available");
+        if (Pressed(ImGuiKey_E)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
+        if (Pressed(ImGuiKey_R)) OpenSweepSession(State, DraftingSweepVerb::Revolve);       // revolution (no Plasticity default key)
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
         if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::UnhideAll);       // unhide-all
@@ -4433,7 +4686,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_Q)) OpenDrawingSession(State, DraftingDrawingKind::Rectangle);             // corner-rectangle
         if (Pressed(ImGuiKey_W)) OpenDrawingSession(State, DraftingDrawingKind::Circle);                // center-circle
         if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::HideUnselected);       // hide-unselected
-        if (Pressed(ImGuiKey_P)) Announce(State, "Not available in this modeller");
+        if (Pressed(ImGuiKey_P)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Mode toggles: one mode at a time (2 / 3 / 4 / 5)");
         return;
     }

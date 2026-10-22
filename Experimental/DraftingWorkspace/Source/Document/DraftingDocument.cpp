@@ -1534,6 +1534,143 @@ DraftingCommandOutcome PipeDraftingPath(DraftingDocument& Document, const std::s
     });
 }
 
+DraftingRevolveAxis ProposeDraftingRevolveAxis(const DraftingDocument& Document, const std::string& Sketch)
+{
+    DraftingRevolveAxis Axis;
+    const FeatureStep* Found = FindStep(Document, Sketch);
+    if (!Found || Found->Kind != FeatureStepKind::Sketch) return Axis;
+    const SketchModel& Model = SolvedSketch(Document, *Found);
+    for (const SketchCurve& Curve : Model.Curves)
+    {
+        if (Curve.Kind == SketchCurveKind::Line && Curve.Construction) { Axis.Line = Curve.Identifier; return Axis; }
+    }
+    // Side test on the drawn geometry (curve samples, so bulging arcs and splines count).
+    double LowX = 1e300, HighX = -1e300, LowY = 1e300, HighY = -1e300, Scale = 0.0;
+    for (const SketchCurve& Curve : Model.Curves)
+    {
+        if (Curve.Construction) continue;
+        for (const Vector2& Sample : SampleSketchCurve(Model, Curve))
+        {
+            LowX = std::min(LowX, Sample.X); HighX = std::max(HighX, Sample.X);
+            LowY = std::min(LowY, Sample.Y); HighY = std::max(HighY, Sample.Y);
+            Scale = std::max({ Scale, std::fabs(Sample.X), std::fabs(Sample.Y) });
+        }
+    }
+    const double Slack = 1.0e-9 * std::max(Scale, 1.0);
+    const bool ClearOfY = LowX >= -Slack || HighX <= Slack, ClearOfX = LowY >= -Slack || HighY <= Slack;
+    if (!ClearOfY && ClearOfX) Axis.Direction = { 1.0, 0.0 };
+    return Axis;
+}
+
+std::string DescribeDraftingRevolveAxis(const DraftingDocument& Document, const std::string& Sketch, const DraftingRevolveAxis& Axis)
+{
+    if (Axis.Line >= 0)
+    {
+        const FeatureStep* Found = FindStep(Document, Sketch);
+        if (Found)
+        {
+            const SketchModel& Model = SolvedSketch(Document, *Found);
+            for (const SketchCurve& Curve : Model.Curves) if (Curve.Identifier == Axis.Line) return SketchCurveName(Curve);
+        }
+        return "line " + std::to_string(Axis.Line);
+    }
+    if (Axis.Origin.X == 0.0 && Axis.Origin.Y == 0.0)
+    {
+        if (Axis.Direction.X == 0.0 && Axis.Direction.Y != 0.0) return "sketch y-axis";
+        if (Axis.Direction.Y == 0.0 && Axis.Direction.X != 0.0) return "sketch x-axis";
+    }
+    return "axis (" + FormatAmount(Axis.Origin.X) + ", " + FormatAmount(Axis.Origin.Y) + ") + t·(" + FormatAmount(Axis.Direction.X) + ", " + FormatAmount(Axis.Direction.Y) + ")";
+}
+
+namespace
+{
+    // Extrude's combination rules for the profile verbs: the first body is New, a second one needs a Boolean or New body.
+    [[nodiscard]] std::string CombinationRefusal(const DraftingDocument& Document, FeatureCombination Combination, bool FirstBodyCondition, const std::string& Target)
+    {
+        if (FirstBodyCondition && (Combination == FeatureCombination::Difference || Combination == FeatureCombination::Intersection))
+            return std::string("nothing to ") + (Combination == FeatureCombination::Difference ? "subtract from" : "intersect with") + " yet (no body)";
+        if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference, Intersection or New body";
+        if (!Target.empty() && !FindRegeneratedBody(Document, Target)) return "no body named " + Target;
+        return {};
+    }
+}
+
+DraftingCommandOutcome RevolveDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const DraftingRevolveAxis& Axis, double Angle, FeatureCombination Combination,
+                                             const std::string& Target)
+{
+    const bool        FirstBodyCondition = !Document.Summary.PresentCondition && Combination != FeatureCombination::Separate;
+    const std::string Caption = NextCaption(Document, "Revolve");
+    const std::string Label   = Caption + " · " + DraftingBodyCaption(Document, Sketch) + " · " + FormatAmount(Angle * 180.0 / std::numbers::pi) + "° about " +
+                                DescribeDraftingRevolveAxis(Document, Sketch, Axis) + " · " + (FirstBodyCondition ? "New" : FeatureCombinationLabel(Combination));
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        const FeatureStep* Found = FindStep(Document, Sketch);
+        if (!Found || Found->Kind != FeatureStepKind::Sketch) return "choose the profile: focus a sketch step";
+        if (!(Angle > 1.0e-9) || Angle > 2.0 * std::numbers::pi + 1.0e-12) return "the angle must lie in (0°, 360°]";
+        if (const std::string Refusal = CombinationRefusal(Document, Combination, FirstBodyCondition, Target); !Refusal.empty()) return Refusal;
+        FeatureStep Step;
+        Step.Kind           = FeatureStepKind::Revolve;
+        Step.Label          = "Revolve#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Profile        = Sketch;
+        Step.AxisIdentifier = Axis.Line;
+        if (Axis.Line < 0) { Step.AxisOrigin = Axis.Origin; Step.AxisDirection = Axis.Direction; }
+        Step.Angle          = FeatureValue{ Angle };
+        Step.Combination    = FirstBodyCondition ? FeatureCombination::New : Combination;
+        Step.Target         = Target;
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+DraftingCommandOutcome EvolveDraftingProfile(DraftingDocument& Document, const std::string& Profile, const std::string& Path, FeatureCombination Combination, const std::string& Target)
+{
+    const bool        FirstBodyCondition = !Document.Summary.PresentCondition && Combination != FeatureCombination::Separate;
+    const std::string Caption = NextCaption(Document, "Evolution");
+    const std::string Label   = Caption + " · " + DraftingBodyCaption(Document, Profile) + " along " + (Path.empty() ? std::string("?") : DraftingBodyCaption(Document, Path)) + " · " +
+                                (FirstBodyCondition ? "New" : FeatureCombinationLabel(Combination));
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        const FeatureStep* Found = FindStep(Document, Profile);
+        if (!Found || Found->Kind != FeatureStepKind::Sketch) return "choose the profile: focus a sketch step";
+        const FeatureStep* Spine = FindStep(Document, Path);
+        if (!Spine || (Spine->Kind != FeatureStepKind::Sketch && Spine->Kind != FeatureStepKind::SpaceCurve)) return "choose the path: click a one-curve sketch or select a curve";
+        if (Path == Profile) return "the path must be another sketch than the profile";
+        if (const std::string Refusal = CombinationRefusal(Document, Combination, FirstBodyCondition, Target); !Refusal.empty()) return Refusal;
+        FeatureStep Step;
+        Step.Kind        = FeatureStepKind::Evolution;
+        Step.Label       = "Evolution#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Profile     = Profile;
+        Step.Path        = Path;
+        Step.Combination = FirstBodyCondition ? FeatureCombination::New : Combination;
+        Step.Target      = Target;
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Selection = {};
+        return {};
+    });
+}
+
+std::string ProposeDraftingEvolutionPath(const DraftingDocument& Document, const std::string& Profile)
+{
+    if (!Document.Selection.Curves.empty()) return Document.Selection.Curves.front();
+    for (auto Step = Document.Tree.Steps.rbegin(); Step != Document.Tree.Steps.rend(); ++Step)
+    {
+        if (Step->Kind != FeatureStepKind::Sketch || Step->Label == Profile) continue;
+        const SketchModel& Model = SolvedSketch(Document, *Step);
+        int Drawn = 0;
+        bool Open = true;
+        for (const SketchCurve& Curve : Model.Curves)
+        {
+            if (Curve.Construction) continue;
+            ++Drawn;
+            Open = Open && Curve.Kind != SketchCurveKind::Circle && !(Curve.Kind == SketchCurveKind::Spline && Curve.Points.size() > 1 && Curve.Points.front() == Curve.Points.back());
+        }
+        if (Drawn == 1 && Open) return Step->Label;
+    }
+    return {};
+}
+
 std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)
 {
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)

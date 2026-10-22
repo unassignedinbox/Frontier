@@ -139,6 +139,17 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Combination", static_cast<int64_t>(Step.Combination));
         Table.insert("AxisIdentifier", Step.AxisIdentifier);
         Table.insert("Angle", EncodeValue(Step.Angle));
+        if (Step.Kind == FeatureStepKind::Revolve && Step.AxisIdentifier < 0)              // Axis without a line (absent in older files)
+        {
+            Table.insert("AxisOrigin", toml::array{ Step.AxisOrigin.X, Step.AxisOrigin.Y });
+            Table.insert("AxisDirection", toml::array{ Step.AxisDirection.X, Step.AxisDirection.Y });
+        }
+        break;
+    case FeatureStepKind::Evolution:
+        // The profile sketch and the path (a one-curve sketch or a SpaceCurve).
+        Table.insert("Profile", Step.Profile);
+        Table.insert("Path", Step.Path);
+        Table.insert("Combination", static_cast<int64_t>(Step.Combination));
         break;
     case FeatureStepKind::Blend:
         Table.insert("Shape", static_cast<int64_t>(Step.Shape));
@@ -487,7 +498,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Pipe)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Evolution)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -511,6 +522,15 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             Step.Tool           = View["Tool"].value_or(std::string{});
             Step.AxisIdentifier = static_cast<int>(View["AxisIdentifier"].value_or(int64_t{ -1 }));
             Step.Angle          = DecodeValue(View["Angle"], Step.Angle);
+            const auto Planar = [&](const char* Key, Vector2 Fallback)
+            {
+                const toml::array* Pair = View[Key].as_array();
+                if (!Pair || Pair->size() != 2) return Fallback;
+                return Vector2{ (*Pair)[0].value_or(Fallback.X), (*Pair)[1].value_or(Fallback.Y) };
+            };
+            Step.AxisOrigin     = Planar("AxisOrigin", Step.AxisOrigin);
+            Step.AxisDirection  = Planar("AxisDirection", Step.AxisDirection);
+            Step.Path           = View["Path"].value_or(std::string{});
             Step.Shape          = static_cast<BlendProfile>(View["Shape"].value_or(int64_t{ 0 }));
             Step.Size           = DecodeValue(View["Size"]);
             Step.Operation      = static_cast<FaceOperationKind>(View["Operation"].value_or(int64_t{ 1 }));

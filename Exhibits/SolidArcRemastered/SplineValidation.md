@@ -62,7 +62,7 @@
 | 🟢 | Open spline profile | open profile | open profile: Spline21 ends at a point joined to 0 other curves |
 | 🟢 | Self-crossing closed spline | crosses itself: Spline | profile crosses itself: Spline22 × Spline22 |
 | 🟢 | Spline crossing a line | crosses itself | profile crosses itself: Spline23 × Line24 |
-| 🟢 | Revolve a spline profile | Revolve: 🚧 Spline | Revolve: 🚧 Spline25 is a spline (rational surface of revolution not built yet) |
+| 🟢 | Revolve a spline profile across its axis | crosses the axis | Revolve: profile crosses the axis |
 
 ## Solver (C7)
 
