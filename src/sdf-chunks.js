@@ -448,11 +448,14 @@ export function buildChunkGeometry(job, meta, v, ctx) {
     let block = 0;
     if (blockAmp > 0) {
       const bh = (0.35 + 0.65 * smoothstep(0.35, 0.6, hard)) * (1 - col.oc);
-      block = -jc.off * blockAmp * bh * sg.mul;
-      if (jc.scar) {
+      // signed per (column, segment): stacked blocks step in AND out around a zero mean,
+      // so no fin survives a segment boundary — the old same-sign multiplier only breathed
+      // the fins, it never broke the shade bands
+      block = sg.off * blockAmp * bh;
+      if (sg.scar < blockLoss * 0.55) {
         // no block falls out of the top bed right under the crest (it would leave the lip floating)
         const guard = needCF ? 1 - smoothstep(col.crest - 1.5 * thick, col.crest - 0.3 * thick, y) : 1;
-        block += jc.scar * guard * scarDepth;
+        block += guard * scarDepth;
       }
       block += sg.groove * (0.35 + 0.65 * hardness) * (1 - col.oc);
     }

@@ -108,11 +108,12 @@ export function segField(bkey, y, segH = 12) {
   const d0 = Math.abs(y - b0), d1 = Math.abs(y - b1), d2 = Math.abs(y - b2);
   const dCross = Math.min(d0, d1, d2);
   const nearK = dCross === d0 ? kc - 1 : dCross === d2 ? kc + 1 : kc;
-  const mul = 0.2 + 0.9 * jshash(bkey, seg, 703);
+  const off = jshash(bkey, seg, 711) * 2 - 1;
   const live = jshash(bkey, nearK, 705) > 0.3 ? 1 : 0;
   const groove = (1 - sstep(0, 0.45, dCross)) * 0.35 * live;
   const gmul = 0.55 + 0.9 * jshash(bkey, seg, 707);
-  return { seg, mul, groove, gmul };
+  const scar = jshash(bkey, seg, 713);
+  return { seg, off, groove, gmul, scar };
 }
 
 // vec4 uniforms for the shader: (normalX, normalZ, origin, seed)

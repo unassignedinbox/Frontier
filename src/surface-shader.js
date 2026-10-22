@@ -73,7 +73,7 @@ uniform vec4 uJointSetA, uJointSetB;
 uniform float uBlockLoss;
 uniform float uTexWarp, uJointBend, uJointVary, uJointDomain, uFacePatch;
 uniform float uSeaLevel, uSeed, uIsRock, uDebugView;
-uniform float uPaintWater, uWaterClear;
+uniform float uPaintWater, uWaterClear, uRiverFoam;
 uniform vec3 uWaterDeep, uWaterShallow;
 
 // lateral bed-thickness jitter — must match bedJitter() in strata-model.js
@@ -549,22 +549,13 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
     float gB = ( 1.0 - smoothstep( 0.0, wB, dB ) ) * smoothstep( 0.15, 0.5, wall ) * lip;
     float sB = ( bf < 0.5 ? 1.0 : -1.0 ) * ( dB < wB ? ( 1.0 - dB / wB ) : 0.0 ) * smoothstep( 0.15, 0.5, wall ) * lip;
     vec3 crackG = vec3( ggrad.x, sB / max( wB, 0.01 ), ggrad.y ) * depth * 1.5;
-    // each block: its own tilt and tone from the joint-cell key both sides share.
-    // The tone lives in the column for life (no bed-index term: that painted brick
-    // courses) and breathes slowly with height so stacked cells never align into fins.
-    // Fallen-out blocks read through the carved socket + groove shadow; the old pale
-    // per-(cell, bed) scar rectangles were banding and are gone.
-    int bkey = int( JA.z ) * 73 + int( JB.z ) * 191;
-    float hb = jsHash( bkey, 7, 501 ) - 0.5;
-    float drift = 0.45 + 0.55 * cgNoise3( vec3( float( bkey ) * 0.37, wp.y * 0.02, 7.0 ) ).x;
-    vec3 tilt = ( vec3( hb, jsHash( bkey, 7, 503 ), jsHash( bkey, 7, 505 ) ) - 0.5 ) * 0.22 * uJointBlocks * jointAmt;
-    // block tone survives to far zoom (it IS the structure there); grooves fade with footprint
-    float toneFade = ( 1.0 - smoothstep( spacing * 0.5, spacing * 2.0, footprint ) ) * uJointBlocks * rockMask;
-    blockTone = hb * 0.3 * toneFade * drift;
-    G += crackG + tilt;
+    // No per-column tone or tilt: full-height paint stripes in both albedo and the
+    // shading normal. The carved blocks (signed per column AND segment) carry all the
+    // structure now; grooves + hairlines stay to seat the joints.
+    G += crackG;
     // closed joints show a hairline so every block reads even where no crack opened
     float hair = max( ( 1.0 - smoothstep( 0.0, ww * 0.45, abs( JA.y ) ) ) * ( 1.0 - JA.w ), ( 1.0 - smoothstep( 0.0, ww * 0.45, abs( JB.y ) ) ) * ( 1.0 - JB.w ) );
-    crackAO = max( max( groove, gB ), hair * 0.4 ) * jointAmt;
+    crackAO = max( max( groove, gB ), hair * 0.4 ) * jointAmt * clamp( uJointBlocks / 0.6, 0.0, 1.7 );
     Gt = ( G - n * dot( n, G ) ) * uBumpScale;
     nW = normalize( n - Gt );
   }
@@ -582,7 +573,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   rock *= 1.0 - uGrainContrast * 0.45 + uGrainContrast * 0.9 * ( grain.x * 0.5 + 0.5 );
   rock *= 1.0 - uGrainContrast * 0.2 + uGrainContrast * 0.4 * ( grainFine.x * 0.5 + 0.5 );
 
-  float streakPre = smoothstep( 0.56, 0.78, cgNoise3( vec3( wp.x, wp.y * 0.05, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.1, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4 ) * wall;
+  float streakPre = smoothstep( 0.56, 0.78, cgNoise3( vec3( wp.x, wp.y * 0.3, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.6, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4 ) * wall;
 
   // oxide pockets
   float ox = smoothstep( 0.52, 0.8, cgNoise3( wp / uOxideScale + 7.0 ).x * 0.6 + cgNoise3( wp / uOxideScale * 3.4 ).x * 0.4 );
@@ -605,7 +596,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
 
   // runoff staining: broken into districts (some wall panels streak, some stay clean)
   // and halved past ~100 m so the far face never shimmers into vertical stripes
-  float streakN = cgNoise3( vec3( wp.x, wp.y * 0.05, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.1, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4;
+  float streakN = cgNoise3( vec3( wp.x, wp.y * 0.3, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.6, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4;
   float streakPatch = cgNoise3( wp * 0.02 + 13.0 ).x;
   float streak = smoothstep( 0.56, 0.78, streakN ) * uStreakAmount * mix( 0.3, 1.0, smoothstep( 0.35, 0.65, streakPatch ) );
   streak *= 1.0 - smoothstep( 60.0, 220.0, length( cameraPosition - wp ) ) * 0.55;
@@ -810,7 +801,16 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float wdepth = waterLine - wp.y;
   float paint = uPaintWater * ( 1.0 - smoothstep( -0.05, 0.25, -wdepth ) ) * ( 1.0 - uIsRock );
   vec3 waterCol = mix( uWaterShallow, uWaterDeep, smoothstep( 0.0, uWaterClear * 3.0, wdepth ) );
-  color = mix( color, mix( color * 0.6, waterCol, smoothstep( 0.0, uWaterClear, wdepth ) * 0.6 + 0.4 ), paint );
+  // white water: painted water on steep rock is falling, not standing — aerated foam
+  // streaks instead of a navy slab (the riverFoam control finally wired; falls and surf
+  // rendered navy without it). Gentle rivers never reach this branch: wall-gated.
+  float falls = paint * smoothstep( 0.45, 0.75, wall );
+  float foamN = cgNoise3( vec3( ( wp.x + wp.z ) * 1.4, wp.y * 0.35, 9.0 ) ).x * 0.65
+    + cgNoise3( vec3( ( wp.x - wp.z ) * 3.1, wp.y * 0.8, 4.0 ) ).x * 0.35;
+  float foam = falls * uRiverFoam * smoothstep( 0.32, 0.72, foamN );
+  waterCol = mix( waterCol, vec3( 0.88, 0.92, 0.93 ), clamp( foam * 1.2, 0.0, 1.0 ) );
+  float bedMix = mix( smoothstep( 0.0, uWaterClear, wdepth ) * 0.6 + 0.4, 1.0, falls );
+  color = mix( color, mix( color * 0.6, waterCol, bedMix ), paint );
 
   float roughness = uBaseRoughness - wet * 0.4 - fresh * 0.05 - shore * 0.35 * uShoreWet;
   roughness = mix( roughness, 0.95, roadSurf );
@@ -924,7 +924,7 @@ export function makeSurfaceUniforms() {
     uVegSlope: { value: 0.72 }, uSoilSlopeCos: { value: 0.75 }, uSedSlopeCos: { value: 0.66 }, uSedDirRad: { value: 0 }, uSnowLine: { value: 430 }, uSnowSlopeCos: { value: 0.67 },
     uSeaLevel: { value: 0 }, uSeed: { value: 428 }, uJointDomain: { value: 0 },
     uJointSetA: { value: [1, 0, 0, 11] }, uJointSetB: { value: [0, 1, 0, 311] },
-    uPaintWater: { value: 1 }, uWaterClear: { value: 1.5 }, uWaterDeep: { value: new THREE.Color(0x1d4552) }, uWaterShallow: { value: new THREE.Color(0x4f7f7a) },
+    uPaintWater: { value: 1 }, uWaterClear: { value: 1.5 }, uWaterDeep: { value: new THREE.Color(0x1d4552) }, uWaterShallow: { value: new THREE.Color(0x4f7f7a) }, uRiverFoam: { value: 1 },
   });
   return u;
 }
@@ -975,6 +975,7 @@ export function updateSurfaceUniforms(uniforms, v) {
   uniforms.uWaterClear.value = v.riverClearDepth == null ? 1.5 : Math.max(0.1, v.riverClearDepth);
   uniforms.uWaterDeep.value.setStyle(v.riverColor || '#1d4552');
   uniforms.uWaterShallow.value.setStyle(v.riverShallowColor || '#4f7f7a');
+  uniforms.uRiverFoam.value = v.riverFoam == null ? 1 : v.riverFoam;
 }
 
 function makeBedTexture(data, count) {

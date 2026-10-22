@@ -138,24 +138,35 @@ const wallNormalStd = (o) => {
 {
   const H = v.sdfSegH || 12;
   const bkeys = [3, 17, 42, 101, 500];
-  let loMul = 1, hiMul = 0, grooveCols = 0;
+  let loOff = 1, hiOff = -1, loGm = 2, hiGm = 0, loSc = 1, hiSc = 0, grooveCols = 0;
+  let flips = 0, adj = 0;
   const bounds = [];
   for (const b of bkeys) {
-    let prev = null, breaks = 0;
+    let prevSeg = null, prevOff = 0, breaks = 0;
     let mx = 0;
     for (let y = 0; y <= 60; y += 0.25) {
       const sg = segField(b, y, H);
-      if (sg.mul < loMul) loMul = sg.mul;
-      if (sg.mul > hiMul) hiMul = sg.mul;
+      if (sg.off < loOff) loOff = sg.off;
+      if (sg.off > hiOff) hiOff = sg.off;
+      if (sg.gmul < loGm) loGm = sg.gmul;
+      if (sg.gmul > hiGm) hiGm = sg.gmul;
+      if (sg.scar < loSc) loSc = sg.scar;
+      if (sg.scar > hiSc) hiSc = sg.scar;
       if (Math.abs(sg.groove) > mx) mx = Math.abs(sg.groove);
-      if (prev != null && Math.abs(sg.mul - prev) > 1e-9) { breaks++; bounds.push(y); }
-      prev = sg.mul;
+      if (prevSeg != null && sg.seg !== prevSeg) {
+        breaks++; bounds.push(y); adj++;
+        if ((sg.off > 0) !== (prevOff > 0)) flips++;
+      }
+      prevSeg = sg.seg; prevOff = sg.off;
     }
     if (mx > 0.2) grooveCols++;
     if (breaks < 3 || breaks > 8) fails.push(`segField breaks wrong for column ${b} (${breaks} in 60 m)`);
   }
-  console.log(`segments: breaks/60m ok, mul range=[${loMul.toFixed(2)}, ${hiMul.toFixed(2)}], grooveCols=${grooveCols}/5`);
-  if (!(loMul < 0.5 && hiMul > 0.8)) fails.push(`segment contrast weak (mul [${loMul.toFixed(2)}, ${hiMul.toFixed(2)}])`);
+  console.log(`segments: breaks/60m ok, off=[${loOff.toFixed(2)}, ${hiOff.toFixed(2)}], gmul=[${loGm.toFixed(2)}, ${hiGm.toFixed(2)}], scar=[${loSc.toFixed(2)}, ${hiSc.toFixed(2)}], flips=${flips}/${adj}, grooveCols=${grooveCols}/5`);
+  if (!(loOff < -0.7 && hiOff > 0.7)) fails.push(`segment offsets weak ([${loOff.toFixed(2)}, ${hiOff.toFixed(2)}])`);
+  if (!(flips / Math.max(1, adj) > 0.3 && flips / Math.max(1, adj) < 0.7)) fails.push(`segments do not flip sign (flips=${flips}/${adj})`);
+  if (!(loGm < 0.75 && hiGm > 1.15)) fails.push(`groove aperture range weak ([${loGm.toFixed(2)}, ${hiGm.toFixed(2)}])`);
+  if (!(loSc < 0.2 && hiSc > 0.8)) fails.push(`scar hash degenerate ([${loSc.toFixed(2)}, ${hiSc.toFixed(2)}])`);
   if (grooveCols < 3) fails.push(`cross-grooves missing (${grooveCols}/5 columns)`);
   const spread = Math.max(...bounds) - Math.min(...bounds);
   if (!(spread > 10)) fails.push(`segment boundaries suspiciously aligned (spread ${spread.toFixed(1)} m)`);

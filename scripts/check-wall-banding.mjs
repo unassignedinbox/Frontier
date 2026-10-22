@@ -6,7 +6,7 @@
 // Mirrors the wall path (wall = 1) of surface-shader.js line by line:
 //   - wallBed: one quiet rock tone + aperiodic district drift (NO bed structure)
 //   - joint grooves + lip-gated bedding ledges (hard-over-soft only, broken along strike)
-//   - per-column block tone with vertical drift (NO bed-index term)
+//   - NO per-column block tone (the shader dropped it: full-height paint stripes)
 //   - runoff streaks with district patchiness + distance fade
 // Deliberately OMITS the aperiodic finish terms (grain tint, oxide pockets, spalls,
 // flakes, moss): they cannot create bands, they only dilute the bed-locked share — so
@@ -121,20 +121,14 @@ function evalWallPixel(x, y, footprint) {
   const patch = clamp01(cgNoise3(x / 145 + 21, y / 145, z / 145) * 0.5 + 0.5);
   const faceVar = mix(1, 0.3 + 1.35 * patch, v.facePatch == null ? 0.5 : v.facePatch);
   const jointAmt = (v.jointStrength || 0) * jointFade * 1 * mix(1, 0.3 + 1.15 * faceVar, 0.85);
-  // per-column block tone with vertical drift (no bed term — brick courses are gone)
-  const bkey = jf.cellA * 73 + jf.cellB * 191;
-  const hb = jshash(bkey, 7, 501) - 0.5;
-  const drift = 0.45 + 0.55 * cgNoise3(bkey * 0.37, y * 0.02, 7.0);
-  const toneFade = (1 - sstep(spacing * 0.5, spacing * 2.0, footprint)) * (v.jointBlocks == null ? 0.6 : v.jointBlocks);
-  const blockTone = hb * 0.3 * toneFade * drift;
-  const crackAO = Math.max(Math.max(jf.groove, gB), jf.hair * 0.4) * jointAmt;
+  // (no per-column block tone: the shader dropped it — full-height paint stripes)
+  const crackAO = Math.max(Math.max(jf.groove, gB), jf.hair * 0.4) * jointAmt * Math.min(1.7, (v.jointBlocks == null ? 0.6 : v.jointBlocks) / 0.6);
   let rock = [0, 1, 2].map((i) => mix(rockA[i], bandCol, (v.strataContrast == null ? 0.7 : v.strataContrast) * 1));
-  rock = rock.map((c) => c * (1 + blockTone));
   rock = rock.map((c) => c * (1 - crackAO * 0.42));
   // (hardness tint is gated off walls: × (1 − wallFlat) = 0 — nothing to do)
   // runoff streaks with district patchiness + distance fade (footprint emulates distance)
-  const st = cgNoise3(x / v.streakScale, (y * 0.05) / v.streakScale, z / v.streakScale) * 0.6
-    + cgNoise3((x * 3.6) / v.streakScale + 5, (y * 0.1) / v.streakScale + 5, (z * 3.6) / v.streakScale + 5) * 0.4;
+  const st = cgNoise3(x / v.streakScale, (y * 0.3) / v.streakScale, z / v.streakScale) * 0.6
+    + cgNoise3((x * 3.6) / v.streakScale + 5, (y * 0.6) / v.streakScale + 5, (z * 3.6) / v.streakScale + 5) * 0.4;
   const streakPatch = cgNoise3(x * 0.02 + 13, y * 0.02 + 13, z * 0.02 + 13);
   let streak = sstep(0.56, 0.78, st) * (v.streakAmount == null ? 1 : v.streakAmount) * mix(0.3, 1.0, sstep(0.35, 0.65, streakPatch));
   streak *= footprint > 1.5 ? 0.45 : 1.0;
