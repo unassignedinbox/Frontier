@@ -9,6 +9,7 @@
 
 #include "Geometry/RollingBallCarrier.h"
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 
 #include "Intersection/ImplicitSurface.h"
 #include "Intersection/IntersectionCurve.h"
@@ -53,6 +54,31 @@ namespace
     [[nodiscard]] Vector3 FootOnSupport(const SurfaceGeometry& Support, Vector3 Position) noexcept
     {
         return EvaluateSurface(Support, ProjectOntoSurface(Support, Position, { 0.0, 0.0 })).Position;
+    }
+
+    // 📝 Seed for the foot of Spine(τ) on Support: when the spine is a trace on the parallel offset of Support, that foot
+    //    IS the trace's chart foot on the offset (same normal line), interpolated at τ. NaN otherwise (global inversion).
+    [[nodiscard]] Vector2 SpineFootHint(const CurveGeometry& Spine, const SurfaceGeometry& Support, double τ) noexcept
+    {
+        const auto* Traced = std::get_if<IntersectionCurve>(&Spine);
+        const auto* Spline = std::get_if<NurbsSurface>(&Support);
+        if (Traced == nullptr || Spline == nullptr) return { NAN, NAN };
+        const std::array<Vector2, 2> Feet = InterpolateIntersectionFeet(*Traced->Trace, τ);
+        const SurfaceGeometry* Sides[2] = { &Traced->Trace->First, &Traced->Trace->Second };
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            const auto* Offset = std::get_if<ParallelSurface>(Sides[Side]);
+            if (Offset != nullptr && Offset->Definition->Basis.Definition == Spline->Definition) return Feet[Side];
+        }
+        return { NAN, NAN };
+    }
+
+    // The same foot seeded by Hint (NaN: global) on a NURBS or parallel support, for points stepped in small moves (the
+    // ± stencils below); analytic supports keep their closed form and ignore it.
+    [[nodiscard]] Vector3 FootOnSupport(const SurfaceGeometry& Support, Vector3 Position, Vector2& Hint) noexcept
+    {
+        if (!std::holds_alternative<NurbsSurface>(Support) && !std::holds_alternative<ParallelSurface>(Support)) return FootOnSupport(Support, Position);
+        return MeasureSurfaceDistanceNear(Support, Position, Hint).Foot;
     }
 
     // Spine point, unit tangent and the cross-section frame E₁ (towards the guide foot), E₂ = E₁ × T.
@@ -109,7 +135,8 @@ namespace
         Frame.Centre   = Sample.Position;
         Frame.Velocity = Sample.Derivative;
         Frame.Tangent  = Normalize(Sample.Derivative);
-        const Vector3 Towards = FootOnSupport(Definition.Guide, Frame.Centre) - Frame.Centre;  // [len] - ≈ r·E₁
+        Vector2       Seed    = SpineFootHint(Definition.Spine, Definition.Guide, Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period));
+        const Vector3 Towards = FootOnSupport(Definition.Guide, Frame.Centre, Seed) - Frame.Centre;   // [len] - ≈ r·E₁
         Frame.First  = Normalize(Towards - Frame.Tangent * Dot(Towards, Frame.Tangent));
         Frame.Second = Cross(Frame.First, Frame.Tangent) * Definition.Handedness;
         if (Slot) *Slot = { Definition.Serial, 𝑢, Frame.Centre, Frame.Tangent, Frame.First, Frame.Velocity };
@@ -127,11 +154,12 @@ namespace
         Vector3 Second = {};                                                                 // [-] - E₂(X)
     };
 
-    [[nodiscard]] FieldFrame ResolveFieldFrame(const RollingBallDefinition& Definition, const TracedIntersection& Trace, Vector3 Position, Vector3 Reference) noexcept
+    // Hints: chart feet on Trace.First, Trace.Second and the guide, carried from the + stencil point to the − one.
+    [[nodiscard]] FieldFrame ResolveFieldFrame(const RollingBallDefinition& Definition, const TracedIntersection& Trace, Vector3 Position, Vector3 Reference, std::array<Vector2, 3>& Hints) noexcept
     {
-        Vector3 Tangent = Normalize(Cross(MeasureSurfaceDistance(Trace.First, Position).Normal, MeasureSurfaceDistance(Trace.Second, Position).Normal));
+        Vector3 Tangent = Normalize(Cross(MeasureSurfaceDistanceNear(Trace.First, Position, Hints[0]).Normal, MeasureSurfaceDistanceNear(Trace.Second, Position, Hints[1]).Normal));
         if (Dot(Tangent, Reference) < 0.0) Tangent = -Tangent;
-        const Vector3 Towards = FootOnSupport(Definition.Guide, Position) - Position;      // [len] - ≈ r·E₁
+        const Vector3 Towards = FootOnSupport(Definition.Guide, Position, Hints[2]) - Position;   // [len] - ≈ r·E₁
         FieldFrame Frame;
         Frame.First  = Normalize(Towards - Tangent * Dot(Towards, Tangent));
         Frame.Second = Cross(Frame.First, Tangent) * Definition.Handedness;
@@ -239,10 +267,12 @@ namespace
         const double  Step  = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
         const Vector3 Reach = Frame.Velocity * Step;                                         // [len] - h·C′
         ChordRuling Ruling;
-        Ruling.Near     = FootOnSupport(Definition.Guide, Frame.Centre);
-        Ruling.Far      = FootOnSupport(Definition.Partner, Frame.Centre);
-        Ruling.NearRate = (FootOnSupport(Definition.Guide, Frame.Centre + Reach) - FootOnSupport(Definition.Guide, Frame.Centre - Reach)) * (1.0 / (2.0 * Step));
-        Ruling.FarRate  = (FootOnSupport(Definition.Partner, Frame.Centre + Reach) - FootOnSupport(Definition.Partner, Frame.Centre - Reach)) * (1.0 / (2.0 * Step));
+        Vector2 NearHint{ NAN, NAN }, FarHint{ NAN, NAN };                                  // [-] - Chart feet shared by each stencil
+        Ruling.Near     = FootOnSupport(Definition.Guide, Frame.Centre, NearHint);
+        Ruling.Far      = FootOnSupport(Definition.Partner, Frame.Centre, FarHint);
+        Vector2 NearBack = NearHint, FarBack = FarHint;
+        Ruling.NearRate = (FootOnSupport(Definition.Guide, Frame.Centre + Reach, NearHint) - FootOnSupport(Definition.Guide, Frame.Centre - Reach, NearBack)) * (1.0 / (2.0 * Step));
+        Ruling.FarRate  = (FootOnSupport(Definition.Partner, Frame.Centre + Reach, FarHint) - FootOnSupport(Definition.Partner, Frame.Centre - Reach, FarBack)) * (1.0 / (2.0 * Step));
         return Ruling;
     }
 
@@ -419,8 +449,10 @@ SurfaceSample EvaluateRollingBall(const RollingBallSurface& Surface, Vector2 Par
         // 💡 Traced spine: C′ is exact and E₁′, E₂′ come from the frame field on the tangent line (one Newton solve per
         //    sample instead of three).
         const Vector3    Reach = Frame.Velocity * Step;                                      // [len] - h·C′
-        const FieldFrame Ahead = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre + Reach, Frame.Tangent);
-        const FieldFrame Back  = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre - Reach, Frame.Tangent);
+        const std::array<Vector2, 2> Feet = InterpolateIntersectionFeet(*Traced->Trace, Clamp(Parameter.X, Definition.SpineLow, Definition.SpineHigh, Definition.Period));
+        std::array<Vector2, 3> Hints = { Feet[0], Feet[1], SpineFootHint(Definition.Spine, Definition.Guide, Clamp(Parameter.X, Definition.SpineLow, Definition.SpineHigh, Definition.Period)) };
+        const FieldFrame Ahead = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre + Reach, Frame.Tangent, Hints);
+        const FieldFrame Back  = ResolveFieldFrame(Definition, *Traced->Trace, Frame.Centre - Reach, Frame.Tangent, Hints);
         const Vector3    Turn  = ((Ahead.First - Back.First) * Cosine + (Ahead.Second - Back.Second) * Sine) * (1.0 / (2.0 * Step));
         Sample.DerivativeU = Frame.Velocity + Turn * Definition.Radius;
         return Sample;
@@ -559,7 +591,9 @@ CurveSample EvaluateContactCurve(const ContactDefinition& Definition, double τ)
     const auto Foot = [&](double Value)
     {
         const double Inside = Clamp(Value, Definition.SpineLow, Definition.SpineHigh, Definition.Period);
-        return FootOnSupport(Definition.Support, EvaluateCurve(Definition.Spine, SpineParameter(Definition, Inside)).Position);
+        const double Along = SpineParameter(Definition, Inside);                              // [-] - Spine τ
+        Vector2      Seed  = SpineFootHint(Definition.Spine, Definition.Support, Along);
+        return FootOnSupport(Definition.Support, EvaluateCurve(Definition.Spine, Along).Position, Seed);
     };
     const double Step = DifferenceStep(Definition.SpineLow, Definition.SpineHigh, Definition.Period);
     const double Low  = Clamp(τ - Step, Definition.SpineLow, Definition.SpineHigh, Definition.Period);

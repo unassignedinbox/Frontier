@@ -47,6 +47,11 @@ struct RationalSegment
 
 [[nodiscard]] SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 Position) noexcept;
 
+// 💡 MeasureSurfaceDistance with a chart hint for NURBS and parallel carriers: a finite Hint seeds a certified local
+//    inversion (else the global one), and Hint receives the foot's chart point either way; other carriers ignore it.
+//    A Newton loop that keeps one Hint per surface, starting from NaN, gets the global answer at local cost.
+[[nodiscard]] SurfaceDistance MeasureSurfaceDistanceNear(const SurfaceGeometry& Surface, Vector3 Position, Vector2& Hint) noexcept;
+
 // Exact conversion: a line is one linear segment; a circular arc is split into ≤ π/2 rational quadratics.
 [[nodiscard]] std::vector<RationalSegment> ConvertToRationalSegments(const CurveGeometry& Curve, double Low, double High);
 

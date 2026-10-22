@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <type_traits>
 
 namespace Frontier::SolidArcRemastered
@@ -148,6 +149,26 @@ SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 P
     }
     Measure.Foot = Position - Measure.Normal * Measure.Distance;
     return Measure;
+}
+
+SurfaceDistance MeasureSurfaceDistanceNear(const SurfaceGeometry& Surface, Vector3 Position, Vector2& Hint) noexcept
+{
+    const auto*         Offset = std::get_if<ParallelSurface>(&Surface);
+    const NurbsSurface* Spline = Offset ? &Offset->Definition->Basis : std::get_if<NurbsSurface>(&Surface);
+    if (Spline == nullptr) return MeasureSurfaceDistance(Surface, Position);
+    std::optional<Vector2> Parameter;
+    if (std::isfinite(Hint.X) && std::isfinite(Hint.Y)) Parameter = PolishNurbsFootLocally(*Spline, Position, Hint);
+    if (!Parameter)
+    {
+        const NurbsDomain U = MeasureNurbsSurfaceDomain(*Spline->Definition, true), V = MeasureNurbsSurfaceDomain(*Spline->Definition, false);
+        Parameter = ProjectOntoNurbsSurface(*Spline, Position, { 0.5 * (U.Low + U.High), 0.5 * (V.Low + V.High) });
+    }
+    Hint = *Parameter;
+    const Vector3 Foot     = EvaluateNurbsSurface(*Spline, *Parameter).Position;
+    const Vector3 Normal   = EvaluateNurbsNormal(*Spline, *Parameter);
+    const double  Distance = Dot(Position - Foot, Normal);                                   // [len] - Signed, basis
+    if (Offset) return { Distance - Offset->Definition->Distance, Normal, Foot + Normal * Offset->Definition->Distance };
+    return { Distance, Normal, Foot };
 }
 
 std::vector<RationalSegment> ConvertToRationalSegments(const CurveGeometry& Curve, double Low, double High)

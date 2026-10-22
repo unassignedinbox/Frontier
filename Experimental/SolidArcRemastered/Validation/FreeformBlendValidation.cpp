@@ -7,6 +7,12 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Audit/EnclosedVolume.h"
+#include "Blend/EdgeBlend.h"
+#include "Construction/BodyTransform.h"
+#include "Construction/PrimitiveConstruction.h"
+#include "Feature/ProfileSweep.h"
+#include "Geometry/CurveGeometry.h"
 #include "Geometry/NurbsCarrier.h"
 #include "Geometry/ParallelCarrier.h"
 #include "Geometry/SurfaceGeometry.h"
@@ -17,12 +23,19 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <csignal>
+#include <cstdlib>
 #include <cstdio>
 #include <functional>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
+
+#if defined(__unix__)
+#include <unistd.h>
+#endif
 
 using namespace Frontier::SolidArcRemastered;
 
@@ -49,7 +62,11 @@ namespace
     GateTally SectionGate  = { "P3", "Intersections with parallel carriers: offset NURBS sphere ∩ plane = the circle, offset cylinder ∩ offset cylinder (Steinmetz), offset freeform ∩ plane — every chart point on both exact carriers", "interior ≤ 10⁻⁹ · open ends ≤ 10⁻⁷" };
     GateTally FoldGate     = { "P4", "Fold margin min(1 − dκᵢ): inward offsets of a unit NURBS cylinder by 0.5 (margin ½) and 1.2 (folds); offset of an offset adds distances; d = 0 returns the basis", "exact" };
 
-    std::vector<GateTally*> AllGates() { return { &CarrierGate, &FreeformGate, &SectionGate, &FoldGate }; }
+    GateTally VolumeGate   = { "F1", "Rolling-ball fillets on NURBS supports = closed forms: promoted block edge (3 − (1 − π/4)·r²·L), promoted cylinder rim (Pappus), freeform D-extrusion spline rim (A·(L − c·Θ), curved Pappus) — and equal to the analytic-body fillet", "≤ 10⁻⁹ relative" };
+    GateTally LawGate      = { "F2", "Rolling-ball law on every NURBS sheet: |ball − support| = r, feet on the supports along their normals, contact on the carrier, G1 between blend and supports", "≤ 10⁻⁹ (len · rad)" };
+    GateTally RefusalGate  = { "F3", "Honest refusals: a ball past a support curvature radius (fold), and the 🚧 chamfer / variable on NURBS supports — atomic, input untouched", "exact" };
+
+    std::vector<GateTally*> AllGates() { return { &CarrierGate, &FreeformGate, &SectionGate, &FoldGate, &VolumeGate, &LawGate, &RefusalGate }; }
 
     struct DetailRow
     {
@@ -269,6 +286,205 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- F blends on NURBS supports ------------------------------------------------------------------------------------
+
+    [[nodiscard]] EdgeToken NearestEdge(const ModelPartition& Partition, BodyToken Body, Vector3 Probe)
+    {
+        EdgeToken Best    = {};
+        double    Nearest = std::numeric_limits<double>::max();                                  // [len] - Closest sample so far
+        for (const EdgeToken Edge : Partition.CollectInventory(Body).Edges)
+        {
+            const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
+            const CurveGeometry& Curve   = Partition.Curves.Resolve(Profile.Curve);
+            for (int Sample = 0; Sample <= 32; ++Sample)
+            {
+                const double Gap = Distance(EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Sample / 32.0).Position, Probe);
+                if (Gap < Nearest) { Nearest = Gap; Best = Edge; }
+            }
+        }
+        return Best;
+    }
+
+    // 📝 Independent of the blend's own residuals: every section τ comes from projecting a point of the ORIGINAL edge
+    //    onto the spine; the ball is tested against the exact supports by inversion, the feet against the support normal,
+    //    and G1 as the angle between the carrier normal and the support normal at each foot.
+    struct SheetMeasure
+    {
+        double Ball     = 0.0;                                                                   // [len] - ||ball − support| − r|
+        double Foot     = 0.0;                                                                   // [len] - Foot off support / off normal / off carrier
+        double Tangency = 0.0;                                                                   // [rad] - Blend ↔ support normal angle
+        int    Sections = 0;                                                                     // [-]   - Sections sampled
+    };
+
+    [[nodiscard]] SheetMeasure MeasureSheet(const ModelPartition& Partition, const EdgeBlendSheet& Sheet)
+    {
+        SheetMeasure         Measure;
+        const EdgeProfile&   Edge  = Partition.Edges.Resolve(Sheet.Edge);
+        const CurveGeometry& Curve = Partition.Curves.Resolve(Edge.Curve);
+        for (int Sample = 1; Sample < 40; ++Sample)
+        {
+            const Vector3 OnEdge = EvaluateCurve(Curve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / 40.0).Position;
+            const double  τ      = ProjectOntoCurve(Sheet.Spine, OnEdge, 0.0);
+            const Vector3 Ball   = EvaluateCurve(Sheet.Spine, τ).Position;                       // [len] - Ball centre
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const SurfaceGeometry& Support = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Sheet.Faces[Side]).Surface);
+                const Vector3          Foot    = EvaluateCurve(Sheet.Contacts[Side], τ).Position;
+                const SurfaceDistance  Reach   = MeasureSurfaceDistance(Support, Ball);
+                const SurfaceDistance  OnBase  = MeasureSurfaceDistance(Support, Foot);
+                const SurfaceDistance  OnBlend = MeasureSurfaceDistance(Sheet.Surface, Foot);
+                Measure.Ball     = std::max(Measure.Ball, std::fabs(std::fabs(Reach.Distance) - Sheet.Radius));
+                Measure.Foot     = std::max({ Measure.Foot, std::fabs(OnBase.Distance), Length(Cross(Ball - Foot, OnBase.Normal)), std::fabs(OnBlend.Distance) });
+                Measure.Tangency = std::max(Measure.Tangency, std::asin(std::min(1.0, Length(Cross(OnBlend.Normal, OnBase.Normal)))));
+            }
+            ++Measure.Sections;
+        }
+        return Measure;
+    }
+
+    // 📝 D-profile: the base line (0, 0) → (2, 0), then a convex clamped cubic back to (0, 0) leaving and arriving
+    //    perpendicular to the line (first and last legs vertical), so the plane y = 0 is a normal plane of the rim at both
+    //    ends and the fillet's end caps are exact cross-sections. Turning of the rim Θ = π.
+    [[nodiscard]] SketchProfile DProfile()
+    {
+        SketchProfile  Profile;
+        ProfileLoop    Loop;
+        ProfileSegment Base;
+        Base.Kind  = ProfileSegmentKind::Line;
+        Base.Start = { 0.0, 0.0 };
+        Base.End   = { 2.0, 0.0 };
+        Base.Curve = 0;
+        Base.Name  = "Line1";
+        ProfileSegment Arch;
+        Arch.Kind         = ProfileSegmentKind::Spline;
+        Arch.Start        = { 2.0, 0.0 };
+        Arch.End          = { 0.0, 0.0 };
+        Arch.Curve        = 1;
+        Arch.Name         = "Spline2";
+        Arch.Spline.Degree = 3;
+        Arch.Spline.Knots  = { 0.0, 0.0, 0.0, 0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0, 1.0, 1.0, 1.0 };
+        Arch.Spline.Poles  = { { 2.0, 0.0 }, { 2.0, 0.8 }, { 1.7, 1.7 }, { 0.3, 1.7 }, { 0.0, 0.8 }, { 0.0, 0.0 } };
+        Loop.Segments = { Base, Arch };
+        Profile.Loops = { Loop };
+        Profile.Scale = 2.0;
+        ArrangeProfileLoops(Profile);
+        return Profile;
+    }
+
+    // Arc length of a profile segment (composite Simpson on |C′|, 4096 panels per knot span: error ≪ 10⁻¹³).
+    [[nodiscard]] double SegmentLength(const ProfileSegment& Segment)
+    {
+        const std::vector<double> Breaks = CollectProfileBreaks(Segment);
+        double Total = 0.0;
+        for (size_t Index = 0; Index + 1 < Breaks.size(); ++Index)
+        {
+            const int    Panels = 4096;
+            const double Step   = (Breaks[Index + 1] - Breaks[Index]) / Panels;
+            for (int Panel = 0; Panel < Panels; ++Panel)
+            {
+                const double Low = Breaks[Index] + Step * Panel;
+                const auto   Speed = [&](double Fraction) { const Vector2 T = EvaluateProfileTangent(Segment, Fraction); return std::hypot(T.X, T.Y); };
+                Total += Step / 6.0 * (Speed(Low) + 4.0 * Speed(Low + 0.5 * Step) + Speed(Low + Step));
+            }
+        }
+        return Total;
+    }
+
+    void ValidateBlends(const std::string& Only)
+    {
+        const double Corner   = 1.0 - Pi / 4.0;                                                  // [-]   - Spandrel area / r²
+        const double Centroid = (10.0 - 3.0 * Pi) / (12.0 - 3.0 * Pi);                           // [-]   - Spandrel centroid / r (from the corner)
+        struct Specimen
+        {
+            const char*                                           Key;
+            const char*                                           Name;
+            std::function<BodyToken(ModelPartition&)>             Build;
+            Vector3                                               Probe;
+            double                                                Radius;
+            std::function<double()>                               Expected;
+            bool                                                  AnalyticTwin;
+        };
+        const SketchProfile Arch       = DProfile();
+        const double        ArchLength = SegmentLength(Arch.Loops[0].Segments[1].Kind == ProfileSegmentKind::Spline ? Arch.Loops[0].Segments[1] : Arch.Loops[0].Segments[0]);
+        const double        Height     = 1.0;                                                    // [len] - D-extrusion height
+        const std::vector<Specimen> Specimens =
+        {
+            { "block", "Promoted block 2 × 1.5 × 1 · fillet r 0.2 on the top front edge (NURBS plane ∩ NURBS plane)",
+              [](ModelPartition& Partition) { return ConstructBlock(Partition, { 0, 0, 0 }, { 2, 1.5, 1 }).Value; }, { 1.0, 0.0, 1.0 }, 0.2,
+              [&] { return 3.0 - Corner * 0.04 * 2.0; }, true },
+            { "rim", "Promoted cylinder r 1 × 1.5 · fillet r 0.2 on the top rim (NURBS cylinder ∩ NURBS plane, closed)",
+              [](ModelPartition& Partition) { return ConstructCylinder(Partition, Upright({ 0, 0, 0 }), 1.0, 1.5).Value; }, { 1.0, 0.0, 1.5 }, 0.2,
+              [&] { return Pi * 1.5 - 2.0 * Pi * (1.0 - Centroid * 0.2) * Corner * 0.04; }, true },
+            { "arch", "Freeform D-extrusion · fillet r 0.25 on the spline rim (bicubic-ruled NURBS ∩ plane, curved Pappus)",
+              [&](ModelPartition& Partition) { return ExtrudeProfile(Partition, Arch, OrthonormalFrame{}, Height).Body; },
+              { 1.0, 1.7 * 0.75 + 0.0, 1.0 }, 0.25,
+              [&] { return Arch.Area * Height - Corner * 0.0625 * (ArchLength - Centroid * 0.25 * Pi); }, false },
+        };
+        for (const Specimen& Each : Specimens)
+        {
+            if (!Only.empty() && Only != "blend" && Only != Each.Key) continue;
+            ModelPartition Partition;
+            const BodyToken Source = Each.Build(Partition);
+            const TransformOutcome Promoted = Each.AnalyticTwin ? PromoteBodyToNurbs(Partition, Source) : TransformOutcome{ Source, {} };
+            if (!Promoted.Refusal.empty()) { Report(VolumeGate, Each.Name, "promotion refused: " + Promoted.Refusal, 1.0, false); continue; }
+            BlendSettings Settings;
+            Settings.Profile = BlendProfile::Fillet;
+            Settings.Size    = Each.Radius;
+            const auto         Moment  = std::chrono::steady_clock::now();
+            const EdgeToken    Edge    = NearestEdge(Partition, Promoted.Body, Each.Probe);
+            const BlendOutcome Blended = BlendEdges(Partition, Promoted.Body, { Edge }, Settings);
+            const double       Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Moment).count();
+            if (!Blended.Refusal.empty()) { Report(VolumeGate, Each.Name, "blend refused: " + Blended.Refusal, 1.0, false); continue; }
+            const double Volume   = IntegrateBodyVolume(Partition, Blended.Body);
+            const double Expected = Each.Expected();
+            const double Error    = std::fabs(Volume - Expected) / Expected;
+            std::string  Twin;
+            double       TwinError = 0.0;
+            if (Each.AnalyticTwin)
+            {
+                const BlendOutcome Analytic = BlendEdges(Partition, Source, { NearestEdge(Partition, Source, Each.Probe) }, Settings);
+                TwinError = Analytic.Refusal.empty() ? std::fabs(IntegrateBodyVolume(Partition, Analytic.Body) - Volume) / Expected : 1.0;
+                Twin = " · analytic twin " + Scientific(TwinError);
+            }
+            const BlendStatistics& Statistics = Blended.Statistics;
+            Report(VolumeGate, Each.Name, "V " + std::to_string(Volume) + " vs closed form " + std::to_string(Expected) + " → " + Scientific(Error) + Twin + " · procedural carriers " + std::to_string(Statistics.CarrierProcedural)
+                   + " · traced sections " + std::to_string(Statistics.TracedSections) + " · audit " + (Blended.Audit.SoundCondition() ? "sound" : "UNSOUND") + " · " + std::to_string(static_cast<int>(Seconds * 1000.0)) + " ms",
+                   std::max(Error, TwinError), Error <= 1.0e-9 && TwinError <= 1.0e-9 && Blended.Audit.SoundCondition());
+            for (const EdgeBlendSheet& Sheet : Blended.Sheets)
+            {
+                const SheetMeasure Measure = MeasureSheet(Partition, Sheet);
+                Report(LawGate, Each.Name, "ball " + Scientific(Measure.Ball) + " · feet " + Scientific(Measure.Foot) + " · G1 " + Scientific(Measure.Tangency) + " rad · sheet residual " + Scientific(Sheet.MaxResidual) + " (" + std::to_string(Measure.Sections) + " sections × 2 supports)",
+                       std::max({ Measure.Ball, Measure.Foot, Measure.Tangency }), Measure.Ball <= 1.0e-9 && Measure.Foot <= 1.0e-9 && Measure.Tangency <= 1.0e-9);
+            }
+        }
+
+        // ---- F3 refusals: atomic, the input body untouched.
+        struct Refusal { const char* Name; double Size; BlendProfile Profile; std::optional<double> EndSize; const char* Expected; };
+        const std::vector<Refusal> Refusals =
+        {
+            { "D-extrusion rim, r 0.9 (past the arch's curvature radius)", 0.9, BlendProfile::Fillet, std::nullopt, "fold margin" },
+            { "D-extrusion rim, chamfer 0.2", 0.2, BlendProfile::Chamfer, std::nullopt, "🚧" },
+            { "D-extrusion rim, variable fillet 0.15 → 0.3", 0.15, BlendProfile::Fillet, 0.3, "🚧" },
+        };
+        for (const Refusal& Each : Refusals)
+        {
+            if (!Only.empty() && Only != "blend" && Only != "refusal") continue;
+            ModelPartition  Partition;
+            const BodyToken Body   = ExtrudeProfile(Partition, Arch, OrthonormalFrame{}, Height).Body;
+            const double    Before = IntegrateBodyVolume(Partition, Body);
+            BlendSettings   Settings;
+            Settings.Profile = Each.Profile;
+            Settings.Size    = Each.Size;
+            Settings.EndSize = Each.EndSize;
+            const BlendOutcome Blended = BlendEdges(Partition, Body, { NearestEdge(Partition, Body, { 1.0, 1.275, 1.0 }) }, Settings);
+            const bool Passed = !Blended.Refusal.empty() && Blended.Refusal.find(Each.Expected) != std::string::npos && IntegrateBodyVolume(Partition, Body) == Before;
+            Report(RefusalGate, Each.Name, Blended.Refusal.empty() ? "accepted (expected a refusal)" : "\"" + Blended.Refusal + "\"", Passed ? 0.0 : 1.0, Passed);
+        }
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    ENTRY
 //------------------------------------------------------------------------------------------------------------------------
@@ -276,11 +492,20 @@ namespace
 int main(int Count, char** Arguments)
 {
     const std::string Only = Count > 2 && std::string(Arguments[1]) == "--only" ? Arguments[2] : "";
+    // --deadline SECONDS (after --only KEY, POSIX only): exit cleanly on the alarm so profilers still write their report.
+#if defined(__unix__)
+    if (Count > 4 && std::string(Arguments[3]) == "--deadline")
+    {
+        std::signal(SIGALRM, [](int) { std::fprintf(stderr, "⚠️ deadline reached\n"); std::exit(3); });
+        alarm(static_cast<unsigned>(std::atoi(Arguments[4])));
+    }
+#endif
     const auto Start = std::chrono::steady_clock::now();
     if (Only.empty() || Only == "carrier") ValidateClosedForms();
     if (Only.empty() || Only == "freeform") ValidateFreeform();
     if (Only.empty() || Only == "section") ValidateSections();
     if (Only.empty() || Only == "fold") ValidateFolds();
+    if (Only.empty() || Only == "blend" || Only == "block" || Only == "rim" || Only == "arch" || Only == "refusal") ValidateBlends(Only);
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
 
     bool PassedCondition = true;

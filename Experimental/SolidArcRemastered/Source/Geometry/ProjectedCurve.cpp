@@ -1,5 +1,5 @@
 /*====================================================================================================================================
-                                                      PROJECTEDCURVE.CPP
+                                                       PROJECTEDCURVE.CPP
 ====================================================================================================================================*/
 // 🧩 SP-curves for section curves: exact line / ellipse when the chart image is affine, exact projection otherwise
 
@@ -40,7 +40,7 @@ namespace
 ParameterSample EvaluateProjectedParameterCurve(const ProjectedParameterCurve& Curve, double τ) noexcept
 {
     const CurveSample   Point     = EvaluateCurve(Curve.Curve, τ);
-    const Vector2       Parameter = ProjectOntoSurface(Curve.Surface, Point.Position, InterpolateTable(Curve, τ));
+    const Vector2       Parameter = ProjectOntoSurfaceNear(Curve.Surface, Point.Position, InterpolateTable(Curve, τ));
     const SurfaceSample Sample    = EvaluateSurface(Curve.Surface, Parameter);
     const double        Guu       = Dot(Sample.DerivativeU, Sample.DerivativeU);             // [len²] - Metric
     const double        Guv       = Dot(Sample.DerivativeU, Sample.DerivativeV);             // [len²] - Metric

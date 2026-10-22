@@ -265,10 +265,14 @@ namespace
     }
 
     // Newton on ½|S − X|² from a seed; a coordinate held at its bound by an outward step continues as 1D Newton.
-    [[nodiscard]] Vector2 PolishSurfaceFoot(const NurbsSurfaceDefinition& Definition, Vector3 Target, Vector2 Parameter) noexcept
+    // ⚠️ Settle (local inversion only): Newton converges quadratically, so one more iteration after a 3D step of
+    //    ≤ 10⁻⁹·extent lands at rounding and the loop stops there. The global search keeps the full schedule (its starts
+    //    are far, and an early exit there once cost accuracy); an off-surface target never meets its 10⁻¹⁶ floor.
+    [[nodiscard]] Vector2 PolishSurfaceFoot(const NurbsSurfaceDefinition& Definition, Vector3 Target, Vector2 Parameter, bool Settle = false) noexcept
     {
         const NurbsDomain U = MeasureNurbsSurfaceDomain(Definition, true), V = MeasureNurbsSurfaceDomain(Definition, false);
         const double      Floor = 1.0e-16 * Definition.Extent;                              // [len] - Step that no longer moves
+        bool              Final = false;                                                     // [-]   - Settle: this is the last step
         for (int Iteration = 0; Iteration < NewtonLimit; ++Iteration)
         {
             const NurbsSurfaceDerivatives S = EvaluateNurbsSurfaceDerivatives(Definition, Parameter);
@@ -313,7 +317,8 @@ namespace
             }
             const double Moved = Length(S.U * (StepU * Scale) + S.V * (StepV * Scale));      // [len] - 3D length of the step
             Parameter = Next;
-            if (Moved <= Floor || Length(Residual) <= Floor) break;
+            if (Moved <= Floor || Length(Residual) <= Floor || Final) break;
+            Final = Settle && Moved <= 1.0e-9 * Definition.Extent;
         }
         return Parameter;
     }
@@ -767,6 +772,28 @@ Vector2 ProjectOntoNurbsSurface(const NurbsSurface& Surface, Vector3 Position, V
     if (Definition.PeriodU > 0.0) Best.X = FoldNearest(Best.X, Reference.X, Definition.PeriodU);
     if (Definition.PeriodV > 0.0) Best.Y = FoldNearest(Best.Y, Reference.Y, Definition.PeriodV);
     return Best;
+}
+
+std::optional<Vector2> PolishNurbsFootLocally(const NurbsSurface& Surface, Vector3 Position, Vector2 Start) noexcept
+{
+    const NurbsSurfaceDefinition& Definition = *Surface.Definition;
+    const NurbsDomain U = MeasureNurbsSurfaceDomain(Definition, true), V = MeasureNurbsSurfaceDomain(Definition, false);
+    const Vector2 Origin = ConfineParameter(Definition, Start);                               // [-] - Start inside the domain
+    const Vector2 Foot   = PolishSurfaceFoot(Definition, Position, Origin, true);
+    // Chart jump: the foot must stay in the basin of the start (periodic coordinates compared on the circle).
+    const auto Jump = [](double From, double To, double Period) { const double Step = To - From; return Period > 0.0 ? std::fabs(Step - Period * std::round(Step / Period)) : std::fabs(Step); };
+    if (Jump(Origin.X, Foot.X, Definition.PeriodU) > 0.1 * (U.High - U.Low) || Jump(Origin.Y, Foot.Y, Definition.PeriodV) > 0.1 * (V.High - V.Low)) return std::nullopt;
+    // Interior: a foot held on a domain edge is a constrained minimum that the global search must arbitrate.
+    const double EdgeU = 1.0e-12 * (U.High - U.Low), EdgeV = 1.0e-12 * (V.High - V.Low);
+    if ((Definition.PeriodU <= 0.0 && (Foot.X <= U.Low + EdgeU || Foot.X >= U.High - EdgeU)) || (Definition.PeriodV <= 0.0 && (Foot.Y <= V.Low + EdgeV || Foot.Y >= V.High - EdgeV))) return std::nullopt;
+    // Stationary and a strict minimum of |X − S|².
+    const NurbsSurfaceDerivatives S = EvaluateNurbsSurfaceDerivatives(Definition, Foot);
+    const Vector3 Residual = S.Position - Position;                                           // [len] - S − X
+    const double  Slack    = 1.0e-10 * (Length(Residual) + 1.0e-6 * Definition.Extent);       // [len] - Rounding allowance
+    if (std::fabs(Dot(S.U, Residual)) > Slack * Length(S.U) || std::fabs(Dot(S.V, Residual)) > Slack * Length(S.V)) return std::nullopt;
+    const double A = Dot(S.U, S.U) + Dot(S.UU, Residual), B = Dot(S.U, S.V) + Dot(S.UV, Residual), D = Dot(S.V, S.V) + Dot(S.VV, Residual);
+    if (!(A > 0.0) || !(D > 0.0) || !(A * D - B * B > 0.0)) return std::nullopt;
+    return Foot;
 }
 
 SurfacePeriodicity ResolveNurbsPeriodicity(const NurbsSurface& Surface) noexcept

@@ -13,6 +13,7 @@
 #include "Geometry/SurfaceGeometry.h"
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -69,6 +70,7 @@ struct TracedIntersection
     bool                 Closed   = false;                                                  // [-]   - Loop of period 2π
     double               Perimeter = 0.0;                                                   // [len] - Chord length of the guide
     std::shared_ptr<const BallLaw> Law = {};                                                // [-]   - Present: ball-law spine
+    std::vector<std::array<Vector2, 2>> Feet = {};                                          // [-]   - Chart feet on First / Second at the knots (NURBS / parallel only)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -88,6 +90,10 @@ struct TracedIntersection
 // 💡 Ball-law spine over the edge interval [Low, High] (closed: one 2π turn): the guide is exact spine samples, refined
 //    like a traced curve. nullopt where the solve fails anywhere (a wedge too tight for the setback, θ → 0 or π).
 [[nodiscard]] std::optional<CurveGeometry> BuildBallLawCurve(const SurfaceGeometry& First, const SurfaceGeometry& Second, const BallLaw& Law, double Low, double High, bool Closed);
+
+// Chart feet on First / Second at τ, interpolated from the knot feet (NaN when none were recorded): a seed for the
+// certified local inversion (MeasureSurfaceDistanceNear) of points on or near the trace.
+[[nodiscard]] std::array<Vector2, 2> InterpolateIntersectionFeet(const TracedIntersection& Trace, double τ) noexcept;
 
 // r(τ) of a ball-law spine (τ in the spine's own parameter); 0 for an ordinary trace.
 [[nodiscard]] double MeasureBallLawRadius(const TracedIntersection& Trace, double τ) noexcept;

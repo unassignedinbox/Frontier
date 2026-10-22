@@ -10,6 +10,7 @@
 #include "Intersection/IntersectionCurve.h"
 
 #include "Intersection/ImplicitSurface.h"
+#include "Geometry/NurbsCarrier.h"
 
 #include <algorithm>
 #include <array>
@@ -39,15 +40,17 @@ namespace
     // 📝 3D Newton on { d₁ = ℓ₁, d₂ = ℓ₂, Π·(X − Q) = 0 }: rows N₁, N₂, Π; inverse by the triple-product formula.
     //    Normals receives N₁, N₂ at the returned Position (reused by the caller, so no surface is measured twice there).
     //    Levels ℓᵢ are 0 for an intersection and σᵢ·r for a ball-law centre (the distance rows are shifted, nothing else).
-    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale, std::array<Vector3, 2>* Normals = nullptr, std::array<double, 2> Levels = { 0.0, 0.0 }) noexcept
+    [[nodiscard]] bool CorrectOntoBoth(const SurfaceGeometry& First, const SurfaceGeometry& Second, Vector3& Position, Vector3 PlaneNormal, Vector3 PlanePoint, double Scale, std::array<Vector3, 2>* Normals = nullptr, std::array<double, 2> Levels = { 0.0, 0.0 },
+                                       std::array<Vector2, 2> Hints = { Vector2{ NAN, NAN }, Vector2{ NAN, NAN } }) noexcept
     {
         const double Tolerance = 1.0e-13 * (1.0 + Scale);                                    // [len] - Acceptance
         SurfaceDistance OnFirst, OnSecond;                                                   // [-]   - Measured at Position when Current
         bool Current = false;                                                                // [-]   - Position unmoved since measured
+        Vector2 HintFirst = Hints[0], HintSecond = Hints[1];                                 // [-]   - Chart feet carried between steps
         for (int Iteration = 0; Iteration < 24; ++Iteration)
         {
-            OnFirst  = MeasureSurfaceDistance(First, Position);
-            OnSecond = MeasureSurfaceDistance(Second, Position);
+            OnFirst  = MeasureSurfaceDistanceNear(First, Position, HintFirst);
+            OnSecond = MeasureSurfaceDistanceNear(Second, Position, HintSecond);
             OnFirst.Distance  -= Levels[0];
             OnSecond.Distance -= Levels[1];
             Current  = true;
@@ -67,8 +70,8 @@ namespace
         }
         if (!Current)
         {
-            OnFirst  = MeasureSurfaceDistance(First, Position);
-            OnSecond = MeasureSurfaceDistance(Second, Position);
+            OnFirst  = MeasureSurfaceDistanceNear(First, Position, HintFirst);
+            OnSecond = MeasureSurfaceDistanceNear(Second, Position, HintSecond);
             OnFirst.Distance  -= Levels[0];
             OnSecond.Distance -= Levels[1];
         }
@@ -116,6 +119,114 @@ namespace
         return Sample;
     }
 
+    [[nodiscard]] bool ChartCarrier(const SurfaceGeometry& Surface) noexcept { return std::holds_alternative<NurbsSurface>(Surface) || std::holds_alternative<ParallelSurface>(Surface); }
+
+    // Global chart feet of the knot points on both surfaces (only when one of them is a NURBS or parallel carrier).
+    void RecordFeet(TracedIntersection& Trace) noexcept
+    {
+        Trace.Feet.clear();
+        if (!ChartCarrier(Trace.First) && !ChartCarrier(Trace.Second)) return;
+        for (const Vector3& Point : Trace.Points)
+        {
+            std::array<Vector2, 2> Feet = { Vector2{ NAN, NAN }, Vector2{ NAN, NAN } };
+            (void)MeasureSurfaceDistanceNear(Trace.First, Point, Feet[0]);
+            (void)MeasureSurfaceDistanceNear(Trace.Second, Point, Feet[1]);
+            Trace.Feet.push_back(Feet);
+        }
+    }
+
+    // 📝 Deterministic seed for the corrector at τ: the knot feet interpolated linearly across the guide segment (periodic
+    //    coordinates unwrapped on the circle). A function of τ alone, so every evaluation is reproducible.
+    [[nodiscard]] std::array<Vector2, 2> InterpolateFeet(const TracedIntersection& Trace, double τ) noexcept
+    {
+        std::array<Vector2, 2> Hints = { Vector2{ NAN, NAN }, Vector2{ NAN, NAN } };
+        if (Trace.Feet.size() != Trace.Knots.size() || Trace.Knots.size() < 2) return Hints;
+        const size_t Index    = LocateSegment(Trace, τ);
+        const double Fraction = std::clamp((τ - Trace.Knots[Index]) / (Trace.Knots[Index + 1] - Trace.Knots[Index]), 0.0, 1.0);
+        const SurfaceGeometry* Surfaces[2] = { &Trace.First, &Trace.Second };
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            const SurfacePeriodicity Period = ResolvePeriodicity(*Surfaces[Side]);
+            const Vector2 Low = Trace.Feet[Index][Side], High = Trace.Feet[Index + 1][Side];
+            const auto Blend = [&](double From, double To, double Cycle)
+            {
+                double Step = To - From;
+                if (Cycle > 0.0) Step -= Cycle * std::round(Step / Cycle);
+                return From + Step * Fraction;
+            };
+            Hints[Side] = { Blend(Low.X, High.X, Period.PeriodU), Blend(Low.Y, High.Y, Period.PeriodV) };
+        }
+        return Hints;
+    }
+
+    // 📝 Chart breaks: where the curve crosses a knot line of a NURBS / parallel carrier the geometry is only C^(p−1)
+    //    (a cubic's curvature turns a corner there), so a guide knot is inserted exactly on that line — the curve point
+    //    found by bisection along the segment, each probe corrected onto both surfaces in the plane across it. Every
+    //    breakpoint consumer (quadrature, tessellation) then splits there and sees an analytic integrand on each piece.
+    [[nodiscard]] std::vector<Vector3> InsertChartBreaks(const SurfaceGeometry& First, const SurfaceGeometry& Second, const std::vector<Vector3>& Guide, bool Closed, double Scale)
+    {
+        const SurfaceGeometry* Surfaces[2] = { &First, &Second };
+        const auto Wrap = [](double Value, double Period) { return Period > 0.0 ? Value - Period * std::round(Value / Period) : Value; };
+        std::vector<std::array<Vector2, 2>> Feet(Guide.size());
+        std::array<Vector2, 2> Chain = { Vector2{ NAN, NAN }, Vector2{ NAN, NAN } };
+        for (size_t Index = 0; Index < Guide.size(); ++Index)
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                if (ResolveNurbsChart(*Surfaces[Side]) == nullptr) continue;
+                (void)MeasureSurfaceDistanceNear(*Surfaces[Side], Guide[Index], Chain[Side]);
+                Feet[Index][Side] = Chain[Side];
+            }
+        std::vector<Vector3> Result;
+        const size_t Segments = Closed ? Guide.size() : Guide.size() - 1;
+        for (size_t Index = 0; Index < Guide.size(); ++Index)
+        {
+            Result.push_back(Guide[Index]);
+            if (Index >= Segments) continue;
+            const size_t Next = (Index + 1) % Guide.size();
+            std::vector<std::pair<double, Vector3>> Breaks;                                  // [-] - (segment fraction, curve point)
+            for (int Side = 0; Side < 2; ++Side)
+            {
+                const NurbsSurface* Spline = ResolveNurbsChart(*Surfaces[Side]);
+                if (Spline == nullptr) continue;
+                const SurfacePeriodicity Period = ResolveNurbsPeriodicity(*Spline);
+                for (int Axis = 0; Axis < 2; ++Axis)
+                {
+                    const double Cycle = Axis == 0 ? Period.PeriodU : Period.PeriodV;
+                    const auto   Coordinate = [&](Vector2 Foot) { return Axis == 0 ? Foot.X : Foot.Y; };
+                    const double From = Coordinate(Feet[Index][Side]);
+                    const double To   = From + Wrap(Coordinate(Feet[Next][Side]) - From, Cycle);
+                    const double Low = std::min(From, To), High = std::max(From, To), Gap = High - Low;
+                    if (!(Gap > 0.0)) continue;
+                    for (double Knot : CollectNurbsSurfaceKnots(*Spline, Axis == 0, Low, High))
+                    {
+                        if (!(Knot > Low + 1.0e-9 * Gap && Knot < High - 1.0e-9 * Gap)) continue;
+                        double  Left = 0.0, Right = 1.0;
+                        Vector3 Point = {};
+                        bool    Found = false;
+                        Vector2 Probe = Feet[Index][Side];
+                        for (int Halving = 0; Halving < 56; ++Halving)
+                        {
+                            const double Middle    = 0.5 * (Left + Right);
+                            Vector3      Candidate = Guide[Index] + (Guide[Next] - Guide[Index]) * Middle;
+                            if (!CorrectOntoBoth(First, Second, Candidate, Guide[Next] - Guide[Index], Candidate, Scale)) { Found = false; break; }
+                            (void)MeasureSurfaceDistanceNear(*Surfaces[Side], Candidate, Probe);
+                            const double Value = From + Wrap(Coordinate(Probe) - From, Cycle);
+                            if ((Value - Knot) * (To - From) < 0.0) Left = Middle; else Right = Middle;
+                            Point = Candidate;
+                            Found = true;
+                        }
+                        const double Fraction = 0.5 * (Left + Right);
+                        if (Found && Fraction > 1.0e-6 && Fraction < 1.0 - 1.0e-6) Breaks.push_back({ Fraction, Point });
+                    }
+                }
+            }
+            std::sort(Breaks.begin(), Breaks.end(), [](const auto& A, const auto& B) { return A.first < B.first; });
+            for (const auto& [Fraction, Point] : Breaks)
+                if (Distance(Point, Result.back()) > 1.0e-9 * (1.0 + Scale) && Distance(Point, Guide[Next]) > 1.0e-9 * (1.0 + Scale)) Result.push_back(Point);
+        }
+        return Result;
+    }
+
     // ---- Ball law ---------------------------------------------------------------------------------------------------
 
     // r(t) at the edge point E(t): Size(t) for a radius law, Size(t)·tan(θ/2) for a wedge setback, θ the wedge angle between
@@ -147,7 +258,8 @@ namespace
         if (!(Radius > 0.0) || !std::isfinite(Radius)) return false;
         Centre = Edge.Position;
         std::array<Vector3, 2> Normals;
-        if (!CorrectOntoBoth(Trace.First, Trace.Second, Centre, Edge.Derivative, Edge.Position, Trace.Perimeter, &Normals, { Law.Signs[0] * Radius, Law.Signs[1] * Radius })) return false;
+        const std::array<Vector2, 2> Hints = InterpolateFeet(Trace, Law.Direction * EdgeParameter);   // Knot space: τ = Direction·t
+        if (!CorrectOntoBoth(Trace.First, Trace.Second, Centre, Edge.Derivative, Edge.Position, Trace.Perimeter, &Normals, { Law.Signs[0] * Radius, Law.Signs[1] * Radius }, Hints)) return false;
         // One edge evaluation per stencil point serves both r′ and E″ (a traced edge costs a Newton solve each).
         const double      Step   = 5.0e-6 * (1.0 + std::fabs(EdgeParameter));              // [-]   - h
         const CurveSample Ahead  = EvaluateCurve(Law.Edge, EdgeParameter + Step);
@@ -220,6 +332,7 @@ CurveGeometry BuildIntersectionCurve(const SurfaceGeometry& First, const Surface
         Guide.swap(Refined);
         if (!Inserted) break;
     }
+    if (ChartCarrier(First) || ChartCarrier(Second)) Guide = InsertChartBreaks(First, Second, Guide, Closed, Scale);
     if (Closed) Guide.push_back(Guide.front());
 
     // ---- Knots by chord length; tangents N₁ × N₂ oriented along the chart, scaled by ds/dτ.
@@ -239,6 +352,7 @@ CurveGeometry BuildIntersectionCurve(const SurfaceGeometry& First, const Surface
         Trace->Tangents.push_back(Direction * Speed);
         Trace->Knots.push_back(Chord[Index] / Speed);
     }
+    RecordFeet(*Trace);
     return IntersectionCurve{ std::move(Trace) };
 }
 
@@ -258,6 +372,7 @@ CurveGeometry ReverseIntersectionCurve(const TracedIntersection& Trace)
     }
     std::reverse(Reversed->Points.begin(), Reversed->Points.end());
     std::reverse(Reversed->Tangents.begin(), Reversed->Tangents.end());
+    std::reverse(Reversed->Feet.begin(), Reversed->Feet.end());
     for (Vector3& Tangent : Reversed->Tangents) Tangent = -Tangent;
     for (size_t Index = 0; Index < Trace.Knots.size(); ++Index) Reversed->Knots[Index] = -Trace.Knots[Trace.Knots.size() - 1 - Index];
     return IntersectionCurve{ std::move(Reversed) };
@@ -315,7 +430,13 @@ std::optional<CurveGeometry> BuildBallLawCurve(const SurfaceGeometry& First, con
         Trace->Tangents.push_back(Samples[Index].Derivative);
         Trace->Knots.push_back(Samples[Index].τ);
     }
+    RecordFeet(*Trace);
     return IntersectionCurve{ std::move(Trace) };
+}
+
+std::array<Vector2, 2> InterpolateIntersectionFeet(const TracedIntersection& Trace, double τ) noexcept
+{
+    return InterpolateFeet(Trace, FoldParameter(Trace, τ));
 }
 
 double MeasureBallLawRadius(const TracedIntersection& Trace, double τ) noexcept
@@ -355,7 +476,7 @@ CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ
     const GuideSample Guide = EvaluateGuide(Trace, FoldParameter(Trace, τ));
     Vector3 Position = Guide.Position;
     std::array<Vector3, 2> Normals;
-    if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter, &Normals)) return { Guide.Position, Guide.First };
+    if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter, &Normals, { 0.0, 0.0 }, InterpolateFeet(Trace, FoldParameter(Trace, τ)))) return { Guide.Position, Guide.First };
     const Vector3 Direction = Cross(Normals[0], Normals[1]);
     const double  Sine      = Length(Direction);                                             // [-] - |N₁ × N₂|
     if (Sine <= 1.0e-10) return { Position, Guide.First };

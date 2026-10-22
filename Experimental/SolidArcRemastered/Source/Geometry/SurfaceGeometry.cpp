@@ -129,6 +129,18 @@ Vector3 EvaluateSurfaceNormal(const SurfaceGeometry& Surface, Vector2 Parameter)
     return EvaluateRadial(Torus.Frame, 𝑢).Radial * std::cos(𝑣) + Torus.Frame.ZAxis * std::sin(𝑣);
 }
 
+Vector2 ProjectOntoSurfaceNear(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept
+{
+    const auto*         Offset = std::get_if<ParallelSurface>(&Surface);
+    const NurbsSurface* Spline = Offset ? &Offset->Definition->Basis : std::get_if<NurbsSurface>(&Surface);
+    if (Spline == nullptr || !std::isfinite(Reference.X) || !std::isfinite(Reference.Y)) return ProjectOntoSurface(Surface, Position, Reference);
+    const std::optional<Vector2> Local = PolishNurbsFootLocally(*Spline, Position, Reference);
+    if (!Local) return ProjectOntoSurface(Surface, Position, Reference);
+    const SurfacePeriodicity Period = ResolveNurbsPeriodicity(*Spline);
+    const auto Fold = [](double Value, double Near, double Cycle) { return Cycle > 0.0 ? Value + Cycle * std::round((Near - Value) / Cycle) : Value; };
+    return { Fold(Local->X, Reference.X, Period.PeriodU), Fold(Local->Y, Reference.Y, Period.PeriodV) };
+}
+
 Vector2 ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return ProjectOntoRollingBall(*Carrier, Position, Reference);

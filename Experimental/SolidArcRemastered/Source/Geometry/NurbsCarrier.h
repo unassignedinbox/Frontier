@@ -164,6 +164,10 @@ struct NurbsBasisSample
 // Global closest point: best seeds of the pole-lattice samples, Newton with exact second derivatives, clamped to the
 // domain (periodic directions wrap and take the representative nearest to Reference).
 [[nodiscard]] Vector2                 ProjectOntoNurbsSurface(const NurbsSurface& Surface, Vector3 Position, Vector2 Reference) noexcept;
+// 💡 Local inversion: Newton from Start alone. The foot is returned only when it is certified locally — X − S ⟂ S𝑢, S𝑣
+//    to rounding, a strict minimum (positive-definite Hessian), interior, and within a tenth of the domain of Start —
+//    else nullopt and the caller inverts globally. For points stepped in small moves from a globally inverted one.
+[[nodiscard]] std::optional<Vector2>  PolishNurbsFootLocally(const NurbsSurface& Surface, Vector3 Position, Vector2 Start) noexcept;
 [[nodiscard]] SurfacePeriodicity      ResolveNurbsPeriodicity(const NurbsSurface& Surface) noexcept;
 
 // Distinct interior knots of one direction inside (Low, High), repeated per period.

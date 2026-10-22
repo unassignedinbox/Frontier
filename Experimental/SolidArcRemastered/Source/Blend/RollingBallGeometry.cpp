@@ -1,5 +1,5 @@
 /*====================================================================================================================================
-                                                   ROLLINGBALLGEOMETRY.CPP
+                                                    ROLLINGBALLGEOMETRY.CPP
 ====================================================================================================================================*/
 // 🧩 Rolling-ball geometry of one edge: spine = offset ∩ offset, contact curves, exact blend carrier, conic sections
 
@@ -10,6 +10,7 @@
 #include "Containment/FaceDomain.h"
 #include "Intersection/SurfaceIntersection.h"
 #include "Geometry/RollingBallCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Intersection/IntersectionCurve.h"
 
 #include <algorithm>
@@ -29,6 +30,7 @@ namespace
     //--------------------------------------------------------------------------------------------------------------------
 
     constexpr double ResidualAllowance = 1.0e-9;                                             // [len/len] - Relative to max(1, size)
+    constexpr double FoldMarginFloor   = 0.02;                                               // [-]       - min(1 − d·κ) a NURBS offset must keep
     constexpr int    ResidualSamples   = 24;                                                 // [-]       - Sections sampled per sheet
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -451,9 +453,16 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     for (int Side = 0; Side < 2; ++Side)
     {
         const double Distance = (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Sheet.Radius;
-        if (std::holds_alternative<NurbsSurface>(Supports[Side])) return Refuse("blend on a NURBS support (no exact rational offset carrier yet, 🚧)");
         const std::optional<SurfaceGeometry> Offset = OffsetSurface(Supports[Side], Distance);
         if (!Offset) return Refuse(std::string("size exceeds the curvature radius of the ") + SurfaceCategoryLabel(Supports[Side]) + " support");
+        // 📝 NURBS support: the offset is the exact parallel carrier S + d·n. It is regular only while 1 − d·κᵢ > 0 on
+        //    the face; near a fold its SSI is ill-conditioned, so a ball within 2 % of a local curvature radius is refused.
+        if (const auto* Parallel = std::get_if<ParallelSurface>(&*Offset))
+        {
+            const ParameterWindow Window = DescribeFaceDomain(Partition, Sheet.Faces[Side]).Window;
+            const ParallelFold    Fold   = MeasureParallelFold(*Parallel, Window.Low, Window.High);
+            if (!(Fold.Margin > FoldMarginFloor)) return Refuse("size exceeds the curvature radius of the NURBS support (fold margin " + std::to_string(Fold.Margin) + ")");
+        }
         Sheet.Offsets[Side] = *Offset;
     }
 

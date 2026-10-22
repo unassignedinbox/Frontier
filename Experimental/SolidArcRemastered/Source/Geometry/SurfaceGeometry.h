@@ -119,6 +119,10 @@ struct SurfacePeriodicity
 
 // Closed-form closest-point inversion; periodic parameters take the representative nearest to Reference.
 [[nodiscard]] Vector2            ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept;
+// 💡 ProjectOntoSurface for a Reference already near the foot (a dense chart table, the previous step): NURBS and
+//    parallel carriers try the certified local inversion from Reference first (periodic coordinates folded next to it),
+//    falling back to the global one; every other carrier is ProjectOntoSurface itself.
+[[nodiscard]] Vector2            ProjectOntoSurfaceNear(const SurfaceGeometry& Surface, Vector3 Position, Vector2 Reference) noexcept;
 
 [[nodiscard]] SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept;
 
