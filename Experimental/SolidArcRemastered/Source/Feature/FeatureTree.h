@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -175,7 +176,23 @@ struct RegenerationOutcome
     std::map<std::string, CurveFitOutcome> Curves   = {};                                    // [-]  - Fitted (and edited) curve per SpaceCurve label
     std::map<std::string, NurbsSurface> Panels      = {};                                    // [-]  - Carrier per panel face name (zebra / deviation)
     int                                Refused      = 0;                                     // [-]  - Steps refused
+    int                                Resumed      = 0;                                     // [-]  - First step replayed (earlier ones restored from a checkpoint)
     double                             Milliseconds = 0.0;                                   // [ms] - Whole replay
+};
+
+// 📝 Opaque replay state after one step: a copy of the partition plus everything the loop carries forward.
+struct ReplayCheckpoint;
+
+// 📝 Incremental replay memory, owned by the caller and handed to every regeneration of one tree. Step k is restored
+//    from Checkpoints[k] when the digests of steps 0..k all match (and every Duplicate snapshot a restored step must
+//    take is in the restored state); replay resumes at the first mismatch. Checkpoints are immutable and shared, so
+//    copying a cache (a preview clone) costs no partition copies.
+struct RegenerationCache
+{
+    std::vector<std::string>                             Digests     = {};                   // [-] - DigestFeatureStep per step, after its replay
+    std::vector<std::shared_ptr<const ReplayCheckpoint>> Checkpoints = {};                   // [-] - State after each step
+    std::vector<bool>                                    Captured    = {};                   // [-] - The step ran with CaptureCondition
+    bool                                                 EnabledCondition = true;            // [-] - False: always replay from scratch (still records)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -197,7 +214,10 @@ struct RegenerationOutcome
 //    Evolution sweeps the profile of sketch Step.Profile along Step.Path (a one-curve sketch or a SpaceCurve), from the
 //    path end nearer the profile centroid (a curve's stored direction is arbitrary), and combines like an extrude. Revolve turns about the sketch line Step.AxisIdentifier, else about AxisOrigin +
 //    t·AxisDirection in sketch coordinates.
-[[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false);
+//    Cache (optional): restore the unchanged leading steps from their checkpoints and replay from the first changed one;
+//    the result is bit-identical to a full replay (same tokens, names, volumes). The cache is refreshed for the next run.
+[[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false,
+                                                        RegenerationCache* Cache = nullptr);
 
 // A sketch step's solve frame: its plane raised along the normal by the elevation.
 [[nodiscard]] OrthonormalFrame SketchStepFrame(const FeatureTree& Tree, const FeatureStep& Step);

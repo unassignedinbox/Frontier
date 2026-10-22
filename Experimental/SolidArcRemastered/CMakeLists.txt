@@ -67,6 +67,7 @@ add_library(SolidArcRemastered STATIC
     Source/Feature/ProfileSweep.cpp
     Source/Feature/BodyCut.cpp
     Source/Feature/PathSweep.cpp
+    Source/Feature/ReplayDigest.cpp
     Source/Feature/TopologicalNaming.cpp
     Source/Feature/FeatureTree.cpp
     Source/Feature/FeatureCatalogue.cpp
@@ -163,6 +164,8 @@ add_executable(BodyCutValidation Validation/BodyCutValidation.cpp)
 target_link_libraries(BodyCutValidation PRIVATE SolidArcRemastered)
 add_executable(SweepValidation Validation/SweepValidation.cpp)
 target_link_libraries(SweepValidation PRIVATE SolidArcRemastered)
+add_executable(ReplayValidation Validation/ReplayValidation.cpp)
+target_link_libraries(ReplayValidation PRIVATE SolidArcRemastered)
 
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
@@ -188,4 +191,5 @@ add_test(NAME NurbsValidation COMMAND NurbsValidation)
 add_test(NAME SetbackValidation COMMAND SetbackValidation)
 add_test(NAME BodyCutValidation COMMAND BodyCutValidation)
 add_test(NAME SweepValidation COMMAND SweepValidation)
+add_test(NAME ReplayValidation COMMAND ReplayValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

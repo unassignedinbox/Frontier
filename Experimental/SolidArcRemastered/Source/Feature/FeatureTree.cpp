@@ -7,6 +7,7 @@
 
 #include "Feature/BodyCut.h"
 #include "Feature/PathSweep.h"
+#include "Feature/ReplayDigest.h"
 #include "Geometry/NurbsCarrier.h"
 #include "Local/FaceOperations.h"
 #include "Sketch/SketchConstraining.h"
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <set>
 
 namespace Frontier::SolidArcRemastered
 {
@@ -202,7 +204,27 @@ std::vector<std::string> ProjectSketchLinks(SketchModel& Model, const Orthonorma
     return Notes;
 }
 
-RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition)
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    REPLAY CHECKPOINT
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 Everything the step loop carries from one step to the next (the working copy Current / Naming / Target is reloaded
+//    at the top of every step, so it is not saved).
+struct ReplayCheckpoint
+{
+    ModelPartition                                                  Partition = {};          // [-] - Records after the step
+    RegenerationOutcome                                             Outcome   = {};          // [-] - Steps / Sketches / Curves / Refused so far
+    std::map<std::string, SolvedSketch>                             Sketches  = {};          // [-] - Solved sketches so far
+    std::vector<RegeneratedBody>                                    Bodies    = {};          // [-] - Bodies so far
+    int                                                             Active    = -1;          // [-] - Active body index
+    int                                                             PanelBody = -1;          // [-] - Panel-built body index
+    std::vector<TreePanel>                                          Panels    = {};          // [-] - Open panels
+    std::string                                                     ClosedBy  = {};          // [-] - Closing step label
+    std::map<std::pair<std::string, std::string>, RegeneratedBody>  Snapshots = {};          // [-] - Duplicate snapshots so far
+    std::set<std::pair<std::string, std::string>>                   Served    = {};          // [-] - Snapshot requests met so far (taken or absent)
+};
+
+RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition, RegenerationCache* Cache)
 {
     const auto Started = Clock::now();
     RegenerationOutcome Outcome;
@@ -248,6 +270,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     // Duplicate snapshots ahead of time: the bodies some later Duplicate copies as they stood after a given step.
     std::map<std::string, std::vector<std::string>> SnapshotRequests;                        // Step label → body keys
     std::map<std::pair<std::string, std::string>, RegeneratedBody> Snapshots;                // (step, key) → body then
+    std::set<std::pair<std::string, std::string>>                  Served;                   // Requests met (a missing body takes none)
     for (const FeatureStep& Step : Tree.Steps)
     {
         if (Step.Kind == FeatureStepKind::Duplicate && !Step.Source.empty()) SnapshotRequests[Step.Source].push_back(Step.Target);
@@ -300,8 +323,58 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         return {};
     };
 
-    for (FeatureStep& Step : Tree.Steps)
+    // Incremental replay: restore the longest unchanged prefix (same digests, captured when capturing).
+    size_t Resume = 0;
+    if (Cache && Cache->EnabledCondition)
     {
+        const size_t Limit = std::min({ Tree.Steps.size(), Cache->Digests.size(), Cache->Checkpoints.size(), Cache->Captured.size() });
+        while (Resume < Limit && Cache->Checkpoints[Resume] && (!CaptureCondition || Cache->Captured[Resume]) &&
+               Cache->Digests[Resume] == DigestFeatureStep(Tree, Tree.Steps[Resume])) ++Resume;
+        // A Duplicate snapshot due after a restored step (a newly added Duplicate) must be in the restored state; else
+        // resume at that step. Snapshots no longer requested are harmless (nothing reads them).
+        for (bool Lowered = true; Lowered && Resume > 0;)
+        {
+            Lowered = false;
+            const ReplayCheckpoint& Saved = *Cache->Checkpoints[Resume - 1];
+            for (size_t Index = 0; Index < Resume && !Lowered; ++Index)
+            {
+                const auto Requested = SnapshotRequests.find(Tree.Steps[Index].Label);
+                if (Requested == SnapshotRequests.end()) continue;
+                for (const std::string& Key : Requested->second)
+                {
+                    if (Saved.Served.count({ Requested->first, Key }) != 0) continue;
+                    Resume  = Index;
+                    Lowered = true;
+                    break;
+                }
+            }
+        }
+    }
+    if (Resume > 0)
+    {
+        const ReplayCheckpoint& Saved = *Cache->Checkpoints[Resume - 1];
+        Partition = Saved.Partition;
+        Outcome   = Saved.Outcome;
+        Sketches  = Saved.Sketches;
+        Bodies    = Saved.Bodies;
+        Active    = Saved.Active;
+        PanelBody = Saved.PanelBody;
+        Panels    = Saved.Panels;
+        ClosedBy  = Saved.ClosedBy;
+        Snapshots = Saved.Snapshots;
+        Served    = Saved.Served;
+    }
+    Outcome.Resumed = static_cast<int>(Resume);
+    if (Cache)
+    {
+        Cache->Digests.resize(Tree.Steps.size());
+        Cache->Checkpoints.resize(Tree.Steps.size());
+        Cache->Captured.resize(Tree.Steps.size());
+    }
+
+    for (size_t StepIndex = Resume; StepIndex < Tree.Steps.size(); ++StepIndex)
+    {
+        FeatureStep& Step = Tree.Steps[StepIndex];
         const auto StepStarted = Clock::now();
         FeatureStepReport Report;
         Report.Label = Step.Label;
@@ -892,6 +965,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             {
                 const int Index = Key.empty() ? Active : FindBody(Key);
                 if (Index >= 0) Snapshots[{ Step.Label, Key }] = Bodies[Index];
+                Served.insert({ Step.Label, Key });
             }
         }
         Report.Body         = Current;
@@ -900,6 +974,24 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Report.Milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - StepStarted).count();
         Outcome.Refused    += Report.Status == FeatureStepStatus::Refused ? 1 : 0;
         Outcome.Steps.push_back(std::move(Report));
+        if (Cache)
+        {
+            // Digest after the replay: capture may have rewritten the step's reference signatures.
+            auto Saved = std::make_shared<ReplayCheckpoint>();
+            Saved->Partition = Partition;
+            Saved->Outcome   = Outcome;
+            Saved->Sketches  = Sketches;
+            Saved->Bodies    = Bodies;
+            Saved->Active    = Active;
+            Saved->PanelBody = PanelBody;
+            Saved->Panels    = Panels;
+            Saved->ClosedBy  = ClosedBy;
+            Saved->Snapshots = Snapshots;
+            Saved->Served    = Served;
+            Cache->Checkpoints[StepIndex] = std::move(Saved);
+            Cache->Digests[StepIndex]     = DigestFeatureStep(Tree, Step);
+            Cache->Captured[StepIndex]    = CaptureCondition;
+        }
     }
     if (Active >= 0)
     {
