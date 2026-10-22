@@ -80,8 +80,9 @@ struct DraftingCameraFrame
 //    inside the pixel box Low … High (viewport pixels, y down). Without x-ray only visible edges qualify: at least one
 //    segment midpoint is not behind the nearest face along its pixel ray (2 px + 10⁻⁴ of the bounds diagonal of slack,
 //    so creases and silhouettes count as visible). XRayEnabled keeps hidden edges too. Indices in scene order.
+//    Section (Alt+S, may be null): edges wholly on the removed side never qualify, and visibility honours the clip and cap.
 [[nodiscard]] std::vector<uint32_t> EncloseDraftingEdges(const DraftingScene& Scene, const DraftingCameraFrame& Frame, std::array<double, 2> Low,
-                                                         std::array<double, 2> High, bool XRayEnabled);
+                                                         std::array<double, 2> High, bool XRayEnabled, const DraftingSectionClip* Section = nullptr);
 
 void OrbitDraftingCamera(DraftingCamera& Camera, double DeltaX, double DeltaY);                       // [px]
 void PanDraftingCamera(DraftingCamera& Camera, const DraftingCameraFrame& Frame, double DeltaX, double DeltaY); // [px]

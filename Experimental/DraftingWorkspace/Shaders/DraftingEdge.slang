@@ -8,6 +8,8 @@
 
 [[vk::push_constant]] ConstantBuffer<DraftingProjection> Projection;
 [[vk::binding(1, 0)]] StructuredBuffer<uint> EdgeStates;
+// 📝 Section (Alt+S): [0] = (n, w), the kept side n·P + w ≥ 0; [1] = (eye, enabled flag).
+[[vk::binding(2, 0)]] StructuredBuffer<float4> Section;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INPUT/OUTPUT STRUCTURES
@@ -70,14 +72,26 @@ EdgePixel DraftingEdgeVertex(EdgeSegment Segment, uint VertexIndex : SV_VulkanVe
     Pixel.Position = float4(-2.0, -2.0, 0.0, 1.0);
     Pixel.Distance = 1000.0;
     Pixel.Edge     = Segment.Edge;
-    float4 Start = mul(Projection.ClipFromWorld, float4(Segment.Start, 1.0));
-    float4 End   = mul(Projection.ClipFromWorld, float4(Segment.End, 1.0));
+    // 📝 Section (Alt+S): the world segment is cut at the plane before projection (exact, unlike a per-pixel test).
+    float3 Head = Segment.Start;
+    float3 Tail = Segment.End;
+    if (Section[1].w > 0.5)
+    {
+        const float HeadSide = dot(Section[0].xyz, Head) + Section[0].w;
+        const float TailSide = dot(Section[0].xyz, Tail) + Section[0].w;
+        if (HeadSide < 0.0 && TailSide < 0.0) return Pixel;
+        const float3 Crossing = lerp(Head, Tail, HeadSide / (HeadSide - TailSide));
+        if (HeadSide < 0.0) Head = Crossing;
+        if (TailSide < 0.0) Tail = Crossing;
+    }
+    float4 Start = mul(Projection.ClipFromWorld, float4(Head, 1.0));
+    float4 End   = mul(Projection.ClipFromWorld, float4(Tail, 1.0));
     // 📝 DisplayStroke.w < 0 (x-ray occluded draw): a world margin M = −w. The stroke takes its depth from the endpoint
     //    moved M toward the eye (along −Forward), so a stroke passes the GREATER test only when it lies more than M
     //    behind the face in front — the same world margin in orthographic and perspective views.
     const float  Margin    = max(-Projection.DisplayStroke.w, 0.0);
-    const float4 StartNear = mul(Projection.ClipFromWorld, float4(Segment.Start - Projection.ViewForward.xyz * Margin, 1.0));
-    const float4 EndNear   = mul(Projection.ClipFromWorld, float4(Segment.End - Projection.ViewForward.xyz * Margin, 1.0));
+    const float4 StartNear = mul(Projection.ClipFromWorld, float4(Head - Projection.ViewForward.xyz * Margin, 1.0));
+    const float4 EndNear   = mul(Projection.ClipFromWorld, float4(Tail - Projection.ViewForward.xyz * Margin, 1.0));
     // 📝 Clip before the perspective division, including the near-zero homogeneous denominator.
     if (!ClipSegment(Start, End, Start.w - 1.0e-5, End.w - 1.0e-5)) return Pixel;
     if (!ClipSegment(Start, End, Start.z, End.z)) return Pixel;

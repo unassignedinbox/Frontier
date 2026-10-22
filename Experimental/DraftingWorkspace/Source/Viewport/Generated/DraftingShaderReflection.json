@@ -3,7 +3,7 @@
  "sources": [
   {
    "file": "Shaders/DraftingEdge.slang",
-   "sha256": "9b98bf0fa46078d42f4ba6e42b727de4218075d4d607c9b48ed829f470eee1da"
+   "sha256": "a439b4d2cc31bb3214b8b2b060a8b11ac33b68db533954aefd82e058b3f29821"
   },
   {
    "file": "Shaders/DraftingGrid.slang",
@@ -15,19 +15,19 @@
   },
   {
    "file": "Shaders/DraftingProjection.slang",
-   "sha256": "1773ecec517ed60eef056a95d0dfd215db03ba33ad92f6a8b41200903a18b20a"
+   "sha256": "170c1af99c187b3ddb55662688a77adc1245490325bc37cca50fdb962a06230a"
   },
   {
    "file": "Shaders/DraftingSurface.slang",
-   "sha256": "5457a552d41bef03a3f9cde2c80bd5c692f588f93cb49d3912c8d01cfd06a9d3"
+   "sha256": "ddd78eae6bbb397b44375fd4f04d226edc5f7be4a53b27c8de3d61f6d6b0c9b6"
   }
  ],
  "entries": [
   {
    "name": "DraftingSurfaceVertex",
    "entry": "main",
-   "words": 440,
-   "sha256": "cd37717fb9f7f5a0071729568035a21544a1ef09b6dc7cc9f1538321bf2b634b",
+   "words": 492,
+   "sha256": "618da82e619d0c12c0107c430c9dfa62d15b46d4cdf6ad61cad9bb9f8fba5f87",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -376,6 +376,38 @@
          "kind": "scalar",
          "scalarType": "float32"
         }
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
+         }
+        ]
        },
        "sizes": [
         {
@@ -734,6 +766,38 @@
           "kind": "scalar",
           "scalarType": "float32"
          }
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
+          }
+         ]
         },
         "sizes": [
          {
@@ -933,7 +997,7 @@
        "binding": {
         "kind": "varyingOutput",
         "index": 0,
-        "count": 2
+        "count": 3
        },
        "type": {
         "kind": "struct",
@@ -976,6 +1040,30 @@
           "semanticName": "NORMAL"
          },
          {
+          "name": "World",
+          "type": {
+           "kind": "vector",
+           "elementCount": 3,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "varyingOutput",
+             "value": 1
+            }
+           ]
+          },
+          "stage": "vertex",
+          "binding": {
+           "kind": "varyingOutput",
+           "index": 1
+          },
+          "semanticName": "TEXCOORD",
+          "semanticIndex": 1
+         },
+         {
           "name": "Face",
           "type": {
            "kind": "scalar",
@@ -990,7 +1078,7 @@
           "stage": "vertex",
           "binding": {
            "kind": "varyingOutput",
-           "index": 1
+           "index": 2
           },
           "semanticName": "BLENDINDICES"
          }
@@ -998,7 +1086,7 @@
         "sizes": [
          {
           "kind": "varyingOutput",
-          "value": 2
+          "value": 3
          }
         ]
        }
@@ -1011,8 +1099,8 @@
   {
    "name": "DraftingSurfaceFragment",
    "entry": "main",
-   "words": 1849,
-   "sha256": "8299f048046fd128091f3f94add2be6f606837ee38defbd5f2d9ef7d750b414e",
+   "words": 2540,
+   "sha256": "1c01afb9ae1f8ca7ac09c83b146f6437a83175caa34612d800a3aa30ee483c38",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -1361,6 +1449,38 @@
          "kind": "scalar",
          "scalarType": "float32"
         }
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
+         }
+        ]
        },
        "sizes": [
         {
@@ -1727,6 +1847,38 @@
          }
         ]
        }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
       }
      ]
     },
@@ -1743,7 +1895,7 @@
          "binding": {
           "kind": "varyingInput",
           "index": 0,
-          "count": 2
+          "count": 3
          },
          "type": {
           "kind": "struct",
@@ -1786,6 +1938,30 @@
             "semanticName": "NORMAL"
            },
            {
+            "name": "World",
+            "type": {
+             "kind": "vector",
+             "elementCount": 3,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "varyingInput",
+               "value": 1
+              }
+             ]
+            },
+            "stage": "fragment",
+            "binding": {
+             "kind": "varyingInput",
+             "index": 1
+            },
+            "semanticName": "TEXCOORD",
+            "semanticIndex": 1
+           },
+           {
             "name": "Face",
             "type": {
              "kind": "scalar",
@@ -1800,7 +1976,7 @@
             "stage": "fragment",
             "binding": {
              "kind": "varyingInput",
-             "index": 1
+             "index": 2
             },
             "semanticName": "BLENDINDICES"
            }
@@ -1808,7 +1984,7 @@
           "sizes": [
            {
             "kind": "varyingInput",
-            "value": 2
+            "value": 3
            }
           ]
          }
@@ -1831,7 +2007,7 @@
         "binding": {
          "kind": "varyingInput",
          "index": 0,
-         "count": 2
+         "count": 3
         },
         "type": {
          "kind": "struct",
@@ -1874,6 +2050,30 @@
            "semanticName": "NORMAL"
           },
           {
+           "name": "World",
+           "type": {
+            "kind": "vector",
+            "elementCount": 3,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "varyingInput",
+              "value": 1
+             }
+            ]
+           },
+           "stage": "fragment",
+           "binding": {
+            "kind": "varyingInput",
+            "index": 1
+           },
+           "semanticName": "TEXCOORD",
+           "semanticIndex": 1
+          },
+          {
            "name": "Face",
            "type": {
             "kind": "scalar",
@@ -1888,7 +2088,7 @@
            "stage": "fragment",
            "binding": {
             "kind": "varyingInput",
-            "index": 1
+            "index": 2
            },
            "semanticName": "BLENDINDICES"
           }
@@ -1896,7 +2096,7 @@
          "sizes": [
           {
            "kind": "varyingInput",
-           "value": 2
+           "value": 3
           }
          ]
         }
@@ -1982,8 +2182,8 @@
   {
    "name": "DraftingEdgeVertex",
    "entry": "main",
-   "words": 2001,
-   "sha256": "e4612914aba68a1b25280b7a5e786279ce79a8d350e5f5bde6d62da23a3a878e",
+   "words": 2399,
+   "sha256": "e90cf33ec6ab0eadd113f469dce14963bed572e17198e8208cf377b77417fde0",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -2302,6 +2502,38 @@
           "kind": "uniform",
           "value": 4,
           "alignment": 4
+         }
+        ]
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
          }
         ]
        },
@@ -2632,6 +2864,38 @@
            "kind": "uniform",
            "value": 4,
            "alignment": 4
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
           }
          ]
         },
@@ -3257,6 +3521,38 @@
         }
        ]
       }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
+         }
+        ]
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
      }
     ],
     "globalScope": {
@@ -3577,6 +3873,38 @@
            "kind": "uniform",
            "value": 4,
            "alignment": 4
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
           }
          ]
         },
@@ -4146,6 +4474,38 @@
         }
        ]
       }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
+         }
+        ]
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
      }
     ],
     "globalScope": {
@@ -4466,6 +4826,38 @@
            "kind": "uniform",
            "value": 4,
            "alignment": 4
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
           }
          ]
         },

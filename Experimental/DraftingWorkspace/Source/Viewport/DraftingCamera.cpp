@@ -203,8 +203,12 @@ void FitDraftingCamera(DraftingCamera& Camera, const DraftingScene& Scene)
 }
 
 std::vector<uint32_t> EncloseDraftingEdges(const DraftingScene& Scene, const DraftingCameraFrame& Frame, std::array<double, 2> Low,
-                                           std::array<double, 2> High, bool XRayEnabled)
+                                           std::array<double, 2> High, bool XRayEnabled, const DraftingSectionClip* Section)
 {
+    const auto Kept = [&](const float Point[3])
+    {
+        return !Section || Section->Plane[0] * Point[0] + Section->Plane[1] * Point[1] + Section->Plane[2] * Point[2] + Section->Plane[3] >= 0.0;
+    };
     // World point → viewport pixel; false behind the eye.
     const auto Project = [&](const float Point[3], std::array<double, 2>& Pixel)
     {
@@ -233,16 +237,20 @@ std::vector<uint32_t> EncloseDraftingEdges(const DraftingScene& Scene, const Dra
             WhollyCondition = Project(Scene.Segments[Index].Start, Start) && Project(Scene.Segments[Index].End, End) && Inside(Start) && Inside(End);
         }
         if (!WhollyCondition) continue;
+        bool KeptCondition = false;
+        for (uint32_t Index = Edge.FirstSegment; Index < Edge.FirstSegment + Edge.SegmentCount && !KeptCondition; ++Index)
+            KeptCondition = Kept(Scene.Segments[Index].Start) || Kept(Scene.Segments[Index].End);
+        if (!KeptCondition) continue;
         bool VisibleCondition = XRayEnabled;
         for (uint32_t Index = Edge.FirstSegment; Index < Edge.FirstSegment + Edge.SegmentCount && !VisibleCondition; ++Index)
         {
             const DraftingSceneSegment& Segment = Scene.Segments[Index];
             const float Middle[3] = { 0.5f * (Segment.Start[0] + Segment.End[0]), 0.5f * (Segment.Start[1] + Segment.End[1]), 0.5f * (Segment.Start[2] + Segment.End[2]) };
             std::array<double, 2> Pixel{};
-            if (!Project(Middle, Pixel)) continue;
+            if (!Kept(Middle) || !Project(Middle, Pixel)) continue;
             const DraftingRay Ray   = CastDraftingRay(Frame, Pixel[0], Pixel[1]);
             const double      Reach = (Middle[0] - Ray.Origin[0]) * Ray.Direction[0] + (Middle[1] - Ray.Origin[1]) * Ray.Direction[1] + (Middle[2] - Ray.Origin[2]) * Ray.Direction[2];
-            const std::optional<DraftingPick> Face = PickDraftingScene(Scene, Ray, 0.0);
+            const std::optional<DraftingPick> Face = PickDraftingScene(Scene, Ray, 0.0, false, Section);
             VisibleCondition = !Face || Face->Distance >= Reach - Slack;
         }
         if (VisibleCondition) Enclosed.push_back(EdgeIndex);

@@ -56,3 +56,6 @@ static const float3 ActiveTint   = float3(0.200, 1.000, 0.451);
 static const float3 HoverTint    = float3(0.780, 0.880, 1.000);
 
 static const uint IdentityEdgeBit = 0x80000000u;                                             // Identity code: edge flag
+static const uint IdentitySectionCap = 0x7FFFFFFFu;                                         // Identity code: section cap (no entity)
+// 📝 Bit 16 of a face word: the face belongs to an open sheet, so its back side is never a section cap.
+static const uint StateSheet = 0x10000u;

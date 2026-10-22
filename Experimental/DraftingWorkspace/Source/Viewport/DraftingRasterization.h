@@ -90,6 +90,8 @@ struct DraftingViewportStyle
     float ZebraStripes    = 0.0f;                                                            // [-]   - Zebra stripes over the reflection angle (0 off, V8)
     bool  XRayEnabled     = false;                                                           // [-]   - Alt+Z: ghost faces + occluded edges, picked through
     float XRayOpacity     = 0.45f;                                                           // [0-1] - Ghost face opacity α in x-ray
+    bool  SectionEnabled  = false;                                                           // [-]   - Alt+S: clip at SectionPlane, cap the solids
+    std::array<double, 4> SectionPlane = { 0.0, 0.0, 1.0, 0.0 };                             // [-]   - (n, w): kept side n·P + w ≥ 0
     std::vector<DraftingImagePlaneDraw> ImagePlanes = {};                                    // [-]   - Blueprint references, depth-tested behind the model
 };
 
@@ -160,6 +162,7 @@ private:
     DraftingBuffer SegmentBuffer     = {};
     DraftingBuffer FaceStateBuffer   = {};
     DraftingBuffer EdgeStateBuffer   = {};
+    DraftingBuffer SectionBuffer     = {};                                                   // [-] - 2 × float4: plane, (eye, enabled)
     uint32_t       CornerCount       = 0;
     uint32_t       SegmentCount      = 0;
     uint32_t       FaceCount         = 0;

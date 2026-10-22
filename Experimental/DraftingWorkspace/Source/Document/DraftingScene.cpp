@@ -281,14 +281,32 @@ DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRat
     return Scene;
 }
 
-std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled)
+std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled,
+                                              const DraftingSectionClip* Section)
 {
+    const auto Side = [&](const Triple& Point)
+    {
+        return Section ? Section->Plane[0] * Point[0] + Section->Plane[1] * Point[1] + Section->Plane[2] * Point[2] + Section->Plane[3] : 0.0;
+    };
     std::optional<DraftingPick> Face;
     for (size_t Corner = 0; Corner + 2 < Scene.Corners.size(); Corner += 3)
     {
-        const std::optional<double> Hit = IntersectTriangle(Ray, Widen(Scene.Corners[Corner].Position),
-                                                            Widen(Scene.Corners[Corner + 1].Position), Widen(Scene.Corners[Corner + 2].Position));
-        if (Hit && (!Face || *Hit < Face->Distance)) Face = DraftingPick{ Scene.Corners[Corner].Face + 1u, *Hit };
+        const Triple First  = Widen(Scene.Corners[Corner].Position);
+        const Triple Second = Widen(Scene.Corners[Corner + 1].Position);
+        const Triple Third  = Widen(Scene.Corners[Corner + 2].Position);
+        const std::optional<double> Hit = IntersectTriangle(Ray, First, Second, Third);
+        if (!Hit || (Face && *Hit >= Face->Distance)) continue;
+        const uint32_t FaceIndex = Scene.Corners[Corner].Face;
+        if (Section)
+        {
+            const Triple Point = { Ray.Origin[0] + Ray.Direction[0] * *Hit, Ray.Origin[1] + Ray.Direction[1] * *Hit, Ray.Origin[2] + Ray.Direction[2] * *Hit };
+            if (Side(Point) < 0.0) continue;                                                 // Removed half: discarded on the GPU too
+            // 📝 Outward CCW triangles (as the rasterizer's front face): the back is seen when the normal runs along the ray.
+            const bool BackCondition  = Dot(Cross(Difference(Second, First), Difference(Third, First)), Ray.Direction) > 0.0;
+            const bool SheetCondition = FaceIndex < Section->SheetFaces.size() && Section->SheetFaces[FaceIndex] != 0;
+            if (BackCondition && !SheetCondition) { Face = DraftingPick{ IdentitySectionCap, *Hit }; continue; }
+        }
+        Face = DraftingPick{ FaceIndex + 1u, *Hit };
     }
     std::optional<DraftingPick> Edge;
     double                      Closest = EdgeReach;                                         // [len] - Best separation so far
@@ -297,10 +315,26 @@ std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const 
         const auto [Reach, Separation] = ApproachSegment(Ray, Widen(Segment.Start), Widen(Segment.End));
         if (Separation > Closest || Reach <= 0.0) continue;
         if (Face && !XRayEnabled && Reach > Face->Distance + EdgeReach) continue;
+        if (Section && Side({ Ray.Origin[0] + Ray.Direction[0] * Reach, Ray.Origin[1] + Ray.Direction[1] * Reach, Ray.Origin[2] + Ray.Direction[2] * Reach }) < -EdgeReach) continue;
         Closest = Separation;
         Edge    = DraftingPick{ IdentityEdgeBit | (Segment.Edge + 1u), Reach };
     }
     return Edge ? Edge : Face;
+}
+
+DraftingSectionClip ComposeDraftingSectionClip(const DraftingScene& Scene, const DraftingDocument& Document, std::array<double, 4> Plane)
+{
+    DraftingSectionClip Clip;
+    Clip.Plane = Plane;
+    Clip.SheetFaces.assign(Scene.Faces.size(), 0);
+    for (const DraftingSceneBody& Body : Scene.Bodies)
+    {
+        bool SheetCondition = false;
+        for (const DraftingBodyFigures& Figures : Document.Summary.Bodies) if (Figures.Key == Body.Key) SheetCondition = Figures.SheetCondition;
+        if (!SheetCondition) continue;
+        for (uint32_t Index = Body.FirstFace; Index < Body.FirstFace + Body.FaceCount && Index < Clip.SheetFaces.size(); ++Index) Clip.SheetFaces[Index] = 1;
+    }
+    return Clip;
 }
 
 DraftingSceneStates ComposeDraftingStates(const DraftingScene& Scene, const DraftingSelection& Selection, uint32_t HoverIdentity)

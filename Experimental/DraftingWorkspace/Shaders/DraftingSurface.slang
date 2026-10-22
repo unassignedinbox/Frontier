@@ -8,6 +8,8 @@
 [[vk::push_constant]] ConstantBuffer<DraftingProjection> Projection;
 [[vk::binding(0, 0)]] StructuredBuffer<uint> FaceStates;
 [[vk::binding(0, 1)]] Sampler2DArray         Matcaps;                                       // Layer k − 1 = matcap layer k
+// 📝 Section (Alt+S): [0] = (n, w), the kept side n·P + w ≥ 0; [1] = (eye, enabled flag).
+[[vk::binding(2, 0)]] StructuredBuffer<float4> Section;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INPUT/OUTPUT STRUCTURES
@@ -24,6 +26,7 @@ struct SurfacePixel
 {
     float4                 Position : SV_Position;                                           // [-]   - Clip position
     float3                 Normal   : NORMAL0;                                               // [-]   - World normal
+    float3                 World    : TEXCOORD1;                                             // [len] - World point
     nointerpolation uint   Face     : BLENDINDICES0;                                         // [idx] - Scene face
 };
 
@@ -43,6 +46,7 @@ SurfacePixel DraftingSurfaceVertex(SurfaceCorner Corner)
     SurfacePixel Pixel;
     Pixel.Position = mul(Projection.ClipFromWorld, float4(Corner.Position, 1.0));
     Pixel.Normal   = Corner.Normal;
+    Pixel.World    = Corner.Position;
     Pixel.Face     = Corner.Face;
     return Pixel;
 }
@@ -56,6 +60,31 @@ SurfacePixel DraftingSurfaceVertex(SurfaceCorner Corner)
 [shader("fragment")]
 SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV_IsFrontFace)
 {
+    // 📝 Section (Alt+S): the removed side (n·P + w < 0) is discarded. A back face that is still the nearest kept surface
+    //    is seen through the opening from inside the material, so it becomes the cap: the hatched section colour lit as
+    //    the plane, identity IdentitySectionCap. It keeps its own depth — the plane crossing would be nearer than kept
+    //    front faces wherever the eye ray crosses the plane outside the material — and the viewport draws the grid and
+    //    image planes before the surfaces while sectioning, so nothing shows through a cap. Sheet faces (StateSheet)
+    //    keep their dark back side.
+    const float4 Plane     = Section[0];
+    const bool   Sectioned = Section[1].w > 0.5;
+    const float  Side      = dot(Plane.xyz, Pixel.World) + Plane.w;
+    if (Sectioned && Side < 0.0) discard;
+    if (Sectioned && !FrontFacing && (FaceStates[Pixel.Face] & StateSheet) == 0u)
+    {
+        const float3 Facing   = -Plane.xyz;                                                  // The cap faces the removed side
+        const float3 CapView  = float3(dot(Facing, Projection.ViewRight.xyz), dot(Facing, Projection.ViewUp.xyz), -dot(Facing, Projection.ViewForward.xyz));
+        const float  CapKey   = saturate(dot(CapView, normalize(float3(-0.45, 0.55, 0.70))));
+        const float3 Base     = float3(0.86, 0.38, 0.29) * (0.62 + 0.38 * CapKey);
+        // 45° screen hatch every 9 px, anti-aliased over one pixel.
+        const float  Phase    = (Pixel.Position.x + Pixel.Position.y) / 9.0;
+        const float  Gap      = abs(frac(Phase + 0.5) - 0.5);
+        const float  Ink      = 1.0 - smoothstep(0.07, 0.07 + max(fwidth(Phase), 1.0e-4) * 1.2, Gap);
+        SurfaceTargets Cap;
+        Cap.Colour   = float4(lerp(Base, Base * 0.42, Ink), Projection.ViewForward.w > 0.0 ? Projection.ViewForward.w : 1.0);
+        Cap.Identity = IdentitySectionCap;
+        return Cap;
+    }
     float3 Normal = normalize(Pixel.Normal) * (FrontFacing ? 1.0 : -1.0);
     float3 View   = float3(dot(Normal, Projection.ViewRight.xyz), dot(Normal, Projection.ViewUp.xyz), -dot(Normal, Projection.ViewForward.xyz));
     float  Key    = saturate(dot(View, normalize(float3(-0.45, 0.55, 0.70))));

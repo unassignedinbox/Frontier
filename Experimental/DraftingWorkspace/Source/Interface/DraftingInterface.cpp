@@ -2565,13 +2565,23 @@ void DrawSketchOverlays(DraftingWorkspaceState& State, ImDrawList* Canvas, const
         Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
         for (const SketchCurve& Curve : Sketch.Curves)
         {
+            // 📝 Section (Alt+S): samples on the removed side break the polyline, as the model is clipped there.
+            const float Width = Curve.Construction ? 1.0f : Focused ? 2.5f : 1.8f;
             std::vector<ImVec2> Pixels;
+            const auto Flush = [&]()
+            {
+                if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Width);
+                Pixels.clear();
+            };
+            const std::array<double, 4>& Cut = State.Style.SectionPlane;
             for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve))
             {
+                const Vector3 Point = PlacePlanePoint(Plane, Sample);
+                if (State.Style.SectionEnabled && Cut[0] * Point.X + Cut[1] * Point.Y + Cut[2] * Point.Z + Cut[3] < 0.0) { Flush(); continue; }
                 ImVec2 Pixel;
-                if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel);
+                if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel);
             }
-            if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Curve.Construction ? 1.0f : Focused ? 2.5f : 1.8f);
+            Flush();
         }
     }
 }
@@ -2898,6 +2908,205 @@ void DrawMeasureOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const
     }
 }
 
+// Plane equation (n, w) of a section frame: the kept side n·P + w ≥ 0 is the frame's +Z side.
+std::array<double, 4> SectionEquation(const OrthonormalFrame& Plane)
+{
+    return { Plane.ZAxis.X, Plane.ZAxis.Y, Plane.ZAxis.Z, -Dot(Plane.ZAxis, Plane.Origin) };
+}
+
+// Pill / announcement caption of the request ("Section y = 1.25", "Section face F3 −0.5").
+std::string DescribeSectionRequest(const DraftingSectionRequest& Request)
+{
+    static const char* Axes[] = { "x", "y", "z" };
+    const std::string Flip = Request.Flipped ? " (flipped)" : "";
+    if (Request.Axis == DraftingSectionAxis::Face) return "Section on " + Request.Face + " at " + FormatLength(Request.Offset) + Flip;
+    return std::string("Section ") + Axes[int(Request.Axis)] + " = " + FormatLength(Request.Offset) + Flip;
+}
+
+// Default offsets: world planes through the centre of the shown scene's bounds; a face plane halfway through the
+// bounds behind the face (offset along the outward normal, negative = into the body).
+double DefaultSectionOffset(const DraftingWorkspaceState& State, const DraftingSectionRequest& Request)
+{
+    const DraftingScene& Scene = State.Scene;
+    if (Request.Axis != DraftingSectionAxis::Face)
+    {
+        const int Axis = int(Request.Axis);
+        return 0.5 * (Scene.BoundsLow[Axis] + Scene.BoundsHigh[Axis]);
+    }
+    DraftingSectionRequest AtFace = Request;
+    AtFace.Offset  = 0.0;
+    AtFace.Flipped = false;
+    const DraftingSection Plane = ResolveDraftingSectionPlane(State.Document, AtFace);
+    if (!Plane.PlaneCondition) return 0.0;
+    double Deepest = 0.0;                                                                    // [len] - Farthest corner along −outward
+    for (int Corner = 0; Corner < 8; ++Corner)
+    {
+        const Vector3 Point{ (Corner & 1) ? Scene.BoundsHigh[0] : Scene.BoundsLow[0], (Corner & 2) ? Scene.BoundsHigh[1] : Scene.BoundsLow[1],
+                             (Corner & 4) ? Scene.BoundsHigh[2] : Scene.BoundsLow[2] };
+        Deepest = std::max(Deepest, Dot(Point - Plane.Plane.Origin, Plane.Plane.ZAxis));     // ZAxis = −outward at offset 0
+    }
+    return -0.5 * Deepest;
+}
+
+void StoreSectionOffsetText(DraftingSectionSession& Session)
+{
+    std::snprintf(Session.OffsetText.data(), Session.OffsetText.size(), "%.6g", Session.Request.Offset);
+}
+
+// 💡 Every frame while Section is on: the plane goes to the viewport programs (clip + cap) and the CPU pick; the exact
+//    kernel section is recomputed only when the request or the document revision moved (0.2 … 2 s for curved bodies).
+void RefreshSection(DraftingWorkspaceState& State)
+{
+    DraftingSectionSession& Session = State.Section;
+    State.Style.SectionEnabled = false;
+    if (!Session.ActiveCondition) return;
+    const DraftingSection Plane = ResolveDraftingSectionPlane(State.Document, Session.Request);
+    if (!Plane.PlaneCondition)
+    {
+        if (Session.Section.RequestKey != Plane.RequestKey || Session.Section.Revision != Plane.Revision) Session.Section = Plane;
+        return;
+    }
+    State.Style.SectionEnabled = true;
+    State.Style.SectionPlane   = SectionEquation(Plane.Plane);
+    Session.Clip = ComposeDraftingSectionClip(DisplayedDraftingScene(State), State.Document, State.Style.SectionPlane);
+    if (Session.Refreshes > 0 && Session.Section.Revision == State.Document.Revision && Session.Section.RequestKey == Plane.RequestKey) return;
+    Session.Section    = SectionDraftingDocument(State.Document, Session.Request);
+    Session.Refreshes += 1;
+}
+
+// The section clip for CPU picks while Section is on (null otherwise).
+const DraftingSectionClip* ActiveSectionClip(const DraftingWorkspaceState& State)
+{
+    return State.Style.SectionEnabled ? &State.Section.Clip : nullptr;
+}
+
+void ChooseSectionAxis(DraftingWorkspaceState& State, DraftingSectionAxis Axis)
+{
+    DraftingSectionSession& Session = State.Section;
+    Session.Request.Axis = Axis;
+    if (Axis == DraftingSectionAxis::Face)
+    {
+        if (State.Document.Selection.Faces.empty()) { Announce(State, "Section face: select a planar face first (mode 3)"); Session.Request.Face = {}; }
+        else Session.Request.Face = State.Document.Selection.Faces.back();
+    }
+    Session.Request.Offset = DefaultSectionOffset(State, Session.Request);
+    StoreSectionOffsetText(Session);
+    RefreshSection(State);
+    Announce(State, Session.Section.Refusal.empty() ? DescribeSectionRequest(Session.Request) + Compose(" · A %.6g m²", Session.Section.Area) : Session.Section.Refusal);
+}
+
+// Section (Alt+S; Fusion Section Analysis, no Plasticity default): default plane y through the scene centre with the
+// front half (facing the isometric camera) removed; a selected planar face starts a face section instead.
+void ToggleSection(DraftingWorkspaceState& State)
+{
+    DraftingSectionSession& Session = State.Section;
+    Session.ActiveCondition = !Session.ActiveCondition;
+    Session.Refreshes       = 0;
+    if (!Session.ActiveCondition)
+    {
+        State.Style.SectionEnabled = false;
+        Announce(State, "Section off");
+        return;
+    }
+    Session.Request.Flipped = false;
+    ChooseSectionAxis(State, State.Document.Selection.Faces.empty() ? DraftingSectionAxis::Y : DraftingSectionAxis::Face);
+    if (!Session.Section.Refusal.empty() && Session.Request.Axis == DraftingSectionAxis::Face) ChooseSectionAxis(State, DraftingSectionAxis::Y);
+}
+
+void AdjustSectionOffset(DraftingWorkspaceState& State, double Delta)
+{
+    State.Section.Request.Offset += Delta;
+    StoreSectionOffsetText(State.Section);
+    RefreshSection(State);
+    Announce(State, DescribeSectionRequest(State.Section.Request));
+}
+
+void FlipSection(DraftingWorkspaceState& State)
+{
+    State.Section.Request.Flipped = !State.Section.Request.Flipped;
+    RefreshSection(State);
+    Announce(State, DescribeSectionRequest(State.Section.Request));
+}
+
+// 📝 Inspector card: plane family (X / Y / Z / Face), offset field (Enter applies; units as everywhere), − / + steps of
+//    1/20 of the bounds diagonal, Flip, and the exact figures (u = plane x axis, v = plane y axis, about the centroid).
+void DrawSectionCard(DraftingWorkspaceState& State)
+{
+    DraftingSectionSession& Session = State.Section;
+    if (!Session.ActiveCondition) return;
+    BeginCard("Section");
+    const float Spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float Quarter = std::floor((ImGui::GetContentRegionAvail().x - 3.0f * Spacing) / 4.0f);
+    static const char* AxisLabels[] = { "X###SectionAxisX", "Y###SectionAxisY", "Z###SectionAxisZ", "Face###SectionAxisFace" };
+    for (int Axis = 0; Axis < 4; ++Axis)
+    {
+        if (Axis) ImGui::SameLine();
+        if (ToggleButton(State, AxisLabels[Axis], int(Session.Request.Axis) == Axis, ImVec2(Quarter, 0))) ChooseSectionAxis(State, DraftingSectionAxis(Axis));
+    }
+    const DraftingScene& Scene = State.Scene;
+    double Diagonal = 0.0;
+    for (int Axis = 0; Axis < 3; ++Axis) Diagonal += (Scene.BoundsHigh[Axis] - Scene.BoundsLow[Axis]) * (Scene.BoundsHigh[Axis] - Scene.BoundsLow[Axis]);
+    const double Step = std::max(1.0e-3, 0.05 * std::sqrt(Diagonal));
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 3.0f * (34.0f + Spacing) - 8.0f);
+    if (ImGui::InputText("###SectionOffset", Session.OffsetText.data(), Session.OffsetText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
+    {
+        double Value = 0.0;
+        if (ParseDraftingLength(Session.OffsetText.data(), Value)) { Session.Request.Offset = Value; RefreshSection(State); Announce(State, DescribeSectionRequest(Session.Request)); }
+        else Announce(State, std::string("Section offset: cannot read \"") + Session.OffsetText.data() + "\"");
+    }
+    RegisterWidget(State, "###SectionOffset");
+    ImGui::SameLine();
+    if (PressButton(State, "-###SectionCloser", ImVec2(34, 0))) AdjustSectionOffset(State, -Step);
+    ImGui::SameLine();
+    if (PressButton(State, "+###SectionFarther", ImVec2(34, 0))) AdjustSectionOffset(State, Step);
+    ImGui::SameLine();
+    if (ToggleButton(State, "F###SectionFlip", Session.Request.Flipped, ImVec2(34, 0))) FlipSection(State);
+    const DraftingSection& Section = Session.Section;
+    if (!Section.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Section.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    else
+    {
+        const auto Row = [](const char* Caption, const std::string& Value)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+            ImGui::TextUnformatted(Caption);
+            ImGui::PopStyleColor();
+            ImGui::SameLine(128.0f);
+            ImGui::TextUnformatted(Value.c_str());
+        };
+        Row("Area", Compose("%.6g m²", Section.Area));
+        Row("Perimeter", Compose("%.6g m", Section.Perimeter));
+        Row("Centroid", Compose("(%.4f, %.4f, %.4f)", Section.Centroid.X, Section.Centroid.Y, Section.Centroid.Z));
+        Row("Iuu Ivv", Compose("%.5g · %.5g m4", Section.SecondMoments[0], Section.SecondMoments[1]));
+        Row("Iuv", Compose("%.5g m4", Section.SecondMoments[2]));
+        Row("Pieces", Compose("%d rgn · %d loop · %d body", Section.Regions, Section.Loops, Section.Bodies));
+        ImGui::TextDisabled("exact kernel cut · %.0f ms%s", Section.Milliseconds, Section.Sheets ? Compose(" · %d sheet(s) skipped", Section.Sheets).c_str() : "");
+    }
+    if (PressButton(State, "Close (Alt+S)###SectionClose")) ToggleSection(State);
+    EndCard();
+}
+
+// 📝 The exact section outline (kernel polylines) over the viewport while the eye is on the removed side, where the cap
+//    is visible; drawn only when the figures describe the plane in force (no stale outline during a recomputation).
+void DrawSectionOutline(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    const DraftingSectionSession& Session = State.Section;
+    if (!State.Style.SectionEnabled || !Session.Section.Refusal.empty() || Session.Section.RequestKey != DraftingSectionKey(Session.Request)
+        || Session.Section.Revision != State.Document.Revision) return;
+    const std::array<double, 4>& Plane = State.Style.SectionPlane;
+    if (Plane[0] * Frame.Eye[0] + Plane[1] * Frame.Eye[1] + Plane[2] * Frame.Eye[2] + Plane[3] >= 0.0) return;
+    for (const std::vector<Vector3>& Line : Session.Section.Outline)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector3& Point : Line) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x2a, 0x10, 0x0c, 0xff), 2.0f);
+    }
+}
+
 // Zebra (V8): stripe count to the surface shader, and a finer tessellation so interpolated normals follow the surface.
 void ToggleZebra(DraftingWorkspaceState& State)
 {
@@ -3071,14 +3280,15 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
     if (State.PickMode == DraftingPickMode::Edge && (Identity == 0 || !(Identity & IdentityEdgeBit)))
     {
-        const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled);
+        const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled, ActiveSectionClip(State));
         Identity = Nearby && (Nearby->Identity & IdentityEdgeBit) ? Nearby->Identity : 0;
     }
     if (State.PickMode == DraftingPickMode::Face && (Identity & IdentityEdgeBit))
     {
-        const std::optional<DraftingPick> Behind = PickDraftingScene(State.Scene, Ray, 0.0);
+        const std::optional<DraftingPick> Behind = PickDraftingScene(State.Scene, Ray, 0.0, false, ActiveSectionClip(State));
         Identity = Behind ? Behind->Identity : 0;
     }
+    if (Identity == IdentitySectionCap) Identity = 0;                                        // The section cap is no entity
     if (Identity == 0)
     {
         if (Intent == DraftingPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()
@@ -3175,7 +3385,7 @@ void SelectInBox(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame
     {
         const std::array<double, 2> LocalLow{ Low.x - State.ViewportRect[0], Low.y - State.ViewportRect[1] };
         const std::array<double, 2> LocalHigh{ High.x - State.ViewportRect[0], High.y - State.ViewportRect[1] };
-        for (const uint32_t Index : EncloseDraftingEdges(State.Scene, Frame, LocalLow, LocalHigh, State.Style.XRayEnabled))
+        for (const uint32_t Index : EncloseDraftingEdges(State.Scene, Frame, LocalLow, LocalHigh, State.Style.XRayEnabled, ActiveSectionClip(State)))
         {
             const std::string& Name = State.Scene.Edges[Index].Name;
             const std::vector<std::string>& Edges = State.Document.Selection.Edges;
@@ -3882,6 +4092,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawTrimPreview(State, Canvas, Frame);
     DrawConstraintOverlay(State, Canvas, Frame);
     DrawSweepOutline(State, Canvas, Frame);
+    DrawSectionOutline(State, Canvas, Frame);
     DrawMeasureOverlay(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
@@ -3902,6 +4113,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
     if (State.Style.XRayEnabled) DrawStatusPill(Canvas, Pill, "X-ray", IM_COL32(0xc7, 0xd4, 0xe8, 0xff));
     if (State.Measure.ActiveCondition) DrawStatusPill(Canvas, Pill, "Measure", IM_COL32(0xff, 0xc8, 0x3d, 0xff));
+    if (State.Section.ActiveCondition) DrawStatusPill(Canvas, Pill, DescribeSectionRequest(State.Section.Request), IM_COL32(0xdb, 0x61, 0x4a, 0xff));
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
         DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
@@ -3912,7 +4124,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     if (!State.Document.Regeneration.Curves.empty())
         DrawStatusPill(Canvas, Pill, Compose("%d curve(s) · %d selected", int(State.Document.Regeneration.Curves.size()), int(State.Document.Selection.Curves.size())), IM_COL32(0x9f, 0xd8, 0xff, 0xff));
     if (State.HoverIdentity != 0 && Hovered)
-        DrawStatusPill(Canvas, Pill, NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity), IM_COL32(0xff, 0xd2, 0x4d, 0xff));
+        DrawStatusPill(Canvas, Pill, State.HoverIdentity == IdentitySectionCap ? std::string("Section cap") : NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity),
+                       IM_COL32(0xff, 0xd2, 0x4d, 0xff));
     if (State.Bevel.ActiveCondition)
     {
         ImVec2 Below(Image.x + 12, Image.y + 44);
@@ -4526,6 +4739,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
     DrawMeasureCard(State);
+    DrawSectionCard(State);
     DrawDrawingCard(State);
     DrawConstraintCard(State);
     DrawStepCard(State);
@@ -4801,6 +5015,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
             else ToggleXRay(State);                                                     // viewport:toggle-x-ray
         }
         if (Pressed(ImGuiKey_E)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
+        if (Pressed(ImGuiKey_S)) ToggleSection(State);                                      // section (no Plasticity default; Alt+S is free)
         if (Pressed(ImGuiKey_R)) OpenSweepSession(State, DraftingSweepVerb::Revolve);       // revolution (no Plasticity default key)
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
@@ -5009,6 +5224,7 @@ void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTe
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
     StageBevelPreview(State);
     RefreshMeasure(State);
+    RefreshSection(State);
     DrawHeader(State, Frame);
     DrawDocumentBar(State, Frame);
     const float Top    = PanelGap + HeaderHeight + PanelGap + DocumentHeight + PanelGap;
@@ -5051,6 +5267,10 @@ DraftingSceneStates DisplayedDraftingStates(const DraftingWorkspaceState& State)
     // 📝 Matcap layers ride in bits 8 … 15 of each face word (DraftingSurface.slang).
     const std::vector<uint32_t> Layers = ComposeDraftingMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);
     for (size_t Index = 0; Index < States.Faces.size() && Index < Layers.size(); ++Index) States.Faces[Index] |= Layers[Index];
+    // 📝 Sheet faces carry StateSheetFace (bit 16) so a section never caps an open panel.
+    if (State.Style.SectionEnabled)
+        for (size_t Index = 0; Index < States.Faces.size() && Index < State.Section.Clip.SheetFaces.size(); ++Index)
+            if (State.Section.Clip.SheetFaces[Index]) States.Faces[Index] |= StateSheetFace;
     return States;
 }
 

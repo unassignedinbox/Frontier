@@ -26,6 +26,8 @@ namespace Frontier::DraftingWorkspace
 
 // 📝 Identity target encoding (R32_UINT): 0 = background, face f → f + 1, edge e → IdentityEdgeBit | (e + 1).
 constexpr uint32_t IdentityEdgeBit = 0x80000000u;
+constexpr uint32_t IdentitySectionCap = 0x7FFFFFFFu;                                         // Section cap (Alt+S): no entity
+constexpr uint32_t StateSheetFace     = 0x10000u;                                            // Face-word bit 16: sheet face (no cap)
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
@@ -110,6 +112,14 @@ struct DraftingRay
     std::array<double, 3> Direction = { 0.0, 0.0, -1.0 };                                    // [-]   - Unit direction
 };
 
+// 📝 Section clip (Alt+S) shared by the CPU pick and the viewport programs: the kept side is n·P + w ≥ 0; the back side
+//    of a solid's face seen through the opening is the cap (SheetFaces[f] = 1 exempts open-sheet faces).
+struct DraftingSectionClip
+{
+    std::array<double, 4> Plane      = { 0.0, 0.0, 1.0, 0.0 };                               // [-] - (n, w)
+    std::vector<uint8_t>  SheetFaces = {};                                                   // [-] - One per scene face: 1 = sheet
+};
+
 struct DraftingPick
 {
     uint32_t Identity = 0;                                                                   // [-]   - Identity code (see IdentityEdgeBit)
@@ -156,7 +166,14 @@ struct DraftingDeviationMap
 //    EdgeReach of the segment and no closer than the face hit minus EdgeReach (so silhouette and crease edges are
 //    pickable but hidden edges are not). XRayEnabled (Alt+Z) drops the face test for edges: the nearest edge within reach
 //    wins wherever it lies, as the occluded strokes of the x-ray frame are pickable. Returns nothing on a miss.
-[[nodiscard]] std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled = false);
+//    Section (Alt+S, may be null): hits on the removed side are ignored, as the viewport discards them; when the first
+//    kept hit is the back of a solid's face the ray meets the cap — IdentitySectionCap at that back face's distance (the
+//    viewport keeps the same depth), which also hides the edges behind it.
+[[nodiscard]] std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled = false,
+                                                            const DraftingSectionClip* Section = nullptr);
+
+// Section clip of a scene: the plane and the faces of the document's sheet bodies.
+[[nodiscard]] DraftingSectionClip ComposeDraftingSectionClip(const DraftingScene& Scene, const DraftingDocument& Document, std::array<double, 4> Plane);
 
 // Selection names → state words; the last name of the most recently picked kind is the active operand.
 [[nodiscard]] DraftingSceneStates ComposeDraftingStates(const DraftingScene& Scene, const DraftingSelection& Selection, uint32_t HoverIdentity);

@@ -168,15 +168,16 @@ bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& 
     Device = &Borrowed;
     try
     {
-        // ① descriptor set: face states (binding 0), edge states (binding 1)
-        VkDescriptorSetLayoutBinding Bindings[2]{};
+        // ① descriptor set: face states (binding 0), edge states (binding 1), section plane (binding 2; the push block is full)
+        VkDescriptorSetLayoutBinding Bindings[3]{};
         Bindings[0] = { 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
         Bindings[1] = { 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+        Bindings[2] = { 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
         VkDescriptorSetLayoutCreateInfo LayoutRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-        LayoutRequest.bindingCount = 2;
+        LayoutRequest.bindingCount = 3;
         LayoutRequest.pBindings    = Bindings;
         Require(vkCreateDescriptorSetLayout(Device->Device, &LayoutRequest, nullptr, &BufferLayout), "vkCreateDescriptorSetLayout");
-        const VkDescriptorPoolSize PoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 };
+        const VkDescriptorPoolSize PoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 };
         VkDescriptorPoolCreateInfo PoolRequest{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
         PoolRequest.maxSets       = 1;
         PoolRequest.poolSizeCount = 1;
@@ -187,6 +188,16 @@ bool DraftingRasterization::Create(const DraftingDevice& Borrowed, std::string& 
         DescriptorRequest.descriptorSetCount = 1;
         DescriptorRequest.pSetLayouts        = &BufferLayout;
         Require(vkAllocateDescriptorSets(Device->Device, &DescriptorRequest, &BufferSet), "vkAllocateDescriptorSets");
+        SectionBuffer = Device->CreateBuffer(8 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        std::memset(SectionBuffer.Mapped, 0, SectionBuffer.Size);
+        const VkDescriptorBufferInfo SectionTarget{ SectionBuffer.Buffer, 0, VK_WHOLE_SIZE };
+        VkWriteDescriptorSet SectionWrite{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+        SectionWrite.dstSet          = BufferSet;
+        SectionWrite.dstBinding      = 2;
+        SectionWrite.descriptorCount = 1;
+        SectionWrite.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        SectionWrite.pBufferInfo     = &SectionTarget;
+        vkUpdateDescriptorSets(Device->Device, 1, &SectionWrite, 0, nullptr);
 
         // ② pipeline layout: the set + one 128-byte push range
         const VkPushConstantRange Push{ VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128 };
@@ -339,7 +350,7 @@ void DraftingRasterization::Destroy()
     if (!Device || !Device->Device) return;
     vkDeviceWaitIdle(Device->Device);
     DestroyTargets();
-    for (DraftingBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer }) Device->DestroyBuffer(*Buffer);
+    for (DraftingBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer, &SectionBuffer }) Device->DestroyBuffer(*Buffer);
     ReleasePictures();
     Device->DestroyImage(MatcapArray);
     if (MatcapPool) vkDestroyDescriptorPool(Device->Device, MatcapPool, nullptr);
@@ -602,6 +613,13 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
     Projection.DisplayStroke[1] = float(Colour.Height);
     Projection.DisplayStroke[2] = Style.EdgeStroke;
     Projection.DisplayStroke[3] = Style.EdgeDepthBias;
+    // 📝 Section block (binding 2): (n, w) and (eye, enabled); written through the persistent mapping like the states.
+    if (SectionBuffer.Mapped)
+    {
+        const float Block[8] = { float(Style.SectionPlane[0]), float(Style.SectionPlane[1]), float(Style.SectionPlane[2]), float(Style.SectionPlane[3]),
+                                 float(Frame.Eye[0]), float(Frame.Eye[1]), float(Frame.Eye[2]), Style.SectionEnabled ? 1.0f : 0.0f };
+        std::memcpy(SectionBuffer.Mapped, Block, sizeof(Block));
+    }
     const VkShaderStageFlags PushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     const VkDeviceSize       Origin     = 0;
     const auto DrawSurfaces = [&](VkPipeline Pipeline)
@@ -679,6 +697,14 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
         DrawSurfaces(SurfaceDepthPipeline);
         DrawSurfaces(SurfaceGhostPipeline);
         DrawEdges(EdgeOccludedPipeline, -float(OccludedMarginPixels * Frame.WorldPerPixel));  // < 0: world margin [len]
+        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
+    }
+    else if (Style.SectionEnabled)
+    {
+        // 📝 Section: grid and image planes first, so a cap (a back face at its own depth) is never crossed by them.
+        DrawPlanes();
+        DrawGrid();
+        DrawSurfaces(SurfacePipeline);
         DrawEdges(EdgePipeline, Style.EdgeDepthBias);
     }
     else

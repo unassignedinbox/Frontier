@@ -349,6 +349,24 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "measure-length") return Numeric(State.Measure.Measurement.Length);
     if (Field == "measure-volume") return Numeric(State.Measure.Measurement.Volume);
     if (Field == "measure-refreshes") return Numeric(State.Measure.Refreshes);
+    if (Field == "section")
+    {
+        // Text = request key ("y 1.25", "face F3 -0.5 flipped") or the refusal, Number = 1 while Section (Alt+S) is on.
+        const DraftingSection& Section = State.Section.Section;
+        Text   = !State.Section.ActiveCondition ? std::string("off") : Section.Refusal.empty() ? DraftingSectionKey(State.Section.Request) : Section.Refusal;
+        Number = State.Section.ActiveCondition ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "section-clip") return Numeric(State.Style.SectionEnabled ? 1 : 0);
+    if (Field == "section-offset") return Numeric(State.Section.Request.Offset);
+    if (Field == "section-area") return Numeric(State.Section.Section.Area);
+    if (Field == "section-perimeter") return Numeric(State.Section.Section.Perimeter);
+    if (Field == "section-regions") return Numeric(State.Section.Section.Regions);
+    if (Field == "section-loops") return Numeric(State.Section.Section.Loops);
+    if (Field == "section-bodies") return Numeric(State.Section.Section.Bodies);
+    if (Field == "section-iuu") return Numeric(State.Section.Section.SecondMoments[0]);
+    if (Field == "section-ivv") return Numeric(State.Section.Section.SecondMoments[1]);
+    if (Field == "section-refreshes") return Numeric(State.Section.Refreshes);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
     if (Field == "construct-combination") return Numeric(int(State.ConstructForm.Combination));
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
@@ -377,7 +395,8 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "document-path") { Text = State.DocumentPath; Number = double(Text.size()); return true; }
     if (Field == "hover")
     {
-        Text   = State.HoverIdentity ? NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity) : std::string();
+        Text   = State.HoverIdentity == IdentitySectionCap ? std::string("section cap")
+               : State.HoverIdentity ? NameDraftingIdentity(DisplayedDraftingScene(State), State.HoverIdentity) : std::string();
         Number = double(State.HoverIdentity);
         return true;
     }

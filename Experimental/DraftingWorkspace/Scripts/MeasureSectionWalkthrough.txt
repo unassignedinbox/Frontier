@@ -53,3 +53,53 @@ key I
 frames 2
 expect measure == 0
 key Escape
+
+# ⑥ Alt+S: the default plane y = 1.25 (scene centre) through the boss and the hole, front half removed. The exact cut is
+#    the 4 × 1 block profile − chamfer ½·0.2² − fillet corner (1 − π/4)·0.25² − hole 0.6 × 1 + boss 1 × 0.75
+#    = 4.116587 m² in 2 regions (the hole splits it)
+key S Alt
+frames 2
+expect section == 1
+expect section contains y 1.25
+expect section-clip == 1
+expect section-area ~ 4.116587
+expect section-regions == 2
+expect section-bodies == 1
+capture 156SectionY
+
+# ⑦ the cap is no entity: hovering it reads "section cap", a click there selects nothing
+key 3
+move world 2.0 1.25 0.5
+frames 2
+expect hover == section cap
+click world 2.0 1.25 0.5
+frames 2
+expect selected-faces == 0
+capture 157SectionCapHover
+
+# ⑧ X through the boss axis (x = 1): the hole is not cut — 2.5 × 1 + boss 1 × 0.75 = 3.25 m², one region
+click @SectionAxisX
+frames 2
+expect section contains x 2
+click @SectionOffset
+key A Ctrl
+type 1
+key Enter
+frames 2
+expect section contains x 1
+expect section-area ~ 3.25
+expect section-regions == 1
+capture 158SectionX
+
+# ⑨ Flip keeps the other half (x ≥ 1): same cut, the cap now faces away from the isometric eye
+click @SectionFlip
+frames 2
+expect section contains flipped
+expect section-area ~ 3.25
+capture 159SectionFlipped
+
+# ⑩ Alt+S again: everything returns
+key S Alt
+frames 2
+expect section == 0
+expect section-clip == 0

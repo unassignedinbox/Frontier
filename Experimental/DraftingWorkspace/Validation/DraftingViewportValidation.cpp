@@ -51,6 +51,7 @@ namespace
     GateTally ViewGate        = { "V6", "View presets: centre pixel names the expected face (Top → top cap, Front → front side, …)", "all equal" };
     GateTally DeterminismGate = { "V7", "Same frame twice → identical colour and identity digests", "equal" };
     GateTally XRayGate        = { "V9", "X-ray: ghost faces = α · opaque + (1 − α) · background; every revealed stroke pixel is a CPU-hidden edge; no other identity changes; rim spill; probe and CPU pick through; box visibility = GPU edges; off → bit-identical", "≤ 2 / 255 · ≥ 99.5 % · 0 · ≤ 2 % · equal" };
+    GateTally SectionGate     = { "V10", "Section (Alt+S): interior pixels = CPU pick with the clip (removed side gone, caps where the material is cut); every cap pixel within 1 px of a CPU cap; probe; grid never through a cap; off → bit-identical", "≤ 0.1 % · all · equal" };
     GateTally MatcapGate      = { "V8", "Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact", "≤ 2 / 255" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows
@@ -528,6 +529,100 @@ int main(int ArgumentCount, char** Arguments)
         }
     }
 
+    // ---- V10 section: kept-side clip and caps against the CPU pick, cap mask within 1 px, grid behind caps, bit-exact restore
+    {
+        DraftingViewportStyle Plain = Style;
+        Plain.GridEnabled = false;
+        struct Cut { const char* Label; std::array<double, 4> Plane; };
+        const Cut Cuts[] = { { "y = 1.25 (keep y ≥ 1.25)", { 0.0, 1.0, 0.0, -1.25 } }, { "x = 1 (keep x ≤ 1)", { -1.0, 0.0, 0.0, 1.0 } } };
+        for (const bool OrthographicCondition : { true, false })
+        {
+            Camera.OrthographicEnabled = OrthographicCondition;
+            PresentDraftingView(Camera, DraftingViewPreset::Isometric);
+            const DraftingCameraFrame Frame  = FrameDraftingCamera(Camera, Width, Height);
+            const Rendered            Opaque = RenderFrame(Device, Raster, Frame, Plain);
+            for (const Cut& Plane : Cuts)
+            {
+                const std::string Label = std::string(OrthographicCondition ? "ortho " : "persp ") + Plane.Label;
+                DraftingViewportStyle Sectioned = Plain;
+                Sectioned.SectionEnabled = true;
+                Sectioned.SectionPlane   = Plane.Plane;
+                const DraftingSectionClip Clip  = ComposeDraftingSectionClip(Scene, Document, Plane.Plane);
+                const Rendered            Image = RenderFrame(Device, Raster, Frame, Sectioned);
+                const auto CpuIdentity = [&](double Column, double Row)
+                {
+                    const std::optional<DraftingPick> Hit = PickDraftingScene(Scene, CastDraftingRay(Frame, Column + 0.5, Row + 0.5), 0.0, false, &Clip);
+                    return Hit ? Hit->Identity : 0u;
+                };
+
+                // ① interior pixels (5 × 5 one identity, no stroke) against the sectioned CPU pick
+                long Compared = 0, Mismatched = 0, CapCompared = 0;
+                for (uint32_t Row = 3; Row + 3 < Height; Row += 3)
+                    for (uint32_t Column = 3; Column + 3 < Width; Column += 3)
+                    {
+                        const uint32_t Centre = Image.Identity[size_t(Row) * Width + Column];
+                        bool UniformCondition = (Centre & IdentityEdgeBit) == 0u;
+                        for (int DeltaRow = -2; DeltaRow <= 2 && UniformCondition; ++DeltaRow)
+                            for (int DeltaColumn = -2; DeltaColumn <= 2 && UniformCondition; ++DeltaColumn)
+                                UniformCondition = Image.Identity[size_t(Row + DeltaRow) * Width + Column + DeltaColumn] == Centre;
+                        if (!UniformCondition) continue;
+                        ++Compared;
+                        if (Centre == IdentitySectionCap) ++CapCompared;
+                        if (CpuIdentity(Column, Row) != Centre) ++Mismatched;
+                    }
+                const double Rate = Compared ? 100.0 * double(Mismatched) / double(Compared) : 100.0;
+                Tally(SectionGate, Rate, Compared > 1000 && CapCompared > 100 && Rate <= 0.1,
+                      Label + ": " + std::to_string(Mismatched) + " / " + std::to_string(Compared) + " interior pixels differ (" + std::to_string(CapCompared) + " on the cap) (%)");
+
+                // ② every GPU cap pixel has a CPU cap within 1 px (the cap outline is exact up to rasterisation)
+                long CapPixels = 0, Stray = 0;
+                std::array<double, 3> CapSum{};
+                size_t ProbeIndex = 0;
+                for (uint32_t Row = 1; Row + 1 < Height; ++Row)
+                    for (uint32_t Column = 1; Column + 1 < Width; ++Column)
+                    {
+                        const size_t Index = size_t(Row) * Width + Column;
+                        if (Image.Identity[Index] != IdentitySectionCap) continue;
+                        ++CapPixels;
+                        const uint32_t Pixel = Image.Colour[Index];
+                        CapSum[0] += (Pixel & 0xff) / 255.0; CapSum[1] += ((Pixel >> 8) & 0xff) / 255.0; CapSum[2] += ((Pixel >> 16) & 0xff) / 255.0;
+                        if (CpuIdentity(Column, Row) == IdentitySectionCap) { if (ProbeIndex == 0 && CapPixels > 50) ProbeIndex = Index; continue; }
+                        bool NearCondition = false;
+                        for (int DeltaRow = -1; DeltaRow <= 1 && !NearCondition; ++DeltaRow)
+                            for (int DeltaColumn = -1; DeltaColumn <= 1 && !NearCondition; ++DeltaColumn)
+                                NearCondition = CpuIdentity(double(Column) + DeltaColumn, double(Row) + DeltaRow) == IdentitySectionCap;
+                        if (!NearCondition) ++Stray;
+                    }
+                for (double& Channel : CapSum) Channel /= std::max<long>(CapPixels, 1);
+                Tally(SectionGate, double(Stray), CapPixels > 500 && Stray == 0 && CapSum[0] > CapSum[1] + 0.15,
+                      Label + ": " + std::to_string(CapPixels) + " cap pixels, mean colour (" + Compact(CapSum[0]) + ", " + Compact(CapSum[1]) + ", " + Compact(CapSum[2]) + "); without a CPU cap within 1 px");
+
+                // ③ the single-texel probe (hover path) on a cap pixel reads the cap
+                const int      ProbeX = int(ProbeIndex % Width), ProbeY = int(ProbeIndex / Width);
+                const Rendered Probed = RenderFrame(Device, Raster, Frame, Sectioned, ProbeX, ProbeY);
+                Tally(SectionGate, 0.0, ProbeIndex != 0 && Probed.Probe == IdentitySectionCap && CpuIdentity(ProbeX, ProbeY) == IdentitySectionCap,
+                      Label + ": probe at (" + std::to_string(ProbeX) + ", " + std::to_string(ProbeY) + ") → " + (Probed.Probe == IdentitySectionCap ? "cap" : "not the cap"));
+
+                // ④ with the grid on, the grid (drawn first while sectioning) never shows through a cap: cap pixels unchanged
+                DraftingViewportStyle Gridded = Sectioned;
+                Gridded.GridEnabled = true;
+                const Rendered WithGrid = RenderFrame(Device, Raster, Frame, Gridded);
+                long Changed = 0;
+                for (size_t Index = 0; Index < Image.Identity.size(); ++Index)
+                    if (Image.Identity[Index] == IdentitySectionCap && (WithGrid.Identity[Index] != IdentitySectionCap || WithGrid.Colour[Index] != Image.Colour[Index])) ++Changed;
+                Tally(SectionGate, double(Changed), Changed == 0, Label + ": cap pixels changed by switching the grid on");
+
+                if (!OrthographicCondition)
+                    WriteExhibit(Exhibits, std::string("ViewportSection") + (Plane.Plane[1] > 0.5 ? "Y" : "X"), WithGrid, Width, Height);
+            }
+
+            // ⑤ section off again → the unsectioned frame bit for bit
+            const Rendered Restored = RenderFrame(Device, Raster, Frame, Plain);
+            Tally(SectionGate, 0.0, Restored.Colour == Opaque.Colour && Restored.Identity == Opaque.Identity,
+                  std::string(OrthographicCondition ? "ortho" : "persp") + ": section off → colour and identity bit-identical to the unsectioned frame");
+        }
+    }
+
     // ---- V7 determinism
     {
         PresentDraftingView(Camera, DraftingViewPreset::Isometric);
@@ -548,7 +643,7 @@ int main(int ArgumentCount, char** Arguments)
                 Device.Describe().c_str(), Scene.Faces.size(), Scene.Edges.size(), Scene.Corners.size() / 3, Width, Height, SlowestMs, Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate, &XRayGate })
+    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate, &XRayGate, &SectionGate })
     {
         std::printf("| %s | %s | %s | %.4g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

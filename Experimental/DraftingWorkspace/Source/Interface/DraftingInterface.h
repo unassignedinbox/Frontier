@@ -332,6 +332,7 @@ struct DraftingSectionSession
     DraftingSectionRequest Request         = {};                                             // [-] - Plane choice
     DraftingSection        Section         = {};                                             // [-] - Last exact section
     std::array<char, 32>   OffsetText      = {};                                             // [-] - Offset field ("0.5", "250mm")
+    DraftingSectionClip    Clip            = {};                                             // [-] - Plane + sheet faces for the CPU pick
     int                    Refreshes       = 0;                                              // [-] - Recomputations (script evidence)
 };
 
