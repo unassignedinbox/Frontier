@@ -66,6 +66,7 @@ struct FaceChangeStatistics
 {
     int    Edges[4]          = { 0, 0, 0, 0 };                                               // [-]   - Per EdgeChangeCategory
     int    EllipticalEdges   = 0;                                                            // [-]   - Oblique plane ∩ cylinder
+    int    TracedEdges       = 0;                                                            // [-]   - Traced meetings of NURBS / parallel carriers
     int    MovedVertices     = 0;                                                            // [-]   - Vertices re-solved
     int    ReplacedFaces     = 0;                                                            // [-]   - Faces with a new carrier
     double MaxVertexResidual = 0.0;                                                          // [len] - Worst vertex off an incident curve

@@ -82,13 +82,13 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     {
         const auto Found = Vertices.find(Index);
         if (Found != Vertices.end()) return Found->second;
-        return Vertices[Index] = Partition.Vertices.Issue({ Blueprint.Vertices[Index].Position, ExactPrecision });
+        return Vertices[Index] = Partition.Vertices.Issue({ Blueprint.Vertices[Index].Position, Blueprint.Vertices[Index].Precision });
     };
     const auto IssueEdge = [&](int Index)
     {
         if (Outcome.Edges[Index].PresentCondition()) return Outcome.Edges[Index];
         const BlueprintEdge& Block = Blueprint.Edges[Index];
-        const EdgeToken      Edge  = Partition.Edges.Issue({ {}, IssueVertex(Block.Start), IssueVertex(Block.End), Block.Low, Block.High, ExactPrecision, {} });
+        const EdgeToken      Edge  = Partition.Edges.Issue({ {}, IssueVertex(Block.Start), IssueVertex(Block.End), Block.Low, Block.High, Block.Precision, {} });
         Partition.AttachCurve(Edge, Block.Curve, Block.Low, Block.High);
         Outcome.EdgeOrder.push_back(Index);
         return Outcome.Edges[Index] = Edge;

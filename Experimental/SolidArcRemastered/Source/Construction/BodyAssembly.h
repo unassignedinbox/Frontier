@@ -28,7 +28,8 @@ namespace Frontier::SolidArcRemastered
 
 struct BlueprintVertex
 {
-    Vector3 Position = {};                                                                   // [len] - Point
+    Vector3 Position  = {};                                                                  // [len] - Point
+    double  Precision = ExactPrecision;                                                      // [len] - Local sphere radius (tolerant models)
 };
 
 struct BlueprintEdge
@@ -38,6 +39,7 @@ struct BlueprintEdge
     double        High  = 1.0;                                                               // [-] - τ at End
     int           Start = -1;                                                                // [-] - BlueprintVertex index
     int           End   = -1;                                                                // [-] - BlueprintVertex index
+    double        Precision = ExactPrecision;                                                // [len] - Local tube radius (tolerant models)
 };
 
 // 📝 Directed use of an edge by a loop; the SP-curve shares the edge's τ (same-parameter rule).

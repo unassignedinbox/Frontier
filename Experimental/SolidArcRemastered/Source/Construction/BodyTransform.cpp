@@ -11,6 +11,7 @@
 #include "Geometry/NurbsCarrier.h"
 #include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
+#include "Surfacing/CarrierApproximation.h"
 
 #include <cmath>
 #include <map>
@@ -239,7 +240,7 @@ namespace
     }
 
     // Chart box of a face from its SP-curves (periodic images are already unwrapped per loop).
-    [[nodiscard]] std::pair<Vector2, Vector2> MeasureFaceChartBox(const ModelPartition& Partition, FaceToken Face)
+    [[nodiscard]] std::pair<Vector2, Vector2> MeasureFaceChartBox(const ModelPartition& Partition, FaceToken Face, int Samples = 32)
     {
         Vector2 Low{ INFINITY, INFINITY }, High{ -INFINITY, -INFINITY };
         for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
@@ -249,9 +250,9 @@ namespace
                 const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
                 const EdgeProfile& Edge = Partition.Edges.Resolve(Use.Edge);
                 if (!Use.SurfaceCurve) return;
-                for (int Sample = 0; Sample <= 32; ++Sample)
+                for (int Sample = 0; Sample <= Samples; ++Sample)
                 {
-                    const Vector2 Point = EvaluateParameterCurve(*Use.SurfaceCurve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / 32.0).Position;
+                    const Vector2 Point = EvaluateParameterCurve(*Use.SurfaceCurve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / Samples).Position;
                     Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) };
                     High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) };
                 }
@@ -268,7 +269,10 @@ namespace
 
     // 💡 One blueprint walk for both transforms and NURBS promotion: PromoteAll converts every analytic face and every
     //    line / conic edge before mapping; a non-similar map promotes the curved ones it could not otherwise carry.
-    [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll)
+    //    With Approximation (PromoteAll only) the procedural carriers left over — rolling-ball / parallel faces, traced
+    //    edges — are replaced by certified cubic B-splines in their own parameterisation, tallied into Tally.
+    [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll,
+                                                     const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr)
     {
         TransformOutcome Outcome;
         const MapAnalysis Analysis = AnalyseMap(Map);
@@ -279,6 +283,7 @@ namespace
 
         // ① Vertices and edges (line intervals stretch by |M·d|; circle / ellipse / NURBS parameters are kept).
         std::map<uint32_t, int> VertexIndex, EdgeIndex;                                      // [-] - Source slot → blueprint index
+        std::vector<char>       TolerantEdges;                                               // [-] - Edges touching a stand-in
         for (VertexToken Vertex : Inventory.Vertices)
         {
             VertexIndex[Vertex.Slot] = static_cast<int>(Blueprint.Vertices.size());
@@ -294,6 +299,17 @@ namespace
             {
                 // 📝 Exact conversion over the edge interval with τ kept, so vertices and SP-curve parameters still agree.
                 if (const std::optional<NurbsCurve> Spline = ConvertCurveToNurbs(Curve, Profile.IntervalLow, Profile.IntervalHigh)) Curve = *Spline;
+            }
+            if (Approximation != nullptr && !std::holds_alternative<NurbsCurve>(Curve))
+            {
+                // 📝 No exact NURBS form (traced intersection, contact curve): certified stand-in over the same τ interval.
+                const CurveApproximation Stand = ApproximateCurveAsNurbs(Curve, Profile.IntervalLow, Profile.IntervalHigh, *Approximation);
+                if (!Stand.Refusal.empty()) { Outcome.Refusal = "Approximate: edge " + std::to_string(Edge.Slot) + " — " + Stand.Refusal; return Outcome; }
+                Curve = *Stand.Curve;
+                Tally->CurveDeviation = std::max(Tally->CurveDeviation, Stand.Deviation);
+                ++Tally->ApproximatedEdges;
+                TolerantEdges.resize(Blueprint.Edges.size() + 1, 0);
+                TolerantEdges[Blueprint.Edges.size()] = 1;
             }
             const MappedCurve Mapped = MapCurve(Analysis, Curve);
             if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
@@ -316,6 +332,20 @@ namespace
                 const auto [BoxLow, BoxHigh] = MeasureFaceChartBox(Partition, Face);
                 if (const std::optional<NurbsSurface> Spline = ConvertSurfaceToNurbs(Surface, BoxLow, BoxHigh)) Surface = *Spline;
             }
+            if (Approximation != nullptr && (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<ParallelSurface>(Surface)))
+            {
+                // 📝 Same chart, so the SP-curve anchors below stay valid; the box is sampled densely because the spline
+                //    clamps outside it.
+                const auto [BoxLow, BoxHigh] = MeasureFaceChartBox(Partition, Face, 256);
+                const SurfaceApproximation Stand = ApproximateSurfaceAsNurbs(Surface, BoxLow, BoxHigh, *Approximation);
+                if (!Stand.Refusal.empty()) { Outcome.Refusal = std::string("Approximate: ") + SurfaceCategoryLabel(Surface) + " face — " + Stand.Refusal; return Outcome; }
+                Tally->SurfaceDeviation = std::max(Tally->SurfaceDeviation, Stand.Deviation);
+                Tally->PoleCount += Stand.Surface->Definition->CountU * Stand.Surface->Definition->CountV;
+                ++Tally->ApproximatedFaces;
+                Surface = *Stand.Surface;
+            }
+            const bool          StandIn = Approximation != nullptr && std::holds_alternative<NurbsSurface>(Surface) && ProceduralSurfaceCondition(Partition.Surfaces.Resolve(Profile.Surface))
+                                          && !std::holds_alternative<NurbsSurface>(Partition.Surfaces.Resolve(Profile.Surface));
             const MappedSurface Mapped = MapSurface(Analysis, Surface);
             if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
             BlueprintFace Image;
@@ -336,6 +366,7 @@ namespace
                     const Vector2 Anchor = MapAnchor(Analysis, Surface, Middle);
                     BlueprintUse Placement;
                     Placement.Edge         = Edge;
+                    if (StandIn) { TolerantEdges.resize(Blueprint.Edges.size(), 0); TolerantEdges[Edge] = 1; }
                     Placement.Sense        = Use.Sense;
                     Placement.SurfaceCurve = FitSurfaceCurve(Image.Surface, EdgeImage.Curve, EdgeImage.Low, EdgeImage.High, { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } }, Anchor);
                     Uses.push_back(std::move(Placement));
@@ -350,8 +381,25 @@ namespace
             }
             Blueprint.Faces.push_back(std::move(Image));
         }
+        // 📝 Tolerant model (Parasolid-style local precision): an edge stand-in and a face stand-in are each within the
+        //    tolerance of the exact geometry, so an edge touching one lies within 2 × tolerance of its faces — that is its
+        //    tube, and its vertices' spheres are at least as large (vertex ≥ edge ≥ face). The audit verifies the claim.
+        if (Approximation != nullptr)
+        {
+            TolerantEdges.resize(Blueprint.Edges.size(), 0);
+            const double Tube = 2.0 * Approximation->Tolerance;                              // [len] - Edge tube radius
+            for (size_t Edge = 0; Edge < Blueprint.Edges.size(); ++Edge)
+            {
+                if (!TolerantEdges[Edge]) continue;
+                BlueprintEdge& Image = Blueprint.Edges[Edge];
+                Image.Precision = Tube;
+                Blueprint.Vertices[Image.Start].Precision = Tube;
+                Blueprint.Vertices[Image.End].Precision   = Tube;
+                ++Tally->TolerantEdges;
+            }
+        }
         // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
-        const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, PromoteAll ? "Promote" : "Transform");
+        const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, Approximation != nullptr ? "Approximate" : PromoteAll ? "Promote" : "Transform");
         if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
         Outcome.Body        = Assembly.Body;
         Outcome.SourceFaces = Inventory.Faces;
@@ -405,6 +453,13 @@ TransformOutcome TransformBodyAcross(const ModelPartition& Partition, BodyToken 
 TransformOutcome PromoteBodyToNurbs(ModelPartition& Partition, BodyToken Source)
 {
     return TransformBodyWith(Partition, Source, Partition, TranslationMap({}), true);
+}
+
+ApproximationOutcome ApproximateBodyAsNurbs(ModelPartition& Partition, BodyToken Source, const ApproximationSettings& Settings)
+{
+    ApproximationOutcome Outcome;
+    Outcome.Transform = TransformBodyWith(Partition, Source, Partition, TranslationMap({}), true, &Settings, &Outcome);
+    return Outcome;
 }
 
 TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map)

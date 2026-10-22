@@ -18,6 +18,7 @@
 #include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/IsoParameterCurve.h"
+#include "Intersection/SurfaceIntersection.h"
 
 #include <algorithm>
 #include <chrono>
@@ -295,6 +296,59 @@ namespace
             return Result;
         }
 
+        // 📝 Chart box of an old face from its SP-curves, grown by half its size on every side (the change moves the edge
+        //    inside it) and clamped to a NURBS chart's domain. A replaced carrier keeps its old face's chart: an offset
+        //    plane keeps its frame, a parallel carrier lives on its basis chart.
+        [[nodiscard]] ParameterBox GrownChartBox(int Index) const
+        {
+            Vector2 Low{ INFINITY, INFINITY }, High{ -INFINITY, -INFINITY };
+            for (LoopToken Loop : Partition.Faces.Resolve(Inventory.Faces[Index]).Loops)
+                Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+                {
+                    const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+                    const EdgeProfile& Edge = Partition.Edges.Resolve(Use.Edge);
+                    if (!Use.SurfaceCurve) return;
+                    for (int Sample = 0; Sample <= 64; ++Sample)
+                    {
+                        const Vector2 Point = EvaluateParameterCurve(*Use.SurfaceCurve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / 64.0).Position;
+                        Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) };
+                        High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) };
+                    }
+                });
+            const Vector2 Margin = { 0.5 * (High.X - Low.X) + 1.0e-6 * Scale, 0.5 * (High.Y - Low.Y) + 1.0e-6 * Scale };
+            ParameterBox Box{ Low - Margin, High + Margin };
+            if (const NurbsSurface* Chart = ResolveNurbsChart(Surfaces[Index]))
+            {
+                const NurbsDomain U = MeasureNurbsSurfaceDomain(*Chart->Definition, true), V = MeasureNurbsSurfaceDomain(*Chart->Definition, false);
+                Box.Low  = { std::max(Box.Low.X, U.Low), std::max(Box.Low.Y, V.Low) };
+                Box.High = { std::min(Box.High.X, U.High), std::min(Box.High.Y, V.High) };
+            }
+            return Box;
+        }
+
+        // 💡 N4: no closed form between the new carriers (a NURBS or parallel carrier is involved) — the exact traced
+        //    intersection (Newton-corrected onto both carriers, Intersection/IntersectionCurve) of the branch passing
+        //    nearest the old edge's midpoint. Tangential branches are skipped (a smooth edge is never re-intersected).
+        [[nodiscard]] std::optional<CurveGeometry> TraceCarrierMeeting(int First, int Second, Vector3 Midpoint) const
+        {
+            const SurfaceIntersectionOutcome Meeting = IntersectSurfaces(Surfaces[First], GrownChartBox(First), Surfaces[Second], GrownChartBox(Second));
+            const IntersectionBranch* Nearest = nullptr;
+            double Reach = INFINITY;                                                         // [len] - Branch distance to the old midpoint
+            for (const IntersectionBranch& Branch : Meeting.Branches)
+            {
+                if (Branch.TangentialCondition) continue;
+                for (const IntersectionChartPoint& Point : Branch.Chart)
+                    if (Distance(Point.Position, Midpoint) < Reach) { Reach = Distance(Point.Position, Midpoint); Nearest = &Branch; }
+            }
+            if (Nearest == nullptr) return std::nullopt;
+            if (Nearest->Category != BranchCategory::Traced) return Nearest->Curve;
+            std::vector<Vector3> Points;
+            Points.reserve(Nearest->Chart.size());
+            for (const IntersectionChartPoint& Point : Nearest->Chart) Points.push_back(Point.Position);
+            if (Points.size() < 2) return std::nullopt;
+            return BuildIntersectionCurve(Surfaces[First], Surfaces[Second], Points, Nearest->ClosedCondition);
+        }
+
         std::string SolveEdges()
         {
             Solutions.resize(Inventory.Edges.size());
@@ -361,6 +415,11 @@ namespace
                         return LabelToken("E", Edge) + ": smooth edge between faces that move differently (the blend must be re-made, 🚧)";
                     }
                     Solved = IntersectCarriersExactly(Surfaces[First], Surfaces[Second], Midpoint);
+                    if (!Solved && (ProceduralSurfaceCondition(Surfaces[First]) || ProceduralSurfaceCondition(Surfaces[Second])))
+                    {
+                        Solved = TraceCarrierMeeting(First, Second, Midpoint);
+                        if (Solved) ++Outcome.Statistics.TracedEdges;
+                    }
                     if (!Solved)
                     {
                         return LabelToken("E", Edge) + ": new " + SurfaceCategoryLabel(Surfaces[First]) + " and " + SurfaceCategoryLabel(Surfaces[Second]) +

@@ -78,6 +78,7 @@ add_library(SolidArcRemastered STATIC
     Source/Surfacing/SurfaceAlgebra.cpp
     Source/Surfacing/CurveNetwork.cpp
     Source/Surfacing/PanelAssembly.cpp
+    Source/Surfacing/CarrierApproximation.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
     Source/Measurement/MassProperties.cpp

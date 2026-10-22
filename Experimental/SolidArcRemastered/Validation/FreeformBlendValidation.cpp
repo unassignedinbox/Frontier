@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                   FREEFORMBLENDVALIDATION.CPP
 ====================================================================================================================================*/
-// 🧩 Priority 10: exact offsets of NURBS surfaces (parallel carrier) and rolling-ball fillets / chamfers on NURBS supports
+// 🧩 Priority 10: exact offsets of NURBS surfaces (parallel carrier), rolling-ball fillets / chamfers on NURBS supports,
+//    offsets and hollows of NURBS walls (N4) and certified NURBS stand-ins for the procedural carriers (N3)
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INCLUDES
@@ -18,6 +19,12 @@
 #include "Geometry/SurfaceGeometry.h"
 #include "Intersection/ImplicitSurface.h"
 #include "Intersection/SurfaceIntersection.h"
+#include "Audit/ModelAudit.h"
+#include "Local/FaceOperations.h"
+#include "Measurement/MassProperties.h"
+#include "Surfacing/CarrierApproximation.h"
+#include "Sketch/SketchSpline.h"
+#include <map>
 
 #include <algorithm>
 #include <array>
@@ -66,7 +73,16 @@ namespace
     GateTally LawGate      = { "F2", "Rolling-ball law on every NURBS sheet: |ball − support| = r, feet on the supports along their normals, contact on the carrier, G1 between blend and supports", "≤ 10⁻⁹ (len · rad)" };
     GateTally RefusalGate  = { "F3", "Honest refusals: a ball past a support curvature radius (fold), and the 🚧 chamfer / variable on NURBS supports — atomic, input untouched", "exact" };
 
-    std::vector<GateTally*> AllGates() { return { &CarrierGate, &FreeformGate, &SectionGate, &FoldGate, &VolumeGate, &LawGate, &RefusalGate }; }
+    GateTally StandInGate     = { "A1", "NURBS stand-ins of rolling-ball / parallel carriers, measured off the certification lattice: 2000 random chart points — parametric |S − A|, geometric distance of A to the exact carrier, normal drift", "≤ tolerance (len) · drift ≤ angular tolerance 10⁻³ rad" };
+    GateTally ExchangeGate    = { "A2", "All-NURBS bodies (ApproximateBodyAsNurbs): no procedural carrier left, audit sound, |ΔV| ≤ tolerance × area, every edge on its stand-in faces, G1 drift across blend boundaries", "≤ tolerance · 2 × tolerance (edges) · drift ≤ 10⁻³ rad" };
+    GateTally ApproximateGate = { "A3", "Honest refusals: a tolerance the span cap cannot reach, a non-positive tolerance, an empty window — atomic, no body created", "exact" };
+    GateTally OrderGate       = { "A4", "Convergence: tolerance 10⁻⁴ → 10⁻¹⁰ on a parallel carrier (position only); spans per direction grow as ε^(−1/4) for cubic interpolation, every step certified", "3.5 ≤ order ≤ 5" };
+
+    GateTally OffsetGate  = { "O1", "Face offsets of a NURBS wall = closed form: the D-extrusion's spline wall ±0.1 → ΔV = H·(±d·L + π·d²/2) (Steiner: the wall leaves the base perpendicular, so the offset ends on the base plane untrimmed)", "≤ 10⁻⁹ relative" };
+    GateTally HollowGate  = { "O2", "Hollow with a NURBS wall: D-extrusion, wall 0.1, top open → V = A·H − A_in·(H − t); A_in by Green's theorem on the inward offset curve trimmed at y = t (root-found crossings, Simpson per knot span)", "≤ 10⁻⁹ relative" };
+    GateTally MeetingGate = { "O3", "Traced meetings (FaceChange N4): new edges between a parallel carrier and planes are exact traced intersections — on both carriers ≤ 10⁻⁹·scale, audit sound, the wall is a parallel carrier", "exact" };
+
+    std::vector<GateTally*> AllGates() { return { &CarrierGate, &FreeformGate, &SectionGate, &FoldGate, &VolumeGate, &LawGate, &RefusalGate, &OffsetGate, &HollowGate, &MeetingGate, &StandInGate, &ExchangeGate, &ApproximateGate, &OrderGate }; }
 
     struct DetailRow
     {
@@ -83,7 +99,7 @@ namespace
         ++Gate.Checks;
         if (!PassedCondition) ++Gate.Failures;
         Details.push_back({ Gate.Code, Name, Detail, PassedCondition });
-        std::fprintf(stderr, "%s %s %s\n", PassedCondition ? "🟢" : "🔴", Gate.Code, Name.c_str());
+        std::fprintf(stderr, "%s %s %s\n      %s\n", PassedCondition ? "🟢" : "🔴", Gate.Code, Name.c_str(), Detail.c_str());
     }
 
     [[nodiscard]] std::string Scientific(double Value)
@@ -485,6 +501,372 @@ namespace
     }
 }
 
+namespace
+{
+    // ---- O offsets and hollows of NURBS walls (N4) --------------------------------------------------------------------
+
+    [[nodiscard]] FaceOperationOutcome OffsetSplineWall(ModelPartition& Partition, BodyToken Body, double Distance)
+    {
+        FaceOperationSettings Settings;
+        Settings.Kind     = FaceOperationKind::Offset;
+        Settings.Distance = Distance;
+        for (FaceToken Face : Partition.CollectInventory(Body).Faces)
+            if (std::holds_alternative<NurbsSurface>(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface))) Settings.Faces.push_back(Face);
+        return ApplyFaceOperation(Partition, Body, Settings);
+    }
+
+    // 📝 Area inside the inward offset of the D-profile's arch by t, above the offset base line y = t (Green's theorem:
+    //    A = ∫ x dy along the offset arch between its two crossings of y = t; the closing segment on y = t has dy = 0).
+    //    O = C + t·N with N the unit left normal (inward for the counter-clockwise D), O′ = C′ + t·J·(C″ − T(T·C″))/|C′|.
+    [[nodiscard]] double InwardOffsetArea(const ProfileSegment& Arch, double Thickness)
+    {
+        const auto Offset = [&](double τ, Vector2& Derivative)
+        {
+            const SketchSplineDerivatives Sample = EvaluateSketchSpline(Arch.Spline, τ);
+            const double  Speed   = std::hypot(Sample.First.X, Sample.First.Y);
+            const Vector2 Tangent = { Sample.First.X / Speed, Sample.First.Y / Speed };
+            const double  Along   = Tangent.X * Sample.Second.X + Tangent.Y * Sample.Second.Y;
+            const Vector2 Turn    = { (Sample.Second.X - Tangent.X * Along) / Speed, (Sample.Second.Y - Tangent.Y * Along) / Speed };
+            Derivative = { Sample.First.X - Thickness * Turn.Y, Sample.First.Y + Thickness * Turn.X };
+            return Vector2{ Sample.Position.X - Thickness * Tangent.Y, Sample.Position.Y + Thickness * Tangent.X };
+        };
+        const auto Height = [&](double τ) { Vector2 Unused; return Offset(τ, Unused).Y - Thickness; };
+        const auto Crossing = [&](double Low, double High)
+        {
+            for (int Step = 0; Step < 200; ++Step)
+            {
+                const double Middle = 0.5 * (Low + High);
+                if ((Height(Low) < 0.0) == (Height(Middle) < 0.0)) Low = Middle; else High = Middle;
+            }
+            return 0.5 * (Low + High);
+        };
+        const double First = Crossing(0.0, 0.2), Last = Crossing(0.8, 1.0);
+        std::vector<double> Breaks = { First };
+        for (double Knot : { 1.0 / 3.0, 2.0 / 3.0 }) if (Knot > First && Knot < Last) Breaks.push_back(Knot);
+        Breaks.push_back(Last);
+        double Area = 0.0;
+        for (size_t Index = 0; Index + 1 < Breaks.size(); ++Index)
+        {
+            const int    Panels = 8192;
+            const double Step   = (Breaks[Index + 1] - Breaks[Index]) / Panels;
+            const auto   Integrand = [&](double τ) { Vector2 Derivative; const Vector2 Point = Offset(τ, Derivative); return Point.X * Derivative.Y; };
+            for (int Panel = 0; Panel < Panels; ++Panel)
+            {
+                const double Low = Breaks[Index] + Step * Panel;
+                Area += Step / 6.0 * (Integrand(Low) + 4.0 * Integrand(Low + 0.5 * Step) + Integrand(Low + Step));
+            }
+        }
+        return Area;
+    }
+
+    void ValidateOffsets()
+    {
+        const SketchProfile   Profile = DProfile();
+        const ProfileSegment& Arch    = Profile.Loops[0].Segments[0].Kind == ProfileSegmentKind::Spline ? Profile.Loops[0].Segments[0] : Profile.Loops[0].Segments[1];
+        const double          Length  = SegmentLength(Arch);
+        const double          Height  = 1.0;                                                     // [len] - Extrusion height
+        const auto Meeting = [&](const std::string& Name, ModelPartition& Partition, const FaceOperationOutcome& Outcome)
+        {
+            int Parallel = 0;
+            for (FaceToken Face : Partition.CollectInventory(Outcome.Body).Faces) Parallel += std::holds_alternative<ParallelSurface>(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface)) ? 1 : 0;
+            const bool Passed = Outcome.Audit.SoundCondition() && Outcome.Statistics.MaxEdgeResidual <= 3.0e-9 && Outcome.Statistics.TracedEdges > 0 && Parallel > 0;
+            Report(MeetingGate, Name, std::to_string(Outcome.Statistics.TracedEdges) + " traced edge(s) · edge residual " + Scientific(Outcome.Statistics.MaxEdgeResidual) + " · vertex residual " + Scientific(Outcome.Statistics.MaxVertexResidual)
+                   + " · " + std::to_string(Parallel) + " parallel face(s) · audit " + (Outcome.Audit.SoundCondition() ? "sound" : "UNSOUND") + " · " + std::to_string(static_cast<int>(Outcome.Milliseconds)) + " ms",
+                   Outcome.Statistics.MaxEdgeResidual, Passed);
+        };
+        for (const double Distance : { 0.1, -0.1 })
+        {
+            ModelPartition  Partition;
+            const BodyToken Body   = ExtrudeProfile(Partition, Profile, OrthonormalFrame{}, Height).Body;
+            const std::string Name = std::string("D-extrusion · spline wall offset ") + (Distance > 0.0 ? "+" : "−") + "0.1";
+            const FaceOperationOutcome Outcome = OffsetSplineWall(Partition, Body, Distance);
+            if (!Outcome.Refusal.empty()) { Report(OffsetGate, Name, "refused: " + Outcome.Refusal, 1.0, false); continue; }
+            const double Expected = (Profile.Area + Distance * Length + Pi * Distance * Distance / 2.0) * Height;
+            const double Volume   = IntegrateBodyVolume(Partition, Outcome.Body);
+            const double Error    = std::fabs(Volume - Expected) / Expected;
+            Report(OffsetGate, Name, "V " + std::to_string(Volume) + " vs closed form " + std::to_string(Expected) + " (arch length " + std::to_string(Length) + ") → " + Scientific(Error), Error, Error <= 1.0e-9);
+            Meeting(Name, Partition, Outcome);
+        }
+        {
+            const double    Thickness = 0.1;                                                     // [len] - Wall
+            ModelPartition  Partition;
+            const BodyToken Body = ExtrudeProfile(Partition, Profile, OrthonormalFrame{}, Height).Body;
+            FaceOperationSettings Settings;
+            Settings.Kind     = FaceOperationKind::Hollow;
+            Settings.Distance = Thickness;
+            for (FaceToken Face : Partition.CollectInventory(Body).Faces)
+                if (const auto* Plane = std::get_if<PlaneSurface>(&Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface)))
+                    if (std::fabs(Plane->Frame.ZAxis.Z) > 0.9 && Plane->Frame.Origin.Z > 0.5 * Height) Settings.Faces.push_back(Face);
+            const std::string Name = "D-extrusion · hollow, wall 0.1, top open";
+            const FaceOperationOutcome Outcome = ApplyFaceOperation(Partition, Body, Settings);
+            if (Settings.Faces.size() != 1 || !Outcome.Refusal.empty()) { Report(HollowGate, Name, "refused: " + Outcome.Refusal, 1.0, false); return; }
+            const double Inner    = InwardOffsetArea(Arch, Thickness);
+            const double Expected = Profile.Area * Height - Inner * (Height - Thickness);
+            const double Volume   = IntegrateBodyVolume(Partition, Outcome.Body);
+            const double Error    = std::fabs(Volume - Expected) / Expected;
+            Report(HollowGate, Name, "V " + std::to_string(Volume) + " vs closed form " + std::to_string(Expected) + " (A_in " + std::to_string(Inner) + " by Green; the O(t²) corner formula would give "
+                   + std::to_string(Profile.Area - (Length + 2.0) * Thickness + Thickness * Thickness * (2.0 + Pi / 2.0)) + ") → " + Scientific(Error) + " · audit " + (Outcome.Audit.SoundCondition() ? "sound" : "UNSOUND"),
+                   Error, Error <= 1.0e-9 && Outcome.Audit.SoundCondition());
+        }
+    }
+}
+
+namespace
+{
+    // ---- A NURBS stand-ins (N3) ----------------------------------------------------------------------------------------
+
+    // Chart box of a face from its SP-curves (256 samples per fin, as the approximation itself measures it).
+    [[nodiscard]] std::pair<Vector2, Vector2> FaceChartBox(const ModelPartition& Partition, FaceToken Face)
+    {
+        Vector2 Low{ INFINITY, INFINITY }, High{ -INFINITY, -INFINITY };
+        for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+            {
+                const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+                const EdgeProfile& Edge = Partition.Edges.Resolve(Use.Edge);
+                if (!Use.SurfaceCurve) return;
+                for (int Sample = 0; Sample <= 256; ++Sample)
+                {
+                    const Vector2 Point = EvaluateParameterCurve(*Use.SurfaceCurve, Edge.IntervalLow + (Edge.IntervalHigh - Edge.IntervalLow) * Sample / 256.0).Position;
+                    Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) };
+                    High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) };
+                }
+            });
+        return { Low, High };
+    }
+
+    [[nodiscard]] bool StandInCondition(const SurfaceGeometry& Surface) { return std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<ParallelSurface>(Surface); }
+
+    // Unit normal from the chart derivatives (sign ignored by the callers: they compare lines, not senses).
+    [[nodiscard]] Vector3 ChartNormal(const SurfaceGeometry& Surface, Vector2 Parameter)
+    {
+        const SurfaceSample Sample = EvaluateSurface(Surface, Parameter);
+        return Normalize(Cross(Sample.DerivativeU, Sample.DerivativeV));
+    }
+
+    [[nodiscard]] double LineAngle(Vector3 First, Vector3 Second) { return std::asin(std::min(1.0, Length(Cross(First, Second)))); }
+
+    // 📝 Deterministic chart points (64-bit LCG), so a run is reproducible and still off every lattice.
+    struct ChartScatter
+    {
+        uint64_t State = 0x9E3779B97F4A7C15ull;                                                  // [-] - LCG state
+        double Next()
+        {
+            State = State * 6364136223846793005ull + 1442695040888963407ull;
+            return static_cast<double>(State >> 11) * (1.0 / 9007199254740992.0);
+        }
+    };
+
+    struct StandInMeasure
+    {
+        double Parametric = 0.0;                                                                 // [len] - |S − A| at the same chart point
+        double Geometric  = 0.0;                                                                 // [len] - |distance of A to S|
+        double Drift      = 0.0;                                                                 // [rad] - Normal line angle
+    };
+
+    [[nodiscard]] StandInMeasure MeasureStandIn(const SurfaceGeometry& Exact, const SurfaceGeometry& StandIn, Vector2 Low, Vector2 High)
+    {
+        StandInMeasure Measure;
+        ChartScatter   Scatter;
+        for (int Sample = 0; Sample < 2000; ++Sample)
+        {
+            const Vector2 Point   = { Low.X + (High.X - Low.X) * Scatter.Next(), Low.Y + (High.Y - Low.Y) * Scatter.Next() };
+            const Vector3 Spline  = EvaluateSurface(StandIn, Point).Position;
+            Measure.Parametric = std::max(Measure.Parametric, Distance(EvaluateSurface(Exact, Point).Position, Spline));
+            Measure.Geometric  = std::max(Measure.Geometric, std::fabs(MeasureSurfaceDistance(Exact, Spline).Distance));
+            Measure.Drift      = std::max(Measure.Drift, LineAngle(ChartNormal(Exact, Point), ChartNormal(StandIn, Point)));
+        }
+        return Measure;
+    }
+
+    struct ExchangeSpecimen
+    {
+        const char*                               Name;
+        std::function<BodyToken(ModelPartition&)> Build;                                         // Exact body with procedural carriers
+    };
+
+    [[nodiscard]] BodyToken BlendNearest(ModelPartition& Partition, BodyToken Body, Vector3 Probe, double Radius)
+    {
+        BlendSettings Settings;
+        Settings.Profile = BlendProfile::Fillet;
+        Settings.Size    = Radius;
+        const BlendOutcome Blended = BlendEdges(Partition, Body, { NearestEdge(Partition, Body, Probe) }, Settings);
+        return Blended.Refusal.empty() ? Blended.Body : BodyToken{};
+    }
+
+    void ValidateApproximation(const std::string& Only)
+    {
+        const SketchProfile Arch = DProfile();
+        const std::vector<ExchangeSpecimen> Specimens =
+        {
+            { "Promoted block · fillet r 0.2 (rolling ball on NURBS planes)", [](ModelPartition& Partition)
+              { const BodyToken Block = ConstructBlock(Partition, { 0, 0, 0 }, { 2, 1.5, 1 }).Value; return BlendNearest(Partition, PromoteBodyToNurbs(Partition, Block).Body, { 1.0, 0.0, 1.0 }, 0.2); } },
+            { "Promoted cylinder rim · fillet r 0.2 (closed rolling ball)", [](ModelPartition& Partition)
+              { const BodyToken Drum = ConstructCylinder(Partition, Upright({ 0, 0, 0 }), 1.0, 1.5).Value; return BlendNearest(Partition, PromoteBodyToNurbs(Partition, Drum).Body, { 1.0, 0.0, 1.5 }, 0.2); } },
+            { "Freeform D-extrusion · fillet r 0.25 on the spline rim (traced spine, knots at ⅓ and ⅔)", [&](ModelPartition& Partition)
+              { return BlendNearest(Partition, ExtrudeProfile(Partition, Arch, OrthonormalFrame{}, 1.0).Body, { 1.0, 1.275, 1.0 }, 0.25); } },
+            { "Freeform D-extrusion · spline wall offset outward 0.1 (parallel carrier, traced edges)", [&](ModelPartition& Partition)
+              { return OffsetSplineWall(Partition, ExtrudeProfile(Partition, Arch, OrthonormalFrame{}, 1.0).Body, 0.1).Body; } },
+        };
+        // ---- A1 parallel carriers, surface level (bodies with a parallel wall follow in the A2 list).
+        if (Only.empty() || Only == "approximate" || Only == "standin")
+        {
+            struct Offset { const char* Name; double Distance; };
+            for (const Offset& Each : { Offset{ "Freeform bicubic patch offset +0.1 (parallel carrier)", 0.1 }, Offset{ "Freeform bicubic patch offset −0.25 (parallel carrier)", -0.25 } })
+                for (const double Tolerance : { 1.0e-6, 1.0e-8 })
+                {
+                    const SurfaceGeometry      Exact = ConstructParallelSurface(FreeformPatch(), Each.Distance);
+                    ApproximationSettings      Settings;
+                    Settings.Tolerance = Tolerance;
+                    const auto                 Moment = std::chrono::steady_clock::now();
+                    const SurfaceApproximation Fit    = ApproximateSurfaceAsNurbs(Exact, { 0.0, 0.0 }, { 2.0, 2.0 }, Settings);
+                    const double               Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Moment).count();
+                    const std::string          Label   = std::string(Each.Name) + " · tolerance " + Scientific(Tolerance);
+                    if (!Fit.Refusal.empty()) { Report(StandInGate, Label, "refused: " + Fit.Refusal, 1.0, false); continue; }
+                    const StandInMeasure Measure = MeasureStandIn(Exact, *Fit.Surface, { 0.0, 0.0 }, { 2.0, 2.0 });
+                    Report(StandInGate, Label,
+                           "parametric " + Scientific(Measure.Parametric) + " · geometric " + Scientific(Measure.Geometric) + " · normal drift " + Scientific(Measure.Drift) + " rad · "
+                           + std::to_string(Fit.Surface->Definition->CountU) + " × " + std::to_string(Fit.Surface->Definition->CountV) + " poles · " + std::to_string(static_cast<int>(Seconds * 1000.0)) + " ms",
+                           std::max(Measure.Parametric, Measure.Geometric) / Tolerance, Measure.Parametric <= Tolerance && Measure.Geometric <= Tolerance && Measure.Drift <= Settings.AngularTolerance);
+                }
+        }
+
+        for (const ExchangeSpecimen& Each : Specimens)
+        {
+            if (!Only.empty() && Only != "approximate" && Only != "exchange") break;
+            ModelPartition  Partition;
+            const BodyToken Exact = Each.Build(Partition);
+            if (!Exact.PresentCondition()) { Report(ExchangeGate, Each.Name, "the exact specimen could not be built", 1.0, false); continue; }
+            const double ExactVolume = IntegrateBodyVolume(Partition, Exact);
+            for (const double Tolerance : { 1.0e-6, 1.0e-8 })
+            {
+                const std::string Label = std::string(Each.Name) + " · tolerance " + Scientific(Tolerance);
+                ApproximationSettings Settings;
+                Settings.Tolerance = Tolerance;
+                const auto                 Moment  = std::chrono::steady_clock::now();
+                const ApproximationOutcome Outcome = ApproximateBodyAsNurbs(Partition, Exact, Settings);
+                const double               Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Moment).count();
+                if (!Outcome.Transform.Refusal.empty()) { Report(ExchangeGate, Label, "refused: " + Outcome.Transform.Refusal, 1.0, false); continue; }
+                const BodyToken Copy = Outcome.Transform.Body;
+
+                // A1 per approximated face (source and image share the copy order).
+                for (size_t Index = 0; Index < Outcome.Transform.SourceFaces.size(); ++Index)
+                {
+                    const SurfaceGeometry& Source = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Outcome.Transform.SourceFaces[Index]).Surface);
+                    if (!StandInCondition(Source)) continue;
+                    const SurfaceGeometry& Image  = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Outcome.Transform.Faces[Index]).Surface);
+                    const auto [Low, High]        = FaceChartBox(Partition, Outcome.Transform.SourceFaces[Index]);
+                    const StandInMeasure Measure  = MeasureStandIn(Source, Image, Low, High);
+                    const NurbsSurfaceDefinition& Spline = *std::get<NurbsSurface>(Image).Definition;
+                    Report(StandInGate, Label + " · " + SurfaceCategoryLabel(Source) + " face",
+                           "parametric " + Scientific(Measure.Parametric) + " · geometric " + Scientific(Measure.Geometric) + " · normal drift " + Scientific(Measure.Drift) + " rad · "
+                           + std::to_string(Spline.CountU) + " × " + std::to_string(Spline.CountV) + " poles",
+                           std::max(Measure.Parametric, Measure.Geometric) / Tolerance, Measure.Parametric <= Tolerance && Measure.Geometric <= Tolerance && Measure.Drift <= Settings.AngularTolerance);
+                }
+
+                // A2 the body: carriers, audit, volume, edges on faces, G1 drift.
+                const BodyInventory Inventory = Partition.CollectInventory(Copy);
+                int Leftovers = 0;
+                for (FaceToken Face : Inventory.Faces) Leftovers += std::holds_alternative<NurbsSurface>(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface)) ? 0 : 1;
+                for (EdgeToken Edge : Inventory.Edges) Leftovers += std::holds_alternative<NurbsCurve>(Partition.Curves.Resolve(Partition.Edges.Resolve(Edge).Curve)) ? 0 : 1;
+                const auto        AuditMoment = std::chrono::steady_clock::now();
+                const AuditReport Audit  = AuditBody(Partition, Copy);
+                const auto        MassMoment = std::chrono::steady_clock::now();
+                // |ΔV| ≤ tolerance × (area of the approximated faces): each stand-in point is within the tolerance.
+                double StandInArea = 0.0;
+                for (FaceToken Face : Outcome.Transform.SourceFaces)
+                    if (StandInCondition(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface))) StandInArea += MeasureFaceArea(Partition, Face).Area;
+                const double VolumeGap   = std::fabs(IntegrateBodyVolume(Partition, Copy) - ExactVolume);
+                const double VolumeLimit = Tolerance * StandInArea;
+                const auto        EdgeMoment = std::chrono::steady_clock::now();
+                std::map<uint32_t, std::vector<FaceToken>> EdgeFaces;
+                for (FaceToken Face : Inventory.Faces)
+                    for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+                        Partition.EnumerateLoopFins(Loop, [&](FinToken Fin) { EdgeFaces[Partition.Fins.Resolve(Fin).Edge.Slot].push_back(Face); });
+                double OffFace = 0.0, Drift = 0.0;
+                for (EdgeToken Edge : Inventory.Edges)
+                {
+                    const EdgeProfile&   Profile = Partition.Edges.Resolve(Edge);
+                    const CurveGeometry& Curve   = Partition.Curves.Resolve(Profile.Curve);
+                    const std::vector<FaceToken>& Faces = EdgeFaces[Edge.Slot];
+                    for (int Sample = 0; Sample <= 32; ++Sample)
+                    {
+                        const Vector3 Point = EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Sample / 32.0).Position;
+                        std::vector<Vector3> Normals;
+                        for (FaceToken Face : Faces)
+                        {
+                            const SurfaceDistance Reach = MeasureSurfaceDistance(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface), Point);
+                            OffFace = std::max(OffFace, std::fabs(Reach.Distance));
+                            Normals.push_back(Reach.Normal);
+                        }
+                        // G1 drift only where the exact body is tangent (blend boundaries), not across sharp edges.
+                        if (Normals.size() == 2 && LineAngle(Normals[0], Normals[1]) < 1.0e-2) Drift = std::max(Drift, LineAngle(Normals[0], Normals[1]));
+                    }
+                }
+                const bool Passed = Leftovers == 0 && Audit.SoundCondition() && VolumeGap <= VolumeLimit && Outcome.SurfaceDeviation <= Tolerance && Outcome.CurveDeviation <= Tolerance
+                                    && OffFace <= 2.0 * Tolerance && Drift <= Settings.AngularTolerance && Outcome.ApproximatedFaces > 0;
+                const std::string Finding = Audit.SoundCondition() ? "" : std::string(" (") + Audit.Findings[0].Code + " " + Audit.Findings[0].Subject + ": " + Audit.Findings[0].Detail + ", "
+                                                                           + Scientific(Audit.Findings[0].Measured) + " > " + Scientific(Audit.Findings[0].Allowed) + ")";
+                Report(ExchangeGate, Label,
+                       std::to_string(Outcome.ApproximatedFaces) + " face(s) · " + std::to_string(Outcome.ApproximatedEdges) + " edge(s) approximated · " + std::to_string(Outcome.PoleCount) + " poles · certified "
+                       + Scientific(Outcome.SurfaceDeviation) + " / " + Scientific(Outcome.CurveDeviation) + " · procedural left " + std::to_string(Leftovers) + " · audit " + (Audit.SoundCondition() ? "sound" : "UNSOUND" + Finding)
+                       + " · |ΔV| " + Scientific(VolumeGap) + " ≤ " + Scientific(VolumeLimit) + " · edges off faces " + Scientific(OffFace) + " · G1 drift " + Scientific(Drift) + " rad · "
+                       + std::to_string(static_cast<int>(Seconds * 1000.0)) + " ms (audit " + std::to_string(static_cast<int>(std::chrono::duration<double>(MassMoment - AuditMoment).count() * 1000.0))
+                       + " · volumes " + std::to_string(static_cast<int>(std::chrono::duration<double>(EdgeMoment - MassMoment).count() * 1000.0)) + " · edges "
+                       + std::to_string(static_cast<int>(std::chrono::duration<double>(std::chrono::steady_clock::now() - EdgeMoment).count() * 1000.0)) + ")",
+                       std::max({ VolumeGap / VolumeLimit, OffFace / (2.0 * Tolerance) }), Passed);
+            }
+        }
+
+        // ---- A3 refusals: atomic, no body created.
+        if (Only.empty() || Only == "approximate" || Only == "refusal")
+        {
+            ModelPartition  Partition;
+            const BodyToken Exact = BlendNearest(Partition, ExtrudeProfile(Partition, Arch, OrthonormalFrame{}, 1.0).Body, { 1.0, 1.275, 1.0 }, 0.25);
+            struct Refusal { const char* Name; double Tolerance; int MaximumSpans; const char* Expected; };
+            const std::vector<Refusal> Refusals =
+            {
+                { "Tolerance 10⁻¹² with at most 4 spans per direction", 1.0e-12, 4, "spans needed" },
+                { "Tolerance 0", 0.0, 512, "positive" },
+                { "Tolerance NaN", std::numeric_limits<double>::quiet_NaN(), 512, "positive" },
+            };
+            for (const Refusal& Each : Refusals)
+            {
+                const size_t Before = (Partition.Bodies.OccupiedCount() + Partition.Faces.OccupiedCount() + Partition.Edges.OccupiedCount());
+                ApproximationSettings Settings;
+                Settings.Tolerance    = Each.Tolerance;
+                Settings.MaximumSpans = Each.MaximumSpans;
+                const ApproximationOutcome Outcome = ApproximateBodyAsNurbs(Partition, Exact, Settings);
+                const bool Passed = !Outcome.Transform.Refusal.empty() && Outcome.Transform.Refusal.find(Each.Expected) != std::string::npos && (Partition.Bodies.OccupiedCount() + Partition.Faces.OccupiedCount() + Partition.Edges.OccupiedCount()) == Before;
+                Report(ApproximateGate, Each.Name, Outcome.Transform.Refusal.empty() ? "accepted (expected a refusal)" : "\"" + Outcome.Transform.Refusal + "\"", Passed ? 0.0 : 1.0, Passed);
+            }
+            const SurfaceApproximation Empty = ApproximateSurfaceAsNurbs(PlaneSurface{}, { 0.0, 0.0 }, { 0.0, 1.0 });
+            Report(ApproximateGate, "Empty window [0, 0] × [0, 1]", Empty.Refusal.empty() ? "accepted (expected a refusal)" : "\"" + Empty.Refusal + "\"", Empty.Refusal.empty() ? 1.0 : 0.0, !Empty.Refusal.empty());
+
+            // ---- A4 convergence (position only: the angular test off, a carrier with one basis knot per direction).
+            const SurfaceGeometry Offset = ConstructParallelSurface(FreeformPatch(), 0.1);
+            const std::vector<double> Tolerances = { 1.0e-4, 1.0e-6, 1.0e-8, 1.0e-10 };
+            std::vector<double> Spans;
+            std::string Detail;
+            bool Certified = true;
+            for (double Tolerance : Tolerances)
+            {
+                ApproximationSettings Settings;
+                Settings.Tolerance        = Tolerance;
+                Settings.AngularTolerance = 1.0;
+                const SurfaceApproximation Fit = ApproximateSurfaceAsNurbs(Offset, { 0.0, 0.0 }, { 2.0, 2.0 }, Settings);
+                Certified = Certified && Fit.Refusal.empty() && Fit.Deviation <= Tolerance;
+                Spans.push_back(std::sqrt(static_cast<double>(Fit.SpansU) * Fit.SpansV));
+                Detail += Scientific(Tolerance) + ": " + std::to_string(Fit.SpansU) + " × " + std::to_string(Fit.SpansV) + " spans, certified " + Scientific(Fit.Deviation) + " · ";
+            }
+            // Mean spans per direction N ∝ ε^(−1/p): p = ln(ε₁/ε₄) / ln(N₄/N₁) over six decades.
+            const double Order = std::log(Tolerances.front() / Tolerances.back()) / std::log(Spans.back() / Spans.front());
+            Detail += "order p = " + std::to_string(Order).substr(0, 4) + " (cubic interpolation: 4)";
+            Report(OrderGate, "Parallel offset +0.1 of the freeform patch", Detail, Order, Certified && Order >= 3.5 && Order <= 5.0);
+        }
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    ENTRY
 //------------------------------------------------------------------------------------------------------------------------
@@ -506,11 +888,13 @@ int main(int Count, char** Arguments)
     if (Only.empty() || Only == "section") ValidateSections();
     if (Only.empty() || Only == "fold") ValidateFolds();
     if (Only.empty() || Only == "blend" || Only == "block" || Only == "rim" || Only == "arch" || Only == "refusal") ValidateBlends(Only);
+    if (Only.empty() || Only == "offset") ValidateOffsets();
+    if (Only.empty() || Only == "approximate" || Only == "exchange" || Only == "standin" || Only == "refusal") ValidateApproximation(Only);
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
 
     bool PassedCondition = true;
     for (const GateTally* Gate : AllGates()) PassedCondition = PassedCondition && Gate->Failures == 0 && (Gate->Checks > 0 || !Only.empty());
-    std::printf("# Freeform blend validation\n\n%s Priority 10: exact offsets of NURBS surfaces and rolling-ball blends on NURBS supports (%.2f s)\n\n", PassedCondition ? "🟢" : "🔴", Seconds);
+    std::printf("# Freeform blend validation\n\n%s Priority 10: exact offsets of NURBS surfaces, rolling-ball blends on NURBS supports, offsets / hollows of NURBS walls and certified NURBS stand-ins (%.2f s)\n\n", PassedCondition ? "🟢" : "🔴", Seconds);
     std::printf("## Gates\n\n| | Gate | Measures | Limit | Worst | Checks | Failures |\n|---|---|---|---|---|---|---|\n");
     for (const GateTally* Gate : AllGates())
     {

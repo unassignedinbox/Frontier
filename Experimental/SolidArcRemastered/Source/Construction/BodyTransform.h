@@ -9,6 +9,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Surfacing/CarrierApproximation.h"
 #include "Topology/ModelPartition.h"
 
 #include <string>
@@ -38,6 +39,18 @@ struct TransformOutcome
     std::vector<FaceToken> Faces       = {};                                                 // [-] - Their images (same order: names carry over)
 };
 
+// 📝 ApproximateBodyAsNurbs: the copy plus the certified worst deviations of the approximated carriers.
+struct ApproximationOutcome
+{
+    TransformOutcome Transform         = {};                                                 // [-]   - The all-NURBS copy
+    double           SurfaceDeviation  = 0.0;                                                // [len] - Worst face stand-in deviation
+    double           CurveDeviation    = 0.0;                                                // [len] - Worst edge stand-in deviation
+    int              ApproximatedFaces = 0;                                                  // [-]   - Rolling-ball / parallel faces replaced
+    int              ApproximatedEdges = 0;                                                  // [-]   - Traced edges replaced
+    int              PoleCount         = 0;                                                  // [-]   - Poles of the face stand-ins
+    int              TolerantEdges     = 0;                                                  // [-]   - Edges given a 2 × tolerance tube
+};
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
@@ -62,6 +75,12 @@ struct TransformOutcome
 // Exact NURBS copy: every analytic face becomes its rational B-spline form (covering the face chart), every line and
 // conic edge its NURBS curve over the same τ interval. Traced edges and rolling-ball faces are kept as they are.
 [[nodiscard]] TransformOutcome PromoteBodyToNurbs(ModelPartition& Partition, BodyToken Source);
+
+// 💡 All-NURBS copy for exchange (priority 10 N3, option A): as PromoteBodyToNurbs, and every carrier without an exact
+//    NURBS form — rolling-ball and parallel faces, traced intersection / contact edges — becomes a certified cubic
+//    B-spline in its own parameterisation (Surfacing/CarrierApproximation.h), within Settings.Tolerance. The exact
+//    source body stays the reference; the copy is refused atomically when any carrier cannot be certified.
+[[nodiscard]] ApproximationOutcome ApproximateBodyAsNurbs(ModelPartition& Partition, BodyToken Source, const ApproximationSettings& Settings = {});
 
 // Mirror copy across the plane through PlanePoint with normal PlaneNormal.
 [[nodiscard]] TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal);
