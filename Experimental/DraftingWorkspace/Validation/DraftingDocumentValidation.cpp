@@ -1439,6 +1439,9 @@ int main()
         Tally(TrimGate, 0.0, RoundTrips, "save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal");
     }
 
+    GateTally ConstrainGate   = { "W23", "Sketch constraints (K): a drawn rectangle goes DOF 4 → Lock 2 → D 1 → D 0, each dimension drives the extrude volume; literal and parameter-bound dimension edits regenerate downstream; undo / redo; remove frees a degree", "≤ 10⁻⁹ · exact" };
+    GateTally ConflictGate    = { "W24", "Constraint refusals: redundant (named partner) and conflicting (named partners) constraints, non-dimension / non-positive edits, unknown sketch — the document, history and file stay untouched", "exact" };
+    GateTally DragGate        = { "W25", "Point drag: a free corner follows the cursor and the extrude follows it; a locked point refuses; the preview is pure; save → load → save byte-equal with constraint labels", "≤ 10⁻⁹ · exact" };
     // ---- W19 … W22: the editing keys (G / R / S, Shift+D, Ctrl+C / Ctrl+V, H family, J / O / P)
     {
         auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
@@ -1599,13 +1602,126 @@ int main()
         Tally(CurveGate, 0.0, RoundTrip(Plan) && EncodeDraftingDocument(Plan).find("Kind = 15") != std::string::npos, "save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step");
     }
 
+    // ---- W23 … W25: sketch constraints (K)
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto Propose = [](const DraftingDocument& Target, const std::string& Sketch, std::vector<SketchPick> Picks, SketchConstraintVerb Verb, double Value = std::numeric_limits<double>::quiet_NaN())
+        {
+            const DraftingSketchDiagnosis Diagnosis = DiagnoseDraftingSketch(Target, Sketch);
+            SketchConstraintProposal Proposal = ProposeSketchConstraint(Diagnosis.Sketch, Picks, Verb);
+            if (!std::isnan(Value)) Proposal.Constraint.Value = Value;
+            return Proposal.Constraint;
+        };
+        auto Freedom = [](const DraftingDocument& Target, const std::string& Sketch) { return DiagnoseDraftingSketch(Target, Sketch).Solve.DegreesOfFreedom; };
+        const SketchPick Bottom = { SketchPickKind::Curve, 0 };
+        const SketchPick Side   = { SketchPickKind::Curve, 1 };
+        const SketchPick Top    = { SketchPickKind::Curve, 2 };
+
+        // W23 ① a drawn 2 × 1 rectangle extruded by 1: DOF 4; ] locks its first corner (2), D on the bottom = 3 (1), D on the side = 2 (0)
+        DraftingDocument Plate = CreateDraftingDocument("Constraints");
+        DraftingDrawingRequest Drawing;
+        Drawing.Kind = DraftingDrawingKind::Rectangle; Drawing.Points = { { 0.0, 0.0 }, { 2.0, 1.0 } };
+        const DraftingCommandOutcome Drawn = DrawDraftingSketch(Plate, Drawing);
+        const std::string Sketch = Drawn.AcceptedCondition ? Plate.Tree.Steps.back().Label : std::string{};
+        const DraftingCommandOutcome Raised = ExtrudeDraftingSketch(Plate, Sketch, 1.0, FeatureCombination::Separate);
+        const std::string Key = Raised.AcceptedCondition ? Plate.Tree.Steps.back().Label : std::string{};
+        const int Free = Freedom(Plate, Sketch);
+        const DraftingCommandOutcome Locked = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { { SketchPickKind::Point, 0 } }, SketchConstraintVerb::Lock));
+        const int AfterLock = Freedom(Plate, Sketch);
+        const DraftingCommandOutcome Wide = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Bottom }, SketchConstraintVerb::Dimension, 3.0));
+        const int AfterWide = Freedom(Plate, Sketch);
+        const double WideVolume = Plate.Summary.Volume;
+        const DraftingCommandOutcome Tall = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Side }, SketchConstraintVerb::Dimension, 2.0));
+        const int AfterTall = Freedom(Plate, Sketch);
+        const std::vector<SketchConstraint>& Authored = Plate.Tree.Steps[0].Sketch.Constraints;
+        const bool Labelled = Authored.size() == 7 && Authored[4].Label == "F1" && Authored[5].Label == "D1" && Authored[6].Label == "D2";
+        Tally(ConstrainGate, Relative(Plate.Summary.Volume, 6.0) + Relative(WideVolume, 3.0),
+              Free == 4 && Locked.AcceptedCondition && AfterLock == 2 && Wide.AcceptedCondition && AfterWide == 1 && Tall.AcceptedCondition && AfterTall == 0 && Labelled
+                  && Relative(WideVolume, 3.0) <= 1.0e-9 && Relative(Plate.Summary.Volume, 6.0) <= 1.0e-9 && Plate.Regeneration.Active == Key,
+              "DOF " + std::to_string(Free) + " → " + Locked.Label + " " + std::to_string(AfterLock) + " → " + Wide.Label + " " + std::to_string(AfterWide) + " (V 3) → " + Tall.Label + " " + std::to_string(AfterTall) + " (V 6); labels F1 D1 D2");
+
+        // W23 ② D1 = 4 → V 8 (the solved corners are written back: the step's own points move); undo → 6, redo → 8
+        const DraftingCommandOutcome Edit = ChangeDraftingDimension(Plate, Sketch, 5, 4.0);
+        const double Edited = Plate.Summary.Volume;
+        const Vector2 Corner = Plate.Tree.Steps[0].Sketch.Points[2].Position;
+        const bool Undone = UndoDraftingCommand(Plate);
+        const double Restored = Plate.Summary.Volume;
+        const bool Redone = RedoDraftingCommand(Plate);
+        Tally(ConstrainGate, Relative(Edited, 8.0) + Relative(Restored, 6.0) + std::abs(Corner.X - 4.0) + std::abs(Corner.Y - 2.0),
+              Edit.AcceptedCondition && Relative(Edited, 8.0) <= 1.0e-9 && std::abs(Corner.X - 4.0) <= 1.0e-9 && std::abs(Corner.Y - 2.0) <= 1.0e-9 && Undone && Relative(Restored, 6.0) <= 1.0e-12 && Redone && Relative(Plate.Summary.Volume, 8.0) <= 1.0e-9,
+              Edit.Label + ": V 8, far corner written back at (4, 2); undo V 6, redo V 8");
+
+        // W23 ③ a Block tile is fully dimensioned by parameters: its Width dimension changes the parameter (and the volume)
+        DraftingDocument Tile = CreateDraftingDocument("Tile");
+        Expect(ConstructDraftingPrimitive(Tile, DraftingConstructRequest{}));
+        const std::string TileSketch = Tile.Tree.Steps[0].Label;
+        int WidthIndex = -1;
+        for (size_t Index = 0; Index < Tile.Tree.Steps[0].Sketch.Constraints.size(); ++Index)
+            if (Tile.Tree.Steps[0].Sketch.Constraints[Index].Parameter.ends_with("Width")) WidthIndex = static_cast<int>(Index);
+        const int TileFree = Freedom(Tile, TileSketch);
+        const DraftingCommandOutcome Widen = ChangeDraftingDimension(Tile, TileSketch, WidthIndex, 3.0);
+        double WidthValue = 0.0;
+        for (const FeatureParameter& Parameter : Tile.Tree.Parameters) if (Parameter.Name.ends_with("Width")) WidthValue = Parameter.Value;
+        Tally(ConstrainGate, Relative(Tile.Summary.Volume, 4.5), TileFree == 0 && WidthIndex >= 0 && Widen.AcceptedCondition && WidthValue == 3.0 && Relative(Tile.Summary.Volume, 4.5) <= 1.0e-9,
+              "Block tile DOF 0; " + Widen.Label + " sets its Width parameter to 3 → V 3 × 1.5 × 1 = 4.5");
+
+        // W23 ④ removing D2 frees the height (DOF 1); the body stays (positions unchanged)
+        const DraftingCommandOutcome Freed = RemoveDraftingConstraint(Plate, Sketch, 6);
+        Tally(ConstrainGate, Relative(Plate.Summary.Volume, 8.0), Freed.AcceptedCondition && Freedom(Plate, Sketch) == 1 && Relative(Plate.Summary.Volume, 8.0) <= 1.0e-12 && Plate.Tree.Steps[0].Sketch.Constraints.size() == 6,
+              Freed.Label + ": DOF 1, V 8 kept");
+
+        // W24 refusals (with D2 back): each leaves the file and the history untouched
+        Expect(ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Side }, SketchConstraintVerb::Dimension, 2.0)));
+        const std::string File = EncodeDraftingDocument(Plate);
+        const size_t History = Plate.UndoEntries.size();
+        const DraftingCommandOutcome Again     = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Bottom }, SketchConstraintVerb::Horizontal));
+        const DraftingCommandOutcome Implied   = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Top }, SketchConstraintVerb::Dimension));
+        const DraftingCommandOutcome Clash     = ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Top }, SketchConstraintVerb::Dimension, 5.0));
+        const DraftingCommandOutcome Valueless = ChangeDraftingDimension(Plate, Sketch, 0, 1.0);
+        const DraftingCommandOutcome Negative  = ChangeDraftingDimension(Plate, Sketch, 5, -1.0);
+        const DraftingCommandOutcome Missing   = ConstrainDraftingSketch(Plate, Key, Propose(Plate, Sketch, { Bottom }, SketchConstraintVerb::Horizontal));
+        const DraftingCommandOutcome Beyond    = RemoveDraftingConstraint(Plate, Sketch, 40);
+        const bool Untouched = EncodeDraftingDocument(Plate) == File && Plate.UndoEntries.size() == History;
+        Tally(ConflictGate, 0.0, !Again.AcceptedCondition && Again.Refusal.find("already implied by H1") != std::string::npos,
+              "second H on Line1 refused: " + Again.Refusal);
+        Tally(ConflictGate, 0.0, !Implied.AcceptedCondition && Implied.Refusal.find("already implied by") != std::string::npos && Implied.Refusal.find("D1") != std::string::npos,
+              "Length 4 on the top refused: " + Implied.Refusal);
+        Tally(ConflictGate, 0.0, !Clash.AcceptedCondition && Clash.Refusal.find("conflicts with") != std::string::npos && Clash.Refusal.find("D1") != std::string::npos,
+              "Length 5 on the top refused: " + Clash.Refusal);
+        Tally(ConflictGate, 0.0, !Valueless.AcceptedCondition && !Negative.AcceptedCondition && !Missing.AcceptedCondition && !Beyond.AcceptedCondition && Untouched,
+              "refused: " + Valueless.Refusal + " · " + Negative.Refusal + " · " + Missing.Refusal + " · " + Beyond.Refusal + "; file and history untouched");
+
+        // W25 ① D2 removed again: the free far corner dragged to (4, 3) carries the top up → V 12; the preview is pure
+        Expect(RemoveDraftingConstraint(Plate, Sketch, 6));
+        const std::string BeforePreview = EncodeDraftingDocument(Plate);
+        const SketchDragOutcome Preview = PreviewDraftingDrag(Plate, Sketch, 2, { 4.0, 3.0 });
+        const bool Pure = EncodeDraftingDocument(Plate) == BeforePreview && Preview.Refusal.empty() && Preview.PinnedCondition;
+        const DraftingCommandOutcome Dragged = DragDraftingSketchPoint(Plate, Sketch, 2, { 4.0, 3.0 });
+        const Vector2 Far = Plate.Tree.Steps[0].Sketch.Points[2].Position;
+        const Vector2 Near = Plate.Tree.Steps[0].Sketch.Points[3].Position;
+        const double Miss = std::abs(Far.X - 4.0) + std::abs(Far.Y - 3.0) + std::abs(Near.X) + std::abs(Near.Y - 3.0);
+        Tally(DragGate, Miss + Relative(Plate.Summary.Volume, 12.0), Pure && Dragged.AcceptedCondition && Miss <= 1.0e-9 && Relative(Plate.Summary.Volume, 12.0) <= 1.0e-9,
+              Dragged.Label + ": corner at (4, 3), Line3.Start follows to (0, 3), V 12; the preview left the document alone");
+
+        // W25 ② dragging the locked corner refuses; ③ codec byte-equal with F1 D1 and the dragged positions
+        const DraftingCommandOutcome Stuck = DragDraftingSketchPoint(Plate, Sketch, 0, { -1.0, -1.0 });
+        Tally(DragGate, 0.0, !Stuck.AcceptedCondition && Stuck.Refusal.find("fully constrained") != std::string::npos, "refused: " + Stuck.Refusal);
+        const std::string Written = EncodeDraftingDocument(Plate);
+        const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+        DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+        Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+        RegenerateDraftingDocument(Copy, true);
+        Tally(DragGate, 0.0, Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Volume == Plate.Summary.Volume && Written.find("'F1'") != std::string::npos && Freedom(Copy, Sketch) == 1,
+              "save → load → save byte-equal; F1 / D1 labels and DOF 1 survive the reload");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

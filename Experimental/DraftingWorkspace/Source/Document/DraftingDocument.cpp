@@ -1575,6 +1575,224 @@ const char* DraftingConstructLabel(DraftingConstructKind Kind) noexcept
     return "Construct";
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    CONSTRAINTS (K)
+//------------------------------------------------------------------------------------------------------------------------
+
+namespace
+{
+    // 📝 Label prefix per kind; the rectangle tool's own H1 V1 H2 V2 share the scheme.
+    [[nodiscard]] const char* ConstraintPrefix(SketchConstraintKind Constraint) noexcept
+    {
+        switch (Constraint)
+        {
+        case Kind::Coincident:         return "C";
+        case Kind::Fixed:              return "F";
+        case Kind::Horizontal:         return "H";
+        case Kind::Vertical:           return "V";
+        case Kind::Distance:
+        case Kind::Length:             return "D";
+        case Kind::HorizontalDistance: return "DX";
+        case Kind::VerticalDistance:   return "DY";
+        case Kind::Parallel:           return "L";
+        case Kind::Perpendicular:      return "P";
+        case Kind::Angle:              return "A";
+        case Kind::EqualLength:
+        case Kind::EqualRadius:        return "Q";
+        case Kind::Radius:             return "R";
+        case Kind::PointOnLine:
+        case Kind::PointOnCircle:      return "O";
+        case Kind::Tangent:            return "T";
+        case Kind::Midpoint:           return "M";
+        case Kind::Symmetric:          return "Y";
+        case Kind::Concentric:         return "CC";
+        case Kind::ArcRule:            return "AR";
+        }
+        return "K";
+    }
+
+    [[nodiscard]] FeatureStep* FindSketchStep(DraftingDocument& Document, const std::string& Label, size_t& Index)
+    {
+        for (Index = 0; Index < Document.Tree.Steps.size(); ++Index)
+            if (Document.Tree.Steps[Index].Label == Label) return Document.Tree.Steps[Index].Kind == FeatureStepKind::Sketch ? &Document.Tree.Steps[Index] : nullptr;
+        return nullptr;
+    }
+
+    // The step's sketch with every parameter-bound dimension set to its parameter's value, as regeneration solves it.
+    [[nodiscard]] SketchModel BindSketch(const DraftingDocument& Document, const FeatureStep& Step)
+    {
+        SketchModel Bound = Step.Sketch;
+        for (SketchConstraint& Constraint : Bound.Constraints)
+        {
+            if (Constraint.Parameter.empty()) continue;
+            const double Value = EvaluateFeatureValue(Document.Tree, ParameterValue(Constraint.Parameter));
+            if (!std::isnan(Value)) Constraint.Value = Value;
+        }
+        return Bound;
+    }
+
+    // Solved positions (points and circle radii) back into the authored sketch; constraints stay as authored.
+    void WriteBackPositions(FeatureStep& Step, const SketchModel& Solved)
+    {
+        for (size_t Point = 0; Point < Step.Sketch.Points.size() && Point < Solved.Points.size(); ++Point) Step.Sketch.Points[Point].Position = Solved.Points[Point].Position;
+        for (size_t Curve = 0; Curve < Step.Sketch.Curves.size() && Curve < Solved.Curves.size(); ++Curve) Step.Sketch.Curves[Curve].Radius = Solved.Curves[Curve].Radius;
+    }
+
+    [[nodiscard]] std::string NameConstraint(const SketchModel& Sketch, int Index)
+    {
+        const SketchConstraint& Constraint = Sketch.Constraints[Index];
+        const std::string Text = DescribeSketchConstraint(Sketch, Constraint);
+        return Constraint.Label.empty() ? Text : Constraint.Label + " (" + Text + ")";
+    }
+
+    // 📝 Why a solve of Sketch is not acceptable, naming constraints; empty when it converged without conflicts. Watch:
+    //    the index of the constraint just added (-1: none), refused also when merely redundant.
+    [[nodiscard]] std::string SolveRefusal(const SketchModel& Sketch, const SketchSolveOutcome& Solve, int Watch)
+    {
+        if (Watch >= 0 && Watch < static_cast<int>(Solve.Constraints.size()))
+        {
+            const SketchConstraintReport& Report = Solve.Constraints[Watch];
+            std::string Partners;
+            for (int Partner : Report.Partners) if (Partner != Watch) Partners += (Partners.empty() ? "" : ", ") + NameConstraint(Sketch, Partner);
+            const std::string Subject = DescribeSketchConstraint(Sketch, Sketch.Constraints[Watch]);
+            if (Report.Status == SketchConstraintStatus::Unsupported) return Subject + ": its references do not fit the constraint";
+            if (Report.Status == SketchConstraintStatus::Redundant) return Subject + " is already implied by " + (Partners.empty() ? std::string("the others") : Partners);
+            if (Report.Status == SketchConstraintStatus::Conflicting) return Subject + " conflicts with " + (Partners.empty() ? std::string("the others") : Partners);
+        }
+        if (!Solve.ConflictGroups.empty())
+        {
+            std::string Group;
+            for (int Member : Solve.ConflictGroups.front()) Group += (Group.empty() ? "" : ", ") + NameConstraint(Sketch, Member);
+            return "conflicting constraints: " + Group;
+        }
+        if (!Solve.Converged) return "the sketch has no solution there (largest residual " + std::to_string(Solve.MaxResidual) + ")";
+        return {};
+    }
+
+    [[nodiscard]] std::string SketchOwner(const DraftingDocument& Document, const std::string& Label)
+    {
+        const auto Caption = Document.Captions.find(Label);
+        return Caption != Document.Captions.end() ? Caption->second : Label;
+    }
+}
+
+std::string NextDraftingConstraintLabel(const SketchModel& Sketch, SketchConstraintKind Constraint)
+{
+    const std::string Prefix = ConstraintPrefix(Constraint);
+    int Highest = 0;
+    for (const SketchConstraint& Existing : Sketch.Constraints)
+    {
+        if (Existing.Label.size() <= Prefix.size() || Existing.Label.compare(0, Prefix.size(), Prefix) != 0) continue;
+        const std::string Digits = Existing.Label.substr(Prefix.size());
+        if (std::all_of(Digits.begin(), Digits.end(), [](unsigned char Character) { return std::isdigit(Character) != 0; })) Highest = std::max(Highest, std::stoi(Digits));
+    }
+    return Prefix + std::to_string(Highest + 1);
+}
+
+DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document, const std::string& Sketch)
+{
+    DraftingSketchDiagnosis Diagnosis;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Label != Sketch || Step.Kind != FeatureStepKind::Sketch) continue;
+        Diagnosis.PresentCondition = true;
+        Diagnosis.Sketch           = BindSketch(Document, Step);
+        Diagnosis.Solve            = SolveSketch(Diagnosis.Sketch);
+    }
+    return Diagnosis;
+}
+
+DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const SketchConstraint& Constraint)
+{
+    std::string Subject = SketchConstraintTitle(Constraint.Kind);
+    for (const FeatureStep& Step : Document.Tree.Steps)
+        if (Step.Label == Sketch && Step.Kind == FeatureStepKind::Sketch) Subject = DescribeSketchConstraint(Step.Sketch, Constraint);
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    return RunCommand(Document, "Constrain " + SketchOwner(Document, Sketch) + ": " + Subject, false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        SketchConstraint Added = Constraint;
+        if (Added.Label.empty()) Added.Label = NextDraftingConstraintLabel(Found->Sketch, Added.Kind);
+        Found->Sketch.Constraints.push_back(Added);
+        SketchModel Solved = BindSketch(Document, *Found);
+        const SketchSolveOutcome Solve = SolveSketch(Solved);
+        if (std::string Refusal = SolveRefusal(Solved, Solve, static_cast<int>(Solved.Constraints.size()) - 1); !Refusal.empty()) return Refusal;
+        WriteBackPositions(*Found, Solved);
+        return {};
+    }, Index);
+}
+
+DraftingCommandOutcome RemoveDraftingConstraint(DraftingDocument& Document, const std::string& Sketch, int Constraint)
+{
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    const std::string Named = Found && Constraint >= 0 && Constraint < static_cast<int>(Found->Sketch.Constraints.size()) ? NameConstraint(Found->Sketch, Constraint) : std::string("constraint");
+    return RunCommand(Document, "Remove " + Named + " from " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        if (Constraint < 0 || Constraint >= static_cast<int>(Found->Sketch.Constraints.size())) return "the sketch has no constraint " + std::to_string(Constraint);
+        Found->Sketch.Constraints.erase(Found->Sketch.Constraints.begin() + Constraint);
+        return {};
+    }, Index);
+}
+
+DraftingCommandOutcome ChangeDraftingDimension(DraftingDocument& Document, const std::string& Sketch, int Constraint, double Value)
+{
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    const bool  Valid = Found && Constraint >= 0 && Constraint < static_cast<int>(Found->Sketch.Constraints.size());
+    const bool  Angular = Valid && Found->Sketch.Constraints[Constraint].Kind == Kind::Angle;
+    char Shown[48];
+    std::snprintf(Shown, sizeof(Shown), Angular ? "%.6g°" : "%.6g", Angular ? Value * 180.0 / std::numbers::pi : Value);
+    const std::string Named = Valid ? (Found->Sketch.Constraints[Constraint].Label.empty() ? std::string(SketchConstraintTitle(Found->Sketch.Constraints[Constraint].Kind)) : Found->Sketch.Constraints[Constraint].Label) : std::string("dimension");
+    return RunCommand(Document, Named + " = " + Shown + " in " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        if (!Valid) return "the sketch has no constraint " + std::to_string(Constraint);
+        SketchConstraint& Dimension = Found->Sketch.Constraints[Constraint];
+        if (!SketchDimensionCondition(Dimension.Kind)) return DescribeSketchConstraint(Found->Sketch, Dimension) + " has no value to change";
+        if (!std::isfinite(Value)) return "the value is not a number";
+        const bool Positive = Dimension.Kind == Kind::Distance || Dimension.Kind == Kind::Length || Dimension.Kind == Kind::Radius;
+        if (Positive && !(Value > 0.0)) return std::string(SketchConstraintTitle(Dimension.Kind)) + " must be positive";
+        if (!Dimension.Parameter.empty())
+        {
+            if (!AssignFeatureParameter(Document.Tree, Dimension.Parameter, Value)) return "unknown parameter " + Dimension.Parameter;
+        }
+        else Dimension.Value = Value;
+        SketchModel Solved = BindSketch(Document, *Found);
+        const SketchSolveOutcome Solve = SolveSketch(Solved);
+        if (std::string Refusal = SolveRefusal(Solved, Solve, -1); !Refusal.empty()) return Refusal;
+        WriteBackPositions(*Found, Solved);
+        return {};
+    }, Index);
+}
+
+SketchDragOutcome PreviewDraftingDrag(const DraftingDocument& Document, const std::string& Sketch, int Point, Vector2 Target)
+{
+    for (const FeatureStep& Step : Document.Tree.Steps)
+        if (Step.Label == Sketch && Step.Kind == FeatureStepKind::Sketch) return DragSketchPoint(BindSketch(Document, Step), Point, Target);
+    SketchDragOutcome Missing;
+    Missing.Refusal = "Drag: no sketch step " + Sketch;
+    return Missing;
+}
+
+DraftingCommandOutcome DragDraftingSketchPoint(DraftingDocument& Document, const std::string& Sketch, int Point, Vector2 Target)
+{
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    const std::string Named = Found ? NameSketchPick(Found->Sketch, { SketchPickKind::Point, Point }) : std::string("point");
+    return RunCommand(Document, "Drag " + Named + " of " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        const SketchDragOutcome Drag = PreviewDraftingDrag(Document, Sketch, Point, Target);
+        if (!Drag.Refusal.empty()) return Drag.Refusal;
+        if (!(Drag.Travel > 1.0e-12 * std::max(1.0, Drag.Solve.Scale))) return Named + " is fully constrained (it cannot move)";
+        WriteBackPositions(*Found, Drag.Sketch);
+        return {};
+    }, Index);
+}
+
 const char* DraftingDrawingLabel(DraftingDrawingKind Kind) noexcept
 {
     switch (Kind)

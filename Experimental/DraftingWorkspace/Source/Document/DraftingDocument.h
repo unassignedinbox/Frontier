@@ -13,6 +13,7 @@
 #include "Document/DraftingMatcap.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
+#include "Sketch/SketchConstraining.h"
 #include "Sketch/SketchEditing.h"
 #include "Sketch/SketchTrim.h"
 #include "Topology/ModelPartition.h"
@@ -287,6 +288,35 @@ struct VehicleCurveFile;
 [[nodiscard]] DraftingCommandOutcome PipeDraftingPath(DraftingDocument& Document, const std::string& Path, double Radius,
                                                       Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
                                                       const std::string& Target = {});
+
+// 📝 Constraint commands on a sketch step (the K session). Each one solves the edited sketch first, with its parameters
+//    bound as regeneration binds them: a redundant or conflicting constraint is refused naming the constraints it
+//    duplicates or contradicts, and on success the solved positions are written back into the step, so the sketch stays
+//    where it is shown and every later step (extrudes of it) regenerates. One undo entry each.
+struct DraftingSketchDiagnosis
+{
+    bool                         PresentCondition = false;                                   // [-] - The label is a sketch step
+    Modeller::SketchModel        Sketch           = {};                                      // [-] - As solved (parameters bound)
+    Modeller::SketchSolveOutcome Solve            = {};                                      // [-] - DOF, statuses, fixed points
+};
+
+[[nodiscard]] DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document, const std::string& Sketch);
+
+// Appends Constraint (an unlabelled one gets the next "H3" / "D2" … label of its kind).
+[[nodiscard]] DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const Modeller::SketchConstraint& Constraint);
+
+[[nodiscard]] DraftingCommandOutcome RemoveDraftingConstraint(DraftingDocument& Document, const std::string& Sketch, int Constraint);
+
+// A dimension's new value ([len], angles [rad]); one bound to a document parameter changes the parameter.
+[[nodiscard]] DraftingCommandOutcome ChangeDraftingDimension(DraftingDocument& Document, const std::string& Sketch, int Constraint, double Value);
+
+// SolveSpace drag: the point pinned at Target (sketch-plane coordinates) with the rest following, else as near as its
+// constraints let it; refused when it cannot move at all.
+[[nodiscard]] DraftingCommandOutcome DragDraftingSketchPoint(DraftingDocument& Document, const std::string& Sketch, int Point, Modeller::Vector2 Target);
+[[nodiscard]] Modeller::SketchDragOutcome PreviewDraftingDrag(const DraftingDocument& Document, const std::string& Sketch, int Point, Modeller::Vector2 Target);
+
+// "H3", "D2": the label the next constraint of that kind gets in Sketch.
+[[nodiscard]] std::string NextDraftingConstraintLabel(const Modeller::SketchModel& Sketch, Modeller::SketchConstraintKind Kind);
 
 // Key of the body carrying a face / edge name, or the key itself for Body; empty when no body has it.
 [[nodiscard]] std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);
