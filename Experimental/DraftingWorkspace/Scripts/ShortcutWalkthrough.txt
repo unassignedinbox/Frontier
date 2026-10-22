@@ -131,11 +131,12 @@ expect orthographic == 1
 key Keypad5
 expect orthographic == 0
 
-# ⑧ Alt+Z x-ray (edges only) and back
+# ⑧ Alt+Z x-ray (ghost faces, hidden edges) and back; the faces stay on
 key Z Alt
-expect surfaces == 0
-key Z Alt
+expect xray == 1
 expect surfaces == 1
+key Z Alt
+expect xray == 0
 
 # ⑨ E opens the extrude command on the selected face (0.5 by default), Enter finishes: boss r 0.5 grows by π · 0.5² · 0.5
 click @ViewIsometric

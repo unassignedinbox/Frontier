@@ -2796,6 +2796,14 @@ void DrawCurveOverlays(DraftingWorkspaceState& State, ImDrawList* Canvas, const 
     }
 }
 
+// X-ray (Plasticity viewport:toggle-x-ray, Alt+Z): ghost faces at α, hidden edges drawn faded and picked / boxed through.
+void ToggleXRay(DraftingWorkspaceState& State)
+{
+    State.Style.XRayEnabled = !State.Style.XRayEnabled;
+    Announce(State, State.Style.XRayEnabled ? Compose("X-ray on · faces %d %% · hidden edges pickable", int(std::lround(State.Style.XRayOpacity * 100.0f)))
+                                            : std::string("X-ray off"));
+}
+
 // Zebra (V8): stripe count to the surface shader, and a finer tessellation so interpolated normals follow the surface.
 void ToggleZebra(DraftingWorkspaceState& State)
 {
@@ -2969,7 +2977,7 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
     }
     if (State.PickMode == DraftingPickMode::Edge && (Identity == 0 || !(Identity & IdentityEdgeBit)))
     {
-        const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel);
+        const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled);
         Identity = Nearby && (Nearby->Identity & IdentityEdgeBit) ? Nearby->Identity : 0;
     }
     if (State.PickMode == DraftingPickMode::Face && (Identity & IdentityEdgeBit))
@@ -3049,7 +3057,7 @@ void PickAtPointer(DraftingWorkspaceState& State, ImVec2 Local, DraftingPickInte
 }
 
 // Curves wholly inside the screen box, appended in feature-tree order (the import order of sections).
-void SelectCurvesInBox(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Corner, ImVec2 Opposite, DraftingPickIntent Intent)
+void SelectInBox(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Corner, ImVec2 Opposite, DraftingPickIntent Intent)
 {
     const ImVec2 Low(std::min(Corner.x, Opposite.x), std::min(Corner.y, Opposite.y));
     const ImVec2 High(std::max(Corner.x, Opposite.x), std::max(Corner.y, Opposite.y));
@@ -3067,8 +3075,28 @@ void SelectCurvesInBox(DraftingWorkspaceState& State, const DraftingCameraFrame&
         if (Intent == DraftingPickIntent::Remove ? Member : !Member) SelectDraftingCurve(State.Document, Step.Label, true);
         ++Count;
     }
+    // B-rep edges (modes 2 / 5): wholly inside the box; hidden ones only in x-ray.
+    State.Box.Edges = 0;
+    if (State.PickMode != DraftingPickMode::ControlPoint)
+    {
+        const std::array<double, 2> LocalLow{ Low.x - State.ViewportRect[0], Low.y - State.ViewportRect[1] };
+        const std::array<double, 2> LocalHigh{ High.x - State.ViewportRect[0], High.y - State.ViewportRect[1] };
+        for (const uint32_t Index : EncloseDraftingEdges(State.Scene, Frame, LocalLow, LocalHigh, State.Style.XRayEnabled))
+        {
+            const std::string& Name = State.Scene.Edges[Index].Name;
+            const std::vector<std::string>& Edges = State.Document.Selection.Edges;
+            const bool Member = std::find(Edges.begin(), Edges.end(), Name) != Edges.end();
+            if (Intent == DraftingPickIntent::Remove ? Member : !Member) SelectDraftingName(State.Document, DraftingSelectionKind::Edge, Name, true);
+            ++State.Box.Edges;
+        }
+    }
     ++State.Box.Commits;
-    Announce(State, Compose("Box %s %d curve(s) · %d selected", Intent == DraftingPickIntent::Remove ? "removed" : "selected", Count, int(State.Document.Selection.Curves.size())));
+    const char* Verb = Intent == DraftingPickIntent::Remove ? "removed" : "selected";
+    if (State.Box.Edges > 0)
+        Announce(State, Compose("Box %s %d curve(s) + %d edge(s)%s · %d edge(s) selected", Verb, Count, State.Box.Edges, State.Style.XRayEnabled ? " (x-ray)" : "",
+                                int(State.Document.Selection.Edges.size())));
+    else
+        Announce(State, Compose("Box %s %d curve(s) · %d selected", Verb, Count, int(State.Document.Selection.Curves.size())));
 }
 
 DraftingPickIntent PickIntentOf(const ImGuiIO& Io)
@@ -3550,6 +3578,8 @@ void DrawViewportBar(DraftingWorkspaceState& State)
     ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Edges###EdgeToggle", State.Style.EdgesEnabled)) State.Style.EdgesEnabled = !State.Style.EdgesEnabled;
     ImGui::SameLine(0, 4);
+    if (ToggleButton(State, "X-ray###XRayToggle", State.Style.XRayEnabled)) ToggleXRay(State);
+    ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Combs###CombToggle", State.CombsEnabled)) State.CombsEnabled = !State.CombsEnabled;
     ImGui::SameLine(0, 4);
     if (ToggleButton(State, "Zebra###ZebraToggle", State.ZebraEnabled)) ToggleZebra(State);
@@ -3742,7 +3772,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
                 Box.ActiveCondition = false;
-                if (Moved) SelectCurvesInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io));
+                if (Moved) SelectInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io));
                 else if (LeftClick && !OverCube) PickAtPointer(State, Local, PickIntentOf(Io));
             }
         }
@@ -3775,6 +3805,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawStatusPill(Canvas, Pill, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective", MutedColour);
     static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
     DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
+    if (State.Style.XRayEnabled) DrawStatusPill(Canvas, Pill, "X-ray", IM_COL32(0xc7, 0xd4, 0xe8, 0xff));
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
         DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
@@ -4670,7 +4701,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_Z))
         {
             if (Shift) { State.Style.GridEnabled = !State.Style.GridEnabled; Announce(State, State.Style.GridEnabled ? "Overlays on" : "Overlays off"); }
-            else { State.Style.SurfacesEnabled = !State.Style.SurfacesEnabled; Announce(State, State.Style.SurfacesEnabled ? "X-ray off" : "X-ray on (edges only)"); }
+            else ToggleXRay(State);                                                     // viewport:toggle-x-ray
         }
         if (Pressed(ImGuiKey_E)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
         if (Pressed(ImGuiKey_R)) OpenSweepSession(State, DraftingSweepVerb::Revolve);       // revolution (no Plasticity default key)

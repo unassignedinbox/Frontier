@@ -88,6 +88,8 @@ struct DraftingViewportStyle
     bool  EdgesEnabled    = true;                                                            // [-]   - B-rep edges
     bool  SurfacesEnabled = true;                                                            // [-]   - B-rep faces
     float ZebraStripes    = 0.0f;                                                            // [-]   - Zebra stripes over the reflection angle (0 off, V8)
+    bool  XRayEnabled     = false;                                                           // [-]   - Alt+Z: ghost faces + occluded edges, picked through
+    float XRayOpacity     = 0.45f;                                                           // [0-1] - Ghost face opacity α in x-ray
     std::vector<DraftingImagePlaneDraw> ImagePlanes = {};                                    // [-]   - Blueprint references, depth-tested behind the model
 };
 
@@ -169,6 +171,9 @@ private:
     VkDescriptorSet       BufferSet        = VK_NULL_HANDLE;
     VkPipelineLayout      PipelineLayout   = VK_NULL_HANDLE;
     VkPipeline            SurfacePipeline  = VK_NULL_HANDLE;
+    VkPipeline            SurfaceDepthPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ①: depth + identity, no colour
+    VkPipeline            SurfaceGhostPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ②: front fragments blended at α
+    VkPipeline            EdgeOccludedPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ③: depth GREATER, pickable
     VkPipeline            EdgePipeline     = VK_NULL_HANDLE;
     VkPipeline            GridPipeline     = VK_NULL_HANDLE;
     VkDescriptorSetLayout PictureLayout    = VK_NULL_HANDLE;

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace Frontier::DraftingWorkspace
 {
@@ -74,6 +75,13 @@ struct DraftingCameraFrame
 
 // Pixel (x right, y down, from the top-left corner; centres at +0.5) → world ray through it.
 [[nodiscard]] DraftingRay CastDraftingRay(const DraftingCameraFrame& Frame, double PixelX, double PixelY);
+
+// 💡 Box selection of B-rep edges (Plasticity viewport-selector): the scene edges whose every polyline point projects
+//    inside the pixel box Low … High (viewport pixels, y down). Without x-ray only visible edges qualify: at least one
+//    segment midpoint is not behind the nearest face along its pixel ray (2 px + 10⁻⁴ of the bounds diagonal of slack,
+//    so creases and silhouettes count as visible). XRayEnabled keeps hidden edges too. Indices in scene order.
+[[nodiscard]] std::vector<uint32_t> EncloseDraftingEdges(const DraftingScene& Scene, const DraftingCameraFrame& Frame, std::array<double, 2> Low,
+                                                         std::array<double, 2> High, bool XRayEnabled);
 
 void OrbitDraftingCamera(DraftingCamera& Camera, double DeltaX, double DeltaY);                       // [px]
 void PanDraftingCamera(DraftingCamera& Camera, const DraftingCameraFrame& Frame, double DeltaX, double DeltaY); // [px]

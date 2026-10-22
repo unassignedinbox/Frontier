@@ -301,13 +301,15 @@ struct DraftingClipboard
 };
 
 // 📝 Box selection (Plasticity viewport-selector drag): a left drag from empty viewport space in modes 1 / 2 / 5 selects
-//    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes).
+//    every curve whose projection lies wholly inside the box, in feature-tree order (Shift adds, Ctrl removes); in modes
+//    2 / 5 also every B-rep edge wholly inside — the visible ones, or hidden ones too in x-ray (EncloseDraftingEdges).
 struct DraftingBoxSelection
 {
     bool   ActiveCondition = false;                                                          // [-]  - Left button held after a press on empty space
     ImVec2 Start           = {};                                                             // [px] - Press position (screen)
     ImVec2 End             = {};                                                             // [px] - Pointer (screen)
     int    Commits         = 0;                                                              // [-]  - Box selections applied (script evidence)
+    int    Edges           = 0;                                                              // [-]  - B-rep edges the last box enclosed
 };
 
 struct DraftingWorkspaceState

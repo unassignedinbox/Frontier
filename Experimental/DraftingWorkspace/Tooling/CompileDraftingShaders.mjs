@@ -51,7 +51,7 @@ const GridFields       = [['PlaneFromClip', 0, 64], ['AlongU', 64, 16], ['AlongV
 const PlaneFields      = [['ClipFromWorld', 0, 64], ['Corner', 64, 16], ['Right', 80, 16], ['Down', 96, 16], ['Crop', 112, 16]];
 const Programs = [
     ['DraftingSurface.slang', ['DraftingSurfaceVertex', 'DraftingSurfaceFragment'], ProjectionFields, [['FaceStates', 0], ['Matcaps', 0, 1]]],
-    ['DraftingEdge.slang',    ['DraftingEdgeVertex', 'DraftingEdgeFragment'],       ProjectionFields, [['EdgeStates', 1]]],
+    ['DraftingEdge.slang',    ['DraftingEdgeVertex', 'DraftingEdgeFragment', 'DraftingEdgeOccludedFragment'], ProjectionFields, [['EdgeStates', 1]]],
     ['DraftingGrid.slang',    ['DraftingGridVertex', 'DraftingGridFragment'],       GridFields,       []],
     ['DraftingImagePlane.slang', ['DraftingImagePlaneVertex', 'DraftingImagePlaneFragment'], PlaneFields, [['Picture', 0, 1]]],
 ];

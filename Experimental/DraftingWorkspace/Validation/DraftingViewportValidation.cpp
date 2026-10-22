@@ -43,13 +43,14 @@ namespace
         long        Failures = 0;                                                            // [-] - Measurements over the limit
     };
 
-    GateTally DeviceGate      = { "V1", "Vulkan 1.3 device, SPIR-V modules from the Slang archive, three pipelines", "created" };
+    GateTally DeviceGate      = { "V1", "Vulkan 1.3 device, SPIR-V modules from the Slang archive, seven pipelines (opaque, x-ray depth / ghost / occluded strokes, edges, grid, image planes)", "created" };
     GateTally FaceGate        = { "V2", "Face pixels away from edges: GPU identity = CPU ray pick (7 views × perspective / orthographic)", "mismatch ≤ 0.1 %" };
     GateTally EdgeGate        = { "V3", "Edge-stroke pixels: the GPU edge passes within the stroke reach of the pixel ray and is not hidden behind the CPU face hit (orthographic)", "explained ≥ 99.5 %" };
     GateTally ProbeGate       = { "V4", "Single-texel identity probe (hover path) = full readback = CPU pick", "all equal" };
     GateTally TintGate        = { "V5", "Selected face blue (#4099ff), active edge green (#33ff73), hovered face lighter; others unchanged", "all hold" };
     GateTally ViewGate        = { "V6", "View presets: centre pixel names the expected face (Top → top cap, Front → front side, …)", "all equal" };
     GateTally DeterminismGate = { "V7", "Same frame twice → identical colour and identity digests", "equal" };
+    GateTally XRayGate        = { "V9", "X-ray: ghost faces = α · opaque + (1 − α) · background; every revealed stroke pixel is a CPU-hidden edge; no other identity changes; rim spill; probe and CPU pick through; box visibility = GPU edges; off → bit-identical", "≤ 2 / 255 · ≥ 99.5 % · 0 · ≤ 2 % · equal" };
     GateTally MatcapGate      = { "V8", "Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact", "≤ 2 / 255" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows
@@ -374,6 +375,159 @@ int main(int ArgumentCount, char** Arguments)
         WriteExhibit(Exhibits, "ViewportMatcaps", Shaded, Width, Height);
     }
 
+    // ---- V9 x-ray: ghost faces, revealed hidden strokes, pick-through, box visibility, bit-exact restore
+    {
+        DraftingViewportStyle Plain = Style;
+        Plain.GridEnabled = false;                                                           // Flat background behind the ghost faces
+        DraftingViewportStyle Ghost = Plain;
+        Ghost.XRayEnabled = true;
+        const double α = Ghost.XRayOpacity;
+        for (const bool OrthographicCondition : { true, false })
+        {
+            Camera.OrthographicEnabled = OrthographicCondition;
+            PresentDraftingView(Camera, DraftingViewPreset::Isometric);
+            const DraftingCameraFrame Frame  = FrameDraftingCamera(Camera, Width, Height);
+            const std::string         Label  = OrthographicCondition ? "isometric ortho" : "isometric persp";
+            const Rendered            Opaque = RenderFrame(Device, Raster, Frame, Plain);
+            const Rendered            XRay   = RenderFrame(Device, Raster, Frame, Ghost);
+
+            // ① ghost faces: interior face pixels (5 × 5 one face in both frames) blend the opaque colour over the background
+            double GhostWorst = 0.0;
+            long   GhostCount = 0;
+            for (uint32_t Row = 2; Row + 2 < Height; ++Row)
+                for (uint32_t Column = 2; Column + 2 < Width; ++Column)
+                {
+                    const size_t   Index  = size_t(Row) * Width + Column;
+                    const uint32_t Centre = Opaque.Identity[Index];
+                    if (Centre == 0u || (Centre & IdentityEdgeBit) || XRay.Identity[Index] != Centre) continue;
+                    bool UniformCondition = true;
+                    for (int DeltaRow = -2; DeltaRow <= 2 && UniformCondition; ++DeltaRow)
+                        for (int DeltaColumn = -2; DeltaColumn <= 2 && UniformCondition; ++DeltaColumn)
+                        {
+                            const size_t Near = size_t(int(Row) + DeltaRow) * Width + size_t(int(Column) + DeltaColumn);
+                            UniformCondition = Opaque.Identity[Near] == Centre && XRay.Identity[Near] == Centre;
+                        }
+                    if (!UniformCondition) continue;
+                    for (int Channel = 0; Channel < 3; ++Channel)
+                    {
+                        const double Shaded   = ((Opaque.Colour[Index] >> (8 * Channel)) & 0xff) / 255.0;
+                        const double Expected = α * Shaded + (1.0 - α) * Plain.Background[Channel];
+                        GhostWorst = std::max(GhostWorst, std::abs(((XRay.Colour[Index] >> (8 * Channel)) & 0xff) - Expected * 255.0));
+                    }
+                    ++GhostCount;
+                }
+            Tally(XRayGate, GhostWorst, GhostCount > 5000 && GhostWorst <= 2.0,
+                  Label + ": " + std::to_string(GhostCount) + " interior face pixels = α · opaque + (1 − α) · background within " + Compact(GhostWorst) + " / 255 (α " + Compact(α) + ")");
+
+            // ② revealed pixels: the identity changed → it must be a hidden edge (CPU: within the stroke reach, behind the face hit)
+            long Revealed = 0, Explained = 0, Other = 0, Spilled = 0;
+            const double Reach = (0.5 * 2.0 * Ghost.EdgeStroke + 1.0) * Frame.WorldPerPixel * 1.05;
+            for (uint32_t Row = 0; Row < Height; ++Row)
+                for (uint32_t Column = 0; Column < Width; ++Column)
+                {
+                    const size_t   Index    = size_t(Row) * Width + Column;
+                    const uint32_t Identity = XRay.Identity[Index];
+                    if (Identity == Opaque.Identity[Index]) continue;
+                    if (!(Identity & IdentityEdgeBit)) { ++Other; continue; }
+                    ++Revealed;
+                    // Self-spill: the same edge has a visible stroke pixel within 2 px in the opaque frame (a rim, not a hidden run).
+                    for (int DeltaRow = -2; DeltaRow <= 2; ++DeltaRow)
+                    {
+                        bool SpillCondition = false;
+                        for (int DeltaColumn = -2; DeltaColumn <= 2 && !SpillCondition; ++DeltaColumn)
+                        {
+                            const int Near = int(Row) + DeltaRow, Across = int(Column) + DeltaColumn;
+                            SpillCondition = Near >= 0 && Across >= 0 && Near < int(Height) && Across < int(Width) && Opaque.Identity[size_t(Near) * Width + Across] == Identity;
+                        }
+                        if (SpillCondition) { ++Spilled; break; }
+                    }
+                    if (!OrthographicCondition) continue;                                    // One world reach per pixel: orthographic only
+                    const DraftingRay                 Ray  = CastDraftingRay(Frame, Column + 0.5, Row + 0.5);
+                    const DraftingEdgeApproach        Edge = ApproachDraftingEdge(Scene, Ray, (Identity & ~IdentityEdgeBit) - 1u);
+                    const std::optional<DraftingPick> Face = PickDraftingScene(Scene, Ray, 0.0);
+                    if (Edge.Separation <= Reach && Face && Edge.Reach >= Face->Distance - 4.0 * Reach) ++Explained;
+                }
+            if (OrthographicCondition)
+            {
+                const double Rate = Revealed ? 100.0 * double(Explained) / double(Revealed) : 0.0;
+                Tally(XRayGate, 100.0 - Rate, Revealed > 300 && Rate >= 99.5, Label + ": " + std::to_string(Explained) + " / " + std::to_string(Revealed) + " revealed stroke pixels are hidden edges (unexplained %)");
+            }
+            Tally(XRayGate, double(Other), Other == 0 && Revealed > 300, Label + ": " + std::to_string(Revealed) + " pixels changed identity to a hidden edge, " + std::to_string(Other) + " changed otherwise");
+            // Rim spill: revealed pixels of an edge whose visible stroke lies within 2 px — what remains are the visible ↔ hidden
+            // transitions along one edge (the occluded draw's 8 px world margin removes the rims of steep faces).
+            const double SpillRate = Revealed ? 100.0 * double(Spilled) / double(Revealed) : 100.0;
+            Tally(XRayGate, SpillRate, SpillRate <= 2.0, Label + ": " + std::to_string(Spilled) + " / " + std::to_string(Revealed) + " revealed pixels lie within 2 px of the same edge's visible stroke (%)");
+
+            // ③ pick-through at the middle of the hidden back-bottom edge (y = 2.5, z = 0): the revealed pixel of that edge
+            //    nearest its middle segment's midpoint; GPU probe = that edge, the x-ray CPU pick finds it, the opaque one does not
+            if (OrthographicCondition)
+            {
+                const uint32_t ProbeEdge = IdentityNamed(Scene, "Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3))", true);
+                int ProbeX = -1, ProbeY = -1;
+                if (ProbeEdge != 0u)
+                {
+                    const DraftingSceneEdge&    Hidden  = Scene.Edges[(ProbeEdge & ~IdentityEdgeBit) - 1u];
+                    const DraftingSceneSegment& Segment = Scene.Segments[Hidden.FirstSegment + Hidden.SegmentCount / 2];
+                    double Middle[4] = {};
+                    for (int Row = 0; Row < 4; ++Row)
+                        for (int Axis = 0; Axis < 3; ++Axis) Middle[Row] += Frame.ClipFromWorld[Axis * 4 + Row] * 0.5 * (Segment.Start[Axis] + Segment.End[Axis]);
+                    for (int Row = 0; Row < 4; ++Row) Middle[Row] += Frame.ClipFromWorld[12 + Row];
+                    const double CentreX = (Middle[0] / Middle[3] * 0.5 + 0.5) * Width, CentreY = (Middle[1] / Middle[3] * 0.5 + 0.5) * Height;
+                    double Nearest = 1.0e9;
+                    for (int Row = int(CentreY) - 3; Row <= int(CentreY) + 3; ++Row)
+                        for (int Column = int(CentreX) - 3; Column <= int(CentreX) + 3; ++Column)
+                        {
+                            if (Row < 0 || Column < 0 || Row >= int(Height) || Column >= int(Width) || XRay.Identity[size_t(Row) * Width + Column] != ProbeEdge) continue;
+                            const double Gap = std::hypot(Column + 0.5 - CentreX, Row + 0.5 - CentreY);
+                            if (Gap < Nearest) { Nearest = Gap; ProbeX = Column; ProbeY = Row; }
+                        }
+                }
+                const Rendered  Probed  = RenderFrame(Device, Raster, Frame, Ghost, ProbeX, ProbeY);
+                const DraftingRay Ray   = CastDraftingRay(Frame, ProbeX + 0.5, ProbeY + 0.5);
+                const std::optional<DraftingPick> Through = PickDraftingScene(Scene, Ray, 3.0 * Frame.WorldPerPixel, true);
+                const std::optional<DraftingPick> Solid   = PickDraftingScene(Scene, Ray, 3.0 * Frame.WorldPerPixel, false);
+                const bool ThroughCondition = ProbeEdge != 0u && Probed.Probe == ProbeEdge && Through && Through->Identity == ProbeEdge && Solid && Solid->Identity != ProbeEdge;
+                Tally(XRayGate, 0.0, ThroughCondition, Label + ": probe (" + std::to_string(ProbeX) + ", " + std::to_string(ProbeY) + ") → " + NameDraftingIdentity(Scene, Probed.Probe)
+                      + "; CPU x-ray pick → " + (Through ? NameDraftingIdentity(Scene, Through->Identity) : std::string("nothing")) + "; opaque pick → "
+                      + (Solid ? NameDraftingIdentity(Scene, Solid->Identity) : std::string("nothing")));
+
+                WriteExhibit(Exhibits, "ViewportXRay", XRay, Width, Height);
+
+                // ④ box over the whole viewport, from a slightly orbited view (the exact isometric looks edge-on at the
+                //    chamfer, whose two long edges then coincide on screen): x-ray encloses every edge; without x-ray the
+                //    CPU-visible edges = the edges the GPU drew. An edge drawn only as end caps where it meets a visible vertex
+                //    (≤ CapPixels: two stroke ends of reach + 1 px) counts as touching, either verdict accepted.
+                DraftingCamera Orbited = Camera;
+                OrbitDraftingCamera(Orbited, 37.0, 11.0);
+                const DraftingCameraFrame Turned = FrameDraftingCamera(Orbited, Width, Height);
+                const Rendered            Seen   = RenderFrame(Device, Raster, Turned, Plain);
+                constexpr long CapPixels = 16;
+                std::vector<long> Drawn(Scene.Edges.size(), 0);
+                for (const uint32_t Identity : Seen.Identity) if (Identity & IdentityEdgeBit) ++Drawn[(Identity & ~IdentityEdgeBit) - 1u];
+                const std::vector<uint32_t> Visible = EncloseDraftingEdges(Scene, Turned, { 0.0, 0.0 }, { double(Width), double(Height) }, false);
+                const std::vector<uint32_t> Every   = EncloseDraftingEdges(Scene, Turned, { 0.0, 0.0 }, { double(Width), double(Height) }, true);
+                long Disagreements = 0, DrawnCount = 0, Touching = 0;
+                std::string Missed;
+                for (uint32_t Index = 0; Index < Scene.Edges.size(); ++Index)
+                {
+                    const bool CpuCondition = std::find(Visible.begin(), Visible.end(), Index) != Visible.end();
+                    DrawnCount += Drawn[Index] > CapPixels ? 1 : 0;
+                    if (Drawn[Index] > 0 && Drawn[Index] <= CapPixels) { ++Touching; continue; }
+                    if (CpuCondition != (Drawn[Index] > 0)) { ++Disagreements; Missed += " " + Scene.Edges[Index].Name + " (" + std::to_string(Drawn[Index]) + " px, CPU " + (CpuCondition ? "visible)" : "hidden)"); }
+                }
+                Tally(XRayGate, double(Disagreements), Disagreements == 0 && Every.size() == Scene.Edges.size() && Visible.size() < Every.size(),
+                      "orbited ortho: box encloses " + std::to_string(Visible.size()) + " visible edges (GPU drew " + std::to_string(DrawnCount) + ", " + std::to_string(Touching)
+                      + " touching by end caps) and " + std::to_string(Every.size()) + " / " + std::to_string(Scene.Edges.size()) + " in x-ray; disagreements" + (Missed.empty() ? std::string(" none") : Missed));
+            }
+
+            // ⑤ determinism and restore: the x-ray frame twice; x-ray off again → the opaque frame bit for bit
+            const Rendered Again    = RenderFrame(Device, Raster, Frame, Ghost);
+            const Rendered Restored = RenderFrame(Device, Raster, Frame, Plain);
+            Tally(XRayGate, 0.0, Again.Colour == XRay.Colour && Again.Identity == XRay.Identity && Restored.Colour == Opaque.Colour && Restored.Identity == Opaque.Identity,
+                  Label + ": x-ray frame repeatable; off → colour and identity bit-identical to the opaque frame");
+        }
+    }
+
     // ---- V7 determinism
     {
         PresentDraftingView(Camera, DraftingViewPreset::Isometric);
@@ -394,7 +548,7 @@ int main(int ArgumentCount, char** Arguments)
                 Device.Describe().c_str(), Scene.Faces.size(), Scene.Edges.size(), Scene.Corners.size() / 3, Width, Height, SlowestMs, Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate })
+    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate, &XRayGate })
     {
         std::printf("| %s | %s | %s | %.4g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

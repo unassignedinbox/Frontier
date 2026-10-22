@@ -51,6 +51,8 @@ SurfacePixel DraftingSurfaceVertex(SurfaceCorner Corner)
 //    Matcap layer k ≥ 1 (bits 8 … 15 of the face state) replaces it with Matcaps[k − 1] at uv = (½ + ½x, ½ − ½y) of the
 //    view-space normal (DraftingMatcap.h: pixel (i, j) holds normal x = 2(i + ½)/E − 1, y = 1 − 2(j + ½)/E).
 //    Back faces (open sheets, inside views) are shaded darker so the inside of a body never reads as its outside.
+//    X-ray (ViewForward.w = face opacity α > 0): the colour leaves with alpha α and the ghost pipeline blends it over
+//    the grid and image planes drawn first; α = 0 (x-ray off) writes opaque alpha 1.
 [shader("fragment")]
 SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV_IsFrontFace)
 {
@@ -95,7 +97,7 @@ SurfaceTargets DraftingSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
     if (!FrontFacing)                  Colour = Colour * float3(0.55, 0.42, 0.42);
 
     SurfaceTargets Targets;
-    Targets.Colour   = float4(saturate(Colour), 1.0);
+    Targets.Colour   = float4(saturate(Colour), Projection.ViewForward.w > 0.0 ? Projection.ViewForward.w : 1.0);
     Targets.Identity = Pixel.Face + 1u;
     return Targets;
 }

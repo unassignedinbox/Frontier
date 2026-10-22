@@ -49,6 +49,11 @@ VkShaderModule CreateModule(VkDevice Device, const uint32_t (&Code)[Words])
     return Module;
 }
 
+// 📝 X-ray occluded strokes count as hidden only when they lie more than this many pixels (world size at the target)
+//    behind the face in front; below that, the stroke pixels of a visible rim spilling onto its own steep face would read
+//    as hidden (measured: 1097 of 2743 revealed pixels at a bare depth bias, see ViewportValidation V9).
+constexpr double OccludedMarginPixels = 8.0;
+
 struct PipelineRecipe
 {
     VkShaderModule                                 Vertex         = VK_NULL_HANDLE;
@@ -60,6 +65,8 @@ struct PipelineRecipe
     bool                                           DepthWrite     = true;
     bool                                           ColourBlend    = false;
     bool                                           IdentityWrite  = true;
+    bool                                           ColourWrite    = true;
+    VkCompareOp                                    DepthCompare   = VK_COMPARE_OP_LESS_OR_EQUAL;
 };
 
 VkPipeline CreatePipeline(VkDevice Device, VkPipelineLayout Layout, const PipelineRecipe& Recipe)
@@ -88,9 +95,10 @@ VkPipeline CreatePipeline(VkDevice Device, VkPipelineLayout Layout, const Pipeli
     VkPipelineDepthStencilStateCreateInfo DepthState{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
     DepthState.depthTestEnable  = VK_TRUE;
     DepthState.depthWriteEnable = Recipe.DepthWrite ? VK_TRUE : VK_FALSE;
-    DepthState.depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL;
+    DepthState.depthCompareOp   = Recipe.DepthCompare;
     VkPipelineColorBlendAttachmentState Blends[2]{};
-    Blends[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    Blends[0].colorWriteMask = Recipe.ColourWrite ? VkColorComponentFlags(VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT)
+                                                  : VkColorComponentFlags(0);
     if (Recipe.ColourBlend)
     {
         Blends[0].blendEnable         = VK_TRUE;
@@ -255,6 +263,7 @@ void DraftingRasterization::CreatePipelines()
     const VkShaderModule SurfaceFragment = CreateModule(Device->Device, DraftingSurfaceFragmentCode);
     const VkShaderModule EdgeVertex      = CreateModule(Device->Device, DraftingEdgeVertexCode);
     const VkShaderModule EdgeFragment    = CreateModule(Device->Device, DraftingEdgeFragmentCode);
+    const VkShaderModule EdgeOccluded    = CreateModule(Device->Device, DraftingEdgeOccludedFragmentCode);
     const VkShaderModule GridVertex      = CreateModule(Device->Device, DraftingGridVertexCode);
     const VkShaderModule GridFragment    = CreateModule(Device->Device, DraftingGridFragmentCode);
     const VkShaderModule PlaneVertex     = CreateModule(Device->Device, DraftingImagePlaneVertexCode);
@@ -269,6 +278,18 @@ void DraftingRasterization::CreatePipelines()
     Surface.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
     SurfacePipeline       = CreatePipeline(Device->Device, PlaneLayout, Surface);
 
+    // 📝 X-ray faces in two draws so each pixel blends exactly one face whatever the triangle order: ① the nearest depth
+    //    and its identity (no colour), ② the same programs again, depth test ≤ without writes, so only the fragment
+    //    at that depth passes (identical vertex program → identical depth) and blends at α over grid / image planes.
+    PipelineRecipe SurfaceDepth = Surface;
+    SurfaceDepth.ColourWrite    = false;
+    SurfaceDepthPipeline        = CreatePipeline(Device->Device, PlaneLayout, SurfaceDepth);
+    PipelineRecipe SurfaceGhost = Surface;
+    SurfaceGhost.DepthWrite     = false;
+    SurfaceGhost.ColourBlend    = true;
+    SurfaceGhost.IdentityWrite  = false;
+    SurfaceGhostPipeline        = CreatePipeline(Device->Device, PlaneLayout, SurfaceGhost);
+
     PipelineRecipe Edge;
     Edge.Vertex        = EdgeVertex;
     Edge.Fragment      = EdgeFragment;
@@ -278,6 +299,15 @@ void DraftingRasterization::CreatePipelines()
     Edge.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
     Edge.ColourBlend   = true;
     EdgePipeline       = CreatePipeline(Device->Device, PipelineLayout, Edge);
+
+    // 📝 X-ray ③: only stroke pixels behind the surface depth (GREATER), never writing depth; the identity is written so
+    //    hidden edges hover and pick through the faces (the visible-edge draw afterwards wins where both cover a pixel).
+    PipelineRecipe Occluded = Edge;
+    Occluded.Fragment       = EdgeOccluded;
+    Occluded.FragmentEntry  = DraftingEdgeOccludedFragmentEntry;
+    Occluded.DepthWrite     = false;
+    Occluded.DepthCompare   = VK_COMPARE_OP_GREATER;
+    EdgeOccludedPipeline    = CreatePipeline(Device->Device, PipelineLayout, Occluded);
 
     PipelineRecipe Grid;
     Grid.Vertex        = GridVertex;
@@ -300,7 +330,7 @@ void DraftingRasterization::CreatePipelines()
     Plane.IdentityWrite = false;
     PlanePipeline       = CreatePipeline(Device->Device, PlaneLayout, Plane);
 
-    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, GridVertex, GridFragment, PlaneVertex, PlaneFragment })
+    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, EdgeOccluded, GridVertex, GridFragment, PlaneVertex, PlaneFragment })
         vkDestroyShaderModule(Device->Device, Module, nullptr);
 }
 
@@ -316,7 +346,7 @@ void DraftingRasterization::Destroy()
     MatcapPool   = VK_NULL_HANDLE;
     MatcapSet    = VK_NULL_HANDLE;
     MatcapLayers = 0;
-    for (VkPipeline* Pipeline : { &SurfacePipeline, &EdgePipeline, &GridPipeline, &PlanePipeline })
+    for (VkPipeline* Pipeline : { &SurfacePipeline, &SurfaceDepthPipeline, &SurfaceGhostPipeline, &EdgePipeline, &EdgeOccludedPipeline, &GridPipeline, &PlanePipeline })
     {
         if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
         *Pipeline = VK_NULL_HANDLE;
@@ -562,37 +592,42 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
     vkCmdSetScissor(Commands, 0, 1, &Scissor);
     vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
 
-    // ② surfaces, then edges (depth-biased toward the eye), then the grid behind both
+    // ② surfaces, then edges (depth-biased toward the eye), then the grid behind both (x-ray: see below)
     DraftingProjectionBlock Projection;
     Narrow(Frame.ClipFromWorld, Projection.ClipFromWorld);
     Narrow(Frame.Right, Projection.ViewRight, Frame.OrthographicEnabled ? 1.0f : 0.0f);
     Narrow(Frame.Up, Projection.ViewUp, Style.ZebraStripes);
-    Narrow(Frame.Forward, Projection.ViewForward, 0.0f);
+    Narrow(Frame.Forward, Projection.ViewForward, Style.XRayEnabled ? std::clamp(Style.XRayOpacity, 0.01f, 1.0f) : 0.0f);
     Projection.DisplayStroke[0] = float(Colour.Width);
     Projection.DisplayStroke[1] = float(Colour.Height);
     Projection.DisplayStroke[2] = Style.EdgeStroke;
     Projection.DisplayStroke[3] = Style.EdgeDepthBias;
     const VkShaderStageFlags PushStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     const VkDeviceSize       Origin     = 0;
-    if (Style.SurfacesEnabled && CornerCount)
+    const auto DrawSurfaces = [&](VkPipeline Pipeline)
     {
+        if (!Style.SurfacesEnabled || !CornerCount) return;
         const VkDescriptorSet SurfaceSets[2] = { BufferSet, MatcapSet };
-        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, SurfacePipeline);
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
         vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlaneLayout, 0, 2, SurfaceSets, 0, nullptr);
         vkCmdPushConstants(Commands, PlaneLayout, PushStages, 0, sizeof(Projection), &Projection);
         vkCmdBindVertexBuffers(Commands, 0, 1, &CornerBuffer.Buffer, &Origin);
         vkCmdDraw(Commands, CornerCount, 1, 0, 0);
         vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
-    }
-    if (Style.EdgesEnabled && SegmentCount)
+    };
+    const auto DrawEdges = [&](VkPipeline Pipeline, float DepthBias)
     {
-        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, EdgePipeline);
-        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
+        if (!Style.EdgesEnabled || !SegmentCount) return;
+        DraftingProjectionBlock Stroke = Projection;
+        Stroke.DisplayStroke[3] = DepthBias;
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
+        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Stroke), &Stroke);
         vkCmdBindVertexBuffers(Commands, 0, 1, &SegmentBuffer.Buffer, &Origin);
         vkCmdDraw(Commands, 6, SegmentCount, 0, 0);
-    }
-    if (!Style.ImagePlanes.empty() && PlanePipeline)
+    };
+    const auto DrawPlanes = [&]()
     {
+        if (Style.ImagePlanes.empty() || !PlanePipeline) return;
         vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlanePipeline);
         vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PlaneLayout, 0, 1, &BufferSet, 0, nullptr);
         for (const DraftingImagePlaneDraw& Draw : Style.ImagePlanes)
@@ -609,9 +644,10 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
             vkCmdDraw(Commands, 6, 1, 0, 0);
         }
         vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
-    }
-    if (Style.GridEnabled)
+    };
+    const auto DrawGrid = [&]()
     {
+        if (!Style.GridEnabled) return;
         // 📝 Plane rows pick (u, v, n) from world (x, y, z): XY → (x, y, z), XZ → (x, z, y), YZ → (y, z, x); the world
         //    axis colours follow (X red, Y green, Z blue) as in the SolidArc view-aligned grid table.
         static constexpr int   PlaneAxes[3][3] = { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 2, 0 } };
@@ -633,6 +669,24 @@ void DraftingRasterization::Record(VkCommandBuffer Commands, const DraftingCamer
         vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, GridPipeline);
         vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Grid), &Grid);
         vkCmdDraw(Commands, 3, 1, 0, 0);
+    };
+    // 📝 X-ray: grid and image planes first (seen through the ghost faces), the surface depth + identity, the ghost faces,
+    //    then the occluded strokes and the visible strokes on top. Off: the unchanged opaque order.
+    if (Style.XRayEnabled)
+    {
+        DrawPlanes();
+        DrawGrid();
+        DrawSurfaces(SurfaceDepthPipeline);
+        DrawSurfaces(SurfaceGhostPipeline);
+        DrawEdges(EdgeOccludedPipeline, -float(OccludedMarginPixels * Frame.WorldPerPixel));  // < 0: world margin [len]
+        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
+    }
+    else
+    {
+        DrawSurfaces(SurfacePipeline);
+        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
+        DrawPlanes();
+        DrawGrid();
     }
     vkCmdEndRendering(Commands);
 

@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                       DRAFTINGEDGE.SLANG
 ====================================================================================================================================*/
-// 🧩 B-rep edges as antialiased pixel-width strokes (six corners per instanced segment) with the R32 identity output
+// 🧩 B-rep edges as antialiased pixel-width strokes (six corners per instanced segment) with the R32 identity output;
+//    the x-ray program draws the occluded part of every edge as a thinner, faded stroke that stays pickable
 
 #include "DraftingProjection.slang"
 
@@ -71,6 +72,12 @@ EdgePixel DraftingEdgeVertex(EdgeSegment Segment, uint VertexIndex : SV_VulkanVe
     Pixel.Edge     = Segment.Edge;
     float4 Start = mul(Projection.ClipFromWorld, float4(Segment.Start, 1.0));
     float4 End   = mul(Projection.ClipFromWorld, float4(Segment.End, 1.0));
+    // 📝 DisplayStroke.w < 0 (x-ray occluded draw): a world margin M = −w. The stroke takes its depth from the endpoint
+    //    moved M toward the eye (along −Forward), so a stroke passes the GREATER test only when it lies more than M
+    //    behind the face in front — the same world margin in orthographic and perspective views.
+    const float  Margin    = max(-Projection.DisplayStroke.w, 0.0);
+    const float4 StartNear = mul(Projection.ClipFromWorld, float4(Segment.Start - Projection.ViewForward.xyz * Margin, 1.0));
+    const float4 EndNear   = mul(Projection.ClipFromWorld, float4(Segment.End - Projection.ViewForward.xyz * Margin, 1.0));
     // 📝 Clip before the perspective division, including the near-zero homogeneous denominator.
     if (!ClipSegment(Start, End, Start.w - 1.0e-5, End.w - 1.0e-5)) return Pixel;
     if (!ClipSegment(Start, End, Start.z, End.z)) return Pixel;
@@ -87,7 +94,13 @@ EdgePixel DraftingEdgeVertex(EdgeSegment Segment, uint VertexIndex : SV_VulkanVe
     Pixel.Position     = Corner < 2u ? Start : End;
     Pixel.Position.xy += (Across * Side * Reach + Along) * 2.0 / Projection.DisplayStroke.xy * Pixel.Position.w;
     // 📝 Edges win depth ties against their own faces: pull toward the eye by a fraction of the depth range.
-    Pixel.Position.z   = max(0.0, Pixel.Position.z - Projection.DisplayStroke.w * Pixel.Position.w);
+    if (Projection.DisplayStroke.w >= 0.0)
+        Pixel.Position.z = max(0.0, Pixel.Position.z - Projection.DisplayStroke.w * Pixel.Position.w);
+    else
+    {
+        const float4 Near = Corner < 2u ? StartNear : EndNear;
+        Pixel.Position.z  = clamp(Near.z / max(Near.w, 1.0e-6) * Pixel.Position.w, 0.0, Pixel.Position.w);
+    }
     Pixel.Distance     = Side * Reach;
     return Pixel;
 }
@@ -105,6 +118,28 @@ EdgeTargets DraftingEdgeFragment(EdgePixel Pixel)
     if ((State & StateActive) != 0u)   Colour = ActiveTint;
     EdgeTargets Targets;
     Targets.Colour   = float4(Colour, Coverage);
+    Targets.Identity = IdentityEdgeBit | (Pixel.Edge + 1u);
+    return Targets;
+}
+
+// 📝 X-ray (Plasticity CurveEdge_XRay layer): drawn with depth test GREATER after the surface depth, so only the stroke
+//    pixels hidden behind a face arrive here. Unselected strokes are a pale steel at 55 % and 0.7 × the width; selected,
+//    active and hovered ones keep their tints at 85 %. The identity is written, so a hidden edge is hovered and picked
+//    through the faces in front of it.
+[shader("fragment")]
+EdgeTargets DraftingEdgeOccludedFragment(EdgePixel Pixel)
+{
+    uint  State    = EdgeStates[Pixel.Edge];
+    float Radius   = StrokeRadius(State) * ((State & (StateSelected | StateActive | StateHovered)) != 0u ? 1.0 : 0.7);
+    float Coverage = 1.0 - smoothstep(Radius - 0.5, Radius + 0.75, abs(Pixel.Distance));
+    if (Coverage < 0.35) discard;
+    float3 Colour  = float3(0.780, 0.830, 0.910);
+    float  Opacity = 0.55;
+    if ((State & StateHovered) != 0u)  { Colour = HoverTint;    Opacity = 0.85; }
+    if ((State & StateSelected) != 0u) { Colour = SelectedTint; Opacity = 0.85; }
+    if ((State & StateActive) != 0u)   { Colour = ActiveTint;   Opacity = 0.85; }
+    EdgeTargets Targets;
+    Targets.Colour   = float4(Colour, Coverage * Opacity);
     Targets.Identity = IdentityEdgeBit | (Pixel.Edge + 1u);
     return Targets;
 }

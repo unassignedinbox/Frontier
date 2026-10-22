@@ -334,6 +334,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     }
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
     if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
+    if (Field == "xray") return Numeric(State.Style.XRayEnabled ? 1 : 0);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
     if (Field == "construct-combination") return Numeric(int(State.ConstructForm.Combination));
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
@@ -434,6 +435,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     }
     if (Field == "pole-drags") return Numeric(State.PoleDrag.Commits);
     if (Field == "box-selections") return Numeric(State.Box.Commits);
+    if (Field == "box-edges") return Numeric(State.Box.Edges);
     if (Field == "pole-drag-active") return Numeric(State.PoleDrag.ActiveCondition ? 1 : 0);
     if (Field == "pole-edits")
     {

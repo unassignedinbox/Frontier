@@ -154,8 +154,9 @@ struct DraftingDeviationMap
 
 // 💡 CPU pick: nearest triangle hit (Möller–Trumbore); an edge wins over the face behind it when the ray passes within
 //    EdgeReach of the segment and no closer than the face hit minus EdgeReach (so silhouette and crease edges are
-//    pickable but hidden edges are not). Returns nothing on a miss.
-[[nodiscard]] std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach);
+//    pickable but hidden edges are not). XRayEnabled (Alt+Z) drops the face test for edges: the nearest edge within reach
+//    wins wherever it lies, as the occluded strokes of the x-ray frame are pickable. Returns nothing on a miss.
+[[nodiscard]] std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled = false);
 
 // Selection names → state words; the last name of the most recently picked kind is the active operand.
 [[nodiscard]] DraftingSceneStates ComposeDraftingStates(const DraftingScene& Scene, const DraftingSelection& Selection, uint32_t HoverIdentity);

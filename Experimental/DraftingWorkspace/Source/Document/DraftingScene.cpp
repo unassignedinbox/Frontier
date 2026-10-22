@@ -281,7 +281,7 @@ DraftingScene BuildDraftingScene(const DraftingDocument& Document, double SagRat
     return Scene;
 }
 
-std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach)
+std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const DraftingRay& Ray, double EdgeReach, bool XRayEnabled)
 {
     std::optional<DraftingPick> Face;
     for (size_t Corner = 0; Corner + 2 < Scene.Corners.size(); Corner += 3)
@@ -296,7 +296,7 @@ std::optional<DraftingPick> PickDraftingScene(const DraftingScene& Scene, const 
     {
         const auto [Reach, Separation] = ApproachSegment(Ray, Widen(Segment.Start), Widen(Segment.End));
         if (Separation > Closest || Reach <= 0.0) continue;
-        if (Face && Reach > Face->Distance + EdgeReach) continue;
+        if (Face && !XRayEnabled && Reach > Face->Distance + EdgeReach) continue;
         Closest = Separation;
         Edge    = DraftingPick{ IdentityEdgeBit | (Segment.Edge + 1u), Reach };
     }

@@ -14,7 +14,7 @@ struct DraftingProjection
     column_major float4x4 ClipFromWorld;                                                     // [-]  - Projection × view
     float4                ViewRight;                                                         // [-]  - Camera right (world), w: orthographic flag
     float4                ViewUp;                                                            // [-]  - Camera up (world), w: zebra stripe count (0 off)
-    float4                ViewForward;                                                       // [-]  - Eye → target (world), w: grid spacing [len]
+    float4                ViewForward;                                                       // [-]  - Eye → target (world), w: x-ray face opacity (0 off)
     float4                DisplayStroke;                                                     // [px] - Width, height, edge stroke, edge depth bias
 };
 

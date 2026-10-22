@@ -202,6 +202,54 @@ void FitDraftingCamera(DraftingCamera& Camera, const DraftingScene& Scene)
     Camera.Distance    = Camera.SceneRadius / std::sin(0.5 * Camera.FieldOfView) * 1.08;
 }
 
+std::vector<uint32_t> EncloseDraftingEdges(const DraftingScene& Scene, const DraftingCameraFrame& Frame, std::array<double, 2> Low,
+                                           std::array<double, 2> High, bool XRayEnabled)
+{
+    // World point → viewport pixel; false behind the eye.
+    const auto Project = [&](const float Point[3], std::array<double, 2>& Pixel)
+    {
+        double Clip[4] = {};
+        for (int Row = 0; Row < 4; ++Row)
+            Clip[Row] = Frame.ClipFromWorld[0 * 4 + Row] * Point[0] + Frame.ClipFromWorld[1 * 4 + Row] * Point[1] + Frame.ClipFromWorld[2 * 4 + Row] * Point[2]
+                      + Frame.ClipFromWorld[3 * 4 + Row];
+        if (Clip[3] <= 1.0e-12) return false;
+        Pixel = { (Clip[0] / Clip[3] * 0.5 + 0.5) * Frame.Width, (Clip[1] / Clip[3] * 0.5 + 0.5) * Frame.Height };
+        return true;
+    };
+    const auto Inside = [&](const std::array<double, 2>& Pixel) { return Pixel[0] >= Low[0] && Pixel[0] <= High[0] && Pixel[1] >= Low[1] && Pixel[1] <= High[1]; };
+    Triple Span{};
+    for (int Axis = 0; Axis < 3; ++Axis) Span[Axis] = Scene.BoundsHigh[Axis] - Scene.BoundsLow[Axis];
+    const double Slack = 2.0 * Frame.WorldPerPixel + 1.0e-4 * std::sqrt(Dot(Span, Span));            // [len]
+
+    std::vector<uint32_t> Enclosed;
+    for (uint32_t EdgeIndex = 0; EdgeIndex < Scene.Edges.size(); ++EdgeIndex)
+    {
+        const DraftingSceneEdge& Edge = Scene.Edges[EdgeIndex];
+        if (Edge.SegmentCount == 0) continue;
+        bool WhollyCondition = true;
+        for (uint32_t Index = Edge.FirstSegment; Index < Edge.FirstSegment + Edge.SegmentCount && WhollyCondition; ++Index)
+        {
+            std::array<double, 2> Start{}, End{};
+            WhollyCondition = Project(Scene.Segments[Index].Start, Start) && Project(Scene.Segments[Index].End, End) && Inside(Start) && Inside(End);
+        }
+        if (!WhollyCondition) continue;
+        bool VisibleCondition = XRayEnabled;
+        for (uint32_t Index = Edge.FirstSegment; Index < Edge.FirstSegment + Edge.SegmentCount && !VisibleCondition; ++Index)
+        {
+            const DraftingSceneSegment& Segment = Scene.Segments[Index];
+            const float Middle[3] = { 0.5f * (Segment.Start[0] + Segment.End[0]), 0.5f * (Segment.Start[1] + Segment.End[1]), 0.5f * (Segment.Start[2] + Segment.End[2]) };
+            std::array<double, 2> Pixel{};
+            if (!Project(Middle, Pixel)) continue;
+            const DraftingRay Ray   = CastDraftingRay(Frame, Pixel[0], Pixel[1]);
+            const double      Reach = (Middle[0] - Ray.Origin[0]) * Ray.Direction[0] + (Middle[1] - Ray.Origin[1]) * Ray.Direction[1] + (Middle[2] - Ray.Origin[2]) * Ray.Direction[2];
+            const std::optional<DraftingPick> Face = PickDraftingScene(Scene, Ray, 0.0);
+            VisibleCondition = !Face || Face->Distance >= Reach - Slack;
+        }
+        if (VisibleCondition) Enclosed.push_back(EdgeIndex);
+    }
+    return Enclosed;
+}
+
 const char* DraftingViewLabel(DraftingViewPreset Preset) noexcept
 {
     switch (Preset)
