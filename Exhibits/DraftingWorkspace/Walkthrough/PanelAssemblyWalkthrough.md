@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 358 frames · 27.4959 s · slowest frame 732.025 ms
+- Frame: 1600 x 900 · 358 frames · 31.2866 s · slowest frame 731.883 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
@@ -17,7 +17,7 @@
 | 37 | `sheet == 1` | 1 | 🟢 |
 | 38 | `faces == 1` | 1 | 🟢 |
 | 39 | `sound == 1` | 1 | 🟢 |
-| 40 | `status contains Lofted 3 curve(s)` | Lofted 3 curve(s) → panel (sound) · 1 panel(s) · 3 ms | 🟢 |
+| 40 | `status contains Lofted 3 curve(s)` | Lofted 3 curve(s) → panel (sound) · 1 panel(s) · 1 ms | 🟢 |
 | 48 | `selected-curves == Section3,Section4,Section5,Section6` | Section3,Section4,Section5,Section6 | 🟢 |
 | 51 | `loft-continuity == 2` | 2 | 🟢 |
 | 55 | `steps == 13` | 13 | 🟢 |
@@ -26,7 +26,7 @@
 | 58 | `sheet == 1` | 1 | 🟢 |
 | 59 | `faces == 2` | 2 | 🟢 |
 | 60 | `sound == 1` | 1 | 🟢 |
-| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 4 ms | 🟢 |
+| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms | 🟢 |
 | 67 | `steps == 14` | 14 | 🟢 |
 | 68 | `refused == 0` | 0 | 🟢 |
 | 69 | `panels == 4` | 4 | 🟢 |
@@ -54,7 +54,7 @@
 | 131 | `sound == 1` | 1 | 🟢 |
 | 132 | `volume > 0.791` | 0.7928018098 | 🟢 |
 | 133 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 41 ms | 🟢 |
+| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 35 ms | 🟢 |
 | 149 | `steps == 10` | 10 | 🟢 |
 | 167 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
 | 173 | `steps == 11` | 11 | 🟢 |
@@ -62,19 +62,19 @@
 | 175 | `panels == 1` | 1 | 🟢 |
 | 176 | `sheet == 1` | 1 | 🟢 |
 | 177 | `sound == 1` | 1 | 🟢 |
-| 178 | `status contains Network of 10 curve(s)` | Network of 10 curve(s) → panel (sound) · 1 panel(s) · 6 ms | 🟢 |
+| 178 | `status contains Network of 10 curve(s)` | Network of 10 curve(s) → panel (sound) · 1 panel(s) · 3 ms | 🟢 |
 | 184 | `dirty == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 93 | `be7f5072338afd31` |
-| 61FrontRearG2 | 101 | `0ab0b24544bfa615` |
-| 62BonnetMirrored | 115 | `6282401f0caf4be7` |
-| 63CloseRefused | 125 | `150c2001d23c41ce` |
-| 64PodHalves | 220 | `5ebb210ed7fb7b2e` |
-| 65PodSolid | 236 | `d9ad358a64161090` |
-| 66NetworkCurves | 344 | `6a5e8c0491ee078e` |
-| 67NetworkPanel | 352 | `dbf7cd704750efd3` |
+| 60RearSectionsG2 | 93 | `9bf02f3eb93dd068` |
+| 61FrontRearG2 | 101 | `fe3e0a6d4cd55ecf` |
+| 62BonnetMirrored | 115 | `d278c53a60590158` |
+| 63CloseRefused | 125 | `05c8845b8392acd1` |
+| 64PodHalves | 220 | `52eb8838ab52432b` |
+| 65PodSolid | 236 | `5abe99a381485459` |
+| 66NetworkCurves | 344 | `a810279d7e429fd0` |
+| 67NetworkPanel | 352 | `67aac1c707974323` |
 
 ## Journal
 
@@ -88,14 +88,14 @@
 - Selected curve Section2 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 3 selected
 - Autosaved _ClaudeScratch/DraftingWorkspace/PanelRecovery.drafting.toml
-- Loft1 · 3 sections · 3 ms
-- Lofted 3 curve(s) → panel (sound) · 1 panel(s) · 3 ms
+- Loft1 · 3 sections · 1 ms
+- Lofted 3 curve(s) → panel (sound) · 1 panel(s) · 1 ms
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 1 selected
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 4 ms
-- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 4 ms
+- Loft2 · 4 sections · G2 · 2 ms
+- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms
 - Mirror1 · plane x = 0 · 6 ms
 - Mirrored through x = 0 → 4 panel(s), sound · 6 ms
 - Framed the document (Space)
@@ -113,12 +113,12 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/PanelRecovery.drafting.toml
 - Selected curve Hoop4 · 9 poles · fit 0.060 mm · 4 selected
 - Selected curve Hoop5 · 10 poles · fit 0.066 mm · 5 selected
-- Loft1 · 5 sections · 8 ms
-- Lofted 5 curve(s) → panel (sound) · 1 panel(s) · 8 ms
+- Loft1 · 5 sections · 2 ms
+- Lofted 5 curve(s) → panel (sound) · 1 panel(s) · 2 ms
 - Mirror1 · plane x = 0 · 8 ms
 - Mirrored through x = 0 → 2 panel(s), sound · 8 ms
-- Close1 · plane caps · 41 ms
-- Closed → solid · volume 0.79280 m³ · sound · 41 ms
+- Close1 · plane caps · 35 ms
+- Closed → solid · volume 0.79280 m³ · sound · 35 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms
@@ -137,6 +137,6 @@
 - Selected curve Section3 · 4 poles · fit 0.044 mm · 8 selected
 - Selected curve Spine4 · 4 poles · fit 0.049 mm · 9 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 10 selected
-- Network1 · 10 curves · 6 ms
-- Network of 10 curve(s) → panel (sound) · 1 panel(s) · 6 ms
+- Network1 · 10 curves · 3 ms
+- Network of 10 curve(s) → panel (sound) · 1 panel(s) · 3 ms
 - Saved _ClaudeScratch/DraftingWorkspace/Panels.drafting.toml

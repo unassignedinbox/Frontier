@@ -127,6 +127,12 @@ CaptureCaptions = {
     "137EvolutionProposed"       : "Shift+P: a circle swept along the proposed path, the newest one-curve sketch",
     "138EvolutionPath"           : "A click on the Bezier switches the path: the circle sweeps along it by rotation-minimising frames",
     "139Evolution"               : "Revolve1 4.10109, Revolve2 0.05655, Evolution1 0.31908 m3 (pi r^2 L): three sound bodies",
+    "140ReplayTailEdit"          : "Incremental replay: Fillet1 0.25 -> 0.3 replays only Fillet1 and Chamfer1 (Body card: replayed 2/8)",
+    "141ReplayMiddleEdit"        : "The hole radius 0.35 replays from its sketch: replayed 4/8, the first four steps restored",
+    "142ReplayUndo"              : "Ctrl+Z restores every step from the saved checkpoints: replayed 0/8 in 0.1 ms",
+    "143ReplayRedo"              : "Ctrl+Shift+Z: replayed 0/8 again, bit-identical to a full replay",
+    "144ReplayFullEdit"          : "Block1 width is a sketch dimension: the whole tree replays (8/8)",
+    "145ReplayPreview"           : "B stages the bevel preview from the document's checkpoints: only the new fillet runs (replayed 1/9)",
 }
 
 #------------------------------------------------------------------------------------------------------------------------

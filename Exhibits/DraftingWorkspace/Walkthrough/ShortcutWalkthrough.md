@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 41.2343 s · slowest frame 917.285 ms
+- Frame: 1600 x 900 · 256 frames · 25.5216 s · slowest frame 388.263 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt
 - Expectations: 69 / 69 passed
 
@@ -79,9 +79,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `a02d760205b3cee0` |
-| 21TangentChain | 144 | `47d4dd04644a9d87` |
-| 20ShortcutExtrude | 224 | `3e2c19f4652a3b86` |
+| 19BevelSignChamfer | 64 | `33a9a5043c341eed` |
+| 21TangentChain | 144 | `698a17d297b1d25f` |
+| 20ShortcutExtrude | 224 | `e425ed671dd52b8b` |
 
 ## Journal
 
@@ -92,7 +92,7 @@
 - Bevel cancelled (document untouched)
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 333 ms
+- Fillet 0.3 on 1 edge(s) · 134 ms
 - Undo
 - Redo
 - Selection cleared
@@ -103,7 +103,7 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 241 ms
+- Delete Fillet2 · 44 ms
 - Selection cleared
 - Framed the document (Space)
 - X-ray on (edges only)
@@ -112,8 +112,8 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 294 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 93 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 377 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 100 ms
 - Selection cleared

@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 496 frames · 30.2169 s · slowest frame 1284.68 ms
+- Frame: 1600 x 900 · 496 frames · 40.012 s · slowest frame 1693.47 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/TrimSplitWalkthrough.txt
 - Expectations: 54 / 54 passed
 
@@ -22,7 +22,7 @@
 | 60 | `selected-bodies contains Cut#4` | Cut#4 | 🟢 |
 | 61 | `pick-mode == 4` | 4 | 🟢 |
 | 62 | `sound == 1` | 1 | 🟢 |
-| 63 | `status contains Cut` | Cut (Extrude1 by Line1) · 206 ms | 🟢 |
+| 63 | `status contains Cut` | Cut (Extrude1 by Line1) · 275 ms | 🟢 |
 | 73 | `bodies == 1` | 1 | 🟢 |
 | 74 | `steps == 5` | 5 | 🟢 |
 | 75 | `body-volumes contains 1.400000` | Extrude1 1.400000 | 🟢 |
@@ -64,15 +64,15 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 102CutLine | 109 | `f3360f77edf586c6` |
-| 103CutRemoved | 129 | `9157fbba2504849f` |
-| 104CutCore | 168 | `d0500da511b9b115` |
-| 105CutHole | 176 | `6c4ea142002ebb86` |
-| 106PanelCut | 317 | `037e8e1457ce629d` |
-| 107PanelTrimmed | 325 | `1a401ada66389675` |
-| 108TrimHover | 394 | `67bac72212082878` |
-| 109TrimStar | 451 | `5bda2d8bef560d3e` |
-| 110StarExtruded | 496 | `a7cef983c125db64` |
+| 102CutLine | 109 | `c7e9ac2e1599df59` |
+| 103CutRemoved | 129 | `cc9c5bd578e7a8c4` |
+| 104CutCore | 168 | `d440c7e0c2bc13ce` |
+| 105CutHole | 176 | `55181df46d93f9f5` |
+| 106PanelCut | 317 | `49cc9608212f1c52` |
+| 107PanelTrimmed | 325 | `2514a72c5a86964d` |
+| 108TrimHover | 394 | `c4368b2ad5a63e5c` |
+| 109TrimStar | 451 | `7d95b8de14fa8392` |
+| 110StarExtruded | 496 | `83a06144d6a20a40` |
 
 ## Journal
 
@@ -81,24 +81,24 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 5 ms
+- Extrude1 · Rectangle1 · New · 7 ms
 - Selection cleared
 - Cut (C): focus a sketch step or select a curve (the cutter), pick the body in mode 4 (else the active body)
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 6 ms
-- Cut (Extrude1 by Line1) · 206 ms
+- Line1 · 5 ms
+- Cut (Extrude1 by Line1) · 275 ms
 - View Isometric
 - Framed the document (Space)
-- Remove (Cut1) · 202 ms
+- Remove (Cut1) · 6 ms
 - Undo
 - Redo
 - Circle on plane XY: click centre and rim · V two-point mode · Esc aborts
-- Circle1 · 203 ms
-- Cut (Extrude1 by Circle1) · 263 ms
+- Circle1 · 6 ms
+- Cut (Extrude1 by Circle1) · 76 ms
 - View Isometric
-- Remove (Cut2) · 251 ms
+- Remove (Cut2) · 15 ms
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 1 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
@@ -110,15 +110,15 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 4 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 5 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected
-- Loft1 · 6 sections · 2 ms
-- Lofted 6 curve(s) → panel (sound) · 1 panel(s) · 2 ms
+- Loft1 · 6 sections · 1 ms
+- Lofted 6 curve(s) → panel (sound) · 1 panel(s) · 1 ms
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/TrimSplitRecovery.drafting.toml
-- Curve1 · Hermite · 2 ms
-- Cut (Loft1 by Curve1) · 1159 ms
+- Curve1 · Hermite · 1 ms
+- Cut (Loft1 by Curve1) · 1532 ms
 - View Isometric
 - Framed the document (Space)
-- Remove (Cut1) · 948 ms
+- Remove (Cut1) · 168 ms
 - New document (previous recovery copy kept)
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/TrimSplitRecovery.drafting.toml
@@ -132,6 +132,6 @@
 - Trim ended
 - Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Line1 · New · 11 ms
+- Extrude1 · Line1 · New · 14 ms
 - View Isometric
 - Framed the document (Space)

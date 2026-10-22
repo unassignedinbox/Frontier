@@ -1,8 +1,8 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 609 frames · 27.4255 s · slowest frame 279.126 ms
-- Script: Experimental/DraftingWorkspace/Scripts/LinkedConstraintsWalkthrough.txt
+- Frame: 1600 x 900 · 609 frames · 44.0456 s · slowest frame 401.442 ms
+- Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
 | Line | Expectation | Observed | Result |
@@ -59,18 +59,18 @@
 | 260 | `volume ~ 4` | 4 | 🟢 |
 | 269 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
 | 270 | `sketch-dof == 1` | 1 | 🟢 |
-| 280 | `status contains Unlink` | Unlink Line2.Start of Line1 · 8 ms | 🟢 |
+| 280 | `status contains Unlink` | Unlink Line2.Start of Line1 · 7 ms | 🟢 |
 | 281 | `sketch-dof == 3` | 3 | 🟢 |
 | 282 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `9327d9b1a69519b2` |
-| 129ConstrainSplineG2 | 221 | `fbbde2d4c402567f` |
-| 130ConstrainReference | 415 | `d45b228c79582c58` |
-| 131ConstrainReferenceFollows | 449 | `3fb70c881f241b57` |
-| 132ConstrainLinkPick | 508 | `39674a0e3155352e` |
-| 133ConstrainLinked | 595 | `c883b71501588ad8` |
+| 128ConstrainSplineG1 | 179 | `37a2d3d88dad63f7` |
+| 129ConstrainSplineG2 | 221 | `bc4c418ff5de707d` |
+| 130ConstrainReference | 415 | `3875f545f682b6a7` |
+| 131ConstrainReferenceFollows | 449 | `1e98a8a7855bb011` |
+| 132ConstrainLinkPick | 508 | `9148cae22ec4b20a` |
+| 133ConstrainLinked | 595 | `bacd6fa93d6b96b3` |
 
 ## Journal
 
@@ -104,24 +104,24 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 5 ms
+- Extrude1 · Rectangle1 · New · 7 ms
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 6 ms
+- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 1.5 · Line1 · 5 ms
+- Constrain Rectangle1: Length 1.5 · Line1 · 6 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 1 · Line2 · 5 ms
+- Constrain Rectangle1: Length 1 · Line2 · 6 ms
 - Picks cleared
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End
-- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 5 ms
+- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms
 - Picks cleared
-- D2 = 2 in Rectangle1 · 6 ms
+- D2 = 2 in Rectangle1 · 9 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
 - Picks cleared
 - Constrain ended
@@ -135,13 +135,13 @@
 - Constrain Line1: Coincident · Line1.Start · Point2 · 6 ms
 - Picked Line1.End
 - Picked Line1.End, Line3 of Rectangle1
-- Constrain Line1: Point on line · Line1.End · Line2 · 7 ms
+- Constrain Line1: Point on line · Line1.End · Line2 · 6 ms
 - Constrain ended
 - Constrain Rectangle1 · 8 constraint(s) · DOF 0 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- D1 = 2 in Rectangle1 · 8 ms
+- D1 = 2 in Rectangle1 · 11 ms
 - Picks cleared
 - Constrain ended
 - Constrain Line1 · 2 constraint(s) · DOF 1 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line2.Start
 - Autosaved _ClaudeScratch/DraftingWorkspace/LinkedConstraintsRecovery.drafting.toml
-- Unlink Line2.Start of Line1 · 8 ms
+- Unlink Line2.Start of Line1 · 7 ms
