@@ -17,6 +17,6 @@
   "Undo": 2,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves, then D N H V O Q M Y L [ ] · drag points · Esc ends",
+  "Status": "Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends",
   "Viewport": [320, 160, 930, 730]
 }

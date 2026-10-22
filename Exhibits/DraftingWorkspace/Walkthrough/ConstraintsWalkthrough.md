@@ -1,8 +1,8 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 457 frames · 37.6408 s · slowest frame 308.147 ms
-- Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ConstraintsWalkthrough.txt
+- Frame: 1600 x 900 · 457 frames · 35.8287 s · slowest frame 324.12 ms
+- Script: Experimental/DraftingWorkspace/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
 | Line | Expectation | Observed | Result |
@@ -15,7 +15,7 @@
 | 47 | `constraints == H1,V1,H2,V2` | H1,V1,H2,V2 | 🟢 |
 | 48 | `sketch-dof == 4` | 4 | 🟢 |
 | 49 | `sketch-status == under-constrained` | under-constrained | 🟢 |
-| 50 | `status contains Constrain Rectangle1` | Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves, then D N H V... | 🟢 |
+| 50 | `status contains Constrain Rectangle1` | Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sket... | 🟢 |
 | 56 | `constrain-picks == Line1.Start` | Line1.Start | 🟢 |
 | 59 | `constraint-count == 5` | 5 | 🟢 |
 | 60 | `sketch-dof == 2` | 2 | 🟢 |
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `a448ab0258e9db46` |
-| 123ConstrainFull | 174 | `dd58b338f30f2977` |
-| 124ConstrainConflict | 202 | `574b54973b14f4cf` |
-| 125ConstrainEdit | 240 | `548c1bad0bce3429` |
-| 126ConstrainDragging | 275 | `94c2d037b82b500c` |
-| 127ConstrainAngle | 451 | `f6b6b54405bd5c6a` |
+| 122ConstrainOpen | 109 | `d7ceaa5681464a80` |
+| 123ConstrainFull | 174 | `a2bfae897b474776` |
+| 124ConstrainConflict | 202 | `0e1379779b97a66a` |
+| 125ConstrainEdit | 240 | `9676628b11aea480` |
+| 126ConstrainDragging | 275 | `64f2d8ea45ebfaee` |
+| 127ConstrainAngle | 451 | `3db8d3da64e9711d` |
 
 ## Journal
 
@@ -99,9 +99,9 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 5 ms
+- Extrude1 · Rectangle1 · New · 6 ms
 - Selection cleared
-- Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves, then D N H V O Q M Y L [ ] · drag points · Esc ends
+- Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 6 ms
 - Picked Line1
@@ -119,24 +119,24 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/ConstraintsRecovery.drafting.toml
 - Constraint dropped
 - Picks cleared
-- D1 Length 3 · Line1 · type a value + Enter · Delete removes
-- D1 = 4 in Rectangle1 · 13 ms
+- D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
+- D1 = 4 in Rectangle1 · 12 ms
 - Undo
 - Redo
 - Picks cleared
-- D2 Length 2 · Line2 · type a value + Enter · Delete removes
-- Remove D2 (Length 2 · Line2) from Rectangle1 · 14 ms
+- D2 Length 2 · Line2 · type a value + Enter · E makes it a reference · Delete removes
+- Remove D2 (Length 2 · Line2) from Rectangle1 · 13 ms
 - Drag Line2.End of Rectangle1 · 16 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/ConstraintsRecovery.drafting.toml
-- Line1 · 17 ms
-- Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves, then D N H V O Q M Y L [ ] · drag points · Esc ends
+- Line1 · 16 ms
+- Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 17 ms
 - Picked Line1
-- Constrain Line1: Horizontal · Line1 · 16 ms
+- Constrain Line1: Horizontal · Line1 · 19 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
 - Constrain Line1: Length 1.5 · Line1 · 17 ms
@@ -144,7 +144,7 @@
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 17 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 16 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2

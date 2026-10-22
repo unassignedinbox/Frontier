@@ -1,0 +1,22 @@
+{
+  "Frame": 221,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#2", "Caption": "Curve1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Curve", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[1, 1], [2, 0.6], [3, 0.9], [4, 1.1]], "Refusal": ""},
+  "Undo": 8,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Constrain Curve1: Horizontal end · Spline1.Point3 · 0 ms",
+  "Viewport": [320, 160, 930, 730]
+}

@@ -1,0 +1,22 @@
+{
+  "Frame": 449,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}],
+  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 3, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[-0, -0], [2, 1]], "Refusal": ""},
+  "Undo": 7,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)",
+  "Viewport": [320, 160, 930, 730]
+}

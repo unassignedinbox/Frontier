@@ -279,6 +279,15 @@ add_test(NAME DraftingConstraintsWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingConstraintsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME DraftingLinkedConstraintsWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/LinkedConstraintsRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/LinkedConstraints.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/LinkedConstraintsWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingLinkedConstraintsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

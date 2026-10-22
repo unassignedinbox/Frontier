@@ -1035,7 +1035,8 @@ constexpr ImU32  FreeColour        = IM_COL32(0x9f, 0xd8, 0xff, 0xff);          
 constexpr ImU32  ConstraintColour  = IM_COL32(0xe0, 0x8c, 0xff, 0xff);                       // #e08cff  - Glyphs (SolveSpace magenta)
 constexpr ImU32  ReferenceColour   = IM_COL32(0xa8, 0xb0, 0xbc, 0xff);                       // #a8b0bc  - Reference (driven) dimensions
 constexpr ImU32  LinkColour        = IM_COL32(0xff, 0xc1, 0x4d, 0xff);                       // #ffc14d  - Linked (projected) geometry, amber
-constexpr ImU32  OtherSketchColour = IM_COL32(0x9f, 0xa8, 0xb4, 0x8c);                       // #9fa8b4  - Earlier sketches (dimmed, pickable)
+constexpr ImU32  OtherSketchColour = IM_COL32(0xc9, 0xd1, 0xdc, 0xd0);                       // #c9d1dc  - Earlier sketches (dashed, pickable)
+constexpr ImU32  OtherSketchCasing = IM_COL32(0x20, 0x24, 0x2c, 0xb0);                       // #20242c  - Their dark casing (reads on faces too)
 
 // 📝 One clickable constraint mark in pixels: a pill (letter or stroke symbol) or a dimension (lines + value pill).
 struct ConstraintGlyph
@@ -1643,6 +1644,29 @@ void DriveConstraintSession(DraftingWorkspaceState& State, const DraftingCameraF
     return Pixels;
 }
 
+// Dashed polyline (6 px on, 4 px off) over a dark casing: earlier sketches read on the background and on faces alike.
+void DrawDashedPolyline(ImDrawList* Canvas, const std::vector<ImVec2>& Pixels, ImU32 Colour, float Width)
+{
+    Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), OtherSketchCasing, Width + 2.0f);
+    constexpr float On = 6.0f, Period = 10.0f;
+    float Phase = 0.0f;                                                                      // [px] - Arc length into the current period
+    for (size_t Index = 0; Index + 1 < Pixels.size(); ++Index)
+    {
+        const ImVec2 From = Pixels[Index], To = Pixels[Index + 1];
+        const float  Span = std::hypot(To.x - From.x, To.y - From.y);
+        float Travel = 0.0f;
+        while (Travel < Span)
+        {
+            const float Step = std::min(Span - Travel, Phase < On ? On - Phase : Period - Phase);
+            if (Phase < On && Span > 0.0f)
+                Canvas->AddLine(ImVec2(From.x + (To.x - From.x) * Travel / Span, From.y + (To.y - From.y) * Travel / Span),
+                                ImVec2(From.x + (To.x - From.x) * (Travel + Step) / Span, From.y + (To.y - From.y) * (Travel + Step) / Span), Colour, Width);
+            Travel += Step;
+            Phase   = std::fmod(Phase + Step, Period);
+        }
+    }
+}
+
 // 📝 The session sketch on top of the ordinary overlay: curves green when fully fixed, picks blue, hover white, points
 //    (green fixed · light blue free), the drag preview, then every constraint glyph / dimension coloured by status.
 void DrawConstraintOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
@@ -1665,13 +1689,15 @@ void DrawConstraintOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, co
             const std::vector<ImVec2> Pixels = CurvePixels(State, Frame, *Other.Sketch, Other.Sketch->Curves[Curve], Other.Plane);
             if (Pixels.size() < 2) continue;
             const bool Chosen = PickedIn(Other.Label, SketchPickKind::Curve, Curve), Over = HoveredIn(Other.Label, SketchPickKind::Curve, Curve);
-            Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Chosen ? SelectedColour : Over ? IM_COL32(0xff, 0xff, 0xff, 0xff) : OtherSketchColour, Chosen || Over ? 3.0f : 1.5f);
+            if (Chosen || Over) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Chosen ? SelectedColour : IM_COL32(0xff, 0xff, 0xff, 0xff), 3.0f);
+            else DrawDashedPolyline(Canvas, Pixels, OtherSketchColour, 1.5f);
         }
         for (int Point = 0; Point < int(Other.Sketch->Points.size()); ++Point)
         {
             ImVec2 Pixel;
             if (!ProjectWorldPoint(State, Frame, PlacePlanePoint(Other.Plane, Other.Sketch->Points[Point].Position), Pixel)) continue;
             const bool Chosen = PickedIn(Other.Label, SketchPickKind::Point, Point);
+            if (!Chosen) Canvas->AddCircleFilled(Pixel, 4.5f, OtherSketchCasing);
             Canvas->AddCircleFilled(Pixel, Chosen ? 5.0f : 3.0f, Chosen ? SelectedColour : OtherSketchColour);
             if (HoveredIn(Other.Label, SketchPickKind::Point, Point)) Canvas->AddCircle(Pixel, 8.0f, IM_COL32(0xff, 0xff, 0xff, 0xff), 0, 1.5f);
         }

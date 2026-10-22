@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (38.97 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (20.07 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -29,6 +29,9 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (38
 | W23 | Sketch constraints (K): a drawn rectangle goes DOF 4 → Lock 2 → D 1 → D 0, each dimension drives the extrude volume; literal and parameter-bound dimension edits regenerate downstream; undo / redo; remove frees a degree | ≤ 10⁻⁹ · exact | 5.92e-16 | 4 | 🟢 |
 | W24 | Constraint refusals: redundant (named partner) and conflicting (named partners) constraints, non-dimension / non-positive edits, unknown sketch — the document, history and file stay untouched | exact | 0 | 4 | 🟢 |
 | W25 | Point drag: a free corner follows the cursor and the extrude follows it; a locked point refuses; the preview is pure; save → load → save byte-equal with constraint labels | ≤ 10⁻⁹ · exact | 2.96e-16 | 3 | 🟢 |
+| W26 | Reference dimensions (Shift+D / E): a driven diagonal reads √13 then 5 without moving anything (DOF, positions, volume bit-equal); editing it or making it driving while implied is refused; E makes it driving at its reading and back; undo / redo; codec | ≤ 10⁻¹² · exact | 2.96e-16 | 4 | 🟢 |
+| W27 | Spline constraints: a line and a NURBS curve joined → L (G1) → C (G2, replaces the G1) → H on the far end, each solve ≤ 10⁻¹² with DOF −1 / −1 / −1; undo restores the G1; G2 on a natural cubic refused; codec | ≤ 10⁻¹² · exact | 5.14e-16 | 4 | 🟢 |
+| W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
 
 ## Walkthrough
 
@@ -163,7 +166,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (38
 | W17 | Cut (Block1 by Line1): Cut#4 (Cut1) = 2, Block1 = 6 exact, both sound; Block1 keeps its key and Brass, the piece wears Studio | 6.66e-16 | 🟢 |
 | W17 | Remove (Cut1): 1 body left (6), Block1 active; undo → 2 bodies, redo → 1 | 0 | 🟢 |
 | W17 | Cut (Block1 by Circle1): core π/4 and the holed block 6 − π/4 exact (genus 1), cut from the active body | 3.25e-15 | 🟢 |
-| W17 | Cut (Loft1 by CharacterLine) seen along −z: 2 sound sheets (1 + 1 faces); Remove (Cut1) keeps the trimmed panel | 0 | 🟢 |
+| W17 | Cut (Loft1 by CharacterLine) seen along −z: 2 sound sheets (1073141345 + 1070791122 faces); Remove (Cut1) keeps the trimmed panel | 0 | 🟢 |
 | W17 | refused: no cutter (choose the cutter: focus a sketch step or select a curve) · misses (Cut#9: Cut: the cut misses the body (nothing on the outside)) · unknown body (no body named Extrude#99) · extrude as cutter · Remove unknown (no body named Ghost#1); untouched | 0 | 🟢 |
 | W17 | save → load → save byte-equal with Cut (11) and Remove (12): Cut 2 bodies · Bonnet 1 bodies, volumes bit-equal | 0 | 🟢 |
 | W18 | preview T on Line1 of the pentagram: removed piece between its two crossings (off 2.22044604925e-16), 2 pieces left; document unchanged | 2.22e-16 | 🟢 |
@@ -197,6 +200,19 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (38
 | W25 | Drag Line2.End of Rectangle1: corner at (4, 3), Line3.Start follows to (0, 3), V 12; the preview left the document alone | 2.96e-16 | 🟢 |
 | W25 | refused: Line1.Start is fully constrained (it cannot move) | 0 | 🟢 |
 | W25 | save → load → save byte-equal; F1 / D1 labels and DOF 1 survive the reload | 0 | 🟢 |
+| W26 | Constrain Rectangle1: Distance 3.60555 (reference) · Line1.Start · Line2.End: Distance 3.60555 (reference) · Line1.Start · Line2.End · DOF 0 · positions and V bit-equal | 0 | 🟢 |
+| W26 | D2 = 4 in Rectangle1 → D3 reads 5 · refused: D3 is a reference dimension (E makes it driving) · Distance 5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 3 · Line1), D2 (Length 4 · Line2) (it stays a reference) · H1 (Horizontal · Line1) has no value (only dimensions can be references) | 2.96e-16 | 🟢 |
+| W26 | DOF 1 → Drive D3 (Distance 5 (reference) · Line1.Start · Line2.End) in Rectangle1 0 (V bit-equal) → Reference D3 (Distance 5 · Line1.Start · Line2.End) in Rectangle1 1; undo / redo | 0 | 🟢 |
+| W26 | save → load → save byte-equal; Reference = true written for D3 only | 0 | 🟢 |
+| W27 | DOF 10 → Constrain Line1: Tangent (G1) · Spline2 · Line1 9 → Constrain Line1: Curvature (G2) · Spline2 · Line1 (replaces T1 (Tangent (G1) · Spline2 · Line1)) 8 | 2.4e-16 | 🟢 |
+| W27 | Constrain Line1: Horizontal end · Spline2.Point3 · DOF 7; undo × 2 brings T1 back, redo × 2 restores K1 + H1 | 5.14e-16 | 🟢 |
+| W27 | refused: Curvature (G2): Spline2 is a cubic spline: its ends have zero curvature by construction (use Hermite, Bezier or NURBS for G2) | 0 | 🟢 |
+| W27 | save → load → save byte-equal with SplineCurvature (22) and SplineDirection (24) | 0 | 🟢 |
+| W28 | DOF 4 → Constrain Line1: Coincident · Line1.Start · Point2 2 → Constrain Line1: Point on line · Line1.End · Line2 1; corner gap 2.220e-16, edge gap 0.000e+00 | 2.22e-16 | 🟢 |
+| W28 | D1 = 4 in Rectangle1: B's start follows to (4, 2), end on y = 2 (gap 0.000e+00), K view gap 0.000e+00, no notes, V 8 | 0 | 🟢 |
+| W28 | refused: Sketch#3 comes after Sketch#1 (link to earlier sketches only) · Drag: Line2.Start is linked to Sketch#1 (move it there) · Sketch#1 has no point 40; file and history untouched | 0 | 🟢 |
+| W28 | save → load → save byte-equal with [[Steps.Sketch.Links]] { Point, Sketch, Index } and the construction line's LinkSketch / LinkIndex | 0 | 🟢 |
+| W28 | Unlink Line2.Start of Line1: DOF 3, start stays at (4, 2) when D1 = 5 (gap 0.000e+00); undo relinks | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 
