@@ -571,7 +571,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
 
   vec3 rock = mix( uRockA, bandCol, uStrataContrast * bandVis );
   rock *= 1.0 + blockTone;
-  rock *= 1.0 - crackAO * 0.55;
+  rock *= 1.0 - crackAO * 0.42;
   vec3 strataOnly = rock;
   // terrain beds carry the erosion hardness: caprock paler and cleaner, soft beds darker and warmer
   // (gated off the steep walls — per-bed tones there are banding, whatever their source)
@@ -829,7 +829,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   roughness = mix( roughness, 0.95, veg );
   roughness = mix( roughness, uSnowRoughness, snow );
 
-  float ao = ( 1.0 - rim * 0.25 * uPeelShadow ) * ( 1.0 - pit * 0.4 ) * ( 1.0 - crackAO * 0.5 ) * ( 1.0 - sedSeam * 0.3 * sedCover ) * ( 1.0 - max( 0.0, -cavity ) * 0.4 * uCavityStrength );
+  float ao = ( 1.0 - rim * 0.25 * uPeelShadow ) * ( 1.0 - pit * 0.4 ) * ( 1.0 - crackAO * 0.42 ) * ( 1.0 - sedSeam * 0.3 * sedCover ) * ( 1.0 - max( 0.0, -cavity ) * 0.4 * uCavityStrength );
   ao = mix( ao, 1.0, snow * 0.6 );
 
   // soil and sediment hide the rock micro-relief under a softer surface; the fill brings its own

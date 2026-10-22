@@ -143,6 +143,7 @@ export const defaults = {
   sdfVertical: 0,
   sdfLeanReach: 24,         // [m]
   sdfNotch: 0,              // [m] wave-cut notch depth at the waterline
+  sdfSegH: 12,              // [m] cross-joint segment height (columns break up the face)
   sdfPushScale: 28,         // [m]
   sdfBlocks: 0,
   sdfBlockSwing: 0.6,       // how far the block lattice swings from world-aligned             // [m] rock blocks: per-block in/out of the face
@@ -371,9 +372,9 @@ export const presets = {
     plateauStrength: 0.5, plateauHeight: 220, canyonDepth: 0, snowLine: 5000, vegetation: 0.9, mossiness: 0.8, seaLevel: 70, waterEnabled: 1,
     talusSoft: 35, talusHard: 84, droplets: 150000,
     sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.6, sdfPits: 0.35, sdfRough: 0.9, sdfPushPull: 1.0, sdfPushScale: 22, sdfNotch: 2.5,
-    sdfBlocks: 3, sdfBlockSize: 8, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 28, sdfChunk: 32, sdfMaxChunks: 800,
-    jointSpacing: 7, jointWidth: 0.5,
-    peelStrength: 0.5, peelScale: 1.8, flakeStrength: 0.7, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
+    sdfBlocks: 2, sdfBlockSize: 8, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 28, sdfChunk: 32, sdfMaxChunks: 800,
+    jointSpacing: 7, jointWidth: 0.7, jointStagger: 1.5,
+    peelStrength: 0.5, peelScale: 1.8, peelFresh: 0.45, flakeStrength: 0.7, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
   },
   'Coastal cliffs': {
     palette: 'shale', worldSize: 1024, mountainHeight: 110, baseElevation: -25, baseFrequency: 1.0, ridgeSharpness: 1.3, peakPower: 1.0, warpStrength: 0.4,
@@ -384,7 +385,7 @@ export const presets = {
     snowOn: 0, vegetation: 0.95, vegSlope: 32, vegPatchiness: 0.2, mossiness: 0.25, soilAmount: 0.6, dryness: 0.15,
     seaLevel: 0, waterEnabled: 1, waterMeshes: 0, riverCatchment: 0.4, riverLakes: 0,
     sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.5, sdfPits: 0.3, sdfRough: 0.8, sdfPushPull: 1, sdfPushScale: 30, sdfNotch: 2.0,
-    sdfBlocks: 2.5, sdfBlockSize: 9, sdfBlockLoss: 0.12, sdfVertical: 1.15, sdfLean: 1.5, sdfLeanReach: 30, sdfChunk: 32, sdfMaxChunks: 800, overhang: 2,
+    sdfBlocks: 2, sdfBlockSize: 9, sdfBlockLoss: 0.12, sdfVertical: 1.15, sdfLean: 1.5, sdfLeanReach: 30, sdfChunk: 32, sdfMaxChunks: 800, overhang: 2,
     jointStrength: 1.0, jointSpacing: 6, jointWidth: 0.35, jointDepth: 0.4, jointStagger: 1, jointBlocks: 0.7, jointDropout: 0.3,
     peelStrength: 0.25, flakeStrength: 0.3, oxideAmount: 0.25, wetness: 0.8, rockDensity: 0.45, rockSlopeMax: 30, rockSizeMin: 0.6, rockSizeMax: 6, gravelAmount: 1,
     sunElevation: 38, sunAzimuth: 235, turbidity: 3, fogDensity: 0.3,

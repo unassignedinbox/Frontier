@@ -13,7 +13,7 @@
 //          piecewise-linear border → watertight with the terrain mesh, which skips the covered quads
 
 import { SimplexNoise, GradientNoise3, smoothstep, lerp, clamp01 } from './noise.js';
-import { jointField, makeJointSets } from './joint-sets.js';
+import { jointField, makeJointSets, segField } from './joint-sets.js';
 import { makeBedTable, bedAt, bedJitter, bedHardness } from './strata-model.js';
 import { NO_WATER } from './features.js';
 import { edgeTable, triTable } from './mc-tables.js';
@@ -353,6 +353,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   // soft-bed slots were half of the banded-wallpaper look.
   const blockAmp = Math.max(0, v.sdfBlocks || 0);
   const blockLoss = Math.min(1, Math.max(0, v.sdfBlockLoss == null ? 0.12 : v.sdfBlockLoss));
+  const segH = Math.max(6, v.sdfSegH || 12);
   const jointSpacing = Math.max(1.5, v.jointSpacing || 6);
   const jointWidth = Math.max(0.15, v.jointWidth || 0.35);
   const jointDropout = Math.min(0.9, Math.max(0, v.jointDropout == null ? 0.25 : v.jointDropout));
@@ -361,7 +362,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   const jointOpts = { width: jointWidth, dropout: jointDropout, stagger: jointStagger, domain: jointDomain, loss: blockLoss, vary: v.jointVary == null ? 0.7 : v.jointVary };
   const seamW = Math.max(0.35, vox * 0.6);
   const seamDepth = 0.22 * undercut, bedStep = 0.12 * undercut;
-  const jointDepthM = 1.5, scarDepth = 1.2 + blockAmp * 0.35, pitDepthM = 2;
+  const jointDepthM = 0.8, scarDepth = 1.2 + blockAmp * 0.35, pitDepthM = 2;
   const bump = roughAmp + detail.amp + pushAmp + blockAmp;
   const maxCarve = carveReach(v);
   // everything that depends on the plan position only
@@ -434,18 +435,26 @@ export function buildChunkGeometry(job, meta, v, ctx) {
     const hardness = smoothstep(0.45, 0.7, hard);
     const bedOff = (0.45 - hardness) * bedStep;
     const bedRelief = (seam + bedOff) * bedPower * (1 - col.oc);
+    // cross-joints: per-column segments (mul), live ticks (groove), per-segment joint
+    // aperture (gmul — joints pinch and swell along their length, so no groove runs the
+    // face at uniform depth to catch the eye)
+    const sgb = jc.cellA * 73 + jc.cellB * 191;
+    const sg = blockAmp > 0 ? segField(sgb, y, segH) : null;
     // planar joints: grooves at the true joint planes, biting hardest in hard beds
-    const jointCarve = jc.groove * joints * jointDepthM * (0.35 + 0.65 * hardness) * (1 - col.oc);
-    // blocks: each joint-bounded block stands proud or sits back; some have fallen out
+    const jointCarve = jc.groove * joints * jointDepthM * (0.35 + 0.65 * hardness) * (sg ? sg.gmul : 1) * (1 - col.oc);
+    // blocks: each joint-bounded block stands proud or sits back; some have fallen out.
+    // Cross-joints divide every column into irregular segments (each column its own
+    // heights), so fins never run the full face — full-height fins + low sun = zebra.
     let block = 0;
     if (blockAmp > 0) {
       const bh = (0.35 + 0.65 * smoothstep(0.35, 0.6, hard)) * (1 - col.oc);
-      block = -jc.off * blockAmp * bh;
+      block = -jc.off * blockAmp * bh * sg.mul;
       if (jc.scar) {
         // no block falls out of the top bed right under the crest (it would leave the lip floating)
         const guard = needCF ? 1 - smoothstep(col.crest - 1.5 * thick, col.crest - 0.3 * thick, y) : 1;
         block += jc.scar * guard * scarDepth;
       }
+      block += sg.groove * (0.35 + 0.65 * hardness) * (1 - col.oc);
     }
     // vesicles / weathering pits in hard rock (small; the blotchy soft-bed pocks are gone)
     const n = 0.5 + 0.5 * ctx.pocket.fbm(x / pocketScale, y / (pocketScale * 0.6), z / pocketScale, 3, 2.1, 0.55);
@@ -653,7 +662,14 @@ export function buildChunkGeometry(job, meta, v, ctx) {
     aux2[n * 4] = bil(m.road, cu, cw);
     aux2[n * 4 + 1] = bil(m.river, cu, cw);
     aux2[n * 4 + 2] = bil(m.lake, cu, cw);
-    aux2[n * 4 + 3] = m.waterPaint ? bil(m.waterPaint, cu, cw) : m.waterLevel[Math.min(Sz - 1, Math.max(0, Math.round(cw) + pad)) * Sx + Math.min(Sx - 1, Math.max(0, Math.round(cu) + pad))];
+    // waterPaint on dry heightfield cells is exactly (height − 40): correct where the
+    // surface IS the heightfield, but a carved vertex far below its column top would
+    // read it as a lake in the sky and paint itself water-blue. Dry fallback is exactly
+    // identifiable, so reject it at carved verts (real streams/seas are never height−40
+    // and pass through untouched — waterfalls survive this).
+    let wAux = m.waterPaint ? bil(m.waterPaint, cu, cw) : m.waterLevel[Math.min(Sz - 1, Math.max(0, Math.round(cw) + pad)) * Sx + Math.min(Sx - 1, Math.max(0, Math.round(cu) + pad))];
+    if (m.waterPaint && Math.abs(wAux - (bil(m.height, cu, cw) - 40)) < 0.25) wAux = Math.min(wAux, y - 0.1);
+    aux2[n * 4 + 3] = wAux;
   }
   const index = count > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
   return { positions: pos, normals, aux, aux2, index, voxels: nx * ny * nz, triangles: indices.length / 3 };

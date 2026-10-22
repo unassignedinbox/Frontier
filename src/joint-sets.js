@@ -93,6 +93,28 @@ export function jointField(x, z, bedIndex, sets, spacing, bedThick, o = {}) {
   return { d, groove, hair, cellA: A.cell, cellB: B.cell, blockTone, off, off2, scar };
 }
 
+// Cross-joints (CARVE ONLY — no paint mirror): each vertical joint-bounded column is
+// divided into irregular segments ~segH tall. Without them the per-column offsets run
+// the full face height as fins, and a low sun turns the fins into zebra stripes. Each
+// segment stands differently (mul) and some segment boundaries crack open (groove), so
+// the wall reads as stacked blocks, never as organ pipes — and never as beds, because
+// every column breaks at its own heights. Pure function of (blockKey, y).
+export function segField(bkey, y, segH = 12) {
+  const H = Math.max(6, segH);
+  const kc = Math.floor(y / H);
+  const b = (k) => (k + 0.5) * H + (jshash(bkey, k, 701) - 0.5) * 0.7 * H;
+  const b0 = b(kc - 1), b1 = b(kc), b2 = b(kc + 1);
+  const seg = y < b1 ? kc - 1 : kc;
+  const d0 = Math.abs(y - b0), d1 = Math.abs(y - b1), d2 = Math.abs(y - b2);
+  const dCross = Math.min(d0, d1, d2);
+  const nearK = dCross === d0 ? kc - 1 : dCross === d2 ? kc + 1 : kc;
+  const mul = 0.2 + 0.9 * jshash(bkey, seg, 703);
+  const live = jshash(bkey, nearK, 705) > 0.3 ? 1 : 0;
+  const groove = (1 - sstep(0, 0.45, dCross)) * 0.35 * live;
+  const gmul = 0.55 + 0.9 * jshash(bkey, seg, 707);
+  return { seg, mul, groove, gmul };
+}
+
 // vec4 uniforms for the shader: (normalX, normalZ, origin, seed)
 export function jointSetUniforms(seed) {
   const s = makeJointSets(seed);

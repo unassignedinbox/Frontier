@@ -130,7 +130,7 @@ function evalWallPixel(x, y, footprint) {
   const crackAO = Math.max(Math.max(jf.groove, gB), jf.hair * 0.4) * jointAmt;
   let rock = [0, 1, 2].map((i) => mix(rockA[i], bandCol, (v.strataContrast == null ? 0.7 : v.strataContrast) * 1));
   rock = rock.map((c) => c * (1 + blockTone));
-  rock = rock.map((c) => c * (1 - crackAO * 0.55));
+  rock = rock.map((c) => c * (1 - crackAO * 0.42));
   // (hardness tint is gated off walls: × (1 − wallFlat) = 0 — nothing to do)
   // runoff streaks with district patchiness + distance fade (footprint emulates distance)
   const st = cgNoise3(x / v.streakScale, (y * 0.05) / v.streakScale, z / v.streakScale) * 0.6
@@ -225,9 +225,70 @@ writeFileSync('/tmp/wall-far.png', PNG.sync.write(far.png));
 writeFileSync('/tmp/wall-close.png', PNG.sync.write(close.png));
 console.log('wrote /tmp/wall-near.png /tmp/wall-far.png /tmp/wall-close.png');
 
+const fails = []; // declared early: the groove-tracking probe below pushes here
+
+// Groove tracking: can the eye follow joint grooves across bed boundaries? Sample the
+// REAL joint groove field on a (strike × height) grid through the real beds; correlate
+// adjacent rows within one bed (grooves exist and continue) vs across a boundary (the
+// lattice jogs by stagger + rescale, 30% of grooves terminate by dropout). Trackable
+// grooves are the zebra's skeleton: within must be ~1, across must break below half.
+{
+  const rows = 100, cols = 200, yA = Y0, yB = Y0 + SPAN_Y, SPAN_S = 40;
+  const grid = new Float32Array(rows * cols);
+  const rowBed = new Int32Array(rows);
+  for (let r = 0; r < rows; r++) {
+    const y = yA + (r / (rows - 1)) * (yB - yA);
+    const bedVotes = new Map();
+    for (let c = 0; c < cols; c++) {
+      const x = X0 + (c / (cols - 1)) * SPAN_S;
+      const z = Z0;
+      const sxj = x + v.worldSize / 2, szj = z + v.worldSize / 2;
+      const t = (y + dipX * sxj + dipZ * szj) / (bedJitter(sxj, szj, lateral) * bandScale);
+      const bed = bedAt(table, t);
+      bedVotes.set(bed.index, (bedVotes.get(bed.index) || 0) + 1);
+      const jf = jointField(x, z, bed.index, jsets, jsp, bed.thick, {
+        width: v.jointWidth || 0.35, dropout: v.jointDropout == null ? 0.3 : v.jointDropout,
+        stagger: v.jointStagger == null ? 1 : v.jointStagger, domain: jointDomain,
+        loss: 0, vary: v.jointVary == null ? 0.7 : v.jointVary,
+      });
+      grid[r * cols + c] = jf.groove;
+    }
+    let best = -1, bn = -1;
+    for (const [k, n] of bedVotes) if (n > bn) { bn = n; best = k; }
+    rowBed[r] = best;
+  }
+  // Masked to the groove support (cols where EITHER row has groove energy): grooves
+  // are sparse, and unmasked Pearson is inflated by the shared all-zero background.
+  const rowCorr = (r1, r2) => {
+    const xs = [], ys = [];
+    for (let c = 0; c < cols; c++) {
+      const a = grid[r1 * cols + c], b = grid[r2 * cols + c];
+      if (a > 0.05 || b > 0.05) { xs.push(a); ys.push(b); }
+    }
+    if (xs.length < 10) return NaN;
+    const mx = xs.reduce((s, t) => s + t, 0) / xs.length, my = ys.reduce((s, t) => s + t, 0) / ys.length;
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let k = 0; k < xs.length; k++) { sxy += (xs[k] - mx) * (ys[k] - my); sxx += (xs[k] - mx) * (xs[k] - mx); syy += (ys[k] - my) * (ys[k] - my); }
+    return sxx < 1e-9 || syy < 1e-9 ? NaN : sxy / Math.sqrt(sxx * syy);
+  };
+  let wSum = 0, wN = 0, aSum = 0, aN = 0;
+  for (let r = 0; r + 1 < rows; r++) {
+    const cc = rowCorr(r, r + 1);
+    if (Number.isNaN(cc)) continue;
+    if (rowBed[r] === rowBed[r + 1]) { wSum += cc; wN++; } else { aSum += cc; aN++; }
+  }
+  const within = wN ? wSum / wN : NaN, across = aN ? aSum / aN : NaN;
+  const f1 = (x) => (Number.isNaN(x) ? 'n/a' : x.toFixed(3));
+  console.log(`grooves: row-correlation within-bed=${f1(within)} (n=${wN}) across-bed=${f1(across)} (n=${aN})`);
+  if (Number.isNaN(within) || Number.isNaN(across)) fails.push('groove tracking starved');
+  else {
+    if (!(within > 0.8)) fails.push(`grooves not continuous within beds (${within.toFixed(3)})`);
+    if (!(across < 0.5)) fails.push(`grooves trackable across beds — zebra skeleton (${across.toFixed(3)})`);
+  }
+}
+
 // Regression gates: the far view is what the user judges. Bed-locked structure must be
 // a whisper there, and vertical striping must stay well below the joint spacing scale.
-const fails = [];
 const gate = (name, val, lim) => { if (val > lim) fails.push(`${name}=${val.toFixed(3)} > ${lim}`); };
 gate('far.rowRange', mf.rowRange, 0.1);
 gate('far.bedShare', mf.bedShare, 0.12);
