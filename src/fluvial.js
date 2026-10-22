@@ -69,10 +69,22 @@ export function fluvialErosion(height, hardness, N, size, opts, progress = () =>
   const seaMask = new Uint8Array(total);
   const incision = new Float32Array(total); // total metres cut (for the flow/sediment maps)
   const area = cell * cell;
+  // D8 routing locks into parallel grid stripes on smooth slopes (striped drainage area and
+  // sediment that survive into the flow and alluvium maps), so the routing — and only the
+  // routing — runs on the height plus a static low-frequency wander, the way the rill and
+  // river solvers already do. Half a metre never moves a valley once incised, but it breaks
+  // every tie on the interfluves; static, so the network does not jump between iterations.
+  const routing = new Float32Array(total);
+  const wander = new Float32Array(total);
+  {
+    const wn = new SimplexNoise((opts.seed || 1) * 91 + 5);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) wander[j * N + i] = 0.5 * wn.fbm(i * cell / 35, j * cell / 35, 2, 2.1, 0.5);
+  }
 
   for (let it = 0; it < iterations; it++) {
-    // 1. routing on the filled surface
-    const { filled, order } = fillDepressions(height, N, sea, floorGrade);
+    // 1. routing on the filled surface (wander-broken so D8 cannot lock to the grid)
+    for (let i = 0; i < total; i++) routing[i] = height[i] + wander[i];
+    const { filled, order } = fillDepressions(routing, N, sea, floorGrade);
     const down = flowDirections(filled, N);
 
     // 2. drainage area: donors are processed after receivers in `order`, so sum in reverse
@@ -156,7 +168,8 @@ export function fluvialErosion(height, hardness, N, size, opts, progress = () =>
   }
 
   // final drainage area for the caller (flow map seed)
-  const { filled, order } = fillDepressions(height, N, sea);
+  for (let i = 0; i < total; i++) routing[i] = height[i] + wander[i];
+  const { filled, order } = fillDepressions(routing, N, sea);
   const down = flowDirections(filled, N);
   acc.fill(1);
   for (let k = total - 1; k >= 0; k--) { const c = order[k], d = down[c]; if (d >= 0) acc[d] += acc[c]; }

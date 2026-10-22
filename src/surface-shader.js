@@ -330,16 +330,16 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   vec4 flB = cgNoise3( vec3( flU * 2.6 + 11.0, flV * 2.6, 8.2 ) );
   float flN = flA.x * 0.68 + flB.x * 0.32;
   float flRidge = 1.0 - abs( flN * 2.0 - 1.0 );
-  float flFade = ( 1.0 - smoothstep( 0.12, 0.45, footprint / flScale ) ) * smoothstep( 0.004, 0.03, dhLen ) * ( 1.0 - smoothstep( 0.72, 0.94, wall ) );
+  float flFade = ( 1.0 - smoothstep( 0.05, 0.20, footprint / flScale ) ) * smoothstep( 0.004, 0.03, dhLen ) * ( 1.0 - smoothstep( 0.72, 0.94, wall ) );
   float flowMask = smoothstep( 0.06, 0.45, flow );
-  float flowlineVis = smoothstep( 0.86, 0.985, flRidge ) * flowMask * uFlowline * flFade;
+  float flowlineVis = smoothstep( 0.93, 0.995, flRidge ) * flowMask * uFlowline * flFade;
   // groove relief across the lines, from the noise gradient (cgNoise3 returns it analytically):
   // the surface dips along each line, so raking light reads the rills as rills
-  float flT = clamp( ( flRidge - 0.86 ) / 0.125, 0.0, 1.0 );
-  float flDs = 6.0 * flT * ( 1.0 - flT ) / 0.125;
+  float flT = clamp( ( flRidge - 0.93 ) / 0.065, 0.0, 1.0 );
+  float flDs = 6.0 * flT * ( 1.0 - flT ) / 0.065;
   float flDsign = flN > 0.5 ? -2.0 : 2.0;
   float flGradU = flDsign * ( flA.y * 0.68 + flB.y * 2.6 * 0.32 ) / flScale;
-  vec3 flowGroove = vec3( flowPerp.x, 0.0, flowPerp.y ) * ( -flDs * flGradU * 0.08 * flowMask * uFlowline * flFade );
+  vec3 flowGroove = vec3( flowPerp.x, 0.0, flowPerp.y ) * ( -flDs * flGradU * 0.035 * flowMask * uFlowline * flFade );
 
   // ---- cover masks first, so rock micro-detail only grows where rock is exposed ----------------
   float speckle = cgNoise3( wp * 2.3 ).x;
@@ -606,7 +606,10 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   bedCol = mix( bedCol, uSilt * ( 0.9 + 0.2 * speckle ), lakeBed * ( 1.0 - riverBed ) );
   float bedMix = smoothstep( 0.05, 0.5, max( riverBed, lakeBed ) );
   float bedDry = smoothstep( 0.1, 1.4, wp.y - waterLine );            // 0 drowned → 1 evaporated
-  float dryM = bedMix * bedDry * uDryBed;
+  // the crust is for true beds (channels, lake floors) — not for the alluvium aprons, which
+  // never exceed 0.75 in the lake mask and keep their bedded sediment look
+  float bedCore = max( riverBed, smoothstep( 0.72, 0.95, lakeBed ) );
+  float dryM = bedMix * bedDry * uDryBed * smoothstep( 0.15, 0.6, bedCore );
   if ( dryM > 0.003 ) {
     // desiccation polygons on the dried bed
     float dcS = 1.15;

@@ -136,7 +136,10 @@ through. The isolated proof of the technique lives in `../SdfCliffLab`.
    hillslopes diffuse towards the channels and the massifs are uplifted a little so the relief
    stays high while the valleys deepen. Solved with the Braun–Willett implicit scheme (cells
    processed from the outlets upwards, closed form per cell, unconditionally stable) over a few
-   dozen long steps, re‑routing the water (priority‑flood fill + D8) every step. **Sedimentation**:
+   dozen long steps, re‑routing the water (priority‑flood fill + D8) every step on a static
+   noise‑broken surface, so D8 never locks into grid stripes on smooth slopes the way the
+   un‑wandered solver did (striped drainage area and sediment that survived into the flow
+   and alluvium maps). **Sedimentation**:
    what the rivers cut is carried downstream (donors before receivers) and dropped wherever the
    flux exceeds the transport capacity ∝ A^m·S — alluvial fans where slopes flatten, valley
    fills, deltas and basin floors; the deposited thickness becomes an *alluvium* map: the

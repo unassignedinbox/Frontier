@@ -82,7 +82,7 @@ export function generateTerrain(params, progress = () => {}) {
     progress({ phase: 'Fluvial incision', fraction: 0 });
     fluvial = fluvialErosion(height, hardness, N, params.worldSize, {
       strength: params.fluvialStrength, iterations: params.fluvialIterations, concavity: params.fluvialConcavity,
-      uplift: params.fluvialUplift, diffusion: params.fluvialDiffusion, basinFill: params.fluvialFill, deposition: params.fluvialDeposition,
+      uplift: params.fluvialUplift, diffusion: params.fluvialDiffusion, basinFill: params.fluvialFill, deposition: params.fluvialDeposition, seed: params.seed,
       seaLevel: params.waterEnabled ? params.seaLevel : -Infinity,
     }, (f) => progress({ phase: 'Fluvial incision', fraction: f }));
   }
