@@ -191,8 +191,16 @@ through. The isolated proof of the technique lives in `../SdfCliffLab`.
    a hard dark edge; where the water surface drops steeply (rapids, falls) it turns to white water.
    The bed and water of the nearest channel cell are interpolated along the channel direction
    and the floor smoothed, so a steep river is a ramp, not a staircase of treads. Reaches steeper
-   than *Dry above grade* show the carved gully (wet rock, gravel) with no standing water — a
-   mountain torrent does not read as flat water — unless the river is big; lake shores are eased
+   than *Dry above grade* show the carved gully with no standing water — a mountain torrent
+   does not read as flat water — unless the river is big, and every bed knows whether it is wet:
+   channels and lake floors that lie above the water have *evaporated* to a pale evaporite crust
+   with desiccation cracks and ripple ridges (*Water → Evaporated beds*, with its own colour and
+   crack amount), while drowned beds stay dark and saturated — so dry headwater gullies, gravel-bar
+   tops, playas and drained channels all read as dry ground instead of damp rock. The slopes carry
+   *flow lines* (*Soil & gravel → Runoff → Flow lines*): thin directional streaks drawn along the
+   downhill direction wherever the erosion flow map says water ran, with a groove in the normal so
+   raking light reads the rills as rills — the flow-line texture of Gaea's erosion, live in the
+   shader with its own spacing control; lake shores are eased
    into a shelving beach. Steep reaches are wide shallow V gullies; inside closed depressions water runs down the
    real floor into the lake instead of in straight lines across the filled flat; a little noise on
    the routing surface breaks the dead‑straight D8 lines smooth slopes produce. The water mesh is
@@ -291,7 +299,7 @@ six sections:
 | **Surface** | Rock colour · Painted beds · Jointing · Grain · Mineral flakes · Spalling · Sediment · Soil & gravel · Plants & snow |
 | **Environment** | Sun & atmosphere · Water · Viewport |
 
-21 rows, 56 cards, 334 controls. Terrain rows rebuild the heightfield (press *Generate* or
+21 rows, 56 cards, 339 controls. Terrain rows rebuild the heightfield (press *Generate* or
 Ctrl+Enter; the worker reports progress), *Cliffs & mesh* and *Roads* rebuild the mesh, *Rocks*
 re‑scatters, everything under **Surface / Environment** is live. Cards that change stage inside a row
 carry their own stage (the simulated‑river card is a terrain card inside a mesh row, for instance),
@@ -328,10 +336,11 @@ so splitting the categories did not change when anything recomputes.
   detail patchiness, groove width/depth, stagger, block tilt/tone, missing joints), **Grain**,
   **Mineral flakes** (three plate layers), **Spalling**, **Sediment** (cover, bed thickness, bed
   contrast, cross‑lamination, sorting, grain offset, ripples + wavelength, current direction, mud
-  cracks, grain, slope limit, three facies colours), **Soil & gravel** (runoff staining, pebble
-  gravel, soil) and **Plants & snow**.
+  cracks, grain, slope limit, three facies colours), **Soil & gravel** (runoff staining, flow
+  lines, pebble gravel, soil) and **Plants & snow**.
 * **Environment** — sun direction and atmosphere (turbidity, fog, exposure), water (meshes, sea
-  level, colours, opacity, clarity, foam, shoreline wetness, dried‑bed shading) and viewport
+  level, colours, opacity, clarity, foam, shoreline wetness, bed shading with evaporated‑bed
+  crust/cracks/colour) and viewport
   (wireframe, show rocks, auto‑rotate, isolate a single layer, exports).
 
 38 presets: Alpine granite, Sandstone mesa, Canyon, Sea cliffs, Coastal cliffs, Quarry walls, Desert
@@ -370,4 +379,7 @@ in `localStorage`.
 node scripts/check-generate.mjs "Sandstone mesa" 256   # headless pipeline run + ASCII preview
 node scripts/check-shader.mjs /path/to/glslangValidator # assembles the injected shader exactly as
                                                         # Three does and validates GLSL ES 3.00
+node scripts/check-shader-parse.mjs                 # same chunk, no glslangValidator needed:
+                                                        # parses our injected GLSL and checks every
+                                                        # uniform it uses is declared (npm install first)
 ```

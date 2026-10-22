@@ -43,8 +43,8 @@ const fragmentHead = /* glsl */`
 varying vec4 vAux;
 varying vec4 vAux2;
 varying vec3 vWorldPos;
-uniform vec3 uRockA, uRockB, uRockC, uFresh, uOxide, uGrassA, uGrassB, uDry, uMoss, uSnow, uGravel, uRoad, uSilt;
-uniform float uShoreWet, uRoadOn, uBedOn;
+uniform vec3 uRockA, uRockB, uRockC, uFresh, uOxide, uGrassA, uGrassB, uDry, uMoss, uSnow, uGravel, uRoad, uSilt, uEvaporite;
+uniform float uShoreWet, uRoadOn, uBedOn, uDryBed, uDryBedCracks;
 uniform float uStrataBand, uStrataContrast, uDipX, uDipZ, uSeamStrength, uSeamWidth, uLaminae, uBedGradient, uHardnessTint;
 uniform sampler2D uBedTex;   // stratigraphic column: (top, hardness, tint, thickness) per bed
 uniform int uBedCount;
@@ -56,7 +56,7 @@ uniform float uFlakeStrength, uFlakeSheen, uFlakeEdge, uFlakeOxide, uFlakeSparkl
 uniform vec3 uFlakeCol[3];
 uniform float uFlakeOn[3], uFlakeSize[3], uFlakeDensity[3], uFlakeHeight[3], uFlakeCrystal[3], uFlakeVar[3], uFlakeShape[3], uFlakeReveal[3];
 uniform float uPeelStrength, uPeelScale, uPeelCoverage, uPeelThickness, uPeelBedding, uPeelFresh, uPeelPits, uPeelShadow, uPeelSecond;
-uniform float uWetness, uStreakScale, uStreakAmount;
+uniform float uWetness, uStreakScale, uStreakAmount, uFlowline, uFlowlineScale;
 uniform float uGravelAmount, uGravelScale, uGravelRelief, uGravelVariation;
 uniform vec3 uSunDir;
 uniform float uVegetation, uVegScale, uVegSlope, uVegPatchiness, uDryness;
@@ -313,6 +313,34 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   vec2 cgOff = cgWarp2( wp, 4.5 * uTexWarp, 0.0 );
   float faceVar = mix( 1.0, 0.3 + 1.35 * cgPatch( wp, 145.0, 21.0 ), uFacePatch );
 
+  // ---- flow lines: directional erosion streaks along the drainage -------------------------------
+  // Water runs downhill, so the downhill direction from the geometry normal *is* the flow direction
+  // everywhere — rills, gullies, valley floors — with no flow map needed. Noise stretched along it
+  // becomes long thin lines that follow the drainage and converge downstream: the flow-line texture
+  // of Gaea's erosion. The erosion flow channel decides where they show; dead-flat ground (no
+  // downhill) and cliff faces (which carry vertical streaks instead) fade them out.
+  vec2 dhVec = -n.xz;
+  float dhLen = length( dhVec );
+  vec2 flowDir = dhLen > 1e-4 ? dhVec / dhLen : vec2( 1.0, 0.0 );
+  vec2 flowPerp = vec2( -flowDir.y, flowDir.x );
+  float flScale = max( 0.5, uFlowlineScale );
+  float flU = dot( wp.xz, flowPerp ) / flScale;
+  float flV = dot( wp.xz, flowDir ) / ( flScale * 5.0 );
+  vec4 flA = cgNoise3( vec3( flU, flV, 3.7 + uSeed * 0.171 ) );
+  vec4 flB = cgNoise3( vec3( flU * 2.6 + 11.0, flV * 2.6, 8.2 ) );
+  float flN = flA.x * 0.68 + flB.x * 0.32;
+  float flRidge = 1.0 - abs( flN * 2.0 - 1.0 );
+  float flFade = ( 1.0 - smoothstep( 0.12, 0.45, footprint / flScale ) ) * smoothstep( 0.004, 0.03, dhLen ) * ( 1.0 - smoothstep( 0.72, 0.94, wall ) );
+  float flowMask = smoothstep( 0.06, 0.45, flow );
+  float flowlineVis = smoothstep( 0.86, 0.985, flRidge ) * flowMask * uFlowline * flFade;
+  // groove relief across the lines, from the noise gradient (cgNoise3 returns it analytically):
+  // the surface dips along each line, so raking light reads the rills as rills
+  float flT = clamp( ( flRidge - 0.86 ) / 0.125, 0.0, 1.0 );
+  float flDs = 6.0 * flT * ( 1.0 - flT ) / 0.125;
+  float flDsign = flN > 0.5 ? -2.0 : 2.0;
+  float flGradU = flDsign * ( flA.y * 0.68 + flB.y * 2.6 * 0.32 ) / flScale;
+  vec3 flowGroove = vec3( flowPerp.x, 0.0, flowPerp.y ) * ( -flDs * flGradU * 0.08 * flowMask * uFlowline * flFade );
+
   // ---- cover masks first, so rock micro-detail only grows where rock is exposed ----------------
   float speckle = cgNoise3( wp * 2.3 ).x;
   float vegSlopeCos = uVegSlope;
@@ -441,6 +469,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   // Normal perturbation from the composite height gradient
   vec3 Gt = ( G - n * dot( n, G ) ) * uBumpScale;
   vec3 nW = normalize( n - Gt );
+  nW = normalize( nW + flowGroove );
 
   // ---- colour --------------------------------------------------------------------------------
   // strata: beds of varying thickness in the dipped frame, wavy, with soft broken seams
@@ -560,7 +589,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   // runoff staining
   float streak = cgNoise3( vec3( wp.x, wp.y * 0.05, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.1, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4;
   streak = smoothstep( 0.56, 0.78, streak ) * uStreakAmount;
-  float wet = clamp( uWetness * ( flow * 0.9 + streak * wall * 0.7 ), 0.0, 1.0 );
+  float wet = clamp( uWetness * ( flow * 0.9 + streak * wall * 0.7 ) + flowlineVis * 0.9, 0.0, 1.0 );
   rock *= 1.0 - wet * 0.5;
 
   // scree gravel on deposits: pebbles in a sandy matrix
@@ -569,11 +598,38 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   vec3 gravel = mix( matrix, stone, pebbleCover );
   rock = mix( rock, gravel, gravelMix );
 
-  // drawn features: river beds (cobbles → silt towards the banks), lake beds (silt), roads
+  // river beds (cobbles → silt towards the banks) and lake beds (silt); a bed above the water has
+  // evaporated to a pale crust with mud cracks and ripple ridges, while a drowned bed stays dark
+  // and saturated — so dry headwater gullies, bar tops, playas and drained channels read as dry
   float cobble = cgNoise3( wp * 2.6 ).x * 0.5 + cgNoise3( wp * 9.0 + 3.0 ).x * 0.5;
   vec3 bedCol = mix( uSilt, mix( uGravel * ( 0.65 + 0.7 * cobble ), gravel, step( 0.001, uGravelAmount ) ), smoothstep( 0.45, 0.95, riverBed ) );
   bedCol = mix( bedCol, uSilt * ( 0.9 + 0.2 * speckle ), lakeBed * ( 1.0 - riverBed ) );
   float bedMix = smoothstep( 0.05, 0.5, max( riverBed, lakeBed ) );
+  float bedDry = smoothstep( 0.1, 1.4, wp.y - waterLine );            // 0 drowned → 1 evaporated
+  float dryM = bedMix * bedDry * uDryBed;
+  if ( dryM > 0.003 ) {
+    // desiccation polygons on the dried bed
+    float dcS = 1.15;
+    vec2 dcq = wp.xz / dcS + 7.3;
+    ivec2 dcc = ivec2( floor( dcq ) );
+    vec2 dcf = fract( dcq );
+    float dd1 = 1e9, dd2 = 1e9;
+    for ( int sj = -1; sj <= 1; sj++ ) for ( int si = -1; si <= 1; si++ ) {
+      ivec2 cc = dcc + ivec2( si, sj );
+      vec2 ctr = vec2( float( si ), float( sj ) ) + vec2( cgHash2( cc, 61.0 ), cgHash2( cc, 73.0 ) );
+      float dd = length( dcf - ctr );
+      if ( dd < dd1 ) { dd2 = dd1; dd1 = dd; } else if ( dd < dd2 ) { dd2 = dd; }
+    }
+    float dcFade = 1.0 - smoothstep( 0.2, 0.7, footprint / dcS );
+    float dryCrack = ( 1.0 - smoothstep( 0.04, 0.15, dd2 - dd1 ) ) * uDryBedCracks * dcFade;
+    // ripple ridges across the last flow (the phase runs along the downhill direction)
+    float ripPh = dot( wp.xz, flowDir ) / 0.85;
+    float ripFade = 1.0 - smoothstep( 0.12, 0.5, footprint / 0.85 );
+    float dryRipple = sin( ripPh * 6.2831853 ) * ripFade;
+    vec3 evap = uEvaporite * ( 0.9 + 0.2 * speckle ) * ( 1.0 - 0.38 * dryCrack ) * ( 1.0 + 0.05 * dryRipple );
+    bedCol = mix( bedCol, evap, clamp( dryM, 0.0, 1.0 ) );
+  }
+  bedCol *= mix( vec3( 0.66, 0.7, 0.68 ), vec3( 1.0 ), clamp( bedDry * uDryBed + ( 1.0 - uDryBed ), 0.0, 1.0 ) );
   rock = mix( rock, bedCol, bedMix );
   float roadSurf = smoothstep( 0.5, 0.75, road );
   float shoulder = smoothstep( 0.1, 0.4, road ) * ( 1.0 - roadSurf );
@@ -609,7 +665,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float grit = cgNoise3( wp * 11.0 + 5.0 ).x * 0.5 + 0.5;
   vec3 soilCol = mix( uSoilColor, uSoilLight, clamp( clods * 0.7 + grit * 0.3, 0.0, 1.0 ) * uSoilClods + 0.15 );
   soilCol *= 0.92 + 0.16 * grit;
-  float damp = clamp( flow * 1.1 + ( 1.0 - smoothstep( waterLine + 0.2, waterLine + 2.5, wp.y ) ) + streak * 0.3, 0.0, 1.0 ) * uSoilMoisture;
+  float damp = clamp( flow * 1.1 + ( 1.0 - smoothstep( waterLine + 0.2, waterLine + 2.5, wp.y ) ) + streak * 0.3 + flowlineVis * 0.6, 0.0, 1.0 ) * uSoilMoisture;
   soilCol *= 1.0 - 0.4 * damp;
   soilCol *= 1.0 - 0.18 * max( 0.0, -cavity );
   // alluvium / silt on top of the soil (sediment the rivers dropped)
@@ -780,7 +836,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
     else if ( uDebugView < 5.5 ) dbg = mix( vec3( 0.1 ), vec3( 0.3 + 0.6 * pebbleTone ), pebbleCover ) * ( 0.3 + 0.7 * gravelHere );
     else if ( uDebugView < 6.5 ) dbg = vec3( 0.12 ) + vec3( 0.1, 0.7, 0.1 ) * veg + vec3( 0.05, 0.3, 0.15 ) * moss + vec3( 0.9 ) * snow + vec3( 0.5, 0.4, 0.3 ) * gravelMix + vec3( 0.45, 0.3, 0.15 ) * soil * ( 1.0 - veg );
     else if ( uDebugView < 7.5 ) dbg = vec3( rockMask, wet, hardness );
-    else dbg = vec3( road, riverBed, lakeBed ) + vec3( 0.0, 0.0, 0.4 ) * under;
+    else dbg = vec3( road, riverBed, lakeBed ) + vec3( 0.0, 0.0, 0.4 ) * under + vec3( 0.5, 0.08, 0.0 ) * dryM;
     s.albedo = dbg;
     s.normalW = n;
     s.roughness = 1.0;
@@ -808,7 +864,7 @@ const fragmentBody = /* glsl */`
 }
 `;
 
-const colorKeys = { uSedGravel: 'sedColorGravel', uSedSand: 'sedColorSand', uSedSilt: 'sedColorSilt', uSoilColor: 'soilColor', uSoilLight: 'soilLight', uRoad: 'roadColor', uSilt: 'siltColor', uRockA: 'rockA', uRockB: 'rockB', uRockC: 'rockC', uFresh: 'fresh', uOxide: 'oxide', uGrassA: 'grassA', uGrassB: 'grassB', uDry: 'dryColor', uMoss: 'mossColor', uSnow: 'snowColor', uGravel: 'gravelColor' };
+const colorKeys = { uSedGravel: 'sedColorGravel', uSedSand: 'sedColorSand', uSedSilt: 'sedColorSilt', uSoilColor: 'soilColor', uSoilLight: 'soilLight', uRoad: 'roadColor', uSilt: 'siltColor', uEvaporite: 'drybedColor', uRockA: 'rockA', uRockB: 'rockB', uRockC: 'rockC', uFresh: 'fresh', uOxide: 'oxide', uGrassA: 'grassA', uGrassB: 'grassB', uDry: 'dryColor', uMoss: 'mossColor', uSnow: 'snowColor', uGravel: 'gravelColor' };
 
 // uniform → [value key, enable key (optional), scale]
 const scalarKeys = {
@@ -819,14 +875,14 @@ const scalarKeys = {
   uOxideAmount: ['oxideAmount', 'oxideOn'], uOxideScale: ['oxideScale'], uCavityStrength: ['cavityStrength'],
   uFlakeStrength: ['flakeStrength', 'flakesOn'], uFlakeSheen: ['flakeSheen'], uFlakeEdge: ['flakeEdge'], uFlakeOxide: ['flakeOxide'], uFlakeSparkle: ['flakeSparkle'],
   uPeelStrength: ['peelStrength', 'peelOn'], uPeelScale: ['peelScale'], uPeelCoverage: ['peelCoverage'], uPeelThickness: ['peelThickness'], uPeelBedding: ['peelBedding'], uPeelFresh: ['peelFresh'], uPeelPits: ['peelPits'], uPeelShadow: ['peelShadow'], uPeelSecond: ['peelSecond'],
-  uWetness: ['wetness', 'runoffOn'], uStreakScale: ['streakScale'], uStreakAmount: ['streakAmount'],
+  uWetness: ['wetness', 'runoffOn'], uStreakScale: ['streakScale'], uStreakAmount: ['streakAmount'], uFlowline: ['flowlineStrength', 'runoffOn'], uFlowlineScale: ['flowlineScale'],
   uGravelAmount: ['gravelAmount', 'gravelOn'], uGravelScale: ['gravelScale'], uGravelRelief: ['gravelRelief'], uGravelVariation: ['gravelVariation'],
   uSoilAmount: ['soilAmount', 'soilOn'], uSoilClods: ['soilClods'], uSoilMoisture: ['soilMoisture'], uSoilAlluvium: ['soilAlluvium'],
   uSedAmount: ['sedimentAmount', 'sedimentOn'], uSedBands: ['sedBands', 'sedimentOn'], uSedBedScale: ['sedBedScale'], uSedLaminae: ['sedLaminae', 'sedimentOn'], uSedFacies: ['sedFacies'], uSedGrainBias: ['sedGrainBias'], uSedRipple: ['sedRipple', 'sedimentOn'], uSedRippleScale: ['sedRippleScale'], uSedCracks: ['sedCracks', 'sedimentOn'], uSedGrain: ['sedGrain', 'sedimentOn'],
   uVegetation: ['vegetation', 'vegOn'], uVegScale: ['vegScale'], uVegPatchiness: ['vegPatchiness'], uDryness: ['dryness'],
   uMossiness: ['mossiness', 'mossOn'], uMossScale: ['mossScale'],
   uSnowSoftness: ['snowSoftness'], uSnowRoughness: ['snowRoughness'],
-  uBumpScale: ['bumpScale'], uBaseRoughness: ['baseRoughness'], uDebugView: ['debugView'], uShoreWet: ['shoreWet'], uRoadOn: ['roadShading'], uBedOn: ['bedShading'],
+  uBumpScale: ['bumpScale'], uBaseRoughness: ['baseRoughness'], uDebugView: ['debugView'], uShoreWet: ['shoreWet'], uRoadOn: ['roadShading'], uBedOn: ['bedShading'], uDryBed: ['drybedAmount'], uDryBedCracks: ['drybedCracks'],
 };
 
 // per-layer flake uniforms (arrays of 3): uniform → value key prefix (key = prefix + layer index 1..3)

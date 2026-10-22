@@ -222,6 +222,8 @@ export const defaults = {
   wetness: 0.6,
   streakScale: 6,           // [m]
   streakAmount: 1,
+  flowlineStrength: 0.65,
+  flowlineScale: 7,         // [m]
   gravelOn: 1,
   gravelAmount: 0.8,
   gravelScale: 0.14,        // [m]
@@ -321,6 +323,9 @@ export const defaults = {
   shoreWet: 0.7,
   bedShading: 1,
   siltColor: '#b9ad94',
+  drybedAmount: 1,
+  drybedCracks: 0.6,
+  drybedColor: '#d3c9ae',
   // Sun & sky
   sunAzimuth: 215,          // [°]
   sunElevation: 24,         // [°]
@@ -539,7 +544,7 @@ Object.assign(presets, {
     droplets: 6000, erodeSpeed: 0.1, thermalIterations: 30, thermalRate: 0.6, talusSoft: 33, talusHard: 36,
     snowOn: 0, vegOn: 0, vegetation: 0, mossOn: 0, mossiness: 0, oxideAmount: 0.15, waterEnabled: 0, seaLevel: -100,
     rocksEnabled: 0, pebblesOn: 0, gravelAmount: 0, peelOn: 0, flakeStrength: 0.25, flakeSize3: 0.08, flakeCrystal3: 0.5, flakeSparkle: 1.2,
-    sdfOn: 0, overhang: 0, detailRelief: 0.15, rockyAmount: 0, cragAmount: 0, fluvialStrength: 0, rillStrength: 0, riverSim: 0, riverWater: 0, riverLakes: 0, streakAmount: 0, wetness: 0.1,
+    sdfOn: 0, overhang: 0, detailRelief: 0.15, rockyAmount: 0, cragAmount: 0, fluvialStrength: 0, rillStrength: 0, riverSim: 0, riverWater: 0, riverLakes: 0, streakAmount: 0, wetness: 0.1, flowlineStrength: 0,
     sunElevation: 28, sunAzimuth: 250, turbidity: 8, fogDensity: 0.15,
   },
   'Icelandic highlands': {
@@ -1174,6 +1179,8 @@ export const groups = [
         ['wetness', 'Wetness', 0, 1, 0.05, '', 'Dark wet staining along drainage'],
         ['streakAmount', 'Face streaks', 0, 1, 0.05, '', 'Vertical water streaks down the faces'],
         ['streakScale', 'Streak scale', 1, 30, 0.5, 'm', 'Spacing of the streaks'],
+        ['flowlineStrength', 'Flow lines', 0, 1, 0.05, '', 'Directional erosion streaks along the drainage — thin converging lines where runoff concentrates, drawn along the downhill direction (Gaea flowlines)'],
+        ['flowlineScale', 'Flow-line spacing', 2, 30, 0.5, 'm', 'Across-flow spacing of the lines'],
       ] },
       { title: 'Soil', controls: [
         ['soilOn', 'Enable soil', 0, 1, 1, '', ''],
@@ -1244,6 +1251,9 @@ export const groups = [
         ['shoreWet', 'Shoreline wetness', 0, 1, 0.05, '', 'Dark wet band just above the waterline'],
         ['bedShading', 'Bed shading', 0, 1, 1, '', 'Silt / cobble shading on river and lake beds'],
         ['siltColor', 'Silt colour', 0, 0, 0, 'color', ''],
+        ['drybedAmount', 'Evaporated beds', 0, 1, 0.05, '', 'Beds above the water dry to a pale evaporite crust with mud cracks and ripple ridges; beds under water stay dark and saturated'],
+        ['drybedCracks', 'Bed cracks', 0, 1, 0.05, '', 'Desiccation polygons on the dried beds'],
+        ['drybedColor', 'Evaporite colour', 0, 0, 0, 'color', 'Pale silt / salt crust left where water evaporated'],
       ] },
     ],
   },

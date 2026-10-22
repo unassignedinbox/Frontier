@@ -7,12 +7,14 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "check": "node scripts/check-generate.mjs"
+    "check": "node scripts/check-generate.mjs",
+    "check:shader": "node scripts/check-shader-parse.mjs"
   },
   "dependencies": {
     "three": "^0.170.0"
   },
   "devDependencies": {
+    "@shaderfrog/glsl-parser": "^7.0.1",
     "vite": "^6.0.0"
   }
 }
