@@ -193,21 +193,38 @@ export function packChunkJobs(fine, chunks, v) {
     }
     jobs.push({ ci: c.ci, cj: c.cj, i0: c.i0, j0: c.j0, cw: c.cw, ch: c.ch, pad, hmin: c.hmin, hmax: c.hmax, slopeF: c.slopeF, maps });
   }
-  // voxel resolution: explicit, or the finest that fits the voxel budget (only the band around the
-  // surface is polygonised, so the estimate is footprint × band thickness)
-  let k = Math.max(1, Math.min(4, Math.round(v.sdfVoxel || 0)));
-  if (!(v.sdfVoxel >= 1)) {
-    let est = 0;
+  // voxel resolution: explicit, or adaptive per chunk within the voxel budget. Only the band
+  // around the surface is polygonised, so the estimate is footprint × band thickness; every
+  // chunk is guaranteed k=1 and the heroes upgrade to k=2..4 while the budget lasts, biggest
+  // faces first (the list is W-sum ordered) — so the great walls get crisp blocks instead of
+  // everything melting at k=1. Upgrades past k=2 go to the top 12 only (build time is cubic).
+  let kMax = 1;
+  if (v.sdfVoxel >= 1) {
+    kMax = Math.max(1, Math.min(4, Math.round(v.sdfVoxel)));
+    for (const job of jobs) job.k = kMax;
+  } else {
+    const budget = Math.max(1e6, (v.sdfVoxelBudget || 24) * 1e6);
+    let remaining = budget;
+    const est1 = [];
     for (const c of list) {
       let band = (maxCarve * Math.min(3, c.slopeF) * 2) / cell + 6;
       // a sheared (vertical) wall is polygonised over the whole foot…crest band of each column
       if (vertical > 0) band = Math.max(band, 0.6 * ((c.hmax - c.hmin) / cell) + 6);
-      est += c.cw * c.ch * band;
+      const e = c.cw * c.ch * band;
+      est1.push(e); remaining -= e;
     }
-    const budget = Math.max(1e6, (v.sdfVoxelBudget || 24) * 1e6);
-    k = est * 64 <= budget ? 4 : est * 27 <= budget ? 3 : est * 8 <= budget ? 2 : 1;
+    const kk = jobs.map(() => 1);
+    for (let pass = 2; pass <= 4; pass++) {
+      for (let j = 0; j < jobs.length; j++) {
+        if (kk[j] !== pass - 1) continue;
+        if (pass >= 3 && j >= 12) continue;
+        const cost = est1[j] * (pass * pass * pass - (pass - 1) * (pass - 1) * (pass - 1));
+        if (cost <= remaining) { kk[j] = pass; remaining -= cost; }
+      }
+    }
+    jobs.forEach((job, j) => { job.k = kk[j]; if (kk[j] > kMax) kMax = kk[j]; });
   }
-  return { jobs, transfer, meta: { N, size: fine.worldSize, C, k, cell: cell / k } };
+  return { jobs, transfer, meta: { N, size: fine.worldSize, C, k: kMax, cell: cell / kMax } };
 }
 
 // largest distance the carve can move the surface along the normal
@@ -278,7 +295,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   const pad = job.pad || 0;
   const Sx = job.cw + 1 + 2 * pad, Sz = job.ch + 1 + 2 * pad;
   const cell = size / (N - 1);
-  const k = v.sdfVoxel >= 1 ? Math.max(1, Math.min(4, Math.round(v.sdfVoxel))) : (meta.k || 1);
+  const k = v.sdfVoxel >= 1 ? Math.max(1, Math.min(4, Math.round(v.sdfVoxel))) : (job.k || meta.k || 1);
   const vox = cell / k;
   const nx = job.cw * k, nz = job.ch * k;
   const x0 = (job.i0 / (N - 1) - 0.5) * size, z0 = (job.j0 / (N - 1) - 0.5) * size;
@@ -355,7 +372,11 @@ export function buildChunkGeometry(job, meta, v, ctx) {
     const h = bil(m.height, u, wq);
     const w = bil(m.sdfWeight, u, wq);
     const [gx, gz] = grad(u, wq);
-    const slopeF = Math.sqrt(1 + gx * gx + gz * gz);
+    // (y − h)/slopeF is only a valid distance while the heightfield is a graph over the
+    // column; past ~72° it collapses toward 0 and the carve term takes over the sign, so
+    // near-vertical steps turn into noise-defined spikes and flakes. Cap it: a true step
+    // then renders as its (one-cell) ramp plus carve instead of flying off.
+    const slopeF = Math.min(3, Math.sqrt(1 + gx * gx + gz * gz));
     const gl = Math.hypot(gx, gz);
     const steep = smoothstep(0.7, 1.7, gl);
     const oc = hasOutcrop ? bil(m.outcrop, u, wq) : 0;
@@ -374,8 +395,32 @@ export function buildChunkGeometry(job, meta, v, ctx) {
       const dxs = bil(m.gxs, u, wq), dzs = bil(m.gzs, u, wq);
       const dl = Math.hypot(dxs, dzs);
       if (gm > 0.5 && dl > 1e-6 && crest - foot > 2) {
-        vW = Math.min(vertMaxW, (crest - foot) / gm) * vertical * w;
+        // the window-smoothed slope underestimates narrow fins and crest brinks, where the
+        // full-window shift would sample across to unrelated ground and tear the wall (spikes,
+        // ragged rims, eaten fins) — so the shift width never exceeds what the LOCAL slope
+        // implies, and the shear fades out where the smoothed uphill direction disagrees with
+        // the local gradient (notches, fins, hairpins: no single shift direction is valid there
+        // and the steep heightfield + carve already describe the rock); on a planar ramp the
+        // two agree and nothing changes
+        vW = Math.min(vertMaxW, (crest - foot) / Math.max(gm, gl)) * vertical * w;
+        if (gl > 1e-3) vW *= smoothstep(0.05, 0.3, gl) * smoothstep(0.2, 0.6, (gx * dxs + gz * dzs) / (gl * dl));
+        else vW = 0;
         vdx = dxs / dl; vdz = dzs / dl; // unit uphill direction
+        if (vW > 1e-6) {
+          // walk the shift line: from foot to crest the shifted samples must climb the SAME
+          // face monotonically — columns whose shift crosses a wall laterally, straddles a
+          // notch, or slides off a fin sample unrelated ground and grow detached curtains
+          // and folds next to the wall, so the shear fades out with the violation
+          const faceH = crest - foot;
+          let prev = -Infinity, dip = 0;
+          for (let s = 0; s <= 4; s++) {
+            const tt = s / 4, e = tt * tt * (3 - 2 * tt), sh = ((e - 0.5) * vW) / cell;
+            const hs = bil(m.height, u + vdx * sh, wq + vdz * sh);
+            if (s > 0 && hs < prev) dip = Math.max(dip, prev - hs);
+            if (hs > prev) prev = hs;
+          }
+          vW *= 1 - smoothstep(faceH * 0.06, faceH * 0.22, dip);
+        }
       }
     }
     // this column's joint-set domain: block size, block depth and the phase of the block grid
@@ -410,7 +455,9 @@ export function buildChunkGeometry(job, meta, v, ctx) {
       gbase: Math.min(L, thick, 4 * blockAmp + 2 * vox) * 0.7,
       tf0: col.crest - 1.5 * thick - 2 * vox, tf1: col.crest - 0.3 * thick,
       dPlan: Math.min(Math.min(fx, 1 - fx) * L + (1 - col.visX) * L, Math.min(fz, 1 - fz) * L + (1 - col.visZ) * L),
-      r: Math.min(L, thick) * (0.15 + 0.35 * hash2(Math.floor(qx) + bi * 31, Math.floor(qz) - bi * 17, ctx.seed + 19)) + crackW,
+      // bevel radius ~1 voxel (was up to half the block: pillow blocks); the hash keeps some
+      // blocks crisp and some well rounded, and the voxel floor keeps edges alias-safe
+      r: Math.max(vox * 1.5, crackW * 0.7 + Math.min(L, thick) * (0.03 + 0.06 * hash2(Math.floor(qx) + bi * 31, Math.floor(qz) - bi * 17, ctx.seed + 19))),
       base: new Float64Array(4), S: new Float64Array(4), M: new Float64Array(4), lost: new Uint8Array(4) });
     for (let c = 0; c < 4; c++) {
       const i = ix + (c & 1), k = iz + (c >> 1);
@@ -496,7 +543,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
       h = bil(m.height, u, wq);
       const [gx, gz] = grad(u, wq);
       const g = Math.hypot(gx, gz);
-      slopeF = Math.sqrt(1 + g * g);
+      slopeF = Math.min(3, Math.sqrt(1 + g * g));
       steep = Math.max(steep, smoothstep(0.7, 1.7, g));
     }
     const plain = y - h;
@@ -543,7 +590,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   const idx = (ix, iy, iz) => (iz * sy + iy) * sx + ix;
 
   // welded output: one vertex per crossed grid edge (axis, ix, iy, iz)
-  const positions = [], indices = [];
+  let positions = [], indices = [];
   const edgeIds = new Int32Array(3 * sx * sy * sz).fill(-1);
   const EDGE_AXIS = [0, 1, 0, 1, 0, 1, 0, 1, 2, 2, 2, 2];
   const EDGE_OFF = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
@@ -592,6 +639,45 @@ export function buildChunkGeometry(job, meta, v, ctx) {
           if (nx_ * gx + ny_ * gy + nz_ * gz < 0) { const tmp = ib; ib = ic; ic = tmp; }
           indices.push(ia, ib, ic);
         }
+      }
+    }
+  }
+
+  // drop floater flakes and detached blocks: the carve can pinch off small components
+  // (thin lips, block-loss cubes) that hover next to the wall. Keep every component with
+  // ≥1% of the triangles (a second rock mass in the chunk is always bigger than that) and
+  // never drop the largest; compact the vertices so no orphans ship to the worker result.
+  {
+    const nv = positions.length / 3, nt = indices.length / 3;
+    if (nt > 0) {
+      const parent = new Int32Array(nv);
+      for (let i = 0; i < nv; i++) parent[i] = i;
+      const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+      for (let t = 0; t < nt; t++) {
+        const r0 = find(indices[t * 3]);
+        let r = r0;
+        const r1 = find(indices[t * 3 + 1]), r2 = find(indices[t * 3 + 2]);
+        if (r1 !== r) { parent[r1] = r; }
+        if (r2 !== r) { parent[r2] = r; }
+      }
+      const compTris = new Map();
+      for (let t = 0; t < nt; t++) { const r = find(indices[t * 3]); compTris.set(r, (compTris.get(r) || 0) + 1); }
+      let best = -1, bestN = -1;
+      for (const [r, n] of compTris) if (n > bestN) { bestN = n; best = r; }
+      const keepN = Math.max(1, Math.ceil(nt * 0.01));
+      if (compTris.size > 1) {
+        const remap = new Int32Array(nv).fill(-1);
+        const npos = [], nidx = [];
+        for (let t = 0; t < nt; t++) {
+          const r = find(indices[t * 3]);
+          if (r !== best && compTris.get(r) < keepN) continue;
+          for (let k = 0; k < 3; k++) {
+            const v = indices[t * 3 + k];
+            if (remap[v] < 0) { remap[v] = npos.length / 3; npos.push(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]); }
+            nidx.push(remap[v]);
+          }
+        }
+        positions = npos; indices = nidx;
       }
     }
   }

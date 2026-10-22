@@ -366,8 +366,11 @@ export const presets = {
   'Sea cliffs': {
     palette: 'basalt', mountainHeight: 300, baseElevation: 20, baseFrequency: 1.4, ridgeSharpness: 1.6, peakPower: 1.1, warpStrength: 0.5,
     reliefContrast: 0.9, strataBand: 22, strataStrength: 0.85, strataDip: 8, strataDipDirection: 120, hardnessContrast: 0.9,
+    cliffHeight: 150, cliffSharpness: 1, cliffStacks: 0.4, cliffProtect: 0.9,
     plateauStrength: 0.5, plateauHeight: 220, canyonDepth: 0, snowLine: 5000, vegetation: 0.9, mossiness: 0.8, seaLevel: 70, waterEnabled: 1,
     talusSoft: 35, talusHard: 84, droplets: 150000,
+    sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.6, sdfPits: 0.08, sdfRough: 0.2, sdfPushPull: 1.2, sdfPushScale: 12,
+    sdfBlocks: 3, sdfBlockSize: 8, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 28, sdfChunk: 32, sdfMaxChunks: 800,
     peelStrength: 0.5, peelScale: 1.8, flakeStrength: 0.7, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
   },
   'Coastal cliffs': {
