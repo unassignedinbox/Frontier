@@ -809,8 +809,8 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
     + cgNoise3( vec3( ( wp.x - wp.z ) * 3.1, wp.y * 0.8, 4.0 ) ).x * 0.35;
   float foam = falls * uRiverFoam * smoothstep( 0.32, 0.72, foamN );
   waterCol = mix( waterCol, vec3( 0.88, 0.92, 0.93 ), clamp( foam * 1.2, 0.0, 1.0 ) );
-  float bedMix = mix( smoothstep( 0.0, uWaterClear, wdepth ) * 0.6 + 0.4, 1.0, falls );
-  color = mix( color, mix( color * 0.6, waterCol, bedMix ), paint );
+  float wtrBedMix = mix( smoothstep( 0.0, uWaterClear, wdepth ) * 0.6 + 0.4, 1.0, falls );
+  color = mix( color, mix( color * 0.6, waterCol, wtrBedMix ), paint );
 
   float roughness = uBaseRoughness - wet * 0.4 - fresh * 0.05 - shore * 0.35 * uShoreWet;
   roughness = mix( roughness, 0.95, roadSurf );
