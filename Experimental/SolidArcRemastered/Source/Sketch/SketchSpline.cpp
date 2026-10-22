@@ -231,6 +231,36 @@ SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector
     return Outcome;
 }
 
+SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau)
+{
+    SketchSplineWeights Weights;
+    if (Count < 2 || (Closed && Count < 4)) { Weights.Refusal = "too few spline points"; return Weights; }
+    Weights.Position.assign(Count, 0.0);
+    Weights.First.assign(Count, 0.0);
+    Weights.Second.assign(Count, 0.0);
+    const int Last = Count - 1;
+    for (int Slot = 0; Slot < Count; ++Slot)
+    {
+        if (Closed && Slot == Last) continue;                                                // Same point as slot 0
+        // x carries the unit input; y keeps consecutive points apart (and the closing pair together).
+        std::vector<Vector2> Points(Count);
+        for (int Index = 0; Index < Count; ++Index)
+        {
+            const bool Unit = Index == Slot || (Closed && Slot == 0 && Index == Last);
+            Points[Index] = { Unit ? 1.0 : 0.0, Closed && Index == Last ? 0.0 : static_cast<double>(Index) };
+        }
+        const SketchSplineOutcome Resolved = ResolveSketchSpline(Form, Points, static_cast<double>(Count));
+        if (!Resolved.Refusal.empty()) { Weights.Refusal = Resolved.Refusal; return Weights; }
+        Weights.Low  = Resolved.Curve.Knots.front();
+        Weights.High = Resolved.Curve.Knots.back();
+        const SketchSplineDerivatives At = EvaluateSketchSpline(Resolved.Curve, std::clamp(Tau, Weights.Low, Weights.High));
+        Weights.Position[Slot] = At.Position.X;
+        Weights.First[Slot]    = At.First.X;
+        Weights.Second[Slot]   = At.Second.X;
+    }
+    return Weights;
+}
+
 SketchSplineOutcome ResolveSketchCurveSpline(const SketchModel& Sketch, const SketchCurve& Curve)
 {
     std::vector<Vector2> Points;

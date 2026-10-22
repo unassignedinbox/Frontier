@@ -33,15 +33,16 @@ enum class SketchConstraintVerb : uint8_t
 {
     Dimension     = 0,                                                                       // [D] line → length · 2 points → distance · circle / arc → radius
     Angle         = 1,                                                                       // [N] 2 lines → angle from the first to the second (CCW)
-    Horizontal    = 2,                                                                       // [H] line → horizontal · 2 points → level (same y)
-    Vertical      = 3,                                                                       // [V] line → vertical · 2 points → plumb (same x)
-    On            = 4,                                                                       // [O] 2 points → coincident · point + line / circle → on it · 2 circles → concentric
+    Horizontal    = 2,                                                                       // [H] line → horizontal · 2 points → level (same y) · spline + its end → end tangent horizontal
+    Vertical      = 3,                                                                       // [V] line → vertical · 2 points → plumb (same x) · spline + its end → end tangent vertical
+    On            = 4,                                                                       // [O] 2 points → coincident · point + line / circle / spline → on it · 2 circles → concentric
     Equal         = 5,                                                                       // [Q] 2 lines → equal length · 2 circles / arcs → equal radius
     Midpoint      = 6,                                                                       // [M] point + line → at its midpoint
     Symmetric     = 7,                                                                       // [Y] 2 points + line → mirror images across it
-    Parallel      = 8,                                                                       // [L] 2 lines → parallel · line + circle or 2 circles → tangent
+    Parallel      = 8,                                                                       // [L] 2 lines → parallel · line + circle or 2 circles → tangent · spline + curve meeting at an end → tangent (G1)
     Perpendicular = 9,                                                                       // [[] 2 lines → perpendicular
     Lock          = 10,                                                                      // []] point → fixed where it is
+    Curvature     = 11,                                                                      // [C] spline + curve meeting at an end → tangent and equal curvature (G2) · not in SolveSpace
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -75,10 +76,15 @@ struct SketchDragOutcome
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 💡 Maps a SolveSpace verb and the picks (any order) to one constraint of the kernel's 20 kinds, or a refusal naming
-//    what the verb takes. Splines take no curve constraint (their defining points do); a pick out of range, a curve
-//    picked twice or the same point twice is refused.
+// 💡 Maps a SolveSpace verb and the picks (any order) to one constraint of the kernel's kinds, or a refusal naming what
+//    the verb takes. Splines take O (point on it), L / C (tangent / curvature where it meets another curve at an end:
+//    shared or coincident end points, or the end on a circle) and H / V with one of its ends (end direction); a pick out
+//    of range, a curve picked twice or the same point twice is refused.
 [[nodiscard]] SketchConstraintProposal ProposeSketchConstraint(const SketchModel& Sketch, const std::vector<SketchPick>& Picks, SketchConstraintVerb Verb);
+
+// 💡 Shift+D in SolveSpace: a reference (driven) dimension — what D would add for these picks (or the angle of two lines),
+//    with DrivenCondition set. It never constrains, so it is never redundant; the solver keeps its Value measured.
+[[nodiscard]] SketchConstraintProposal ProposeSketchReference(const SketchModel& Sketch, const std::vector<SketchPick>& Picks);
 
 // 💡 The value a dimension has on the sketch as it stands: distance / length / radius [len], horizontal or vertical
 //    distance (signed, second − first) [len], angle from the first line to the second (CCW, (−π, π]) [rad]. 0 for kinds

@@ -36,6 +36,18 @@ struct SketchSplineDerivatives
     Vector2 Second   = {};                                                                   // [len] - C″(τ)
 };
 
+// 📝 Every form is linear in its defining points (uniform parameters), so C(τ) = Σ wⱼ(τ)·Qⱼ: per defining slot, the
+//    weights of the position and of its first two τ-derivatives (closed: the repeated last slot weighs 0), with the domain.
+struct SketchSplineWeights
+{
+    double              Low      = 0.0;                                                      // [-] - First knot
+    double              High     = 1.0;                                                      // [-] - Last knot
+    std::vector<double> Position = {};                                                       // [-] - wⱼ(τ)
+    std::vector<double> First    = {};                                                       // [-] - wⱼ′(τ)
+    std::vector<double> Second   = {};                                                       // [-] - wⱼ″(τ)
+    std::string         Refusal  = {};                                                       // [-] - Why no weights (too few slots, Bezier degree)
+};
+
 struct SketchSplineOutcome
 {
     SketchSplineCurve Curve   = {};                                                          // [-] - Valid when Refusal is empty
@@ -62,6 +74,9 @@ struct SketchSplineOutcome
 
 [[nodiscard]] SketchSplineDerivatives EvaluateSketchSpline(const SketchSplineCurve& Curve, double Tau) noexcept;
 
+// Weights of a Count-slot spline of Form at τ (clamped into the domain: ±∞ gives the ends). Built by resolving the curve
+// for each unit input, so they are exactly what ResolveSketchSpline does with real points.
+[[nodiscard]] SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau);
 // Same point set traversed backwards: poles reversed, knots mirrored (τ′ = a + b − τ).
 void ReverseSketchSpline(SketchSplineCurve& Curve) noexcept;
 

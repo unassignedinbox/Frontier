@@ -147,6 +147,7 @@ struct FeatureStepReport
     BodyNaming                     Naming       = {};                                        // [-]  - Names of that body
     std::string                    Target       = {};                                        // [-]  - Key of that body (empty before any body)
     double                         Milliseconds = 0.0;                                       // [ms] - Step time
+    std::vector<std::string>       Notes        = {};                                        // [-]  - Built with remarks (sketch: dangling links)
 };
 
 // 📝 One body of the regenerated part. Key = label of the step that created it ("Extrude#2", "Loft#12"): stable across

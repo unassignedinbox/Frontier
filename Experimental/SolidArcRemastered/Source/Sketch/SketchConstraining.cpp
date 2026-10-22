@@ -56,9 +56,67 @@ namespace
         return Sorted;
     }
 
-    [[nodiscard]] bool Pattern(const SortedPicks& Sorted, size_t Points, size_t Lines, size_t Circles) noexcept
+    [[nodiscard]] bool Pattern(const SortedPicks& Sorted, size_t Points, size_t Lines, size_t Circles, size_t Splines = 0) noexcept
     {
-        return Sorted.Points.size() == Points && Sorted.Lines.size() == Lines && Sorted.Circles.size() == Circles && Sorted.Splines.empty();
+        return Sorted.Points.size() == Points && Sorted.Lines.size() == Lines && Sorted.Circles.size() == Circles && Sorted.Splines.size() == Splines;
+    }
+
+    // 📝 Where a spline meets another curve: the spline end (point index) and, for a second spline, which of its ends
+    //    (0 first · 1 last). Ends meet when they are the same point or lie within 10⁻⁶ of the sketch size; a full circle
+    //    is met by a spline end on it.
+    struct SplineJoint
+    {
+        int         End       = -1;                                                          // [-] - Spline end point index
+        double      OtherEnd  = 0.0;                                                         // [-] - Second spline: 0 first · 1 last
+        std::string Refusal   = {};                                                          // [-] - Why they do not meet
+    };
+
+    [[nodiscard]] SplineJoint JoinSpline(const SketchModel& Sketch, int Spline, int Other)
+    {
+        SplineJoint  Joint;
+        const auto&  Curve = Sketch.Curves[Spline];
+        const auto&  Shape = Sketch.Curves[Other];
+        const auto   Position = [&](int Index) { return Sketch.Points[Index].Position; };
+        if (Curve.Points.size() < 2 || Curve.Points.front() == Curve.Points.back())
+        {
+            Joint.Refusal = SketchCurveName(Curve) + " is closed: it has no end";
+            return Joint;
+        }
+        Vector2 Low{ 1e300, 1e300 }, High{ -1e300, -1e300 };
+        for (const SketchPoint& Point : Sketch.Points)
+        {
+            Low  = { std::min(Low.X, Point.Position.X), std::min(Low.Y, Point.Position.Y) };
+            High = { std::max(High.X, Point.Position.X), std::max(High.Y, Point.Position.Y) };
+        }
+        const double Join = 1.0e-6 * std::max(1.0, Distance(Low, High));
+        double Best = 1e300;
+        for (int End : { Curve.Points.front(), Curve.Points.back() })
+        {
+            if (Shape.Kind == SketchCurveKind::Circle)
+            {
+                const double Gap = std::fabs(Distance(Position(End), Position(Shape.Centre)) - Shape.Radius);
+                if (Gap < Best) { Best = Gap; Joint.End = End; }
+                continue;
+            }
+            std::vector<std::pair<int, double>> Ends;
+            if (Shape.Kind == SketchCurveKind::Spline)
+            {
+                if (Shape.Points.size() < 2 || Shape.Points.front() == Shape.Points.back()) { Joint.Refusal = SketchCurveName(Shape) + " is closed: it has no end"; return Joint; }
+                Ends = { { Shape.Points.front(), 0.0 }, { Shape.Points.back(), 1.0 } };
+            }
+            else Ends = { { Shape.Start, 0.0 }, { Shape.End, 1.0 } };
+            for (const auto& [Point, Which] : Ends)
+            {
+                const double Gap = Point == End ? 0.0 : Distance(Position(End), Position(Point));
+                if (Gap < Best) { Best = Gap; Joint.End = End; Joint.OtherEnd = Which; }
+            }
+        }
+        if (Best > Join)
+        {
+            Joint.End     = -1;
+            Joint.Refusal = SketchCurveName(Curve) + " and " + SketchCurveName(Shape) + " do not meet at an end (O their ends together first)";
+        }
+        return Joint;
     }
 
     [[nodiscard]] bool EndpointCondition(const SketchCurve& Curve, int Point) noexcept
@@ -137,6 +195,10 @@ namespace
         case Kind::PointOnCircle:
         case Kind::Midpoint:           return { 2, { true, false, false } };
         case Kind::Symmetric:          return { 3, { true, true, false } };
+        case Kind::SplineTangent:
+        case Kind::SplineCurvature:    return { 2, { false, false, false } };
+        case Kind::PointOnSpline:      return { 2, { true, false, false } };
+        case Kind::SplineDirection:    return { 1, { false, false, false } };
         }
         return {};
     }
@@ -151,11 +213,55 @@ SketchConstraintProposal ProposeSketchConstraint(const SketchModel& Sketch, cons
     if (Picks.empty()) return Refuse(Verb, "pick points or curves of the sketch first");
     const SortedPicks Sorted = SortPicks(Sketch, Picks);
     if (!Sorted.Refusal.empty()) return Refuse(Verb, Sorted.Refusal);
-    if (!Sorted.Splines.empty())
-        return Refuse(Verb, SketchCurveName(Sketch.Curves[Sorted.Splines.front()]) + " is a spline: constrain its defining points instead");
     const auto& P = Sorted.Points;
     const auto& L = Sorted.Lines;
     const auto& C = Sorted.Circles;
+    const auto& S = Sorted.Splines;
+    if (!S.empty())
+    {
+        const std::string Spline = SketchCurveName(Sketch.Curves[S[0]]);
+        switch (Verb)
+        {
+        case SketchConstraintVerb::On:
+        {
+            if (!Pattern(Sorted, 1, 0, 0, 1)) return Refuse(Verb, "takes a point and a spline");
+            const auto& Defining = Sketch.Curves[S[0]].Points;
+            if (std::find(Defining.begin(), Defining.end(), P[0]) != Defining.end())
+                return Refuse(Verb, NameSketchPick(Sketch, { SketchPickKind::Point, P[0] }) + " defines " + Spline);
+            return Accept(Make(Kind::PointOnSpline, P[0], S[0]));
+        }
+        case SketchConstraintVerb::Horizontal:
+        case SketchConstraintVerb::Vertical:
+        {
+            const auto& Defining = Sketch.Curves[S[0]].Points;
+            if (!Pattern(Sorted, 1, 0, 0, 1) || Defining.size() < 2 || Defining.front() == Defining.back() || (P[0] != Defining.front() && P[0] != Defining.back()))
+                return Refuse(Verb, "takes a spline and one of its end points (the end tangent turns level / plumb)");
+            return Accept(Make(Kind::SplineDirection, S[0], -1, P[0], Verb == SketchConstraintVerb::Horizontal ? 0.0 : std::numbers::pi / 2.0));
+        }
+        case SketchConstraintVerb::Parallel:
+        case SketchConstraintVerb::Curvature:
+        {
+            int First = -1, Other = -1;
+            if (Pattern(Sorted, 0, 1, 0, 1)) { First = S[0]; Other = L[0]; }
+            else if (Pattern(Sorted, 0, 0, 1, 1)) { First = S[0]; Other = C[0]; }
+            else if (Pattern(Sorted, 0, 0, 0, 2)) { First = S[0]; Other = S[1]; }
+            else return Refuse(Verb, "takes a spline and a line, circle / arc or spline it meets at an end");
+            const SplineJoint Joint = JoinSpline(Sketch, First, Other);
+            if (!Joint.Refusal.empty()) return Refuse(Verb, Joint.Refusal);
+            // A natural cubic spline has C″ = 0 at its ends: its end curvature is 0 by construction, not a free quantity.
+            if (Verb == SketchConstraintVerb::Curvature)
+            {
+                for (int Curve : { First, Other })
+                {
+                    if (Sketch.Curves[Curve].Kind == SketchCurveKind::Spline && Sketch.Curves[Curve].Form == SketchSplineForm::CubicSpline)
+                        return Refuse(Verb, SketchCurveName(Sketch.Curves[Curve]) + " is a cubic spline: its ends have zero curvature by construction (use Hermite, Bezier or NURBS for G2)");
+                }
+            }
+            return Accept(Make(Verb == SketchConstraintVerb::Parallel ? Kind::SplineTangent : Kind::SplineCurvature, First, Other, Joint.End, 0.0, Joint.OtherEnd));
+        }
+        default: return Refuse(Verb, Spline + " is a spline: it takes O, L, C and H / V (constrain its defining points for the rest)");
+        }
+    }
 
     switch (Verb)
     {
@@ -245,8 +351,26 @@ SketchConstraintProposal ProposeSketchConstraint(const SketchModel& Sketch, cons
         const Vector2 Where = Sketch.Points[P[0]].Position;
         return Accept(Make(Kind::Fixed, P[0], -1, -1, Where.X, Where.Y));
     }
+    case SketchConstraintVerb::Curvature: return Refuse(Verb, "takes a spline and the curve it meets at an end");
     }
     return Refuse(Verb, "unknown verb");
+}
+
+SketchConstraintProposal ProposeSketchReference(const SketchModel& Sketch, const std::vector<SketchPick>& Picks)
+{
+    SketchConstraintProposal Proposal = ProposeSketchConstraint(Sketch, Picks, SketchConstraintVerb::Dimension);
+    if (!Proposal.Refusal.empty())
+    {
+        const SketchConstraintProposal Angle = ProposeSketchConstraint(Sketch, Picks, SketchConstraintVerb::Angle);
+        if (!Angle.Refusal.empty())
+        {
+            Proposal.Refusal = "Reference dimension: takes one line, two points, one circle / arc or two lines";
+            return Proposal;
+        }
+        Proposal = Angle;
+    }
+    Proposal.Constraint.DrivenCondition = true;
+    return Proposal;
 }
 
 double MeasureSketchConstraint(const SketchModel& Sketch, const SketchConstraint& Constraint)
@@ -296,8 +420,15 @@ std::string NameSketchPick(const SketchModel& Sketch, SketchPick Pick)
 std::string DescribeSketchConstraint(const SketchModel& Sketch, const SketchConstraint& Constraint)
 {
     std::string Text = SketchConstraintTitle(Constraint.Kind);
+    if (Constraint.Kind == Kind::SplineDirection)
+    {
+        const double Degrees = Constraint.Value * 180.0 / std::numbers::pi;
+        Text = std::abs(Degrees) < 1.0e-9 ? "Horizontal end" : std::abs(Degrees - 90.0) < 1.0e-9 ? "Vertical end" : "End direction " + FormatNumber(Degrees) + "°";
+        return Text + " · " + NameSketchPick(Sketch, { SketchPickKind::Point, Constraint.Third });
+    }
     if (Constraint.Kind == Kind::Angle) Text += " " + FormatNumber(Constraint.Value * 180.0 / std::numbers::pi) + "°";
     else if (SketchDimensionCondition(Constraint.Kind)) Text += " " + FormatNumber(Constraint.Value);
+    if (Constraint.DrivenCondition) Text += " (reference)";
     else if (Constraint.Kind == Kind::Fixed) Text += " (" + FormatNumber(Constraint.Value) + ", " + FormatNumber(Constraint.SecondValue) + ")";
     else if (Constraint.Kind == Kind::Tangent && Constraint.SecondValue < 0.0) Text += " (inside)";
     const ReferenceLayout Layout = LayoutOf(Constraint.Kind);
@@ -332,13 +463,17 @@ const char* SketchConstraintTitle(SketchConstraintKind Constraint) noexcept
     case Kind::Symmetric:          return "Symmetric";
     case Kind::Concentric:         return "Concentric";
     case Kind::ArcRule:            return "Arc rule";
+    case Kind::SplineTangent:      return "Tangent (G1)";
+    case Kind::SplineCurvature:    return "Curvature (G2)";
+    case Kind::PointOnSpline:      return "Point on spline";
+    case Kind::SplineDirection:    return "End direction";
     }
     return "?";
 }
 
 char SketchConstraintVerbKey(SketchConstraintVerb Verb) noexcept
 {
-    static constexpr char Keys[] = { 'D', 'N', 'H', 'V', 'O', 'Q', 'M', 'Y', 'L', '[', ']' };
+    static constexpr char Keys[] = { 'D', 'N', 'H', 'V', 'O', 'Q', 'M', 'Y', 'L', '[', ']', 'C' };
     const int Index = static_cast<int>(Verb);
     return Index >= 0 && Index < static_cast<int>(sizeof(Keys)) ? Keys[Index] : '?';
 }
@@ -358,6 +493,7 @@ const char* SketchConstraintVerbLabel(SketchConstraintVerb Verb) noexcept
     case SketchConstraintVerb::Parallel:      return "Parallel / tangent";
     case SketchConstraintVerb::Perpendicular: return "Perpendicular";
     case SketchConstraintVerb::Lock:          return "Lock point";
+    case SketchConstraintVerb::Curvature:     return "Curvature (G2)";
     }
     return "?";
 }
@@ -367,6 +503,11 @@ SketchDragOutcome DragSketchPoint(const SketchModel& Sketch, int Point, Vector2 
     SketchDragOutcome Outcome;
     if (Point < 0 || Point >= static_cast<int>(Sketch.Points.size())) { Outcome.Refusal = "Drag: the point is not in the sketch"; return Outcome; }
     const Vector2 Origin = Sketch.Points[Point].Position;
+    if (!Sketch.Points[Point].Link.Sketch.empty())
+    {
+        Outcome.Refusal = "Drag: " + NameSketchPick(Sketch, { SketchPickKind::Point, Point }) + " is linked to " + Sketch.Points[Point].Link.Sketch + " (move it there)";
+        return Outcome;
+    }
 
     // ① Pinned: the point held at the target by a temporary Fixed constraint, the rest follows.
     SketchModel Pinned = Sketch;

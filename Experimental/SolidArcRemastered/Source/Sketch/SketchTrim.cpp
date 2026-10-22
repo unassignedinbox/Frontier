@@ -116,7 +116,11 @@ namespace
             case SketchConstraintKind::EqualLength:
             case SketchConstraintKind::EqualRadius:
             case SketchConstraintKind::Tangent:
-            case SketchConstraintKind::Concentric:    return { true, true, false };
+            case SketchConstraintKind::Concentric:
+            case SketchConstraintKind::SplineTangent:
+            case SketchConstraintKind::SplineCurvature: return { true, true, false };
+            case SketchConstraintKind::SplineDirection: return { true, false, false };
+            case SketchConstraintKind::PointOnSpline:
             case SketchConstraintKind::PointOnLine:
             case SketchConstraintKind::PointOnCircle:
             case SketchConstraintKind::Midpoint:      return { false, true, false };

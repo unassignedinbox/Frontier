@@ -40,7 +40,8 @@ enum class SketchSplineForm : uint8_t
     CubicSpline = 4,                                                                         // Through the points, cubic · C² (natural or periodic ends)
 };
 
-// 📝 References per kind (First / Second / Third): P = point index, L = line, C = circle or arc.
+// 📝 References per kind (First / Second / Third): P = point index, L = line, C = circle or arc, S = spline, K = any curve,
+//    E = the point index of one end of the spline (its first or last defining point).
 enum class SketchConstraintKind : uint8_t
 {
     Coincident         = 0,                                                                  // P, P            · 2 equations
@@ -64,6 +65,10 @@ enum class SketchConstraintKind : uint8_t
     Symmetric          = 18,                                                                 // P, P, L         · 2
     Concentric         = 19,                                                                 // C, C            · 2
     ArcRule            = 20,                                                                 // C (arc): |CS| = |CE|, added implicitly · 1
+    SplineTangent      = 21,                                                                 // S, K, E: S's end tangent ∥ K's tangent there (K a spline: SecondValue 0 start · 1 end) · 1
+    SplineCurvature    = 22,                                                                 // S, K, E: tangent as 21 and equal signed curvature (G2) · 2
+    PointOnSpline      = 23,                                                                 // P, S: signed distance to the closest point of S · 1
+    SplineDirection    = 24,                                                                 // S, −, E: S's end tangent at angle Value (mod π; H 0, V π/2) · 1
 };
 
 enum class SketchConstraintStatus : uint8_t
@@ -73,15 +78,25 @@ enum class SketchConstraintStatus : uint8_t
     Conflicting = 2,                                                                         // Dependent on others, inconsistent
     Unmet       = 3,                                                                         // Independent but not met (no convergence)
     Unsupported = 4,                                                                         // A reference of the wrong kind (spline as line / circle) · left out
+    Driven      = 5,                                                                         // A reference (driven) dimension: measured after the solve, no equation
 };
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
 //------------------------------------------------------------------------------------------------------------------------
 
+// 📝 Geometry projected from another sketch (SolveSpace's reference geometry from an earlier group). The solver holds
+//    linked unknowns where they are; the feature tree re-projects them from the source sketch at every regeneration.
+struct SketchLink
+{
+    std::string Sketch = {};                                                                 // [-] - Source sketch step label (empty: not linked)
+    int         Index  = -1;                                                                 // [-] - Source point index (point link) or curve index (circle radius link)
+};
+
 struct SketchPoint
 {
-    Vector2 Position = {};                                                                   // [len] - Unknowns x, y
+    Vector2    Position = {};                                                                // [len] - Unknowns x, y
+    SketchLink Link     = {};                                                                // [-]   - Projected from another sketch: held fixed
 };
 
 struct SketchCurve
@@ -95,6 +110,7 @@ struct SketchCurve
     bool            Construction = false;                                                    // [-]   - Reference only, not profile
     SketchSplineForm Form        = SketchSplineForm::CubicSpline;                            // [-]   - Spline form
     std::vector<int> Points      = {};                                                       // [-]   - Spline defining point indices (closed: first = last)
+    SketchLink       Link        = {};                                                       // [-]   - Circle projected from another sketch: radius held fixed
 };
 
 struct SketchConstraint
@@ -107,6 +123,7 @@ struct SketchConstraint
     double               SecondValue = 0.0;                                                  // [len|-]   - Fixed y / tangent side
     std::string          Parameter   = {};                                                   // [-]       - Bound parameter name (empty: literal)
     std::string          Label       = {};                                                   // [-]       - Display label ("Width", "H1")
+    bool                 DrivenCondition = false;                                            // [-]       - Reference dimension: no equation, Value = the measurement
 };
 
 struct SketchModel
@@ -135,7 +152,8 @@ struct SketchSolveOutcome
 {
     bool                                Converged         = false;                           // [-]   - All independent equations met
     int                                 Iterations        = 0;                               // [-]   - Steps taken
-    int                                 Unknowns          = 0;                               // [-]   - n
+    int                                 Unknowns          = 0;                               // [-]   - n (free unknowns: linked ones excluded)
+    int                                 Linked            = 0;                               // [-]   - Unknowns held by links
     int                                 Equations         = 0;                               // [-]   - m (incl. implicit arc rules)
     int                                 Rank              = 0;                               // [-]   - Numerical rank of J at the solution
     int                                 StructuralRank    = 0;                               // [-]   - Rank at a generic perturbed configuration
@@ -175,6 +193,13 @@ int AppendSketchArc(SketchModel& Sketch, int Centre, int Start, int End, int Ide
 int AppendSketchSpline(SketchModel& Sketch, std::vector<int> Points, SketchSplineForm Form, int Identifier, bool Construction = false);
 int AppendSketchConstraint(SketchModel& Sketch, SketchConstraintKind Kind, int First, int Second = -1, int Third = -1, double Value = 0.0,
                            const std::string& Label = {}, double SecondValue = 0.0);
+
+// Current value of a dimension kind (length, distance, x / y distance, radius; angle in (−π, π] from the first line to
+// the second); NaN for any other kind or a bad reference. The solver writes this into a driven dimension's Value.
+[[nodiscard]] double MeasureSketchDimension(const SketchModel& Sketch, const SketchConstraint& Constraint) noexcept;
+
+// Point index of the spline end nearest Position (its first or last defining point), −1 for a closed / bad spline.
+[[nodiscard]] int NearestSketchSplineEnd(const SketchModel& Sketch, const SketchCurve& Curve, Vector2 Position) noexcept;
 
 // Arc / circle radius as currently placed (arc: |Centre − Start|).
 [[nodiscard]] double MeasureSketchRadius(const SketchModel& Sketch, const SketchCurve& Curve) noexcept;
