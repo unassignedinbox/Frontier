@@ -83,11 +83,12 @@ export function jointField(x, z, bedIndex, sets, spacing, bedThick, o = {}) {
   const hair = Math.max(A.hair, B.hair);
   const d = Math.min(A.d, B.d);
   const key = A.cell * 73 + B.cell * 191;
-  // tone and offset persist across beds (a joint-bounded column of rock), with a smaller
-  // per-bed jitter - resetting them at every bed boundary reads as brickwork
-  const blockTone = (jshash(key, 7, 501) - 0.5) * 0.45 + (jshash(key, bedIndex, 501) - 0.5) * 0.55;
-  const off = ((jshash(key, 7, 503) - 0.5) * 0.6 + (jshash(key, bedIndex, 503) - 0.5) * 0.4) * 2;
-  const off2 = ((jshash(key, 7, 505) - 0.5) * 0.6 + (jshash(key, bedIndex, 505) - 0.5) * 0.4) * 2;
+  // tone and offset live in the joint-bounded COLUMN for life: resetting them at bed
+  // boundaries painted brick courses (every bed a new tone = horizontal banding). The
+  // shared core is per-column; the paint adds its own aperiodic vertical drift.
+  const blockTone = jshash(key, 7, 501) - 0.5;
+  const off = ((jshash(key, 7, 503) - 0.5) * 0.85 + (jshash(key, bedIndex, 503) - 0.5) * 0.15) * 2;
+  const off2 = ((jshash(key, 7, 505) - 0.5) * 0.85 + (jshash(key, bedIndex, 505) - 0.5) * 0.15) * 2;
   const scar = jshash(key, bedIndex, lossSeed) < loss ? 1 : 0;
   return { d, groove, hair, cellA: A.cell, cellB: B.cell, blockTone, off, off2, scar };
 }

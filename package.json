@@ -9,6 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "check": "node scripts/check-generate.mjs",
     "check:shader": "node scripts/check-shader-parse.mjs",
+    "check:wall": "node scripts/check-wall-banding.mjs",
+    "check:chunk": "node scripts/check-chunk-build.mjs",
     "check:rivers": "node scripts/check-river-chords.mjs"
   },
   "dependencies": {
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@shaderfrog/glsl-parser": "^7.0.1",
+    "pngjs": "^7.0.0",
     "vite": "^6.0.0"
   }
 }

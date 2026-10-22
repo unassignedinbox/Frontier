@@ -503,19 +503,21 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float seam = ( 1.0 - smoothstep( 0.0, uSeamWidth, min( bf, 1.0 - bf ) ) ) * seamNoise;
   bandCol *= 1.0 - uSeamStrength * seam;
   // bedding shows on exposed faces; on gentle ground it is under soil and scree and only hinted
-  // on steep walls the bold hard/soft striping is what read as wallpaper: compress the beds
-  // toward a quiet per-bed tone there (the joint blocks carry the structure instead)
+  // on steep walls ANY bed-locked luminance reads as wallpaper bands — seams, gradients,
+  // per-bed steps all survive a hue-only flattening — so walls get no bed structure at
+  // all: one quiet rock tone with slow aperiodic district drift (the joint blocks and the
+  // carved ledges carry the structure instead)
   float wallFlat = smoothstep( 0.12, 0.5, wall );
-  float bedJit = 0.9 + 0.2 * fract( bh * 5.77 + 0.31 );
-  vec3 flatBed = vec3( dot( bandCol, vec3( 0.3333 ) ) ) * bedJit;
-  bandCol = mix( bandCol, flatBed, wallFlat * 0.8 );
+  float distDrift = ( cgNoise3( wp * 0.016 + 4.2 ).x - 0.5 ) * 0.16 + ( cgNoise3( wp * 0.05 + 9.1 ).x - 0.5 ) * 0.10;
+  vec3 wallBed = vec3( dot( mix( uRockB, uRockA, 0.55 ), vec3( 0.3333 ) ) ) * ( 1.0 + distDrift );
+  bandCol = mix( bandCol, wallBed, wallFlat );
   float bandVis = mix( 0.3, 1.0, smoothstep( 0.12, 0.45, wall ) );
 
   // ---- jointing: the SAME two joint sets the SDF carve cuts ----------------------------------
   // Grooves line up with the carved grooves and every carved block gets its painted tone, so
   // paint and geometry describe one rock mass. Bed thickness here is the raw table value, as
   // in the carve (no lateral jitter), or the two lattices would drift apart with distance.
-  float blockTone = 0.0, crackAO = 0.0, scarFresh = 0.0;
+  float blockTone = 0.0, crackAO = 0.0;
   if ( uJointStrength > 0.001 && rockMask > 0.01 ) {
     float bedThickM = max( 0.3, bedRec.w );
     float jsp = clamp( uJointSpacing, 1.5, 60.0 );
@@ -535,20 +537,30 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
       float u = clamp( abs( JB.y ) / ww, 0.0, 1.0 );
       ggrad += uJointSetB.xy * ( -6.0 * u * ( 1.0 - u ) / ww * ( JB.y >= 0.0 ? 1.0 : -1.0 ) ) * JB.w;
     }
-    // bedding joints: a groove at every bed boundary (strongest on the walls)
+    // bedding ledges: only where hard rock sits on soft (differential erosion — the same
+    // gate the carve uses, so painted ledge shadows sit on carved ledges), broken along
+    // strike. A groove at every bed boundary would be banding again.
     float dB = min( bf, 1.0 - bf ) * bedThickM;
     float wB = uJointWidth * 1.2;
-    float gB = ( 1.0 - smoothstep( 0.0, wB, dB ) ) * smoothstep( 0.15, 0.5, wall );
-    float sB = ( bf < 0.5 ? 1.0 : -1.0 ) * ( dB < wB ? ( 1.0 - dB / wB ) : 0.0 ) * smoothstep( 0.15, 0.5, wall );
+    float hardN = bf > 0.5 ? texelFetch( uBedTex, ivec2( min( bedIdx + 1, uBedCount - 1 ), 0 ), 0 ).y
+                            : texelFetch( uBedTex, ivec2( max( bedIdx - 1, 0 ), 0 ), 0 ).y;
+    float lip = clamp( ( bf > 0.5 ? hardN - bedHard : bedHard - hardN ) * 2.2, 0.0, 1.0 );
+    lip *= 0.35 + 0.65 * seamNoise;
+    float gB = ( 1.0 - smoothstep( 0.0, wB, dB ) ) * smoothstep( 0.15, 0.5, wall ) * lip;
+    float sB = ( bf < 0.5 ? 1.0 : -1.0 ) * ( dB < wB ? ( 1.0 - dB / wB ) : 0.0 ) * smoothstep( 0.15, 0.5, wall ) * lip;
     vec3 crackG = vec3( ggrad.x, sB / max( wB, 0.01 ), ggrad.y ) * depth * 1.5;
-    // each block: its own tilt and tone from the joint-cell key both sides share
+    // each block: its own tilt and tone from the joint-cell key both sides share.
+    // The tone lives in the column for life (no bed-index term: that painted brick
+    // courses) and breathes slowly with height so stacked cells never align into fins.
+    // Fallen-out blocks read through the carved socket + groove shadow; the old pale
+    // per-(cell, bed) scar rectangles were banding and are gone.
     int bkey = int( JA.z ) * 73 + int( JB.z ) * 191;
-    float hb = ( jsHash( bkey, 7, 501 ) - 0.5 ) * 0.45 + ( jsHash( bkey, bedIdx, 501 ) - 0.5 ) * 0.55;
-    vec3 tilt = ( vec3( hb, jsHash( bkey, bedIdx, 503 ), jsHash( bkey, bedIdx, 505 ) ) - 0.5 ) * 0.22 * uJointBlocks * jointAmt;
+    float hb = jsHash( bkey, 7, 501 ) - 0.5;
+    float drift = 0.45 + 0.55 * cgNoise3( vec3( float( bkey ) * 0.37, wp.y * 0.02, 7.0 ) ).x;
+    vec3 tilt = ( vec3( hb, jsHash( bkey, 7, 503 ), jsHash( bkey, 7, 505 ) ) - 0.5 ) * 0.22 * uJointBlocks * jointAmt;
     // block tone survives to far zoom (it IS the structure there); grooves fade with footprint
     float toneFade = ( 1.0 - smoothstep( spacing * 0.5, spacing * 2.0, footprint ) ) * uJointBlocks * rockMask;
-    blockTone = hb * 0.3 * toneFade;
-    scarFresh = step( jsHash( bkey, bedIdx, 1237 ), uBlockLoss ) * toneFade;
+    blockTone = hb * 0.3 * toneFade * drift;
     G += crackG + tilt;
     // closed joints show a hairline so every block reads even where no crack opened
     float hair = max( ( 1.0 - smoothstep( 0.0, ww * 0.45, abs( JA.y ) ) ) * ( 1.0 - JA.w ), ( 1.0 - smoothstep( 0.0, ww * 0.45, abs( JB.y ) ) ) * ( 1.0 - JB.w ) );
@@ -560,11 +572,11 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   vec3 rock = mix( uRockA, bandCol, uStrataContrast * bandVis );
   rock *= 1.0 + blockTone;
   rock *= 1.0 - crackAO * 0.55;
-  rock = mix( rock, rock * 1.18 + uFresh * 0.12, clamp( scarFresh, 0.0, 1.0 ) );
   vec3 strataOnly = rock;
   // terrain beds carry the erosion hardness: caprock paler and cleaner, soft beds darker and warmer
-  rock = mix( rock, rock * 1.12 + uRockC * 0.06, hardness * uHardnessTint * ( 1.0 - uIsRock ) );
-  rock = mix( rock, rock * vec3( 0.86, 0.78, 0.7 ), ( 1.0 - hardness ) * 0.6 * uHardnessTint * ( 1.0 - uIsRock ) );
+  // (gated off the steep walls — per-bed tones there are banding, whatever their source)
+  rock = mix( rock, rock * 1.12 + uRockC * 0.06, hardness * uHardnessTint * ( 1.0 - uIsRock ) * ( 1.0 - wallFlat ) );
+  rock = mix( rock, rock * vec3( 0.86, 0.78, 0.7 ), ( 1.0 - hardness ) * 0.6 * uHardnessTint * ( 1.0 - uIsRock ) * ( 1.0 - wallFlat ) );
 
   // mottle & grain tint
   rock *= 1.0 - uGrainContrast * 0.45 + uGrainContrast * 0.9 * ( grain.x * 0.5 + 0.5 );
@@ -591,9 +603,12 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   // cavity / convexity
   rock *= 1.0 + cavity * 0.35 * uCavityStrength;
 
-  // runoff staining
-  float streak = cgNoise3( vec3( wp.x, wp.y * 0.05, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.1, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4;
-  streak = smoothstep( 0.56, 0.78, streak ) * uStreakAmount;
+  // runoff staining: broken into districts (some wall panels streak, some stay clean)
+  // and halved past ~100 m so the far face never shimmers into vertical stripes
+  float streakN = cgNoise3( vec3( wp.x, wp.y * 0.05, wp.z ) / uStreakScale ).x * 0.6 + cgNoise3( vec3( wp.x * 3.6, wp.y * 0.1, wp.z * 3.6 ) / uStreakScale + 5.0 ).x * 0.4;
+  float streakPatch = cgNoise3( wp * 0.02 + 13.0 ).x;
+  float streak = smoothstep( 0.56, 0.78, streakN ) * uStreakAmount * mix( 0.3, 1.0, smoothstep( 0.35, 0.65, streakPatch ) );
+  streak *= 1.0 - smoothstep( 60.0, 220.0, length( cameraPosition - wp ) ) * 0.55;
   float wet = clamp( uWetness * ( flow * 0.9 + streak * wall * 0.7 ) + flowlineVis * 0.9, 0.0, 1.0 );
   rock *= 1.0 - wet * 0.5;
 

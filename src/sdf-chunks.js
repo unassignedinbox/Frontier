@@ -235,7 +235,7 @@ export function carveReach(v) {
   const detail = (v.detailRelief || 0) + (v.rockyAmount || 0) + (v.cragAmount || 0);
   const blocks = Math.max(0, v.sdfBlocks || 0);
   return undercut * (1 + 0.5 * pits + 0.9 * joints) + 1.5 + detail + Math.max(0, v.sdfPushPull || 0) + Math.max(0, v.sdfLean || 0)
-    + blocks * 1.5 + (blocks > 0 ? Math.min(v.sdfBlockSize || 8, 12) * 0.6 : 0);
+    + blocks * 1.5 + (blocks > 0 ? Math.min(v.sdfBlockSize || 8, 12) * 0.6 : 0) + (v.waterEnabled ? Math.max(0, v.sdfNotch || 0) : 0);
 }
 
 
@@ -317,7 +317,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   const pits = v.sdfPits == null ? 0.3 : v.sdfPits;
   const joints = v.sdfJoints == null ? 0.5 : v.sdfJoints;
   // roughness wavelength is tied to the voxel size (≥ 5 voxels) so it cannot alias into stair-steps
-  const roughAmp = (v.sdfRough == null ? 0.5 : v.sdfRough) * Math.min(1.2, vox * 0.3);
+  const roughAmp = (v.sdfRough == null ? 0.5 : v.sdfRough) * Math.min(3.0, vox * 0.9);
   const roughFreq = 1 / (vox * 5);
   const bedPower = v.sdfBedContrast == null ? 1 : v.sdfBedContrast; // bed-relief contrast: partings + per-bed steps
   const hasOutcrop = !!m.outcrop;
@@ -333,6 +333,11 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   // vertical to overhanging — instead of the back-leaning slope a heightfield gives
   const leanAmp = Math.max(0, v.sdfLean || 0);
   const hasLean = leanAmp > 0 && !!m.crest && !!m.foot;
+  // wave-cut notch: the sea bites a recess at the waterline (a real notch is uniform
+  // along strike — that is what makes it read as wave-cut, not banding). Gaussian in
+  // height, so inland faces feel nothing even where a preset leaves it enabled.
+  const notchAmp = v.waterEnabled ? Math.max(0, v.sdfNotch || 0) : 0;
+  const notchY = v.seaLevel != null ? v.seaLevel : -1e6;
   // vertical wall: the face is sheared so its crest moves out and its foot moves in — at 1 the
   // contours of the face collapse onto one line (a vertical wall), above 1 the wall overhangs
   // (\ /). A point at height y takes the heightfield from a plan position shifted uphill by
@@ -355,7 +360,7 @@ export function buildChunkGeometry(job, meta, v, ctx) {
   const jointDomain = Math.max(14, jointSpacing * 5);
   const jointOpts = { width: jointWidth, dropout: jointDropout, stagger: jointStagger, domain: jointDomain, loss: blockLoss, vary: v.jointVary == null ? 0.7 : v.jointVary };
   const seamW = Math.max(0.35, vox * 0.6);
-  const seamDepth = 0.15 * undercut, bedStep = 0.12 * undercut;
+  const seamDepth = 0.22 * undercut, bedStep = 0.12 * undercut;
   const jointDepthM = 1.5, scarDepth = 1.2 + blockAmp * 0.35, pitDepthM = 2;
   const bump = roughAmp + detail.amp + pushAmp + blockAmp;
   const maxCarve = carveReach(v);
@@ -417,9 +422,15 @@ export function buildChunkGeometry(job, meta, v, ctx) {
     // the joint field of this bed at this plan position (cached: constant per column + bed)
     let jc = col.jc;
     if (!jc || jc.bi !== bi) jc = col.jc = { bi, ...jointField(x, z, bi, ctx.jsets, jointSpacing, thick, jointOpts) };
-    // bedding relief: thin recessed partings AT the bed boundaries, hard beds faintly proud
+    // bedding relief: a recessed ledge only where hard rock sits on soft (raw table
+    // hardness both sides, same gate as the paint, so carved and painted ledges agree);
+    // hard beds stand faintly proud of soft ones by their hardness difference
     const edge = Math.min(f, 1 - f) * thick;
-    const seam = (1 - smoothstep(0, seamW, edge)) * seamDepth;
+    const tHard = ctx.strata.table.hard, tCount = ctx.strata.table.count;
+    const hardHere = tHard[Math.min(Math.max(bi, 0), tCount - 1)];
+    const hardN = f > 0.5 ? tHard[Math.min(bi + 1, tCount - 1)] : tHard[Math.max(bi - 1, 0)];
+    const lip = clamp01((f > 0.5 ? hardN - hardHere : hardHere - hardN) * 2.2);
+    const seam = (1 - smoothstep(0, seamW, edge)) * seamDepth * lip;
     const hardness = smoothstep(0.45, 0.7, hard);
     const bedOff = (0.45 - hardness) * bedStep;
     const bedRelief = (seam + bedOff) * bedPower * (1 - col.oc);
@@ -450,7 +461,12 @@ export function buildChunkGeometry(job, meta, v, ctx) {
       const down = Math.min(1, Math.max(0, (col.crest - y) / faceH));
       lean = leanAmp * down * (1 - 0.5 * smoothstep(0.85, 1, down)) * (1 - col.oc);
     }
-    const d = bedRelief + jointCarve + block + pit + rough - det - push + lean;
+    let notch = 0;
+    if (notchAmp > 0) {
+      const dw = (y - notchY) / 3;
+      if (dw > -3 && dw < 3) notch = notchAmp * Math.exp(-0.5 * dw * dw);
+    }
+    const d = bedRelief + jointCarve + block + pit + rough - det - push + lean + notch;
     return d * col.steep * col.w;
   }
   function fCol(col, y) {
