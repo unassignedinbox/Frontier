@@ -142,7 +142,7 @@ export const defaults = {
   sdfLean: 0,               // [m]
   sdfVertical: 0,
   sdfLeanReach: 24,         // [m]
-  sdfPushScale: 18,         // [m]
+  sdfPushScale: 28,         // [m]
   sdfBlocks: 0,
   sdfBlockSwing: 0.6,       // how far the block lattice swings from world-aligned             // [m] rock blocks: per-block in/out of the face
   sdfBlockSize: 8,          // [m]
@@ -176,12 +176,12 @@ export const defaults = {
   // Jointing (cracks that break the face into blocks)
   jointOn: 1,
   jointStrength: 0.7,
-  jointSpacing: 3,          // [m]
+  jointSpacing: 6,          // [m]
   texWarp: 0.55,            // how far the cell lattices are warped and stretched
   jointBend: 0.6,           // how much the joint sets swing across the massif
   jointVary: 0.7,           // block size varies panel to panel (the true-3D domain grid)
   facePatch: 0.5,           // some panels are massive, some are busy
-  jointWidth: 0.22,         // [m]
+  jointWidth: 0.35,         // [m]
   jointDepth: 0.35,         // [m]
   jointStagger: 1,
   jointBlocks: 0.6,
@@ -369,8 +369,9 @@ export const presets = {
     cliffHeight: 150, cliffSharpness: 1, cliffStacks: 0.4, cliffProtect: 0.9,
     plateauStrength: 0.5, plateauHeight: 220, canyonDepth: 0, snowLine: 5000, vegetation: 0.9, mossiness: 0.8, seaLevel: 70, waterEnabled: 1,
     talusSoft: 35, talusHard: 84, droplets: 150000,
-    sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.6, sdfPits: 0.08, sdfRough: 0.2, sdfPushPull: 1.2, sdfPushScale: 12,
+    sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.6, sdfPits: 0.08, sdfRough: 0.2, sdfPushPull: 1.2, sdfPushScale: 30,
     sdfBlocks: 3, sdfBlockSize: 8, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 28, sdfChunk: 32, sdfMaxChunks: 800,
+    jointSpacing: 7, jointWidth: 0.4,
     peelStrength: 0.5, peelScale: 1.8, flakeStrength: 0.7, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
   },
   'Coastal cliffs': {
@@ -381,9 +382,9 @@ export const presets = {
     cliffProtect: 0.9, fluvialStrength: 0.65, fluvialIterations: 35, droplets: 60000, erodeSpeed: 0.3, thermalIterations: 25, talusSoft: 40, talusHard: 89, rillStrength: 0.45,
     snowOn: 0, vegetation: 0.95, vegSlope: 32, vegPatchiness: 0.2, mossiness: 0.25, soilAmount: 0.6, dryness: 0.15,
     seaLevel: 0, waterEnabled: 1, waterMeshes: 0, riverCatchment: 0.4, riverLakes: 0,
-    sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.5, sdfPits: 0.1, sdfRough: 0.25, sdfPushPull: 1, sdfPushScale: 14,
+    sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.5, sdfPits: 0.1, sdfRough: 0.25, sdfPushPull: 1, sdfPushScale: 30,
     sdfBlocks: 2.5, sdfBlockSize: 9, sdfBlockLoss: 0.12, sdfVertical: 1.15, sdfLean: 1.5, sdfLeanReach: 30, sdfChunk: 32, sdfMaxChunks: 800, overhang: 2,
-    jointStrength: 1.0, jointSpacing: 2.2, jointWidth: 0.2, jointDepth: 0.4, jointStagger: 1, jointBlocks: 0.7, jointDropout: 0.3,
+    jointStrength: 1.0, jointSpacing: 6, jointWidth: 0.35, jointDepth: 0.4, jointStagger: 1, jointBlocks: 0.7, jointDropout: 0.3,
     peelStrength: 0.25, flakeStrength: 0.3, oxideAmount: 0.25, wetness: 0.8, rockDensity: 0.45, rockSlopeMax: 30, rockSizeMin: 0.6, rockSizeMax: 6, gravelAmount: 1,
     sunElevation: 38, sunAzimuth: 235, turbidity: 3, fogDensity: 0.3,
   },
@@ -395,9 +396,9 @@ export const presets = {
     cliffProtect: 0.9, fluvialStrength: 0.4, fluvialIterations: 25, droplets: 40000, erodeSpeed: 0.25, thermalIterations: 20, talusSoft: 40, talusHard: 89, rillStrength: 0.3,
     snowOn: 0, vegetation: 0.35, vegSlope: 30, vegPatchiness: 0.7, mossiness: 0.1, soilAmount: 0.7, dryness: 0.4,
     seaLevel: -100, waterEnabled: 0, riverCatchment: 0.6, riverLakes: 0,
-    sdfOn: 1, sdfAngle: 50, sdfUndercut: 2, sdfJoints: 0.6, sdfPits: 0.05, sdfRough: 0.2, sdfPushPull: 1, sdfPushScale: 10,
+    sdfOn: 1, sdfAngle: 50, sdfUndercut: 2, sdfJoints: 0.6, sdfPits: 0.05, sdfRough: 0.2, sdfPushPull: 1, sdfPushScale: 26,
     sdfBlocks: 3, sdfBlockSize: 7, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 24, sdfMaxChunks: 800, overhang: 1.5,
-    jointStrength: 1.2, jointSpacing: 1.8, jointWidth: 0.18, jointDepth: 0.45, jointStagger: 0.6, jointBlocks: 0.8, jointDropout: 0.25,
+    jointStrength: 1.2, jointSpacing: 5, jointWidth: 0.3, jointDepth: 0.45, jointStagger: 0.6, jointBlocks: 0.8, jointDropout: 0.25,
     peelStrength: 0.3, flakeStrength: 0.35, oxideAmount: 0.3, wetness: 0.4, rockDensity: 0.9, rockSlopeMax: 35, rockSizeMin: 0.5, rockSizeMax: 8, gravelAmount: 1,
     sunElevation: 42, sunAzimuth: 200, turbidity: 3, fogDensity: 0.15,
   },
@@ -411,9 +412,9 @@ export const presets = {
     cliffProtect: 0, fluvialStrength: 0.35, fluvialIterations: 25, droplets: 60000, erodeSpeed: 0.3, thermalIterations: 30, talusSoft: 33, talusHard: 85, rillStrength: 0.35,
     snowOn: 0, vegetation: 0.05, vegSlope: 25, mossiness: 0, soilAmount: 0.5, soilColor: '#8a5a3c', dryness: 0.8,
     seaLevel: -100, waterEnabled: 0, riverWater: 0, riverCatchment: 0.1, riverLakes: 0,
-    sdfOn: 1, sdfAngle: 55, sdfUndercut: 4, sdfJoints: 0.5, sdfPits: 0.2, sdfRough: 0.3, sdfPushPull: 1.5, sdfPushScale: 12,
+    sdfOn: 1, sdfAngle: 55, sdfUndercut: 4, sdfJoints: 0.5, sdfPits: 0.2, sdfRough: 0.3, sdfPushPull: 1.5, sdfPushScale: 30,
     sdfBlocks: 1.5, sdfBlockSize: 7, sdfBlockLoss: 0.08, sdfVertical: 0, sdfLean: 0, sdfChunk: 32, sdfMaxChunks: 300, overhang: 2,
-    jointStrength: 0.8, jointSpacing: 2.5, jointWidth: 0.2, jointDepth: 0.35, jointStagger: 1, jointBlocks: 0.6, jointDropout: 0.35,
+    jointStrength: 0.8, jointSpacing: 6.5, jointWidth: 0.35, jointDepth: 0.35, jointStagger: 1, jointBlocks: 0.6, jointDropout: 0.35,
     peelStrength: 0.3, flakeStrength: 0.2, oxideAmount: 0.75, wetness: 0.1, rockDensity: 0.6, rockSlopeMax: 32, rockSizeMin: 0.5, rockSizeMax: 7, gravelAmount: 1,
     sunElevation: 46, sunAzimuth: 225, turbidity: 7, fogDensity: 0.15,
   },
@@ -427,9 +428,9 @@ export const presets = {
     cliffProtect: 0.9, fluvialStrength: 0.4, fluvialIterations: 25, droplets: 40000, erodeSpeed: 0.25, thermalIterations: 20, talusSoft: 36, talusHard: 89, rillStrength: 0.3,
     snowOn: 0, vegetation: 0.08, vegSlope: 25, mossiness: 0, soilAmount: 0.5, soilColor: '#8a5a3c', dryness: 0.75,
     seaLevel: -100, waterEnabled: 0, riverWater: 0, riverCatchment: 0.1, riverLakes: 0,
-    sdfOn: 1, sdfAngle: 50, sdfUndercut: 2.5, sdfJoints: 0.6, sdfPits: 0.05, sdfRough: 0.2, sdfPushPull: 1, sdfPushScale: 10,
+    sdfOn: 1, sdfAngle: 50, sdfUndercut: 2.5, sdfJoints: 0.6, sdfPits: 0.05, sdfRough: 0.2, sdfPushPull: 1, sdfPushScale: 26,
     sdfBlocks: 3, sdfBlockSize: 7, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 24, sdfChunk: 32, sdfMaxChunks: 300, overhang: 1.5,
-    jointStrength: 1.1, jointSpacing: 1.8, jointWidth: 0.18, jointDepth: 0.45, jointStagger: 0.6, jointBlocks: 0.8, jointDropout: 0.25,
+    jointStrength: 1.1, jointSpacing: 5.5, jointWidth: 0.3, jointDepth: 0.45, jointStagger: 0.6, jointBlocks: 0.8, jointDropout: 0.25,
     peelStrength: 0.3, flakeStrength: 0.25, oxideAmount: 0.7, wetness: 0.1, rockDensity: 0.7, rockSlopeMax: 35, rockSizeMin: 0.5, rockSizeMax: 8, gravelAmount: 1,
     sunElevation: 42, sunAzimuth: 215, turbidity: 6, fogDensity: 0.12,
   },
@@ -659,7 +660,7 @@ Object.assign(presets, {
     strataBand: 34, strataStrength: 0.8, hardnessContrast: 0.9, strataLateral: 0.25, fluvialStrength: 0.6, fluvialConcavity: 0.3,
     rillStrength: 0.8, talusSoft: 40, talusHard: 88, sdfOn: 1, sdfAngle: 72, sdfUndercut: 7, sdfBlocks: 1.6, sdfBlockSize: 12,
     sdfVertical: 1.1, overhang: 5, buttress: 0.7, detailRelief: 0.8, rockyAmount: 0.9, peelStrength: 0.6, peelScale: 3.4,
-    flakeStrength: 0.35, jointSpacing: 3.4, vegetation: 0.55, vegSlope: 26, soilAmount: 0.7, sedGrainBias: -0.15, sedimentAmount: 0.75, sedBedScale: 0.4,
+    flakeStrength: 0.35, jointSpacing: 6, vegetation: 0.55, vegSlope: 26, soilAmount: 0.7, sedGrainBias: -0.15, sedimentAmount: 0.75, sedBedScale: 0.4,
     riverSim: 1, riverCatchment: 0.05, riverWidthScale: 1.6, riverMaxWidth: 26, riverFloodplain: 0.6, riverWater: 1, riverLakes: 1,
     waterEnabled: 0, seaLevel: -40, snowOn: 0, fogDensity: 1.1, turbidity: 4, sunElevation: 52, sunAzimuth: 160,
     rocksEnabled: 1, pebblesOn: 1, rockDensity: 0.45, rockSizeMax: 7, rockTalus: 1, rockCaps: 0.5, rockInPlace: 0.6, rockSizeSpread: 0.8,
@@ -680,7 +681,7 @@ Object.assign(presets, {
     talusSoft: 40, talusHard: 84, thermalRate: 0.6, thermalIterations: 12, strataBand: 30, strataStrength: 0.5, hardnessContrast: 0.8,
     outcropDensity: 0.5, outcropSize: 12, outcropCount: 4, outcropBury: 0.5, outcropWeather: 0.6, outcropRidge: 0.4, outcropSlopeMax: 34,
     sdfOn: 1, sdfAngle: 60, sdfUndercut: 4, overhang: 2.5, detailRelief: 0.9, rockyAmount: 1.0, cragAmount: 0.5, peelStrength: 0.5,
-    flakeStrength: 0.5, jointSpacing: 2.6, vegetation: 0.28, vegSlope: 30, dryness: 0.4, soilAmount: 0.6, sedimentAmount: 0.85,
+    flakeStrength: 0.5, jointSpacing: 5.5, vegetation: 0.28, vegSlope: 30, dryness: 0.4, soilAmount: 0.6, sedimentAmount: 0.85,
     sedBedScale: 0.6, sedBands: 0.6, sedGrainBias: -0.1, sedFacies: 0.9, sedCracks: 0.1, snowOn: 1, snowLine: 300, snowSlope: 62, snowSoftness: 2.4,
     riverSim: 1, riverCatchment: 0.06, riverWidthScale: 2.2, riverMaxWidth: 34, riverFloodplain: 1.2, riverWater: 1, riverLakes: 1,
     riverLakeFill: 0.6, riverLakeMax: 1.4, waterEnabled: 0, seaLevel: -120, gravelAmount: 0.9,
@@ -693,7 +694,7 @@ Object.assign(presets, {
     strataStrength: 0.5, hardnessContrast: 0.45, strataLateral: 0.4, fluvialStrength: 0.55, rillStrength: 0.7, talusSoft: 36,
     talusHard: 78, sdfOn: 1, sdfAngle: 74, sdfUndercut: 9, sdfPockets: 0.8, sdfBlocks: 1.8, sdfBlockSize: 8, sdfVertical: 0.9,
     overhang: 5.5, buttress: 0.6, ledgeNoise: 0.5, detailRelief: 0.55, rockyAmount: 0.7, peelStrength: 0.45, flakeStrength: 0.3,
-    jointSpacing: 2.2, vegetation: 0.7, vegSlope: 28, soilAmount: 0.7, sedimentAmount: 0.8, sedBedScale: 0.3, sedRipple: 0.7,
+    jointSpacing: 5.5, vegetation: 0.7, vegSlope: 28, soilAmount: 0.7, sedimentAmount: 0.8, sedBedScale: 0.3, sedRipple: 0.7,
     sedRippleScale: 0.6, sedGrainBias: -0.1, sedFacies: 0.8, sedColorSand: '#d8cdb4', sedColorSilt: '#c6bda6',
     seaLevel: 0, waterEnabled: 1, shoreWet: 1, riverSim: 1, riverCatchment: 0.08, riverWater: 1, riverLakes: 0,
     rocksEnabled: 1, pebblesOn: 1, rockDensity: 0.55, rockSizeMax: 5.5, rockTalus: 1, rockShore: 1, rockInPlace: 0.5, rockCaps: 0.3,
@@ -887,11 +888,10 @@ export const groups = [
         ['sdfPits', 'Pits', 0, 1, 0.05, '', 'Weathering hollows'],
         ['sdfRough', 'Roughness', 0, 1.5, 0.05, '', 'Fine 3D roughness on the carved faces'],
         ['sdfPushPull', '3D push–pull', 0, 10, 0.25, 'm', 'Blocky buttresses stand out of the carved face and recesses go back into it, varying with height so blocks overhang the recess below (blockiness from Landform → Rugged outcrops)'],
-        ['sdfPushScale', 'Block scale', 4, 80, 1, 'm', 'Size of the 3D blocks'],
+        ['sdfPushScale', 'Buttress scale', 8, 80, 1, 'm', 'Wavelength of the slow swell of the face plane: buttresses and recesses'],
         ['sdfBlocks', 'Rock blocks', 0, 6, 0.25, 'm', 'The face becomes a wall of discrete rock blocks — bed rows × two vertical joint families, staggered bed to bed — each block proud of or set back from the face by up to this much, with a bevelled rim and a crack groove around it (3-D geometry, not shading). Blocks smaller than ~3 voxels cannot be resolved: lower the world size or raise the voxel budget for finer blocks'],
         ['sdfBlockSize', 'Rock block size', 2, 40, 0.5, 'm', 'Width of the rock blocks (each bed varies it; thick beds give wider blocks)'],
         ['sdfBlockLoss', 'Missing blocks', 0, 1, 0.05, '', 'Share of blocks that have fallen out of the face, leaving a deep recess'],
-        ['sdfBlockSwing', 'Block swing', 0, 1, 0.05, '', 'How far the block lattice rotates across the cliff: joint sets curve around a dome in the real thing, and one axis-aligned grid over every wall is what reads as tiling'],
         ['sdfVertical', 'Vertical wall', 0, 1.6, 0.05, '', 'Shears every steep face so its crest moves out and its foot moves in: 1 = the face stands truly vertical (|) whatever the heightfield slope, above 1 it overhangs (\\ /). Cliffs only — the ground before and behind the face is left alone'],
         ['sdfLean', 'Lean (| /)', 0, 12, 0.5, 'm', 'The face is cut back progressively from crest to foot, so a cliff stands vertical to overhanging (| /) instead of leaning back (| \\)'],
         ['sdfLeanReach', 'Lean reach', 8, 80, 2, 'm', 'Plan distance over which crest and foot of a face are found'],
@@ -1064,13 +1064,12 @@ export const groups = [
         ['jointOn', 'Enable jointing', 0, 1, 1, '', 'Cracks that break the face into blocks: two vertical joint sets (staggered bed to bed like brickwork) and the bedding planes, each joint with its own width, some missing, each block with its own tilt and tone'],
         ['jointStrength', 'Jointing', 0, 1.5, 0.05, '', ''],
         ['jointSpacing', 'Joint spacing', 0.6, 20, 0.1, 'm', 'Block size along the face (scaled by bed thickness)'],
-        ['jointBend', 'Joint swing', 0, 1, 0.05, '', 'How much the two joint sets curve and rotate across the massif, so the lattice is never square to the view over a whole cliff'],
         ['jointVary', 'Block size varies', 0, 1, 0.05, '', 'Coarse panels of different block size, on the same grid the true-3D blocks are varied by — massive slabs here, closely jointed rock there'],
-        ['texWarp', 'Pattern warp', 0, 1, 0.05, '', 'Warps and stretches the cells of every face pattern (joints, spalls, flakes, gravel) so nothing marches along the world axes'],
+        ['texWarp', 'Pattern warp', 0, 1, 0.05, '', 'Warps and stretches the cells of face patterns (spalls, flakes, gravel) so nothing marches along the world axes'],
         ['facePatch', 'Detail patchiness', 0, 1, 0.05, '', 'How much the *amount* of jointing, spalling and flaking varies from patch to patch — 0 = the whole cliff is finished the same way'],
         ['jointWidth', 'Crack width', 0.05, 1, 0.01, 'm', ''],
         ['jointDepth', 'Crack depth', 0, 1.5, 0.05, 'm', 'How far the grooves read into the face'],
-        ['jointStagger', 'Stagger', 0, 1, 0.05, '', 'Offset of the vertical joints from bed to bed (0 = continuous columns, 1 = brickwork)'],
+        ['jointStagger', 'Stagger', 0, 1, 0.05, '', 'How much the joints step sideways at each bed boundary (0 = continuous planes, 1 = strongly stepped)'],
         ['jointBlocks', 'Block relief', 0, 1, 0.05, '', 'Per-block tilt and tone'],
         ['jointDropout', 'Missing joints', 0, 0.8, 0.05, '', 'Share of joints that do not show, so block sizes vary'],
       ] },

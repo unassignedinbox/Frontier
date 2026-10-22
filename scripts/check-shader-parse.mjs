@@ -7,10 +7,12 @@ import { parser } from '@shaderfrog/glsl-parser';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { jointSetsGLSL } from '../src/joint-sets.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = readFileSync(join(root, 'src', 'surface-shader.js'), 'utf8');
-const head = src.match(/const fragmentHead = \/\* glsl \*\/`([\s\S]*?)`;/)[1];
+// the head interpolates the shared joint-set GLSL at runtime; substitute the same source
+const head = src.match(/const fragmentHead = \/\* glsl \*\/`([\s\S]*?)`;/)[1].replace('${jointSetsGLSL}', jointSetsGLSL);
 const body = src.match(/const fragmentBody = \/\* glsl \*\/`([\s\S]*?)`;/)[1];
 
 // Every uXxx the chunk uses must be declared in it (or be a Three.js-provided builtin).
