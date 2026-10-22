@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 476 frames · 36.991 s · slowest frame 398.056 ms
+- Frame: 1600 x 900 · 476 frames · 36.585 s · slowest frame 389.905 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -86,17 +86,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `bed2729f99cc7e0b` |
-| 112Rotate | 142 | `cfb013ddb15a16b4` |
-| 113Scale | 180 | `fc9ddd8a2bc0507d` |
-| 114Duplicate | 209 | `f39e82a747893f12` |
-| 115Paste | 228 | `aced427ea21d67d9` |
-| 116Hide | 236 | `4b3cdd71723337f5` |
-| 117InvertHidden | 273 | `0bfa58503e50c075` |
-| 118Join | 365 | `f345e37667b85d26` |
-| 119OffsetPreview | 407 | `994b050cb2c5f2b1` |
-| 120PipePreview | 462 | `938cb0b848d28d40` |
-| 121Pipe | 476 | `5eb656b260a555b8` |
+| 111MovePreview | 98 | `364c5dc1a669696d` |
+| 112Rotate | 142 | `bbafdfa605d23fd4` |
+| 113Scale | 180 | `f00a0f5d6b3e3df5` |
+| 114Duplicate | 209 | `18562b09b59f01ee` |
+| 115Paste | 228 | `73995ea9896a8eda` |
+| 116Hide | 236 | `e663d595e2730d5e` |
+| 117InvertHidden | 273 | `85070da524a134a5` |
+| 118Join | 365 | `ac80c04a626678d7` |
+| 119OffsetPreview | 407 | `5995c62504e03278` |
+| 120PipePreview | 462 | `251a30c20ea9dce9` |
+| 121Pipe | 476 | `ade474379399893e` |
 
 ## Journal
 
@@ -105,7 +105,7 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 7 ms
+- Extrude1 · Rectangle1 · New · 8 ms
 - Selection cleared
 - Move needs picked bodies (mode 4, or a face / edge of the body)
 - Selected Extrude1 (6 faces)
@@ -125,7 +125,7 @@
 - Duplicate (Extrude1) · 18 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
-- Remove (Extrude1Copy1) · 8 ms
+- Remove (Extrude1Copy1) · 7 ms
 - Paste (Extrude1Copy1) · 22 ms
 - Hide selected · 1 hidden
 - Unhide all · 0 hidden
@@ -145,11 +145,11 @@
 - Bevel size 1 m (pinned)
 - Extrude1 · Line2 · New · 5 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
-- Offset Line2 by 0.25 · 3 ms
+- Offset Line2 by 0.25 · 4 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Line1 · 3 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric
-- Pipe r 0.2 along Line1 · 14 ms
+- Pipe r 0.2 along Line1 · 11 ms
 - Framed the document (Space)

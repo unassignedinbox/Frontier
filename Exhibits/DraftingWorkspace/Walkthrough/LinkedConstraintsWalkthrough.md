@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 609 frames · 44.0456 s · slowest frame 401.442 ms
+- Frame: 1600 x 900 · 609 frames · 42.0287 s · slowest frame 397.217 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
@@ -65,12 +65,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `37a2d3d88dad63f7` |
-| 129ConstrainSplineG2 | 221 | `bc4c418ff5de707d` |
-| 130ConstrainReference | 415 | `3875f545f682b6a7` |
-| 131ConstrainReferenceFollows | 449 | `1e98a8a7855bb011` |
-| 132ConstrainLinkPick | 508 | `9148cae22ec4b20a` |
-| 133ConstrainLinked | 595 | `bacd6fa93d6b96b3` |
+| 128ConstrainSplineG1 | 179 | `53a1e107d99f51c7` |
+| 129ConstrainSplineG2 | 221 | `d842eb1246a87859` |
+| 130ConstrainReference | 415 | `4a7aad87ee80bfd6` |
+| 131ConstrainReferenceFollows | 449 | `d886a977a26d4f29` |
+| 132ConstrainLinkPick | 508 | `f3ce83744e0f2f5e` |
+| 133ConstrainLinked | 595 | `703734b1422779e6` |
 
 ## Journal
 

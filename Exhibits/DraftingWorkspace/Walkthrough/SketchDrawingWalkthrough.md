@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 339 frames · 30.8081 s · slowest frame 992.664 ms
+- Frame: 1600 x 900 · 339 frames · 30.1123 s · slowest frame 917.481 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `e5a71e38067911a0` |
-| 31CurveForms | 243 | `96d76a06ad5a6063` |
-| 32HermiteClosing | 254 | `43e6eeb99d64a936` |
-| 33DrawnSolid | 339 | `25c5bc15d30d2595` |
+| 30RectanglePreview | 32 | `9e271d364b024fe0` |
+| 31CurveForms | 243 | `1b086d5f142c39ea` |
+| 32HermiteClosing | 254 | `d14f1660934b6584` |
+| 33DrawnSolid | 339 | `58791234c8f695fd` |
 
 ## Journal
 
@@ -99,7 +99,7 @@
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 53 ms
+- Extrude3 · Line1 · Union · 51 ms
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Point dropped · 2 left
 - Autosaved _ClaudeScratch/DraftingWorkspace/SketchRecovery.drafting.toml
@@ -107,11 +107,11 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 20 ms
+- Curve1 · Hermite · 23 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 706 ms
+- Extrude4 · Curve1 · Difference · 701 ms
 - Arc on plane XY: click start, end, then a point on the arc · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left

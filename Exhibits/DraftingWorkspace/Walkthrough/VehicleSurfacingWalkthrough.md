@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 251 frames · 21.5308 s · slowest frame 412.42 ms
+- Frame: 1600 x 900 · 251 frames · 20.2643 s · slowest frame 391.262 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -63,13 +63,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 36 | `92a66f7eee2eb336` |
-| 51ControlPoints | 43 | `cf027e2c07d6779b` |
-| 52SectionsSelected | 140 | `9d598c616f59b151` |
-| 53BonnetLoft | 148 | `3b7555ec0fd75498` |
-| 54PoleDragLive | 185 | `3b3869fef4d1f99b` |
-| 55PoleMoved | 199 | `81583fb1482f0233` |
-| 56SheetUnderside | 234 | `63d66dfd158e90ea` |
+| 50CurvesImported | 36 | `8f3d823ef522d7f2` |
+| 51ControlPoints | 43 | `b992890d9f455ff4` |
+| 52SectionsSelected | 140 | `71272c6e6fc8b674` |
+| 53BonnetLoft | 148 | `c2e51e84bd660529` |
+| 54PoleDragLive | 185 | `670aaa244f5ecd00` |
+| 55PoleMoved | 199 | `832eed52b97e4037` |
+| 56SheetUnderside | 234 | `ead5ca06949c4deb` |
 
 ## Journal
 

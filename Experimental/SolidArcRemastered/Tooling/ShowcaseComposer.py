@@ -133,6 +133,12 @@ CaptureCaptions = {
     "143ReplayRedo"              : "Ctrl+Shift+Z: replayed 0/8 again, bit-identical to a full replay",
     "144ReplayFullEdit"          : "Block1 width is a sketch dimension: the whole tree replays (8/8)",
     "145ReplayPreview"           : "B stages the bevel preview from the document's checkpoints: only the new fillet runs (replayed 1/9)",
+    "146XRayBoxOpaque"           : "Box selection without x-ray: the 17 visible edges of the bracket",
+    "147XRayBoxThrough"          : "Alt+Z x-ray: ghost faces over the grid, the same box takes all 24 edges including the hidden ones",
+    "148XRayHover"               : "Hover through the solid: the hidden back-bottom edge lights up and is named",
+    "149XRayPicked"              : "A click picks the hidden edge through the top face",
+    "150XRayFillet"              : "B fillets the hidden edge; the preview is seen through the ghost faces (12 faces, 10.1691 m3)",
+    "151XRayFilleted"            : "Applied: 10.22278 - (1 - pi/4) 0.25^2 4 = 10.16912 m3, sound",
 }
 
 #------------------------------------------------------------------------------------------------------------------------

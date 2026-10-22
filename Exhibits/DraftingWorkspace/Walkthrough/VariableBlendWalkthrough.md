@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 97 frames · 10.9699 s · slowest frame 432.318 ms
+- Frame: 1600 x 900 · 97 frames · 10.6587 s · slowest frame 388.1 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/VariableBlendWalkthrough.txt
 - Expectations: 31 / 31 passed
 
@@ -33,7 +33,7 @@
 | 74 | `refused == 0` | 0 | 🟢 |
 | 75 | `sound == 1` | 1 | 🟢 |
 | 76 | `volume ~ 10.185606734` | 10.18560673 | 🟢 |
-| 77 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 149 ms | 🟢 |
+| 77 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 155 ms | 🟢 |
 | 82 | `faces == 11` | 11 | 🟢 |
 | 83 | `steps == 8` | 8 | 🟢 |
 | 85 | `faces == 12` | 12 | 🟢 |
@@ -41,10 +41,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 22VariableFillet | 64 | `0a6886b058fafa3d` |
-| 23VariableFlipped | 71 | `da7fd7ec9de8dc9a` |
-| 24VariableChamfer | 78 | `ead43dd4da3ecf45` |
-| 25VariableApplied | 90 | `a2f2949ccdd90d40` |
+| 22VariableFillet | 64 | `f5f998532565eded` |
+| 23VariableFlipped | 71 | `3bd63e2c09fabce7` |
+| 24VariableChamfer | 78 | `ba35a63b8a7f055d` |
+| 25VariableApplied | 90 | `1337dbdc8ab80107` |
 
 ## Journal
 
@@ -55,6 +55,6 @@
 - Bevel end size 0.1 m
 - View Front
 - Anchor flipped: the start size is at each edge's end corner
-- Fillet 0.3 → 0.1 on 1 edge(s) · 149 ms
+- Fillet 0.3 → 0.1 on 1 edge(s) · 155 ms
 - Undo
 - Redo

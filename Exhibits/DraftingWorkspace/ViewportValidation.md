@@ -1,10 +1,10 @@
 # DraftingViewportValidation
 
-Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 88.0 ms (13.0 s total).
+Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 87.5 ms (14.7 s total).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
-| V1 | Vulkan 1.3 device, SPIR-V modules from the Slang archive, three pipelines | created | 0 | 1 | 🟢 |
+| V1 | Vulkan 1.3 device, SPIR-V modules from the Slang archive, seven pipelines (opaque, x-ray depth / ghost / occluded strokes, edges, grid, image planes) | created | 0 | 1 | 🟢 |
 | V2 | Face pixels away from edges: GPU identity = CPU ray pick (7 views × perspective / orthographic) | mismatch ≤ 0.1 % | 0 | 14 | 🟢 |
 | V3 | Edge-stroke pixels: the GPU edge passes within the stroke reach of the pixel ray and is not hidden behind the CPU face hit (orthographic) | explained ≥ 99.5 % | 0 | 1 | 🟢 |
 | V4 | Single-texel identity probe (hover path) = full readback = CPU pick | all equal | 0 | 5 | 🟢 |
@@ -12,6 +12,7 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V6 | View presets: centre pixel names the expected face (Top → top cap, Front → front side, …) | all equal | 0 | 8 | 🟢 |
 | V7 | Same frame twice → identical colour and identity digests | equal | 0 | 1 | 🟢 |
 | V8 | Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact | ≤ 2 / 255 | 0.5139 | 7 | 🟢 |
+| V9 | X-ray: ghost faces = α · opaque + (1 − α) · background; every revealed stroke pixel is a CPU-hidden edge; no other identity changes; rim spill; probe and CPU pick through; box visibility = GPU edges; off → bit-identical | ≤ 2 / 255 · ≥ 99.5 % · 0 · ≤ 2 % · equal | 1.347 | 11 | 🟢 |
 
 ## Walkthrough
 
@@ -57,4 +58,15 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V8 | Extrude#2.Side(Line1) → BrushedSteel (layer 2): view normal (-0.707, -0.408), 25351 pixels within 0.51 / 255 of the texel (RGB 58 58 61) | 0.5139 | 🟢 |
 | V8 | Extrude#2.Side(Line1) without matcap: Studio shader = CPU Studio mirror within 0.244 / 255 | 0.2442 | 🟢 |
 | V8 | layers cleared → colour bit-identical to the Studio frame; identity unchanged by matcaps | 0 | 🟢 |
+| V9 | isometric ortho: 95461 interior face pixels = α · opaque + (1 − α) · background within 0.736 / 255 (α 0.45) | 0.7358 | 🟢 |
+| V9 | isometric ortho: 1708 / 1708 revealed stroke pixels are hidden edges (unexplained %) | 0 | 🟢 |
+| V9 | isometric ortho: 1708 pixels changed identity to a hidden edge, 0 changed otherwise | 0 | 🟢 |
+| V9 | isometric ortho: 23 / 1708 revealed pixels lie within 2 px of the same edge's visible stroke (%) | 1.347 | 🟢 |
+| V9 | isometric ortho: probe (538, 319) → Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3)); CPU x-ray pick → Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3)); opaque pick → Extrude#2.Cap(End) | 0 | 🟢 |
+| V9 | orbited ortho: box encloses 19 visible edges (GPU drew 19, 4 touching by end caps) and 24 / 24 in x-ray; disagreements none | 0 | 🟢 |
+| V9 | isometric ortho: x-ray frame repeatable; off → colour and identity bit-identical to the opaque frame | 0 | 🟢 |
+| V9 | isometric persp: 95358 interior face pixels = α · opaque + (1 − α) · background within 0.736 / 255 (α 0.45) | 0.7358 | 🟢 |
+| V9 | isometric persp: 2013 pixels changed identity to a hidden edge, 0 changed otherwise | 0 | 🟢 |
+| V9 | isometric persp: 21 / 2013 revealed pixels lie within 2 px of the same edge's visible stroke (%) | 1.043 | 🟢 |
+| V9 | isometric persp: x-ray frame repeatable; off → colour and identity bit-identical to the opaque frame | 0 | 🟢 |
 | V7 | colour 98dff767c0c745d2 · identity edc87526f403b936 | 0 | 🟢 |

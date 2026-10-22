@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 358 frames · 31.2866 s · slowest frame 731.883 ms
+- Frame: 1600 x 900 · 358 frames · 30.6604 s · slowest frame 787.758 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
@@ -26,7 +26,7 @@
 | 58 | `sheet == 1` | 1 | 🟢 |
 | 59 | `faces == 2` | 2 | 🟢 |
 | 60 | `sound == 1` | 1 | 🟢 |
-| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms | 🟢 |
+| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 1 ms | 🟢 |
 | 67 | `steps == 14` | 14 | 🟢 |
 | 68 | `refused == 0` | 0 | 🟢 |
 | 69 | `panels == 4` | 4 | 🟢 |
@@ -54,7 +54,7 @@
 | 131 | `sound == 1` | 1 | 🟢 |
 | 132 | `volume > 0.791` | 0.7928018098 | 🟢 |
 | 133 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 35 ms | 🟢 |
+| 134 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 34 ms | 🟢 |
 | 149 | `steps == 10` | 10 | 🟢 |
 | 167 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
 | 173 | `steps == 11` | 11 | 🟢 |
@@ -67,14 +67,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 93 | `9bf02f3eb93dd068` |
-| 61FrontRearG2 | 101 | `fe3e0a6d4cd55ecf` |
-| 62BonnetMirrored | 115 | `d278c53a60590158` |
-| 63CloseRefused | 125 | `05c8845b8392acd1` |
-| 64PodHalves | 220 | `52eb8838ab52432b` |
-| 65PodSolid | 236 | `5abe99a381485459` |
-| 66NetworkCurves | 344 | `a810279d7e429fd0` |
-| 67NetworkPanel | 352 | `67aac1c707974323` |
+| 60RearSectionsG2 | 93 | `46ab7d271c5993a6` |
+| 61FrontRearG2 | 101 | `e5bfb92120900169` |
+| 62BonnetMirrored | 115 | `d80a07081834af91` |
+| 63CloseRefused | 125 | `e9921fd5ac9bbf7b` |
+| 64PodHalves | 220 | `8034744da4846ecc` |
+| 65PodSolid | 236 | `ac8ca70dfcc21d0d` |
+| 66NetworkCurves | 344 | `d275588826ebb238` |
+| 67NetworkPanel | 352 | `0dae8a171c0daee5` |
 
 ## Journal
 
@@ -94,15 +94,15 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 2 ms
-- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms
+- Loft2 · 4 sections · G2 · 1 ms
+- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 1 ms
 - Mirror1 · plane x = 0 · 6 ms
 - Mirrored through x = 0 → 4 panel(s), sound · 6 ms
 - Framed the document (Space)
 - Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps )
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/DraftingWorkspace/PanelRecovery.drafting.toml
-- Import 5 curve(s) · 7 ms
+- Import 5 curve(s) · 8 ms
 - Framed the document (Space)
 - Imported 5 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticPod.toml · 46 poles · worst fit 0.066 mm
 - View Isometric
@@ -113,12 +113,12 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/PanelRecovery.drafting.toml
 - Selected curve Hoop4 · 9 poles · fit 0.060 mm · 4 selected
 - Selected curve Hoop5 · 10 poles · fit 0.066 mm · 5 selected
-- Loft1 · 5 sections · 2 ms
-- Lofted 5 curve(s) → panel (sound) · 1 panel(s) · 2 ms
+- Loft1 · 5 sections · 1 ms
+- Lofted 5 curve(s) → panel (sound) · 1 panel(s) · 1 ms
 - Mirror1 · plane x = 0 · 8 ms
 - Mirrored through x = 0 → 2 panel(s), sound · 8 ms
-- Close1 · plane caps · 35 ms
-- Closed → solid · volume 0.79280 m³ · sound · 35 ms
+- Close1 · plane caps · 34 ms
+- Closed → solid · volume 0.79280 m³ · sound · 34 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms

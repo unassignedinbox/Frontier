@@ -304,7 +304,15 @@ add_test(NAME DraftingIncrementalReplayWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/IncrementalReplayWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
-set_tests_properties(DraftingRevolveSweepWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(DraftingIncrementalReplayWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME DraftingXRayWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/XRayRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/XRay.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/XRayWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingXRayWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

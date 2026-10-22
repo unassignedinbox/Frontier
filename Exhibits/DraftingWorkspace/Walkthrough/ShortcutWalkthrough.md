@@ -1,9 +1,9 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 25.5216 s · slowest frame 388.263 ms
+- Frame: 1600 x 900 · 256 frames · 26.4972 s · slowest frame 414.095 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt
-- Expectations: 69 / 69 passed
+- Expectations: 70 / 70 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
@@ -57,31 +57,32 @@
 | 128 | `grid-plane == 2` | 2 | 🟢 |
 | 130 | `orthographic == 1` | 1 | 🟢 |
 | 132 | `orthographic == 0` | 0 | 🟢 |
-| 136 | `surfaces == 0` | 0 | 🟢 |
-| 138 | `surfaces == 1` | 1 | 🟢 |
-| 147 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
-| 150 | `bevel-active == 1` | 1 | 🟢 |
-| 151 | `bevel-size ~ 0.5` | 0.5 | 🟢 |
-| 154 | `bevel-active == 0` | 0 | 🟢 |
-| 155 | `steps == 9` | 9 | 🟢 |
-| 156 | `refused == 0` | 0 | 🟢 |
-| 157 | `sound == 1` | 1 | 🟢 |
-| 158 | `volume > 10.60` | 10.61547283 | 🟢 |
-| 159 | `volume < 10.63` | 10.61547283 | 🟢 |
-| 167 | `selected-faces == 1` | Extrude#4.Cap(End) | 🟢 |
-| 170 | `steps == 10` | 10 | 🟢 |
-| 171 | `volume > 10.99` | 11.00817191 | 🟢 |
-| 172 | `volume < 11.02` | 11.00817191 | 🟢 |
-| 177 | `construct-open == 1` | 1 | 🟢 |
-| 180 | `construct-combination == 2` | 2 | 🟢 |
-| 183 | `construct-open == 0` | 0 | 🟢 |
-| 184 | `steps == 10` | 10 | 🟢 |
+| 136 | `xray == 1` | 1 | 🟢 |
+| 137 | `surfaces == 1` | 1 | 🟢 |
+| 139 | `xray == 0` | 0 | 🟢 |
+| 148 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
+| 151 | `bevel-active == 1` | 1 | 🟢 |
+| 152 | `bevel-size ~ 0.5` | 0.5 | 🟢 |
+| 155 | `bevel-active == 0` | 0 | 🟢 |
+| 156 | `steps == 9` | 9 | 🟢 |
+| 157 | `refused == 0` | 0 | 🟢 |
+| 158 | `sound == 1` | 1 | 🟢 |
+| 159 | `volume > 10.60` | 10.61547283 | 🟢 |
+| 160 | `volume < 10.63` | 10.61547283 | 🟢 |
+| 168 | `selected-faces == 1` | Extrude#4.Cap(End) | 🟢 |
+| 171 | `steps == 10` | 10 | 🟢 |
+| 172 | `volume > 10.99` | 11.00817191 | 🟢 |
+| 173 | `volume < 11.02` | 11.00817191 | 🟢 |
+| 178 | `construct-open == 1` | 1 | 🟢 |
+| 181 | `construct-combination == 2` | 2 | 🟢 |
+| 184 | `construct-open == 0` | 0 | 🟢 |
+| 185 | `steps == 10` | 10 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `33a9a5043c341eed` |
-| 21TangentChain | 144 | `698a17d297b1d25f` |
-| 20ShortcutExtrude | 224 | `e425ed671dd52b8b` |
+| 19BevelSignChamfer | 64 | `b0411db3d6c1c470` |
+| 21TangentChain | 144 | `d6bc15d2ffd1e8e2` |
+| 20ShortcutExtrude | 224 | `02594782b1effa5a` |
 
 ## Journal
 
@@ -92,7 +93,7 @@
 - Bevel cancelled (document untouched)
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 134 ms
+- Fillet 0.3 on 1 edge(s) · 139 ms
 - Undo
 - Redo
 - Selection cleared
@@ -103,10 +104,10 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 44 ms
+- Delete Fillet2 · 45 ms
 - Selection cleared
 - Framed the document (Space)
-- X-ray on (edges only)
+- X-ray on · faces 45 % · hidden edges pickable
 - X-ray off
 - Autosaved _ClaudeScratch/DraftingWorkspace/ShortcutRecovery.drafting.toml
 - View Isometric
@@ -115,5 +116,5 @@
 - ExtrudeFaces 0.5 on 1 face(s) · 93 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 100 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 101 ms
 - Selection cleared

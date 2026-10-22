@@ -12,6 +12,7 @@
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingScene.h"
 #include "Document/VehicleCurveImport.h"
+#include "Viewport/DraftingCamera.h"
 
 #include "Blend/BlendCatalogue.h"
 #include "Geometry/NurbsCarrier.h"
@@ -75,6 +76,7 @@ namespace
     GateTally RevolveGate     = { "W29", "Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line", "≤ 10⁻⁹ · exact" };
     GateTally EvolutionGate   = { "W30", "Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path", "≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin" };
     GateTally ReplayGate      = { "W31", "Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints", "identical · undo / redo / clone ≥ 10× · tail edit ≥ 2×" };
+    GateTally XRayGate        = { "W32", "X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none", "all equal" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2231,13 +2233,75 @@ int main()
               "bonnet (" + std::to_string(Bonnet.Tree.Steps.size()) + " steps, full " + Ms(BonnetFull) + "): pole move resumed at " + std::to_string(MovedResume) + " · " + Ms(Moved) + "; undo restored all · " + Ms(Undone) + " · identical");
     }
 
+    // ---- W32 x-ray: pick-through and box edges (closed form: the isometric eye sits at +x, −y, +z, so exactly the 3 edges
+    //      meeting the far corner (0, 2, 0) are hidden)
+    {
+        DraftingDocument Ghost = CreateDraftingDocument("Ghost");
+        DraftingConstructRequest Brick;
+        Brick.Kind = DraftingConstructKind::Block; Brick.Width = 4.0; Brick.Depth = 2.0; Brick.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Ghost, Brick));
+        const DraftingScene Scene = BuildDraftingScene(Ghost);
+        auto AtCorner = [](const Vector3& Point, double X, double Y, double Z)
+        {
+            return std::abs(Point.X - X) + std::abs(Point.Y - Y) + std::abs(Point.Z - Z) < 1.0e-9;
+        };
+        auto TouchesFarCorner = [&](const std::string& Name)
+        {
+            return AtCorner(EdgeEndPosition(Ghost, Name, false), 0.0, 2.0, 0.0) || AtCorner(EdgeEndPosition(Ghost, Name, true), 0.0, 2.0, 0.0);
+        };
+        auto LiesOn = [&](const std::string& Name, double Y, double Z)                       // Edge along x at (y, z)
+        {
+            const Vector3 Start = EdgeEndPosition(Ghost, Name, false);
+            const Vector3 End   = EdgeEndPosition(Ghost, Name, true);
+            return std::abs(Start.Y - Y) + std::abs(End.Y - Y) + std::abs(Start.Z - Z) + std::abs(End.Z - Z) < 1.0e-9 && std::abs(Start.X - End.X) > 1.0;
+        };
+        auto NameOf = [&](const std::optional<DraftingPick>& Hit) { return Hit ? NameDraftingIdentity(Scene, Hit->Identity) : std::string("(miss)"); };
+
+        // Pick-through: from the front-top towards the back-bottom edge (2, 2, 0)
+        const DraftingRay Behind = RayBetween({ 2.0, -3.0, 4.0 }, { 2.0, 2.0, 0.0 });
+        const std::optional<DraftingPick> Opaque = PickDraftingScene(Scene, Behind, 0.02, false);
+        const std::optional<DraftingPick> Through = PickDraftingScene(Scene, Behind, 0.02, true);
+        const bool OpaqueFace = Opaque && (Opaque->Identity & IdentityEdgeBit) == 0;
+        const bool ThroughEdge = Through && (Through->Identity & IdentityEdgeBit) != 0 && LiesOn(NameOf(Through), 2.0, 0.0);
+        const double Farther = (Opaque && Through) ? Through->Distance - Opaque->Distance : 0.0;
+        Tally(XRayGate, 0.0, OpaqueFace && ThroughEdge && Farther > 0.5,
+              "ray at the hidden back-bottom edge: opaque → " + NameOf(Opaque) + " · x-ray → " + NameOf(Through) + " (" + std::to_string(Farther) + " farther)");
+
+        // A visible edge (front-top, y = 0, z = 1) still picks in x-ray, and the same with x-ray off
+        const DraftingRay Front = RayBetween({ 2.0, -3.0, 4.0 }, { 2.0, 0.0, 1.0 });
+        const std::optional<DraftingPick> FrontOpaque  = PickDraftingScene(Scene, Front, 0.02, false);
+        const std::optional<DraftingPick> FrontThrough = PickDraftingScene(Scene, Front, 0.02, true);
+        Tally(XRayGate, 0.0, FrontOpaque && FrontThrough && FrontOpaque->Identity == FrontThrough->Identity && (FrontThrough->Identity & IdentityEdgeBit) != 0 && LiesOn(NameOf(FrontThrough), 0.0, 1.0),
+              "ray at the visible front-top edge: opaque = x-ray → " + NameOf(FrontThrough));
+
+        // Box edges over the whole viewport in the isometric view
+        DraftingCamera Camera;
+        Camera.Target = { 2.0, 1.0, 0.5 }; Camera.Distance = 10.0; Camera.SceneRadius = 2.5;
+        const DraftingCameraFrame Frame = FrameDraftingCamera(Camera, 800.0, 600.0);
+        const std::vector<uint32_t> Visible = EncloseDraftingEdges(Scene, Frame, { 0.0, 0.0 }, { 800.0, 600.0 }, false);
+        const std::vector<uint32_t> All     = EncloseDraftingEdges(Scene, Frame, { 0.0, 0.0 }, { 800.0, 600.0 }, true);
+        long OffCorner = 0;
+        for (const DraftingSceneEdge& Edge : Scene.Edges) OffCorner += TouchesFarCorner(Edge.Name) ? 0 : 1;
+        bool VisibleOffCorner = true;
+        for (const uint32_t Index : Visible) VisibleOffCorner = VisibleOffCorner && !TouchesFarCorner(Scene.Edges[Index].Name);
+        const bool Subset = std::includes(All.begin(), All.end(), Visible.begin(), Visible.end());
+        Tally(XRayGate, 0.0, Scene.Edges.size() == 12 && OffCorner == 9 && Visible.size() == 9 && VisibleOffCorner,
+              "full box without x-ray → " + std::to_string(Visible.size()) + " edges, none at the far corner (closed form 9 of " + std::to_string(Scene.Edges.size()) + ")");
+        Tally(XRayGate, 0.0, All.size() == 12 && Subset, "full box with x-ray → " + std::to_string(All.size()) + " edges (the opaque 9 among them)");
+
+        // An empty corner of the viewport (the block projects around the centre)
+        const std::vector<uint32_t> NoneOpaque  = EncloseDraftingEdges(Scene, Frame, { 0.0, 0.0 }, { 40.0, 40.0 }, false);
+        const std::vector<uint32_t> NoneThrough = EncloseDraftingEdges(Scene, Frame, { 0.0, 0.0 }, { 40.0, 40.0 }, true);
+        Tally(XRayGate, 0.0, NoneOpaque.empty() && NoneThrough.empty(), "empty 40 × 40 px corner box → " + std::to_string(NoneOpaque.size()) + " / " + std::to_string(NoneThrough.size()) + " edges");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

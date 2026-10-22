@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 457 frames · 36.3502 s · slowest frame 400.261 ms
+- Frame: 1600 x 900 · 457 frames · 33.1896 s · slowest frame 390.613 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `04d9cde45cfa3a91` |
-| 123ConstrainFull | 174 | `a2acd177b3fb5faa` |
-| 124ConstrainConflict | 202 | `7f03dd7bbafb14a3` |
-| 125ConstrainEdit | 240 | `d3952470f9a100d6` |
-| 126ConstrainDragging | 275 | `9cf54726b50089ea` |
-| 127ConstrainAngle | 451 | `70ff91b814299166` |
+| 122ConstrainOpen | 109 | `1fd5eb35ae87bcd9` |
+| 123ConstrainFull | 174 | `d9f36fc8e8449d41` |
+| 124ConstrainConflict | 202 | `951fe5874009fd30` |
+| 125ConstrainEdit | 240 | `94f5ec1a9254fdbd` |
+| 126ConstrainDragging | 275 | `809a9b17e121695f` |
+| 127ConstrainAngle | 451 | `97c9051f4a979e53` |
 
 ## Journal
 
@@ -120,23 +120,23 @@
 - Constraint dropped
 - Picks cleared
 - D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
-- D1 = 4 in Rectangle1 · 17 ms
+- D1 = 4 in Rectangle1 · 18 ms
 - Undo
 - Redo
 - Picks cleared
 - D2 Length 2 · Line2 · type a value + Enter · E makes it a reference · Delete removes
 - Remove D2 (Length 2 · Line2) from Rectangle1 · 17 ms
-- Drag Line2.End of Rectangle1 · 23 ms
+- Drag Line2.End of Rectangle1 · 22 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/ConstraintsRecovery.drafting.toml
-- Line1 · 16 ms
+- Line1 · 15 ms
 - Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 15 ms
 - Picked Line1
-- Constrain Line1: Horizontal · Line1 · 15 ms
+- Constrain Line1: Horizontal · Line1 · 17 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
 - Constrain Line1: Length 1.5 · Line1 · 15 ms
@@ -144,7 +144,7 @@
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 15 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 16 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2

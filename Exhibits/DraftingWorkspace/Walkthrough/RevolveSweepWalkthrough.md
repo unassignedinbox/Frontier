@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 424 frames · 48.441 s · slowest frame 2111.5 ms
+- Frame: 1600 x 900 · 424 frames · 47.4716 s · slowest frame 2253.71 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/RevolveSweepWalkthrough.txt
 - Expectations: 47 / 47 passed
 
@@ -57,12 +57,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 134RevolvePreview | 171 | `6bdbcbdcd6ec7045` |
-| 135RevolvePreviewIsometric | 181 | `e0bcec3600154608` |
-| 136RevolveEdgeAxis | 258 | `d16a863842a39aee` |
-| 137EvolutionProposed | 376 | `9a700bb84b824cf1` |
-| 138EvolutionPath | 386 | `6f78f8a01cfa2ff4` |
-| 139Evolution | 400 | `67f9878971dd98fd` |
+| 134RevolvePreview | 171 | `1dfcb48e76eb8f0f` |
+| 135RevolvePreviewIsometric | 181 | `4b4b39a73b61e972` |
+| 136RevolveEdgeAxis | 258 | `e022603932a4bfdf` |
+| 137EvolutionProposed | 376 | `9ec242de86fd9999` |
+| 138EvolutionPath | 386 | `1caf865a6ab1de26` |
+| 139Evolution | 400 | `4f1d1a48c17103fd` |
 
 ## Journal
 
@@ -78,9 +78,9 @@
 - Join (Line2, Line1, Curve1) · 0 ms
 - Revolve Line2 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - View Isometric
-- Revolve1 · Line2 · 360° about sketch y-axis · New · 421 ms
+- Revolve1 · Line2 · 360° about sketch y-axis · New · 395 ms
 - Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts
-- Rectangle1 · 276 ms
+- Rectangle1 · 291 ms
 - Revolve Rectangle1 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Revolve about the sketch x-axis
 - Revolve about the sketch y-axis
@@ -88,15 +88,15 @@
 - Revolve: New body
 - Autosaved _ClaudeScratch/DraftingWorkspace/RevolveSweepRecovery.drafting.toml
 - View Isometric
-- Revolve2 · Rectangle1 · 90° about Line4 · New body · 276 ms
+- Revolve2 · Rectangle1 · 90° about Line4 · New body · 291 ms
 - Circle on plane XY: click centre and rim · V two-point mode · Esc aborts
-- Circle1 · 277 ms
+- Circle1 · 285 ms
 - Curve on plane XZ: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Curve form: Bezier
 - Autosaved _ClaudeScratch/DraftingWorkspace/RevolveSweepRecovery.drafting.toml
-- Curve1 · Bezier · 289 ms
+- Curve1 · Bezier · 284 ms
 - Line on plane XZ: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 277 ms
+- Line1 · 296 ms
 - View Isometric
 - Evolution Circle1 along Line1 · click another sketch's curve for the path · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Evolution along Curve1
