@@ -353,7 +353,10 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float vegNoise = cgNoise3( wp / uVegScale ).x * 0.5 + cgNoise3( wp / uVegScale * 5.5 + 2.0 ).x * 0.5;
   float belowSnow = 1.0 - smoothstep( uSnowLine - 160.0, uSnowLine - 20.0, wp.y );
   float aboveWater = smoothstep( uSeaLevel + 1.0, uSeaLevel + 7.0, wp.y );
-  float gravelMix = smoothstep( 0.1, 0.6, deposit ) * uGravelAmount;
+  // loose material never coats near-vertical rock: the heightfield deposit map is
+  // sampled by XZ, so without this gate every gully paints a gravel ribbon down the
+  // whole face (scree at 35° and fans are far below the gate and unaffected)
+  float gravelMix = smoothstep( 0.1, 0.6, deposit ) * uGravelAmount * ( 1.0 - smoothstep( 0.7, 0.9, wall ) );
   float vegThreshold = mix( 0.25, 0.6, uVegPatchiness );
   float veg = uVegetation * flatness * smoothstep( vegThreshold - 0.15, vegThreshold + 0.15, vegNoise + uVegetation * 0.35 - 0.15 ) * ( 1.0 - gravelMix * 0.8 ) * ( 1.0 - uIsRock * 0.9 ) * belowSnow * aboveWater;
   veg = clamp( veg, 0.0, 1.0 ) * ( 1.0 - smoothstep( 0.15, 0.6, bedCover ) );
@@ -615,7 +618,10 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float cobble = cgNoise3( wp * 2.6 ).x * 0.5 + cgNoise3( wp * 9.0 + 3.0 ).x * 0.5;
   vec3 bedCol = mix( uSilt, mix( uGravel * ( 0.65 + 0.7 * cobble ), gravel, step( 0.001, uGravelAmount ) ), smoothstep( 0.45, 0.95, riverBed ) );
   bedCol = mix( bedCol, uSilt * ( 0.9 + 0.2 * speckle ), lakeBed * ( 1.0 - riverBed ) );
-  float bedMix = smoothstep( 0.05, 0.5, max( riverBed, lakeBed ) );
+  // channel beds are flats by nature: on near-vertical rock the XZ-sampled bed masks
+  // would paint silt ribbons down waterfalls and salt crusts on sea cliffs (torrent
+  // beds at 60° and below are far below the gate and unaffected)
+  float bedMix = smoothstep( 0.05, 0.5, max( riverBed, lakeBed ) ) * ( 1.0 - smoothstep( 0.7, 0.9, wall ) );
   float bedDry = smoothstep( 0.1, 1.4, wp.y - waterLine );            // 0 drowned → 1 evaporated
   // the crust is for true beds (channels, lake floors) — not for the alluvium aprons, which
   // never exceed 0.75 in the lake mask and keep their bedded sediment look

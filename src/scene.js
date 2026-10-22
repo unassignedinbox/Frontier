@@ -45,7 +45,7 @@ export class CliffScene {
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
-    this.hemi = new THREE.HemisphereLight(0x8fb0e0, 0x4a4036, 0.25);
+    this.hemi = new THREE.HemisphereLight(0x8fb0e0, 0x4a4036, 0.45);
     this.scene.add(this.hemi);
 
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
