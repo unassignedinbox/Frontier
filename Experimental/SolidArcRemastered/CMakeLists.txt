@@ -63,6 +63,7 @@ add_library(SolidArcRemastered STATIC
     Source/Sketch/SketchCatalogue.cpp
     Source/Sketch/SketchTrim.cpp
     Source/Sketch/SketchEditing.cpp
+    Source/Sketch/SketchConstraining.cpp
     Source/Feature/ProfileSweep.cpp
     Source/Feature/BodyCut.cpp
     Source/Feature/PathSweep.cpp
@@ -135,6 +136,8 @@ add_executable(SketchTrimValidation Validation/SketchTrimValidation.cpp)
 target_link_libraries(SketchTrimValidation PRIVATE SolidArcRemastered)
 add_executable(SketchEditingValidation Validation/SketchEditingValidation.cpp)
 target_link_libraries(SketchEditingValidation PRIVATE SolidArcRemastered)
+add_executable(SketchConstrainingValidation Validation/SketchConstrainingValidation.cpp)
+target_link_libraries(SketchConstrainingValidation PRIVATE SolidArcRemastered)
 add_executable(BodyEditingValidation Validation/BodyEditingValidation.cpp)
 target_link_libraries(BodyEditingValidation PRIVATE SolidArcRemastered)
 add_executable(SplineValidation Validation/SplineValidation.cpp)
@@ -171,6 +174,7 @@ add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)
 add_test(NAME SketchValidation COMMAND SketchValidation)
 add_test(NAME SketchTrimValidation COMMAND SketchTrimValidation)
 add_test(NAME SketchEditingValidation COMMAND SketchEditingValidation)
+add_test(NAME SketchConstrainingValidation COMMAND SketchConstrainingValidation)
 add_test(NAME BodyEditingValidation COMMAND BodyEditingValidation)
 add_test(NAME SplineValidation COMMAND SplineValidation)
 add_test(NAME FeatureValidation COMMAND FeatureValidation)
