@@ -179,6 +179,14 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "sound") return Numeric(Document.Summary.SoundCondition ? 1 : 0);
     if (Field == "steps") return Numeric(double(Document.Tree.Steps.size()));
     if (Field == "refused") return Numeric(Document.Regeneration.Refused);
+    if (Field == "replay-resumed") return Numeric(Document.Regeneration.Resumed);
+    if (Field == "replay-ms") return Numeric(Document.Summary.RegenerationMs);
+    if (Field == "preview-resumed")
+    {
+        // The staged preview of the open session (bevel, move / rotate / scale, revolve / sweep); −1 without one.
+        const DraftingDocument* Preview = State.Bevel.Preview ? State.Bevel.Preview.get() : State.Transform.Preview ? State.Transform.Preview.get() : State.Sweep.Preview.get();
+        return Numeric(Preview ? Preview->Regeneration.Resumed : -1);
+    }
     if (Field == "undo") return Numeric(double(Document.UndoEntries.size()));
     if (Field == "redo") return Numeric(double(Document.RedoEntries.size()));
     if (Field == "selected-faces") return Join(Document.Selection.Faces);

@@ -191,7 +191,7 @@ struct RegenerationCache
 {
     std::vector<std::string>                             Digests     = {};                   // [-] - DigestFeatureStep per step, after its replay
     std::vector<std::shared_ptr<const ReplayCheckpoint>> Checkpoints = {};                   // [-] - State after each step
-    std::vector<bool>                                    Captured    = {};                   // [-] - The step ran with CaptureCondition
+    std::vector<bool>                                    Captured    = {};                   // [-] - Signatures captured (a capturing run re-captures restored steps in place)
     bool                                                 EnabledCondition = true;            // [-] - False: always replay from scratch (still records)
 };
 

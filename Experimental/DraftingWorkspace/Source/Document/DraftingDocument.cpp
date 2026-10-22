@@ -275,7 +275,19 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
 
 [[nodiscard]] DraftingHistoryEntry Snapshot(const DraftingDocument& Document, const std::string& Label)
 {
-    return { Document.Tree, Document.Captions, Label, Document.Appearance, false };
+    return { Document.Tree, Document.Captions, Label, Document.Appearance, false, std::make_shared<const RegenerationCache>(Document.Replay),
+             Document.SummaryCheckpoint, Document.Summary };
+}
+
+// 📝 Only the newest entries of each stack keep their checkpoints (memory bound); older ones replay when reached.
+constexpr size_t HistoryReplayDepth = 8;                                                     // [-] - Entries per stack with checkpoints
+
+void TrimHistoryReplay(DraftingDocument& Document)
+{
+    for (std::vector<DraftingHistoryEntry>* Entries : { &Document.UndoEntries, &Document.RedoEntries })
+    {
+        for (size_t Index = 0; Index + HistoryReplayDepth < Entries->size(); ++Index) (*Entries)[Index].Replay.reset();
+    }
 }
 
 // 📝 A matcap-only entry swaps the appearance back and keeps the body (and its Revision): no regeneration.
@@ -285,6 +297,12 @@ void Restore(DraftingDocument& Document, DraftingHistoryEntry Entry)
     if (Entry.AppearanceCondition) return;
     Document.Tree     = std::move(Entry.Tree);
     Document.Captions = std::move(Entry.Captions);
+    if (Entry.Replay)
+    {
+        Document.Replay            = *Entry.Replay;
+        Document.Summary           = std::move(Entry.Summary);
+        Document.SummaryCheckpoint = std::move(Entry.SummaryCheckpoint);
+    }
     RegenerateDraftingDocument(Document);
 }
 
@@ -306,6 +324,7 @@ DraftingCommandOutcome RunAppearanceCommand(DraftingDocument& Document, const st
     }
     Document.UndoEntries.push_back(std::move(Before));
     Document.RedoEntries.clear();
+    TrimHistoryReplay(Document);
     Outcome.AcceptedCondition = true;
     Outcome.Milliseconds      = ElapsedMs(Start);
     return Outcome;
@@ -356,6 +375,7 @@ DraftingCommandOutcome RunCommand(DraftingDocument& Document, const std::string&
     }
     Document.UndoEntries.push_back(std::move(Before));
     Document.RedoEntries.clear();
+    TrimHistoryReplay(Document);
     Outcome.AcceptedCondition = true;
     Outcome.Milliseconds      = ElapsedMs(Start);
     return Outcome;
@@ -416,43 +436,56 @@ DraftingDocument CreateDraftingDocument(const std::string& Title)
 void RegenerateDraftingDocument(DraftingDocument& Document, bool CaptureCondition)
 {
     Document.Partition    = std::make_unique<ModelPartition>();
-    Document.Regeneration = RegenerateFeatureTree(*Document.Partition, Document.Tree, CaptureCondition);
+    Document.Regeneration = RegenerateFeatureTree(*Document.Partition, Document.Tree, CaptureCondition, &Document.Replay);
     // 📝 One counter for every document in the process, so a staged preview never shares a scene key with its source.
     static std::atomic<uint64_t> RevisionCounter{ 0 };
     Document.Revision     = ++RevisionCounter;
 
+    // Every step restored from the checkpoint the summary was measured on: the bodies are those bodies (same records),
+    // so the audit / volume figures still hold; only the captions are refreshed (renames do not touch the tree).
+    const std::shared_ptr<const ReplayCheckpoint> Final = Document.Replay.Checkpoints.empty() ? nullptr : Document.Replay.Checkpoints.back();
+    const bool ReusedCondition = Final && Document.SummaryCheckpoint == Final && Document.Regeneration.Resumed == static_cast<int>(Document.Tree.Steps.size());
+    Document.SummaryCheckpoint = Final;
     DraftingBodySummary& Summary = Document.Summary;
-    Summary                      = {};
-    Summary.RegenerationMs       = Document.Regeneration.Milliseconds;
-    Summary.SoundCondition       = true;
-    for (const RegeneratedBody& Regenerated : Document.Regeneration.Bodies)
+    if (ReusedCondition)
     {
-        const BodyToken Body = Regenerated.Body;
-        if (!Body.PresentCondition() || !Document.Partition->Bodies.Authenticate(Body)) continue;
-        const BodyInventory Inventory = Document.Partition->CollectInventory(Body);
-        if (Inventory.Faces.empty()) continue;
-        const AuditReport   Audit     = AuditBody(*Document.Partition, Body);
-        DraftingBodyFigures Figures;
-        Figures.Key            = Regenerated.Key;
-        Figures.Caption        = DraftingBodyCaption(Document, Regenerated.Key);
-        Figures.SoundCondition = Audit.SoundCondition();
-        Figures.SheetCondition = Document.Partition->Bodies.Resolve(Body).Category == BodyCategory::Sheet;
-        Figures.Faces          = static_cast<int>(Inventory.Faces.size());
-        Figures.Edges          = static_cast<int>(Inventory.Edges.size());
-        Figures.Vertices       = static_cast<int>(Inventory.Vertices.size());
-        Figures.Genus          = Audit.Genus;
-        Figures.Volume         = Figures.SheetCondition ? 0.0 : IntegrateBodyVolume(*Document.Partition, Body);
-        Summary.PresentCondition = true;
-        Summary.SoundCondition   = Summary.SoundCondition && Figures.SoundCondition;
-        Summary.SheetCondition   = Summary.SheetCondition || Figures.SheetCondition;
-        Summary.Faces           += Figures.Faces;
-        Summary.Edges           += Figures.Edges;
-        Summary.Vertices        += Figures.Vertices;
-        Summary.Genus            = (Summary.Genus < 0 ? 0 : Summary.Genus) + Figures.Genus;
-        Summary.Volume          += Figures.Volume;
-        Summary.Bodies.push_back(std::move(Figures));
+        Summary.RegenerationMs = Document.Regeneration.Milliseconds;
+        for (DraftingBodyFigures& Figures : Summary.Bodies) Figures.Caption = DraftingBodyCaption(Document, Figures.Key);
     }
-    if (!Summary.PresentCondition) Summary.SoundCondition = false;
+    else
+    {
+        Summary                      = {};
+        Summary.RegenerationMs       = Document.Regeneration.Milliseconds;
+        Summary.SoundCondition       = true;
+        for (const RegeneratedBody& Regenerated : Document.Regeneration.Bodies)
+        {
+            const BodyToken Body = Regenerated.Body;
+            if (!Body.PresentCondition() || !Document.Partition->Bodies.Authenticate(Body)) continue;
+            const BodyInventory Inventory = Document.Partition->CollectInventory(Body);
+            if (Inventory.Faces.empty()) continue;
+            const AuditReport   Audit     = AuditBody(*Document.Partition, Body);
+            DraftingBodyFigures Figures;
+            Figures.Key            = Regenerated.Key;
+            Figures.Caption        = DraftingBodyCaption(Document, Regenerated.Key);
+            Figures.SoundCondition = Audit.SoundCondition();
+            Figures.SheetCondition = Document.Partition->Bodies.Resolve(Body).Category == BodyCategory::Sheet;
+            Figures.Faces          = static_cast<int>(Inventory.Faces.size());
+            Figures.Edges          = static_cast<int>(Inventory.Edges.size());
+            Figures.Vertices       = static_cast<int>(Inventory.Vertices.size());
+            Figures.Genus          = Audit.Genus;
+            Figures.Volume         = Figures.SheetCondition ? 0.0 : IntegrateBodyVolume(*Document.Partition, Body);
+            Summary.PresentCondition = true;
+            Summary.SoundCondition   = Summary.SoundCondition && Figures.SoundCondition;
+            Summary.SheetCondition   = Summary.SheetCondition || Figures.SheetCondition;
+            Summary.Faces           += Figures.Faces;
+            Summary.Edges           += Figures.Edges;
+            Summary.Vertices        += Figures.Vertices;
+            Summary.Genus            = (Summary.Genus < 0 ? 0 : Summary.Genus) + Figures.Genus;
+            Summary.Volume          += Figures.Volume;
+            Summary.Bodies.push_back(std::move(Figures));
+        }
+        if (!Summary.PresentCondition) Summary.SoundCondition = false;
+    }
     KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
     KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
     std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
@@ -466,6 +499,9 @@ DraftingDocument CloneDraftingDocument(const DraftingDocument& Source)
     Copy.Captions  = Source.Captions;
     Copy.Selection = Source.Selection;
     Copy.Appearance = Source.Appearance;
+    Copy.Replay     = Source.Replay;
+    Copy.Summary    = Source.Summary;
+    Copy.SummaryCheckpoint = Source.SummaryCheckpoint;
     RegenerateDraftingDocument(Copy);
     return Copy;
 }
@@ -948,6 +984,7 @@ bool UndoDraftingCommand(DraftingDocument& Document)
     Document.RedoEntries.push_back(Snapshot(Document, Entry.Label));
     Document.RedoEntries.back().AppearanceCondition = Entry.AppearanceCondition;
     Restore(Document, std::move(Entry));
+    TrimHistoryReplay(Document);
     return true;
 }
 
@@ -959,6 +996,7 @@ bool RedoDraftingCommand(DraftingDocument& Document)
     Document.UndoEntries.push_back(Snapshot(Document, Entry.Label));
     Document.UndoEntries.back().AppearanceCondition = Entry.AppearanceCondition;
     Restore(Document, std::move(Entry));
+    TrimHistoryReplay(Document);
     return true;
 }
 

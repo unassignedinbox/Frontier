@@ -3996,7 +3996,10 @@ void DrawBevelCard(DraftingWorkspaceState& State)
     }
     else if (Bevel.Preview)
     {
-        ImGui::Text("Preview: %d faces · %.4f m³", Bevel.Preview->Summary.Faces, Bevel.Preview->Summary.Volume);
+        // Staged from the document's checkpoints: only the new blend replays ("replayed 1/9").
+        const int PreviewSteps = static_cast<int>(Bevel.Preview->Tree.Steps.size());
+        ImGui::Text("Preview: %d faces · %.4f m³ · replayed %d/%d", Bevel.Preview->Summary.Faces, Bevel.Preview->Summary.Volume,
+                    PreviewSteps - std::min(PreviewSteps, Bevel.Preview->Regeneration.Resumed), PreviewSteps);
     }
     if (PressButton(State, "Apply###BevelApply", ImVec2(130, 0), Bevel.Refusal.empty())) ApplyBevelSession(State);
     ImGui::SameLine();
@@ -4247,7 +4250,10 @@ void DrawBodyCard(DraftingWorkspaceState& State)
         }
         ImGui::TextColored(Tint(Summary.SoundCondition ? ActiveColour : RefusalColour), "%s", Summary.SoundCondition ? "Audit: sound" : "Audit: findings");
         ImGui::SameLine();
-        ImGui::TextDisabled("· replay %.1f ms · %d triangles", Summary.RegenerationMs, int(State.Scene.Corners.size() / 3));
+        // Incremental replay: "replayed k/n" = the last k steps ran, the earlier ones were restored from their checkpoints.
+        const int Steps    = static_cast<int>(State.Document.Tree.Steps.size());
+        const int Replayed = Steps - std::min(Steps, State.Document.Regeneration.Resumed);
+        ImGui::TextDisabled("· replayed %d/%d · %.1f ms · %d tris", Replayed, Steps, Summary.RegenerationMs, int(State.Scene.Corners.size() / 3));
     }
     EndCard();
 }

@@ -328,8 +328,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     if (Cache && Cache->EnabledCondition)
     {
         const size_t Limit = std::min({ Tree.Steps.size(), Cache->Digests.size(), Cache->Checkpoints.size(), Cache->Captured.size() });
-        while (Resume < Limit && Cache->Checkpoints[Resume] && (!CaptureCondition || Cache->Captured[Resume]) &&
-               Cache->Digests[Resume] == DigestFeatureStep(Tree, Tree.Steps[Resume])) ++Resume;
+        while (Resume < Limit && Cache->Checkpoints[Resume] && Cache->Digests[Resume] == DigestFeatureStep(Tree, Tree.Steps[Resume])) ++Resume;
         // A Duplicate snapshot due after a restored step (a newly added Duplicate) must be in the restored state; else
         // resume at that step. Snapshots no longer requested are harmless (nothing reads them).
         for (bool Lowered = true; Lowered && Resume > 0;)
@@ -348,6 +347,34 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                     break;
                 }
             }
+        }
+    }
+    // Capture on a restored step last replayed without it: a signature depends only on the partition before the step and
+    // the resolved slot (the step's own result never reads it), so it is written from the previous checkpoint and the
+    // step's resolutions — exactly what a capturing replay would write — without replaying the step.
+    if (CaptureCondition)
+    {
+        const ModelPartition Empty;
+        for (size_t Index = 0; Index < Resume; ++Index)
+        {
+            if (Cache->Captured[Index]) continue;
+            FeatureStep& Step = Tree.Steps[Index];
+            const ModelPartition& Before = Index == 0 ? Empty : Cache->Checkpoints[Index - 1]->Partition;
+            const std::vector<ResolvedReference>& Resolutions = Cache->Checkpoints[Index]->Outcome.Steps[Index].Resolutions;
+            const size_t Edges   = Step.References.size();
+            const size_t Anchors = Step.Kind == FeatureStepKind::Blend && Step.EndSize ? Step.SizeAnchors.size() : 0;
+            if (Resolutions.size() == Edges + Anchors)                                       // Fewer: refused before resolving, nothing captured
+            {
+                for (size_t Reference = 0; Reference < Edges + Anchors; ++Reference)
+                {
+                    const ResolvedReference& Resolved = Resolutions[Reference];
+                    if (Resolved.Method == ResolutionMethod::Refused) continue;
+                    TopologyReference& Target = Reference < Edges ? Step.References[Reference] : Step.SizeAnchors[Reference - Edges];
+                    Target.Signature = CaptureSignature(Before, Target.Kind, Resolved.Slot);
+                }
+            }
+            Cache->Digests[Index]  = DigestFeatureStep(Tree, Step);
+            Cache->Captured[Index] = true;
         }
     }
     if (Resume > 0)
@@ -990,7 +1017,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Saved->Served    = Served;
             Cache->Checkpoints[StepIndex] = std::move(Saved);
             Cache->Digests[StepIndex]     = DigestFeatureStep(Tree, Step);
-            Cache->Captured[StepIndex]    = CaptureCondition;
+            Cache->Captured[StepIndex]    = CaptureCondition || (Step.References.empty() && Step.SizeAnchors.empty());   // Capture writes reference signatures only
         }
     }
     if (Active >= 0)

@@ -297,6 +297,13 @@ add_test(NAME DraftingRevolveSweepWalkthrough
                  --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/RevolveSweepWalkthrough.txt"
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME DraftingIncrementalReplayWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/ReplayRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Replay.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/IncrementalReplayWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingRevolveSweepWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

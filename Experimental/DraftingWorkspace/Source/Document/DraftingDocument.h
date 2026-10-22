@@ -147,16 +147,6 @@ struct DraftingCommandOutcome
     double      Milliseconds      = 0.0;                                                     // [ms] - Command + regeneration time
 };
 
-// 📝 One undo entry: the whole tree before the command (trees are small; replay rebuilds the body exactly).
-struct DraftingHistoryEntry
-{
-    Modeller::FeatureTree              Tree     = {};                                        // [-] - Tree before the command
-    std::map<std::string, std::string> Captions = {};                                        // [-] - Step captions before the command
-    std::string                        Label    = {};                                        // [-] - Command caption
-    DraftingAppearance                 Appearance = {};                                      // [-] - Matcaps before the command
-    bool                               AppearanceCondition = false;                          // [-] - Matcap-only entry: restore without regenerating
-};
-
 // 📝 Figures of one body (Inspector body list, Outliner).
 struct DraftingBodyFigures
 {
@@ -186,6 +176,21 @@ struct DraftingBodySummary
     std::vector<DraftingBodyFigures> Bodies = {};                                            // [-]     - One per body, in creation order
 };
 
+// 📝 One undo entry: the whole tree before the command (trees are small; replay rebuilds the body exactly). Recent entries
+//    also keep the replay checkpoints of that moment (shared, immutable), so undo / redo / a rolled-back command restore
+//    every step instead of replaying it.
+struct DraftingHistoryEntry
+{
+    Modeller::FeatureTree              Tree     = {};                                        // [-] - Tree before the command
+    std::map<std::string, std::string> Captions = {};                                        // [-] - Step captions before the command
+    std::string                        Label    = {};                                        // [-] - Command caption
+    DraftingAppearance                 Appearance = {};                                      // [-] - Matcaps before the command
+    bool                               AppearanceCondition = false;                          // [-] - Matcap-only entry: restore without regenerating
+    std::shared_ptr<const Modeller::RegenerationCache> Replay = {};                          // [-] - Checkpoints then (recent entries only)
+    std::shared_ptr<const Modeller::ReplayCheckpoint>  SummaryCheckpoint = {};               // [-] - Checkpoint the summary below was measured on
+    DraftingBodySummary                                Summary = {};                         // [-] - Body figures then (reused when every step restores)
+};
+
 struct DraftingDocument
 {
     std::string                                Title        = "Untitled";                    // [-] - Document caption
@@ -200,6 +205,9 @@ struct DraftingDocument
     uint64_t                                   Revision     = 0;                             // [-] - Bumped by every regeneration (scene cache key)
     std::vector<DraftingImagePlane>            ImagePlanes  = {};                            // [-] - Blueprint references (saved, not in the history)
     DraftingAppearance                         Appearance   = {};                            // [-] - Body / face matcaps (saved, undoable)
+    Modeller::RegenerationCache                Replay       = {};                            // [-] - Step checkpoints of the last replay (incremental regeneration)
+    std::shared_ptr<const Modeller::ReplayCheckpoint> SummaryCheckpoint = {};                // [-] - Final checkpoint Summary was measured on (figures reused when a
+                                                                                             //       regeneration restores every step from it: undo / redo / clone)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -211,7 +219,8 @@ struct VehicleCurveFile;
 
 [[nodiscard]] DraftingDocument CreateDraftingDocument(const std::string& Title = "Untitled");
 
-// Independent copy (tree, captions, selection; history not copied), regenerated into its own partition.
+// Independent copy (tree, captions, selection; history not copied), regenerated into its own partition. The replay
+// checkpoints are shared, so the copy restores every step instead of replaying the tree (preview staging is instant).
 [[nodiscard]] DraftingDocument CloneDraftingDocument(const DraftingDocument& Source);
 
 // 💡 Commands are atomic: the tree is snapshotted, changed and regenerated; if the step the command added is refused by

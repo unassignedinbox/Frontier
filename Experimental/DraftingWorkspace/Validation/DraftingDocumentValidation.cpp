@@ -74,6 +74,7 @@ namespace
     GateTally CurveGate       = { "W22", "Join (J) two open drawings into a closed square (extrudes to 1); offset (O) it by ¼ (2.25); pipe (P) along a drawn line (π r² L); refusals; codec byte-equal with kinds 13 / 14 / 15", "≤ 10⁻⁹ · exact" };
     GateTally RevolveGate     = { "W29", "Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line", "≤ 10⁻⁹ · exact" };
     GateTally EvolutionGate   = { "W30", "Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path", "≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin" };
+    GateTally ReplayGate      = { "W31", "Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints", "identical · undo / redo / clone ≥ 10× · tail edit ≥ 2×" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2081,13 +2082,162 @@ int main()
               "save → load → save byte-equal with the Evolution (16) steps and Path = '" + Rail + "'");
     }
 
+    // ---- W31 incremental replay: identical to full replays, resume points, speed
+    {
+        // A copy regenerated from scratch (cache off): the reference every incremental state must equal.
+        auto FullReplay = [](const DraftingDocument& Source)
+        {
+            DraftingDocument Copy = CreateDraftingDocument(Source.Title);
+            Copy.Tree      = Source.Tree;
+            Copy.Captions  = Source.Captions;
+            Copy.Selection = Source.Selection;
+            Copy.Replay.EnabledCondition = false;
+            RegenerateDraftingDocument(Copy);
+            return Copy;
+        };
+        auto Identical = [](const DraftingDocument& First, const DraftingDocument& Second)
+        {
+            const DraftingBodySummary& A = First.Summary;
+            const DraftingBodySummary& B = Second.Summary;
+            if (A.Volume != B.Volume || A.Faces != B.Faces || A.Edges != B.Edges || A.Vertices != B.Vertices || A.Genus != B.Genus || A.Bodies.size() != B.Bodies.size()) return false;
+            for (size_t Index = 0; Index < A.Bodies.size(); ++Index) if (A.Bodies[Index].Key != B.Bodies[Index].Key || A.Bodies[Index].Volume != B.Bodies[Index].Volume) return false;
+            const RegenerationOutcome& P = First.Regeneration;
+            const RegenerationOutcome& Q = Second.Regeneration;
+            if (P.Bodies.size() != Q.Bodies.size() || P.Steps.size() != Q.Steps.size() || P.Active != Q.Active || P.Refused != Q.Refused || P.Curves.size() != Q.Curves.size()) return false;
+            for (size_t Index = 0; Index < P.Bodies.size(); ++Index)
+            {
+                const RegeneratedBody& X = P.Bodies[Index];
+                const RegeneratedBody& Y = Q.Bodies[Index];
+                if (X.Key != Y.Key || X.Body.Slot != Y.Body.Slot || X.Body.Generation != Y.Body.Generation) return false;
+                if (X.Naming.Faces != Y.Naming.Faces || X.Naming.Edges != Y.Naming.Edges || X.Naming.Vertices != Y.Naming.Vertices) return false;
+            }
+            for (size_t Index = 0; Index < P.Steps.size(); ++Index)
+            {
+                if (P.Steps[Index].Status != Q.Steps[Index].Status || P.Steps[Index].Refusal != Q.Steps[Index].Refusal || P.Steps[Index].Body.Slot != Q.Steps[Index].Body.Slot) return false;
+            }
+            return EncodeDraftingDocument(First) == EncodeDraftingDocument(Second);
+        };
+        auto Milliseconds = [](auto&& Action)
+        {
+            const auto Started = std::chrono::steady_clock::now();
+            Action();
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Started).count();
+        };
+        auto Ms = [](double Value) { char Text[32]; std::snprintf(Text, sizeof Text, "%.1f ms", Value); return std::string(Text); };
+        auto Times = [](double Value) { char Text[32]; std::snprintf(Text, sizeof Text, "%.1f×", Value); return std::string(Text); };
+
+        // Build: block + 8 bosses (union) + 4 holes (difference) + a front fillet, every command checked against a full replay.
+        DraftingDocument Studded = CreateDraftingDocument("Studded");
+        int  Commands = 0, IdenticalCount = 0, AppendResumes = 0;
+        auto Command = [&](DraftingCommandOutcome Outcome)
+        {
+            const size_t Before = Studded.UndoEntries.empty() ? 0 : Studded.UndoEntries.back().Tree.Steps.size();
+            Expect(Outcome);
+            ++Commands;
+            IdenticalCount += Identical(Studded, FullReplay(Studded)) ? 1 : 0;
+            AppendResumes  += static_cast<size_t>(Studded.Regeneration.Resumed) == Before ? 1 : 0;
+        };
+        DraftingConstructRequest Plate;
+        Plate.Kind = DraftingConstructKind::Block; Plate.Width = 8.0; Plate.Depth = 3.0; Plate.Height = 0.6;
+        Command(ConstructDraftingPrimitive(Studded, Plate));
+        for (int Boss = 0; Boss < 8; ++Boss)
+        {
+            DraftingConstructRequest Stud;
+            Stud.Kind = DraftingConstructKind::Cylinder; Stud.Position = { 0.75 + 0.9 * Boss, 2.1, 0.3 }; Stud.Radius = 0.25 + 0.01 * Boss; Stud.Height = 0.5 + 0.05 * Boss;
+            Stud.Combination = FeatureCombination::Union;
+            Command(ConstructDraftingPrimitive(Studded, Stud));
+        }
+        for (int Hole = 0; Hole < 4; ++Hole)
+        {
+            DraftingConstructRequest Drill;
+            Drill.Kind = DraftingConstructKind::Cylinder; Drill.Position = { 1.3 + 1.8 * Hole, 0.9, -0.5 }; Drill.Radius = 0.2; Drill.Height = 2.0;
+            Drill.Combination = FeatureCombination::Difference;
+            Command(ConstructDraftingPrimitive(Studded, Drill));
+        }
+        const std::string FrontEdge = PickAndSelect(Studded, RayBetween({ 4.0, -1.0, 1.6 }, { 4.0, 0.0, 0.6 }), false);
+        SelectDraftingName(Studded, DraftingSelectionKind::Edge, FrontEdge, false);
+        Command(BlendDraftingSelection(Studded, BlendProfile::Fillet, 0.15));
+        const int Steps = static_cast<int>(Studded.Tree.Steps.size());
+        Tally(ReplayGate, 0.0, IdenticalCount == Commands && AppendResumes == Commands && Steps == 27 && Studded.Regeneration.Refused == 0,
+              std::to_string(Commands) + " commands → " + std::to_string(Steps) + " steps: " + std::to_string(IdenticalCount) + " identical to a full replay, " + std::to_string(AppendResumes) + " resumed at the new step");
+
+        // Speed: full replay vs the incremental paths (each result identical to a full replay of the same tree).
+        double Full = 1.0e300;
+        for (int Run = 0; Run < 3; ++Run) Full = std::min(Full, Milliseconds([&]() { (void)FullReplay(Studded); }));
+        auto Timed = [&](const std::string& Caption, auto&& Action, int ExpectedResume, double Least)
+        {
+            const double Time = Milliseconds(Action);
+            const bool Same = Identical(Studded, FullReplay(Studded));
+            const int Resumed = Studded.Regeneration.Resumed;
+            Tally(ReplayGate, Full / Time, Same && Resumed == ExpectedResume && Full / Time >= Least,
+                  Caption + ": resumed at " + std::to_string(Resumed) + "/" + std::to_string(Studded.Tree.Steps.size()) + " · " + Ms(Time) + " vs full " + Ms(Full) + " · " + Times(Full / Time) + " · identical");
+        };
+        int BindingStep = -1;
+        for (int Index = 0; Index < Steps && BindingStep < 0; ++Index)
+        {
+            for (const SketchConstraint& Constraint : Studded.Tree.Steps[Index].Sketch.Constraints) if (Constraint.Parameter == "Cylinder6.Radius") BindingStep = Index;
+        }
+        Timed("tail edit Fillet1.Size 0.15 → 0.12", [&]() { Expect(AssignDraftingParameter(Studded, "Fillet1.Size", 0.12)); }, Steps - 1, 2.0);
+        Timed("middle edit Cylinder6.Radius 0.30 → 0.32", [&]() { Expect(AssignDraftingParameter(Studded, "Cylinder6.Radius", 0.32)); }, BindingStep, 0.0);
+        Timed("undo (Cylinder6.Radius back)", [&]() { (void)UndoDraftingCommand(Studded); }, Steps, 10.0);
+        Timed("redo", [&]() { (void)RedoDraftingCommand(Studded); }, Steps, 10.0);
+        Timed("undo again", [&]() { (void)UndoDraftingCommand(Studded); }, Steps, 10.0);
+        {
+            std::unique_ptr<DraftingDocument> Preview;
+            const double Time = Milliseconds([&]() { Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(Studded)); });
+            Tally(ReplayGate, Full / Time, Identical(*Preview, Studded) && Preview->Regeneration.Resumed == Steps && Full / Time >= 10.0,
+                  "preview clone (bevel / move / sweep staging): resumed at " + std::to_string(Preview->Regeneration.Resumed) + "/" + std::to_string(Steps) + " · " + Ms(Time) + " · " + Times(Full / Time));
+            DraftingBlendRequest Wider;
+            Wider.Size = 0.2;
+            const std::string BackEdge = PickAndSelect(*Preview, RayBetween({ 4.0, 4.0, 1.6 }, { 4.0, 3.0, 0.6 }), false);
+            SelectDraftingName(*Preview, DraftingSelectionKind::Edge, BackEdge, false);
+            const double Staged = Milliseconds([&]() { Expect(BlendDraftingSelection(*Preview, Wider)); });
+            // Fillet1 was last replayed by the (non-capturing) parameter edit: this authoring command re-captures its edge
+            // signature in place from the checkpoint before it, so only the new fillet replays (27).
+            Tally(ReplayGate, 0.0, Identical(*Preview, FullReplay(*Preview)) && Preview->Regeneration.Resumed == Steps && Identical(Studded, FullReplay(Studded)),
+                  "preview fillets the back edge " + BackEdge + ": resumed at " + std::to_string(Preview->Regeneration.Resumed) + " (Fillet1 re-captured in place) · " + Ms(Staged) + " · source untouched");
+        }
+
+        // History depth: 10 more edits; only the 8 newest undo entries keep checkpoints; undoing all 10 stays identical.
+        for (int Edit = 0; Edit < 10; ++Edit) Expect(AssignDraftingParameter(Studded, "Fillet1.Size", 0.1 + 0.005 * Edit));
+        int Kept = 0;
+        for (const DraftingHistoryEntry& Entry : Studded.UndoEntries) Kept += Entry.Replay ? 1 : 0;
+        int UndoIdentical = 0, UndoRestored = 0;
+        for (int Edit = 0; Edit < 10; ++Edit)
+        {
+            (void)UndoDraftingCommand(Studded);
+            UndoIdentical += Identical(Studded, FullReplay(Studded)) ? 1 : 0;
+            UndoRestored  += Studded.Regeneration.Resumed == Steps ? 1 : 0;
+        }
+        Tally(ReplayGate, 0.0, Kept == 8 && Studded.UndoEntries.size() > 8 && UndoIdentical == 10 && UndoRestored >= 8,
+              std::to_string(Studded.UndoEntries.size() + 10) + " undo entries, " + std::to_string(Kept) + " with checkpoints; 10 undos identical, " + std::to_string(UndoRestored) + " restored every step (older ones resume at the edited step)");
+
+        // Vehicle bonnet: 11 SpaceCurves + loft; a pole move on one section resumes at that curve.
+        DraftingDocument Bonnet = CreateDraftingDocument("Bonnet");
+        Expect(ImportDraftingCurves(Bonnet, ReadVehicleCurves(DRAFTING_VEHICLE_SAMPLE)));
+        std::vector<std::string> Sections;
+        for (const FeatureStep& Step : Bonnet.Tree.Steps) if (Bonnet.Captions[Step.Label].rfind("Section", 0) == 0) Sections.push_back(Step.Label);
+        Expect(LoftDraftingCurves(Bonnet, Sections));
+        int SectionStep = -1;
+        for (size_t Index = 0; Index < Bonnet.Tree.Steps.size(); ++Index) if (Bonnet.Tree.Steps[Index].Label == Sections.back()) SectionStep = static_cast<int>(Index);
+        const Vector3 Pole = Bonnet.Regeneration.Curves.at(Sections.back()).Curve.Definition->Poles[2];
+        double BonnetFull = 1.0e300;
+        for (int Run = 0; Run < 3; ++Run) BonnetFull = std::min(BonnetFull, Milliseconds([&]() { (void)FullReplay(Bonnet); }));
+        const double Moved = Milliseconds([&]() { Expect(MoveDraftingPole(Bonnet, Sections.back(), 2, Pole + Vector3{ 0.0, 0.0, 0.01 })); });
+        const bool MovedSame = Identical(Bonnet, FullReplay(Bonnet));
+        const int MovedResume = Bonnet.Regeneration.Resumed;
+        const double Undone = Milliseconds([&]() { (void)UndoDraftingCommand(Bonnet); });
+        Tally(ReplayGate, BonnetFull / Undone, MovedSame && MovedResume == SectionStep && Identical(Bonnet, FullReplay(Bonnet)) && Bonnet.Regeneration.Resumed == static_cast<int>(Bonnet.Tree.Steps.size()),
+              "bonnet (" + std::to_string(Bonnet.Tree.Steps.size()) + " steps, full " + Ms(BonnetFull) + "): pole move resumed at " + std::to_string(MovedResume) + " · " + Ms(Moved) + "; undo restored all · " + Ms(Undone) + " · identical");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
