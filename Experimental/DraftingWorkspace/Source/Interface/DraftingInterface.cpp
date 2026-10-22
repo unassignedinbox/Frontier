@@ -929,6 +929,7 @@ void OpenTrimSession(DraftingWorkspaceState& State)
     if (!SketchCondition) { Announce(State, "Trim needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
     State.Trim = { true, false, {}, -1, {}, {}, {}, State.Trim.Commits };
     State.Drawing.ActiveCondition = false;
+    State.Constrain.ActiveCondition = false;
     Announce(State, "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
 }
 
@@ -1018,6 +1019,719 @@ void DrawTrimPreview(DraftingWorkspaceState& State, ImDrawList* Canvas, const Dr
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    CONSTRAINT SESSION (K)
+//------------------------------------------------------------------------------------------------------------------------
+
+std::string CaptionOf(const DraftingDocument& Document, const std::string& Label);
+bool        CollectTypedAmount(std::string& Typed);
+bool        ParseTypedAmount(const std::string& Typed, double& Value);
+
+constexpr float  ConstraintReach   = 8.0f;                                                   // [px]  - Point / curve pick radius
+constexpr float  GlyphOffset       = 14.0f;                                                  // [px]  - Glyph pill off its line
+constexpr float  GlyphStride       = 24.0f;                                                  // [px]  - Next pill on the same line / point
+constexpr float  DimensionOffset   = 22.0f;                                                  // [px]  - Dimension line off its feature
+constexpr double ConstraintSnap    = 0.1;                                                    // [len] - Drag grid
+constexpr ImU32  FreeColour        = IM_COL32(0x9f, 0xd8, 0xff, 0xff);                       // #9fd8ff  - Free point / curve
+constexpr ImU32  ConstraintColour  = IM_COL32(0xe0, 0x8c, 0xff, 0xff);                       // #e08cff  - Glyphs (SolveSpace magenta)
+
+// 📝 One clickable constraint mark in pixels: a pill (letter or stroke symbol) or a dimension (lines + value pill).
+struct ConstraintGlyph
+{
+    int                                    Constraint = -1;                                   // [-]  - Index in the sketch
+    ImVec2                                 Centre     = {};                                   // [px] - Pill centre
+    ImVec2                                 HalfExtent = {};                                   // [px] - Pill half size
+    std::string                            Text       = {};                                   // [-]  - Pill text (empty: Symbol)
+    int                                    Symbol     = 0;                                    // [-]  - 0 text · 1 parallel strokes · 2 perpendicular strokes
+    std::vector<std::pair<ImVec2, ImVec2>> Strokes    = {};                                   // [px] - Dimension / extension / leader lines
+};
+
+// The session sketch as regenerated: solved model, solve report, elevated plane; Sketch null when the step is gone.
+struct ConstraintView
+{
+    const FeatureStep*        Step   = nullptr;                                              // [-] - Sketch step
+    const SketchModel*        Sketch = nullptr;                                              // [-] - Solved sketch
+    const SketchSolveOutcome* Solve  = nullptr;                                              // [-] - Its report (null: none)
+    OrthonormalFrame          Plane  = {};                                                   // [-] - Elevated plane
+};
+
+std::string ConstraintSketchLabel(const DraftingWorkspaceState& State)
+{
+    const std::string Label = State.Constrain.ActiveCondition ? State.Constrain.Sketch : State.FocusedStep;
+    for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == Label && Step.Kind == FeatureStepKind::Sketch) return Label;
+    return {};
+}
+
+[[nodiscard]] ConstraintView ViewConstraintSketch(const DraftingWorkspaceState& State, const std::string& Label)
+{
+    ConstraintView View;
+    for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == Label && Step.Kind == FeatureStepKind::Sketch) View.Step = &Step;
+    if (!View.Step) return View;
+    const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+    View.Sketch = Solved != State.Document.Regeneration.Sketches.end() ? &Solved->second : &View.Step->Sketch;
+    for (const FeatureStepReport& Report : State.Document.Regeneration.Steps) if (Report.Label == Label) View.Solve = &Report.Solve;
+    View.Plane = ElevatedSketchPlane(State.Document, *View.Step);
+    return View;
+}
+
+[[nodiscard]] SketchConstraintStatus ConstraintStatusOf(const ConstraintView& View, int Constraint)
+{
+    if (!View.Solve || Constraint < 0 || Constraint >= int(View.Solve->Constraints.size())) return SketchConstraintStatus::Satisfied;
+    return View.Solve->Constraints[Constraint].Status;
+}
+
+[[nodiscard]] ImVec2 Unit(ImVec2 Vector, ImVec2 Fallback)
+{
+    const float Size = std::hypot(Vector.x, Vector.y);
+    return Size > 1.0e-6f ? ImVec2(Vector.x / Size, Vector.y / Size) : Fallback;
+}
+
+// 📝 Glyph layout from the solved sketch: dimensions stand outside (away from the sketch's pixel centroid) as offset
+//    lines with the value, letter pills inside beside line middles (sliding along the line for each further pill), at
+//    points and on circle tops; angles as an arc at the lines' meeting. A lone line: dimensions above, letters below.
+std::vector<ConstraintGlyph> LayoutConstraintGlyphs(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, const SketchModel& Sketch, const OrthonormalFrame& Plane)
+{
+    std::vector<ConstraintGlyph> Glyphs;
+    std::map<int, int> CurveSlots, PointSlots;
+    auto Pixel = [&](Vector2 Point) { ImVec2 Out(-1.0e6f, -1.0e6f); ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Point), Out); return Out; };
+    auto PointPixel = [&](int Point) { return Point >= 0 && Point < int(Sketch.Points.size()) ? Pixel(Sketch.Points[Point].Position) : ImVec2(-1.0e6f, -1.0e6f); };
+    auto CurveOf = [&](int Curve) -> const SketchCurve* { return Curve >= 0 && Curve < int(Sketch.Curves.size()) ? &Sketch.Curves[Curve] : nullptr; };
+    ImVec2 Centroid(0.0f, 0.0f);
+    for (int Point = 0; Point < int(Sketch.Points.size()); ++Point) { const ImVec2 At = PointPixel(Point); Centroid.x += At.x / float(Sketch.Points.size()); Centroid.y += At.y / float(Sketch.Points.size()); }
+    // Normal of the screen segment From → To pointing away from the centroid (up the screen when the centroid is on it).
+    auto Outward = [&](ImVec2 From, ImVec2 To)
+    {
+        const ImVec2 Along = Unit(ImVec2(To.x - From.x, To.y - From.y), ImVec2(1, 0));
+        ImVec2 Normal(-Along.y, Along.x);
+        const float Side = Normal.x * (0.5f * (From.x + To.x) - Centroid.x) + Normal.y * (0.5f * (From.y + To.y) - Centroid.y);
+        if (std::abs(Side) > 2.0f) return Side < 0.0f ? ImVec2(-Normal.x, -Normal.y) : Normal;
+        return Normal.y > 0.0f || (Normal.y == 0.0f && Normal.x < 0.0f) ? ImVec2(-Normal.x, -Normal.y) : Normal;
+    };
+    auto Pill = [&](int Constraint, ImVec2 Centre, const std::string& Text, int Symbol)
+    {
+        ConstraintGlyph Glyph;
+        Glyph.Constraint = Constraint;
+        Glyph.Centre     = Centre;
+        Glyph.Text       = Text;
+        Glyph.Symbol     = Symbol;
+        Glyph.HalfExtent = Symbol ? ImVec2(10.0f, 9.0f) : ImVec2(ImGui::CalcTextSize(Text.c_str()).x * 0.5f + 6.0f, 9.0f);
+        Glyphs.push_back(Glyph);
+        return &Glyphs.back();
+    };
+    // Screen frame of a line: start, end, unit direction and its outward normal.
+    auto LineFrame = [&](const SketchCurve& Curve, ImVec2& Start, ImVec2& End, ImVec2& Along, ImVec2& Normal)
+    {
+        Start  = PointPixel(Curve.Start);
+        End    = PointPixel(Curve.End);
+        Along  = Unit(ImVec2(End.x - Start.x, End.y - Start.y), ImVec2(1, 0));
+        Normal = Outward(Start, End);
+    };
+    auto OnCurve = [&](int Constraint, int Curve, const std::string& Text, int Symbol)
+    {
+        const SketchCurve* Shape = CurveOf(Curve);
+        if (!Shape) return;
+        const int Slot = CurveSlots[Curve]++;
+        if (Shape->Kind == SketchCurveKind::Line)
+        {
+            ImVec2 Start, End, Along, Normal;
+            LineFrame(*Shape, Start, End, Along, Normal);
+            const float Shift = float(Slot) * GlyphStride;
+            Pill(Constraint, ImVec2(0.5f * (Start.x + End.x) - Normal.x * GlyphOffset + Along.x * Shift, 0.5f * (Start.y + End.y) - Normal.y * GlyphOffset + Along.y * Shift), Text, Symbol);
+        }
+        else if (Shape->Kind == SketchCurveKind::Circle || Shape->Kind == SketchCurveKind::Arc)
+        {
+            const Vector2 Centre = Sketch.Points[Shape->Centre].Position;
+            const double  Radius = MeasureSketchRadius(Sketch, *Shape);
+            const ImVec2  Top    = Pixel({ Centre.X, Centre.Y + Radius });
+            Pill(Constraint, ImVec2(Top.x + float(Slot) * GlyphStride, Top.y - GlyphOffset), Text, Symbol);
+        }
+    };
+    auto AtPoint = [&](int Constraint, int Point, const std::string& Text)
+    {
+        const ImVec2 At   = PointPixel(Point);
+        const int    Slot = PointSlots[Point]++;
+        Pill(Constraint, ImVec2(At.x + 14.0f + float(Slot) * GlyphStride, At.y - 14.0f), Text, 0);
+    };
+    // Dimension between two screen points, offset along Normal, value pill in the middle.
+    auto Dimension = [&](int Constraint, ImVec2 From, ImVec2 To, ImVec2 Normal, const std::string& Text)
+    {
+        const ImVec2 A(From.x + Normal.x * DimensionOffset, From.y + Normal.y * DimensionOffset);
+        const ImVec2 B(To.x + Normal.x * DimensionOffset, To.y + Normal.y * DimensionOffset);
+        ConstraintGlyph* Glyph = Pill(Constraint, ImVec2(0.5f * (A.x + B.x), 0.5f * (A.y + B.y)), Text, 0);
+        Glyph->Strokes = { { A, B }, { From, ImVec2(A.x + Normal.x * 4.0f, A.y + Normal.y * 4.0f) }, { To, ImVec2(B.x + Normal.x * 4.0f, B.y + Normal.y * 4.0f) } };
+    };
+    for (int Index = 0; Index < int(Sketch.Constraints.size()); ++Index)
+    {
+        const SketchConstraint& Constraint = Sketch.Constraints[Index];
+        switch (Constraint.Kind)
+        {
+        case SketchConstraintKind::Horizontal:    OnCurve(Index, Constraint.First, "H", 0); break;
+        case SketchConstraintKind::Vertical:      OnCurve(Index, Constraint.First, "V", 0); break;
+        case SketchConstraintKind::Parallel:      OnCurve(Index, Constraint.First, {}, 1); OnCurve(Index, Constraint.Second, {}, 1); break;
+        case SketchConstraintKind::Perpendicular: OnCurve(Index, Constraint.First, {}, 2); OnCurve(Index, Constraint.Second, {}, 2); break;
+        case SketchConstraintKind::EqualLength:
+        case SketchConstraintKind::EqualRadius:   OnCurve(Index, Constraint.First, "=", 0); OnCurve(Index, Constraint.Second, "=", 0); break;
+        case SketchConstraintKind::Coincident:    AtPoint(Index, Constraint.First, "C"); break;
+        case SketchConstraintKind::Fixed:         AtPoint(Index, Constraint.First, "F"); break;
+        case SketchConstraintKind::PointOnLine:
+        case SketchConstraintKind::PointOnCircle: AtPoint(Index, Constraint.First, "O"); break;
+        case SketchConstraintKind::Midpoint:      AtPoint(Index, Constraint.First, "M"); break;
+        case SketchConstraintKind::Concentric:    if (const SketchCurve* Shape = CurveOf(Constraint.First)) AtPoint(Index, Shape->Centre, "CC"); break;
+        case SketchConstraintKind::Tangent:
+            if (const SketchCurve* Shape = CurveOf(Constraint.First); Shape && Shape->Kind == SketchCurveKind::Line) OnCurve(Index, Constraint.First, "T", 0);
+            else OnCurve(Index, Constraint.Second, "T", 0);
+            break;
+        case SketchConstraintKind::Symmetric:
+        {
+            const ImVec2 A = PointPixel(Constraint.First), B = PointPixel(Constraint.Second);
+            Pill(Index, ImVec2(0.5f * (A.x + B.x), 0.5f * (A.y + B.y) - GlyphOffset), "Y", 0);
+            break;
+        }
+        case SketchConstraintKind::Length:
+            if (const SketchCurve* Shape = CurveOf(Constraint.First); Shape && Shape->Kind == SketchCurveKind::Line)
+            {
+                ImVec2 Start, End, Along, Normal;
+                LineFrame(*Shape, Start, End, Along, Normal);
+                Dimension(Index, Start, End, Normal, FormatLength(MeasureSketchConstraint(Sketch, Constraint)));
+            }
+            break;
+        case SketchConstraintKind::Distance:
+        {
+            const ImVec2 A = PointPixel(Constraint.First), B = PointPixel(Constraint.Second);
+            Dimension(Index, A, B, Outward(A, B), FormatLength(MeasureSketchConstraint(Sketch, Constraint)));
+            break;
+        }
+        case SketchConstraintKind::HorizontalDistance:
+        case SketchConstraintKind::VerticalDistance:
+        {
+            const bool Across = Constraint.Kind == SketchConstraintKind::HorizontalDistance;
+            if (Constraint.Value == 0.0 && Constraint.Parameter.empty())
+            {
+                // Level / plumb points (H / V on two points): a letter between them.
+                const ImVec2 A = PointPixel(Constraint.First), B = PointPixel(Constraint.Second);
+                Pill(Index, ImVec2(0.5f * (A.x + B.x), 0.5f * (A.y + B.y) - GlyphOffset), Across ? "V" : "H", 0);
+                break;
+            }
+            if (Constraint.First < 0 || Constraint.Second < 0 || Constraint.First >= int(Sketch.Points.size()) || Constraint.Second >= int(Sketch.Points.size())) break;
+            const Vector2 First = Sketch.Points[Constraint.First].Position, Second = Sketch.Points[Constraint.Second].Position;
+            const Vector2 Corner = Across ? Vector2{ Second.X, First.Y } : Vector2{ First.X, Second.Y };
+            const ImVec2  A = Pixel(First), B = Pixel(Corner);
+            Dimension(Index, A, B, Outward(A, B), FormatLength(std::abs(MeasureSketchConstraint(Sketch, Constraint))));
+            break;
+        }
+        case SketchConstraintKind::Radius:
+            if (const SketchCurve* Shape = CurveOf(Constraint.First); Shape && Shape->Centre >= 0)
+            {
+                const Vector2 Centre = Sketch.Points[Shape->Centre].Position;
+                const double  Radius = MeasureSketchRadius(Sketch, *Shape);
+                const double  Slant  = std::numbers::pi * 0.25;
+                const ImVec2  Middle = Pixel(Centre), Rim = Pixel({ Centre.X + Radius * std::cos(Slant), Centre.Y + Radius * std::sin(Slant) });
+                const ImVec2  Out    = Unit(ImVec2(Rim.x - Middle.x, Rim.y - Middle.y), ImVec2(0.7f, -0.7f));
+                const std::string Text = "R" + FormatLength(Radius);
+                const float   Reach  = ImGui::CalcTextSize(Text.c_str()).x * 0.5f + 12.0f;
+                ConstraintGlyph* Glyph = Pill(Index, ImVec2(Rim.x + Out.x * Reach, Rim.y + Out.y * Reach), Text, 0);
+                Glyph->Strokes = { { Middle, Rim } };
+            }
+            break;
+        case SketchConstraintKind::Angle:
+        {
+            const SketchCurve* FirstLine = CurveOf(Constraint.First);
+            const SketchCurve* SecondLine = CurveOf(Constraint.Second);
+            if (!FirstLine || !SecondLine || FirstLine->Kind != SketchCurveKind::Line || SecondLine->Kind != SketchCurveKind::Line) break;
+            const Vector2 P0 = Sketch.Points[FirstLine->Start].Position, P1 = Sketch.Points[FirstLine->End].Position;
+            const Vector2 Q0 = Sketch.Points[SecondLine->Start].Position, Q1 = Sketch.Points[SecondLine->End].Position;
+            const Vector2 U = P1 - P0, W = Q1 - Q0;
+            const double  Turn = U.X * W.Y - U.Y * W.X;
+            const Vector2 MiddleP = (P0 + P1) * 0.5, MiddleQ = (Q0 + Q1) * 0.5;
+            Vector2 Meeting = MiddleQ;
+            if (std::abs(Turn) > 1.0e-12 * std::max(1.0, Dot(U, U) + Dot(W, W)))
+            {
+                const Vector2 Gap = Q0 - P0;
+                Meeting = P0 + U * ((Gap.X * W.Y - Gap.Y * W.X) / Turn);
+            }
+            const ImVec2 Hub = Pixel(Meeting);
+            auto Towards = [&](Vector2 Middle, Vector2 Direction)
+            {
+                const Vector2 Away = Dot(Middle - Meeting, Direction) >= 0.0 ? Direction : Direction * -1.0;
+                const ImVec2 Far = Pixel(Meeting + Away * (1.0 / std::max(1.0e-12, Length(Away))) * std::max(1.0e-6, 0.1 * Length(Middle - Meeting) + 1.0e-3));
+                return Unit(ImVec2(Far.x - Hub.x, Far.y - Hub.y), ImVec2(1, 0));
+            };
+            const ImVec2 A = Towards(MiddleP, U), B = Towards(MiddleQ, W);
+            float From = std::atan2(A.y, A.x), Sweep = std::atan2(B.y, B.x) - From;
+            while (Sweep > float(std::numbers::pi)) Sweep -= 2.0f * float(std::numbers::pi);
+            while (Sweep < -float(std::numbers::pi)) Sweep += 2.0f * float(std::numbers::pi);
+            char Text[32];
+            std::snprintf(Text, sizeof(Text), "%.4g°", std::abs(MeasureSketchConstraint(Sketch, Constraint)) * 180.0 / std::numbers::pi);
+            const float  Middle = From + Sweep * 0.5f;
+            ConstraintGlyph* Glyph = Pill(Index, ImVec2(Hub.x + std::cos(Middle) * 46.0f, Hub.y + std::sin(Middle) * 46.0f), Text, 0);
+            constexpr int Steps = 16;
+            for (int Step = 0; Step < Steps; ++Step)
+            {
+                const float T0 = From + Sweep * float(Step) / Steps, T1 = From + Sweep * float(Step + 1) / Steps;
+                Glyph->Strokes.push_back({ ImVec2(Hub.x + std::cos(T0) * 28.0f, Hub.y + std::sin(T0) * 28.0f), ImVec2(Hub.x + std::cos(T1) * 28.0f, Hub.y + std::sin(T1) * 28.0f) });
+            }
+            break;
+        }
+        default: break;
+        }
+    }
+    return Glyphs;
+}
+
+void OpenConstraintSession(DraftingWorkspaceState& State)
+{
+    std::string Label = FocusedSketchCondition(State) ? State.FocusedStep : std::string{};
+    if (Label.empty())
+        for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Kind == FeatureStepKind::Sketch) Label = Step.Label;   // newest sketch
+    if (Label.empty()) { Announce(State, "Constrain (K) needs a sketch: draw one first (Shift+A line, Shift+Q rectangle, Shift+W circle …)"); return; }
+    const int Commits = State.Constrain.Commits;
+    State.Constrain                 = {};
+    State.Constrain.ActiveCondition = true;
+    State.Constrain.Sketch          = Label;
+    State.Constrain.Commits         = Commits;
+    State.Drawing.ActiveCondition   = false;
+    State.Trim.ActiveCondition      = false;
+    State.FocusedStep               = Label;
+    const ConstraintView View = ViewConstraintSketch(State, Label);
+    Announce(State, Compose("Constrain %s · %d constraint(s) · DOF %d · click points / curves, then D N H V O Q M Y L [ ] · drag points · Esc ends", CaptionOf(State.Document, Label).c_str(),
+                            int(View.Sketch->Constraints.size()), View.Solve ? View.Solve->DegreesOfFreedom : -1));
+}
+
+void CloseConstraintSession(DraftingWorkspaceState& State)
+{
+    State.Constrain.ActiveCondition = false;
+    State.Constrain.DragCondition   = false;
+    State.Constrain.PressCondition  = false;
+    Announce(State, "Constrain ended");
+}
+
+// Drops picks that no longer exist (after undo) and ends the session when its sketch is gone.
+void ReconcileConstraintSession(DraftingWorkspaceState& State)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    if (!View.Step) { CloseConstraintSession(State); return; }
+    std::erase_if(Session.Picks, [&](const SketchPick& Pick)
+    {
+        return Pick.Index < 0 || Pick.Index >= int(Pick.Kind == SketchPickKind::Point ? View.Sketch->Points.size() : View.Sketch->Curves.size());
+    });
+    if (Session.PickedConstraint >= int(View.Sketch->Constraints.size())) Session.PickedConstraint = -1;
+}
+
+// 📝 Under the pointer, in order: a point (≤ 8 px), a constraint glyph, a curve (≤ 8 px).
+void HoverConstraintTarget(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, const ConstraintView& View, const std::vector<ConstraintGlyph>& Glyphs)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    Session.HoverCondition  = false;
+    Session.HoverConstraint = -1;
+    const ImVec2 Mouse   = ImGui::GetIO().MousePos;
+    double       Nearest = ConstraintReach;
+    for (int Point = 0; Point < int(View.Sketch->Points.size()); ++Point)
+    {
+        ImVec2 Pixel;
+        if (!ProjectWorldPoint(State, Frame, PlacePlanePoint(View.Plane, View.Sketch->Points[Point].Position), Pixel)) continue;
+        const double Gap = std::hypot(Pixel.x - Mouse.x, Pixel.y - Mouse.y);
+        if (Gap <= Nearest) { Nearest = Gap; Session.HoverCondition = true; Session.Hover = { SketchPickKind::Point, Point }; }
+    }
+    if (Session.HoverCondition) return;
+    for (const ConstraintGlyph& Glyph : Glyphs)
+        if (std::abs(Mouse.x - Glyph.Centre.x) <= Glyph.HalfExtent.x + 2.0f && std::abs(Mouse.y - Glyph.Centre.y) <= Glyph.HalfExtent.y + 2.0f) { Session.HoverConstraint = Glyph.Constraint; return; }
+    for (int Curve = 0; Curve < int(View.Sketch->Curves.size()); ++Curve)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector2& Sample : SampleSketchCurve(*View.Sketch, View.Sketch->Curves[Curve]))
+        {
+            ImVec2 Pixel;
+            if (ProjectWorldPoint(State, Frame, PlacePlanePoint(View.Plane, Sample), Pixel)) Pixels.push_back(Pixel);
+        }
+        for (size_t Index = 0; Index + 1 < Pixels.size(); ++Index)
+        {
+            const double AlongX = Pixels[Index + 1].x - Pixels[Index].x, AlongY = Pixels[Index + 1].y - Pixels[Index].y;
+            const double Square = AlongX * AlongX + AlongY * AlongY;
+            const double Share  = Square > 0.0 ? std::clamp(((Mouse.x - Pixels[Index].x) * AlongX + (Mouse.y - Pixels[Index].y) * AlongY) / Square, 0.0, 1.0) : 0.0;
+            const double Gap    = std::hypot(Pixels[Index].x + AlongX * Share - Mouse.x, Pixels[Index].y + AlongY * Share - Mouse.y);
+            if (Gap <= Nearest) { Nearest = Gap; Session.HoverCondition = true; Session.Hover = { SketchPickKind::Curve, Curve }; }
+        }
+    }
+}
+
+[[nodiscard]] std::string ListConstraintPicks(const DraftingWorkspaceState& State)
+{
+    const ConstraintView View = ViewConstraintSketch(State, State.Constrain.Sketch);
+    std::string Names;
+    if (!View.Sketch) return Names;
+    for (const SketchPick& Pick : State.Constrain.Picks) Names += (Names.empty() ? "" : ", ") + NameSketchPick(*View.Sketch, Pick);
+    return Names;
+}
+
+void ConcludeConstraint(DraftingWorkspaceState& State, const DraftingCommandOutcome& Outcome)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    Session.Refusal = Outcome.AcceptedCondition ? std::string{} : Outcome.Refusal;
+    if (Outcome.AcceptedCondition) ++Session.Commits;
+    Conclude(State, Outcome);
+}
+
+void CommitConstraint(DraftingWorkspaceState& State, SketchConstraint Constraint)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    const DraftingCommandOutcome Outcome = ConstrainDraftingSketch(State.Document, Session.Sketch, Constraint);
+    ConcludeConstraint(State, Outcome);
+    if (!Outcome.AcceptedCondition) return;
+    Session.Picks.clear();
+    Session.PendingCondition = false;
+    Session.Typed.clear();
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    Session.PickedConstraint = View.Sketch && SketchDimensionCondition(Constraint.Kind) ? int(View.Sketch->Constraints.size()) - 1 : -1;
+}
+
+// 📝 A verb key: the picks become a constraint (D / N wait for a value first), or the refusal says why not.
+void ApplyConstraintVerb(DraftingWorkspaceState& State, SketchConstraintVerb Verb)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    if (!View.Sketch) return;
+    const SketchConstraintProposal Proposal = ProposeSketchConstraint(*View.Sketch, Session.Picks, Verb);
+    if (!Proposal.Refusal.empty())
+    {
+        Session.Refusal = Proposal.Refusal;
+        Announce(State, "Refused: " + Proposal.Refusal);
+        return;
+    }
+    Session.Refusal.clear();
+    if (Verb == SketchConstraintVerb::Dimension || Verb == SketchConstraintVerb::Angle)
+    {
+        Session.PendingCondition = true;
+        Session.Proposed         = Proposal.Constraint;
+        Session.Typed.clear();
+        Session.PickedConstraint = -1;
+        Announce(State, Compose("%s: type a value (now %s) · Enter applies · Esc drops", DescribeSketchConstraint(*View.Sketch, Proposal.Constraint).c_str(),
+                                Verb == SketchConstraintVerb::Angle ? Compose("%.4g°", Proposal.Constraint.Value * 180.0 / std::numbers::pi).c_str() : FormatLength(Proposal.Constraint.Value).c_str()));
+        return;
+    }
+    CommitConstraint(State, Proposal.Constraint);
+}
+
+void CommitPendingConstraint(DraftingWorkspaceState& State)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    SketchConstraint Constraint = Session.Proposed;
+    double Typed = 0.0;
+    if (ParseTypedAmount(Session.Typed, Typed)) Constraint.Value = Constraint.Kind == SketchConstraintKind::Angle ? Typed * std::numbers::pi / 180.0 : Typed;
+    CommitConstraint(State, Constraint);
+}
+
+void RemovePickedConstraint(DraftingWorkspaceState& State)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    if (Session.PickedConstraint < 0) { Announce(State, "Remove: click a constraint glyph or dimension first"); return; }
+    const DraftingCommandOutcome Outcome = RemoveDraftingConstraint(State.Document, Session.Sketch, Session.PickedConstraint);
+    ConcludeConstraint(State, Outcome);
+    if (Outcome.AcceptedCondition) Session.PickedConstraint = -1;
+}
+
+void EditPickedDimension(DraftingWorkspaceState& State)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    double Value = 0.0;
+    if (!View.Sketch || Session.PickedConstraint < 0 || !ParseTypedAmount(Session.Typed, Value)) return;
+    const bool Angular = View.Sketch->Constraints[Session.PickedConstraint].Kind == SketchConstraintKind::Angle;
+    ConcludeConstraint(State, ChangeDraftingDimension(State.Document, Session.Sketch, Session.PickedConstraint, Angular ? Value * std::numbers::pi / 180.0 : Value));
+    Session.Typed.clear();
+}
+
+void ClickConstraintTarget(DraftingWorkspaceState& State)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    Session.Refusal.clear();
+    if (Session.HoverCondition)
+    {
+        const auto Found = std::find_if(Session.Picks.begin(), Session.Picks.end(), [&](const SketchPick& Pick) { return Pick.Kind == Session.Hover.Kind && Pick.Index == Session.Hover.Index; });
+        if (Found != Session.Picks.end()) Session.Picks.erase(Found);
+        else Session.Picks.push_back(Session.Hover);
+        Session.PickedConstraint = -1;
+        Session.PendingCondition = false;
+        Session.Typed.clear();
+        Announce(State, Session.Picks.empty() ? std::string("No picks") : "Picked " + ListConstraintPicks(State));
+        return;
+    }
+    if (Session.HoverConstraint >= 0)
+    {
+        const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+        Session.PickedConstraint = Session.HoverConstraint;
+        Session.Picks.clear();
+        Session.PendingCondition = false;
+        Session.Typed.clear();
+        const SketchConstraint& Constraint = View.Sketch->Constraints[Session.PickedConstraint];
+        Announce(State, Compose("%s%s%s · %s", Constraint.Label.c_str(), Constraint.Label.empty() ? "" : " ", DescribeSketchConstraint(*View.Sketch, Constraint).c_str(),
+                                SketchDimensionCondition(Constraint.Kind) ? "type a value + Enter · Delete removes" : "Delete removes"));
+        return;
+    }
+    Session.Picks.clear();
+    Session.PickedConstraint = -1;
+    Session.PendingCondition = false;
+    Session.Typed.clear();
+}
+
+// 📝 Viewport gestures while K is open: hover, click picks, press-travel-release drags a point.
+void DriveConstraintSession(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, bool PointerCondition, bool LeftClick, bool RightClick)
+{
+    ReconcileConstraintSession(State);
+    DraftingConstraintSession& Session = State.Constrain;
+    if (!Session.ActiveCondition) return;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    ImGuiIO& Io = ImGui::GetIO();
+    if (!Session.DragCondition)
+    {
+        if (PointerCondition) HoverConstraintTarget(State, Frame, View, LayoutConstraintGlyphs(State, Frame, *View.Sketch, View.Plane));
+        else { Session.HoverCondition = false; Session.HoverConstraint = -1; }
+    }
+    if (PointerCondition && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && Session.HoverCondition && Session.Hover.Kind == SketchPickKind::Point)
+    {
+        Session.PressCondition = true;
+        Session.DragPoint      = Session.Hover.Index;
+    }
+    if (Session.PressCondition && ImGui::IsMouseDown(ImGuiMouseButton_Left) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance)
+    {
+        Vector2 Target;
+        if (IntersectSketchPlane(Frame, Local, View.Plane, Target))
+        {
+            if (!Io.KeyCtrl) Target = { std::round(Target.X / ConstraintSnap) * ConstraintSnap, std::round(Target.Y / ConstraintSnap) * ConstraintSnap };
+            if (!Session.DragCondition || Target.X != Session.DragTarget.X || Target.Y != Session.DragTarget.Y)
+            {
+                Session.DragCondition = true;
+                Session.DragTarget    = Target;
+                const SketchDragOutcome Preview = PreviewDraftingDrag(State.Document, Session.Sketch, Session.DragPoint, Target);
+                Session.DragPreviewCondition = Preview.Refusal.empty();
+                Session.Refusal              = Preview.Refusal;
+                if (Session.DragPreviewCondition) Session.DragPreview = Preview.Sketch;
+            }
+        }
+    }
+    if (Session.PressCondition && (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left)))
+    {
+        const bool Dragged = Session.DragCondition;
+        Session.PressCondition = false;
+        Session.DragCondition  = false;
+        if (Dragged)
+        {
+            if (Session.DragPreviewCondition) ConcludeConstraint(State, DragDraftingSketchPoint(State.Document, Session.Sketch, Session.DragPoint, Session.DragTarget));
+            Session.DragPreviewCondition = false;
+            return;
+        }
+    }
+    if (LeftClick) ClickConstraintTarget(State);
+    if (RightClick) CloseConstraintSession(State);
+}
+
+// Pixel polyline of one sketch curve.
+[[nodiscard]] std::vector<ImVec2> CurvePixels(const DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, const SketchModel& Sketch, const SketchCurve& Curve, const OrthonormalFrame& Plane)
+{
+    std::vector<ImVec2> Pixels;
+    for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel); }
+    return Pixels;
+}
+
+// 📝 The session sketch on top of the ordinary overlay: curves green when fully fixed, picks blue, hover white, points
+//    (green fixed · light blue free), the drag preview, then every constraint glyph / dimension coloured by status.
+void DrawConstraintOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    const DraftingConstraintSession& Session = State.Constrain;
+    if (!Session.ActiveCondition) return;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    if (!View.Sketch) return;
+    const bool         Dragging = Session.DragCondition && Session.DragPreviewCondition;
+    const SketchModel& Shown    = Dragging ? Session.DragPreview : *View.Sketch;
+    auto Picked = [&](SketchPickKind Kind, int Index) { return std::any_of(Session.Picks.begin(), Session.Picks.end(), [&](const SketchPick& Pick) { return Pick.Kind == Kind && Pick.Index == Index; }); };
+    auto Hovered = [&](SketchPickKind Kind, int Index) { return Session.HoverCondition && Session.Hover.Kind == Kind && Session.Hover.Index == Index; };
+    for (int Curve = 0; Curve < int(Shown.Curves.size()); ++Curve)
+    {
+        const std::vector<ImVec2> Pixels = CurvePixels(State, Frame, Shown, Shown.Curves[Curve], View.Plane);
+        if (Pixels.size() < 2) continue;
+        const bool  Fixed  = !Dragging && View.Solve && Curve < int(View.Solve->CurveFixed.size()) && View.Solve->CurveFixed[Curve];
+        const ImU32 Colour = Picked(SketchPickKind::Curve, Curve) ? SelectedColour : Hovered(SketchPickKind::Curve, Curve) ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Fixed ? ActiveColour : FreeColour;
+        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Picked(SketchPickKind::Curve, Curve) || Hovered(SketchPickKind::Curve, Curve) ? 3.5f : 2.5f);
+    }
+    for (int Point = 0; Point < int(Shown.Points.size()); ++Point)
+    {
+        ImVec2 Pixel;
+        if (!ProjectWorldPoint(State, Frame, PlacePlanePoint(View.Plane, Shown.Points[Point].Position), Pixel)) continue;
+        const bool  Fixed  = !Dragging && View.Solve && Point < int(View.Solve->PointFixed.size()) && View.Solve->PointFixed[Point];
+        const bool  Chosen = Picked(SketchPickKind::Point, Point) || (Dragging && Point == Session.DragPoint);
+        Canvas->AddCircleFilled(Pixel, Chosen ? 5.5f : 4.0f, Chosen ? SelectedColour : Fixed ? ActiveColour : FreeColour);
+        if (Hovered(SketchPickKind::Point, Point)) Canvas->AddCircle(Pixel, 8.0f, IM_COL32(0xff, 0xff, 0xff, 0xff), 0, 1.5f);
+    }
+    for (const ConstraintGlyph& Glyph : LayoutConstraintGlyphs(State, Frame, Shown, View.Plane))
+    {
+        const SketchConstraintStatus Status = ConstraintStatusOf(View, Glyph.Constraint);
+        const bool  Troubled = !Dragging && Status != SketchConstraintStatus::Satisfied;
+        const bool  Chosen   = Glyph.Constraint == Session.PickedConstraint;
+        const bool  Over     = Glyph.Constraint == Session.HoverConstraint;
+        const ImU32 Accent   = Chosen ? SelectedColour : Troubled ? RefusalColour : Over ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ConstraintColour;
+        for (const auto& [From, To] : Glyph.Strokes) Canvas->AddLine(From, To, Accent, 1.2f);
+        const ImVec2 Low(Glyph.Centre.x - Glyph.HalfExtent.x, Glyph.Centre.y - Glyph.HalfExtent.y), High(Glyph.Centre.x + Glyph.HalfExtent.x, Glyph.Centre.y + Glyph.HalfExtent.y);
+        Canvas->AddRectFilled(Low, High, IM_COL32(0x16, 0x1a, 0x21, 0xe0), 5.0f);
+        Canvas->AddRect(Low, High, Accent, 5.0f, Chosen || Over ? 2.0f : 1.0f);
+        if (Glyph.Symbol == 1)
+        {
+            for (const float Shift : { -3.0f, 3.0f }) Canvas->AddLine(ImVec2(Glyph.Centre.x + Shift - 3.0f, Glyph.Centre.y + 5.0f), ImVec2(Glyph.Centre.x + Shift + 3.0f, Glyph.Centre.y - 5.0f), Accent, 1.6f);
+        }
+        else if (Glyph.Symbol == 2)
+        {
+            Canvas->AddLine(ImVec2(Glyph.Centre.x - 6.0f, Glyph.Centre.y + 5.0f), ImVec2(Glyph.Centre.x + 6.0f, Glyph.Centre.y + 5.0f), Accent, 1.6f);
+            Canvas->AddLine(ImVec2(Glyph.Centre.x, Glyph.Centre.y + 5.0f), ImVec2(Glyph.Centre.x, Glyph.Centre.y - 6.0f), Accent, 1.6f);
+        }
+        else
+        {
+            const ImVec2 Size = ImGui::CalcTextSize(Glyph.Text.c_str());
+            Canvas->AddText(ImVec2(Glyph.Centre.x - Size.x * 0.5f, Glyph.Centre.y - Size.y * 0.5f), Accent, Glyph.Text.c_str());
+        }
+    }
+}
+
+// Status line for the K session: sketch, DOF / conflict state, constraint count, picks or the pending verb.
+[[nodiscard]] std::string ConstraintSessionReadout(const DraftingWorkspaceState& State, bool& TroubleCondition)
+{
+    const DraftingConstraintSession& Session = State.Constrain;
+    const ConstraintView View = ViewConstraintSketch(State, Session.Sketch);
+    TroubleCondition = false;
+    if (!View.Sketch) return "Constrain";
+    std::string Freedom = "DOF ?";
+    if (View.Solve)
+    {
+        TroubleCondition = !View.Solve->ConflictGroups.empty() || !View.Solve->Converged;
+        Freedom = TroubleCondition ? std::string("conflicting") : View.Solve->DegreesOfFreedom == 0 ? std::string("fully constrained") : Compose("DOF %d", View.Solve->DegreesOfFreedom);
+    }
+    std::string Tail;
+    if (Session.DragCondition) Tail = Compose(" · drag %s to (%s, %s)", NameSketchPick(*View.Sketch, { SketchPickKind::Point, Session.DragPoint }).c_str(), FormatLength(Session.DragTarget.X).c_str(), FormatLength(Session.DragTarget.Y).c_str());
+    else if (Session.PendingCondition) Tail = " · " + DescribeSketchConstraint(*View.Sketch, Session.Proposed) + " · typed " + (Session.Typed.empty() ? std::string("(measured)") : Session.Typed);
+    else if (Session.PickedConstraint >= 0)
+    {
+        const SketchConstraint& Constraint = View.Sketch->Constraints[Session.PickedConstraint];
+        Tail = " · " + (Constraint.Label.empty() ? std::string{} : Constraint.Label + " ") + DescribeSketchConstraint(*View.Sketch, Constraint) + (Session.Typed.empty() ? std::string{} : " · typed " + Session.Typed);
+    }
+    else if (!Session.Picks.empty()) Tail = " · " + ListConstraintPicks(State);
+    return Compose("Constrain %s · %s · %d constraint(s)%s", CaptionOf(State.Document, Session.Sketch).c_str(), Freedom.c_str(), int(View.Sketch->Constraints.size()), Tail.c_str());
+}
+
+// 📝 Keyboard while K is open (after the view keys): Ctrl+Z / Ctrl+Shift+Z stay live.
+template <typename PressedKey>
+void RouteConstraintKeys(DraftingWorkspaceState& State, PressedKey&& Pressed, bool Control, bool Shift, bool Alternate)
+{
+    DraftingConstraintSession& Session = State.Constrain;
+    ReconcileConstraintSession(State);
+    if (!Session.ActiveCondition) return;
+    if (Control)
+    {
+        if (Pressed(ImGuiKey_Z)) { if (Shift) Redo(State); else Undo(State); ReconcileConstraintSession(State); }
+        return;
+    }
+    const bool Typing = Session.PendingCondition || Session.PickedConstraint >= 0;
+    const bool Empty  = Session.Typed.empty();
+    if (Typing) CollectTypedAmount(Session.Typed);
+    if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter))
+    {
+        if (Session.PendingCondition) CommitPendingConstraint(State);
+        else if (Session.PickedConstraint >= 0 && !Session.Typed.empty()) EditPickedDimension(State);
+        return;
+    }
+    if (Pressed(ImGuiKey_Escape))
+    {
+        if (Session.PendingCondition) { Session.PendingCondition = false; Session.Typed.clear(); Announce(State, "Constraint dropped"); }
+        else if (!Session.Typed.empty()) Session.Typed.clear();
+        else if (!Session.Picks.empty() || Session.PickedConstraint >= 0) { Session.Picks.clear(); Session.PickedConstraint = -1; Session.Refusal.clear(); Announce(State, "Picks cleared"); }
+        else CloseConstraintSession(State);
+        return;
+    }
+    if (Alternate) return;
+    if (Pressed(ImGuiKey_K)) { CloseConstraintSession(State); return; }
+    if (Session.PickedConstraint >= 0 && !Session.PendingCondition && (Pressed(ImGuiKey_Delete) || Pressed(ImGuiKey_X) || (Empty && Pressed(ImGuiKey_Backspace))))
+    {
+        RemovePickedConstraint(State);
+        return;
+    }
+    if (Shift) return;
+    static const std::pair<ImGuiKey, SketchConstraintVerb> Verbs[] = {
+        { ImGuiKey_D, SketchConstraintVerb::Dimension }, { ImGuiKey_N, SketchConstraintVerb::Angle }, { ImGuiKey_H, SketchConstraintVerb::Horizontal },
+        { ImGuiKey_V, SketchConstraintVerb::Vertical }, { ImGuiKey_O, SketchConstraintVerb::On }, { ImGuiKey_Q, SketchConstraintVerb::Equal },
+        { ImGuiKey_M, SketchConstraintVerb::Midpoint }, { ImGuiKey_Y, SketchConstraintVerb::Symmetric }, { ImGuiKey_L, SketchConstraintVerb::Parallel },
+        { ImGuiKey_LeftBracket, SketchConstraintVerb::Perpendicular }, { ImGuiKey_RightBracket, SketchConstraintVerb::Lock } };
+    for (const auto& [Key, Verb] : Verbs) if (Pressed(Key)) { ApplyConstraintVerb(State, Verb); return; }
+}
+
+// Inspector card: the sketch's constraints (click picks, status words), DOF, the verb buttons and a dimension field.
+void DrawConstraintCard(DraftingWorkspaceState& State)
+{
+    const std::string Label = ConstraintSketchLabel(State);
+    if (Label.empty()) return;
+    const ConstraintView View = ViewConstraintSketch(State, Label);
+    if (!View.Sketch) return;
+    DraftingConstraintSession& Session = State.Constrain;
+    const bool Live = Session.ActiveCondition && Session.Sketch == Label;
+    BeginCard("Constraints");
+    const int Freedom = View.Solve ? View.Solve->DegreesOfFreedom : -1;
+    const bool Trouble = View.Solve && (!View.Solve->ConflictGroups.empty() || !View.Solve->Converged);
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(Trouble ? RefusalColour : Freedom == 0 ? ActiveColour : FreeColour));
+    ImGui::TextUnformatted(Trouble ? "Conflicting constraints" : Freedom == 0 ? "Fully constrained (DOF 0)" : Compose("Under-constrained · DOF %d", Freedom).c_str());
+    ImGui::PopStyleColor();
+    for (int Index = 0; Index < int(View.Sketch->Constraints.size()); ++Index)
+    {
+        const SketchConstraint&      Constraint = View.Sketch->Constraints[Index];
+        const SketchConstraintStatus Status     = ConstraintStatusOf(View, Index);
+        const std::string Row = Compose("%s  %s%s###ConstraintRow%d", Constraint.Label.empty() ? "-" : Constraint.Label.c_str(), DescribeSketchConstraint(*View.Sketch, Constraint).c_str(),
+                                        Status == SketchConstraintStatus::Satisfied ? "" : Compose(" · %s", SketchConstraintStatusLabel(Status)).c_str(), Index);
+        if (Status != SketchConstraintStatus::Satisfied) ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        if (ImGui::Selectable(Row.c_str(), Live && Session.PickedConstraint == Index))
+        {
+            if (!Live) OpenConstraintSession(State);
+            State.Constrain.PickedConstraint = Index;
+            State.Constrain.Picks.clear();
+            State.Constrain.PendingCondition = false;
+            State.Constrain.Typed.clear();
+        }
+        RegisterWidget(State, Compose("ConstraintRow%d", Index).c_str());
+        if (Status != SketchConstraintStatus::Satisfied) ImGui::PopStyleColor();
+    }
+    if (Live)
+    {
+        ImGui::Spacing();
+        static const std::pair<const char*, SketchConstraintVerb> Buttons[] = {
+            { "D###ConstrainD", SketchConstraintVerb::Dimension }, { "N###ConstrainN", SketchConstraintVerb::Angle }, { "H###ConstrainH", SketchConstraintVerb::Horizontal },
+            { "V###ConstrainV", SketchConstraintVerb::Vertical }, { "O###ConstrainO", SketchConstraintVerb::On }, { "Q###ConstrainQ", SketchConstraintVerb::Equal },
+            { "M###ConstrainM", SketchConstraintVerb::Midpoint }, { "Y###ConstrainY", SketchConstraintVerb::Symmetric }, { "L###ConstrainL", SketchConstraintVerb::Parallel },
+            { "[###ConstrainPerpendicular", SketchConstraintVerb::Perpendicular }, { "]###ConstrainLock", SketchConstraintVerb::Lock } };
+        for (size_t Index = 0; Index < std::size(Buttons); ++Index)
+        {
+            if (Index) ImGui::SameLine(0, 3);
+            if (PressButton(State, Buttons[Index].first, ImVec2(23, 0))) ApplyConstraintVerb(State, Buttons[Index].second);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", SketchConstraintVerbLabel(Buttons[Index].second));
+        }
+        if (Session.PickedConstraint >= 0 && Session.PickedConstraint < int(View.Sketch->Constraints.size()))
+        {
+            const SketchConstraint& Constraint = View.Sketch->Constraints[Session.PickedConstraint];
+            if (SketchDimensionCondition(Constraint.Kind))
+            {
+                const bool Angular = Constraint.Kind == SketchConstraintKind::Angle;
+                double Value = MeasureSketchConstraint(*View.Sketch, Constraint) * (Angular ? 180.0 / std::numbers::pi : 1.0);
+                ImGui::SetNextItemWidth(150);
+                if (ImGui::InputDouble(Angular ? "deg###DimensionValue" : "m###DimensionValue", &Value, 0.0, 0.0, "%.6g", ImGuiInputTextFlags_EnterReturnsTrue))
+                    ConcludeConstraint(State, ChangeDraftingDimension(State.Document, Session.Sketch, Session.PickedConstraint, Angular ? Value * std::numbers::pi / 180.0 : Value));
+                RegisterWidget(State, "DimensionValue");
+            }
+            if (PressButton(State, "Remove###RemoveConstraint", ImVec2(118, 0))) RemovePickedConstraint(State);
+        }
+        if (!Session.Refusal.empty())
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+            ImGui::TextWrapped("%s", Session.Refusal.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+    else if (PressButton(State, "Constrain (K)###OpenConstrain", ImVec2(150, 0))) OpenConstraintSession(State);
+    EndCard();
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    EDITING SESSIONS (G / R / S · SHIFT+D · O / P · J · H · CTRL+C / V)
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -1096,6 +1810,7 @@ void OpenTransformSession(DraftingWorkspaceState& State, DraftingTransformVerb V
     Transform.Pivot              = MeasureBodiesCentre(State.Scene, Keys);
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
+    State.Constrain.ActiveCondition = false;
     Announce(State, Compose("%s%s %d body(ies) · X / Y / Z axis%s · type a value · click / Enter commits · Esc cancels", DuplicateCondition ? "Duplicate + " : "",
                             TransformVerbLabel(Verb), int(Keys.size()), Verb == DraftingTransformVerb::Move ? " · Shift+X / Y / Z plane" : ""));
 }
@@ -1262,6 +1977,7 @@ void OpenSweepSession(DraftingWorkspaceState& State, DraftingSweepVerb Verb)
     Sweep.Combination     = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : FeatureCombination::Separate;
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
+    State.Constrain.ActiveCondition = false;
     Announce(State, Compose("%s %s · move sideways (Shift fine, Ctrl free) or type a value%s · click / Enter commits · Esc cancels", Verb == DraftingSweepVerb::Offset ? "Offset" : "Pipe",
                             CaptionOf(State.Document, Path).c_str(), Verb == DraftingSweepVerb::Pipe ? " · Q union · W difference · E intersect · R new body" : ""));
 }
@@ -2502,7 +3218,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     //    movement is an ordinary click (selects the curve).
     DraftingPoleDrag& Drag = State.PoleDrag;
     bool PoleGesture = false;
-    if (State.PickMode == DraftingPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition)
+    if (State.PickMode == DraftingPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Constrain.ActiveCondition)
     {
         if (!Drag.ActiveCondition)
         {
@@ -2586,6 +3302,10 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (LeftClick && !OverCube) ApplySweepSession(State);
         else if (RightClick && !OverCube) CancelSweepSession(State);
     }
+    else if (State.Constrain.ActiveCondition)
+    {
+        DriveConstraintSession(State, Frame, Local, Hovered && !OverCube, LeftClick && !OverCube, RightClick && !OverCube);
+    }
     else if (State.Trim.ActiveCondition)
     {
         HoverTrimPiece(State, Frame, Local, Hovered && !OverCube);
@@ -2634,6 +3354,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
     DrawTrimPreview(State, Canvas, Frame);
+    DrawConstraintOverlay(State, Canvas, Frame);
     DrawSweepOutline(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
@@ -2700,6 +3421,18 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
+    if (State.Constrain.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 12, Image.y + 44);
+        bool Trouble = false;
+        const std::string Readout = ConstraintSessionReadout(State, Trouble);
+        DrawStatusPill(Canvas, Below, Readout, Trouble ? RefusalColour : ActiveColour);
+        if (!State.Constrain.Refusal.empty())
+        {
+            ImVec2 Next(Image.x + 12, Image.y + 76);
+            DrawStatusPill(Canvas, Next, State.Constrain.Refusal, RefusalColour);
+        }
+    }
     if (State.Transform.ActiveCondition)
     {
         ImVec2 Below(Image.x + 12, Image.y + 44);
@@ -2730,6 +3463,8 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Drawing.Kind == DraftingDrawingKind::Circle ? "Click centre then rim (Ctrl free) · V two-point / centre · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == DraftingDrawingKind::Arc ? "Click start, end, then a point on the arc (Ctrl free) · Ctrl+Z drop · Esc abort"
                               : "Click both cap centres, then the rim (Ctrl free) · Ctrl+Z drop · Esc abort")
+                       : State.Constrain.ActiveCondition
+                           ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
                            ? "Trim: hover a curve (the red piece comes off between its crossings) · click removes it · Esc / T / right-click end"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == DraftingSessionVerb::Profile
@@ -3232,6 +3967,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
     DrawDrawingCard(State);
+    DrawConstraintCard(State);
     DrawStepCard(State);
     DrawBodyCard(State);
     DrawAppearanceCard(State);
@@ -3460,6 +4196,13 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_Keypad7)) PresentView(State, Control ? DraftingViewPreset::Bottom : DraftingViewPreset::Top);
     if (Pressed(ImGuiKey_Keypad5)) State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
 
+    // [command='constrain'] — SolveSpace verbs on the picks, typed values, Delete removes a picked constraint (view keys live).
+    if (State.Constrain.ActiveCondition)
+    {
+        RouteConstraintKeys(State, Pressed, Control, Shift, Alternate);
+        return;
+    }
+
     // body[command='trim'] — click pieces to remove · Esc / T ends (the view keys above stay live).
     if (State.Trim.ActiveCondition)
     {
@@ -3549,6 +4292,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_H)) ChangeVisibility(State, DraftingVisibilityVerb::HideSelected);         // hide-selected
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
+    if (Pressed(ImGuiKey_K)) OpenConstraintSession(State);                                 // constrain (K is free in Plasticity's map)
     if (Pressed(ImGuiKey_J)) JoinSketches(State);                                          // command:join-curves
     if (Pressed(ImGuiKey_O)) OpenSweepSession(State, DraftingSweepVerb::Offset);           // command:offset-curve
     if (Pressed(ImGuiKey_P)) OpenSweepSession(State, DraftingSweepVerb::Pipe);             // command:pipe
@@ -3793,6 +4537,11 @@ bool ParseDraftingLength(const std::string& Text, double& Value)
         }
     }
     return false;
+}
+
+std::string DraftingConstraintSketch(const DraftingWorkspaceState& State)
+{
+    return ConstraintSketchLabel(State);
 }
 
 std::string DescribeDraftingWorkspace(const DraftingWorkspaceState& State)

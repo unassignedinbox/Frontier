@@ -189,6 +189,34 @@ struct DraftingTrimSession
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
 };
 
+// 📝 K (constrain, SolveSpace's verbs on Plasticity's free K key) on one sketch step: click points / curves to pick them
+//    (a click on a constraint glyph or dimension picks that constraint, a click on empty space clears), then D distance /
+//    length / radius and N angle wait for a typed value (Enter; nothing typed keeps the measured one), H V O Q M Y L [ ]
+//    apply at once. A press on a point that travels drags it (snapped 0.1 unless Ctrl; the rest of the sketch follows
+//    its constraints), the release commits. A picked constraint: Delete / X / Backspace removes it, digits + Enter edit a
+//    dimension. Esc drops a pending verb, then the picks, then ends; K or right-click ends.
+struct DraftingConstraintSession
+{
+    bool                                ActiveCondition      = false;                         // [-]   - K pressed, not ended
+    std::string                         Sketch               = {};                            // [-]   - Sketch step label
+    std::vector<Modeller::SketchPick>   Picks                = {};                            // [-]   - Picked points / curves (click order)
+    bool                                HoverCondition       = false;                         // [-]   - A point / curve is under the pointer
+    Modeller::SketchPick                Hover                = {};                            // [-]   - It
+    int                                 HoverConstraint      = -1;                            // [-]   - Glyph under the pointer (−1: none)
+    int                                 PickedConstraint     = -1;                            // [-]   - Picked glyph (−1: none)
+    bool                                PendingCondition     = false;                         // [-]   - D / N waits for a value
+    Modeller::SketchConstraint          Proposed             = {};                            // [-]   - The constraint D / N would add
+    std::string                         Typed                = {};                            // [-]   - Typed value (pending verb or picked dimension)
+    bool                                PressCondition       = false;                         // [-]   - Left button went down on a point
+    int                                 DragPoint            = -1;                            // [-]   - That point
+    bool                                DragCondition        = false;                         // [-]   - The press travelled: dragging
+    Modeller::Vector2                   DragTarget           = {};                            // [len] - Pointer on the sketch plane (snapped)
+    bool                                DragPreviewCondition = false;                         // [-]   - DragPreview is valid
+    Modeller::SketchModel               DragPreview          = {};                            // [-]   - The sketch as the drag would leave it
+    std::string                         Refusal              = {};                            // [-]   - Why the last verb / drag was refused
+    int                                 Commits              = 0;                             // [-]   - Constraints added / removed / edited, drags (script evidence)
+};
+
 enum class DraftingTransformVerb : uint8_t
 {
     Move   = 0,                                                                              // G
@@ -282,6 +310,7 @@ struct DraftingWorkspaceState
     DraftingBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     DraftingBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
     DraftingTrimSession                   Trim           = {};                               // [-]   - T: curve trim session
+    DraftingConstraintSession             Constrain      = {};                               // [-]   - K: sketch constraint session
     DraftingTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
     DraftingSweepSession                  Sweep          = {};                               // [-]   - O / P session
     DraftingClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
@@ -348,6 +377,9 @@ void RefreshDraftingScene(DraftingWorkspaceState& State, bool DirtyCondition);
 
 // "250mm", "-25cm", "0.25m", "1in", "1ft", "2.5e-1" → model units (metres); false when unparsable.
 bool ParseDraftingLength(const std::string& Text, double& Value);
+
+// Sketch step the constraint card / script fields describe: the K session's, else the focused sketch step, else "".
+[[nodiscard]] std::string DraftingConstraintSketch(const DraftingWorkspaceState& State);
 
 // JSON summary of the workspace (document, selection, camera, bevel session) for capture exhibits.
 [[nodiscard]] std::string DescribeDraftingWorkspace(const DraftingWorkspaceState& State);

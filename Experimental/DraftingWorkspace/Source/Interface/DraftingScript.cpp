@@ -46,6 +46,7 @@ ImGuiKey KeyByName(const std::string& Name)
         { "Keypad1", ImGuiKey_Keypad1 }, { "Keypad3", ImGuiKey_Keypad3 }, { "Keypad5", ImGuiKey_Keypad5 }, { "Keypad7", ImGuiKey_Keypad7 },
         { "Space", ImGuiKey_Space }, { "Enter", ImGuiKey_Enter }, { "Escape", ImGuiKey_Escape },
         { "Delete", ImGuiKey_Delete }, { "Backspace", ImGuiKey_Backspace }, { "Tab", ImGuiKey_Tab },
+        { "LeftBracket", ImGuiKey_LeftBracket }, { "RightBracket", ImGuiKey_RightBracket },
     };
     const auto Found = Keys.find(Name);
     return Found == Keys.end() ? ImGuiKey_None : Found->second;
@@ -219,6 +220,59 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "hidden") return Numeric(double(Document.Appearance.HiddenBodies.size()));
     if (Field == "scene-bodies") return Numeric(double(State.Scene.Bodies.size()));
     if (Field == "clipboard") return Numeric(double(State.Clipboard.Keys.size()));
+    if (Field == "constrain") return Numeric(State.Constrain.ActiveCondition ? 1 : 0);
+    if (Field == "constrain-commits") return Numeric(double(State.Constrain.Commits));
+    if (Field == "constrain-refusal") { Text = State.Constrain.Refusal; Number = double(Text.size()); return true; }
+    if (Field.starts_with("constrain") || Field.starts_with("constraint") || Field.starts_with("sketch-") || Field == "picked-constraint")
+    {
+        // 📝 The K session's sketch (else the focused sketch step) as regenerated.
+        const std::string Label  = DraftingConstraintSketch(State);
+        const auto        Solved = Document.Regeneration.Sketches.find(Label);
+        const Modeller::SketchModel*        Sketch = Solved != Document.Regeneration.Sketches.end() ? &Solved->second : nullptr;
+        const Modeller::SketchSolveOutcome* Solve  = nullptr;
+        for (const Modeller::FeatureStepReport& Report : Document.Regeneration.Steps) if (Report.Label == Label) Solve = &Report.Solve;
+        if (!Sketch) { Text.clear(); Number = -1.0; return true; }
+        if (Field == "constrain-picks")
+        {
+            std::vector<std::string> Names;
+            for (const Modeller::SketchPick& Pick : State.Constrain.Picks) Names.push_back(Modeller::NameSketchPick(*Sketch, Pick));
+            return Join(Names);
+        }
+        if (Field == "constraint-count") return Numeric(double(Sketch->Constraints.size()));
+        if (Field == "constraints")
+        {
+            std::vector<std::string> Labels;
+            for (const Modeller::SketchConstraint& Constraint : Sketch->Constraints) Labels.push_back(Constraint.Label.empty() ? std::string("-") : Constraint.Label);
+            return Join(Labels);
+        }
+        if (Field == "sketch-dof") return Numeric(Solve ? double(Solve->DegreesOfFreedom) : -1.0);
+        if (Field == "sketch-status")
+        {
+            Text   = !Solve ? std::string("unsolved") : (!Solve->ConflictGroups.empty() || !Solve->Converged) ? std::string("conflicting") : Solve->DegreesOfFreedom == 0 ? std::string("fully constrained") : std::string("under-constrained");
+            Number = Solve ? double(Solve->DegreesOfFreedom) : -1.0;
+            return true;
+        }
+        if (Field == "picked-constraint")
+        {
+            const int Picked = State.Constrain.ActiveCondition ? State.Constrain.PickedConstraint : -1;
+            Text   = Picked >= 0 && Picked < int(Sketch->Constraints.size()) ? Sketch->Constraints[Picked].Label + " " + Modeller::DescribeSketchConstraint(*Sketch, Sketch->Constraints[Picked]) : std::string{};
+            Number = double(Picked);
+            return true;
+        }
+        if (Field == "sketch-points")
+        {
+            // "(0, 0) (3, 0) …" at %.6g, Number = the count.
+            Text.clear();
+            for (const Modeller::SketchPoint& Point : Sketch->Points)
+            {
+                char Pair[80];
+                std::snprintf(Pair, sizeof(Pair), "%s(%.6g, %.6g)", Text.empty() ? "" : " ", std::abs(Point.Position.X) < 5.0e-13 ? 0.0 : Point.Position.X, std::abs(Point.Position.Y) < 5.0e-13 ? 0.0 : Point.Position.Y);
+                Text += Pair;
+            }
+            Number = double(Sketch->Points.size());
+            return true;
+        }
+    }
     if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
     if (Field == "trim-refusal")
