@@ -109,6 +109,12 @@ CaptureCaptions = {
     "119OffsetPreview"  : "O · 0.25: the green outline previews the offset sketch",
     "120PipePreview"    : "P · 0.2 · R along a drawn line: the staged tube",
     "121Pipe"           : "Pipe1 as a second body: π · 0.04 · 2 exact, audit sound",
+    "122ConstrainOpen"  : "K on a drawn rectangle: H / V glyphs, every point free (blue), Constraints card DOF 4",
+    "123ConstrainFull"  : "] corner, D 3, D 2: fully constrained, all green, the extrude follows (V 6)",
+    "124ConstrainConflict": "D 5 on the top line refused: it conflicts with V1, V2 and D1, named in the card",
+    "125ConstrainEdit"  : "Click D1 and type 4: the width and the extrude follow (V 8)",
+    "126ConstrainDragging": "D2 deleted, the far corner dragged: the free top edge previews live, DOF 1",
+    "127ConstrainAngle" : "A line chain: ], H, D 1.5, N 45°, Q equal: fully constrained at the closed-form corner",
 }
 
 #------------------------------------------------------------------------------------------------------------------------
