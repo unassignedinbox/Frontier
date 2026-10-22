@@ -139,7 +139,7 @@ function updateStats(extra = {}) {
       const cats = c ? ['talus', 'face', 'channel', 'bar', 'cap', 'erratic', 'shore'].filter((k) => c[k] > 0).map((k) => `${ROCK_CAT_NAMES[k]} ${c[k].toLocaleString('en-US')}`) : [];
       return `${scene.rockCount.toLocaleString('en-US')} + ${(scene.pebbleCount || 0).toLocaleString('en-US')} stones${cats.length ? ` · ${cats.join(' · ')}` : ''}`;
     })(),
-    '3D cliffs': scene.sdfStats ? `${scene.sdfStats.done}/${scene.sdfStats.total} chunks · R5 · ${scene.sdfStats.voxel.toFixed(2)} m voxels · ${scene.sdfStats.triangles.toLocaleString('en-US')} tris · ${(scene.sdfStats.ms / 1000).toFixed(1)} s${scene.sdfStats.candidates > scene.sdfStats.total ? ` (${scene.sdfStats.candidates - scene.sdfStats.total} skipped by cap)` : ''}` : 'off',
+    '3D cliffs': scene.sdfStats ? `${scene.sdfStats.done}/${scene.sdfStats.total} chunks · R6 · ${scene.sdfStats.voxel.toFixed(2)} m voxels · ${scene.sdfStats.triangles.toLocaleString('en-US')} tris · ${(scene.sdfStats.ms / 1000).toFixed(1)} s${scene.sdfStats.candidates > scene.sdfStats.total ? ` (${scene.sdfStats.candidates - scene.sdfStats.total} skipped by cap)` : ''}` : 'off',
     'Relief': `${lastField.stats.min.toFixed(0)} – ${lastField.stats.max.toFixed(0)} m`,
     'Heightfield': `${(lastField.stats.elapsedMs / 1000).toFixed(1)} s`,
   });

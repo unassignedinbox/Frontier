@@ -600,7 +600,7 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   float streakPatch = cgNoise3( wp * 0.02 + 13.0 ).x;
   float streak = smoothstep( 0.56, 0.78, streakN ) * uStreakAmount * mix( 0.3, 1.0, smoothstep( 0.35, 0.65, streakPatch ) );
   streak *= 1.0 - smoothstep( 60.0, 220.0, length( cameraPosition - wp ) ) * 0.55;
-  float wet = clamp( uWetness * ( flow * 0.9 + streak * wall * 0.7 ) + flowlineVis * 0.9, 0.0, 1.0 );
+  float wet = clamp( uWetness * ( flow * 0.9 * ( 1.0 - smoothstep( 0.5, 0.8, wall ) ) + streak * wall * 0.7 ) + flowlineVis * 0.9, 0.0, 1.0 );
   rock *= 1.0 - wet * 0.5;
 
   // scree gravel on deposits: pebbles in a sandy matrix
@@ -804,7 +804,12 @@ Surface evaluateCliffSurface( vec3 wp, vec3 n, vec4 aux, vec4 aux2 ) {
   // white water: painted water on steep rock is falling, not standing — aerated foam
   // streaks instead of a navy slab (the riverFoam control finally wired; falls and surf
   // rendered navy without it). Gentle rivers never reach this branch: wall-gated.
-  float falls = paint * smoothstep( 0.45, 0.75, wall );
+  // river-fed falls foam along their whole drop; sea-fed rock foams only at the surf
+  // line — without this the foam fires on submerged cliff faces (white blotches out
+  // at sea), and it fades a few metres under the sea on plunging falls
+  float riverFed = smoothstep( uSeaLevel + 1.0, uSeaLevel + 4.0, localWater ) * smoothstep( uSeaLevel - 5.0, uSeaLevel - 1.0, wp.y );
+  float surfZone = 1.0 - smoothstep( 1.0, 3.0, abs( wp.y - uSeaLevel ) );
+  float falls = paint * smoothstep( 0.45, 0.75, wall ) * max( riverFed, surfZone );
   float foamN = cgNoise3( vec3( ( wp.x + wp.z ) * 1.4, wp.y * 0.35, 9.0 ) ).x * 0.65
     + cgNoise3( vec3( ( wp.x - wp.z ) * 3.1, wp.y * 0.8, 4.0 ) ).x * 0.35;
   float foam = falls * uRiverFoam * smoothstep( 0.32, 0.72, foamN );

@@ -374,7 +374,7 @@ export const presets = {
     sdfOn: 1, sdfAngle: 50, sdfUndercut: 3, sdfJoints: 0.6, sdfPits: 0.35, sdfRough: 0.9, sdfPushPull: 1.0, sdfPushScale: 22, sdfNotch: 2.5,
     sdfBlocks: 2, sdfBlockSize: 8, sdfBlockLoss: 0.1, sdfVertical: 1.1, sdfLean: 1, sdfLeanReach: 28, sdfChunk: 32, sdfMaxChunks: 800,
     jointSpacing: 7, jointWidth: 0.7, jointStagger: 1.5, streakAmount: 0.35,
-    peelStrength: 0.5, peelScale: 1.8, peelFresh: 0.3, flakeStrength: 0.7, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
+    peelStrength: 0.5, peelScale: 1.8, peelFresh: 0.3, flakeStrength: 0.5, oxideAmount: 0.2, sunElevation: 18, sunAzimuth: 290, turbidity: 3, fogDensity: 0.5,
   },
   'Coastal cliffs': {
     palette: 'shale', worldSize: 1024, mountainHeight: 110, baseElevation: -25, baseFrequency: 1.0, ridgeSharpness: 1.3, peakPower: 1.0, warpStrength: 0.4,
