@@ -431,6 +431,10 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "snap-z") return Numeric(State.Picker.Current.Position.Z);
     if (Field == "snap-lock") { Text = State.Picker.Lock == DraftingSnapLockKind::None ? std::string("none") : std::string(DraftingSnapLockLabel(State.Picker.Lock)); Number = double(int(State.Picker.Lock)); return true; }
     if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
+    if (Field == "pole-snap-gap") return Numeric(State.PoleDrag.ActiveCondition && State.Picker.Current.Kind != DraftingSnapKind::None ? Modeller::Distance(State.PoleDrag.Position, State.Picker.Current.Position) : std::nan(""));
+    if (Field == "pole-drag-x") return Numeric(State.PoleDrag.Position.X);
+    if (Field == "pole-drag-y") return Numeric(State.PoleDrag.Position.Y);
+    if (Field == "pole-drag-z") return Numeric(State.PoleDrag.Position.Z);
     if (Field == "snapped-points") return Numeric(double(State.Picker.Snapped));
     if (Field == "curves" || Field == "selected-curves")
     {

@@ -919,6 +919,19 @@ void ChooseSnapLock(DraftingWorkspaceState& State, DraftingSnapLockKind Kind)
     Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + " through the last point · the same key releases it · object snaps align along it");
 }
 
+// An object snap carried into a sketch plane (its foot along the plane normal). On-curve snaps count only on curves in
+// the plane: an edge above the plane that merely overlaps the pointer on screen would move the point away from where
+// it was clicked (its distinct points still snap). Sets Picker.Current; nullopt when nothing snaps.
+std::optional<Vector2> SnapOntoPlane(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, const OrthonormalFrame& Plane,
+                                     std::optional<Vector3> Reference, std::vector<DraftingSnapPoint> Transient, const std::vector<std::string>& Excluded)
+{
+    DraftingSnap Object = FindPointerSnap(State, Frame, Local, Reference, std::move(Transient), Excluded, false);
+    if (Object.Kind == DraftingSnapKind::Curve && std::abs(Dot(Object.Position - Plane.Origin, Plane.ZAxis)) > 1.0e-9 * (1.0 + Length(Object.Position))) Object = {};
+    State.Picker.Current = Object;
+    if (Object.Kind == DraftingSnapKind::None) return std::nullopt;
+    return Vector2{ Dot(Object.Position - Plane.Origin, Plane.XAxis), Dot(Object.Position - Plane.Origin, Plane.YAxis) };
+}
+
 // The drawing pointer: on the lock line (aligned with a point snap, else 0.1 steps), else on an object snap projected
 // into the drawing plane, else on the 0.1 grid; Ctrl is free. Rectangle s squares the second corner.
 void PlaceDrawingPointer(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, Vector2& Point)
@@ -955,15 +968,7 @@ void PlaceDrawingPointer(DraftingWorkspaceState& State, const DraftingCameraFram
     }
     else
     {
-        DraftingSnap Object = FindPointerSnap(State, Frame, Local, Reference, Chain, {}, false);
-        // On-curve snaps count only on curves in the drawing plane: an edge above the plane that merely overlaps the
-        // pointer on screen would move the point away from where it was clicked (its distinct points still snap).
-        if (Object.Kind == DraftingSnapKind::Curve && std::abs(Dot(Object.Position - Plane.Origin, Plane.ZAxis)) > 1.0e-9 * (1.0 + Length(Object.Position))) Object = {};
-        if (Object.Kind != DraftingSnapKind::None)
-        {
-            Point          = Flatten(Object.Position);                                       // Off-plane snaps land at their foot
-            Picker.Current = Object;
-        }
+        if (const std::optional<Vector2> Snapped = SnapOntoPlane(State, Frame, Local, Plane, Reference, Chain, {})) Point = *Snapped;
         else if (!Free) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
     }
     if (Drawing.Kind == DraftingDrawingKind::Rectangle && Drawing.SquareCondition && Drawing.Points.size() == 1)
@@ -1760,7 +1765,9 @@ void DriveConstraintSession(DraftingWorkspaceState& State, const DraftingCameraF
         Vector2 Target;
         if (IntersectSketchPlane(Frame, Local, View.Plane, Target))
         {
-            if (!Io.KeyCtrl) Target = { std::round(Target.X / ConstraintSnap) * ConstraintSnap, std::round(Target.Y / ConstraintSnap) * ConstraintSnap };
+            // Object snaps first (never onto the dragged sketch itself), else the grid; Ctrl free
+            if (const std::optional<Vector2> Snapped = SnapOntoPlane(State, Frame, Local, View.Plane, std::nullopt, {}, { Session.Sketch })) Target = *Snapped;
+            else if (!Io.KeyCtrl) Target = { std::round(Target.X / ConstraintSnap) * ConstraintSnap, std::round(Target.Y / ConstraintSnap) * ConstraintSnap };
             if (!Session.DragCondition || Target.X != Session.DragTarget.X || Target.Y != Session.DragTarget.Y)
             {
                 Session.DragCondition = true;
@@ -1779,6 +1786,8 @@ void DriveConstraintSession(DraftingWorkspaceState& State, const DraftingCameraF
         Session.DragCondition  = false;
         if (Dragged)
         {
+            if (Session.DragPreviewCondition && State.Picker.Current.Kind != DraftingSnapKind::None) ++State.Picker.Snapped;
+            State.Picker.Current = {};
             if (Session.DragPreviewCondition) ConcludeConstraint(State, DragDraftingSketchPoint(State.Document, Session.Sketch, Session.DragPoint, Session.DragTarget));
             Session.DragPreviewCondition = false;
             return;
@@ -3003,9 +3012,10 @@ void DrawSnapOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const Dr
     constexpr ImU32 OutlineColour = IM_COL32(0x10, 0x12, 0x16, 0xd0);                         // Dark halo behind the glyph
     constexpr ImU32 LockColours[] = { 0, AxisColours[0], AxisColours[1], AxisColours[2], IM_COL32(0xff, 0xc8, 0x3d, 0xff), IM_COL32(0x4d, 0xd2, 0xff, 0xff), IM_COL32(0xe0, 0x8c, 0xff, 0xff) };
     const DraftingPointPicker& Picker = State.Picker;
-    const bool Drawing = State.Drawing.ActiveCondition;
-    const bool Moving  = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
-    if (!Drawing && !Moving) return;
+    const bool Drawing  = State.Drawing.ActiveCondition;
+    const bool Moving   = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
+    const bool Dragging = (State.Constrain.ActiveCondition && State.Constrain.DragCondition) || State.PoleDrag.ActiveCondition;
+    if (!Drawing && !Moving && !Dragging) return;
     if (Drawing && Picker.Lock != DraftingSnapLockKind::None)
     {
         const double Span = 4000.0 * Frame.WorldPerPixel;
@@ -4234,9 +4244,18 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
             const double      Facing = Dot(Direction, Drag.Facing);
             const bool        Moved  = Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance;
             if (std::abs(Facing) > 1.0e-9 && Moved) Drag.Position = Origin + Direction * (Dot(Drag.Origin - Origin, Drag.Facing) / Facing);
+            if (Moved)
+            {
+                // Object snaps (points, curves, edges; never the dragged curve) place the pole exactly
+                const DraftingSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, { Drag.Label }, false);
+                State.Picker.Current = Object;
+                if (Object.Kind != DraftingSnapKind::None) Drag.Position = Object.Position;
+            }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
                 Drag.ActiveCondition = false;
+                if (Moved && State.Picker.Current.Kind != DraftingSnapKind::None) ++State.Picker.Snapped;
+                State.Picker.Current = {};
                 if (Moved)
                 {
                     const std::string            Caption = CaptionOf(State.Document, Drag.Label);
@@ -4991,8 +5010,11 @@ void DrawDrawingCard(DraftingWorkspaceState& State)
 // 📝 Object snaps while drawing or moving: master switch, per-kind filter, the active direction lock.
 void DrawSnapCard(DraftingWorkspaceState& State)
 {
-    const bool Moving = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
-    if (!State.Drawing.ActiveCondition && !Moving) return;
+    const bool Moving   = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
+    // 📝 Outside drawing and Move the card only joins while a sketch point (K) or a pole (mode 1) is actually held: the
+    //    constraint rows and panel buttons below it must stay where the pointer expects them otherwise.
+    const bool Dragging = (State.Constrain.ActiveCondition && State.Constrain.DragCondition) || State.PoleDrag.ActiveCondition;
+    if (!State.Drawing.ActiveCondition && !Moving && !Dragging) return;
     DraftingPointPicker& Picker = State.Picker;
     BeginCard("Snaps");
     if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, ImVec2(140, 0))) Picker.Enabled = !Picker.Enabled;
@@ -5013,7 +5035,9 @@ void DrawSnapCard(DraftingWorkspaceState& State)
     ImGui::EndDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
     ImGui::TextWrapped(State.Drawing.ActiveCondition ? "x y z t n b lock a direction through the last point (again releases) · s squares a rectangle · Ctrl held: free"
-                                                     : "The grab point snaps, then lands on the snap under the pointer · X / Y / Z still constrain · Ctrl held: free");
+                       : Moving ? "The grab point snaps, then lands on the snap under the pointer · X / Y / Z still constrain · Ctrl held: free"
+                       : State.Constrain.ActiveCondition ? "A dragged sketch point lands on points and in-plane curves of other geometry, else the grid · Ctrl held: free"
+                                                         : "A dragged pole lands on points, curves and edges of other geometry · Ctrl held: free");
     ImGui::PopStyleColor();
     EndCard();
 }

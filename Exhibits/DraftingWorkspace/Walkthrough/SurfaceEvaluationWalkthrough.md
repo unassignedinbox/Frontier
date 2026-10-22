@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 316 frames · 33.6539 s · slowest frame 2439.05 ms
+- Frame: 1600 x 900 · 316 frames · 47.4732 s · slowest frame 2388.91 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -26,7 +26,7 @@
 | 85 | `refused == 0` | 0 | 🟢 |
 | 86 | `panels == 2` | 2 | 🟢 |
 | 87 | `sound == 1` | 1 | 🟢 |
-| 88 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms | 🟢 |
+| 88 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 3 ms | 🟢 |
 | 91 | `zebra == 1` | 1 | 🟢 |
 | 99 | `zebra == 0` | 0 | 🟢 |
 | 102 | `deviation-points == 286` | 286 | 🟢 |
@@ -38,10 +38,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 134 | `4a85bb091ad4e316` |
-| 71ZebraG2 | 188 | `a57a617af201c451` |
-| 72DeviationMap | 213 | `4924f3d0e87e9d7e` |
-| 73ZebraMirrored | 316 | `b31804714472b41e` |
+| 70ZebraG0 | 134 | `53fd25ac14ad8b65` |
+| 71ZebraG2 | 188 | `1fd564d325d7a212` |
+| 72DeviationMap | 213 | `1d058db102bc41dc` |
+| 73ZebraMirrored | 316 | `5410b0446eb7faa6` |
 
 ## Journal
 
@@ -72,8 +72,8 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 2 ms
-- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 2 ms
+- Loft2 · 4 sections · G2 · 3 ms
+- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 3 ms
 - Selection cleared
 - View Top
 - Zebra off
@@ -89,8 +89,8 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 4 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 5 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected
-- Loft1 · 6 sections · 1 ms
-- Lofted 6 curve(s) → panel (sound) · 1 panel(s) · 1 ms
+- Loft1 · 6 sections · 2 ms
+- Lofted 6 curve(s) → panel (sound) · 1 panel(s) · 2 ms
 - Mirror1 · plane x = 0 · 4 ms
 - Mirrored through x = 0 → 2 panel(s), sound · 4 ms
 - Selection cleared

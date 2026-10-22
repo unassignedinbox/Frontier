@@ -81,7 +81,7 @@ namespace
     GateTally XRayGate        = { "W32", "X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none", "all equal" };
     GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
     GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
-    GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, direction lock lines", "≤ 1e-12 (on carrier)" };
+    GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2633,6 +2633,18 @@ int main()
             DraftingSnapCatalogue Others = CatalogueDraftingSnaps(Snaps, Scene, { Snaps.Regeneration.Bodies.front().Key });
             const DraftingSnap Excluded = FindDraftingSnap(Others, Snaps, Scene, Query({ 4.0, 0.0, 1.0 }));
             Tally(SnapGate, 0.0, !(Excluded.Kind == DraftingSnapKind::Endpoint && Distance(Excluded.Position, Vector3{ 4.0, 0.0, 1.0 }) <= 1.0e-9), "block excluded (Move) at its corner → " + Describe(Excluded));
+            // A dragged sketch excludes itself by its step label: the circle's centre is gone, the block's corner stays
+            std::string CircleLabel;
+            for (const FeatureStep& Step : Snaps.Tree.Steps)
+            {
+                const auto Caption = Snaps.Captions.find(Step.Label);
+                if (Step.Kind == FeatureStepKind::Sketch && Caption != Snaps.Captions.end() && Caption->second == "Circle1") CircleLabel = Step.Label;
+            }
+            DraftingSnapCatalogue WithoutCircle = CatalogueDraftingSnaps(Snaps, Scene, { CircleLabel });
+            const DraftingSnap Centre = FindDraftingSnap(WithoutCircle, Snaps, Scene, Query({ -5.0, -3.0, 0.0 }, 1.0, 1.0));
+            const DraftingSnap Corner = FindDraftingSnap(WithoutCircle, Snaps, Scene, Query({ 4.0, 0.0, 1.0 }, 1.0, 1.0));
+            Tally(SnapGate, 0.0, !CircleLabel.empty() && Centre.Kind != DraftingSnapKind::Centre && Corner.Kind == DraftingSnapKind::Endpoint && WithoutCircle.Curves.size() + 1 == Catalogue.Curves.size(),
+                  "sketch " + CircleLabel + " excluded (its point being dragged): centre → " + Describe(Centre) + " · corner → " + Describe(Corner));
             // Filter: endpoints off → the corner pointer lands on an edge instead (still exact)
             DraftingSnapQuery Filtered = Query({ 4.0, 0.0, 1.0 }, 1.0, 1.0);
             Filtered.Filter.EndpointEnabled = false;

@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 131 frames · 16.0759 s · slowest frame 404.772 ms
+- Frame: 1600 x 900 · 131 frames · 23.0535 s · slowest frame 484.74 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/XRayWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,12 +46,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 146XRayBoxOpaque | 31 | `90f1d74585e5ca7a` |
-| 147XRayBoxThrough | 60 | `430eec2c049ce28f` |
-| 148XRayHover | 69 | `1ccbeec058bcebfe` |
-| 149XRayPicked | 78 | `648bcc91449ce260` |
-| 150XRayFillet | 85 | `9b77e848176a3b21` |
-| 151XRayFilleted | 92 | `4a346b493449c4bf` |
+| 146XRayBoxOpaque | 31 | `9941f4329b008d1a` |
+| 147XRayBoxThrough | 60 | `3746cc195ee64303` |
+| 148XRayHover | 69 | `529a97fd91defc23` |
+| 149XRayPicked | 78 | `ab120d6993083d09` |
+| 150XRayFillet | 85 | `0a3c8de3b29beff8` |
+| 151XRayFilleted | 92 | `3a22a18a973139e6` |
 
 ## Journal
 
@@ -62,7 +62,7 @@
 - Selection cleared
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
-- Fillet 0.25 on 1 edge(s) · 138 ms
+- Fillet 0.25 on 1 edge(s) · 134 ms
 - Selection cleared
 - Selected Extrude#2.Cap(End)
 - Selection cleared

@@ -511,7 +511,7 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
     std::vector<PlacedSegment> Placed;
     for (const Modeller::FeatureStep& Step : Document.Tree.Steps)
     {
-        if (Step.Kind != Modeller::FeatureStepKind::Sketch) continue;
+        if (Step.Kind != Modeller::FeatureStepKind::Sketch || ExcludedCondition(Step.Label)) continue;
         const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
         const Modeller::SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
         Modeller::OrthonormalFrame Plane = Step.Plane;
@@ -573,7 +573,7 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
     // ---- Fitted SpaceCurves (NURBS over [0, 1])
     for (const auto& [Label, Fit] : Document.Regeneration.Curves)
     {
-        if (!Fit.Curve.Definition) continue;
+        if (!Fit.Curve.Definition || ExcludedCondition(Label)) continue;
         DraftingSnapCurve Curve;
         const auto Caption = Document.Captions.find(Label);
         Curve.Source  = "Curve " + (Caption != Document.Captions.end() ? Caption->second : Label);

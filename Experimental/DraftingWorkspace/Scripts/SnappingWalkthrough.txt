@@ -1,6 +1,7 @@
 # DraftingWorkspace object-snapping walkthrough — the Plasticity point picker while drawing and moving: endpoint,
 # midpoint, centre, tangent and perpendicular snaps land on the exact carriers; n / b / t / x / y / z lock a direction
-# through the last point; s squares a rectangle; G moves a grab-point snap onto a target snap; x-ray reaches hidden points.
+# through the last point; s squares a rectangle; a dragged sketch point (K) and G's grab point land on snaps; x-ray
+# reaches hidden points.
 # Run: DraftingWorkspaceCapture --specimen --reset-files --recovery …/SnapRecovery.drafting.toml
 #      --document …/Snap.drafting.toml --script Experimental/DraftingWorkspace/Scripts/SnappingWalkthrough.txt
 # Bracket specimen: block 4 × 2.5 × 1 with its corner at the origin, boss, hole, Fillet1, Chamfer1 — volume 10.22278.
@@ -128,8 +129,31 @@ click world -3.67 2.83 0.0
 frames 2
 expect steps == 11
 
-# ⑩ Mode 4, pick the bracket, G with the pointer on its corner (0, 0, 0): the grab point snaps there; over the circle's
-#    centre the move is exactly (−2, 1.2, 0); the click commits, Ctrl+Z restores
+# ⑩ K on the square: dragging its corner (−3, 2) lands it on the circle's centre (an object snap of another sketch; the
+#    square's own points never snap). H / V keep the square axis-aligned, so its neighbours follow
+key K
+frames 2
+expect constrain == 1
+move world -3.0 2.0 0.0
+frames 2
+press Left
+frames 1
+move world -2.5 1.6 0.0
+frames 2
+move world -1.99 1.21 0.0
+frames 3
+expect snap contains Centre
+expect snap-x == -2
+capture 169SnapConstraintDrag
+release Left
+frames 3
+expect sketch-points contains (-2, 1.2)
+expect snapped-points == 5
+key Escape
+frames 2
+
+# ⑪ Mode 4, pick the bracket, G with the pointer on its corner (0, 0, 0): the grab point snaps there; over the circle's
+#    centre (now also the dragged square corner, an endpoint ranked before the centre) the move is exactly (−2, 1.2, 0); the click commits, Ctrl+Z restores
 key 4
 click world 2.0 1.0 1.0
 frames 2
@@ -139,12 +163,12 @@ key G
 frames 2
 move world -1.99 1.21 0.0
 frames 3
-expect snap contains Centre
+expect snap contains Endpoint · Line1 · Rectangle1
 expect transform-shift-x == -2
 expect transform-shift-y ~ 1.2
 expect transform-shift-z == 0
 expect transform-readout contains Endpoint
-capture 169SnapMove
+capture 170SnapMove
 click world -1.99 1.21 0.0
 frames 3
 expect transform-commits == 1
@@ -152,7 +176,7 @@ expect volume ~ 10.22278
 key Z Ctrl
 frames 3
 
-# ⑪ Shift+A, the hidden back-left-bottom corner (0, 2.5, 0): the solid hides it; Alt+Z x-ray reaches it
+# ⑫ Shift+A, the hidden back-left-bottom corner (0, 2.5, 0): the solid hides it; Alt+Z x-ray reaches it
 key A Shift
 move world 0.01 2.49 0.0
 frames 2
@@ -164,7 +188,41 @@ frames 2
 expect snap contains Endpoint
 expect snap-x == 0
 expect snap-y == 2.5
-capture 170SnapXRay
+capture 171SnapXRay
 key Escape
 key Z Alt
 frames 2
+
+# ⑬ Mode 1 pole drag on the synthetic bonnet (VehicleCurves import): pole 2 of Section3 at (0.50298, 0.41799, 0.81056)
+#    dragged over Section2's rear end snaps onto it — the pole sits exactly on the snap (gap 0); the curve itself never
+#    snaps (its own poles move). Ctrl+Z restores
+key N Ctrl
+frames 2
+click @HeaderImport
+frames 3
+click @PathImport
+frames 3
+expect steps == 11
+click @ViewIsometric
+frames 2
+key Space
+frames 3
+key 1
+frames 2
+move world 0.50298 0.41799 0.81056
+frames 2
+press Left
+frames 1
+move world 0.62 0.3 0.77
+frames 2
+move world 0.7502 0.1872 0.7205
+frames 3
+expect snap contains Endpoint · Curve Section2
+expect pole-snap-gap == 0
+capture 172SnapPoleDrag
+release Left
+frames 3
+expect pole-edits == 1
+expect snapped-points == 6
+key Z Ctrl
+frames 3

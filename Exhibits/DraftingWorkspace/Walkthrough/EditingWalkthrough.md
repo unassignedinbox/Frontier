@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 476 frames · 39.6905 s · slowest frame 435.466 ms
+- Frame: 1600 x 900 · 476 frames · 58.3072 s · slowest frame 436.463 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -86,17 +86,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `9887f178d1f06e9c` |
-| 112Rotate | 142 | `3ac96eb40b888c80` |
-| 113Scale | 180 | `face4f1c14424678` |
-| 114Duplicate | 209 | `7509cd0204b1eb75` |
-| 115Paste | 228 | `085e3cfe7d7a7cac` |
-| 116Hide | 236 | `bb33ce7a68e7f574` |
-| 117InvertHidden | 273 | `0db5b6802ce260ce` |
-| 118Join | 365 | `b130ac70ef0f90d6` |
-| 119OffsetPreview | 407 | `6016739691cd77f6` |
-| 120PipePreview | 462 | `e87f370efc1678bc` |
-| 121Pipe | 476 | `829fa60b414bdacb` |
+| 111MovePreview | 98 | `a8bf00d6d556a963` |
+| 112Rotate | 142 | `3091e34cd4a41863` |
+| 113Scale | 180 | `181cca0070ee80f5` |
+| 114Duplicate | 209 | `28af92a70c2a6fb3` |
+| 115Paste | 228 | `60d10a94e56937e5` |
+| 116Hide | 236 | `ea594f0a56ab6b86` |
+| 117InvertHidden | 273 | `8be8f0bb663fdb7b` |
+| 118Join | 365 | `92b445483f30d4ba` |
+| 119OffsetPreview | 407 | `e295278a3b72384e` |
+| 120PipePreview | 462 | `00182e75dbdce5cd` |
+| 121Pipe | 476 | `0794ccc5db447c6e` |
 
 ## Journal
 
@@ -113,7 +113,7 @@
 - Autosaved _ClaudeScratch/DraftingWorkspace/EditingRecovery.drafting.toml
 - Move (Extrude1) · 7 ms
 - Rotate 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
-- Rotate (Extrude1) · 7 ms
+- Rotate (Extrude1) · 8 ms
 - View Isometric
 - Framed the document (Space)
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
@@ -145,7 +145,7 @@
 - Bevel size 1 m (pinned)
 - Extrude1 · Line2 · New · 5 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
-- Offset Line2 by 0.25 · 4 ms
+- Offset Line2 by 0.25 · 3 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Line1 · 3 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels

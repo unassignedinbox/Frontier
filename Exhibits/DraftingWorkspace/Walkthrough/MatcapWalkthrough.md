@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 151 frames · 15.5573 s · slowest frame 399.168 ms
+- Frame: 1600 x 900 · 151 frames · 22.4409 s · slowest frame 483.384 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/MatcapWalkthrough.txt
 - Expectations: 30 / 30 passed
 
@@ -40,12 +40,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 90MatcapStudio | 5 | `4f1e16475db86bc8` |
-| 91MatcapBody | 14 | `8786145d1c1dc134` |
-| 92MatcapPicker | 39 | `6c3a002f29bafd6e` |
-| 93MatcapFaces | 53 | `bcdbcab55225e01f` |
-| 94MatcapMixed | 112 | `b302a12d432c1d71` |
-| 95MatcapUndo | 151 | `9177d5f48d465013` |
+| 90MatcapStudio | 5 | `fab757a75bb26e57` |
+| 91MatcapBody | 14 | `2eb49ab40bc0508d` |
+| 92MatcapPicker | 39 | `1efb51281da3c0e4` |
+| 93MatcapFaces | 53 | `35b9af6d0a04f423` |
+| 94MatcapMixed | 112 | `690a04b03386af67` |
+| 95MatcapUndo | 151 | `f74cc3b58def4753` |
 
 ## Journal
 

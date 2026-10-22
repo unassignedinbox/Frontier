@@ -10,13 +10,13 @@
   "Sheet": false,
   "PoleDrags": 0,
   "PickMode": 4,
-  "Hover": "Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line4))",
+  "Hover": "Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))",
   "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
-  "Drawing": {"Active": true, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
-  "Undo": 8,
-  "Redo": 1,
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-3, 2], [-3.8, 2.8]], "Refusal": ""},
+  "Undo": 9,
+  "Redo": 0,
   "Welcome": false,
-  "Status": "X-ray on · faces 45 % · hidden edges pickable",
+  "Status": "Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels",
   "Viewport": [320, 160, 930, 730]
 }

@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 305 frames · 33.6573 s · slowest frame 405.701 ms
+- Frame: 1600 x 900 · 305 frames · 49.9834 s · slowest frame 449.649 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/MultiBodyWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -13,7 +13,7 @@
 | 38 | `bodies == 2` | 2 | 🟢 |
 | 39 | `steps == 10` | 10 | 🟢 |
 | 40 | `body-volumes contains Block2 3.000000` | Block1 10.222774 · Block2 3.000000 | 🟢 |
-| 41 | `status contains New body` | Block2 · New body · 74 ms | 🟢 |
+| 41 | `status contains New body` | Block2 · New body · 73 ms | 🟢 |
 | 69 | `refused == 0` | 0 | 🟢 |
 | 70 | `bodies == 3` | 3 | 🟢 |
 | 71 | `body-captions contains Cylinder3` | Block1,Block2,Cylinder3 | 🟢 |
@@ -42,19 +42,19 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 96MultiBodyNew | 98 | `5d02e5c40b669079` |
-| 97MultiBodyThree | 175 | `e6e1f2042415a9d1` |
-| 98MultiBodyMatcaps | 248 | `084982a0e01fe374` |
-| 99MultiBodyBoolean | 278 | `79dc6e9b903c4033` |
-| 100MultiBodyDrilled | 291 | `58958e0396a0bb06` |
-| 101MultiBodyUndo | 305 | `ee9e6c7a80d7022a` |
+| 96MultiBodyNew | 98 | `dc7c3c37dc1dde35` |
+| 97MultiBodyThree | 175 | `181ed7aa6b07c7ea` |
+| 98MultiBodyMatcaps | 248 | `64b758c65f730a48` |
+| 99MultiBodyBoolean | 278 | `f2a8f41a56e309fd` |
+| 100MultiBodyDrilled | 291 | `5d355321ce31fafc` |
+| 101MultiBodyUndo | 305 | `1cf0d263cdbe097e` |
 
 ## Journal
 
-- Block2 · New body · 74 ms
+- Block2 · New body · 73 ms
 - Framed the document (Space)
 - Autosaved _ClaudeScratch/DraftingWorkspace/MultiBodyRecovery.drafting.toml
-- Cylinder3 · New body · 113 ms
+- Cylinder3 · New body · 107 ms
 - Selected Block1 (11 faces)
 - Matcap BrushedSteel → 1 body(ies)
 - Selected Block2 (6 faces)
@@ -67,7 +67,7 @@
 - Boolean: Block2 with 1 tool(s) · Q union · W difference · E intersect · Enter applies
 - Boolean: Difference
 - Autosaved _ClaudeScratch/DraftingWorkspace/MultiBodyRecovery.drafting.toml
-- Combine · Difference (Block2 − Cylinder3) · 153 ms
+- Combine · Difference (Block2 − Cylinder3) · 137 ms
 - Selection cleared
 - Undo
 - Redo

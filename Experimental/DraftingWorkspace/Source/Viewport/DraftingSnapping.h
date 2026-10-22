@@ -114,12 +114,13 @@ struct DraftingSnapPoint
     std::string       Body     = {};                                                         // [-]   - Owning body key (empty: sketch / curve)
 };
 
-// 📝 Everything snappable in one document revision (the bodies in Excluded left out — Move snaps onto other bodies).
+// 📝 Everything snappable in one document revision. Excluded names bodies (Move snaps onto other bodies) and sketch or
+//    SpaceCurve step labels (a dragged sketch point or pole never snaps onto its own geometry).
 //    Surfaces / FaceTokens follow the scene face table; face centres are measured lazily (planar faces only).
 struct DraftingSnapCatalogue
 {
     uint64_t                                          Revision     = 0;                      // [-]   - Document revision
-    std::string                                       ExclusionKey = {};                     // [-]   - Excluded body keys joined
+    std::string                                       ExclusionKey = {};                     // [-]   - Excluded body keys / step labels joined
     std::vector<DraftingSnapCurve>                    Curves       = {};                     // [-]   - Edges, sketch segments, SpaceCurves
     std::vector<DraftingSnapPoint>                    Points       = {};                     // [-]   - Fixed snap points
     std::vector<std::optional<Modeller::SurfaceGeometry>> Surfaces = {};                     // [-]   - Per scene face (empty: excluded / none)

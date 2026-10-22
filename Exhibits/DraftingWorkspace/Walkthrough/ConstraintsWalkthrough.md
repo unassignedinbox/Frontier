@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 457 frames · 38.0181 s · slowest frame 428.396 ms
+- Frame: 1600 x 900 · 457 frames · 52.747 s · slowest frame 452.578 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `1177b6fb5b156693` |
-| 123ConstrainFull | 174 | `09954984d69e96c3` |
-| 124ConstrainConflict | 202 | `cb30c30d61e8cfc8` |
-| 125ConstrainEdit | 240 | `594fe2430179b80f` |
-| 126ConstrainDragging | 275 | `48177182abf59548` |
-| 127ConstrainAngle | 451 | `a7a74d9434f06e2b` |
+| 122ConstrainOpen | 109 | `db600726249c417e` |
+| 123ConstrainFull | 174 | `c8d57a506352f693` |
+| 124ConstrainConflict | 202 | `c866b661dacdf063` |
+| 125ConstrainEdit | 240 | `587a7cf84cefe7b7` |
+| 126ConstrainDragging | 275 | `5ac91343c32508c8` |
+| 127ConstrainAngle | 451 | `50be84ad9678559f` |
 
 ## Journal
 
@@ -103,14 +103,14 @@
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
+- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 13 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 3 · Line1 · 11 ms
+- Constrain Rectangle1: Length 3 · Line1 · 10 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 2 · Line2 · 15 ms
+- Constrain Rectangle1: Length 2 · Line2 · 14 ms
 - Picks cleared
 - Picked Line3
 - Length 3 · Line3: type a value (now 3) · Enter applies · Esc drops
@@ -120,13 +120,13 @@
 - Constraint dropped
 - Picks cleared
 - D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
-- D1 = 4 in Rectangle1 · 18 ms
+- D1 = 4 in Rectangle1 · 17 ms
 - Undo
 - Redo
 - Picks cleared
 - D2 Length 2 · Line2 · type a value + Enter · E makes it a reference · Delete removes
-- Remove D2 (Length 2 · Line2) from Rectangle1 · 18 ms
-- Drag Line2.End of Rectangle1 · 24 ms
+- Remove D2 (Length 2 · Line2) from Rectangle1 · 17 ms
+- Drag Line2.End of Rectangle1 · 22 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
@@ -139,14 +139,14 @@
 - Constrain Line1: Horizontal · Line1 · 15 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Line1: Length 1.5 · Line1 · 17 ms
+- Constrain Line1: Length 1.5 · Line1 · 16 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 16 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 15 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
-- Constrain Line1: Equal length · Line1 · Line2 · 22 ms
+- Constrain Line1: Equal length · Line1 · Line2 · 15 ms
 - Constrain ended

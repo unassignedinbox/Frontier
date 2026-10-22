@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 339 frames · 30.7642 s · slowest frame 1001.44 ms
+- Frame: 1600 x 900 · 339 frames · 41.1065 s · slowest frame 987.788 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `548d570484437c40` |
-| 31CurveForms | 243 | `13245b30d0522cf0` |
-| 32HermiteClosing | 254 | `fcc71da8e1f3f5ac` |
-| 33DrawnSolid | 339 | `26c15b3ddefcfde4` |
+| 30RectanglePreview | 32 | `e771aaa5e57122b9` |
+| 31CurveForms | 243 | `ea28104c2f91ec49` |
+| 32HermiteClosing | 254 | `eda2d4984d19cf65` |
+| 33DrawnSolid | 339 | `e74f7a52919503d5` |
 
 ## Journal
 
@@ -94,12 +94,12 @@
 - Bevel size 1.5 m (pinned)
 - Extrude2 · Circle1 · Difference · 34 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 15 ms
+- Line1 · 16 ms
 - Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 51 ms
+- Extrude3 · Line1 · Union · 50 ms
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Point dropped · 2 left
 - Autosaved _ClaudeScratch/DraftingWorkspace/SketchRecovery.drafting.toml
@@ -107,11 +107,11 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 19 ms
+- Curve1 · Hermite · 20 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 763 ms
+- Extrude4 · Curve1 · Difference · 728 ms
 - Arc on plane XY: click start, end, then a point on the arc · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left
