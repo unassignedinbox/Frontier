@@ -14,6 +14,7 @@
 #include "Document/DraftingScene.h"
 #include "Document/VehicleCurveImport.h"
 #include "Viewport/DraftingCamera.h"
+#include "Viewport/DraftingSnapping.h"
 
 #include "Blend/BlendCatalogue.h"
 #include "Geometry/NurbsCarrier.h"
@@ -80,6 +81,7 @@ namespace
     GateTally XRayGate        = { "W32", "X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none", "all equal" };
     GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
     GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
+    GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, direction lock lines", "≤ 1e-12 (on carrier)" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2504,13 +2506,160 @@ int main()
         Tally(SectionGate, 0.0, Boxed.size() == 8 && KeptCondition, "full box, x-ray, sectioned → " + std::to_string(Boxed.size()) + " edges, all reaching x ≤ 1 (closed form 8 of 12)");
     }
 
+    // ---- W35 object snapping: exact snap points under the pointer (closed forms on a block, a cylinder, sketches)
+    {
+        DraftingDocument Snaps = CreateDraftingDocument("Snaps");
+        DraftingConstructRequest Brick;
+        Brick.Kind = DraftingConstructKind::Block; Brick.Width = 4.0; Brick.Depth = 2.0; Brick.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Snaps, Brick));
+        DraftingConstructRequest Post;
+        Post.Kind = DraftingConstructKind::Cylinder; Post.Position = { 6.0, 1.0, 0.0 }; Post.Radius = 0.5; Post.Height = 1.0;
+        Post.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Snaps, Post));
+        Expect(DrawDraftingSketch(Snaps, DrawingOf(DraftingDrawingKind::Line, 0, { { -3.0, -2.0 }, { -1.0, -4.0 } })));
+        Expect(DrawDraftingSketch(Snaps, DrawingOf(DraftingDrawingKind::Line, 0, { { -3.0, -4.0 }, { -1.0, -2.0 } })));
+        Expect(DrawDraftingSketch(Snaps, DrawingOf(DraftingDrawingKind::Circle, 0, { { -5.0, -3.0 }, { -4.2, -3.0 } }, false, true)));
+        Expect(DrawDraftingSketch(Snaps, DrawingOf(DraftingDrawingKind::Curve, 0, { { -8.0, -1.0 }, { -7.0, 0.5 }, { -6.0, -0.5 }, { -5.0, 1.0 } })));
+        const DraftingScene   Scene     = BuildDraftingScene(Snaps);
+        DraftingSnapCatalogue Catalogue = CatalogueDraftingSnaps(Snaps, Scene);
+        DraftingCamera Camera;
+        Camera.Target = { 0.0, -1.0, 0.5 }; Camera.Distance = 22.0; Camera.SceneRadius = 9.0;
+        const DraftingCameraFrame Frame = FrameDraftingCamera(Camera, 1200.0, 900.0);
+        auto Query = [&](Vector3 At, double NudgeX = 0.0, double NudgeY = 0.0)
+        {
+            DraftingSnapQuery Request;
+            Request.Frame = Frame;
+            (void)ProjectDraftingPoint(Frame, At, Request.PixelX, Request.PixelY);
+            Request.PixelX += NudgeX;
+            Request.PixelY += NudgeY;
+            return Request;
+        };
+        auto Describe = [](const DraftingSnap& Snap)
+        {
+            char Text[256];
+            std::snprintf(Text, sizeof(Text), "%s (%.12g, %.12g, %.12g) · %s · %.1f px", Snap.Kind == DraftingSnapKind::None ? "none" : DraftingSnapLabel(Snap.Kind),
+                          Snap.Position.X, Snap.Position.Y, Snap.Position.Z, Snap.Source.c_str(), Snap.Pixels);
+            return std::string(Text);
+        };
+        auto Point = [&](const char* Note, Vector3 At, DraftingSnapKind Kind, Vector3 Expected, double NudgeX = 3.0, double NudgeY = -2.0)
+        {
+            const DraftingSnap Snap  = FindDraftingSnap(Catalogue, Snaps, Scene, Query(At, NudgeX, NudgeY));
+            const double       Error = Distance(Snap.Position, Expected);
+            Tally(SnapGate, Error, Snap.Kind == Kind && Error <= 1.0e-12, std::string(Note) + " → " + Describe(Snap));
+        };
+        Point("block corner (4, 0, 1), pointer 3.6 px off", { 4.0, 0.0, 1.0 }, DraftingSnapKind::Endpoint, { 4.0, 0.0, 1.0 });
+        Point("front top edge midpoint (2, 0, 1)", { 2.0, 0.0, 1.0 }, DraftingSnapKind::Midpoint, { 2.0, 0.0, 1.0 });
+        Point("top face centre (2, 1, 1) (planar face centroid)", { 2.0, 1.0, 1.0 }, DraftingSnapKind::Centre, { 2.0, 1.0, 1.0 });
+        Point("cylinder top rim centre (6, 1, 1)", { 6.0, 1.0, 1.0 }, DraftingSnapKind::Centre, { 6.0, 1.0, 1.0 });
+        Point("sketch lines cross at (−2, −3, 0)", { -2.0, -3.0, 0.0 }, DraftingSnapKind::Intersection, { -2.0, -3.0, 0.0 });
+        Point("sketch line end (−1, −4, 0)", { -1.0, -4.0, 0.0 }, DraftingSnapKind::Endpoint, { -1.0, -4.0, 0.0 });
+        Point("sketch circle centre (−5, −3, 0)", { -5.0, -3.0, 0.0 }, DraftingSnapKind::Centre, { -5.0, -3.0, 0.0 });
+        {
+            // On the front top edge at x = 1.3 (y = 0, z = 1 exactly), on the top face, on the rim, on the cylinder side
+            const DraftingSnap Edge = FindDraftingSnap(Catalogue, Snaps, Scene, Query({ 1.3, 0.0, 1.0 }, 1.0, 1.0));
+            const double EdgeError = std::abs(Edge.Position.Y) + std::abs(Edge.Position.Z - 1.0);
+            Tally(SnapGate, EdgeError, Edge.Kind == DraftingSnapKind::Curve && EdgeError <= 1.0e-12 && std::abs(Edge.Position.X - 1.3) < 0.05, "on edge near (1.3, 0, 1): |y| + |z − 1| → " + Describe(Edge));
+            const DraftingSnap Top = FindDraftingSnap(Catalogue, Snaps, Scene, Query({ 2.9, 1.4, 1.0 }));
+            const double TopError = std::abs(Top.Position.Z - 1.0);
+            Tally(SnapGate, TopError, Top.Kind == DraftingSnapKind::Face && TopError <= 1.0e-12 && Distance(Top.Normal, Vector3{ 0.0, 0.0, 1.0 }) <= 1.0e-12, "on top face near (2.9, 1.4, 1): |z − 1|, outward normal ẑ → " + Describe(Top));
+            const Vector3 RimAt{ 6.0 + 0.5 * std::cos(-0.6), 1.0 + 0.5 * std::sin(-0.6), 1.0 };
+            const DraftingSnap Rim = FindDraftingSnap(Catalogue, Snaps, Scene, Query(RimAt, 1.0, -1.0));
+            const double RimError = std::abs(std::hypot(Rim.Position.X - 6.0, Rim.Position.Y - 1.0) - 0.5) + std::abs(Rim.Position.Z - 1.0);
+            Tally(SnapGate, RimError, Rim.Kind == DraftingSnapKind::Curve && RimError <= 1.0e-12, "on top rim near angle −0.6: ||ρ| − 0.5| + |z − 1| → " + Describe(Rim));
+            const Vector3 SideAt{ 6.0 + 0.5 * std::cos(-0.9), 1.0 + 0.5 * std::sin(-0.9), 0.45 };
+            const DraftingSnap Side = FindDraftingSnap(Catalogue, Snaps, Scene, Query(SideAt, 0.0, 0.0));
+            const double SideError = std::abs(std::hypot(Side.Position.X - 6.0, Side.Position.Y - 1.0) - 0.5);
+            Tally(SnapGate, SideError, Side.Kind == DraftingSnapKind::Face && SideError <= 1.0e-12, "on cylinder side near angle −0.9, z 0.45: ||ρ| − 0.5| (exact ray hit, not the facets) → " + Describe(Side));
+        }
+        {
+            // Tangent from P = (−5, −0.5, 0) to the circle r 0.8 at (−5, −3): cos α = r / d = 0.32
+            const Vector3 Reference{ -5.0, -0.5, 0.0 };
+            const double  Sine = std::sqrt(1.0 - 0.32 * 0.32);
+            const Vector3 Expected{ -5.0 + 0.8 * Sine, -3.0 + 0.8 * 0.32, 0.0 };
+            DraftingSnapQuery Request = Query(Expected, 2.0, 1.0);
+            Request.Reference = Reference;
+            const DraftingSnap Snap = FindDraftingSnap(Catalogue, Snaps, Scene, Request);
+            const Vector3 Centre{ -5.0, -3.0, 0.0 };
+            const double Error = std::abs(Distance(Snap.Position, Centre) - 0.8) + std::abs(Dot(Snap.Position - Reference, Snap.Position - Centre)) + std::abs(Snap.Position.Z);
+            Tally(SnapGate, Error, Snap.Kind == DraftingSnapKind::Tangent && Error <= 1.0e-12 && Distance(Snap.Position, Expected) <= 1.0e-12,
+                  "tangent from (−5, −0.5, 0) to circle r 0.8: ||T − C| − r| + |(T − P)·(T − C)| → " + Describe(Snap));
+            // Perpendicular from P = (−4.5, −4.5, 0) to the line (−3, −2) → (−1, −4): foot (−2.5, −2.5, 0)
+            Request = Query({ -2.5, -2.5, 0.0 }, 2.0, 2.0);
+            Request.Reference = Vector3{ -4.5, -4.5, 0.0 };
+            const DraftingSnap Foot = FindDraftingSnap(Catalogue, Snaps, Scene, Request);
+            const double FootError = Distance(Foot.Position, Vector3{ -2.5, -2.5, 0.0 });
+            Tally(SnapGate, FootError, Foot.Kind == DraftingSnapKind::Perpendicular && FootError <= 1.0e-12, "perpendicular from (−4.5, −4.5, 0) to Line (−3, −2) → (−1, −4): foot (−2.5, −2.5, 0) → " + Describe(Foot));
+        }
+        {
+            // Arc-length midpoint of the Hermite curve: both halves equal (independent 200 000-chord sums)
+            const DraftingSnapCurve* Spline = nullptr;
+            for (const DraftingSnapCurve& Curve : Catalogue.Curves) if (Curve.Segment && Curve.Segment->Kind == ProfileSegmentKind::Spline) Spline = &Curve;
+            const DraftingSnapPoint* Middle = nullptr;
+            for (const DraftingSnapPoint& Each : Catalogue.Points) if (Spline && Each.Kind == DraftingSnapKind::Midpoint && Each.Source == Spline->Source) Middle = &Each;
+            double Before = 0.0, After = 0.0;
+            if (Spline && Middle)
+            {
+                const Vector2 Local{ Dot(Middle->Position - Spline->Plane.Origin, Spline->Plane.XAxis), Dot(Middle->Position - Spline->Plane.Origin, Spline->Plane.YAxis) };
+                const double Split = LocateProfileFraction(*Spline->Segment, Local);
+                constexpr int Chords = 200000;
+                for (int Index = 0; Index < Chords; ++Index)
+                {
+                    const double From = double(Index) / Chords, To = double(Index + 1) / Chords;
+                    const auto Chord = [&](double Low, double High) { return Distance(EvaluateProfileSegment(*Spline->Segment, Low), EvaluateProfileSegment(*Spline->Segment, High)); };
+                    if (To <= Split) Before += Chord(From, To);
+                    else if (From >= Split) After += Chord(From, To);
+                    else { Before += Chord(From, Split); After += Chord(Split, To); }
+                }
+            }
+            const double Imbalance = std::abs(Before - After) / std::max(1.0e-12, Before + After);
+            Tally(SnapGate, Imbalance, Middle && Imbalance <= 1.0e-9, "Hermite curve midpoint: |L₁ − L₂| / L (L₁ " + std::to_string(Before) + ", L₂ " + std::to_string(After) + ")");
+        }
+        {
+            // Hidden back corner (0, 2, 0): no endpoint there unless x-ray
+            DraftingSnapQuery Hidden = Query({ 0.0, 2.0, 0.0 }, 1.0, 1.0);
+            const DraftingSnap Plain = FindDraftingSnap(Catalogue, Snaps, Scene, Hidden);
+            Hidden.XRayEnabled = true;
+            const DraftingSnap Through = FindDraftingSnap(Catalogue, Snaps, Scene, Hidden);
+            const bool PlainCondition = !(Plain.Kind == DraftingSnapKind::Endpoint && Distance(Plain.Position, Vector3{ 0.0, 2.0, 0.0 }) <= 1.0e-12);
+            Tally(SnapGate, Distance(Through.Position, Vector3{ 0.0, 2.0, 0.0 }), PlainCondition && Through.Kind == DraftingSnapKind::Endpoint && Distance(Through.Position, Vector3{ 0.0, 2.0, 0.0 }) <= 1.0e-12,
+                  "hidden corner (0, 2, 0): plain → " + Describe(Plain) + " · x-ray → " + Describe(Through));
+            // Section x ≤ 3 (n = −x̂, w = 3): the corner (4, 0, 1) is cut away
+            const DraftingSectionClip Clip = ComposeDraftingSectionClip(Scene, Snaps, { -1.0, 0.0, 0.0, 3.0 });
+            DraftingSnapQuery Cut = Query({ 4.0, 0.0, 1.0 }, 1.0, 1.0);
+            Cut.Section = &Clip;
+            const DraftingSnap Sectioned = FindDraftingSnap(Catalogue, Snaps, Scene, Cut);
+            Tally(SnapGate, 0.0, !(Sectioned.Kind == DraftingSnapKind::Endpoint && Distance(Sectioned.Position, Vector3{ 4.0, 0.0, 1.0 }) <= 1.0e-9), "corner (4, 0, 1) behind the section x ≤ 3 → " + Describe(Sectioned));
+            // Move excludes the moving body: the block's corner does not snap
+            DraftingSnapCatalogue Others = CatalogueDraftingSnaps(Snaps, Scene, { Snaps.Regeneration.Bodies.front().Key });
+            const DraftingSnap Excluded = FindDraftingSnap(Others, Snaps, Scene, Query({ 4.0, 0.0, 1.0 }));
+            Tally(SnapGate, 0.0, !(Excluded.Kind == DraftingSnapKind::Endpoint && Distance(Excluded.Position, Vector3{ 4.0, 0.0, 1.0 }) <= 1.0e-9), "block excluded (Move) at its corner → " + Describe(Excluded));
+            // Filter: endpoints off → the corner pointer lands on an edge instead (still exact)
+            DraftingSnapQuery Filtered = Query({ 4.0, 0.0, 1.0 }, 1.0, 1.0);
+            Filtered.Filter.EndpointEnabled = false;
+            const DraftingSnap Edge = FindDraftingSnap(Catalogue, Snaps, Scene, Filtered);
+            Tally(SnapGate, 0.0, Edge.Kind != DraftingSnapKind::Endpoint && Edge.Kind != DraftingSnapKind::None, "endpoints disabled at the corner → " + Describe(Edge));
+            // Transient point (the drawing chain)
+            DraftingSnapQuery Chain = Query({ -6.0, -6.0, 0.0 }, 2.0, 2.0);
+            Chain.Transient.push_back({ DraftingSnapKind::Endpoint, { -6.0, -6.0, 0.0 }, {}, {}, "Drawing point 1", {} });
+            const DraftingSnap Placed = FindDraftingSnap(Catalogue, Snaps, Scene, Chain);
+            Tally(SnapGate, Distance(Placed.Position, Vector3{ -6.0, -6.0, 0.0 }), Placed.Kind == DraftingSnapKind::Endpoint && Distance(Placed.Position, Vector3{ -6.0, -6.0, 0.0 }) == 0.0, "placed drawing point (−6, −6, 0) → " + Describe(Placed));
+            // Direction lock: the pointer over (5.5, 0, 1) meets the x line through (4, 0, 1) at t = 1.5
+            const DraftingSnapQuery Lock = Query({ 5.5, 0.0, 1.0 });
+            const std::optional<double> Along = ApproachDraftingLine(CastDraftingRay(Frame, Lock.PixelX, Lock.PixelY), { 4.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 });
+            Tally(SnapGate, Along ? std::abs(*Along - 1.5) : 1.0, Along && std::abs(*Along - 1.5) <= 1.0e-9, "x lock through (4, 0, 1), pointer over (5.5, 0, 1) → t " + std::to_string(Along ? *Along : -1.0));
+            // Catalogue census: 12 + 2 block / cylinder edges' vertices … reported for the record
+            Tally(SnapGate, 0.0, Catalogue.Curves.size() >= 12 + 3 + 4 && !Catalogue.Points.empty(),
+                  "catalogue: " + std::to_string(Catalogue.Curves.size()) + " curves, " + std::to_string(Catalogue.Points.size()) + " fixed points");
+        }
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

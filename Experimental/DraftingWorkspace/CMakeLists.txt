@@ -124,6 +124,7 @@ add_library(DraftingWorkspace STATIC
     Source/Viewport/DraftingDevice.cpp
     Source/Viewport/DraftingRasterization.cpp
     Source/Viewport/DraftingPortableImage.cpp
+    Source/Viewport/DraftingSnapping.cpp
     Source/Interface/DraftingInterface.cpp
     Source/Interface/DraftingFrame.cpp
     Source/Interface/DraftingOptions.cpp
