@@ -11,6 +11,8 @@
 
 #include "Topology/ModelPartition.h"
 
+#include <functional>
+
 namespace Frontier::SolidArcRemastered
 {
 
@@ -37,5 +39,17 @@ struct ShellVolumeMeasure
 
 // Signed parametric area Σ ∮ 𝑢 d𝑣 over a face's loops: positive when the loops run counter-clockwise in (𝑢, 𝑣).
 [[nodiscard]] double IntegrateParametricArea(const ModelPartition& Partition, FaceToken Face);
+
+// 💡 Outward flux ∮∮ F·n dA of a vector field over a closed shell, by the same Green reduction as the volume (F = P / 3
+//    gives the volume). By the divergence theorem it is ∭ div F dV over the shell's interior, so F = (𝑥² / 2, 0, 0)
+//    gives the first moment ∭ 𝑥 dV and F = (𝑥³ / 3, 0, 0) the second ∭ 𝑥² dV. Same noise floor as the volume.
+[[nodiscard]] double IntegrateShellFlux(const ModelPartition& Partition, SolidShellToken SolidShell, const std::function<Vector3(Vector3)>& Field);
+
+// 💡 ∬ w(P) dA over a trimmed face: density w · |∂P/∂𝑢 × ∂P/∂𝑣| through Green's theorem over its SP-curves, signed by
+//    the loops' sense in (𝑢, 𝑣) so a reversed face still integrates positively. w ≡ 1 gives the true surface area.
+[[nodiscard]] double IntegrateFaceSurface(const ModelPartition& Partition, FaceToken Face, const std::function<double(Vector3)>& Weight);
+
+// Arc length ∫ |C′(τ)| dτ of an edge over its interval (adaptive Gauss–Legendre, split at the carrier's breakpoints).
+[[nodiscard]] double MeasureEdgeLength(const ModelPartition& Partition, EdgeToken Edge);
 
 } // namespace Frontier::SolidArcRemastered

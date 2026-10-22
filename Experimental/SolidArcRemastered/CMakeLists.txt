@@ -79,6 +79,9 @@ add_library(SolidArcRemastered STATIC
     Source/Surfacing/PanelAssembly.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
+    Source/Measurement/MassProperties.cpp
+    Source/Measurement/MinimumDistance.cpp
+    Source/Measurement/PlaneSection.cpp
     Source/Audit/ModelAudit.cpp
     Source/Audit/IntersectionAudit.cpp
     Source/Audit/TessellationAudit.cpp
@@ -166,6 +169,8 @@ add_executable(SweepValidation Validation/SweepValidation.cpp)
 target_link_libraries(SweepValidation PRIVATE SolidArcRemastered)
 add_executable(ReplayValidation Validation/ReplayValidation.cpp)
 target_link_libraries(ReplayValidation PRIVATE SolidArcRemastered)
+add_executable(MeasureValidation Validation/MeasureValidation.cpp)
+target_link_libraries(MeasureValidation PRIVATE SolidArcRemastered)
 
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
@@ -192,4 +197,5 @@ add_test(NAME SetbackValidation COMMAND SetbackValidation)
 add_test(NAME BodyCutValidation COMMAND BodyCutValidation)
 add_test(NAME SweepValidation COMMAND SweepValidation)
 add_test(NAME ReplayValidation COMMAND ReplayValidation)
+add_test(NAME MeasureValidation COMMAND MeasureValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

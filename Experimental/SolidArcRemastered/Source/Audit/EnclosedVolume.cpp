@@ -273,6 +273,91 @@ double IntegrateBodyVolume(const ModelPartition& Partition, BodyToken Body)
     return Total;
 }
 
+double IntegrateShellFlux(const ModelPartition& Partition, SolidShellToken SolidShell, const std::function<Vector3(Vector3)>& Field)
+{
+    // 📝 MeasureShellVolume with a general field: the floor is again taken over the whole shell (a field may vanish on
+    //    a whole face, as 𝑥² does on 𝑥 = 0).
+    // ⚠️ The floor's scale integrates |F·N|, never F·N: a moment field cancels over a full turn (∫ cos³ = 0 on a
+    //    cylinder), so its signed inner integral along the seam is round-off, a floor scaled by it is round-off too,
+    //    and every panel recursed to the depth cap (2²⁴ panels per fin).
+    const std::vector<FaceToken>& Faces = Partition.Shells.Resolve(SolidShell).Faces;
+    const auto Density = [&](const SurfaceGeometry& Surface)
+    {
+        return [&Surface, &Field](Vector2 Parameter)
+        {
+            const SurfaceSample Sample = EvaluateSurface(Surface, Parameter);
+            return Dot(Field(Sample.Position), Cross(Sample.DerivativeU, Sample.DerivativeV));
+        };
+    };
+    const auto Absolute = [&](const SurfaceGeometry& Surface)
+    {
+        return [&Surface, &Field](Vector2 Parameter)
+        {
+            const SurfaceSample Sample = EvaluateSurface(Surface, Parameter);
+            return std::fabs(Dot(Field(Sample.Position), Cross(Sample.DerivativeU, Sample.DerivativeV)));
+        };
+    };
+    std::vector<double> FaceMagnitudes(Faces.size(), 0.0);                                   // [-] - Per face ∫|G 𝑣′| dτ
+    double Magnitude = 0.0;                                                                  // [-] - Σ∫|G 𝑣′| dτ
+    for (size_t Index = 0; Index < Faces.size(); ++Index)
+    {
+        const FaceProfile& Profile = Partition.Faces.Resolve(Faces[Index]);
+        if (!Profile.Surface.PresentCondition()) return std::nan("");
+        const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
+        Magnitude += FaceMagnitudes[Index] = IntegrateFaceLoops(Partition, Faces[Index], Absolute(Surface), 0.0, true, &Surface);
+    }
+    double Total = 0.0;
+    for (size_t Index = 0; Index < Faces.size(); ++Index)
+    {
+        const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Faces[Index]).Surface);
+        const double Floor = std::max(1.0e-15 * Magnitude, MeasureDerivativeNoise(Surface) * FaceMagnitudes[Index]);
+        Total += IntegrateFaceLoops(Partition, Faces[Index], Density(Surface), Floor, false, &Surface);
+    }
+    return Total;
+}
+
+double IntegrateFaceSurface(const ModelPartition& Partition, FaceToken Face, const std::function<double(Vector3)>& Weight)
+{
+    // ⚠️ The sense comes from the parametric area (density 1), never from the weighted total: a weight that changes
+    //    sign over the face (a centred coordinate) may integrate to either sign on a correctly oriented face.
+    const FaceProfile& Profile = Partition.Faces.Resolve(Face);
+    if (!Profile.Surface.PresentCondition()) return std::nan("");
+    const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
+    const auto Density = [&](Vector2 Parameter)
+    {
+        const SurfaceSample Sample = EvaluateSurface(Surface, Parameter);
+        return Weight(Sample.Position) * Length(Cross(Sample.DerivativeU, Sample.DerivativeV));
+    };
+    // ⚠️ The floor's scale integrates |w| (see IntegrateShellFlux): a centred weight cancels over a full turn.
+    const auto Absolute = [&](Vector2 Parameter)
+    {
+        const SurfaceSample Sample = EvaluateSurface(Surface, Parameter);
+        return std::fabs(Weight(Sample.Position)) * Length(Cross(Sample.DerivativeU, Sample.DerivativeV));
+    };
+    const double Sense     = IntegrateParametricArea(Partition, Face) < 0.0 ? -1.0 : 1.0;    // [-] - Loop sense in (𝑢, 𝑣)
+    const double Magnitude = IntegrateFaceLoops(Partition, Face, Absolute, 0.0, true, &Surface);
+    const double Floor     = std::max(1.0e-15, MeasureDerivativeNoise(Surface)) * Magnitude;
+    return Sense * IntegrateFaceLoops(Partition, Face, Density, Floor, false, &Surface);
+}
+
+double MeasureEdgeLength(const ModelPartition& Partition, EdgeToken Edge)
+{
+    const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+    if (!Profile.Curve.PresentCondition()) return std::nan("");
+    const CurveGeometry& Curve = Partition.Curves.Resolve(Profile.Curve);
+    const auto Speed = [&](double τ) { return Length(EvaluateCurve(Curve, τ).Derivative); };
+    std::vector<double> Stops = { Profile.IntervalLow };
+    for (double Knot : CollectCurveBreakpoints(Curve, Profile.IntervalLow, Profile.IntervalHigh)) Stops.push_back(Knot);
+    Stops.push_back(Profile.IntervalHigh);
+    double Total = 0.0;
+    for (size_t Index = 0; Index + 1 < Stops.size(); ++Index)
+    {
+        const double Magnitude = EstimateMagnitude(Stops[Index], Stops[Index + 1], PanelSpan, Speed);
+        Total += IntegrateRefined(Stops[Index], Stops[Index + 1], PanelSpan, Speed, 1.0e-15 * Magnitude);
+    }
+    return std::fabs(Total);
+}
+
 double IntegrateParametricArea(const ModelPartition& Partition, FaceToken Face)
 {
     // Density 1 never cancels, so the face's own magnitude (× its carrier's derivative noise) is a valid floor here.
