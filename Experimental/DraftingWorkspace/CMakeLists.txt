@@ -117,6 +117,7 @@ add_library(DraftingWorkspace STATIC
     Source/Document/VehicleCurveImport.cpp
     Source/Document/DraftingImagePlane.cpp
     Source/Document/DraftingMatcap.cpp
+    Source/Document/DraftingMeasurement.cpp
     Source/Document/DraftingScene.cpp
     Source/Document/DraftingSpecimen.cpp
     Source/Viewport/DraftingCamera.cpp

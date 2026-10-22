@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingMeasurement.h"
 #include "Document/DraftingImagePlane.h"
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingScene.h"
@@ -77,6 +78,7 @@ namespace
     GateTally EvolutionGate   = { "W30", "Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path", "≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin" };
     GateTally ReplayGate      = { "W31", "Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints", "identical · undo / redo / clone ≥ 10× · tail edit ≥ 2×" };
     GateTally XRayGate        = { "W32", "X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none", "all equal" };
+    GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -86,8 +88,10 @@ namespace
         Gate.Worst = std::max(Gate.Worst, Value);
         ++Gate.Checks;
         if (!PassedCondition) ++Gate.Failures;
-        char Row[512];
-        std::snprintf(Row, sizeof(Row), "| %s | %s | %.3g | %s |", Gate.Code, Note.c_str(), Value, PassedCondition ? "🟢" : "🔴");
+        std::string Escaped;                                                                 // A '|' in a name would split the table cell
+        for (const char Glyph : Note) Escaped += Glyph == '|' ? std::string("\\|") : std::string(1, Glyph);
+        char Row[1024];
+        std::snprintf(Row, sizeof(Row), "| %s | %s | %.3g | %s |", Gate.Code, Escaped.c_str(), Value, PassedCondition ? "🟢" : "🔴");
         Journal.push_back(Row);
     }
 
@@ -2295,13 +2299,139 @@ int main()
         Tally(XRayGate, 0.0, NoneOpaque.empty() && NoneThrough.empty(), "empty 40 × 40 px corner box → " + std::to_string(NoneOpaque.size()) + " / " + std::to_string(NoneThrough.size()) + " edges");
     }
 
+    // ---- W33 measure + section: exact figures of a 4 × 2 × 1 block (corner at the origin) and a second 2 × 2 × 1 body at
+    //      x ∈ [6, 8], against closed forms (unit density)
+    {
+        DraftingDocument Gauge = CreateDraftingDocument("Gauge");
+        DraftingConstructRequest Brick;
+        Brick.Kind = DraftingConstructKind::Block; Brick.Width = 4.0; Brick.Depth = 2.0; Brick.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Gauge, Brick));
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0, std::abs(Expected)); };
+        auto Near = [](const Vector3& Point, double X, double Y, double Z) { return std::abs(Point.X - X) + std::abs(Point.Y - Y) + std::abs(Point.Z - Z); };
+        auto Row = [](const DraftingMeasurement& Measurement, const std::string& Caption)
+        {
+            for (const DraftingMeasureRow& Each : Measurement.Rows) if (Each.Caption == Caption) return Each.Number;
+            return std::nan("");
+        };
+        auto Select = [&](std::initializer_list<DraftingRay> Rays)
+        {
+            ClearDraftingSelection(Gauge);
+            std::string Names;
+            for (const DraftingRay& Ray : Rays) Names += (Names.empty() ? "" : " + ") + PickAndSelect(Gauge, Ray, true);
+            return Names;
+        };
+        const DraftingRay Top        = RayBetween({ 1.3, 0.7, 5.0 }, { 1.3, 0.7, 0.0 });
+        const DraftingRay Bottom     = RayBetween({ 1.3, 0.7, -5.0 }, { 1.3, 0.7, 0.0 });
+        const DraftingRay Front      = RayBetween({ 1.3, -5.0, 0.4 }, { 1.3, 0.0, 0.4 });
+        const DraftingRay FrontTop   = RayBetween({ 2.0, -3.0, 4.0 }, { 2.0, 0.0, 1.0 });
+        const DraftingRay BackBottom = RayBetween({ 2.0, 5.0, -3.0 }, { 2.0, 2.0, 0.0 });
+
+        // Nothing selected → the body: V = 8, A = 28, centroid (2, 1, ½), principal moments m(b² + c²)/12 = 10/3, 34/3, 40/3
+        ClearDraftingSelection(Gauge);
+        const DraftingMeasurement Body = MeasureDraftingSelection(Gauge);
+        const double BodyError = std::max({ Relative(Body.Volume, 8.0), Relative(Body.Area, 28.0), Near(Body.Centroid, 2.0, 1.0, 0.5),
+                                            Relative(Row(Body, "Principal I1 I2 I3"), 10.0 / 3.0) });
+        Tally(MeasureGate, BodyError, Body.Refusal.empty() && BodyError <= 1.0e-9 && Body.CentroidCondition,
+              "nothing selected → " + Body.Subject + " · V " + std::to_string(Body.Volume) + " · A " + std::to_string(Body.Area) + " · I₁ " + std::to_string(Row(Body, "Principal I1 I2 I3")));
+
+        // One face: top, area 8, perimeter 12, centroid (2, 1, 1)
+        const std::string TopName = Select({ Top });
+        const DraftingMeasurement Face = MeasureDraftingSelection(Gauge);
+        const double FaceError = std::max({ Relative(Face.Area, 8.0), Relative(Face.Length, 12.0), Near(Face.Centroid, 2.0, 1.0, 1.0) });
+        Tally(MeasureGate, FaceError, Face.Refusal.empty() && FaceError <= 1.0e-9, "face " + TopName + " → area " + std::to_string(Face.Area) + " · perimeter " + std::to_string(Face.Length));
+
+        // One edge: front-top, length 4
+        const std::string EdgeName = Select({ FrontTop });
+        const DraftingMeasurement Edge = MeasureDraftingSelection(Gauge);
+        Tally(MeasureGate, Relative(Edge.Length, 4.0), Edge.Refusal.empty() && Relative(Edge.Length, 4.0) <= 1.0e-9, "edge " + EdgeName + " → length " + std::to_string(Edge.Length));
+
+        // Two faces: top + bottom → distance 1, normals 180°; top + front → touching (0), 90°
+        const std::string Opposite = Select({ Top, Bottom });
+        const DraftingMeasurement Apart = MeasureDraftingSelection(Gauge);
+        const double ApartError = std::max({ Relative(Apart.Distance, 1.0), std::abs(Apart.Angle - 180.0) / 180.0, std::abs(Apart.Second.Z - Apart.First.Z) - 1.0 });
+        Tally(MeasureGate, ApartError, Apart.DistanceCondition && ApartError <= 1.0e-9, Opposite + " → distance " + std::to_string(Apart.Distance) + " · angle " + std::to_string(Apart.Angle) + "°");
+        const std::string Adjacent = Select({ Top, Front });
+        const DraftingMeasurement Touching = MeasureDraftingSelection(Gauge);
+        const double TouchingError = std::max(std::abs(Touching.Distance), std::abs(Touching.Angle - 90.0) / 90.0);
+        Tally(MeasureGate, TouchingError, Touching.DistanceCondition && TouchingError <= 1.0e-9, Adjacent + " → distance " + std::to_string(Touching.Distance) + " · angle " + std::to_string(Touching.Angle) + "°");
+
+        // Edge + face: front-top edge ∥ bottom face → distance 1, line-to-plane angle 0°; two skew-parallel edges → √5, 0°
+        const std::string EdgeFace = Select({ Bottom, FrontTop });
+        const DraftingMeasurement Parallel = MeasureDraftingSelection(Gauge);
+        const double ParallelError = std::max(Relative(Parallel.Distance, 1.0), std::abs(Parallel.Angle));
+        Tally(MeasureGate, ParallelError, Parallel.DistanceCondition && ParallelError <= 1.0e-9, EdgeFace + " → distance " + std::to_string(Parallel.Distance) + " · angle " + std::to_string(Parallel.Angle) + "°");
+        const std::string TwoEdges = Select({ FrontTop, BackBottom });
+        const DraftingMeasurement Diagonal = MeasureDraftingSelection(Gauge);
+        const double DiagonalError = std::max(Relative(Diagonal.Distance, std::sqrt(5.0)), std::abs(Diagonal.Angle));
+        Tally(MeasureGate, DiagonalError, Diagonal.DistanceCondition && DiagonalError <= 1.0e-9, TwoEdges + " → distance " + std::to_string(Diagonal.Distance) + " (√5) · angle " + std::to_string(Diagonal.Angle) + "°");
+
+        // Three faces → total area 8 + 8 + 4 = 20
+        Select({ Top, Bottom, Front });
+        const DraftingMeasurement Total = MeasureDraftingSelection(Gauge);
+        Tally(MeasureGate, Relative(Total.Area, 20.0), Total.Refusal.empty() && Relative(Total.Area, 20.0) <= 1.0e-9, Total.Subject + " → total area " + std::to_string(Total.Area));
+
+        // Section x = 1.5 (n = −x̂, u = ŷ, v = −ẑ): 2 × 1 rectangle → A 2, P 6, centroid (1.5, 1, ½), Iuu = 2·1³/12, Ivv = 1·2³/12
+        auto SectionError = [&](const DraftingSection& Section, double Area, double Perimeter, Vector3 Centroid, double Iuu, double Ivv)
+        {
+            return std::max({ Relative(Section.Area, Area), Relative(Section.Perimeter, Perimeter), Near(Section.Centroid, Centroid.X, Centroid.Y, Centroid.Z),
+                              Relative(Section.SecondMoments[0], Iuu), Relative(Section.SecondMoments[1], Ivv), std::abs(Section.SecondMoments[2]) });
+        };
+        ClearDraftingSelection(Gauge);
+        const DraftingSection Across = SectionDraftingDocument(Gauge, { DraftingSectionAxis::X, 1.5, false, {} });
+        const double AcrossError = SectionError(Across, 2.0, 6.0, { 1.5, 1.0, 0.5 }, 2.0 / 12.0, 8.0 / 12.0);
+        Tally(MeasureGate, AcrossError, Across.Refusal.empty() && AcrossError <= 1.0e-9 && Across.Regions == 1 && Across.Loops == 1 && Across.Plane.ZAxis.X == -1.0,
+              "section x = 1.5 → A " + std::to_string(Across.Area) + " · P " + std::to_string(Across.Perimeter) + " · Iuu " + std::to_string(Across.SecondMoments[0]) + " · Ivv " + std::to_string(Across.SecondMoments[1]));
+
+        // Section z = 0.25: 4 × 2 → A 8, P 12, Iuu = 4·2³/12, Ivv = 2·4³/12
+        const DraftingSection Level = SectionDraftingDocument(Gauge, { DraftingSectionAxis::Z, 0.25, false, {} });
+        const double LevelError = SectionError(Level, 8.0, 12.0, { 2.0, 1.0, 0.25 }, 32.0 / 12.0, 128.0 / 12.0);
+        Tally(MeasureGate, LevelError, Level.Refusal.empty() && LevelError <= 1.0e-9, "section z = 0.25 → A " + std::to_string(Level.Area) + " · Ivv " + std::to_string(Level.SecondMoments[1]));
+
+        // Face plane: the top face moved −¼ along its normal (z = ¾), kept side below
+        Select({ Top });
+        const DraftingSection Facing = SectionDraftingDocument(Gauge, { DraftingSectionAxis::Face, -0.25, false, TopName });
+        const double FacingError = std::max(SectionError(Facing, 8.0, 12.0, { 2.0, 1.0, 0.75 }, 32.0 / 12.0, 128.0 / 12.0), std::abs(Facing.Plane.ZAxis.Z + 1.0));
+        Tally(MeasureGate, FacingError, Facing.Refusal.empty() && FacingError <= 1.0e-9, "section on " + TopName + " at −0.25 → plane z " + std::to_string(Facing.Plane.Origin.Z) + " · A " + std::to_string(Facing.Area));
+
+        // Refusals: a plane past the body; a Face request naming no planar face
+        const DraftingSection Past = SectionDraftingDocument(Gauge, { DraftingSectionAxis::X, 10.0, false, {} });
+        const DraftingSection Nameless = SectionDraftingDocument(Gauge, { DraftingSectionAxis::Face, 0.0, false, "F-none" });
+        Tally(MeasureGate, 0.0, Past.Refusal.find("misses") != std::string::npos && !Nameless.PlaneCondition && !Nameless.Refusal.empty(),
+              "x = 10 → \"" + Past.Refusal + "\" · face F-none → \"" + Nameless.Refusal + "\"");
+
+        // Second body 2 × 2 × 1 at x = 6: section z = ½ adds; centroid area-weighted; Ivv by the parallel-axis theorem
+        DraftingConstructRequest Second = Brick;
+        Second.Combination = FeatureCombination::Separate; Second.Position = { 6.0, 0.0, 0.0 }; Second.Width = 2.0;
+        Expect(ConstructDraftingPrimitive(Gauge, Second));
+        ClearDraftingSelection(Gauge);
+        const DraftingSection Pair = SectionDraftingDocument(Gauge, { DraftingSectionAxis::Z, 0.5, false, {} });
+        const double CentreX = (8.0 * 2.0 + 4.0 * 7.0) / 12.0;
+        const double PairIvv = 2.0 * 64.0 / 12.0 + 8.0 * (2.0 - CentreX) * (2.0 - CentreX) + 2.0 * 8.0 / 12.0 + 4.0 * (7.0 - CentreX) * (7.0 - CentreX);
+        const double PairIuu = 4.0 * 8.0 / 12.0 + 2.0 * 8.0 / 12.0;
+        const double PairError = SectionError(Pair, 12.0, 20.0, { CentreX, 1.0, 0.5 }, PairIuu, PairIvv);
+        Tally(MeasureGate, PairError, Pair.Refusal.empty() && PairError <= 1.0e-9 && Pair.Bodies == 2 && Pair.Regions == 2,
+              "two bodies, z = ½ → A " + std::to_string(Pair.Area) + " · x̄ " + std::to_string(Pair.Centroid.X) + " · Ivv " + std::to_string(Pair.SecondMoments[1]) + " (parallel axis " + std::to_string(PairIvv) + ")");
+
+        // Mode-4 body pick → that body's mass (V 4); hiding it removes it from the section
+        const std::string SecondKey = Gauge.Regeneration.Bodies.back().Key;
+        ClearDraftingSelection(Gauge);
+        SelectDraftingName(Gauge, DraftingSelectionKind::Body, SecondKey, false);
+        const DraftingMeasurement Picked = MeasureDraftingSelection(Gauge);
+        const double PickedError = std::max(Relative(Picked.Volume, 4.0), Near(Picked.Centroid, 7.0, 1.0, 0.5));
+        Tally(MeasureGate, PickedError, Picked.Refusal.empty() && PickedError <= 1.0e-9, "body " + SecondKey + " picked → " + Picked.Subject + " · V " + std::to_string(Picked.Volume));
+        Expect(ChangeDraftingVisibility(Gauge, DraftingVisibilityVerb::HideSelected));
+        const DraftingSection Alone = SectionDraftingDocument(Gauge, { DraftingSectionAxis::Z, 0.5, false, {} });
+        Tally(MeasureGate, Relative(Alone.Area, 8.0), Alone.Refusal.empty() && Relative(Alone.Area, 8.0) <= 1.0e-9 && Alone.Bodies == 1,
+              "second body hidden → section A " + std::to_string(Alone.Area) + " over " + std::to_string(Alone.Bodies) + " body");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

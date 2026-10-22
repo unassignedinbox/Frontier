@@ -10,6 +10,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingMeasurement.h"
 #include "Document/DraftingScene.h"
 #include "Interface/DraftingOptions.h"
 #include "Viewport/DraftingCamera.h"
@@ -312,6 +313,28 @@ struct DraftingBoxSelection
     int    Edges           = 0;                                                              // [-]  - B-rep edges the last box enclosed
 };
 
+// 📝 Measure (I; Fusion Inspect → Measure — Plasticity has none): the Inspector card and viewport overlay (dimension line
+//    between the closest points, centroid marker) of MeasureDraftingSelection, recomputed only when the selection or
+//    the document revision changes.
+struct DraftingMeasureSession
+{
+    bool                ActiveCondition = false;                                             // [-] - Card + overlay shown
+    DraftingMeasurement Measurement     = {};                                                // [-] - Last exact measurement
+    int                 Refreshes       = 0;                                                 // [-] - Recomputations (script evidence)
+};
+
+// 📝 Section (Alt+S; Fusion Section Analysis): the viewport clips everything on the removed side of the plane and caps
+//    the cut solids on the GPU; the card shows the exact kernel section (SectionDraftingDocument), recomputed when the
+//    request or the revision changes. The plane keeps its +normal side, as the kernel cut does.
+struct DraftingSectionSession
+{
+    bool                   ActiveCondition = false;                                          // [-] - Clipping + card shown
+    DraftingSectionRequest Request         = {};                                             // [-] - Plane choice
+    DraftingSection        Section         = {};                                             // [-] - Last exact section
+    std::array<char, 32>   OffsetText      = {};                                             // [-] - Offset field ("0.5", "250mm")
+    int                    Refreshes       = 0;                                              // [-] - Recomputations (script evidence)
+};
+
 struct DraftingWorkspaceState
 {
     DraftingOptions                       Options        = {};                               // [-]   - Loaded options
@@ -330,6 +353,8 @@ struct DraftingWorkspaceState
     DraftingTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
     DraftingSweepSession                  Sweep          = {};                               // [-]   - O / P session
     DraftingClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
+    DraftingMeasureSession                Measure        = {};                               // [-]   - I: Measure card + overlay
+    DraftingSectionSession                Section        = {};                               // [-]   - Alt+S: section plane, caps, exact figures
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)

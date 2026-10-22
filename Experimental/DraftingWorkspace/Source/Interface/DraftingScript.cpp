@@ -335,6 +335,20 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
     if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
     if (Field == "xray") return Numeric(State.Style.XRayEnabled ? 1 : 0);
+    if (Field == "measure")
+    {
+        // Text = subject (or the refusal), Number = 1 while Measure (I) is shown.
+        const DraftingMeasurement& Measurement = State.Measure.Measurement;
+        Text   = !State.Measure.ActiveCondition ? std::string("off") : Measurement.Refusal.empty() ? Measurement.Subject : Measurement.Refusal;
+        Number = State.Measure.ActiveCondition ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "measure-distance") return Numeric(State.Measure.Measurement.Distance);
+    if (Field == "measure-angle") return Numeric(State.Measure.Measurement.Angle);
+    if (Field == "measure-area") return Numeric(State.Measure.Measurement.Area);
+    if (Field == "measure-length") return Numeric(State.Measure.Measurement.Length);
+    if (Field == "measure-volume") return Numeric(State.Measure.Measurement.Volume);
+    if (Field == "measure-refreshes") return Numeric(State.Measure.Refreshes);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
     if (Field == "construct-combination") return Numeric(int(State.ConstructForm.Combination));
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);

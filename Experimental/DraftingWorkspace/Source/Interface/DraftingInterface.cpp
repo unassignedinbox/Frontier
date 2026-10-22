@@ -2804,6 +2804,100 @@ void ToggleXRay(DraftingWorkspaceState& State)
                                             : std::string("X-ray off"));
 }
 
+void DrawStatusPill(ImDrawList* Canvas, ImVec2& Cursor, const std::string& Text, ImU32 Accent);
+
+// Measure (I): recompute only when the selection or the document revision moved (a NURBS body takes ~1 s).
+void RefreshMeasure(DraftingWorkspaceState& State)
+{
+    DraftingMeasureSession& Measure = State.Measure;
+    if (!Measure.ActiveCondition) return;
+    if (Measure.Refreshes > 0 && Measure.Measurement.Revision == State.Document.Revision
+        && Measure.Measurement.SelectionKey == DraftingSelectionKey(State.Document.Selection)) return;
+    Measure.Measurement = MeasureDraftingSelection(State.Document);
+    Measure.Refreshes  += 1;
+}
+
+// Measure (I; Fusion Inspect → Measure, no Plasticity default): card + overlay of the selection's exact figures.
+void ToggleMeasure(DraftingWorkspaceState& State)
+{
+    DraftingMeasureSession& Measure = State.Measure;
+    Measure.ActiveCondition = !Measure.ActiveCondition;
+    Measure.Refreshes       = 0;
+    if (!Measure.ActiveCondition) { Announce(State, "Measure off"); return; }
+    RefreshMeasure(State);
+    const DraftingMeasurement& Measurement = Measure.Measurement;
+    if (!Measurement.Refusal.empty()) Announce(State, Measurement.Refusal);
+    else Announce(State, "Measure · " + Measurement.Subject + (Measurement.Rows.empty() ? std::string{} : " · " + Measurement.Rows.front().Caption + " " + Measurement.Rows.front().Value));
+}
+
+// 📝 Inspector card: subject, then caption / value rows (values wrap under long captions), timing and the selection rule.
+void DrawMeasureCard(DraftingWorkspaceState& State)
+{
+    if (!State.Measure.ActiveCondition) return;
+    const DraftingMeasurement& Measurement = State.Measure.Measurement;
+    BeginCard("Measure");
+    if (!Measurement.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Measurement.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(ActiveColour));
+        ImGui::TextWrapped("%s", Measurement.Subject.c_str());
+        ImGui::PopStyleColor();
+        for (const DraftingMeasureRow& Row : Measurement.Rows)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+            ImGui::TextUnformatted(Row.Caption.c_str());
+            ImGui::PopStyleColor();
+            const float Indent = 128.0f;
+            if (ImGui::CalcTextSize(Row.Caption.c_str()).x + 8.0f < Indent) ImGui::SameLine(Indent);
+            else ImGui::Indent(16.0f);
+            ImGui::TextUnformatted(Row.Value.c_str());
+            if (ImGui::CalcTextSize(Row.Caption.c_str()).x + 8.0f >= Indent) ImGui::Unindent(16.0f);
+        }
+        ImGui::TextDisabled("exact · %.0f ms", Measurement.Milliseconds);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextWrapped("1 face / edge · 2 for distance + angle · body (4) or nothing for mass");
+    ImGui::PopStyleColor();
+    if (PressButton(State, "Close (I)###MeasureClose")) ToggleMeasure(State);
+    EndCard();
+}
+
+// 📝 Viewport overlay: amber dimension line between the closest points with end dots and a distance pill at its middle;
+//    a centroid cross-hair for a body / face.
+void DrawMeasureOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    if (!State.Measure.ActiveCondition) return;
+    const DraftingMeasurement& Measurement = State.Measure.Measurement;
+    constexpr ImU32 DimensionColour = IM_COL32(0xff, 0xc8, 0x3d, 0xff);                     // Amber: dimension
+    constexpr ImU32 CentroidColour  = IM_COL32(0x4d, 0xd2, 0xff, 0xff);                     // Cyan: centre of mass / area
+    ImVec2 First, Second;
+    if (Measurement.DistanceCondition && ProjectWorldPoint(State, Frame, Measurement.First, First) && ProjectWorldPoint(State, Frame, Measurement.Second, Second))
+    {
+        Canvas->AddLine(First, Second, IM_COL32(0x10, 0x10, 0x10, 0xc0), 4.0f);
+        Canvas->AddLine(First, Second, DimensionColour, 2.0f);
+        Canvas->AddCircleFilled(First, 4.5f, DimensionColour);
+        Canvas->AddCircleFilled(Second, 4.5f, DimensionColour);
+        const std::string Label = Compose("%.4f m", Measurement.Distance) + (std::isnan(Measurement.Angle) ? std::string{} : Compose(" · %.2f°", Measurement.Angle));
+        ImVec2 Pill(0.5f * (First.x + Second.x) + 10.0f, 0.5f * (First.y + Second.y) - 13.0f);
+        DrawStatusPill(Canvas, Pill, Label, DimensionColour);
+    }
+    ImVec2 Centre;
+    if (Measurement.CentroidCondition && ProjectWorldPoint(State, Frame, Measurement.Centroid, Centre))
+    {
+        Canvas->AddCircle(Centre, 7.0f, IM_COL32(0x10, 0x10, 0x10, 0xc0), 0, 4.0f);
+        Canvas->AddCircle(Centre, 7.0f, CentroidColour, 0, 2.0f);
+        Canvas->AddLine(ImVec2(Centre.x - 11, Centre.y), ImVec2(Centre.x + 11, Centre.y), CentroidColour, 1.5f);
+        Canvas->AddLine(ImVec2(Centre.x, Centre.y - 11), ImVec2(Centre.x, Centre.y + 11), CentroidColour, 1.5f);
+        ImVec2 Pill(Centre.x + 12.0f, Centre.y + 4.0f);
+        DrawStatusPill(Canvas, Pill, "Centroid", CentroidColour);
+    }
+}
+
 // Zebra (V8): stripe count to the surface shader, and a finer tessellation so interpolated normals follow the surface.
 void ToggleZebra(DraftingWorkspaceState& State)
 {
@@ -3788,6 +3882,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawTrimPreview(State, Canvas, Frame);
     DrawConstraintOverlay(State, Canvas, Frame);
     DrawSweepOutline(State, Canvas, Frame);
+    DrawMeasureOverlay(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
@@ -3806,6 +3901,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
     DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
     if (State.Style.XRayEnabled) DrawStatusPill(Canvas, Pill, "X-ray", IM_COL32(0xc7, 0xd4, 0xe8, 0xff));
+    if (State.Measure.ActiveCondition) DrawStatusPill(Canvas, Pill, "Measure", IM_COL32(0xff, 0xc8, 0x3d, 0xff));
     const DraftingBodySummary& Summary = State.Document.Summary;
     if (Summary.PresentCondition)
         DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
@@ -4429,6 +4525,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
+    DrawMeasureCard(State);
     DrawDrawingCard(State);
     DrawConstraintCard(State);
     DrawStepCard(State);
@@ -4761,6 +4858,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
     if (Pressed(ImGuiKey_K)) OpenConstraintSession(State);                                 // constrain (K is free in Plasticity's map)
+    if (Pressed(ImGuiKey_I)) ToggleMeasure(State);                                         // measure (I is free in Plasticity's map)
     if (Pressed(ImGuiKey_J)) JoinSketches(State);                                          // command:join-curves
     if (Pressed(ImGuiKey_O)) OpenSweepSession(State, DraftingSweepVerb::Offset);           // command:offset-curve
     if (Pressed(ImGuiKey_P)) OpenSweepSession(State, DraftingSweepVerb::Pipe);             // command:pipe
@@ -4910,6 +5008,7 @@ void DrawDraftingInterface(DraftingWorkspaceState& State, ImTextureID ViewportTe
     RefreshDraftingMatcaps(State);
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
     StageBevelPreview(State);
+    RefreshMeasure(State);
     DrawHeader(State, Frame);
     DrawDocumentBar(State, Frame);
     const float Top    = PanelGap + HeaderHeight + PanelGap + DocumentHeight + PanelGap;
