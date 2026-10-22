@@ -68,7 +68,7 @@ namespace
                     const double Fraction = (Line + 0.25) / (Divisions + 1);
                     const double Value = Direction == IsoDirection::FixedU ? Box->Low.X + (Box->High.X - Box->Low.X) * Fraction : Box->Low.Y + (Box->High.Y - Box->Low.Y) * Fraction;
                     const IsoParameterCurve Iso = ExtractIsoParameterCurve(*Surface, Direction, Value);
-                    if (Iso.DegenerateCondition) continue;
+                    if (Iso.DegenerateCondition || Iso.ApproximateCondition) continue;   // Reference lines must be exact
                     const double RunLow  = Direction == IsoDirection::FixedU ? Box->Low.Y : Box->Low.X;
                     const double RunHigh = Direction == IsoDirection::FixedU ? Box->High.Y : Box->High.X;
                     const CurveSurfaceOutcome Hits = IntersectCurveSurface(Iso.Curve, Iso.Offset + Iso.Scale * RunLow, Iso.Offset + Iso.Scale * RunHigh, *Target);

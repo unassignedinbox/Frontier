@@ -4,6 +4,7 @@
 // 🧩 Iso-parameter lines and circles per surface type
 
 #include "Intersection/IsoParameterCurve.h"
+#include "Geometry/ParallelCarrier.h"
 
 #include "Geometry/NurbsCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
@@ -60,6 +61,17 @@ IsoParameterCurve ExtractIsoParameterCurve(const SurfaceGeometry& Surface, IsoDi
         IsoParameterCurve Iso;
         if (Direction == IsoDirection::FixedU && Carrier->Definition->Section == RollingBallSection::Circle) Iso.Curve = ExtractRollingBallSection(*Carrier, Value);
         else Iso.DegenerateCondition = true;
+        return Iso;
+    }
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface))
+    {
+        // 📝 An offset's iso-curve is not rational: a dense polyline through exact offset points over the basis domain
+        //    (τ = running parameter), flagged approximate — good for seeding, never for geometry.
+        const NurbsSurfaceDefinition& Basis = *Offset->Definition->Basis.Definition;
+        const NurbsDomain Run = MeasureNurbsSurfaceDomain(Basis, Direction != IsoDirection::FixedU);
+        IsoParameterCurve Iso;
+        Iso.Curve                = ExtractParallelIsoPolyline(*Offset, Direction == IsoDirection::FixedU, Value, Run.Low, Run.High);
+        Iso.ApproximateCondition = true;
         return Iso;
     }
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))

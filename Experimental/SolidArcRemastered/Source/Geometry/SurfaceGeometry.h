@@ -80,7 +80,16 @@ struct NurbsSurface
     std::shared_ptr<const NurbsSurfaceDefinition> Definition = {};                           // [-] - Shared, immutable
 };
 
-using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface, RollingBallSurface, NurbsSurface>;
+// 📝 Exact offset of a NURBS surface (Geometry/ParallelCarrier.h): O = S + d·N on the basis chart, derivatives from the
+//    basis's exact second derivatives (Weingarten), inversion = the basis inversion. The rolling-ball spine on freeform
+//    supports is the intersection of two of these.
+struct ParallelDefinition;
+struct ParallelSurface
+{
+    std::shared_ptr<const ParallelDefinition> Definition = {};                               // [-] - Shared, immutable
+};
+
+using SurfaceGeometry = std::variant<PlaneSurface, CylinderSurface, ConeSurface, SphereSurface, TorusSurface, RollingBallSurface, NurbsSurface, ParallelSurface>;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
@@ -124,9 +133,18 @@ struct SurfacePeriodicity
 
 [[nodiscard]] const char*        SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept;
 
+// The NURBS chart behind a surface: the surface itself, or the basis of a parallel (offset) surface; null otherwise.
+// Domain clamps, knot stops and confined feet follow this chart.
+[[nodiscard]] const NurbsSurface* ResolveNurbsChart(const SurfaceGeometry& Surface) noexcept;
+
+// True for carriers without a closed-form implicit or frame (rolling ball, NURBS, parallel): scanned, never composed.
+[[nodiscard]] bool               ProceduralSurfaceCondition(const SurfaceGeometry& Surface) noexcept;
+
 // 💡 Exact offset by Distance along the natural normal: every analytic type offsets to its own type (plane → plane,
 //    cylinder r → r + δ, cone r₀ → r₀ + δ·√(1 + s²) with the same slope, sphere R → R + δ, torus r → r + δ). Empty when
 //    the offset degenerates (radius ≤ 0, torus tube reaching its axis) — the curvature-radius limit of a rolling ball.
+//    A NURBS surface offsets to the exact procedural ParallelSurface (an offset of one adds distances); its fold limit
+//    is local, so the caller checks it over the window it uses (MeasureParallelFold).
 [[nodiscard]] std::optional<SurfaceGeometry> OffsetSurface(const SurfaceGeometry& Surface, double Distance) noexcept;
 
 } // namespace Frontier::SolidArcRemastered

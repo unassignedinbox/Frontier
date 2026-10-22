@@ -32,6 +32,7 @@ struct IsoParameterCurve
     double        Offset               = 0.0;                                                // [-] - τ at s = 0
     double        Scale                = 1.0;                                                // [-] - dτ/ds
     bool          DegenerateCondition  = false;                                              // [-] - Collapses to a point (pole, apex)
+    bool          ApproximateCondition = false;                                              // [-] - Polyline stand-in (parallel surface): seeds only
 };
 
 //------------------------------------------------------------------------------------------------------------------------

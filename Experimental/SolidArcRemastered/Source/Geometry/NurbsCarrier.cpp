@@ -881,7 +881,7 @@ NurbsSurface ConstructNurbsRevolution(const NurbsCurveDefinition& Profile, const
 std::optional<NurbsSurface> ConvertSurfaceToNurbs(const SurfaceGeometry& Surface, Vector2 BoxLow, Vector2 BoxHigh)
 {
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return *Spline;
-    if (std::holds_alternative<RollingBallSurface>(Surface)) return std::nullopt;
+    if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<ParallelSurface>(Surface)) return std::nullopt;   // Not rational
     // Linear directions get a 5 % margin so every SP-curve stays strictly inside the patch.
     const auto Widen = [](double Low, double High)
     {

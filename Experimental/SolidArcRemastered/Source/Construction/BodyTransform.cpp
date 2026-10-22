@@ -9,6 +9,7 @@
 #include "Geometry/ProjectedCurve.h"
 #include "Intersection/IntersectionCurve.h"
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <cmath>
@@ -94,6 +95,16 @@ namespace
             Mapped.Flip    = Analysis.Determinant < 0.0;
             return Mapped;
         }
+        if (const auto* Offset = std::get_if<ParallelSurface>(&Surface))
+        {
+            // 📝 M(S + d·N) = M·S + d·s·(M·N)/s; the image basis's normal is sign(det)·(M·N)/s, so d′ = d·s·sign(det) and
+            //    the face sense flips with det < 0 as for NURBS. A non-similar map bends the normal lines: no exact image.
+            if (!Analysis.Similar) { Mapped.Refusal = "Transform: a non-similar map has no exact image of an offset NURBS surface (🚧)"; return Mapped; }
+            const NurbsSurface Basis = MapNurbsSurface(*Offset->Definition->Basis.Definition, [&](Vector3 Point) { return ApplyPoint(Analysis.Map, Point); });
+            Mapped.Surface = ConstructParallelSurface(Basis, Offset->Definition->Distance * Analysis.Scale * (Analysis.Determinant < 0.0 ? -1.0 : 1.0));
+            Mapped.Flip    = Analysis.Determinant < 0.0;
+            return Mapped;
+        }
         if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
         {
             if (Analysis.Similar) { Mapped.Surface = PlaneSurface{ MapSurfaceFrame(Analysis, Plane->Frame) }; return Mapped; }
@@ -126,7 +137,7 @@ namespace
         std::visit([&](const auto& Carrier)
         {
             using Kind = std::decay_t<decltype(Carrier)>;
-            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return;   // Mapped above
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface> || std::is_same_v<Kind, ParallelSurface>) return;   // Mapped above
             else
             {
             const OrthonormalFrame Frame = MapSurfaceFrame(Analysis, Carrier.Frame);
@@ -221,7 +232,7 @@ namespace
     {
         if (std::holds_alternative<PlaneSurface>(Surface)) return Parameter;                // No periodic image to choose
         if (std::holds_alternative<RollingBallSurface>(Surface)) return Parameter;          // Chart carried exactly (handedness)
-        if (std::holds_alternative<NurbsSurface>(Surface)) return Parameter;                // Poles mapped, chart kept
+        if (ResolveNurbsChart(Surface) != nullptr) return Parameter;                        // Poles mapped, chart kept
         const double U = Analysis.Determinant > 0.0 ? Parameter.X : -Parameter.X;
         const bool   Linear = std::holds_alternative<CylinderSurface>(Surface) || std::holds_alternative<ConeSurface>(Surface);
         return { U, Linear ? Parameter.Y * Analysis.Scale : Parameter.Y };
@@ -252,7 +263,7 @@ namespace
     // Curved analytic carriers (and conic edges) have no exact image under a non-similar map, but their NURBS form has.
     [[nodiscard]] bool PromotableSurface(const SurfaceGeometry& Surface) noexcept
     {
-        return !std::holds_alternative<PlaneSurface>(Surface) && !std::holds_alternative<NurbsSurface>(Surface) && !std::holds_alternative<RollingBallSurface>(Surface);
+        return !std::holds_alternative<PlaneSurface>(Surface) && !ProceduralSurfaceCondition(Surface);
     }
 
     // 💡 One blueprint walk for both transforms and NURBS promotion: PromoteAll converts every analytic face and every
@@ -296,7 +307,7 @@ namespace
         {
             const FaceProfile& Profile = Partition.Faces.Resolve(Face);
             SurfaceGeometry Surface = Partition.Surfaces.Resolve(Profile.Surface);
-            const bool Promote = PromoteAll ? !std::holds_alternative<NurbsSurface>(Surface) && !std::holds_alternative<RollingBallSurface>(Surface)
+            const bool Promote = PromoteAll ? !ProceduralSurfaceCondition(Surface)
                                             : !Analysis.Similar && PromotableSurface(Surface);
             if (Promote)
             {

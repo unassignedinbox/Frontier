@@ -6,6 +6,7 @@
 #include "Geometry/SurfaceGeometry.h"
 
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <cmath>
@@ -59,6 +60,7 @@ SurfaceSample EvaluateSurface(const SurfaceGeometry& Surface, Vector2 Parameter)
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return EvaluateRollingBall(*Carrier, Parameter);
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return EvaluateNurbsSurface(*Spline, Parameter);
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface)) return EvaluateParallelSurface(*Offset, Parameter);
     const double 𝑢 = Parameter.X;                                                            // [-] - First surface parameter
     const double 𝑣 = Parameter.Y;                                                            // [-] - Second surface parameter
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
@@ -108,6 +110,7 @@ Vector3 EvaluateSurfaceNormal(const SurfaceGeometry& Surface, Vector2 Parameter)
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return EvaluateRollingBallNormal(*Carrier, Parameter);
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return EvaluateNurbsNormal(*Spline, Parameter);
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface)) return EvaluateParallelNormal(*Offset, Parameter);
     const double 𝑢 = Parameter.X;                                                            // [-] - First surface parameter
     const double 𝑣 = Parameter.Y;                                                            // [-] - Second surface parameter
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface)) return Plane->Frame.ZAxis;
@@ -130,6 +133,7 @@ Vector2 ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vec
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return ProjectOntoRollingBall(*Carrier, Position, Reference);
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return ProjectOntoNurbsSurface(*Spline, Position, Reference);
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface)) return ProjectOntoParallelSurface(*Offset, Position, Reference);
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {
         const Vector3 Local = LocalCoordinates(Plane->Frame, Position);
@@ -138,7 +142,7 @@ Vector2 ProjectOntoSurface(const SurfaceGeometry& Surface, Vector3 Position, Vec
     const OrthonormalFrame& Frame = std::visit([](const auto& Typed) -> const OrthonormalFrame&
     {
         using Kind = std::decay_t<decltype(Typed)>;
-        if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Returned above
+        if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface> || std::is_same_v<Kind, ParallelSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Returned above
         else return Typed.Frame;
     }, Surface);
     const Vector3 Local  = LocalCoordinates(Frame, Position);                                // [len] - Frame coordinates
@@ -163,20 +167,20 @@ SurfacePeriodicity ResolvePeriodicity(const SurfaceGeometry& Surface) noexcept
     if (std::holds_alternative<PlaneSurface>(Surface)) return { 0.0, 0.0 };
     if (std::holds_alternative<TorusSurface>(Surface)) return { FullTurn, FullTurn };
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return ResolveRollingBallPeriodicity(*Carrier);
-    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return ResolveNurbsPeriodicity(*Spline);
+    if (const NurbsSurface* Spline = ResolveNurbsChart(Surface)) return ResolveNurbsPeriodicity(*Spline);
     return { FullTurn, 0.0 };
 }
 
 std::vector<double> CollectSurfaceBreakpoints(const SurfaceGeometry& Surface, double Low, double High)
 {
     if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface)) return CollectCurveBreakpoints(Ball->Definition->Spine, Low, High);
-    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return CollectNurbsSurfaceKnots(*Spline, true, Low, High);
+    if (const NurbsSurface* Spline = ResolveNurbsChart(Surface)) return CollectNurbsSurfaceKnots(*Spline, true, Low, High);
     return {};
 }
 
 std::vector<double> CollectSurfaceBreakpointsAlongV(const SurfaceGeometry& Surface, double Low, double High)
 {
-    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return CollectNurbsSurfaceKnots(*Spline, false, Low, High);
+    if (const NurbsSurface* Spline = ResolveNurbsChart(Surface)) return CollectNurbsSurfaceKnots(*Spline, false, Low, High);
     return {};
 }
 
@@ -187,14 +191,36 @@ double MeasureDerivativeNoise(const SurfaceGeometry& Surface) noexcept
 
 const char* SurfaceCategoryLabel(const SurfaceGeometry& Surface) noexcept
 {
-    constexpr const char* Labels[] = { "Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall", "Nurbs" };
+    constexpr const char* Labels[] = { "Plane", "Cylinder", "Cone", "Sphere", "Torus", "RollingBall", "Nurbs", "Parallel" };
     return Labels[Surface.index()];
+}
+
+const NurbsSurface* ResolveNurbsChart(const SurfaceGeometry& Surface) noexcept
+{
+    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return Spline;
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface)) return &Offset->Definition->Basis;
+    return nullptr;
+}
+
+bool ProceduralSurfaceCondition(const SurfaceGeometry& Surface) noexcept
+{
+    return std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface) || std::holds_alternative<ParallelSurface>(Surface);
 }
 
 std::optional<SurfaceGeometry> OffsetSurface(const SurfaceGeometry& Surface, double Distance) noexcept
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return OffsetRollingBall(*Carrier, Distance);
-    if (std::holds_alternative<NurbsSurface>(Surface)) return std::nullopt;                // 🚧 No exact rational offset
+    if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))
+    {
+        if (Distance == 0.0) return Surface;
+        return ConstructParallelSurface(*Spline, Distance);
+    }
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface))
+    {
+        const double Total = Offset->Definition->Distance + Distance;                         // [len] - Distances add
+        if (Total == 0.0) return SurfaceGeometry{ Offset->Definition->Basis };
+        return ConstructParallelSurface(Offset->Definition->Basis, Total);
+    }
     if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
     {
         PlaneSurface Offset = *Plane;

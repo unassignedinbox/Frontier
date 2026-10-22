@@ -146,7 +146,7 @@ namespace
         // 📝 Any constant base works (∮ H(𝑣) d𝑣 = 0 on a closed chart loop); a NURBS patch starts at its 𝑢-domain so the
         //    inner integral never extrapolates the patch.
         double LowerLimit = 0.0;                                                             // [-] - Inner lower limit
-        if (Chart != nullptr) if (const auto* Spline = std::get_if<NurbsSurface>(Chart)) LowerLimit = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
+        if (Chart != nullptr) if (const NurbsSurface* Spline = ResolveNurbsChart(*Chart)) LowerLimit = MeasureNurbsSurfaceDomain(*Spline->Definition, true).Low;
         // ⚠️ An open rolling-ball spine (a ball-law spine extended past its edge) exists only over its range: below it the
         //    chart clamps 𝑢, so the inner integral starts at the spine's low end.
         if (Chart != nullptr) if (const auto* Ball = std::get_if<RollingBallSurface>(Chart); Ball && Ball->Definition->Period == 0.0 && std::isfinite(Ball->Definition->SpineLow))
@@ -175,7 +175,7 @@ namespace
             if (Start > End) std::reverse(Breakpoints.begin(), Breakpoints.end());
             Stops.insert(Stops.end(), Breakpoints.begin(), Breakpoints.end());
         }
-        if (Chart != nullptr && std::holds_alternative<NurbsSurface>(*Chart))
+        if (Chart != nullptr && ResolveNurbsChart(*Chart) != nullptr)
         {
             // ⚠️ The density is only C⁰ across a 𝑣-knot: stop where the SP-curve crosses one (64 samples, bisection).
             constexpr int Samples = 64;

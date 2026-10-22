@@ -6,6 +6,7 @@
 #include "Tessellation/BodyTessellation.h"
 
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
@@ -925,6 +926,7 @@ double MeasurePeakCurvature(const SurfaceGeometry& Surface, Vector2 Parameter) n
 {
     if (const auto* Carrier = std::get_if<RollingBallSurface>(&Surface)) return MeasureRollingBallCurvature(*Carrier, Parameter.X);
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return MeasureNurbsCurvature(*Spline, Parameter);
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface)) return MeasureParallelCurvature(*Offset, Parameter);
     if (std::holds_alternative<PlaneSurface>(Surface)) return 0.0;
     if (const auto* Cylinder = std::get_if<CylinderSurface>(&Surface)) return 1.0 / Cylinder->Radius;
     if (const auto* Sphere = std::get_if<SphereSurface>(&Surface)) return 1.0 / Sphere->Radius;

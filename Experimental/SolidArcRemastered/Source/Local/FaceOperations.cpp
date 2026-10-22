@@ -12,6 +12,7 @@
 #include "Boolean/GeneralFuse.h"
 #include "Local/TopologyRebuild.h"
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/IntersectionCurve.h"
 
@@ -109,6 +110,12 @@ namespace
     SurfaceGeometry MoveSurface(const SurfaceGeometry& Surface, const SimilarityMotion& Motion)
     {
         if (const auto* Spline = std::get_if<NurbsSurface>(&Surface)) return MapNurbsSurface(*Spline->Definition, [&](Vector3 Point) { return Motion.Move(Point); });
+        if (const auto* Offset = std::get_if<ParallelSurface>(&Surface))
+        {
+            // A similarity moves the basis poles; the distance scales with s (a proper motion keeps the normal's side).
+            const NurbsSurface Basis = MapNurbsSurface(*Offset->Definition->Basis.Definition, [&](Vector3 Point) { return Motion.Move(Point); });
+            return ConstructParallelSurface(Basis, Offset->Definition->Distance * Motion.Scale);
+        }
         if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface))
         {
             // A canal's RadiusRate scales by s / Stretch with its spine's τ (conic edges keep τ, open traces stretch by s).
@@ -125,7 +132,7 @@ namespace
         return std::visit([&](const auto& Carrier) -> SurfaceGeometry
         {
             using Type  = std::decay_t<decltype(Carrier)>;
-            if constexpr (std::is_same_v<Type, RollingBallSurface> || std::is_same_v<Type, NurbsSurface>) return Carrier;   // Moved above
+            if constexpr (std::is_same_v<Type, RollingBallSurface> || std::is_same_v<Type, NurbsSurface> || std::is_same_v<Type, ParallelSurface>) return Carrier;   // Moved above
             else
             {
             auto Moved  = Carrier;

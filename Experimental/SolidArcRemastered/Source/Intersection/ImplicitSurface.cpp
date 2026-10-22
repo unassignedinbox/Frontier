@@ -6,6 +6,7 @@
 #include "Intersection/ImplicitSurface.h"
 
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 
 #include <algorithm>
@@ -33,7 +34,7 @@ namespace
         return std::visit([](const auto& Typed) -> const OrthonormalFrame&
         {
             using Kind = std::decay_t<decltype(Typed)>;
-            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // No frame: handled first
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface> || std::is_same_v<Kind, ParallelSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // No frame: handled first
             else return Typed.Frame;
         }, Surface);
     }
@@ -81,6 +82,12 @@ SurfaceDistance MeasureSurfaceDistance(const SurfaceGeometry& Surface, Vector3 P
     {
         const RollingBallDistance Measure = MeasureRollingBallDistance(*Carrier, Position);   // |X − C(𝑢*)| − r, exact
         return { Measure.Distance, Measure.Normal, Measure.Foot };
+    }
+    if (const auto* Offset = std::get_if<ParallelSurface>(&Surface))
+    {
+        // 📝 Same normal line as the basis: the signed distance drops by d and the foot moves out by d·N.
+        const SurfaceDistance Basis = MeasureSurfaceDistance(SurfaceGeometry{ Offset->Definition->Basis }, Position);
+        return { Basis.Distance - Offset->Definition->Distance, Basis.Normal, Basis.Foot + Basis.Normal * Offset->Definition->Distance };
     }
     if (const auto* Spline = std::get_if<NurbsSurface>(&Surface))
     {
@@ -197,7 +204,7 @@ Vector3 EvaluateRationalSegment(const RationalSegment& Segment, double 𝑡)
 BernsteinPolynomial ComposeImplicitEquation(const SurfaceGeometry& Surface, const RationalSegment& Segment)
 {
     // ⚠️ The rolling-ball and NURBS carriers have no polynomial implicit form; IntersectCurveSurface scans their distance instead.
-    if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return BernsteinPolynomial{ { 1.0 } };
+    if (ProceduralSurfaceCondition(Surface)) return BernsteinPolynomial{ { 1.0 } };
     const HomogeneousCoordinates H = ComposeHomogeneous(FrameOf(Surface), Segment);
     if (std::holds_alternative<PlaneSurface>(Surface)) return H.Z;                             // z
     const BernsteinPolynomial Planar = AddBernstein(Square(H.X), Square(H.Y));               // x² + y²
@@ -237,7 +244,7 @@ double ImplicitMagnitude(const SurfaceGeometry& Surface, const RationalSegment& 
         if constexpr (std::is_same_v<Kind, ConeSurface>) Scale = std::max(Scale, std::fabs(Typed.OriginRadius));
         if constexpr (std::is_same_v<Kind, TorusSurface>) Scale = std::max(Scale, Typed.MajorRadius + Typed.MinorRadius);
     }, Surface);
-    if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return 1.0;   // Scanned, never composed
+    if (ProceduralSurfaceCondition(Surface)) return 1.0;                                    // Scanned, never composed
     const int Degree = std::holds_alternative<PlaneSurface>(Surface) ? 1 : std::holds_alternative<TorusSurface>(Surface) ? 4 : 2;
     return std::pow(std::max(Scale, 1.0e-300), Degree);
 }

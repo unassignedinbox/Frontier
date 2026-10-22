@@ -30,6 +30,7 @@ add_library(SolidArcRemastered STATIC
     Source/Geometry/SurfaceGeometry.cpp
     Source/Geometry/RollingBallCarrier.cpp
     Source/Geometry/NurbsCarrier.cpp
+    Source/Geometry/ParallelCarrier.cpp
     Source/Geometry/ProjectedCurve.cpp
     Source/Containment/FaceDomain.cpp
     Source/Containment/WindingNumber.cpp
@@ -171,6 +172,8 @@ add_executable(ReplayValidation Validation/ReplayValidation.cpp)
 target_link_libraries(ReplayValidation PRIVATE SolidArcRemastered)
 add_executable(MeasureValidation Validation/MeasureValidation.cpp)
 target_link_libraries(MeasureValidation PRIVATE SolidArcRemastered)
+add_executable(FreeformBlendValidation Validation/FreeformBlendValidation.cpp)
+target_link_libraries(FreeformBlendValidation PRIVATE SolidArcRemastered)
 
 enable_testing()
 add_test(NAME TopologyValidation  COMMAND TopologyValidation)
@@ -198,4 +201,5 @@ add_test(NAME BodyCutValidation COMMAND BodyCutValidation)
 add_test(NAME SweepValidation COMMAND SweepValidation)
 add_test(NAME ReplayValidation COMMAND ReplayValidation)
 add_test(NAME MeasureValidation COMMAND MeasureValidation)
+add_test(NAME FreeformBlendValidation COMMAND FreeformBlendValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

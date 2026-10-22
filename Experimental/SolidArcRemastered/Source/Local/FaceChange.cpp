@@ -15,6 +15,7 @@
 #include "Intersection/CurveSurfaceIntersection.h"
 #include "Intersection/IntersectionCurve.h"
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 #include "Geometry/RollingBallCarrier.h"
 #include "Intersection/IsoParameterCurve.h"
 
@@ -342,6 +343,7 @@ namespace
                     const bool FixedU = std::fabs(Sample.Derivative.X) <= 1.0e-12 * std::max(1.0, std::fabs(Sample.Derivative.Y));
                     const IsoParameterCurve Iso = ExtractIsoParameterCurve(Surfaces[First], FixedU ? IsoDirection::FixedU : IsoDirection::FixedV, FixedU ? Sample.Position.X : Sample.Position.Y);
                     if (Iso.DegenerateCondition) return LabelToken("E", Edge) + ": seam iso-line degenerates on the new carrier";
+                    if (Iso.ApproximateCondition) return LabelToken("E", Edge) + ": seam iso-line of an offset NURBS carrier has no exact curve (🚧)";
                     Solved = Iso.Curve;
                     Solution.Category = EdgeChangeCategory::Seam;
                 }
@@ -635,7 +637,7 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
     std::vector<Bounds> FaceBounds(Inventory.Faces.size());
     for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index)
     {
-        const auto* Freeform = std::get_if<NurbsSurface>(&Domains[Index].Surface);
+        const NurbsSurface* Freeform = ResolveNurbsChart(Domains[Index].Surface);
         if (Freeform == nullptr) continue;
         Bounds& Box = FaceBounds[Index];
         Box = { Freeform->Definition->Poles.front(), Freeform->Definition->Poles.front(), true };
@@ -643,6 +645,12 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
         {
             Box.Low  = { std::min(Box.Low.X, Pole.X), std::min(Box.Low.Y, Pole.Y), std::min(Box.Low.Z, Pole.Z) };
             Box.High = { std::max(Box.High.X, Pole.X), std::max(Box.High.Y, Pole.Y), std::max(Box.High.Z, Pole.Z) };
+        }
+        if (const auto* Offset = std::get_if<ParallelSurface>(&Domains[Index].Surface))       // The offset stays within |d| of the hull
+        {
+            const double Reach = std::fabs(Offset->Definition->Distance);                     // [len] - |d|
+            Box.Low  = Box.Low - Vector3{ Reach, Reach, Reach };
+            Box.High = Box.High + Vector3{ Reach, Reach, Reach };
         }
     }
     for (EdgeToken Edge : Inventory.Edges)
@@ -697,7 +705,7 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
             const FaceDomain& Domain = Domains[Index];
             // The scan keeps the spacing the whole edge would get on this carrier (Chord/256, ≤ Extent/100).
             CurveSurfaceSettings Clipped = Settings;
-            if (const auto* Freeform = std::get_if<NurbsSurface>(&Domain.Surface)) Clipped.ScanSpacing = std::min(Chord / 256.0, 1.0e-2 * Freeform->Definition->Extent);
+            if (const NurbsSurface* Freeform = ResolveNurbsChart(Domain.Surface)) Clipped.ScanSpacing = std::min(Chord / 256.0, 1.0e-2 * Freeform->Definition->Extent);
             const CurveSurfaceOutcome Outcome = IntersectCurveSurface(Curve, ClipLow, ClipHigh, Domain.Surface, Clipped);
             std::vector<Vector3> Probes;
             for (const CurveSurfaceCrossing& Crossing : Outcome.Crossings) Probes.push_back(Crossing.Position);

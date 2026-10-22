@@ -6,6 +6,7 @@
 #include "Local/RedundantTopology.h"
 
 #include "Geometry/NurbsCarrier.h"
+#include "Geometry/ParallelCarrier.h"
 
 #include "Geometry/ProjectedCurve.h"
 #include "Topology/EulerEdits.h"
@@ -66,6 +67,12 @@ namespace
                 if (Distance(A.Poles[Index], B.Poles[Index]) > Precision || std::fabs(A.Weights[Index] - B.Weights[Index]) > 1.0e-12 * A.Weights[Index]) return CarrierMatch::Distinct;
             return CarrierMatch::Identical;
         }
+        if (const auto* OffsetA = std::get_if<ParallelSurface>(&First))                      // Same basis, same distance
+        {
+            const ParallelDefinition& A = *OffsetA->Definition;
+            const ParallelDefinition& B = *std::get<ParallelSurface>(Second).Definition;
+            return A.Basis.Definition == B.Basis.Definition && std::fabs(A.Distance - B.Distance) <= Precision ? CarrierMatch::Identical : CarrierMatch::Distinct;
+        }
         if (const auto* BallA = std::get_if<RollingBallSurface>(&First))                     // Same definition only (conservative)
         {
             return BallA->Definition == std::get<RollingBallSurface>(Second).Definition ? CarrierMatch::Identical : CarrierMatch::Distinct;
@@ -74,7 +81,7 @@ namespace
         {
             using Kind = std::decay_t<decltype(SurfaceA)>;
             const Kind& SurfaceB = std::get<Kind>(Second);
-            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) return false;   // Compared above
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface> || std::is_same_v<Kind, ParallelSurface>) return false;   // Compared above
             else
             {
             if (!SameFrame(SurfaceA.Frame, SurfaceB.Frame, Precision)) return false;

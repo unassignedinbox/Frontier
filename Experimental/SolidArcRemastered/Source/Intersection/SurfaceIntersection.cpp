@@ -34,7 +34,7 @@ namespace
         return std::visit([](const auto& Typed) -> const OrthonormalFrame&
         {
             using Kind = std::decay_t<decltype(Typed)>;
-            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Never an axis candidate
+            if constexpr (std::is_same_v<Kind, RollingBallSurface> || std::is_same_v<Kind, NurbsSurface> || std::is_same_v<Kind, ParallelSurface>) { static const OrthonormalFrame Unused{}; return Unused; }   // Never an axis candidate
             else return Typed.Frame;
         }, Surface);
     }
@@ -274,7 +274,7 @@ namespace
     {
         const auto OnAxis = [&](Vector3 Point) { return Length(Cross(Point - Axis.Origin, Axis.ZAxis)) <= Precision; };
         const auto Height = [&](Vector3 Point) { return Dot(Point - Axis.Origin, Axis.ZAxis); };
-        if (std::holds_alternative<RollingBallSurface>(Surface) || std::holds_alternative<NurbsSurface>(Surface)) return std::nullopt;   // Not an analytic revolution
+        if (ProceduralSurfaceCondition(Surface)) return std::nullopt;                       // Not an analytic revolution
         if (const auto* Plane = std::get_if<PlaneSurface>(&Surface))
         {
             if (Length(Cross(Plane->Frame.ZAxis, Axis.ZAxis)) > ParallelSine) return std::nullopt;
@@ -626,7 +626,7 @@ namespace
     //    actually reaches it. Corrected points sit within 10⁻¹¹ of both surfaces; 10× the precision is the gate.
     [[nodiscard]] bool FootReaches(const IntersectionContext& Context, const SurfaceGeometry& Surface, Vector2 Foot, Vector3 Position)
     {
-        if (!std::holds_alternative<NurbsSurface>(Surface)) return true;
+        if (ResolveNurbsChart(Surface) == nullptr) return true;
         return Distance(EvaluateSurface(Surface, Foot).Position, Position) <= 10.0 * Context.Settings.Precision;
     }
 
@@ -798,9 +798,17 @@ namespace
             const CurveSurfaceOutcome Hits = IntersectCurveSurface(Iso.Curve, Iso.Offset + Iso.Scale * RunLow, Iso.Offset + Iso.Scale * RunHigh, Target, { Context.Settings.Precision, 1.0e-13 });
             for (const CurveSurfaceCrossing& Hit : Hits.Crossings)
             {
-                if (!InsideBoth(Context, Hit.Position)) continue;
+                Vector3 Position = Hit.Position;
+                // 📝 A polyline stand-in (parallel carrier) crosses within its sag of the curve: correct onto both exact
+                //    carriers in the plane across the branch, as loop seeds are, before the foot gate sees it.
+                if (Iso.ApproximateCondition)
+                {
+                    const PairProbe Probe = ProbePair(Context, Position);
+                    if (Probe.Sine < Context.Settings.SingularSine || !CorrectOntoBoth(Context, Position, Normalize(Probe.Cross), Position)) continue;
+                }
+                if (!InsideBoth(Context, Position)) continue;
                 Context.Outcome.Statistics.LatticeCrossings += 1;
-                Seeds.push_back(Hit.Position);
+                Seeds.push_back(Position);
             }
         };
         const int               Divisions   = std::max(1, Context.Settings.LatticeDivisions);
