@@ -139,6 +139,14 @@ CaptureCaptions = {
     "149XRayPicked"              : "A click picks the hidden edge through the top face",
     "150XRayFillet"              : "B fillets the hidden edge; the preview is seen through the ghost faces (12 faces, 10.1691 m3)",
     "151XRayFilleted"            : "Applied: 10.22278 - (1 - pi/4) 0.25^2 4 = 10.16912 m3, sound",
+    "152MeasureBody"             : "I with nothing selected: mass properties of the bracket, V 10.2228 m3, A 36.0477 m2, centroid marker",
+    "153MeasureFace"             : "Boss top: area pi 0.5^2 = 0.7853982 m2, perimeter pi",
+    "154MeasureDistance"         : "Boss top + front face: exact minimum distance 1.060660 at 90 deg, closest points drawn",
+    "155MeasureEdges"            : "Two circular edges: minimum distance 1.415097 between the boss rim and the hole rim",
+    "156SectionY"                : "Alt+S at y = 1.25: hatched caps, exact cut A 4.116587 = 4 - chamfer - fillet - hole + boss, 2 regions",
+    "157SectionCapHover"         : "Hover on the cap: 'section cap', pickable but it selects nothing",
+    "158SectionX"                : "X plane at x = 1: one region through the boss, A 3.25 m2",
+    "159SectionFlipped"          : "F flips the kept side (x >= 1): same cut, the other half shown",
 }
 
 #------------------------------------------------------------------------------------------------------------------------
