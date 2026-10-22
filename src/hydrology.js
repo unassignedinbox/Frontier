@@ -138,24 +138,48 @@ export function simulateRivers(height, N, size, opts, seed = 1) {
   const total = N * N;
   const original = Float32Array.from(height);
 
-  // a little low-frequency noise on the routing surface breaks the dead-straight D8 lines that
-  // smooth slopes otherwise produce (the depressions are filled again afterwards)
+  // Slope-scaled wander on the routing surface. A fixed 1.5 m / 90 m wobble has a
+  // gradient of ~0.03, plenty on gentle ground but dwarfed by steep smooth faces
+  // (gradient 0.5+), where D8 then locks to the face aspect and draws ruler-straight
+  // channels hundreds of metres long — the bright dry-bed ribbons on arid presets.
+  // So the amplitude scales with the local gradient to hold the noise gradient at a
+  // fixed FRACTION of the face gradient: enough to keep flipping between the
+  // downhill-consistent D8 directions (a meander), never enough to route uphill. A
+  // shorter-wavelength component keeps the meander scale below the face length.
+  // Flats keep the old behaviour (floor), cliffs stay locked at worst over their own
+  // width (cap); only the routing sees this, never the carved height.
   const routing = Float32Array.from(height);
-  const wander = opts.wander == null ? 1.5 : Math.max(0, opts.wander);
-  if (wander > 0) {
+  const wanderBase = opts.wander == null ? 1.5 : Math.max(0, opts.wander);
+  if (wanderBase > 0) {
     const wn = new SimplexNoise(seed * 23 + 11);
+    const inv2cell = 1 / (2 * cell);
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const x = i * cell, z = j * cell;
-      routing[j * N + i] += wander * wn.fbm(x / 90, z / 90, 3, 2.1, 0.55);
+      const il = Math.max(0, i - 1), ir = Math.min(N - 1, i + 1);
+      const ju = Math.max(0, j - 1), jd = Math.min(N - 1, j + 1);
+      const gx = (height[j * N + ir] - height[j * N + il]) * inv2cell;
+      const gz = (height[jd * N + i] - height[ju * N + i]) * inv2cell;
+      const g = Math.sqrt(gx * gx + gz * gz);
+      const amp = Math.min(wanderBase + 8 * Math.min(g, 0.75), 8);
+      routing[j * N + i] += amp * (0.7 * wn.fbm(x / 90, z / 90, 3, 2.1, 0.55) +
+        0.3 * wn.fbm(x / 28 + 3.7, z / 28 - 8.2, 2, 2.1, 0.5));
     }
   }
   const { filled } = fillDepressions(routing, N, opts.seaLevel == null ? -Infinity : opts.seaLevel);
   const down = flowDirections(filled, N);
   // inside closed depressions water runs down the real floor to the lowest point (into the lake),
-  // not in dead-straight lines across the filled flat; the sink hands its flow to the pour point
+  // not in dead-straight lines across the filled flat. A floor cell with no downhill neighbour
+  // drains through a LOCAL exit path: from the sink, a chain of adjacent steps climbs to the
+  // pour point along the filled drainage, and every cell on that chain is forced onto it — so
+  // the sink's neighbours can drain into it without forming a 2-cycle that traps the whole
+  // hollow's catchment. (Never link the sink straight to the pour point: the centreline
+  // rasteriser draws every receiver link as a segment, so a long-range link paints a
+  // ruler-straight ribbon across the whole hollow, ignoring the terrain — and a flat pit floor
+  // fans a whole bundle of them to the same exit.)
   {
     const downF = Int32Array.from(down);
     const inDep = (c) => filled[c] - routing[c] > 0.3;
+    const sinks = [];
     for (let j = 0; j < N; j++) {
       for (let i = 0; i < N; i++) {
         const c = j * N + i;
@@ -169,9 +193,26 @@ export function simulateRivers(height, N, size, opts, seed = 1) {
           if (drop > bestDrop) { bestDrop = drop; best = n; }
         }
         if (best >= 0) { down[c] = best; continue; }
-        let p = c, guard = 0;
-        while (p >= 0 && inDep(p) && guard++ < total) p = downF[p];
-        down[c] = p;
+        sinks.push(c);
+      }
+    }
+    // the filled surface strictly decreases along these steps (priority-flood epsilon grade),
+    // so every step is adjacent, the walk always terminates at the pour point, and the graph
+    // stays acyclic; among the filled-descending neighbours the walk prefers the lowest
+    // routing surface so the exit path bends with the floor instead of pointing radially out
+    for (const s of sinks) {
+      let p = s, guard = 0;
+      while (p >= 0 && inDep(p) && guard++ < total) {
+        const ci = p % N, cj = (p - ci) / N;
+        let nxt = downF[p];
+        for (let d = 0; d < 8; d++) {
+          const ni = ci + DX[d], nj = cj + DZ[d];
+          if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+          const n = nj * N + ni;
+          if (filled[n] < filled[p] && routing[n] < routing[nxt < 0 ? p : nxt]) nxt = n;
+        }
+        down[p] = nxt;
+        p = nxt;
       }
     }
   }
