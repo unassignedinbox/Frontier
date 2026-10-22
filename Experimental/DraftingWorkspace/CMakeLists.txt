@@ -314,6 +314,14 @@ add_test(NAME DraftingXRayWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingXRayWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME DraftingMeasureSectionWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/MeasureRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Measure.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/MeasureSectionWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingMeasureSectionWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

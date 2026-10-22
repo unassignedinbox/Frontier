@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (85.75 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (86.91 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -34,9 +34,10 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (85
 | W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
 | W29 | Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line | ≤ 10⁻⁹ · exact | 1.88e-16 | 5 | 🟢 |
 | W30 | Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path | ≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin | 5.28e-09 | 5 | 🟢 |
-| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 3.01e+03 | 10 | 🟢 |
+| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 2.99e+03 | 10 | 🟢 |
 | W32 | X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none | all equal | 0 | 5 | 🟢 |
 | W33 | Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals | ≤ 1e-9 relative | 3.8e-12 | 15 | 🟢 |
+| W34 | Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies | exact | 0 | 9 | 🟢 |
 
 ## Walkthrough
 
@@ -229,15 +230,15 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (85
 | W30 | refused: the path must be another sketch than the profile · choose the path: click a one-curve sketch or select a curve · Evolution#5: Evolution: path sketch Sketch#1 has 4 curves (🚧 one line, arc or spline; J joins a chain into a spline first) · Evolution#5: Evolution: the path starts along the profile plane (it must leave the plane) · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
 | W30 | save → load → save byte-equal with the Evolution (16) steps and Path = 'Sketch#2' | 0 | 🟢 |
 | W31 | 14 commands → 27 steps: 14 identical to a full replay, 14 resumed at the new step | 0 | 🟢 |
-| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 715.6 ms vs full 1900.4 ms · 2.7× · identical | 2.66 | 🟢 |
-| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 1701.1 ms vs full 1900.4 ms · 1.1× · identical | 1.12 | 🟢 |
-| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 0.9 ms vs full 1900.4 ms · 2088.8× · identical | 2.09e+03 | 🟢 |
-| W31 | redo: resumed at 27/27 · 0.9 ms vs full 1900.4 ms · 2092.9× · identical | 2.09e+03 | 🟢 |
-| W31 | undo again: resumed at 27/27 · 0.9 ms vs full 1900.4 ms · 2007.3× · identical | 2.01e+03 | 🟢 |
-| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.6 ms · 3005.2× | 3.01e+03 | 🟢 |
-| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 692.6 ms · source untouched | 0 | 🟢 |
+| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 605.3 ms vs full 1782.5 ms · 2.9× · identical | 2.94 | 🟢 |
+| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 1587.4 ms vs full 1782.5 ms · 1.1× · identical | 1.12 | 🟢 |
+| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 0.9 ms vs full 1782.5 ms · 1928.7× · identical | 1.93e+03 | 🟢 |
+| W31 | redo: resumed at 27/27 · 0.9 ms vs full 1782.5 ms · 1976.2× · identical | 1.98e+03 | 🟢 |
+| W31 | undo again: resumed at 27/27 · 0.9 ms vs full 1782.5 ms · 1881.6× · identical | 1.88e+03 | 🟢 |
+| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.6 ms · 2987.9× | 2.99e+03 | 🟢 |
+| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 688.2 ms · source untouched | 0 | 🟢 |
 | W31 | 25 undo entries, 8 with checkpoints; 10 undos identical, 8 restored every step (older ones resume at the edited step) | 0 | 🟢 |
-| W31 | bonnet (12 steps, full 2.7 ms): pole move resumed at 5 · 1.8 ms; undo restored all · 0.1 ms · identical | 19.6 | 🟢 |
+| W31 | bonnet (12 steps, full 2.7 ms): pole move resumed at 5 · 1.9 ms; undo restored all · 0.1 ms · identical | 20.7 | 🟢 |
 | W32 | ray at the hidden back-bottom edge: opaque → Extrude#2.Cap(End) · x-ray → Edge(Extrude#2.Cap(Start)\|Extrude#2.Side(Line3)) (1.600781 farther) | 0 | 🟢 |
 | W32 | ray at the visible front-top edge: opaque = x-ray → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line1)) | 0 | 🟢 |
 | W32 | full box without x-ray → 9 edges, none at the far corner (closed form 9 of 12) | 0 | 🟢 |
@@ -258,6 +259,15 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (85
 | W33 | two bodies, z = ½ → A 12.000000 · x̄ 3.666667 · Ivv 78.666667 (parallel axis 78.666667) | 3.8e-12 | 🟢 |
 | W33 | body Extrude#4 picked → Body Block2 · V 4.000000 | 1.33e-15 | 🟢 |
 | W33 | second body hidden → section A 8.000000 over 1 body | 8.88e-16 | 🟢 |
+| W34 | clip of a solid block: plane copied, 6 faces, none marked sheet | 0 | 🟢 |
+| W34 | down at x = 3: unsectioned → Extrude#2.Cap(End) · sectioned → (miss) | 0 | 🟢 |
+| W34 | along −x through the opening → (cap) at 5.000000 (back face x = 0: 5; plane crossing: 4) · cap name "" | 0 | 🟢 |
+| W34 | oblique ray crossing the plane outside the material → Extrude#2.Cap(End) (the kept top, not the cap) at 3.201562 | 0 | 🟢 |
+| W34 | x = 4 top edge: unsectioned → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line2)) · sectioned → (miss) | 0 | 🟢 |
+| W34 | x = 0 top edge: sectioned = unsectioned → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line4)) | 0 | 🟢 |
+| W34 | same ray with sheet faces → Extrude#2.Side(Line4) (its back, no cap) | 0 | 🟢 |
+| W34 | the body summarised as a sheet → 6 / 6 faces marked | 0 | 🟢 |
+| W34 | full box, x-ray, sectioned → 8 edges, all reaching x ≤ 1 (closed form 8 of 12) | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

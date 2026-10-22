@@ -1,6 +1,6 @@
 # DraftingViewportValidation
 
-Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 87.5 ms (14.7 s total).
+Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 — specimen: 11 faces, 24 edges, 1332 triangles; 960 × 640; slowest frame 104.8 ms (16.3 s total).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -13,6 +13,7 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V7 | Same frame twice → identical colour and identity digests | equal | 0 | 1 | 🟢 |
 | V8 | Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact | ≤ 2 / 255 | 0.5139 | 7 | 🟢 |
 | V9 | X-ray: ghost faces = α · opaque + (1 − α) · background; every revealed stroke pixel is a CPU-hidden edge; no other identity changes; rim spill; probe and CPU pick through; box visibility = GPU edges; off → bit-identical | ≤ 2 / 255 · ≥ 99.5 % · 0 · ≤ 2 % · equal | 1.347 | 11 | 🟢 |
+| V10 | Section (Alt+S): interior pixels = CPU pick with the clip (removed side gone, caps where the material is cut); every cap pixel within 1 px of a CPU cap; probe; grid never through a cap; off → bit-identical | ≤ 0.1 % · all · equal | 0 | 18 | 🟢 |
 
 ## Walkthrough
 
@@ -69,4 +70,22 @@ Viewport of DraftingWorkspace on SwiftShader Device (Subzero) · Vulkan 1.3.0 �
 | V9 | isometric persp: 2013 pixels changed identity to a hidden edge, 0 changed otherwise | 0 | 🟢 |
 | V9 | isometric persp: 21 / 2013 revealed pixels lie within 2 px of the same edge's visible stroke (%) | 1.043 | 🟢 |
 | V9 | isometric persp: x-ray frame repeatable; off → colour and identity bit-identical to the opaque frame | 0 | 🟢 |
+| V10 | ortho y = 1.25 (keep y ≥ 1.25): 0 / 65880 interior pixels differ (2787 on the cap) (%) | 0 | 🟢 |
+| V10 | ortho y = 1.25 (keep y ≥ 1.25): 28547 cap pixels, mean colour (0.533, 0.235, 0.179); without a CPU cap within 1 px | 0 | 🟢 |
+| V10 | ortho y = 1.25 (keep y ≥ 1.25): probe at (363, 181) → cap | 0 | 🟢 |
+| V10 | ortho y = 1.25 (keep y ≥ 1.25): cap pixels changed by switching the grid on | 0 | 🟢 |
+| V10 | ortho x = 1 (keep x ≤ 1): 0 / 66391 interior pixels differ (2204 on the cap) (%) | 0 | 🟢 |
+| V10 | ortho x = 1 (keep x ≤ 1): 22681 cap pixels, mean colour (0.407, 0.179, 0.137); without a CPU cap within 1 px | 0 | 🟢 |
+| V10 | ortho x = 1 (keep x ≤ 1): probe at (437, 180) → cap | 0 | 🟢 |
+| V10 | ortho x = 1 (keep x ≤ 1): cap pixels changed by switching the grid on | 0 | 🟢 |
+| V10 | ortho: section off → colour and identity bit-identical to the unsectioned frame | 0 | 🟢 |
+| V10 | persp y = 1.25 (keep y ≥ 1.25): 0 / 65792 interior pixels differ (2533 on the cap) (%) | 0 | 🟢 |
+| V10 | persp y = 1.25 (keep y ≥ 1.25): 26288 cap pixels, mean colour (0.533, 0.235, 0.179); without a CPU cap within 1 px | 0 | 🟢 |
+| V10 | persp y = 1.25 (keep y ≥ 1.25): probe at (376, 186) → cap | 0 | 🟢 |
+| V10 | persp y = 1.25 (keep y ≥ 1.25): cap pixels changed by switching the grid on | 0 | 🟢 |
+| V10 | persp x = 1 (keep x ≤ 1): 0 / 66317 interior pixels differ (2017 on the cap) (%) | 0 | 🟢 |
+| V10 | persp x = 1 (keep x ≤ 1): 21592 cap pixels, mean colour (0.408, 0.179, 0.137); without a CPU cap within 1 px | 0 | 🟢 |
+| V10 | persp x = 1 (keep x ≤ 1): probe at (428, 186) → cap | 0 | 🟢 |
+| V10 | persp x = 1 (keep x ≤ 1): cap pixels changed by switching the grid on | 0 | 🟢 |
+| V10 | persp: section off → colour and identity bit-identical to the unsectioned frame | 0 | 🟢 |
 | V7 | colour 98dff767c0c745d2 · identity edc87526f403b936 | 0 | 🟢 |

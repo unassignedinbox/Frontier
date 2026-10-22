@@ -79,6 +79,7 @@ namespace
     GateTally ReplayGate      = { "W31", "Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints", "identical · undo / redo / clone ≥ 10× · tail edit ≥ 2×" };
     GateTally XRayGate        = { "W32", "X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none", "all equal" };
     GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
+    GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2425,13 +2426,91 @@ int main()
               "second body hidden → section A " + std::to_string(Alone.Area) + " over " + std::to_string(Alone.Bodies) + " body");
     }
 
+    // ---- W34 section clip: CPU pick and box selection of the Alt+S view (closed form on a 4 × 2 × 1 block, plane x = 1,
+    //      normal −x̂ so the kept side is x ≤ 1)
+    {
+        DraftingDocument Cut = CreateDraftingDocument("Cut");
+        DraftingConstructRequest Brick;
+        Brick.Kind = DraftingConstructKind::Block; Brick.Width = 4.0; Brick.Depth = 2.0; Brick.Height = 1.0;
+        Expect(ConstructDraftingPrimitive(Cut, Brick));
+        const DraftingScene       Scene = BuildDraftingScene(Cut);
+        const DraftingSectionClip Clip  = ComposeDraftingSectionClip(Scene, Cut, { -1.0, 0.0, 0.0, 1.0 });
+        auto NameOf = [&](const std::optional<DraftingPick>& Hit)
+        {
+            if (!Hit) return std::string("(miss)");
+            return Hit->Identity == IdentitySectionCap ? std::string("(cap)") : NameDraftingIdentity(Scene, Hit->Identity);
+        };
+        auto EdgeCondition = [](const std::optional<DraftingPick>& Hit) { return Hit && Hit->Identity != IdentitySectionCap && (Hit->Identity & IdentityEdgeBit) != 0; };
+
+        Tally(SectionGate, 0.0, Clip.Plane == std::array<double, 4>{ -1.0, 0.0, 0.0, 1.0 } && Clip.SheetFaces.size() == Scene.Faces.size() &&
+                               std::count(Clip.SheetFaces.begin(), Clip.SheetFaces.end(), uint8_t(1)) == 0,
+              "clip of a solid block: plane copied, " + std::to_string(Clip.SheetFaces.size()) + " faces, none marked sheet");
+
+        // Straight down at x = 3: top and bottom both lie on the removed side → nothing
+        const DraftingRay Removed = RayBetween({ 3.0, 1.0, 5.0 }, { 3.0, 1.0, 0.0 });
+        const std::optional<DraftingPick> RemovedOpen = PickDraftingScene(Scene, Removed, 0.0);
+        const std::optional<DraftingPick> RemovedCut  = PickDraftingScene(Scene, Removed, 0.0, false, &Clip);
+        Tally(SectionGate, 0.0, RemovedOpen && !RemovedCut, "down at x = 3: unsectioned → " + NameOf(RemovedOpen) + " · sectioned → " + NameOf(RemovedCut));
+
+        // Along −x at (y, z) = (1, ½): x = 4 is removed, the back of x = 0 is the first kept surface → the cap at distance 5
+        const DraftingRay Opening = RayBetween({ 5.0, 1.0, 0.5 }, { 0.0, 1.0, 0.5 });
+        const std::optional<DraftingPick> Capped = PickDraftingScene(Scene, Opening, 0.0, false, &Clip);
+        const double CapError = Capped ? std::abs(Capped->Distance - 5.0) : 1.0;
+        Tally(SectionGate, CapError, Capped && Capped->Identity == IdentitySectionCap && CapError <= 1.0e-9 && NameDraftingIdentity(Scene, IdentitySectionCap).empty(),
+              "along −x through the opening → " + NameOf(Capped) + " at " + std::to_string(Capped ? Capped->Distance : 0.0) + " (back face x = 0: 5; plane crossing: 4) · cap name \"\"");
+
+        // Oblique from (3, 1, 3) towards (½, 1, 1): it crosses the plane above the block (z = 1.4), then meets the kept top
+        const DraftingRay Oblique = RayBetween({ 3.0, 1.0, 3.0 }, { 0.5, 1.0, 1.0 });
+        const std::optional<DraftingPick> Over     = PickDraftingScene(Scene, Oblique, 0.0, false, &Clip);
+        const std::optional<DraftingPick> OverOpen = PickDraftingScene(Scene, Oblique, 0.0);
+        const double OverError = Over ? std::abs(Over->Distance - std::sqrt(2.5 * 2.5 + 2.0 * 2.0)) : 1.0;
+        Tally(SectionGate, OverError, Over && OverOpen && Over->Identity == OverOpen->Identity && OverError <= 1.0e-9,
+              "oblique ray crossing the plane outside the material → " + NameOf(Over) + " (the kept top, not the cap) at " + std::to_string(Over ? Over->Distance : 0.0));
+
+        // Edges: the x = 4 top edge is removed (the ray continues through removed faces → miss); the x = 0 top edge picks
+        const DraftingRay FarEdge  = RayBetween({ 5.0, 1.0, 2.0 }, { 4.0, 1.0, 1.0 });
+        const DraftingRay NearEdge = RayBetween({ -1.0, 1.0, 2.0 }, { 0.0, 1.0, 1.0 });
+        const std::optional<DraftingPick> FarOpen  = PickDraftingScene(Scene, FarEdge, 0.02);
+        const std::optional<DraftingPick> FarCut   = PickDraftingScene(Scene, FarEdge, 0.02, false, &Clip);
+        const std::optional<DraftingPick> NearOpen = PickDraftingScene(Scene, NearEdge, 0.02);
+        const std::optional<DraftingPick> NearCut  = PickDraftingScene(Scene, NearEdge, 0.02, false, &Clip);
+        Tally(SectionGate, 0.0, EdgeCondition(FarOpen) && !FarCut, "x = 4 top edge: unsectioned → " + NameOf(FarOpen) + " · sectioned → " + NameOf(FarCut));
+        Tally(SectionGate, 0.0, EdgeCondition(NearCut) && NearOpen && NearCut->Identity == NearOpen->Identity, "x = 0 top edge: sectioned = unsectioned → " + NameOf(NearCut));
+
+        // Sheet faces have no inside: a clip marking every face as sheet shows the back of x = 0 itself
+        DraftingSectionClip Sheets = Clip;
+        Sheets.SheetFaces.assign(Scene.Faces.size(), 1);
+        const std::optional<DraftingPick> Backside = PickDraftingScene(Scene, Opening, 0.0, false, &Sheets);
+        Tally(SectionGate, 0.0, Backside && Backside->Identity != IdentitySectionCap && (Backside->Identity & IdentityEdgeBit) == 0 && std::abs(Backside->Distance - 5.0) <= 1.0e-9,
+              "same ray with sheet faces → " + NameOf(Backside) + " (its back, no cap)");
+        for (DraftingBodyFigures& Figures : Cut.Summary.Bodies) Figures.SheetCondition = true;  // Summary only; restored below
+        const DraftingSectionClip Marked = ComposeDraftingSectionClip(Scene, Cut, Clip.Plane);
+        for (DraftingBodyFigures& Figures : Cut.Summary.Bodies) Figures.SheetCondition = false;
+        Tally(SectionGate, 0.0, std::count(Marked.SheetFaces.begin(), Marked.SheetFaces.end(), uint8_t(1)) == long(Scene.Faces.size()),
+              "the body summarised as a sheet → " + std::to_string(std::count(Marked.SheetFaces.begin(), Marked.SheetFaces.end(), uint8_t(1))) + " / " + std::to_string(Scene.Faces.size()) + " faces marked");
+
+        // Box over the whole viewport in x-ray: the 4 edges at x = 4 are removed, the 4 at x = 0 and the 4 along x remain
+        DraftingCamera Camera;
+        Camera.Target = { 2.0, 1.0, 0.5 }; Camera.Distance = 10.0; Camera.SceneRadius = 2.5;
+        const DraftingCameraFrame   Frame  = FrameDraftingCamera(Camera, 800.0, 600.0);
+        const std::vector<uint32_t> Boxed  = EncloseDraftingEdges(Scene, Frame, { 0.0, 0.0 }, { 800.0, 600.0 }, true, &Clip);
+        bool KeptCondition = true;
+        for (const uint32_t Index : Boxed)
+        {
+            const Vector3 Start = EdgeEndPosition(Cut, Scene.Edges[Index].Name, false);
+            const Vector3 End   = EdgeEndPosition(Cut, Scene.Edges[Index].Name, true);
+            KeptCondition = KeptCondition && std::min(Start.X, End.X) <= 1.0;
+        }
+        Tally(SectionGate, 0.0, Boxed.size() == 8 && KeptCondition, "full box, x-ray, sectioned → " + std::to_string(Boxed.size()) + " edges, all reaching x ≤ 1 (closed form 8 of 12)");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
