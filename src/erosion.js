@@ -95,7 +95,24 @@ export function hydraulicErosion(height, hardness, params, progress = () => {}) 
       }
       px += dx; py += dy;
 
-      if (px < 0 || px >= N - 1 || py < 0 || py >= N - 1) break;
+      if (px < 0 || px >= N - 1 || py < 0 || py >= N - 1) {
+        // A droplet that leaves the map drops its sediment load where it stands instead of
+        // carrying it off the edge: without this the border strip is pure brush erosion with
+        // no compensating deposition, a sink that steepens and runs away (-8e7 m under a
+        // 150 m escarpment). The dump lands in the lowest cells, so it self-levels.
+        if (sediment > 0) {
+          h[idx] += sediment * (1 - u) * (1 - v);
+          h[idx + 1] += sediment * u * (1 - v);
+          h[idx + N] += sediment * (1 - u) * v;
+          h[idx + N + 1] += sediment * u * v;
+          delta[idx] += sediment * (1 - u) * (1 - v);
+          delta[idx + 1] += sediment * u * (1 - v);
+          delta[idx + N] += sediment * (1 - u) * v;
+          delta[idx + N + 1] += sediment * u * v;
+          sediment = 0;
+        }
+        break;
+      }
       const mx = Math.floor(px), my = Math.floor(py);
       const midx = my * N + mx;
       const mu = px - mx, mv = py - my;
