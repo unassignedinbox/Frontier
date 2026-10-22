@@ -115,6 +115,12 @@ CaptureCaptions = {
     "125ConstrainEdit"  : "Click D1 and type 4: the width and the extrude follow (V 8)",
     "126ConstrainDragging": "D2 deleted, the far corner dragged: the free top edge previews live, DOF 1",
     "127ConstrainAngle" : "A line chain: ], H, D 1.5, N 45°, Q equal: fully constrained at the closed-form corner",
+    "128ConstrainSplineG1"       : "Line locked, curve + line, L: the NURBS curve leaves the joint along the line (T1), DOF 5",
+    "129ConstrainSplineG2"       : "C replaces T1 by K1 (G2), H1 levels the far end: a smooth blend out of the line, DOF 3",
+    "130ConstrainReference"      : "Shift+D on the diagonal of a fully constrained plate: a grey reference (1.803), nothing moves",
+    "131ConstrainReferenceFollows": "D2 = 2: the reference reads (2.5); E is refused because H1, V1, D1, D2 already imply it",
+    "132ConstrainLinkPick"       : "K on a later sketch: the plate's sketch is drawn dashed and its far corner is pickable",
+    "133ConstrainLinked"         : "Linked corner and top line in amber: the plate's D1 = 2 carries the later line's start to (2, 2)",
 }
 
 #------------------------------------------------------------------------------------------------------------------------
