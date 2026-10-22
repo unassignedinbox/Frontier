@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (24.16 s).
+Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (38.97 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -26,6 +26,9 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (24
 | W20 | Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals | ≤ 10⁻⁹ · exact | 1.89e-15 | 3 | 🟢 |
 | W21 | Hide family (H, Shift+H, Alt+H, Ctrl+H): scene bodies and picking follow, selection drops hidden bodies, undo, codec round trip, refusals | exact | 0 | 2 | 🟢 |
 | W22 | Join (J) two open drawings into a closed square (extrudes to 1); offset (O) it by ¼ (2.25); pipe (P) along a drawn line (π r² L); refusals; codec byte-equal with kinds 13 / 14 / 15 | ≤ 10⁻⁹ · exact | 5.65e-16 | 5 | 🟢 |
+| W23 | Sketch constraints (K): a drawn rectangle goes DOF 4 → Lock 2 → D 1 → D 0, each dimension drives the extrude volume; literal and parameter-bound dimension edits regenerate downstream; undo / redo; remove frees a degree | ≤ 10⁻⁹ · exact | 5.92e-16 | 4 | 🟢 |
+| W24 | Constraint refusals: redundant (named partner) and conflicting (named partners) constraints, non-dimension / non-positive edits, unknown sketch — the document, history and file stay untouched | exact | 0 | 4 | 🟢 |
+| W25 | Point drag: a free corner follows the cursor and the extrude follows it; a locked point refuses; the preview is pure; save → load → save byte-equal with constraint labels | ≤ 10⁻⁹ · exact | 2.96e-16 | 3 | 🟢 |
 
 ## Walkthrough
 
@@ -183,6 +186,17 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (24
 | W22 | Pipe r 0.25 along Line2: tube V π r² L = π/8 exact, sound, active | 5.65e-16 | 🟢 |
 | W22 | refused: pick two or more sketches to join · Line1 feeds a later step (join into it instead) · Offset: the offset turns Line1 inside out (🚧 no loop clean-up) · Pipe#7: Pipe: radius must be positive · choose the path: focus a sketch step or select a curve | 0 | 🟢 |
 | W22 | save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step | 0 | 🟢 |
+| W23 | DOF 4 → Constrain Rectangle1: Fixed (0, 0) · Line1.Start 2 → Constrain Rectangle1: Length 3 · Line1 1 (V 3) → Constrain Rectangle1: Length 2 · Line2 0 (V 6); labels F1 D1 D2 | 2.96e-16 | 🟢 |
+| W23 | D1 = 4 in Rectangle1: V 8, far corner written back at (4, 2); undo V 6, redo V 8 | 5.18e-16 | 🟢 |
+| W23 | Block tile DOF 0; Width = 3 in Block1 sets its Width parameter to 3 → V 3 × 1.5 × 1 = 4.5 | 5.92e-16 | 🟢 |
+| W23 | Remove D2 (Length 2 · Line2) from Rectangle1: DOF 1, V 8 kept | 2.22e-16 | 🟢 |
+| W24 | second H on Line1 refused: Horizontal · Line1 is already implied by H1 (Horizontal · Line1) | 0 | 🟢 |
+| W24 | Length 4 on the top refused: Length 4 · Line3 is already implied by V1 (Vertical · Line2), V2 (Vertical · Line4), D1 (Length 4 · Line1) | 0 | 🟢 |
+| W24 | Length 5 on the top refused: Length 5 · Line3 conflicts with V1 (Vertical · Line2), V2 (Vertical · Line4), D1 (Length 4 · Line1) | 0 | 🟢 |
+| W24 | refused: Horizontal · Line1 has no value to change · Length must be positive · no sketch step Extrude#2 · the sketch has no constraint 40; file and history untouched | 0 | 🟢 |
+| W25 | Drag Line2.End of Rectangle1: corner at (4, 3), Line3.Start follows to (0, 3), V 12; the preview left the document alone | 2.96e-16 | 🟢 |
+| W25 | refused: Line1.Start is fully constrained (it cannot move) | 0 | 🟢 |
+| W25 | save → load → save byte-equal; F1 / D1 labels and DOF 1 survive the reload | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 
