@@ -565,8 +565,9 @@ int main()
         SketchModel Sketch;
         AppendArch(Sketch, ArchPoints, SketchSplineForm::CubicSpline);
         ModelPartition Partition;
-        const SweepOutcome Outcome = RevolveProfile(Partition, ExtractSketchProfile(Sketch), OrthonormalFrame{}, { 0.0, -1.0 }, { 1.0, 0.0 }, 3.0);
-        ExpectRefusal("Revolve a spline profile", Outcome.Refusal, "Revolve: 🚧 Spline");
+        // Spline revolves are exact now (SweepValidation R1 / R3); an axis through the arch (y = 1) is still refused.
+        const SweepOutcome Outcome = RevolveProfile(Partition, ExtractSketchProfile(Sketch), OrthonormalFrame{}, { 0.0, 1.0 }, { 1.0, 0.0 }, 3.0);
+        ExpectRefusal("Revolve a spline profile across its axis", Outcome.Refusal, "crosses the axis");
     }
 
     // ---- C7 solver: spline points are ordinary unknowns; a spline as a line / circle reference is Unsupported.

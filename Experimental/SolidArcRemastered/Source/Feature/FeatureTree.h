@@ -47,6 +47,7 @@ enum class FeatureStepKind : uint8_t
     Transform     = 13,                                                                      // Move / rotate / scale a body in place (Plasticity G / R / S)
     Duplicate     = 14,                                                                      // Copy of a body as a new body (Plasticity Shift+D, Ctrl+C / Ctrl+V)
     Pipe          = 15,                                                                      // Circle swept along a SpaceCurve or a one-curve sketch (Plasticity P)
+    Evolution     = 16,                                                                      // Sketch profile swept along a path (Plasticity Shift+P / Alt+E)
 };
 
 enum class FeatureCombination : uint8_t
@@ -106,7 +107,10 @@ struct FeatureStep
     std::string                    Profile        = {};                                      // [-]   - Extrude / revolve / cut: sketch step label
     FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane)
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body
-    int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch
+    int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch (−1: AxisOrigin / AxisDirection)
+    Vector2                        AxisOrigin     = {};                                      // [len] - Revolve without an axis line: a point of the axis (sketch coordinates)
+    Vector2                        AxisDirection  = {};                                      // [-]   - Revolve without an axis line: axis direction (sketch coordinates)
+    std::string                    Path           = {};                                      // [-]   - Evolution: path — a one-curve sketch or a SpaceCurve label
     FeatureValue                   Angle          = { 2.0 * std::numbers::pi };              // [rad] - Revolve: turn angle in (0, 2π]
     BlendProfile                   Shape          = BlendProfile::Fillet;                    // [-]   - Blend cross-section
     FeatureValue                   Size           = {};                                      // [len] - Blend radius / setback (at the anchors)
@@ -190,6 +194,9 @@ struct RegenerationOutcome
 //    survives the later removal of its original — into a body keyed by its own label, every face renamed
 //    "Label.Copy(name)"; Pipe sweeps a circle of radius Step.Size along a SpaceCurve (Step.Sections) or the single curve
 //    of a sketch (Step.Profile) — lines and arcs exactly, free-form paths as a NURBS tube — and combines like an extrude.
+//    Evolution sweeps the profile of sketch Step.Profile along Step.Path (a one-curve sketch or a SpaceCurve), from the
+//    path end nearer the profile centroid (a curve's stored direction is arbitrary), and combines like an extrude. Revolve turns about the sketch line Step.AxisIdentifier, else about AxisOrigin +
+//    t·AxisDirection in sketch coordinates.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false);
 
 // A sketch step's solve frame: its plane raised along the normal by the elevation.

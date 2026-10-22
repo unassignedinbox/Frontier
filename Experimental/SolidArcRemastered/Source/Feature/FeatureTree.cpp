@@ -349,6 +349,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         }
         case FeatureStepKind::Extrude:
         case FeatureStepKind::Revolve:
+        case FeatureStepKind::Evolution:
         {
             // ② Sweep the profile into a tool body named by role, then combine.
             const auto Found = Sketches.find(Step.Profile);
@@ -357,14 +358,82 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             const SketchProfile Profile = ExtractSketchProfile(Solved.Model);
             SweepOutcome Sweep;
             if (Step.Kind == FeatureStepKind::Extrude) Sweep = ExtrudeProfile(Partition, Profile, Solved.Plane, EvaluateFeatureValue(Tree, Step.Extent));
+            else if (Step.Kind == FeatureStepKind::Evolution)
+            {
+                // ⑯ Path: a SpaceCurve, or another sketch holding exactly one open curve (line, arc or spline).
+                std::optional<NurbsCurve> Path;
+                std::string Problem;
+                if (const auto Curve = Outcome.Curves.find(Step.Path); Curve != Outcome.Curves.end()) Path = Curve->second.Curve;
+                else if (Step.Path == Step.Profile) Problem = "Evolution: the path must be another sketch than the profile";
+                else if (const auto Source = Sketches.find(Step.Path); Source == Sketches.end() || !Source->second.UsableCondition) Problem = "Evolution: path " + (Step.Path.empty() ? std::string("(none)") : Step.Path) + " is unavailable";
+                else
+                {
+                    const SolvedSketch& Carrier = Source->second;
+                    std::vector<int> Drawn;
+                    for (size_t Index = 0; Index < Carrier.Model.Curves.size(); ++Index) if (!Carrier.Model.Curves[Index].Construction) Drawn.push_back(static_cast<int>(Index));
+                    if (Drawn.size() != 1) Problem = "Evolution: path sketch " + Step.Path + " has " + std::to_string(Drawn.size()) + " curves (🚧 one line, arc or spline; J joins a chain into a spline first)";
+                    else
+                    {
+                        const ProfileSegment Segment = ResolveSketchCurveSegment(Carrier.Model, Drawn.front(), 1.0e-12, Problem);
+                        if (!Problem.empty()) Problem = "Evolution: " + Problem;
+                        else if (Segment.Kind == ProfileSegmentKind::Circle) Problem = "Evolution: the path " + Segment.Name + " is closed (🚧 closed sweeps)";
+                        else
+                        {
+                            const OrthonormalFrame& Frame = Carrier.Plane;
+                            const auto Lift = [&](Vector2 Point) { return Frame.Origin + Frame.XAxis * Point.X + Frame.YAxis * Point.Y; };
+                            if (Segment.Kind == ProfileSegmentKind::Line) Path = ConvertLineToNurbs(StraightLine{ Lift(Segment.Start), Normalize(Lift(Segment.End) - Lift(Segment.Start)) }, 0.0, Distance(Segment.Start, Segment.End));
+                            else if (Segment.Kind == ProfileSegmentKind::Arc)
+                            {
+                                const double Sign = Segment.Sweep > 0.0 ? 1.0 : -1.0;
+                                const ConicForm Conic{ Lift(Segment.Centre), Frame.XAxis * Segment.Radius, Frame.YAxis * (Sign * Segment.Radius), Frame.ZAxis * Sign };
+                                Path = ConvertConicToNurbs(Conic, Sign * Segment.StartAngle, Sign * Segment.StartAngle + std::fabs(Segment.Sweep));
+                            }
+                            else
+                            {
+                                std::vector<Vector3> Poles;
+                                for (const Vector2& Pole : Segment.Spline.Poles) Poles.push_back(Lift(Pole));
+                                Path = ConstructNurbsCurve(Segment.Spline.Degree, Segment.Spline.Knots, Poles, std::vector<double>(Poles.size(), 1.0));
+                                if (!Path) Problem = "Evolution: the spline path has invalid knots";
+                            }
+                        }
+                    }
+                }
+                if (!Problem.empty()) { Refuse(Problem); break; }
+                // The sweep runs from the path end nearer the profile centroid: a sketch arc is stored counter-clockwise
+                // and a curve's drawing order is arbitrary, so neither may decide where the profile starts.
+                if (Path->Definition && !Path->Definition->Poles.empty())
+                {
+                    Vector3 Anchor{};
+                    int     Count = 0;
+                    for (const ProfileLoop& Loop : Profile.Loops)
+                        for (const ProfileSegment& Segment : Loop.Segments)
+                        {
+                            const Vector2 Point = EvaluateProfileSegment(Segment, 0.0);
+                            Anchor = Anchor + Solved.Plane.Origin + Solved.Plane.XAxis * Point.X + Solved.Plane.YAxis * Point.Y;
+                            ++Count;
+                        }
+                    if (Count > 0) Anchor = Anchor * (1.0 / Count);
+                    const std::vector<Vector3>& Poles = Path->Definition->Poles;
+                    if (Count > 0 && Distance(Anchor, Poles.back()) < Distance(Anchor, Poles.front()) - 1.0e-12 * std::max(1.0, Profile.Scale)) Path = ReverseNurbsCurve(*Path->Definition);
+                }
+                const EvolutionOutcome Evolved = EvolveProfile(Partition, Profile, Solved.Plane, *Path);
+                if (!Evolved.Refusal.empty()) { Refuse(Evolved.Refusal); break; }
+                Sweep = Evolved.Sweep;
+            }
             else
             {
-                const SketchCurve* Axis = nullptr;
-                for (const SketchCurve& Curve : Solved.Model.Curves) if (Curve.Kind == SketchCurveKind::Line && Curve.Identifier == Step.AxisIdentifier) Axis = &Curve;
-                if (!Axis) { Refuse("Revolve: axis line " + std::to_string(Step.AxisIdentifier) + " not in sketch " + Step.Profile); break; }
-                // The axis may close the profile loop itself (its segments sweep nothing) or be a construction line.
-                const Vector2 Start = Solved.Model.Points[Axis->Start].Position, End = Solved.Model.Points[Axis->End].Position;
-                Sweep = RevolveProfile(Partition, Profile, Solved.Plane, Start, End - Start, EvaluateFeatureValue(Tree, Step.Angle));
+                Vector2 Start = Step.AxisOrigin, Direction = Step.AxisDirection;
+                if (Step.AxisIdentifier >= 0)
+                {
+                    const SketchCurve* Axis = nullptr;
+                    for (const SketchCurve& Curve : Solved.Model.Curves) if (Curve.Kind == SketchCurveKind::Line && Curve.Identifier == Step.AxisIdentifier) Axis = &Curve;
+                    if (!Axis) { Refuse("Revolve: axis line " + std::to_string(Step.AxisIdentifier) + " not in sketch " + Step.Profile); break; }
+                    // The axis may close the profile loop itself (its segments sweep nothing) or be a construction line.
+                    Start     = Solved.Model.Points[Axis->Start].Position;
+                    Direction = Solved.Model.Points[Axis->End].Position - Start;
+                }
+                if (!(Length(Direction) > 1.0e-12 * Profile.Scale)) { Refuse("Revolve: the axis has no direction"); break; }
+                Sweep = RevolveProfile(Partition, Profile, Solved.Plane, Start, Direction, EvaluateFeatureValue(Tree, Step.Angle));
             }
             if (!Sweep.Refusal.empty()) { Refuse(Sweep.Refusal); break; }
             const BodyNaming ToolNaming = NameSweptBody(Partition, Sweep, Step.Label);
@@ -864,6 +933,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Transform:     return "Transform";
     case FeatureStepKind::Duplicate:     return "Duplicate";
     case FeatureStepKind::Pipe:          return "Pipe";
+    case FeatureStepKind::Evolution:     return "Evolution";
     }
     return "?";
 }

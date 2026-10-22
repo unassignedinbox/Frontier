@@ -36,6 +36,7 @@ struct LoftSettings
     bool           AlignCondition  = true;                                                   // [-] - Reverse open sections running against the first
     LoftContinuity Start           = {};                                                     // [-] - Condition at the first section
     LoftContinuity End             = {};                                                     // [-] - Condition at the last section
+    std::vector<double> Parameters = {};                                                     // [-] - Fixed 𝑣ₖ (0 … 1, increasing); empty: averaged chord length
 };
 
 struct LoftSurfaceOutcome

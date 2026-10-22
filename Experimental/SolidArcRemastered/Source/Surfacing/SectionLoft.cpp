@@ -189,9 +189,19 @@ LoftSurfaceOutcome LoftSectionSurface(const std::vector<NurbsCurve>& Sections, c
         for (int Row = 1; Row < CountV; ++Row) Parameters[Row] += Cumulative[Row] / Cumulative.back();
         ++Columns;
     }
-    if (Columns == 0) return Refuse("all sections coincide");
-    for (double& Parameter : Parameters) Parameter /= Columns;
-    Parameters.back() = 1.0;
+    if (Settings.Parameters.empty())
+    {
+        if (Columns == 0) return Refuse("all sections coincide");
+        for (double& Parameter : Parameters) Parameter /= Columns;
+        Parameters.back() = 1.0;
+    }
+    else
+    {
+        // ③″ Caller-fixed 𝑣ₖ: lofts that must share boundary columns bit-for-bit (evolution sides) take one list.
+        if (static_cast<int>(Settings.Parameters.size()) != CountV) return Refuse(std::to_string(Settings.Parameters.size()) + " fixed parameters for " + std::to_string(CountV) + " sections");
+        if (Settings.Parameters.front() != 0.0 || Settings.Parameters.back() != 1.0) return Refuse("fixed parameters must run from 0 to 1");
+        Parameters = Settings.Parameters;
+    }
     for (int Row = 1; Row < CountV; ++Row)
     {
         if (!(Parameters[Row] > Parameters[Row - 1] + 1.0e-12)) return Refuse("sections " + std::to_string(Row - 1) + " and " + std::to_string(Row) + " coincide");

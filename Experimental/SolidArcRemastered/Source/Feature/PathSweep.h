@@ -43,6 +43,24 @@ struct PipeOutcome
     std::string            Refusal   = {};                                                   // [-]   - "Pipe: …" when refused
 };
 
+struct EvolutionSettings
+{
+    double ToleranceRatio = 1.0e-5;                                                          // [-] - Allowed deviation / profile scale
+    int    SectionLimit   = 513;                                                             // [-] - Most stations before refusing
+    int    FirstSections  = 9;                                                               // [-] - Stations of the first attempt (doubles)
+};
+
+// 📝 A sketch profile swept along a path (Plasticity Evolution): one NURBS side per profile curve, plane caps.
+struct EvolutionOutcome
+{
+    SweepOutcome Sweep     = {};                                                             // [-]   - Body, faces and roles (Side(curve), caps)
+    int          Sections  = 0;                                                              // [-]   - Stations skinned
+    double       Deviation = 0.0;                                                            // [len] - Largest skin − true sweep gap measured midway
+    double       Length    = 0.0;                                                            // [len] - Path length
+    double       Bend      = 0.0;                                                            // [-]   - Reach · κmax (must stay < 1)
+    std::string  Refusal   = {};                                                             // [-]   - "Evolution: …" when refused
+};
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
@@ -59,6 +77,15 @@ struct PipeOutcome
 //    (🚧), a non-positive radius, r·κ ≥ 1 anywhere (the tube would fold over itself) or no convergence.
 [[nodiscard]] PipeOutcome PipeAlongCurve(ModelPartition& Partition, const NurbsCurve& Path, double Radius, const PipeSettings& Settings = {});
 
+// 💡 Evolution (Plasticity Shift+P): the profile on Plane carried rigidly along Path by its rotation-minimising frames
+//    (double reflection on 4096 samples, as the pipe), keeping its pose relative to the path start — it need not be ⟂
+//    the path or touch it. Each profile curve (line, arc, circle, spline: exact NURBS sections, rigid images stay exact)
+//    is skinned through equal arc-length stations with one shared 𝑣-parametrisation, so neighbouring sides share their
+//    rails bit-for-bit; stations double until every side is within ToleranceRatio·scale of the true sweep midway. The
+//    caps are the exact profile and its rigid image, holes included. Refused: closed or cusped paths, a path leaving
+//    along the profile plane, a profile reaching ≥ 1/κmax from the path start (the sweep would fold), no convergence.
+[[nodiscard]] EvolutionOutcome EvolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, const NurbsCurve& Path,
+                                             const EvolutionSettings& Settings = {});
 // Profile on Plane swept along Displacement: a displacement ∥ the plane normal is an extrude; oblique ones 🚧.
 [[nodiscard]] SweepOutcome SweepProfileAlongLine(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector3 Displacement);
 

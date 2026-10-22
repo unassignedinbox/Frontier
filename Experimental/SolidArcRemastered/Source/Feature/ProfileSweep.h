@@ -58,7 +58,7 @@ struct SweepOutcome
 // 💡 Revolve by Angle (default 360°) about the sketch line through AxisPoint along AxisDirection, turning from the sketch
 //    plane toward the side the right-hand rule about the axis gives: segments ⟂ axis → planes (disc / annulus / sector),
 //    ∥ axis → cylinders, oblique → cones (apex vertex on the axis), arcs centred on the axis → spheres (poles), other arcs
-//    → tori, a full circle off the axis → a torus. Segments on the axis vanish (partial: they bound both caps); the
+//    → tori, a full circle off the axis → a torus, splines → exact NURBS surfaces of revolution (rational circles). Segments on the axis vanish (partial: they bound both caps); the
 //    profile must not cross the axis. Partial turns add planar caps at 𝑢 = 0 and 𝑢 = Angle (G2: pipe on an arc).
 [[nodiscard]] SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection,
                                           double Angle = 2.0 * std::numbers::pi);

@@ -4,6 +4,7 @@
 // 🧩 Path verbs — each recognised case is rewritten as the exact primitive or sweep that produces the same solid
 
 #include "Feature/PathSweep.h"
+#include "Feature/SweepBlueprint.h"
 
 #include "Construction/PrimitiveConstruction.h"
 #include "Geometry/NurbsCarrier.h"
@@ -245,6 +246,195 @@ PipeOutcome PipeAlongCurve(ModelPartition& Partition, const NurbsCurve& Path, do
     }
     Outcome.Refusal = "Pipe: " + std::to_string(Settings.SectionLimit) + " sections still deviate " + std::to_string(Outcome.Deviation) + " from the true tube (allowed " + std::to_string(Tolerance) + ")";
     return Outcome;
+}
+
+EvolutionOutcome EvolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, const NurbsCurve& Path, const EvolutionSettings& Settings)
+{
+    using namespace Sweeping;
+    EvolutionOutcome Outcome;
+    const auto Refused = [&](const std::string& Reason) { Outcome.Refusal = "Evolution: " + Reason; return Outcome; };
+    if (!Profile.Refusal.empty()) return Refused(Profile.Refusal);
+    if (!Path.Definition) return Refused("the path has no carrier");
+    const NurbsCurveDefinition& Definition = *Path.Definition;
+    const PathTable Table = TabulatePath(Definition);
+    Outcome.Length = Table.Lengths.back();
+    if (!(Outcome.Length > 0.0)) return Refused("the path has no length");
+    if (Distance(Table.Points.front(), Table.Points.back()) <= 1.0e-9 * Outcome.Length) return Refused("the path is closed (🚧 closed sweeps; open the curve or sweep along a part of it)");
+    for (const Vector3& Tangent : Table.Tangents) if (!(Length(Tangent) > 0.0)) return Refused("the path has a cusp (zero speed)");
+    const auto Lift3 = [&](Vector2 Point) { return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y; };
+    const auto Lift  = [&](Vector2 Direction) { return Plane.XAxis * Direction.X + Plane.YAxis * Direction.Y; };
+
+    // ① Rigid frame map at an arc length: x ↦ C(s) + F(s)·F(0)ᵀ·(x − C(0)), F = [T N B] from the rotation-minimising table.
+    struct FrameMap { Vector3 Point, Tangent, Normal, Binormal; };
+    const auto FrameAt = [&](double Along)
+    {
+        double  Parameter = 0.0;
+        Vector3 Normal;
+        LocateStation(Table, Along, Parameter, Normal);
+        const NurbsCurveDerivatives Derivatives = EvaluateNurbsCurveDerivatives(Definition, Parameter);
+        const Vector3 Tangent = Normalize(Derivatives.First);
+        Normal = Normalize(Normal - Tangent * Dot(Normal, Tangent));
+        return FrameMap{ Derivatives.Position, Tangent, Normal, Cross(Tangent, Normal) };
+    };
+    const FrameMap Start = FrameAt(0.0);
+    const auto Turn  = [&](const FrameMap& Frame, Vector3 Direction)
+    {
+        return Frame.Tangent * Dot(Direction, Start.Tangent) + Frame.Normal * Dot(Direction, Start.Normal) + Frame.Binormal * Dot(Direction, Start.Binormal);
+    };
+    const auto Carry = [&](const FrameMap& Frame, Vector3 Point) { return Frame.Point + Turn(Frame, Point - Start.Point); };
+
+    // ② The path must leave the profile plane, and no profile point may reach the tightest bend radius.
+    const double Facing = Dot(Start.Tangent, Plane.ZAxis);                                   // [-] - cos(path, plane normal)
+    if (std::fabs(Facing) < 1.0e-3) return Refused("the path starts along the profile plane (it must leave the plane)");
+    double Reach = 0.0;                                                                      // [len] - Farthest profile point from the path start
+    for (const ProfileLoop& Loop : Profile.Loops)
+    {
+        for (const ProfileSegment& Segment : Loop.Segments)
+        {
+            for (int Index = 0; Index <= 32; ++Index) Reach = std::max(Reach, Distance(Lift3(EvaluateProfileSegment(Segment, Index / 32.0)), Start.Point));
+        }
+    }
+    Outcome.Bend = Reach * Table.Bend;
+    if (Outcome.Bend >= 1.0)
+    {
+        return Refused("the profile reaches " + std::to_string(Reach) + " from the path start, beyond the tightest bend radius " + std::to_string(1.0 / Table.Bend) + " (the sweep would fold over itself)");
+    }
+
+    // ③ Every profile curve as an exact NURBS section in traversal order (clockwise arcs: mirrored minor axis).
+    struct SideSource { const ProfileSegment* Segment; NurbsCurve Section; };
+    std::vector<std::vector<SideSource>> Sources(Profile.Loops.size());
+    for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
+    {
+        for (const ProfileSegment& Segment : Profile.Loops[LoopIndex].Segments)
+        {
+            std::optional<NurbsCurve> Section;
+            if (Segment.Kind == ProfileSegmentKind::Line)
+            {
+                const double Span = Distance(Segment.Start, Segment.End);
+                Section = ConvertLineToNurbs(StraightLine{ Lift3(Segment.Start), Lift(Normalize(Segment.End - Segment.Start)) }, 0.0, Span);
+            }
+            else if (Segment.Kind == ProfileSegmentKind::Spline) Section = LiftSpline(Segment.Spline, Lift3);
+            else
+            {
+                const double Sign = Segment.Sweep > 0.0 ? 1.0 : -1.0;
+                const ConicForm Conic{ Lift3(Segment.Centre), Plane.XAxis * Segment.Radius, Plane.YAxis * (Sign * Segment.Radius), Plane.ZAxis * Sign };
+                const double Low = Sign * Segment.StartAngle;
+                Section = ConvertConicToNurbs(Conic, Low, Low + std::fabs(Segment.Sweep));
+            }
+            if (!Section || !Section->Definition) return Refused(Segment.Name + " has no valid NURBS form");
+            Sources[LoopIndex].push_back({ &Segment, *Section });
+        }
+    }
+    const double Tolerance = Settings.ToleranceRatio * Profile.Scale;                       // [len] - Allowed skin deviation
+
+    for (int Count = std::max(Settings.FirstSections, 2); Count <= Settings.SectionLimit; Count = 2 * Count - 1)
+    {
+        // ④ Stations at equal arc length; one fixed 𝑣-list for every side so shared rails coincide.
+        std::vector<FrameMap> Frames;
+        std::vector<double>   Parameters;
+        for (int Station = 0; Station < Count; ++Station)
+        {
+            Frames.push_back(FrameAt(Outcome.Length * Station / (Count - 1)));
+            Parameters.push_back(Station == Count - 1 ? 1.0 : static_cast<double>(Station) / (Count - 1));
+        }
+        LoftSettings Loft;
+        Loft.DegreeAcross   = 3;
+        Loft.AlignCondition = false;
+        Loft.Parameters     = Parameters;
+        std::vector<std::vector<NurbsSurface>> Skins(Profile.Loops.size());
+        double Worst = 0.0;
+        for (size_t LoopIndex = 0; LoopIndex < Sources.size(); ++LoopIndex)
+        {
+            for (const SideSource& Source : Sources[LoopIndex])
+            {
+                std::vector<NurbsCurve> Sections;
+                for (const FrameMap& Frame : Frames) Sections.push_back(MapNurbsCurve(*Source.Section.Definition, [&](Vector3 Point) { return Carry(Frame, Point); }));
+                const LoftSurfaceOutcome Skin = LoftSectionSurface(Sections, Loft);
+                if (!Skin.Refusal.empty()) return Refused(Source.Segment->Name + ": " + Skin.Refusal);
+                Skins[LoopIndex].push_back(Skin.Surface);
+                // ⑤ Deviation midway between stations against the rigidly carried section (𝑢 maps linearly onto τ).
+                const NurbsDomain Domain = MeasureNurbsCurveDomain(*Source.Section.Definition);
+                for (int Station = 0; Station + 1 < Count; ++Station)
+                {
+                    const FrameMap Middle = FrameAt(Outcome.Length * (Station + 0.5) / (Count - 1));
+                    const double   Across = 0.5 * (Parameters[Station] + Parameters[Station + 1]);
+                    for (int Around = 0; Around <= 8; ++Around)
+                    {
+                        const double U = Around / 8.0;
+                        const Vector3 Exact = Carry(Middle, EvaluateNurbsCurve(*Source.Section.Definition, Domain.Low + U * (Domain.High - Domain.Low)).Position);
+                        Worst = std::max(Worst, Distance(EvaluateNurbsSurface(Skin.Surface, { U, Across }).Position, Exact));
+                    }
+                }
+            }
+        }
+        Outcome.Sections  = Count;
+        Outcome.Deviation = Worst;
+        if (Worst > Tolerance) continue;
+
+        // ⑥ Topology: per profile vertex a start / end vertex and a rail (the 𝑢 = 0 iso of the side it starts), per
+        //    curve a bottom (𝑣 = 0) and top (𝑣 = 1) edge; a closed single curve uses its rail twice as the seam.
+        const FrameMap Last = Frames.back();
+        BlueprintWriter Writer;
+        struct LoopEdges { std::vector<int> Bottom, Top; };
+        std::vector<LoopEdges> Rims(Profile.Loops.size());
+        for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
+        {
+            const ProfileLoop& Loop = Profile.Loops[LoopIndex];
+            const int Pieces = static_cast<int>(Loop.Segments.size());
+            std::vector<int> Low(Pieces), High(Pieces), Rail(Pieces);
+            for (int Index = 0; Index < Pieces; ++Index)
+            {
+                const Vector3 Corner = Lift3(Loop.Segments[Index].Start);
+                Low[Index]  = Writer.AddVertex(Corner);
+                High[Index] = Writer.AddVertex(Carry(Last, Corner));
+                Rail[Index] = Writer.AddEdge(ExtractNurbsIsoCurve(Skins[LoopIndex][Index], true, 0.0), 0.0, 1.0, Low[Index], High[Index]);
+            }
+            for (int Index = 0; Index < Pieces; ++Index)
+            {
+                const ProfileSegment& Segment = Loop.Segments[Index];
+                const NurbsSurface&   Skin    = Skins[LoopIndex][Index];
+                const int Next = (Index + 1) % Pieces;
+                const int Bottom = Writer.AddEdge(ExtractNurbsIsoCurve(Skin, false, 0.0), 0.0, 1.0, Low[Index], Low[Next]);
+                const int Top    = Writer.AddEdge(ExtractNurbsIsoCurve(Skin, false, 1.0), 0.0, 1.0, High[Index], High[Next]);
+                Rims[LoopIndex].Bottom.push_back(Bottom);
+                Rims[LoopIndex].Top.push_back(Top);
+                LoopPlan Plan;
+                Plan.Uses = { { Bottom, Orientation::Forward, Vector2{ 0.5, 0.0 } }, { Rail[Next], Orientation::Forward, Vector2{ 1.0, 0.5 } },
+                              { Top, Orientation::Reversed, Vector2{ 0.5, 1.0 } }, { Rail[Index], Orientation::Reversed, Vector2{ 0.0, 0.5 } } };
+                const FrameMap Middle  = FrameAt(0.5 * Outcome.Length);
+                const Vector3  Outward = Turn(Middle, Lift(OutwardAt(Segment, 0.5)));
+                Writer.AddFace(Skin, EvaluateNurbsSurface(Skin, { 0.5, 0.5 }).Position, Outward, { Plan }, { SweepFaceRole::Side, Segment.Name, static_cast<int>(LoopIndex) }, Vector2{ 0.5, 0.5 });
+            }
+        }
+
+        // ⑦ Caps: the profile plane and its rigid image, one pair per outer loop with the holes it directly encloses.
+        const double Ahead = Facing > 0.0 ? 1.0 : -1.0;                                     // [-] - Path side of the plane
+        for (size_t Outer = 0; Outer < Profile.Loops.size(); ++Outer)
+        {
+            if (Profile.Loops[Outer].Depth % 2 != 0) continue;
+            for (int End = 0; End < 2; ++End)
+            {
+                std::vector<LoopPlan> Plans;
+                for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
+                {
+                    if (LoopIndex != Outer && Profile.Loops[LoopIndex].Enclosure != static_cast<int>(Outer)) continue;
+                    LoopPlan Plan;
+                    Plan.Outer = LoopIndex == Outer;
+                    for (int Edge : End == 0 ? Rims[LoopIndex].Bottom : Rims[LoopIndex].Top) Plan.Uses.push_back({ Edge, Orientation::Forward });
+                    Plans.push_back(Plan);
+                }
+                const OrthonormalFrame CapFrame = End == 0 ? Plane : OrthonormalFrame{ Carry(Last, Plane.Origin), Turn(Last, Plane.XAxis), Turn(Last, Plane.YAxis), Turn(Last, Plane.ZAxis) };
+                const Vector3 Corner = Lift3(Profile.Loops[Outer].Segments[0].Start);
+                const Vector3 Probe  = End == 0 ? Corner : Carry(Last, Corner);
+                const SweepFace Role{ End == 0 ? SweepFaceRole::StartCap : SweepFaceRole::EndCap, {}, static_cast<int>(Outer) };
+                Writer.AddFace(PlaneSurface{ CapFrame }, Probe, CapFrame.ZAxis * (End == 0 ? -Ahead : Ahead), Plans, Role);
+            }
+        }
+        Outcome.Sweep = Assemble(Partition, Writer, "Evolution");
+        if (!Outcome.Sweep.Refusal.empty()) return Refused(Outcome.Sweep.Refusal);
+        return Outcome;
+    }
+    return Refused(std::to_string(Settings.SectionLimit) + " stations still deviate " + std::to_string(Outcome.Deviation) + " from the true sweep (allowed " + std::to_string(Tolerance) + ")");
 }
 
 SweepOutcome SweepProfileAlongLine(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector3 Displacement)

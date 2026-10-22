@@ -1,9 +1,10 @@
 /*====================================================================================================================================
                                                         PROFILESWEEP.CPP
 ====================================================================================================================================*/
-// 🧩 Solids from sketch profiles: linear extrude (planes, cylinders, holes) and full revolve (plane … torus, poles)
+// 🧩 Solids from sketch profiles: linear extrude (planes, cylinders, holes) and revolve (plane … torus, poles, NURBS revolutions)
 
 #include "Feature/ProfileSweep.h"
+#include "Feature/SweepBlueprint.h"
 
 #include "Geometry/NurbsCarrier.h"
 #include "Geometry/ProjectedCurve.h"
@@ -21,136 +22,7 @@ namespace Frontier::SolidArcRemastered
 //                                                    INTERNAL FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-namespace
-{
-    constexpr double FullTurn = 2.0 * std::numbers::pi;                                      // [rad] - 2π
-
-    [[nodiscard]] Orientation Opposite(Orientation Sense) noexcept { return Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward; }
-
-    struct LoopUse
-    {
-        int                    Edge   = -1;                                                  // [-] - Blueprint edge
-        Orientation            Sense  = Orientation::Forward;                                // [-] - Along / against τ
-        std::optional<Vector2> Anchor = std::nullopt;                                        // [-] - Chart point of the use midpoint (periodic charts)
-    };
-
-    struct LoopPlan
-    {
-        std::vector<LoopUse> Uses  = {};                                                     // [-] - Loop order (either direction)
-        bool                 Outer = true;                                                   // [-] - Outer boundary vs hole
-    };
-
-    // 📝 Blueprint writer: faces get their sense from an outward probe and their loops are turned to agree with it
-    //    (Σ∮𝑢 d𝑣 > 0 for outer loops of a Forward face, audit G5), so callers never reason about loop direction.
-    class BlueprintWriter
-    {
-    public:
-        int AddVertex(Vector3 Position)
-        {
-            Blueprint.Vertices.push_back({ Position });
-            return static_cast<int>(Blueprint.Vertices.size()) - 1;
-        }
-
-        int AddEdge(CurveGeometry Curve, double Low, double High, int Start, int End)
-        {
-            BlueprintEdge Edge;
-            Edge.Curve = std::move(Curve); Edge.Low = Low; Edge.High = High; Edge.Start = Start; Edge.End = End;
-            Blueprint.Edges.push_back(std::move(Edge));
-            return static_cast<int>(Blueprint.Edges.size()) - 1;
-        }
-
-        [[nodiscard]] Vector3 EdgeMidpoint(int Edge) const
-        {
-            const BlueprintEdge& Record = Blueprint.Edges[Edge];
-            return EvaluateCurve(Record.Curve, 0.5 * (Record.Low + Record.High)).Position;
-        }
-
-        void AddFace(const SurfaceGeometry& Surface, Vector3 Probe, Vector3 Outward, std::vector<LoopPlan> Loops, SweepFace Role)
-        {
-            BlueprintFace Face;
-            Face.Surface = Surface;
-            const Vector2       Parameter = ProjectOntoSurface(Surface, Probe, { std::numbers::pi, 0.0 });
-            const SurfaceSample Sample    = EvaluateSurface(Surface, Parameter);
-            Face.Sense = Dot(Cross(Sample.DerivativeU, Sample.DerivativeV), Outward) > 0.0 ? Orientation::Forward : Orientation::Reversed;
-            for (LoopPlan& Plan : Loops)
-            {
-                std::vector<BlueprintUse> Uses;
-                for (const LoopUse& Use : Plan.Uses)
-                {
-                    const BlueprintEdge& Edge = Blueprint.Edges[Use.Edge];
-                    const Vector2 Anchor = Use.Anchor.value_or(Vector2{ 0.0, 0.0 });
-                    const ParameterWindow Window = { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } };
-                    BlueprintUse Record;
-                    Record.Edge         = Use.Edge;
-                    Record.Sense        = Use.Sense;
-                    Record.SurfaceCurve = FitSurfaceCurve(Surface, Edge.Curve, Edge.Low, Edge.High, Window, Use.Anchor);
-                    Uses.push_back(std::move(Record));
-                }
-                const double Expected = (Face.Sense == Orientation::Forward ? 1.0 : -1.0) * (Plan.Outer ? 1.0 : -1.0);
-                if (MeasureChartArea(Uses) * Expected < 0.0)
-                {
-                    std::reverse(Uses.begin(), Uses.end());
-                    for (BlueprintUse& Record : Uses) Record.Sense = Opposite(Record.Sense);
-                }
-                Face.Loops.push_back(std::move(Uses));
-            }
-            Blueprint.Faces.push_back(std::move(Face));
-            Roles.push_back(std::move(Role));
-        }
-
-        [[nodiscard]] double MeasureChartArea(const std::vector<BlueprintUse>& Uses) const
-        {
-            std::vector<Vector2> Polygon;
-            constexpr int Samples = 24;
-            for (const BlueprintUse& Use : Uses)
-            {
-                const BlueprintEdge& Edge = Blueprint.Edges[Use.Edge];
-                for (int Index = 0; Index < Samples; ++Index)
-                {
-                    const double Fraction = static_cast<double>(Index) / Samples;
-                    const double Tau = Use.Sense == Orientation::Forward ? Edge.Low + Fraction * (Edge.High - Edge.Low) : Edge.High - Fraction * (Edge.High - Edge.Low);
-                    Polygon.push_back(EvaluateParameterCurve(Use.SurfaceCurve, Tau).Position);
-                }
-            }
-            double Area = 0.0;
-            for (size_t Index = 0; Index < Polygon.size(); ++Index)
-            {
-                const Vector2 First = Polygon[Index], Second = Polygon[(Index + 1) % Polygon.size()];
-                Area += 0.5 * (First.X * Second.Y - Second.X * First.Y);
-            }
-            return Area;
-        }
-
-        BodyBlueprint          Blueprint = {};
-        std::vector<SweepFace> Roles     = {};
-    };
-
-    [[nodiscard]] SweepOutcome Assemble(ModelPartition& Partition, BlueprintWriter& Writer, const char* Label)
-    {
-        SweepOutcome Outcome;
-        const AssemblyOutcome Assembly = AssembleBody(Partition, Writer.Blueprint, Label);
-        if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
-        Outcome.Body  = Assembly.Body;
-        Outcome.Faces = Assembly.Faces;
-        Outcome.Roles = Writer.Roles;
-        return Outcome;
-    }
-
-    // Right of travel (outward for an outer CCW / hole CW profile) at a segment fraction, in sketch coordinates.
-    [[nodiscard]] Vector2 OutwardAt(const ProfileSegment& Segment, double Fraction)
-    {
-        const Vector2 Tangent = EvaluateProfileTangent(Segment, Fraction);
-        return Normalize(Vector2{ Tangent.Y, -Tangent.X });
-    }
-
-    // Spline lifted onto the sketch plane at one elevation: an exact polynomial NURBS curve (unit weights).
-    [[nodiscard]] std::optional<NurbsCurve> LiftSpline(const SketchSplineCurve& Spline, const std::function<Vector3(Vector2)>& Place)
-    {
-        std::vector<Vector3> Poles;
-        for (const Vector2& Pole : Spline.Poles) Poles.push_back(Place(Pole));
-        return ConstructNurbsCurve(Spline.Degree, Spline.Knots, std::move(Poles), std::vector<double>(Spline.Poles.size(), 1.0));
-    }
-}
+using namespace Sweeping;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    EXTRUDE
@@ -303,15 +175,6 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Revolve: " + Profile.Refusal; return Refused; }
     if (!(Angle > 1.0e-9) || Angle > FullTurn + 1.0e-12) { Refused.Refusal = "Revolve: sweep angle must lie in (0, 2π]"; return Refused; }
-    for (const ProfileLoop& Loop : Profile.Loops)
-    {
-        for (const ProfileSegment& Segment : Loop.Segments)
-        {
-            if (Segment.Kind != ProfileSegmentKind::Spline) continue;
-            Refused.Refusal = "Revolve: 🚧 " + Segment.Name + " is a spline (rational surface of revolution not built yet)";
-            return Refused;
-        }
-    }
     const double Tolerance = 1.0e-9 * Profile.Scale;                                         // [len] - On-axis distance
     const Vector2 Along = Normalize(AxisDirection);
     Vector2 Radial = { -Along.Y, Along.X };                                                  // [-] - Sketch direction away from the axis
@@ -355,6 +218,7 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
     auto TurnCurve = [&](const CurveGeometry& Curve) -> CurveGeometry
     {
         if (const auto* Line = std::get_if<StraightLine>(&Curve)) return StraightLine{ TurnPoint(Line->Origin), TurnDirection(Line->Direction) };
+        if (const auto* Spline = std::get_if<NurbsCurve>(&Curve)) return MapNurbsCurve(*Spline->Definition, TurnPoint);   // Rigid: exact
         const auto& Arc = std::get<CircularArc>(Curve);
         return CircularArc{ { TurnPoint(Arc.Frame.Origin), TurnDirection(Arc.Frame.XAxis), TurnDirection(Arc.Frame.YAxis), TurnDirection(Arc.Frame.ZAxis) }, Arc.Radius };
     };
@@ -444,6 +308,18 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
                     StartV = Start.Y - Wide; EndV = End.Y - Wide;
                 }
             }
+            else if (Segment.Kind == ProfileSegmentKind::Spline)
+            {
+                // 📝 Spline meridian: the spline lifted at 𝑢 = 0 swept by exact rational circles (ConstructNurbsRevolution),
+                //    𝑢 the turn over [0, Angle], 𝑣 the spline's own τ (stored in traversal order, so the seam runs Start → End).
+                const std::optional<NurbsCurve> Lifted = LiftSpline(Segment.Spline, Place);
+                if (!Lifted) { Refused.Refusal = "Revolve: " + Segment.Name + " has no valid B-spline form"; return Refused; }
+                Surface   = ConstructNurbsRevolution(*Lifted->Definition, { Origin, AxisX, AxisY, AxisZ }, 0.0, Partial ? Angle : FullTurn);
+                SeamCurve = *Lifted;
+                SeamLow   = Segment.Spline.Knots.front();
+                SeamHigh  = Segment.Spline.Knots.back();
+                StartV = SeamLow; EndV = SeamHigh;
+            }
             else
             {
                 const Vector2 Centre = Meridian(Segment.Centre);
@@ -513,7 +389,8 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
             Plan.Uses.push_back({ FarCopy, SeamSense, Vector2{ FarSeam, MiddleV } });
             if (Ring[Next] >= 0) Plan.Uses.push_back({ Ring[Next], Orientation::Reversed, Vector2{ TrackMiddle, EndV } });
             Plan.Uses.push_back({ Seam, Opposite(SeamSense), Vector2{ 0.0, MiddleV } });
-            Writer.AddFace(Surface, Probe, Outward, { Plan }, Role);
+            const Vector2 Seed = std::holds_alternative<NurbsSurface>(Surface) ? Vector2{ TrackMiddle, MiddleV } : Vector2{ std::numbers::pi, 0.0 };
+            Writer.AddFace(Surface, Probe, Outward, { Plan }, Role, Seed);
         }
     }
 
