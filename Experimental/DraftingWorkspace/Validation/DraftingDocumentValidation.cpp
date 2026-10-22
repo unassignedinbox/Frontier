@@ -1442,6 +1442,9 @@ int main()
     GateTally ConstrainGate   = { "W23", "Sketch constraints (K): a drawn rectangle goes DOF 4 → Lock 2 → D 1 → D 0, each dimension drives the extrude volume; literal and parameter-bound dimension edits regenerate downstream; undo / redo; remove frees a degree", "≤ 10⁻⁹ · exact" };
     GateTally ConflictGate    = { "W24", "Constraint refusals: redundant (named partner) and conflicting (named partners) constraints, non-dimension / non-positive edits, unknown sketch — the document, history and file stay untouched", "exact" };
     GateTally DragGate        = { "W25", "Point drag: a free corner follows the cursor and the extrude follows it; a locked point refuses; the preview is pure; save → load → save byte-equal with constraint labels", "≤ 10⁻⁹ · exact" };
+    GateTally ReferenceGate   = { "W26", "Reference dimensions (Shift+D / E): a driven diagonal reads √13 then 5 without moving anything (DOF, positions, volume bit-equal); editing it or making it driving while implied is refused; E makes it driving at its reading and back; undo / redo; codec", "≤ 10⁻¹² · exact" };
+    GateTally SplineGate      = { "W27", "Spline constraints: a line and a NURBS curve joined → L (G1) → C (G2, replaces the G1) → H on the far end, each solve ≤ 10⁻¹² with DOF −1 / −1 / −1; undo restores the G1; G2 on a natural cubic refused; codec", "≤ 10⁻¹² · exact" };
+    GateTally LinkGate        = { "W28", "Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees", "≤ 10⁻¹² · exact" };
     // ---- W19 … W22: the editing keys (G / R / S, Shift+D, Ctrl+C / Ctrl+V, H family, J / O / P)
     {
         auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
@@ -1715,13 +1718,228 @@ int main()
               "save → load → save byte-equal; F1 / D1 labels and DOF 1 survive the reload");
     }
 
+    // ---- W26 … W28: reference dimensions (Shift+D / E), spline constraints (L / C / H), cross-sketch links
+    {
+        auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        auto Propose = [](const DraftingDocument& Target, const std::string& Sketch, std::vector<SketchPick> Picks, SketchConstraintVerb Verb, double Value = std::numeric_limits<double>::quiet_NaN())
+        {
+            SketchConstraintProposal Proposal = ProposeSketchConstraint(DiagnoseDraftingSketch(Target, Sketch).Sketch, Picks, Verb);
+            if (!std::isnan(Value)) Proposal.Constraint.Value = Value;
+            return Proposal.Constraint;
+        };
+        auto Freedom = [](const DraftingDocument& Target, const std::string& Sketch) { return DiagnoseDraftingSketch(Target, Sketch).Solve.DegreesOfFreedom; };
+        auto RoundTrip = [](const DraftingDocument& Source)
+        {
+            const std::string Written = EncodeDraftingDocument(Source);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            return Read.Refusal.empty() && EncodeDraftingDocument(Copy) == Written && Copy.Summary.Volume == Source.Summary.Volume;
+        };
+        auto DrawRectangle = [](DraftingDocument& Target, Vector2 Low, Vector2 High)
+        {
+            DraftingDrawingRequest Drawing;
+            Drawing.Kind = DraftingDrawingKind::Rectangle; Drawing.Points = { Low, High };
+            return DrawDraftingSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+        };
+        auto Scientific = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3e", Value); return std::string(Text); };
+        const SketchPick Bottom = { SketchPickKind::Curve, 0 };
+        const SketchPick Side   = { SketchPickKind::Curve, 1 };
+
+        // W26 ① a fully dimensioned 2 × 1 → 3 × 2 plate (DOF 0, V 6); Shift+D on its diagonal: D3 (reference) reads √13,
+        //        DOF stays 0, the positions and the volume are bit-equal
+        DraftingDocument Plate = CreateDraftingDocument("References");
+        const std::string Sketch = DrawRectangle(Plate, { 0.0, 0.0 }, { 2.0, 1.0 });
+        Expect(ExtrudeDraftingSketch(Plate, Sketch, 1.0, FeatureCombination::Separate));
+        Expect(ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { { SketchPickKind::Point, 0 } }, SketchConstraintVerb::Lock)));
+        Expect(ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Bottom }, SketchConstraintVerb::Dimension, 3.0)));
+        Expect(ConstrainDraftingSketch(Plate, Sketch, Propose(Plate, Sketch, { Side }, SketchConstraintVerb::Dimension, 2.0)));
+        const std::vector<Vector2> Corners = [&] { std::vector<Vector2> Positions; for (const SketchPoint& Point : Plate.Tree.Steps[0].Sketch.Points) Positions.push_back(Point.Position); return Positions; }();
+        const double Before = Plate.Summary.Volume;
+        const SketchConstraintProposal Diagonal = ProposeSketchReference(DiagnoseDraftingSketch(Plate, Sketch).Sketch, { { SketchPickKind::Point, 0 }, { SketchPickKind::Point, 2 } });
+        const DraftingCommandOutcome Referenced = ConstrainDraftingSketch(Plate, Sketch, Diagonal.Constraint);
+        const SketchConstraint& Reading = Plate.Tree.Steps[0].Sketch.Constraints.back();
+        bool Unmoved = Plate.Summary.Volume == Before;
+        for (size_t Point = 0; Point < Corners.size(); ++Point) Unmoved = Unmoved && Plate.Tree.Steps[0].Sketch.Points[Point].Position.X == Corners[Point].X && Plate.Tree.Steps[0].Sketch.Points[Point].Position.Y == Corners[Point].Y;
+        const DraftingSketchDiagnosis Diagnosed = DiagnoseDraftingSketch(Plate, Sketch);
+        const int ReadingIndex = static_cast<int>(Plate.Tree.Steps[0].Sketch.Constraints.size()) - 1;
+        Tally(ReferenceGate, std::abs(Reading.Value - std::sqrt(13.0)),
+              Diagonal.Refusal.empty() && Referenced.AcceptedCondition && Reading.DrivenCondition && Reading.Label == "D3" && std::abs(Reading.Value - std::sqrt(13.0)) <= 1.0e-12 && Diagnosed.Solve.DegreesOfFreedom == 0
+                  && Diagnosed.Solve.Constraints[ReadingIndex].Status == SketchConstraintStatus::Driven && Unmoved,
+              Referenced.Label + ": " + DescribeSketchConstraint(Plate.Tree.Steps[0].Sketch, Reading) + " · DOF 0 · positions and V bit-equal");
+
+        // W26 ② D2 = 4 → the reading follows to 5 (written back); editing the reading and making it driving are refused
+        const DraftingCommandOutcome Taller = ChangeDraftingDimension(Plate, Sketch, 6, 4.0);
+        const double Followed = Plate.Tree.Steps[0].Sketch.Constraints[ReadingIndex].Value;
+        const std::string File = EncodeDraftingDocument(Plate);
+        const size_t History = Plate.UndoEntries.size();
+        const DraftingCommandOutcome Typed   = ChangeDraftingDimension(Plate, Sketch, ReadingIndex, 6.0);
+        const DraftingCommandOutcome Driving = ToggleDraftingReference(Plate, Sketch, ReadingIndex);
+        const DraftingCommandOutcome Plain   = ToggleDraftingReference(Plate, Sketch, 0);
+        const bool Untouched = EncodeDraftingDocument(Plate) == File && Plate.UndoEntries.size() == History;
+        Tally(ReferenceGate, std::abs(Followed - 5.0) + Relative(Plate.Summary.Volume, 12.0),
+              Taller.AcceptedCondition && std::abs(Followed - 5.0) <= 1.0e-12 && Relative(Plate.Summary.Volume, 12.0) <= 1.0e-9 && !Typed.AcceptedCondition && Typed.Refusal.find("reference dimension") != std::string::npos
+                  && !Driving.AcceptedCondition && Driving.Refusal.find("stays a reference") != std::string::npos && !Plain.AcceptedCondition && Untouched,
+              Taller.Label + " → D3 reads 5 · refused: " + Typed.Refusal + " · " + Driving.Refusal + " · " + Plain.Refusal);
+
+        // W26 ③ D2 removed (DOF 1): E makes D3 driving at its reading √(9 + 16) = 5 (DOF 0, nothing moves), E again frees it;
+        //        undo / redo; save → load → save byte-equal with Reference = true
+        Expect(RemoveDraftingConstraint(Plate, Sketch, 6));
+        const int Loose = Freedom(Plate, Sketch);
+        const double LooseVolume = Plate.Summary.Volume;
+        const int Index = static_cast<int>(Plate.Tree.Steps[0].Sketch.Constraints.size()) - 1;
+        const DraftingCommandOutcome Drive = ToggleDraftingReference(Plate, Sketch, Index);
+        const int Driven = Freedom(Plate, Sketch);
+        const double DrivenValue = Plate.Tree.Steps[0].Sketch.Constraints[Index].Value;
+        const bool DrivenStill = Plate.Summary.Volume == LooseVolume;
+        const DraftingCommandOutcome Release = ToggleDraftingReference(Plate, Sketch, Index);
+        const int Released = Freedom(Plate, Sketch);
+        const bool Undone = UndoDraftingCommand(Plate) && Freedom(Plate, Sketch) == 0 && !Plate.Tree.Steps[0].Sketch.Constraints[Index].DrivenCondition;
+        const bool Redone = RedoDraftingCommand(Plate) && Freedom(Plate, Sketch) == 1 && Plate.Tree.Steps[0].Sketch.Constraints[Index].DrivenCondition;
+        Tally(ReferenceGate, std::abs(DrivenValue - 5.0),
+              Loose == 1 && Drive.AcceptedCondition && Driven == 0 && std::abs(DrivenValue - 5.0) <= 1.0e-12 && DrivenStill && Release.AcceptedCondition && Released == 1 && Undone && Redone,
+              "DOF " + std::to_string(Loose) + " → " + Drive.Label + " " + std::to_string(Driven) + " (V bit-equal) → " + Release.Label + " " + std::to_string(Released) + "; undo / redo");
+        const std::string Written = EncodeDraftingDocument(Plate);
+        Tally(ReferenceGate, 0.0, RoundTrip(Plate) && Written.find("Reference = true") != std::string::npos, "save → load → save byte-equal; Reference = true written for D3 only");
+
+        // W27 ① a NURBS curve drawn from (0, 0) and a line (−2, 0.5) → (0, 0), joined (ends welded): L gives T1 (G1), C gives
+        //        K1 that replaces it (G2), H on the far end; each solve converges ≤ 10⁻¹², undo brings T1 back
+        DraftingDocument Joint = CreateDraftingDocument("Spline joint");
+        DraftingDrawingRequest Lead;
+        Lead.Kind = DraftingDrawingKind::Line; Lead.Points = { { -2.0, 0.5 }, { 0.0, 0.0 } };
+        Expect(DrawDraftingSketch(Joint, Lead));
+        const std::string LineSketch = Joint.Tree.Steps.back().Label;
+        DraftingDrawingRequest Sweep;
+        Sweep.Kind = DraftingDrawingKind::Curve; Sweep.Form = SketchSplineForm::Nurbs; Sweep.Points = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, 1.2 }, { 3.0, 0.4 } };
+        Expect(DrawDraftingSketch(Joint, Sweep));
+        const std::string CurveSketch = Joint.Tree.Steps.back().Label;
+        const DraftingCommandOutcome Joined = JoinDraftingSketches(Joint, { LineSketch, CurveSketch });
+        int LineCurve = -1, SplineCurve = -1;
+        const SketchModel& Merged = Joint.Tree.Steps[0].Sketch;
+        for (size_t Curve = 0; Curve < Merged.Curves.size(); ++Curve)
+            (Merged.Curves[Curve].Kind == SketchCurveKind::Spline ? SplineCurve : LineCurve) = static_cast<int>(Curve);
+        const bool Welded = SplineCurve >= 0 && LineCurve >= 0 && (Merged.Curves[SplineCurve].Points.front() == Merged.Curves[LineCurve].End || Merged.Curves[SplineCurve].Points.front() == Merged.Curves[LineCurve].Start);
+        const int FarEnd = SplineCurve >= 0 ? Merged.Curves[SplineCurve].Points.back() : -1;
+        const int Open = Freedom(Joint, LineSketch);
+        const DraftingCommandOutcome Tangent = ConstrainDraftingSketch(Joint, LineSketch, Propose(Joint, LineSketch, { { SketchPickKind::Curve, SplineCurve }, { SketchPickKind::Curve, LineCurve } }, SketchConstraintVerb::Parallel));
+        const DraftingSketchDiagnosis AfterTangent = DiagnoseDraftingSketch(Joint, LineSketch);
+        const DraftingCommandOutcome Curvature = ConstrainDraftingSketch(Joint, LineSketch, Propose(Joint, LineSketch, { { SketchPickKind::Curve, SplineCurve }, { SketchPickKind::Curve, LineCurve } }, SketchConstraintVerb::Curvature));
+        const DraftingSketchDiagnosis AfterCurvature = DiagnoseDraftingSketch(Joint, LineSketch);
+        const std::vector<SketchConstraint>& Joints = Joint.Tree.Steps[0].Sketch.Constraints;
+        const bool Replaced = !Joints.empty() && Joints.back().Kind == SketchConstraintKind::SplineCurvature && Joints.back().Label == "K1"
+                           && std::none_of(Joints.begin(), Joints.end(), [](const SketchConstraint& Constraint) { return Constraint.Kind == SketchConstraintKind::SplineTangent; });
+        Tally(SplineGate, std::max(AfterTangent.Solve.MaxResidual, AfterCurvature.Solve.MaxResidual),
+              Joined.AcceptedCondition && Welded && Tangent.AcceptedCondition && AfterTangent.Solve.Converged && AfterTangent.Solve.MaxResidual <= 1.0e-12 && AfterTangent.Solve.DegreesOfFreedom == Open - 1
+                  && Curvature.AcceptedCondition && Curvature.Label.find("replaces T1") != std::string::npos && Replaced && AfterCurvature.Solve.Converged && AfterCurvature.Solve.MaxResidual <= 1.0e-12
+                  && AfterCurvature.Solve.DegreesOfFreedom == Open - 2,
+              "DOF " + std::to_string(Open) + " → " + Tangent.Label + " " + std::to_string(AfterTangent.Solve.DegreesOfFreedom) + " → " + Curvature.Label + " " + std::to_string(AfterCurvature.Solve.DegreesOfFreedom));
+        const DraftingCommandOutcome Level = ConstrainDraftingSketch(Joint, LineSketch, Propose(Joint, LineSketch, { { SketchPickKind::Curve, SplineCurve }, { SketchPickKind::Point, FarEnd } }, SketchConstraintVerb::Horizontal));
+        const DraftingSketchDiagnosis AfterLevel = DiagnoseDraftingSketch(Joint, LineSketch);
+        const std::string LevelLabel = Joint.Tree.Steps[0].Sketch.Constraints.back().Label;
+        const bool Back = UndoDraftingCommand(Joint) && UndoDraftingCommand(Joint)
+                       && std::any_of(Joint.Tree.Steps[0].Sketch.Constraints.begin(), Joint.Tree.Steps[0].Sketch.Constraints.end(), [](const SketchConstraint& Constraint) { return Constraint.Kind == SketchConstraintKind::SplineTangent && Constraint.Label == "T1"; });
+        const bool Forward = RedoDraftingCommand(Joint) && RedoDraftingCommand(Joint) && Joint.Tree.Steps[0].Sketch.Constraints.back().Label == LevelLabel;
+        Tally(SplineGate, AfterLevel.Solve.MaxResidual,
+              Level.AcceptedCondition && LevelLabel == "H1" && AfterLevel.Solve.Converged && AfterLevel.Solve.MaxResidual <= 1.0e-12 && AfterLevel.Solve.DegreesOfFreedom == Open - 3 && Back && Forward,
+              Level.Label + " · DOF " + std::to_string(AfterLevel.Solve.DegreesOfFreedom) + "; undo × 2 brings T1 back, redo × 2 restores K1 + H1");
+
+        // W27 ② refusals: G2 on a natural cubic spline, L on a spline and a curve that do not meet; save → load → save byte-equal
+        DraftingDocument Natural = CreateDraftingDocument("Natural");
+        Expect(DrawDraftingSketch(Natural, Lead));
+        const std::string NaturalSketch = Natural.Tree.Steps.back().Label;
+        DraftingDrawingRequest Cubic = Sweep;
+        Cubic.Form = SketchSplineForm::CubicSpline;
+        Expect(DrawDraftingSketch(Natural, Cubic));
+        Expect(JoinDraftingSketches(Natural, { NaturalSketch, Natural.Tree.Steps.back().Label }));
+        const SketchConstraintProposal NaturalProposal = ProposeSketchConstraint(DiagnoseDraftingSketch(Natural, NaturalSketch).Sketch, { { SketchPickKind::Curve, SplineCurve }, { SketchPickKind::Curve, LineCurve } }, SketchConstraintVerb::Curvature);
+        Tally(SplineGate, 0.0, !NaturalProposal.Refusal.empty() && NaturalProposal.Refusal.find("zero curvature") != std::string::npos, "refused: " + NaturalProposal.Refusal);
+        Tally(SplineGate, 0.0, RoundTrip(Joint) && EncodeDraftingDocument(Joint).find("Kind = 22") != std::string::npos && EncodeDraftingDocument(Joint).find("Kind = 24") != std::string::npos,
+              "save → load → save byte-equal with SplineCurvature (22) and SplineDirection (24)");
+
+        // W28 ① Sketch A: a 3 × 2 plate (DOF 0, V 6); Sketch B (later, same plane): a free line (5, 3) → (6, 4). O on B's start
+        //        and A's far corner links the corner into B (one undo entry); O on B's end and A's top line links the line
+        //        (construction, on linked points); B's start sits on (3, 2), its end on y = 2
+        DraftingDocument Linked = CreateDraftingDocument("Links");
+        const std::string Source = DrawRectangle(Linked, { 0.0, 0.0 }, { 2.0, 1.0 });
+        Expect(ExtrudeDraftingSketch(Linked, Source, 1.0, FeatureCombination::Separate));
+        Expect(ConstrainDraftingSketch(Linked, Source, Propose(Linked, Source, { { SketchPickKind::Point, 0 } }, SketchConstraintVerb::Lock)));
+        Expect(ConstrainDraftingSketch(Linked, Source, Propose(Linked, Source, { Bottom }, SketchConstraintVerb::Dimension, 3.0)));
+        Expect(ConstrainDraftingSketch(Linked, Source, Propose(Linked, Source, { Side }, SketchConstraintVerb::Dimension, 2.0)));
+        DraftingDrawingRequest Spoke;
+        Spoke.Kind = DraftingDrawingKind::Line; Spoke.Points = { { 5.0, 3.0 }, { 6.0, 4.0 } };
+        Expect(DrawDraftingSketch(Linked, Spoke));
+        const std::string Follower = Linked.Tree.Steps.back().Label;
+        const std::vector<std::string> Sources = DraftingLinkSources(Linked, Follower);
+        const int Unlinked = Freedom(Linked, Follower);
+        const std::vector<DraftingSketchPick> CornerPicks = { { {}, { SketchPickKind::Point, 0 } }, { Source, { SketchPickKind::Point, 2 } } };
+        const DraftingLinkedPicks CornerLinked = LinkDraftingPicks(Linked, Follower, CornerPicks);
+        const SketchConstraintProposal CornerProposal = ProposeSketchConstraint(CornerLinked.Sketch, CornerLinked.Picks, SketchConstraintVerb::On);
+        const size_t BeforeCorner = Linked.UndoEntries.size();
+        const DraftingCommandOutcome Cornered = ConstrainDraftingSketch(Linked, Follower, CornerProposal.Constraint, CornerPicks);
+        const bool OneEntry = Linked.UndoEntries.size() == BeforeCorner + 1;
+        const int AfterCorner = Freedom(Linked, Follower);
+        const std::vector<DraftingSketchPick> EdgePicks = { { {}, { SketchPickKind::Point, 1 } }, { Source, { SketchPickKind::Curve, 2 } } };
+        const DraftingLinkedPicks EdgeLinked = LinkDraftingPicks(Linked, Follower, EdgePicks);
+        const SketchConstraintProposal EdgeProposal = ProposeSketchConstraint(EdgeLinked.Sketch, EdgeLinked.Picks, SketchConstraintVerb::On);
+        const DraftingCommandOutcome Edged = ConstrainDraftingSketch(Linked, Follower, EdgeProposal.Constraint, EdgePicks);
+        const int AfterEdge = Freedom(Linked, Follower);
+        const SketchModel& Solved = Linked.Regeneration.Sketches.at(Follower);
+        const double CornerGap = std::abs(Solved.Points[0].Position.X - 3.0) + std::abs(Solved.Points[0].Position.Y - 2.0);
+        const double EdgeGap   = std::abs(Solved.Points[1].Position.Y - 2.0);
+        const SketchModel& Authored = Linked.Tree.Steps.back().Sketch;
+        const bool Shapes = Authored.Points.size() == 4 && Authored.Points[2].Link.Sketch == Source && Authored.Points[2].Link.Index == 2 && Authored.Curves.size() == 2 && Authored.Curves[1].Construction
+                         && Authored.Curves[1].Link.Sketch == Source && Authored.Curves[1].Link.Index == 2 && CornerLinked.Appended == 1 && EdgeLinked.Appended == 2;
+        Tally(LinkGate, CornerGap + EdgeGap,
+              Sources.size() == 1 && Sources[0] == Source && CornerLinked.Refusal.empty() && CornerProposal.Refusal.empty() && Cornered.AcceptedCondition && OneEntry && Edged.AcceptedCondition && Shapes
+                  && Unlinked == 4 && AfterCorner == 2 && AfterEdge == 1 && CornerGap <= 1.0e-12 && EdgeGap <= 1.0e-12,
+              "DOF " + std::to_string(Unlinked) + " → " + Cornered.Label + " " + std::to_string(AfterCorner) + " → " + Edged.Label + " " + std::to_string(AfterEdge) + "; corner gap " + Scientific(CornerGap) + ", edge gap " + Scientific(EdgeGap));
+
+        // W28 ② A's D1 = 4: B regenerates with its start on (4, 2) and its end still on the top line; the K session's view
+        //        (DiagnoseDraftingSketch) shows the same before B is touched
+        const DraftingCommandOutcome Widened = ChangeDraftingDimension(Linked, Source, 5, 4.0);
+        const SketchModel& Moved = Linked.Regeneration.Sketches.at(Follower);
+        const DraftingSketchDiagnosis Viewed = DiagnoseDraftingSketch(Linked, Follower);
+        const double MovedGap = std::abs(Moved.Points[0].Position.X - 4.0) + std::abs(Moved.Points[0].Position.Y - 2.0) + std::abs(Moved.Points[1].Position.Y - 2.0);
+        const double ViewGap  = std::abs(Viewed.Sketch.Points[0].Position.X - 4.0) + std::abs(Viewed.Sketch.Points[0].Position.Y - 2.0);
+        bool Quiet = true;
+        for (const FeatureStepReport& Report : Linked.Regeneration.Steps) Quiet = Quiet && Report.Notes.empty();
+        Tally(LinkGate, MovedGap + ViewGap, Widened.AcceptedCondition && MovedGap <= 1.0e-12 && ViewGap <= 1.0e-12 && Quiet && Relative(Linked.Summary.Volume, 8.0) <= 1.0e-9,
+              Widened.Label + ": B's start follows to (4, 2), end on y = 2 (gap " + Scientific(MovedGap) + "), K view gap " + Scientific(ViewGap) + ", no notes, V 8");
+
+        // W28 ③ refusals: A linking to the later B, dragging the linked point, a non-existent source point — untouched
+        const std::string LinkedFile = EncodeDraftingDocument(Linked);
+        const size_t LinkedHistory = Linked.UndoEntries.size();
+        const DraftingLinkedPicks Later = LinkDraftingPicks(Linked, Source, { { {}, { SketchPickKind::Point, 0 } }, { Follower, { SketchPickKind::Point, 0 } } });
+        const DraftingCommandOutcome Backward = ConstrainDraftingSketch(Linked, Source, CornerProposal.Constraint, { { {}, { SketchPickKind::Point, 0 } }, { Follower, { SketchPickKind::Point, 0 } } });
+        const DraftingCommandOutcome Held = DragDraftingSketchPoint(Linked, Follower, 2, { 9.0, 9.0 });
+        const DraftingLinkedPicks Beyond = LinkDraftingPicks(Linked, Follower, { { Source, { SketchPickKind::Point, 40 } } });
+        const bool LinkedUntouched = EncodeDraftingDocument(Linked) == LinkedFile && Linked.UndoEntries.size() == LinkedHistory;
+        Tally(LinkGate, 0.0, Later.Refusal.find("comes after") != std::string::npos && !Backward.AcceptedCondition && !Held.AcceptedCondition && Held.Refusal.find("is linked to") != std::string::npos
+                  && Beyond.Refusal.find("has no point 40") != std::string::npos && LinkedUntouched,
+              "refused: " + Later.Refusal + " · " + Held.Refusal + " · " + Beyond.Refusal + "; file and history untouched");
+
+        // W28 ④ save → load → save byte-equal (Links, LinkSketch); Delete unlinks the corner: B's start stays at (4, 2), free,
+        //        and no longer follows A (D1 = 5 leaves it); undo relinks it
+        Tally(LinkGate, 0.0, RoundTrip(Linked) && LinkedFile.find("[[Steps.Sketch.Links]]") != std::string::npos && LinkedFile.find("LinkSketch = ") != std::string::npos,
+              "save → load → save byte-equal with [[Steps.Sketch.Links]] { Point, Sketch, Index } and the construction line's LinkSketch / LinkIndex");
+        const DraftingCommandOutcome Unlink = UnlinkDraftingGeometry(Linked, Follower, { SketchPickKind::Point, 2 });
+        const int Freed = Freedom(Linked, Follower);
+        Expect(ChangeDraftingDimension(Linked, Source, 5, 5.0));
+        const SketchModel& Stayed = Linked.Regeneration.Sketches.at(Follower);
+        const double StayGap = std::abs(Stayed.Points[0].Position.X - 4.0) + std::abs(Stayed.Points[0].Position.Y - 2.0);
+        const bool Relinked = UndoDraftingCommand(Linked) && UndoDraftingCommand(Linked) && !Linked.Tree.Steps.back().Sketch.Points[2].Link.Sketch.empty();
+        Tally(LinkGate, StayGap, Unlink.AcceptedCondition && Freed == AfterEdge + 2 && StayGap <= 1.0e-12 && Relinked,
+              Unlink.Label + ": DOF " + std::to_string(Freed) + ", start stays at (4, 2) when D1 = 5 (gap " + Scientific(StayGap) + "); undo relinks");
+    }
+
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

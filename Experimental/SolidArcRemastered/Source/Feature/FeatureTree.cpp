@@ -157,6 +157,51 @@ FeatureValue SumValue(const std::string& First, double FirstFactor, const std::s
     return { 0.0, First, FirstFactor, Offset, Second, SecondFactor };
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                              SKETCH LINKS
+//------------------------------------------------------------------------------------------------------------------------
+
+OrthonormalFrame SketchStepFrame(const FeatureTree& Tree, const FeatureStep& Step)
+{
+    OrthonormalFrame Frame = Step.Plane;
+    Frame.Origin = Step.Plane.Origin + Step.Plane.ZAxis * EvaluateFeatureValue(Tree, Step.Elevation);
+    return Frame;
+}
+
+std::vector<std::string> ProjectSketchLinks(SketchModel& Model, const OrthonormalFrame& Plane, const std::function<LinkedSketchSource(const std::string&)>& Source)
+{
+    std::vector<std::string> Notes;
+    for (size_t Point = 0; Point < Model.Points.size(); ++Point)
+    {
+        const SketchLink& Link = Model.Points[Point].Link;
+        if (Link.Sketch.empty()) continue;
+        const std::string Name  = NameSketchPick(Model, { SketchPickKind::Point, static_cast<int>(Point) });
+        const LinkedSketchSource Found = Source(Link.Sketch);
+        if (!Found.Model) { Notes.push_back(Name + ": link to " + Link.Sketch + " is dangling (held where it was)"); continue; }
+        const SketchModel& From = *Found.Model;
+        if (Link.Index < 0 || Link.Index >= static_cast<int>(From.Points.size())) { Notes.push_back(Name + ": " + Link.Sketch + " has no point " + std::to_string(Link.Index) + " (held where it was)"); continue; }
+        const Vector2 Local = From.Points[Link.Index].Position;
+        const Vector3 World = Found.Plane.Origin + Found.Plane.XAxis * Local.X + Found.Plane.YAxis * Local.Y;
+        Model.Points[Point].Position = { Dot(World - Plane.Origin, Plane.XAxis), Dot(World - Plane.Origin, Plane.YAxis) };
+    }
+    for (SketchCurve& Curve : Model.Curves)
+    {
+        if (Curve.Kind != SketchCurveKind::Circle || Curve.Link.Sketch.empty()) continue;
+        const LinkedSketchSource Found = Source(Curve.Link.Sketch);
+        if (!Found.Model) { Notes.push_back(SketchCurveName(Curve) + ": link to " + Curve.Link.Sketch + " is dangling (held where it was)"); continue; }
+        const SketchModel& From = *Found.Model;
+        if (Curve.Link.Index < 0 || Curve.Link.Index >= static_cast<int>(From.Curves.size()) || From.Curves[Curve.Link.Index].Kind == SketchCurveKind::Line
+            || From.Curves[Curve.Link.Index].Kind == SketchCurveKind::Spline)
+        {
+            Notes.push_back(SketchCurveName(Curve) + ": " + Curve.Link.Sketch + " has no circle " + std::to_string(Curve.Link.Index) + " (held where it was)");
+            continue;
+        }
+        if (std::fabs(Dot(Found.Plane.ZAxis, Plane.ZAxis)) < 1.0 - 1.0e-12) { Notes.push_back(SketchCurveName(Curve) + ": " + Curve.Link.Sketch + " is not parallel (radius held)"); continue; }
+        Curve.Radius = MeasureSketchRadius(From, From.Curves[Curve.Link.Index]);
+    }
+    return Notes;
+}
+
 RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition)
 {
     const auto Started = Clock::now();
@@ -284,40 +329,13 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 if (std::isnan(Value)) { BoundCondition = false; Refuse("Sketch: unknown parameter " + Constraint.Parameter); break; }
                 Constraint.Value = Value;
             }
-            Solved.Plane = Step.Plane;
-            Solved.Plane.Origin = Step.Plane.Origin + Step.Plane.ZAxis * EvaluateFeatureValue(Tree, Step.Elevation);
-            // ② Links: points projected orthogonally from earlier sketches into this plane, circle radii copied when the
-            //    planes are parallel. A link to a missing or later sketch, or a bad index, keeps the last position (held) and
-            //    is noted on the step.
-            for (size_t Point = 0; Point < Solved.Model.Points.size(); ++Point)
+            // ② Links read the sketches solved so far (only earlier steps: a later or own label is dangling).
+            Solved.Plane = SketchStepFrame(Tree, Step);
+            for (std::string& Note : ProjectSketchLinks(Solved.Model, Solved.Plane, [&](const std::string& Label)
             {
-                const SketchLink& Link = Solved.Model.Points[Point].Link;
-                if (Link.Sketch.empty()) continue;
-                const std::string Name  = NameSketchPick(Solved.Model, { SketchPickKind::Point, static_cast<int>(Point) });
-                const auto        Found = Sketches.find(Link.Sketch);
-                if (Found == Sketches.end() || Link.Sketch == Step.Label) { Report.Notes.push_back(Name + ": link to " + Link.Sketch + " is dangling (held where it was)"); continue; }
-                const SketchModel& Source = Found->second.Model;
-                if (Link.Index < 0 || Link.Index >= static_cast<int>(Source.Points.size())) { Report.Notes.push_back(Name + ": " + Link.Sketch + " has no point " + std::to_string(Link.Index) + " (held where it was)"); continue; }
-                const OrthonormalFrame& From  = Found->second.Plane;
-                const Vector2           Local = Source.Points[Link.Index].Position;
-                const Vector3           World = From.Origin + From.XAxis * Local.X + From.YAxis * Local.Y;
-                Solved.Model.Points[Point].Position = { Dot(World - Solved.Plane.Origin, Solved.Plane.XAxis), Dot(World - Solved.Plane.Origin, Solved.Plane.YAxis) };
-            }
-            for (SketchCurve& Curve : Solved.Model.Curves)
-            {
-                if (Curve.Kind != SketchCurveKind::Circle || Curve.Link.Sketch.empty()) continue;
-                const auto Found = Sketches.find(Curve.Link.Sketch);
-                if (Found == Sketches.end() || Curve.Link.Sketch == Step.Label) { Report.Notes.push_back(SketchCurveName(Curve) + ": link to " + Curve.Link.Sketch + " is dangling (held where it was)"); continue; }
-                const SketchModel& Source = Found->second.Model;
-                if (Curve.Link.Index < 0 || Curve.Link.Index >= static_cast<int>(Source.Curves.size()) || Source.Curves[Curve.Link.Index].Kind == SketchCurveKind::Line
-                    || Source.Curves[Curve.Link.Index].Kind == SketchCurveKind::Spline)
-                {
-                    Report.Notes.push_back(SketchCurveName(Curve) + ": " + Curve.Link.Sketch + " has no circle " + std::to_string(Curve.Link.Index) + " (held where it was)");
-                    continue;
-                }
-                if (std::fabs(Dot(Found->second.Plane.ZAxis, Solved.Plane.ZAxis)) < 1.0 - 1.0e-12) { Report.Notes.push_back(SketchCurveName(Curve) + ": " + Curve.Link.Sketch + " is not parallel (radius held)"); continue; }
-                Curve.Radius = MeasureSketchRadius(Source, Source.Curves[Curve.Link.Index]);
-            }
+                const auto Found = Sketches.find(Label);
+                return Found == Sketches.end() || Label == Step.Label ? LinkedSketchSource{} : LinkedSketchSource{ &Found->second.Model, Found->second.Plane };
+            })) Report.Notes.push_back(std::move(Note));
             if (BoundCondition)
             {
                 Report.Solve = SolveSketch(Solved.Model);

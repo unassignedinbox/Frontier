@@ -195,13 +195,17 @@ struct DraftingTrimSession
 //    apply at once. A press on a point that travels drags it (snapped 0.1 unless Ctrl; the rest of the sketch follows
 //    its constraints), the release commits. A picked constraint: Delete / X / Backspace removes it, digits + Enter edit a
 //    dimension. Esc drops a pending verb, then the picks, then ends; K or right-click ends.
+//    Splines: O point on the curve, H / V with an end point (end direction), L (G1) and C (G2) with a curve meeting an end.
+//    Shift+D adds a reference (driven, display-only) dimension, drawn grey in parentheses; E toggles a picked dimension
+//    between driving and reference. Earlier sketches draw dimmed and are pickable: a constraint on their geometry links
+//    it in (amber, held at its projection, following them on regeneration); Delete on a picked linked point / curve unlinks.
 struct DraftingConstraintSession
 {
     bool                                ActiveCondition      = false;                         // [-]   - K pressed, not ended
     std::string                         Sketch               = {};                            // [-]   - Sketch step label
-    std::vector<Modeller::SketchPick>   Picks                = {};                            // [-]   - Picked points / curves (click order)
+    std::vector<DraftingSketchPick>     Picks                = {};                            // [-]   - Picked points / curves (click order; Sketch set: an earlier sketch's)
     bool                                HoverCondition       = false;                         // [-]   - A point / curve is under the pointer
-    Modeller::SketchPick                Hover                = {};                            // [-]   - It
+    DraftingSketchPick                  Hover                = {};                            // [-]   - It
     int                                 HoverConstraint      = -1;                            // [-]   - Glyph under the pointer (−1: none)
     int                                 PickedConstraint     = -1;                            // [-]   - Picked glyph (−1: none)
     bool                                PendingCondition     = false;                         // [-]   - D / N waits for a value

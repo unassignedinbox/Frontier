@@ -90,6 +90,11 @@ constexpr int64_t FormatVersion = 1;                                            
             Entry.insert("FormLabel", SketchSplineFormLabel(Curve.Form));
             Entry.insert("Points", std::move(Indices));
         }
+        if (!Curve.Link.Sketch.empty())
+        {
+            Entry.insert("LinkSketch", Curve.Link.Sketch);
+            Entry.insert("LinkIndex", Curve.Link.Index);
+        }
         Curves.push_back(std::move(Entry));
     }
     toml::array Constraints;
@@ -99,9 +104,17 @@ constexpr int64_t FormatVersion = 1;                                            
                            { "Third", Constraint.Third }, { "Value", Constraint.Value }, { "SecondValue", Constraint.SecondValue },
                            { "Label", Constraint.Label } };
         if (!Constraint.Parameter.empty()) Entry.insert("Parameter", Constraint.Parameter);
+        if (Constraint.DrivenCondition) Entry.insert("Reference", true);
         Constraints.push_back(std::move(Entry));
     }
-    return toml::table{ { "Points", std::move(Points) }, { "Curves", std::move(Curves) }, { "Constraints", std::move(Constraints) } };
+    toml::table Table{ { "Points", std::move(Points) }, { "Curves", std::move(Curves) }, { "Constraints", std::move(Constraints) } };
+    // Links = [{ Point, Sketch, Index }]: points projected from earlier sketches; written only when there are any.
+    toml::array Links;
+    for (size_t Point = 0; Point < Sketch.Points.size(); ++Point)
+        if (!Sketch.Points[Point].Link.Sketch.empty())
+            Links.push_back(toml::table{ { "Point", static_cast<int64_t>(Point) }, { "Sketch", Sketch.Points[Point].Link.Sketch }, { "Index", Sketch.Points[Point].Link.Index } });
+    if (!Links.empty()) Table.insert("Links", std::move(Links));
+    return Table;
 }
 
 [[nodiscard]] toml::table EncodeStep(const FeatureStep& Step, const std::map<std::string, std::string>& Captions)
@@ -291,6 +304,8 @@ constexpr int64_t FormatVersion = 1;                                            
             Decoded.Construction = Curve["Construction"].value_or(false);
             Decoded.Form         = static_cast<SketchSplineForm>(Curve["Form"].value_or(int64_t{ 4 }));
             if (const toml::array* Indices = Curve["Points"].as_array()) for (const toml::node& Index : *Indices) Decoded.Points.push_back(static_cast<int>(Index.value_or(int64_t{ -1 })));
+            Decoded.Link.Sketch  = Curve["LinkSketch"].value_or(std::string{});
+            Decoded.Link.Index   = static_cast<int>(Curve["LinkIndex"].value_or(int64_t{ -1 }));
             Sketch.Curves.push_back(Decoded);
         }
     }
@@ -308,7 +323,18 @@ constexpr int64_t FormatVersion = 1;                                            
             Decoded.SecondValue = Constraint["SecondValue"].value_or(0.0);
             Decoded.Parameter   = Constraint["Parameter"].value_or(std::string{});
             Decoded.Label       = Constraint["Label"].value_or(std::string{});
+            Decoded.DrivenCondition = Constraint["Reference"].value_or(false);
             Sketch.Constraints.push_back(std::move(Decoded));
+        }
+    }
+    if (const toml::array* Links = View["Links"].as_array())
+    {
+        for (const toml::node& Entry : *Links)
+        {
+            const toml::node_view<const toml::node> Link{ Entry };
+            const int64_t Point = Link["Point"].value_or(int64_t{ -1 });
+            if (Point < 0 || Point >= static_cast<int64_t>(Sketch.Points.size())) continue;
+            Sketch.Points[Point].Link = { Link["Sketch"].value_or(std::string{}), static_cast<int>(Link["Index"].value_or(int64_t{ -1 })) };
         }
     }
     return Sketch;

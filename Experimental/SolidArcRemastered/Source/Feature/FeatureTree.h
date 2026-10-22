@@ -15,6 +15,7 @@
 #include "Surfacing/CurveFitting.h"
 #include "Geometry/SurfaceGeometry.h"
 
+#include <functional>
 #include <map>
 #include <numbers>
 #include <optional>
@@ -190,6 +191,22 @@ struct RegenerationOutcome
 //    "Label.Copy(name)"; Pipe sweeps a circle of radius Step.Size along a SpaceCurve (Step.Sections) or the single curve
 //    of a sketch (Step.Profile) — lines and arcs exactly, free-form paths as a NURBS tube — and combines like an extrude.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false);
+
+// A sketch step's solve frame: its plane raised along the normal by the elevation.
+[[nodiscard]] OrthonormalFrame SketchStepFrame(const FeatureTree& Tree, const FeatureStep& Step);
+
+// A solved earlier sketch a link reads from (null Model: no such sketch before this one).
+struct LinkedSketchSource
+{
+    const SketchModel* Model = nullptr;                                                      // [-] - Solved positions
+    OrthonormalFrame   Plane = {};                                                           // [-] - Its solve frame
+};
+
+// 📝 Linked points of Model (solved in Plane) re-projected orthogonally from their source sketches, linked circle radii
+//    copied when the planes are parallel. A missing source or bad index keeps the last position (held); the returned
+//    notes say so ("Point0: link to Sketch#9 is dangling (held where it was)").
+[[nodiscard]] std::vector<std::string> ProjectSketchLinks(SketchModel& Model, const OrthonormalFrame& Plane,
+                                                          const std::function<LinkedSketchSource(const std::string&)>& Source);
 
 [[nodiscard]] double EvaluateFeatureValue(const FeatureTree& Tree, const FeatureValue& Value);
 

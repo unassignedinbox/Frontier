@@ -302,8 +302,42 @@ struct DraftingSketchDiagnosis
 
 [[nodiscard]] DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document, const std::string& Sketch);
 
-// Appends Constraint (an unlabelled one gets the next "H3" / "D2" … label of its kind).
-[[nodiscard]] DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const Modeller::SketchConstraint& Constraint);
+// 📝 Geometry picked in an earlier sketch step while constraining this one. Linking appends it as linked points (held
+//    at their projection into this plane) and construction curves, reusing whatever is linked already, so the kernel
+//    proposals run on one model; the constraint command links the same picks again inside its own undo entry.
+struct DraftingSketchPick
+{
+    std::string          Sketch = {};                                                        // [-] - Sketch step label (empty: the edited sketch)
+    Modeller::SketchPick Pick   = {};                                                        // [-] - Point / curve in that sketch
+};
+
+struct DraftingLinkedPicks
+{
+    Modeller::SketchModel             Sketch   = {};                                         // [-] - As solved, the linked geometry appended
+    std::vector<Modeller::SketchPick> Picks    = {};                                         // [-] - The picks in that model
+    int                               Appended = 0;                                          // [-] - Points + curves it gained
+    std::string                       Refusal  = {};                                         // [-] - Why a pick cannot be linked
+};
+
+[[nodiscard]] DraftingLinkedPicks LinkDraftingPicks(const DraftingDocument& Document, const std::string& Sketch, const std::vector<DraftingSketchPick>& Picks);
+
+// Sketch steps Sketch may link to (the ones before it), in tree order.
+[[nodiscard]] std::vector<std::string> DraftingLinkSources(const DraftingDocument& Document, const std::string& Sketch);
+
+// Appends Constraint (an unlabelled one gets the next "H3" / "D2" … label of its kind). With Links, its indices refer to
+// LinkDraftingPicks(Links)'s model and the linked geometry is added with it. G2 replaces the G1 on the same joint.
+[[nodiscard]] DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const Modeller::SketchConstraint& Constraint,
+                                                             const std::vector<DraftingSketchPick>& Links = {});
+
+// SolveSpace E: a dimension toggled between driving and reference (driven, display-only). Becoming driving keeps the
+// measured value and is refused when it would be redundant or conflicting; a parameter-bound one stays driving.
+[[nodiscard]] DraftingCommandOutcome ToggleDraftingReference(DraftingDocument& Document, const std::string& Sketch, int Constraint);
+
+// Delete on linked geometry: the link dropped (a circle's radius too), the geometry stays where it is, now free.
+[[nodiscard]] DraftingCommandOutcome UnlinkDraftingGeometry(DraftingDocument& Document, const std::string& Sketch, Modeller::SketchPick Pick);
+
+// True when the point / curve is held by a link to another sketch.
+[[nodiscard]] bool DraftingLinkedCondition(const Modeller::SketchModel& Sketch, Modeller::SketchPick Pick) noexcept;
 
 [[nodiscard]] DraftingCommandOutcome RemoveDraftingConstraint(DraftingDocument& Document, const std::string& Sketch, int Constraint);
 

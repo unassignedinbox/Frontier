@@ -544,6 +544,11 @@ namespace
             const DualPoint Centre = Context.Point(Arc.Centre);
             return Norm(Difference(Context.Point(Arc.Start), Centre)) - Norm(Difference(Context.Point(Arc.End), Centre));
         }
+        case SketchConstraintKind::SplineTangent:
+        case SketchConstraintKind::SplineCurvature:
+        case SketchConstraintKind::PointOnSpline:
+        case SketchConstraintKind::SplineDirection:
+            break;                                                                           // Spline kinds: dense gradients (above)
         }
         return {};
     }

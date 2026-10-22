@@ -1607,8 +1607,134 @@ namespace
         case Kind::Symmetric:          return "Y";
         case Kind::Concentric:         return "CC";
         case Kind::ArcRule:            return "AR";
+        case Kind::SplineTangent:      return "T";
+        case Kind::SplineCurvature:    return "K";                                          // κ: "G1" would read as tangency
+        case Kind::PointOnSpline:      return "O";
+        case Kind::SplineDirection:    return "E";
         }
-        return "K";
+        return "X";
+    }
+
+    // A spline end direction is labelled by its sense (H / V), the rest by kind.
+    [[nodiscard]] std::string LabelPrefix(const SketchConstraint& Constraint)
+    {
+        if (Constraint.Kind == Kind::SplineDirection && std::fabs(Constraint.Value) < 1.0e-12) return "H";
+        if (Constraint.Kind == Kind::SplineDirection && std::fabs(Constraint.Value - std::numbers::pi / 2.0) < 1.0e-12) return "V";
+        return ConstraintPrefix(Constraint.Kind);
+    }
+
+    [[nodiscard]] std::string NextLabel(const SketchModel& Sketch, const std::string& Prefix)
+    {
+        int Highest = 0;
+        for (const SketchConstraint& Existing : Sketch.Constraints)
+        {
+            if (Existing.Label.size() <= Prefix.size() || Existing.Label.compare(0, Prefix.size(), Prefix) != 0) continue;
+            const std::string Digits = Existing.Label.substr(Prefix.size());
+            if (std::all_of(Digits.begin(), Digits.end(), [](unsigned char Character) { return std::isdigit(Character) != 0; })) Highest = std::max(Highest, std::stoi(Digits));
+        }
+        return Prefix + std::to_string(Highest + 1);
+    }
+
+    // Index of the sketch step labelled Label (Steps.size(): none).
+    [[nodiscard]] size_t SketchStepIndex(const DraftingDocument& Document, const std::string& Label)
+    {
+        for (size_t Index = 0; Index < Document.Tree.Steps.size(); ++Index)
+            if (Document.Tree.Steps[Index].Label == Label && Document.Tree.Steps[Index].Kind == FeatureStepKind::Sketch) return Index;
+        return Document.Tree.Steps.size();
+    }
+
+    // The last replay's solve of sketch step Label when it comes before step Before (null Model otherwise).
+    [[nodiscard]] LinkedSketchSource EarlierSketch(const DraftingDocument& Document, size_t Before, const std::string& Label)
+    {
+        const size_t Index = SketchStepIndex(Document, Label);
+        if (Index >= Before) return {};
+        const auto Solved = Document.Regeneration.Sketches.find(Label);
+        if (Solved == Document.Regeneration.Sketches.end()) return {};
+        return { &Solved->second, SketchStepFrame(Document.Tree, Document.Tree.Steps[Index]) };
+    }
+
+    // 📝 Picks into Model (the sketch of step Target): the edited sketch's own pass through, picks in earlier sketches are
+    //    linked in. A point becomes a linked point (one already linked to it is reused); a curve becomes a construction
+    //    curve on linked points, carrying the link (a circle's radius is then held too). Circles and arcs need parallel
+    //    planes (anything else projects to an ellipse); an arc seen from behind runs the other way. Empty: all linked.
+    [[nodiscard]] std::string LinkPicks(const DraftingDocument& Document, size_t Target, SketchModel& Model, const std::vector<DraftingSketchPick>& Picks,
+                                        std::vector<SketchPick>& Local, int& Appended)
+    {
+        const std::string&     Own   = Document.Tree.Steps[Target].Label;
+        const OrthonormalFrame Plane = SketchStepFrame(Document.Tree, Document.Tree.Steps[Target]);
+        for (const DraftingSketchPick& Pick : Picks)
+        {
+            if (Pick.Sketch.empty() || Pick.Sketch == Own) { Local.push_back(Pick.Pick); continue; }
+            const LinkedSketchSource Source = EarlierSketch(Document, Target, Pick.Sketch);
+            if (!Source.Model)
+            {
+                const size_t Index = SketchStepIndex(Document, Pick.Sketch);
+                if (Index == Document.Tree.Steps.size()) return "no sketch step " + Pick.Sketch;
+                if (Index > Target) return Pick.Sketch + " comes after " + Own + " (link to earlier sketches only)";
+                return Pick.Sketch + " has no solved geometry to link";
+            }
+            const SketchModel& From      = *Source.Model;
+            const double       Alignment = Dot(Source.Plane.ZAxis, Plane.ZAxis);
+            const auto Project = [&](int Index) -> Vector2
+            {
+                const Vector2 Position = From.Points[Index].Position;
+                const Vector3 World    = Source.Plane.Origin + Source.Plane.XAxis * Position.X + Source.Plane.YAxis * Position.Y;
+                return { Dot(World - Plane.Origin, Plane.XAxis), Dot(World - Plane.Origin, Plane.YAxis) };
+            };
+            const auto LinkPoint = [&](int Index) -> int
+            {
+                for (size_t Point = 0; Point < Model.Points.size(); ++Point)
+                    if (Model.Points[Point].Link.Sketch == Pick.Sketch && Model.Points[Point].Link.Index == Index) return static_cast<int>(Point);
+                const int Added = AppendSketchPoint(Model, Project(Index));
+                Model.Points[Added].Link = { Pick.Sketch, Index };
+                ++Appended;
+                return Added;
+            };
+            const int Count = Pick.Pick.Kind == SketchPickKind::Point ? static_cast<int>(From.Points.size()) : static_cast<int>(From.Curves.size());
+            if (Pick.Pick.Index < 0 || Pick.Pick.Index >= Count) return Pick.Sketch + " has no " + (Pick.Pick.Kind == SketchPickKind::Point ? "point " : "curve ") + std::to_string(Pick.Pick.Index);
+            if (Pick.Pick.Kind == SketchPickKind::Point) { Local.push_back({ SketchPickKind::Point, LinkPoint(Pick.Pick.Index) }); continue; }
+            int Reused = -1;
+            for (size_t Index = 0; Index < Model.Curves.size(); ++Index)
+                if (Model.Curves[Index].Link.Sketch == Pick.Sketch && Model.Curves[Index].Link.Index == Pick.Pick.Index) Reused = static_cast<int>(Index);
+            if (Reused >= 0) { Local.push_back({ SketchPickKind::Curve, Reused }); continue; }
+            const SketchCurve& Curve = From.Curves[Pick.Pick.Index];
+            if ((Curve.Kind == SketchCurveKind::Circle || Curve.Kind == SketchCurveKind::Arc) && std::fabs(Alignment) < 1.0 - 1.0e-12)
+                return SketchCurveName(Curve) + " of " + Pick.Sketch + " is not parallel to " + Own + " (it would project to an ellipse)";
+            int Identifier = 1;
+            for (const SketchCurve& Existing : Model.Curves) Identifier = std::max(Identifier, Existing.Identifier + 1);
+            int Added = -1;
+            switch (Curve.Kind)
+            {
+            case SketchCurveKind::Line:
+            {
+                const int Start = LinkPoint(Curve.Start);
+                Added = AppendSketchLine(Model, Start, LinkPoint(Curve.End), Identifier, true);
+                break;
+            }
+            case SketchCurveKind::Circle:
+                Added = AppendSketchCircle(Model, LinkPoint(Curve.Centre), MeasureSketchRadius(From, Curve), Identifier, true);
+                break;
+            case SketchCurveKind::Arc:
+            {
+                const int Centre = LinkPoint(Curve.Centre);
+                const int Start  = LinkPoint(Curve.Start);
+                const int End    = LinkPoint(Curve.End);
+                Added = Alignment > 0.0 ? AppendSketchArc(Model, Centre, Start, End, Identifier, true) : AppendSketchArc(Model, Centre, End, Start, Identifier, true);
+                break;
+            }
+            case SketchCurveKind::Spline:
+            {
+                std::vector<int> Points;
+                for (int Point : Curve.Points) Points.push_back(LinkPoint(Point));
+                Added = AppendSketchSpline(Model, Points, Curve.Form, Identifier, true);
+                break;
+            }
+            }
+            Model.Curves[Added].Link = { Pick.Sketch, Pick.Pick.Index };
+            ++Appended;
+            Local.push_back({ SketchPickKind::Curve, Added });
+        }
+        return {};
     }
 
     [[nodiscard]] FeatureStep* FindSketchStep(DraftingDocument& Document, const std::string& Label, size_t& Index)
@@ -1618,10 +1744,17 @@ namespace
         return nullptr;
     }
 
-    // The step's sketch with every parameter-bound dimension set to its parameter's value, as regeneration solves it.
+    // The step's sketch with every parameter-bound dimension set to its parameter's value and its links re-projected from
+    // the last replay, as regeneration solves it.
     [[nodiscard]] SketchModel BindSketch(const DraftingDocument& Document, const FeatureStep& Step)
     {
         SketchModel Bound = Step.Sketch;
+        const size_t Target = SketchStepIndex(Document, Step.Label);
+        if (Target < Document.Tree.Steps.size())
+        {
+            const std::vector<std::string> Notes = ProjectSketchLinks(Bound, SketchStepFrame(Document.Tree, Step), [&](const std::string& Label) { return EarlierSketch(Document, Target, Label); });
+            static_cast<void>(Notes);                                                        // Dangling links stay held; the replay reports them
+        }
         for (SketchConstraint& Constraint : Bound.Constraints)
         {
             if (Constraint.Parameter.empty()) continue;
@@ -1631,11 +1764,29 @@ namespace
         return Bound;
     }
 
-    // Solved positions (points and circle radii) back into the authored sketch; constraints stay as authored.
+    // Solved positions (points and circle radii) back into the authored sketch, with the reference dimensions' readings;
+    // constraints stay as authored.
     void WriteBackPositions(FeatureStep& Step, const SketchModel& Solved)
     {
         for (size_t Point = 0; Point < Step.Sketch.Points.size() && Point < Solved.Points.size(); ++Point) Step.Sketch.Points[Point].Position = Solved.Points[Point].Position;
         for (size_t Curve = 0; Curve < Step.Sketch.Curves.size() && Curve < Solved.Curves.size(); ++Curve) Step.Sketch.Curves[Curve].Radius = Solved.Curves[Curve].Radius;
+        for (size_t Constraint = 0; Constraint < Step.Sketch.Constraints.size() && Constraint < Solved.Constraints.size(); ++Constraint)
+            if (Step.Sketch.Constraints[Constraint].DrivenCondition) Step.Sketch.Constraints[Constraint].Value = Solved.Constraints[Constraint].Value;
+    }
+
+    // Index of the G1 a G2 on the same spline joint supersedes (-1: none).
+    [[nodiscard]] int SupersededTangent(const SketchModel& Sketch, const SketchConstraint& Curvature)
+    {
+        if (Curvature.Kind != Kind::SplineCurvature) return -1;
+        for (size_t Index = 0; Index < Sketch.Constraints.size(); ++Index)
+        {
+            const SketchConstraint& Existing = Sketch.Constraints[Index];
+            if (Existing.Kind != Kind::SplineTangent || Existing.Third != Curvature.Third) continue;
+            const bool Same    = Existing.First == Curvature.First && Existing.Second == Curvature.Second;
+            const bool Swapped = Existing.First == Curvature.Second && Existing.Second == Curvature.First;
+            if (Same || Swapped) return static_cast<int>(Index);
+        }
+        return -1;
     }
 
     [[nodiscard]] std::string NameConstraint(const SketchModel& Sketch, int Index)
@@ -1678,15 +1829,33 @@ namespace
 
 std::string NextDraftingConstraintLabel(const SketchModel& Sketch, SketchConstraintKind Constraint)
 {
-    const std::string Prefix = ConstraintPrefix(Constraint);
-    int Highest = 0;
-    for (const SketchConstraint& Existing : Sketch.Constraints)
-    {
-        if (Existing.Label.size() <= Prefix.size() || Existing.Label.compare(0, Prefix.size(), Prefix) != 0) continue;
-        const std::string Digits = Existing.Label.substr(Prefix.size());
-        if (std::all_of(Digits.begin(), Digits.end(), [](unsigned char Character) { return std::isdigit(Character) != 0; })) Highest = std::max(Highest, std::stoi(Digits));
-    }
-    return Prefix + std::to_string(Highest + 1);
+    return NextLabel(Sketch, ConstraintPrefix(Constraint));
+}
+
+DraftingLinkedPicks LinkDraftingPicks(const DraftingDocument& Document, const std::string& Sketch, const std::vector<DraftingSketchPick>& Picks)
+{
+    DraftingLinkedPicks Linked;
+    const size_t Target = SketchStepIndex(Document, Sketch);
+    if (Target == Document.Tree.Steps.size()) { Linked.Refusal = "no sketch step " + Sketch; return Linked; }
+    Linked.Sketch  = BindSketch(Document, Document.Tree.Steps[Target]);
+    static_cast<void>(SolveSketch(Linked.Sketch));                                           // Proposals measure what is shown
+    Linked.Refusal = LinkPicks(Document, Target, Linked.Sketch, Picks, Linked.Picks, Linked.Appended);
+    return Linked;
+}
+
+std::vector<std::string> DraftingLinkSources(const DraftingDocument& Document, const std::string& Sketch)
+{
+    std::vector<std::string> Sources;
+    const size_t Target = SketchStepIndex(Document, Sketch);
+    for (size_t Index = 0; Index < Target && Index < Document.Tree.Steps.size(); ++Index)
+        if (Document.Tree.Steps[Index].Kind == FeatureStepKind::Sketch) Sources.push_back(Document.Tree.Steps[Index].Label);
+    return Sources;
+}
+
+bool DraftingLinkedCondition(const SketchModel& Sketch, SketchPick Pick) noexcept
+{
+    if (Pick.Kind == SketchPickKind::Point) return Pick.Index >= 0 && Pick.Index < static_cast<int>(Sketch.Points.size()) && !Sketch.Points[Pick.Index].Link.Sketch.empty();
+    return Pick.Index >= 0 && Pick.Index < static_cast<int>(Sketch.Curves.size()) && !Sketch.Curves[Pick.Index].Link.Sketch.empty();
 }
 
 DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document, const std::string& Sketch)
@@ -1702,18 +1871,25 @@ DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document,
     return Diagnosis;
 }
 
-DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const SketchConstraint& Constraint)
+DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const SketchConstraint& Constraint, const std::vector<DraftingSketchPick>& Links)
 {
     std::string Subject = SketchConstraintTitle(Constraint.Kind);
-    for (const FeatureStep& Step : Document.Tree.Steps)
-        if (Step.Label == Sketch && Step.Kind == FeatureStepKind::Sketch) Subject = DescribeSketchConstraint(Step.Sketch, Constraint);
+    const DraftingLinkedPicks Preview = LinkDraftingPicks(Document, Sketch, Links);
+    const int Superseded = Preview.Refusal.empty() ? SupersededTangent(Preview.Sketch, Constraint) : -1;
+    if (Preview.Refusal.empty()) Subject = DescribeSketchConstraint(Preview.Sketch, Constraint);
+    if (Superseded >= 0) Subject += " (replaces " + NameConstraint(Preview.Sketch, Superseded) + ")";
     size_t Index = 0;
     FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
     return RunCommand(Document, "Constrain " + SketchOwner(Document, Sketch) + ": " + Subject, false, [&]() -> std::string
     {
         if (!Found) return "no sketch step " + Sketch;
+        if (!Preview.Refusal.empty()) return Preview.Refusal;
+        std::vector<SketchPick> Local;
+        int Appended = 0;
+        if (std::string Refusal = LinkPicks(Document, Index, Found->Sketch, Links, Local, Appended); !Refusal.empty()) return Refusal;
+        if (Superseded >= 0) Found->Sketch.Constraints.erase(Found->Sketch.Constraints.begin() + Superseded);
         SketchConstraint Added = Constraint;
-        if (Added.Label.empty()) Added.Label = NextDraftingConstraintLabel(Found->Sketch, Added.Kind);
+        if (Added.Label.empty()) Added.Label = NextLabel(Found->Sketch, LabelPrefix(Added));
         Found->Sketch.Constraints.push_back(Added);
         SketchModel Solved = BindSketch(Document, *Found);
         const SketchSolveOutcome Solve = SolveSketch(Solved);
@@ -1752,6 +1928,7 @@ DraftingCommandOutcome ChangeDraftingDimension(DraftingDocument& Document, const
         if (!Valid) return "the sketch has no constraint " + std::to_string(Constraint);
         SketchConstraint& Dimension = Found->Sketch.Constraints[Constraint];
         if (!SketchDimensionCondition(Dimension.Kind)) return DescribeSketchConstraint(Found->Sketch, Dimension) + " has no value to change";
+        if (Dimension.DrivenCondition) return Named + " is a reference dimension (E makes it driving)";
         if (!std::isfinite(Value)) return "the value is not a number";
         const bool Positive = Dimension.Kind == Kind::Distance || Dimension.Kind == Kind::Length || Dimension.Kind == Kind::Radius;
         if (Positive && !(Value > 0.0)) return std::string(SketchConstraintTitle(Dimension.Kind)) + " must be positive";
@@ -1764,6 +1941,70 @@ DraftingCommandOutcome ChangeDraftingDimension(DraftingDocument& Document, const
         const SketchSolveOutcome Solve = SolveSketch(Solved);
         if (std::string Refusal = SolveRefusal(Solved, Solve, -1); !Refusal.empty()) return Refusal;
         WriteBackPositions(*Found, Solved);
+        return {};
+    }, Index);
+}
+
+DraftingCommandOutcome ToggleDraftingReference(DraftingDocument& Document, const std::string& Sketch, int Constraint)
+{
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    const bool Valid    = Found && Constraint >= 0 && Constraint < static_cast<int>(Found->Sketch.Constraints.size());
+    const bool ToDriven = Valid && !Found->Sketch.Constraints[Constraint].DrivenCondition;
+    const std::string Named = Valid ? NameConstraint(Found->Sketch, Constraint) : std::string("dimension");
+    return RunCommand(Document, std::string(ToDriven ? "Reference " : "Drive ") + Named + " in " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        if (!Valid) return "the sketch has no constraint " + std::to_string(Constraint);
+        SketchConstraint& Dimension = Found->Sketch.Constraints[Constraint];
+        if (!SketchDimensionCondition(Dimension.Kind)) return Named + " has no value (only dimensions can be references)";
+        if (ToDriven && !Dimension.Parameter.empty()) return Named + " is bound to " + Dimension.Parameter + " (it stays driving)";
+        if (ToDriven)
+        {
+            Dimension.DrivenCondition = true;
+            SketchModel Solved = BindSketch(Document, *Found);
+            static_cast<void>(SolveSketch(Solved));
+            WriteBackPositions(*Found, Solved);
+            return {};
+        }
+        SketchModel Reading = BindSketch(Document, *Found);                                  // The current reading, so nothing moves
+        static_cast<void>(SolveSketch(Reading));
+        Dimension.DrivenCondition = false;
+        Dimension.Value           = Reading.Constraints[Constraint].Value;
+        SketchModel Solved = BindSketch(Document, *Found);
+        const SketchSolveOutcome Solve = SolveSketch(Solved);
+        if (std::string Refusal = SolveRefusal(Solved, Solve, Constraint); !Refusal.empty()) return Refusal + " (it stays a reference)";
+        WriteBackPositions(*Found, Solved);
+        return {};
+    }, Index);
+}
+
+DraftingCommandOutcome UnlinkDraftingGeometry(DraftingDocument& Document, const std::string& Sketch, SketchPick Pick)
+{
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    const std::string Named = Found ? NameSketchPick(Found->Sketch, Pick) : std::string("geometry");
+    return RunCommand(Document, "Unlink " + Named + " of " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        if (!DraftingLinkedCondition(Found->Sketch, Pick)) return Named + " is not linked";
+        SketchModel Projected = BindSketch(Document, *Found);                                // Where it is shown now, so it stays there
+        static_cast<void>(SolveSketch(Projected));
+        WriteBackPositions(*Found, Projected);
+        SketchModel& Model = Found->Sketch;
+        const auto Free = [&](int Point) { if (Point >= 0 && Point < static_cast<int>(Model.Points.size())) Model.Points[Point].Link = {}; };
+        if (Pick.Kind == SketchPickKind::Point)
+        {
+            Free(Pick.Index);
+            for (SketchCurve& Curve : Model.Curves) if (Curve.Kind == SketchCurveKind::Circle && Curve.Centre == Pick.Index) Curve.Link = {};
+            return {};
+        }
+        SketchCurve& Curve = Model.Curves[Pick.Index];
+        Curve.Link = {};
+        Free(Curve.Start);
+        Free(Curve.End);
+        Free(Curve.Centre);
+        for (int Point : Curve.Points) Free(Point);
         return {};
     }, Index);
 }

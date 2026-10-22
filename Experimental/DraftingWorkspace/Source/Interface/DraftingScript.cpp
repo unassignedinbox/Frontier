@@ -235,7 +235,24 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         if (Field == "constrain-picks")
         {
             std::vector<std::string> Names;
-            for (const Modeller::SketchPick& Pick : State.Constrain.Picks) Names.push_back(Modeller::NameSketchPick(*Sketch, Pick));
+            for (const DraftingSketchPick& Pick : State.Constrain.Picks)
+            {
+                if (Pick.Sketch.empty()) { Names.push_back(Modeller::NameSketchPick(*Sketch, Pick.Pick)); continue; }
+                const auto Other   = Document.Regeneration.Sketches.find(Pick.Sketch);
+                const auto Caption = Document.Captions.find(Pick.Sketch);
+                Names.push_back((Other != Document.Regeneration.Sketches.end() ? Modeller::NameSketchPick(Other->second, Pick.Pick) : std::string("?")) + " of "
+                                + (Caption != Document.Captions.end() ? Caption->second : Pick.Sketch));
+            }
+            return Join(Names);
+        }
+        if (Field == "sketch-links")
+        {
+            // Linked points + curves of the sketch: "Point2,Line2.Start,…,Line2", Number = the count.
+            std::vector<std::string> Names;
+            for (int Point = 0; Point < int(Sketch->Points.size()); ++Point)
+                if (!Sketch->Points[Point].Link.Sketch.empty()) Names.push_back(Modeller::NameSketchPick(*Sketch, { Modeller::SketchPickKind::Point, Point }));
+            for (int Curve = 0; Curve < int(Sketch->Curves.size()); ++Curve)
+                if (!Sketch->Curves[Curve].Link.Sketch.empty()) Names.push_back(Modeller::SketchCurveName(Sketch->Curves[Curve]));
             return Join(Names);
         }
         if (Field == "constraint-count") return Numeric(double(Sketch->Constraints.size()));
