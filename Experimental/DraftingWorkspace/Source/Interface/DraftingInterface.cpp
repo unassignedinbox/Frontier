@@ -810,6 +810,10 @@ void AppendDrawingPoint(DraftingWorkspaceState& State, Vector2 Point, bool Closi
     }
     Drawing.Points.push_back(Point);
     Drawing.Refusal.clear();
+    DraftingPointPicker& Picker = State.Picker;
+    Picker.Placed = Picker.Current;                                                          // t / n / b use the snapped curve or face
+    if (Picker.Current.Kind >= DraftingSnapKind::Endpoint && Picker.Current.Kind <= DraftingSnapKind::Face) ++Picker.Snapped;
+    Picker.Lock = DraftingSnapLockKind::None;                                                // A lock serves one point (Plasticity)
     if (!Chain && Drawing.Points.size() >= DrawingClicks(Drawing.Kind)) FinishDrawingSession(State, false);
 }
 
@@ -819,7 +823,155 @@ void RetractDrawingPoint(DraftingWorkspaceState& State)
     if (Drawing.Points.empty()) { Announce(State, "No point to drop"); return; }
     Drawing.Points.pop_back();
     Drawing.Refusal.clear();
+    State.Picker.Placed = {};
+    State.Picker.Lock   = DraftingSnapLockKind::None;
     Announce(State, Compose("Point dropped · %d left", int(Drawing.Points.size())));
+}
+
+// 📝 Object snapping (Plasticity point picker). The catalogue of exact carriers follows the document revision, the
+//    scene's faces and the bodies excluded (Move skips the bodies it carries).
+const DraftingSectionClip* ActiveSectionClip(const DraftingWorkspaceState& State);
+
+[[nodiscard]] bool PointSnapCondition(DraftingSnapKind Kind)
+{
+    return Kind >= DraftingSnapKind::Endpoint && Kind <= DraftingSnapKind::Perpendicular;
+}
+
+DraftingSnapCatalogue& SnapCatalogue(DraftingWorkspaceState& State, const std::vector<std::string>& Excluded)
+{
+    DraftingPointPicker& Picker = State.Picker;
+    std::string Key;
+    for (const std::string& Body : Excluded) Key += Body + ";";
+    if (!Picker.Catalogue || Picker.Catalogue->Revision != State.Document.Revision || Picker.Catalogue->ExclusionKey != Key || Picker.SceneFaces != State.Scene.Faces.size())
+    {
+        Picker.Catalogue  = std::make_unique<DraftingSnapCatalogue>(CatalogueDraftingSnaps(State.Document, State.Scene, Excluded));
+        Picker.SceneFaces = State.Scene.Faces.size();
+    }
+    return *Picker.Catalogue;
+}
+
+// The snap under the pointer (None when snapping is off or Ctrl is held).
+DraftingSnap FindPointerSnap(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, std::optional<Vector3> Reference,
+                             std::vector<DraftingSnapPoint> Transient, const std::vector<std::string>& Excluded, bool FaceCondition)
+{
+    if (!State.Picker.Enabled || ImGui::GetIO().KeyCtrl) return {};
+    DraftingSnapQuery Query;
+    Query.Frame       = Frame;
+    Query.PixelX      = Local.x;
+    Query.PixelY      = Local.y;
+    Query.Reference   = Reference;
+    Query.Transient   = std::move(Transient);
+    Query.XRayEnabled = State.Style.XRayEnabled;
+    Query.Section     = ActiveSectionClip(State);
+    Query.Filter      = State.Picker.Filter;
+    Query.Filter.FaceEnabled = Query.Filter.FaceEnabled && FaceCondition;
+    return FindDraftingSnap(SnapCatalogue(State, Excluded), State.Document, State.Scene, Query);
+}
+
+// n / b / t / x / y / z while drawing: a line through the last point the next point slides along; the same key again
+// releases it. Directions leaving the drawing plane are refused (the sketch stays planar).
+void ChooseSnapLock(DraftingWorkspaceState& State, DraftingSnapLockKind Kind)
+{
+    DraftingPointPicker&          Picker  = State.Picker;
+    const DraftingDrawingSession& Drawing = State.Drawing;
+    if (Picker.Lock == Kind)
+    {
+        Picker.Lock = DraftingSnapLockKind::None;
+        Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + " released");
+        return;
+    }
+    if (Drawing.Points.empty()) { Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + ": place a point first"); return; }
+    const OrthonormalFrame Plane  = DraftingSketchPlane(Drawing.GridPlane);
+    const Vector3          Origin = PlacePlanePoint(Plane, Drawing.Points.back());
+    Vector3 Tangent = Picker.Placed.Tangent;
+    if (Length(Tangent) < 0.5 && Drawing.Points.size() >= 2)
+    {
+        const Vector3 Chord = Origin - PlacePlanePoint(Plane, Drawing.Points[Drawing.Points.size() - 2]);
+        if (Length(Chord) > 0.0) Tangent = Chord * (1.0 / Length(Chord));
+    }
+    Vector3 Normal = Picker.Placed.Normal;
+    if (Length(Normal) < 0.5 && Length(Tangent) > 0.5) Normal = Normalize(Cross(Plane.ZAxis, Tangent));
+    Vector3 Direction;
+    switch (Kind)
+    {
+    case DraftingSnapLockKind::X:        Direction = { 1.0, 0.0, 0.0 }; break;
+    case DraftingSnapLockKind::Y:        Direction = { 0.0, 1.0, 0.0 }; break;
+    case DraftingSnapLockKind::Z:        Direction = { 0.0, 0.0, 1.0 }; break;
+    case DraftingSnapLockKind::Tangent:  Direction = Tangent; break;
+    case DraftingSnapLockKind::Normal:   Direction = Normal; break;
+    case DraftingSnapLockKind::Binormal: Direction = Length(Tangent) > 0.5 && Length(Normal) > 0.5 ? Normalize(Cross(Tangent, Normal)) : Vector3{}; break;
+    default: return;
+    }
+    static const char* Planes[] = { "XY", "XZ", "YZ" };
+    if (Length(Direction) < 0.5)
+    {
+        Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + ": the last point has no curve or face direction (snap it to a curve, or place two points)");
+        return;
+    }
+    if (std::abs(Dot(Direction, Plane.ZAxis)) > 1.0e-9)
+    {
+        Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + " leaves the " + Planes[std::clamp(Drawing.GridPlane, 0, 2)] + " drawing plane: refused");
+        return;
+    }
+    Picker.Lock          = Kind;
+    Picker.LockOrigin    = Origin;
+    Picker.LockDirection = Direction;
+    Announce(State, std::string("Lock ") + DraftingSnapLockLabel(Kind) + " through the last point · the same key releases it · object snaps align along it");
+}
+
+// The drawing pointer: on the lock line (aligned with a point snap, else 0.1 steps), else on an object snap projected
+// into the drawing plane, else on the 0.1 grid; Ctrl is free. Rectangle s squares the second corner.
+void PlaceDrawingPointer(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, Vector2& Point)
+{
+    DraftingDrawingSession& Drawing = State.Drawing;
+    DraftingPointPicker&    Picker  = State.Picker;
+    const OrthonormalFrame  Plane   = DraftingSketchPlane(Drawing.GridPlane);
+    const bool              Free    = ImGui::GetIO().KeyCtrl;
+    auto Flatten = [&](Vector3 World) { return Vector2{ Dot(World - Plane.Origin, Plane.XAxis), Dot(World - Plane.Origin, Plane.YAxis) }; };
+    std::vector<DraftingSnapPoint> Chain;
+    for (size_t Index = 0; Index < Drawing.Points.size(); ++Index)
+        Chain.push_back({ DraftingSnapKind::Endpoint, PlacePlanePoint(Plane, Drawing.Points[Index]), {}, {}, Compose("Point %d", int(Index) + 1), {} });
+    std::optional<Vector3> Reference;
+    if (!Drawing.Points.empty()) Reference = PlacePlanePoint(Plane, Drawing.Points.back());
+    Picker.Current = {};
+    if (Picker.Lock != DraftingSnapLockKind::None)
+    {
+        const std::optional<double> Along = ApproachDraftingLine(CastDraftingRay(Frame, Local.x, Local.y), Picker.LockOrigin, Picker.LockDirection);
+        if (Along)
+        {
+            double      Travel = *Along;
+            std::string Note;
+            const DraftingSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, Chain, {}, false);
+            if (PointSnapCondition(Object.Kind))
+            {
+                Travel = Dot(Object.Position - Picker.LockOrigin, Picker.LockDirection);
+                Note   = std::string(" · level with ") + DraftingSnapLabel(Object.Kind) + " " + Object.Source;
+            }
+            else if (!Free) Travel = std::round(Travel / DrawingSnap) * DrawingSnap;
+            const Vector3 World = Picker.LockOrigin + Picker.LockDirection * Travel;
+            Point          = Flatten(World);
+            Picker.Current = { DraftingSnapKind::Axis, World, Picker.LockDirection, {}, std::string("Lock ") + DraftingSnapLockLabel(Picker.Lock) + Note, 0.0 };
+        }
+    }
+    else
+    {
+        DraftingSnap Object = FindPointerSnap(State, Frame, Local, Reference, Chain, {}, false);
+        // On-curve snaps count only on curves in the drawing plane: an edge above the plane that merely overlaps the
+        // pointer on screen would move the point away from where it was clicked (its distinct points still snap).
+        if (Object.Kind == DraftingSnapKind::Curve && std::abs(Dot(Object.Position - Plane.Origin, Plane.ZAxis)) > 1.0e-9 * (1.0 + Length(Object.Position))) Object = {};
+        if (Object.Kind != DraftingSnapKind::None)
+        {
+            Point          = Flatten(Object.Position);                                       // Off-plane snaps land at their foot
+            Picker.Current = Object;
+        }
+        else if (!Free) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
+    }
+    if (Drawing.Kind == DraftingDrawingKind::Rectangle && Drawing.SquareCondition && Drawing.Points.size() == 1)
+    {
+        const Vector2 From  = Drawing.Points.front();
+        const double  Side  = std::max(std::abs(Point.X - From.X), std::abs(Point.Y - From.Y));
+        Point = { From.X + (Point.X >= From.X ? Side : -Side), From.Y + (Point.Y >= From.Y ? Side : -Side) };
+    }
 }
 
 // Plasticity E on a sketch region: the focused sketch step's profile, pointer-adjusted distance, Q/W/E/R Boolean.
@@ -2027,7 +2179,18 @@ void DriveTransformSession(DraftingWorkspaceState& State, const DraftingCameraFr
 {
     DraftingTransformSession& Transform = State.Transform;
     ImGuiIO& Io = ImGui::GetIO();
-    if (!Transform.StartCondition) { Transform.Start = Io.MousePos; Transform.StartLocal = Local; Transform.StartCondition = true; }
+    if (!Transform.StartCondition)
+    {
+        Transform.Start = Io.MousePos; Transform.StartLocal = Local; Transform.StartCondition = true;
+        if (Transform.Verb == DraftingTransformVerb::Move)
+        {
+            // Plasticity move: the grab point snaps (a vertex of the body), then follows the pointer's snaps elsewhere.
+            const DraftingSnap Anchor = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, true);
+            Transform.AnchorCondition = Anchor.Kind != DraftingSnapKind::None;
+            Transform.Anchor          = Anchor.Position;
+            Transform.AnchorSource    = Transform.AnchorCondition ? std::string(DraftingSnapLabel(Anchor.Kind)) + " " + Anchor.Source : std::string{};
+        }
+    }
     const Vector3 Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
     const Vector3 Axes[3] = { { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
     static const char* AxisNames[] = { "x", "y", "z" };
@@ -2045,6 +2208,7 @@ void DriveTransformSession(DraftingWorkspaceState& State, const DraftingCameraFr
         if (TypedCondition)
         {
             Shift = Axes[std::max(0, Transform.Axis)] * Typed;                                 // Typed: along the axis (x when free)
+            State.Picker.Current = {};
         }
         else
         {
@@ -2067,16 +2231,30 @@ void DriveTransformSession(DraftingWorkspaceState& State, const DraftingCameraFr
                 return true;
             };
             Vector3 From, To;
-            if (Meet(Transform.StartLocal, From) && Meet(Local, To))
+            const DraftingSnap Target = Transform.AnchorCondition ? FindPointerSnap(State, Frame, Local, std::nullopt, {}, Transform.Keys, true) : DraftingSnap{};
+            State.Picker.Current = Target;
+            if (Target.Kind != DraftingSnapKind::None)
             {
-                Shift = To - From;
+                // Anchor onto the target snap, within the axis / plane constraint
+                Shift = Target.Position - Transform.Anchor;
                 if (Transform.Axis >= 0 && !Transform.PlaneCondition) Shift = Axes[Transform.Axis] * Dot(Shift, Axes[Transform.Axis]);
+                else if (Transform.Axis >= 0) Shift = Shift - Axes[Transform.Axis] * Dot(Shift, Axes[Transform.Axis]);
             }
-            Shift = { Snap(Shift.X, MoveSnap), Snap(Shift.Y, MoveSnap), Snap(Shift.Z, MoveSnap) };
+            else
+            {
+                if (Meet(Transform.StartLocal, From) && Meet(Local, To))
+                {
+                    Shift = To - From;
+                    if (Transform.Axis >= 0 && !Transform.PlaneCondition) Shift = Axes[Transform.Axis] * Dot(Shift, Axes[Transform.Axis]);
+                }
+                Shift = { Snap(Shift.X, MoveSnap), Snap(Shift.Y, MoveSnap), Snap(Shift.Z, MoveSnap) };
+            }
         }
         Transform.Map     = TranslationMap(Shift);
         Transform.Readout = Compose("Move%s%s (%s, %s, %s)", Transform.Axis < 0 ? " screen" : Transform.PlaneCondition ? " plane ⊥" : " ", Transform.Axis < 0 ? "" : AxisNames[Transform.Axis],
                                     FormatLength(Shift.X).c_str(), FormatLength(Shift.Y).c_str(), FormatLength(Shift.Z).c_str());
+        if (!TypedCondition && State.Picker.Current.Kind != DraftingSnapKind::None)
+            Transform.Readout += std::string(" · ") + Transform.AnchorSource + " → " + DraftingSnapLabel(State.Picker.Current.Kind) + " " + State.Picker.Current.Source;
         break;
     }
     case DraftingTransformVerb::Rotate:
@@ -2815,6 +2993,83 @@ void ToggleXRay(DraftingWorkspaceState& State)
 }
 
 void DrawStatusPill(ImDrawList* Canvas, ImVec2& Cursor, const std::string& Text, ImU32 Accent);
+
+// 📝 Snap glyphs (Fusion / Plasticity style): square endpoint, triangle midpoint, ringed centre, cross intersection,
+//    ring + bar tangent, ⊥ perpendicular, dot on curve, dot + normal tick on face, dot on a lock line; the caption pill
+//    sits at the pointer (+14, +14). The active lock draws as a dashed line through the last point.
+void DrawSnapOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    constexpr ImU32 SnapColour    = IM_COL32(0xe6, 0xff, 0x4d, 0xff);                         // #e6ff4d - Snapped point
+    constexpr ImU32 OutlineColour = IM_COL32(0x10, 0x12, 0x16, 0xd0);                         // Dark halo behind the glyph
+    constexpr ImU32 LockColours[] = { 0, AxisColours[0], AxisColours[1], AxisColours[2], IM_COL32(0xff, 0xc8, 0x3d, 0xff), IM_COL32(0x4d, 0xd2, 0xff, 0xff), IM_COL32(0xe0, 0x8c, 0xff, 0xff) };
+    const DraftingPointPicker& Picker = State.Picker;
+    const bool Drawing = State.Drawing.ActiveCondition;
+    const bool Moving  = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
+    if (!Drawing && !Moving) return;
+    if (Drawing && Picker.Lock != DraftingSnapLockKind::None)
+    {
+        const double Span = 4000.0 * Frame.WorldPerPixel;
+        std::vector<ImVec2> Pixels;
+        for (int Index = -40; Index <= 40; ++Index)
+        {
+            ImVec2 Pixel;
+            if (ProjectWorldPoint(State, Frame, Picker.LockOrigin + Picker.LockDirection * (Span * Index / 40.0), Pixel)) Pixels.push_back(Pixel);
+        }
+        if (Pixels.size() >= 2) DrawDashedPolyline(Canvas, Pixels, LockColours[int(Picker.Lock)], 1.5f);
+    }
+    const DraftingSnap& Snap = Picker.Current;
+    if (Snap.Kind == DraftingSnapKind::None || Snap.Kind == DraftingSnapKind::Grid) return;
+    ImVec2 At;
+    if (!ProjectWorldPoint(State, Frame, Snap.Position, At)) return;
+    auto Glyph = [&](ImU32 Colour, float Width)
+    {
+        const float R = 6.0f;
+        switch (Snap.Kind)
+        {
+        case DraftingSnapKind::Endpoint: Canvas->AddRect(ImVec2(At.x - R, At.y - R), ImVec2(At.x + R, At.y + R), Colour, 0.0f, Width); break;
+        case DraftingSnapKind::Midpoint: Canvas->AddTriangle(ImVec2(At.x, At.y - R - 1.0f), ImVec2(At.x - R, At.y + R - 1.0f), ImVec2(At.x + R, At.y + R - 1.0f), Colour, Width); break;
+        case DraftingSnapKind::Centre:
+            Canvas->AddCircle(At, R, Colour, 20, Width);
+            Canvas->AddLine(ImVec2(At.x - R - 3.0f, At.y), ImVec2(At.x + R + 3.0f, At.y), Colour, Width * 0.5f);
+            Canvas->AddLine(ImVec2(At.x, At.y - R - 3.0f), ImVec2(At.x, At.y + R + 3.0f), Colour, Width * 0.5f);
+            break;
+        case DraftingSnapKind::Intersection:
+            Canvas->AddLine(ImVec2(At.x - R, At.y - R), ImVec2(At.x + R, At.y + R), Colour, Width);
+            Canvas->AddLine(ImVec2(At.x - R, At.y + R), ImVec2(At.x + R, At.y - R), Colour, Width);
+            break;
+        case DraftingSnapKind::Tangent:
+            Canvas->AddCircle(ImVec2(At.x, At.y + R * 0.5f), R * 0.8f, Colour, 20, Width);
+            Canvas->AddLine(ImVec2(At.x - R - 3.0f, At.y - R * 0.3f), ImVec2(At.x + R + 3.0f, At.y - R * 0.3f), Colour, Width);
+            break;
+        case DraftingSnapKind::Perpendicular:
+            Canvas->AddLine(ImVec2(At.x - R, At.y + R), ImVec2(At.x + R, At.y + R), Colour, Width);
+            Canvas->AddLine(ImVec2(At.x, At.y + R), ImVec2(At.x, At.y - R), Colour, Width);
+            Canvas->AddRect(ImVec2(At.x, At.y + R * 0.2f), ImVec2(At.x + R * 0.8f, At.y + R), Colour, 0.0f, Width * 0.5f);
+            break;
+        case DraftingSnapKind::Face:
+        {
+            ImVec2 Tip;
+            if (ProjectWorldPoint(State, Frame, Snap.Position + Snap.Normal * (24.0 * Frame.WorldPerPixel), Tip)) Canvas->AddLine(At, Tip, Colour, Width);
+            Canvas->AddCircleFilled(At, 3.5f, Colour);
+            break;
+        }
+        default: Canvas->AddCircleFilled(At, 4.0f, Colour); break;
+        }
+    };
+    Glyph(OutlineColour, 4.0f);
+    Glyph(Snap.Kind == DraftingSnapKind::Axis ? LockColours[int(Picker.Lock)] : SnapColour, 2.0f);
+    const ImVec2 Pointer = ImGui::GetIO().MousePos;
+    std::string Text = Snap.Kind == DraftingSnapKind::Axis ? Snap.Source : std::string(DraftingSnapLabel(Snap.Kind)) + " · " + Snap.Source;
+    if (Text.size() > 72) Text = Text.substr(0, 69) + "...";
+    // Flip left / up near the viewport's right and bottom edges (the hint line lives along the bottom)
+    const float  Width  = ImGui::CalcTextSize(Text.c_str()).x + 26.0f;
+    const float  Right  = State.ViewportRect[0] + State.ViewportRect[2];
+    const float  Bottom = State.ViewportRect[1] + State.ViewportRect[3];
+    ImVec2 Caption(Pointer.x + 14.0f, Pointer.y + 14.0f);
+    if (Caption.x + Width > Right - 8.0f) Caption.x = Pointer.x - 14.0f - Width;
+    if (Caption.y + 26.0f > Bottom - 40.0f) Caption.y = Pointer.y - 14.0f - 26.0f;
+    DrawStatusPill(Canvas, Caption, Text, Snap.Kind == DraftingSnapKind::Axis ? LockColours[int(Picker.Lock)] : SnapColour);
+}
 
 // Measure (I): recompute only when the selection or the document revision moved (a NURBS body takes ~1 s).
 void RefreshMeasure(DraftingWorkspaceState& State)
@@ -4010,9 +4265,10 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         Vector2 Point;
         bool    Closing = false;
         Drawing.PointerCondition = Hovered && IntersectConstructionPlane(Frame, Local, Drawing.GridPlane, Point);
+        if (!Drawing.PointerCondition) State.Picker.Current = {};
         if (Drawing.PointerCondition)
         {
-            if (!Io.KeyCtrl) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
+            PlaceDrawingPointer(State, Frame, Local, Point);
             ImVec2 First;
             const OrthonormalFrame Plane = DraftingSketchPlane(Drawing.GridPlane);
             if (DrawingClicks(Drawing.Kind) == 0 && Drawing.Points.size() >= 2 && ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Drawing.Points.front()), First) &&
@@ -4097,6 +4353,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
+    DrawSnapOverlay(State, Canvas, Frame);
     if (State.Box.ActiveCondition && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance)
     {
         const ImVec2 Low(std::min(State.Box.Start.x, State.Box.End.x), std::min(State.Box.Start.y, State.Box.End.y));
@@ -4206,7 +4463,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (!Sweep.Refusal.empty()) DrawStatusPill(Canvas, Below, Sweep.Refusal, RefusalColour);
     }
     const char* Hint = State.Transform.ActiveCondition
-                           ? (State.Transform.Verb == DraftingTransformVerb::Move ? "Move: pointer (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / Enter commit · Esc / right-click cancel"
+                           ? (State.Transform.Verb == DraftingTransformVerb::Move ? "Move: pointer snaps to points / edges / faces (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / Enter commit · Esc / right-click cancel"
                               : State.Transform.Verb == DraftingTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / Enter commit · Esc / right-click cancel"
                               : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / Enter commit · Esc / right-click cancel")
                        : State.Sweep.ActiveCondition
@@ -4215,12 +4472,12 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Sweep.Verb == DraftingSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
                        : State.Drawing.ActiveCondition
-                           ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (Ctrl free) · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == DraftingDrawingKind::Line ? "Click points (Ctrl free) · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == DraftingDrawingKind::Rectangle ? "Click two corners (Ctrl free) · Alt centre / corner · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == DraftingDrawingKind::Circle ? "Click centre then rim (Ctrl free) · V two-point / centre · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == DraftingDrawingKind::Arc ? "Click start, end, then a point on the arc (Ctrl free) · Ctrl+Z drop · Esc abort"
-                              : "Click both cap centres, then the rim (Ctrl free) · Ctrl+Z drop · Esc abort")
+                           ? (State.Drawing.Kind == DraftingDrawingKind::Curve ? "Click points (snaps, Ctrl free) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Line ? "Click points (snaps, Ctrl free) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Rectangle ? "Click two corners (snaps, Ctrl free) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Circle ? "Click centre then rim (snaps, Ctrl free) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == DraftingDrawingKind::Arc ? "Click start, end, then a point on the arc (snaps, Ctrl free) · x y z t n b lock · Ctrl+Z drop · Esc abort"
+                              : "Click both cap centres, then the rim (snaps, Ctrl free) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
@@ -4731,6 +4988,36 @@ void DrawDrawingCard(DraftingWorkspaceState& State)
     EndCard();
 }
 
+// 📝 Object snaps while drawing or moving: master switch, per-kind filter, the active direction lock.
+void DrawSnapCard(DraftingWorkspaceState& State)
+{
+    const bool Moving = State.Transform.ActiveCondition && State.Transform.Verb == DraftingTransformVerb::Move;
+    if (!State.Drawing.ActiveCondition && !Moving) return;
+    DraftingPointPicker& Picker = State.Picker;
+    BeginCard("Snaps");
+    if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, ImVec2(140, 0))) Picker.Enabled = !Picker.Enabled;
+    ImGui::SameLine();
+    ImGui::Text("Lock %s", Picker.Lock == DraftingSnapLockKind::None ? "none" : DraftingSnapLockLabel(Picker.Lock));
+    struct Choice { const char* Label; bool* Enabled; };
+    DraftingSnapFilter& Filter = Picker.Filter;
+    const Choice Choices[] = { { "Endpoint###SnapEndpoint", &Filter.EndpointEnabled }, { "Midpoint###SnapMidpoint", &Filter.MidpointEnabled },
+                               { "Centre###SnapCentre", &Filter.CentreEnabled }, { "Intersection###SnapIntersection", &Filter.IntersectionEnabled },
+                               { "Tangent###SnapTangent", &Filter.TangentEnabled }, { "Perpendicular###SnapPerpendicular", &Filter.PerpendicularEnabled },
+                               { "On curve###SnapCurve", &Filter.CurveEnabled }, { "On face (Move)###SnapFace", &Filter.FaceEnabled } };
+    ImGui::BeginDisabled(!Picker.Enabled);
+    for (int Index = 0; Index < 8; ++Index)
+    {
+        if (Index % 2 == 1) ImGui::SameLine();
+        if (ToggleButton(State, Choices[Index].Label, *Choices[Index].Enabled, ImVec2(140, 0))) *Choices[Index].Enabled = !*Choices[Index].Enabled;
+    }
+    ImGui::EndDisabled();
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextWrapped(State.Drawing.ActiveCondition ? "x y z t n b lock a direction through the last point (again releases) · s squares a rectangle · Ctrl held: free"
+                                                     : "The grab point snaps, then lands on the snap under the pointer · X / Y / Z still constrain · Ctrl held: free");
+    ImGui::PopStyleColor();
+    EndCard();
+}
+
 void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
     BeginPanel("Inspector", Position, Size);
@@ -4741,6 +5028,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     DrawMeasureCard(State);
     DrawSectionCard(State);
     DrawDrawingCard(State);
+    DrawSnapCard(State);
     DrawConstraintCard(State);
     DrawStepCard(State);
     DrawBodyCard(State);
@@ -4864,6 +5152,18 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) FinishDrawingSession(State, false);
         else if (Pressed(ImGuiKey_Escape)) CancelDrawingSession(State);
         else if (Control && Pressed(ImGuiKey_Z)) RetractDrawingPoint(State);               // gizmo:line:undo / gizmo:curve:undo
+        else if (Alternate && !Control && !Io.KeyShift && Pressed(ImGuiKey_Z)) ToggleXRay(State);       // viewport:toggle-x-ray stays live (hidden snaps)
+        else if (!Control && !Alternate && !Io.KeyShift && (Pressed(ImGuiKey_X) || Pressed(ImGuiKey_Y) || Pressed(ImGuiKey_Z) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_N) || Pressed(ImGuiKey_B)))
+        {
+            // body[gizmo=point-picker]: x / y / z, set-tangent, set-normal, set-binormal
+            ChooseSnapLock(State, Pressed(ImGuiKey_X) ? DraftingSnapLockKind::X : Pressed(ImGuiKey_Y) ? DraftingSnapLockKind::Y : Pressed(ImGuiKey_Z) ? DraftingSnapLockKind::Z
+                                : Pressed(ImGuiKey_T) ? DraftingSnapLockKind::Tangent : Pressed(ImGuiKey_N) ? DraftingSnapLockKind::Normal : DraftingSnapLockKind::Binormal);
+        }
+        else if (Drawing.Kind == DraftingDrawingKind::Rectangle && !Control && !Alternate && Pressed(ImGuiKey_S))
+        {
+            Drawing.SquareCondition = !Drawing.SquareCondition;                               // body[gizmo=point-picker]: set-square
+            Announce(State, Drawing.SquareCondition ? "Rectangle: square (s releases)" : "Rectangle: free sides");
+        }
         else if (Drawing.Kind == DraftingDrawingKind::Curve && !Control && !Alternate)
         {
             static const ImGuiKey Keys[] = { ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4 };

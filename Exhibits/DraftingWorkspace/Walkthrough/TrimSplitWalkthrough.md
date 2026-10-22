@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 496 frames · 39.5637 s · slowest frame 1706.82 ms
+- Frame: 1600 x 900 · 496 frames · 41.4146 s · slowest frame 1239.23 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/TrimSplitWalkthrough.txt
 - Expectations: 54 / 54 passed
 
@@ -22,7 +22,7 @@
 | 60 | `selected-bodies contains Cut#4` | Cut#4 | 🟢 |
 | 61 | `pick-mode == 4` | 4 | 🟢 |
 | 62 | `sound == 1` | 1 | 🟢 |
-| 63 | `status contains Cut` | Cut (Extrude1 by Line1) · 276 ms | 🟢 |
+| 63 | `status contains Cut` | Cut (Extrude1 by Line1) · 279 ms | 🟢 |
 | 73 | `bodies == 1` | 1 | 🟢 |
 | 74 | `steps == 5` | 5 | 🟢 |
 | 75 | `body-volumes contains 1.400000` | Extrude1 1.400000 | 🟢 |
@@ -64,15 +64,15 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 102CutLine | 109 | `41169f881dabac02` |
-| 103CutRemoved | 129 | `105096ab5d320e36` |
-| 104CutCore | 168 | `c57446f86ca29a17` |
-| 105CutHole | 176 | `2bc80f84af7528b5` |
-| 106PanelCut | 317 | `ae69ebaff4400668` |
-| 107PanelTrimmed | 325 | `09b603ddc39fc1d6` |
-| 108TrimHover | 394 | `84df90dea7b58594` |
-| 109TrimStar | 451 | `2285ac0550c256cf` |
-| 110StarExtruded | 496 | `ee9df15a92e5d987` |
+| 102CutLine | 109 | `30e3373f3bb57358` |
+| 103CutRemoved | 129 | `033fb57c83f14023` |
+| 104CutCore | 168 | `6a6217c1de14c921` |
+| 105CutHole | 176 | `900c93d4b376f349` |
+| 106PanelCut | 317 | `6bdc2b2ee9504814` |
+| 107PanelTrimmed | 325 | `25d77e4c75f8abaf` |
+| 108TrimHover | 394 | `076cd58d33a6f1d2` |
+| 109TrimStar | 451 | `958227a50e21634c` |
+| 110StarExtruded | 496 | `ed32835a22dc42d5` |
 
 ## Journal
 
@@ -86,7 +86,7 @@
 - Cut (C): focus a sketch step or select a curve (the cutter), pick the body in mode 4 (else the active body)
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Line1 · 5 ms
-- Cut (Extrude1 by Line1) · 276 ms
+- Cut (Extrude1 by Line1) · 279 ms
 - View Isometric
 - Framed the document (Space)
 - Remove (Cut1) · 6 ms
@@ -94,9 +94,9 @@
 - Redo
 - Circle on plane XY: click centre and rim · V two-point mode · Esc aborts
 - Circle1 · 6 ms
-- Cut (Extrude1 by Circle1) · 77 ms
+- Cut (Extrude1 by Circle1) · 78 ms
 - View Isometric
-- Remove (Cut2) · 15 ms
+- Remove (Cut2) · 20 ms
 - New document (previous recovery copy kept)
 - Import 11 curve(s) · 2 ms
 - Framed the document (Space)
@@ -115,10 +115,10 @@
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/TrimSplitRecovery.drafting.toml
 - Curve1 · Hermite · 1 ms
-- Cut (Loft1 by Curve1) · 1560 ms
+- Cut (Loft1 by Curve1) · 1097 ms
 - View Isometric
 - Framed the document (Space)
-- Remove (Cut1) · 168 ms
+- Remove (Cut1) · 29 ms
 - New document (previous recovery copy kept)
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/TrimSplitRecovery.drafting.toml

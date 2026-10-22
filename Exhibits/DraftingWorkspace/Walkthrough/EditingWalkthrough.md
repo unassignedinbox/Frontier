@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 476 frames · 36.585 s · slowest frame 389.905 ms
+- Frame: 1600 x 900 · 476 frames · 39.6905 s · slowest frame 435.466 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -86,17 +86,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `364c5dc1a669696d` |
-| 112Rotate | 142 | `bbafdfa605d23fd4` |
-| 113Scale | 180 | `f00a0f5d6b3e3df5` |
-| 114Duplicate | 209 | `18562b09b59f01ee` |
-| 115Paste | 228 | `73995ea9896a8eda` |
-| 116Hide | 236 | `e663d595e2730d5e` |
-| 117InvertHidden | 273 | `85070da524a134a5` |
-| 118Join | 365 | `ac80c04a626678d7` |
-| 119OffsetPreview | 407 | `5995c62504e03278` |
-| 120PipePreview | 462 | `251a30c20ea9dce9` |
-| 121Pipe | 476 | `ade474379399893e` |
+| 111MovePreview | 98 | `9887f178d1f06e9c` |
+| 112Rotate | 142 | `3ac96eb40b888c80` |
+| 113Scale | 180 | `face4f1c14424678` |
+| 114Duplicate | 209 | `7509cd0204b1eb75` |
+| 115Paste | 228 | `085e3cfe7d7a7cac` |
+| 116Hide | 236 | `bb33ce7a68e7f574` |
+| 117InvertHidden | 273 | `0db5b6802ce260ce` |
+| 118Join | 365 | `b130ac70ef0f90d6` |
+| 119OffsetPreview | 407 | `6016739691cd77f6` |
+| 120PipePreview | 462 | `e87f370efc1678bc` |
+| 121Pipe | 476 | `829fa60b414bdacb` |
 
 ## Journal
 
@@ -105,7 +105,7 @@
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 8 ms
+- Extrude1 · Rectangle1 · New · 7 ms
 - Selection cleared
 - Move needs picked bodies (mode 4, or a face / edge of the body)
 - Selected Extrude1 (6 faces)

@@ -219,6 +219,9 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "transform") return Numeric(State.Transform.ActiveCondition ? 1 : 0);
     if (Field == "transform-commits") return Numeric(double(State.Transform.Commits));
     if (Field == "transform-readout") { Text = State.Transform.Readout; Number = double(Text.size()); return true; }
+    if (Field == "transform-shift-x") return Numeric(State.Transform.Map.Shift.X);
+    if (Field == "transform-shift-y") return Numeric(State.Transform.Map.Shift.Y);
+    if (Field == "transform-shift-z") return Numeric(State.Transform.Map.Shift.Z);
     if (Field == "transform-preview-volume") return Numeric(State.Transform.Preview ? State.Transform.Preview->Summary.Volume : 0.0);
     if (Field == "sweep") return Numeric(State.Sweep.ActiveCondition ? 1 : 0);
     if (Field == "sweep-commits") return Numeric(double(State.Sweep.Commits));
@@ -411,6 +414,24 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "drawing-centre") return Numeric(State.Drawing.CentreCondition ? 1 : 0);
     if (Field == "drawing-plane") return Numeric(State.Drawing.GridPlane);
     if (Field == "drawing-refusal") { Text = State.Drawing.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "drawing-last-x") return Numeric(State.Drawing.Points.empty() ? std::nan("") : State.Drawing.Points.back().X);
+    if (Field == "drawing-last-y") return Numeric(State.Drawing.Points.empty() ? std::nan("") : State.Drawing.Points.back().Y);
+    if (Field == "drawing-pointer-x") return Numeric(State.Drawing.PointerCondition ? State.Drawing.Pointer.X : std::nan(""));
+    if (Field == "drawing-pointer-y") return Numeric(State.Drawing.PointerCondition ? State.Drawing.Pointer.Y : std::nan(""));
+    if (Field == "drawing-square") return Numeric(State.Drawing.SquareCondition ? 1 : 0);
+    if (Field == "snap")
+    {
+        const DraftingSnap& Snap = State.Picker.Current;
+        Text   = Snap.Kind == DraftingSnapKind::None ? std::string("none") : std::string(DraftingSnapLabel(Snap.Kind)) + " · " + Snap.Source;
+        Number = double(int(Snap.Kind));
+        return true;
+    }
+    if (Field == "snap-x") return Numeric(State.Picker.Current.Position.X);
+    if (Field == "snap-y") return Numeric(State.Picker.Current.Position.Y);
+    if (Field == "snap-z") return Numeric(State.Picker.Current.Position.Z);
+    if (Field == "snap-lock") { Text = State.Picker.Lock == DraftingSnapLockKind::None ? std::string("none") : std::string(DraftingSnapLockLabel(State.Picker.Lock)); Number = double(int(State.Picker.Lock)); return true; }
+    if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
+    if (Field == "snapped-points") return Numeric(double(State.Picker.Snapped));
     if (Field == "curves" || Field == "selected-curves")
     {
         std::vector<std::string> Captions;

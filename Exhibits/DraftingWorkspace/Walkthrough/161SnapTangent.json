@@ -1,0 +1,22 @@
+{
+  "Frame": 42,
+  "Title": "Bracket",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cylinder2 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Cylinder2 · Extrude", "Refused": false}, {"Label": "Blend#7", "Caption": "Fillet1 · Blend", "Refused": false}, {"Label": "Blend#8", "Caption": "Chamfer1 · Blend", "Refused": false}, {"Label": "Sketch#9", "Caption": "Circle1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 11, "Edges": 24, "Vertices": 16, "Genus": 1, "Volume": 10.22277375, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": true, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0, 0]], "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts",
+  "Viewport": [320, 160, 930, 730]
+}

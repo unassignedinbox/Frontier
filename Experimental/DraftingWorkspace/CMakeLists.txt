@@ -323,6 +323,14 @@ add_test(NAME DraftingMeasureSectionWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingMeasureSectionWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME DraftingSnappingWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/SnapRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Snap.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/SnappingWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingSnappingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 609 frames · 42.0287 s · slowest frame 397.217 ms
+- Frame: 1600 x 900 · 609 frames · 46.9552 s · slowest frame 439.081 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
@@ -65,12 +65,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `53a1e107d99f51c7` |
-| 129ConstrainSplineG2 | 221 | `d842eb1246a87859` |
-| 130ConstrainReference | 415 | `4a7aad87ee80bfd6` |
-| 131ConstrainReferenceFollows | 449 | `d886a977a26d4f29` |
-| 132ConstrainLinkPick | 508 | `f3ce83744e0f2f5e` |
-| 133ConstrainLinked | 595 | `703734b1422779e6` |
+| 128ConstrainSplineG1 | 179 | `b754fc147b459324` |
+| 129ConstrainSplineG2 | 221 | `bb18fae5f2cb5394` |
+| 130ConstrainReference | 415 | `ab7219cce5a25717` |
+| 131ConstrainReferenceFollows | 449 | `d080db24b7adc118` |
+| 132ConstrainLinkPick | 508 | `38f7548963109a40` |
+| 133ConstrainLinked | 595 | `e138cc5a6a7aad35` |
 
 ## Journal
 
@@ -111,7 +111,7 @@
 - Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 1.5 · Line1 · 6 ms
+- Constrain Rectangle1: Length 1.5 · Line1 · 7 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
@@ -119,7 +119,7 @@
 - Picks cleared
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End
-- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms
+- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 7 ms
 - Picks cleared
 - D2 = 2 in Rectangle1 · 9 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
@@ -128,7 +128,7 @@
 - Selection cleared
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/DraftingWorkspace/LinkedConstraintsRecovery.drafting.toml
-- Line1 · 6 ms
+- Line1 · 7 ms
 - Constrain Line1 · 0 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End of Rectangle1

@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 316 frames · 32.8795 s · slowest frame 2430.37 ms
+- Frame: 1600 x 900 · 316 frames · 33.6539 s · slowest frame 2439.05 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -38,10 +38,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 134 | `dea1e2b4f76890b3` |
-| 71ZebraG2 | 188 | `f93c2802f88363f2` |
-| 72DeviationMap | 213 | `1745ec7f974e440c` |
-| 73ZebraMirrored | 316 | `71c020d010ca75ea` |
+| 70ZebraG0 | 134 | `4a85bb091ad4e316` |
+| 71ZebraG2 | 188 | `a57a617af201c451` |
+| 72DeviationMap | 213 | `4924f3d0e87e9d7e` |
+| 73ZebraMirrored | 316 | `b31804714472b41e` |
 
 ## Journal
 

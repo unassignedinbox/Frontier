@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 120 frames · 12.8596 s · slowest frame 655.789 ms
+- Frame: 1600 x 900 · 120 frames · 15.1553 s · slowest frame 672.831 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/MeasureSectionWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -42,14 +42,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 152MeasureBody | 10 | `0984a9857e23241b` |
-| 153MeasureFace | 22 | `bfdef77d106cf732` |
-| 154MeasureDistance | 31 | `e4dbbcbbfba00927` |
-| 155MeasureEdges | 50 | `3e2ef50159c2b0c5` |
-| 156SectionY | 65 | `204996d124fa7149` |
-| 157SectionCapHover | 81 | `f46df5f3246c5f98` |
-| 158SectionX | 105 | `00b122c02a1ce982` |
-| 159SectionFlipped | 114 | `f4538404b79d6a4b` |
+| 152MeasureBody | 10 | `4aae15a7355a8f99` |
+| 153MeasureFace | 22 | `8c9a959b4c7ef237` |
+| 154MeasureDistance | 31 | `c424f4dab70b57a8` |
+| 155MeasureEdges | 50 | `5a0c459c40ce1e96` |
+| 156SectionY | 65 | `7b1b35900366b039` |
+| 157SectionCapHover | 81 | `d7d3d27a32156e47` |
+| 158SectionX | 105 | `e33758b3e08f751e` |
+| 159SectionFlipped | 114 | `b93e91279a4bf5c6` |
 
 ## Journal
 

@@ -1,0 +1,170 @@
+# DraftingWorkspace object-snapping walkthrough — the Plasticity point picker while drawing and moving: endpoint,
+# midpoint, centre, tangent and perpendicular snaps land on the exact carriers; n / b / t / x / y / z lock a direction
+# through the last point; s squares a rectangle; G moves a grab-point snap onto a target snap; x-ray reaches hidden points.
+# Run: DraftingWorkspaceCapture --specimen --reset-files --recovery …/SnapRecovery.drafting.toml
+#      --document …/Snap.drafting.toml --script Experimental/DraftingWorkspace/Scripts/SnappingWalkthrough.txt
+# Bracket specimen: block 4 × 2.5 × 1 with its corner at the origin, boss, hole, Fillet1, Chamfer1 — volume 10.22278.
+# Closed forms: circle C = (−2, 1.2), r 0.6; from P = (0, 0) the tangent point is C + r(cos α û + sin α ẑ × û) with
+# cos α = r / |P − C|: T = (-1.569338679, 1.617768868); the perpendicular foot from (2, 0) is C + r (M − C) / |M − C|
+# = (-1.425304229, 1.027591269).
+
+# ① Shift+W centre circle r 0.6 at (−2, 1.2) on the grid
+frames 3
+key W Shift
+click world -2.0 1.2 0.0
+frames 2
+click world -1.4 1.2 0.0
+frames 2
+expect steps == 9
+
+# ② Shift+A line: the pointer 2 px off the block's front-left-bottom corner snaps onto it (Endpoint, exact); the click
+#    places (0, 0)
+key A Shift
+move world 0.012 -0.008 0.0
+frames 2
+expect snap contains Endpoint
+expect snap-x == 0
+expect snap-y == 0
+expect snap-z == 0
+capture 160SnapEndpoint
+click world 0.012 -0.008 0.0
+frames 2
+expect drawing-points == 1
+expect drawing-last-x == 0
+expect drawing-last-y == 0
+
+# ③ Tangent from the last point to the circle (|T − C| = r, (T − P)·(T − C) = 0); the click places it
+move world -1.559338679 1.627768868 0.0
+frames 2
+expect snap contains Tangent
+expect snap-x ~ -1.569338679
+expect snap-y ~ 1.617768868
+capture 161SnapTangent
+click world -1.559338679 1.627768868 0.0
+frames 2
+expect drawing-points == 2
+expect drawing-last-x ~ -1.569338679
+
+# ④ t (set-tangent): the lock line follows the circle's tangent at T; the point slides along it in 0.1 steps — travel 1.0
+key T
+frames 2
+expect snap-lock contains tangent
+move world -2.245620126 2.325537736 0.0
+frames 2
+expect snap contains tangent
+expect drawing-pointer-x ~ -2.265620126
+expect drawing-pointer-y ~ 2.335537736
+capture 162SnapLockTangent
+click world -2.245620126 2.325537736 0.0
+frames 2
+expect drawing-points == 3
+expect snap-lock contains none
+
+# ⑤ n (set-normal): square to the last direction in the plane, travel 0.5
+key N
+frames 2
+expect snap-lock contains normal
+move world -2.634504560 2.007397012 0.0
+frames 2
+expect drawing-pointer-x ~ -2.624504560
+expect drawing-pointer-y ~ 1.987397012
+capture 163SnapLockNormal
+click world -2.634504560 2.007397012 0.0
+frames 2
+expect drawing-points == 4
+
+# ⑥ b (set-binormal) = tangent × normal = ẑ leaves the XY drawing plane: refused, no lock
+key B
+frames 2
+expect snap-lock contains none
+capture 164SnapBinormalRefused
+
+# ⑦ The circle's centre, then the block's front-bottom edge midpoint (2, 0, 0) — clicked
+move world -1.99 1.21 0.0
+frames 2
+expect snap contains Centre
+expect snap-x == -2
+expect snap-y ~ 1.2
+capture 165SnapCentre
+move world 2.01 -0.01 0.0
+frames 2
+expect snap contains Midpoint
+expect snap-x == 2
+expect snap-y == 0
+capture 166SnapMidpoint
+click world 2.01 -0.01 0.0
+frames 2
+expect drawing-points == 5
+
+# ⑧ Perpendicular from (2, 0) to the circle: the nearest point on the line through the centre
+move world -1.415304229 1.017591269 0.0
+frames 2
+expect snap contains Perpendicular
+expect snap-x ~ -1.425304229
+expect snap-y ~ 1.027591269
+capture 167SnapPerpendicular
+click world -1.415304229 1.017591269 0.0
+frames 2
+expect drawing-points == 6
+expect snapped-points == 4
+key Enter
+frames 2
+expect steps == 10
+
+# ⑨ Shift+Q rectangle, s (set-square): first corner (−3, 2), the pointer over (−3.67, 2.83) → grid (−3.7, 2.8) →
+#    the larger side 0.8 on both axes: (−3.8, 2.8)
+key Q Shift
+click world -3.0 2.0 0.0
+frames 2
+key S
+frames 2
+expect drawing-square == 1
+move world -3.67 2.83 0.0
+frames 2
+expect drawing-pointer-x ~ -3.8
+expect drawing-pointer-y ~ 2.8
+capture 168SnapSquare
+click world -3.67 2.83 0.0
+frames 2
+expect steps == 11
+
+# ⑩ Mode 4, pick the bracket, G with the pointer on its corner (0, 0, 0): the grab point snaps there; over the circle's
+#    centre the move is exactly (−2, 1.2, 0); the click commits, Ctrl+Z restores
+key 4
+click world 2.0 1.0 1.0
+frames 2
+move world 0.012 -0.008 0.0
+frames 2
+key G
+frames 2
+move world -1.99 1.21 0.0
+frames 3
+expect snap contains Centre
+expect transform-shift-x == -2
+expect transform-shift-y ~ 1.2
+expect transform-shift-z == 0
+expect transform-readout contains Endpoint
+capture 169SnapMove
+click world -1.99 1.21 0.0
+frames 3
+expect transform-commits == 1
+expect volume ~ 10.22278
+key Z Ctrl
+frames 3
+
+# ⑪ Shift+A, the hidden back-left-bottom corner (0, 2.5, 0): the solid hides it; Alt+Z x-ray reaches it
+key A Shift
+move world 0.01 2.49 0.0
+frames 2
+expect snap lacks Endpoint
+key Z Alt
+frames 3
+move world 0.012 2.492 0.0
+frames 2
+expect snap contains Endpoint
+expect snap-x == 0
+expect snap-y == 2.5
+capture 170SnapXRay
+key Escape
+key Z Alt
+frames 2

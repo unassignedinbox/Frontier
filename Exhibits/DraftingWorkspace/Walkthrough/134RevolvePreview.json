@@ -13,7 +13,7 @@
   "Hover": "Edge(Revolve#4.Side(Line3)|Revolve#4.Side(Line4))",
   "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 11.46663532, "Target": [1.720129574, 1.376103659, 8.426204708e-17], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
-  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[0.6, 2], [-0, 2], [-0, 0]], "Refusal": ""},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[0.6, 2], [-0, 2], [0, 0]], "Refusal": ""},
   "Undo": 4,
   "Redo": 0,
   "Welcome": false,

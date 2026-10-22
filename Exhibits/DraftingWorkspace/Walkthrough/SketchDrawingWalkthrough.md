@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 339 frames · 30.1123 s · slowest frame 917.481 ms
+- Frame: 1600 x 900 · 339 frames · 30.7642 s · slowest frame 1001.44 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `9e271d364b024fe0` |
-| 31CurveForms | 243 | `1b086d5f142c39ea` |
-| 32HermiteClosing | 254 | `d14f1660934b6584` |
-| 33DrawnSolid | 339 | `58791234c8f695fd` |
+| 30RectanglePreview | 32 | `548d570484437c40` |
+| 31CurveForms | 243 | `13245b30d0522cf0` |
+| 32HermiteClosing | 254 | `fcc71da8e1f3f5ac` |
+| 33DrawnSolid | 339 | `26c15b3ddefcfde4` |
 
 ## Journal
 
@@ -107,11 +107,11 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 23 ms
+- Curve1 · Hermite · 19 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 701 ms
+- Extrude4 · Curve1 · Difference · 763 ms
 - Arc on plane XY: click start, end, then a point on the arc · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left

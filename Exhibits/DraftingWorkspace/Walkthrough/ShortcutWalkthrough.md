@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 26.4972 s · slowest frame 414.095 ms
+- Frame: 1600 x 900 · 256 frames · 26.7425 s · slowest frame 424.847 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/ShortcutWalkthrough.txt
 - Expectations: 70 / 70 passed
 
@@ -80,9 +80,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `b0411db3d6c1c470` |
-| 21TangentChain | 144 | `d6bc15d2ffd1e8e2` |
-| 20ShortcutExtrude | 224 | `02594782b1effa5a` |
+| 19BevelSignChamfer | 64 | `14936b86925ba723` |
+| 21TangentChain | 144 | `7e9c21a633c30fb5` |
+| 20ShortcutExtrude | 224 | `1464b542b2198f12` |
 
 ## Journal
 
@@ -93,7 +93,7 @@
 - Bevel cancelled (document untouched)
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 139 ms
+- Fillet 0.3 on 1 edge(s) · 140 ms
 - Undo
 - Redo
 - Selection cleared
@@ -113,8 +113,8 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 93 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 111 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 101 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 98 ms
 - Selection cleared

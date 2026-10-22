@@ -15,6 +15,7 @@
 #include "Interface/DraftingOptions.h"
 #include "Viewport/DraftingCamera.h"
 #include "Viewport/DraftingRasterization.h"
+#include "Viewport/DraftingSnapping.h"
 
 #include <imgui.h>
 
@@ -127,7 +128,24 @@ struct DraftingDrawingSession
     int                            GridPlane        = 0;                                     // [-]   - 0 XY · 1 XZ · 2 YZ (fixed at open)
     bool                           CentreCondition  = false;                                 // [-]   - Rectangle: Alt centre mode · circle: V two-point mode off
     Modeller::SketchSplineForm     Form             = Modeller::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
+    bool                           SquareCondition  = false;                                 // [-]   - Rectangle: s keeps the sides equal
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
+};
+
+// 📝 Point picker (Plasticity body[gizmo=point-picker]): object snaps under the pointer while drawing and moving, and
+//    the direction lock keys n / b / t / x / y / z through the last placed point. Ctrl suspends snapping while held.
+struct DraftingPointPicker
+{
+    bool                                   Enabled         = true;                           // [-]   - Object snaps on (Inspector)
+    DraftingSnapFilter                     Filter          = {};                             // [-]   - Enabled kinds (Inspector)
+    DraftingSnap                           Current         = {};                             // [-]   - Snap under the pointer this frame
+    DraftingSnap                           Placed          = {};                             // [-]   - Snap of the last placed point (t / n / b)
+    DraftingSnapLockKind                   Lock            = DraftingSnapLockKind::None;     // [-]   - Direction lock (cleared by the next point)
+    Modeller::Vector3                      LockOrigin      = {};                             // [len] - Last placed point
+    Modeller::Vector3                      LockDirection   = {};                             // [-]   - Unit lock direction
+    std::unique_ptr<DraftingSnapCatalogue> Catalogue       = {};                             // [-]   - Exact carriers of the shown scene
+    size_t                                 SceneFaces      = 0;                              // [-]   - Scene face count the catalogue indexes
+    int                                    Snapped         = 0;                              // [-]   - Points placed on object snaps (script evidence)
 };
 
 // 📝 Mode 1 pole drag: pressing on a shown pole grabs it; the pole follows the pointer in the screen-parallel plane
@@ -246,6 +264,9 @@ struct DraftingTransformSession
     ImVec2                            Start              = {};                               // [px]  - Anchor (screen)
     ImVec2                            StartLocal         = {};                               // [px]  - Anchor (viewport)
     Modeller::Vector3                 Pivot              = {};                               // [len] - Bounds centre of the bodies
+    bool                              AnchorCondition    = false;                            // [-]   - Move started on an object snap
+    Modeller::Vector3                 Anchor             = {};                               // [len] - That snap point (moves onto the target snap)
+    std::string                       AnchorSource       = {};                               // [-]   - "Endpoint · Edge …"
     std::string                       Typed              = {};                               // [-]   - Typed amount
     Modeller::AffineMap               Map                = {};                               // [-]   - Current map
     Modeller::AffineMap               StagedMap          = {};                               // [-]   - Map the preview shows
@@ -347,6 +368,7 @@ struct DraftingWorkspaceState
     DraftingBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
     DraftingDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
     DraftingPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
+    DraftingPointPicker                   Picker         = {};                               // [-]   - Object snaps and direction locks
     DraftingBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     DraftingBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
     DraftingTrimSession                   Trim           = {};                               // [-]   - T: curve trim session

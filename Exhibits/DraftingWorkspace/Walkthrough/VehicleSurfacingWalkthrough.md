@@ -1,7 +1,7 @@
 # DraftingWorkspaceCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 251 frames · 20.2643 s · slowest frame 391.262 ms
+- Frame: 1600 x 900 · 251 frames · 20.8707 s · slowest frame 401.642 ms
 - Script: /home/user/Frontier/Experimental/DraftingWorkspace/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -50,7 +50,7 @@
 | 124 | `refused == 0` | 0 | 🟢 |
 | 125 | `sheet == 1` | 1 | 🟢 |
 | 126 | `sound == 1` | 1 | 🟢 |
-| 127 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 32.64 mm · 3 ms | 🟢 |
+| 127 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 32.64 mm · 4 ms | 🟢 |
 | 130 | `selected-curves == Section3` | Section3 | 🟢 |
 | 134 | `pole-edits == 0` | 0 | 🟢 |
 | 135 | `sheet == 1` | 1 | 🟢 |
@@ -63,13 +63,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 36 | `8f3d823ef522d7f2` |
-| 51ControlPoints | 43 | `b992890d9f455ff4` |
-| 52SectionsSelected | 140 | `71272c6e6fc8b674` |
-| 53BonnetLoft | 148 | `c2e51e84bd660529` |
-| 54PoleDragLive | 185 | `670aaa244f5ecd00` |
-| 55PoleMoved | 199 | `832eed52b97e4037` |
-| 56SheetUnderside | 234 | `ead5ca06949c4deb` |
+| 50CurvesImported | 36 | `18fff6417d165d13` |
+| 51ControlPoints | 43 | `4c71de77d3c436e2` |
+| 52SectionsSelected | 140 | `108f2d121d1d11c7` |
+| 53BonnetLoft | 148 | `e51ed84ae27ec36a` |
+| 54PoleDragLive | 185 | `3b67f5a43f123e7f` |
+| 55PoleMoved | 199 | `2e98049eab8ac7e9` |
+| 56SheetUnderside | 234 | `15384198c5b3e2de` |
 
 ## Journal
 
@@ -100,8 +100,8 @@
 - Loft1 · 6 sections · 1 ms
 - Lofted 6 curve(s) → panel (sound) · 1 panel(s) · 1 ms
 - Pole drag dropped
-- Move pole 2 of Section3 · 3 ms
-- Moved pole 2 of Section3 by 32.64 mm · 3 ms
+- Move pole 2 of Section3 · 4 ms
+- Moved pole 2 of Section3 by 32.64 mm · 4 ms
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 1 selected
 - Undo
 - Redo
