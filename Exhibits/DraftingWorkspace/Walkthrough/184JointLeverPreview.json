@@ -1,0 +1,22 @@
+{
+  "Frame": 301,
+  "Title": "Bracket",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cylinder2 · Sketch", "Refused": false}, {"Label": "Extrude#6", "Caption": "Cylinder2 · Extrude", "Refused": false}, {"Label": "Blend#7", "Caption": "Fillet1 · Blend", "Refused": false}, {"Label": "Blend#8", "Caption": "Chamfer1 · Blend", "Refused": false}, {"Label": "Sketch#9", "Caption": "Cylinder3 · Sketch", "Refused": false}, {"Label": "Extrude#10", "Caption": "Cylinder3 · Extrude", "Refused": false}, {"Label": "Sketch#11", "Caption": "Block2 · Sketch", "Refused": false}, {"Label": "Extrude#12", "Caption": "Block2 · Extrude", "Refused": false}, {"Label": "Joint#13", "Caption": "Revolute1 · Joint", "Refused": false}],
+  "Body": {"Faces": 20, "Edges": 39, "Vertices": 26, "Genus": 1, "Volume": 10.67729806, "Sound": true},
+  "Selection": {"Faces": ["Extrude#12.Cap(End)", "Extrude#10.Cap(End)"], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 3,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 14.64004685, "Target": [4, 2.200000048, 0.875], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Undo": 8,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Joint: Block2 onto Cylinder3 · R V S C P L B kind · drag the values · F flip · Enter applies",
+  "Viewport": [320, 160, 930, 730]
+}

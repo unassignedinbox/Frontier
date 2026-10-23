@@ -32,6 +32,7 @@
 #include <limits>
 #include <numbers>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -84,7 +85,7 @@ namespace
     GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
     GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
     GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
-    GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 2 (0.2 √0.05 + 0.09 asin ⅔)) · 0.1; moving the bracket carries both; refusals; codec byte-equal; undo", "≤ 1e-9" };
+    GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 2 (0.2 √0.05 + 0.09 asin ⅔)) · 0.1; moving the bracket carries both; refusals; codec (joints, geometry, fixed point); undo", "≤ 1e-9" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2751,7 +2752,7 @@ int main()
         const Vector3 PinCentre = Centroid(Rig, PinKey);
         Tally(JointGate, Distance(PinCentre, Vector3{ 3.0, 1.25, 0.5 }), Inserted.AcceptedCondition && Distance(PinCentre, Vector3{ 3.0, 1.25, 0.5 }) <= 1.0e-9,
               "pin into the hole (revolute, flipped, offset 0.25): centroid " + Triple(PinCentre) + " = (3, 1.25, 0.5)");
-        Tally(JointGate, Gap(Rig), Rig.Regeneration.Joints.size() == 1 && std::abs(Gap(Rig) - 0.25) <= 1.0e-9 && Rig.UndoEntries.size() == Entries + 1,
+        Tally(JointGate, std::abs(Gap(Rig) - 0.25), Rig.Regeneration.Joints.size() == 1 && std::abs(Gap(Rig) - 0.25) <= 1.0e-9 && Rig.UndoEntries.size() == Entries + 1,
               "1 regenerated joint, origins 0.25 apart (the offset), 1 undo entry; step " + Rig.Tree.Steps.back().Label + " captioned " + Rig.Captions[Rig.Tree.Steps.back().Label]);
         {
             std::string Names;
@@ -2828,8 +2829,30 @@ int main()
             DraftingDocument Copy = CreateDraftingDocument(Read.Title);
             Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
             RegenerateDraftingDocument(Copy, true);
-            Tally(JointGate, 0.0, EncodeDraftingDocument(Copy) == Written && Copy.Regeneration.Joints.size() == 2 && Written.find("JointFlipped = true") != std::string::npos,
-                  "save → load → save byte-equal with 2 joints (JointFlipped = true for the pin)");
+            // Reference signatures are re-captured on load (the lever's face probe moved with the pin edit), so the first
+            // rewrite refreshes them; a second round trip is the fixed point. Geometry and joint values must match.
+            const std::string          Rewritten = EncodeDraftingDocument(Copy);
+            const DraftingDocumentFile Again     = DecodeDraftingDocument(Rewritten);
+            DraftingDocument Second = CreateDraftingDocument(Again.Title);
+            Second.Tree = Again.Tree; Second.Captions = Again.Captions; Second.Appearance = Again.Appearance;
+            RegenerateDraftingDocument(Second, true);
+            const auto SameValue = [](const FeatureValue& Left, const FeatureValue& Right)
+            {
+                return Left.Literal == Right.Literal && Left.Parameter == Right.Parameter && Left.Factor == Right.Factor && Left.Offset == Right.Offset
+                    && Left.SecondParameter == Right.SecondParameter && Left.SecondFactor == Right.SecondFactor;
+            };
+            bool SameJoints = Copy.Tree.Steps.size() == Rig.Tree.Steps.size();
+            for (size_t Index = 0; SameJoints && Index < Rig.Tree.Steps.size(); ++Index)
+            {
+                const FeatureStep& Left = Rig.Tree.Steps[Index];
+                const FeatureStep& Right = Copy.Tree.Steps[Index];
+                if (Left.Kind != FeatureStepKind::Joint) continue;
+                SameJoints = Right.Kind == FeatureStepKind::Joint && Left.Joint.Kind == Right.Joint.Kind && Left.Joint.FlippedCondition == Right.Joint.FlippedCondition
+                          && SameValue(Left.Joint.Angle, Right.Joint.Angle) && SameValue(Left.Joint.Offset, Right.Joint.Offset) && Left.Target == Right.Target && Left.Tool == Right.Tool;
+            }
+            const double Moved = Distance(Centroid(Copy, PinKey), Centroid(Rig, PinKey)) + Distance(Centroid(Copy, LeverKey), Centroid(Rig, LeverKey));
+            Tally(JointGate, Moved, SameJoints && Moved <= 1.0e-12 && EncodeDraftingDocument(Second) == Rewritten && Copy.Regeneration.Joints.size() == 2 && Written.find("JointFlipped = true") != std::string::npos,
+                  "save → load: 2 joints with equal kind / flip / values / bodies, pin and lever centroids within " + std::to_string(Moved) + "; the second round trip is byte-equal (JointFlipped = true for the pin)");
             const bool Undone = UndoDraftingCommand(Rig) && UndoDraftingCommand(Rig);
             const Vector3 Back = Centroid(Rig, PinKey);
             Tally(JointGate, Distance(Back, Vector3{ 3.0, 1.25, 0.5 }), Distance(Back, Vector3{ 3.0, 1.25, 0.5 }) <= 1.0e-9 && Undone && Rig.Regeneration.Joints.back().Label == SwingLabel,
