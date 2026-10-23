@@ -87,6 +87,8 @@ add_library(SolidArcRemastered STATIC
     Source/Measurement/MinimumDistance.cpp
     Source/Measurement/PlaneSection.cpp
     Source/Drawing/DrawingProjection.cpp
+    Source/Drawing/DrawingSheet.cpp
+    Source/Drawing/DrawingExport.cpp
     Source/Audit/ModelAudit.cpp
     Source/Audit/IntersectionAudit.cpp
     Source/Audit/TessellationAudit.cpp
