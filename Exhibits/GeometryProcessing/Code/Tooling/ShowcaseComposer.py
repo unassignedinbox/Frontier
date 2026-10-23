@@ -246,10 +246,10 @@ def ComposeStills():
     Order     = ["Blend", "Boolean", "Face Operation", "Feature", "Intersection", "Model", "Tessellation"]
     Galleries = { Name: Galleries[Name] for Name in Order if Name in Galleries }
     Captures  = []
-    for Path in sorted((ExhibitRoot / "DraftingWorkspace" / "Walkthrough").glob("*.png")):
+    for Path in sorted((ExhibitRoot / "SolidArc" / "Walkthrough").glob("*.png")):
         Captures.append({ "Name": SpacedName(re.sub(r"^\d+", "", Path.stem)), "Caption": CaptureCaptions.get(Path.stem, ""), "Image": EncodeStill(Path, CaptureWidth, CaptureQuality) })
     Viewport  = [{ "Name": SpacedName(Path.stem.replace("Viewport", "")), "Image": EncodeStill(Path, ViewportWidth, GalleryQuality) }
-                 for Path in sorted((ExhibitRoot / "DraftingWorkspace" / "Viewport").glob("*.png"))]
+                 for Path in sorted((ExhibitRoot / "SolidArc" / "Viewport").glob("*.png"))]
     return Galleries, Captures, Viewport
 
 #------------------------------------------------------------------------------------------------------------------------

@@ -47,7 +47,7 @@ exact live spline rubber bands, browser object snapping, native Vulkan or a rebu
 
 * `Presentation/CommandExchange.h`: injected native draw device records existing surface,
   segment, point, lattice and gizmo/overlay streams. It does not rasterize or return RGBA.
-* `Experimental/SolidArc/Native/GeometryExchange.cpp`: shared C ABI bridge emits those
+* `Experimental/SolidArc/Service/Host/GeometryExchange.cpp`: shared C ABI bridge emits those
   vertex commands and accepts coordinate-specific GPU identities / compressed box-pick runs.
 * `Native/GeometryHost.cpp`, `Native/ServeSequence.py`: local native C++ development
   transport, isolated per browser session, serialized requests, same-origin proxy.

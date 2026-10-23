@@ -3,7 +3,7 @@
 #=======================================================================================================================================
 # 🧩 Blender add-on (vehicle plan V1): File ▸ Export ▸ Vehicle Curves (.toml) — selected edge loops of the active mesh as
 #    ordered LIMIT points (the subdivided surface the designer sees, not the cage), in metres, one half mirror-snapped.
-# ⚠️ Written against the Blender 4.x Python API; NOT run in the Frontier sandbox (no Blender there). The DraftingWorkspace
+# ⚠️ Written against the Blender 4.x Python API; NOT run in the Frontier sandbox (no Blender there). The SolidArcWorkspace
 #    side (DecodeVehicleCurves) is validated with the synthetic sample instead.
 
 bl_info = {
@@ -12,7 +12,7 @@ bl_info = {
     "version": (1, 0, 0),
     "blender": (4, 0, 0),
     "location": "File > Export > Vehicle Curves (.toml)",
-    "description": "Selected edge loops → ordered limit points for DraftingWorkspace curve fitting and lofting",
+    "description": "Selected edge loops → ordered limit points for SolidArcWorkspace curve fitting and lofting",
     "category": "Import-Export",
 }
 

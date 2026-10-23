@@ -206,8 +206,8 @@ workspace CSS or UI was redesigned. This is **browser WebGL2**, not a completed
 native-window Vulkan implementation.
 
 Reproduction:
-1. `python3 Experimental/SolidArc/Native/CompileSequence.py --native`
-2. Start `python3 Experimental/SolidArc/Native/ServeSequence.py` (port 8081).
+1. `python3 Experimental/SolidArc/Service/Host/CompileSequence.py --native`
+2. Start `python3 Experimental/SolidArc/Service/Host/ServeSequence.py` (port 8081).
 3. In `Experimental/SolidArc`: `npm ci && npm run build -- --base=/gpu/`.
 4. Start `Tools/Build/ServeSolidArcMirror.py --port 8082` as before.
 5. `node Tools/Build/RunSolidArcGpuDrawingProof.mjs` with Playwright Chromium

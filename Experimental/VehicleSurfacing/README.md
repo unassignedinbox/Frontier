@@ -1,6 +1,6 @@
 # 🧩 VehicleSurfacing — Blender edge loops → fitted curves → CAD panels → mirrored sheet → solid (plan V1–V8)
 
-**TL;DR** — Export the edge loops you already modelled in Blender as ordered limit points. In DraftingWorkspace, **Import curves…** fits each loop as a fair cubic B-spline within 0.2 mm. You then pick the sections in mode 1, press **L** to loft an exact NURBS sheet, and drag poles to reshape it; the loft regenerates. Tested on a synthetic bonnet: the panel lies within **0.076 mm** of all 286 limit points, including 5 loops the loft never saw, and within **0.053 mm** of the analytic surface.
+**TL;DR** — Export the edge loops you already modelled in Blender as ordered limit points. In SolidArcWorkspace, **Import curves…** fits each loop as a fair cubic B-spline within 0.2 mm. You then pick the sections in mode 1, press **L** to loft an exact NURBS sheet, and drag poles to reshape it; the loft regenerates. Tested on a synthetic bonnet: the panel lies within **0.076 mm** of all 286 limit points, including 5 loops the loft never saw, and within **0.053 mm** of the analytic surface.
 
 **V5–V7:**
 - Curves that cross (sections plus spines) build a Gordon **network** panel when you press **L**.
@@ -57,13 +57,13 @@ Evidence: W14 (planes, picture decode, codec, refusals, axis cylinders), `Bluepr
 | `Samples/BmwM3E90Sections.toml` | 24 traced half sections (48 points each, `Planar = true`) + 3 `[[ImagePlanes]]` |
 | `Tooling/TraceBlueprintSections.py` | Calibration → silhouettes (side roof / underside, plan width, front width) → faired sections + image planes |
 | `Tooling/ComposeSyntheticBonnet.py` | Regenerates all three samples (SyntheticBonnet.toml stays bit-identical) |
-| `../DraftingWorkspace/Source/Document/VehicleCurveImport.*` | `DecodeVehicleCurves` · `ReadVehicleCurves` · `EncodeVehicleCurves` |
+| `../SolidArcWorkspace/Source/Document/VehicleCurveImport.*` | `DecodeVehicleCurves` · `ReadVehicleCurves` · `EncodeVehicleCurves` |
 | `../GeometryProcessing/Source/Surfacing/` | `CurveFitting` (V2, plus end tangents and planar fits), `SectionLoft` (V4, V6), `CurveNetwork` (V5), `PanelAssembly` (V7), `SurfaceAlgebra`, `LinearSystem` |
 
 ## Workflow
 
 ```
-Blender (quads, Subdivision)          DraftingWorkspace (Plasticity keys)
+Blender (quads, Subdivision)          SolidArcWorkspace (Plasticity keys)
   select edge loops ──export──▶ VehicleCurves.toml ──Import curves…──▶ SpaceCurve steps (fit ≤ 0.2 mm)
                                                                          │ 1  control-point mode
                                                                          │ click / Shift+click sections in order

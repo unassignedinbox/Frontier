@@ -47,7 +47,7 @@ struct FeatureInspection
                                        bool EditedCondition);
 
 // Catalogue rows for the viewer (kinds "Sketch" and "Feature").
-void EncodeDraftingCatalogue(JsonWriter& Writer);
+void EncodeSolidArcCatalogue(JsonWriter& Writer);
 
 // Dimension constraints a viewer may edit: label → value (Distance, Horizontal/VerticalDistance, Length, Radius, Angle).
 [[nodiscard]] bool EditableDimensionCondition(const SketchConstraint& Constraint);

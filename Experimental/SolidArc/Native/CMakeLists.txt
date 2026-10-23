@@ -1,0 +1,385 @@
+#=====================================================================================================================================
+#                                                            CMAKELISTS.TXT
+#=====================================================================================================================================
+# 🧩 SolidArc — Vulkan + Slang + ImGui CAD workspace over the GeometryProcessing feature tree (executable SolidArc)
+
+cmake_minimum_required(VERSION 3.20)
+project(SolidArc LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
+# 📝 Identifiers use Greek / mathematical Unicode (SKILL-formatting § 4): MSVC needs /utf-8.
+if(MSVC)
+    add_compile_options(/utf-8 /EHsc)
+endif()
+
+#-------------------------------------------------------------------------------------------------------------------
+#                                                    OPTIONS
+#-------------------------------------------------------------------------------------------------------------------
+
+get_filename_component(FRONTIER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+set(SOLIDARC_UI      "${FRONTIER_ROOT}/UI/SolidArc")                                    # panels, document, viewport, shaders
+set(SOLIDARC_EXHIBIT "${FRONTIER_ROOT}/Exhibits/SolidArc/Code")                         # capture, validation, walkthrough scripts
+set(SOLIDARC_PACKAGES "${FRONTIER_ROOT}/ExternalPackages" CACHE PATH "Pinned third-party sources (Tooling/PrepareSolidArcDependencies.py)")
+set(SOLIDARC_SLANG_COMPILER "" CACHE FILEPATH "slang-wasm.js of slang-loader 0.0.7: regenerate the shader archive when the .slang files change")
+option(SOLIDARC_WINDOWED_HOST "Build the GLFW windowed host (Linux: GLFW null platform, compile coverage only)" ON)
+
+foreach(Witness imgui/imgui.cpp tomlpp/include/toml++/toml.hpp glfw/include/GLFW/glfw3.h vulkan-headers/include/vulkan/vulkan.h stb/stb_image_write.h volk/volk.h)
+    if(NOT EXISTS "${SOLIDARC_PACKAGES}/${Witness}")
+        message(FATAL_ERROR "Missing ${SOLIDARC_PACKAGES}/${Witness} — run: python Experimental/SolidArc/Native/Tooling/PrepareSolidArcDependencies.py")
+    endif()
+endforeach()
+
+#-------------------------------------------------------------------------------------------------------------------
+#                                                    THIRD PARTY
+#-------------------------------------------------------------------------------------------------------------------
+
+add_subdirectory("${FRONTIER_ROOT}/Engine/GeometryProcessing" GeometryProcessing)
+add_subdirectory("${FRONTIER_ROOT}/Engine/Render" Render)
+
+# 📝 volk: the Vulkan meta-loader. No link-time dependency on vulkan-1 / libvulkan; the loader (or a driver such as
+#    SwiftShader) is resolved at run time.
+add_library(SolidArcVolk STATIC "${SOLIDARC_PACKAGES}/volk/volk.c")
+target_include_directories(SolidArcVolk SYSTEM PUBLIC "${SOLIDARC_PACKAGES}/volk" "${SOLIDARC_PACKAGES}/vulkan-headers/include")
+target_compile_definitions(SolidArcVolk PUBLIC VK_NO_PROTOTYPES)
+if(WIN32)
+    target_compile_definitions(SolidArcVolk PUBLIC VK_USE_PLATFORM_WIN32_KHR NOMINMAX WIN32_LEAN_AND_MEAN)
+else()
+    target_link_libraries(SolidArcVolk PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
+set(SOLIDARC_IMGUI "${SOLIDARC_PACKAGES}/imgui")
+add_library(SolidArcImGui STATIC
+    "${SOLIDARC_IMGUI}/imgui.cpp"
+    "${SOLIDARC_IMGUI}/imgui_draw.cpp"
+    "${SOLIDARC_IMGUI}/imgui_tables.cpp"
+    "${SOLIDARC_IMGUI}/imgui_widgets.cpp"
+    "${SOLIDARC_IMGUI}/backends/imgui_impl_vulkan.cpp"
+)
+target_include_directories(SolidArcImGui SYSTEM PUBLIC "${SOLIDARC_IMGUI}" "${SOLIDARC_IMGUI}/backends")
+target_compile_definitions(SolidArcImGui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+target_link_libraries(SolidArcImGui PUBLIC SolidArcVolk)
+
+add_library(SolidArcTomlPlusPlus INTERFACE)
+target_include_directories(SolidArcTomlPlusPlus SYSTEM INTERFACE "${SOLIDARC_PACKAGES}/tomlpp/include")
+
+add_library(SolidArcStb INTERFACE)
+target_include_directories(SolidArcStb SYSTEM INTERFACE "${SOLIDARC_PACKAGES}/stb")
+
+if(SOLIDARC_WINDOWED_HOST)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+    set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
+    if(NOT WIN32 AND NOT APPLE)
+        find_path(SOLIDARC_X11_HEADERS X11/Xlib.h)
+        if(NOT SOLIDARC_X11_HEADERS)
+            set(GLFW_BUILD_X11     OFF CACHE BOOL "" FORCE)
+            set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+        endif()
+    endif()
+    add_subdirectory("${SOLIDARC_PACKAGES}/glfw" glfw EXCLUDE_FROM_ALL)
+endif()
+
+#-------------------------------------------------------------------------------------------------------------------
+#                                                    SHADER ARCHIVE
+#-------------------------------------------------------------------------------------------------------------------
+
+# 📝 The SPIR-V archive is committed (UI/SolidArc/Viewport/Generated/SolidArcShaderArchive.h) so a build needs no shader
+#    compiler. With SOLIDARC_SLANG_COMPILER set, editing a .slang file regenerates it through Node.js + slang-loader.
+set(SOLIDARC_SHADERS
+    "${SOLIDARC_UI}/Shaders/SolidArcProjection.slang"
+    "${SOLIDARC_UI}/Shaders/SolidArcSurface.slang"
+    "${SOLIDARC_UI}/Shaders/SolidArcEdge.slang"
+    "${SOLIDARC_UI}/Shaders/SolidArcGrid.slang"
+)
+set(SOLIDARC_SHADER_ARCHIVE "${SOLIDARC_UI}/Viewport/Generated/SolidArcShaderArchive.h")
+if(SOLIDARC_SLANG_COMPILER)
+    find_program(SOLIDARC_NODE node REQUIRED)
+    add_custom_command(
+        OUTPUT  "${SOLIDARC_SHADER_ARCHIVE}"
+        COMMAND "${SOLIDARC_NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/Tooling/CompileSolidArcShaders.mjs" --compiler "${SOLIDARC_SLANG_COMPILER}"
+        DEPENDS ${SOLIDARC_SHADERS} "${CMAKE_CURRENT_SOURCE_DIR}/Tooling/CompileSolidArcShaders.mjs"
+        COMMENT "Compiling SolidArc Slang shaders to SPIR-V"
+        VERBATIM)
+endif()
+add_custom_target(SolidArcShaderArchive DEPENDS "${SOLIDARC_SHADER_ARCHIVE}")
+
+#-------------------------------------------------------------------------------------------------------------------
+#                                                    LIBRARY
+#-------------------------------------------------------------------------------------------------------------------
+
+add_library(FrontierSolidArcUI STATIC
+    ${SOLIDARC_UI}/Document/SolidArcDocument.cpp
+    ${SOLIDARC_UI}/Document/SolidArcDocumentCodec.cpp
+    ${SOLIDARC_UI}/Document/VehicleCurveImport.cpp
+    ${SOLIDARC_UI}/Document/SolidArcImagePlane.cpp
+    ${SOLIDARC_UI}/Document/SolidArcMatcap.cpp
+    ${SOLIDARC_UI}/Document/SolidArcMeasurement.cpp
+    ${SOLIDARC_UI}/Document/SolidArcDrawingSheet.cpp
+    ${SOLIDARC_UI}/Document/SolidArcExchange.cpp
+    ${SOLIDARC_UI}/Document/SolidArcScene.cpp
+    ${SOLIDARC_UI}/Document/SolidArcSpecimen.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcCamera.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcDevice.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcRasterization.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcPortableImage.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcSnapping.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcInterface.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcFrame.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcOptions.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcScript.cpp
+)
+add_dependencies(FrontierSolidArcUI SolidArcShaderArchive)
+target_include_directories(FrontierSolidArcUI PUBLIC "${FRONTIER_ROOT}")
+target_link_libraries(FrontierSolidArcUI PUBLIC FrontierGeometryProcessing FrontierOrbitCamera SolidArcVolk SolidArcImGui SolidArcTomlPlusPlus SolidArcStb)
+target_compile_definitions(FrontierSolidArcUI PRIVATE SOLIDARC_FONT_PATH="${FRONTIER_ROOT}/EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf")
+if(NOT MSVC)
+    target_compile_options(FrontierSolidArcUI PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+endif()
+
+#-------------------------------------------------------------------------------------------------------------------
+#                                                    EXECUTABLES
+#-------------------------------------------------------------------------------------------------------------------
+
+add_executable(SolidArcCapture "${SOLIDARC_EXHIBIT}/SolidArcCapture.cpp")
+target_link_libraries(SolidArcCapture PRIVATE FrontierSolidArcUI)
+
+if(SOLIDARC_WINDOWED_HOST)
+    # 📝 Target SolidArc, executable SolidArc (the same pattern as TextureStudio → TextureWorkspace upstream).
+    add_executable(SolidArc SolidArcApplication.cpp "${SOLIDARC_IMGUI}/backends/imgui_impl_glfw.cpp")
+    set_target_properties(SolidArc PROPERTIES OUTPUT_NAME SolidArcWorkspace)
+    target_compile_definitions(SolidArc PRIVATE GLFW_INCLUDE_NONE)
+    target_link_libraries(SolidArc PRIVATE FrontierSolidArcUI glfw)
+    if(WIN32)
+        set_target_properties(SolidArc PROPERTIES WIN32_EXECUTABLE ON)
+        target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/ENTRY:mainCRTStartup>)
+    endif()
+endif()
+
+add_executable(SolidArcDocumentValidation "${SOLIDARC_EXHIBIT}/SolidArcDocumentValidation.cpp")
+target_link_libraries(SolidArcDocumentValidation PRIVATE FrontierSolidArcUI)
+target_compile_definitions(SolidArcDocumentValidation PRIVATE SOLIDARC_VEHICLE_SAMPLE="${FRONTIER_ROOT}/Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml"
+                                                                     SOLIDARC_STEP_FIXTURES="${FRONTIER_ROOT}/Exhibits/GeometryProcessing/Code/StepFixtures")
+
+add_executable(SolidArcViewportValidation "${SOLIDARC_EXHIBIT}/SolidArcViewportValidation.cpp")
+target_link_libraries(SolidArcViewportValidation PRIVATE FrontierSolidArcUI)
+
+enable_testing()
+add_test(NAME SolidArcDocumentValidation COMMAND SolidArcDocumentValidation)
+add_test(NAME SolidArcViewportValidation COMMAND SolidArcViewportValidation)
+set_tests_properties(SolidArcViewportValidation PROPERTIES SKIP_RETURN_CODE 77)
+
+# 📝 Interface walkthroughs: real ImGui input on the offscreen Vulkan frame (set SOLIDARC_VULKAN_DRIVER for SwiftShader).
+#    Run from the repository root because the scripts name _ClaudeScratch/SolidArcWorkspace/… files; the recovery
+#    walkthrough consumes the autosave the first one leaves behind.
+set(SOLIDARC_WALKTHROUGH_CAPTURES "${CMAKE_CURRENT_BINARY_DIR}/WalkthroughCaptures")
+add_test(NAME SolidArcWorkspaceWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Bracket.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/WorkspaceWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcRecoveryWalkthrough
+         COMMAND SolidArcCapture
+                 --options "${SOLIDARC_EXHIBIT}/Scripts/RecoveryOptions.toml"
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/RecoveryWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcShortcutWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ShortcutRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Shortcut.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/ShortcutWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcVariableBlendWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/VariableRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Variable.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/VariableBlendWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcSketchDrawingWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/SketchRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Sketch.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/SketchDrawingWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcVehicleSurfacingWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/VehicleRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Vehicle.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/VehicleSurfacingWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcPanelAssemblyWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/PanelRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Panels.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/PanelAssemblyWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcSurfaceEvaluationWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/EvaluationRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Evaluation.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/SurfaceEvaluationWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+# 📝 Blueprint study: the BMW three-view is third-party and never committed; the walkthrough runs only where a copy sits at
+#    _ClaudeScratch/Blueprint/BmwM3E90.jpg (see Experimental/VehicleSurfacing/Samples/BmwM3E90Calibration.toml).
+if(EXISTS "${FRONTIER_ROOT}/_ClaudeScratch/Blueprint/BmwM3E90.jpg")
+    add_test(NAME SolidArcBlueprintModellingWalkthrough
+             COMMAND SolidArcCapture --specimen --reset-files
+                     --recovery _ClaudeScratch/SolidArcWorkspace/BlueprintRecovery.solidarc
+                     --document _ClaudeScratch/SolidArcWorkspace/Blueprint.solidarc
+                     --script "${SOLIDARC_EXHIBIT}/Scripts/BlueprintModellingWalkthrough.txt"
+                     --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+             WORKING_DIRECTORY "${FRONTIER_ROOT}")
+    set_tests_properties(SolidArcBlueprintModellingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+add_test(NAME SolidArcMatcapWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/MatcapRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Matcap.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/MatcapWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcMatcapWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcMultiBodyWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/MultiBody.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/MultiBodyWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcMultiBodyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME SolidArcTrimSplitWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/TrimSplitRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/TrimSplit.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/TrimSplitWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcTrimSplitWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME SolidArcEditingWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Editing.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/EditingWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcEditingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME SolidArcConstraintsWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ConstraintsRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Constraints.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/ConstraintsWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcConstraintsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME SolidArcLinkedConstraintsWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/LinkedConstraints.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/LinkedConstraintsWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcLinkedConstraintsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+# SolidArc revolve / sweep walkthrough — Alt+R revolve (proposed y-axis, X / Y keys, a clicked profile line as
+# the axis, typed degrees) and Shift+P / Alt+E evolution (proposed path, a clicked curve switches it), staged previews.
+add_test(NAME SolidArcRevolveSweepWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/RevolveSweepRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/RevolveSweep.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/RevolveSweepWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcIncrementalReplayWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ReplayRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Replay.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/IncrementalReplayWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcIncrementalReplayWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcXRayWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/XRayRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/XRay.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/XRayWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcXRayWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcMeasureSectionWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/MeasureRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Measure.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/MeasureSectionWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcMeasureSectionWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcDrawingSheetWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/SheetRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Sheet.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/DrawingSheetWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcDrawingSheetWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcExchangeWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ExchangeRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Exchange.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/ExchangeWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcExchangeWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME SolidArcSnappingWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Snap.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/SnappingWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcSnappingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+add_test(NAME SolidArcNurbsBlendWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/NurbsBlendRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/NurbsBlend.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/NurbsBlendWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+# Each NURBS blend takes 40–60 s (rolling-ball assembly plus audit), five of them plus the cut: allow 40 minutes.
+set_tests_properties(SolidArcNurbsBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 2400)
+
+add_test(NAME SolidArcAssemblyWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Assembly.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/AssemblyWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(SolidArcAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
+set_tests_properties(SolidArcPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcVehicleSurfacingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcVariableBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcWorkspaceWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP SolidArcAutosave)
+set_tests_properties(SolidArcRecoveryWalkthrough PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED SolidArcAutosave)

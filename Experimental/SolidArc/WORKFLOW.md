@@ -195,7 +195,7 @@ image with a difficult-to-find gallery link. The **Construct + drawing** tab sho
 `SolidArcGpuDrawing.gif` (Construct menu, rectangle preview/commit, circle
 preview/commit), followed by clearly labelled native CPU catalogue/drawing evidence.
 The **Open GPU drawing editor** link opens this unchanged HTML workspace at `/gpu/`.
-Build with `npm run build -- --base=/gpu/`; run `Native/ServeSequence.py` on 8081
+Build with `npm run build -- --base=/gpu/`; run `Service/Host/ServeSequence.py` on 8081
 alongside `Tools/Build/ServeSolidArcMirror.py --port 8082`. Browser `/native` requests
 are proxied on the same origin, never to browser-local localhost.
 
@@ -269,7 +269,7 @@ uses repeated centre clicks, an editable radius, and Enter/right-click completio
 HTML rubber bands are non-authoritative presentation; committed NURBS come from C++.
 
 Verification:
-- `python3 Experimental/SolidArc/Native/GeometryMetrics.py`: 18 checks, including all
+- `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`: 18 checks, including all
   27 catalogue entries and kind preservation after rename/save/reopen/undo.
 - `node Experimental/SolidArc/src/WorkflowMetrics.mjs`: nine workflow checks.
 - `node Tools/Build/RunSolidArcCurveCubeProof.mjs`: five new mouse-selected tools,
@@ -388,7 +388,7 @@ transport; optional `VITE_SOLIDARC_TRANSPORT=wasm` deployments must rebuild the
 runtime with Emscripten before using the new commands (the retained WASM binary
 has not been regenerated here).
 
-Validation: `Native/GeometryMetrics.py` passes 19 tests, including all 31 catalogue
+Validation: `Service/Host/GeometryMetrics.py` passes 19 tests, including all 31 catalogue
 commands, four curve transactions, weighted versus unit-weight sampled geometry,
 and invalid weights/degrees without scene mutation. `SolidArcEditorProof` passes
 21 own-mouse native tool cases / 1,392 interpolated pointer moves, native wheel
@@ -433,7 +433,7 @@ The native Inspector retains its explicit native parameter editor. The retained
 optional WASM binary must be rebuilt with Emscripten to acquire these new exports;
 the live/default transport uses the freshly built native C++ service.
 
-Validation: 23 `Native/GeometryMetrics.py` tests; native
+Validation: 23 `Service/Host/GeometryMetrics.py` tests; native
 `SolidArcEditorProof --loft-only` mouse-selects two profile fixtures, Shift-adds,
 reverses in the Inspector, clicks Loft and Apply, validates the resulting solid,
 and checks one-step undo/redo. `RunSolidArcLoftProof.mjs` tests actual browser
@@ -473,7 +473,7 @@ SwiftShader WebGL2; native screenshots use the C++ CPU reference renderer.
   native C++ own-mouse E/Inspector proofs pass, as do existing native/browser loft and
   upright orbit regressions. Proof adapters: browser software SwiftShader WebGL2 (zero
   CPU fragments/RGBA uploads); native C++ CPU-reference raster, not physical GPU proof.
-- Reproduce: `python3 Experimental/SolidArc/Native/GeometryMetrics.py`,
+- Reproduce: `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`,
   `python3 Tools/Build/RunSolidArcEditorProof.py --build-only`,
   `.cache/solidarc-editor/SolidArcEditorProof --extrude-only`,
   `BROWSER_EXECUTABLE=/path/to/chromium node Tools/Build/RunSolidArcExtrudeProof.mjs`,
@@ -543,7 +543,7 @@ and browser toolbar/viewport tests pass. Native also verifies locked eligibility
 also checks drag cancellation, armed navigation and drawing-mode protection. Existing
 native/browser face Extrude and disabled Loft proofs, plus upright orbit tests, pass.
 
-Reproduce with `python3 Experimental/SolidArc/Native/GeometryMetrics.py`,
+Reproduce with `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`,
 `python3 Tools/Build/RunSolidArcEditorProof.py --build-only`,
 `.cache/solidarc-editor/SolidArcEditorProof --sketch-tools-only`,
 `BROWSER_EXECUTABLE=/path/to/chromium node Tools/Build/RunSolidArcSketchToolsProof.mjs`,
@@ -611,7 +611,7 @@ and RGBA framebuffer uploads. Native proof renderer: C++ CPU reference / real Im
 
 Reproduce:
 ```
-python3 Experimental/SolidArc/Native/BevelMetrics.py
+python3 Experimental/SolidArc/Service/Host/BevelMetrics.py
 (cd Experimental/SolidArc && npm run test:bevel-input && npm run build -- --base=/gpu/)
 python3 Tools/Build/RunSolidArcEditorProof.py --build-only
 .cache/solidarc-editor/SolidArcEditorProof --bevel-only
@@ -624,7 +624,7 @@ Portable embedded evidence: `Exhibits/Gallery/Editor/SolidArcBevelProof.html`.
 
 The shared native kernel now treats explicitly selected circular rim segments and their tangent line/arc continuation as **one cap blend**, rather than splitting the chain into independent rolls and rejecting its shared vertex. `Kernel/CapRimBlend.cpp` constructs exact rational torus/cylinder patches for round mode and conical-revolution/plane patches for flat mode, retains original support surfaces, trims surviving loops, and inserts matching end sections. It validates closed oriented topology, cap self-intersections, finite size, prismatic support, endpoint clearance and curvature-aware removal volume. New roll faces use their exact natural patch boundaries; extrusion and revolution have different parameter orderings, which must be reflected in their initial face reversal before `Orient()`.
 
-Reproduction: `Native/Fixtures/MixedCapCorner.arc` is a minimized version of the actual captured live journal, with the same extrusion dimensions/face displacements and the earlier radii 0.25820216770000004 and 0.19306934379268867. Select arc 14 and line 15, **B**, enter `20.2791507347mm`, Apply. Negative input produces chamfer. Result: V16/E25/F11, Euler 2, genus 0; both UI feature histories contain all three operations. An explicit arc also carries its tangent line when selected alone. Ordinary old single-line journal commands deliberately keep their previous semantics, so replay does not silently alter earlier operations or invalidate the user's selected rim.
+Reproduction: `Service/Host/Fixtures/MixedCapCorner.arc` is a minimized version of the actual captured live journal, with the same extrusion dimensions/face displacements and the earlier radii 0.25820216770000004 and 0.19306934379268867. Select arc 14 and line 15, **B**, enter `20.2791507347mm`, Apply. Negative input produces chamfer. Result: V16/E25/F11, Euler 2, genus 0; both UI feature histories contain all three operations. An explicit arc also carries its tangent line when selected alone. Ordinary old single-line journal commands deliberately keep their previous semantics, so replay does not silently alter earlier operations or invalidate the user's selected rim.
 
 **Superseded (2026-10-19): tangent propagation.** The default `beveladd` route is now the general rolling-ball blend (`Kernel/RollingBallBlend.cpp`), which propagates a selection along tangent chains (a sharp edge tangent to the selected one across a smooth edge joins it). The fixture's second fillet (line edge 3) therefore continues over the first fillet's end arc and along the top-left edge instead of stopping with a flat ledge, and old single-line journal commands that ran into a tangent blend replay with that propagated geometry. The fixture now selects arc 10 + line 11 (the propagated fillet's far end on the back face); result V18/E29/F13, Euler 2, genus 0. Evidence: `Exhibits/RollingBallBlend/Results/BevelLabEditorProof.md`.
 
@@ -635,7 +635,7 @@ This is a bounded prismatic cap-rim route, **not** universal arbitrary-surface/m
 Re-run proofs from repository root:
 
 ```sh
-python3 Experimental/SolidArc/Native/BevelMetrics.py   # 55 tests, includes concurrent session exchange
+python3 Experimental/SolidArc/Service/Host/BevelMetrics.py   # 55 tests, includes concurrent session exchange
 python3 Tools/Build/VerifySolidArcCapRim.py             # geometry/support/G1/volume/rotation proof
 python3 Tools/Build/RunSolidArcEditorProof.py --build-only
 .cache/solidarc-editor/SolidArcEditorProof --bevel-corner-only
@@ -672,7 +672,7 @@ The development native service accepts an optional trusted local `--recover-sess
   Profile/guide dependencies participate in regeneration and source discovery;
   save/open replays the native construction journal. Profile mode does not expose
   an ineffective degree dimension.
-- Tests: `python3 Native/GeometryMetrics.py` (39 tests),
+- Tests: `python3 Service/Host/GeometryMetrics.py` (39 tests),
   `.cache/solidarc-editor/SolidArcEditorProof --fender-only` (from repo root),
   `node Tools/Build/RunSolidArcCurveDrawingProof.mjs`, and
   `node Tools/Build/RunSolidArcFenderProof.mjs` (from repo root, browser env as above).
@@ -715,7 +715,7 @@ Sources are `public/examples/{Solidify,Pipe,Revolve}.arc`:
 - Revolve: closed XZ section rotated 360° around Z into a stepped collar with
   through-bore. Inspector angle can be edited; 270° and undo back to 360° tested.
 
-`python3 Native/GeometryMetrics.py` now runs 42 tests, including demo save/open,
+`python3 Service/Host/GeometryMetrics.py` now runs 42 tests, including demo save/open,
 closed/manifold/oriented validation, Solidify volume, invalid-thickness refusal
 and one-step undo/redo. `Tools/Build/RunSolidArcOperationsDemoProof.mjs` tests the
 live three-tab bundle, topology, parameter edits/undo, a fourth preserved document,
@@ -757,7 +757,7 @@ regression also pass.
 - Live example `/gpu/?example=booleans2d` opens a separate document without replacing the current drawing. Native startup remains empty/recovery-based; proof fixtures do not become user documents.
 - Native proof: `.cache/solidarc-editor/SolidArcEditorProof --booleans2d-only` uses actual ImGui mouse/Shift/wheel selection, Reverse order, operation button and Apply; checks areas 20/8/4/8, selected closed output and single-step undo/redo. Open-curve disabled button ignores a mouse click. Actual native captures are CPU-reference renders, not GPU evidence.
 - Browser proof: `LD_LIBRARY_PATH="$PWD/.cache/browser/libs/lib" BROWSER_EXECUTABLE=/tmp/chromium node Tools/Build/RunSolidArcBooleans2DProof.mjs` uses actual outliner Shift-click, reverse/button/Apply, native area reports, undo/redo, and invalid open/different-plane button checks. PASS; zero CPU RGBA uploads, no JS errors; WebGL2 SwiftShader software.
-- `python3 Experimental/SolidArc/Native/GeometryMetrics.py`: 44/44 PASS, including 24 2D boolean operation scenarios: overlapping rectangles/circles, shared/adjacent edges, disjoint, nested holes, identical circles, and XZ profiles with active XY workplane. Includes save/reopen and invalid-pair atomic refusal checks. Native Loft and Solidify/Pipe/Revolve own-input regressions also PASS.
+- `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`: 44/44 PASS, including 24 2D boolean operation scenarios: overlapping rectangles/circles, shared/adjacent edges, disjoint, nested holes, identical circles, and XZ profiles with active XY workplane. Includes save/reopen and invalid-pair atomic refusal checks. Native Loft and Solidify/Pipe/Revolve own-input regressions also PASS.
 - `python3 Tools/Build/GenerateSolidArcBooleans2DProof.py` builds portable `Exhibits/Gallery/Editor/SolidArcBooleans2DProof.html`; served at `/proofs/booleans2d`, linked from the native mirror. Generated captures/reports stay ignored like existing proof artifacts.
 - Before upgrading backend/native processes, checkpointed the active 4-figure HTML user session to `_ClaudeScratch/autosave/BeforeBooleans2D.json`, retained the prior other-session fallback, and relaunched backend with that explicit recovery file. Current live binary and proof route refreshed. Recovery preserves authored geometry/selection/camera, not in-memory undo history.
 - Next separate phase: 3D body boolean eligibility/interaction proofs and supported-intersection coverage. This change does not claim general 3D boolean robustness or arbitrary compound-profile object semantics.
@@ -774,7 +774,7 @@ regression also pass.
 - For a body pair, native eligibility runs each actual `IntersectionSolver::Combine` and validates closed/manifold/oriented positive-volume B-rep results. Cache keyed by document/selection geometry fingerprint plus locks avoids recomputing SSI on mouse/camera frames. Empty or unsupported results are disabled with native refusal reasons; subelement/hidden/locked/invalid-solid selections are ineligible. Apply revalidates the result before consuming either input; direct-command failures are atomic. Subtract is first minus second. Boolean results are destructive geometry with single-step undo/redo, not a replayable/editable boolean feature graph.
 - Reused existing native NURBS SSI/exact special-case solvers, not mesh or browser-side booleans. General free-form intersections must be transversal; arbitrary tangent/coincident configurations are not claimed universally supported. Empty 3D results refuse (unlike accepted empty 2D regions). Disconnected unions are one multi-hull body. No new general-SSI algorithm was substituted.
 - Native own-input `--booleans3d-only` proof: actual viewport mouse/Shift selection, wheel/Inspector buttons, reverse order, Apply; verified volumes 42 / 18 / 6 / 18 m3 on offset boxes, closed/manifold/oriented solid selection, one-step undo/redo. Actual disabled empty Intersect ignores a click. Added popup minimum width so wrapped explanations cannot collapse into a narrow column and push Apply outside the screen.
-- `python3 Experimental/SolidArc/Native/GeometryMetrics.py`: 46/46 PASS. Includes 12 successful 3D fixture/operation cases (offset/aligned boxes, enclosed cavity, cylindrical through-bore), topology and numerical volumes, save/reopen, undo/redo, reverse order, disconnected union, identical/contained/disjoint empty refusal, edge-selection disabled and whole-selection re-enable. Existing 2D/kernel tests retained.
+- `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`: 46/46 PASS. Includes 12 successful 3D fixture/operation cases (offset/aligned boxes, enclosed cavity, cylindrical through-bore), topology and numerical volumes, save/reopen, undo/redo, reverse order, disconnected union, identical/contained/disjoint empty refusal, edge-selection disabled and whole-selection re-enable. Existing 2D/kernel tests retained.
 - `RunSolidArcBooleans3DProof.mjs`: browser Shift-click/reverse/operation/Apply/volume/undo/redo plus grey disjoint Intersect; PASS, no JS errors, zero RGBA uploads. Native own-input and browser 2D regressions also PASS. Native proof uses CPU raster, browser uses WebGL2 SwiftShader software; neither physical-GPU evidence.
 - `/gpu/?example=booleans3d`: separate live document, initially two overlapping bodies selected. Preview root now opens requested 3D demo. Header “3D example” opens another document without replacing current work, “3D boolean proofs” opens the 10-image native/HTML page inline (no popup/new-tab dependence). Actual browser verified root landing, all proof images, closing dialog, and preservation of a separate KeepBody drawing when opening an example.
 - Proof reproduction: `python3 Tools/Build/RunSolidArcEditorProof.py --build-only`; `.cache/solidarc-editor/SolidArcEditorProof --booleans3d-only`; `LD_LIBRARY_PATH="$PWD/.cache/browser/libs/lib" BROWSER_EXECUTABLE=/tmp/chromium node Tools/Build/RunSolidArcBooleans3DProof.mjs`; `python3 Tools/Build/GenerateSolidArcBooleans3DProof.py`. Generated portable `SolidArcBooleans3DProof.html` is served at `/proofs/booleans3d`; artifacts remain ignored.
@@ -786,7 +786,7 @@ regression also pass.
 - Ctrl/Shift-click additive/toggle selection in viewport and Outliner. Fixed native Outliner synchronization to carry the complete ordered selection, not merely its primary row. SolidArc Shift-click selects the clicked row, not intervening rows; other editors retain their existing range semantics. Modifier-removal rebuilds the remaining ordered selection rather than incorrectly treating `select --add` as a toggle. Active/other selection colors retained.
 - Added optional native `GpuPickingRaster`: CPU-owned triangle/segment/point streams issue GLES3 draws into R32UI + depth24 framebuffer; GPU-generated IDs/readback drive native selection. Native Vulkan-style Y-down/Z[0,1] projection is explicitly converted to GL Y-up/Z[-1,1]. Fixed missing pick identity on native point/Empty glyphs. The **visible native color PNG is still CPU reference**; the sandbox's actual GLES implementation is ANGLE/SwiftShader **software**, not physical hardware and not a native Vulkan color renderer. Default without opt-in remains CPU picking; requested backend initialization errors do not silently fall back.
 - `FaceContactBoxUnion` fixes a real partial-face-contact error: coordinate-arrangement exterior patches omit the internal contact interface and sew conformingly. Example base32 + top8 now returns one closed/manifold/oriented hull, volume40, exterior area80 (formerly two hulls/area88). Identical XY boxes: Z overlap union48/subtract16/intersect16; full-face touch union64/subtract32/disabled intersection; gap union64 in two hulls/subtract32/disabled intersection. Each enabled case checks volume/topology/hulls and Undo/Redo.
-- `python3 Experimental/SolidArc/Native/GeometryMetrics.py`: **47 PASS, 13.303s**. Native `--booleans3d-only` with GPU picking: own-mouse PASS42/18/6/18. Native `--shortcuts-picking-only`: Ctrl+A/Escape, Ctrl viewport toggle, Ctrl/Shift Outliner, Ctrl+S dedicated save, GPU upper-face occlusion/encoded face bits/point ID PASS. Browser `RunSolidArcShortcutsPickingProof.mjs`: actual Ctrl+A/text-field selection, Ctrl+S download, Ctrl/Shift Outliner, Ctrl/Shift viewport, partial-contact Union/Subtract Apply and topology PASS; zero JS errors/CPU fragments/RGBA uploads. `topology <body> --summary` avoids losing the validation header to the transport's bounded 100-line diagnostic tail on larger solids.
+- `python3 Experimental/SolidArc/Service/Host/GeometryMetrics.py`: **47 PASS, 13.303s**. Native `--booleans3d-only` with GPU picking: own-mouse PASS42/18/6/18. Native `--shortcuts-picking-only`: Ctrl+A/Escape, Ctrl viewport toggle, Ctrl/Shift Outliner, Ctrl+S dedicated save, GPU upper-face occlusion/encoded face bits/point ID PASS. Browser `RunSolidArcShortcutsPickingProof.mjs`: actual Ctrl+A/text-field selection, Ctrl+S download, Ctrl/Shift Outliner, Ctrl/Shift viewport, partial-contact Union/Subtract Apply and topology PASS; zero JS errors/CPU fragments/RGBA uploads. `topology <body> --summary` avoids losing the validation header to the transport's bounded 100-line diagnostic tail on larger solids.
 - Reproduction (Linux sandbox; browser dependency setup from earlier sections):
   ```sh
   python3 Tools/Build/PrepareSolidArcNativeGpuPicking.py
@@ -828,10 +828,10 @@ regression also pass.
 
 The native C++ OCCT blend route is provisioned by
 `python3 Tools/Build/BuildSolidArcOcctBlend.py` and automatically discovered by
-`Native/ServeSequence.py`. Live HTML preview remains on 8083 with native backend
+`Service/Host/ServeSequence.py`. Live HTML preview remains on 8083 with native backend
 on 8081. Verified all six sharp sphere-minus-box edges in both modes at .0375
 through actual native own-pointer and HTML B-popup inputs (12 + 12 cases),
 undo/redo/save/reopen, plus 70 existing enabled-backend regressions.
-See [OCCT_BLEND.md](Native/OCCT_BLEND.md) for dependency notices, validation bounds,
+See [OCCT_BLEND.md](Service/Host/OCCT_BLEND.md) for dependency notices, validation bounds,
 reproduction and the remaining larger-radius edge-1 refusal. Do not claim every
 arbitrary Boolean fillet / radius is supported.

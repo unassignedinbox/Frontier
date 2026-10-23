@@ -435,7 +435,7 @@ std::string EncodeCatalogue()
         Writer.CloseObject();
         Writer.CloseObject();
     }
-    EncodeDraftingCatalogue(Writer);
+    EncodeSolidArcCatalogue(Writer);
     Writer.CloseArray();
     Writer.CloseObject();
     return Writer.Result();

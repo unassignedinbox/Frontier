@@ -354,7 +354,7 @@ std::string EncodeSketch(const SketchSpecimen& Specimen, const SketchModel& Solv
     return Writer.Result();
 }
 
-void EncodeDraftingCatalogue(JsonWriter& Writer)
+void EncodeSolidArcCatalogue(JsonWriter& Writer)
 {
     for (const SketchSpecimen& Specimen : BuildSketchCatalogue())
     {

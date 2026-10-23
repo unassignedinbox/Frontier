@@ -15,7 +15,7 @@ try {
     const {default: CreateGeometry} = await import("../Runtime/GeometryModule.js");
     Geometry = await CreateGeometry({ print: Record, printErr: Record });
     if (typeof Geometry._RenderCommands !== "function")
-      throw Error("The bundled WebAssembly runtime predates GPU command streams. Rebuild Native/CompileSequence.py with Emscripten; CPU raster fallback is disabled.");
+      throw Error("The bundled WebAssembly runtime predates GPU command streams. Rebuild Service/Host/CompileSequence.py with Emscripten; CPU raster fallback is disabled.");
   }
   postMessage({ ready: true, protocol: CommandProtocol, session: NativeTransport ? SessionIdentity : null });
 } catch (ErrorValue) {
