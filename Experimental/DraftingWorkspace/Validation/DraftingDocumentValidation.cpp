@@ -2912,14 +2912,36 @@ int main()
         Direct.Paper = Settings.Paper; Direct.Angle = Settings.Angle; Direct.Scale = Sheet.Sheet.Scale * DraftingModelUnitMillimetres; Direct.ModelUnitMillimetres = 1.0;
         Direct.Title = { Rig.Title, Settings.Title.DrawingNumber, "", "", "", Settings.Title.Revision, Settings.Title.Company };
         const Modeller::DrawingSheet Reference = Modeller::ComposeDrawingSheet(*Rig.Partition, Bodies, Direct);
-        double Stroke = Reference.Lines.size() == Sheet.Sheet.Lines.size() ? 0.0 : 1.0e300;
+        // Dimension texts are 1000× longer numbers ("4000" vs "4"), so footprints and the layout differ; each view's
+        // strokes relative to its view origin (and the frame / title block) must coincide.
+        double Stroke = Reference.Lines.size() == Sheet.Sheet.Lines.size() && Reference.Views.size() == Sheet.Sheet.Views.size() ? 0.0 : 1.0e300;
+        double Shifted = 0.0;                                                                // [mm] - Largest view-origin move
+        size_t Compared = 0;
+        for (size_t View = 0; Stroke < 1.0e300 && View < Reference.Views.size(); ++View)
+            Shifted = std::max(Shifted, std::hypot(Sheet.Sheet.Views[View].Origin.X - Reference.Views[View].Origin.X, Sheet.Sheet.Views[View].Origin.Y - Reference.Views[View].Origin.Y));
         for (size_t Line = 0; Stroke < 1.0e300 && Line < Reference.Lines.size(); ++Line)
         {
-            if (Reference.Lines[Line].Points.size() != Sheet.Sheet.Lines[Line].Points.size()) { Stroke = 1.0e300; break; }
-            for (size_t Point = 0; Point < Reference.Lines[Line].Points.size(); ++Point)
-                Stroke = std::max(Stroke, std::hypot(Reference.Lines[Line].Points[Point].X - Sheet.Sheet.Lines[Line].Points[Point].X, Reference.Lines[Line].Points[Point].Y - Sheet.Sheet.Lines[Line].Points[Point].Y));
+            const Modeller::SheetPolyline& Ours = Sheet.Sheet.Lines[Line];
+            const Modeller::SheetPolyline& Theirs = Reference.Lines[Line];
+            if (Theirs.Layer != Ours.Layer || Theirs.Points.size() != Ours.Points.size()) { Stroke = 1.0e300; break; }
+            if (Theirs.Layer == Modeller::SheetLayer::Dimension || Theirs.Layer == Modeller::SheetLayer::CuttingPlane || Theirs.Points.empty()) continue;
+            Modeller::Vector2 Offset{ 0.0, 0.0 };
+            for (size_t View = 0; View < Reference.Views.size(); ++View)
+            {
+                const Modeller::PlacedDrawingView& Placed = Reference.Views[View];
+                const Modeller::Vector2 Point = Theirs.Points.front();
+                if (Point.X >= Placed.Low.X - 1.0e-6 && Point.X <= Placed.High.X + 1.0e-6 && Point.Y >= Placed.Low.Y - 1.0e-6 && Point.Y <= Placed.High.Y + 1.0e-6)
+                {
+                    Offset = { Sheet.Sheet.Views[View].Origin.X - Placed.Origin.X, Sheet.Sheet.Views[View].Origin.Y - Placed.Origin.Y };
+                    break;
+                }
+            }
+            for (size_t Point = 0; Point < Theirs.Points.size(); ++Point)
+                Stroke = std::max(Stroke, std::hypot(Theirs.Points[Point].X + Offset.X - Ours.Points[Point].X, Theirs.Points[Point].Y + Offset.Y - Ours.Points[Point].Y));
+            ++Compared;
         }
-        Tally(SheetGate, Stroke, Stroke <= 1.0e-9, Format("metres × 1000 at 1:%g = millimetres at ", 1.0 / Sheet.Sheet.Scale) + Reference.ScaleLabel + Format(": %zu strokes, worst %.1e mm", Reference.Lines.size(), Stroke));
+        Tally(SheetGate, Stroke, Stroke <= 1.0e-9, Format("metres × 1000 at 1:%g = millimetres at ", 1.0 / Sheet.Sheet.Scale) + Reference.ScaleLabel
+              + Format(": %zu of %zu strokes (all but dimensions) coincide per view, worst %.1e mm (views moved ≤ %.2f mm by the longer texts)", Compared, Reference.Lines.size(), Stroke, Shifted));
 
         // Paper and angle: A4 picks a scale no larger than A3; third angle mirrors the Top / Right placement about Front.
         DraftingDrawingSheetSettings Small = Settings;
@@ -2975,9 +2997,17 @@ int main()
         Copy.DrawingSheet = File.DrawingSheet;
         const bool RoundTrip = File.Refusal.empty() && DraftingDrawingSheetKey(File.DrawingSheet) == DraftingDrawingSheetKey(Saved.DrawingSheet)
                             && DraftingSectionKey(File.DrawingSheet.Section) == DraftingSectionKey(Saved.DrawingSheet.Section) && EncodeDraftingDocument(Copy) == Written1;
-        std::string BadPaper = Written1, BadAngle = Written1;
-        BadPaper.replace(BadPaper.find("Paper = \"A2\""), 12, "Paper = \"A5\"");
-        BadAngle.replace(BadAngle.find("Angle = \"Third\""), 15, "Angle = \"Fifth\"");
+        // toml++ writes 'literal' or "basic" strings; either is swapped.
+        const auto Swap = [](std::string Text, const std::string& Key, const std::string& From, const std::string& To)
+        {
+            for (const char* Quote : { "'", "\"" })
+            {
+                const std::string Old = Key + " = " + Quote + From + Quote;
+                if (const size_t At = Text.find(Old); At != std::string::npos) return Text.replace(At, Old.size(), Key + " = \"" + To + "\"");
+            }
+            return std::string();
+        };
+        const std::string BadPaper = Swap(Written1, "Paper", "A2", "A5"), BadAngle = Swap(Written1, "Angle", "Third", "Fifth");
         const std::string PaperRefusal = DecodeDraftingDocument(BadPaper).Refusal, AngleRefusal = DecodeDraftingDocument(BadAngle).Refusal;
         Tally(SheetGate, 0.0, Plain.find("[DrawingSheet]") == std::string::npos && Written1.find("[DrawingSheet]") != std::string::npos && RoundTrip
               && PaperRefusal.find("A5") != std::string::npos && AngleRefusal.find("Fifth") != std::string::npos,
