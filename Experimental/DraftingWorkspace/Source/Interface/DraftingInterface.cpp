@@ -3759,7 +3759,7 @@ void ExportDrawingSheet(DraftingWorkspaceState& State, const char* Extension)
 {
     DraftingDrawingSheetSession& Session = State.DrawingSheet;
     RefreshDrawingSheet(State);
-    Session.ExportPath    = DraftingDrawingSheetExportPath(State.DocumentPath, Extension);
+    Session.ExportPath    = DraftingDrawingSheetExportPath(State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath, Extension);  // as Ctrl+S
     Session.ExportRefusal = ExportDraftingDrawingSheet(Session.Sheet, Session.ExportPath);
     Session.ExportBytes   = 0.0;
     std::error_code Failure;
