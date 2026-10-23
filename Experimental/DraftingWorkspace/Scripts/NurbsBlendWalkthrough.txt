@@ -150,9 +150,10 @@ expect bevel-active == 0
 expect refused == 0
 expect sound == 1
 expect status contains 0.1 → 0.25
+expect volume ~ 2.133847116
 capture 177NurbsVariableApplied
 
-# ⑤ Ctrl+Z, B, constant chamfer 0.9: past the wall's curvature radius, refused by name; Esc leaves the body untouched
+# ⑤ Ctrl+Z, B (a new session opens constant again), chamfer 0.9: past the wall's curvature radius, refused by name; Esc leaves the body untouched
 key Z Ctrl
 frames 3
 key 2
@@ -162,9 +163,6 @@ frames 2
 click world 2.0 1.5 1.0
 frames 2
 key B
-frames 3
-expect bevel-variable == 1
-key V
 frames 3
 expect bevel-variable == 0
 key C

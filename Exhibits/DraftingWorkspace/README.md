@@ -1,6 +1,6 @@
 # 🧩 DraftingWorkspace — evidence for step 9
 
-**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes 19 / 19 (20 / 20 with the BMW picture). **875 / 875** walkthrough expectations pass, and the parity checklist scores 🟢 63 · ⚠️ 1 · 🚧 3 out of 67 rows (`Experimental/DraftingWorkspace/PARITY-SolidArcBrowserEditor.md`).
+**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes 22 / 22 (23 / 23 with the BMW picture). **1012 / 1012** walkthrough expectations pass across 21 reports, and the parity checklist scores 🟢 69 · ⚠️ 1 · 🚧 3 out of 73 rows (`Experimental/DraftingWorkspace/PARITY-SolidArcBrowserEditor.md`).
 
 | Report | Result |
 |---|---|
@@ -24,6 +24,7 @@
 | `Walkthrough/IncrementalReplayWalkthrough.md` | 29 / 29: bracket specimen; Fillet1 0.25 → 0.3 resumes at Fillet1 (Body card `replayed 2/8`); the hole radius 0.35 resumes at its sketch (4/8); Ctrl+Z / Ctrl+Shift+Z restore every step (0/8); Block1 height resumes at the extrude (7/8), Block1 width replays all (8/8); B on the bottom-front edge stages a preview that replays only the new fillet (`replayed 1/9`), Esc leaves the document untouched |
 | `Walkthrough/XRayWalkthrough.md` | 36 / 36: bracket in mode 2; the box over the whole part takes the 17 visible edges, Alt+Z and the same box takes all 24; hovering and clicking the hidden back-bottom edge through the top face; B fillets it r 0.25 through the ghost faces (10.22278 → 10.16912 = − (1 − π/4) · 0.25² · 4); mode 3 still picks the front face; the toolbar toggle turns x-ray off and the edge is no longer hovered; Ctrl+Z |
 | `Walkthrough/SnappingWalkthrough.md` | 62 / 62: on the bracket, a circle r 0.6 at (−2, 1.2), then Shift+A: the block corner snaps exactly (160), the tangent point to the circle from it (161, within the script's 1e-6 check; W35 proves it to 5.6e-16), t locks the circle tangent and slides 1.0 along it (162), n squares to it by 0.5 (163), b = ẑ leaves the plane and is refused (164), centre (165), edge midpoint (2, 0, 0) (166), perpendicular foot on the circle from (2, 0) (167); s squares a rectangle to 0.8 × 0.8 (168); K drags the square's corner onto the circle centre (169); G grabs the bracket's corner and lands it there, shift exactly (−2, 1.2, 0) (170); the hidden back corner snaps only after Alt+Z (171); on the imported bonnet a mode 1 pole of Section3 dragged onto Section2's end sits exactly on it, gap 0 (172) |
+| `Walkthrough/NurbsBlendWalkthrough.md` | 43 / 43: Ctrl+N, Top view, closed Hermite through (0, 0.5) (1, 0) (2, 0.5) (2, 1.5) (1, 2) (0, 1.5) extruded 1; Shift+A line x = 0.8, C, X keeps the right piece (173); mode 2, the spline rim, B, C: the default 0.25 chamfer previews at 2.050097 m³ and tessellates (174), 0.15 → 2.118687 m³ applied (175); Ctrl+Z, D fillet 0.1, V end 0.25 (176) → `Fillet 0.1 → 0.25`, 2.133847 m³, sound (177); Ctrl+Z, chamfer 0.9 refused `E37: size exceeds the curvature radius of the NURBS support` (178), Esc leaves the body untouched. Volumes equal the headless kernel on the same rim |
 | `Walkthrough/VariableBlendWalkthrough.md` | 31 / 31: B, numeric 0.3, V (end size starts at 0.15, typed 0.1), Front view, F flips the anchor, C variable chamfer, D, Enter (one undo entry, caption `0.3 → 0.1`), Ctrl+Z / Ctrl+Shift+Z; preview and applied volumes equal the closed form to 10⁻⁶ |
 
 ## Key frames (`Walkthrough/`)
@@ -90,6 +91,12 @@
 | `149XRayPicked` | Click: the hidden edge is the selection |
 | `150XRayFillet` | B: the fillet preview on the hidden edge seen through the solid, Bevel card `Preview: 12 faces · 10.1691 m³ · replayed 1/9` |
 | `151XRayFilleted` | Enter: 9 steps, 12 faces, 10.16912 m³ |
+| `173NurbsBlendCutBody` | The closed-Hermite extrusion cut at x = 0.8, left piece removed: 4 faces, 2.1591 m³, the top rim an open spline edge |
+| `174NurbsChamfer025` | B · C on the rim: the default 0.25 chamfer band on the NURBS wall, Bevel card `Preview: 5 faces · 2.0501 m³` (the preview that used to hang tessellation) |
+| `175NurbsChamferApplied` | 0.15 typed, Enter: sound, 2.118687 m³ |
+| `176NurbsVariablePreview` | Ctrl+Z, D fillet 0.1, V with the end typed 0.25: the variable fillet preview |
+| `177NurbsVariableApplied` | Enter: 6 steps, 5 faces, sound, 2.13385 m³; status `Fillet 0.1 → 0.25 on 1 edge(s)` — the fillet widens along the rim |
+| `178NurbsChamferRefused` | Chamfer 0.9: refused in red, `E37 … curvature radius of the NURBS support (fold margin −0.435210)`, the rim stays selected, body untouched |
 | `16WelcomeBack` · `17Recovered` | Recovery modal, then the continued document |
 | `19BevelSignChamfer` | Pointer moved left past zero: the session became a chamfer (0.8514 m, refused as wider than the edge) |
 | `20ShortcutExtrude` | E on the boss top: V 10.2228 → 10.6155 m³ |

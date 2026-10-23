@@ -1,0 +1,22 @@
+{
+  "Frame": 282,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Curve1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Cut#4", "Caption": "Cut1 · Cut", "Refused": false}, {"Label": "Remove#5", "Caption": "Remove1 · Remove", "Refused": false}],
+  "Body": {"Faces": 4, "Edges": 6, "Vertices": 4, "Genus": 0, "Volume": 2.159104537, "Sound": true},
+  "Selection": {"Faces": [], "Edges": ["Edge(Extrude#2.Cap(End)|Extrude#2.Side(Spline1))"], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 2,
+  "Hover": "",
+  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 4.093093431, "Target": [1.462500006, 1.000032714, 0.5], "Orthographic": false},
+  "Bevel": {"Active": true, "Shape": "Fillet", "Size": 0.1, "Pinned": true, "Variable": true, "EndSize": 0.25, "Flipped": false, "PreviewFaces": 5, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.8, -0.5], [0.8, 2.5]], "Refusal": ""},
+  "Undo": 5,
+  "Redo": 1,
+  "Welcome": false,
+  "Status": "Bevel end size 0.25 m",
+  "Viewport": [320, 160, 930, 730]
+}
