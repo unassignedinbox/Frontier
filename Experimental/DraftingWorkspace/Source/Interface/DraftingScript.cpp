@@ -46,7 +46,7 @@ ImGuiKey KeyByName(const std::string& Name)
         { "1", ImGuiKey_1 }, { "2", ImGuiKey_2 }, { "3", ImGuiKey_3 }, { "4", ImGuiKey_4 }, { "5", ImGuiKey_5 },
         { "Keypad1", ImGuiKey_Keypad1 }, { "Keypad3", ImGuiKey_Keypad3 }, { "Keypad5", ImGuiKey_Keypad5 }, { "Keypad7", ImGuiKey_Keypad7 },
         { "Space", ImGuiKey_Space }, { "Enter", ImGuiKey_Enter }, { "Escape", ImGuiKey_Escape },
-        { "Delete", ImGuiKey_Delete }, { "Backspace", ImGuiKey_Backspace }, { "Tab", ImGuiKey_Tab },
+        { "Delete", ImGuiKey_Delete }, { "Backspace", ImGuiKey_Backspace }, { "Tab", ImGuiKey_Tab }, { "Home", ImGuiKey_Home }, { "End", ImGuiKey_End },
         { "LeftBracket", ImGuiKey_LeftBracket }, { "RightBracket", ImGuiKey_RightBracket },
     };
     const auto Found = Keys.find(Name);

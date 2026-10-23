@@ -2,6 +2,8 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.32 MB, no external resources) with 30 interactive kernel models (now including the variable fillet and chamfer on a curved edge, VariableArcFillet / VariableArcChamfer, the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
+**TL;DR (exchange in the workspace, priority 4 X4)**: `FeatureStepKind::Import` (18) replays one solid from STEP text embedded in the step (`Exchange`, `ExchangeUnit`, both in the replay digest; faces named `Label.Face(k)` in file order). The DraftingWorkspace uses it for Import… / Open… and writes STEP / STL through `WriteStep` / `WriteStl` for Export… / Save as…; its evidence is `Exhibits/DraftingWorkspace` (W38, `ExchangeWalkthrough.md`, `ExchangeExport/`).
+
 **TL;DR (STEP import, priority 4 X3)**: `Exchange/StepReading` reads STEP solids back into the kernel. `ReadStep` / `ImportStepFile` scan any Part 21 file (AP203 / AP214 / AP242), turn every MANIFOLD_SOLID_BREP and BREP_WITH_VOIDS into a `BodyBlueprint` and build it with `AssembleBody`. Each body is assembled and audited in a scratch partition first, so a refusal leaves the caller's partition untouched.
 
 - **Geometry read:** PLANE, CYLINDRICAL / CONICAL / SPHERICAL / TOROIDAL_SURFACE, LINE, CIRCLE, ELLIPSE, B-spline curves and surfaces (rational, quasi-uniform, Bézier; knots clamped where the file leaves them open). SURFACE_OF_REVOLUTION / SURFACE_OF_LINEAR_EXTRUSION become exact NURBS.

@@ -112,6 +112,9 @@ DraftingExportOutcome ExportDraftingBodies(const DraftingDocument& Document, con
         if (Found == Document.Regeneration.Bodies.end() || !Found->Body.PresentCondition()) return Refuse("no body named " + Key);
         Tokens.push_back(Found->Body);
     }
+    std::error_code Error;
+    const std::filesystem::path Folder = std::filesystem::path(Path).parent_path();
+    if (!Folder.empty()) std::filesystem::create_directories(Folder, Error);                // Beside a document not saved yet
     std::string Failure;
     if (Outcome.Format == DraftingExchangeFormat::Step)
     {
@@ -135,7 +138,6 @@ DraftingExportOutcome ExportDraftingBodies(const DraftingDocument& Document, con
         Outcome.Triangles = Export.Triangles;
     }
     if (!Failure.empty()) return Refuse(Failure);
-    std::error_code Error;
     Outcome.Bytes        = double(std::filesystem::file_size(Path, Error));
     Outcome.Milliseconds = ElapsedMilliseconds(Start);
     return Outcome;

@@ -4383,7 +4383,7 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
         const std::string DocumentPath = State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath;
         if (ImGui::IsPopupOpen(Title) && State.PathText[0] == 0)
             std::snprintf(State.PathText.data(), State.PathText.size(), "%s",
-                          (ImportCondition ? State.Options.CurvesPath : ExportCondition ? DraftingExportPath(DocumentPath, ".step") : DocumentPath).c_str());
+                          (ImportCondition ? (State.Exchange.Export.Format == DraftingExchangeFormat::Step && State.Exchange.Export.Refusal.empty() ? State.Exchange.Export.Path : State.Options.CurvesPath) : ExportCondition ? DraftingExportPath(DocumentPath, ".step") : DocumentPath).c_str());
         if (ImGui::BeginPopupModal(Title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             const size_t ExportCount = DraftingExportBodies(State.Document).size();
@@ -5490,7 +5490,7 @@ void DrawStepCard(DraftingWorkspaceState& State)
         const size_t      Mark    = Step->Exchange.find("PRODUCT('");
         const std::string Product = Mark == std::string::npos ? std::string("?") : Step->Exchange.substr(Mark + 9, Step->Exchange.find('\'', Mark + 9) - Mark - 9);
         ImGui::TextWrapped("STEP body %s embedded (%.1f kB, %.0f mm per model unit) · faces %s.Face(1 …) in file order", Product.c_str(), Step->Exchange.size() / 1000.0,
-                           Step->ExchangeUnit, CaptionOf(State.Document, Label).c_str());
+                           Step->ExchangeUnit, Label.c_str());
     }
     if (Step->Kind == FeatureStepKind::Pipe)
     {
