@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Interface/DraftingScript.h"
+#include "Measurement/MassProperties.h"
 #include "Sketch/SketchSpline.h"
 
 #include <algorithm>
@@ -183,8 +184,9 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "replay-ms") return Numeric(Document.Summary.RegenerationMs);
     if (Field == "preview-resumed")
     {
-        // The staged preview of the open session (bevel, move / rotate / scale, revolve / sweep); −1 without one.
-        const DraftingDocument* Preview = State.Bevel.Preview ? State.Bevel.Preview.get() : State.Transform.Preview ? State.Transform.Preview.get() : State.Sweep.Preview.get();
+        // The staged preview of the open session (bevel, move / rotate / scale, revolve / sweep, joint, dragged value); −1 without one.
+        const DraftingDocument* Preview = State.Bevel.Preview ? State.Bevel.Preview.get() : State.Transform.Preview ? State.Transform.Preview.get() : State.Sweep.Preview ? State.Sweep.Preview.get()
+                                        : State.Joint.Preview ? State.Joint.Preview.get() : State.ParameterDrag.Preview.get();
         return Numeric(Preview ? Preview->Regeneration.Resumed : -1);
     }
     if (Field == "undo") return Numeric(double(Document.UndoEntries.size()));
@@ -352,6 +354,59 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "measure-length") return Numeric(State.Measure.Measurement.Length);
     if (Field == "measure-volume") return Numeric(State.Measure.Measurement.Volume);
     if (Field == "measure-refreshes") return Numeric(State.Measure.Refreshes);
+    if (Field == "measure-interference") { Text = State.Measure.Measurement.Interference; Number = double(Text.size()); return true; }
+    if (Field == "measure-overlap") return Numeric(State.Measure.Measurement.OverlapVolume);
+    if (Field == "measure-overlap-edges") return Numeric(double(State.Measure.Measurement.Overlap.size()));
+    if (Field == "joint") return Numeric(State.Joint.ActiveCondition ? 1 : 0);
+    if (Field == "joint-phase") return Numeric(State.Joint.ActiveCondition ? State.Joint.Phase : -1);
+    if (Field == "joint-commits") return Numeric(double(State.Joint.Commits));
+    if (Field == "joint-kind") { Text = Modeller::JointKindLabel(State.Joint.Request.Kind); Number = Modeller::JointFreedom(State.Joint.Request.Kind); return true; }
+    if (Field == "joint-angle") return Numeric(State.Joint.Request.Angle);
+    if (Field == "joint-flipped") return Numeric(State.Joint.Request.Flipped ? 1 : 0);
+    if (Field == "joint-refusal") { Text = State.Joint.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "joint-preview") return Numeric(State.Joint.Preview ? 1 : 0);
+    if (Field == "joint-hover")
+    {
+        // "circle centre on Link1" for the entity under the pointer (or its refusal), Number = 1 when it offers an origin.
+        const DraftingJointOrigin& Hover = State.Joint.Hover;
+        Text   = State.Joint.HoverName.empty() ? std::string() : Hover.Refusal.empty() ? Hover.Description + " on " + DraftingBodyCaption(Document, Hover.Body) : Hover.Refusal;
+        Number = !State.Joint.HoverName.empty() && Hover.Refusal.empty() ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "joint-picks")
+    {
+        Text   = State.Joint.Moving.Description + (State.Joint.Moving.Body.empty() ? std::string() : " on " + DraftingBodyCaption(Document, State.Joint.Moving.Body)) + " -> "
+               + State.Joint.Fixed.Description + (State.Joint.Fixed.Body.empty() ? std::string() : " on " + DraftingBodyCaption(Document, State.Joint.Fixed.Body));
+        Number = double(State.Joint.Phase);
+        return true;
+    }
+    if (Field == "joints" || Field == "joint-gap")
+    {
+        // Joints of the regeneration; joint-gap = the largest distance between a joint's two origins (0 when assembled).
+        double Gap = 0.0;
+        for (const Modeller::RegeneratedJoint& Joint : Document.Regeneration.Joints) Gap = std::max(Gap, Modeller::Distance(Joint.MovingOrigin.Origin, Joint.FixedOrigin.Origin));
+        return Numeric(Field == "joints" ? double(Document.Regeneration.Joints.size()) : Gap);
+    }
+    if (Field == "parameter-drag") return Numeric(double(State.ParameterDrag.Stagings));
+    if (Field.starts_with("centroid:"))
+    {
+        // "centroid:Link2" → "(x, y, z)" at %.6f of that body (caption or key), Number = x.
+        const std::string Wanted = Field.substr(9);
+        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+        {
+            if (Body.Key != Wanted && DraftingBodyCaption(Document, Body.Key) != Wanted) continue;
+            const Modeller::BodyMassProperties Mass = Modeller::MeasureBodyMass(*Document.Partition, Body.Body);
+            const auto Clean = [](double Value) { return std::abs(Value) < 5.0e-7 ? 0.0 : Value; };          // No "-0.000000"
+            char Triple[120];
+            std::snprintf(Triple, sizeof(Triple), "(%.6f, %.6f, %.6f)", Clean(Mass.Centroid.X), Clean(Mass.Centroid.Y), Clean(Mass.Centroid.Z));
+            Text   = Triple;
+            Number = Mass.Centroid.X;
+            return true;
+        }
+        Text = "no body " + Wanted;
+        Number = 0.0;
+        return true;
+    }
     if (Field == "section")
     {
         // Text = request key ("y 1.25", "face F3 -0.5 flipped") or the refusal, Number = 1 while Section (Alt+S) is on.

@@ -357,6 +357,38 @@ struct DraftingSectionSession
     int                    Refreshes       = 0;                                              // [-] - Recomputations (script evidence)
 };
 
+// 📝 Joint (Alt+J; Fusion Joint — Plasticity has none): ① pick the joint origin on the moving body, ② on the fixed body
+//    (the hovered edge / face shows its origin glyph: z blue, x red), ③ choose the kind (R rigid · V revolute · S slider ·
+//    C cylindrical · P pin-slot · L planar · B ball), drag the values, F flips, Enter applies. Two entities picked beforehand
+//    (on two bodies; the later pick is the fixed one) skip ① and ②. The preview is a staged document.
+struct DraftingJointSession
+{
+    bool                              ActiveCondition = false;                               // [-] - Alt+J pressed, not ended
+    int                               Phase           = 0;                                   // [-] - 0 moving origin · 1 fixed origin · 2 adjust
+    DraftingJointRequest              Request         = {};                                  // [-] - Picks, kind and values
+    DraftingSelectionKind             HoverKind       = DraftingSelectionKind::Edge;         // [-] - Entity under the pointer
+    std::string                       HoverName       = {};                                  // [-] - Its name (empty: none)
+    DraftingJointOrigin               Hover           = {};                                  // [-] - Its joint origin (glyph)
+    DraftingJointOrigin               Moving          = {};                                  // [-] - Picked origin on the moving body
+    DraftingJointOrigin               Fixed           = {};                                  // [-] - Picked origin on the fixed body
+    std::string                       StagedKey       = {};                                  // [-] - Request the preview shows
+    std::unique_ptr<DraftingDocument> Preview         = {};                                  // [-] - Staged document
+    DraftingScene                     PreviewScene    = {};                                  // [-] - Its display arrays
+    std::string                       Refusal         = {};                                  // [-] - Why the preview / commit is refused
+    int                               Commits         = 0;                                   // [-] - Joints applied (script evidence)
+};
+
+// 📝 Dragging a joint value in the step card: the staged document shows the motion (replayed from the joint), the
+//    document takes the value once on release (one undo entry).
+struct DraftingParameterDrag
+{
+    std::string                       Parameter    = {};                                     // [-] - Parameter being dragged (empty: none)
+    double                            Value        = 0.0;                                    // [-] - Value the preview shows
+    std::unique_ptr<DraftingDocument> Preview      = {};                                     // [-] - Staged document
+    DraftingScene                     PreviewScene = {};                                     // [-] - Its display arrays
+    int                               Stagings     = 0;                                      // [-] - Previews built (script evidence)
+};
+
 struct DraftingWorkspaceState
 {
     DraftingOptions                       Options        = {};                               // [-]   - Loaded options
@@ -378,6 +410,8 @@ struct DraftingWorkspaceState
     DraftingClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
     DraftingMeasureSession                Measure        = {};                               // [-]   - I: Measure card + overlay
     DraftingSectionSession                Section        = {};                               // [-]   - Alt+S: section plane, caps, exact figures
+    DraftingJointSession                  Joint          = {};                               // [-]   - Alt+J: joint card, origin glyphs, preview
+    DraftingParameterDrag                 ParameterDrag  = {};                               // [-]   - Step card: dragged joint value
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)

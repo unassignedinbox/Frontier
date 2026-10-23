@@ -9,6 +9,7 @@
 
 #include "Document/DraftingMeasurement.h"
 
+#include "Assembly/AssemblyAnalysis.h"
 #include "Audit/EnclosedVolume.h"
 #include "Measurement/MassProperties.h"
 #include "Measurement/MinimumDistance.h"
@@ -219,6 +220,48 @@ void MeasureBodies(const DraftingDocument& Document, const std::vector<std::stri
     if (Sheets) AppendRow(Measurement, "Skipped", Figure("%d sheet body(ies)", Sheets), Sheets);
 }
 
+// Two solid bodies: interference on a scratch copy of the partition (the overlap Boolean adds a body); the overlay gets
+// the clearance's closest points or the edges of the shared volume, sampled 24 chords per edge.
+void MeasureInterference(const DraftingDocument& Document, const std::string& FirstKey, const std::string& SecondKey, DraftingMeasurement& Measurement)
+{
+    const Modeller::RegeneratedBody* First  = FindBody(Document, FirstKey);
+    const Modeller::RegeneratedBody* Second = FindBody(Document, SecondKey);
+    if (!First || !Second || SheetBodyCondition(Document, FirstKey) || SheetBodyCondition(Document, SecondKey)) return;
+    Modeller::ModelPartition Scratch = *Document.Partition;
+    const Modeller::InterferenceMeasure Measure = Modeller::DetectBodyInterference(Scratch, First->Body, Second->Body);
+    if (!Measure.Refusal.empty()) { AppendRow(Measurement, "Interference", Measure.Refusal); return; }
+    Measurement.Interference = Modeller::InterferenceConditionLabel(Measure.Condition);
+    Measurement.Subject      = BodyCaptionOf(Document, FirstKey) + " + " + BodyCaptionOf(Document, SecondKey);
+    AppendRow(Measurement, "Interference", Measurement.Interference);
+    switch (Measure.Condition)
+    {
+    case Modeller::InterferenceCondition::Clear:
+    case Modeller::InterferenceCondition::Contact:
+        Measurement.Distance          = Measure.Clearance;
+        Measurement.DistanceCondition = Measure.Condition == Modeller::InterferenceCondition::Clear;
+        Measurement.First             = Measure.First;
+        Measurement.Second            = Measure.Second;
+        AppendRow(Measurement, "Clearance", Figure("%.6g m", Measure.Clearance), Measure.Clearance);
+        break;
+    case Modeller::InterferenceCondition::Overlap:
+    case Modeller::InterferenceCondition::Contained:
+    {
+        Measurement.OverlapVolume = Measure.Volume;
+        AppendRow(Measurement, Measure.Condition == Modeller::InterferenceCondition::Overlap ? "Overlap volume" : "Contained volume", Figure("%.6g m³", Measure.Volume), Measure.Volume);
+        for (Modeller::EdgeToken Edge : Scratch.CollectInventory(Measure.Body).Edges)
+        {
+            const Modeller::EdgeProfile&   Profile = Scratch.Edges.Resolve(Edge);
+            const Modeller::CurveGeometry& Curve   = Scratch.Curves.Resolve(Profile.Curve);
+            std::vector<Vector3> Polyline;
+            for (int Index = 0; Index <= 24; ++Index)
+                Polyline.push_back(Modeller::EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Index / 24.0).Position);
+            Measurement.Overlap.push_back(std::move(Polyline));
+        }
+        break;
+    }
+    }
+}
+
 void MeasureFace(const DraftingDocument& Document, const MeasureOperand& Operand, DraftingMeasurement& Measurement)
 {
     const Modeller::ModelPartition& Partition = *Document.Partition;
@@ -374,6 +417,7 @@ DraftingMeasurement MeasureDraftingSelection(const DraftingDocument& Document)
         }
         if (Keys.empty()) Measurement.Refusal = "Measure: every body is hidden";
         else MeasureBodies(Document, Keys, Measurement);
+        if (Keys.size() == 2 && Measurement.Refusal.empty()) MeasureInterference(Document, Keys[0], Keys[1], Measurement);
     }
     Measurement.Milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count();
     return Measurement;

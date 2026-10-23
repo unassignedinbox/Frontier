@@ -1357,6 +1357,76 @@ DraftingCommandOutcome TransformDraftingBodies(DraftingDocument& Document, const
     });
 }
 
+DraftingJointOrigin ResolveDraftingJointOrigin(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name)
+{
+    DraftingJointOrigin Origin;
+    if (!Document.Partition) { Origin.Refusal = "there is no body"; return Origin; }
+    if (Kind != DraftingSelectionKind::Edge && Kind != DraftingSelectionKind::Face) { Origin.Refusal = "a joint origin is an edge or a face"; return Origin; }
+    for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+    {
+        const std::map<uint32_t, std::string>& Names = Kind == DraftingSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+        for (const auto& [Slot, Candidate] : Names)
+        {
+            if (Candidate != Name) continue;
+            const JointConnector Connector = ResolveJointConnector(*Document.Partition, Kind == DraftingSelectionKind::Edge ? ReferenceKind::Edge : ReferenceKind::Face, Slot);
+            Origin.Body        = Body.Key;
+            Origin.Frame       = Connector.Frame;
+            Origin.Description = Connector.Description;
+            Origin.Refusal     = Connector.Refusal;
+            return Origin;
+        }
+    }
+    Origin.Refusal = "no edge or face named " + Name;
+    return Origin;
+}
+
+DraftingCommandOutcome JointDraftingBodies(DraftingDocument& Document, const DraftingJointRequest& Request)
+{
+    const DraftingJointOrigin Moving = ResolveDraftingJointOrigin(Document, Request.MovingKind, Request.MovingName);
+    const DraftingJointOrigin Fixed  = ResolveDraftingJointOrigin(Document, Request.FixedKind, Request.FixedName);
+    const std::string Label = std::string(JointKindLabel(Request.Kind)) + " joint (" + (Moving.Body.empty() ? std::string("?") : DraftingBodyCaption(Document, Moving.Body)) + " → "
+                            + (Fixed.Body.empty() ? std::string("?") : DraftingBodyCaption(Document, Fixed.Body)) + ")";
+    return RunCommand(Document, Label, true, [&]() -> std::string
+    {
+        if (!Moving.Refusal.empty()) return "moving origin: " + Moving.Refusal;
+        if (!Fixed.Refusal.empty()) return "fixed origin: " + Fixed.Refusal;
+        if (Moving.Body == Fixed.Body) return "both joint origins are on " + DraftingBodyCaption(Document, Moving.Body) + " (pick one on each body)";
+        const std::string Caption   = NextCaption(Document, JointKindLabel(Request.Kind));
+        const std::string StepLabel = "Joint#" + std::to_string(NextStepOrdinal(Document.Tree));
+        const double      Degree    = std::numbers::pi / 180.0;
+        const auto Bind = [&](const char* Field, double Value, double Low, double High, const char* Meaning, double Factor)
+        {
+            Document.Tree.Parameters.push_back({ Caption + "." + Field, Value, std::min(Low, Value), std::max(High, Value), Meaning });
+            return ParameterValue(Caption + "." + Field, Factor);
+        };
+        const JointKind Kind   = Request.Kind;
+        const bool      Slides = Kind == JointKind::Slider || Kind == JointKind::Cylindrical || Kind == JointKind::PinSlot || Kind == JointKind::Planar;
+        const double    Span   = std::max({ 1.0, 4.0 * std::abs(Request.Slide), 4.0 * std::abs(Request.SecondSlide), 4.0 * std::abs(Request.Offset) });
+        FeatureStep Step;
+        Step.Kind   = FeatureStepKind::Joint;
+        Step.Label  = StepLabel;
+        Step.Target = Moving.Body;
+        Step.Tool   = Fixed.Body;
+        Step.References.push_back({ Request.MovingKind == DraftingSelectionKind::Edge ? ReferenceKind::Edge : ReferenceKind::Face, Request.MovingName, {} });
+        Step.References.push_back({ Request.FixedKind == DraftingSelectionKind::Edge ? ReferenceKind::Edge : ReferenceKind::Face, Request.FixedName, {} });
+        FeatureJoint& Joint = Step.Joint;
+        Joint.Kind             = Kind;
+        Joint.FlippedCondition = Request.Flipped;
+        Joint.Angle            = Bind("Angle", Request.Angle, -180.0, 180.0, Kind == JointKind::Ball ? "yaw about the joint z [deg]" : "turn about the joint z [deg]", Degree);
+        Joint.Offset           = Bind("Offset", Request.Offset, -Span, Span, "offset along the joint z", 1.0);
+        if (Slides) Joint.Slide = Bind("Slide", Request.Slide, -Span, Span, Kind == JointKind::Slider || Kind == JointKind::Cylindrical ? "slide along the joint z" : "slide along the joint x", 1.0);
+        if (Kind == JointKind::Planar) Joint.SecondSlide = Bind("SecondSlide", Request.SecondSlide, -Span, Span, "slide along the joint y", 1.0);
+        if (Kind == JointKind::Ball)
+        {
+            Joint.Pitch = Bind("Pitch", Request.Pitch, -180.0, 180.0, "pitch about the joint y [deg]", Degree);
+            Joint.Roll  = Bind("Roll", Request.Roll, -180.0, 180.0, "roll about the joint x [deg]", Degree);
+        }
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Captions[StepLabel] = Caption;
+        return {};
+    });
+}
+
 DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys, const AffineMap& Map, const std::string& Source)
 {
     const std::vector<std::string> Unique = UniqueKeys(Keys);

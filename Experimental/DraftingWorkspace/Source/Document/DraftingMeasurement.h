@@ -41,6 +41,8 @@ struct DraftingMeasureRow
 // 💡 What Measure (I) reports for the current selection (Fusion Inspect → Measure; Plasticity has none):
 //    nothing / mode-4 body → mass properties · 1 face → area, perimeter, carrier · 1 edge → length, carrier ·
 //    2 entities → minimum distance (+ angle when both carry a direction) · more → total area / length.
+//    2 solid bodies (mode 4) → their totals plus interference (Assembly/AssemblyAnalysis.h): clear with the clearance
+//    and its closest points, contact, overlap with the shared volume and its edges, or one contained in the other.
 //    Figures the subject lacks stay NaN; the overlay reads the point fields.
 struct DraftingMeasurement
 {
@@ -58,6 +60,9 @@ struct DraftingMeasurement
     Modeller::Vector3               Second            = {};                                  // [len]  - Closest point on the second entity
     bool                            CentroidCondition = false;                               // [-]    - Centroid is meaningful
     Modeller::Vector3               Centroid          = {};                                  // [len]  - Body / face centroid
+    std::string                     Interference      = {};                                  // [-]    - 2 bodies: Clear / Contact / Overlap / Contained
+    double                          OverlapVolume     = DraftingUnmeasured;                  // [len³] - 2 bodies: shared volume
+    std::vector<std::vector<Modeller::Vector3>> Overlap = {};                                // [len]  - 2 bodies: edges of the shared volume (overlay)
     double                          Milliseconds      = 0.0;                                 // [ms]   - Measurement time
     std::string                     Refusal           = {};                                  // [-]    - Empty on success
 };

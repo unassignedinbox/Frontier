@@ -82,6 +82,7 @@ namespace
     GateTally MeasureGate     = { "W33", "Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals", "≤ 1e-9 relative" };
     GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
     GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
+    GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 0.09π)·0.1; moving the bracket carries both; refusals; codec byte-equal; undo", "≤ 1e-9" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2671,7 +2672,170 @@ int main()
     std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate })
+    // ---- W36 joints (Alt+J) + interference: a pin into the bracket hole, a lever on the pin, every number closed form
+    {
+        DraftingDocument Rig = BuildDraftingSpecimen();
+        DraftingConstructRequest Pin;
+        Pin.Kind = DraftingConstructKind::Cylinder; Pin.Position = { 6.0, 1.25, 0.0 }; Pin.Radius = 0.25; Pin.Height = 1.5;
+        Pin.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Rig, Pin));
+        DraftingConstructRequest Lever;
+        Lever.Kind = DraftingConstructKind::Block; Lever.Position = { 6.0, 4.0, 0.0 }; Lever.Width = 2.0; Lever.Depth = 0.4; Lever.Height = 0.2;
+        Lever.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Rig, Lever));
+        Tally(JointGate, 0.0, Rig.Regeneration.Bodies.size() == 3, "bracket + pin + lever: " + std::to_string(Rig.Regeneration.Bodies.size()) + " bodies");
+        const std::string BracketKey = Rig.Regeneration.Bodies[0].Key, PinKey = Rig.Regeneration.Bodies[1].Key, LeverKey = Rig.Regeneration.Bodies[2].Key;
+        // The entity of a body whose joint origin sits at a point (and reads Description) — what the hover offers there.
+        auto OriginAt = [&](const DraftingDocument& Document, const std::string& Key, DraftingSelectionKind Kind, Vector3 At, const char* Description)
+        {
+            for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+            {
+                if (Body.Key != Key) continue;
+                for (const auto& [Slot, Name] : Kind == DraftingSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces)
+                {
+                    const DraftingJointOrigin Origin = ResolveDraftingJointOrigin(Document, Kind, Name);
+                    if (Origin.Refusal.empty() && Origin.Description == Description && Distance(Origin.Frame.Origin, At) <= 1.0e-9) return Name;
+                }
+            }
+            return std::string();
+        };
+        auto Centroid = [&](const DraftingDocument& Document, const std::string& Key)
+        {
+            for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+                if (Body.Key == Key) return MeasureBodyMass(*Document.Partition, Body.Body).Centroid;
+            return Vector3{ std::nan(""), 0.0, 0.0 };
+        };
+        auto Bounds = [&](const DraftingDocument& Document, const std::string& Key, Vector3& Low, Vector3& High)
+        {
+            Low = { 1.0e9, 1.0e9, 1.0e9 }; High = { -1.0e9, -1.0e9, -1.0e9 };
+            for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+            {
+                if (Body.Key != Key) continue;
+                for (const VertexToken Vertex : CollectInventory(*Document.Partition, Body.Body).Vertices)
+                {
+                    const Vector3 Point = Document.Partition->Vertices.Resolve(Vertex).Position;
+                    Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
+                    High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
+                }
+            }
+        };
+        auto Gap = [](const DraftingDocument& Document)
+        {
+            double Worst = 0.0;
+            for (const RegeneratedJoint& Joint : Document.Regeneration.Joints) Worst = std::max(Worst, Distance(Joint.MovingOrigin.Origin, Joint.FixedOrigin.Origin));
+            return Worst;
+        };
+        auto Triple = [](Vector3 Point) { char Text[96]; std::snprintf(Text, sizeof(Text), "(%.12g, %.12g, %.12g)", Point.X, Point.Y, Point.Z); return std::string(Text); };
+        // ① the hover origins: circles a quarter turn off their seams are probed by centre (the rim's own centre)
+        const std::string PinTop   = OriginAt(Rig, PinKey, DraftingSelectionKind::Edge, { 6.0, 1.25, 1.5 }, "circle centre");
+        const std::string HoleTop  = OriginAt(Rig, BracketKey, DraftingSelectionKind::Edge, { 3.0, 1.25, 1.0 }, "circle centre");
+        const std::string LeverBed = OriginAt(Rig, LeverKey, DraftingSelectionKind::Face, { 7.0, 4.2, 0.0 }, "face centroid");
+        const std::string PinCap   = OriginAt(Rig, PinKey, DraftingSelectionKind::Face, { 6.0, 1.25, 1.5 }, "face centroid");
+        Tally(JointGate, 0.0, !PinTop.empty() && !HoleTop.empty() && !LeverBed.empty() && !PinCap.empty(),
+              "origins: pin top rim → circle centre (6, 1.25, 1.5); hole top rim → (3, 1.25, 1); lever bed → face centroid (7, 4.2, 0); pin cap → (6, 1.25, 1.5)");
+        {
+            const DraftingJointOrigin Rim = ResolveDraftingJointOrigin(Rig, DraftingSelectionKind::Edge, HoleTop);
+            Tally(JointGate, Distance(Rim.Frame.ZAxis, Vector3{ 0.0, 0.0, 1.0 }), Rim.Body == BracketKey && Distance(Rim.Frame.ZAxis, Vector3{ 0.0, 0.0, 1.0 }) <= 1.0e-12,
+                  "hole rim z axis leaves the bracket top (+z): " + Triple(Rim.Frame.ZAxis) + " on " + Rim.Body);
+        }
+        // ② revolute, flipped (origins aligned) + offset 0.25: the pin drops into the hole, 0.25 proud — centroid (3, 1.25, 0.5)
+        DraftingJointRequest Insert;
+        Insert.MovingKind = DraftingSelectionKind::Edge; Insert.MovingName = PinTop;
+        Insert.FixedKind  = DraftingSelectionKind::Edge; Insert.FixedName  = HoleTop;
+        Insert.Kind = JointKind::Revolute; Insert.Flipped = true; Insert.Offset = 0.25;
+        const size_t Entries = Rig.UndoEntries.size();
+        const DraftingCommandOutcome Inserted = JointDraftingBodies(Rig, Insert);
+        Expect(Inserted);
+        const Vector3 PinCentre = Centroid(Rig, PinKey);
+        Tally(JointGate, Distance(PinCentre, Vector3{ 3.0, 1.25, 0.5 }), Inserted.AcceptedCondition && Distance(PinCentre, Vector3{ 3.0, 1.25, 0.5 }) <= 1.0e-9,
+              "pin into the hole (revolute, flipped, offset 0.25): centroid " + Triple(PinCentre) + " = (3, 1.25, 0.5)");
+        Tally(JointGate, Gap(Rig), Rig.Regeneration.Joints.size() == 1 && std::abs(Gap(Rig) - 0.25) <= 1.0e-9 && Rig.UndoEntries.size() == Entries + 1,
+              "1 regenerated joint, origins 0.25 apart (the offset), 1 undo entry; step " + Rig.Tree.Steps.back().Label + " captioned " + Rig.Captions[Rig.Tree.Steps.back().Label]);
+        {
+            std::string Names;
+            for (const FeatureParameter& Parameter : Rig.Tree.Parameters) if (Parameter.Name.starts_with(Rig.Tree.Steps.back().Label + ".")) Names += Parameter.Name + " ";
+            Tally(JointGate, 0.0, Names.find(".Angle") != std::string::npos && Names.find(".Offset") != std::string::npos && Names.find(".Slide") == std::string::npos,
+                  "revolute parameters: " + Names);
+        }
+        // ③ the lever bed onto the pin cap, revolute 90°: lever centred on the pin axis, long side along y
+        DraftingJointRequest Swing;
+        Swing.MovingKind = DraftingSelectionKind::Face; Swing.MovingName = LeverBed;
+        Swing.FixedKind  = DraftingSelectionKind::Face; Swing.FixedName  = OriginAt(Rig, PinKey, DraftingSelectionKind::Face, { 3.0, 1.25, 1.25 }, "face centroid");
+        Swing.Kind = JointKind::Revolute; Swing.Angle = 90.0;
+        Expect(JointDraftingBodies(Rig, Swing));
+        const std::string SwingLabel = Rig.Tree.Steps.back().Label;
+        Vector3 Low, High;
+        Bounds(Rig, LeverKey, Low, High);
+        const double BoundsError = Distance(Low, Vector3{ 2.8, 0.25, 1.25 }) + Distance(High, Vector3{ 3.2, 2.25, 1.45 });
+        Tally(JointGate, BoundsError, BoundsError <= 1.0e-9, "lever on the pin cap at 90°: bounds " + Triple(Low) + " … " + Triple(High) + " = (2.8, 0.25, 1.25) … (3.2, 2.25, 1.45)");
+        // ④ measure: lever + bracket clear by 0.25 (lever bed over the bracket top), bracket + pin clear by 0.05 (hole r 0.3, pin r 0.25)
+        auto Measure = [&](const DraftingDocument& Document, const std::string& First, const std::string& Second)
+        {
+            DraftingDocument Copy = CloneDraftingDocument(Document);
+            Copy.Selection = {};
+            Copy.Selection.Bodies = { First, Second };
+            Copy.Selection.LastKind = DraftingSelectionKind::Body;
+            return MeasureDraftingSelection(Copy);
+        };
+        {
+            const DraftingMeasurement Above = Measure(Rig, LeverKey, BracketKey);
+            Tally(JointGate, std::abs(Above.Distance - 0.25), Above.Interference.starts_with("Clear") && std::abs(Above.Distance - 0.25) <= 1.0e-9,
+                  "lever + bracket: " + Above.Interference + ", clearance " + std::to_string(Above.Distance));
+            const DraftingMeasurement Inside = Measure(Rig, BracketKey, PinKey);
+            Tally(JointGate, std::abs(Inside.Distance - 0.05), Inside.Interference.starts_with("Clear") && std::abs(Inside.Distance - 0.05) <= 1.0e-9,
+                  "bracket + pin: " + Inside.Interference + ", clearance " + std::to_string(Inside.Distance) + " (0.3 − 0.25)");
+        }
+        // ⑤ the pin offset −0.1 (one undo entry): replay resumes at the pin joint, the lever rides down — it now overlaps the
+        //    bracket top slab 0.1 deep minus the hole: (2 · 0.4 − π · 0.3²) · 0.1
+        const std::string InsertLabel = Rig.Regeneration.Joints.front().Label;
+        Expect(AssignDraftingParameter(Rig, InsertLabel + ".Offset", -0.1));
+        {
+            const double              Expected = (0.8 - Pi * 0.09) * 0.1;
+            const DraftingMeasurement Clash    = Measure(Rig, LeverKey, BracketKey);
+            Tally(JointGate, std::abs(Clash.OverlapVolume - Expected), Clash.Interference.starts_with("Overlap") && std::abs(Clash.OverlapVolume - Expected) <= 1.0e-9 && !Clash.Overlap.empty(),
+                  "pin offset −0.1 → lever + bracket: " + Clash.Interference + ", overlap " + std::to_string(Clash.OverlapVolume) + " = (0.8 − 0.09π)·0.1, " + std::to_string(Clash.Overlap.size()) + " overlap edges drawn");
+            Bounds(Rig, LeverKey, Low, High);
+            Tally(JointGate, std::abs(Low.Z - 0.9), std::abs(Low.Z - 0.9) <= 1.0e-9, "the lever followed the pin: bed at z " + std::to_string(Low.Z) + " = 0.9");
+        }
+        // ⑥ moving the bracket +1 x carries the pin and the lever (bodies jointed to it follow)
+        Expect(TransformDraftingBodies(Rig, { BracketKey }, TranslationMap({ 1.0, 0.0, 0.0 }), "Move"));
+        {
+            const Vector3 Carried = Centroid(Rig, PinKey);
+            Bounds(Rig, LeverKey, Low, High);
+            const double Error = Distance(Carried, Vector3{ 4.0, 1.25, 0.15 }) + std::abs(Low.X - 3.8);
+            Tally(JointGate, Error, Error <= 1.0e-9 && std::abs(Gap(Rig) - 0.1) <= 1.0e-9,
+                  "bracket moved +1 x: pin centroid " + Triple(Carried) + " = (4, 1.25, 0.15), lever x from " + std::to_string(Low.X) + " = 3.8, joints still assembled");
+        }
+        // ⑦ refusals leave the document untouched: both origins on one body, a pin jointed twice
+        {
+            const size_t Before = Rig.UndoEntries.size();
+            DraftingJointRequest Self = Insert;
+            Self.FixedKind = DraftingSelectionKind::Face; Self.FixedName = OriginAt(Rig, PinKey, DraftingSelectionKind::Face, { 4.0, 1.25, 0.9 }, "face centroid");
+            const DraftingCommandOutcome Lonely = JointDraftingBodies(Rig, Self);
+            DraftingJointRequest Twice = Insert;
+            Twice.MovingName = OriginAt(Rig, PinKey, DraftingSelectionKind::Edge, { 4.0, 1.25, 0.9 }, "circle centre");
+            Twice.FixedName  = OriginAt(Rig, BracketKey, DraftingSelectionKind::Edge, { 4.0, 1.25, 1.0 }, "circle centre");
+            const DraftingCommandOutcome Again = JointDraftingBodies(Rig, Twice);
+            Tally(JointGate, 0.0, !Lonely.AcceptedCondition && !Again.AcceptedCondition && Rig.UndoEntries.size() == Before,
+                  "refused: \"" + Lonely.Refusal + "\" · \"" + Again.Refusal + "\"; no undo entry");
+        }
+        // ⑧ undo takes back the move, then the offset; the file keeps both joints byte-equal
+        {
+            const std::string Written = EncodeDraftingDocument(Rig);
+            const DraftingDocumentFile Read = DecodeDraftingDocument(Written);
+            DraftingDocument Copy = CreateDraftingDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateDraftingDocument(Copy, true);
+            Tally(JointGate, 0.0, EncodeDraftingDocument(Copy) == Written && Copy.Regeneration.Joints.size() == 2 && Written.find("JointFlipped = true") != std::string::npos,
+                  "save → load → save byte-equal with 2 joints (JointFlipped = true for the pin)");
+            const bool Undone = UndoDraftingCommand(Rig) && UndoDraftingCommand(Rig);
+            const Vector3 Back = Centroid(Rig, PinKey);
+            Tally(JointGate, Distance(Back, Vector3{ 3.0, 1.25, 0.5 }), Distance(Back, Vector3{ 3.0, 1.25, 0.5 }) <= 1.0e-9 && Undone && Rig.Regeneration.Joints.back().Label == SwingLabel,
+                  "2 × undo → pin centroid " + Triple(Back) + " again");
+        }
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

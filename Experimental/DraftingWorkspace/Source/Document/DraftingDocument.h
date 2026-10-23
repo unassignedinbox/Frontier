@@ -278,6 +278,41 @@ struct VehicleCurveFile;
 [[nodiscard]] DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys,
                                                              const Modeller::AffineMap& Map, const std::string& Source = {});
 
+// 📝 Alt+J (Fusion Joint; Plasticity has none): place the body owning MovingName onto the body owning FixedName by a
+//    joint between the two joint origins (an edge or a face each; Assembly/JointSolver.h reads the origin off it).
+//    Angles in degrees; each value becomes a step parameter (caption.Angle, .Offset, .Slide, .SecondSlide, .Pitch, .Roll)
+//    so the step card and the parameter fields drag it, replaying from the joint only.
+struct DraftingJointRequest
+{
+    DraftingSelectionKind MovingKind  = DraftingSelectionKind::Edge;                         // [-]   - Edge or face
+    std::string           MovingName  = {};                                                  // [-]   - Joint origin on the moving body
+    DraftingSelectionKind FixedKind   = DraftingSelectionKind::Edge;                         // [-]   - Edge or face
+    std::string           FixedName   = {};                                                  // [-]   - Joint origin on the fixed body
+    Modeller::JointKind   Kind        = Modeller::JointKind::Revolute;                       // [-]   - Fusion joint type
+    double                Angle       = 0.0;                                                 // [deg] - Turn about the joint 𝑧 (ball: yaw)
+    double                Offset      = 0.0;                                                 // [len] - Along the joint 𝑧
+    double                Slide       = 0.0;                                                 // [len] - Slider / cylindrical 𝑧 · pin-slot / planar 𝑥
+    double                SecondSlide = 0.0;                                                 // [len] - Planar 𝑦
+    double                Pitch       = 0.0;                                                 // [deg] - Ball: about 𝑦
+    double                Roll        = 0.0;                                                 // [deg] - Ball: about 𝑥
+    bool                  Flipped     = false;                                               // [-]   - Origins aligned instead of facing
+};
+
+// 📝 The joint origin an edge or a face offers (hover glyph of the Joint card), with the body that owns it.
+struct DraftingJointOrigin
+{
+    std::string                Body        = {};                                             // [-] - Owning body key
+    Modeller::OrthonormalFrame Frame       = {};                                             // [-] - Origin and axes (world)
+    std::string                Description = {};                                             // [-] - "circle centre", "plane centroid", …
+    std::string                Refusal     = {};                                             // [-] - Empty when the entity offers one
+};
+
+[[nodiscard]] DraftingJointOrigin ResolveDraftingJointOrigin(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);
+
+// One Joint step: the moving body (and every body jointed to it) moves; refused (document untouched) when both origins
+// are on one body, the moving body is already jointed, or the joint would close a loop.
+[[nodiscard]] DraftingCommandOutcome JointDraftingBodies(DraftingDocument& Document, const DraftingJointRequest& Request);
+
 // Plasticity H / Shift+H / Alt+H / Ctrl+H (appearance: undoable, saved, no regeneration).
 [[nodiscard]] DraftingCommandOutcome ChangeDraftingVisibility(DraftingDocument& Document, DraftingVisibilityVerb Verb);
 

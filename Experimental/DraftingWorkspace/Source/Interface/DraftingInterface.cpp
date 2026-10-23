@@ -3081,6 +3081,293 @@ void DrawSnapOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const Dr
     DrawStatusPill(Canvas, Caption, Text, Snap.Kind == DraftingSnapKind::Axis ? LockColours[int(Picker.Lock)] : SnapColour);
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    JOINT (ALT+J)
+//------------------------------------------------------------------------------------------------------------------------
+
+// Fingerprint of a request: the staged preview is rebuilt only when it changes.
+std::string JointRequestKey(const DraftingJointRequest& Request)
+{
+    return Compose("%d|%s|%d|%s|%d|%.17g|%.17g|%.17g|%.17g|%.17g|%.17g|%d", int(Request.MovingKind), Request.MovingName.c_str(), int(Request.FixedKind), Request.FixedName.c_str(),
+                   int(Request.Kind), Request.Angle, Request.Offset, Request.Slide, Request.SecondSlide, Request.Pitch, Request.Roll, Request.Flipped ? 1 : 0);
+}
+
+void StageJointPreview(DraftingWorkspaceState& State)
+{
+    DraftingJointSession& Joint = State.Joint;
+    if (!Joint.ActiveCondition || Joint.Phase < 2) return;
+    const std::string Key = JointRequestKey(Joint.Request);
+    if (Key == Joint.StagedKey) return;
+    Joint.StagedKey = Key;
+    Joint.Refusal.clear();
+    Joint.Preview = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
+    const DraftingCommandOutcome Outcome = JointDraftingBodies(*Joint.Preview, Joint.Request);
+    if (!Outcome.AcceptedCondition) { Joint.Refusal = Legible(Outcome.Refusal); Joint.Preview.reset(); return; }
+    Joint.PreviewScene = BuildDraftingScene(*Joint.Preview);
+}
+
+void CloseJointSession(DraftingWorkspaceState& State, const char* Message)
+{
+    State.Joint.ActiveCondition = false;
+    State.Joint.Preview.reset();
+    State.Joint.StagedKey.clear();
+    State.Joint.HoverName.clear();
+    if (Message) Announce(State, Message);
+}
+
+void AnnounceJointAdjust(DraftingWorkspaceState& State)
+{
+    const DraftingJointSession& Joint = State.Joint;
+    Announce(State, Compose("Joint: %s onto %s · R V S C P L B kind · drag the values · F flip · Enter applies", DraftingBodyCaption(State.Document, Joint.Moving.Body).c_str(),
+                            DraftingBodyCaption(State.Document, Joint.Fixed.Body).c_str()));
+}
+
+// 💡 Alt+J (Fusion Joint; Plasticity has none). Two entities picked beforehand on two bodies skip the picking: the earlier
+//    pick (pick order of one kind; for a face and an edge, the one picked last is fixed) is on the moving body.
+void OpenJointSession(DraftingWorkspaceState& State)
+{
+    if (State.Document.Summary.Bodies.size() < 2)
+    {
+        Announce(State, "Joint (Alt+J) needs two bodies: construct one with R (New body) in Shift+C / V / X / Z");
+        return;
+    }
+    DraftingJointSession& Joint   = State.Joint;
+    const int             Commits = Joint.Commits;
+    const JointKind       Kind    = Joint.Request.Kind;                                     // The last kind is kept, as the bevel keeps its shape
+    CloseJointSession(State, nullptr);
+    Joint                 = DraftingJointSession{};
+    Joint.Commits         = Commits;
+    Joint.Request.Kind    = Kind;
+    Joint.ActiveCondition = true;
+    const DraftingSelection& Selection = State.Document.Selection;
+    std::vector<std::pair<DraftingSelectionKind, std::string>> Picks;
+    if (Selection.Faces.size() + Selection.Edges.size() == 2)
+    {
+        constexpr DraftingSelectionKind Edge = DraftingSelectionKind::Edge, Face = DraftingSelectionKind::Face;
+        if (Selection.Edges.size() == 2) Picks = { { Edge, Selection.Edges[0] }, { Edge, Selection.Edges[1] } };
+        else if (Selection.Faces.size() == 2) Picks = { { Face, Selection.Faces[0] }, { Face, Selection.Faces[1] } };
+        else if (Selection.LastKind == Edge) Picks = { { Face, Selection.Faces[0] }, { Edge, Selection.Edges[0] } };
+        else Picks = { { Edge, Selection.Edges[0] }, { Face, Selection.Faces[0] } };
+    }
+    if (Picks.size() == 2)
+    {
+        const DraftingJointOrigin First  = ResolveDraftingJointOrigin(State.Document, Picks[0].first, Picks[0].second);
+        const DraftingJointOrigin Second = ResolveDraftingJointOrigin(State.Document, Picks[1].first, Picks[1].second);
+        if (First.Refusal.empty() && Second.Refusal.empty() && First.Body != Second.Body)
+        {
+            Joint.Moving             = First;
+            Joint.Fixed              = Second;
+            Joint.Request.MovingKind = Picks[0].first;
+            Joint.Request.MovingName = Picks[0].second;
+            Joint.Request.FixedKind  = Picks[1].first;
+            Joint.Request.FixedName  = Picks[1].second;
+            Joint.Phase              = 2;
+            StageJointPreview(State);
+            AnnounceJointAdjust(State);
+            return;
+        }
+    }
+    Announce(State, "Joint: pick the joint origin on the moving body (an edge or a face)");
+}
+
+void ChooseJointKind(DraftingWorkspaceState& State, JointKind Kind)
+{
+    State.Joint.Request.Kind = Kind;
+    StageJointPreview(State);
+    Announce(State, Compose("Joint: %s · %d degree(s) of freedom", JointKindLabel(Kind), JointFreedom(Kind)));
+}
+
+void FlipJoint(DraftingWorkspaceState& State)
+{
+    State.Joint.Request.Flipped = !State.Joint.Request.Flipped;
+    StageJointPreview(State);
+    Announce(State, State.Joint.Request.Flipped ? "Joint: flipped (origins aligned)" : "Joint: origins facing");
+}
+
+// The edge (within 8 px, else the face) under the pointer and the joint origin it offers — the hover glyph.
+void HoverJointOrigin(DraftingWorkspaceState& State, const DraftingCameraFrame& Frame, ImVec2 Local, bool Hovered)
+{
+    DraftingJointSession& Joint = State.Joint;
+    if (Joint.Phase >= 2) return;
+    uint32_t Identity = Hovered ? State.HoverIdentity : 0;
+    if (Hovered && !(Identity & IdentityEdgeBit))
+    {
+        const DraftingRay                 Ray    = CastDraftingRay(Frame, Local.x, Local.y);
+        const std::optional<DraftingPick> Nearby = PickDraftingScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled, ActiveSectionClip(State));
+        if (Nearby && (Nearby->Identity & IdentityEdgeBit)) Identity = Nearby->Identity;
+    }
+    if (Identity == IdentitySectionCap) Identity = 0;
+    const std::string           Name = Identity ? NameDraftingIdentity(State.Scene, Identity) : std::string();
+    const DraftingSelectionKind Kind = Identity ? DraftingIdentityKind(Identity) : DraftingSelectionKind::Edge;
+    if (Name == Joint.HoverName && Kind == Joint.HoverKind) return;
+    Joint.HoverName = Name;
+    Joint.HoverKind = Kind;
+    Joint.Hover     = Name.empty() ? DraftingJointOrigin{} : ResolveDraftingJointOrigin(State.Document, Kind, Name);
+}
+
+void ClickJointSession(DraftingWorkspaceState& State)
+{
+    DraftingJointSession& Joint = State.Joint;
+    if (Joint.Phase >= 2) return;
+    if (Joint.HoverName.empty()) { Announce(State, "Joint: point at an edge or a face"); return; }
+    if (!Joint.Hover.Refusal.empty()) { Announce(State, "Joint: " + Joint.Hover.Refusal); return; }
+    if (Joint.Phase == 0)
+    {
+        Joint.Moving             = Joint.Hover;
+        Joint.Request.MovingKind = Joint.HoverKind;
+        Joint.Request.MovingName = Joint.HoverName;
+        Joint.Phase              = 1;
+        Announce(State, Compose("Joint: %s on %s moves · now pick the joint origin on the body it joins", Joint.Moving.Description.c_str(),
+                                DraftingBodyCaption(State.Document, Joint.Moving.Body).c_str()));
+        return;
+    }
+    if (Joint.Hover.Body == Joint.Moving.Body) { Announce(State, "Joint: pick the second joint origin on another body"); return; }
+    Joint.Fixed             = Joint.Hover;
+    Joint.Request.FixedKind = Joint.HoverKind;
+    Joint.Request.FixedName = Joint.HoverName;
+    Joint.Phase             = 2;
+    StageJointPreview(State);
+    AnnounceJointAdjust(State);
+}
+
+void ApplyJointSession(DraftingWorkspaceState& State)
+{
+    DraftingJointSession& Joint = State.Joint;
+    if (Joint.Phase < 2) { Announce(State, "Joint: pick both joint origins first"); return; }
+    const DraftingJointRequest Request = Joint.Request;
+    CloseJointSession(State, nullptr);
+    const DraftingCommandOutcome Outcome = JointDraftingBodies(State.Document, Request);
+    if (Outcome.AcceptedCondition)
+    {
+        ++Joint.Commits;
+        State.FocusedStep = State.Document.Tree.Steps.back().Label;                          // The step card drags its values
+    }
+    Conclude(State, Outcome);
+}
+
+void DrawJointCard(DraftingWorkspaceState& State)
+{
+    DraftingJointSession& Joint = State.Joint;
+    BeginCard("Joint");
+    static const struct { const char* Label; JointKind Kind; } Kinds[] = {
+        { "Rigid (R)###JointRigid", JointKind::Rigid }, { "Revolute (V)###JointRevolute", JointKind::Revolute }, { "Slider (S)###JointSlider", JointKind::Slider },
+        { "Cylindrical (C)###JointCylindrical", JointKind::Cylindrical }, { "Pin-slot (P)###JointPinSlot", JointKind::PinSlot }, { "Planar (L)###JointPlanar", JointKind::Planar },
+        { "Ball (B)###JointBall", JointKind::Ball } };
+    const float Half = std::floor((ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.0f);
+    for (int Index = 0; Index < 7; ++Index)
+    {
+        if (Index % 2 == 1) ImGui::SameLine();
+        if (ToggleButton(State, Kinds[Index].Label, Joint.Request.Kind == Kinds[Index].Kind, ImVec2(Half, 0))) ChooseJointKind(State, Kinds[Index].Kind);
+    }
+    const auto Origin = [&](const char* Caption, const DraftingJointOrigin& Picked)
+    {
+        ImGui::Text("%s  %s on %s", Caption, Picked.Description.c_str(), DraftingBodyCaption(State.Document, Picked.Body).c_str());
+    };
+    if (Joint.Phase == 0) ImGui::TextColored(Tint(ActiveColour), "1  Pick the origin on the moving body");
+    if (Joint.Phase >= 1) Origin("Moving", Joint.Moving);
+    if (Joint.Phase == 1) ImGui::TextColored(Tint(ActiveColour), "2  Pick the origin on the fixed body");
+    if (Joint.Phase == 2)
+    {
+        Origin("Fixed ", Joint.Fixed);
+        DraftingJointRequest& Request = Joint.Request;
+        bool Changed = false;
+        const auto Field = [&](const char* Label, double& Value, float Speed, const char* Format)
+        {
+            ImGui::SetNextItemWidth(150);
+            Changed |= ImGui::DragScalar(Label, ImGuiDataType_Double, &Value, Speed, nullptr, nullptr, Format);
+            RegisterWidget(State, Label);
+        };
+        const JointKind Kind = Request.Kind;
+        Field(Kind == JointKind::Ball ? "Yaw###JointAngle" : "Angle###JointAngle", Request.Angle, 0.5f, "%.2f deg");
+        if (Kind == JointKind::Ball)
+        {
+            Field("Pitch###JointPitch", Request.Pitch, 0.5f, "%.2f deg");
+            Field("Roll###JointRoll", Request.Roll, 0.5f, "%.2f deg");
+        }
+        if (Kind == JointKind::Slider || Kind == JointKind::Cylindrical || Kind == JointKind::PinSlot || Kind == JointKind::Planar)
+            Field(Kind == JointKind::Planar ? "Slide x###JointSlide" : "Slide###JointSlide", Request.Slide, 0.005f, "%.4f m");
+        if (Kind == JointKind::Planar) Field("Slide y###JointSecondSlide", Request.SecondSlide, 0.005f, "%.4f m");
+        Field("Offset###JointOffset", Request.Offset, 0.005f, "%.4f m");
+        Changed |= ImGui::Checkbox("Flip (F)###JointFlip", &Request.Flipped);
+        RegisterWidget(State, "Flip (F)###JointFlip");
+        if (Changed) StageJointPreview(State);
+        ImGui::TextDisabled("%s · %d degree(s) of freedom", JointKindLabel(Kind), JointFreedom(Kind));
+    }
+    if (!Joint.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Joint.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextWrapped("Edges give centres / midpoints, faces centroids / axes · R V S C P L B kind · drag a value · F flip · Enter applies · Esc cancels. "
+                       "The moving body and every body jointed to it move; the fixed body stays.");
+    ImGui::PopStyleColor();
+    if (PressButton(State, "Apply###JointApply", ImVec2(118, 0), Joint.Phase == 2 && Joint.Refusal.empty())) ApplyJointSession(State);
+    ImGui::SameLine();
+    if (PressButton(State, "Cancel###JointCancel", ImVec2(118, 0))) CloseJointSession(State, "Joint cancelled");
+    EndCard();
+}
+
+// 📝 Joint origin glyph: a ring in the origin's plane, z (blue, long) and x (red) arrows, and a caption pill.
+void DrawJointGlyph(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame, const OrthonormalFrame& Origin, const std::string& Caption, ImU32 Accent)
+{
+    constexpr ImU32 HaloColour = IM_COL32(0x10, 0x12, 0x16, 0xd0);
+    const double    Unit       = Frame.WorldPerPixel;
+    ImVec2 Centre, Tip;
+    if (!ProjectWorldPoint(State, Frame, Origin.Origin, Centre)) return;
+    std::vector<ImVec2> Ring;
+    for (int Index = 0; Index <= 32; ++Index)
+    {
+        const double Turn = 2.0 * std::numbers::pi * Index / 32.0;
+        ImVec2 Pixel;
+        if (ProjectWorldPoint(State, Frame, Origin.Origin + Origin.XAxis * (18.0 * Unit * std::cos(Turn)) + Origin.YAxis * (18.0 * Unit * std::sin(Turn)), Pixel)) Ring.push_back(Pixel);
+    }
+    if (Ring.size() > 2)
+    {
+        Canvas->AddPolyline(Ring.data(), int(Ring.size()), HaloColour, 0, 4.0f);
+        Canvas->AddPolyline(Ring.data(), int(Ring.size()), Accent, 0, 2.0f);
+    }
+    const auto Arrow = [&](Vector3 Direction, double Pixels, ImU32 Colour)
+    {
+        if (!ProjectWorldPoint(State, Frame, Origin.Origin + Direction * (Pixels * Unit), Tip)) return;
+        Canvas->AddLine(Centre, Tip, HaloColour, 4.5f);
+        Canvas->AddLine(Centre, Tip, Colour, 2.5f);
+        Canvas->AddCircleFilled(Tip, 3.5f, Colour);
+    };
+    Arrow(Origin.XAxis, 30.0, AxisColours[0]);
+    Arrow(Origin.ZAxis, 48.0, AxisColours[2]);
+    Canvas->AddCircleFilled(Centre, 5.0f, HaloColour);
+    Canvas->AddCircleFilled(Centre, 3.5f, Accent);
+    if (!Caption.empty())
+    {
+        ImVec2 Pill(Centre.x + 14.0f, Centre.y + 6.0f);
+        DrawStatusPill(Canvas, Pill, Caption, Accent);
+    }
+}
+
+// Overlay of the Joint card (hovered origin, picked origins, the placed origin of the preview) and of a focused Joint step.
+void DrawJointOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame)
+{
+    constexpr ImU32 HoverColour  = IM_COL32(0x4d, 0xd2, 0xff, 0xff);                         // Cyan: what a click takes
+    constexpr ImU32 PickedColour = IM_COL32(0xff, 0xc8, 0x3d, 0xff);                         // Amber: chosen origins
+    const DraftingJointSession& Joint = State.Joint;
+    if (Joint.ActiveCondition)
+    {
+        if (Joint.Phase < 2 && !Joint.HoverName.empty() && Joint.Hover.Refusal.empty()) DrawJointGlyph(State, Canvas, Frame, Joint.Hover.Frame, Joint.Hover.Description, HoverColour);
+        if (Joint.Phase >= 1 && Joint.Phase < 2) DrawJointGlyph(State, Canvas, Frame, Joint.Moving.Frame, "moving", PickedColour);
+        if (Joint.Phase == 2)
+        {
+            DrawJointGlyph(State, Canvas, Frame, Joint.Fixed.Frame, std::string(JointKindLabel(Joint.Request.Kind)) + " joint", PickedColour);
+            if (Joint.Preview && !Joint.Preview->Regeneration.Joints.empty()) DrawJointGlyph(State, Canvas, Frame, Joint.Preview->Regeneration.Joints.back().MovingOrigin, "", HoverColour);
+        }
+        return;
+    }
+    const DraftingDocument& Shown = State.ParameterDrag.Preview ? *State.ParameterDrag.Preview : State.Document;
+    for (const RegeneratedJoint& Placed : Shown.Regeneration.Joints)
+        if (Placed.Label == State.FocusedStep) DrawJointGlyph(State, Canvas, Frame, Placed.FixedOrigin, std::string(JointKindLabel(Placed.Kind)) + " joint", PickedColour);
+}
+
 // Measure (I): recompute only when the selection or the document revision moved (a NURBS body takes ~1 s).
 void RefreshMeasure(DraftingWorkspaceState& State)
 {
@@ -3136,7 +3423,7 @@ void DrawMeasureCard(DraftingWorkspaceState& State)
         ImGui::TextDisabled("exact · %.0f ms", Measurement.Milliseconds);
     }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextWrapped("1 face / edge · 2 for distance + angle · body (4) or nothing for mass");
+    ImGui::TextWrapped("1 face / edge · 2 for distance + angle · body (4) or nothing for mass · 2 bodies (4) for interference");
     ImGui::PopStyleColor();
     if (PressButton(State, "Close (I)###MeasureClose")) ToggleMeasure(State);
     EndCard();
@@ -3160,6 +3447,19 @@ void DrawMeasureOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const
         const std::string Label = Compose("%.4f m", Measurement.Distance) + (std::isnan(Measurement.Angle) ? std::string{} : Compose(" · %.2f°", Measurement.Angle));
         ImVec2 Pill(0.5f * (First.x + Second.x) + 10.0f, 0.5f * (First.y + Second.y) - 13.0f);
         DrawStatusPill(Canvas, Pill, Label, DimensionColour);
+    }
+    // Two bodies overlapping: the edges of the shared volume, red over everything.
+    for (const std::vector<Vector3>& Polyline : Measurement.Overlap)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector3& Point : Polyline)
+        {
+            ImVec2 Pixel;
+            if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel);
+        }
+        if (Pixels.size() < 2) continue;
+        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x10, 0x10, 0x10, 0xc0), 0, 4.5f);
+        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), RefusalColour, 0, 2.5f);
     }
     ImVec2 Centre;
     if (Measurement.CentroidCondition && ProjectWorldPoint(State, Frame, Measurement.Centroid, Centre))
@@ -4323,6 +4623,12 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (LeftClick && !OverCube) ApplyTrim(State);
         if (RightClick && !OverCube) CloseTrimSession(State);
     }
+    else if (State.Joint.ActiveCondition)
+    {
+        HoverJointOrigin(State, Frame, Local, Hovered && !OverCube);
+        if (LeftClick && !OverCube) ClickJointSession(State);
+        if (RightClick && !OverCube) CloseJointSession(State, "Joint cancelled");
+    }
     else if (State.Bevel.ActiveCondition)
     {
         const bool Idle = !ImGui::IsAnyMouseDown();
@@ -4369,6 +4675,7 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawSweepOutline(State, Canvas, Frame);
     DrawSectionOutline(State, Canvas, Frame);
     DrawMeasureOverlay(State, Canvas, Frame);
+    DrawJointOverlay(State, Canvas, Frame);
     DrawCurveOverlays(State, Canvas, Frame);
     if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
     if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
@@ -4795,6 +5102,10 @@ void DrawStepCard(DraftingWorkspaceState& State)
     }
     if (Step->Kind == FeatureStepKind::Evolution)
         ImGui::TextWrapped("Sweeps %s along %s (rotation-minimizing frames)", CaptionOf(State.Document, Step->Profile).c_str(), CaptionOf(State.Document, Step->Path).c_str());
+    if (Step->Kind == FeatureStepKind::Joint)
+        ImGui::TextWrapped("%s joint: %s onto %s · %d degree(s) of freedom%s · drag a value (Ctrl+click types it)", JointKindLabel(Step->Joint.Kind),
+                           DraftingBodyCaption(State.Document, Step->Target).c_str(), DraftingBodyCaption(State.Document, Step->Tool).c_str(), JointFreedom(Step->Joint.Kind),
+                           Step->Joint.FlippedCondition ? " · flipped" : "");
     if (Step->Kind == FeatureStepKind::Pipe)
     {
         const std::string Path = Step->Sections.empty() ? CaptionOf(State.Document, Step->Profile) : CaptionOf(State.Document, Step->Sections.front());
@@ -4807,9 +5118,38 @@ void DrawStepCard(DraftingWorkspaceState& State)
         if (Parameter.Name.rfind(Prefix, 0) == 0) Parameters.push_back(Parameter);
     for (FeatureParameter& Parameter : Parameters)
     {
+        const std::string Field = Parameter.Name.substr(Prefix.size()) + "###Parameter:" + Parameter.Name;
+        if (Step->Kind == FeatureStepKind::Joint)
+        {
+            // Dragged: a staged document shows the motion (replayed from the joint); the document takes the value on release.
+            DraftingParameterDrag& Drag    = State.ParameterDrag;
+            const bool             Mine    = Drag.Parameter == Parameter.Name;
+            const std::string      Suffix  = Parameter.Name.substr(Prefix.size());
+            const bool             Angular = Suffix == "Angle" || Suffix == "Pitch" || Suffix == "Roll";
+            double Dragged = Mine ? Drag.Value : Parameter.Value;
+            ImGui::SetNextItemWidth(150);
+            const bool Edited = ImGui::DragScalar(Field.c_str(), ImGuiDataType_Double, &Dragged, Angular ? 0.5f : 0.005f, nullptr, nullptr, Angular ? "%.2f deg" : "%.4f m");
+            RegisterWidget(State, Field.c_str());
+            if (Edited && Dragged != (Mine ? Drag.Value : Parameter.Value))
+            {
+                Drag.Parameter = Parameter.Name;
+                Drag.Value     = Dragged;
+                Drag.Preview   = std::make_unique<DraftingDocument>(CloneDraftingDocument(State.Document));
+                const DraftingCommandOutcome Staged = AssignDraftingParameter(*Drag.Preview, Parameter.Name, Dragged);
+                if (Staged.AcceptedCondition) { Drag.PreviewScene = BuildDraftingScene(*Drag.Preview); ++Drag.Stagings; }
+                else { Drag.Preview.reset(); Announce(State, Staged.Refusal); }
+            }
+            if (ImGui::IsItemDeactivated() && Drag.Parameter == Parameter.Name)
+            {
+                const double Final = Drag.Value;
+                Drag.Parameter.clear();
+                Drag.Preview.reset();
+                if (Final != Parameter.Value) { Conclude(State, AssignDraftingParameter(State.Document, Parameter.Name, Final)); break; }
+            }
+            continue;
+        }
         double Value = Parameter.Value;
         ImGui::SetNextItemWidth(150);
-        const std::string Field = Parameter.Name.substr(Prefix.size()) + "###Parameter:" + Parameter.Name;
         ImGui::InputDouble(Field.c_str(), &Value, 0.0, 0.0, "%.4f");
         RegisterWidget(State, Field.c_str());
         if (ImGui::IsItemDeactivatedAfterEdit() && Value != Parameter.Value)
@@ -5047,6 +5387,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     BeginPanel("Inspector", Position, Size);
     PanelHeading("Inspector");
     if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
+    else if (State.Joint.ActiveCondition) DrawJointCard(State);
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
     DrawMeasureCard(State);
@@ -5213,6 +5554,25 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         return;
     }
 
+    // Joint (Alt+J) — R V S C P L B kind · F flip · Enter applies · Esc cancels (letters free inside the command).
+    if (State.Joint.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyJointSession(State);
+        else if (Pressed(ImGuiKey_Escape)) CloseJointSession(State, "Joint cancelled");
+        else if (!Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_R)) ChooseJointKind(State, JointKind::Rigid);
+            if (Pressed(ImGuiKey_V)) ChooseJointKind(State, JointKind::Revolute);
+            if (Pressed(ImGuiKey_S)) ChooseJointKind(State, JointKind::Slider);
+            if (Pressed(ImGuiKey_C)) ChooseJointKind(State, JointKind::Cylindrical);
+            if (Pressed(ImGuiKey_P)) ChooseJointKind(State, JointKind::PinSlot);
+            if (Pressed(ImGuiKey_L)) ChooseJointKind(State, JointKind::Planar);
+            if (Pressed(ImGuiKey_B)) ChooseJointKind(State, JointKind::Ball);
+            if (Pressed(ImGuiKey_F)) FlipJoint(State);
+        }
+        return;
+    }
+
     // body[command='boolean'] — Q union · W difference · E intersect · Enter applies · Esc cancels.
     if (State.Boolean.ActiveCondition)
     {
@@ -5340,6 +5700,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         }
         if (Pressed(ImGuiKey_E)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
         if (Pressed(ImGuiKey_S)) ToggleSection(State);                                      // section (no Plasticity default; Alt+S is free)
+        if (Pressed(ImGuiKey_J)) OpenJointSession(State);                                   // joint (no Plasticity default; Alt+J is free)
         if (Pressed(ImGuiKey_R)) OpenSweepSession(State, DraftingSweepVerb::Revolve);       // revolution (no Plasticity default key)
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
@@ -5570,6 +5931,8 @@ const DraftingScene& DisplayedDraftingScene(const DraftingWorkspaceState& State)
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
     if (State.Transform.ActiveCondition && State.Transform.Preview && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
+    if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
+    if (State.ParameterDrag.Preview) return State.ParameterDrag.PreviewScene;
     return State.Scene;
 }
 
@@ -5587,6 +5950,8 @@ DraftingSceneStates DisplayedDraftingStates(const DraftingWorkspaceState& State)
     DraftingSceneStates States = &Scene == &State.Bevel.PreviewScene ? ComposeDraftingStates(Scene, State.Bevel.Preview->Selection, State.HoverIdentity)
                                : &Scene == &State.Transform.PreviewScene ? ComposeDraftingStates(Scene, State.Transform.Preview->Selection, 0)
                                : &Scene == &State.Sweep.PreviewScene ? ComposeDraftingStates(Scene, State.Sweep.Preview->Selection, 0)
+                               : &Scene == &State.Joint.PreviewScene ? ComposeDraftingStates(Scene, State.Joint.Preview->Selection, 0)
+                               : &Scene == &State.ParameterDrag.PreviewScene ? ComposeDraftingStates(Scene, State.ParameterDrag.Preview->Selection, 0)
                                                                       : ComposeDraftingStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
     // 📝 Matcap layers ride in bits 8 … 15 of each face word (DraftingSurface.slang).
     const std::vector<uint32_t> Layers = ComposeDraftingMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);
