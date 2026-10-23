@@ -89,6 +89,7 @@ add_library(SolidArcRemastered STATIC
     Source/Drawing/DrawingProjection.cpp
     Source/Drawing/DrawingSheet.cpp
     Source/Drawing/DrawingExport.cpp
+    Source/Exchange/StepExchange.cpp
     Source/Exchange/StlExchange.cpp
     Source/Audit/ModelAudit.cpp
     Source/Audit/IntersectionAudit.cpp
