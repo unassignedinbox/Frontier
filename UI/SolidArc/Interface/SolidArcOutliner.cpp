@@ -292,14 +292,26 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
     const float CollectionHeight = 11.0f * SolidArcStyleTokens::FontScale + 12.0f;
     const float CollectionCentre = Y + 0.5f * CollectionHeight;
     {
-        const float ChevronWidth = Sheet.Measure("⌄ \xC2\xA0", 11.0f);
+        const float ChevronWidth = 6.0f + Sheet.Measure(" \xC2\xA0", 11.0f);
         const float CaptionWidth = Sheet.Measure("Geometry collection", 11.0f);
         const PlaneExtent Fold   = Spanning(Left + 12.0f, Y, 8.0f + ChevronWidth + 8.0f + 13.0f + 8.0f + CaptionWidth + 8.0f, CollectionHeight);
         const SolidArcPress Press = PressSolidArcRegion(State.Widgets, "OutlinerFold", Fold);
         const ColorQuad   Tint   = Press.HoveredCondition ? Ink(0xffffff) : Ink(0x969696);
         Sheet.Box(Fold, Press.HoveredCondition ? Ink(HoverFill) : Clear, 16.0f);
         float FoldCursor = Fold.MinimumX + 8.0f;
-        FoldCursor += Sheet.Text(FoldCursor, CollectionCentre, 11.0f, Tint, Outliner.FoldedEnabled ? "› \xC2\xA0" : "⌄ \xC2\xA0") + 8.0f;
+        // DM Sans has no ⌄ / ›: the chevron is two strokes in the advance of the glyph and its trailing spaces.
+        const float ChevronX = FoldCursor + 1.0f;
+        if (Outliner.FoldedEnabled)
+        {
+            Sheet.Line(ChevronX + 1.5f, CollectionCentre - 3.0f, ChevronX + 4.5f, CollectionCentre, Tint, 1.2f);
+            Sheet.Line(ChevronX + 4.5f, CollectionCentre, ChevronX + 1.5f, CollectionCentre + 3.0f, Tint, 1.2f);
+        }
+        else
+        {
+            Sheet.Line(ChevronX, CollectionCentre - 1.5f, ChevronX + 3.0f, CollectionCentre + 1.5f, Tint, 1.2f);
+            Sheet.Line(ChevronX + 3.0f, CollectionCentre + 1.5f, ChevronX + 6.0f, CollectionCentre - 1.5f, Tint, 1.2f);
+        }
+        FoldCursor += ChevronWidth + 8.0f;
         Sheet.Icon(IconSymbol::SolidArcFolder, FoldCursor, CollectionCentre - 6.5f, 13.0f, Tint);
         Sheet.Text(FoldCursor + 13.0f + 8.0f, CollectionCentre, 11.0f, Tint, "Geometry collection");
         if (Press.ClickedCondition) Outliner.FoldedEnabled = !Outliner.FoldedEnabled;
