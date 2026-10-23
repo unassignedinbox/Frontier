@@ -63,6 +63,8 @@ struct BodyBlueprint
     std::vector<BlueprintEdge>   Edges    = {};                                              // [-] - All candidate edges
     std::vector<BlueprintFace>   Faces    = {};                                              // [-] - Faces of the body
     BodyCategory                 Category = BodyCategory::Solid;                             // [-] - Solid, or Sheet (laminar edges allowed)
+    std::vector<double>          ShellVolumes = {};                                          // [len³] - Optional: signed volume per shell, from an
+                                                                                             //          identical earlier assembly (empty → integrate)
 };
 
 struct AssemblyOutcome
@@ -74,6 +76,7 @@ struct AssemblyOutcome
     std::vector<FaceToken> Faces     = {};                                                   // [-] - Per blueprint face
     std::vector<EdgeToken> Edges     = {};                                                   // [-] - Per blueprint edge (absent if unused)
     std::vector<int>       EdgeOrder = {};                                                   // [-] - Blueprint edges in issue order
+    std::vector<double>    ShellVolumes = {};                                                // [len³] - Signed volume per shell, in issue order
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -85,5 +88,14 @@ struct AssemblyOutcome
 //    two fins; ④ outer shells (positive enclosed volume) become solid regions, cavities join the smallest solid region
 //    containing a witness vertex. Label prefixes refusals ("Boolean", "Blend", …).
 [[nodiscard]] AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blueprint, const std::string& Label);
+
+// 💡 SP-curves for every loop of a face whose uses carry only edges (imported or rebuilt topology). Each loop's chart image
+//    is tracked continuously along the loop (every projection referenced to the previous one), so circles that cross a
+//    seam unwrap by themselves. Where tracking cannot separate the two uses of a seam — both pass through a singular point
+//    (sphere pole, cone apex) and land on the same image — the face interior decides: it lies to the left of each use
+//    about the outward normal, so the use with the interior on the +𝑢 side sits on the low chart boundary and its mate one
+//    period higher. The loop with the widest image fixes the principal window; every other loop is moved by whole periods
+//    into it. Each use is then fitted by FitSurfaceCurve at its mid-image anchor.
+void FitFaceSurfaceCurves(const BodyBlueprint& Blueprint, BlueprintFace& Face);
 
 } // namespace Frontier::SolidArcRemastered

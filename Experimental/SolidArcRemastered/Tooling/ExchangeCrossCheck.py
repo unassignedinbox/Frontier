@@ -7,7 +7,11 @@
 #    shells, faces, surface types, volume and area against the kernel's exact values, distance from points of the exact model
 #    to the shape read); galleries shaded from what each reader built.
 #
+#    Import (X3): OpenCascade reads the kernel's STEP of every OpenCascade-authored fixture it imported (OCCT → kernel → OCCT),
+#    trimesh reads the kernel's tessellation of each imported fixture, and the import gallery shades those tessellations.
+#
 #    python3 ExchangeCrossCheck.py --files <folder> --report ExchangeValidation.md --markdown <out.md> --gallery <stl.png> --step-gallery <step.png>
+#                                  [--fixtures Validation/StepFixtures --import-gallery <import.png>]
 #    Headless Linux: LD_LIBRARY_PATH=_ClaudeScratch/stubs (PrepareLinuxBuild.sh exchange builds a no-op libGL.so.1 for OCP).
 
 import argparse
@@ -31,10 +35,10 @@ def ReadExactVolumes(ReportPath):
             Volumes[Match.group(1)] = float(Match.group(2))
     return Volumes
 
-def CrossCheckStl(Folder, Volumes):
+def CrossCheckStl(Folder, Volumes, Suffix=''):
     Rows = []
     for Name in sorted(Volumes):
-        Path = os.path.join(Folder, Name + '.stl')
+        Path = os.path.join(Folder, Name + Suffix + '.stl')
         if not os.path.exists(Path):
             Rows.append((Name, None))
             continue
@@ -194,10 +198,83 @@ def RenderStepGallery(Rows, Names, Path):
     Figure.savefig(Path)
 
 # ------------------------------------------------------------------------------------------------------------------------
+#                                                    IMPORT
+# ------------------------------------------------------------------------------------------------------------------------
+
+def ReadFixtureExpectations(Folder):
+    Expected = {}
+    for Line in open(os.path.join(Folder, 'Expectations.txt'), encoding='utf-8'):
+        if not Line.strip() or Line.startswith('#'):
+            continue
+        Fields = Line.split()
+        Expected[Fields[0]] = {'Unit': Fields[1], 'Volume': float(Fields[2]), 'Area': float(Fields[3]),
+                               **dict(zip(('Solids', 'Shells', 'Faces', 'Edges', 'Vertices'), map(int, Fields[4:9])))}
+    return Expected
+
+def CrossCheckImport(Folder, FixtureFolder, Markdown, GalleryPath):
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_SHELL, TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+
+    def Unique(Shape, Kind):
+        Seen, Explorer = [], TopExp_Explorer(Shape, Kind)
+        while Explorer.More():
+            if not any(Explorer.Current().IsSame(Other) for Other in Seen):
+                Seen.append(Explorer.Current())
+            Explorer.Next()
+        return len(Seen)
+
+    Expected = ReadFixtureExpectations(FixtureFolder)
+    MeshRows = CrossCheckStl(Folder, {Name: Values['Volume'] for Name, Values in Expected.items()}, '.imported')
+    Meshes = dict(MeshRows)
+    Table = ['| | Fixture | Unit | Re-read by OCCT | Solids | Shells | Faces | ΔV / V (OCCT) | ΔA / A (OCCT) | Kernel facets | Watertight | ΔV / V (facets) |',
+             '|---|---|---|---|---|---|---|---|---|---|---|---|']
+    Passed = True
+    for Name, Expect in Expected.items():
+        Path = os.path.join(Folder, Name + '.reexported.step')
+        Reader = STEPControl_Reader()
+        if not os.path.exists(Path) or Reader.ReadFile(Path) != IFSelect_RetDone:
+            Table.append('| 🔴 | %s | %s | not read | | | | | | | | |' % (Name, Expect['Unit']))
+            Passed = False
+            continue
+        Reader.TransferRoots()
+        Shape = Reader.OneShape()
+        Volume, Area = GProp_GProps(), GProp_GProps()
+        BRepGProp.VolumeProperties_s(Shape, Volume, 1e-12, False)
+        BRepGProp.SurfaceProperties_s(Shape, Area, 1e-12, False)
+        Valid = BRepCheck_Analyzer(Shape).IsValid()
+        Counts = [Unique(Shape, Kind) for Kind in (TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE)]
+        VolumeError = abs(Volume.Mass() - Expect['Volume']) / Expect['Volume']
+        AreaError = abs(Area.Mass() - Expect['Area']) / Expect['Area']
+        Mesh = Meshes.get(Name)
+        MeshError = abs(Mesh['Volume'] - Expect['Volume']) / Expect['Volume'] if Mesh else 1.0
+        Sound = (Valid and Counts == [Expect['Solids'], Expect['Shells'], Expect['Faces']] and VolumeError <= 5.0e-5 and AreaError <= 5.0e-5
+                 and Mesh is not None and Mesh['Watertight'] and Mesh['Winding'] and MeshError < 0.03)
+        Passed = Passed and Sound
+        Table.append('| %s | %s | %s | %s | %d | %d | %d | %.1e | %.1e | %s | %s | %.1e |' % ('🟢' if Sound else '🔴', Name, Expect['Unit'], 'valid' if Valid else 'INVALID', Counts[0], Counts[1], Counts[2],
+                                                                            VolumeError, AreaError, Mesh['Faces'] if Mesh else '—', Mesh['Watertight'] if Mesh else '—', MeshError))
+    with open(Markdown, 'a', encoding='utf-8') as Stream:
+        Stream.write('\n## STEP import\n\n%s %d OpenCascade-authored fixtures (Validation/StepFixtures, StepFixtures.py) imported by the kernel (EX11), then (a) written again by the kernel '
+                     'and read by OpenCascade — BRepCheck validity, unique solids / shells / faces and adaptive volume / area (ε 10⁻¹²) against the fixture references — '
+                     'and (b) tessellated by the kernel and read by trimesh (closure, winding, facet volume within 3 %%). OCCT → kernel → OCCT closes the loop: the kernel '
+                     'neither lost nor invented geometry on the way through. Limits as for STEP export (5 × 10⁻⁵, OCCT re-derives trimming curves on B-spline faces).\n\n'
+                     % ('🟢' if Passed else '🔴', len(Expected)))
+        Stream.write('\n'.join(Table) + '\n')
+    if GalleryPath:
+        RenderGallery(MeshRows, list(Expected), GalleryPath,
+                      'OpenCascade-authored STEP imported by the kernel — the kernel\'s own tessellation of what it read, re-read by trimesh %s' % trimesh.__version__)
+    print('\n'.join(Table))
+    return Passed
+
+# ------------------------------------------------------------------------------------------------------------------------
 #                                                    GALLERY
 # ------------------------------------------------------------------------------------------------------------------------
 
-def RenderGallery(Rows, Names, Path):
+def RenderGallery(Rows, Names, Path, Title=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as Pyplot
@@ -225,7 +302,7 @@ def RenderGallery(Rows, Names, Path):
         Axes.view_init(elev=28, azim=-58)
         Axes.set_axis_off()
         Axes.set_title('%s\n%d facets · χ %d · %s' % (Name, Values['Faces'], Values['Euler'], 'watertight' if Values['Watertight'] else 'OPEN'), fontsize=10)
-    Figure.suptitle('STL files read back by trimesh %s (shaded from the facets it read)' % trimesh.__version__, fontsize=12)
+    Figure.suptitle(Title or 'STL files read back by trimesh %s (shaded from the facets it read)' % trimesh.__version__, fontsize=12)
     Figure.tight_layout()
     Figure.savefig(Path)
 
@@ -240,6 +317,8 @@ def Main():
     Parser.add_argument('--markdown', required=True)
     Parser.add_argument('--gallery')
     Parser.add_argument('--step-gallery')
+    Parser.add_argument('--fixtures')
+    Parser.add_argument('--import-gallery')
     Arguments = Parser.parse_args()
 
     Volumes = ReadExactVolumes(Arguments.report)
@@ -291,9 +370,12 @@ def Main():
         Stream.write('\n'.join(StepTable) + '\n')
     if Arguments.step_gallery:
         RenderStepGallery(StepRows, ['BoxAllFillet', 'HoleRimFillet', 'MirroredCross', 'TiltedBoreChamfer', 'VariableArcFillet', 'PromotedBoxAllFillet', 'ApproximatedHoleRimFillet', 'PromotedTorus'], Arguments.step_gallery)
+    ImportPassed = True
+    if Arguments.fixtures:
+        ImportPassed = CrossCheckImport(Arguments.files, Arguments.fixtures, Arguments.markdown, Arguments.import_gallery)
     print('\n'.join(Table))
     print('\n'.join(StepTable))
-    return 0 if Passed and StepPassed else 1
+    return 0 if Passed and StepPassed and ImportPassed else 1
 
 if __name__ == '__main__':
     sys.exit(Main())

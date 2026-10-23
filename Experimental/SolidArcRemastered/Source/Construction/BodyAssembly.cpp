@@ -7,6 +7,10 @@
 
 #include "Audit/EnclosedVolume.h"
 #include "Containment/WindingNumber.h"
+#include "Geometry/ProjectedCurve.h"
+
+#include <algorithm>
+#include <cmath>
 
 #include <functional>
 #include <limits>
@@ -156,9 +160,14 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     //    ⚠️ One volume per shell: a procedural carrier's flux is the costliest integral here, so it is never taken twice.
     std::vector<SolidShellToken> OuterShells, CavityShells;
     std::vector<double>          OuterVolumes;
-    for (SolidShellToken SolidShell : ShellOrder)
+    // 📝 Exact shell volumes cost a Green integration over every SP-curve; a caller that already assembled this very
+    //    blueprint (STEP import assembles in a scratch partition first) hands them back instead of paying twice.
+    const bool KnownVolumesCondition = Blueprint.ShellVolumes.size() == ShellOrder.size();
+    for (size_t Index = 0; Index < ShellOrder.size(); ++Index)
     {
-        const double Volume = IntegrateShellVolume(Partition, SolidShell);                   // [len³] - Signed
+        const SolidShellToken SolidShell = ShellOrder[Index];
+        const double Volume = KnownVolumesCondition ? Blueprint.ShellVolumes[Index] : IntegrateShellVolume(Partition, SolidShell);  // [len³] - Signed
+        Outcome.ShellVolumes.push_back(Volume);
         if (Volume > 0.0) { OuterShells.push_back(SolidShell); OuterVolumes.push_back(Volume); }
         else CavityShells.push_back(SolidShell);
     }
@@ -195,6 +204,131 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
     Outcome.Solids = static_cast<int>(OuterShells.size());
     Outcome.Shells = static_cast<int>(ShellOrder.size());
     return Outcome;
+}
+
+void FitFaceSurfaceCurves(const BodyBlueprint& Blueprint, BlueprintFace& Face)
+{
+    constexpr int            Steps  = 24;
+    const SurfacePeriodicity Period = ResolvePeriodicity(Face.Surface);
+    const double             Signum = Face.Sense == Orientation::Forward ? 1.0 : -1.0;
+
+    // ① Continuous chart track of every use, in loop order; anchor and chart direction at the middle sample.
+    struct UseTrack
+    {
+        std::vector<Vector2> Samples   = {};                                                 // [-] - Chart images along the use
+        Vector2              Anchor    = {};                                                 // [-] - Middle image
+        Vector2              Direction = {};                                                 // [-] - Chart tangent at the middle
+    };
+    std::vector<std::vector<UseTrack>> Tracks(Face.Loops.size());
+    for (size_t Loop = 0; Loop < Face.Loops.size(); ++Loop)
+    {
+        Vector2 Cursor  = {};
+        bool    Started = false;
+        for (const BlueprintUse& Use : Face.Loops[Loop])
+        {
+            const BlueprintEdge& Edge  = Blueprint.Edges[Use.Edge];
+            const double         From  = Use.Sense == Orientation::Forward ? Edge.Low : Edge.High;
+            const double         Until = Use.Sense == Orientation::Forward ? Edge.High : Edge.Low;
+            UseTrack             Track;
+            for (int Step = 0; Step <= Steps; ++Step)
+            {
+                Cursor  = ProjectOntoSurface(Face.Surface, EvaluateCurve(Edge.Curve, From + (Until - From) * Step / Steps).Position, Started ? Cursor : Vector2{});
+                Started = true;
+                Track.Samples.push_back(Cursor);
+            }
+            Track.Anchor    = Track.Samples[Steps / 2];
+            Track.Direction = Track.Samples[Steps / 2 + 1] - Track.Samples[Steps / 2 - 1];
+            Tracks[Loop].push_back(std::move(Track));
+        }
+    }
+
+    // ② Seams: an edge used twice by this face. When both images coincide in the seam coordinate, the interior side
+    //    decides which use takes the low boundary.
+    std::map<int, std::vector<std::pair<size_t, size_t>>> Repeats;
+    for (size_t Loop = 0; Loop < Face.Loops.size(); ++Loop)
+        for (size_t Index = 0; Index < Face.Loops[Loop].size(); ++Index) Repeats[Face.Loops[Loop][Index].Edge].push_back({ Loop, Index });
+    for (const auto& [Edge, Uses] : Repeats)
+    {
+        if (Uses.size() != 2 || Uses[0].first != Uses[1].first) continue;
+        UseTrack&     First      = Tracks[Uses[0].first][Uses[0].second];
+        UseTrack&     Second     = Tracks[Uses[1].first][Uses[1].second];
+        const bool    AlongU     = std::fabs(First.Direction.X) <= std::fabs(First.Direction.Y);   // Constant 𝑢: a 𝑢-seam
+        const double  SeamPeriod = AlongU ? Period.PeriodU : Period.PeriodV;
+        const auto    Coordinate = [AlongU](Vector2 Value) -> double { return AlongU ? Value.X : Value.Y; };
+        if (!(SeamPeriod > 0.0) || std::fabs(Coordinate(First.Anchor) - Coordinate(Second.Anchor)) >= 0.5 * SeamPeriod) continue;
+        const SurfaceSample Sample  = EvaluateSurface(Face.Surface, First.Anchor);
+        const double        Chart   = Dot(Cross(Sample.DerivativeU, Sample.DerivativeV), EvaluateSurfaceNormal(Face.Surface, First.Anchor) * Signum);
+        if (Chart == 0.0) continue;
+        const double ChartSign = Chart > 0.0 ? 1.0 : -1.0;
+        // Interior to the left about the outward normal: (−d𝑣, d𝑢) in a chart that keeps orientation, mirrored otherwise.
+        const auto InteriorAbove = [&](const UseTrack& Track)
+        {
+            return AlongU ? -ChartSign * Track.Direction.Y > 0.0 : ChartSign * Track.Direction.X > 0.0;
+        };
+        const bool FirstLow = InteriorAbove(First), SecondLow = InteriorAbove(Second);
+        if (FirstLow == SecondLow) continue;
+        // Boundary values: the rest of the loop spans the chart when it reaches across most of a period.
+        double BoundaryLow = 1e300, BoundaryHigh = -1e300;
+        const size_t Loop = Uses[0].first;
+        for (size_t Index = 0; Index < Tracks[Loop].size(); ++Index)
+        {
+            if (Index == Uses[0].second || Index == Uses[1].second) continue;
+            for (const Vector2& Sample2 : Tracks[Loop][Index].Samples)
+            {
+                BoundaryLow  = std::min(BoundaryLow, Coordinate(Sample2));
+                BoundaryHigh = std::max(BoundaryHigh, Coordinate(Sample2));
+            }
+        }
+        if (!(BoundaryHigh - BoundaryLow > 0.5 * SeamPeriod))
+        {
+            BoundaryLow  = Coordinate(First.Anchor);
+            BoundaryHigh = BoundaryLow + SeamPeriod;
+        }
+        const auto Place = [AlongU](UseTrack& Track, double Value)
+        {
+            (AlongU ? Track.Anchor.X : Track.Anchor.Y) = Value;
+            for (Vector2& Sample2 : Track.Samples) (AlongU ? Sample2.X : Sample2.Y) = Value;
+        };
+        Place(First, FirstLow ? BoundaryLow : BoundaryHigh);
+        Place(Second, SecondLow ? BoundaryLow : BoundaryHigh);
+    }
+
+    // ③ Principal window from the widest loop; other loops moved by whole periods into it.
+    std::vector<Vector2> Least(Face.Loops.size(), Vector2{ 1e300, 1e300 }), Most(Face.Loops.size(), Vector2{ -1e300, -1e300 });
+    size_t Widest = 0;
+    double WidestSpan = -1.0;
+    for (size_t Loop = 0; Loop < Face.Loops.size(); ++Loop)
+    {
+        for (const UseTrack& Track : Tracks[Loop])
+            for (const Vector2& Sample : Track.Samples)
+            {
+                Least[Loop] = { std::min(Least[Loop].X, Sample.X), std::min(Least[Loop].Y, Sample.Y) };
+                Most[Loop]  = { std::max(Most[Loop].X, Sample.X), std::max(Most[Loop].Y, Sample.Y) };
+            }
+        const double Span = (Period.PeriodU > 0.0 ? Most[Loop].X - Least[Loop].X : 0.0) + (Period.PeriodV > 0.0 ? Most[Loop].Y - Least[Loop].Y : 0.0);
+        if (Span > WidestSpan) { WidestSpan = Span; Widest = Loop; }
+    }
+    const auto Fold = [](double Value, double PeriodLength) { return PeriodLength > 0.0 ? -std::floor((Value + 1.0e-9) / PeriodLength) * PeriodLength : 0.0; };
+    const Vector2 Origin{ Least[Widest].X + Fold(Least[Widest].X, Period.PeriodU), Least[Widest].Y + Fold(Least[Widest].Y, Period.PeriodV) };
+    for (size_t Loop = 0; Loop < Face.Loops.size(); ++Loop)
+    {
+        Vector2 Shift{};
+        if (Loop == Widest) Shift = Origin - Least[Loop];
+        else
+        {
+            const Vector2 Centre = (Least[Loop] + Most[Loop]) * 0.5;
+            Shift = { Fold(Centre.X - Origin.X, Period.PeriodU), Fold(Centre.Y - Origin.Y, Period.PeriodV) };
+        }
+        if (Period.PeriodU <= 0.0) Shift.X = 0.0;
+        if (Period.PeriodV <= 0.0) Shift.Y = 0.0;
+        for (size_t Index = 0; Index < Face.Loops[Loop].size(); ++Index)
+        {
+            BlueprintUse&        Use    = Face.Loops[Loop][Index];
+            const BlueprintEdge& Edge   = Blueprint.Edges[Use.Edge];
+            const Vector2        Anchor = Tracks[Loop][Index].Anchor + Shift;
+            Use.SurfaceCurve = FitSurfaceCurve(Face.Surface, Edge.Curve, Edge.Low, Edge.High, { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } }, Anchor);
+        }
+    }
 }
 
 } // namespace Frontier::SolidArcRemastered

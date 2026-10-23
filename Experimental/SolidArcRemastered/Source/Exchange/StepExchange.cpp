@@ -95,6 +95,14 @@ KnotForm DescribeKnots(const std::vector<double>& Knots)
     return { Out.Multiplicities + ")", Out.Values + ")" };
 }
 
+// 💡 Normalisation is not idempotent in floating point (N(N(v)) may differ from N(v) in the last bit), so a vector that is
+//    already unit to rounding is written as it is: a direction read from a file then goes out bit-identical, and export →
+//    import → export reaches a fixed point.
+Vector3 KeepUnit(Vector3 Value)
+{
+    return std::fabs(Dot(Value, Value) - 1.0) <= 4.0e-16 ? Value : Normalize(Value);
+}
+
 bool RationalCondition(const std::vector<double>& Weights)
 {
     return std::any_of(Weights.begin(), Weights.end(), [](double Weight) { return Weight != 1.0; });
@@ -143,7 +151,7 @@ public:
     }
 
     int Point(Vector3 Position) { return Add("CARTESIAN_POINT(''," + Coordinates(Position * Scale) + ")"); }
-    int Direction(Vector3 Value) { return Add("DIRECTION(''," + Coordinates(Normalize(Value)) + ")"); }
+    int Direction(Vector3 Value) { return Add("DIRECTION(''," + Coordinates(KeepUnit(Value)) + ")"); }
 
     int Placement(Vector3 Origin, Vector3 Axis, Vector3 Reference)
     {

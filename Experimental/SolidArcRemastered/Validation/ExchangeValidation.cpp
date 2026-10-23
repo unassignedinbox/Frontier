@@ -3,7 +3,9 @@
 ====================================================================================================================================*/
 // 🧩 Exchange (priority 4): X1 STL export read back — closure, Euler characteristic against the B-rep, volume within the
 //    chordal bound, binary = ASCII, refusals; X2 STEP AP214 export walked by an independent Part 21 parser — references,
-//    counts, closed edge uses, connected loops, carrier types, exact vertices, units, stand-in deviation, refusals
+//    counts, closed edge uses, connected loops, carrier types, exact vertices, units, stand-in deviation, refusals; X3 STEP
+//    import — every exported body read back (counts, carriers, bit-identical vertices, volume, a byte fixed point after one
+//    generation), OpenCascade-authored fixtures against OpenCascade's own measures, refusals that leave the partition alone
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INCLUDES
@@ -18,6 +20,7 @@
 #include "Geometry/SurfaceGeometry.h"
 #include "Inspection/SpecimenCatalogue.h"
 #include "Measurement/MassProperties.h"
+#include "Tessellation/BodyTessellation.h"
 
 #include <algorithm>
 #include <chrono>
@@ -29,6 +32,7 @@
 #include <map>
 #include <numbers>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -61,7 +65,17 @@ GateTally StepGeometryGate  = { "EX6", "STEP geometry: every face's carrier enti
 GateTally StepRefusalGate   = { "EX7", "STEP refusals name the cause: no bodies, zero / negative unit, non-positive tolerance, a stale body token, a sheet body", "named" };
 GateTally StepTimingGate    = { "EX8", "STEP export time per body (stand-in fitting included)", "≤ 2 s" };
 
-std::vector<GateTally*> AllGates() { return { &StlClosureGate, &StlVolumeGate, &StlFormatGate, &StlRefusalGate, &StepStructureGate, &StepGeometryGate, &StepRefusalGate, &StepTimingGate }; }
+GateTally ImportStructureGate = { "EX9", "STEP import of every exported body (ReadStep → AssembleBody → AuditBody sound): faces, loops, edges, vertices, shells and solid regions = the original's; carrier kinds kept (stand-ins arrive as NURBS); every vertex bit-identical; exported again, read again, exported again → the same bytes (fixed point after one generation); two bodies in one file → two bodies; a metre model read in metres and in millimetres", "exact" };
+GateTally ImportGeometryGate  = { "EX10", "STEP import geometry: |ΔV| and |ΔA| against the original's exact mass properties — ≤ 10⁻⁹ relative where every carrier was written exactly, ≤ 2 × stand-in deviation × area otherwise (tolerant edges absorb the stand-in gap, counted)", "≤ 10⁻⁹ rel · ≤ 2δA" };
+GateTally ImportFixtureGate   = { "EX11", "OpenCascade-authored STEP (StepFixtures.py: fillet spheres, chamfer cones, torus with two seams, edge-less sphere, apex cone, B-spline loft, surface of revolution / linear extrusion, void, inch units, a boss fillet whose torus loop OpenCascade wrote backwards): read sound; solids, shells, faces, edges, vertices = OpenCascade's (degenerated edges excluded); |ΔV|, |ΔA| against GProp (ε 10⁻¹²; Gauss–Legendre of the exact profile where GProp's quadrature is off); OpenCascade's own triangulation points on the imported carriers", "≤ 10⁻⁶ rel · ≤ 10⁻⁶ mm" };
+GateTally ImportRefusalGate   = { "EX12", "STEP import refusals name the cause and add nothing to the partition: empty input, no DATA, unterminated DATA, a missing instance, an unsupported surface, an open shell, no solid, a non-metre length unit, a zero model unit, a missing file, a two-solid file whose second solid is broken", "named · atomic" };
+GateTally ImportTimingGate    = { "EX13", "STEP import time per file (parse, conversion, SP-curves, assembly, audit twice)", "≤ 2 s" };
+
+std::vector<GateTally*> AllGates()
+{
+    return { &StlClosureGate,    &StlVolumeGate,    &StlFormatGate,       &StlRefusalGate,     &StepStructureGate, &StepGeometryGate, &StepRefusalGate,
+             &StepTimingGate,    &ImportStructureGate, &ImportGeometryGate, &ImportFixtureGate, &ImportRefusalGate, &ImportTimingGate };
+}
 
 struct DetailRow
 {
@@ -73,6 +87,11 @@ struct DetailRow
 
 std::vector<DetailRow> Details;
 std::string            FileFolder;                                                           // --files: write the exports here
+#ifdef FRONTIER_STEP_FIXTURES
+std::string FixtureFolder = FRONTIER_STEP_FIXTURES;                                          // --fixtures: OpenCascade-authored STEP files
+#else
+std::string FixtureFolder;
+#endif
 
 void Report(GateTally& Gate, const std::string& Name, const std::string& Detail, double Value, bool PassedCondition)
 {
@@ -574,6 +593,251 @@ void ValidateStepRefusals()
     Refuses("sheet body", WriteStep(Block.Partition, { Block.Body }, {}).Refusal, "only solid bodies");
 }
 
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    STEP IMPORT
+//------------------------------------------------------------------------------------------------------------------------
+
+// Carrier kind as it must arrive: analytic and NURBS kept, procedural carriers as their B-spline stand-ins.
+size_t ArrivingKind(const SurfaceGeometry& Surface)
+{
+    const size_t Kind = Surface.index();
+    return Kind <= 4 || Kind == 6 ? Kind : 6;
+}
+
+std::multiset<std::array<double, 3>> VertexSet(const ModelPartition& Partition, BodyToken Body, double Scale = 1.0)
+{
+    std::multiset<std::array<double, 3>> Out;
+    for (const VertexToken Vertex : Partition.CollectInventory(Body).Vertices)
+    {
+        const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+        Out.insert({ Position.X * Scale, Position.Y * Scale, Position.Z * Scale });
+    }
+    return Out;
+}
+
+std::array<int, 6> TopologyCounts(const ModelPartition& Partition, BodyToken Body)
+{
+    const BodyInventory Inventory = Partition.CollectInventory(Body);
+    int SolidRegions = 0;
+    for (const RegionToken Region : Inventory.Regions) SolidRegions += Partition.Regions.Resolve(Region).Material == RegionMaterial::Solid;
+    return { static_cast<int>(Inventory.Faces.size()), static_cast<int>(Inventory.Loops.size()), static_cast<int>(Inventory.Edges.size()),
+             static_cast<int>(Inventory.Vertices.size()), static_cast<int>(Inventory.Shells.size()), SolidRegions };
+}
+
+std::string CountText(const std::array<int, 6>& Counts)
+{
+    return Format("F %d L %d E %d V %d shells %d solids %d", Counts[0], Counts[1], Counts[2], Counts[3], Counts[4], Counts[5]);
+}
+
+void WriteImportedStl(const std::string& Name, const ModelPartition& Partition, BodyToken Body)
+{
+    if (FileFolder.empty()) return;
+    StlRequest Request;
+    const StlExport Export = WriteStl(Partition, { Body }, Request);
+    if (Export.Refusal.empty()) WriteFile(Name + ".stl", Export.Bytes);
+}
+
+void ValidateStepImport()
+{
+    std::vector<TestBody> Bodies = ConstructStepBodies();
+    for (TestBody& Entry : Bodies)
+    {
+        StepRequest Request;
+        Request.Name = Entry.Name;
+        const StepExport Export = WriteStep(Entry.Partition, { Entry.Body }, Request);
+        if (!Export.Refusal.empty()) { Report(ImportStructureGate, Entry.Name, Export.Refusal, 1.0, false); continue; }
+        ModelPartition   Imported;
+        const StepImport Reading = ReadStep(Imported, Export.Bytes, {});
+        Report(ImportTimingGate, Entry.Name, Format("%.1f ms, %d instances", Reading.Milliseconds, Reading.Instances), Reading.Milliseconds / 1000.0, Reading.Refusal.empty() && Reading.Milliseconds <= 2000.0);
+        if (!Reading.Refusal.empty() || Reading.Bodies.size() != 1) { Report(ImportStructureGate, Entry.Name, Reading.Refusal.empty() ? std::string("not one body") : Reading.Refusal, 1.0, false); continue; }
+        const BodyToken Body = Reading.Bodies.front();
+
+        // ---- structure
+        const std::array<int, 6> Original = TopologyCounts(Entry.Partition, Entry.Body), Arrived = TopologyCounts(Imported, Body);
+        std::multiset<size_t> ExpectedKinds, FoundKinds;
+        for (const FaceToken Face : Entry.Partition.CollectInventory(Entry.Body).Faces) ExpectedKinds.insert(ArrivingKind(Entry.Partition.Surfaces.Resolve(Entry.Partition.Faces.Resolve(Face).Surface)));
+        for (const FaceToken Face : Imported.CollectInventory(Body).Faces) FoundKinds.insert(Imported.Surfaces.Resolve(Imported.Faces.Resolve(Face).Surface).index());
+        const bool SameVertices = VertexSet(Entry.Partition, Entry.Body) == VertexSet(Imported, Body);
+        const StepExport Second = WriteStep(Imported, { Body }, Request);
+        ModelPartition   Again;
+        const StepImport SecondReading = ReadStep(Again, Second.Bytes, {});
+        const StepExport Third = SecondReading.Refusal.empty() ? WriteStep(Again, SecondReading.Bodies, Request) : StepExport{};
+        const bool FixedPoint = Second.Refusal.empty() && Third.Refusal.empty() && Second.Bytes == Third.Bytes;
+        Report(ImportStructureGate, Entry.Name,
+               Format("%s; kinds kept: %s; vertices bit-identical: %s; tolerant edges %d / vertices %d (largest gap %.1e); generation 2 = 3: %s", CountText(Arrived).c_str(), ExpectedKinds == FoundKinds ? "yes" : "no",
+                      SameVertices ? "yes" : "no", Reading.TolerantEdges, Reading.TolerantVertices, Reading.LargestGap, FixedPoint ? "yes" : SecondReading.Refusal.empty() ? "no" : SecondReading.Refusal.c_str()),
+               0.0, Original == Arrived && ExpectedKinds == FoundKinds && SameVertices && FixedPoint);
+
+        // ---- geometry
+        const BodyMassProperties Exact = MeasureBodyMass(Entry.Partition, Entry.Body), Read = MeasureBodyMass(Imported, Body);
+        const bool   ExactCondition = Export.ApproximatedSurfaces == 0 && Export.ApproximatedCurves == 0;
+        const double VolumeError = std::fabs(Read.Volume - Exact.Volume), AreaError = std::fabs(Read.SurfaceArea - Exact.SurfaceArea);
+        const double VolumeLimit = ExactCondition ? 1.0e-9 * std::fabs(Exact.Volume) : 2.0 * Export.Deviation * Exact.SurfaceArea + 1.0e-9 * std::fabs(Exact.Volume);
+        const double AreaLimit   = ExactCondition ? 1.0e-9 * Exact.SurfaceArea : 2.0 * Export.Deviation * Exact.SurfaceArea + 1.0e-9 * Exact.SurfaceArea;
+        Report(ImportGeometryGate, Entry.Name,
+               Format("%s; ΔV %.2e (limit %.2e), ΔA %.2e (limit %.2e); V %.12g", ExactCondition ? "exact carriers" : "stand-ins", VolumeError, VolumeLimit, AreaError, AreaLimit, Read.Volume),
+               VolumeError / std::max(1e-300, std::fabs(Exact.Volume)), VolumeError <= VolumeLimit && AreaError <= AreaLimit);
+    }
+
+    // Two bodies in one file.
+    {
+        ModelPartition Partition;
+        const BodyToken First  = ConstructBlock(Partition, { 0.0, 0.0, 0.0 }, { 2.0, 1.0, 1.0 }).Value;
+        const BodyToken Second = ConstructSpecimen(Partition, "Torus", {}).Body;
+        ModelPartition   Imported;
+        const StepImport Reading = ReadStep(Imported, WriteStep(Partition, { First, Second }, {}).Bytes, {});
+        const bool Same = Reading.Refusal.empty() && Reading.Bodies.size() == 2 && VertexSet(Partition, First) == VertexSet(Imported, Reading.Bodies[0])
+                          && VertexSet(Partition, Second) == VertexSet(Imported, Reading.Bodies[1]);
+        Report(ImportStructureGate, "Block + Torus in one file", Format("%zu bodies, %d solids; vertices bit-identical in order: %s", Reading.Bodies.size(), Reading.Solids, Same ? "yes" : "no"), 0.0, Same);
+    }
+
+    // Units: a metre model, read in metres (round trip within rounding) and in millimetres (× 1000).
+    {
+        ModelPartition  Partition;
+        const BodyToken Block = ConstructBlock(Partition, { 0.25, 0.5, 0.125 }, { 4.0, 2.5, 1.0 }).Value;
+        StepRequest Metres;
+        Metres.ModelUnitMillimetres = 1000.0;
+        const std::string Bytes = WriteStep(Partition, { Block }, Metres).Bytes;
+        ModelPartition    InMetres, InMillimetres;
+        StepImportRequest MetreRequest;
+        MetreRequest.ModelUnitMillimetres = 1000.0;
+        const StepImport MetreReading = ReadStep(InMetres, Bytes, MetreRequest);
+        const StepImport MillimetreReading = ReadStep(InMillimetres, Bytes, {});
+        double Worst = 0.0;
+        bool   Readable = MetreReading.Refusal.empty() && MillimetreReading.Refusal.empty();
+        if (Readable)
+        {
+            const auto Expected = VertexSet(Partition, Block), Metric = VertexSet(InMetres, MetreReading.Bodies[0]), Scaled = VertexSet(InMillimetres, MillimetreReading.Bodies[0], 1.0e-3);
+            for (auto Want = Expected.begin(), Got = Metric.begin(), Milli = Scaled.begin(); Want != Expected.end() && Got != Metric.end() && Milli != Scaled.end(); ++Want, ++Got, ++Milli)
+                for (int Axis = 0; Axis < 3; ++Axis) Worst = std::max({ Worst, std::fabs((*Want)[Axis] - (*Got)[Axis]), std::fabs((*Want)[Axis] - (*Milli)[Axis]) });
+            Readable = Expected.size() == Metric.size() && Expected.size() == Scaled.size();
+        }
+        Report(ImportStructureGate, "Block in metres → mm file → metres and mm", Format("file unit %.0f mm; worst corner error %.1e m (both readings)", MetreReading.FileUnitMillimetres, Worst), Worst, Readable && Worst <= 1.0e-15);
+    }
+}
+
+void ValidateStepFixtures()
+{
+    std::ifstream Expectations(std::filesystem::path(FixtureFolder) / "Expectations.txt");
+    if (!Expectations) { Report(ImportFixtureGate, "fixtures", "no Expectations.txt in " + FixtureFolder, 1.0, false); return; }
+    std::string Line;
+    while (std::getline(Expectations, Line))
+    {
+        if (Line.empty() || Line[0] == '#') continue;
+        std::istringstream Fields(Line);
+        std::string Name, Unit;
+        double Volume = 0.0, Area = 0.0;
+        std::array<int, 5> Expected{};
+        Fields >> Name >> Unit >> Volume >> Area >> Expected[0] >> Expected[1] >> Expected[2] >> Expected[3] >> Expected[4];
+        ModelPartition   Partition;
+        const StepImport Reading = ImportStepFile(Partition, (std::filesystem::path(FixtureFolder) / (Name + ".step")).string(), {});
+        Report(ImportTimingGate, Name + " (OpenCascade)", Format("%.1f ms, %d instances", Reading.Milliseconds, Reading.Instances), Reading.Milliseconds / 1000.0, Reading.Refusal.empty() && Reading.Milliseconds <= 2000.0);
+        if (!Reading.Refusal.empty() || Reading.Bodies.empty()) { Report(ImportFixtureGate, Name, Reading.Refusal.empty() ? std::string("no body") : Reading.Refusal, 1.0, false); continue; }
+        std::array<int, 5> Found{};
+        double FoundVolume = 0.0, FoundArea = 0.0, PointGap = 0.0;
+        int    Points = 0;
+        for (const BodyToken Body : Reading.Bodies)
+        {
+            const std::array<int, 6> Counts = TopologyCounts(Partition, Body);
+            Found[0] += Counts[5];
+            Found[1] += Counts[4];
+            Found[2] += Counts[0];
+            Found[3] += Counts[2];
+            Found[4] += Counts[3];
+            const BodyMassProperties Mass = MeasureBodyMass(Partition, Body);
+            FoundVolume += Mass.Volume;
+            FoundArea   += Mass.SurfaceArea;
+        }
+        // OpenCascade triangulation nodes (on its exact surfaces): distance to the nearest imported carrier.
+        std::ifstream PointStream(std::filesystem::path(FixtureFolder) / (Name + ".points.txt"));
+        double X = 0.0, Y = 0.0, Z = 0.0;
+        while (PointStream >> X >> Y >> Z)
+        {
+            double Nearest = 1e300;
+            for (const BodyToken Body : Reading.Bodies)
+                for (const FaceToken Face : Partition.CollectInventory(Body).Faces)
+                {
+                    const SurfaceGeometry& Carrier = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface);
+                    const Vector3 Point{ X, Y, Z };
+                    Nearest = std::min(Nearest, Length(EvaluateSurface(Carrier, ProjectOntoSurface(Carrier, Point, {})).Position - Point));
+                }
+            PointGap = std::max(PointGap, Nearest);
+            ++Points;
+        }
+        const double VolumeError = std::fabs(FoundVolume - Volume) / Volume, AreaError = std::fabs(FoundArea - Area) / Area;
+        Report(ImportFixtureGate, Name,
+               Format("%s file: solids %d shells %d F %d E %d V %d (OpenCascade %d %d %d %d %d); ΔV/V %.1e, ΔA/A %.1e; %d points, worst %.1e mm; seams added %d, degenerate edges skipped %d, converted surfaces %d, reoriented faces %d, tolerant edges %d (largest gap %.1e mm)",
+                      Unit.c_str(), Found[0], Found[1], Found[2], Found[3], Found[4], Expected[0], Expected[1], Expected[2], Expected[3], Expected[4], VolumeError, AreaError, Points, PointGap, Reading.SynthesizedSeams,
+                      Reading.DegenerateEdges, Reading.ConvertedSurfaces, Reading.ReorientedFaces, Reading.TolerantEdges, Reading.LargestGap),
+               std::max(VolumeError, AreaError), Found == Expected && VolumeError <= 1.0e-6 && AreaError <= 1.0e-6 && Points > 0 && PointGap <= 1.0e-6);
+        // Evidence: our own tessellation of what was read (gallery) and our STEP of it (OpenCascade reads it back).
+        WriteImportedStl(Name + ".imported", Partition, Reading.Bodies.front());
+        StepRequest Request;
+        Request.Name = Name;
+        const StepExport Export = WriteStep(Partition, Reading.Bodies, Request);
+        if (Export.Refusal.empty()) WriteFile(Name + ".reexported.step", Export.Bytes);
+    }
+}
+
+void ValidateStepImportRefusals()
+{
+    ModelPartition  Source;
+    const BodyToken Block = ConstructBlock(Source, { 0.0, 0.0, 0.0 }, { 1.0, 1.0, 1.0 }).Value;
+    const std::string Bytes = WriteStep(Source, { Block }, {}).Bytes;
+    const auto Refuses = [&](const std::string& Name, const std::string& Input, const char* Wanted, const StepImportRequest& Request = {})
+    {
+        ModelPartition   Partition;
+        const StepImport Reading = ReadStep(Partition, Input, Request);
+        const bool Untouched = Partition.Bodies.OccupiedCount() == 0 && Reading.Bodies.empty();
+        Report(ImportRefusalGate, Name, (Reading.Refusal.empty() ? std::string("(accepted)") : Reading.Refusal) + (Untouched ? "; partition untouched" : "; partition CHANGED"), 0.0,
+               Reading.Refusal.find(Wanted) != std::string::npos && Untouched);
+    };
+    const auto Replace = [](std::string Text, const std::string& From, const std::string& To)
+    {
+        const size_t At = Text.find(From);
+        if (At != std::string::npos) Text.replace(At, From.size(), To);
+        return Text;
+    };
+    Refuses("empty input", "", "not an ISO 10303-21");
+    Refuses("no DATA section", "ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n", "no DATA section");
+    Refuses("unterminated DATA", Bytes.substr(0, Bytes.find("ENDSEC;\nEND-ISO")), "not closed by ENDSEC");
+    {
+        // Drop the definition of the first VERTEX_POINT's CARTESIAN_POINT.
+        const size_t Vertex = Bytes.find("VERTEX_POINT('',#");
+        const std::string Point = "\n#" + std::to_string(std::atoi(Bytes.c_str() + Vertex + 17)) + "=";
+        const size_t Line = Bytes.find(Point);
+        Refuses("missing instance", Bytes.substr(0, Line + 1) + Bytes.substr(Bytes.find('\n', Line + 1) + 1), "missing instance");
+    }
+    Refuses("unsupported surface", Replace(Bytes, "=PLANE(", "=OFFSET_SURFACE("), "unsupported face surface OFFSET_SURFACE");
+    {
+        // One face removed from the closed shell list: the edges around it are used once.
+        const size_t Shell = Bytes.find("CLOSED_SHELL('',(#");
+        const size_t Comma = Bytes.find(',', Shell + 17);
+        Refuses("open shell", Bytes.substr(0, Shell + 17) + Bytes.substr(Comma + 1), "non-manifold or open");
+    }
+    Refuses("no solid", Replace(Bytes, "MANIFOLD_SOLID_BREP(", "MANIFOLD_SOLID_BREX("), "holds no MANIFOLD_SOLID_BREP");
+    Refuses("gram length unit", Replace(Bytes, "SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.MILLI.,.GRAM.)"), "not based on the metre");
+    StepImportRequest Zero;
+    Zero.ModelUnitMillimetres = 0.0;
+    Refuses("zero model unit", Bytes, "positive length", Zero);
+    {
+        ModelPartition   Partition;
+        const StepImport Reading = ImportStepFile(Partition, "/nonexistent/Frontier.step", {});
+        Report(ImportRefusalGate, "missing file", Reading.Refusal, 0.0, Reading.Refusal.find("cannot open") != std::string::npos && Partition.Bodies.OccupiedCount() == 0);
+    }
+    {
+        // Two solids, the second broken: neither may arrive.
+        ModelPartition  Pair;
+        const BodyToken First  = ConstructBlock(Pair, { 0.0, 0.0, 0.0 }, { 1.0, 1.0, 1.0 }).Value;
+        const BodyToken Second = ConstructBlock(Pair, { 3.0, 0.0, 0.0 }, { 1.0, 1.0, 1.0 }).Value;
+        const std::string Both = WriteStep(Pair, { First, Second }, {}).Bytes;
+        const size_t Shell = Both.find("CLOSED_SHELL('',(#", Both.find("CLOSED_SHELL('',(#") + 1);
+        const size_t Comma = Both.find(',', Shell + 17);
+        Refuses("second of two solids open", Both.substr(0, Shell + 17) + Both.substr(Comma + 1), "solid 2");
+    }
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -587,17 +851,21 @@ int main(int Count, char** Arguments)
     {
         if (std::string(Arguments[Index]) == "--only") Only = Arguments[Index + 1];
         if (std::string(Arguments[Index]) == "--files") FileFolder = Arguments[Index + 1];
+        if (std::string(Arguments[Index]) == "--fixtures") FixtureFolder = Arguments[Index + 1];
     }
     const auto Start = std::chrono::steady_clock::now();
     if (Only.empty() || Only == "stl") ValidateStl();
     if (Only.empty() || Only == "stlrefusal") ValidateStlRefusals();
     if (Only.empty() || Only == "step") ValidateStep();
     if (Only.empty() || Only == "steprefusal") ValidateStepRefusals();
+    if (Only.empty() || Only == "import") ValidateStepImport();
+    if (Only.empty() || Only == "fixtures") ValidateStepFixtures();
+    if (Only.empty() || Only == "importrefusal") ValidateStepImportRefusals();
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
 
     bool PassedCondition = true;
     for (const GateTally* Gate : AllGates()) PassedCondition = PassedCondition && Gate->Failures == 0 && (Gate->Checks > 0 || !Only.empty());
-    std::printf("# Exchange validation\n\n%s Priority 4: STL export and read-back; STEP AP214 export (%.2f s)\n\n", PassedCondition ? "🟢" : "🔴", Seconds);
+    std::printf("# Exchange validation\n\n%s Priority 4: STL export and read-back; STEP AP214 export and import (%.2f s)\n\n", PassedCondition ? "🟢" : "🔴", Seconds);
     std::printf("## Gates\n\n| | Gate | Measures | Limit | Worst | Checks | Failures |\n|---|---|---|---|---|---|---|\n");
     for (const GateTally* Gate : AllGates())
         std::printf("| %s | %s | %s | %s | %.2e | %ld | %ld |\n", Gate->Failures == 0 && Gate->Checks > 0 ? "🟢" : "🔴", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures);
