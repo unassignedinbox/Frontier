@@ -12,6 +12,7 @@
 #include "Document/DraftingImagePlane.h"
 #include "Document/DraftingDocumentCodec.h"
 #include "Document/DraftingDrawingSheet.h"
+#include "Document/DraftingExchange.h"
 #include "Document/DraftingScene.h"
 #include "Document/DraftingSpecimen.h"
 #include "Document/VehicleCurveImport.h"
@@ -20,6 +21,9 @@
 
 #include "Blend/BlendCatalogue.h"
 #include "Drawing/DrawingExport.h"
+#include "Exchange/StepExchange.h"
+#include "Exchange/StlExchange.h"
+#include "Feature/ReplayDigest.h"
 #include "Geometry/NurbsCarrier.h"
 #include "Measurement/MassProperties.h"
 #include "Sketch/SketchProfile.h"
@@ -89,6 +93,7 @@ namespace
     GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
     GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 2 (0.2 √0.05 + 0.09 asin ⅔)) · 0.1; moving the bracket carries both; refusals; codec (joints, geometry, fixed point); undo", "≤ 1e-9" };
     GateTally SheetGate       = { "W37", "Drawing sheet (Alt+D) of the bracket specimen: kernel views, hidden lines and dimensions in mm (metres × 1000), automatic ISO 5455 scale (next larger refused), unit invariance against the millimetre kernel sheet, A4 third-angle placement, section A-A cap = exact section 4.116587, SVG / DXF export byte-equal beside the document, [DrawingSheet] codec round trip + refusals, hidden bodies refused", "≤ 1e-9" };
+    GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, |ΔV| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -3026,7 +3031,180 @@ int main()
               "refusals: " + None.Refusal + " · " + NoFace.Refusal);
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate })
+    // ---- W38 STEP / STL exchange: the bracket + a sphere out and back in, OCCT fixtures in, a fillet on an imported edge
+    {
+        const auto Format   = [](const char* Pattern, auto... Values) { char Text[512]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Relative = [](double Value, double Expected) { return std::abs(Value - Expected) / std::max(1.0e-12, std::abs(Expected)); };
+        const auto Bytes    = [](const std::string& Path) { std::ifstream Stream(Path, std::ios::binary); std::ostringstream Text; Text << Stream.rdbuf(); return Text.str(); };
+        const std::filesystem::path Folder = std::filesystem::temp_directory_path() / "DraftingExchangeValidation";
+        std::filesystem::remove_all(Folder);
+        std::filesystem::create_directories(Folder);
+        const std::string StepPath = (Folder / "Bracket.step").string(), StlPath = (Folder / "Bracket.stl").string();
+
+        // ① Bracket specimen + a sphere r 0.5 at x = 6 (New body): STEP of both = the kernel writer's bytes.
+        DraftingDocument Rig = BuildDraftingSpecimen();
+        DraftingConstructRequest Request;
+        Request.Kind = DraftingConstructKind::Sphere; Request.Position = { 6.0, 0.0, 0.5 }; Request.Radius = 0.5;
+        Request.Combination = FeatureCombination::Separate;
+        Expect(ConstructDraftingPrimitive(Rig, Request));
+        Rig.Selection = {};
+        std::vector<BodyToken> Tokens;
+        for (const RegeneratedBody& Body : Rig.Regeneration.Bodies) Tokens.push_back(Body.Body);
+        const DraftingExportOutcome Step = ExportDraftingBodies(Rig, StepPath);
+        Modeller::StepRequest Direct;
+        Direct.ModelUnitMillimetres = DraftingModelUnitMillimetres;
+        Direct.Name                 = "Bracket";
+        const std::string Expected = Modeller::WriteStep(*Rig.Partition, Tokens, Direct).Bytes;
+        const std::string Written  = Bytes(StepPath);
+        Tally(ExchangeGate, 0.0, Step.Refusal.empty() && Step.Bodies.size() == 2 && Tokens.size() == 2 && Written == Expected && Step.Bytes == double(Written.size())
+              && Written.find("FILE_NAME('Bracket'") != std::string::npos && DraftingExportPath((Folder / "Bracket.drafting.toml").string(), ".step") == StepPath,
+              Format("Export… Bracket.step: %zu bodies, %d faces, %d stand-in(s), %.0f B = WriteStep bytes, %.0f ms", Step.Bodies.size(), Step.Faces, Step.Approximated, Step.Bytes, Step.Milliseconds));
+
+        // Read back in millimetres by the kernel reader: volumes × 10⁹.
+        ModelPartition Millimetres;
+        StepImportRequest MillimetreRequest;
+        const StepImport Back = ReadStep(Millimetres, Written, MillimetreRequest);
+        double WorstBack = Back.Bodies.size() == 2 ? 0.0 : 1.0;
+        for (size_t Index = 0; Index < Back.Bodies.size() && Index < Rig.Summary.Bodies.size(); ++Index)
+            WorstBack = std::max(WorstBack, Relative(MeasureBodyMass(Millimetres, Back.Bodies[Index]).Volume, Rig.Summary.Bodies[Index].Volume * 1.0e9));
+        Tally(ExchangeGate, WorstBack, Back.Refusal.empty() && WorstBack <= 1.0e-9 && Back.FileUnitMillimetres == 1.0,
+              Format("read back in mm: %zu solids, volumes = metres³ × 10⁹ (worst %.1e)", Back.Bodies.size(), WorstBack));
+
+        // ② STL: the writer's bytes, watertight per body, |ΔV| ≤ sag · A (mm).
+        const DraftingExportOutcome Facets = ExportDraftingBodies(Rig, StlPath);
+        StlRequest Tessellated;
+        Tessellated.ModelUnitMillimetres = DraftingModelUnitMillimetres;
+        Tessellated.Name                 = "Bracket";
+        const StlExport    Reference = WriteStl(*Rig.Partition, Tokens, Tessellated);
+        const StlReading   Reading   = ReadStl(Bytes(StlPath));
+        const StlSoundness Sound     = MeasureStlSoundness(Reading);
+        const double Exact = Rig.Summary.Volume * 1.0e9;
+        const double Gap   = std::abs(Sound.Volume - Exact);
+        Tally(ExchangeGate, Gap / Exact, Facets.Refusal.empty() && Bytes(StlPath) == Reference.Bytes && Sound.WatertightCondition && Sound.Components == 2 && Gap <= Reference.Sag * Sound.Area,
+              Format("Export… Bracket.stl: %d facets, watertight, 2 components, |ΔV| %.3f mm³ ≤ sag %.4f mm × A %.0f mm²", Facets.Triangles, Gap, Reference.Sag, Sound.Area));
+
+        // ③ What is written: the selection, else every shown body (hidden ones stay out).
+        const std::string SphereKey = Rig.Summary.Bodies.size() == 2 ? Rig.Summary.Bodies[1].Key : std::string{};
+        DraftingDocument Chosen = CloneDraftingDocument(Rig);
+        SelectDraftingName(Chosen, DraftingSelectionKind::Body, SphereKey, false);
+        const std::vector<std::string> Picked = DraftingExportBodies(Chosen);
+        DraftingDocument Veiled = CloneDraftingDocument(Rig);
+        Veiled.Appearance.HiddenBodies.insert(Rig.Summary.Bodies.front().Key);
+        const std::vector<std::string> Shown = DraftingExportBodies(Veiled);
+        const DraftingExportOutcome Single = ExportDraftingBodies(Chosen, (Folder / "Sphere.stp").string());
+        Tally(ExchangeGate, 0.0, Picked == std::vector<std::string>{ SphereKey } && Shown == std::vector<std::string>{ SphereKey } && Single.Refusal.empty() && Single.Bodies.size() == 1
+              && Bytes(Single.Path).find("PRODUCT('Sphere'") != std::string::npos,
+              "selected sphere → 1 body; bracket hidden → 1 body; Sphere.stp names its PRODUCT 'Sphere'");
+
+        // ④ Import… Bracket.step into a fresh document: one Import step per solid, one undo entry, equal figures.
+        DraftingDocument Received = CreateDraftingDocument("Received");
+        const DraftingStepReading    Read     = ReadDraftingStepFile(StepPath);
+        const DraftingCommandOutcome Imported = ImportDraftingStep(Received, Read);
+        double WorstVolume = Received.Summary.Bodies.size() == 2 ? 0.0 : 1.0;
+        bool   Figures     = Received.Summary.Bodies.size() == 2;
+        std::string Captions;
+        for (size_t Index = 0; Figures && Index < 2; ++Index)
+        {
+            const DraftingBodyFigures& Ours = Received.Summary.Bodies[Index];
+            const DraftingBodyFigures& Theirs = Rig.Summary.Bodies[Index];
+            WorstVolume = std::max(WorstVolume, Relative(Ours.Volume, Theirs.Volume));
+            Figures = Figures && Ours.Faces == Theirs.Faces && Ours.Edges == Theirs.Edges && Ours.Vertices == Theirs.Vertices && Ours.Genus == Theirs.Genus && Ours.SoundCondition;
+            Captions += (Captions.empty() ? "" : " · ") + Ours.Caption + " (" + Ours.Key + Format(", %d faces)", Ours.Faces);
+        }
+        const bool Steps = Received.Tree.Steps.size() == 2 && Received.Tree.Steps[0].Kind == FeatureStepKind::Import && Received.Tree.Steps[0].ExchangeUnit == DraftingModelUnitMillimetres
+                        && Received.UndoEntries.size() == 1;
+        Tally(ExchangeGate, WorstVolume, Read.Refusal.empty() && Imported.AcceptedCondition && Steps && Figures && WorstVolume <= 1.0e-9 && Read.Texts.size() == 2,
+              Imported.Label + ": " + Captions + Format(" · volumes, faces, edges, vertices, genus equal (worst %.1e) · %.0f ms", WorstVolume, Imported.Milliseconds));
+
+        // Faces are named in file order; the names reach the selection.
+        const std::string FirstFace = Received.Regeneration.Bodies.empty() || Received.Regeneration.Bodies[0].Naming.Faces.empty() ? std::string{} : Received.Regeneration.Bodies[0].Naming.Faces.begin()->second;
+        bool Named = !FirstFace.empty();
+        for (const RegeneratedBody& Body : Received.Regeneration.Bodies)
+            for (const auto& [Slot, Name] : Body.Naming.Faces) Named = Named && Name.rfind(Body.Key + ".Face(", 0) == 0;
+        Tally(ExchangeGate, 0.0, Named, "every imported face is named <Import#k>.Face(n), e.g. " + FirstFace);
+
+        // ⑤ Canonical fixed point: export the imported bodies, import that, export again: byte-equal.
+        const std::string Second = (Folder / "Second" / "Bracket.step").string(), Third = (Folder / "Third" / "Bracket.step").string();
+        std::filesystem::create_directories(Folder / "Second");
+        std::filesystem::create_directories(Folder / "Third");
+        const DraftingExportOutcome Again = ExportDraftingBodies(Received, Second);
+        DraftingDocument Echo = CreateDraftingDocument("Echo");
+        const DraftingCommandOutcome Echoed = ImportDraftingStep(Echo, ReadDraftingStepFile(Second));
+        const DraftingExportOutcome Last = ExportDraftingBodies(Echo, Third);
+        Tally(ExchangeGate, 0.0, Again.Refusal.empty() && Echoed.AcceptedCondition && Last.Refusal.empty() && Bytes(Second) == Bytes(Third) && Read.Texts[0] == Received.Tree.Steps[0].Exchange,
+              Format("export → import → export byte-equal (%.0f B); the embedded text is the canonical writing", Again.Bytes));
+
+        // ⑥ Saved with the document: the STEP text rides along (multi-line string); save → load → save byte-equal, digests equal.
+        const std::string Saved1 = EncodeDraftingDocument(Received);
+        const DraftingDocumentFile Loaded = DecodeDraftingDocument(Saved1);
+        DraftingDocument Reloaded = CreateDraftingDocument(Loaded.Title);
+        const DraftingCommandOutcome Opened = ReplaceDraftingTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+        bool Digests = Reloaded.Tree.Steps.size() == Received.Tree.Steps.size();
+        for (size_t Index = 0; Digests && Index < Received.Tree.Steps.size(); ++Index)
+            Digests = DigestFeatureStep(Reloaded.Tree, Reloaded.Tree.Steps[Index]) == DigestFeatureStep(Received.Tree, Received.Tree.Steps[Index]);
+        FeatureTree Altered = Received.Tree;
+        if (!Altered.Steps.empty()) Altered.Steps[0].Exchange += " ";
+        const bool Sensitive = !Altered.Steps.empty() && DigestFeatureStep(Altered, Altered.Steps[0]) != DigestFeatureStep(Received.Tree, Received.Tree.Steps[0]);
+        Tally(ExchangeGate, std::abs(Reloaded.Summary.Volume - Received.Summary.Volume), Loaded.Refusal.empty() && Opened.AcceptedCondition && Reloaded.Summary.Volume == Received.Summary.Volume
+              && EncodeDraftingDocument(Reloaded) == Saved1 && Digests && Sensitive && Reloaded.Regeneration.Naming.Faces == Received.Regeneration.Naming.Faces,
+              Format("codec: %zu B of TOML carry both files; save → load → save byte-equal, volumes and names equal, digests equal (and change with the text)", Saved1.size()));
+
+        // Undo removes both imports, redo restores them.
+        DraftingDocument Undone = CloneDraftingDocument(Received);
+        const bool Back1 = UndoDraftingCommand(Undone) && Undone.Tree.Steps.empty() && Undone.Summary.Bodies.empty();
+        const bool Forth = RedoDraftingCommand(Undone) && Undone.Summary.Volume == Received.Summary.Volume;
+        Tally(ExchangeGate, 0.0, Back1 && Forth, "undo removes the import (both bodies), redo restores it");
+
+        // ⑦ OCCT-written fixtures: FilletedBoss (a loop running against its mates is repaired), InchBlock (inch → metres).
+        const std::string Fixtures = DRAFTING_STEP_FIXTURES;
+        DraftingDocument Boss = CreateDraftingDocument("Boss");
+        const DraftingStepReading BossRead = ReadDraftingStepFile(Fixtures + "/FilletedBoss.step");
+        const DraftingCommandOutcome BossIn = ImportDraftingStep(Boss, BossRead);
+        Tally(ExchangeGate, Relative(Boss.Summary.Volume, 23897.5876482e-9), BossIn.AcceptedCondition && Boss.Summary.SoundCondition && Relative(Boss.Summary.Volume, 23897.5876482e-9) <= 1.0e-9
+              && Boss.Summary.Faces == 9 && BossRead.FileUnitMillimetres == 1.0,
+              Format("FilletedBoss.step (OCCT): 9 faces, V %.10e m³, %d loop(s) reoriented, %d tolerant edge(s)", Boss.Summary.Volume, BossRead.ReorientedFaces, BossRead.TolerantEdges));
+        DraftingDocument Inch = CreateDraftingDocument("Inch");
+        const DraftingStepReading InchRead = ReadDraftingStepFile(Fixtures + "/InchBlock.step");
+        const DraftingCommandOutcome InchIn = ImportDraftingStep(Inch, InchRead);
+        const double Side = 0.0254;
+        Tally(ExchangeGate, Relative(Inch.Summary.Volume, Side * Side * Side), InchIn.AcceptedCondition && Relative(Inch.Summary.Volume, Side * Side * Side) <= 1.0e-9 && InchRead.FileUnitMillimetres == 25.4,
+              Format("InchBlock.step (OCCT, INCH): V = 0.0254³ m³ (%.10e), caption %s", Inch.Summary.Volume, Inch.Summary.Bodies.empty() ? "?" : Inch.Summary.Bodies[0].Caption.c_str()));
+
+        // ⑧ The imported body is a body like any other: fillet r 5 mm on an edge by its persistent name.
+        const std::string Edge = Inch.Regeneration.Bodies.empty() || Inch.Regeneration.Bodies[0].Naming.Edges.empty() ? std::string{} : Inch.Regeneration.Bodies[0].Naming.Edges.begin()->second;
+        SelectDraftingName(Inch, DraftingSelectionKind::Edge, Edge, false);
+        const double Radius = 0.005;
+        const DraftingCommandOutcome Rounded = BlendDraftingSelection(Inch, BlendProfile::Fillet, Radius);
+        const double Removed = (1.0 - Pi / 4.0) * Radius * Radius * Side;
+        TallyVolume(ExchangeGate, Inch, Side * Side * Side - Removed, "fillet r 5 mm on imported edge " + Edge + (Rounded.AcceptedCondition ? "" : " refused: " + Rounded.Refusal) + ": V = 0.0254³ − (1 − π/4) r² L");
+
+        // ⑨ Refusals leave the document as it was: a missing file, a damaged solid, a non-STEP name, nothing to export.
+        std::string Damaged = Written;
+        const size_t Shell = Damaged.find("CLOSED_SHELL('',(#");
+        if (Shell != std::string::npos) Damaged.insert(Shell + 17, "999999,");
+        const std::string DamagedPath = (Folder / "Damaged.step").string();
+        { std::ofstream Stream(DamagedPath, std::ios::binary); Stream << Damaged; }
+        DraftingDocument Kept = CloneDraftingDocument(Received);
+        const std::string Before = EncodeDraftingDocument(Kept);
+        const DraftingStepReading    Missing  = ReadDraftingStepFile((Folder / "Absent.step").string());
+        const DraftingStepReading    Broken   = ReadDraftingStepFile(DamagedPath);
+        const DraftingCommandOutcome Refused1 = ImportDraftingStep(Kept, Missing);
+        const DraftingCommandOutcome Refused2 = ImportDraftingStep(Kept, Broken);
+        const DraftingExportOutcome  Wrong    = ExportDraftingBodies(Rig, (Folder / "Bracket.obj").string());
+        const DraftingExportOutcome  Empty    = ExportDraftingBodies(CreateDraftingDocument("Empty"), (Folder / "Empty.step").string());
+        Tally(ExchangeGate, 0.0, !Refused1.AcceptedCondition && !Refused2.AcceptedCondition && EncodeDraftingDocument(Kept) == Before && Kept.UndoEntries.size() == Received.UndoEntries.size()
+              && !Broken.Refusal.empty() && !Wrong.Refusal.empty() && !Empty.Refusal.empty() && !std::filesystem::exists(Folder / "Bracket.obj") && !std::filesystem::exists(Folder / "Empty.step"),
+              "refused, document unchanged: " + Refused1.Refusal + " · " + Refused2.Refusal + " · " + Wrong.Refusal + " · " + Empty.Refusal);
+
+        // A saved Import step without its text is refused by the codec.
+        std::string Hollow = Saved1;
+        const size_t Text = Hollow.find("Exchange = ");
+        if (Text != std::string::npos) Hollow.replace(Text, 11, "Exchanged = ");
+        const DraftingDocumentFile Emptied = DecodeDraftingDocument(Hollow);
+        Tally(ExchangeGate, 0.0, Text != std::string::npos && !Emptied.Refusal.empty(), "codec: an Import step without its STEP text refused: " + Emptied.Refusal);
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

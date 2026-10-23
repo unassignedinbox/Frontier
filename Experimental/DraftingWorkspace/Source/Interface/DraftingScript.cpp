@@ -497,6 +497,33 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         Number = State.DrawingSheet.ExportBytes;
         return true;
     }
+    if (Field == "exchange-export")
+    {
+        // Text = the last written path (or its refusal), Number = its size in bytes.
+        Text   = State.Exchange.Export.Refusal.empty() ? State.Exchange.Export.Path : State.Exchange.Export.Refusal;
+        Number = State.Exchange.Export.Bytes;
+        return true;
+    }
+    if (Field == "exchange-export-bodies")
+    {
+        // Text = the captions written, in order; Number = how many.
+        for (const std::string& Key : State.Exchange.Export.Bodies) Text += (Text.empty() ? "" : " ") + DraftingBodyCaption(State.Document, Key);
+        Number = double(State.Exchange.Export.Bodies.size());
+        return true;
+    }
+    if (Field == "exchange-export-faces") return Numeric(State.Exchange.Export.Faces);
+    if (Field == "exchange-export-facets") return Numeric(State.Exchange.Export.Triangles);
+    if (Field == "exchange-exports") return Numeric(State.Exchange.Exports);
+    if (Field == "exchange-import")
+    {
+        // Text = the last STEP file read (or its refusal), Number = the solids it added.
+        Text   = State.Exchange.ImportRefusal.empty() ? State.Exchange.ImportPath : State.Exchange.ImportRefusal;
+        Number = State.Exchange.ImportSolids;
+        return true;
+    }
+    if (Field == "exchange-import-faces") return Numeric(State.Exchange.ImportFaces);
+    if (Field == "exchange-import-repairs") return Numeric(State.Exchange.ImportRepairs);
+    if (Field == "exchange-imports") return Numeric(State.Exchange.Imports);
     if (Field == "section-offset") return Numeric(State.Section.Request.Offset);
     if (Field == "section-area") return Numeric(State.Section.Section.Area);
     if (Field == "section-perimeter") return Numeric(State.Section.Section.Perimeter);

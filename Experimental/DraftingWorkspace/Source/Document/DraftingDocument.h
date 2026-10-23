@@ -494,6 +494,11 @@ struct DraftingLinkedPicks
 //    at Tolerance — one undo entry, and all or nothing (a curve that cannot be fitted refuses the import).
 [[nodiscard]] DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const VehicleCurveFile& File, double Tolerance = 2.0e-4);
 
+// 💡 Import STEP (priority 4 X4): one Import step per solid of a ReadDraftingStepFile reading (one undo entry), each a
+//    body of its own captioned by the file name ("Boss", "Boss.2" …), its canonical STEP text embedded in the document.
+struct DraftingStepReading;
+[[nodiscard]] DraftingCommandOutcome ImportDraftingStep(DraftingDocument& Document, const DraftingStepReading& Reading);
+
 // 💡 V4–V6: a Loft step through the SpaceCurve steps in the given order (Plasticity L), G0 / G1 / G2 (Continuity 0–2) to a
 //    panel already ending on its first or last section; when the picked curves cross each other (DetectCurveNetwork)
 //    a Network step (Gordon / Coons, V5) is made instead — order does not matter there, and G1 / G2 refuses (🚧).

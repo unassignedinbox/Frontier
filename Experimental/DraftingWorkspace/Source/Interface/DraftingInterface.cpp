@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cfloat>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <numbers>
@@ -4034,6 +4035,63 @@ void ImportCurves(DraftingWorkspaceState& State, const std::string& Path)
     Announce(State, Compose("Imported %d curve(s) from %s · %d poles · worst fit %.3f mm", int(File.Curves.size()), Path.c_str(), Poles, Worst * 1000.0));
 }
 
+// 💡 Import… with a .step / .stp file (or Open… with one, as Plasticity opens STEP into the scene): every solid becomes
+//    an Import step and a body of its own (one undo entry); the new bodies are selected and framed.
+void ImportStep(DraftingWorkspaceState& State, const std::string& Path)
+{
+    DraftingExchangeSession& Session = State.Exchange;
+    const auto Start = std::chrono::steady_clock::now();
+    const DraftingStepReading    Reading = ReadDraftingStepFile(Path);
+    const size_t                 Before  = State.Document.Tree.Steps.size();
+    const DraftingCommandOutcome Outcome = ImportDraftingStep(State.Document, Reading);
+    Session.ImportPath         = Path;
+    Session.ImportRefusal      = Outcome.AcceptedCondition ? std::string{} : Outcome.Refusal;
+    Session.ImportSolids       = Outcome.AcceptedCondition ? int(Reading.Texts.size()) : 0;
+    Session.ImportFaces        = Outcome.AcceptedCondition ? Reading.Faces : 0;
+    Session.ImportRepairs      = Outcome.AcceptedCondition ? Reading.ReorientedFaces + Reading.TolerantEdges : 0;
+    Session.ImportMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count();
+    Conclude(State, Outcome);
+    if (!Outcome.AcceptedCondition) return;
+    ++Session.Imports;
+    DraftingSelection Picked;
+    Picked.LastKind = DraftingSelectionKind::Body;
+    for (size_t Index = Before; Index < State.Document.Tree.Steps.size(); ++Index) Picked.Bodies.push_back(State.Document.Tree.Steps[Index].Label);
+    State.Document.Selection = Picked;
+    FrameSelection(State);
+    const char* Unit = Reading.FileUnitMillimetres == 25.4 ? "in" : Reading.FileUnitMillimetres == 1000.0 ? "m" : Reading.FileUnitMillimetres == 1.0 ? "mm" : "mm×";
+    Announce(State, Compose("Imported %s · %d solid(s) · %d face(s) · file unit %s · %d loop(s) reoriented · %d tolerant edge(s) · %.0f ms", Path.c_str(), Session.ImportSolids,
+                            Session.ImportFaces, Unit, Reading.ReorientedFaces, Reading.TolerantEdges, Session.ImportMilliseconds));
+}
+
+// Export… (or Save as… with a .step / .stp / .stl name, as Plasticity exports by file type): the selected bodies, else
+// every shown body, in millimetres; the document path is left as it is.
+void ExportBodies(DraftingWorkspaceState& State, const std::string& Path)
+{
+    DraftingExchangeSession& Session = State.Exchange;
+    Session.Export = ExportDraftingBodies(State.Document, Path);
+    if (!Session.Export.Refusal.empty()) { Announce(State, "Refused: " + Session.Export.Refusal); return; }
+    ++Session.Exports;
+    const DraftingExportOutcome& Export = Session.Export;
+    const std::string Figures = Export.Format == DraftingExchangeFormat::Step ? Compose("%d face(s)%s", Export.Faces, Export.Approximated > 0 ? Compose(" · %d certified stand-in(s)", Export.Approximated).c_str() : "")
+                                                                             : Compose("%d facet(s)", Export.Triangles);
+    Announce(State, Compose("Exported %d body(ies) as %s → %s · %s · %.0f bytes · %.0f ms", int(Export.Bodies.size()), DraftingExchangeFormatLabel(Export.Format), Path.c_str(),
+                            Figures.c_str(), Export.Bytes, Export.Milliseconds));
+}
+
+// Import… dispatches by extension: .step / .stp → bodies, .toml → VehicleCurves.
+void ImportFile(DraftingWorkspaceState& State, const std::string& Path)
+{
+    const DraftingExchangeFormat Format = DraftingExchangeFormatOf(Path);
+    if (Format == DraftingExchangeFormat::Step) ImportStep(State, Path);
+    else if (Format == DraftingExchangeFormat::Toml) ImportCurves(State, Path);
+    else
+    {
+        State.Exchange.ImportPath    = Path;
+        State.Exchange.ImportRefusal = "Import: " + Path + " is neither .step / .stp nor a VehicleCurves .toml";
+        Announce(State, "Refused: " + State.Exchange.ImportRefusal);
+    }
+}
+
 // L (Plasticity loft): the selected curves, in pick order, become a panel (crossing curves: a Gordon network).
 void LoftSelectedCurves(DraftingWorkspaceState& State)
 {
@@ -4298,7 +4356,9 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     ImGui::SameLine();
     if (PressButton(State, "Save as…###HeaderSaveAs")) ImGui::OpenPopup("Save document");
     ImGui::SameLine();
-    if (PressButton(State, "Import curves…###HeaderImport")) ImGui::OpenPopup("Import curves");
+    if (PressButton(State, "Import…###HeaderImport")) ImGui::OpenPopup("Import");
+    ImGui::SameLine();
+    if (PressButton(State, "Export…###HeaderExport")) ImGui::OpenPopup("Export");
     if (!State.PopupRequest.empty())
     {
         ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Ctrl+O / Ctrl+Shift+S (same ID stack as the buttons)
@@ -4315,25 +4375,37 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     ImGui::TextUnformatted(Device.c_str());
     ImGui::PopStyleColor();
 
-    for (const char* Title : { "Open document", "Save document", "Import curves" })
+    for (const char* Title : { "Open document", "Save document", "Import", "Export" })
     {
         const bool OpenCondition   = std::strcmp(Title, "Open document") == 0;
-        const bool ImportCondition = std::strcmp(Title, "Import curves") == 0;
+        const bool ImportCondition = std::strcmp(Title, "Import") == 0;
+        const bool ExportCondition = std::strcmp(Title, "Export") == 0;
+        const std::string DocumentPath = State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath;
         if (ImGui::IsPopupOpen(Title) && State.PathText[0] == 0)
             std::snprintf(State.PathText.data(), State.PathText.size(), "%s",
-                          (ImportCondition ? State.Options.CurvesPath : State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath).c_str());
+                          (ImportCondition ? State.Options.CurvesPath : ExportCondition ? DraftingExportPath(DocumentPath, ".step") : DocumentPath).c_str());
         if (ImGui::BeginPopupModal(Title, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::TextUnformatted(ImportCondition ? "Import VehicleCurves.toml (Blender ExportVehicleCurves add-on): each curve is fitted within 0.2 mm"
-                                   : OpenCondition ? "Open a .drafting.toml document" : "Save the document as .drafting.toml");
+            const size_t ExportCount = DraftingExportBodies(State.Document).size();
+            const std::string Prompt = ImportCondition ? std::string("Import a STEP file (.step / .stp: every solid becomes a body) or VehicleCurves.toml (curves fitted within 0.2 mm)")
+                                     : ExportCondition ? Compose("Export %d %s body(ies) in millimetres: .step / .stp (STEP AP214, exact B-rep) or .stl (binary facets)", int(ExportCount),
+                                                                 State.Document.Selection.Bodies.empty() ? "shown" : "selected")
+                                     : OpenCondition   ? std::string("Open a .drafting.toml document (a .step / .stp file is imported into this one)")
+                                                       : std::string("Save the document as .drafting.toml (.step / .stp / .stl exports the bodies instead)");
+            ImGui::TextUnformatted(Prompt.c_str());
             ImGui::SetNextItemWidth(420);
             const bool Entered = ImGui::InputText("##Path", State.PathText.data(), State.PathText.size(), ImGuiInputTextFlags_EnterReturnsTrue);
             RegisterWidget(State, "PathField");
-            if (PressButton(State, ImportCondition ? "Import###PathImport" : OpenCondition ? "Open###PathOpen" : "Save###PathSave", ImVec2(120, 0)) || Entered)
+            if (PressButton(State, ImportCondition ? "Import###PathImport" : ExportCondition ? "Export###PathExport" : OpenCondition ? "Open###PathOpen" : "Save###PathSave", ImVec2(120, 0)) || Entered)
             {
-                if (ImportCondition) ImportCurves(State, State.PathText.data());
-                else if (OpenCondition) OpenDocument(State, State.PathText.data(), true);
-                else SaveDocument(State, State.PathText.data());
+                const std::string Path = State.PathText.data();
+                const DraftingExchangeFormat Format = DraftingExchangeFormatOf(Path);
+                if (ImportCondition) ImportFile(State, Path);
+                else if (ExportCondition) ExportBodies(State, Path);
+                else if (OpenCondition && Format == DraftingExchangeFormat::Step) ImportStep(State, Path);
+                else if (OpenCondition) OpenDocument(State, Path, true);
+                else if (Format == DraftingExchangeFormat::Step || Format == DraftingExchangeFormat::Stl) ExportBodies(State, Path);
+                else SaveDocument(State, Path);
                 State.PathText[0] = 0;
                 ImGui::CloseCurrentPopup();
             }
@@ -5412,6 +5484,14 @@ void DrawStepCard(DraftingWorkspaceState& State)
         ImGui::TextWrapped("%s joint: %s onto %s · %d degree(s) of freedom%s · drag a value (Ctrl+click types it)", JointKindLabel(Step->Joint.Kind),
                            DraftingBodyCaption(State.Document, Step->Target).c_str(), DraftingBodyCaption(State.Document, Step->Tool).c_str(), JointFreedom(Step->Joint.Kind),
                            Step->Joint.FlippedCondition ? " · flipped" : "");
+    if (Step->Kind == FeatureStepKind::Import)
+    {
+        // The embedded file's PRODUCT name and size; faces are named Face(k) in file order.
+        const size_t      Mark    = Step->Exchange.find("PRODUCT('");
+        const std::string Product = Mark == std::string::npos ? std::string("?") : Step->Exchange.substr(Mark + 9, Step->Exchange.find('\'', Mark + 9) - Mark - 9);
+        ImGui::TextWrapped("STEP body %s embedded (%.1f kB, %.0f mm per model unit) · faces %s.Face(1 …) in file order", Product.c_str(), Step->Exchange.size() / 1000.0,
+                           Step->ExchangeUnit, CaptionOf(State.Document, Label).c_str());
+    }
     if (Step->Kind == FeatureStepKind::Pipe)
     {
         const std::string Path = Step->Sections.empty() ? CaptionOf(State.Document, Step->Profile) : CaptionOf(State.Document, Step->Sections.front());

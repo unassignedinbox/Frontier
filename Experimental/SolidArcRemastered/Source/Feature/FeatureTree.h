@@ -51,6 +51,7 @@ enum class FeatureStepKind : uint8_t
     Pipe          = 15,                                                                      // Circle swept along a SpaceCurve or a one-curve sketch (Plasticity P)
     Evolution     = 16,                                                                      // Sketch profile swept along a path (Plasticity Shift+P / Alt+E)
     Joint         = 17,                                                                      // Place a body by a joint to another body (Fusion joints, priority 11)
+    Import        = 18,                                                                      // One solid read from embedded STEP text (priority 4 X4)
 };
 
 enum class FeatureCombination : uint8_t
@@ -149,6 +150,9 @@ struct FeatureStep
     AffineMap                      Placement      = {};                                      // [-]   - Transform / duplicate: x ↦ M·x + Shift (identity: none)
     std::string                    Source         = {};                                      // [-]   - Duplicate: step after which Target is copied (empty: as it is now)
     FeatureJoint                   Joint          = {};                                      // [-]   - Joint: kind and values (Target moves onto Tool; References = moving, fixed origin)
+    std::string                    Exchange       = {};                                      // [-]   - Import: STEP (ISO 10303-21) text of one body, embedded so the
+                                                                                             //         document stands alone
+    double                         ExchangeUnit   = 1.0;                                     // [mm]  - Import: millimetres per model unit (1000 in a metre document)
 };
 
 struct FeatureTree
@@ -248,6 +252,8 @@ struct RegenerationCache
 //    target, References[1] the one on the tool (Assembly/JointSolver.h); the target takes the rigid placement (names kept)
 //    and every body jointed to it earlier follows, as do bodies jointed to a body that a rigid Transform moves. One joint
 //    per placed body; a joint that would close a loop is refused. Removing or consuming a body drops its joints.
+//    Import (priority 4 X4) reads Step.Exchange, the STEP text of exactly one body, at Step.ExchangeUnit millimetres per
+//    model unit into a body keyed by its label; faces are named Label.Face(k) in file order, edges and vertices from them.
 //    Cache (optional): restore the unchanged leading steps from their checkpoints and replay from the first changed one;
 //    the result is bit-identical to a full replay (same tokens, names, volumes). The cache is refreshed for the next run.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false,

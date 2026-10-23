@@ -119,6 +119,7 @@ add_library(DraftingWorkspace STATIC
     Source/Document/DraftingMatcap.cpp
     Source/Document/DraftingMeasurement.cpp
     Source/Document/DraftingDrawingSheet.cpp
+    Source/Document/DraftingExchange.cpp
     Source/Document/DraftingScene.cpp
     Source/Document/DraftingSpecimen.cpp
     Source/Viewport/DraftingCamera.cpp
@@ -158,7 +159,8 @@ endif()
 
 add_executable(DraftingDocumentValidation Validation/DraftingDocumentValidation.cpp)
 target_link_libraries(DraftingDocumentValidation PRIVATE DraftingWorkspace)
-target_compile_definitions(DraftingDocumentValidation PRIVATE DRAFTING_VEHICLE_SAMPLE="${FRONTIER_ROOT}/Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml")
+target_compile_definitions(DraftingDocumentValidation PRIVATE DRAFTING_VEHICLE_SAMPLE="${FRONTIER_ROOT}/Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml"
+                                                                     DRAFTING_STEP_FIXTURES="${FRONTIER_ROOT}/Experimental/SolidArcRemastered/Validation/StepFixtures")
 
 add_executable(DraftingViewportValidation Validation/DraftingViewportValidation.cpp)
 target_link_libraries(DraftingViewportValidation PRIVATE DraftingWorkspace)

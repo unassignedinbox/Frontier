@@ -8,6 +8,7 @@
 #include "Feature/BodyCut.h"
 #include "Feature/PathSweep.h"
 #include "Feature/ReplayDigest.h"
+#include "Exchange/StepExchange.h"
 #include "Geometry/NurbsCarrier.h"
 #include "Local/FaceOperations.h"
 #include "Sketch/SketchConstraining.h"
@@ -960,6 +961,30 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Create();
             break;
         }
+        case FeatureStepKind::Import:
+        {
+            // ⑱ One body read from the step's embedded STEP text (priority 4 X4): a body of its own keyed by the step,
+            //    faces named Label.Face(k) in file order. The text is the kernel's own canonical export of the body, so
+            //    replay rebuilds the same topology with bit-identical vertices every time (ExchangeValidation EX9).
+            StepImportRequest Request;
+            Request.ModelUnitMillimetres = Step.ExchangeUnit;
+            Request.Label                = "Import";
+            const StepImport Reading = ReadStep(Partition, Step.Exchange, Request);
+            if (!Reading.Refusal.empty()) { Refuse(Reading.Refusal); break; }
+            if (Reading.Bodies.size() != 1)
+            {
+                Refuse("Import: the embedded STEP text holds " + std::to_string(Reading.Bodies.size()) + " bodies (one per step)");
+                break;
+            }
+            const BodyInventory      Inventory = Partition.CollectInventory(Reading.Bodies.front());
+            std::vector<std::string> Names;
+            for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index) Names.push_back(Step.Label + ".Face(" + std::to_string(Index + 1) + ")");
+            Naming  = NamePanelBody(Partition, Reading.Bodies.front(), Inventory.Faces, Names);
+            Current = Reading.Bodies.front();
+            Create();
+            for (const std::string& Note : Reading.Notes) Report.Notes.push_back(Note);
+            break;
+        }
         case FeatureStepKind::Joint:
         {
             // ⑰ Place Step.Target by a joint to Step.Tool (Fusion joints): both joint origins are read off the current
@@ -1169,6 +1194,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Pipe:          return "Pipe";
     case FeatureStepKind::Evolution:     return "Evolution";
     case FeatureStepKind::Joint:         return "Joint";
+    case FeatureStepKind::Import:        return "Import";
     }
     return "?";
 }

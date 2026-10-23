@@ -8,6 +8,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingDrawingSheet.h"
+#include "Document/DraftingExchange.h"
 #include "Document/VehicleCurveImport.h"
 
 #include "Audit/EnclosedVolume.h"
@@ -871,6 +873,29 @@ DraftingCommandOutcome ImportDraftingCurves(DraftingDocument& Document, const Ve
         }
     }
     return Outcome;
+}
+
+DraftingCommandOutcome ImportDraftingStep(DraftingDocument& Document, const DraftingStepReading& Reading)
+{
+    const std::string Label = "Import " + Reading.Stem + " · " + std::to_string(Reading.Texts.size()) + " solid(s)";
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (!Reading.Refusal.empty()) return Reading.Refusal;
+        if (Reading.Texts.empty()) return "Import " + Reading.Stem + ": the file holds no solid";
+        for (size_t Index = 0; Index < Reading.Texts.size(); ++Index)
+        {
+            FeatureStep Step;
+            Step.Kind         = FeatureStepKind::Import;
+            Step.Label        = "Import#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Exchange     = Reading.Texts[Index];
+            Step.ExchangeUnit = DraftingModelUnitMillimetres;
+            const std::string Wanted = Reading.Texts.size() == 1 ? Reading.Stem : Reading.Stem + "." + std::to_string(Index + 1);
+            const bool Taken = std::any_of(Document.Captions.begin(), Document.Captions.end(), [&](const auto& Entry) { return Entry.second == Wanted; });
+            Document.Captions[Step.Label] = Taken ? NextCaption(Document, Wanted + ".") : Wanted;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        return {};
+    });
 }
 
 DraftingCommandOutcome LoftDraftingCurves(DraftingDocument& Document, const std::vector<std::string>& Labels, int Continuity)

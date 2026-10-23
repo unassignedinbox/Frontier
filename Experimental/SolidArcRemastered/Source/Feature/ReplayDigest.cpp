@@ -179,6 +179,8 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
         Writer.Flag(Range->has_value());
         if (Range->has_value()) { Writer.Number((*Range)->Low); Writer.Number((*Range)->High); }
     }
+    Writer.Phrase(Step.Exchange);
+    Writer.Number(Step.ExchangeUnit);
     if (Step.Kind == FeatureStepKind::SpaceCurve)
     {
         for (const FeatureStep& Other : Tree.Steps) if (Other.Kind == FeatureStepKind::Mirror) Writer.Frame(Other.Plane);

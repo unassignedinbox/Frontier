@@ -11,6 +11,7 @@
 
 #include "Document/DraftingDocument.h"
 #include "Document/DraftingDrawingSheet.h"
+#include "Document/DraftingExchange.h"
 #include "Document/DraftingMeasurement.h"
 #include "Document/DraftingScene.h"
 #include "Interface/DraftingOptions.h"
@@ -379,6 +380,22 @@ struct DraftingDrawingSheetSession
     int                   Exports         = 0;                                               // [-]  - Files written
 };
 
+// 📝 STEP / STL exchange (priority 4 X4; Plasticity File → Import / Export, and Open / Save as by file type): Export…
+//    writes the selected bodies (else every shown body) beside the document as STEP AP214 or binary STL in millimetres;
+//    Import… reads .step / .stp (one Import step per solid, the file embedded) or VehicleCurves .toml.
+struct DraftingExchangeSession
+{
+    DraftingExportOutcome Export             = {};                                           // [-]  - Last export (path, bodies, size, refusal)
+    std::string           ImportPath         = {};                                           // [-]  - Last STEP file read
+    std::string           ImportRefusal      = {};                                           // [-]  - Why the last STEP import was refused
+    int                   ImportSolids       = 0;                                            // [-]  - Solids the last import added
+    int                   ImportFaces        = 0;                                            // [-]  - Faces the last import read
+    int                   ImportRepairs      = 0;                                            // [-]  - Loops reoriented + tolerant edges
+    double                ImportMilliseconds = 0.0;                                          // [ms] - Read + canonical rewrite + regeneration
+    int                   Exports            = 0;                                            // [-]  - Files written (script evidence)
+    int                   Imports            = 0;                                            // [-]  - STEP files imported (script evidence)
+};
+
 // 📝 Joint (Alt+J; Fusion Joint — Plasticity has none): ① pick the joint origin on the moving body, ② on the fixed body
 //    (the hovered edge / face shows its origin glyph: z blue, x red), ③ choose the kind (R rigid · V revolute · S slider ·
 //    C cylindrical · P pin-slot · L planar · B ball), drag the values, F flips, Enter applies. Two entities picked beforehand
@@ -434,6 +451,7 @@ struct DraftingWorkspaceState
     DraftingSectionSession                Section        = {};                               // [-]   - Alt+S: section plane, caps, exact figures
     DraftingDrawingSheetSession           DrawingSheet   = {};                               // [-]   - Alt+D: paper, views, dimensions, export
     DraftingJointSession                  Joint          = {};                               // [-]   - Alt+J: joint card, origin glyphs, preview
+    DraftingExchangeSession               Exchange       = {};                               // [-]   - Import… / Export…: STEP and STL files
     DraftingParameterDrag                 ParameterDrag  = {};                               // [-]   - Step card: dragged joint value
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets

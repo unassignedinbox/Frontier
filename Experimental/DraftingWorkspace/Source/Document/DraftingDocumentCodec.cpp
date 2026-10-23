@@ -241,6 +241,11 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("PlacementShift", EncodeVector(Step.Placement.Shift));
         if (!Step.Source.empty()) Table.insert("Source", Step.Source);                     // Paste: the copy-time step
         break;
+    case FeatureStepKind::Import:
+        // The kernel's canonical STEP text of the body (millimetres) and the model unit it is read at.
+        Table.insert("Exchange", Step.Exchange);
+        Table.insert("ExchangeUnit", Step.ExchangeUnit);
+        break;
     case FeatureStepKind::Pipe:
         // The path: a sketch (Profile) or a SpaceCurve (Sections); the radius is Size.
         if (!Step.Profile.empty()) Table.insert("Profile", Step.Profile);
@@ -574,7 +579,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Joint)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Import)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -637,6 +642,12 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
                 };
                 Joint.AngleRange = Range("JointAngleRange");
                 Joint.SlideRange = Range("JointSlideRange");
+            }
+            if (Step.Kind == FeatureStepKind::Import)
+            {
+                Step.Exchange     = View["Exchange"].value_or(std::string{});
+                Step.ExchangeUnit = View["ExchangeUnit"].value_or(1.0);
+                if (Step.Exchange.empty()) { File.Refusal = Step.Label + " has no embedded STEP text"; return File; }
             }
             Step.References = DecodeReferences(View["References"]);
             if (View["EndSize"])
