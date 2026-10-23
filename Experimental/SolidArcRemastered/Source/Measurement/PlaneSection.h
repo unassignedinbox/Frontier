@@ -37,6 +37,15 @@ struct PlaneSectionMeasure
     std::string                       Refusal       = {};                                    // [-]    - Empty on success
 };
 
+// 📝 The kept piece of a half-space cut and its cap faces (planar, on the plane), in the partition that was cut.
+struct HalfSpaceCut
+{
+    BodyToken              Body    = {};                                                     // [-]   - Piece on the +Plane.ZAxis side
+    std::vector<FaceToken> Caps    = {};                                                     // [-]   - Its faces lying on the plane
+    double                 Reach   = 0.0;                                                    // [len] - Body radius about the plane origin
+    std::string            Refusal = {};                                                     // [-]   - "Section: …" when refused
+};
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
@@ -47,6 +56,10 @@ struct PlaneSectionMeasure
 //    moments come from IntegrateFaceSurface, the perimeter from MeasureEdgeLength. Refused for sheets, a plane that
 //    misses the body or touches it only along a face (no area), or when the cut is refused. OutlineStep bounds the
 //    chord of the outline polylines (0 → 1 % of the body reach).
+// 💡 Cuts Body in Partition (callers pass a scratch copy: the partition gains the tool and both pieces) by the half-space on
+//    the +Plane.ZAxis side and finds the cap faces. Shared by SectionBody and the drawing section views.
+[[nodiscard]] HalfSpaceCut CutBodyAtPlane(ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane);
+
 [[nodiscard]] PlaneSectionMeasure SectionBody(const ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane, double OutlineStep = 0.0);
 
 } // namespace Frontier::SolidArcRemastered

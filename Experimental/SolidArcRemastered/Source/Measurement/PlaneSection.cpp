@@ -25,6 +25,47 @@ namespace Frontier::SolidArcRemastered
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
+HalfSpaceCut CutBodyAtPlane(ModelPartition& Scratch, BodyToken Body, const OrthonormalFrame& Plane)
+{
+    HalfSpaceCut Kept;
+    bool SolidCondition = false;
+    for (RegionToken Region : Scratch.Bodies.Resolve(Body).Regions) SolidCondition = SolidCondition || Scratch.Regions.Resolve(Region).Material == RegionMaterial::Solid;
+    if (!SolidCondition) { Kept.Refusal = "Section: the body is a sheet"; return Kept; }
+
+    // ---- ① the cut: a chain along Plane.YAxis on the plane through Plane.XAxis; its left side is +Plane.ZAxis
+    const double   Reach   = MeasureCutReach(Scratch, Body, Plane);                          // [len] - Body radius about the origin
+    Kept.Reach = Reach;
+    const OrthonormalFrame Through = { Plane.Origin, Plane.YAxis, Plane.ZAxis, Plane.XAxis };
+    ProfileSegment Chain;
+    Chain.Kind  = ProfileSegmentKind::Line;
+    Chain.Start = { -2.0 * Reach, 0.0 };
+    Chain.End   = { 2.0 * Reach, 0.0 };
+    Chain.Name  = "Section";
+    const SketchProfile Profile = CloseCutChain({ Chain }, Reach);
+    if (!Profile.Refusal.empty()) { Kept.Refusal = "Section: " + Profile.Refusal; return Kept; }
+    const BodyCutOutcome Cut = CutBody(Scratch, Body, Profile, Through, Reach);
+    // 📝 A cut that keeps nothing on the +ZAxis side is a plane beyond the body (or on a face whose normal points away).
+    if (!Cut.Refusal.empty() && Cut.Refusal.find("misses") != std::string::npos) { Kept.Refusal = "Section: the plane misses the body"; return Kept; }
+    if (!Cut.Refusal.empty()) { Kept.Refusal = "Section: " + Cut.Refusal.substr(Cut.Refusal.rfind("Cut: ", 0) == 0 ? 5 : 0); return Kept; }
+    if (!Cut.Inside.Refusal.empty() || !Cut.Inside.Body.PresentCondition()) { Kept.Refusal = "Section: the plane misses the body"; return Kept; }
+    Kept.Body = Cut.Inside.Body;
+
+    // ---- ② cap faces: planar, normal ∥ Plane.ZAxis, on the plane
+    const double Tolerance = 1.0e-9 * std::max(1.0, Reach);                                  // [len] - On-plane test
+    for (FaceToken Face : Scratch.CollectInventory(Cut.Inside.Body).Faces)
+    {
+        const FaceProfile& Profile = Scratch.Faces.Resolve(Face);
+        if (!Profile.Surface.PresentCondition()) continue;
+        const auto* Flat = std::get_if<PlaneSurface>(&Scratch.Surfaces.Resolve(Profile.Surface));
+        if (Flat == nullptr) continue;
+        if (Length(Cross(Flat->Frame.ZAxis, Plane.ZAxis)) > 1.0e-9) continue;
+        if (std::fabs(Dot(Flat->Frame.Origin - Plane.Origin, Plane.ZAxis)) > Tolerance) continue;
+        Kept.Caps.push_back(Face);
+    }
+    if (Kept.Caps.empty()) Kept.Refusal = "Section: the plane misses the body";
+    return Kept;
+}
+
 PlaneSectionMeasure SectionBody(const ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane, double OutlineStep)
 {
     const auto          Start = std::chrono::steady_clock::now();
@@ -34,41 +75,12 @@ PlaneSectionMeasure SectionBody(const ModelPartition& Partition, BodyToken Body,
         Measure.Milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count();
         return Measure;
     };
-    bool SolidCondition = false;
-    for (RegionToken Region : Partition.Bodies.Resolve(Body).Regions) SolidCondition = SolidCondition || Partition.Regions.Resolve(Region).Material == RegionMaterial::Solid;
-    if (!SolidCondition) { Measure.Refusal = "Section: the body is a sheet"; return Finish(); }
-
-    // ---- ① the cut: a chain along Plane.YAxis on the plane through Plane.XAxis; its left side is +Plane.ZAxis
-    ModelPartition Scratch = Partition;
-    const double   Reach   = MeasureCutReach(Scratch, Body, Plane);                          // [len] - Body radius about the origin
-    const OrthonormalFrame Through = { Plane.Origin, Plane.YAxis, Plane.ZAxis, Plane.XAxis };
-    ProfileSegment Chain;
-    Chain.Kind  = ProfileSegmentKind::Line;
-    Chain.Start = { -2.0 * Reach, 0.0 };
-    Chain.End   = { 2.0 * Reach, 0.0 };
-    Chain.Name  = "Section";
-    const SketchProfile Profile = CloseCutChain({ Chain }, Reach);
-    if (!Profile.Refusal.empty()) { Measure.Refusal = "Section: " + Profile.Refusal; return Finish(); }
-    const BodyCutOutcome Cut = CutBody(Scratch, Body, Profile, Through, Reach);
-    // 📝 A cut that keeps nothing on the +ZAxis side is a plane beyond the body (or on a face whose normal points away).
-    if (!Cut.Refusal.empty() && Cut.Refusal.find("misses") != std::string::npos) { Measure.Refusal = "Section: the plane misses the body"; return Finish(); }
-    if (!Cut.Refusal.empty()) { Measure.Refusal = "Section: " + Cut.Refusal.substr(Cut.Refusal.rfind("Cut: ", 0) == 0 ? 5 : 0); return Finish(); }
-    if (!Cut.Inside.Refusal.empty() || !Cut.Inside.Body.PresentCondition()) { Measure.Refusal = "Section: the plane misses the body"; return Finish(); }
-
-    // ---- ② cap faces: planar, normal ∥ Plane.ZAxis, on the plane
-    const double Tolerance = 1.0e-9 * std::max(1.0, Reach);                                  // [len] - On-plane test
-    std::vector<FaceToken> Caps;
-    for (FaceToken Face : Scratch.CollectInventory(Cut.Inside.Body).Faces)
-    {
-        const FaceProfile& Profile = Scratch.Faces.Resolve(Face);
-        if (!Profile.Surface.PresentCondition()) continue;
-        const auto* Flat = std::get_if<PlaneSurface>(&Scratch.Surfaces.Resolve(Profile.Surface));
-        if (Flat == nullptr) continue;
-        if (Length(Cross(Flat->Frame.ZAxis, Plane.ZAxis)) > 1.0e-9) continue;
-        if (std::fabs(Dot(Flat->Frame.Origin - Plane.Origin, Plane.ZAxis)) > Tolerance) continue;
-        Caps.push_back(Face);
-    }
-    if (Caps.empty()) { Measure.Refusal = "Section: the plane misses the body"; return Finish(); }
+    ModelPartition     Scratch = Partition;
+    const HalfSpaceCut Cut     = CutBodyAtPlane(Scratch, Body, Plane);
+    if (!Cut.Refusal.empty()) { Measure.Refusal = Cut.Refusal; return Finish(); }
+    const double                  Reach     = Cut.Reach;
+    const double                  Tolerance = 1.0e-9 * std::max(1.0, Reach);                // [len] - On-plane test
+    const std::vector<FaceToken>& Caps      = Cut.Caps;
 
     // ---- ③ area, centroid and second moments in plane coordinates
     const auto U = [&](Vector3 Position) { return Dot(Position - Plane.Origin, Plane.XAxis); };

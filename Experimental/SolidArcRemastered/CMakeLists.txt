@@ -86,6 +86,7 @@ add_library(SolidArcRemastered STATIC
     Source/Measurement/MassProperties.cpp
     Source/Measurement/MinimumDistance.cpp
     Source/Measurement/PlaneSection.cpp
+    Source/Drawing/DrawingProjection.cpp
     Source/Audit/ModelAudit.cpp
     Source/Audit/IntersectionAudit.cpp
     Source/Audit/TessellationAudit.cpp
@@ -177,6 +178,8 @@ add_executable(MeasureValidation Validation/MeasureValidation.cpp)
 target_link_libraries(MeasureValidation PRIVATE SolidArcRemastered)
 add_executable(AssemblyValidation Validation/AssemblyValidation.cpp)
 target_link_libraries(AssemblyValidation PRIVATE SolidArcRemastered)
+add_executable(DrawingValidation Validation/DrawingValidation.cpp)
+target_link_libraries(DrawingValidation PRIVATE SolidArcRemastered)
 add_executable(FreeformBlendValidation Validation/FreeformBlendValidation.cpp)
 target_link_libraries(FreeformBlendValidation PRIVATE SolidArcRemastered)
 
@@ -207,5 +210,6 @@ add_test(NAME SweepValidation COMMAND SweepValidation)
 add_test(NAME ReplayValidation COMMAND ReplayValidation)
 add_test(NAME MeasureValidation COMMAND MeasureValidation)
 add_test(NAME AssemblyValidation COMMAND AssemblyValidation)
+add_test(NAME DrawingValidation COMMAND DrawingValidation)
 add_test(NAME FreeformBlendValidation COMMAND FreeformBlendValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)
