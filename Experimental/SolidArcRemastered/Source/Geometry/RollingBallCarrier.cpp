@@ -527,7 +527,19 @@ double MeasureRollingBallCurvature(const RollingBallSurface& Surface, double �
     const double  κ     = Speed > 0.0 ? Length(Turn) / Speed : 0.0;                          // [1/len] - Spine curvature
     const double  Ball  = CanalCondition(Definition) ? RadiusAt(Definition, Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period)) : Definition.Radius;   // [len] - r(𝑢)
     const double  Along = 1.0 - Ball * κ;                                                    // [-] - Inner-side stretch
-    if (ChordCondition(Definition)) return Along > 1.0e-12 ? κ / Along : INFINITY;           // Straight rulings: only the rails bend
+    if (ChordCondition(Definition))
+    {
+        // 📝 Straight rulings: only the rails bend, so the peak is the larger rail curvature, each by the same tangent-turn
+        //    stencil as the spine. The canal bound κ / (1 − r·κ) assumes a rail on the inner side of the spine's turn; a
+        //    convex wedge's feet lie outside it, and that bound went infinite on a regular chamfer whose spine radius
+        //    dropped below r (setback 0.25 on a wall of radius 0.49), which drove edge sampling to its depth limit.
+        const ChordRuling Before = ResolveRuling(Definition, Low), After = ResolveRuling(Definition, High);
+        const ChordRuling Here   = ResolveRuling(Definition, Clamp(𝑢, Definition.SpineLow, Definition.SpineHigh, Definition.Period));
+        const double NearArc = Length(Here.NearRate) * (High - Low), FarArc = Length(Here.FarRate) * (High - Low);   // [len] - Rail stencil lengths
+        const double NearBend = NearArc > 0.0 ? Length(Normalize(After.NearRate) - Normalize(Before.NearRate)) / NearArc : 0.0;
+        const double FarBend  = FarArc > 0.0 ? Length(Normalize(After.FarRate) - Normalize(Before.FarRate)) / FarArc : 0.0;
+        return std::max(NearBend, FarBend);
+    }
     return std::max(1.0 / Ball, Along > 1.0e-12 ? κ / Along : INFINITY);
 }
 

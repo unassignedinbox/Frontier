@@ -877,6 +877,89 @@ NurbsSurface MapNurbsSurface(const NurbsSurfaceDefinition& Definition, const Poi
     return NurbsSurface{ std::move(Image) };
 }
 
+namespace
+{
+    using HomogeneousPole = std::array<double, 4>;                                           // [-] - (w·P, w)
+
+    // Blossom of the polynomial on span [Knots[Span], Knots[Span + 1]] (poles Span − p … Span) at Arguments (p values).
+    [[nodiscard]] HomogeneousPole BlossomSpan(const std::vector<double>& Knots, int Degree, int Span, const std::vector<HomogeneousPole>& Poles, const std::vector<double>& Arguments) noexcept
+    {
+        std::vector<HomogeneousPole> Work(Poles.begin() + (Span - Degree), Poles.begin() + (Span + 1));
+        for (int Level = 1; Level <= Degree; ++Level)
+        {
+            for (int Index = Degree; Index >= Level; --Index)
+            {
+                const int    Knot  = Span - Degree + Index;                                 // [-] - j
+                const double Width = Knots[Knot + Degree + 1 - Level] - Knots[Knot];
+                const double Alpha = Width > 0.0 ? (Arguments[Level - 1] - Knots[Knot]) / Width : 0.0;
+                for (int Axis = 0; Axis < 4; ++Axis) Work[Index][Axis] = (1.0 - Alpha) * Work[Index - 1][Axis] + Alpha * Work[Index][Axis];
+            }
+        }
+        return Work[Degree];
+    }
+
+    // Re-expresses one open B-spline row on the Grown knots (end knots moved outward): the first / last p poles become
+    // the blossoms of the end spans at the new knot windows; every other pole is kept.
+    void ExtendRow(const std::vector<double>& Knots, const std::vector<double>& Grown, int Degree, std::vector<HomogeneousPole>& Poles)
+    {
+        const int Count = static_cast<int>(Poles.size());
+        int First = Degree, Last = Count - 1;                                                // [-] - End spans (non-empty)
+        while (First + 1 < Count && !(Knots[First + 1] > Knots[First])) ++First;
+        while (Last > Degree && !(Knots[Last + 1] > Knots[Last])) --Last;
+        std::vector<HomogeneousPole> Result = Poles;
+        for (int Index = 0; Index < Degree; ++Index)
+        {
+            const std::vector<double> Head(Grown.begin() + Index + 1, Grown.begin() + Index + 1 + Degree);
+            Result[Index] = BlossomSpan(Knots, Degree, First, Poles, Head);
+            const std::vector<double> Tail(Grown.begin() + (Count - 1 - Index) + 1, Grown.begin() + (Count - 1 - Index) + 1 + Degree);
+            Result[Count - 1 - Index] = BlossomSpan(Knots, Degree, Last, Poles, Tail);
+        }
+        Poles.swap(Result);
+    }
+}
+
+std::optional<NurbsSurface> ExtendNurbsSurface(const NurbsSurfaceDefinition& Definition, double Extension)
+{
+    auto Image = std::make_shared<NurbsSurfaceDefinition>(Definition);
+    for (const bool AlongU : { true, false })
+    {
+        if ((AlongU ? Image->PeriodU : Image->PeriodV) > 0.0) continue;
+        const int            Degree = AlongU ? Image->DegreeU : Image->DegreeV;
+        const int            Count  = AlongU ? Image->CountU : Image->CountV;
+        const int            Across = AlongU ? Image->CountV : Image->CountU;
+        std::vector<double>& Knots  = AlongU ? Image->KnotsU : Image->KnotsV;
+        const double         Grow   = Extension * (Knots[Knots.size() - 1 - Degree] - Knots[Degree]);   // [-] - Parameter growth per end
+        const std::vector<double> Original = Knots;
+        std::vector<double>       Grown    = Knots;
+        for (int Index = 0; Index <= Degree; ++Index)
+        {
+            Grown[Index]                    = Original[Degree] - Grow;
+            Grown[Grown.size() - 1 - Index] = Original[Original.size() - 1 - Degree] + Grow;
+        }
+        for (int Line = 0; Line < Across; ++Line)
+        {
+            std::vector<HomogeneousPole> Row(Count);
+            for (int Index = 0; Index < Count; ++Index)
+            {
+                const size_t Slot   = AlongU ? static_cast<size_t>(Index) * Image->CountV + Line : static_cast<size_t>(Line) * Image->CountV + Index;
+                const double Weight = Image->Weights[Slot];
+                Row[Index] = { Image->Poles[Slot].X * Weight, Image->Poles[Slot].Y * Weight, Image->Poles[Slot].Z * Weight, Weight };
+            }
+            ExtendRow(Original, Grown, Degree, Row);
+            for (int Index = 0; Index < Count; ++Index)
+            {
+                const size_t Slot = AlongU ? static_cast<size_t>(Index) * Image->CountV + Line : static_cast<size_t>(Line) * Image->CountV + Index;
+                if (!(Row[Index][3] > 0.0) || !std::isfinite(Row[Index][3])) return std::nullopt;   // A rational end span turned over
+                Image->Weights[Slot] = Row[Index][3];
+                Image->Poles[Slot]   = { Row[Index][0] / Row[Index][3], Row[Index][1] / Row[Index][3], Row[Index][2] / Row[Index][3] };
+            }
+        }
+        Knots = Grown;
+    }
+    PrepareSurface(*Image);
+    return NurbsSurface{ std::move(Image) };
+}
+
 NurbsSurface ConstructNurbsRevolution(const NurbsCurveDefinition& Profile, const OrthonormalFrame& Axis, double StartAngle, double Sweep)
 {
     // 📝 Every ring pole is an affine image of the profile pole Q = O + a·X + b·Y + h·Z: rotated by the joint angle θₖ

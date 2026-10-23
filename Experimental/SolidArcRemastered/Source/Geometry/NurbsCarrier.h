@@ -181,6 +181,13 @@ struct NurbsBasisSample
 
 [[nodiscard]] NurbsSurface            MapNurbsSurface(const NurbsSurfaceDefinition& Definition, const PointMap& Map);
 
+// 📝 Natural extension: every open (non-periodic) direction grows by Extension × its domain length at both ends, the end
+//    spans continued as the same polynomials (blossoming: the new end poles are Qᵢ = blossom of the end span at
+//    (s × (p − i), k_{p+1} … k_{p+i}) in homogeneous form). Inside the old domain the surface and its chart are unchanged
+//    — a blend can then roll past the end of a support (Parasolid's surface extension) while its rails stay on the face.
+//    nullopt when a rational end span would turn a weight non-positive.
+[[nodiscard]] std::optional<NurbsSurface> ExtendNurbsSurface(const NurbsSurfaceDefinition& Definition, double Extension);
+
 // 📝 Surface of revolution: the profile (in any half-plane through the axis) swept by exact rational circles about
 //    Axis.ZAxis, 𝑢 counter-clockwise from Axis.XAxis + StartAngle over Sweep, 𝑢-domain [StartAngle, StartAngle + Sweep];
 //    the profile's τ becomes 𝑣. Poles on the axis collapse to a point row (sphere poles, cone apex).

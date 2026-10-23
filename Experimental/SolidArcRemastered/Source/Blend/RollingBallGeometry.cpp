@@ -31,6 +31,7 @@ namespace
 
     constexpr double ResidualAllowance = 1.0e-9;                                             // [len/len] - Relative to max(1, size)
     constexpr double FoldMarginFloor   = 0.02;                                               // [-]       - min(1 − d·κ) a NURBS offset must keep
+    constexpr double SupportExtension  = 0.25;                                               // [-]       - NURBS support growth per end (× domain) on the ball-law path
     constexpr int    ResidualSamples   = 24;                                                 // [-]       - Sections sampled per sheet
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -346,13 +347,33 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
     if ((Settings.Profile == BlendProfile::Chamfer && (VariableWedge || !ConicEdge)) || VariableSize)
     {
         if (Override.Side >= 0) return Refuse("chamfer on a curved edge with a smooth overflow (🚧)");
+        // ⚠️ Fold guard, as ③: the largest ball along the edge must keep every NURBS support's parallel offset regular
+        //    (1 − r·κ ≥ the floor on the face) — past a curvature radius the law's Newton marches into the fold.
+        const double Largest = std::max(Settings.Size, Settings.EndSize.value_or(Settings.Size)) * (Settings.Profile == BlendProfile::Chamfer ? std::tan(0.5 * Sheet.Dihedral) : 1.0);   // [len] - Largest r
         for (int Side = 0; Side < 2; ++Side)
         {
-            if (std::holds_alternative<NurbsSurface>(Supports[Side])) return Refuse(VariableSize ? "variable size on a NURBS support (closed-form foot needed for the ball law, 🚧)"
-                                                                                                 : "chamfer on a NURBS support (closed-form foot needed for the chord carrier, 🚧)");
+            if (!std::holds_alternative<NurbsSurface>(Supports[Side])) continue;
+            const std::optional<SurfaceGeometry> Offset = OffsetSurface(Supports[Side], (Sheet.ConvexCondition ? -1.0 : 1.0) * OrientationSign(Senses[Side]) * Largest);
+            const auto* Parallel = Offset ? std::get_if<ParallelSurface>(&*Offset) : nullptr;
+            if (!Parallel) continue;
+            const ParameterWindow Window = DescribeFaceDomain(Partition, Sheet.Faces[Side]).Window;
+            const ParallelFold    Fold   = MeasureParallelFold(*Parallel, Window.Low, Window.High);
+            if (!(Fold.Margin > FoldMarginFloor)) return Refuse("size exceeds the curvature radius of the NURBS support (fold margin " + std::to_string(Fold.Margin) + ")");
+        }
+        // 📝 NURBS supports roll on their natural extension (end spans continued, chart unchanged inside): the spine runs
+        //    past the edge ends for the cap sections, and there the feet must stay on a smooth surface, not on the
+        //    clamped boundary of the patch.
+        for (int Side = 0; Side < 2; ++Side)
+        {
+            if (const auto* Spline = std::get_if<NurbsSurface>(&Supports[Side]))
+            {
+                const std::optional<NurbsSurface> Extended = ExtendNurbsSurface(*Spline->Definition, SupportExtension);
+                if (!Extended) return Refuse("the NURBS support cannot be extended past its edge (a rational end span turns over)");
+                Supports[Side] = *Extended;
+            }
         }
         const auto* EdgeTrace = std::get_if<IntersectionCurve>(&Carrier);
-        const bool  LawEdge   = std::holds_alternative<EllipticalArc>(Carrier) || (EdgeTrace && !EdgeTrace->Trace->Law) || (VariableSize && ConicEdge);
+        const bool  LawEdge   = std::holds_alternative<EllipticalArc>(Carrier) || std::holds_alternative<NurbsCurve>(Carrier) || (EdgeTrace && !EdgeTrace->Trace->Law) || (VariableSize && ConicEdge);
         if (!LawEdge) return Refuse("chamfer on a variable-angle edge of this carrier kind (🚧)");
         if (VariableSize && Profile.Start == Profile.End) return Refuse("variable size on a closed edge (the size would jump at its only vertex)");
         BallLaw Law;
@@ -367,6 +388,24 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
         const CarrierRange EdgeRange = MeasureCarrierRange(Carrier);
         double SpineLow = EdgeRange.Low, SpineHigh = EdgeRange.High;                          // [-] - Law spine range (edge τ)
         bool   SpineClosed = EdgeRange.Period > 0.0;
+        if (!VariableSize && std::holds_alternative<NurbsCurve>(Carrier) && Profile.Start != Profile.End)
+        {
+            // 💡 An open NURBS edge: the spine covers the edge plus a margin at both ends — an open carrier continues
+            //    polynomially past its ends (like its extended supports), a periodic one (a closed sketch curve cut open)
+            //    by its own next turn, of which the spine takes no more than the edge needs (≤ ½ of the free period, as
+            //    for variable sizes). An end ruling lying exactly in the third face (an edge meeting it square) is then an
+            //    interior crossing, not one on the boundary of the search window.
+            const double Span   = Profile.IntervalHigh - Profile.IntervalLow;                 // [-]   - Edge interval
+            const double Speed  = std::max(Length(EvaluateCurve(Carrier, Middle).Derivative), 1.0e-300);   // [len] - |E′| at mid-edge
+            double       Margin = std::min(0.25 * Span, 8.0 * Settings.Size / Speed);
+            if (EdgeRange.Period > 0.0) Margin = std::min(Margin, 0.5 * (0.98 * EdgeRange.Period - Span));
+            if (Margin > 0.02 * Span)
+            {
+                SpineLow    = Profile.IntervalLow - Margin;
+                SpineHigh   = Profile.IntervalHigh + Margin;
+                SpineClosed = false;
+            }
+        }
         if (VariableSize)
         {
             // 📝 Size(t) linear in the edge parameter (arc length on lines and circles), Size at the start vertex, EndSize at
