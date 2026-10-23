@@ -235,14 +235,27 @@ namespace
             const Vector2 Bottom = ExtremePoint(View, 1, true, VerticalSide);
             const Vector2 Upper  = ExtremePoint(View, 1, false, VerticalSide);
             if (Slot == ViewSlot::Front) { Plan(false, Left, Right); Plan(true, Bottom, Upper); }
+            // A full circle spanning the outline along an axis (a cylinder seen end-on) is sized by its ⌀ alone: neither
+            // the overall size nor its position is repeated along that axis.
+            const double Tolerance = 1.0e-9 * std::max(1.0, View.Reach);
+            const auto Spans = [&](const CircleFit& Circle, bool Vertical)
+            {
+                const double Centre = Vertical ? Circle.Centre.Y : Circle.Centre.X;
+                const double Low = Vertical ? Bottom.Y : Left.X, High = Vertical ? Upper.Y : Right.X;
+                // Nothing reaches past the circle on either side (sampled circle points lie inside it, so equality is not
+                // the test): the circle, being part of the outline, then is its extent.
+                return FullCondition(Circle) && Low >= Centre - Circle.Radius - Tolerance && High <= Centre + Circle.Radius + Tolerance;
+            };
+            bool SpannedVertically = false;
+            for (const CircleFit& Circle : Circles) SpannedVertically = SpannedVertically || Spans(Circle, true);
             if (Slot == ViewSlot::Top)
             {
-                Plan(true, Bottom, Upper);
+                if (!SpannedVertically) Plan(true, Bottom, Upper);
                 for (const CircleFit& Circle : Circles)
                 {
                     if (!FullCondition(Circle)) continue;
-                    Plan(false, Left, Circle.Centre);
-                    Plan(true, Bottom, Circle.Centre);
+                    if (!Spans(Circle, false)) Plan(false, Left, Circle.Centre);
+                    if (!Spans(Circle, true)) Plan(true, Bottom, Circle.Centre);
                 }
             }
             // Linear dimensions: shorter ones nearer the outline, one tier each.
@@ -253,13 +266,13 @@ namespace
                 std::stable_sort(Chosen.begin(), Chosen.end(), [](const LinearPlan& First, const LinearPlan& Second) { return First.Value < Second.Value; });
                 for (size_t Tier = 0; Tier < Chosen.size(); ++Tier)
                 {
-                    const LinearPlan& Chosen0 = Chosen[Tier];
+                    const LinearPlan& Selected = Chosen[Tier];
                     DrawingDimension Dimension;
                     Dimension.Kind   = Vertical ? DrawingDimensionKind::Vertical : DrawingDimensionKind::Horizontal;
-                    Dimension.Value  = Chosen0.Value;
-                    Dimension.Text   = FormatDimensionValue(Chosen0.Value * Unit);
-                    Dimension.First  = Local(Chosen0.First);
-                    Dimension.Second = Local(Chosen0.Second);
+                    Dimension.Value  = Selected.Value;
+                    Dimension.Text   = FormatDimensionValue(Selected.Value * Unit);
+                    Dimension.First  = Local(Selected.First);
+                    Dimension.Second = Local(Selected.Second);
                     const double Offset = FirstTier + TierSpacing * static_cast<double>(Tier);
                     const Vector2 A = Dimension.First, B = Dimension.Second;
                     if (!Vertical)
