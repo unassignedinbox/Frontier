@@ -15,6 +15,7 @@
 #include "UI/SolidArc/Document/SolidArcMeasurement.h"
 #include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Interface/SolidArcOptions.h"
+#include "UI/SolidArc/Interface/SolidArcOutliner.h"
 #include "UI/SolidArc/Viewport/SolidArcCamera.h"
 #include "UI/SolidArc/Viewport/SolidArcRasterization.h"
 #include "UI/SolidArc/Viewport/SolidArcSnapping.h"
@@ -466,6 +467,10 @@ struct SolidArcWorkspaceState
     SolidArcConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
     bool                                  ConstructOpen  = false;                            // [-]   - Construct dialog requested
     bool                                  ConstructShown = false;                            // [-]   - Construct dialog drawn this frame
+    bool                                  ConstructMenuRequest = false;                      // [-]   - Construct catalogue popover requested
+    SolidArcOutlinerState                 Outliner       = {};                               // [-]   - Scene search, filter chips, compact / folded
+    bool                                  HistoryFoldedEnabled = false;                      // [-]   - History strip hidden (Construction history)
+    size_t                                HistoryCount   = 0;                                // [-]   - Steps when the strip last scrolled to the newest
     GeometryProcessing::FaceOperationKind           FaceVerb       = GeometryProcessing::FaceOperationKind::Push; // [-]  - Face-edit verb
     double                                FaceAmount     = 0.25;                             // [-]   - Face-edit amount (by verb)
     std::string                           FocusedStep    = {};                               // [-]   - Outliner row (step label)

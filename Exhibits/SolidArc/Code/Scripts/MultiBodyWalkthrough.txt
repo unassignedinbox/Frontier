@@ -9,6 +9,8 @@
 frames 3
 expect bodies == 1
 expect steps == 8
+click @ConstructLauncher
+frames 2
 click @ConstructBlock
 frames 2
 click @CombinationSeparate
@@ -44,6 +46,8 @@ frames 3
 capture 96MultiBodyNew
 
 # ② R in the Construct dialog: a cylinder r 0.4 h 1.5 as a third body, standing through Block2 (bodies may overlap)
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 key R

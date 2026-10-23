@@ -172,6 +172,8 @@ expect sound == 1
 capture 11ParameterEdit
 
 # ⑪ construct: a through-hole cylinder (Difference) from the Outliner tile
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 click @CombinationDifference

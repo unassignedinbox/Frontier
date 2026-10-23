@@ -101,6 +101,8 @@ capture 84BodySolid
 
 # ⑥ wheel arches: Construct · Cylinder · Axis x · Difference, r 0.37 at each wheel centre
 # front right
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 click @CombinationDifference
@@ -131,6 +133,8 @@ expect faces == 6
 expect volume > 7.04
 expect volume < 7.07
 # front left
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 click @CombinationDifference
@@ -160,6 +164,8 @@ expect faces == 8
 expect volume > 6.95
 expect volume < 6.97
 # rear right
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 click @CombinationDifference
@@ -189,6 +195,8 @@ expect faces == 10
 expect volume > 6.86
 expect volume < 6.89
 # rear left
+click @ConstructLauncher
+frames 2
 click @ConstructCylinder
 frames 2
 click @CombinationDifference

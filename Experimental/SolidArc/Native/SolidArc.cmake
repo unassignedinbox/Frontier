@@ -32,7 +32,7 @@ foreach(Witness imgui/backends/imgui_impl_vulkan.cpp tomlpp/include/toml++/toml.
         message(FATAL_ERROR "Missing ${SOLIDARC_PACKAGES}/${Witness} — run: python Experimental/SolidArc/Native/Tooling/PrepareSolidArcDependencies.py")
     endif()
 endforeach()
-foreach(Required FrontierImGui)
+foreach(Required FrontierImGui FrontierInterface)
     if(NOT TARGET ${Required})
         message(FATAL_ERROR "SolidArc.cmake needs the ${Required} target before it is included")
     endif()
@@ -117,14 +117,16 @@ add_library(FrontierSolidArcUI STATIC
     ${SOLIDARC_UI}/Viewport/SolidArcSnapping.cpp
     ${SOLIDARC_UI}/Interface/SolidArcInterface.cpp
     ${SOLIDARC_UI}/Interface/SolidArcNavigation.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcOutliner.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcStyleSheet.cpp
     ${SOLIDARC_UI}/Interface/SolidArcFrame.cpp
     ${SOLIDARC_UI}/Interface/SolidArcOptions.cpp
     ${SOLIDARC_UI}/Interface/SolidArcScript.cpp
 )
 add_dependencies(FrontierSolidArcUI SolidArcShaderArchive)
 target_include_directories(FrontierSolidArcUI PUBLIC "${FRONTIER_ROOT}")
-target_link_libraries(FrontierSolidArcUI PUBLIC FrontierGeometryProcessing FrontierOrbitCamera SolidArcVolk SolidArcImGuiVulkan SolidArcTomlPlusPlus SolidArcStb)
-target_compile_definitions(FrontierSolidArcUI PRIVATE SOLIDARC_FONT_PATH="${SOLIDARC_FONT_FILE}")
+target_link_libraries(FrontierSolidArcUI PUBLIC FrontierGeometryProcessing FrontierOrbitCamera FrontierInterface SolidArcVolk SolidArcImGuiVulkan SolidArcTomlPlusPlus SolidArcStb)
+target_compile_definitions(FrontierSolidArcUI PRIVATE SOLIDARC_FONT_PATH="${SOLIDARC_FONT_FILE}" SOLIDARC_CONTENT_ROOT="${FRONTIER_ROOT}")
 if(NOT MSVC)
     target_compile_options(FrontierSolidArcUI PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
 endif()

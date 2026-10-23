@@ -9,8 +9,14 @@
 
 #include "UI/SolidArc/Interface/SolidArcInterface.h"
 #include "UI/SolidArc/Interface/SolidArcNavigation.h"
+#include "UI/SolidArc/Interface/SolidArcOutliner.h"
+#include "UI/SolidArc/Interface/SolidArcStyleSheet.h"
+
+#include "Engine/Interface/ControlKit.h"
+#include "Engine/Interface/IconPresentation.h"
 
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
+#include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
 
 #include <algorithm>
@@ -42,8 +48,13 @@ namespace
 constexpr float PanelGap        = 10.0f;                                                     // [px] - Between panels and at the frame edge
 constexpr float  ZebraStripeCount = 64.0f;                                                  // [-]   - Zebra stripes over the reflection angle (V8)
 constexpr double DeviationLimit   = 2.0e-4;                                                 // [len] - Red end of the deviation scale (fit tolerance)
-constexpr float HeaderHeight    = 48.0f;                                                     // [px] - Title row
-constexpr float DocumentHeight  = 38.0f;                                                     // [px] - Document tab row
+constexpr float HeaderHeight    = 68.0f;                                                     // [px] - HTML .app-header
+constexpr float DocumentHeight  = 34.0f;                                                     // [px] - HTML .document-bar
+constexpr float StatusHeight    = 31.0f;                                                     // [px] - HTML .status-bar
+constexpr float FrameMargin     = 12.0f;                                                     // [px] - HTML .workspace padding 0 12
+constexpr float ColumnGap       = 10.0f;                                                     // [px] - HTML .workspace gap
+constexpr float ActionBarHeight = 47.0f;                                                     // [px] - HTML .action-bar
+constexpr float HistoryHeight   = 85.0f;                                                     // [px] - HTML .history-strip
 constexpr float OutlinerWidth   = 300.0f;                                                    // [px] - Left column
 constexpr float InspectorWidth  = 330.0f;                                                    // [px] - Right column
 constexpr float ViewportBar     = 44.0f;                                                     // [px] - Viewport toolbar
@@ -4335,47 +4346,9 @@ SolidArcPickIntent PickIntentOf(const ImGuiIO& Io)
 //                                                    HEADER + DOCUMENT BAR
 //------------------------------------------------------------------------------------------------------------------------
 
-void DrawHeader(SolidArcWorkspaceState& State, const ImVec2 Frame)
+// The Open / Save / Import / Export path forms and the Examples list (on the header ID stack).
+void DrawPathPopups(SolidArcWorkspaceState& State)
 {
-    BeginPanel("Header", ImVec2(PanelGap, PanelGap), ImVec2(Frame.x - 2 * PanelGap, HeaderHeight), ImVec2(16, 10));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("SolidArc");
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted("GeometryProcessing · Vulkan · Slang");
-    ImGui::PopStyleColor();
-    ImGui::SameLine(0, 28);
-    if (PressButton(State, "New###HeaderNew")) StartNewDocument(State);
-    ImGui::SameLine();
-    if (PressButton(State, "Open…###HeaderOpen")) ImGui::OpenPopup("Open document");
-    ImGui::SameLine();
-    if (PressButton(State, "Save###HeaderSave"))
-    {
-        if (State.DocumentPath.empty()) ImGui::OpenPopup("Save document");
-        else SaveDocument(State, State.DocumentPath);
-    }
-    ImGui::SameLine();
-    if (PressButton(State, "Save as…###HeaderSaveAs")) ImGui::OpenPopup("Save document");
-    ImGui::SameLine();
-    if (PressButton(State, "Import…###HeaderImport")) ImGui::OpenPopup("Import");
-    ImGui::SameLine();
-    if (PressButton(State, "Export…###HeaderExport")) ImGui::OpenPopup("Export");
-    if (!State.PopupRequest.empty())
-    {
-        ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Ctrl+O / Ctrl+Shift+S (same ID stack as the buttons)
-        State.PopupRequest.clear();
-    }
-    ImGui::SameLine(0, 18);
-    if (PressButton(State, "Undo###HeaderUndo", ImVec2(0, 0), !State.Document.UndoEntries.empty() && !State.Bevel.ActiveCondition)) Undo(State);
-    ImGui::SameLine();
-    if (PressButton(State, "Redo###HeaderRedo", ImVec2(0, 0), !State.Document.RedoEntries.empty() && !State.Bevel.ActiveCondition)) Redo(State);
-
-    const std::string Device = Compose("%s · %.1f ms", State.DeviceLabel.c_str(), State.FrameMs);
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX() + 20, ImGui::GetWindowWidth() - ImGui::CalcTextSize(Device.c_str()).x - 18));
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted(Device.c_str());
-    ImGui::PopStyleColor();
-
     for (const char* Title : { "Open document", "Save document", "Import", "Export" })
     {
         const bool OpenCondition   = std::strcmp(Title, "Open document") == 0;
@@ -4419,44 +4392,229 @@ void DrawHeader(SolidArcWorkspaceState& State, const ImVec2 Frame)
             ImGui::EndPopup();
         }
     }
-    EndPanel();
+    if (ImGui::BeginPopup("Examples"))
+    {
+        ImGui::TextUnformatted("Examples");
+        ImGui::Separator();
+        if (ImGui::Selectable("Bracket specimen · block, hole, fillets###ExampleBracket"))
+        {
+            AdoptDocument(State, BuildSolidArcSpecimen(), true);
+            State.DocumentPath.clear();
+            Announce(State, "Example: Bracket specimen");
+        }
+        RegisterWidget(State, "ExampleBracket");
+        ImGui::EndPopup();
+    }
 }
 
+// 📝 HTML .button: 35 px pill, #222, #ffffff0d border, padding 0 16, 11 px; hover #292929 / #fff. Glyph (17 px, gap 8)
+//    leads the label when given. Returns the press; the rectangle is recorded under Key for the scripts.
+bool SheetButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const char* Key, float Left, float Centre, const char* Label,
+                 bool EnabledCondition = true, IconSymbol Glyph = IconSymbol::Count, float* Width = nullptr)
+{
+    const bool        GlyphCondition = Glyph != IconSymbol::Count;
+    const float       Extent         = 2.0f + 32.0f + Sheet.Measure(Label, 11.0f) + (GlyphCondition ? 17.0f + 8.0f : 0.0f);
+    const PlaneExtent Box            = Spanning(Left, Centre - 17.5f, Extent, 35.0f);
+    const SolidArcPress Press        = PressSolidArcRegion(State.Widgets, Key, Box, EnabledCondition);
+    const float       Opacity        = EnabledCondition ? 1.0f : 0.3f;                      // button:disabled
+    const ColorQuad   Ink            = ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xeeeeee), Opacity);
+    Sheet.Box(Box, ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0x292929 : 0x222222), Opacity), 24.0f, ControlKit::Faded(SolidArcWash(0x0d), Opacity));
+    float Cursor = Left + 17.0f;
+    if (GlyphCondition)
+    {
+        Sheet.Icon(Glyph, Cursor, Centre - 8.5f, 17.0f, Ink);
+        Cursor += 17.0f + 8.0f;
+    }
+    Sheet.Text(Cursor, Centre, 11.0f, Ink, Label);
+    if (Width) *Width = Extent;
+    return Press.ClickedCondition;
+}
+
+// 📝 HTML .text-button: 11 px #969696, padding 6 8, radius 16, gap 8, glyph 13 after the label when given.
+bool SheetTextButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const char* Key, float Right, float Centre, const char* Label,
+                     IconSymbol Glyph = IconSymbol::Count, float* Width = nullptr)
+{
+    const bool        GlyphCondition = Glyph != IconSymbol::Count;
+    const float       Extent         = 16.0f + Sheet.Measure(Label, 11.0f) + (GlyphCondition ? 8.0f + 13.0f : 0.0f);
+    const float       Height         = 11.0f * SolidArcStyleTokens::FontScale + 12.0f;
+    const PlaneExtent Box            = Spanning(Right - Extent, Centre - 0.5f * Height, Extent, Height);
+    const SolidArcPress Press        = PressSolidArcRegion(State.Widgets, Key, Box);
+    const ColorQuad   Ink            = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0x969696);
+    if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x292929), 16.0f);
+    const float Advance = Sheet.Text(Box.MinimumX + 8.0f, Centre, 11.0f, Ink, Label);
+    if (GlyphCondition) Sheet.Icon(Glyph, Box.MinimumX + 8.0f + Advance + 8.0f, Centre - 6.5f, 13.0f, Ink);
+    if (Width) *Width = Extent;
+    return Press.ClickedCondition;
+}
+
+// 📝 HTML .icon-button: circle of Size, glyph centred (#888, hover #292929 / #fff), optional hairline border.
+bool SheetIconButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const char* Key, float CentreX, float CentreY, float Size, IconSymbol Glyph,
+                     float GlyphSize, uint32_t BorderAlpha = 0, bool EnabledCondition = true)
+{
+    const PlaneExtent   Box   = Spanning(CentreX - 0.5f * Size, CentreY - 0.5f * Size, Size, Size);
+    const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Key, Box, EnabledCondition);
+    const float         Opacity = EnabledCondition ? 1.0f : 0.3f;
+    Sheet.Box(Box, Press.HoveredCondition ? SolidArcInk(0x292929) : SolidArcInk(0, 0.0f), 0.5f * Size,
+              BorderAlpha ? ControlKit::Faded(SolidArcWash(BorderAlpha), Opacity) : SolidArcInk(0, 0.0f));
+    Sheet.Icon(Glyph, CentreX - 0.5f * GlyphSize, CentreY - 0.5f * GlyphSize, GlyphSize,
+               ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : 0x888888), Opacity));
+    return Press.ClickedCondition;
+}
+
+// A borderless, transparent ImGui window over Extent that the sheet draws into (it owns the ID stack of its buttons).
+void BeginSheetWindow(const char* Name, ImVec2 Position, ImVec2 Size)
+{
+    ImGui::SetNextWindowPos(Position);
+    ImGui::SetNextWindowSize(Size);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::Begin(Name, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
+                                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse);
+}
+
+void EndSheetWindow()
+{
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+}
+
+// 📝 HTML .app-header (68 px, padding 0 24, gap 28): the document dock (tab + new), the Workspace / Examples nav, and the
+//    header end (Import, Export, Save as, kernel tag, help, Save). Opens the path popups on its own ID stack.
+void DrawHeader(SolidArcWorkspaceState& State, const ImVec2 Frame)
+{
+    BeginSheetWindow("Header", ImVec2(0, 0), ImVec2(Frame.x, HeaderHeight));
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const float Centre = 0.5f * HeaderHeight;
+
+    // Header end, laid out from the right: Save .solidarc, help, kernel tag, Save as…, Export…, Import… (gap 15).
+    float Right = Frame.x - 24.0f;
+    const auto Measured = [&](const char* Label, bool GlyphCondition) { return 2.0f + 32.0f + Sheet.Measure(Label, 11.0f) + (GlyphCondition ? 25.0f : 0.0f); };
+    Right -= Measured("Save .solidarc", true);
+    if (SheetButton(State, Sheet, "HeaderSave", Right, Centre, "Save .solidarc", true, IconSymbol::SolidArcSave))
+    {
+        if (State.DocumentPath.empty()) State.PopupRequest = "Save document";
+        else SaveDocument(State, State.DocumentPath);
+    }
+    Right -= 15.0f + 28.0f;
+    SheetIconButton(State, Sheet, "HeaderHelp", Right + 14.0f, Centre, 28.0f, IconSymbol::SolidArcHelp, 17.0f);
+    const char* Kernel = "Native CAD · Vulkan viewport";
+    Right -= 15.0f + Sheet.Measure(Kernel, 10.0f) + 12.0f;
+    Sheet.Surface().FillRectangle(Spanning(Right, Centre - 2.5f, 5.0f, 5.0f), SolidArcInk(0x34c759), 2.5f);
+    Sheet.Text(Right + 12.0f, Centre, 10.0f, SolidArcInk(0x919191), Kernel);
+    const struct { const char* Key; const char* Label; const char* Popup; } Ends[] = {
+        { "HeaderSaveAs", "Save as…", "Save document" }, { "HeaderExport", "Export…", "Export" }, { "HeaderImport", "Import…", "Import" } };
+    for (const auto& End : Ends)
+    {
+        Right -= 15.0f + Measured(End.Label, false);
+        if (SheetButton(State, Sheet, End.Key, Right, Centre, End.Label)) State.PopupRequest = End.Popup;
+    }
+    const float EndLeft = Right;
+
+    // Document dock (flex 1, 150 … 660 px): one tab (186 px trapezoid, 24 px, top padding 4) and the 24 px + button.
+    const float NavWidth = 2.0f * 46.0f + SolidArcSheet().Measure("Workspace", 12.0f) + Sheet.Measure("Examples", 12.0f) + 8.0f + 2.0f;
+    const float Dock     = std::clamp(EndLeft - 28.0f - NavWidth - 28.0f - 24.0f, 150.0f, 660.0f);
+    {
+        const float  TabLeft = 24.0f, TabTop = Centre - 14.0f + 4.0f;
+        const PlanePoint Corners[4] = { { TabLeft + 14.0f, TabTop }, { TabLeft + 186.0f - 14.0f, TabTop }, { TabLeft + 186.0f, TabTop + 24.0f }, { TabLeft, TabTop + 24.0f } };
+        Sheet.Surface().FillPolygon(Corners, 4, SolidArcInk(0x1a1a1a));                     // .document-tab.active
+        const float TabCentre = TabTop + 12.0f;
+        Sheet.Icon(IconSymbol::SolidArcBody, TabLeft + 20.0f, TabCentre - 6.5f, 13.0f, SolidArcInk(0xeeeeee));
+        const std::string Caption = State.Document.Title + ".solidarc";
+        const float LabelRight = TabLeft + 186.0f - 20.0f - 15.0f - 7.0f - (State.DirtyCondition ? 4.0f + 7.0f : 0.0f);
+        Sheet.TextClipped(TabLeft + 20.0f + 13.0f + 7.0f, TabCentre, LabelRight - (TabLeft + 40.0f), 11.0f, SolidArcInk(0xeeeeee), Caption.c_str());
+        if (State.DirtyCondition) Sheet.Surface().FillRectangle(Spanning(LabelRight + 7.0f, TabCentre - 2.0f, 4.0f, 4.0f), SolidArcInk(0x999999), 2.0f);
+        const float NewCentre = std::min(TabLeft + 186.0f, 24.0f + Dock - 24.0f) + 8.0f + 12.0f;
+        if (SheetIconButton(State, Sheet, "HeaderNew", NewCentre, Centre, 24.0f, IconSymbol::SolidArcPlus, 13.0f, 0x12)) StartNewDocument(State);
+    }
+
+    // Nav: Workspace (active, #242424, #ffffff0c border) and Examples; 38 px pills, padding 0 23, 12 px.
+    float Cursor = 24.0f + Dock + 28.0f;
+    for (const char* Label : { "Workspace", "Examples" })
+    {
+        const bool        Active = std::strcmp(Label, "Workspace") == 0;
+        const PlaneExtent Pill   = Spanning(Cursor, Centre - 19.0f, 46.0f + Sheet.Measure(Label, 12.0f) + (Active ? 2.0f : 0.0f), 38.0f);
+        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Nav") + Label, Pill);
+        Sheet.Box(Pill, Active ? SolidArcInk(0x242424) : Press.HoveredCondition ? SolidArcInk(0x292929) : SolidArcInk(0, 0.0f), 30.0f,
+                  Active ? SolidArcWash(0x0c) : SolidArcInk(0, 0.0f));
+        Sheet.Text(Pill.MinimumX + 23.0f + (Active ? 1.0f : 0.0f), Centre, 12.0f, SolidArcInk(Active ? 0xeaeaea : Press.HoveredCondition ? 0xffffff : 0x939393), Label);
+        if (Press.ClickedCondition && !Active) State.PopupRequest = "Examples";
+        Cursor = Pill.MaximumX + 8.0f;
+    }
+
+    if (!State.PopupRequest.empty())
+    {
+        ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Buttons, Ctrl+O / Ctrl+Shift+S
+        State.PopupRequest.clear();
+    }
+    DrawPathPopups(State);
+    EndSheetWindow();
+}
+
+// 📝 HTML .document-bar (34 px, padding 0 25, gap 9, 11 px): file glyph, title, .solidarc, dirty dot, divider, location;
+//    on the right Restore previous (when an earlier session left one) and Open document.
 void DrawDocumentBar(SolidArcWorkspaceState& State, const ImVec2 Frame)
 {
-    const float Top = PanelGap + HeaderHeight + PanelGap;
-    BeginPanel("Documents", ImVec2(PanelGap, Top), ImVec2(Frame.x - 2 * PanelGap, DocumentHeight), ImVec2(12, 6));
-    ImDrawList* Canvas = ImGui::GetWindowDrawList();
-    const std::string Tab = State.Document.Title + (State.DocumentPath.empty() ? "" : "  ·  " + State.DocumentPath);
-    const ImVec2 Origin = ImGui::GetCursorScreenPos();
-    const ImVec2 Extent(ImGui::CalcTextSize(Tab.c_str()).x + 44, DocumentHeight - 12);
-    Canvas->AddRectFilled(Origin, ImVec2(Origin.x + Extent.x, Origin.y + Extent.y), RaisedColour, 9.0f);
-    Canvas->AddRect(Origin, ImVec2(Origin.x + Extent.x, Origin.y + Extent.y), SelectedColour, 9.0f);
-    Canvas->AddCircleFilled(ImVec2(Origin.x + 14, Origin.y + Extent.y * 0.5f), 4.0f, State.DirtyCondition ? ActiveColour : MutedColour);
-    Canvas->AddText(ImVec2(Origin.x + 26, Origin.y + (Extent.y - ImGui::GetFontSize()) * 0.5f), IM_COL32_WHITE, Tab.c_str());
-    ImGui::Dummy(Extent);
-    ImGui::SameLine(0, 18);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (Extent.y - ImGui::GetFontSize()) * 0.5f);
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted(State.Status.c_str());
-    ImGui::PopStyleColor();
-    EndPanel();
+    BeginSheetWindow("Documents", ImVec2(0, HeaderHeight), ImVec2(Frame.x, DocumentHeight));
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const float Centre = HeaderHeight + 0.5f * DocumentHeight;
+    float       Cursor = 25.0f;
+    Sheet.Icon(IconSymbol::SolidArcFile, Cursor, Centre - 7.0f, 14.0f, SolidArcInk(0x888888));
+    Cursor += 14.0f + 9.0f;
+    Cursor += Sheet.Text(Cursor, Centre, 11.0f, SolidArcInk(0xeeeeee), State.Document.Title.c_str()) + 9.0f;
+    Cursor += Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), ".solidarc") + 9.0f;
+    if (State.DirtyCondition)
+    {
+        Sheet.Surface().FillRectangle(Spanning(Cursor + 2.0f, Centre - 2.0f, 4.0f, 4.0f), SolidArcInk(0xaaaaaa), 2.0f);
+        Cursor += 2.0f + 4.0f + 9.0f;
+    }
+    Sheet.Surface().FillRectangle(Spanning(Cursor + 9.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Cursor += 9.0f + 1.0f + 9.0f + 9.0f;
+    const std::string Location = State.DocumentPath.empty() ? std::string("SolidArc / Unsaved") : "SolidArc / " + State.DocumentPath;
+    Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), Location.c_str());
+
+    float Right = Frame.x - 25.0f, Width = 0.0f;
+    if (SheetTextButton(State, Sheet, "HeaderOpen", Right, Centre, "Open document", IconSymbol::SolidArcFolder, &Width)) State.PopupRequest = "Open document";
+    Right -= Width + 9.0f;
+    if (std::filesystem::exists(PreviousRecoveryPath(State)) && SheetTextButton(State, Sheet, "RestorePrevious", Right, Centre, "Restore previous", IconSymbol::SolidArcUndo))
+        OpenDocument(State, PreviousRecoveryPath(State), false);
+    EndSheetWindow();
+}
+
+// 📝 HTML .status-bar (31 px, padding 0 21, gap 14, 9 px #8c8c8c): kernel state, figures, the last message; on the right the
+//    frame time and device, Metres · Z up, SOLIDARC NATIVE.
+void DrawStatusBar(SolidArcWorkspaceState& State, const ImVec2 Frame)
+{
+    BeginSheetWindow("Status", ImVec2(0, Frame.y - StatusHeight), ImVec2(Frame.x, StatusHeight));
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const float     Centre = Frame.y - 0.5f * StatusHeight;
+    const ColorQuad Ink    = SolidArcInk(0x8c8c8c);
+    float           Cursor = 21.0f;
+    Sheet.Surface().FillRectangle(Spanning(Cursor, Centre - 2.5f, 5.0f, 5.0f), SolidArcInk(0x34c759), 2.5f);
+    Cursor += 12.0f + Sheet.Text(Cursor + 12.0f, Centre, 9.0f, Ink, "GeometryProcessing ready · Vulkan viewport") + 14.0f;
+    const std::string Figures = Compose("%d faces · %d edges", State.Document.Summary.Faces, State.Document.Summary.Edges);
+    Cursor += Sheet.Text(Cursor, Centre, 9.0f, Ink, Figures.c_str()) + 14.0f;
+
+    float Right = Frame.x - 21.0f;
+    Right -= Sheet.TextRight(Right, Centre, 8.0f, SolidArcInk(0x666666), "NATIVE 0.1") + 7.0f;
+    Right -= Sheet.TextRight(Right, Centre, 9.0f, Ink, "SOLIDARC") + 14.0f + 9.0f;
+    Sheet.Surface().FillRectangle(Spanning(Right - 1.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Right -= 1.0f + 9.0f + 14.0f;
+    Right -= Sheet.TextRight(Right, Centre, 9.0f, Ink, "Metres · Z up") + 14.0f + 9.0f;
+    Sheet.Surface().FillRectangle(Spanning(Right - 1.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Right -= 1.0f + 9.0f + 14.0f;
+    const std::string Device = Compose("%.1f ms frame · %s", State.FrameMs, State.DeviceLabel.c_str());
+    Right -= Sheet.TextRight(Right, Centre, 9.0f, Ink, Device.c_str()) + 14.0f;
+    const std::string Message = Legible(State.Status);
+    Sheet.TextClipped(Cursor, Centre, std::max(0.0f, Right - Cursor), 9.0f, SolidArcInk(0xb0b0b0), Message.c_str());
+    EndSheetWindow();
 }
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    OUTLINER
 //------------------------------------------------------------------------------------------------------------------------
-
-void DrawStatTile(const char* Label, const std::string& Value, float Width)
-{
-    ImDrawList*  Canvas = ImGui::GetWindowDrawList();
-    const ImVec2 Origin = ImGui::GetCursorScreenPos();
-    const ImVec2 Extent(Width, 50);
-    Canvas->AddRectFilled(Origin, ImVec2(Origin.x + Extent.x, Origin.y + Extent.y), CardColour, 10.0f);
-    Canvas->AddText(ImVec2(Origin.x + 10, Origin.y + 6), MutedColour, Label);
-    Canvas->AddText(ImVec2(Origin.x + 10, Origin.y + 25), IM_COL32_WHITE, Value.c_str());
-    ImGui::Dummy(Extent);
-}
 
 void DrawConstructDialog(SolidArcWorkspaceState& State)
 {
@@ -4563,99 +4721,124 @@ void DrawConstructDialog(SolidArcWorkspaceState& State)
     ImGui::EndPopup();
 }
 
-void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
+// 📝 Construct menu (index.html #construct-menu, Solids section): 520 × 330 popover under the viewport Construct chip,
+//    header (dot, Construct, Tab, close), a 132 px section column, 72 px catalogue tiles; a tile opens the size form.
+void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
 {
-    BeginPanel("Outliner", Position, Size);
-    PanelHeading("Outliner");
-    const SolidArcBodySummary& Summary = State.Document.Summary;
-    const float Tile = (ImGui::GetContentRegionAvail().x - 8) * 0.5f;
-    DrawStatTile("Faces", std::to_string(Summary.Faces), Tile);
-    ImGui::SameLine(0, 8);
-    DrawStatTile("Edges", std::to_string(Summary.Edges), Tile);
-    DrawStatTile("Steps", Compose("%d  (%d refused)", int(State.Document.Tree.Steps.size()), State.Document.Regeneration.Refused), Tile);
-    ImGui::SameLine(0, 8);
-    DrawStatTile("Volume", !Summary.PresentCondition ? std::string("-") : Summary.SheetCondition ? std::string("Open sheet") : Compose("%.4f m³", Summary.Volume), Tile);
-    ImGui::Spacing();
-
-    // Bodies (creation order): click picks (Shift adds, pick order = Boolean order), like mode 4 in the viewport.
-    if (Summary.Bodies.size() > 1)
+    if (State.ConstructMenuRequest)
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-        ImGui::TextUnformatted("Bodies");
-        ImGui::PopStyleColor();
-        for (const SolidArcBodyFigures& Figures : Summary.Bodies)
-        {
-            const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
-            const auto Found = std::find(Picked.begin(), Picked.end(), Figures.Key);
-            const std::string Order = Found == Picked.end() ? std::string("   ") : Compose("%d  ", int(Found - Picked.begin()) + 1);
-            const std::string Row = Order + Figures.Caption + "  · " + SolidArcBodyMatcap(State.Document.Appearance, Figures.Key) + "###Body:" + Figures.Key;
-            ImGui::PushStyleColor(ImGuiCol_Header, Tint(SelectedColour));
-            if (ImGui::Selectable(Row.c_str(), Found != Picked.end()))
-            {
-                SelectSolidArcName(State.Document, SolidArcSelectionKind::Body, Figures.Key, ImGui::GetIO().KeyShift);
-                State.PickMode = SolidArcPickMode::Solid;
-                Announce(State, Compose("%s · %d bodies picked", Figures.Caption.c_str(), int(State.Document.Selection.Bodies.size())));
-            }
-            RegisterWidget(State, Row.c_str());
-            ImGui::PopStyleColor();
-        }
-        ImGui::Spacing();
+        ImGui::OpenPopup("ConstructMenu");
+        State.ConstructMenuRequest = false;
     }
-
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted("Feature tree");
+    ImGui::SetNextWindowPos(Anchor);
+    ImGui::SetNextWindowSize(ImVec2(520, 330));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, 0));
+    const bool Shown = ImGui::BeginPopup("ConstructMenu", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
     ImGui::PopStyleColor();
-    const float TreeHeight = std::max(120.0f, ImGui::GetContentRegionAvail().y - 190.0f);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Tint(CardColour));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
-    ImGui::BeginChild("FeatureTree", ImVec2(0, TreeHeight), ImGuiChildFlags_AlwaysUseWindowPadding);
-    if (State.Document.Tree.Steps.empty())
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-        ImGui::TextWrapped("Empty document. Construct a body below, or Open a .solidarc.");
-        ImGui::PopStyleColor();
-    }
-    for (const FeatureStep& Step : State.Document.Tree.Steps)
-    {
-        const FeatureStepReport* Report  = FindReport(State.Document, Step.Label);
-        const bool               Refused = Report && Report->Status == FeatureStepStatus::Refused;
-        const bool               Focused = State.FocusedStep == Step.Label;
-        ImGui::PushStyleColor(ImGuiCol_Header, Tint(SelectedColour));
-        if (Refused) ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
-        const std::string Row = DescribeSolidArcStep(State.Document, Step) + (Refused ? "  · refused" : "") + "###Step:" + Step.Label;
-        if (ImGui::Selectable(Row.c_str(), Focused)) State.FocusedStep = Focused ? std::string() : Step.Label;
-        RegisterWidget(State, Row.c_str());
-        if (Refused && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Legible(Report->Refusal).c_str());
-        if (Refused) ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted("Construct");
-    ImGui::PopStyleColor();
-    const float ConstructTile = (ImGui::GetContentRegionAvail().x - 8) * 0.5f;
-    const SolidArcConstructKind Kinds[] = { SolidArcConstructKind::Block, SolidArcConstructKind::Cylinder, SolidArcConstructKind::Sphere, SolidArcConstructKind::Torus };
+    ImGui::PopStyleVar(2);
+    if (!Shown) return;
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Menu = Spanning(Anchor.x, Anchor.y, 520.0f, 330.0f);
+    Sheet.Box(Menu, SolidArcInk(0x121417), 14.0f, SolidArcWash(0x22));
+    const float Left = Menu.MinimumX + 1.0f, Top = Menu.MinimumY + 1.0f, Right = Menu.MaximumX - 1.0f, Bottom = Menu.MaximumY - 1.0f;
+    // header — 40 px, #ffffff08, #ffffff12 bottom border, padding 0 12 0 16, gap 12.
+    Sheet.Surface().FillRectangle(PlaneExtent{ Left, Top, Right, Top + 40.0f }, SolidArcWash(0x08), 0.0f);
+    Sheet.Line(Left, Top + 40.5f, Right, Top + 40.5f, SolidArcWash(0x12));
+    const float HeaderCentre = Top + 20.0f;
+    Sheet.Surface().FillRectangle(Spanning(Left + 16.0f, HeaderCentre - 4.0f, 8.0f, 8.0f), SolidArcInk(0x4fd8e0), 4.0f);
+    Sheet.Text(Left + 16.0f + 8.0f + 12.0f, HeaderCentre, 12.0f, SolidArcInk(0xdddddd), "Construct", SolidArcWeight::Regular);
+    if (SheetIconButton(State, Sheet, "ConstructMenuClose", Right - 12.0f - 12.0f, HeaderCentre, 24.0f, IconSymbol::SolidArcClose, 17.0f)) ImGui::CloseCurrentPopup();
+    Sheet.TextRight(Right - 12.0f - 24.0f - 12.0f, HeaderCentre, 10.0f, SolidArcInk(0xdddddd), "Tab");
+    // #construct-sections — 132 px, #0003, #ffffff12 right border, padding 8 6; button 36 px, radius 7, 11 px.
+    const float Body = Top + 41.0f;
+    Sheet.Surface().FillRectangle(PlaneExtent{ Left, Body, Left + 132.0f, Bottom }, SolidArcInk(0x000000, 0.2f), 0.0f);
+    Sheet.Line(Left + 131.5f, Body, Left + 131.5f, Bottom, SolidArcWash(0x12));
+    const PlaneExtent Section = Spanning(Left + 6.0f, Body + 8.0f, 132.0f - 12.0f - 1.0f, 36.0f);
+    Sheet.Box(Section, SolidArcWash(0x16), 7.0f);
+    Sheet.Text(Section.MinimumX + 10.0f, Section.MinimumY + 18.0f, 11.0f, SolidArcInk(0xeeeeee), "Solids");
+    Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), "4");
+    // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
+    const float TilesLeft = Left + 132.0f + 10.0f;
+    const float TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
+    const struct { SolidArcConstructKind Kind; IconSymbol Glyph; } Tiles[] = { { SolidArcConstructKind::Block, IconSymbol::SolidArcBody },
+        { SolidArcConstructKind::Cylinder, IconSymbol::SolidArcCylinder }, { SolidArcConstructKind::Sphere, IconSymbol::SolidArcSphere },
+        { SolidArcConstructKind::Torus, IconSymbol::SolidArcRing } };
     for (int Index = 0; Index < 4; ++Index)
     {
-        if (Index % 2 == 1) ImGui::SameLine(0, 8);
-        const std::string Label = std::string(SolidArcConstructLabel(Kinds[Index])) + "###Construct" + SolidArcConstructLabel(Kinds[Index]);
-        if (PressButton(State, Label.c_str(), ImVec2(ConstructTile, 40)))
+        const PlaneExtent   Tile  = Spanning(TilesLeft + float(Index) * (TileWidth + 6.0f), Body + 10.0f, TileWidth, 72.0f);
+        const char*         Label = SolidArcConstructLabel(Tiles[Index].Kind);
+        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Construct") + Label, Tile);
+        Sheet.Box(Tile, SolidArcWash(Press.HoveredCondition ? 0x1e : 0x0c), 8.0f, SolidArcWash(Press.HoveredCondition ? 0x3c : 0x12));
+        const float Stack = 24.0f + 9.0f + 10.0f * SolidArcStyleTokens::FontScale;
+        const float GlyphTop = Tile.MinimumY + 0.5f * (72.0f - Stack);
+        Sheet.Icon(Tiles[Index].Glyph, 0.5f * (Tile.MinimumX + Tile.MaximumX) - 12.0f, GlyphTop, 24.0f, SolidArcInk(0xdddddd));
+        const float Width = Sheet.Measure(Label, 10.0f);
+        Sheet.Text(0.5f * (Tile.MinimumX + Tile.MaximumX - Width), GlyphTop + 24.0f + 9.0f + 0.5f * 10.0f * SolidArcStyleTokens::FontScale, 10.0f,
+                   SolidArcInk(Press.HoveredCondition ? 0xeeeeee : 0xaaaaaa), Label);
+        if (Press.ClickedCondition)
         {
-            State.ConstructForm.Kind        = Kinds[Index];
+            State.ConstructForm.Kind        = Tiles[Index].Kind;
             State.ConstructForm.Combination = State.Document.Summary.PresentCondition ? FeatureCombination::Union : FeatureCombination::New;
             State.ConstructOpen             = true;
+            ImGui::CloseCurrentPopup();
         }
     }
-    if (std::filesystem::exists(PreviousRecoveryPath(State)))
+    // .construct-catalogue footer — 28 px, #ffffff12 top border, padding 8 10, 9 px #828282.
+    Sheet.Line(Left + 132.0f, Bottom - 28.0f + 0.5f, Right, Bottom - 28.0f + 0.5f, SolidArcWash(0x12));
+    Sheet.Text(Left + 132.0f + 10.0f, Bottom - 14.0f, 9.0f, SolidArcInk(0x828282), "Click a tile: set its size and place it · Enter creates");
+    ImGui::EndPopup();
+}
+
+// The Outliner panel (SolidArcOutliner) and what its rows ask for.
+void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
+{
+    BeginSheetWindow("Outliner", Position, Size);
+    const SolidArcOutlinerIntent Intent = ConstructSolidArcOutliner(State, Spanning(Position.x, Position.y, Size.x, Size.y));
+    switch (Intent.Verb)
     {
-        if (PressButton(State, "Restore previous document###RestorePrevious", ImVec2(-1, 0))) OpenDocument(State, PreviousRecoveryPath(State), false);
+    case SolidArcOutlinerVerb::Pick:
+        switch (Intent.Figure.Source)
+        {
+        case SolidArcFigureSource::Body:
+            SelectSolidArcName(State.Document, SolidArcSelectionKind::Body, Intent.Figure.Key, Intent.AdditiveCondition);
+            State.PickMode = SolidArcPickMode::Solid;
+            Announce(State, Compose("%s · %d bodies picked", Intent.Figure.Name.c_str(), int(State.Document.Selection.Bodies.size())));
+            break;
+        case SolidArcFigureSource::Sketch:
+            State.FocusedStep = State.FocusedStep == Intent.Figure.Key ? std::string() : Intent.Figure.Key;
+            break;
+        case SolidArcFigureSource::SpaceCurve:
+            PickCurve(State, Intent.Figure.Key, Intent.AdditiveCondition ? SolidArcPickIntent::Add : SolidArcPickIntent::Replace);
+            break;
+        }
+        break;
+    case SolidArcOutlinerVerb::ToggleVisibility:
+    {
+        const SolidArcCommandOutcome Outcome = ToggleSolidArcBodyVisibility(State.Document, Intent.Figure.Key);
+        if (Outcome.AcceptedCondition)
+        {
+            RefreshSolidArcScene(State, true);
+            Announce(State, Compose("%s %s", Intent.Figure.Name.c_str(), State.Document.Appearance.HiddenBodies.contains(Intent.Figure.Key) ? "hidden" : "shown"));
+        }
+        else
+        {
+            Announce(State, "Refused: " + Outcome.Refusal);
+        }
+        break;
     }
+    case SolidArcOutlinerVerb::Construct:
+        State.ConstructMenuRequest = true;
+        break;
+    case SolidArcOutlinerVerb::None:
+        break;
+    }
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false) && !ImGui::GetIO().WantTextInput) State.Outliner.SearchFocusRequest = true;
+    DrawConstructMenu(State, ImVec2(Position.x + Size.x + ColumnGap + 13.0f, Position.y + 48.0f));
     DrawConstructDialog(State);
-    EndPanel();
+    EndSheetWindow();
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -4838,6 +5021,141 @@ void DrawViewportBar(SolidArcWorkspaceState& State)
     ImGui::NewLine();
 }
 
+// WorkspacePanel.js history-step: the glyph and the one-word caption of a feature step.
+std::pair<IconSymbol, const char*> StepGlyph(const FeatureStep& Step)
+{
+    switch (Step.Kind)
+    {
+    case FeatureStepKind::Sketch:        return { IconSymbol::SolidArcCurve, "sketch" };
+    case FeatureStepKind::Extrude:       return { IconSymbol::SolidArcExtrude, "extrude" };
+    case FeatureStepKind::Revolve:       return { IconSymbol::SolidArcRotate, "revolve" };
+    case FeatureStepKind::Blend:         return Step.Shape == BlendProfile::Fillet ? std::pair{ IconSymbol::SolidArcFillet, "fillet" } : std::pair{ IconSymbol::SolidArcChamfer, "chamfer" };
+    case FeatureStepKind::FaceOperation: return { IconSymbol::SolidArcMove, "face" };
+    case FeatureStepKind::SpaceCurve:    return { IconSymbol::SolidArcNurbs, "curve" };
+    case FeatureStepKind::Loft:          return { IconSymbol::SolidArcSurface, "loft" };
+    case FeatureStepKind::Network:       return { IconSymbol::SolidArcCage, "network" };
+    case FeatureStepKind::Mirror:        return { IconSymbol::SolidArcLayers, "mirror" };
+    case FeatureStepKind::Close:         return { IconSymbol::SolidArcBody, "close" };
+    case FeatureStepKind::Combine:
+        return Step.Combination == FeatureCombination::Difference     ? std::pair{ IconSymbol::SolidArcSubtract, "subtract" }
+             : Step.Combination == FeatureCombination::Intersection   ? std::pair{ IconSymbol::SolidArcIntersect, "intersect" }
+                                                                      : std::pair{ IconSymbol::SolidArcUnion, "union" };
+    case FeatureStepKind::Cut:           return { IconSymbol::SolidArcCut, "cut" };
+    case FeatureStepKind::Remove:        return { IconSymbol::SolidArcTrash, "remove" };
+    case FeatureStepKind::Transform:     return { IconSymbol::SolidArcMove, "move" };
+    case FeatureStepKind::Duplicate:     return { IconSymbol::SolidArcBody, "copy" };
+    case FeatureStepKind::Pipe:          return { IconSymbol::SolidArcSurface, "pipe" };
+    case FeatureStepKind::Evolution:     return { IconSymbol::SolidArcExtrude, "sweep" };
+    case FeatureStepKind::Joint:         return { IconSymbol::SolidArcLink, "joint" };
+    case FeatureStepKind::Import:        return { IconSymbol::SolidArcFile, "import" };
+    }
+    return { IconSymbol::SolidArcBody, "step" };
+}
+
+// 📝 HTML .action-bar (47 px: undo, redo, divider, Construction history, step count … Commands) above the .history-strip
+//    (85 px, #131313 → #171717): one 59 px tile per feature step, numbered, the newest amber, the focused one blue.
+void DrawConstructionHistory(SolidArcWorkspaceState& State, ImVec2 Position, float Width)
+{
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const float Left = Position.x, Top = Position.y, Right = Left + Width;
+    const float Centre = Top + 0.5f * ActionBarHeight;
+    Sheet.Line(Left, Top + 0.5f, Right, Top + 0.5f, SolidArcWash(0x08));
+    const bool Editable = !State.Bevel.ActiveCondition;
+    float Cursor = Left + 13.0f;
+    if (SheetIconButton(State, Sheet, "HeaderUndo", Cursor + 12.0f, Centre, 24.0f, IconSymbol::SolidArcUndo, 15.0f, 0, Editable && !State.Document.UndoEntries.empty())) Undo(State);
+    Cursor += 24.0f + 5.0f;
+    if (SheetIconButton(State, Sheet, "HeaderRedo", Cursor + 12.0f, Centre, 24.0f, IconSymbol::SolidArcRedo, 15.0f, 0, Editable && !State.Document.RedoEntries.empty())) Redo(State);
+    Cursor += 24.0f + 5.0f + 9.0f;
+    Sheet.Surface().FillRectangle(Spanning(Cursor, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Cursor += 1.0f + 9.0f + 5.0f;
+    float Caption = 0.0f;
+    const float CaptionWidth = 16.0f + Sheet.Measure("Construction history", 11.0f);
+    if (SheetTextButton(State, Sheet, "HistoryToggle", Cursor + CaptionWidth, Centre, "Construction history", IconSymbol::Count, &Caption))
+        State.HistoryFoldedEnabled = !State.HistoryFoldedEnabled;
+    Cursor += Caption + 5.0f;
+    const std::vector<FeatureStep>& Steps = State.Document.Tree.Steps;
+    Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), Compose("%d steps", int(Steps.size())).c_str());
+    {
+        const float       CommandsWidth = 16.0f + 13.0f + 8.0f + Sheet.Measure("Commands", 11.0f);
+        const float       Height        = 11.0f * SolidArcStyleTokens::FontScale + 12.0f;
+        const PlaneExtent Box           = Spanning(Right - 13.0f - CommandsWidth, Centre - 0.5f * Height, CommandsWidth, Height);
+        const SolidArcPress Press       = PressSolidArcRegion(State.Widgets, "CommandsToggle", Box);
+        const ColorQuad   Ink           = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0x969696);
+        if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x292929), 16.0f);
+        Sheet.Icon(IconSymbol::SolidArcTerminal, Box.MinimumX + 8.0f, Centre - 6.5f, 13.0f, Ink);
+        Sheet.Text(Box.MinimumX + 8.0f + 13.0f + 8.0f, Centre, 11.0f, Ink, "Commands");
+        if (Press.ClickedCondition) ImGui::OpenPopup("Commands");
+    }
+    if (ImGui::BeginPopup("Commands"))
+    {
+        ImGui::TextUnformatted("Command log");
+        ImGui::Separator();
+        const size_t First = State.Journal.size() > 40 ? State.Journal.size() - 40 : 0;
+        for (size_t Index = First; Index < State.Journal.size(); ++Index) ImGui::TextUnformatted(Legible(State.Journal[Index]).c_str());
+        if (State.Journal.empty()) ImGui::TextUnformatted("Nothing yet.");
+        ImGui::EndPopup();
+    }
+    if (State.HistoryFoldedEnabled) return;
+
+    const float StripTop = Top + ActionBarHeight;
+    ImGui::GetWindowDrawList()->AddRectFilledMultiColor(ImVec2(Left, StripTop), ImVec2(Right, StripTop + HistoryHeight), IM_COL32(0x13, 0x13, 0x13, 0xff),
+                                                        IM_COL32(0x13, 0x13, 0x13, 0xff), IM_COL32(0x17, 0x17, 0x17, 0xff), IM_COL32(0x17, 0x17, 0x17, 0xff));
+    Sheet.Line(Left, StripTop + 0.5f, Right, StripTop + 0.5f, SolidArcWash(0x09));
+    const ImVec2 Restore = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(ImVec2(Left, StripTop + 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 6.0f);
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(1, 1, 1, 0.12f));
+    ImGui::BeginChild("HistoryStrip", ImVec2(Width, HistoryHeight - 1.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_HorizontalScrollbar);
+    SolidArcSheet Strip;
+    Strip.Begin();
+    const ImVec2 Origin = ImGui::GetCursorScreenPos();
+    float        TileLeft = Origin.x + 14.0f;
+    const float  TileTop  = Origin.y + 8.0f + 5.0f;
+    for (size_t Index = 0; Index < Steps.size(); ++Index)
+    {
+        const FeatureStep&       Step    = Steps[Index];
+        const auto [Glyph, Word]         = StepGlyph(Step);
+        const FeatureStepReport* Report  = FindReport(State.Document, Step.Label);
+        const bool               Refused = Report && Report->Status == FeatureStepStatus::Refused;
+        const bool               Newest  = Index + 1 == Steps.size();
+        const bool               Focused = State.FocusedStep == Step.Label;
+        const float              TileWidth = std::max(53.0f, Strip.Measure(Word, 8.0f) + 12.0f);
+        const PlaneExtent        Tile    = Spanning(TileLeft, TileTop, TileWidth, 59.0f);
+        const SolidArcPress      Press   = PressSolidArcRegion(State.Widgets, "Step:" + Step.Label, Tile);
+        const ColorQuad          Fill    = Newest ? SolidArcInk(0x28241e) : Press.HoveredCondition ? SolidArcInk(0x222222) : SolidArcInk(0x1a1a1a);
+        const ColorQuad          Border  = Focused ? SolidArcInk(0x4099ff) : Newest ? SolidArcInk(0xc2a16c, float(0x55) / 255.0f) : SolidArcWash(0x0a);
+        Strip.Box(Tile, Fill, 10.0f, Border);
+        Strip.Text(Tile.MinimumX + 1.0f + 5.0f, Tile.MinimumY + 1.0f + 2.0f + 0.5f * 7.0f * SolidArcStyleTokens::FontScale, 7.0f, SolidArcInk(0x666666),
+                   Compose("%02d", int(Index) + 1).c_str());
+        const float GlyphTop = Tile.MinimumY + 1.0f + 8.0f + 0.5f * (57.0f - 8.0f - (16.0f + 5.0f + 8.0f * SolidArcStyleTokens::FontScale));
+        Strip.Icon(Glyph, 0.5f * (Tile.MinimumX + Tile.MaximumX) - 8.0f, GlyphTop, 16.0f, Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0xb7a68c));
+        const float WordWidth = Strip.Measure(Word, 8.0f);
+        Strip.Text(0.5f * (Tile.MinimumX + Tile.MaximumX - WordWidth), GlyphTop + 16.0f + 5.0f + 0.5f * 8.0f * SolidArcStyleTokens::FontScale, 8.0f,
+                   Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0xa1a1a1), Word);
+        if (Press.HoveredCondition)
+        {
+            const std::string Tip = DescribeSolidArcStep(State.Document, Step) + (Refused ? "\nRefused: " + Legible(Report->Refusal) : std::string());
+            ImGui::SetTooltip("%s", Tip.c_str());
+        }
+        if (Press.ClickedCondition) State.FocusedStep = Focused ? std::string() : Step.Label;
+        TileLeft = Tile.MaximumX + 5.0f;
+    }
+    ImGui::SetCursorScreenPos(Origin);
+    ImGui::Dummy(ImVec2(TileLeft - Origin.x + 14.0f - 5.0f, 1.0f));
+    if (State.HistoryCount != Steps.size())
+    {
+        State.HistoryCount = Steps.size();
+        ImGui::SetScrollX(ImGui::GetScrollMaxX() + 1.0e6f);                                  // newest step in view
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+    ImGui::SetCursorScreenPos(Restore);
+}
+
 void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, ImVec2 Position, ImVec2 Size)
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.090f, 0.106f, 0.137f, 1.0f));
@@ -4853,8 +5171,14 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawViewportBar(State);
 
     const ImVec2 Image(Position.x, Position.y + ViewportBar);
-    const ImVec2 Extent(Size.x, std::max(8.0f, Size.y - ViewportBar));
+    const float  History = ActionBarHeight + (State.HistoryFoldedEnabled ? 0.0f : HistoryHeight);
+    const ImVec2 Extent(Size.x, std::max(8.0f, Size.y - ViewportBar - History));
     State.ViewportRect = { Image.x, Image.y, Extent.x, Extent.y };
+    {
+        const ImVec2 Cursor = ImGui::GetCursorScreenPos();
+        DrawConstructionHistory(State, ImVec2(Position.x, Image.y + Extent.y), Size.x);
+        ImGui::SetCursorScreenPos(Cursor);
+    }
     ImGui::SetCursorScreenPos(Image);
     ImGui::InvisibleButton("ViewportSurface", Extent, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
     RegisterWidget(State, "ViewportSurface");
@@ -6248,18 +6572,26 @@ void ConfigureSolidArcInterface(const SolidArcOptions& Options)
     ImGuiIO& Io = ImGui::GetIO();
     Io.IniFilename = nullptr;
     Io.LogFilename = nullptr;
-    std::string FontPath = Options.FontPath;
-    if (FontPath.empty())
-    {
-        for (const char* Candidate : { "EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf", "../../EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf",
-                                       "../../../EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf" })
-            if (std::filesystem::exists(Candidate)) { FontPath = Candidate; break; }
-#ifdef SOLIDARC_FONT_PATH
-        if (FontPath.empty() && std::filesystem::exists(SOLIDARC_FONT_PATH)) FontPath = SOLIDARC_FONT_PATH;
+    // 📝 Content root: the Frontier checkout (DM Sans archives, EngineContent/Icons/SolidArc); the working directory otherwise.
+    std::filesystem::path Root = ".";
+#ifdef SOLIDARC_CONTENT_ROOT
+    if (std::filesystem::exists(SOLIDARC_CONTENT_ROOT)) Root = SOLIDARC_CONTENT_ROOT;
 #endif
+    std::filesystem::path Family;
+    for (const char* Candidate : { "EngineContent/FontArchives/DMSans", "EngineContent/FontArchives/DM Sans" })
+        if (std::filesystem::exists(Root / Candidate / "DMSans-Regular.ttf")) { Family = Root / Candidate; break; }
+    const std::string FontPath = !Options.FontPath.empty() ? Options.FontPath : Family.empty() ? std::string() : (Family / "DMSans-Regular.ttf").string();
+    SolidArcTypefaces Typefaces;
+    if (!FontPath.empty() && std::filesystem::exists(FontPath))
+    {
+        ImFont* Regular = Io.Fonts->AddFontFromFileTTF(FontPath.c_str(), Options.FontSize);  // First font: the ImGui default
+        const std::filesystem::path LightPath = std::filesystem::path(FontPath).parent_path() / "DMSans-Light.ttf";
+        ImFont* Light = std::filesystem::exists(LightPath) ? Io.Fonts->AddFontFromFileTTF(LightPath.string().c_str(), Options.FontSize) : Regular;
+        Typefaces = { Light, Regular };
     }
-    if (!FontPath.empty() && std::filesystem::exists(FontPath)) Io.Fonts->AddFontFromFileTTF(FontPath.c_str(), Options.FontSize);
     else Io.Fonts->AddFontDefault();
+    ConfigureSolidArcTypefaces(Typefaces);
+    IconPresentation::Attach(Root / "EngineContent/Icons");
 
     ImGuiStyle& Style = ImGui::GetStyle();
     ImGui::StyleColorsDark(&Style);
@@ -6311,14 +6643,16 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
     StageBevelPreview(State);
     RefreshMeasure(State);
     RefreshSection(State);
+    // 📝 HTML grid at 1600 px: header 68, document bar 34, columns 300 | 1fr | 330 (gap 10, margin 12), status bar 31.
     DrawHeader(State, Frame);
     DrawDocumentBar(State, Frame);
-    const float Top    = PanelGap + HeaderHeight + PanelGap + DocumentHeight + PanelGap;
-    const float Height = std::max(100.0f, Frame.y - Top - PanelGap);
-    const float Middle = std::max(100.0f, Frame.x - 4 * PanelGap - OutlinerWidth - InspectorWidth);
-    DrawOutliner(State, ImVec2(PanelGap, Top), ImVec2(OutlinerWidth, Height));
-    DrawViewport(State, ViewportTexture, ImVec2(2 * PanelGap + OutlinerWidth, Top), ImVec2(Middle, Height));
-    DrawInspector(State, ImVec2(3 * PanelGap + OutlinerWidth + Middle, Top), ImVec2(InspectorWidth, Height));
+    const float Top    = HeaderHeight + DocumentHeight;
+    const float Height = std::max(100.0f, Frame.y - Top - StatusHeight);
+    const float Middle = std::max(100.0f, Frame.x - 2 * FrameMargin - 2 * ColumnGap - OutlinerWidth - InspectorWidth);
+    DrawOutliner(State, ImVec2(FrameMargin, Top), ImVec2(OutlinerWidth, Height));
+    DrawViewport(State, ViewportTexture, ImVec2(FrameMargin + OutlinerWidth + ColumnGap, Top), ImVec2(Middle, Height));
+    DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height));
+    DrawStatusBar(State, Frame);
     DrawMatcapPicker(State);
     DrawWelcome(State);
     ApplyShortcuts(State);
