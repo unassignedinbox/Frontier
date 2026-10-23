@@ -3,8 +3,10 @@
 #                                                    PREPARELINUXBUILD.SH
 #====================================================================================================================================
 # 🧩 The README's Linux build in one idempotent script (every step skips when its output exists), run from the repository root:
-#    bash Experimental/DraftingWorkspace/Tooling/PrepareLinuxBuild.sh [kernel] [workspace] [swiftshader] [slang]
+#    bash Experimental/DraftingWorkspace/Tooling/PrepareLinuxBuild.sh [kernel] [workspace] [swiftshader] [slang] [exchange]
 #    No arguments: kernel, workspace and swiftshader. Tools (cmake, ninja) come from a venv under _ClaudeScratch/.
+#    exchange: trimesh and OpenCascade (cadquery-ocp) for Tooling/ExchangeCrossCheck.py, plus a no-op libGL.so.1 for hosts
+#    without OpenGL (OCP links its viewer against it; STEP reading never calls it): LD_LIBRARY_PATH=_ClaudeScratch/stubs.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 Steps="${*:-kernel workspace swiftshader}"
@@ -53,3 +55,16 @@ if [[ " $Steps " == *" slang "* ]]; then
     node Experimental/DraftingWorkspace/Tooling/CompileDraftingShaders.mjs --compiler $Loader
 fi
 echo "PrepareLinuxBuild: done ($Steps)"
+
+#------------------------------------------------------------------------------------------------------------------------
+#                                                    EXCHANGE (independent STL / STEP readers)
+#------------------------------------------------------------------------------------------------------------------------
+if [[ " $Steps " == *" exchange "* ]]; then
+    $Venv/bin/python -c "import trimesh, OCP" 2> /dev/null || $Venv/bin/pip install -q trimesh numpy networkx scipy matplotlib cadquery-ocp
+    if [ ! -f _ClaudeScratch/stubs/libGL.so.1 ] && ! ldconfig -p 2> /dev/null | grep -q "libGL.so.1 "; then
+        mkdir -p _ClaudeScratch/stubs
+        Users=$(ls $Venv/lib/python3*/site-packages/OCP/*.so $Venv/lib/python3*/site-packages/cadquery_ocp.libs/libTKOpenGl*.so* 2> /dev/null)
+        { echo "/* no-op OpenGL entry points for headless OCP */"; nm -D --undefined-only $Users | awk '{print $2}' | sed 's/@.*//' | grep -E "^gl" | sort -u | sed 's/.*/long &(void) { return 0; }/'; } > _ClaudeScratch/stubs/GlStub.c
+        gcc -shared -fPIC -Wl,-soname,libGL.so.1 -o _ClaudeScratch/stubs/libGL.so.1 _ClaudeScratch/stubs/GlStub.c
+    fi
+fi

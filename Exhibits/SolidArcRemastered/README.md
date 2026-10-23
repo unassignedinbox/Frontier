@@ -2,18 +2,33 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.32 MB, no external resources) with 30 interactive kernel models (now including the variable fillet and chamfer on a curved edge, VariableArcFillet / VariableArcChamfer, the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
-**TL;DR (STL exchange, priority 4 X1)**: `Exchange/StlExchange` writes any set of bodies as binary or ASCII STL from the watertight tessellation and reads STL back with a soundness measure.
+**TL;DR (STL and STEP exchange, priority 4 X1–X2)**: `Exchange/StlExchange` writes bodies as binary or ASCII STL from the watertight tessellation and reads STL back with a soundness measure. `Exchange/StepExchange` writes solids as STEP AP214 in millimetres:
 
-[`ExchangeValidation`](ExchangeValidation.md) EX1–EX4 passes 61 checks in 6.0 s over 17 specimens (primitives, hole, cavity, NURBS sweep / loft / pipe, mirrored Boolean, rolling-ball, variable and smooth-overflow fillets, chamfers):
+- **Exact where STEP has the type:** PLANE, CYLINDRICAL / CONICAL / SPHERICAL / TOROIDAL_SURFACE, LINE, CIRCLE, ELLIPSE. NURBS carriers become B_SPLINE_…_WITH_KNOTS, rational where weighted; periodic patches are shifted into the knot domain, and periodic edges crossing the seam are re-joined from their exact Bézier pieces.
+- **Certified stand-ins only for procedural carriers:** rolling-ball / parallel surfaces and traced intersection / contact curves become cubic B-splines (`ApproximateSurfaceAsNurbs` / `ApproximateCurveAsNurbs`, ≤ 10⁻⁶).
+- **Topology:** MANIFOLD_SOLID_BREP per solid region; cavities as BREP_WITH_VOIDS with the void shell reversed under ORIENTED_CLOSED_SHELL(.F.). same_sense is decided by comparing the STEP carrier's normal with the face's outward normal at an interior point. Line and circle parameters equal the kernel's τ, ready for import (X3).
+- **Bytes:** shortest round-trip reals, and a fixed timestamp unless one is given, so the same model writes the same file.
+
+[`ExchangeValidation`](ExchangeValidation.md) EX1–EX8 passes 146 checks in 51 s. STL covers 17 specimens (primitives, hole, cavity, NURBS sweep / loft / pipe, mirrored Boolean, rolling-ball, variable and smooth-overflow fillets, chamfers). STEP covers those plus 4 rolling-ball blends, 4 promoted (rational) NURBS bodies and an approximated (cubic) NURBS body, 26 in all:
 
 | Gate | Shows | Worst |
 |---|---|---|
-| EX1 | Every file welds watertight (0 open / non-manifold / misoriented sides, 0 degenerate facets); χ of the facets = the B-rep's V − E + 2F − L (2, 0 for genus 1, 4 for the cavity); components = shells | 0 defects |
+| EX1 | Every STL file welds watertight (0 open / non-manifold / misoriented sides, 0 degenerate facets); χ of the facets = the B-rep's V − E + 2F − L (2, 0 for genus 1, 4 for the cavity); components = shells | 0 defects |
 | EX2 | \|V(facets) − V(exact)\| ≤ sag · A(exact) for all 17; sphere error 4.35e-1 → 1.06e-1 → 2.63e-2 as sag ÷ 4 (quadratic); metre → millimetre exact to float | ratio 0.47 |
 | EX3 | Binary = 84 + 50 n bytes; ASCII reads back to the same welded facets; stored normals unit; byte-stable rewrite | 4.9e-8 |
-| EX4 | Refusals named (no bodies, bad unit, stale token, truncated binary, missing endsolid, two-vertex facet); removed / flipped / repeated facet → exactly 3 open / misoriented / non-manifold sides | named |
+| EX4 | STL refusals named; removed / flipped / repeated facet → exactly 3 open / misoriented / non-manifold sides | named |
+| EX5 | STEP read by an independent Part 21 parser: AP214 schema, no dangling or repeated #n; faces / edges / vertices / shells / solids = the B-rep; every EDGE_CURVE used once forward and once reverse; every EDGE_LOOP connected; byte-stable | 0 defects |
+| EX6 | Carrier entity = face kind for every face (20 of 26 promoted fillet faces rational); every VERTEX_POINT bit-identical to the model; metre model × 1000 bit-identical with SI_UNIT(.MILLI.,.METRE.); stand-in deviation | 3.3e-7 |
+| EX7 | STEP refusals named: no bodies, zero / negative unit, zero tolerance, stale token, sheet body | named |
+| EX8 | Export time per body | 104 ms |
 
-🔍 Independent: [`ExchangeCrossCheck.md`](ExchangeCrossCheck.md). trimesh 5.1.1 reads all 17 files as watertight with consistent winding, with the same Euler numbers and components and volumes equal to every printed digit. The [gallery](ExchangeGallery/StlGallery.png) is shaded from the facets trimesh read.
+🔍 Independent: [`ExchangeCrossCheck.md`](ExchangeCrossCheck.md).
+
+- **trimesh 5.1.1** reads all 17 STL files as watertight with consistent winding, with the same Euler numbers and components and volumes equal to every printed digit ([gallery](ExchangeGallery/StlGallery.png)).
+- **OpenCascade 8.0.1 (cadquery-ocp)** reads all 26 STEP files as BRepCheck-valid solids with the B-rep's solid, shell and face counts. It keeps the analytic types, and B-splines appear only where expected. Points sampled on the exact model lie on OCCT's faces within 3.5e-15 for exact carriers and 2.9e-7 on stand-ins. Volume and area agree within 10⁻¹² on analytic bodies and within 6e-8 on rolling-ball stand-ins. The [gallery](ExchangeGallery/StepGallery.png) is shaded from OCCT's own tessellation.
+- ⚠️ PromotedCylinder shows ΔV/V 1.1e-5 in OCCT. Its surfaces and rims are exact (r = 1.5 at every sample, textbook rational circle), but on the B-spline *plane* caps OCCT re-derives the 2D trimming curves by projection, because the file carries no pcurves. The same body with an analytic PLANE is exact to 1.5e-12.
+
+Sample files for other CAD systems are in [`ExchangeGallery/`](ExchangeGallery/): `BoxAllFillet`, `HoleRimFillet`, `TiltedBoreChamfer`, `PromotedBoxAllFillet` and `HollowBlock` `.step`, plus `BoxAllFillet.stl` (1 unit = 1 mm).
 
 **TL;DR (drawing sheets, priority 11 D2)**: Views now become finished drawings. `Drawing/DrawingSheet` composes a sheet from bodies:
 
@@ -408,8 +423,9 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `DrawingValidation.md` | DR1 block views · DR2 hole circles and hidden silhouettes · DR3 cylinder and sphere silhouettes · DR4 occlusion between bodies · DR5 section view and hatching · DR6 tangent edges · DR7 refusals · DR8 timings (D1) · DR9 sheet layout · DR10 automatic dimensions · DR11 title block and projection symbol · DR12 sheet section line and hatching · DR13 SVG round trip · DR14 DXF round trip · DR15 sheet refusals (D2) | 🟢 PASS (105) |
 | `DrawingGallery/*.svg, *.png` | 14 projected views from DrawingValidation `--svg` (visible solid, hidden dashed, silhouettes blue, tangent edges green, section outline heavy, hatch grey); `DrawingViews.png` is the contact sheet | — |
 | `DrawingGallery/*Sheet*.svg, *.dxf, *.png` | 4 drawing sheets on A4 (bracket third angle; bracket first angle with section A-A; box edge fillet; cylinder) as exported SVG and DXF R12, PNGs rendered by `Tooling/RenderDrawingSvg.py`; `DrawingSheets.png` is the contact sheet; `BracketSheetFirstAngleSectionDxfRender.png` is the DXF drawn by ezdxf 1.4.5 (0 audit errors) | — |
-| `ExchangeValidation.md` | EX1 STL closure and χ against the B-rep · EX2 volume within sag · area, sphere convergence, millimetre scaling · EX3 binary = ASCII, sizes, normals, byte stability · EX4 refusals and defect counts |
-| `ExchangeCrossCheck.md`, `ExchangeGallery/StlGallery.png` | trimesh read-back of the 17 STL files (watertight, winding, Euler, components, volume) and a shaded gallery of 8 of them |
+| `ExchangeValidation.md` | EX1 STL closure and χ against the B-rep · EX2 volume within sag · area, sphere convergence, millimetre scaling · EX3 binary = ASCII, sizes, normals, byte stability · EX4 refusals and defect counts · EX5 STEP structure by an independent Part 21 parser · EX6 carrier kinds, bit-exact vertices, units, stand-in deviation · EX7 STEP refusals · EX8 export time |
+| `ExchangeCrossCheck.md`, `ExchangeGallery/StlGallery.png`, `ExchangeGallery/StepGallery.png` | trimesh read-back of the 17 STL files; OpenCascade read-back of the 26 STEP files (BRepCheck, counts, surface types, volume, area, point distance); galleries shaded from what each reader built |
+| `ExchangeGallery/*.step, *.stl` | Sample exports for opening in other CAD systems (millimetres) |
 | `SetbackValidation.md` | S1 rims on both carriers · S2 G1 quad ↔ neighbour · S3 G1 across spokes · S4 audit, genus, tessellation, vertex categories · S5 determinism · S6 refusals; per-specimen setback / ball / cap counts | 🟢 PASS |
 | `RollingBallValidation.md` | R1 ball law · R2 rails on supports · R3 G1 at rails · R4 projection · R5 chart normal and derivatives · R6 line/circle spines ≡ cylinder/torus · R7 section closure · R8 bodies · R9 transforms; 4 bodies (one with 2 pinch vertices) | 🟢 PASS |
 | `PatternStressValidation.md` (66 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes · V setback vertex blends; a refusal is ⚠️, a built wrong body 🔴 | 🟢 66 · ⚠️ 0 · 🔴 0 |
