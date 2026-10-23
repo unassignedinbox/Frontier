@@ -10,6 +10,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Document/DraftingDocument.h"
+#include "Document/DraftingDrawingSheet.h"
 #include "Document/DraftingMeasurement.h"
 #include "Document/DraftingScene.h"
 #include "Interface/DraftingOptions.h"
@@ -357,6 +358,27 @@ struct DraftingSectionSession
     int                    Refreshes       = 0;                                              // [-] - Recomputations (script evidence)
 };
 
+// 📝 Drawing sheet (Alt+D; Fusion Drawing — Plasticity has none): the viewport shows the paper of the shown solid
+//    bodies (kernel views, hidden lines, dimensions, title block) instead of the model; wheel zooms about the pointer,
+//    middle / right drag pans, double-click fits. The card picks paper, angle, scale, views and the title fields (saved
+//    with the document) and exports SVG / DXF R12 beside the document. Esc or Alt+D returns to the model.
+struct DraftingDrawingSheetSession
+{
+    bool                  ActiveCondition = false;                                           // [-]  - Paper shown + card
+    DraftingDrawingSheet  Sheet           = {};                                              // [-]  - Last composition
+    float                 Zoom            = 1.0f;                                            // [-]  - × the fitted size
+    std::array<float, 2>  Pan             = {};                                              // [px] - Paper centre offset
+    std::array<char, 96>  TitleText       = {};                                              // [-]  - Title field
+    std::array<char, 96>  NumberText      = {};                                              // [-]  - Drawing number field
+    std::array<char, 96>  AuthorText      = {};                                              // [-]  - Drawn-by field
+    std::array<char, 96>  MaterialText    = {};                                              // [-]  - Material field
+    std::string           ExportPath      = {};                                              // [-]  - Last written file
+    std::string           ExportRefusal   = {};                                              // [-]  - Last export refusal
+    double                ExportBytes     = 0.0;                                             // [B]  - Size of the last file
+    int                   Refreshes       = 0;                                               // [-]  - Compositions (script evidence)
+    int                   Exports         = 0;                                               // [-]  - Files written
+};
+
 // 📝 Joint (Alt+J; Fusion Joint — Plasticity has none): ① pick the joint origin on the moving body, ② on the fixed body
 //    (the hovered edge / face shows its origin glyph: z blue, x red), ③ choose the kind (R rigid · V revolute · S slider ·
 //    C cylindrical · P pin-slot · L planar · B ball), drag the values, F flips, Enter applies. Two entities picked beforehand
@@ -410,6 +432,7 @@ struct DraftingWorkspaceState
     DraftingClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
     DraftingMeasureSession                Measure        = {};                               // [-]   - I: Measure card + overlay
     DraftingSectionSession                Section        = {};                               // [-]   - Alt+S: section plane, caps, exact figures
+    DraftingDrawingSheetSession           DrawingSheet   = {};                               // [-]   - Alt+D: paper, views, dimensions, export
     DraftingJointSession                  Joint          = {};                               // [-]   - Alt+J: joint card, origin glyphs, preview
     DraftingParameterDrag                 ParameterDrag  = {};                               // [-]   - Step card: dragged joint value
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves

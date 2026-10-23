@@ -28,6 +28,7 @@ struct DraftingDocumentFile
     std::map<std::string, std::string> Captions = {};                                        // [-] - Step label → caption
     std::vector<DraftingImagePlane>    ImagePlanes = {};                                     // [-] - Blueprint references
     DraftingAppearance                 Appearance  = {};                                     // [-] - Body / face matcaps
+    DraftingDrawingSheetSettings       DrawingSheet = {};                                    // [-] - Alt+D sheet settings
     std::string                        Refusal  = {};                                        // [-] - Parse failure (empty: fine)
 };
 

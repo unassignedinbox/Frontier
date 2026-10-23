@@ -9,6 +9,7 @@
 
 #include "Document/DraftingDocumentCodec.h"
 
+#include "Document/DraftingDrawingSheet.h"
 #include "Document/DraftingImagePlaneToml.h"
 
 #include <toml++/toml.hpp>
@@ -452,6 +453,62 @@ constexpr int64_t FormatVersion = 1;                                            
     return {};
 }
 
+// 📝 [DrawingSheet] (only when not the defaults): Paper "A4" … "A0", Angle "First" / "Third", Scale (0 = automatic),
+//    Isometric, Section, SectionAxis "X" / "Y" / "Z" / "Face", SectionOffset, SectionFlipped, SectionFace, HiddenLines,
+//    TangentEdges, Dimensions and the title block fields.
+[[nodiscard]] toml::table EncodeDrawingSheet(const DraftingDrawingSheetSettings& Settings)
+{
+    static const char* Axes[] = { "X", "Y", "Z", "Face" };
+    const DraftingTitleFields& Title = Settings.Title;
+    return toml::table{ { "Paper", std::string(Modeller::DrawingPaperLabel(Settings.Paper)) }, { "Angle", std::string(Settings.Angle == Modeller::DrawingProjectionAngle::First ? "First" : "Third") },
+                        { "Scale", Settings.Scale }, { "Isometric", Settings.IsometricEnabled }, { "Section", Settings.SectionEnabled },
+                        { "SectionAxis", std::string(Axes[static_cast<int>(Settings.Section.Axis)]) }, { "SectionOffset", Settings.Section.Offset },
+                        { "SectionFlipped", Settings.Section.Flipped }, { "SectionFace", Settings.Section.Face }, { "HiddenLines", Settings.HiddenLinesEnabled },
+                        { "TangentEdges", Settings.TangentEdgesEnabled }, { "Dimensions", Settings.DimensionsEnabled }, { "Title", Title.Title },
+                        { "DrawingNumber", Title.DrawingNumber }, { "Author", Title.Author }, { "Date", Title.Date }, { "Material", Title.Material },
+                        { "Revision", Title.Revision }, { "Company", Title.Company } };
+}
+
+[[nodiscard]] std::string DecodeDrawingSheet(const toml::table* Table, DraftingDrawingSheetSettings& Settings)
+{
+    Settings = {};
+    if (!Table) return {};
+    const toml::table& Root = *Table;
+    const std::string Paper = Root["Paper"].value_or(std::string("A3")), Angle = Root["Angle"].value_or(std::string("First")), Axis = Root["SectionAxis"].value_or(std::string("Y"));
+    bool Known = false;
+    for (int Index = 0; Index < 5; ++Index)
+    {
+        if (Paper == Modeller::DrawingPaperLabel(static_cast<Modeller::DrawingPaperSize>(Index))) { Settings.Paper = static_cast<Modeller::DrawingPaperSize>(Index); Known = true; }
+    }
+    if (!Known) return "DrawingSheet: unknown paper " + Paper + " (A4 … A0)";
+    if (Angle != "First" && Angle != "Third") return "DrawingSheet: unknown projection angle " + Angle + " (First / Third)";
+    Settings.Angle = Angle == "First" ? Modeller::DrawingProjectionAngle::First : Modeller::DrawingProjectionAngle::Third;
+    Settings.Scale = Root["Scale"].value_or(0.0);
+    if (!(Settings.Scale >= 0.0)) return "DrawingSheet: the scale must be 0 (automatic) or positive";
+    static const char* Axes[] = { "X", "Y", "Z", "Face" };
+    Known = false;
+    for (int Index = 0; Index < 4; ++Index) if (Axis == Axes[Index]) { Settings.Section.Axis = static_cast<DraftingSectionAxis>(Index); Known = true; }
+    if (!Known) return "DrawingSheet: unknown section axis " + Axis + " (X / Y / Z / Face)";
+    Settings.IsometricEnabled    = Root["Isometric"].value_or(true);
+    Settings.SectionEnabled      = Root["Section"].value_or(false);
+    Settings.Section.Offset      = Root["SectionOffset"].value_or(0.0);
+    Settings.Section.Flipped     = Root["SectionFlipped"].value_or(false);
+    Settings.Section.Face        = Root["SectionFace"].value_or(std::string{});
+    Settings.HiddenLinesEnabled  = Root["HiddenLines"].value_or(true);
+    Settings.TangentEdgesEnabled = Root["TangentEdges"].value_or(true);
+    Settings.DimensionsEnabled   = Root["Dimensions"].value_or(true);
+    DraftingTitleFields& Title = Settings.Title;
+    const DraftingTitleFields Defaults;
+    Title.Title         = Root["Title"].value_or(Defaults.Title);
+    Title.DrawingNumber = Root["DrawingNumber"].value_or(Defaults.DrawingNumber);
+    Title.Author        = Root["Author"].value_or(Defaults.Author);
+    Title.Date          = Root["Date"].value_or(Defaults.Date);
+    Title.Material      = Root["Material"].value_or(Defaults.Material);
+    Title.Revision      = Root["Revision"].value_or(Defaults.Revision);
+    Title.Company       = Root["Company"].value_or(Defaults.Company);
+    return {};
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -472,6 +529,7 @@ std::string EncodeDraftingDocument(const DraftingDocument& Document)
                       { "Description", Document.Tree.Description }, { "Parameters", std::move(Parameters) }, { "Steps", std::move(Steps) } };
     if (!Document.ImagePlanes.empty()) Root.insert("ImagePlanes", EncodeDraftingImagePlanes(Document.ImagePlanes));
     if (!DefaultAppearanceCondition(Document.Appearance)) Root.insert("Appearance", EncodeAppearance(Document.Appearance));
+    if (!DefaultDraftingDrawingSheetCondition(Document.DrawingSheet)) Root.insert("DrawingSheet", EncodeDrawingSheet(Document.DrawingSheet));
     std::ostringstream Stream;
     Stream << "# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)\n";
     Stream << Root << "\n";
@@ -498,6 +556,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
     File.Tree.Description = Root["Description"].value_or(std::string{});
     if (std::string Refusal = DecodeDraftingImagePlanes(Root["ImagePlanes"].as_array(), 1.0, File.ImagePlanes); !Refusal.empty()) { File.Refusal = Refusal; return File; }
     if (std::string Refusal = DecodeAppearance(Root["Appearance"].as_table(), File.Appearance); !Refusal.empty()) { File.Refusal = Refusal; return File; }
+    if (std::string Refusal = DecodeDrawingSheet(Root["DrawingSheet"].as_table(), File.DrawingSheet); !Refusal.empty()) { File.Refusal = Refusal; return File; }
     if (const toml::array* Parameters = Root["Parameters"].as_array())
     {
         for (const toml::node& Entry : *Parameters)

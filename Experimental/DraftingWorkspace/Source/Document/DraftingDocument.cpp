@@ -499,6 +499,7 @@ DraftingDocument CloneDraftingDocument(const DraftingDocument& Source)
     Copy.Captions  = Source.Captions;
     Copy.Selection = Source.Selection;
     Copy.Appearance = Source.Appearance;
+    Copy.DrawingSheet = Source.DrawingSheet;
     Copy.Replay     = Source.Replay;
     Copy.Summary    = Source.Summary;
     Copy.SummaryCheckpoint = Source.SummaryCheckpoint;

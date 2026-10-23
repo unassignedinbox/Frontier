@@ -441,6 +441,62 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         return true;
     }
     if (Field == "section-clip") return Numeric(State.Style.SectionEnabled ? 1 : 0);
+    if (Field == "drawing-sheet")
+    {
+        // Text = "A3 1:20 First" (paper, scale, angle) or the refusal, Number = 1 while the sheet (Alt+D) is shown.
+        const DraftingDrawingSheet& Sheet = State.DrawingSheet.Sheet;
+        Text   = !State.DrawingSheet.ActiveCondition ? std::string("off") : !Sheet.Refusal.empty() ? Sheet.Refusal
+               : std::string(Modeller::DrawingPaperLabel(State.Document.DrawingSheet.Paper)) + " " + Sheet.Sheet.ScaleLabel + " " + DraftingProjectionAngleLabel(Sheet.Sheet.Angle);
+        Number = State.DrawingSheet.ActiveCondition ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "drawing-sheet-scale")
+    {
+        Text   = State.DrawingSheet.Sheet.Sheet.ScaleLabel;
+        Number = State.DrawingSheet.Sheet.Sheet.Scale;
+        return true;
+    }
+    if (Field == "drawing-sheet-views")
+    {
+        // Text = view labels in order ("Front Top Right Isometric"), Number = view count.
+        Text.clear();
+        for (const Modeller::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Text += (Text.empty() ? "" : " ") + View.Label;
+        Number = double(State.DrawingSheet.Sheet.Sheet.Views.size());
+        return true;
+    }
+    if (Field == "drawing-sheet-dimensions")
+    {
+        // Text = every dimension text ("4000 2500 ⌀600 …"), Number = dimension count.
+        Text.clear();
+        for (const Modeller::DrawingDimension& Dimension : State.DrawingSheet.Sheet.Sheet.Dimensions) Text += (Text.empty() ? "" : " ") + Dimension.Text;
+        Number = double(State.DrawingSheet.Sheet.Sheet.Dimensions.size());
+        return true;
+    }
+    if (Field == "drawing-sheet-texts")
+    {
+        // Text = every sheet text (title block, labels, dimensions) joined by " | ", Number = text count.
+        Text.clear();
+        for (const Modeller::SheetText& Entry : State.DrawingSheet.Sheet.Sheet.Texts) Text += (Text.empty() ? "" : " | ") + Entry.Content;
+        Number = double(State.DrawingSheet.Sheet.Sheet.Texts.size());
+        return true;
+    }
+    if (Field == "drawing-sheet-lines") return Numeric(double(State.DrawingSheet.Sheet.Sheet.Lines.size()));
+    if (Field == "drawing-sheet-section-area")
+    {
+        double Area = 0.0;                                                                   // [len²] - Section A-A cap (model units)
+        for (const Modeller::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Area += View.View.SectionArea;
+        return Numeric(Area);
+    }
+    if (Field == "drawing-sheet-refreshes") return Numeric(State.DrawingSheet.Refreshes);
+    if (Field == "drawing-sheet-zoom") return Numeric(State.DrawingSheet.Zoom);
+    if (Field == "drawing-sheet-saved") return Numeric(DefaultDraftingDrawingSheetCondition(State.Document.DrawingSheet) ? 0 : 1);
+    if (Field == "drawing-sheet-export")
+    {
+        // Text = the last written path (or its refusal), Number = its size in bytes.
+        Text   = State.DrawingSheet.ExportRefusal.empty() ? State.DrawingSheet.ExportPath : State.DrawingSheet.ExportRefusal;
+        Number = State.DrawingSheet.ExportBytes;
+        return true;
+    }
     if (Field == "section-offset") return Numeric(State.Section.Request.Offset);
     if (Field == "section-area") return Numeric(State.Section.Section.Area);
     if (Field == "section-perimeter") return Numeric(State.Section.Section.Perimeter);

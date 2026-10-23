@@ -118,6 +118,7 @@ add_library(DraftingWorkspace STATIC
     Source/Document/DraftingImagePlane.cpp
     Source/Document/DraftingMatcap.cpp
     Source/Document/DraftingMeasurement.cpp
+    Source/Document/DraftingDrawingSheet.cpp
     Source/Document/DraftingScene.cpp
     Source/Document/DraftingSpecimen.cpp
     Source/Viewport/DraftingCamera.cpp
@@ -323,6 +324,14 @@ add_test(NAME DraftingMeasureSectionWalkthrough
                  --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 set_tests_properties(DraftingMeasureSectionWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+add_test(NAME DraftingDrawingSheetWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/SheetRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Sheet.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/DrawingSheetWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingDrawingSheetWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME DraftingSnappingWalkthrough
          COMMAND DraftingWorkspaceCapture --specimen --reset-files
                  --recovery _ClaudeScratch/DraftingWorkspace/SnapRecovery.drafting.toml

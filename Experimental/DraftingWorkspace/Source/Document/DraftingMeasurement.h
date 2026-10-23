@@ -67,26 +67,6 @@ struct DraftingMeasurement
     std::string                     Refusal           = {};                                  // [-]    - Empty on success
 };
 
-// 📝 Section plane choice (Section card, Alt+S). World planes pass through Offset on their axis; the Face plane is the
-//    selected planar face moved Offset along its outward normal (negative = into the body). The kept side is the
-//    plane's +normal side, as in the kernel; defaults remove the half that faces the isometric camera
-//    (X: n = −x̂, Y: n = +ŷ, Z: n = −ẑ, Face: n = −outward). Flipped negates n.
-enum class DraftingSectionAxis : uint8_t
-{
-    X    = 0,                                                                                // Plane x = Offset
-    Y    = 1,                                                                                // Plane y = Offset
-    Z    = 2,                                                                                // Plane z = Offset
-    Face = 3,                                                                                // Selected planar face, offset along its normal
-};
-
-struct DraftingSectionRequest
-{
-    DraftingSectionAxis Axis    = DraftingSectionAxis::X;                                    // [-]   - Plane family
-    double              Offset  = 0.0;                                                       // [len] - Coordinate / normal offset
-    bool                Flipped = false;                                                     // [-]   - Keep the other half
-    std::string         Face    = {};                                                        // [-]   - Face name (Axis = Face)
-};
-
 // 💡 Exact section of every shown solid body (sheets skipped): the kernel SectionBody per body, figures combined —
 //    areas, perimeters, regions and loops add; the centroid is area-weighted; Iuu Ivv Iuv are moved to the common
 //    centroid by the parallel-axis theorem (u = Plane.XAxis, v = Plane.YAxis).

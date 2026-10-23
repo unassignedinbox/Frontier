@@ -18,7 +18,9 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <cfloat>
 #include <filesystem>
+#include <functional>
 #include <numbers>
 #include <sstream>
 
@@ -262,6 +264,7 @@ bool OpenDocument(DraftingWorkspaceState& State, const std::string& Path, bool A
     Document.Captions = File.Captions;
     Document.ImagePlanes = File.ImagePlanes;
     Document.Appearance  = File.Appearance;
+    Document.DrawingSheet = File.DrawingSheet;
     RegenerateDraftingDocument(Document, true);
     AdoptDocument(State, std::move(Document), true);
     if (AdoptPathCondition) State.DocumentPath = Path;
@@ -3674,6 +3677,297 @@ void DrawSectionOutline(DraftingWorkspaceState& State, ImDrawList* Canvas, const
     }
 }
 
+// 💡 Drawing sheet (Alt+D): recomposed only when the document revision or the settings moved (14 ms … 1 s; a section
+//    view costs the most).
+void RefreshDrawingSheet(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSheetSession& Session = State.DrawingSheet;
+    if (!Session.ActiveCondition) return;
+    const std::string Key = DraftingDrawingSheetCacheKey(State.Document, State.Document.DrawingSheet);
+    if (Session.Refreshes > 0 && Session.Sheet.Revision == State.Document.Revision && Session.Sheet.SettingsKey == Key) return;
+    Session.Sheet      = ComposeDraftingDrawingSheet(State.Document, State.Document.DrawingSheet);
+    Session.Refreshes += 1;
+}
+
+std::string DescribeDrawingSheet(const DraftingWorkspaceState& State)
+{
+    const DraftingDrawingSheet& Sheet = State.DrawingSheet.Sheet;
+    if (!Sheet.Refusal.empty()) return Sheet.Refusal;
+    std::string Text = Compose("Drawing sheet %s · %s · ", Modeller::DrawingPaperLabel(State.Document.DrawingSheet.Paper), Sheet.Sheet.ScaleLabel.c_str());
+    Text += Sheet.Sheet.Angle == Modeller::DrawingProjectionAngle::First ? "first angle" : "third angle";
+    Text += Compose(" · %d views · %d dimensions", int(Sheet.Sheet.Views.size()), int(Sheet.Sheet.Dimensions.size()));
+    return Text;
+}
+
+void StoreDrawingSheetTexts(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSheetSession& Session = State.DrawingSheet;
+    const DraftingTitleFields&   Title   = State.Document.DrawingSheet.Title;
+    std::snprintf(Session.TitleText.data(), Session.TitleText.size(), "%s", Title.Title.c_str());
+    std::snprintf(Session.NumberText.data(), Session.NumberText.size(), "%s", Title.DrawingNumber.c_str());
+    std::snprintf(Session.AuthorText.data(), Session.AuthorText.size(), "%s", Title.Author.c_str());
+    std::snprintf(Session.MaterialText.data(), Session.MaterialText.size(), "%s", Title.Material.c_str());
+}
+
+void ToggleDrawingSheet(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSheetSession& Session = State.DrawingSheet;
+    Session.ActiveCondition = !Session.ActiveCondition;
+    Session.Refreshes       = 0;
+    if (!Session.ActiveCondition) { Announce(State, "Drawing sheet off"); return; }
+    Session.Zoom = 1.0f;
+    Session.Pan  = {};
+    StoreDrawingSheetTexts(State);
+    RefreshDrawingSheet(State);
+    Announce(State, DescribeDrawingSheet(State));
+}
+
+// A settings change: saved with the document (dirty, autosaved), not an undo step; the sheet recomposes at once.
+void ReviseDrawingSheet(DraftingWorkspaceState& State, const std::function<void(DraftingDrawingSheetSettings&)>& Change)
+{
+    Change(State.Document.DrawingSheet);
+    State.DirtyCondition = true;
+    RefreshDrawingSheet(State);
+    Announce(State, DescribeDrawingSheet(State));
+}
+
+// − / + step through the ISO 5455 scales from the one in force (the automatic choice included); Auto returns to 0.
+void StepDrawingSheetScale(DraftingWorkspaceState& State, int Direction)
+{
+    const std::vector<double> Scales  = Modeller::EnumerateStandardScales();                 // Largest first
+    const double              Current = State.Document.DrawingSheet.Scale > 0.0 ? State.Document.DrawingSheet.Scale : State.DrawingSheet.Sheet.Sheet.Scale;
+    int Nearest = 0;
+    for (int Index = 1; Index < int(Scales.size()); ++Index)
+        if (std::fabs(std::log(Scales[Index] / std::max(Current, 1.0e-12))) < std::fabs(std::log(Scales[Nearest] / std::max(Current, 1.0e-12)))) Nearest = Index;
+    const int Next = std::clamp(Nearest - Direction, 0, int(Scales.size()) - 1);
+    ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Settings) { Settings.Scale = Scales[Next]; });
+}
+
+// Section A-A follows the Section card's plane while Alt+S is on, else y through the scene centre (the Front direction).
+void ToggleDrawingSheetSection(DraftingWorkspaceState& State)
+{
+    DraftingSectionRequest Plane = State.Section.ActiveCondition ? State.Section.Request : DraftingSectionRequest{ DraftingSectionAxis::Y, 0.0, false, {} };
+    if (!State.Section.ActiveCondition) Plane.Offset = DefaultSectionOffset(State, Plane);
+    ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Settings)
+    {
+        Settings.SectionEnabled = !Settings.SectionEnabled;
+        if (Settings.SectionEnabled) Settings.Section = Plane;
+    });
+}
+
+void ExportDrawingSheet(DraftingWorkspaceState& State, const char* Extension)
+{
+    DraftingDrawingSheetSession& Session = State.DrawingSheet;
+    RefreshDrawingSheet(State);
+    Session.ExportPath    = DraftingDrawingSheetExportPath(State.DocumentPath, Extension);
+    Session.ExportRefusal = ExportDraftingDrawingSheet(Session.Sheet, Session.ExportPath);
+    Session.ExportBytes   = 0.0;
+    std::error_code Failure;
+    if (Session.ExportRefusal.empty()) Session.ExportBytes = double(std::filesystem::file_size(Session.ExportPath, Failure));
+    if (Session.ExportRefusal.empty()) Session.Exports += 1;
+    Announce(State, Session.ExportRefusal.empty() ? Compose("Exported %s (%.0f bytes)", Session.ExportPath.c_str(), Session.ExportBytes) : Session.ExportRefusal);
+}
+
+// 📝 Inspector card: paper A4 … A0, first / third angle, scale (− / Auto / +), views and line kinds, the title block
+//    fields (Enter applies) and SVG / DXF export beside the document.
+void DrawDrawingSheetCard(DraftingWorkspaceState& State)
+{
+    DraftingDrawingSheetSession& Session  = State.DrawingSheet;
+    if (!Session.ActiveCondition) return;
+    const DraftingDrawingSheetSettings& Settings = State.Document.DrawingSheet;
+    BeginCard("Drawing sheet");
+    const float Spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float Fifth   = std::floor((ImGui::GetContentRegionAvail().x - 4.0f * Spacing) / 5.0f);
+    const float Half    = std::floor((ImGui::GetContentRegionAvail().x - Spacing) / 2.0f);
+    static const char* PaperLabels[] = { "A4###SheetPaperA4", "A3###SheetPaperA3", "A2###SheetPaperA2", "A1###SheetPaperA1", "A0###SheetPaperA0" };
+    for (int Paper = 0; Paper < 5; ++Paper)
+    {
+        if (Paper) ImGui::SameLine();
+        if (ToggleButton(State, PaperLabels[Paper], int(Settings.Paper) == Paper, ImVec2(Fifth, 0)))
+            ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Revised) { Revised.Paper = Modeller::DrawingPaperSize(Paper); });
+    }
+    if (ToggleButton(State, "First angle###SheetFirstAngle", Settings.Angle == Modeller::DrawingProjectionAngle::First, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = Modeller::DrawingProjectionAngle::First; });
+    ImGui::SameLine();
+    if (ToggleButton(State, "Third angle###SheetThirdAngle", Settings.Angle == Modeller::DrawingProjectionAngle::Third, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = Modeller::DrawingProjectionAngle::Third; });
+    const std::string ScaleCaption = (Settings.Scale > 0.0 ? "Scale " : "Auto ") + Session.Sheet.Sheet.ScaleLabel + "###SheetScaleAuto";
+    if (PressButton(State, "-###SheetScaleSmaller", ImVec2(34, 0))) StepDrawingSheetScale(State, -1);
+    ImGui::SameLine();
+    if (ToggleButton(State, ScaleCaption.c_str(), Settings.Scale == 0.0, ImVec2(ImGui::GetContentRegionAvail().x - 34.0f - Spacing, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Scale = 0.0; });
+    ImGui::SameLine();
+    if (PressButton(State, "+###SheetScaleLarger", ImVec2(34, 0))) StepDrawingSheetScale(State, 1);
+    if (ToggleButton(State, "Isometric###SheetIsometric", Settings.IsometricEnabled, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.IsometricEnabled = !Revised.IsometricEnabled; });
+    ImGui::SameLine();
+    if (ToggleButton(State, "Section A-A###SheetSection", Settings.SectionEnabled, ImVec2(Half, 0))) ToggleDrawingSheetSection(State);
+    if (ToggleButton(State, "Hidden lines###SheetHidden", Settings.HiddenLinesEnabled, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.HiddenLinesEnabled = !Revised.HiddenLinesEnabled; });
+    ImGui::SameLine();
+    if (ToggleButton(State, "Dimensions###SheetDimensions", Settings.DimensionsEnabled, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.DimensionsEnabled = !Revised.DimensionsEnabled; });
+
+    const auto Field = [&](const char* Caption, const char* Identifier, std::array<char, 96>& Text, std::string DraftingTitleFields::*Member)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextUnformatted(Caption);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(96.0f);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        const bool Entered = ImGui::InputText(Identifier, Text.data(), Text.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        if (Entered || ImGui::IsItemDeactivatedAfterEdit())
+        {
+            const std::string Value = Text.data();
+            if (State.Document.DrawingSheet.Title.*Member != Value) ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Revised) { Revised.Title.*Member = Value; });
+        }
+        RegisterWidget(State, Identifier);
+    };
+    Field("Title", "###SheetTitle", Session.TitleText, &DraftingTitleFields::Title);
+    Field("Number", "###SheetNumber", Session.NumberText, &DraftingTitleFields::DrawingNumber);
+    Field("Drawn by", "###SheetAuthor", Session.AuthorText, &DraftingTitleFields::Author);
+    Field("Material", "###SheetMaterial", Session.MaterialText, &DraftingTitleFields::Material);
+
+    const DraftingDrawingSheet& Sheet = Session.Sheet;
+    if (!Sheet.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Sheet.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    else
+    {
+        std::string Views;
+        for (const Modeller::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " · ") + View.Label;
+        ImGui::TextWrapped("%s", Views.c_str());
+        ImGui::TextDisabled("%d body · %d dimensions · %d lines · %.0f ms%s", Sheet.Bodies, int(Sheet.Sheet.Dimensions.size()), int(Sheet.Sheet.Lines.size()), Sheet.Milliseconds,
+                            Sheet.Sheets ? Compose(" · %d sheet(s) skipped", Sheet.Sheets).c_str() : "");
+    }
+    if (PressButton(State, "Export SVG###SheetExportSvg", ImVec2(Half, 0))) ExportDrawingSheet(State, ".svg");
+    ImGui::SameLine();
+    if (PressButton(State, "Export DXF###SheetExportDxf", ImVec2(Half, 0))) ExportDrawingSheet(State, ".dxf");
+    if (!Session.ExportPath.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(Session.ExportRefusal.empty() ? MutedColour : RefusalColour));
+        ImGui::TextWrapped("%s", Session.ExportRefusal.empty() ? Compose("%s · %.0f bytes", std::filesystem::path(Session.ExportPath).filename().string().c_str(), Session.ExportBytes).c_str()
+                                                                : Session.ExportRefusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (PressButton(State, "Fit###SheetFit", ImVec2(Half, 0))) { Session.Zoom = 1.0f; Session.Pan = {}; }
+    ImGui::SameLine();
+    if (PressButton(State, "Close (Alt+D)###SheetClose", ImVec2(Half, 0))) ToggleDrawingSheet(State);
+    EndCard();
+}
+
+// Dashes along a pixel polyline: Pattern alternates drawn / blank lengths [px] (empty = continuous).
+void DrawPatternedPolyline(ImDrawList* Canvas, const std::vector<ImVec2>& Points, const std::vector<float>& Pattern, ImU32 Colour, float Width)
+{
+    if (Points.size() < 2) return;
+    if (Pattern.empty()) { Canvas->AddPolyline(Points.data(), int(Points.size()), Colour, Width); return; }
+    size_t Phase     = 0;
+    float  Remaining = Pattern[0];
+    for (size_t Index = 1; Index < Points.size(); ++Index)
+    {
+        ImVec2       From   = Points[Index - 1];
+        const ImVec2 To     = Points[Index];
+        float        Length = std::hypot(To.x - From.x, To.y - From.y);
+        if (Length <= 0.0f) continue;
+        const ImVec2 Along((To.x - From.x) / Length, (To.y - From.y) / Length);
+        while (Length > 0.0f)
+        {
+            const float  Piece = std::min(Remaining, Length);
+            const ImVec2 End(From.x + Along.x * Piece, From.y + Along.y * Piece);
+            if (Phase % 2 == 0) Canvas->AddLine(From, End, Colour, Width);
+            From       = End;
+            Length    -= Piece;
+            Remaining -= Piece;
+            if (Remaining <= 1.0e-4f) { Phase = (Phase + 1) % Pattern.size(); Remaining = Pattern[Phase]; }
+        }
+    }
+}
+
+// 💡 The paper in the viewport: fitted with a 24 px margin × Zoom, centre offset by Pan; layer widths and dash patterns
+//    of ISO 128-2 scaled to the zoom (≥ 1 px); texts by cap height (≈ 0.7 em), rotated by turning their vertices about
+//    the baseline anchor. ⌀ prints as Ø (the interface font has no U+2300; exports keep ⌀ / %%c).
+void DrawDrawingSheetPaper(DraftingWorkspaceState& State, ImDrawList* Canvas, ImVec2 Image, ImVec2 Extent, bool Hovered)
+{
+    DraftingDrawingSheetSession& Session = State.DrawingSheet;
+    RefreshDrawingSheet(State);
+    ImGuiIO& Io = ImGui::GetIO();
+    Canvas->AddRectFilled(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), IM_COL32(0x3a, 0x3f, 0x4a, 0xff), PanelRounding, ImDrawFlags_RoundCornersBottom);
+    const Modeller::DrawingSheet& Sheet = Session.Sheet.Sheet;
+    const Modeller::Vector2 Paper = Session.Sheet.Refusal.empty() ? Modeller::Vector2{ Sheet.Width, Sheet.Height } : Modeller::DrawingPaperDimensions(State.Document.DrawingSheet.Paper);
+    const float  Fit    = std::max(1.0e-3f, std::min((Extent.x - 48.0f) / float(Paper.X), (Extent.y - 48.0f) / float(Paper.Y)));
+    const ImVec2 Centre(Image.x + 0.5f * Extent.x, Image.y + 0.5f * Extent.y);
+    if (Hovered && Io.MouseWheel != 0.0f)
+    {
+        const float  Before = Fit * Session.Zoom;
+        const ImVec2 Corner(Centre.x + Session.Pan[0] - 0.5f * float(Paper.X) * Before, Centre.y + Session.Pan[1] - 0.5f * float(Paper.Y) * Before);
+        const ImVec2 Under((Io.MousePos.x - Corner.x) / Before, (Io.MousePos.y - Corner.y) / Before);    // [mm] - Paper point under the pointer
+        Session.Zoom = std::clamp(Session.Zoom * std::pow(1.2f, Io.MouseWheel), 0.25f, 40.0f);
+        const float After = Fit * Session.Zoom;
+        Session.Pan = { Io.MousePos.x - Under.x * After - Centre.x + 0.5f * float(Paper.X) * After, Io.MousePos.y - Under.y * After - Centre.y + 0.5f * float(Paper.Y) * After };
+    }
+    if ((ImGui::IsItemActive() || Hovered) && (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) || ImGui::IsMouseDragging(ImGuiMouseButton_Right, ClickTolerance)))
+    {
+        Session.Pan[0] += Io.MouseDelta.x;
+        Session.Pan[1] += Io.MouseDelta.y;
+    }
+    if (Hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { Session.Zoom = 1.0f; Session.Pan = {}; }
+    const float  Scale = Fit * Session.Zoom;                                                  // [px/mm]
+    const ImVec2 Corner(Centre.x + Session.Pan[0] - 0.5f * float(Paper.X) * Scale, Centre.y + Session.Pan[1] - 0.5f * float(Paper.Y) * Scale);
+    const auto   Map = [&](const Modeller::Vector2& Point) { return ImVec2(Corner.x + float(Point.X) * Scale, Corner.y + float(Paper.Y - Point.Y) * Scale); };
+
+    Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
+    Canvas->AddRectFilled(ImVec2(Corner.x + 4, Corner.y + 4), ImVec2(Corner.x + float(Paper.X) * Scale + 4, Corner.y + float(Paper.Y) * Scale + 4), IM_COL32(0, 0, 0, 0x50));
+    Canvas->AddRectFilled(Corner, ImVec2(Corner.x + float(Paper.X) * Scale, Corner.y + float(Paper.Y) * Scale), IM_COL32_WHITE);
+    if (!Session.Sheet.Refusal.empty())
+    {
+        const ImVec2 Size = ImGui::CalcTextSize(Session.Sheet.Refusal.c_str());
+        Canvas->AddText(ImVec2(Centre.x + Session.Pan[0] - 0.5f * Size.x, Centre.y + Session.Pan[1] - 0.5f * Size.y), IM_COL32(0xb0, 0x30, 0x20, 0xff), Session.Sheet.Refusal.c_str());
+        Canvas->PopClipRect();
+        return;
+    }
+    struct LayerStyle { float Width; std::vector<float> Dashes; };                            // [mm]
+    static const LayerStyle Styles[] = { { 0.50f, {} }, { 0.25f, { 3.0f, 1.5f } }, { 0.18f, {} }, { 0.50f, {} }, { 0.18f, {} }, { 0.25f, {} },
+                                         { 0.18f, { 8.0f, 1.5f, 1.0f, 1.5f } }, { 0.50f, { 8.0f, 1.5f, 1.0f, 1.5f } }, { 0.70f, {} }, { 0.35f, {} } };
+    const ImU32 Ink = IM_COL32(0x10, 0x12, 0x16, 0xff);
+    for (const Modeller::SheetPolyline& Line : Sheet.Lines)
+    {
+        const LayerStyle& Style = Styles[std::min<size_t>(size_t(Line.Layer), std::size(Styles) - 1)];
+        std::vector<ImVec2> Pixels;
+        Pixels.reserve(Line.Points.size());
+        for (const Modeller::Vector2& Point : Line.Points) Pixels.push_back(Map(Point));
+        std::vector<float> Dashes;
+        for (const float Dash : Style.Dashes) Dashes.push_back(std::max(1.5f, Dash * Scale));
+        DrawPatternedPolyline(Canvas, Pixels, Dashes, Ink, std::max(1.0f, Style.Width * Scale));
+    }
+    for (const Modeller::SheetSolid& Solid : Sheet.Solids) Canvas->AddTriangleFilled(Map(Solid.Corners[0]), Map(Solid.Corners[1]), Map(Solid.Corners[2]), Ink);
+    ImFont* Font = ImGui::GetFont();
+    for (const Modeller::SheetText& Text : Sheet.Texts)
+    {
+        const float Pixels = float(Text.Height) * Scale / 0.70f;                             // [px] - Em from the cap height
+        if (Pixels < 3.0f) continue;
+        std::string Content = Text.Content;
+        for (size_t At = Content.find("⌀"); At != std::string::npos; At = Content.find("⌀", At)) Content.replace(At, std::strlen("⌀"), "Ø");
+        const float  Width  = Font->CalcTextSizeA(Pixels, FLT_MAX, 0.0f, Content.c_str()).x;
+        const float  Ascent = Font->GetFontBaked(Pixels)->Ascent;
+        const ImVec2 Anchor = Map(Text.Position);
+        const float  Shift  = Text.Anchor == Modeller::SheetTextAnchor::Middle ? -0.5f * Width : Text.Anchor == Modeller::SheetTextAnchor::End ? -Width : 0.0f;
+        const int    First  = Canvas->VtxBuffer.Size;
+        Canvas->AddText(Font, Pixels, ImVec2(Anchor.x + Shift, Anchor.y - Ascent), Ink, Content.c_str());
+        if (Text.Angle == 0.0) continue;
+        const float Cosine = float(std::cos(Text.Angle)), Sine = float(std::sin(Text.Angle));      // Paper 𝑦 up, screen 𝑦 down
+        for (int Index = First; Index < Canvas->VtxBuffer.Size; ++Index)
+        {
+            ImVec2&     Position = Canvas->VtxBuffer[Index].pos;
+            const float Across   = Position.x - Anchor.x, Down = Position.y - Anchor.y;
+            Position = ImVec2(Anchor.x + Across * Cosine + Down * Sine, Anchor.y - Across * Sine + Down * Cosine);
+        }
+    }
+    Canvas->PopClipRect();
+}
+
 // Zebra (V8): stripe count to the surface shader, and a finer tessellation so interpolated normals follow the surface.
 void ToggleZebra(DraftingWorkspaceState& State)
 {
@@ -4493,6 +4787,16 @@ void DrawViewport(DraftingWorkspaceState& State, ImTextureID ViewportTexture, Im
     RegisterWidget(State, "ViewportSurface");
     const bool Hovered = ImGui::IsItemHovered();
     State.ViewportHovered = Hovered;
+    if (State.DrawingSheet.ActiveCondition)
+    {
+        State.ViewportHovered = false;
+        DrawDrawingSheetPaper(State, Canvas, Image, Extent, Hovered);
+        Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, "Drawing sheet: wheel zoom · middle / right drag pan · double-click fit · card: paper, angle, scale, views, title, export · Esc / Alt+D model");
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+        return;
+    }
     if (ViewportTexture)
         Canvas->AddImageRounded(ViewportTexture, Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, PanelRounding,
                                 ImDrawFlags_RoundCornersBottom);
@@ -5394,6 +5698,7 @@ void DrawInspector(DraftingWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
     DrawMeasureCard(State);
     DrawSectionCard(State);
+    DrawDrawingSheetCard(State);
     DrawDrawingCard(State);
     DrawSnapCard(State);
     DrawConstraintCard(State);
@@ -5500,6 +5805,14 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
     const bool Shift     = Io.KeyShift;
     const bool Alternate = Io.KeyAlt;
     auto Pressed = [](ImGuiKey Key) { return ImGui::IsKeyPressed(Key, false); };
+
+    // Drawing sheet (Alt+D): the paper replaces the model — Esc or Alt+D returns, Ctrl+S still saves.
+    if (State.DrawingSheet.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Escape) || (Alternate && !Control && !Shift && Pressed(ImGuiKey_D))) ToggleDrawingSheet(State);
+        else if (Control && !Alternate && !Shift && Pressed(ImGuiKey_S)) SaveDocument(State, State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath);
+        return;
+    }
 
     // Mode 1 pole drag in progress: Esc drops it (no edit).
     if (State.PoleDrag.ActiveCondition)
@@ -5702,6 +6015,7 @@ void ApplyShortcuts(DraftingWorkspaceState& State)
         }
         if (Pressed(ImGuiKey_E)) OpenSweepSession(State, DraftingSweepVerb::Evolution);     // command:evolution
         if (Pressed(ImGuiKey_S)) ToggleSection(State);                                      // section (no Plasticity default; Alt+S is free)
+        if (Pressed(ImGuiKey_D)) ToggleDrawingSheet(State);                                 // drawing sheet (no Plasticity default; Alt+D is free)
         if (Pressed(ImGuiKey_J)) OpenJointSession(State);                                   // joint (no Plasticity default; Alt+J is free)
         if (Pressed(ImGuiKey_R)) OpenSweepSession(State, DraftingSweepVerb::Revolve);       // revolution (no Plasticity default key)
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)

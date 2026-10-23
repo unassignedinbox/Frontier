@@ -11,6 +11,7 @@
 
 #include "Document/DraftingImagePlane.h"
 #include "Document/DraftingMatcap.h"
+#include "Drawing/DrawingSheet.h"
 #include "Feature/FeatureTree.h"
 #include "Local/FaceOperations.h"
 #include "Sketch/SketchConstraining.h"
@@ -191,6 +192,55 @@ struct DraftingHistoryEntry
     DraftingBodySummary                                Summary = {};                         // [-] - Body figures then (reused when every step restores)
 };
 
+// 📝 Section plane choice (Section card, Alt+S). World planes pass through Offset on their axis; the Face plane is the
+//    selected planar face moved Offset along its outward normal (negative = into the body). The kept side is the
+//    plane's +normal side, as in the kernel; defaults remove the half that faces the isometric camera
+//    (X: n = −x̂, Y: n = +ŷ, Z: n = −ẑ, Face: n = −outward). Flipped negates n.
+enum class DraftingSectionAxis : uint8_t
+{
+    X    = 0,                                                                                // Plane x = Offset
+    Y    = 1,                                                                                // Plane y = Offset
+    Z    = 2,                                                                                // Plane z = Offset
+    Face = 3,                                                                                // Selected planar face, offset along its normal
+};
+
+struct DraftingSectionRequest
+{
+    DraftingSectionAxis Axis    = DraftingSectionAxis::X;                                    // [-]   - Plane family
+    double              Offset  = 0.0;                                                       // [len] - Coordinate / normal offset
+    bool                Flipped = false;                                                     // [-]   - Keep the other half
+    std::string         Face    = {};                                                        // [-]   - Face name (Axis = Face)
+};
+
+// 📝 Title block fields; an empty Title prints the document title.
+struct DraftingTitleFields
+{
+    std::string Title         = {};                                                          // [-] - Part name (empty: document title)
+    std::string DrawingNumber = "DWG-0001";                                                  // [-] - Identifier
+    std::string Author        = {};                                                          // [-] - Drawn by
+    std::string Date          = {};                                                          // [-] - Issue date
+    std::string Material      = {};                                                          // [-] - Material
+    std::string Revision      = "A";                                                         // [-] - Revision letter
+    std::string Company       = "Frontier";                                                  // [-] - Organisation
+};
+
+// 📝 Saved with the document ([DrawingSheet], only when not the defaults), not in the undo history — like image planes.
+//    First angle by default (ISO 5456-2, SANS 10111); Scale 0 picks the largest standard scale that fits. Section A-A
+//    cuts along a Section-card plane (Alt+S semantics: the +normal side is kept and seen from the removed side).
+struct DraftingDrawingSheetSettings
+{
+    Modeller::DrawingPaperSize       Paper               = Modeller::DrawingPaperSize::A3;    // [-] - ISO 216, landscape
+    Modeller::DrawingProjectionAngle Angle               = Modeller::DrawingProjectionAngle::First; // [-] - Layout and symbol
+    double                           Scale               = 0.0;                               // [-] - Paper : model, 0 = automatic
+    bool                             IsometricEnabled    = true;                              // [-] - Isometric in the free quadrant
+    bool                             SectionEnabled      = false;                             // [-] - Section A-A instead of the isometric
+    DraftingSectionRequest           Section             = { DraftingSectionAxis::Y, 0.0, false, {} }; // [-] - Plane of section A-A
+    bool                             HiddenLinesEnabled  = true;                              // [-] - Dashed hidden lines
+    bool                             TangentEdgesEnabled = true;                              // [-] - Thin tangent edges
+    bool                             DimensionsEnabled   = true;                              // [-] - Automatic dimensions + centre marks
+    DraftingTitleFields              Title               = {};                                // [-] - Title block
+};
+
 struct DraftingDocument
 {
     std::string                                Title        = "Untitled";                    // [-] - Document caption
@@ -205,6 +255,7 @@ struct DraftingDocument
     uint64_t                                   Revision     = 0;                             // [-] - Bumped by every regeneration (scene cache key)
     std::vector<DraftingImagePlane>            ImagePlanes  = {};                            // [-] - Blueprint references (saved, not in the history)
     DraftingAppearance                         Appearance   = {};                            // [-] - Body / face matcaps (saved, undoable)
+    DraftingDrawingSheetSettings               DrawingSheet = {};                            // [-] - Alt+D sheet settings (saved, not in the history)
     Modeller::RegenerationCache                Replay       = {};                            // [-] - Step checkpoints of the last replay (incremental regeneration)
     std::shared_ptr<const Modeller::ReplayCheckpoint> SummaryCheckpoint = {};                // [-] - Final checkpoint Summary was measured on (figures reused when a
                                                                                              //       regeneration restores every step from it: undo / redo / clone)

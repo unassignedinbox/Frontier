@@ -11,6 +11,7 @@
 #include "Document/DraftingMeasurement.h"
 #include "Document/DraftingImagePlane.h"
 #include "Document/DraftingDocumentCodec.h"
+#include "Document/DraftingDrawingSheet.h"
 #include "Document/DraftingScene.h"
 #include "Document/DraftingSpecimen.h"
 #include "Document/VehicleCurveImport.h"
@@ -18,6 +19,7 @@
 #include "Viewport/DraftingSnapping.h"
 
 #include "Blend/BlendCatalogue.h"
+#include "Drawing/DrawingExport.h"
 #include "Geometry/NurbsCarrier.h"
 #include "Measurement/MassProperties.h"
 #include "Sketch/SketchProfile.h"
@@ -86,6 +88,7 @@ namespace
     GateTally SectionGate     = { "W34", "Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeDraftingSectionClip marks sheet bodies", "exact" };
     GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
     GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 2 (0.2 √0.05 + 0.09 asin ⅔)) · 0.1; moving the bracket carries both; refusals; codec (joints, geometry, fixed point); undo", "≤ 1e-9" };
+    GateTally SheetGate       = { "W37", "Drawing sheet (Alt+D) of the bracket specimen: kernel views, hidden lines and dimensions in mm (metres × 1000), automatic ISO 5455 scale (next larger refused), unit invariance against the millimetre kernel sheet, A4 third-angle placement, section A-A cap = exact section 4.116587, SVG / DXF export byte-equal beside the document, [DrawingSheet] codec round trip + refusals, hidden bodies refused", "≤ 1e-9" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -2860,7 +2863,140 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate })
+    // ---- W37 drawing sheet (Alt+D): the bracket on paper through the kernel sheet, metres → millimetres, saved settings
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[256]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        DraftingDocument Rig = BuildDraftingSpecimen();
+        DraftingDrawingSheetSettings Settings;
+        const DraftingDrawingSheet Sheet = ComposeDraftingDrawingSheet(Rig, Settings);
+        std::string Views, Texts;
+        for (const Modeller::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " ") + View.Label;
+        for (const Modeller::DrawingDimension& Dimension : Sheet.Sheet.Dimensions) Texts += (Texts.empty() ? "" : " ") + Dimension.Text;
+        Tally(SheetGate, 0.0, Sheet.Refusal.empty() && Sheet.Bodies == 1 && Views == "Front Top Right Isometric" && Sheet.Sheet.Width == 420.0 && Sheet.Sheet.Height == 297.0
+              && Sheet.Sheet.Angle == Modeller::DrawingProjectionAngle::First,
+              "default: A3 first angle, " + Views + ", scale " + Sheet.Sheet.ScaleLabel + ", " + std::to_string(Sheet.Sheet.Lines.size()) + " lines, "
+              + std::to_string(Sheet.Sheet.Dimensions.size()) + " dimensions, " + Format("%.0f ms", Sheet.Milliseconds));
+
+        // Automatic scale: the largest ISO 5455 scale that fits — the next larger one is refused.
+        const std::vector<double> Scales = Modeller::EnumerateStandardScales();
+        const auto Chosen = std::find_if(Scales.begin(), Scales.end(), [&](double Scale) { return std::fabs(Scale - Sheet.Sheet.Scale) <= 1.0e-15; });
+        bool LargerRefused = Chosen != Scales.end();
+        if (Chosen != Scales.begin() && Chosen != Scales.end())
+        {
+            DraftingDrawingSheetSettings Larger = Settings;
+            Larger.Scale = *(Chosen - 1);
+            LargerRefused = !ComposeDraftingDrawingSheet(Rig, Larger).Refusal.empty();
+        }
+        Tally(SheetGate, 0.0, LargerRefused, "automatic " + Sheet.Sheet.ScaleLabel + " is standard and the next larger scale is refused");
+
+        // Dimension texts in millimetres; every value × 1000 prints as its text and the linear ones span value × scale on paper.
+        double Worst = 0.0;
+        bool   Printed = true;
+        for (const Modeller::DrawingDimension& Dimension : Sheet.Sheet.Dimensions)
+        {
+            const std::string Digits = Modeller::FormatDimensionValue(Dimension.Value * DraftingModelUnitMillimetres);
+            const std::string Prefix = Dimension.Kind == Modeller::DrawingDimensionKind::Diameter ? "⌀" : Dimension.Kind == Modeller::DrawingDimensionKind::Radius ? "R" : "";
+            Printed = Printed && Dimension.Text == Prefix + Digits;
+            if (Dimension.Kind == Modeller::DrawingDimensionKind::Horizontal || Dimension.Kind == Modeller::DrawingDimensionKind::Vertical)
+                Worst = std::max(Worst, std::fabs(std::hypot(Dimension.LineEnd.X - Dimension.LineStart.X, Dimension.LineEnd.Y - Dimension.LineStart.Y)
+                                                  - Dimension.Value * DraftingModelUnitMillimetres * Sheet.Sheet.Scale));
+        }
+        const auto Shows = [&](const char* Text) { return (" " + Texts + " ").find(std::string(" ") + Text + " ") != std::string::npos; };
+        Tally(SheetGate, Worst, Printed && Worst <= 1.0e-9 && Shows("4000") && Shows("2500") && Shows("1750") && Shows("⌀600") && Shows("⌀1000"),
+              "dimensions in mm: " + Texts + Format(" — span vs value × scale %.1e mm", Worst));
+
+        // Unit invariance: the kernel sheet of the same body in millimetre units at scale × 1000 strokes the same paper.
+        std::vector<Modeller::BodyToken> Bodies;
+        for (const RegeneratedBody& Body : Rig.Regeneration.Bodies) Bodies.push_back(Body.Body);
+        Modeller::DrawingSheetRequest Direct;
+        Direct.Paper = Settings.Paper; Direct.Angle = Settings.Angle; Direct.Scale = Sheet.Sheet.Scale * DraftingModelUnitMillimetres; Direct.ModelUnitMillimetres = 1.0;
+        Direct.Title = { Rig.Title, Settings.Title.DrawingNumber, "", "", "", Settings.Title.Revision, Settings.Title.Company };
+        const Modeller::DrawingSheet Reference = Modeller::ComposeDrawingSheet(*Rig.Partition, Bodies, Direct);
+        double Stroke = Reference.Lines.size() == Sheet.Sheet.Lines.size() ? 0.0 : 1.0e300;
+        for (size_t Line = 0; Stroke < 1.0e300 && Line < Reference.Lines.size(); ++Line)
+        {
+            if (Reference.Lines[Line].Points.size() != Sheet.Sheet.Lines[Line].Points.size()) { Stroke = 1.0e300; break; }
+            for (size_t Point = 0; Point < Reference.Lines[Line].Points.size(); ++Point)
+                Stroke = std::max(Stroke, std::hypot(Reference.Lines[Line].Points[Point].X - Sheet.Sheet.Lines[Line].Points[Point].X, Reference.Lines[Line].Points[Point].Y - Sheet.Sheet.Lines[Line].Points[Point].Y));
+        }
+        Tally(SheetGate, Stroke, Stroke <= 1.0e-9, Format("metres × 1000 at 1:%g = millimetres at ", 1.0 / Sheet.Sheet.Scale) + Reference.ScaleLabel + Format(": %zu strokes, worst %.1e mm", Reference.Lines.size(), Stroke));
+
+        // Paper and angle: A4 picks a scale no larger than A3; third angle mirrors the Top / Right placement about Front.
+        DraftingDrawingSheetSettings Small = Settings;
+        Small.Paper = Modeller::DrawingPaperSize::A4;
+        Small.Angle = Modeller::DrawingProjectionAngle::Third;
+        const DraftingDrawingSheet Third = ComposeDraftingDrawingSheet(Rig, Small);
+        const auto Centre = [](const Modeller::PlacedDrawingView& View) { return Modeller::Vector2{ 0.5 * (View.Low.X + View.High.X), 0.5 * (View.Low.Y + View.High.Y) }; };
+        const bool Placed = Third.Refusal.empty() && Third.Sheet.Views.size() >= 3 && Sheet.Sheet.Views.size() >= 3
+                         && Centre(Sheet.Sheet.Views[1]).Y < Centre(Sheet.Sheet.Views[0]).Y && Centre(Third.Sheet.Views[1]).Y > Centre(Third.Sheet.Views[0]).Y
+                         && Centre(Sheet.Sheet.Views[2]).X < Centre(Sheet.Sheet.Views[0]).X && Centre(Third.Sheet.Views[2]).X > Centre(Third.Sheet.Views[0]).X;
+        Tally(SheetGate, 0.0, Placed && Third.Sheet.Scale <= Sheet.Sheet.Scale && Third.Sheet.Width == 297.0,
+              "A4 third angle at " + Third.Sheet.ScaleLabel + ": Top above / Right right of Front (first angle: below / left)");
+
+        // Section A-A along the Section card's y = 1.25 plane: the kernel frame keeps −ZAxis (= the card's removed
+        // side flipped), the cap equals the exact Section figure 4.116587.
+        DraftingDrawingSheetSettings Cut = Settings;
+        Cut.SectionEnabled = true;
+        Cut.Section        = { DraftingSectionAxis::Y, 1.25, false, {} };
+        const DraftingDrawingSheet Sectioned = ComposeDraftingDrawingSheet(Rig, Cut);
+        const DraftingSection      Exact     = SectionDraftingDocument(Rig, Cut.Section);
+        double Cap = 0.0;
+        std::string CutViews;
+        for (const Modeller::PlacedDrawingView& View : Sectioned.Sheet.Views) { Cap += View.View.SectionArea; CutViews += (CutViews.empty() ? "" : " ") + View.Label; }
+        const Modeller::OrthonormalFrame Frame = DraftingSheetSectionFrame(Exact.Plane);
+        Tally(SheetGate, std::fabs(Cap - Exact.Area), Sectioned.Refusal.empty() && CutViews == "Front Top Right Section A-A" && std::fabs(Cap - Exact.Area) <= 1.0e-9
+              && std::fabs(Exact.Area - 4.116587) <= 5.0e-7 && Dot(Frame.ZAxis, Exact.Plane.ZAxis) <= -1.0 + 1.0e-15,
+              CutViews + Format(": cap %.9f m² = section %.9f m², %.0f ms", Cap, Exact.Area, Sectioned.Milliseconds));
+
+        // Export: paths beside the document; the files are the writers' bytes.
+        const std::filesystem::path Folder = std::filesystem::temp_directory_path() / "DraftingSheetValidation";
+        std::filesystem::create_directories(Folder);
+        const std::string Svg = DraftingDrawingSheetExportPath((Folder / "Bracket.drafting.toml").string(), ".svg");
+        const std::string Dxf = DraftingDrawingSheetExportPath((Folder / "Bracket.drafting.toml").string(), ".dxf");
+        const auto Bytes = [](const std::string& Path) { std::ifstream Stream(Path, std::ios::binary); std::ostringstream Text; Text << Stream.rdbuf(); return Text.str(); };
+        const bool Written = ExportDraftingDrawingSheet(Sheet, Svg).empty() && ExportDraftingDrawingSheet(Sheet, Dxf).empty();
+        Tally(SheetGate, 0.0, Written && Svg == (Folder / "Bracket.svg").string() && Dxf == (Folder / "Bracket.dxf").string() && DraftingDrawingSheetExportPath("", ".svg") == "Untitled.svg"
+              && Bytes(Svg) == Modeller::WriteDrawingSvg(Sheet.Sheet) && Bytes(Dxf) == Modeller::WriteDrawingDxf(Sheet.Sheet) && Bytes(Svg).find("⌀600") != std::string::npos,
+              Format("Bracket.svg %zu B + Bracket.dxf %zu B byte-equal to the writers", Bytes(Svg).size(), Bytes(Dxf).size()));
+
+        // Saved with the document: defaults write no table; revised settings round trip (fixed point); bad labels refused.
+        const std::string Plain = EncodeDraftingDocument(Rig);
+        DraftingDocument Saved = CloneDraftingDocument(Rig);
+        Saved.DrawingSheet.Paper = Modeller::DrawingPaperSize::A2;
+        Saved.DrawingSheet.Angle = Modeller::DrawingProjectionAngle::Third;
+        Saved.DrawingSheet.Scale = 0.02;
+        Saved.DrawingSheet.SectionEnabled = true;
+        Saved.DrawingSheet.Section = { DraftingSectionAxis::X, 1.0, true, {} };
+        Saved.DrawingSheet.HiddenLinesEnabled = false;
+        Saved.DrawingSheet.Title = { "Bracket \"B\" Ø", "DWG-0042", "Frontier", "2026-10-23", "AlSi10Mg", "C", "Frontier" };
+        const std::string Written1 = EncodeDraftingDocument(Saved);
+        const DraftingDocumentFile File = DecodeDraftingDocument(Written1);
+        DraftingDocument Copy = CloneDraftingDocument(Rig);
+        Copy.DrawingSheet = File.DrawingSheet;
+        const bool RoundTrip = File.Refusal.empty() && DraftingDrawingSheetKey(File.DrawingSheet) == DraftingDrawingSheetKey(Saved.DrawingSheet)
+                            && DraftingSectionKey(File.DrawingSheet.Section) == DraftingSectionKey(Saved.DrawingSheet.Section) && EncodeDraftingDocument(Copy) == Written1;
+        std::string BadPaper = Written1, BadAngle = Written1;
+        BadPaper.replace(BadPaper.find("Paper = \"A2\""), 12, "Paper = \"A5\"");
+        BadAngle.replace(BadAngle.find("Angle = \"Third\""), 15, "Angle = \"Fifth\"");
+        const std::string PaperRefusal = DecodeDraftingDocument(BadPaper).Refusal, AngleRefusal = DecodeDraftingDocument(BadAngle).Refusal;
+        Tally(SheetGate, 0.0, Plain.find("[DrawingSheet]") == std::string::npos && Written1.find("[DrawingSheet]") != std::string::npos && RoundTrip
+              && PaperRefusal.find("A5") != std::string::npos && AngleRefusal.find("Fifth") != std::string::npos,
+              "codec: no table at the defaults, A2 / third / 1:50 / section x flipped / title fields round trip (fixed point), " + PaperRefusal + " · " + AngleRefusal);
+
+        // Refusals: every body hidden, a face section without a face; hiding is part of the cache key.
+        DraftingDocument Hidden = CloneDraftingDocument(Rig);
+        Hidden.Appearance.HiddenBodies.insert(Rig.Regeneration.Bodies[0].Key);
+        const DraftingDrawingSheet None = ComposeDraftingDrawingSheet(Hidden, Settings);
+        DraftingDrawingSheetSettings Faceless = Settings;
+        Faceless.SectionEnabled = true;
+        Faceless.Section        = { DraftingSectionAxis::Face, 0.0, false, {} };
+        const DraftingDrawingSheet NoFace = ComposeDraftingDrawingSheet(Rig, Faceless);
+        Tally(SheetGate, 0.0, None.Refusal == "Drawing sheet: no shown solid body" && NoFace.Refusal.find("section A-A") != std::string::npos
+              && DraftingDrawingSheetCacheKey(Hidden, Settings) != DraftingDrawingSheetCacheKey(Rig, Settings) && DefaultDraftingDrawingSheetCondition(Settings) && !DefaultDraftingDrawingSheetCondition(Cut),
+              "refusals: " + None.Refusal + " · " + NoFace.Refusal);
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
