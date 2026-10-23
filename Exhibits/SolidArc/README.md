@@ -1,6 +1,6 @@
 # 🧩 SolidArc — application evidence
 
-**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes 25 / 25 (26 / 26 with the BMW picture). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
+**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes 25 / 25 (26 / 26 with the BMW picture), re-run after the SolidArc rename (2026-10-23). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
 
 | Report (in `Results/`) | Result |
 |---|---|

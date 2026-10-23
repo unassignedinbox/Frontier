@@ -11,7 +11,7 @@
   "PoleDrags": 1,
   "PickMode": 3,
   "Hover": "Loft#12.Side(Surface)",
-  "Camera": {"Yaw": -1.570796327, "Pitch": -1.570796327, "Distance": 2.116909979, "Target": [0.3750122786, 0.5500062928, 0.7875294089], "Orthographic": false},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": -1.570796327, "Distance": 2.116909979, "Target": [0.3750122786, 0.5500062928, 0.7875294089], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
   "Undo": 3,

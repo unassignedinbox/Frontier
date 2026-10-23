@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 349 frames · 715.966 s · slowest frame 110764 ms
-- Script: Exhibits/SolidArc/Code/Scripts/NurbsBlendWalkthrough.txt
+- Frame: 1600 x 900 · 349 frames · 1056.31 s · slowest frame 162139 ms
+- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/NurbsBlendWalkthrough.txt
 - Expectations: 43 / 43 passed
 
 | Line | Expectation | Observed | Result |
@@ -43,7 +43,7 @@
 | 149 | `bevel-active == 0` | 0 | 🟢 |
 | 150 | `refused == 0` | 0 | 🟢 |
 | 151 | `sound == 1` | 1 | 🟢 |
-| 152 | `status contains 0.1 → 0.25` | Fillet 0.1 → 0.25 on 1 edge(s) · 105075 ms | 🟢 |
+| 152 | `status contains 0.1 → 0.25` | Fillet 0.1 → 0.25 on 1 edge(s) · 153853 ms | 🟢 |
 | 153 | `volume ~ 2.133847116` | 2.133847116 | 🟢 |
 | 167 | `bevel-variable == 0` | 0 | 🟢 |
 | 175 | `bevel-refusal contains curvature radius` | Blend#6: Blend: E37: size exceeds the curvature radius of the NURBS support (fold margi... | 🟢 |
@@ -53,12 +53,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 173NurbsBlendCutBody | 149 | `ab85450dde404418` |
-| 174NurbsChamfer025 | 184 | `c4c3b6188afacd41` |
-| 175NurbsChamferApplied | 208 | `45bf90c2825ace41` |
-| 176NurbsVariablePreview | 282 | `ac1721d8d754a23f` |
-| 177NurbsVariableApplied | 290 | `ac68846e7a3424e1` |
-| 178NurbsChamferRefused | 342 | `8fe6fc1595851d1e` |
+| 173NurbsBlendCutBody | 149 | `07566569af7d4260` |
+| 174NurbsChamfer025 | 184 | `689bd6dd4f65a61c` |
+| 175NurbsChamferApplied | 208 | `149cc53f4749fbb3` |
+| 176NurbsVariablePreview | 282 | `dfe78af561d13419` |
+| 177NurbsVariableApplied | 290 | `3f2a61547877a0ab` |
+| 178NurbsChamferRefused | 342 | `537b246710dcb288` |
 
 ## Journal
 
@@ -67,12 +67,12 @@
 - Curve1 · Hermite · 0 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Curve1 · New · 29 ms
+- Extrude1 · Curve1 · New · 44 ms
 - Selection cleared
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 19 ms
-- Cut (Extrude1 by Line1) · 896 ms
-- Remove (Cut1) · 25 ms
+- Line1 · 34 ms
+- Cut (Extrude1 by Line1) · 1345 ms
+- Remove (Cut1) · 35 ms
 - View Isometric
 - Framed the document (Space)
 - Selection cleared
@@ -80,14 +80,14 @@
 - Selected Edge(Extrude#2.Cap(End)|Extrude#2.Side(Spline1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.15 m (pinned)
-- Chamfer 0.15 on 1 edge(s) · 48517 ms
+- Chamfer 0.15 on 1 edge(s) · 70635 ms
 - Undo
 - Selected Edge(Extrude#2.Cap(End)|Extrude#2.Side(Spline1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.1 m (pinned)
 - Variable size: 0.1 m at the anchor corner → 0.05 m (F flips the anchor)
 - Bevel end size 0.25 m
-- Fillet 0.1 → 0.25 on 1 edge(s) · 105075 ms
+- Fillet 0.1 → 0.25 on 1 edge(s) · 153853 ms
 - Undo
 - Selected Edge(Extrude#2.Cap(End)|Extrude#2.Side(Spline1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts

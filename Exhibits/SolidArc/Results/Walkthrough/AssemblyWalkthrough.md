@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 415 frames · 116.481 s · slowest frame 7945.51 ms
-- Script: Exhibits/SolidArc/Code/Scripts/AssemblyWalkthrough.txt
+- Frame: 1600 x 900 · 415 frames · 49.7502 s · slowest frame 4078.26 ms
+- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/AssemblyWalkthrough.txt
 - Expectations: 56 / 56 passed
 
 | Line | Expectation | Observed | Result |
@@ -66,30 +66,30 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 179AssemblyParts | 175 | `724764ad6123d455` |
-| 180JointHover | 186 | `603f94996cb3627d` |
-| 181JointPreview | 207 | `17666897ce65ed96` |
-| 182JointFlipped | 230 | `f7d20c83d5951563` |
-| 183JointApplied | 238 | `e18fba1dd757b6d7` |
-| 184JointLeverPreview | 301 | `f847fc58539c5613` |
-| 185JointLever | 309 | `1394e673cacc9669` |
-| 186JointStepDrag | 325 | `95680497c4dfdeff` |
-| 187InterferenceClear | 359 | `a3c215bb13aedafd` |
-| 188JointStepOffset | 392 | `1aef9e450642bdfc` |
-| 189InterferenceOverlap | 415 | `cba3187bd21bfc1a` |
+| 179AssemblyParts | 175 | `d2e4cfe380a1ffef` |
+| 180JointHover | 186 | `40a450e66c28c8bf` |
+| 181JointPreview | 207 | `4f5b89cf9686c0c7` |
+| 182JointFlipped | 230 | `ee6a719915087e50` |
+| 183JointApplied | 238 | `4e4f373529a9b5cc` |
+| 184JointLeverPreview | 301 | `502d5af90fd32cd4` |
+| 185JointLever | 309 | `7c449a93a6afd2ac` |
+| 186JointStepDrag | 325 | `673c0e9725178145` |
+| 187InterferenceClear | 359 | `72dbf192a15b06d0` |
+| 188JointStepOffset | 392 | `431e18c956d673d7` |
+| 189InterferenceOverlap | 415 | `b69fd9cc41d947c3` |
 
 ## Journal
 
-- Cylinder3 · New body · 212 ms
+- Cylinder3 · New body · 120 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
-- Block2 · New body · 192 ms
+- Block2 · New body · 84 ms
 - Framed the document (Space)
 - Joint: pick the joint origin on the moving body (an edge or a face)
 - Joint: circle centre on Cylinder3 moves · now pick the joint origin on the body it joins
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Joint: Cylinder3 onto Block1 · R V S C P L B kind · drag the values · F flip · Enter applies
 - Joint: flipped (origins aligned)
-- Revolute joint (Cylinder3 → Block1) · 191 ms
+- Revolute joint (Cylinder3 → Block1) · 95 ms
 - Joint: pick the joint origin on the moving body (an edge or a face)
 - Joint: circle centre on Cylinder3 moves · now pick the joint origin on the body it joins
 - Joint: pick the second joint origin on another body
@@ -98,8 +98,8 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Added Extrude#10.Cap(End)
 - Joint: Block2 onto Cylinder3 · R V S C P L B kind · drag the values · F flip · Enter applies
-- Revolute joint (Block2 → Cylinder3) · 247 ms
-- Revolute2.Angle = 120 · 298 ms
+- Revolute joint (Block2 → Cylinder3) · 107 ms
+- Revolute2.Angle = 120 · 138 ms
 - Undo
 - Selection cleared
 - Selected Block2 (6 faces)
@@ -108,7 +108,7 @@
 - Measure off
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Selection cleared
-- Revolute1.Offset = -0.1 · 240 ms
+- Revolute1.Offset = -0.1 · 122 ms
 - Selected Block2 (6 faces)
 - Added Block1 · 2 bodies picked
 - Measure · Block2 + Block1 · Volume 10.3828 m³

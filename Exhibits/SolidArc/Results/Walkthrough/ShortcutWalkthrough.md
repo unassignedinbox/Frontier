@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 39.5818 s · slowest frame 486.751 ms
+- Frame: 1600 x 900 · 256 frames · 28.0186 s · slowest frame 439.066 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
 - Expectations: 70 / 70 passed
 
@@ -80,9 +80,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `51cb0d52833d3693` |
-| 21TangentChain | 144 | `3899deec69871c99` |
-| 20ShortcutExtrude | 224 | `4206eb1440e4f1d7` |
+| 19BevelSignChamfer | 64 | `8e1b888f7da960ca` |
+| 21TangentChain | 144 | `2802285100c8c548` |
+| 20ShortcutExtrude | 224 | `6b7d0932efa9a18b` |
 
 ## Journal
 
@@ -93,7 +93,7 @@
 - Bevel cancelled (document untouched)
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 153 ms
+- Fillet 0.3 on 1 edge(s) · 137 ms
 - Undo
 - Redo
 - Selection cleared
@@ -104,7 +104,7 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShortcutRecovery.solidarc
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 44 ms
+- Delete Fillet2 · 61 ms
 - Selection cleared
 - Framed the document (Space)
 - X-ray on · faces 45 % · hidden edges pickable
@@ -113,8 +113,8 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 94 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 98 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 105 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 116 ms
 - Selection cleared

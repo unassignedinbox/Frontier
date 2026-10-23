@@ -11,7 +11,7 @@
   "PoleDrags": 0,
   "PickMode": 2,
   "Hover": "",
-  "Camera": {"Yaw": 0, "Pitch": 0, "Distance": 6.232551794, "Target": [1.543576332, 1.399327478, 1.184619988], "Orthographic": true},
+  "Camera": {"Azimuth": 0, "Elevation": 0, "Distance": 6.232551794, "Target": [1.543576332, 1.399327478, 1.184619988], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)", "Verb": 0, "Profile": "", "Combination": 1},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
   "Undo": 6,

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 457 frames · 52.747 s · slowest frame 452.578 ms
+- Frame: 1600 x 900 · 457 frames · 34.4235 s · slowest frame 446.248 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `db600726249c417e` |
-| 123ConstrainFull | 174 | `c8d57a506352f693` |
-| 124ConstrainConflict | 202 | `c866b661dacdf063` |
-| 125ConstrainEdit | 240 | `587a7cf84cefe7b7` |
-| 126ConstrainDragging | 275 | `5ac91343c32508c8` |
-| 127ConstrainAngle | 451 | `50be84ad9678559f` |
+| 122ConstrainOpen | 109 | `2a16745c309adba4` |
+| 123ConstrainFull | 174 | `3ff5cc680f16f231` |
+| 124ConstrainConflict | 202 | `4b6824d97b40c918` |
+| 125ConstrainEdit | 240 | `ceb75962dbf8b696` |
+| 126ConstrainDragging | 275 | `a2dbd46777e47fcb` |
+| 127ConstrainAngle | 451 | `c9ad51574e4b6096` |
 
 ## Journal
 
@@ -103,7 +103,7 @@
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 13 ms
+- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
 - Constrain Rectangle1: Length 3 · Line1 · 10 ms
@@ -139,7 +139,7 @@
 - Constrain Line1: Horizontal · Line1 · 15 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Line1: Length 1.5 · Line1 · 16 ms
+- Constrain Line1: Length 1.5 · Line1 · 15 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2

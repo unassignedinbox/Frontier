@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 325 frames · 46.4215 s · slowest frame 482.226 ms
+- Frame: 1600 x 900 · 325 frames · 31.5949 s · slowest frame 416.152 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
 - Expectations: 62 / 62 passed
 
@@ -72,19 +72,19 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 29 | `c0e7bf51f8859d87` |
-| 161SnapTangent | 42 | `f28cc94d0a0d9c8d` |
-| 162SnapLockTangent | 60 | `7d3db6d93115941a` |
-| 163SnapLockNormal | 78 | `63f9c4b0802ce5f7` |
-| 164SnapBinormalRefused | 92 | `92e570da56385acd` |
-| 165SnapCentre | 98 | `58853102216264bb` |
-| 166SnapMidpoint | 104 | `05339289d664b976` |
-| 167SnapPerpendicular | 117 | `0bca509a98aa239e` |
-| 168SnapSquare | 150 | `ff980cbe5ecb448c` |
-| 169SnapConstraintDrag | 180 | `119b2789fb49bcd1` |
-| 170SnapMove | 216 | `cab59f666071009f` |
-| 171SnapXRay | 249 | `738e38d19ac1b135` |
-| 172SnapPoleDrag | 314 | `f41c5ae27d64281d` |
+| 160SnapEndpoint | 29 | `2150431d637fd4b9` |
+| 161SnapTangent | 42 | `584f9ab9bc340bba` |
+| 162SnapLockTangent | 60 | `2c8078ada609185b` |
+| 163SnapLockNormal | 78 | `45d943303dc527ca` |
+| 164SnapBinormalRefused | 92 | `226d54b7e2e45681` |
+| 165SnapCentre | 98 | `dcca07b1a835c7b8` |
+| 166SnapMidpoint | 104 | `f2ef30eaca700ea3` |
+| 167SnapPerpendicular | 117 | `3d6f87be0e3f99a6` |
+| 168SnapSquare | 150 | `122adb726b9fc9fe` |
+| 169SnapConstraintDrag | 180 | `5277d0619e35ede2` |
+| 170SnapMove | 216 | `135de384bde69839` |
+| 171SnapXRay | 249 | `1bf094a6e252c320` |
+| 172SnapPoleDrag | 314 | `df903fec5456cecc` |
 
 ## Journal
 
@@ -95,12 +95,12 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
 - Lock normal through the last point · the same key releases it · object snaps align along it
 - Lock binormal leaves the XY drawing plane: refused
-- Line1 · 44 ms
+- Line1 · 45 ms
 - Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts
 - Rectangle: square (s releases)
 - Rectangle1 · 45 ms
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- Drag Line1.End of Rectangle1 · 45 ms
+- Drag Line1.End of Rectangle1 · 46 ms
 - Constrain ended
 - Selected Block1 (11 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
@@ -118,6 +118,6 @@
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
 - Framed the document (Space)
-- Move pole 2 of Section3 · 4 ms
-- Moved pole 2 of Section3 by 350.00 mm · 4 ms
+- Move pole 2 of Section3 · 2 ms
+- Moved pole 2 of Section3 by 350.00 mm · 2 ms
 - Undo

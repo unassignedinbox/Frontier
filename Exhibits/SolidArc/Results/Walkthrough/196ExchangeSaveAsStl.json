@@ -1,5 +1,5 @@
 {
-  "Frame": 83,
+  "Frame": 68,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Extrude#2.Cap(End)",
-  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
   "Undo": 5,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 8 ms",
+  "Status": "Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 12 ms",
   "Viewport": [320, 160, 930, 730]
 }

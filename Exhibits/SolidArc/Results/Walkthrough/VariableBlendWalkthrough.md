@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 97 frames · 15.1946 s · slowest frame 485.284 ms
+- Frame: 1600 x 900 · 97 frames · 11.7693 s · slowest frame 419.351 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/VariableBlendWalkthrough.txt
 - Expectations: 31 / 31 passed
 
@@ -33,7 +33,7 @@
 | 74 | `refused == 0` | 0 | 🟢 |
 | 75 | `sound == 1` | 1 | 🟢 |
 | 76 | `volume ~ 10.185606734` | 10.18560673 | 🟢 |
-| 77 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 152 ms | 🟢 |
+| 77 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 163 ms | 🟢 |
 | 82 | `faces == 11` | 11 | 🟢 |
 | 83 | `steps == 8` | 8 | 🟢 |
 | 85 | `faces == 12` | 12 | 🟢 |
@@ -41,10 +41,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 22VariableFillet | 64 | `8d5db80a84af1f33` |
-| 23VariableFlipped | 71 | `90c2344305507221` |
-| 24VariableChamfer | 78 | `cf1e22f50d096a1f` |
-| 25VariableApplied | 90 | `5577098b8afb3a4b` |
+| 22VariableFillet | 64 | `13de59d96502ed26` |
+| 23VariableFlipped | 71 | `5207028642a24a38` |
+| 24VariableChamfer | 78 | `e26773826f8afb0a` |
+| 25VariableApplied | 90 | `9ba35812157f64d4` |
 
 ## Journal
 
@@ -55,6 +55,6 @@
 - Bevel end size 0.1 m
 - View Front
 - Anchor flipped: the start size is at each edge's end corner
-- Fillet 0.3 → 0.1 on 1 edge(s) · 152 ms
+- Fillet 0.3 → 0.1 on 1 edge(s) · 163 ms
 - Undo
 - Redo

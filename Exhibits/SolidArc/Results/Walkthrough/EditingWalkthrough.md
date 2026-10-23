@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 476 frames · 58.3072 s · slowest frame 436.463 ms
+- Frame: 1600 x 900 · 476 frames · 38.3856 s · slowest frame 456.28 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -23,7 +23,7 @@
 | 66 | `steps == 3` | 3 | 🟢 |
 | 67 | `volume ~ 2` | 2 | 🟢 |
 | 68 | `sound == 1` | 1 | 🟢 |
-| 69 | `status contains Move` | Move (Extrude1) · 7 ms | 🟢 |
+| 69 | `status contains Move` | Move (Extrude1) · 9 ms | 🟢 |
 | 78 | `transform-readout contains Rotate z 45` | Rotate z 45° · typed 45 | 🟢 |
 | 81 | `transform-commits == 2` | 2 | 🟢 |
 | 82 | `steps == 4` | 4 | 🟢 |
@@ -86,17 +86,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `a8bf00d6d556a963` |
-| 112Rotate | 142 | `3091e34cd4a41863` |
-| 113Scale | 180 | `181cca0070ee80f5` |
-| 114Duplicate | 209 | `28af92a70c2a6fb3` |
-| 115Paste | 228 | `60d10a94e56937e5` |
-| 116Hide | 236 | `ea594f0a56ab6b86` |
-| 117InvertHidden | 273 | `8be8f0bb663fdb7b` |
-| 118Join | 365 | `92b445483f30d4ba` |
-| 119OffsetPreview | 407 | `e295278a3b72384e` |
-| 120PipePreview | 462 | `00182e75dbdce5cd` |
-| 121Pipe | 476 | `0794ccc5db447c6e` |
+| 111MovePreview | 98 | `dccc3b188c8972a0` |
+| 112Rotate | 142 | `061bbe0f4b67853f` |
+| 113Scale | 180 | `474972b833ea8f3f` |
+| 114Duplicate | 209 | `dcc83883623e441a` |
+| 115Paste | 228 | `9db75ff220d2282e` |
+| 116Hide | 236 | `b17bd675488d3da2` |
+| 117InvertHidden | 273 | `7aa60e55cc19867c` |
+| 118Join | 365 | `1bc1c3260845677f` |
+| 119OffsetPreview | 407 | `5b7fbf4eeaddf315` |
+| 120PipePreview | 462 | `7a0e48d1495dba83` |
+| 121Pipe | 476 | `6ee16329fa555102` |
 
 ## Journal
 
@@ -111,9 +111,9 @@
 - Selected Extrude1 (6 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Move (Extrude1) · 7 ms
+- Move (Extrude1) · 9 ms
 - Rotate 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
-- Rotate (Extrude1) · 8 ms
+- Rotate (Extrude1) · 7 ms
 - View Isometric
 - Framed the document (Space)
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
@@ -125,7 +125,7 @@
 - Duplicate (Extrude1) · 18 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
-- Remove (Extrude1Copy1) · 7 ms
+- Remove (Extrude1Copy1) · 8 ms
 - Paste (Extrude1Copy1) · 22 ms
 - Hide selected · 1 hidden
 - Unhide all · 0 hidden
@@ -151,5 +151,5 @@
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric
-- Pipe r 0.2 along Line1 · 11 ms
+- Pipe r 0.2 along Line1 · 12 ms
 - Framed the document (Space)

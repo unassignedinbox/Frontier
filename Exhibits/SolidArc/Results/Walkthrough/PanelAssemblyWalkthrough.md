@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 358 frames · 45.5826 s · slowest frame 768.3 ms
+- Frame: 1600 x 900 · 358 frames · 34.2886 s · slowest frame 738.185 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
@@ -26,7 +26,7 @@
 | 58 | `sheet == 1` | 1 | 🟢 |
 | 59 | `faces == 2` | 2 | 🟢 |
 | 60 | `sound == 1` | 1 | 🟢 |
-| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 1 ms | 🟢 |
+| 61 | `status contains · G2` | Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 3 ms | 🟢 |
 | 67 | `steps == 14` | 14 | 🟢 |
 | 68 | `refused == 0` | 0 | 🟢 |
 | 69 | `panels == 4` | 4 | 🟢 |
@@ -67,19 +67,19 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 93 | `3ae0684940dc799c` |
-| 61FrontRearG2 | 101 | `ff35c7b4eeb2ada3` |
-| 62BonnetMirrored | 115 | `1770d1eb30461962` |
-| 63CloseRefused | 125 | `f1336448219ff3ab` |
-| 64PodHalves | 220 | `0fd7236c94d63f13` |
-| 65PodSolid | 236 | `88e7543d3c38da48` |
-| 66NetworkCurves | 344 | `f2ab64ace7129a88` |
-| 67NetworkPanel | 352 | `889e3484959916be` |
+| 60RearSectionsG2 | 93 | `0d35f66d24ddd78f` |
+| 61FrontRearG2 | 101 | `d21d5c0ef7902d8c` |
+| 62BonnetMirrored | 115 | `90f3a47c3aa2ecd6` |
+| 63CloseRefused | 125 | `dabf1bf0ec6edd7c` |
+| 64PodHalves | 220 | `fbec7e200709b782` |
+| 65PodSolid | 236 | `903c907676db1d50` |
+| 66NetworkCurves | 344 | `7daf1dc148d58dd8` |
+| 67NetworkPanel | 352 | `c7de87e61e27c20b` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 3 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
@@ -94,15 +94,15 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 1 ms
-- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 1 ms
+- Loft2 · 4 sections · G2 · 3 ms
+- Lofted 4 curve(s) → panel · G2 (sound) · 2 panel(s) · 3 ms
 - Mirror1 · plane x = 0 · 6 ms
 - Mirrored through x = 0 → 4 panel(s), sound · 6 ms
 - Framed the document (Space)
 - Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps )
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/PanelRecovery.solidarc
-- Import 5 curve(s) · 7 ms
+- Import 5 curve(s) · 12 ms
 - Framed the document (Space)
 - Imported 5 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticPod.toml · 46 poles · worst fit 0.066 mm
 - View Isometric

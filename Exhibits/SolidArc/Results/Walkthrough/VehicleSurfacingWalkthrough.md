@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 251 frames · 31.5413 s · slowest frame 482.034 ms
+- Frame: 1600 x 900 · 251 frames · 23.1112 s · slowest frame 468.984 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -63,18 +63,18 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 36 | `52a26bc4f5e136b1` |
-| 51ControlPoints | 43 | `3c81903c2fb18143` |
-| 52SectionsSelected | 140 | `8ee39035868ba020` |
-| 53BonnetLoft | 148 | `6fece23c3e43c3e8` |
-| 54PoleDragLive | 185 | `110a8652d80b2964` |
-| 55PoleMoved | 199 | `b2f97ca7c337951a` |
-| 56SheetUnderside | 234 | `219a6754d977232c` |
+| 50CurvesImported | 36 | `b53df43d528aa941` |
+| 51ControlPoints | 43 | `754147dc36f87eed` |
+| 52SectionsSelected | 140 | `a971b0c3e72b1cd6` |
+| 53BonnetLoft | 148 | `2d0ee143df99cbcc` |
+| 54PoleDragLive | 185 | `fad5860ddb91c89e` |
+| 55PoleMoved | 199 | `9133438454239286` |
+| 56SheetUnderside | 234 | `76ad6f3add456d81` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 2 ms
+- Import 11 curve(s) · 3 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric

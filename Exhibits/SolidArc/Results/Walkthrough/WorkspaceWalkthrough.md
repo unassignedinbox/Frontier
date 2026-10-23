@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 429 frames · 72.0123 s · slowest frame 719.71 ms
+- Frame: 1600 x 900 · 429 frames · 50.083 s · slowest frame 673.67 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/WorkspaceWalkthrough.txt
 - Expectations: 78 / 78 passed
 
@@ -70,9 +70,9 @@
 | 154 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
 | 157 | `steps == 10` | 10 | 🟢 |
 | 158 | `sound == 1` | 1 | 🟢 |
-| 159 | `status contains Push` | Push 0.25 on 1 face(s) · 144 ms | 🟢 |
+| 159 | `status contains Push` | Push 0.25 on 1 face(s) · 146 ms | 🟢 |
 | 163 | `focused-step == Extrude#2` | Extrude#2 | 🟢 |
-| 169 | `status contains Block1.Height` | Block1.Height = 1.25 · 527 ms | 🟢 |
+| 169 | `status contains Block1.Height` | Block1.Height = 1.25 · 549 ms | 🟢 |
 | 170 | `refused == 0` | 0 | 🟢 |
 | 171 | `sound == 1` | 1 | 🟢 |
 | 198 | `steps == 12` | 12 | 🟢 |
@@ -88,22 +88,22 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 01Workspace | 4 | `ee7986afe88daf6f` |
-| 02FacesSelected | 24 | `25eb1ab7ef3d96bc` |
-| 03EdgeSelected | 46 | `1dea6e6aa3eb541a` |
-| 04BevelPreview | 75 | `c17036ee4840150e` |
-| 05FilletApplied | 86 | `ca2060b737767766` |
-| 06BevelRefusal | 107 | `dcd439c708c313b1` |
-| 07Navigated | 183 | `64f0fb510b3e4f69` |
-| 08ViewCubeTop | 190 | `572a6e724939f180` |
-| 09FrontParallel | 202 | `4f3fdf61f95bb0a6` |
-| 09RightParallel | 209 | `3c7ffe0f14be0c49` |
-| 10FaceEdit | 258 | `75ee63ad0dac6646` |
-| 11ParameterEdit | 285 | `7fb618315c3e9709` |
-| 12Construct | 356 | `d56a6e175f57ac73` |
-| 13Constructed | 365 | `215e0b1ad6f75691` |
-| 14NewDocument | 420 | `7595bf3f0bd02941` |
-| 15Restored | 429 | `45f46655939b7401` |
+| 01Workspace | 4 | `0baa9962eff85277` |
+| 02FacesSelected | 24 | `93eaa8013daf247a` |
+| 03EdgeSelected | 46 | `7654dfb4897d0b51` |
+| 04BevelPreview | 75 | `04c8cec1ce3ef7e6` |
+| 05FilletApplied | 86 | `ecb434cb211dfe21` |
+| 06BevelRefusal | 107 | `b6daa9b54880ff21` |
+| 07Navigated | 183 | `a33d446dc7288465` |
+| 08ViewCubeTop | 190 | `42b896baf1485533` |
+| 09FrontParallel | 202 | `5b42da55ae350fa8` |
+| 09RightParallel | 209 | `6ba996bafc528c3e` |
+| 10FaceEdit | 258 | `a88778c28d5d61cc` |
+| 11ParameterEdit | 285 | `f4fc939980dd9f9b` |
+| 12Construct | 356 | `87340fc4fb70c5eb` |
+| 13Constructed | 365 | `484c00ce1ce7a843` |
+| 14NewDocument | 420 | `dcb825ff78df1180` |
+| 15Restored | 429 | `dd40bbfc352a4856` |
 
 ## Journal
 
@@ -114,7 +114,7 @@
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 136 ms
+- Fillet 0.3 on 1 edge(s) · 161 ms
 - Selected Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel cancelled (document untouched)
@@ -131,10 +131,10 @@
 - View Top
 - View Isometric
 - Selected Extrude#4.Cap(End)
-- Push 0.25 on 1 face(s) · 144 ms
-- Block1.Height = 1.25 · 527 ms
+- Push 0.25 on 1 face(s) · 146 ms
+- Block1.Height = 1.25 · 549 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc
-- Cylinder3 · Difference · 131 ms
+- Cylinder3 · Difference · 136 ms
 - Saved _ClaudeScratch/SolidArcWorkspace/Bracket.solidarc
 - Autosaved _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc
 - New document (previous recovery copy kept)

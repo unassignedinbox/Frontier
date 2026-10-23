@@ -11,7 +11,7 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Extrude#2.Cap(End)",
-  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#5", "Combination": 1},
   "Drawing": {"Active": true, "Kind": "Curve", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.2, 0.2], [0.5, 0.2], [0.5, 0.8], [0.2, 0.8]], "Refusal": ""},
   "Undo": 6,

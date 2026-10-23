@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line3))",
-  "Camera": {"Yaw": -1.570796327, "Pitch": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
   "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[-0, -0], [2, 1]], "Refusal": ""},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms",
+  "Status": "Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 7 ms",
   "Viewport": [320, 160, 930, 730]
 }

@@ -11,7 +11,7 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "",
-  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 7.923126172, "Target": [2, 1.25, 0.875], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
   "Undo": 6,

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 339 frames · 41.1065 s · slowest frame 987.788 ms
+- Frame: 1600 x 900 · 339 frames · 33.7069 s · slowest frame 1216.18 ms
 - Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `e771aaa5e57122b9` |
-| 31CurveForms | 243 | `ea28104c2f91ec49` |
-| 32HermiteClosing | 254 | `eda2d4984d19cf65` |
-| 33DrawnSolid | 339 | `e74f7a52919503d5` |
+| 30RectanglePreview | 32 | `d43d39bf17b12fe8` |
+| 31CurveForms | 243 | `e6dfb51e7269cd85` |
+| 32HermiteClosing | 254 | `37d867e2ff233a3a` |
+| 33DrawnSolid | 339 | `ad48918406e81661` |
 
 ## Journal
 
@@ -94,12 +94,12 @@
 - Bevel size 1.5 m (pinned)
 - Extrude2 · Circle1 · Difference · 34 ms
 - Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
-- Line1 · 16 ms
+- Line1 · 18 ms
 - Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 50 ms
+- Extrude3 · Line1 · Union · 52 ms
 - Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Point dropped · 2 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchRecovery.solidarc
@@ -107,11 +107,11 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 20 ms
+- Curve1 · Hermite · 19 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size 0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 728 ms
+- Extrude4 · Curve1 · Difference · 1010 ms
 - Arc on plane XY: click start, end, then a point on the arc · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left

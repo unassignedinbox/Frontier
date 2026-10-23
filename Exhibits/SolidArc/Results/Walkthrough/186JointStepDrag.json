@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 3,
   "Hover": "",
-  "Camera": {"Yaw": -0.7853981634, "Pitch": 0.6154797087, "Distance": 14.64004685, "Target": [4, 2.200000048, 0.875], "Orthographic": false},
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 14.64004685, "Target": [4, 2.200000048, 0.875], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
   "Undo": 10,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Revolute2.Angle = 120 · 298 ms",
+  "Status": "Revolute2.Angle = 120 · 138 ms",
   "Viewport": [320, 160, 930, 730]
 }

@@ -306,8 +306,9 @@ int main()
     Tally(FileGate, 0.0, !Broken.Refusal.empty(), "malformed file refused: " + Broken.Refusal);
     // 📝 Documents written before the SolidArc rename carry Format = "DraftingWorkspace" and still open unchanged.
     std::string Legacy = Saved;
-    const size_t FormatAt = Legacy.find("Format = \"SolidArc\"");
-    if (FormatAt != std::string::npos) Legacy.replace(FormatAt, std::string("Format = \"SolidArc\"").size(), "Format = \"DraftingWorkspace\"");
+    const std::string Current = "Format = 'SolidArc'";                                     // toml++ writes literal strings
+    const size_t      FormatAt = Legacy.find(Current);
+    if (FormatAt != std::string::npos) Legacy.replace(FormatAt, Current.size(), "Format = 'DraftingWorkspace'");
     const SolidArcDocumentFile LegacyFile = DecodeSolidArcDocument(Legacy);
     SolidArcDocument LegacyDocument = CreateSolidArcDocument(LegacyFile.Title);
     const SolidArcCommandOutcome LegacyOpened = ReplaceSolidArcTree(LegacyDocument, LegacyFile.Tree, LegacyFile.Captions, "Open");
