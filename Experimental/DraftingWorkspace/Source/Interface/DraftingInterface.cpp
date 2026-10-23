@@ -3309,8 +3309,9 @@ void DrawJointCard(DraftingWorkspaceState& State)
     EndCard();
 }
 
-// 📝 Joint origin glyph: a ring in the origin's plane, z (blue, long) and x (red) arrows, and a caption pill.
-void DrawJointGlyph(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame, const OrthonormalFrame& Origin, const std::string& Caption, ImU32 Accent)
+// 📝 Joint origin glyph: a ring in the origin's plane (while picking), z (blue, long) and x (red) arrows, a caption pill.
+void DrawJointGlyph(DraftingWorkspaceState& State, ImDrawList* Canvas, const DraftingCameraFrame& Frame, const OrthonormalFrame& Origin, const std::string& Caption, ImU32 Accent,
+                    bool RingCondition = true)
 {
     constexpr ImU32 HaloColour = IM_COL32(0x10, 0x12, 0x16, 0xd0);
     const double    Unit       = Frame.WorldPerPixel;
@@ -3323,10 +3324,10 @@ void DrawJointGlyph(DraftingWorkspaceState& State, ImDrawList* Canvas, const Dra
         ImVec2 Pixel;
         if (ProjectWorldPoint(State, Frame, Origin.Origin + Origin.XAxis * (18.0 * Unit * std::cos(Turn)) + Origin.YAxis * (18.0 * Unit * std::sin(Turn)), Pixel)) Ring.push_back(Pixel);
     }
-    if (Ring.size() > 2)
+    if (RingCondition && Ring.size() > 2)
     {
-        Canvas->AddPolyline(Ring.data(), int(Ring.size()), HaloColour, 0, 4.0f);
-        Canvas->AddPolyline(Ring.data(), int(Ring.size()), Accent, 0, 2.0f);
+        Canvas->AddPolyline(Ring.data(), int(Ring.size()), HaloColour, 4.0f);
+        Canvas->AddPolyline(Ring.data(), int(Ring.size()), Accent, 2.0f);
     }
     const auto Arrow = [&](Vector3 Direction, double Pixels, ImU32 Colour)
     {
@@ -3363,9 +3364,10 @@ void DrawJointOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const D
         }
         return;
     }
+    if (State.Measure.ActiveCondition) return;                                              // Measure's own pills take the view
     const DraftingDocument& Shown = State.ParameterDrag.Preview ? *State.ParameterDrag.Preview : State.Document;
     for (const RegeneratedJoint& Placed : Shown.Regeneration.Joints)
-        if (Placed.Label == State.FocusedStep) DrawJointGlyph(State, Canvas, Frame, Placed.FixedOrigin, std::string(JointKindLabel(Placed.Kind)) + " joint", PickedColour);
+        if (Placed.Label == State.FocusedStep) DrawJointGlyph(State, Canvas, Frame, Placed.FixedOrigin, std::string(JointKindLabel(Placed.Kind)) + " joint", PickedColour, false);
 }
 
 // Measure (I): recompute only when the selection or the document revision moved (a NURBS body takes ~1 s).
@@ -3458,8 +3460,8 @@ void DrawMeasureOverlay(DraftingWorkspaceState& State, ImDrawList* Canvas, const
             if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel);
         }
         if (Pixels.size() < 2) continue;
-        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x10, 0x10, 0x10, 0xc0), 0, 4.5f);
-        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), RefusalColour, 0, 2.5f);
+        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0x10, 0x10, 0x10, 0xc0), 4.5f);
+        Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), RefusalColour, 2.5f);
     }
     ImVec2 Centre;
     if (Measurement.CentroidCondition && ProjectWorldPoint(State, Frame, Measurement.Centroid, Centre))

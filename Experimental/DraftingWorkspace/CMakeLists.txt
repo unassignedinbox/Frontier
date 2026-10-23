@@ -342,6 +342,15 @@ add_test(NAME DraftingNurbsBlendWalkthrough
 # Each NURBS blend takes 40–60 s (rolling-ball assembly plus audit), five of them plus the cut: allow 40 minutes.
 set_tests_properties(DraftingNurbsBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 2400)
 
+add_test(NAME DraftingAssemblyWalkthrough
+         COMMAND DraftingWorkspaceCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/DraftingWorkspace/AssemblyRecovery.drafting.toml
+                 --document _ClaudeScratch/DraftingWorkspace/Assembly.drafting.toml
+                 --script "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/AssemblyWalkthrough.txt"
+                 --exhibits "${DRAFTING_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+set_tests_properties(DraftingAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+
 set_tests_properties(DraftingPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(DraftingSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

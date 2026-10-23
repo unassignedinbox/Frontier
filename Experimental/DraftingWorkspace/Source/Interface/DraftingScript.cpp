@@ -388,6 +388,31 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         return Numeric(Field == "joints" ? double(Document.Regeneration.Joints.size()) : Gap);
     }
     if (Field == "parameter-drag") return Numeric(double(State.ParameterDrag.Stagings));
+    if (Field.starts_with("bounds:"))
+    {
+        // "bounds:Block3" → "(x0, y0, z0) … (x1, y1, z1)" over that body's vertices at %.6f, Number = the x extent.
+        const std::string Wanted = Field.substr(7);
+        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+        {
+            if (Body.Key != Wanted && DraftingBodyCaption(Document, Body.Key) != Wanted) continue;
+            Modeller::Vector3 Low = { 1.0e9, 1.0e9, 1.0e9 }, High = { -1.0e9, -1.0e9, -1.0e9 };
+            for (const Modeller::VertexToken Vertex : Document.Partition->CollectInventory(Body.Body).Vertices)
+            {
+                const Modeller::Vector3 Point = Document.Partition->Vertices.Resolve(Vertex).Position;
+                Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
+                High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
+            }
+            const auto Clean = [](double Value) { return std::abs(Value) < 5.0e-7 ? 0.0 : Value; };          // No "-0.000000"
+            char Box[200];
+            std::snprintf(Box, sizeof(Box), "(%.6f, %.6f, %.6f) … (%.6f, %.6f, %.6f)", Clean(Low.X), Clean(Low.Y), Clean(Low.Z), Clean(High.X), Clean(High.Y), Clean(High.Z));
+            Text   = Box;
+            Number = High.X - Low.X;
+            return true;
+        }
+        Text = "no body " + Wanted;
+        Number = 0.0;
+        return true;
+    }
     if (Field.starts_with("centroid:"))
     {
         // "centroid:Link2" → "(x, y, z)" at %.6f of that body (caption or key), Number = x.
