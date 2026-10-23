@@ -365,6 +365,9 @@ struct SolidArcJointOrigin
 // Plasticity H / Shift+H / Alt+H / Ctrl+H (appearance: undoable, saved, no regeneration).
 [[nodiscard]] SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, SolidArcVisibilityVerb Verb);
 
+// Outliner eye: hides one body, or shows it again (appearance: undoable, saved, no regeneration).
+[[nodiscard]] SolidArcCommandOutcome ToggleSolidArcBodyVisibility(SolidArcDocument& Document, const std::string& Key);
+
 // Plasticity J: the coplanar sketches merge into the first (ends welded, frame constraints carried); the others are
 // removed. Refused when a merged sketch feeds a later step.
 [[nodiscard]] SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Sketches);

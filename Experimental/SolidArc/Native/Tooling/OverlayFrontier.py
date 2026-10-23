@@ -36,6 +36,25 @@ SeatedPaths = [
     'Experimental/VehicleSurfacing',
     'Exhibits/SolidArc',
     'Exhibits/GeometryProcessing',
+    'EngineContent/Icons/SolidArc',
+    'Engine/Interface/Icons/SolidArcSymbols.inc',
+]
+
+# 📝 IconArt gains a SolidArc workspace domain ("SolidArc/" artwork), like Texture and Fluid. Each edit is (file, anchor,
+#    replacement); the anchor must occur exactly once, the replacement marks it as applied.
+DomainEdits = [
+    ('Engine/Interface/IconSymbols.inc',
+     '#include "Icons/FluidSymbols.inc"\n',
+     '#include "Icons/FluidSymbols.inc"\n#include "Icons/SolidArcSymbols.inc"\n'),
+    ('Engine/Interface/IconArt.h',
+     'enum class IconDomain : uint8_t { Editor, Texture, Fluid };',
+     'enum class IconDomain : uint8_t { Editor, Texture, Fluid, SolidArc };'),
+    ('Engine/Interface/IconArt.cpp',
+     '    if (Path.starts_with("Fluid/")) return IconDomain::Fluid;\n',
+     '    if (Path.starts_with("Fluid/")) return IconDomain::Fluid;\n    if (Path.starts_with("SolidArc/")) return IconDomain::SolidArc;\n'),
+    ('Engine/Interface/IconArt.cpp',
+     'Workspace <= IconDomain::Fluid &&',
+     'Workspace <= IconDomain::SolidArc &&'),
 ]
 
 IncludeLine = 'include("${CMAKE_SOURCE_DIR}/Experimental/SolidArc/Native/SolidArc.cmake")'
@@ -95,6 +114,21 @@ def SeatVolk(Frontier):
     return 'added'
 
 
+def SeatDomain(Frontier):
+    Results = []
+    for Relative, Anchor, Replacement in DomainEdits:
+        Edited = Frontier / Relative
+        Text   = Edited.read_text(encoding='utf-8')
+        if Replacement in Text:
+            Results.append('kept')
+            continue
+        if Text.count(Anchor) != 1:
+            raise RuntimeError('IconDomain anchor not found once in ' + Relative + ': ' + Anchor.strip())
+        Edited.write_text(Text.replace(Anchor, Replacement), encoding='utf-8')
+        Results.append('added')
+    return 'added' if 'added' in Results else 'kept'
+
+
 def Main():
     Parser = argparse.ArgumentParser(description='Seat SolidArc in a Frontier checkout')
     Parser.add_argument('--frontier', required=True, help='SultanAladin/Frontier checkout')
@@ -107,6 +141,7 @@ def Main():
         print('%-8s %s' % (SeatPath(Frontier, Relative, Arguments.copy), Relative))
     print('%-8s %s' % (SeatInclude(Frontier), 'CMakeLists.txt include(SolidArc.cmake)'))
     print('%-8s %s' % (SeatVolk(Frontier), 'Automation/UIDependencies.json volk pin'))
+    print('%-8s %s' % (SeatDomain(Frontier), 'Engine/Interface IconDomain::SolidArc'))
     return 0
 
 

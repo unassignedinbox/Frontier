@@ -1529,6 +1529,29 @@ SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, Soli
     });
 }
 
+SolidArcCommandOutcome ToggleSolidArcBodyVisibility(SolidArcDocument& Document, const std::string& Key)
+{
+    const bool HiddenCondition = Document.Appearance.HiddenBodies.contains(Key);
+    return RunAppearanceCommand(Document, HiddenCondition ? "Show body" : "Hide body", [&]() -> std::string
+    {
+        const bool Present = std::any_of(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(),
+                                         [&](const RegeneratedBody& Body) { return Body.Key == Key; });
+        if (!Present) return "no body " + Key;
+        std::set<std::string>& Hidden = Document.Appearance.HiddenBodies;
+        if (HiddenCondition)
+        {
+            Hidden.erase(Key);
+            return {};
+        }
+        Hidden.insert(Key);
+        // A hidden body leaves the selection.
+        std::erase(Document.Selection.Bodies, Key);
+        std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name) == Key; });
+        std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) == Key; });
+        return {};
+    });
+}
+
 SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Sketches)
 {
     std::vector<std::string> Captions;
