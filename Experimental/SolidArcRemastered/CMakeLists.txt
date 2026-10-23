@@ -81,6 +81,8 @@ add_library(SolidArcRemastered STATIC
     Source/Surfacing/CarrierApproximation.cpp
     Source/Inspection/BlendEncoding.cpp
     Source/Audit/EnclosedVolume.cpp
+    Source/Assembly/AssemblyAnalysis.cpp
+    Source/Assembly/JointSolver.cpp
     Source/Measurement/MassProperties.cpp
     Source/Measurement/MinimumDistance.cpp
     Source/Measurement/PlaneSection.cpp
@@ -173,6 +175,8 @@ add_executable(ReplayValidation Validation/ReplayValidation.cpp)
 target_link_libraries(ReplayValidation PRIVATE SolidArcRemastered)
 add_executable(MeasureValidation Validation/MeasureValidation.cpp)
 target_link_libraries(MeasureValidation PRIVATE SolidArcRemastered)
+add_executable(AssemblyValidation Validation/AssemblyValidation.cpp)
+target_link_libraries(AssemblyValidation PRIVATE SolidArcRemastered)
 add_executable(FreeformBlendValidation Validation/FreeformBlendValidation.cpp)
 target_link_libraries(FreeformBlendValidation PRIVATE SolidArcRemastered)
 
@@ -202,5 +206,6 @@ add_test(NAME BodyCutValidation COMMAND BodyCutValidation)
 add_test(NAME SweepValidation COMMAND SweepValidation)
 add_test(NAME ReplayValidation COMMAND ReplayValidation)
 add_test(NAME MeasureValidation COMMAND MeasureValidation)
+add_test(NAME AssemblyValidation COMMAND AssemblyValidation)
 add_test(NAME FreeformBlendValidation COMMAND FreeformBlendValidation)
 add_test(NAME PatternStressValidation COMMAND PatternStressValidation)

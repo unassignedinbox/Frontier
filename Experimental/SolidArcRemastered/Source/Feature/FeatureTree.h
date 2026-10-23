@@ -9,6 +9,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Assembly/JointSolver.h"
 #include "Construction/BodyTransform.h"
 #include "Feature/TopologicalNaming.h"
 #include "Sketch/SketchSolver.h"
@@ -49,6 +50,7 @@ enum class FeatureStepKind : uint8_t
     Duplicate     = 14,                                                                      // Copy of a body as a new body (Plasticity Shift+D, Ctrl+C / Ctrl+V)
     Pipe          = 15,                                                                      // Circle swept along a SpaceCurve or a one-curve sketch (Plasticity P)
     Evolution     = 16,                                                                      // Sketch profile swept along a path (Plasticity Shift+P / Alt+E)
+    Joint         = 17,                                                                      // Place a body by a joint to another body (Fusion joints, priority 11)
 };
 
 enum class FeatureCombination : uint8_t
@@ -98,6 +100,21 @@ struct FeaturePoleEdit
     Vector3 Position = {};                                                                   // [len] - New pole position
 };
 
+// 📝 A joint step's values (Assembly/JointSolver.h); each kind reads only its own, every value may bind a parameter.
+struct FeatureJoint
+{
+    JointKind                 Kind             = JointKind::Rigid;                           // [-]   - Fusion joint type
+    FeatureValue              Angle            = {};                                         // [rad] - Turn about 𝑧 (ball: yaw)
+    FeatureValue              Slide            = {};                                         // [len] - Slider / cylindrical: along 𝑧 · pin-slot / planar: along 𝑥
+    FeatureValue              SecondSlide      = {};                                         // [len] - Planar: along 𝑦
+    FeatureValue              Pitch            = {};                                         // [rad] - Ball: about 𝑦
+    FeatureValue              Roll             = {};                                         // [rad] - Ball: about 𝑥
+    FeatureValue              Offset           = {};                                         // [len] - Along 𝑧, every kind
+    bool                      FlippedCondition = false;                                      // [-]   - Origins aligned instead of facing each other
+    std::optional<JointRange> AngleRange       = {};                                         // [rad] - Limits on Angle (refused outside)
+    std::optional<JointRange> SlideRange       = {};                                         // [len] - Limits on Slide (refused outside)
+};
+
 struct FeatureStep
 {
     FeatureStepKind                Kind           = FeatureStepKind::Sketch;                 // [-]   - Step type
@@ -131,6 +148,7 @@ struct FeatureStep
     std::string                    Tool           = {};                                      // [-]   - Combine: body key consumed by the Boolean
     AffineMap                      Placement      = {};                                      // [-]   - Transform / duplicate: x ↦ M·x + Shift (identity: none)
     std::string                    Source         = {};                                      // [-]   - Duplicate: step after which Target is copied (empty: as it is now)
+    FeatureJoint                   Joint          = {};                                      // [-]   - Joint: kind and values (Target moves onto Tool; References = moving, fixed origin)
 };
 
 struct FeatureTree
@@ -165,6 +183,17 @@ struct RegeneratedBody
     BodyNaming  Naming = {};                                                                 // [-] - Its persistent names
 };
 
+// 📝 One joint of the regenerated assembly, with both joint origins where they ended up (world).
+struct RegeneratedJoint
+{
+    std::string      Label        = {};                                                      // [-] - Joint step label
+    std::string      Moving       = {};                                                      // [-] - Key of the placed body
+    std::string      Fixed        = {};                                                      // [-] - Key of the body it is jointed to
+    JointKind        Kind         = JointKind::Rigid;                                        // [-] - Joint type
+    OrthonormalFrame MovingOrigin = {};                                                      // [-] - Moving body's joint origin
+    OrthonormalFrame FixedOrigin  = {};                                                      // [-] - Fixed body's joint origin
+};
+
 struct RegenerationOutcome
 {
     BodyToken                          Body         = {};                                    // [-]  - Active body (the one the last body step built or changed)
@@ -175,6 +204,7 @@ struct RegenerationOutcome
     std::map<std::string, SketchModel> Sketches     = {};                                    // [-]  - Solved sketch per label
     std::map<std::string, CurveFitOutcome> Curves   = {};                                    // [-]  - Fitted (and edited) curve per SpaceCurve label
     std::map<std::string, NurbsSurface> Panels      = {};                                    // [-]  - Carrier per panel face name (zebra / deviation)
+    std::vector<RegeneratedJoint>      Joints       = {};                                    // [-]  - Joints whose bodies still exist, in tree order
     int                                Refused      = 0;                                     // [-]  - Steps refused
     int                                Resumed      = 0;                                     // [-]  - First step replayed (earlier ones restored from a checkpoint)
     double                             Milliseconds = 0.0;                                   // [ms] - Whole replay
@@ -214,6 +244,10 @@ struct RegenerationCache
 //    Evolution sweeps the profile of sketch Step.Profile along Step.Path (a one-curve sketch or a SpaceCurve), from the
 //    path end nearer the profile centroid (a curve's stored direction is arbitrary), and combines like an extrude. Revolve turns about the sketch line Step.AxisIdentifier, else about AxisOrigin +
 //    t·AxisDirection in sketch coordinates.
+//    Joint (priority 11) places Step.Target by a Fusion joint to Step.Tool: References[0] names the joint origin on the
+//    target, References[1] the one on the tool (Assembly/JointSolver.h); the target takes the rigid placement (names kept)
+//    and every body jointed to it earlier follows, as do bodies jointed to a body that a rigid Transform moves. One joint
+//    per placed body; a joint that would close a loop is refused. Removing or consuming a body drops its joints.
 //    Cache (optional): restore the unchanged leading steps from their checkpoints and replay from the first changed one;
 //    the result is bit-identical to a full replay (same tokens, names, volumes). The cache is refreshed for the next run.
 [[nodiscard]] RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition = false,

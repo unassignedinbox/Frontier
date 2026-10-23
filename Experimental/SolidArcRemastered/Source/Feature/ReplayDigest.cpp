@@ -170,6 +170,15 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
     Writer.Phrase(Step.Tool);
     Writer.Map(Step.Placement);
     Writer.Phrase(Step.Source);
+    const FeatureJoint& Joint = Step.Joint;
+    Writer.Kind(Joint.Kind);
+    for (const FeatureValue* Value : { &Joint.Angle, &Joint.Slide, &Joint.SecondSlide, &Joint.Pitch, &Joint.Roll, &Joint.Offset }) Writer.Value(*Value);
+    Writer.Flag(Joint.FlippedCondition);
+    for (const std::optional<JointRange>* Range : { &Joint.AngleRange, &Joint.SlideRange })
+    {
+        Writer.Flag(Range->has_value());
+        if (Range->has_value()) { Writer.Number((*Range)->Low); Writer.Number((*Range)->High); }
+    }
     if (Step.Kind == FeatureStepKind::SpaceCurve)
     {
         for (const FeatureStep& Other : Tree.Steps) if (Other.Kind == FeatureStepKind::Mirror) Writer.Frame(Other.Plane);

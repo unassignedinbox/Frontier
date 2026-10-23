@@ -222,6 +222,7 @@ struct ReplayCheckpoint
     std::string                                                     ClosedBy  = {};          // [-] - Closing step label
     std::map<std::pair<std::string, std::string>, RegeneratedBody>  Snapshots = {};          // [-] - Duplicate snapshots so far
     std::set<std::pair<std::string, std::string>>                   Served    = {};          // [-] - Snapshot requests met so far (taken or absent)
+    std::map<std::string, std::string>                              Jointed   = {};          // [-] - Placed body key → the body it is jointed to
 };
 
 RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition, RegenerationCache* Cache)
@@ -238,6 +239,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     std::string StepLabel;                                                                   // Label of the step being replayed
     std::vector<TreePanel> Panels;                                                           // Panels of the panel-built body
     std::string            ClosedBy;                                                         // Close / Combine step that ended them
+    std::map<std::string, std::string> Jointed;                                              // Placed body key → the body it is jointed to
 
     auto FindBody = [&](const std::string& Key) -> int
     {
@@ -265,6 +267,43 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
     {
         Bodies.push_back({ StepLabel, Current, Naming });
         Target = Active = static_cast<int>(Bodies.size()) - 1;
+    };
+    // Bodies jointed (directly or through a chain) to Key follow it when it moves by Map; their joint origins move too.
+    auto CarryDependents = [&](const std::string& Key, const AffineMap& Map) -> std::string
+    {
+        std::set<std::string> Carried = { Key };
+        for (bool Grown = true; Grown;)
+        {
+            Grown = false;
+            for (const auto& [Placed, Base] : Jointed)
+            {
+                if (Carried.count(Base) == 0 || Carried.count(Placed) != 0) continue;
+                Carried.insert(Placed);
+                Grown = true;
+            }
+        }
+        for (const std::string& Dependent : Carried)
+        {
+            const int Index = Dependent == Key ? -1 : FindBody(Dependent);
+            if (Index < 0) continue;
+            const TransformOutcome Follow = TransformBody(Partition, Bodies[Index].Body, Map);
+            if (!Follow.Refusal.empty()) return Follow.Refusal;
+            Bodies[Index].Naming = CarryNaming(Partition, Follow, Bodies[Index].Naming, {});
+            Bodies[Index].Body   = Follow.Body;
+        }
+        for (RegeneratedJoint& Joint : Outcome.Joints)
+        {
+            if (Joint.Moving == Key || Carried.count(Joint.Moving) == 0) continue;
+            Joint.MovingOrigin = MapFrame(Map, Joint.MovingOrigin);
+            Joint.FixedOrigin  = MapFrame(Map, Joint.FixedOrigin);
+        }
+        return {};
+    };
+    // A removed or consumed body leaves every joint it took part in.
+    auto ForgetJoints = [&](const std::string& Key)
+    {
+        for (auto Link = Jointed.begin(); Link != Jointed.end();) Link = Link->first == Key || Link->second == Key ? Jointed.erase(Link) : std::next(Link);
+        std::erase_if(Outcome.Joints, [&](const RegeneratedJoint& Joint) { return Joint.Moving == Key || Joint.Fixed == Key; });
     };
 
     // Duplicate snapshots ahead of time: the bodies some later Duplicate copies as they stood after a given step.
@@ -390,6 +429,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         ClosedBy  = Saved.ClosedBy;
         Snapshots = Saved.Snapshots;
         Served    = Saved.Served;
+        Jointed   = Saved.Jointed;
     }
     Outcome.Resumed = static_cast<int>(Resume);
     if (Cache)
@@ -792,6 +832,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Current = Boolean.Body;
             Store();
             if (ToolIndex == PanelBody) ClosedBy = Step.Label;
+            ForgetJoints(Bodies[ToolIndex].Key);
             Bodies.erase(Bodies.begin() + ToolIndex);
             for (int* Index : { &Target, &Active, &PanelBody })
             {
@@ -860,6 +901,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (!Load(Step.Target)) { Refuse("Remove: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
             const int Removed = Target;
             if (Removed == PanelBody) ClosedBy = Step.Label;
+            ForgetJoints(Bodies[Removed].Key);
             Bodies.erase(Bodies.begin() + Removed);
             for (int* Index : { &Target, &Active, &PanelBody })
             {
@@ -882,6 +924,18 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Current = Moved.Body;
             if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would undo the move
             Store();
+            // Bodies jointed to it follow a rigid move (an assembly moves as one); a scale leaves them where they are.
+            const AffineMap& Map = Step.Placement;
+            const double Determinant = Dot(Map.ColumnX, Cross(Map.ColumnY, Map.ColumnZ));
+            const bool Rigid = std::fabs(Dot(Map.ColumnX, Map.ColumnX) - 1.0) < 1.0e-12 && std::fabs(Dot(Map.ColumnY, Map.ColumnY) - 1.0) < 1.0e-12
+                            && std::fabs(Dot(Map.ColumnZ, Map.ColumnZ) - 1.0) < 1.0e-12 && std::fabs(Dot(Map.ColumnX, Map.ColumnY)) < 1.0e-12
+                            && std::fabs(Dot(Map.ColumnY, Map.ColumnZ)) < 1.0e-12 && std::fabs(Dot(Map.ColumnZ, Map.ColumnX)) < 1.0e-12 && Determinant > 0.0;
+            if (Rigid)
+            {
+                const std::string Key = Bodies[Target].Key;
+                if (const std::string Problem = CarryDependents(Key, Map); !Problem.empty()) { Refuse("Transform: " + Problem); break; }
+                for (RegeneratedJoint& Joint : Outcome.Joints) if (Joint.Moving == Key) Joint.MovingOrigin = MapFrame(Map, Joint.MovingOrigin);
+            }
             break;
         }
         case FeatureStepKind::Duplicate:
@@ -904,6 +958,66 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Naming  = CarryNaming(Partition, Copy, Original.Naming, Step.Label);
             Current = Copy.Body;
             Create();
+            break;
+        }
+        case FeatureStepKind::Joint:
+        {
+            // ⑰ Place Step.Target by a joint to Step.Tool (Fusion joints): both joint origins are read off the current
+            //    geometry (References[0] on the target, [1] on the tool), the target takes the rigid placement and every
+            //    body jointed to it earlier follows. The tool stays where it is (it is the ground of this joint).
+            if (Step.References.size() != 2) { Refuse("Joint: pick one joint origin on each body"); break; }
+            if (Step.Target.empty() || Step.Tool.empty()) { Refuse("Joint: name the placed body and the body it joins"); break; }
+            if (Step.Target == Step.Tool) { Refuse("Joint: " + Step.Target + " cannot be jointed to itself"); break; }
+            const int FixedIndex = FindBody(Step.Tool);
+            if (FixedIndex < 0) { Refuse("Joint: no body named " + Step.Tool); break; }
+            if (!Load(Step.Target)) { Refuse("Joint: no body named " + Step.Target); break; }
+            if (const auto Existing = Jointed.find(Step.Target); Existing != Jointed.end())
+            {
+                Refuse("Joint: " + Step.Target + " is already jointed to " + Existing->second + " (🚧 one joint per placed body)");
+                break;
+            }
+            bool Loop = false;
+            for (std::string Key = Step.Tool; !Loop;)
+            {
+                const auto Up = Jointed.find(Key);
+                if (Up == Jointed.end()) break;
+                Key  = Up->second;
+                Loop = Key == Step.Target;
+            }
+            if (Loop) { Refuse("Joint: " + Step.Tool + " is already placed relative to " + Step.Target + ", so this joint would close a loop (🚧 loop solving)"); break; }
+            const ResolvedReference MovingResolved = ResolveReference(Partition, Current, Naming, Step.References[0]);
+            const ResolvedReference FixedResolved  = ResolveReference(Partition, Bodies[FixedIndex].Body, Bodies[FixedIndex].Naming, Step.References[1]);
+            Report.Resolutions = { MovingResolved, FixedResolved };
+            if (MovingResolved.Method == ResolutionMethod::Refused) { Refuse("Joint: " + MovingResolved.Refusal); break; }
+            if (FixedResolved.Method == ResolutionMethod::Refused) { Refuse("Joint: " + FixedResolved.Refusal); break; }
+            if (CaptureCondition)
+            {
+                Step.References[0].Signature = CaptureSignature(Partition, Step.References[0].Kind, MovingResolved.Slot);
+                Step.References[1].Signature = CaptureSignature(Partition, Step.References[1].Kind, FixedResolved.Slot);
+            }
+            const JointConnector MovingOrigin = ResolveJointConnector(Partition, Step.References[0].Kind, MovingResolved.Slot);
+            if (!MovingOrigin.Refusal.empty()) { Refuse(MovingOrigin.Refusal); break; }
+            const JointConnector FixedOrigin = ResolveJointConnector(Partition, Step.References[1].Kind, FixedResolved.Slot);
+            if (!FixedOrigin.Refusal.empty()) { Refuse(FixedOrigin.Refusal); break; }
+            const FeatureJoint& Joint = Step.Joint;
+            JointMotion Values;
+            Values.Angle       = EvaluateFeatureValue(Tree, Joint.Angle);
+            Values.Slide       = EvaluateFeatureValue(Tree, Joint.Slide);
+            Values.SecondSlide = EvaluateFeatureValue(Tree, Joint.SecondSlide);
+            Values.Pitch       = EvaluateFeatureValue(Tree, Joint.Pitch);
+            Values.Roll        = EvaluateFeatureValue(Tree, Joint.Roll);
+            Values.Offset      = EvaluateFeatureValue(Tree, Joint.Offset);
+            const JointPlacement Placement = SolveJointPlacement(MovingOrigin.Frame, FixedOrigin.Frame, Joint.Kind, Values, Joint.FlippedCondition, Joint.AngleRange, Joint.SlideRange);
+            if (!Placement.Refusal.empty()) { Refuse(Placement.Refusal); break; }
+            const TransformOutcome Moved = TransformBody(Partition, Current, Placement.Map);
+            if (!Moved.Refusal.empty()) { Refuse("Joint: " + Moved.Refusal); break; }
+            Naming  = CarryNaming(Partition, Moved, Naming, {});
+            Current = Moved.Body;
+            if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would undo the move
+            Store();
+            if (const std::string Problem = CarryDependents(Step.Target, Placement.Map); !Problem.empty()) { Refuse("Joint: " + Problem); break; }
+            Jointed[Step.Target] = Step.Tool;
+            Outcome.Joints.push_back({ Step.Label, Step.Target, Step.Tool, Joint.Kind, Placement.Target, FixedOrigin.Frame });
             break;
         }
         case FeatureStepKind::Pipe:
@@ -1015,6 +1129,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Saved->ClosedBy  = ClosedBy;
             Saved->Snapshots = Snapshots;
             Saved->Served    = Served;
+            Saved->Jointed   = Jointed;
             Cache->Checkpoints[StepIndex] = std::move(Saved);
             Cache->Digests[StepIndex]     = DigestFeatureStep(Tree, Step);
             Cache->Captured[StepIndex]    = CaptureCondition || (Step.References.empty() && Step.SizeAnchors.empty());   // Capture writes reference signatures only
@@ -1053,6 +1168,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Duplicate:     return "Duplicate";
     case FeatureStepKind::Pipe:          return "Pipe";
     case FeatureStepKind::Evolution:     return "Evolution";
+    case FeatureStepKind::Joint:         return "Joint";
     }
     return "?";
 }
