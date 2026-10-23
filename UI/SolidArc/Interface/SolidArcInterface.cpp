@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Interface/SolidArcInterface.h"
+#include "UI/SolidArc/Interface/SolidArcNavigation.h"
 
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
@@ -4883,14 +4884,15 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     const bool   RightClick = Hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] <= ClickTolerance * ClickTolerance;
     const bool   OverCube   = DrawOrientationCube(State, Canvas, CubeCorner, LeftClick);
     const OrbitCameraFrame Frame = ViewportFrame(State);
-    if (ImGui::IsItemActive() || Hovered)
-    {
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f))
-            RevolveOrbitCamera(State.Camera, Io.MouseDelta.x, Io.MouseDelta.y);
-        else if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, ClickTolerance))
-            PanOrbitCamera(State.Camera, Frame, Io.MouseDelta.x, Io.MouseDelta.y);
-    }
-    if (Hovered && Io.MouseWheel != 0.0f) DollyOrbitCamera(State.Camera, Io.MouseWheel);
+    SolidArcNavigationPointer Navigation;
+    Navigation.DeltaX              = Io.MouseDelta.x;
+    Navigation.DeltaY              = Io.MouseDelta.y;
+    Navigation.WheelSteps          = Io.MouseWheel;
+    Navigation.MiddleDragCondition = ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f);
+    Navigation.RightDragCondition  = ImGui::IsMouseDragging(ImGuiMouseButton_Right, ClickTolerance);
+    Navigation.CapturedCondition   = ImGui::IsItemActive() || Hovered;
+    Navigation.HoveredCondition    = Hovered;
+    NavigateSolidArcPointer(State.Camera, Frame, Navigation);
 
     // 📝 Mode 1 (Plasticity control-point mode): press on a shown pole grabs it, the pole follows the pointer in the
     //    screen-parallel plane through its start, the release commits one MoveSolidArcPole; a press-release without
@@ -6048,10 +6050,13 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     }
 
     // Viewport navigation (any modifier state the keymap names).
-    if (Pressed(ImGuiKey_Keypad1)) PresentView(State, Control ? OrbitViewPreset::Back : OrbitViewPreset::Front);
-    if (Pressed(ImGuiKey_Keypad3)) PresentView(State, Control ? OrbitViewPreset::Left : OrbitViewPreset::Right);
-    if (Pressed(ImGuiKey_Keypad7)) PresentView(State, Control ? OrbitViewPreset::Bottom : OrbitViewPreset::Top);
-    if (Pressed(ImGuiKey_Keypad5)) State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
+    SolidArcNavigationKeypad Keypad;
+    Keypad.FrontPressed      = Pressed(ImGuiKey_Keypad1);
+    Keypad.RightPressed      = Pressed(ImGuiKey_Keypad3);
+    Keypad.TopPressed        = Pressed(ImGuiKey_Keypad7);
+    Keypad.ProjectionPressed = Pressed(ImGuiKey_Keypad5);
+    Keypad.ControlCondition  = Control;
+    if (const std::optional<OrbitViewPreset> View = NavigateSolidArcKeypad(State.Camera, Keypad)) PresentView(State, *View);
 
     // [command='constrain'] — SolveSpace verbs on the picks, typed values, Delete removes a picked constraint (view keys live).
     if (State.Constrain.ActiveCondition)
