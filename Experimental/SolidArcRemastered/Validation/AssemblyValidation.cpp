@@ -469,19 +469,20 @@ namespace
 
     void ValidateTree()
     {
-        // ① names of the joint origins, read off a regeneration without joints
+        // ① names of the joint origins, read off a regeneration without joints (probes a quarter turn from the circle seams,
+        //    whose vertical seam edges end at angle 0)
         FeatureTree Tree = BuildArmTree();
         ArmNames Names;
         {
             ModelPartition Partition;
             const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree, true);
             if (Outcome.Refused != 0) { Report(TreeGate, "Arm specimen", "refused steps: " + std::to_string(Outcome.Refused), 1.0, false); return; }
-            Names.BossEdge       = EdgeNameAt(Partition, Outcome, "Extrude#2", { 2.25, 2.0, 1.0 });
-            Names.FirstNearEdge  = EdgeNameAt(Partition, Outcome, "Extrude#6", { 0.55, 10.3, 0.0 });
-            Names.FirstFarEdge   = EdgeNameAt(Partition, Outcome, "Extrude#6", { 2.95, 10.3, 0.2 });
-            Names.SecondNearEdge = EdgeNameAt(Partition, Outcome, "Extrude#8", { 0.55, 13.3, 0.0 });
+            Names.BossEdge       = EdgeNameAt(Partition, Outcome, "Extrude#2", { 2.0, 2.25, 1.0 });
+            Names.FirstNearEdge  = EdgeNameAt(Partition, Outcome, "Extrude#6", { 0.3, 10.55, 0.0 });
+            Names.FirstFarEdge   = EdgeNameAt(Partition, Outcome, "Extrude#6", { 2.7, 10.55, 0.2 });
+            Names.SecondNearEdge = EdgeNameAt(Partition, Outcome, "Extrude#8", { 0.3, 13.55, 0.0 });
             const bool Named = !Names.BossEdge.empty() && !Names.FirstNearEdge.empty() && !Names.FirstFarEdge.empty() && !Names.SecondNearEdge.empty();
-            Report(TreeGate, "Joint origins named on the regenerated part", Named ? Names.FirstNearEdge + " · " + Names.BossEdge : "missing", Named ? 0.0 : 1.0, Named);
+            Report(TreeGate, "Joint origins named on the regenerated part", Named ? Names.SecondNearEdge + " → " + Names.FirstFarEdge + " · " + Names.FirstNearEdge + " → " + Names.BossEdge : "missing", Named ? 0.0 : 1.0, Named);
             if (!Named) return;
         }
         // ② the second link is jointed to the first BEFORE the first is jointed to the base: it must follow
@@ -495,8 +496,7 @@ namespace
         };
         ModelPartition     Partition;
         RegenerationCache  Cache;
-        const std::vector<std::pair<double, double>> Angles = { { 0.0, 0.0 }, { 30.0, 45.0 }, { 120.0, -60.0 }, { -90.0, 180.0 }, { 45.0, 45.0 } };
-        int Previous = -1;                                                                   // Which parameter changed last
+        const std::vector<std::pair<double, double>> Angles = { { 0.0, 0.0 }, { 30.0, 0.0 }, { 30.0, 45.0 }, { 120.0, -60.0 }, { -90.0, -60.0 }, { -90.0, 180.0 }, { 45.0, 45.0 } };
         for (size_t Index = 0; Index < Angles.size(); ++Index)
         {
             const double θ1 = Angles[Index].first * Degree, θ2 = Angles[Index].second * Degree;
@@ -506,11 +506,12 @@ namespace
             Tree.Parameters[1].Value = θ2;
             const RegenerationOutcome Outcome = RegenerateFeatureTree(Partition, Tree, false, &Cache);
             const auto [First, Second] = Expect(θ1, θ2);
-            const double Error = std::max(Distance(BodyCentroid(Partition, Outcome, "Extrude#6"), First), Distance(BodyCentroid(Partition, Outcome, "Extrude#8"), Second));
+            const Vector3 FirstMeasured = BodyCentroid(Partition, Outcome, "Extrude#6"), SecondMeasured = BodyCentroid(Partition, Outcome, "Extrude#8");
+            const double Error = std::max(Distance(FirstMeasured, First), Distance(SecondMeasured, Second));
             char Name[96];
             std::snprintf(Name, sizeof Name, "θ₁ %g°, θ₂ %g°", Angles[Index].first, Angles[Index].second);
             const bool Built = Outcome.Refused == 0 && Outcome.Joints.size() == 2;
-            Report(TreeGate, std::string(Name) + " · link centroids", "link 1 / 2 vs closed form " + Scientific(Error) + (Built ? " · 2 joints" : " · refused: " + std::to_string(Outcome.Refused)), Error, Built && Error <= 1.0e-12);
+            Report(TreeGate, std::string(Name) + " · link centroids", "link 2 centroid (" + Fixed(SecondMeasured.X) + ", " + Fixed(SecondMeasured.Y) + ", " + Fixed(SecondMeasured.Z) + ") · link 1 / 2 vs closed form " + Scientific(Error) + (Built ? " · 2 joints" : " · refused: " + std::to_string(Outcome.Refused)), Error, Built && Error <= 1.0e-12);
             if (Index > 0)
             {
                 // Only θ₂ changed → resume at Joint#9 (index 8); θ₁ changed → Joint#10 (index 9) unless θ₂ changed too.
@@ -523,9 +524,7 @@ namespace
                 Report(TreeGate, std::string(Name) + " · incremental replay", "resumed at step " + std::to_string(Outcome.Resumed) + " (expected " + std::to_string(Expected) + ") · " + std::to_string(Differing) + " differing values vs a full replay",
                        static_cast<double>(Differing), Resumed && Differing == 0);
             }
-            Previous = FirstChanged ? 1 : 2;
         }
-        (void) Previous;
 
         // ③ a rigid Transform of the base carries both links (θ₁ 45°, θ₂ 45° from the last regeneration)
         {
@@ -745,6 +744,11 @@ int main(int Count, char** Arguments)
         std::printf("| %s | %s | %s | %s | %.2e | %ld | %ld |\n", Gate->Failures == 0 && Gate->Checks > 0 ? "🟢" : "🔴", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures);
     }
     std::printf("\n## Checks\n\n| | Gate | Check | Detail |\n|---|---|---|---|\n");
-    for (const DetailRow& Row : Details) std::printf("| %s | %s | %s | %s |\n", Row.PassedCondition ? "🟢" : "🔴", Row.Gate.c_str(), Row.Name.c_str(), Row.Detail.c_str());
+    const auto Cell = [](std::string Text)                                                   // Persistent names carry '|'
+    {
+        for (size_t At = Text.find('|'); At != std::string::npos; At = Text.find('|', At + 2)) Text.replace(At, 1, "\\|");
+        return Text;
+    };
+    for (const DetailRow& Row : Details) std::printf("| %s | %s | %s | %s |\n", Row.PassedCondition ? "🟢" : "🔴", Row.Gate.c_str(), Cell(Row.Name).c_str(), Cell(Row.Detail).c_str());
     return PassedCondition ? 0 : 1;
 }

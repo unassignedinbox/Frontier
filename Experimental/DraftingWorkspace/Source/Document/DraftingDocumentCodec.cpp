@@ -214,6 +214,23 @@ constexpr int64_t FormatVersion = 1;                                            
         break;
     case FeatureStepKind::Remove:
         break;
+    case FeatureStepKind::Joint:
+    {
+        // Target moves onto Tool; References = moving, fixed joint origin; every value may bind a parameter.
+        const FeatureJoint& Joint = Step.Joint;
+        Table.insert("Tool", Step.Tool);
+        Table.insert("JointKind", static_cast<int64_t>(Joint.Kind));
+        Table.insert("JointAngle", EncodeValue(Joint.Angle));
+        Table.insert("JointSlide", EncodeValue(Joint.Slide));
+        Table.insert("JointSecondSlide", EncodeValue(Joint.SecondSlide));
+        Table.insert("JointPitch", EncodeValue(Joint.Pitch));
+        Table.insert("JointRoll", EncodeValue(Joint.Roll));
+        Table.insert("JointOffset", EncodeValue(Joint.Offset));
+        Table.insert("JointFlipped", Joint.FlippedCondition);
+        if (Joint.AngleRange) Table.insert("JointAngleRange", toml::array{ Joint.AngleRange->Low, Joint.AngleRange->High });
+        if (Joint.SlideRange) Table.insert("JointSlideRange", toml::array{ Joint.SlideRange->Low, Joint.SlideRange->High });
+        break;
+    }
     case FeatureStepKind::Transform:
     case FeatureStepKind::Duplicate:
         // The affine map as its three linear columns and the shift (x′ = X·x + Y·y + Z·z + Shift).
@@ -498,7 +515,7 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Evolution)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Joint)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer DraftingWorkspace?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -540,6 +557,28 @@ DraftingDocumentFile DecodeDraftingDocument(const std::string& Text)
             Step.Placement.ColumnZ = DecodeVector(View["PlacementZ"], Step.Placement.ColumnZ);
             Step.Placement.Shift   = DecodeVector(View["PlacementShift"], Step.Placement.Shift);
             Step.Source            = View["Source"].value_or(std::string{});
+            if (Step.Kind == FeatureStepKind::Joint)
+            {
+                const int64_t JointCode = View["JointKind"].value_or(int64_t{ 0 });
+                if (JointCode < 0 || JointCode > static_cast<int64_t>(JointKind::Ball)) { File.Refusal = Step.Label + " has an unknown joint kind " + std::to_string(JointCode); return File; }
+                FeatureJoint& Joint = Step.Joint;
+                Joint.Kind             = static_cast<JointKind>(JointCode);
+                Joint.Angle            = DecodeValue(View["JointAngle"]);
+                Joint.Slide            = DecodeValue(View["JointSlide"]);
+                Joint.SecondSlide      = DecodeValue(View["JointSecondSlide"]);
+                Joint.Pitch            = DecodeValue(View["JointPitch"]);
+                Joint.Roll             = DecodeValue(View["JointRoll"]);
+                Joint.Offset           = DecodeValue(View["JointOffset"]);
+                Joint.FlippedCondition = View["JointFlipped"].value_or(false);
+                const auto Range = [&](const char* Key) -> std::optional<JointRange>
+                {
+                    const toml::array* Pair = View[Key].as_array();
+                    if (!Pair || Pair->size() != 2) return std::nullopt;
+                    return JointRange{ (*Pair)[0].value_or(0.0), (*Pair)[1].value_or(0.0) };
+                };
+                Joint.AngleRange = Range("JointAngleRange");
+                Joint.SlideRange = Range("JointSlideRange");
+            }
             Step.References = DecodeReferences(View["References"]);
             if (View["EndSize"])
             {
