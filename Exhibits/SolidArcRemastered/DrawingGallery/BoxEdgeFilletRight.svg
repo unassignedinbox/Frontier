@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="395" viewBox="0 0 520 395">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<text x="8" y="17" font-family="monospace" font-size="13" fill="#333">BoxEdgeFilletRight · 10 strokes · 1 ms</text>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.01,59.99 80.79,59.99 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="80.79,59.99 484.01,59.99 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.01,358.67 35.99,358.67 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.99,358.67 484.01,358.67 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.01,358.67 484.01,59.99 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.99,358.67 35.99,104.79 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.99,104.79 36.04,102.72 36.18,100.66 36.42,98.60 36.67,97.01 36.75,96.56 37.18,94.54 37.70,92.53 38.31,90.56 38.69,89.47 39.02,88.61 39.81,86.70 40.69,84.82 41.65,82.99 41.99,82.39 42.70,81.21 43.83,79.47 45.04,77.79 46.33,76.17 46.47,75.99 47.68,74.61 49.11,73.11 50.61,71.68 51.99,70.47 52.17,70.33 53.79,69.04 55.47,67.83 57.21,66.70 58.39,65.99 58.99,65.65 60.82,64.69 62.70,63.81 64.61,63.02 65.47,62.69 66.56,62.31 68.53,61.70 70.54,61.18 72.56,60.75 73.01,60.67 74.60,60.42 76.66,60.18 78.72,60.04 80.79,59.99 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.99,358.67 35.99,104.79 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="80.79,59.99 78.72,60.04 76.66,60.18 74.60,60.42 73.01,60.67 72.56,60.75 70.54,61.18 68.53,61.70 66.56,62.31 65.47,62.69 64.61,63.02 62.70,63.81 60.82,64.69 58.99,65.65 58.39,65.99 57.21,66.70 55.47,67.83 53.79,69.04 52.17,70.33 51.99,70.47 50.61,71.68 49.11,73.11 47.68,74.61 46.47,75.99 46.33,76.17 45.04,77.79 43.83,79.47 42.70,81.21 41.99,82.39 41.65,82.99 40.69,84.82 39.81,86.70 39.02,88.61 38.69,89.47 38.31,90.56 37.70,92.53 37.18,94.54 36.75,96.56 36.67,97.01 36.42,98.60 36.18,100.66 36.04,102.72 35.99,104.79 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.01,358.67 484.01,59.99 "/>
+</svg>

@@ -2,6 +2,26 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.32 MB, no external resources) with 30 interactive kernel models (now including the variable fillet and chamfer on a curved edge, VariableArcFillet / VariableArcChamfer, the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
+**TL;DR (drawings, priority 11 D1)**: The kernel now makes hidden-line drawing views. `Drawing/DrawingProjection` projects bodies into any right-handed view frame (the six principal views and the isometric come from `StandardDrawingFrame`):
+
+- **Edges:** every edge except seams; a tangent edge (fillet run-out) is flagged when the face normals at its midpoint are parallel.
+- **Silhouettes:** where a curved face turns away from the viewer (N·view = 0). Traced by marching squares on the face chart, every point polished onto the exact contour and trimmed to the face by its chart winding number.
+- **Visibility:** an exact ray toward the viewer is tested against every face whose view box covers the point. Touching, grazing and boundary hits do not hide. Each visibility change is bisected, then snapped to the exact crossing with the projected outline.
+- **Section views:** the bodies are cut on a scratch copy (`CutBodyAtPlane`, factored out of `SectionBody`). Cap edges become section outlines and caps are hatched at 45° by the even-odd rule.
+
+[`DrawingValidation`](DrawingValidation.md) DR1–DR8 passes 51 checks in 1.2 s, worst 5.0e-14. Renders are in [`DrawingGallery/`](DrawingGallery/DrawingViews.png):
+
+| Gate | Shows | Worst |
+|---|---|---|
+| DR1 | Block 4 × 2.5 × 1 in the six principal views (both coincident outlines, nothing hidden) and the isometric (the 3 edges at the far corner hidden, every edge foreshortened by √(2/3)) | 0 |
+| DR2 | Bracket with a through hole r 0.3: top-view rims at r (cover 4π); front and right views have exactly two hidden silhouettes of length 1 at x = 2.7 / 3.3 and y = 0.95 / 1.55 | 7.1e-15 |
+| DR3 | Cylinder silhouettes at ±r (none when seen along the axis); sphere silhouette at radius 1 in front, top and isometric views, one run each | 5.0e-14 |
+| DR4 | A block behind a block: hidden pieces exactly (1, 0.5)→(2, 0.5) and (1, 0.5)→(1, 1); hidden length 3, visible 25 | 0 |
+| DR5 | Section A-A through the hole axis: cap area 3.4, hatch ends on the boundary, slope 1, spacing 0.1, outline length 10.8, source partition untouched | 1.3e-14 |
+| DR6 | A box edge filleted r 0.3: exactly 2 tangent edges (a chamfer: 0); the right view shows quarter arcs at r 0.3 and no silhouette | 1.8e-15 |
+| DR7 | 5 named refusals (no bodies, a skewed frame, a left-handed frame, a plane beyond the body, a plane in front of it) | — |
+| DR8 | 20 view timings, the slowest the section view at 0.3 s | 0.33 s |
+
 **TL;DR (assemblies, priority 11 A1)**: Bodies can now be jointed to each other, Fusion-style. `Assembly/JointSolver` reads a joint origin off any analytic entity: a circle or ellipse edge gives its centre, with the axis out of the adjacent plane face; a line edge gives its midpoint; a plane face gives its area centroid and outward normal; a cylinder or cone side gives its axis point level with the centroid; a sphere or torus gives its centre; a vertex gives its position. It then places the moving body by P = F · Motion · Flip · M⁻¹ for the seven kinds (rigid, revolute, slider, cylindrical, pin-slot, planar and ball), with optional angle and slide limits that refuse rather than clamp. The new **Joint** feature step (kind 17) places `Target` onto `Tool` with the names carried over. Bodies jointed to it earlier follow, and so do bodies jointed to a body moved by a rigid Transform. Removing or consuming a body drops its joints. Incremental replay resumes at the edited joint. `Assembly/AssemblyAnalysis` gives the assembly mass with densities (parallel-axis inertia) and the interference of two bodies: clear with the gap, contact, overlap with the common volume, or contained. [`AssemblyValidation`](AssemblyValidation.md) J1–J6 passes 61 checks in 9.6 s, worst 3.7e-15:
 
 | Gate | Shows | Worst |
@@ -352,6 +372,8 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `FreeformBlendValidation.md` | P1 parallel carrier = closed form · P2 freeform offset derivatives · P3 SSI with parallel carriers · P4 fold margin · F1 fillets on NURBS supports = closed-form V · F2 rolling-ball law · F3 refusals · O1 face offsets of a NURBS wall = Steiner closed form · O2 hollow with a NURBS wall = Green closed form · O3 traced meetings on both carriers · A1 NURBS stand-ins off the lattice (parametric, geometric, normal drift) · A2 all-NURBS bodies (audit, ΔV ≤ tolerance × area, edges within their tolerant tubes, G1 drift) · A3 approximation refusals · A4 convergence order (3.68, cubic 4) · C1 chamfers on NURBS supports = closed forms, all tessellated · C2 variable blends on NURBS supports | 🟢 PASS |
 | `MeasureValidation.md` | Exact mass properties, areas, distances and plane sections against closed forms (priority 9) | 🟢 PASS |
 | `AssemblyValidation.md` | J1 joint origins · J2 the seven joint kinds · J3 Joint steps in the tree (follow rule, incremental replay, Transform, Remove) · J4 assembly mass · J5 interference · J6 refusals (priority 11 A1) | 🟢 PASS (61) |
+| `DrawingValidation.md` | DR1 block views · DR2 hole circles and hidden silhouettes · DR3 cylinder and sphere silhouettes · DR4 occlusion between bodies · DR5 section view and hatching · DR6 tangent edges · DR7 refusals · DR8 timings (priority 11 D1) | 🟢 PASS (51) |
+| `DrawingGallery/*.svg, *.png` | 14 projected views from DrawingValidation `--svg` (visible solid, hidden dashed, silhouettes blue, tangent edges green, section outline heavy, hatch grey); `DrawingViews.png` is the contact sheet | — |
 | `SetbackValidation.md` | S1 rims on both carriers · S2 G1 quad ↔ neighbour · S3 G1 across spokes · S4 audit, genus, tessellation, vertex categories · S5 determinism · S6 refusals; per-specimen setback / ball / cap counts | 🟢 PASS |
 | `RollingBallValidation.md` | R1 ball law · R2 rails on supports · R3 G1 at rails · R4 projection · R5 chart normal and derivatives · R6 line/circle spines ≡ cylinder/torus · R7 section closure · R8 bodies · R9 transforms; 4 bodies (one with 2 pinch vertices) | 🟢 PASS |
 | `PatternStressValidation.md` (66 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes · V setback vertex blends; a refusal is ⚠️, a built wrong body 🔴 | 🟢 66 · ⚠️ 0 · 🔴 0 |

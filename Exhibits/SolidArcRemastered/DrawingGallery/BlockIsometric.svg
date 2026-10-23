@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="434" viewBox="0 0 520 434">
+<rect width="100%" height="100%" fill="#fbfbf8"/>
+<text x="8" y="17" font-family="monospace" font-size="13" fill="#333">BlockIsometric · 13 strokes · 1 ms</text>
+<polyline fill="none" stroke="#111" stroke-width="1.0" stroke-linecap="round" stroke-dasharray="6 4" points="208.30,139.55 35.95,239.06 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.0" stroke-linecap="round" stroke-dasharray="6 4" points="484.05,298.76 415.11,258.96 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.0" stroke-linecap="round" stroke-dasharray="6 4" points="415.11,258.96 208.30,139.55 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.0" stroke-linecap="round" stroke-dasharray="6 4" points="208.30,139.55 208.30,59.95 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.05,219.16 208.30,59.95 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="208.30,59.95 35.95,159.45 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.95,159.45 311.70,318.66 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="311.70,318.66 484.05,219.16 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="311.70,398.27 484.05,298.76 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.95,239.06 311.70,398.27 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="35.95,239.06 35.95,159.45 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="311.70,398.27 311.70,318.66 "/>
+<polyline fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" points="484.05,298.76 484.05,219.16 "/>
+</svg>
