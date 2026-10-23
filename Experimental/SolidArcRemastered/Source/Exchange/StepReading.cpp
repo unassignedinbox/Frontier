@@ -1451,7 +1451,12 @@ StepImport ReadStep(ModelPartition& Partition, const std::string& Bytes, const S
         for (size_t Index = 0; Index < Blueprints.size(); ++Index)
         {
             const AssemblyOutcome Assembly = AssembleBody(Scratch, Blueprints[Index], Request.Label);
-            if (!Assembly.Refusal.empty()) return Finish("solid " + std::to_string(Index + 1) + " (#" + std::to_string(Roots[Index]) + "): " + Assembly.Refusal);
+            if (!Assembly.Refusal.empty())
+            {
+                const std::string Prefix = Request.Label + ": ";                             // AssembleBody labels its refusal too
+                const std::string Cause  = Assembly.Refusal.rfind(Prefix, 0) == 0 ? Assembly.Refusal.substr(Prefix.size()) : Assembly.Refusal;
+                return Finish("solid " + std::to_string(Index + 1) + " (#" + std::to_string(Roots[Index]) + "): " + Cause);
+            }
             Blueprints[Index].ShellVolumes = Assembly.ShellVolumes;                          // The caller's assembly reuses them
             const AuditReport Audit = AuditBody(Scratch, Assembly.Body);
             if (!Audit.SoundCondition())

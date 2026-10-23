@@ -57,3 +57,21 @@
 | 🟢 | VariableArcChamfer | valid | 1 | 1 | 5 / 5 | 9 | BSplineSurface 1, Cylinder 1, Plane 3 | 1.507964383 | 6.0e-08 | 5.3e-08 | 387 | 1.7e-07 |
 | 🟢 | VariableArcFillet | valid | 1 | 1 | 5 / 5 | 9 | BSplineSurface 1, Cylinder 1, Plane 3 | 1.543138003 | 6.1e-08 | 4.9e-08 | 275 | 2.9e-07 |
 | 🟢 | VariableFillet | valid | 1 | 1 | 7 / 7 | 15 | Cone 1, Plane 6 | 23.94002268 | 3.5e-10 | 2.4e-10 | 248 | 3.7e-08 |
+
+## STEP import
+
+🟢 11 OpenCascade-authored fixtures (Validation/StepFixtures, StepFixtures.py) imported by the kernel (EX11), then (a) written again by the kernel and read by OpenCascade — BRepCheck validity, unique solids / shells / faces and adaptive volume / area (ε 10⁻¹²) against the fixture references — and (b) tessellated by the kernel and read by trimesh (closure, winding, facet volume within 3 %). OCCT → kernel → OCCT closes the loop: the kernel neither lost nor invented geometry on the way through. Limits as for STEP export (5 × 10⁻⁵, OCCT re-derives trimming curves on B-spline faces).
+
+| | Fixture | Unit | Re-read by OCCT | Solids | Shells | Faces | ΔV / V (OCCT) | ΔA / A (OCCT) | Kernel facets | Watertight | ΔV / V (facets) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 🟢 | FilletedBox | MM | valid | 1 | 1 | 26 | 1.2e-13 | 1.1e-12 | 5702 | True | 1.6e-03 |
+| 🟢 | ChamferedBore | MM | valid | 1 | 1 | 9 | 2.2e-12 | 7.0e-14 | 952 | True | 7.9e-04 |
+| 🟢 | TiltedTorus | MM | valid | 1 | 1 | 1 | 2.2e-12 | 6.1e-13 | 3598 | True | 8.4e-03 |
+| 🟢 | OffsetSphere | MM | valid | 1 | 1 | 1 | 4.2e-13 | 1.8e-12 | 5166 | True | 3.1e-03 |
+| 🟢 | ApexCone | MM | valid | 1 | 1 | 2 | 1.6e-12 | 2.5e-12 | 2376 | True | 4.0e-03 |
+| 🟢 | SplineLoft | MM | valid | 1 | 1 | 4 | 2.5e-12 | 5.0e-13 | 1990 | True | 3.0e-03 |
+| 🟢 | RevolvedSpline | MM | valid | 1 | 1 | 3 | 2.2e-12 | 5.8e-13 | 3920 | True | 3.2e-03 |
+| 🟢 | ExtrudedSpline | MM | valid | 1 | 1 | 6 | 2.2e-13 | 3.3e-07 | 562 | True | 8.9e-05 |
+| 🟢 | HollowBlock | MM | valid | 1 | 2 | 7 | 1.9e-13 | 3.3e-13 | 1692 | True | 6.4e-04 |
+| 🟢 | FilletedBoss | MM | valid | 1 | 1 | 9 | 1.5e-12 | 3.6e-13 | 1372 | True | 4.6e-04 |
+| 🟢 | InchBlock | INCH | valid | 1 | 1 | 6 | 0.0e+00 | 2.0e-16 | 112 | True | 4.5e-08 |

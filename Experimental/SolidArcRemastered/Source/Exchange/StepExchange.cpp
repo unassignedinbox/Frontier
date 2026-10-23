@@ -100,6 +100,11 @@ KnotForm DescribeKnots(const std::vector<double>& Knots)
 //    import → export reaches a fixed point.
 Vector3 KeepUnit(Vector3 Value)
 {
+    // An axis direction one ulp short of unit (−0.9999999999999999, 0, 0) is written as the exact axis: idempotent like
+    // keeping, and what a reader of the file expects to see.
+    const int Zeros = (Value.X == 0.0) + (Value.Y == 0.0) + (Value.Z == 0.0);
+    if (Zeros == 2 && std::fabs(Dot(Value, Value) - 1.0) <= 4.0e-16)
+        return { Value.X == 0.0 ? 0.0 : std::copysign(1.0, Value.X), Value.Y == 0.0 ? 0.0 : std::copysign(1.0, Value.Y), Value.Z == 0.0 ? 0.0 : std::copysign(1.0, Value.Z) };
     return std::fabs(Dot(Value, Value) - 1.0) <= 4.0e-16 ? Value : Normalize(Value);
 }
 
