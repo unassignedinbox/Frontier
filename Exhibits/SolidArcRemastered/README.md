@@ -2,6 +2,26 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.32 MB, no external resources) with 30 interactive kernel models (now including the variable fillet and chamfer on a curved edge, VariableArcFillet / VariableArcChamfer, the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
+**TL;DR (drawing sheets, priority 11 D2)**: Views now become finished drawings. `Drawing/DrawingSheet` composes a sheet from bodies:
+
+- **Paper and layout:** ISO 216 A4–A0 landscape, 20 mm binding edge. Front, Top and Right views are placed by ISO 5456-2 first or third angle, with the isometric (or section A-A) in the free quadrant. Top shares Front's sheet x mapping exactly and Right its y mapping. The scale is the largest ISO 5455 standard scale (100:1 … 1:1000) whose view footprints, dimensions included, fit 12 mm apart.
+- **Automatic dimensions:** overall sizes from the extreme outline points, hole positions from the outline, ⌀ / R leaders to circles and arcs fitted from the strokes. Shorter dimensions sit nearer the outline. Leaders go to the corner free of both dimension stacks, and an end-on cylinder is sized by its ⌀ alone. Full circles get centre marks.
+- **Section line and title block:** a chain line where the plane is edge-on, with 7 mm arrows toward the kept material, letters A and the label SECTION A-A; hatching is 3 mm on paper. The ISO 7200-style title block (180 × 36 mm) carries the projection symbol.
+- **Export:** `Drawing/DrawingExport` writes SVG (millimetres, one group per ISO 128 line style) and DXF R12 (AC1009, LTYPE / LAYER / STYLE tables, LINE / POLYLINE / SOLID / TEXT, ⌀ as `%%c`).
+
+[`DrawingValidation`](DrawingValidation.md) DR1–DR15 passes 105 checks in 4.7 s (D2 adds 54). Both exports are read back by independent parsers. Sheets (SVG, DXF and PNG) are in [`DrawingGallery/`](DrawingGallery/DrawingSheets.png); the PNGs are rendered by `Tooling/RenderDrawingSvg.py`.
+
+| Gate | Shows | Worst |
+|---|---|---|
+| DR9 | Bracket on A4, both angles: Top / Right share Front's x / y mapping exactly; every corner at origin + 20 × view coordinates; footprints inside the area and ≥ 12 mm apart; 20:1 chosen, 50:1 refused | 1.4e-14 mm |
+| DR10 | Dimensions 4, 1, 2.5, 3, 1.25, ⌀0.6: values, feature points, line = 20 × value, arrow tips; no value box touching a value, view, title block or frame; fillet R0.3 (right view, 10:1); cylinder ⌀1 alone in its end view | 5.9e-14 mm |
+| DR11 | Frame 20 / 10 mm, title block 180 × 36 mm in the corner with all fields; projection symbol circles r 2 / 4, cone ends 4 / 8, circles left (third) or right (first) of the cone | 1.8e-13 mm |
+| DR12 | Cutting line at model y = 1.25, 5 mm past the outline, arrows toward +y, letters A, SECTION A-A; hatch 45° at 3 mm; cap 1360 mm² | 2.0e-12 mm² |
+| DR13 | SVG read back: A4 mm header, 10 layer groups in order, hidden dashed 3 1.5, every polyline / arrowhead / text (an XML-escaped note included) | 5.0e-7 mm (6 decimals) |
+| DR14 | DXF read back: AC1009, tables, every LINE / POLYLINE / SOLID / TEXT in drawing order, `%%c`; `ExportDrawingFile` writes the same bytes | 5.1e-13 mm |
+| DR15 | 8 named refusals (no bodies, unit 0, scale −2, 50:1 too large for A4, a 2000 km slab even at 1:1000, plane misses, export of a refused sheet, unknown extension) | — |
+| DR8 | Plus 6 sheet timings; the slowest is the first-angle section sheet at 0.77 s | 0.77 s |
+
 **TL;DR (drawings, priority 11 D1)**: The kernel now makes hidden-line drawing views. `Drawing/DrawingProjection` projects bodies into any right-handed view frame (the six principal views and the isometric come from `StandardDrawingFrame`):
 
 - **Edges:** every edge except seams; a tangent edge (fillet run-out) is flagged when the face normals at its midpoint are parallel.
@@ -372,8 +392,9 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `FreeformBlendValidation.md` | P1 parallel carrier = closed form · P2 freeform offset derivatives · P3 SSI with parallel carriers · P4 fold margin · F1 fillets on NURBS supports = closed-form V · F2 rolling-ball law · F3 refusals · O1 face offsets of a NURBS wall = Steiner closed form · O2 hollow with a NURBS wall = Green closed form · O3 traced meetings on both carriers · A1 NURBS stand-ins off the lattice (parametric, geometric, normal drift) · A2 all-NURBS bodies (audit, ΔV ≤ tolerance × area, edges within their tolerant tubes, G1 drift) · A3 approximation refusals · A4 convergence order (3.68, cubic 4) · C1 chamfers on NURBS supports = closed forms, all tessellated · C2 variable blends on NURBS supports | 🟢 PASS |
 | `MeasureValidation.md` | Exact mass properties, areas, distances and plane sections against closed forms (priority 9) | 🟢 PASS |
 | `AssemblyValidation.md` | J1 joint origins · J2 the seven joint kinds · J3 Joint steps in the tree (follow rule, incremental replay, Transform, Remove) · J4 assembly mass · J5 interference · J6 refusals (priority 11 A1) | 🟢 PASS (61) |
-| `DrawingValidation.md` | DR1 block views · DR2 hole circles and hidden silhouettes · DR3 cylinder and sphere silhouettes · DR4 occlusion between bodies · DR5 section view and hatching · DR6 tangent edges · DR7 refusals · DR8 timings (priority 11 D1) | 🟢 PASS (51) |
+| `DrawingValidation.md` | DR1 block views · DR2 hole circles and hidden silhouettes · DR3 cylinder and sphere silhouettes · DR4 occlusion between bodies · DR5 section view and hatching · DR6 tangent edges · DR7 refusals · DR8 timings (D1) · DR9 sheet layout · DR10 automatic dimensions · DR11 title block and projection symbol · DR12 sheet section line and hatching · DR13 SVG round trip · DR14 DXF round trip · DR15 sheet refusals (D2) | 🟢 PASS (105) |
 | `DrawingGallery/*.svg, *.png` | 14 projected views from DrawingValidation `--svg` (visible solid, hidden dashed, silhouettes blue, tangent edges green, section outline heavy, hatch grey); `DrawingViews.png` is the contact sheet | — |
+| `DrawingGallery/*Sheet*.svg, *.dxf, *.png` | 4 drawing sheets on A4 (bracket third angle; bracket first angle with section A-A; box edge fillet; cylinder) as exported SVG and DXF R12, PNGs rendered by `Tooling/RenderDrawingSvg.py`; `DrawingSheets.png` is the contact sheet | — |
 | `SetbackValidation.md` | S1 rims on both carriers · S2 G1 quad ↔ neighbour · S3 G1 across spokes · S4 audit, genus, tessellation, vertex categories · S5 determinism · S6 refusals; per-specimen setback / ball / cap counts | 🟢 PASS |
 | `RollingBallValidation.md` | R1 ball law · R2 rails on supports · R3 G1 at rails · R4 projection · R5 chart normal and derivatives · R6 line/circle spines ≡ cylinder/torus · R7 section closure · R8 bodies · R9 transforms; 4 bodies (one with 2 pinch vertices) | 🟢 PASS |
 | `PatternStressValidation.md` (66 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes · V setback vertex blends; a refusal is ⚠️, a built wrong body 🔴 | 🟢 66 · ⚠️ 0 · 🔴 0 |
