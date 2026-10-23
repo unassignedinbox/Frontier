@@ -8,7 +8,7 @@ import os
 import sys
 
 Root = Path(__file__).resolve().parents[3]
-Source = Root / 'Engine/Modelling/SolidArc'
+Source = Root / 'Experimental/SolidArc/Service'
 Destination = Path(__file__).resolve().parents[1] / 'Runtime'
 Native = '--native' in sys.argv
 Scratch = Root / '_ClaudeScratch/build' / ('SolidArcNative' if Native else 'SolidArcWeb')

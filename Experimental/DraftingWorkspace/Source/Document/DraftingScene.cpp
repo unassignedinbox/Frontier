@@ -9,10 +9,10 @@
 
 #include "Document/DraftingScene.h"
 
-#include "Geometry/CurveGeometry.h"
-#include "Geometry/NurbsCarrier.h"
-#include "Geometry/SurfaceGeometry.h"
-#include "Tessellation/BodyTessellation.h"
+#include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
+#include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
+#include "Engine/GeometryProcessing/Geometry/SurfaceGeometry.h"
+#include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
 #include <algorithm>
 #include <atomic>
@@ -25,7 +25,7 @@
 namespace Frontier::DraftingWorkspace
 {
 
-using namespace Frontier::SolidArcRemastered;
+using namespace Frontier::GeometryProcessing;
 
 namespace
 {

@@ -11,13 +11,13 @@
 
 #include "Document/DraftingImagePlane.h"
 #include "Document/DraftingMatcap.h"
-#include "Drawing/DrawingSheet.h"
-#include "Feature/FeatureTree.h"
-#include "Local/FaceOperations.h"
-#include "Sketch/SketchConstraining.h"
-#include "Sketch/SketchEditing.h"
-#include "Sketch/SketchTrim.h"
-#include "Topology/ModelPartition.h"
+#include "Engine/GeometryProcessing/Drawing/DrawingSheet.h"
+#include "Engine/GeometryProcessing/Feature/FeatureTree.h"
+#include "Engine/GeometryProcessing/Local/FaceOperations.h"
+#include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
+#include "Engine/GeometryProcessing/Sketch/SketchEditing.h"
+#include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
+#include "Engine/GeometryProcessing/Topology/ModelPartition.h"
 
 #include <cstdint>
 #include <map>
@@ -28,8 +28,6 @@
 
 namespace Frontier::DraftingWorkspace
 {
-
-namespace Modeller = Frontier::SolidArcRemastered;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    ENUMS
@@ -71,9 +69,9 @@ enum class DraftingSelectionKind : uint8_t
 struct DraftingConstructRequest
 {
     DraftingConstructKind        Kind        = DraftingConstructKind::Block;                 // [-]   - Tile
-    Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Union;           // [-]   - With the target body (first body: New; Separate = new body)
+    GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Union;           // [-]   - With the target body (first body: New; Separate = new body)
     std::string                  Target      = {};                                           // [-]   - Body key the Boolean acts on (empty: the active body)
-    Modeller::Vector3            Position    = { 0.0, 0.0, 0.0 };                             // [len] - Placement
+    GeometryProcessing::Vector3            Position    = { 0.0, 0.0, 0.0 };                             // [len] - Placement
     double                       Width       = 2.0;                                          // [len] - Block x extent
     double                       Depth       = 1.5;                                          // [len] - Block y extent
     double                       Height      = 1.0;                                          // [len] - Block / cylinder z extent
@@ -89,10 +87,10 @@ struct DraftingDrawingRequest
 {
     DraftingDrawingKind            Kind            = DraftingDrawingKind::Line;              // [-]   - Tool
     int                            GridPlane       = 0;                                      // [-]   - 0 XY · 1 XZ · 2 YZ
-    std::vector<Modeller::Vector2> Points          = {};                                     // [len] - Clicks in plane coordinates
+    std::vector<GeometryProcessing::Vector2> Points          = {};                                     // [len] - Clicks in plane coordinates
     bool                           ClosedCondition = false;                                  // [-]   - Line / curve: close the chain
     bool                           CentreCondition = false;                                  // [-]   - Rectangle: centre + corner · circle: centre + rim (else two diameter ends)
-    Modeller::SketchSplineForm     Form            = Modeller::SketchSplineForm::CubicSpline; // [-]  - Curve form (Plasticity 1 … 4)
+    GeometryProcessing::SketchSplineForm     Form            = GeometryProcessing::SketchSplineForm::CubicSpline; // [-]  - Curve form (Plasticity 1 … 4)
 };
 
 // 📝 Selection is stored as persistent names, so it survives regeneration whenever the names still resolve.
@@ -109,7 +107,7 @@ struct DraftingCutRequest
 {
     std::string       Target    = {};                                                        // [-] - Body key (empty = active body)
     std::string       Cutter    = {};                                                        // [-] - Sketch step or SpaceCurve label
-    Modeller::Vector3 Direction = { 0.0, 0.0, -1.0 };                                        // [-] - SpaceCurve cutters: projection direction
+    GeometryProcessing::Vector3 Direction = { 0.0, 0.0, -1.0 };                                        // [-] - SpaceCurve cutters: projection direction
 };
 
 // 📝 Pick is in the sketch's plane coordinates (the pointer met that plane).
@@ -117,7 +115,7 @@ struct DraftingTrimRequest
 {
     std::string       Sketch = {};                                                           // [-]   - Sketch step label
     int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
-    Modeller::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
+    GeometryProcessing::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
 };
 
 // Plasticity H family: H hides the selected bodies, Shift+H every other body, Alt+H shows all, Ctrl+H swaps shown and hidden.
@@ -134,7 +132,7 @@ enum class DraftingVisibilityVerb : uint8_t
 //    a persistent vertex name, so a regeneration that reverses the edge keeps each size at its corner.
 struct DraftingBlendRequest
 {
-    Modeller::BlendProfile Shape             = Modeller::BlendProfile::Fillet;               // [-]   - Cross-section
+    GeometryProcessing::BlendProfile Shape             = GeometryProcessing::BlendProfile::Fillet;               // [-]   - Cross-section
     double                 Size              = 0.25;                                         // [len] - Radius / setback (at the anchors)
     std::optional<double>  EndSize           = {};                                           // [len] - Size at the far ends (empty = constant)
     bool                   ReversedCondition = false;                                        // [-]   - Anchor at each edge's end vertex
@@ -182,13 +180,13 @@ struct DraftingBodySummary
 //    every step instead of replaying it.
 struct DraftingHistoryEntry
 {
-    Modeller::FeatureTree              Tree     = {};                                        // [-] - Tree before the command
+    GeometryProcessing::FeatureTree              Tree     = {};                                        // [-] - Tree before the command
     std::map<std::string, std::string> Captions = {};                                        // [-] - Step captions before the command
     std::string                        Label    = {};                                        // [-] - Command caption
     DraftingAppearance                 Appearance = {};                                      // [-] - Matcaps before the command
     bool                               AppearanceCondition = false;                          // [-] - Matcap-only entry: restore without regenerating
-    std::shared_ptr<const Modeller::RegenerationCache> Replay = {};                          // [-] - Checkpoints then (recent entries only)
-    std::shared_ptr<const Modeller::ReplayCheckpoint>  SummaryCheckpoint = {};               // [-] - Checkpoint the summary below was measured on
+    std::shared_ptr<const GeometryProcessing::RegenerationCache> Replay = {};                          // [-] - Checkpoints then (recent entries only)
+    std::shared_ptr<const GeometryProcessing::ReplayCheckpoint>  SummaryCheckpoint = {};               // [-] - Checkpoint the summary below was measured on
     DraftingBodySummary                                Summary = {};                         // [-] - Body figures then (reused when every step restores)
 };
 
@@ -229,8 +227,8 @@ struct DraftingTitleFields
 //    cuts along a Section-card plane (Alt+S semantics: the +normal side is kept and seen from the removed side).
 struct DraftingDrawingSheetSettings
 {
-    Modeller::DrawingPaperSize       Paper               = Modeller::DrawingPaperSize::A3;    // [-] - ISO 216, landscape
-    Modeller::DrawingProjectionAngle Angle               = Modeller::DrawingProjectionAngle::First; // [-] - Layout and symbol
+    GeometryProcessing::DrawingPaperSize       Paper               = GeometryProcessing::DrawingPaperSize::A3;    // [-] - ISO 216, landscape
+    GeometryProcessing::DrawingProjectionAngle Angle               = GeometryProcessing::DrawingProjectionAngle::First; // [-] - Layout and symbol
     double                           Scale               = 0.0;                               // [-] - Paper : model, 0 = automatic
     bool                             IsometricEnabled    = true;                              // [-] - Isometric in the free quadrant
     bool                             SectionEnabled      = false;                             // [-] - Section A-A instead of the isometric
@@ -244,10 +242,10 @@ struct DraftingDrawingSheetSettings
 struct DraftingDocument
 {
     std::string                                Title        = "Untitled";                    // [-] - Document caption
-    Modeller::FeatureTree                      Tree         = {};                            // [-] - Authored feature tree
+    GeometryProcessing::FeatureTree                      Tree         = {};                            // [-] - Authored feature tree
     std::map<std::string, std::string>         Captions     = {};                            // [-] - Step label → caption ("Sketch#1" → "Block1")
-    std::unique_ptr<Modeller::ModelPartition>  Partition    = {};                            // [-] - Records of the last regeneration
-    Modeller::RegenerationOutcome              Regeneration = {};                            // [-] - Last replay (body, names, step reports)
+    std::unique_ptr<GeometryProcessing::ModelPartition>  Partition    = {};                            // [-] - Records of the last regeneration
+    GeometryProcessing::RegenerationOutcome              Regeneration = {};                            // [-] - Last replay (body, names, step reports)
     DraftingBodySummary                        Summary      = {};                            // [-] - Figures of the last body
     DraftingSelection                          Selection    = {};                            // [-] - Current selection (names)
     std::vector<DraftingHistoryEntry>          UndoEntries  = {};                            // [-] - Most recent last
@@ -256,8 +254,8 @@ struct DraftingDocument
     std::vector<DraftingImagePlane>            ImagePlanes  = {};                            // [-] - Blueprint references (saved, not in the history)
     DraftingAppearance                         Appearance   = {};                            // [-] - Body / face matcaps (saved, undoable)
     DraftingDrawingSheetSettings               DrawingSheet = {};                            // [-] - Alt+D sheet settings (saved, not in the history)
-    Modeller::RegenerationCache                Replay       = {};                            // [-] - Step checkpoints of the last replay (incremental regeneration)
-    std::shared_ptr<const Modeller::ReplayCheckpoint> SummaryCheckpoint = {};                // [-] - Final checkpoint Summary was measured on (figures reused when a
+    GeometryProcessing::RegenerationCache                Replay       = {};                            // [-] - Step checkpoints of the last replay (incremental regeneration)
+    std::shared_ptr<const GeometryProcessing::ReplayCheckpoint> SummaryCheckpoint = {};                // [-] - Final checkpoint Summary was measured on (figures reused when a
                                                                                              //       regeneration restores every step from it: undo / redo / clone)
 };
 
@@ -278,29 +276,29 @@ struct VehicleCurveFile;
 //    the modeller (or the command cannot apply), the snapshot is restored and the refusal is returned. Parameter edits
 //    that make a *later* step refuse are kept — the tree marks the step and keeps the previous body (plan § 3).
 [[nodiscard]] DraftingCommandOutcome ConstructDraftingPrimitive(DraftingDocument& Document, const DraftingConstructRequest& Request);
-[[nodiscard]] DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, Modeller::BlendProfile Shape, double Size);
+[[nodiscard]] DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, GeometryProcessing::BlendProfile Shape, double Size);
 [[nodiscard]] DraftingCommandOutcome BlendDraftingSelection(DraftingDocument& Document, const DraftingBlendRequest& Request);
-[[nodiscard]] DraftingCommandOutcome ChangeDraftingSelection(DraftingDocument& Document, Modeller::FaceOperationKind Operation, double Amount);
+[[nodiscard]] DraftingCommandOutcome ChangeDraftingSelection(DraftingDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount);
 [[nodiscard]] DraftingCommandOutcome AssignDraftingParameter(DraftingDocument& Document, const std::string& Name, double Value);
 [[nodiscard]] DraftingCommandOutcome DeleteDraftingStep(DraftingDocument& Document, const std::string& Label);
-[[nodiscard]] DraftingCommandOutcome ReplaceDraftingTree(DraftingDocument& Document, Modeller::FeatureTree Tree,
+[[nodiscard]] DraftingCommandOutcome ReplaceDraftingTree(DraftingDocument& Document, GeometryProcessing::FeatureTree Tree,
                                                          std::map<std::string, std::string> Captions, const std::string& Label);
 
 // 💡 Drawing → sketch: the request becomes one Sketch step on its construction plane (caption "Line1", "Curve2", …).
 //    ComposeDraftingSketch builds the same sketch without touching a document (live preview); a degenerate drawing
 //    (zero size, collinear arc, coincident spline points) is refused with the reason.
 [[nodiscard]] DraftingCommandOutcome DrawDraftingSketch(DraftingDocument& Document, const DraftingDrawingRequest& Request);
-[[nodiscard]] std::string            ComposeDraftingSketch(const DraftingDrawingRequest& Request, Modeller::SketchModel& Sketch);
+[[nodiscard]] std::string            ComposeDraftingSketch(const DraftingDrawingRequest& Request, GeometryProcessing::SketchModel& Sketch);
 
 // Extrude a sketch step's profile by Distance along its plane normal; the first body is always New, a later one must
 // combine (Union, Difference, Intersection). Refused (document untouched) when the profile or the Boolean refuses.
 [[nodiscard]] DraftingCommandOutcome ExtrudeDraftingSketch(DraftingDocument& Document, const std::string& SketchLabel, double Distance,
-                                                           Modeller::FeatureCombination Combination, const std::string& Target = {});
+                                                           GeometryProcessing::FeatureCombination Combination, const std::string& Target = {});
 
 // Plasticity Q (command:boolean): Combine steps merging each tool body into Target (Union / Difference / Intersection);
 // the tools are consumed. One undo entry; refused (document untouched) unless every Boolean succeeds.
 [[nodiscard]] DraftingCommandOutcome CombineDraftingBodies(DraftingDocument& Document, const std::string& Target,
-                                                           const std::vector<std::string>& Tools, Modeller::FeatureCombination Combination);
+                                                           const std::vector<std::string>& Tools, GeometryProcessing::FeatureCombination Combination);
 
 // 💡 Plasticity C (command:cut): one Cut step splitting Target (empty = the active body) by Cutter, which is a sketch step
 //    (its closed profile cuts out its interior, an open chain splits along itself) or a SpaceCurve projected along
@@ -309,12 +307,12 @@ struct VehicleCurveFile;
 [[nodiscard]] DraftingCommandOutcome CutDraftingBody(DraftingDocument& Document, const DraftingCutRequest& Request);
 
 // 💡 Plasticity T (command:trim): the piece of the curve under Pick, between its crossings with the sketch's other curves
-//    and with every coplanar sketch, comes off (Modeller::TrimSketchCurve); one undo entry. A sketch left without
+//    and with every coplanar sketch, comes off (GeometryProcessing::TrimSketchCurve); one undo entry. A sketch left without
 //    curves is deleted when nothing uses it. Refused (document untouched) when a step that regenerated before now refuses
 //    (e.g. an extrude losing its closed profile), or when the trim itself refuses.
 [[nodiscard]] DraftingCommandOutcome TrimDraftingSketch(DraftingDocument& Document, const DraftingTrimRequest& Request);
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
-[[nodiscard]] Modeller::SketchTrimOutcome PreviewDraftingTrim(const DraftingDocument& Document, const DraftingTrimRequest& Request);
+[[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewDraftingTrim(const DraftingDocument& Document, const DraftingTrimRequest& Request);
 
 // Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
 [[nodiscard]] DraftingCommandOutcome RemoveDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys);
@@ -322,12 +320,12 @@ struct VehicleCurveFile;
 // Plasticity G / R / S: one Transform step per body applying Map (x′ = X·x + Y·y + Z·z + Shift); Verb captions the steps
 // ("Move", "Rotate", "Scale"). Names, selection and every later step that references the bodies follow them.
 [[nodiscard]] DraftingCommandOutcome TransformDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys,
-                                                             const Modeller::AffineMap& Map, const std::string& Verb);
+                                                             const GeometryProcessing::AffineMap& Map, const std::string& Verb);
 
 // Shift+D / Ctrl+V: one Duplicate step per body, placed by Map; each copy is a new body (key = its step label), the last
 // one active, the copies selected. Source (paste) copies each body as it stood right after that step — the clipboard.
 [[nodiscard]] DraftingCommandOutcome DuplicateDraftingBodies(DraftingDocument& Document, const std::vector<std::string>& Keys,
-                                                             const Modeller::AffineMap& Map, const std::string& Source = {});
+                                                             const GeometryProcessing::AffineMap& Map, const std::string& Source = {});
 
 // 📝 Alt+J (Fusion Joint; Plasticity has none): place the body owning MovingName onto the body owning FixedName by a
 //    joint between the two joint origins (an edge or a face each; Assembly/JointSolver.h reads the origin off it).
@@ -339,7 +337,7 @@ struct DraftingJointRequest
     std::string           MovingName  = {};                                                  // [-]   - Joint origin on the moving body
     DraftingSelectionKind FixedKind   = DraftingSelectionKind::Edge;                         // [-]   - Edge or face
     std::string           FixedName   = {};                                                  // [-]   - Joint origin on the fixed body
-    Modeller::JointKind   Kind        = Modeller::JointKind::Revolute;                       // [-]   - Fusion joint type
+    GeometryProcessing::JointKind   Kind        = GeometryProcessing::JointKind::Revolute;                       // [-]   - Fusion joint type
     double                Angle       = 0.0;                                                 // [deg] - Turn about the joint 𝑧 (ball: yaw)
     double                Offset      = 0.0;                                                 // [len] - Along the joint 𝑧
     double                Slide       = 0.0;                                                 // [len] - Slider / cylindrical 𝑧 · pin-slot / planar 𝑥
@@ -353,7 +351,7 @@ struct DraftingJointRequest
 struct DraftingJointOrigin
 {
     std::string                Body        = {};                                             // [-] - Owning body key
-    Modeller::OrthonormalFrame Frame       = {};                                             // [-] - Origin and axes (world)
+    GeometryProcessing::OrthonormalFrame Frame       = {};                                             // [-] - Origin and axes (world)
     std::string                Description = {};                                             // [-] - "circle centre", "plane centroid", …
     std::string                Refusal     = {};                                             // [-] - Empty when the entity offers one
 };
@@ -377,11 +375,11 @@ struct DraftingJointOrigin
 
 // Plasticity O: a new sketch step holding the exact offset of every chain of Sketch (Distance > 0: outward / left).
 [[nodiscard]] DraftingCommandOutcome OffsetDraftingSketch(DraftingDocument& Document, const std::string& Sketch, double Distance);
-[[nodiscard]] Modeller::SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance);
+[[nodiscard]] GeometryProcessing::SketchOffsetOutcome PreviewDraftingOffset(const DraftingDocument& Document, const std::string& Sketch, double Distance);
 
 // Plasticity P: a tube of Radius along a one-curve sketch or a SpaceCurve, combined with Target (Separate: a new body).
 [[nodiscard]] DraftingCommandOutcome PipeDraftingPath(DraftingDocument& Document, const std::string& Path, double Radius,
-                                                      Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                      GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate,
                                                       const std::string& Target = {});
 
 // 📝 Revolve axis (Alt+R): a line of the sketch by identifier (construction or profile edge), else a point + direction
@@ -389,8 +387,8 @@ struct DraftingJointOrigin
 struct DraftingRevolveAxis
 {
     int               Line      = -1;                                                        // [-] - Sketch line identifier (−1: Origin + t·Direction)
-    Modeller::Vector2 Origin    = {};                                                        // [len] - A point of the axis
-    Modeller::Vector2 Direction = { 0.0, 1.0 };                                              // [-]   - Axis direction
+    GeometryProcessing::Vector2 Origin    = {};                                                        // [len] - A point of the axis
+    GeometryProcessing::Vector2 Direction = { 0.0, 1.0 };                                              // [-]   - Axis direction
 };
 
 // The axis Alt+R starts with: the sketch's first construction line, else the sketch y-axis when the profile lies on one
@@ -402,13 +400,13 @@ struct DraftingRevolveAxis
 // Alt+R (Plasticity revolution, no default key): the profile of Sketch turned by Angle (0, 2π] about Axis, combined like
 // an extrude (the first body is New; later ones Union / Difference / Intersection with Target, or New body).
 [[nodiscard]] DraftingCommandOutcome RevolveDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const DraftingRevolveAxis& Axis, double Angle,
-                                                           Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                           GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate,
                                                            const std::string& Target = {});
 
 // Plasticity Evolution (Shift+P / Alt+E): the profile of sketch Profile swept along Path (a one-curve sketch or a
 // SpaceCurve), combined like an extrude.
 [[nodiscard]] DraftingCommandOutcome EvolveDraftingProfile(DraftingDocument& Document, const std::string& Profile, const std::string& Path,
-                                                           Modeller::FeatureCombination Combination = Modeller::FeatureCombination::Separate,
+                                                           GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate,
                                                            const std::string& Target = {});
 // The path Evolution starts with: the first selected curve, else the newest other sketch holding exactly one drawn open
 // curve (empty: none).
@@ -421,8 +419,8 @@ struct DraftingRevolveAxis
 struct DraftingSketchDiagnosis
 {
     bool                         PresentCondition = false;                                   // [-] - The label is a sketch step
-    Modeller::SketchModel        Sketch           = {};                                      // [-] - As solved (parameters bound)
-    Modeller::SketchSolveOutcome Solve            = {};                                      // [-] - DOF, statuses, fixed points
+    GeometryProcessing::SketchModel        Sketch           = {};                                      // [-] - As solved (parameters bound)
+    GeometryProcessing::SketchSolveOutcome Solve            = {};                                      // [-] - DOF, statuses, fixed points
 };
 
 [[nodiscard]] DraftingSketchDiagnosis DiagnoseDraftingSketch(const DraftingDocument& Document, const std::string& Sketch);
@@ -433,13 +431,13 @@ struct DraftingSketchDiagnosis
 struct DraftingSketchPick
 {
     std::string          Sketch = {};                                                        // [-] - Sketch step label (empty: the edited sketch)
-    Modeller::SketchPick Pick   = {};                                                        // [-] - Point / curve in that sketch
+    GeometryProcessing::SketchPick Pick   = {};                                                        // [-] - Point / curve in that sketch
 };
 
 struct DraftingLinkedPicks
 {
-    Modeller::SketchModel             Sketch   = {};                                         // [-] - As solved, the linked geometry appended
-    std::vector<Modeller::SketchPick> Picks    = {};                                         // [-] - The picks in that model
+    GeometryProcessing::SketchModel             Sketch   = {};                                         // [-] - As solved, the linked geometry appended
+    std::vector<GeometryProcessing::SketchPick> Picks    = {};                                         // [-] - The picks in that model
     int                               Appended = 0;                                          // [-] - Points + curves it gained
     std::string                       Refusal  = {};                                         // [-] - Why a pick cannot be linked
 };
@@ -451,7 +449,7 @@ struct DraftingLinkedPicks
 
 // Appends Constraint (an unlabelled one gets the next "H3" / "D2" … label of its kind). With Links, its indices refer to
 // LinkDraftingPicks(Links)'s model and the linked geometry is added with it. G2 replaces the G1 on the same joint.
-[[nodiscard]] DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const Modeller::SketchConstraint& Constraint,
+[[nodiscard]] DraftingCommandOutcome ConstrainDraftingSketch(DraftingDocument& Document, const std::string& Sketch, const GeometryProcessing::SketchConstraint& Constraint,
                                                              const std::vector<DraftingSketchPick>& Links = {});
 
 // SolveSpace E: a dimension toggled between driving and reference (driven, display-only). Becoming driving keeps the
@@ -459,10 +457,10 @@ struct DraftingLinkedPicks
 [[nodiscard]] DraftingCommandOutcome ToggleDraftingReference(DraftingDocument& Document, const std::string& Sketch, int Constraint);
 
 // Delete on linked geometry: the link dropped (a circle's radius too), the geometry stays where it is, now free.
-[[nodiscard]] DraftingCommandOutcome UnlinkDraftingGeometry(DraftingDocument& Document, const std::string& Sketch, Modeller::SketchPick Pick);
+[[nodiscard]] DraftingCommandOutcome UnlinkDraftingGeometry(DraftingDocument& Document, const std::string& Sketch, GeometryProcessing::SketchPick Pick);
 
 // True when the point / curve is held by a link to another sketch.
-[[nodiscard]] bool DraftingLinkedCondition(const Modeller::SketchModel& Sketch, Modeller::SketchPick Pick) noexcept;
+[[nodiscard]] bool DraftingLinkedCondition(const GeometryProcessing::SketchModel& Sketch, GeometryProcessing::SketchPick Pick) noexcept;
 
 [[nodiscard]] DraftingCommandOutcome RemoveDraftingConstraint(DraftingDocument& Document, const std::string& Sketch, int Constraint);
 
@@ -471,11 +469,11 @@ struct DraftingLinkedPicks
 
 // SolveSpace drag: the point pinned at Target (sketch-plane coordinates) with the rest following, else as near as its
 // constraints let it; refused when it cannot move at all.
-[[nodiscard]] DraftingCommandOutcome DragDraftingSketchPoint(DraftingDocument& Document, const std::string& Sketch, int Point, Modeller::Vector2 Target);
-[[nodiscard]] Modeller::SketchDragOutcome PreviewDraftingDrag(const DraftingDocument& Document, const std::string& Sketch, int Point, Modeller::Vector2 Target);
+[[nodiscard]] DraftingCommandOutcome DragDraftingSketchPoint(DraftingDocument& Document, const std::string& Sketch, int Point, GeometryProcessing::Vector2 Target);
+[[nodiscard]] GeometryProcessing::SketchDragOutcome PreviewDraftingDrag(const DraftingDocument& Document, const std::string& Sketch, int Point, GeometryProcessing::Vector2 Target);
 
 // "H3", "D2": the label the next constraint of that kind gets in Sketch.
-[[nodiscard]] std::string NextDraftingConstraintLabel(const Modeller::SketchModel& Sketch, Modeller::SketchConstraintKind Kind);
+[[nodiscard]] std::string NextDraftingConstraintLabel(const GeometryProcessing::SketchModel& Sketch, GeometryProcessing::SketchConstraintKind Kind);
 
 // Key of the body carrying a face / edge name, or the key itself for Body; empty when no body has it.
 [[nodiscard]] std::string DraftingBodyOfName(const DraftingDocument& Document, DraftingSelectionKind Kind, const std::string& Name);
@@ -484,7 +482,7 @@ struct DraftingLinkedPicks
 [[nodiscard]] std::string DraftingBodyCaption(const DraftingDocument& Document, const std::string& Key);
 
 // Construction plane frame: 0 XY (normal +z), 1 XZ (x → x, sketch y → z, normal −y), 2 YZ (y → x, z → y, normal +x).
-[[nodiscard]] Modeller::OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept;
+[[nodiscard]] GeometryProcessing::OrthonormalFrame DraftingSketchPlane(int GridPlane) noexcept;
 
 // A sketch step some extrude / revolve already uses as its profile.
 [[nodiscard]] bool DraftingSketchConsumedCondition(const DraftingDocument& Document, const std::string& SketchLabel);
@@ -512,7 +510,7 @@ struct DraftingStepReading;
 [[nodiscard]] DraftingCommandOutcome CloseDraftingPanels(DraftingDocument& Document);
 
 // 💡 V3 (Plasticity mode 1): pole Pole of a SpaceCurve moves to Position; kept as a pole edit re-applied after every re-fit.
-[[nodiscard]] DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, Modeller::Vector3 Position);
+[[nodiscard]] DraftingCommandOutcome MoveDraftingPole(DraftingDocument& Document, const std::string& Label, int Pole, GeometryProcessing::Vector3 Position);
 
 // Toggles a SpaceCurve in the curve selection (AdditiveCondition false: it becomes the only selected curve).
 void SelectDraftingCurve(DraftingDocument& Document, const std::string& Label, bool AdditiveCondition);
@@ -538,10 +536,10 @@ void ClearDraftingSelection(DraftingDocument& Document);
 [[nodiscard]] std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, const std::string& Name);
 
 // Step caption for the outliner ("Block1 · Sketch", "Fillet3"), falling back to the label.
-[[nodiscard]] std::string DescribeDraftingStep(const DraftingDocument& Document, const Modeller::FeatureStep& Step);
+[[nodiscard]] std::string DescribeDraftingStep(const DraftingDocument& Document, const GeometryProcessing::FeatureStep& Step);
 
 [[nodiscard]] const char* DraftingConstructLabel(DraftingConstructKind Kind) noexcept;
-[[nodiscard]] const char* DraftingFaceOperationLabel(Modeller::FaceOperationKind Operation) noexcept;
+[[nodiscard]] const char* DraftingFaceOperationLabel(GeometryProcessing::FaceOperationKind Operation) noexcept;
 [[nodiscard]] const char* DraftingDrawingLabel(DraftingDrawingKind Kind) noexcept;
 
 } // namespace Frontier::DraftingWorkspace

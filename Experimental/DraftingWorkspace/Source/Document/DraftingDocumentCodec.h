@@ -24,7 +24,7 @@ namespace Frontier::DraftingWorkspace
 struct DraftingDocumentFile
 {
     std::string                        Title    = {};                                        // [-] - Document caption
-    Modeller::FeatureTree              Tree     = {};                                        // [-] - Steps + parameters (signatures re-captured on load)
+    GeometryProcessing::FeatureTree              Tree     = {};                                        // [-] - Steps + parameters (signatures re-captured on load)
     std::map<std::string, std::string> Captions = {};                                        // [-] - Step label → caption
     std::vector<DraftingImagePlane>    ImagePlanes = {};                                     // [-] - Blueprint references
     DraftingAppearance                 Appearance  = {};                                     // [-] - Body / face matcaps

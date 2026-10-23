@@ -9,7 +9,7 @@
 
 #include "Document/DraftingDrawingSheet.h"
 
-#include "Drawing/DrawingExport.h"
+#include "Engine/GeometryProcessing/Drawing/DrawingExport.h"
 
 #include <chrono>
 #include <cstdio>
@@ -26,7 +26,7 @@ namespace Frontier::DraftingWorkspace
 namespace
 {
 
-[[nodiscard]] bool ShownSolidCondition(const DraftingDocument& Document, const Modeller::RegeneratedBody& Body, int& Sheets)
+[[nodiscard]] bool ShownSolidCondition(const DraftingDocument& Document, const GeometryProcessing::RegeneratedBody& Body, int& Sheets)
 {
     if (Document.Appearance.HiddenBodies.contains(Body.Key) || !Body.Body.PresentCondition()) return false;
     for (const DraftingBodyFigures& Figures : Document.Summary.Bodies)
@@ -42,24 +42,24 @@ namespace
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-const char* DraftingProjectionAngleLabel(Modeller::DrawingProjectionAngle Angle) noexcept
+const char* DraftingProjectionAngleLabel(GeometryProcessing::DrawingProjectionAngle Angle) noexcept
 {
-    return Angle == Modeller::DrawingProjectionAngle::First ? "First" : "Third";
+    return Angle == GeometryProcessing::DrawingProjectionAngle::First ? "First" : "Third";
 }
 
-bool ParseDraftingPaperSize(const std::string& Label, Modeller::DrawingPaperSize& Paper) noexcept
+bool ParseDraftingPaperSize(const std::string& Label, GeometryProcessing::DrawingPaperSize& Paper) noexcept
 {
     for (int Index = 0; Index < 5; ++Index)
     {
-        if (Label == Modeller::DrawingPaperLabel(static_cast<Modeller::DrawingPaperSize>(Index))) { Paper = static_cast<Modeller::DrawingPaperSize>(Index); return true; }
+        if (Label == GeometryProcessing::DrawingPaperLabel(static_cast<GeometryProcessing::DrawingPaperSize>(Index))) { Paper = static_cast<GeometryProcessing::DrawingPaperSize>(Index); return true; }
     }
     return false;
 }
 
-bool ParseDraftingProjectionAngle(const std::string& Label, Modeller::DrawingProjectionAngle& Angle) noexcept
+bool ParseDraftingProjectionAngle(const std::string& Label, GeometryProcessing::DrawingProjectionAngle& Angle) noexcept
 {
-    if (Label == "First") { Angle = Modeller::DrawingProjectionAngle::First; return true; }
-    if (Label == "Third") { Angle = Modeller::DrawingProjectionAngle::Third; return true; }
+    if (Label == "First") { Angle = GeometryProcessing::DrawingProjectionAngle::First; return true; }
+    if (Label == "Third") { Angle = GeometryProcessing::DrawingProjectionAngle::Third; return true; }
     return false;
 }
 
@@ -67,7 +67,7 @@ std::string DraftingDrawingSheetKey(const DraftingDrawingSheetSettings& Settings
 {
     const DraftingTitleFields& Title = Settings.Title;
     char Text[160];
-    std::snprintf(Text, sizeof(Text), "%s|%s|%.17g|%d%d%d%d%d|", Modeller::DrawingPaperLabel(Settings.Paper), DraftingProjectionAngleLabel(Settings.Angle), Settings.Scale,
+    std::snprintf(Text, sizeof(Text), "%s|%s|%.17g|%d%d%d%d%d|", GeometryProcessing::DrawingPaperLabel(Settings.Paper), DraftingProjectionAngleLabel(Settings.Angle), Settings.Scale,
                   Settings.IsometricEnabled, Settings.SectionEnabled, Settings.HiddenLinesEnabled, Settings.TangentEdgesEnabled, Settings.DimensionsEnabled);
     std::string Key = Text;
     if (Settings.SectionEnabled) Key += DraftingSectionKey(Settings.Section);
@@ -87,9 +87,9 @@ bool DefaultDraftingDrawingSheetCondition(const DraftingDrawingSheetSettings& Se
     return DraftingDrawingSheetKey(Settings) == DraftingDrawingSheetKey(DraftingDrawingSheetSettings{}) && DraftingSectionKey(Settings.Section) == DraftingSectionKey(DraftingDrawingSheetSettings{}.Section);
 }
 
-Modeller::OrthonormalFrame DraftingSheetSectionFrame(const Modeller::OrthonormalFrame& Plane)
+GeometryProcessing::OrthonormalFrame DraftingSheetSectionFrame(const GeometryProcessing::OrthonormalFrame& Plane)
 {
-    return Modeller::ConstructFrame(Plane.Origin, Plane.ZAxis * -1.0, Plane.XAxis);
+    return GeometryProcessing::ConstructFrame(Plane.Origin, Plane.ZAxis * -1.0, Plane.XAxis);
 }
 
 DraftingDrawingSheet ComposeDraftingDrawingSheet(const DraftingDocument& Document, const DraftingDrawingSheetSettings& Settings)
@@ -103,10 +103,10 @@ DraftingDrawingSheet ComposeDraftingDrawingSheet(const DraftingDocument& Documen
         Out.Milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count();
         return Out;
     };
-    std::vector<Modeller::BodyToken> Bodies;
+    std::vector<GeometryProcessing::BodyToken> Bodies;
     if (Document.Partition)
     {
-        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies) if (ShownSolidCondition(Document, Body, Out.Sheets)) Bodies.push_back(Body.Body);
+        for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies) if (ShownSolidCondition(Document, Body, Out.Sheets)) Bodies.push_back(Body.Body);
     }
     if (Bodies.empty())
     {
@@ -115,7 +115,7 @@ DraftingDrawingSheet ComposeDraftingDrawingSheet(const DraftingDocument& Documen
     }
     Out.Bodies = static_cast<int>(Bodies.size());
 
-    Modeller::DrawingSheetRequest Request;
+    GeometryProcessing::DrawingSheetRequest Request;
     Request.Paper                = Settings.Paper;
     Request.Angle                = Settings.Angle;
     Request.Scale                = Settings.Scale;
@@ -136,7 +136,7 @@ DraftingDrawingSheet ComposeDraftingDrawingSheet(const DraftingDocument& Documen
         }
         Request.Section = DraftingSheetSectionFrame(Plane.Plane);
     }
-    Out.Sheet   = Modeller::ComposeDrawingSheet(*Document.Partition, Bodies, Request);
+    Out.Sheet   = GeometryProcessing::ComposeDrawingSheet(*Document.Partition, Bodies, Request);
     Out.Refusal = Out.Sheet.Refusal;
     return Finish();
 }
@@ -156,7 +156,7 @@ std::string DraftingDrawingSheetExportPath(const std::string& DocumentPath, cons
 std::string ExportDraftingDrawingSheet(const DraftingDrawingSheet& Sheet, const std::string& Path)
 {
     if (!Sheet.Refusal.empty()) return "Export: the drawing sheet was refused (" + Sheet.Refusal + ")";
-    return Modeller::ExportDrawingFile(Sheet.Sheet, Path);
+    return GeometryProcessing::ExportDrawingFile(Sheet.Sheet, Path);
 }
 
 } // namespace Frontier::DraftingWorkspace

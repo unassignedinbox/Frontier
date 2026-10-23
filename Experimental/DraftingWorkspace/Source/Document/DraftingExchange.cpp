@@ -11,8 +11,8 @@
 
 #include "Document/DraftingDrawingSheet.h"
 
-#include "Exchange/StepExchange.h"
-#include "Exchange/StlExchange.h"
+#include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+#include "Engine/GeometryProcessing/Exchange/StlExchange.h"
 
 #include <algorithm>
 #include <cctype>
@@ -85,11 +85,11 @@ std::vector<std::string> DraftingExportBodies(const DraftingDocument& Document)
     for (const std::string& Key : Document.Selection.Bodies)
     {
         const bool Present = std::any_of(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(),
-                                         [&](const Modeller::RegeneratedBody& Body) { return Body.Key == Key && Body.Body.PresentCondition(); });
+                                         [&](const GeometryProcessing::RegeneratedBody& Body) { return Body.Key == Key && Body.Body.PresentCondition(); });
         if (Present && std::find(Keys.begin(), Keys.end(), Key) == Keys.end()) Keys.push_back(Key);
     }
     if (!Keys.empty()) return Keys;
-    for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+    for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
         if (Body.Body.PresentCondition() && !Document.Appearance.HiddenBodies.contains(Body.Key)) Keys.push_back(Body.Key);
     return Keys;
 }
@@ -105,10 +105,10 @@ DraftingExportOutcome ExportDraftingBodies(const DraftingDocument& Document, con
     if (Outcome.Format != DraftingExchangeFormat::Step && Outcome.Format != DraftingExchangeFormat::Stl) return Refuse(Path + " is neither .step / .stp nor .stl");
     if (!Document.Partition) return Refuse("the document has not been regenerated");
     if (Outcome.Bodies.empty()) return Refuse("no shown body to write");
-    std::vector<Modeller::BodyToken> Tokens;
+    std::vector<GeometryProcessing::BodyToken> Tokens;
     for (const std::string& Key : Outcome.Bodies)
     {
-        const auto Found = std::find_if(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(), [&](const Modeller::RegeneratedBody& Body) { return Body.Key == Key; });
+        const auto Found = std::find_if(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(), [&](const GeometryProcessing::RegeneratedBody& Body) { return Body.Key == Key; });
         if (Found == Document.Regeneration.Bodies.end() || !Found->Body.PresentCondition()) return Refuse("no body named " + Key);
         Tokens.push_back(Found->Body);
     }
@@ -118,23 +118,23 @@ DraftingExportOutcome ExportDraftingBodies(const DraftingDocument& Document, con
     std::string Failure;
     if (Outcome.Format == DraftingExchangeFormat::Step)
     {
-        Modeller::StepRequest Request;
+        GeometryProcessing::StepRequest Request;
         Request.ModelUnitMillimetres = DraftingModelUnitMillimetres;
         Request.Name                 = FileStem(Path);
-        const Modeller::StepExport Export = Modeller::WriteStep(*Document.Partition, Tokens, Request);
+        const GeometryProcessing::StepExport Export = GeometryProcessing::WriteStep(*Document.Partition, Tokens, Request);
         if (!Export.Refusal.empty()) return Refuse(Export.Refusal);
-        Failure              = Modeller::ExportStepFile(Export, Path);
+        Failure              = GeometryProcessing::ExportStepFile(Export, Path);
         Outcome.Faces        = Export.Faces;
         Outcome.Approximated = Export.ApproximatedSurfaces + Export.ApproximatedCurves;
     }
     else
     {
-        Modeller::StlRequest Request;
+        GeometryProcessing::StlRequest Request;
         Request.ModelUnitMillimetres = DraftingModelUnitMillimetres;
         Request.Name                 = FileStem(Path);
-        const Modeller::StlExport Export = Modeller::WriteStl(*Document.Partition, Tokens, Request);
+        const GeometryProcessing::StlExport Export = GeometryProcessing::WriteStl(*Document.Partition, Tokens, Request);
         if (!Export.Refusal.empty()) return Refuse(Export.Refusal);
-        Failure           = Modeller::ExportStlFile(Export, Path);
+        Failure           = GeometryProcessing::ExportStlFile(Export, Path);
         Outcome.Triangles = Export.Triangles;
     }
     if (!Failure.empty()) return Refuse(Failure);
@@ -149,11 +149,11 @@ DraftingStepReading ReadDraftingStepFile(const std::string& Path)
     DraftingStepReading Reading;
     Reading.Stem = FileStem(Path);
     const auto Refuse = [&](const std::string& Reason) { Reading.Refusal = Reason; Reading.Texts.clear(); Reading.Milliseconds = ElapsedMilliseconds(Start); return Reading; };
-    Modeller::ModelPartition    Scratch;
-    Modeller::StepImportRequest Request;
+    GeometryProcessing::ModelPartition    Scratch;
+    GeometryProcessing::StepImportRequest Request;
     Request.ModelUnitMillimetres = DraftingModelUnitMillimetres;
     Request.Label                = "Import " + std::filesystem::path(Path).filename().string();
-    const Modeller::StepImport Imported = Modeller::ImportStepFile(Scratch, Path, Request);
+    const GeometryProcessing::StepImport Imported = GeometryProcessing::ImportStepFile(Scratch, Path, Request);
     if (!Imported.Refusal.empty()) return Refuse(Imported.Refusal);
     if (Imported.Sheets > 0) return Refuse(Request.Label + ": the file holds " + std::to_string(Imported.Sheets) + " surface model(s) (🚧 solids only)");
     Reading.Faces               = Imported.Faces;
@@ -163,10 +163,10 @@ DraftingStepReading ReadDraftingStepFile(const std::string& Path)
     Reading.Notes               = Imported.Notes;
     for (size_t Index = 0; Index < Imported.Bodies.size(); ++Index)
     {
-        Modeller::StepRequest Canonical;
+        GeometryProcessing::StepRequest Canonical;
         Canonical.ModelUnitMillimetres = DraftingModelUnitMillimetres;
         Canonical.Name                 = Imported.Bodies.size() == 1 ? Reading.Stem : Reading.Stem + "." + std::to_string(Index + 1);
-        const Modeller::StepExport Export = Modeller::WriteStep(Scratch, { Imported.Bodies[Index] }, Canonical);
+        const GeometryProcessing::StepExport Export = GeometryProcessing::WriteStep(Scratch, { Imported.Bodies[Index] }, Canonical);
         if (!Export.Refusal.empty()) return Refuse(Request.Label + ": solid " + std::to_string(Index + 1) + " cannot be embedded: " + Export.Refusal);
         Reading.Texts.push_back(Export.Bytes);
     }

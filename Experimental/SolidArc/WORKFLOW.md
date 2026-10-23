@@ -151,7 +151,7 @@ The native name-first outliner, direct document roster, icon tiles, Polyline Slo
 point tools and journalled tool settings are now implemented and covered by the
 native proof. The old gaps list above is historical; the current detailed inventory
 and remaining parity work are in
-`Engine/Modelling/SolidArc/NATIVE_UI_PARITY.md`.
+`Experimental/SolidArc/Service/NATIVE_UI_PARITY.md`.
 Regenerate the self-contained offline evidence page with
 `python3 Tools/Build/GenerateSolidArcProofGallery.py` after running the native proof.
 

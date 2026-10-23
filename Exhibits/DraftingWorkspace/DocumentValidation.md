@@ -1,6 +1,6 @@
 # DraftingDocumentValidation
 
-Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (71.24 s).
+Document layer of DraftingWorkspace over the GeometryProcessing feature tree (71.24 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -337,7 +337,7 @@ Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (71
 ## Saved document (TOML, first 40 lines)
 
 ```toml
-# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)
+# DraftingWorkspace document — feature tree of GeometryProcessing (regenerated on load)
 Description = ''
 Format = 'DraftingWorkspace'
 FormatVersion = 1

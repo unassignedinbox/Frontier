@@ -19,14 +19,14 @@
 #include "Viewport/DraftingCamera.h"
 #include "Viewport/DraftingSnapping.h"
 
-#include "Blend/BlendCatalogue.h"
-#include "Drawing/DrawingExport.h"
-#include "Exchange/StepExchange.h"
-#include "Exchange/StlExchange.h"
-#include "Feature/ReplayDigest.h"
-#include "Geometry/NurbsCarrier.h"
-#include "Measurement/MassProperties.h"
-#include "Sketch/SketchProfile.h"
+#include "Engine/GeometryProcessing/Blend/BlendCatalogue.h"
+#include "Engine/GeometryProcessing/Drawing/DrawingExport.h"
+#include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+#include "Engine/GeometryProcessing/Exchange/StlExchange.h"
+#include "Engine/GeometryProcessing/Feature/ReplayDigest.h"
+#include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
+#include "Engine/GeometryProcessing/Measurement/MassProperties.h"
+#include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 
 #include <algorithm>
 #include <cctype>
@@ -45,7 +45,7 @@
 #include <vector>
 
 using namespace Frontier::DraftingWorkspace;
-using namespace Frontier::SolidArcRemastered;
+using namespace Frontier::GeometryProcessing;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    INTERNAL
@@ -2682,7 +2682,7 @@ int main()
     // ---- report
     const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count();
     std::printf("# DraftingDocumentValidation\n\n");
-    std::printf("Document layer of DraftingWorkspace over the SolidArcRemastered feature tree (%.2f s).\n\n", Seconds);
+    std::printf("Document layer of DraftingWorkspace over the GeometryProcessing feature tree (%.2f s).\n\n", Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
     // ---- W36 joints (Alt+J) + interference: a pin into the bracket hole, a lever on the pin, every number closed form
@@ -2877,15 +2877,15 @@ int main()
         DraftingDrawingSheetSettings Settings;
         const DraftingDrawingSheet Sheet = ComposeDraftingDrawingSheet(Rig, Settings);
         std::string Views, Texts;
-        for (const Modeller::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " ") + View.Label;
-        for (const Modeller::DrawingDimension& Dimension : Sheet.Sheet.Dimensions) Texts += (Texts.empty() ? "" : " ") + Dimension.Text;
+        for (const Frontier::GeometryProcessing::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " ") + View.Label;
+        for (const Frontier::GeometryProcessing::DrawingDimension& Dimension : Sheet.Sheet.Dimensions) Texts += (Texts.empty() ? "" : " ") + Dimension.Text;
         Tally(SheetGate, 0.0, Sheet.Refusal.empty() && Sheet.Bodies == 1 && Views == "Front Top Right Isometric" && Sheet.Sheet.Width == 420.0 && Sheet.Sheet.Height == 297.0
-              && Sheet.Sheet.Angle == Modeller::DrawingProjectionAngle::First,
+              && Sheet.Sheet.Angle == Frontier::GeometryProcessing::DrawingProjectionAngle::First,
               "default: A3 first angle, " + Views + ", scale " + Sheet.Sheet.ScaleLabel + ", " + std::to_string(Sheet.Sheet.Lines.size()) + " lines, "
               + std::to_string(Sheet.Sheet.Dimensions.size()) + " dimensions, " + Format("%.0f ms", Sheet.Milliseconds));
 
         // Automatic scale: the largest ISO 5455 scale that fits — the next larger one is refused.
-        const std::vector<double> Scales = Modeller::EnumerateStandardScales();
+        const std::vector<double> Scales = Frontier::GeometryProcessing::EnumerateStandardScales();
         const auto Chosen = std::find_if(Scales.begin(), Scales.end(), [&](double Scale) { return std::fabs(Scale - Sheet.Sheet.Scale) <= 1.0e-15; });
         bool LargerRefused = Chosen != Scales.end();
         if (Chosen != Scales.begin() && Chosen != Scales.end())
@@ -2899,12 +2899,12 @@ int main()
         // Dimension texts in millimetres; every value × 1000 prints as its text and the linear ones span value × scale on paper.
         double Worst = 0.0;
         bool   Printed = true;
-        for (const Modeller::DrawingDimension& Dimension : Sheet.Sheet.Dimensions)
+        for (const Frontier::GeometryProcessing::DrawingDimension& Dimension : Sheet.Sheet.Dimensions)
         {
-            const std::string Digits = Modeller::FormatDimensionValue(Dimension.Value * DraftingModelUnitMillimetres);
-            const std::string Prefix = Dimension.Kind == Modeller::DrawingDimensionKind::Diameter ? "⌀" : Dimension.Kind == Modeller::DrawingDimensionKind::Radius ? "R" : "";
+            const std::string Digits = Frontier::GeometryProcessing::FormatDimensionValue(Dimension.Value * DraftingModelUnitMillimetres);
+            const std::string Prefix = Dimension.Kind == Frontier::GeometryProcessing::DrawingDimensionKind::Diameter ? "⌀" : Dimension.Kind == Frontier::GeometryProcessing::DrawingDimensionKind::Radius ? "R" : "";
             Printed = Printed && Dimension.Text == Prefix + Digits;
-            if (Dimension.Kind == Modeller::DrawingDimensionKind::Horizontal || Dimension.Kind == Modeller::DrawingDimensionKind::Vertical)
+            if (Dimension.Kind == Frontier::GeometryProcessing::DrawingDimensionKind::Horizontal || Dimension.Kind == Frontier::GeometryProcessing::DrawingDimensionKind::Vertical)
                 Worst = std::max(Worst, std::fabs(std::hypot(Dimension.LineEnd.X - Dimension.LineStart.X, Dimension.LineEnd.Y - Dimension.LineStart.Y)
                                                   - Dimension.Value * DraftingModelUnitMillimetres * Sheet.Sheet.Scale));
         }
@@ -2913,12 +2913,12 @@ int main()
               "dimensions in mm: " + Texts + Format(" — span vs value × scale %.1e mm", Worst));
 
         // Unit invariance: the kernel sheet of the same body in millimetre units at scale × 1000 strokes the same paper.
-        std::vector<Modeller::BodyToken> Bodies;
+        std::vector<Frontier::GeometryProcessing::BodyToken> Bodies;
         for (const RegeneratedBody& Body : Rig.Regeneration.Bodies) Bodies.push_back(Body.Body);
-        Modeller::DrawingSheetRequest Direct;
+        Frontier::GeometryProcessing::DrawingSheetRequest Direct;
         Direct.Paper = Settings.Paper; Direct.Angle = Settings.Angle; Direct.Scale = Sheet.Sheet.Scale * DraftingModelUnitMillimetres; Direct.ModelUnitMillimetres = 1.0;
         Direct.Title = { Rig.Title, Settings.Title.DrawingNumber, "", "", "", Settings.Title.Revision, Settings.Title.Company };
-        const Modeller::DrawingSheet Reference = Modeller::ComposeDrawingSheet(*Rig.Partition, Bodies, Direct);
+        const Frontier::GeometryProcessing::DrawingSheet Reference = Frontier::GeometryProcessing::ComposeDrawingSheet(*Rig.Partition, Bodies, Direct);
         // Dimension texts are 1000× longer numbers ("4000" vs "4"), so footprints and the layout differ; each view's
         // strokes relative to its view origin (and the frame / title block) must coincide.
         double Stroke = Reference.Lines.size() == Sheet.Sheet.Lines.size() && Reference.Views.size() == Sheet.Sheet.Views.size() ? 0.0 : 1.0e300;
@@ -2928,15 +2928,15 @@ int main()
             Shifted = std::max(Shifted, std::hypot(Sheet.Sheet.Views[View].Origin.X - Reference.Views[View].Origin.X, Sheet.Sheet.Views[View].Origin.Y - Reference.Views[View].Origin.Y));
         for (size_t Line = 0; Stroke < 1.0e300 && Line < Reference.Lines.size(); ++Line)
         {
-            const Modeller::SheetPolyline& Ours = Sheet.Sheet.Lines[Line];
-            const Modeller::SheetPolyline& Theirs = Reference.Lines[Line];
+            const Frontier::GeometryProcessing::SheetPolyline& Ours = Sheet.Sheet.Lines[Line];
+            const Frontier::GeometryProcessing::SheetPolyline& Theirs = Reference.Lines[Line];
             if (Theirs.Layer != Ours.Layer || Theirs.Points.size() != Ours.Points.size()) { Stroke = 1.0e300; break; }
-            if (Theirs.Layer == Modeller::SheetLayer::Dimension || Theirs.Layer == Modeller::SheetLayer::CuttingPlane || Theirs.Points.empty()) continue;
-            Modeller::Vector2 Offset{ 0.0, 0.0 };
+            if (Theirs.Layer == Frontier::GeometryProcessing::SheetLayer::Dimension || Theirs.Layer == Frontier::GeometryProcessing::SheetLayer::CuttingPlane || Theirs.Points.empty()) continue;
+            Frontier::GeometryProcessing::Vector2 Offset{ 0.0, 0.0 };
             for (size_t View = 0; View < Reference.Views.size(); ++View)
             {
-                const Modeller::PlacedDrawingView& Placed = Reference.Views[View];
-                const Modeller::Vector2 Point = Theirs.Points.front();
+                const Frontier::GeometryProcessing::PlacedDrawingView& Placed = Reference.Views[View];
+                const Frontier::GeometryProcessing::Vector2 Point = Theirs.Points.front();
                 if (Point.X >= Placed.Low.X - 1.0e-6 && Point.X <= Placed.High.X + 1.0e-6 && Point.Y >= Placed.Low.Y - 1.0e-6 && Point.Y <= Placed.High.Y + 1.0e-6)
                 {
                     Offset = { Sheet.Sheet.Views[View].Origin.X - Placed.Origin.X, Sheet.Sheet.Views[View].Origin.Y - Placed.Origin.Y };
@@ -2952,10 +2952,10 @@ int main()
 
         // Paper and angle: A4 picks a scale no larger than A3; third angle mirrors the Top / Right placement about Front.
         DraftingDrawingSheetSettings Small = Settings;
-        Small.Paper = Modeller::DrawingPaperSize::A4;
-        Small.Angle = Modeller::DrawingProjectionAngle::Third;
+        Small.Paper = Frontier::GeometryProcessing::DrawingPaperSize::A4;
+        Small.Angle = Frontier::GeometryProcessing::DrawingProjectionAngle::Third;
         const DraftingDrawingSheet Third = ComposeDraftingDrawingSheet(Rig, Small);
-        const auto Centre = [](const Modeller::PlacedDrawingView& View) { return Modeller::Vector2{ 0.5 * (View.Low.X + View.High.X), 0.5 * (View.Low.Y + View.High.Y) }; };
+        const auto Centre = [](const Frontier::GeometryProcessing::PlacedDrawingView& View) { return Frontier::GeometryProcessing::Vector2{ 0.5 * (View.Low.X + View.High.X), 0.5 * (View.Low.Y + View.High.Y) }; };
         const bool Placed = Third.Refusal.empty() && Third.Sheet.Views.size() >= 3 && Sheet.Sheet.Views.size() >= 3
                          && Centre(Sheet.Sheet.Views[1]).Y < Centre(Sheet.Sheet.Views[0]).Y && Centre(Third.Sheet.Views[1]).Y > Centre(Third.Sheet.Views[0]).Y
                          && Centre(Sheet.Sheet.Views[2]).X < Centre(Sheet.Sheet.Views[0]).X && Centre(Third.Sheet.Views[2]).X > Centre(Third.Sheet.Views[0]).X;
@@ -2971,8 +2971,8 @@ int main()
         const DraftingSection      Exact     = SectionDraftingDocument(Rig, Cut.Section);
         double Cap = 0.0;
         std::string CutViews;
-        for (const Modeller::PlacedDrawingView& View : Sectioned.Sheet.Views) { Cap += View.View.SectionArea; CutViews += (CutViews.empty() ? "" : " ") + View.Label; }
-        const Modeller::OrthonormalFrame Frame = DraftingSheetSectionFrame(Exact.Plane);
+        for (const Frontier::GeometryProcessing::PlacedDrawingView& View : Sectioned.Sheet.Views) { Cap += View.View.SectionArea; CutViews += (CutViews.empty() ? "" : " ") + View.Label; }
+        const Frontier::GeometryProcessing::OrthonormalFrame Frame = DraftingSheetSectionFrame(Exact.Plane);
         Tally(SheetGate, std::fabs(Cap - Exact.Area), Sectioned.Refusal.empty() && CutViews == "Front Top Right Section A-A" && std::fabs(Cap - Exact.Area) <= 1.0e-9
               && std::fabs(Exact.Area - 4.116587) <= 5.0e-7 && Dot(Frame.ZAxis, Exact.Plane.ZAxis) <= -1.0 + 1.0e-15,
               CutViews + Format(": cap %.9f m² = section %.9f m², %.0f ms", Cap, Exact.Area, Sectioned.Milliseconds));
@@ -2985,14 +2985,14 @@ int main()
         const auto Bytes = [](const std::string& Path) { std::ifstream Stream(Path, std::ios::binary); std::ostringstream Text; Text << Stream.rdbuf(); return Text.str(); };
         const bool Written = ExportDraftingDrawingSheet(Sheet, Svg).empty() && ExportDraftingDrawingSheet(Sheet, Dxf).empty();
         Tally(SheetGate, 0.0, Written && Svg == (Folder / "Bracket.svg").string() && Dxf == (Folder / "Bracket.dxf").string() && DraftingDrawingSheetExportPath("", ".svg") == "Untitled.svg"
-              && Bytes(Svg) == Modeller::WriteDrawingSvg(Sheet.Sheet) && Bytes(Dxf) == Modeller::WriteDrawingDxf(Sheet.Sheet) && Bytes(Svg).find("⌀600") != std::string::npos,
+              && Bytes(Svg) == Frontier::GeometryProcessing::WriteDrawingSvg(Sheet.Sheet) && Bytes(Dxf) == Frontier::GeometryProcessing::WriteDrawingDxf(Sheet.Sheet) && Bytes(Svg).find("⌀600") != std::string::npos,
               Format("Bracket.svg %zu B + Bracket.dxf %zu B byte-equal to the writers", Bytes(Svg).size(), Bytes(Dxf).size()));
 
         // Saved with the document: defaults write no table; revised settings round trip (fixed point); bad labels refused.
         const std::string Plain = EncodeDraftingDocument(Rig);
         DraftingDocument Saved = CloneDraftingDocument(Rig);
-        Saved.DrawingSheet.Paper = Modeller::DrawingPaperSize::A2;
-        Saved.DrawingSheet.Angle = Modeller::DrawingProjectionAngle::Third;
+        Saved.DrawingSheet.Paper = Frontier::GeometryProcessing::DrawingPaperSize::A2;
+        Saved.DrawingSheet.Angle = Frontier::GeometryProcessing::DrawingProjectionAngle::Third;
         Saved.DrawingSheet.Scale = 0.02;
         Saved.DrawingSheet.SectionEnabled = true;
         Saved.DrawingSheet.Section = { DraftingSectionAxis::X, 1.0, true, {} };
@@ -3053,10 +3053,10 @@ int main()
         std::vector<BodyToken> Tokens;
         for (const RegeneratedBody& Body : Rig.Regeneration.Bodies) Tokens.push_back(Body.Body);
         const DraftingExportOutcome Step = ExportDraftingBodies(Rig, StepPath);
-        Modeller::StepRequest Direct;
+        Frontier::GeometryProcessing::StepRequest Direct;
         Direct.ModelUnitMillimetres = DraftingModelUnitMillimetres;
         Direct.Name                 = "Bracket";
-        const std::string Expected = Modeller::WriteStep(*Rig.Partition, Tokens, Direct).Bytes;
+        const std::string Expected = Frontier::GeometryProcessing::WriteStep(*Rig.Partition, Tokens, Direct).Bytes;
         const std::string Written  = Bytes(StepPath);
         Tally(ExchangeGate, 0.0, Step.Refusal.empty() && Step.Bodies.size() == 2 && Tokens.size() == 2 && Written == Expected && Step.Bytes == double(Written.size())
               && Written.find("FILE_NAME('Bracket.step'") != std::string::npos && DraftingExportPath((Folder / "Bracket.drafting.toml").string(), ".step") == StepPath,

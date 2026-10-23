@@ -28,7 +28,7 @@ struct VehicleCurve
     std::string                    Name            = {};                                     // [-]   - Loop name from Blender ("ShoulderLine")
     bool                           ClosedCondition = false;                                  // [-]   - Last point joins the first
     bool                           PlanarCondition = false;                                  // [-]   - Fit in the points' best plane (Planar = true)
-    std::vector<Modeller::Vector3> Points          = {};                                     // [len] - Ordered limit points (metres)
+    std::vector<GeometryProcessing::Vector3> Points          = {};                                     // [len] - Ordered limit points (metres)
 };
 
 struct VehicleCurveFile

@@ -1,6 +1,6 @@
 # RollingBallBlend harness: B-rep specimens vs closed-form volumes
 
-Output of `Engine/Modelling/SolidArc/Verification/RollingBallBlendVerification.cpp` (copy in `../Code/`). ΔV is measured by
+Output of `Experimental/SolidArc/Service/Verification/RollingBallBlendVerification.cpp` (copy in `../Code/`). ΔV is measured by
 quadrature on the result; "must refuse" rows pass only when the general route refuses.
 
 | Specimen | Route | Faces | Stations | Max residual | Max fit deviation | ΔV measured | ΔV closed form | Legacy BlendSolver |

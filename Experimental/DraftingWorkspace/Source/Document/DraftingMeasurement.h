@@ -2,7 +2,7 @@
                                                     DRAFTINGMEASUREMENT.H
 ====================================================================================================================================*/
 // 🧩 Inspect: exact measurement of the selection (mass properties, areas, lengths, minimum distance, angles) and the exact
-//    plane section of the shown solid bodies, both over the SolidArcRemastered Measurement division
+//    plane section of the shown solid bodies, both over the GeometryProcessing Measurement division
 #pragma once
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -56,13 +56,13 @@ struct DraftingMeasurement
     double                          Length            = DraftingUnmeasured;                  // [len]  - Edge length / total
     double                          Volume            = DraftingUnmeasured;                  // [len³] - Body volume
     bool                            DistanceCondition = false;                               // [-]    - First / Second hold closest points
-    Modeller::Vector3               First             = {};                                  // [len]  - Closest point on the first entity
-    Modeller::Vector3               Second            = {};                                  // [len]  - Closest point on the second entity
+    GeometryProcessing::Vector3               First             = {};                                  // [len]  - Closest point on the first entity
+    GeometryProcessing::Vector3               Second            = {};                                  // [len]  - Closest point on the second entity
     bool                            CentroidCondition = false;                               // [-]    - Centroid is meaningful
-    Modeller::Vector3               Centroid          = {};                                  // [len]  - Body / face centroid
+    GeometryProcessing::Vector3               Centroid          = {};                                  // [len]  - Body / face centroid
     std::string                     Interference      = {};                                  // [-]    - 2 bodies: Clear / Contact / Overlap / Contained
     double                          OverlapVolume     = DraftingUnmeasured;                  // [len³] - 2 bodies: shared volume
-    std::vector<std::vector<Modeller::Vector3>> Overlap = {};                                // [len]  - 2 bodies: edges of the shared volume (overlay)
+    std::vector<std::vector<GeometryProcessing::Vector3>> Overlap = {};                                // [len]  - 2 bodies: edges of the shared volume (overlay)
     double                          Milliseconds      = 0.0;                                 // [ms]   - Measurement time
     std::string                     Refusal           = {};                                  // [-]    - Empty on success
 };
@@ -74,17 +74,17 @@ struct DraftingSection
 {
     uint64_t                                    Revision     = 0;                            // [-]    - Document revision cut
     std::string                                 RequestKey   = {};                           // [-]    - Request it describes (cache key)
-    Modeller::OrthonormalFrame                  Plane        = {};                           // [-]    - Cut plane (ZAxis = kept side)
+    GeometryProcessing::OrthonormalFrame                  Plane        = {};                           // [-]    - Cut plane (ZAxis = kept side)
     bool                                        PlaneCondition = false;                      // [-]    - Plane resolved (face found, planar)
     double                                      Area         = 0.0;                          // [len²] - Σ region areas
     double                                      Perimeter    = 0.0;                          // [len]  - Σ boundary lengths
-    Modeller::Vector3                           Centroid     = {};                           // [len]  - Area centroid (world)
+    GeometryProcessing::Vector3                           Centroid     = {};                           // [len]  - Area centroid (world)
     std::array<double, 3>                       SecondMoments = {};                          // [len⁴] - Iuu Ivv Iuv about Centroid
     int                                         Regions      = 0;                            // [-]    - Disjoint pieces
     int                                         Loops        = 0;                            // [-]    - Outer loops + holes
     int                                         Bodies       = 0;                            // [-]    - Bodies the plane crosses
     int                                         Sheets       = 0;                            // [-]    - Sheet bodies skipped
-    std::vector<std::vector<Modeller::Vector3>> Outline      = {};                           // [len]  - Boundary polylines (all bodies)
+    std::vector<std::vector<GeometryProcessing::Vector3>> Outline      = {};                           // [len]  - Boundary polylines (all bodies)
     double                                      Milliseconds = 0.0;                          // [ms]   - Cuts + integrals
     std::string                                 Refusal      = {};                           // [-]    - Empty on success
 };

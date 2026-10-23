@@ -12,13 +12,13 @@
 #include "Document/DraftingExchange.h"
 #include "Document/VehicleCurveImport.h"
 
-#include "Audit/EnclosedVolume.h"
-#include "Audit/ModelAudit.h"
-#include "Blend/RollingBallGeometry.h"
-#include "Sketch/SketchCatalogue.h"
-#include "Sketch/SketchSolver.h"
-#include "Sketch/SketchSpline.h"
-#include "Surfacing/CurveNetwork.h"
+#include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
+#include "Engine/GeometryProcessing/Audit/ModelAudit.h"
+#include "Engine/GeometryProcessing/Blend/RollingBallGeometry.h"
+#include "Engine/GeometryProcessing/Sketch/SketchCatalogue.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSolver.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
+#include "Engine/GeometryProcessing/Surfacing/CurveNetwork.h"
 
 #include <algorithm>
 #include <cctype>
@@ -33,7 +33,7 @@
 namespace Frontier::DraftingWorkspace
 {
 
-using namespace Frontier::SolidArcRemastered;
+using namespace Frontier::GeometryProcessing;
 
 namespace
 {
@@ -182,7 +182,7 @@ std::string AuthorTile(DraftingDocument& Document, const DraftingConstructReques
         const char* Elevation = Axis == 0 ? "X" : Axis == 1 ? "Y" : "Z";
         const char* First     = Axis == 0 ? "Y" : "X";
         const char* Second    = Axis == 2 ? "Y" : "Z";
-        const Modeller::Vector2 Place = Axis == 0 ? Modeller::Vector2{ Spot.Y, Spot.Z } : Axis == 1 ? Modeller::Vector2{ Spot.X, Spot.Z } : Modeller::Vector2{ Spot.X, Spot.Y };
+        const GeometryProcessing::Vector2 Place = Axis == 0 ? GeometryProcessing::Vector2{ Spot.Y, Spot.Z } : Axis == 1 ? GeometryProcessing::Vector2{ Spot.X, Spot.Z } : GeometryProcessing::Vector2{ Spot.X, Spot.Y };
         FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
         Section.Plane        = Axis == 0 ? DraftingSketchPlane(2) : Axis == 1 ? UprightPlane() : FloorPlane();
         Section.Elevation    = ParameterValue(Author.Named(Elevation), Axis == 1 ? -1.0 : 1.0);
@@ -1129,17 +1129,17 @@ std::vector<std::string> DraftingTangentChain(const DraftingDocument& Document, 
 {
     const RegeneratedBody* Owner = FindRegeneratedBody(Document, DraftingBodyOfName(Document, DraftingSelectionKind::Edge, Name));
     if (!Document.Partition || !Owner) return { Name };
-    const Modeller::BodyNaming&    Naming    = Owner->Naming;
-    const Modeller::BodyInventory  Inventory = Document.Partition->CollectInventory(Owner->Body);
-    std::vector<Modeller::EdgeToken> Seeds;
-    for (const Modeller::EdgeToken Edge : Inventory.Edges)
+    const GeometryProcessing::BodyNaming&    Naming    = Owner->Naming;
+    const GeometryProcessing::BodyInventory  Inventory = Document.Partition->CollectInventory(Owner->Body);
+    std::vector<GeometryProcessing::EdgeToken> Seeds;
+    for (const GeometryProcessing::EdgeToken Edge : Inventory.Edges)
     {
         const auto Found = Naming.Edges.find(Edge.Slot);
         if (Found != Naming.Edges.end() && Found->second == Name) Seeds.push_back(Edge);
     }
     if (Seeds.empty()) return { Name };
     std::vector<std::string> Names;
-    for (const Modeller::EdgeToken Edge : Modeller::GrowTangentChain(*Document.Partition, Owner->Body, Seeds))
+    for (const GeometryProcessing::EdgeToken Edge : GeometryProcessing::GrowTangentChain(*Document.Partition, Owner->Body, Seeds))
     {
         const auto Found = Naming.Edges.find(Edge.Slot);
         if (Found != Naming.Edges.end()) Names.push_back(Found->second);

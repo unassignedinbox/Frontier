@@ -139,8 +139,8 @@ constexpr double FineEdgeRatio = 0.02;                                          
 // 📝 Vehicle plan V8: one imported limit point and its foot on the nearest surface panel.
 struct DraftingDeviationNeedle
 {
-    Modeller::Vector3 Point    = {};                                                         // [len] - Imported point (SpaceCurve step)
-    Modeller::Vector3 Foot     = {};                                                         // [len] - Closest point on the panels
+    GeometryProcessing::Vector3 Point    = {};                                                         // [len] - Imported point (SpaceCurve step)
+    GeometryProcessing::Vector3 Foot     = {};                                                         // [len] - Closest point on the panels
     double            Distance = 0.0;                                                        // [len] - |Point − Foot|
 };
 
@@ -160,7 +160,7 @@ struct DraftingDeviationMap
 // 💡 Zebra phase (mirrors DraftingSurface.slang): the view direction reflected in the unit normal, its angle to the
 //    camera up axis × Stripes / π — stripe k covers phase [k, k + ½). A function of the normal alone (view fixed), so
 //    a G0 joint breaks the stripes, G1 kinks them and G2 keeps them smooth.
-[[nodiscard]] double DraftingZebraPhase(Modeller::Vector3 Normal, Modeller::Vector3 Forward, Modeller::Vector3 Up, double Stripes) noexcept;
+[[nodiscard]] double DraftingZebraPhase(GeometryProcessing::Vector3 Normal, GeometryProcessing::Vector3 Forward, GeometryProcessing::Vector3 Up, double Stripes) noexcept;
 
 // 💡 CPU pick: nearest triangle hit (Möller–Trumbore); an edge wins over the face behind it when the ray passes within
 //    EdgeReach of the segment and no closer than the face hit minus EdgeReach (so silhouette and crease edges are

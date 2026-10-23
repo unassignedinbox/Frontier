@@ -9,10 +9,10 @@
 
 #include "Viewport/DraftingSnapping.h"
 
-#include "Intersection/ImplicitSurface.h"
-#include "Measurement/MassProperties.h"
-#include "Sketch/SketchSpline.h"
-#include "Sketch/SketchTrim.h"
+#include "Engine/GeometryProcessing/Intersection/ImplicitSurface.h"
+#include "Engine/GeometryProcessing/Measurement/MassProperties.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
+#include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
 
 #include <algorithm>
 #include <array>
@@ -25,8 +25,8 @@ namespace Frontier::DraftingWorkspace
 namespace
 {
 
-using Modeller::Vector2;
-using Modeller::Vector3;
+using GeometryProcessing::Vector2;
+using GeometryProcessing::Vector3;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
@@ -53,7 +53,7 @@ struct CurvePoint
     Vector3 Derivative = {};                                                                 // [len] - dC/ds
 };
 
-[[nodiscard]] Vector3 PlacePlanar(const Modeller::OrthonormalFrame& Plane, Vector2 Point) noexcept
+[[nodiscard]] Vector3 PlacePlanar(const GeometryProcessing::OrthonormalFrame& Plane, Vector2 Point) noexcept
 {
     return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
 }
@@ -62,19 +62,19 @@ struct CurvePoint
 {
     if (Curve.Carrier)
     {
-        const Modeller::CurveSample Sample = Modeller::EvaluateCurve(*Curve.Carrier, Parameter);
+        const GeometryProcessing::CurveSample Sample = GeometryProcessing::EvaluateCurve(*Curve.Carrier, Parameter);
         return { Sample.Position, Sample.Derivative };
     }
-    const Vector2 Point = Modeller::EvaluateProfileSegment(*Curve.Segment, Parameter);
-    const Vector2 Rate  = Modeller::EvaluateProfileTangent(*Curve.Segment, Parameter);
+    const Vector2 Point = GeometryProcessing::EvaluateProfileSegment(*Curve.Segment, Parameter);
+    const Vector2 Rate  = GeometryProcessing::EvaluateProfileTangent(*Curve.Segment, Parameter);
     return { PlacePlanar(Curve.Plane, Point), Curve.Plane.XAxis * Rate.X + Curve.Plane.YAxis * Rate.Y };
 }
 
 // 📝 Closed carriers (full circles, closed splines) wrap; open ones clamp.
 [[nodiscard]] bool WrappingCondition(const DraftingSnapCurve& Curve) noexcept
 {
-    if (Curve.Segment) return Curve.Segment->Kind == Modeller::ProfileSegmentKind::Circle;
-    return Curve.Carrier && Modeller::PeriodicCondition(*Curve.Carrier) && Curve.High - Curve.Low >= 2.0 * std::numbers::pi - 1.0e-9;
+    if (Curve.Segment) return Curve.Segment->Kind == GeometryProcessing::ProfileSegmentKind::Circle;
+    return Curve.Carrier && GeometryProcessing::PeriodicCondition(*Curve.Carrier) && Curve.High - Curve.Low >= 2.0 * std::numbers::pi - 1.0e-9;
 }
 
 [[nodiscard]] double ConfineParameter(const DraftingSnapCurve& Curve, double Parameter) noexcept
@@ -88,29 +88,29 @@ struct CurvePoint
 void DescribeCurvePoint(const DraftingSnapCurve& Curve, double Parameter, Vector3& Tangent, Vector3& Normal)
 {
     const CurvePoint Point = EvaluateSnapCurve(Curve, Parameter);
-    Tangent = Modeller::Length(Point.Derivative) > 0.0 ? Modeller::Normalize(Point.Derivative) : Vector3{};
+    Tangent = GeometryProcessing::Length(Point.Derivative) > 0.0 ? GeometryProcessing::Normalize(Point.Derivative) : Vector3{};
     Normal  = {};
-    if (Modeller::Length(Tangent) == 0.0) return;
+    if (GeometryProcessing::Length(Tangent) == 0.0) return;
     if (Curve.PlanarCondition)
     {
-        Normal = Modeller::Normalize(Modeller::Cross(Curve.PlaneNormal, Tangent));
+        Normal = GeometryProcessing::Normalize(GeometryProcessing::Cross(Curve.PlaneNormal, Tangent));
         return;
     }
     const double Step = 1.0e-5 * (Curve.High - Curve.Low);
     const Vector3 Bend = (EvaluateSnapCurve(Curve, ConfineParameter(Curve, Parameter + Step)).Derivative - EvaluateSnapCurve(Curve, ConfineParameter(Curve, Parameter - Step)).Derivative) * (0.5 / Step);
-    const Vector3 Across = Bend - Tangent * Modeller::Dot(Bend, Tangent);
-    if (Modeller::Length(Across) > 1.0e-9 * (1.0 + Modeller::Length(Bend))) { Normal = Modeller::Normalize(Across); return; }
-    Vector3 Fallback = Modeller::Cross(Tangent, Vector3{ 0.0, 0.0, 1.0 });
-    if (Modeller::Length(Fallback) < 1.0e-6) Fallback = Modeller::Cross(Tangent, Vector3{ 0.0, 1.0, 0.0 });
-    Normal = Modeller::Normalize(Fallback);
+    const Vector3 Across = Bend - Tangent * GeometryProcessing::Dot(Bend, Tangent);
+    if (GeometryProcessing::Length(Across) > 1.0e-9 * (1.0 + GeometryProcessing::Length(Bend))) { Normal = GeometryProcessing::Normalize(Across); return; }
+    Vector3 Fallback = GeometryProcessing::Cross(Tangent, Vector3{ 0.0, 0.0, 1.0 });
+    if (GeometryProcessing::Length(Fallback) < 1.0e-6) Fallback = GeometryProcessing::Cross(Tangent, Vector3{ 0.0, 1.0, 0.0 });
+    Normal = GeometryProcessing::Normalize(Fallback);
 }
 
 // Pieces of [Low, High] the carrier is analytic on (knot spans, intersection guide knots, ≤ 45° arc pieces).
 [[nodiscard]] std::vector<double> CollectCurveStops(const DraftingSnapCurve& Curve)
 {
     std::vector<double> Stops = { Curve.Low };
-    if (Curve.Carrier) for (double Knot : Modeller::CollectCurveBreakpoints(*Curve.Carrier, Curve.Low, Curve.High)) Stops.push_back(Knot);
-    else for (double Break : Modeller::CollectProfileBreaks(*Curve.Segment)) if (Break > 0.0 && Break < 1.0) Stops.push_back(Break);
+    if (Curve.Carrier) for (double Knot : GeometryProcessing::CollectCurveBreakpoints(*Curve.Carrier, Curve.Low, Curve.High)) Stops.push_back(Knot);
+    else for (double Break : GeometryProcessing::CollectProfileBreaks(*Curve.Segment)) if (Break > 0.0 && Break < 1.0) Stops.push_back(Break);
     Stops.push_back(Curve.High);
     std::sort(Stops.begin(), Stops.end());
     Stops.erase(std::unique(Stops.begin(), Stops.end()), Stops.end());
@@ -121,7 +121,7 @@ void DescribeCurvePoint(const DraftingSnapCurve& Curve, double Parameter, Vector
 {
     double Total = 0.0;
     for (size_t Node = 0; Node < GaussNodes.size(); ++Node)
-        Total += GaussWeights[Node] * Modeller::Length(EvaluateSnapCurve(Curve, 0.5 * (From + To) + 0.5 * (To - From) * GaussNodes[Node]).Derivative);
+        Total += GaussWeights[Node] * GeometryProcessing::Length(EvaluateSnapCurve(Curve, 0.5 * (From + To) + 0.5 * (To - From) * GaussNodes[Node]).Derivative);
     return 0.5 * (To - From) * Total;
 }
 
@@ -129,8 +129,8 @@ void DescribeCurvePoint(const DraftingSnapCurve& Curve, double Parameter, Vector
 //    L(s) = L/2 inside the panel that holds it. Lines and circular arcs are parametrised by length already (closed form).
 [[nodiscard]] double LocateMidpoint(const DraftingSnapCurve& Curve)
 {
-    const bool Uniform = (Curve.Carrier && (std::holds_alternative<Modeller::StraightLine>(*Curve.Carrier) || std::holds_alternative<Modeller::CircularArc>(*Curve.Carrier)))
-                      || (Curve.Segment && Curve.Segment->Kind != Modeller::ProfileSegmentKind::Spline);
+    const bool Uniform = (Curve.Carrier && (std::holds_alternative<GeometryProcessing::StraightLine>(*Curve.Carrier) || std::holds_alternative<GeometryProcessing::CircularArc>(*Curve.Carrier)))
+                      || (Curve.Segment && Curve.Segment->Kind != GeometryProcessing::ProfileSegmentKind::Spline);
     if (Uniform) return 0.5 * (Curve.Low + Curve.High);
     const std::vector<double> Stops = CollectCurveStops(Curve);
     std::vector<double> Edges, Lengths = { 0.0 };
@@ -150,7 +150,7 @@ void DescribeCurvePoint(const DraftingSnapCurve& Curve, double Parameter, Vector
     {
         const double Error = Lengths[Panel] + IntegrateSpeed(Curve, Edges[Panel], Parameter) - Half;
         if (Error > 0.0) High = Parameter; else Low = Parameter;
-        const double Speed = Modeller::Length(EvaluateSnapCurve(Curve, Parameter).Derivative);
+        const double Speed = GeometryProcessing::Length(EvaluateSnapCurve(Curve, Parameter).Derivative);
         double Next = Speed > 0.0 ? Parameter - Error / Speed : 0.5 * (Low + High);
         if (!(Next > Low && Next < High)) Next = 0.5 * (Low + High);                         // Newton left the bracket: bisect
         if (std::fabs(Next - Parameter) <= 1.0e-15 * (1.0 + std::fabs(Parameter))) { Parameter = Next; break; }
@@ -172,7 +172,7 @@ void SampleCurve(DraftingSnapCurve& Curve, int Count)
 void AppendPoint(std::vector<DraftingSnapPoint>& Points, DraftingSnapPoint Point, double Scale)
 {
     for (const DraftingSnapPoint& Existing : Points)
-        if (Existing.Kind == Point.Kind && Modeller::Distance(Existing.Position, Point.Position) <= 1.0e-12 * (1.0 + Scale)) return;
+        if (Existing.Kind == Point.Kind && GeometryProcessing::Distance(Existing.Position, Point.Position) <= 1.0e-12 * (1.0 + Scale)) return;
     Points.push_back(std::move(Point));
 }
 
@@ -229,7 +229,7 @@ void CatalogueCurvePoints(DraftingSnapCatalogue& Catalogue, const DraftingSnapCu
     double PixelX = 0.0, PixelY = 0.0;
     if (!ProjectDraftingPoint(Query.Frame, Point, PixelX, PixelY)) return false;
     const DraftingRay Ray   = CastDraftingRay(Query.Frame, PixelX, PixelY);
-    const double      Depth = Modeller::Dot(Point - RayOrigin(Ray), RayDirection(Ray));
+    const double      Depth = GeometryProcessing::Dot(Point - RayOrigin(Ray), RayDirection(Ray));
     const std::optional<DraftingPick> Hit = PickDraftingScene(Scene, Ray, 0.0, false, Query.Section);
     return !Hit || Hit->Distance >= Depth - (3.0e-3 * Scale + 3.0 * Query.Frame.WorldPerPixel);
 }
@@ -328,8 +328,8 @@ struct NearCurve
     const auto Gap = [&](double Parameter)
     {
         const Vector3 Offset = EvaluateSnapCurve(Curve, Parameter).Position - Origin;
-        const Vector3 Across = Offset - Direction * Modeller::Dot(Offset, Direction);
-        return Modeller::Dot(Across, Across);
+        const Vector3 Across = Offset - Direction * GeometryProcessing::Dot(Offset, Direction);
+        return GeometryProcessing::Dot(Across, Across);
     };
     double Low  = Curve.Parameters[Near.Sample > 0 ? Near.Sample - 1 : 0];
     double High = Curve.Parameters[std::min(Near.Sample + 2, Curve.Parameters.size() - 1)];
@@ -353,20 +353,20 @@ struct NearCurve
     {
         const CurvePoint A = EvaluateSnapCurve(First, S), B = EvaluateSnapCurve(Second, T);
         const Vector3 Gap = A.Position - B.Position;
-        if (Modeller::Length(Gap) <= 1.0e-15 * (1.0 + Scale)) break;
-        const double AA = Modeller::Dot(A.Derivative, A.Derivative), AB = -Modeller::Dot(A.Derivative, B.Derivative), BB = Modeller::Dot(B.Derivative, B.Derivative);
+        if (GeometryProcessing::Length(Gap) <= 1.0e-15 * (1.0 + Scale)) break;
+        const double AA = GeometryProcessing::Dot(A.Derivative, A.Derivative), AB = -GeometryProcessing::Dot(A.Derivative, B.Derivative), BB = GeometryProcessing::Dot(B.Derivative, B.Derivative);
         const double Determinant = AA * BB - AB * AB;
         if (!(std::fabs(Determinant) > 1.0e-14 * AA * BB)) return std::nullopt;               // Parallel carriers: no isolated crossing
-        const double RightS = -Modeller::Dot(A.Derivative, Gap), RightT = Modeller::Dot(B.Derivative, Gap);
+        const double RightS = -GeometryProcessing::Dot(A.Derivative, Gap), RightT = GeometryProcessing::Dot(B.Derivative, Gap);
         const double StepS = (RightS * BB - AB * RightT) / Determinant, StepT = (AA * RightT - AB * RightS) / Determinant;
         S = ConfineParameter(First, S + StepS);
         T = ConfineParameter(Second, T + StepT);
         if (std::fabs(StepS) + std::fabs(StepT) <= 1.0e-16 * (1.0 + std::fabs(S) + std::fabs(T))) break;
     }
     const CurvePoint A = EvaluateSnapCurve(First, S), B = EvaluateSnapCurve(Second, T);
-    if (Modeller::Distance(A.Position, B.Position) > MeetTolerance * (1.0 + Scale)) return std::nullopt;
+    if (GeometryProcessing::Distance(A.Position, B.Position) > MeetTolerance * (1.0 + Scale)) return std::nullopt;
     // Overlapping carriers (a consumed sketch line on its body edge) touch everywhere: only a transversal meeting counts.
-    const double Crossing = Modeller::Length(Modeller::Cross(A.Derivative, B.Derivative)), Speeds = Modeller::Length(A.Derivative) * Modeller::Length(B.Derivative);
+    const double Crossing = GeometryProcessing::Length(GeometryProcessing::Cross(A.Derivative, B.Derivative)), Speeds = GeometryProcessing::Length(A.Derivative) * GeometryProcessing::Length(B.Derivative);
     if (!(Crossing > 1.0e-6 * Speeds)) return std::nullopt;
     return A.Position;
 }
@@ -403,17 +403,17 @@ std::vector<double> BracketRoots(const DraftingSnapCurve& Curve, ResidualFunctio
 
 // 📝 Exact ray hit on a face carrier: Newton on the signed distance along the ray from the tessellation hit; the result
 //    is the carrier foot of the last iterate (on the surface to rounding).
-[[nodiscard]] Vector3 PierceSurface(const Modeller::SurfaceGeometry& Surface, const DraftingRay& Ray, double Reach, Vector3& Normal, double Scale)
+[[nodiscard]] Vector3 PierceSurface(const GeometryProcessing::SurfaceGeometry& Surface, const DraftingRay& Ray, double Reach, Vector3& Normal, double Scale)
 {
     const Vector3 Origin = RayOrigin(Ray), Direction = RayDirection(Ray);
     double Along = Reach;
-    Modeller::SurfaceDistance Measure = Modeller::MeasureSurfaceDistance(Surface, Origin + Direction * Along);
+    GeometryProcessing::SurfaceDistance Measure = GeometryProcessing::MeasureSurfaceDistance(Surface, Origin + Direction * Along);
     for (int Iteration = 0; Iteration < 16 && std::fabs(Measure.Distance) > 1.0e-14 * (1.0 + Scale); ++Iteration)
     {
-        const double Facing = Modeller::Dot(Direction, Measure.Normal);
+        const double Facing = GeometryProcessing::Dot(Direction, Measure.Normal);
         if (std::fabs(Facing) < 1.0e-6) break;
         Along  -= Measure.Distance / Facing;
-        Measure = Modeller::MeasureSurfaceDistance(Surface, Origin + Direction * Along);
+        Measure = GeometryProcessing::MeasureSurfaceDistance(Surface, Origin + Direction * Along);
     }
     Normal = Measure.Normal;
     return Measure.Foot;
@@ -439,11 +439,11 @@ bool ProjectDraftingPoint(const DraftingCameraFrame& Frame, Vector3 Point, doubl
 std::optional<double> ApproachDraftingLine(const DraftingRay& Ray, Vector3 Origin, Vector3 Direction) noexcept
 {
     // Closest points of two lines: Origin + t·u and O + s·d; t = (b·e − c·d′) / (a·c − b²) with the usual dot products.
-    const Vector3 Unit = Modeller::Normalize(Direction), Along = RayDirection(Ray), Offset = Origin - RayOrigin(Ray);
-    const double  Cosine = Modeller::Dot(Unit, Along), Denominator = 1.0 - Cosine * Cosine;
+    const Vector3 Unit = GeometryProcessing::Normalize(Direction), Along = RayDirection(Ray), Offset = Origin - RayOrigin(Ray);
+    const double  Cosine = GeometryProcessing::Dot(Unit, Along), Denominator = 1.0 - Cosine * Cosine;
     if (Denominator < 1.0e-12) return std::nullopt;
-    const double Parameter = (Cosine * Modeller::Dot(Offset, Along) - Modeller::Dot(Offset, Unit)) / Denominator;
-    return Parameter / Modeller::Length(Direction);
+    const double Parameter = (Cosine * GeometryProcessing::Dot(Offset, Along) - GeometryProcessing::Dot(Offset, Unit)) / Denominator;
+    return Parameter / GeometryProcessing::Length(Direction);
 }
 
 DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, const DraftingScene& Scene, const std::vector<std::string>& Excluded)
@@ -460,27 +460,27 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
     // ---- Bodies: face carriers by (body, slot) → scene face; edges with their exact carriers and vertices
     if (Document.Partition)
     {
-        const Modeller::ModelPartition& Partition = *Document.Partition;
+        const GeometryProcessing::ModelPartition& Partition = *Document.Partition;
         std::map<std::pair<std::string, uint32_t>, uint32_t> SceneFaces;
         for (const DraftingSceneBody& Body : Scene.Bodies)
             for (uint32_t Face = Body.FirstFace; Face < Body.FirstFace + Body.FaceCount; ++Face) SceneFaces[{ Body.Key, Scene.Faces[Face].Slot }] = Face;
-        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+        for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
         {
             if (!Body.Body.PresentCondition() || Document.Appearance.HiddenBodies.contains(Body.Key) || ExcludedCondition(Body.Key)) continue;
-            const Modeller::BodyInventory Inventory = Partition.CollectInventory(Body.Body);
-            for (const Modeller::FaceToken Face : Inventory.Faces)
+            const GeometryProcessing::BodyInventory Inventory = Partition.CollectInventory(Body.Body);
+            for (const GeometryProcessing::FaceToken Face : Inventory.Faces)
             {
                 const auto Found = SceneFaces.find({ Body.Key, Face.Slot });
-                const Modeller::FaceProfile& Profile = Partition.Faces.Resolve(Face);
+                const GeometryProcessing::FaceProfile& Profile = Partition.Faces.Resolve(Face);
                 if (Found == SceneFaces.end() || !Profile.Surface.PresentCondition()) continue;
                 Catalogue.Surfaces[Found->second]   = Partition.Surfaces.Resolve(Profile.Surface);
                 Catalogue.FaceTokens[Found->second] = Face;
                 const auto Name = Body.Naming.Faces.find(Face.Slot);
                 Catalogue.FaceNames[Found->second]  = Name != Body.Naming.Faces.end() ? Name->second : Scene.Faces[Found->second].Name;
             }
-            for (const Modeller::EdgeToken Edge : Inventory.Edges)
+            for (const GeometryProcessing::EdgeToken Edge : Inventory.Edges)
             {
-                const Modeller::EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+                const GeometryProcessing::EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
                 if (!Profile.Curve.PresentCondition()) continue;
                 DraftingSnapCurve Curve;
                 const auto Name = Body.Naming.Edges.find(Edge.Slot);
@@ -489,17 +489,17 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
                 Curve.Carrier = Partition.Curves.Resolve(Profile.Curve);
                 Curve.Low     = Profile.IntervalLow;
                 Curve.High    = Profile.IntervalHigh;
-                if (const std::optional<Modeller::ConicForm> Conic = Modeller::ResolveConicForm(*Curve.Carrier))
+                if (const std::optional<GeometryProcessing::ConicForm> Conic = GeometryProcessing::ResolveConicForm(*Curve.Carrier))
                 {
                     Curve.PlanarCondition = true;
                     Curve.PlaneNormal     = Conic->Normal;
                     Curve.Centre          = Conic->Centre;
-                    if (const auto* Arc = std::get_if<Modeller::CircularArc>(&*Curve.Carrier)) Curve.Radius = Arc->Radius;
+                    if (const auto* Arc = std::get_if<GeometryProcessing::CircularArc>(&*Curve.Carrier)) Curve.Radius = Arc->Radius;
                 }
-                const bool Straight = std::holds_alternative<Modeller::StraightLine>(*Curve.Carrier);
+                const bool Straight = std::holds_alternative<GeometryProcessing::StraightLine>(*Curve.Carrier);
                 SampleCurve(Curve, Straight ? 1 : CurveSamples);
                 const Vector3 Start = Partition.Vertices.Resolve(Profile.Start).Position, End = Partition.Vertices.Resolve(Profile.End).Position;
-                const bool    Open  = Modeller::Distance(Start, End) > 1.0e-12 * (1.0 + Catalogue.Scale);
+                const bool    Open  = GeometryProcessing::Distance(Start, End) > 1.0e-12 * (1.0 + Catalogue.Scale);
                 CatalogueCurvePoints(Catalogue, Curve, Open);
                 Catalogue.Curves.push_back(std::move(Curve));
             }
@@ -507,21 +507,21 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
     }
 
     // ---- Sketches: solved, on the elevated plane; ends, midpoints, centres; crossings within one plane frame
-    struct PlacedSegment { size_t Curve; Modeller::OrthonormalFrame Plane; Vector2 Low, High; };
+    struct PlacedSegment { size_t Curve; GeometryProcessing::OrthonormalFrame Plane; Vector2 Low, High; };
     std::vector<PlacedSegment> Placed;
-    for (const Modeller::FeatureStep& Step : Document.Tree.Steps)
+    for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps)
     {
-        if (Step.Kind != Modeller::FeatureStepKind::Sketch || ExcludedCondition(Step.Label)) continue;
+        if (Step.Kind != GeometryProcessing::FeatureStepKind::Sketch || ExcludedCondition(Step.Label)) continue;
         const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
-        const Modeller::SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
-        Modeller::OrthonormalFrame Plane = Step.Plane;
-        Plane.Origin = Plane.Origin + Plane.ZAxis * Modeller::EvaluateFeatureValue(Document.Tree, Step.Elevation);
+        const GeometryProcessing::SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
+        GeometryProcessing::OrthonormalFrame Plane = Step.Plane;
+        Plane.Origin = Plane.Origin + Plane.ZAxis * GeometryProcessing::EvaluateFeatureValue(Document.Tree, Step.Elevation);
         const auto   Caption = Document.Captions.find(Step.Label);
         const std::string Owner = Caption != Document.Captions.end() ? Caption->second : Step.Label;
         for (int Index = 0; Index < int(Sketch.Curves.size()); ++Index)
         {
             std::string Refusal;
-            const Modeller::ProfileSegment Segment = Modeller::ResolveSketchCurveSegment(Sketch, Index, 1.0e-9, Refusal);
+            const GeometryProcessing::ProfileSegment Segment = GeometryProcessing::ResolveSketchCurveSegment(Sketch, Index, 1.0e-9, Refusal);
             if (!Refusal.empty()) continue;
             DraftingSnapCurve Curve;
             const std::string Name = Segment.Name.empty() ? "Curve" : Segment.Name;
@@ -530,29 +530,29 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
             Curve.Plane           = Plane;
             Curve.PlanarCondition = true;
             Curve.PlaneNormal     = Plane.ZAxis;
-            if (Segment.Kind == Modeller::ProfileSegmentKind::Arc || Segment.Kind == Modeller::ProfileSegmentKind::Circle)
+            if (Segment.Kind == GeometryProcessing::ProfileSegmentKind::Arc || Segment.Kind == GeometryProcessing::ProfileSegmentKind::Circle)
             {
                 Curve.Centre = PlacePlanar(Plane, Segment.Centre);
                 Curve.Radius = Segment.Radius;
             }
-            SampleCurve(Curve, Segment.Kind == Modeller::ProfileSegmentKind::Line ? 1 : CurveSamples);
-            CatalogueCurvePoints(Catalogue, Curve, Segment.Kind != Modeller::ProfileSegmentKind::Circle);
+            SampleCurve(Curve, Segment.Kind == GeometryProcessing::ProfileSegmentKind::Line ? 1 : CurveSamples);
+            CatalogueCurvePoints(Catalogue, Curve, Segment.Kind != GeometryProcessing::ProfileSegmentKind::Circle);
             Vector2 Low{ 1.0e300, 1.0e300 }, High{ -1.0e300, -1.0e300 };
             for (double Parameter : Curve.Parameters)
             {
-                const Vector2 Point = Modeller::EvaluateProfileSegment(Segment, Parameter);
+                const Vector2 Point = GeometryProcessing::EvaluateProfileSegment(Segment, Parameter);
                 Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) };
                 High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) };
             }
-            const double Bulge = Segment.Kind == Modeller::ProfileSegmentKind::Line ? 0.0 : 0.05 * std::max(High.X - Low.X, High.Y - Low.Y) + Segment.Radius * 0.01;
+            const double Bulge = Segment.Kind == GeometryProcessing::ProfileSegmentKind::Line ? 0.0 : 0.05 * std::max(High.X - Low.X, High.Y - Low.Y) + Segment.Radius * 0.01;
             Placed.push_back({ Catalogue.Curves.size(), Plane, { Low.X - Bulge, Low.Y - Bulge }, { High.X + Bulge, High.Y + Bulge } });
             Catalogue.Curves.push_back(std::move(Curve));
         }
     }
-    const auto SameFrame = [&](const Modeller::OrthonormalFrame& First, const Modeller::OrthonormalFrame& Second)
+    const auto SameFrame = [&](const GeometryProcessing::OrthonormalFrame& First, const GeometryProcessing::OrthonormalFrame& Second)
     {
         const double Tolerance = 1.0e-12 * (1.0 + Catalogue.Scale);
-        return Modeller::Distance(First.Origin, Second.Origin) <= Tolerance && Modeller::Distance(First.XAxis, Second.XAxis) <= 1.0e-12 && Modeller::Distance(First.YAxis, Second.YAxis) <= 1.0e-12;
+        return GeometryProcessing::Distance(First.Origin, Second.Origin) <= Tolerance && GeometryProcessing::Distance(First.XAxis, Second.XAxis) <= 1.0e-12 && GeometryProcessing::Distance(First.YAxis, Second.YAxis) <= 1.0e-12;
     };
     for (size_t First = 0; First < Placed.size(); ++First)
         for (size_t Second = First + 1; Second < Placed.size(); ++Second)
@@ -562,7 +562,7 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
             if (A.High.X < B.Low.X || B.High.X < A.Low.X || A.High.Y < B.Low.Y || B.High.Y < A.Low.Y || !SameFrame(A.Plane, B.Plane)) continue;
             const DraftingSnapCurve& CurveA = Catalogue.Curves[A.Curve];
             const DraftingSnapCurve& CurveB = Catalogue.Curves[B.Curve];
-            for (const Modeller::SegmentCrossing& Crossing : Modeller::IntersectProfileSegments(*CurveA.Segment, *CurveB.Segment, 1.0e-9))
+            for (const GeometryProcessing::SegmentCrossing& Crossing : GeometryProcessing::IntersectProfileSegments(*CurveA.Segment, *CurveB.Segment, 1.0e-9))
             {
                 Vector3 Tangent, Normal;
                 DescribeCurvePoint(CurveA, Crossing.TargetFraction, Tangent, Normal);
@@ -577,12 +577,12 @@ DraftingSnapCatalogue CatalogueDraftingSnaps(const DraftingDocument& Document, c
         DraftingSnapCurve Curve;
         const auto Caption = Document.Captions.find(Label);
         Curve.Source  = "Curve " + (Caption != Document.Captions.end() ? Caption->second : Label);
-        Curve.Carrier = Modeller::CurveGeometry{ Fit.Curve };
+        Curve.Carrier = GeometryProcessing::CurveGeometry{ Fit.Curve };
         Curve.Low     = 0.0;
         Curve.High    = 1.0;
-        if (Modeller::Length(Fit.PlaneNormal) > 0.5) { Curve.PlanarCondition = true; Curve.PlaneNormal = Modeller::Normalize(Fit.PlaneNormal); }
+        if (GeometryProcessing::Length(Fit.PlaneNormal) > 0.5) { Curve.PlanarCondition = true; Curve.PlaneNormal = GeometryProcessing::Normalize(Fit.PlaneNormal); }
         SampleCurve(Curve, CurveSamples * 2);
-        const bool Open = Modeller::Distance(Curve.Points.front(), Curve.Points.back()) > 1.0e-12 * (1.0 + Catalogue.Scale);
+        const bool Open = GeometryProcessing::Distance(Curve.Points.front(), Curve.Points.back()) > 1.0e-12 * (1.0 + Catalogue.Scale);
         CatalogueCurvePoints(Catalogue, Curve, Open);
         Catalogue.Curves.push_back(std::move(Curve));
     }
@@ -638,18 +638,18 @@ DraftingSnap FindDraftingSnap(DraftingSnapCatalogue& Catalogue, const DraftingDo
             const auto Offer = [&](DraftingSnapKind Kind, double Parameter)
             {
                 const Vector3 Position = EvaluateSnapCurve(Curve, Parameter).Position;
-                if (Modeller::Distance(Position, Reference) <= 1.0e-9 * (1.0 + Scale) || !VisibleCondition(Scene, Query, Position, Scale)) return;
+                if (GeometryProcessing::Distance(Position, Reference) <= 1.0e-9 * (1.0 + Scale) || !VisibleCondition(Scene, Query, Position, Scale)) return;
                 Vector3 Tangent, Normal;
                 DescribeCurvePoint(Curve, Parameter, Tangent, Normal);
                 Contest.Offer(Query, Kind, Position, Tangent, Normal, Curve.Source, MeasurePixels(Query, Position));
             };
             if (Query.Filter.PerpendicularEnabled)
-                for (double Root : BracketRoots(Curve, [&](double Parameter) { const CurvePoint Point = EvaluateSnapCurve(Curve, Parameter); return Modeller::Dot(Point.Position - Reference, Point.Derivative); }))
+                for (double Root : BracketRoots(Curve, [&](double Parameter) { const CurvePoint Point = EvaluateSnapCurve(Curve, Parameter); return GeometryProcessing::Dot(Point.Position - Reference, Point.Derivative); }))
                     Offer(DraftingSnapKind::Perpendicular, Root);
             // Tangent lines exist in the curve's plane only: the reference must lie in it.
-            const bool Coplanar = Curve.PlanarCondition && std::fabs(Modeller::Dot(Reference - Curve.Points.front(), Curve.PlaneNormal)) <= 1.0e-9 * (1.0 + Scale);
+            const bool Coplanar = Curve.PlanarCondition && std::fabs(GeometryProcessing::Dot(Reference - Curve.Points.front(), Curve.PlaneNormal)) <= 1.0e-9 * (1.0 + Scale);
             if (Query.Filter.TangentEnabled && Coplanar)
-                for (double Root : BracketRoots(Curve, [&](double Parameter) { const CurvePoint Point = EvaluateSnapCurve(Curve, Parameter); return Modeller::Dot(Modeller::Cross(Point.Position - Reference, Point.Derivative), Curve.PlaneNormal); }))
+                for (double Root : BracketRoots(Curve, [&](double Parameter) { const CurvePoint Point = EvaluateSnapCurve(Curve, Parameter); return GeometryProcessing::Dot(GeometryProcessing::Cross(Point.Position - Reference, Point.Derivative), Curve.PlaneNormal); }))
                     Offer(DraftingSnapKind::Tangent, Root);
         }
     }
@@ -683,22 +683,22 @@ DraftingSnap FindDraftingSnap(DraftingSnapCatalogue& Catalogue, const DraftingDo
         if (Hit && Hit->Identity != 0 && Hit->Identity != IdentitySectionCap && !(Hit->Identity & IdentityEdgeBit) && Hit->Identity - 1 < Catalogue.Surfaces.size())
         {
             const uint32_t Face = Hit->Identity - 1;
-            if (const std::optional<Modeller::SurfaceGeometry>& Surface = Catalogue.Surfaces[Face])
+            if (const std::optional<GeometryProcessing::SurfaceGeometry>& Surface = Catalogue.Surfaces[Face])
             {
-                const double Sense = Document.Partition && Document.Partition->Faces.Resolve(Catalogue.FaceTokens[Face]).Sense == Modeller::Orientation::Reversed ? -1.0 : 1.0;
-                if (Query.Filter.CentreEnabled && std::holds_alternative<Modeller::PlaneSurface>(*Surface) && Document.Partition)
+                const double Sense = Document.Partition && Document.Partition->Faces.Resolve(Catalogue.FaceTokens[Face]).Sense == GeometryProcessing::Orientation::Reversed ? -1.0 : 1.0;
+                if (Query.Filter.CentreEnabled && std::holds_alternative<GeometryProcessing::PlaneSurface>(*Surface) && Document.Partition)
                 {
                     auto Found = Catalogue.FaceCentres.find(Face);
                     if (Found == Catalogue.FaceCentres.end())
                     {
-                        const Modeller::FaceAreaMeasure Area = Modeller::MeasureFaceArea(*Document.Partition, Catalogue.FaceTokens[Face]);
+                        const GeometryProcessing::FaceAreaMeasure Area = GeometryProcessing::MeasureFaceArea(*Document.Partition, Catalogue.FaceTokens[Face]);
                         Found = Catalogue.FaceCentres.emplace(Face, Area.Area > 0.0 ? std::optional<Vector3>(Area.Centroid) : std::nullopt).first;
                     }
                     if (Found->second)
                     {
                         const double Pixels = MeasurePixels(Query, *Found->second);
                         if (Pixels <= Query.PointReach && VisibleCondition(Scene, Query, *Found->second, Scale))
-                            return { DraftingSnapKind::Centre, *Found->second, {}, std::get<Modeller::PlaneSurface>(*Surface).Frame.ZAxis * Sense, "Face " + Catalogue.FaceNames[Face] + " centre", Pixels };
+                            return { DraftingSnapKind::Centre, *Found->second, {}, std::get<GeometryProcessing::PlaneSurface>(*Surface).Frame.ZAxis * Sense, "Face " + Catalogue.FaceNames[Face] + " centre", Pixels };
                     }
                 }
                 if (Query.Filter.FaceEnabled)

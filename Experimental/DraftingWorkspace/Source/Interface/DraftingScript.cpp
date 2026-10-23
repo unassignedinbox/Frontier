@@ -8,8 +8,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Interface/DraftingScript.h"
-#include "Measurement/MassProperties.h"
-#include "Sketch/SketchSpline.h"
+#include "Engine/GeometryProcessing/Measurement/MassProperties.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
 #include <cmath>
@@ -247,19 +247,19 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         // 📝 The K session's sketch (else the focused sketch step) as regenerated.
         const std::string Label  = DraftingConstraintSketch(State);
         const auto        Solved = Document.Regeneration.Sketches.find(Label);
-        const Modeller::SketchModel*        Sketch = Solved != Document.Regeneration.Sketches.end() ? &Solved->second : nullptr;
-        const Modeller::SketchSolveOutcome* Solve  = nullptr;
-        for (const Modeller::FeatureStepReport& Report : Document.Regeneration.Steps) if (Report.Label == Label) Solve = &Report.Solve;
+        const GeometryProcessing::SketchModel*        Sketch = Solved != Document.Regeneration.Sketches.end() ? &Solved->second : nullptr;
+        const GeometryProcessing::SketchSolveOutcome* Solve  = nullptr;
+        for (const GeometryProcessing::FeatureStepReport& Report : Document.Regeneration.Steps) if (Report.Label == Label) Solve = &Report.Solve;
         if (!Sketch) { Text.clear(); Number = -1.0; return true; }
         if (Field == "constrain-picks")
         {
             std::vector<std::string> Names;
             for (const DraftingSketchPick& Pick : State.Constrain.Picks)
             {
-                if (Pick.Sketch.empty()) { Names.push_back(Modeller::NameSketchPick(*Sketch, Pick.Pick)); continue; }
+                if (Pick.Sketch.empty()) { Names.push_back(GeometryProcessing::NameSketchPick(*Sketch, Pick.Pick)); continue; }
                 const auto Other   = Document.Regeneration.Sketches.find(Pick.Sketch);
                 const auto Caption = Document.Captions.find(Pick.Sketch);
-                Names.push_back((Other != Document.Regeneration.Sketches.end() ? Modeller::NameSketchPick(Other->second, Pick.Pick) : std::string("?")) + " of "
+                Names.push_back((Other != Document.Regeneration.Sketches.end() ? GeometryProcessing::NameSketchPick(Other->second, Pick.Pick) : std::string("?")) + " of "
                                 + (Caption != Document.Captions.end() ? Caption->second : Pick.Sketch));
             }
             return Join(Names);
@@ -269,16 +269,16 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
             // Linked points + curves of the sketch: "Point2,Line2.Start,…,Line2", Number = the count.
             std::vector<std::string> Names;
             for (int Point = 0; Point < int(Sketch->Points.size()); ++Point)
-                if (!Sketch->Points[Point].Link.Sketch.empty()) Names.push_back(Modeller::NameSketchPick(*Sketch, { Modeller::SketchPickKind::Point, Point }));
+                if (!Sketch->Points[Point].Link.Sketch.empty()) Names.push_back(GeometryProcessing::NameSketchPick(*Sketch, { GeometryProcessing::SketchPickKind::Point, Point }));
             for (int Curve = 0; Curve < int(Sketch->Curves.size()); ++Curve)
-                if (!Sketch->Curves[Curve].Link.Sketch.empty()) Names.push_back(Modeller::SketchCurveName(Sketch->Curves[Curve]));
+                if (!Sketch->Curves[Curve].Link.Sketch.empty()) Names.push_back(GeometryProcessing::SketchCurveName(Sketch->Curves[Curve]));
             return Join(Names);
         }
         if (Field == "constraint-count") return Numeric(double(Sketch->Constraints.size()));
         if (Field == "constraints")
         {
             std::vector<std::string> Labels;
-            for (const Modeller::SketchConstraint& Constraint : Sketch->Constraints) Labels.push_back(Constraint.Label.empty() ? std::string("-") : Constraint.Label);
+            for (const GeometryProcessing::SketchConstraint& Constraint : Sketch->Constraints) Labels.push_back(Constraint.Label.empty() ? std::string("-") : Constraint.Label);
             return Join(Labels);
         }
         if (Field == "sketch-dof") return Numeric(Solve ? double(Solve->DegreesOfFreedom) : -1.0);
@@ -291,7 +291,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         if (Field == "picked-constraint")
         {
             const int Picked = State.Constrain.ActiveCondition ? State.Constrain.PickedConstraint : -1;
-            Text   = Picked >= 0 && Picked < int(Sketch->Constraints.size()) ? Sketch->Constraints[Picked].Label + " " + Modeller::DescribeSketchConstraint(*Sketch, Sketch->Constraints[Picked]) : std::string{};
+            Text   = Picked >= 0 && Picked < int(Sketch->Constraints.size()) ? Sketch->Constraints[Picked].Label + " " + GeometryProcessing::DescribeSketchConstraint(*Sketch, Sketch->Constraints[Picked]) : std::string{};
             Number = double(Picked);
             return true;
         }
@@ -299,7 +299,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         {
             // "(0, 0) (3, 0) …" at %.6g, Number = the count.
             Text.clear();
-            for (const Modeller::SketchPoint& Point : Sketch->Points)
+            for (const GeometryProcessing::SketchPoint& Point : Sketch->Points)
             {
                 char Pair[80];
                 std::snprintf(Pair, sizeof(Pair), "%s(%.6g, %.6g)", Text.empty() ? "" : " ", std::abs(Point.Position.X) < 5.0e-13 ? 0.0 : Point.Position.X, std::abs(Point.Position.Y) < 5.0e-13 ? 0.0 : Point.Position.Y);
@@ -326,7 +326,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
             const auto Solved  = Document.Regeneration.Sketches.find(State.Trim.Sketch);
             Text = (Caption != Document.Captions.end() ? Caption->second : State.Trim.Sketch);
             if (Solved != Document.Regeneration.Sketches.end() && State.Trim.Curve >= 0 && State.Trim.Curve < int(Solved->second.Curves.size()))
-                Text += " · " + Modeller::SketchCurveName(Solved->second.Curves[State.Trim.Curve]);
+                Text += " · " + GeometryProcessing::SketchCurveName(Solved->second.Curves[State.Trim.Curve]);
         }
         Number = double(Text.size());
         return true;
@@ -360,7 +360,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "joint") return Numeric(State.Joint.ActiveCondition ? 1 : 0);
     if (Field == "joint-phase") return Numeric(State.Joint.ActiveCondition ? State.Joint.Phase : -1);
     if (Field == "joint-commits") return Numeric(double(State.Joint.Commits));
-    if (Field == "joint-kind") { Text = Modeller::JointKindLabel(State.Joint.Request.Kind); Number = Modeller::JointFreedom(State.Joint.Request.Kind); return true; }
+    if (Field == "joint-kind") { Text = GeometryProcessing::JointKindLabel(State.Joint.Request.Kind); Number = GeometryProcessing::JointFreedom(State.Joint.Request.Kind); return true; }
     if (Field == "joint-angle") return Numeric(State.Joint.Request.Angle);
     if (Field == "joint-flipped") return Numeric(State.Joint.Request.Flipped ? 1 : 0);
     if (Field == "joint-refusal") { Text = State.Joint.Refusal; Number = double(Text.size()); return true; }
@@ -384,7 +384,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // Joints of the regeneration; joint-gap = the largest distance between a joint's two origins (0 when assembled).
         double Gap = 0.0;
-        for (const Modeller::RegeneratedJoint& Joint : Document.Regeneration.Joints) Gap = std::max(Gap, Modeller::Distance(Joint.MovingOrigin.Origin, Joint.FixedOrigin.Origin));
+        for (const GeometryProcessing::RegeneratedJoint& Joint : Document.Regeneration.Joints) Gap = std::max(Gap, GeometryProcessing::Distance(Joint.MovingOrigin.Origin, Joint.FixedOrigin.Origin));
         return Numeric(Field == "joints" ? double(Document.Regeneration.Joints.size()) : Gap);
     }
     if (Field == "parameter-drag") return Numeric(double(State.ParameterDrag.Stagings));
@@ -392,13 +392,13 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // "bounds:Block3" → "(x0, y0, z0) … (x1, y1, z1)" over that body's vertices at %.6f, Number = the x extent.
         const std::string Wanted = Field.substr(7);
-        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+        for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
         {
             if (Body.Key != Wanted && DraftingBodyCaption(Document, Body.Key) != Wanted) continue;
-            Modeller::Vector3 Low = { 1.0e9, 1.0e9, 1.0e9 }, High = { -1.0e9, -1.0e9, -1.0e9 };
-            for (const Modeller::VertexToken Vertex : Document.Partition->CollectInventory(Body.Body).Vertices)
+            GeometryProcessing::Vector3 Low = { 1.0e9, 1.0e9, 1.0e9 }, High = { -1.0e9, -1.0e9, -1.0e9 };
+            for (const GeometryProcessing::VertexToken Vertex : Document.Partition->CollectInventory(Body.Body).Vertices)
             {
-                const Modeller::Vector3 Point = Document.Partition->Vertices.Resolve(Vertex).Position;
+                const GeometryProcessing::Vector3 Point = Document.Partition->Vertices.Resolve(Vertex).Position;
                 Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
                 High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
             }
@@ -417,10 +417,10 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // "centroid:Link2" → "(x, y, z)" at %.6f of that body (caption or key), Number = x.
         const std::string Wanted = Field.substr(9);
-        for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+        for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
         {
             if (Body.Key != Wanted && DraftingBodyCaption(Document, Body.Key) != Wanted) continue;
-            const Modeller::BodyMassProperties Mass = Modeller::MeasureBodyMass(*Document.Partition, Body.Body);
+            const GeometryProcessing::BodyMassProperties Mass = GeometryProcessing::MeasureBodyMass(*Document.Partition, Body.Body);
             const auto Clean = [](double Value) { return std::abs(Value) < 5.0e-7 ? 0.0 : Value; };          // No "-0.000000"
             char Triple[120];
             std::snprintf(Triple, sizeof(Triple), "(%.6f, %.6f, %.6f)", Clean(Mass.Centroid.X), Clean(Mass.Centroid.Y), Clean(Mass.Centroid.Z));
@@ -446,7 +446,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         // Text = "A3 1:20 First" (paper, scale, angle) or the refusal, Number = 1 while the sheet (Alt+D) is shown.
         const DraftingDrawingSheet& Sheet = State.DrawingSheet.Sheet;
         Text   = !State.DrawingSheet.ActiveCondition ? std::string("off") : !Sheet.Refusal.empty() ? Sheet.Refusal
-               : std::string(Modeller::DrawingPaperLabel(State.Document.DrawingSheet.Paper)) + " " + Sheet.Sheet.ScaleLabel + " " + DraftingProjectionAngleLabel(Sheet.Sheet.Angle);
+               : std::string(GeometryProcessing::DrawingPaperLabel(State.Document.DrawingSheet.Paper)) + " " + Sheet.Sheet.ScaleLabel + " " + DraftingProjectionAngleLabel(Sheet.Sheet.Angle);
         Number = State.DrawingSheet.ActiveCondition ? 1.0 : 0.0;
         return true;
     }
@@ -460,7 +460,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // Text = view labels in order ("Front Top Right Isometric"), Number = view count.
         Text.clear();
-        for (const Modeller::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Text += (Text.empty() ? "" : " ") + View.Label;
+        for (const GeometryProcessing::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Text += (Text.empty() ? "" : " ") + View.Label;
         Number = double(State.DrawingSheet.Sheet.Sheet.Views.size());
         return true;
     }
@@ -468,7 +468,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // Text = every dimension text ("4000 2500 ⌀600 …"), Number = dimension count.
         Text.clear();
-        for (const Modeller::DrawingDimension& Dimension : State.DrawingSheet.Sheet.Sheet.Dimensions) Text += (Text.empty() ? "" : " ") + Dimension.Text;
+        for (const GeometryProcessing::DrawingDimension& Dimension : State.DrawingSheet.Sheet.Sheet.Dimensions) Text += (Text.empty() ? "" : " ") + Dimension.Text;
         Number = double(State.DrawingSheet.Sheet.Sheet.Dimensions.size());
         return true;
     }
@@ -476,7 +476,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     {
         // Text = every sheet text (title block, labels, dimensions) joined by " | ", Number = text count.
         Text.clear();
-        for (const Modeller::SheetText& Entry : State.DrawingSheet.Sheet.Sheet.Texts) Text += (Text.empty() ? "" : " | ") + Entry.Content;
+        for (const GeometryProcessing::SheetText& Entry : State.DrawingSheet.Sheet.Sheet.Texts) Text += (Text.empty() ? "" : " | ") + Entry.Content;
         Number = double(State.DrawingSheet.Sheet.Sheet.Texts.size());
         return true;
     }
@@ -484,7 +484,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "drawing-sheet-section-area")
     {
         double Area = 0.0;                                                                   // [len²] - Section A-A cap (model units)
-        for (const Modeller::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Area += View.View.SectionArea;
+        for (const GeometryProcessing::PlacedDrawingView& View : State.DrawingSheet.Sheet.Sheet.Views) Area += View.View.SectionArea;
         return Numeric(Area);
     }
     if (Field == "drawing-sheet-refreshes") return Numeric(State.DrawingSheet.Refreshes);
@@ -538,7 +538,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
     if (Field == "bevel-size") return Numeric(State.Bevel.Size);
     if (Field == "bevel-pinned") return Numeric(State.Bevel.PinnedCondition ? 1 : 0);
-    if (Field == "bevel-chamfer") return Numeric(State.Bevel.Shape == Modeller::BlendProfile::Chamfer ? 1 : 0);
+    if (Field == "bevel-chamfer") return Numeric(State.Bevel.Shape == GeometryProcessing::BlendProfile::Chamfer ? 1 : 0);
     if (Field == "bevel-variable") return Numeric(State.Bevel.VariableEnabled ? 1 : 0);
     if (Field == "bevel-end-size") return Numeric(State.Bevel.EndSize);
     if (Field == "bevel-flipped") return Numeric(State.Bevel.ReversedCondition ? 1 : 0);
@@ -573,7 +573,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
         return true;
     }
     if (Field == "drawing-points") return Numeric(double(State.Drawing.Points.size()));
-    if (Field == "drawing-form") { Text = Modeller::SketchSplineFormLabel(State.Drawing.Form); Number = double(int(State.Drawing.Form)); return true; }
+    if (Field == "drawing-form") { Text = GeometryProcessing::SketchSplineFormLabel(State.Drawing.Form); Number = double(int(State.Drawing.Form)); return true; }
     if (Field == "drawing-centre") return Numeric(State.Drawing.CentreCondition ? 1 : 0);
     if (Field == "drawing-plane") return Numeric(State.Drawing.GridPlane);
     if (Field == "drawing-refusal") { Text = State.Drawing.Refusal; Number = double(Text.size()); return true; }
@@ -594,7 +594,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "snap-z") return Numeric(State.Picker.Current.Position.Z);
     if (Field == "snap-lock") { Text = State.Picker.Lock == DraftingSnapLockKind::None ? std::string("none") : std::string(DraftingSnapLockLabel(State.Picker.Lock)); Number = double(int(State.Picker.Lock)); return true; }
     if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
-    if (Field == "pole-snap-gap") return Numeric(State.PoleDrag.ActiveCondition && State.Picker.Current.Kind != DraftingSnapKind::None ? Modeller::Distance(State.PoleDrag.Position, State.Picker.Current.Position) : std::nan(""));
+    if (Field == "pole-snap-gap") return Numeric(State.PoleDrag.ActiveCondition && State.Picker.Current.Kind != DraftingSnapKind::None ? GeometryProcessing::Distance(State.PoleDrag.Position, State.Picker.Current.Position) : std::nan(""));
     if (Field == "pole-drag-x") return Numeric(State.PoleDrag.Position.X);
     if (Field == "pole-drag-y") return Numeric(State.PoleDrag.Position.Y);
     if (Field == "pole-drag-z") return Numeric(State.PoleDrag.Position.Z);
@@ -661,7 +661,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "pole-edits")
     {
         size_t Edits = 0;
-        for (const Modeller::FeatureStep& Step : Document.Tree.Steps) Edits += Step.PoleEdits.size();
+        for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps) Edits += Step.PoleEdits.size();
         return Numeric(double(Edits));
     }
     if (Field == "curve-fit-worst")
@@ -673,9 +673,9 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "sketches")
     {
         std::vector<std::string> Captions;
-        for (const Modeller::FeatureStep& Step : Document.Tree.Steps)
+        for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps)
         {
-            if (Step.Kind != Modeller::FeatureStepKind::Sketch) continue;
+            if (Step.Kind != GeometryProcessing::FeatureStepKind::Sketch) continue;
             const auto Caption = Document.Captions.find(Step.Label);
             Captions.push_back(Caption != Document.Captions.end() ? Caption->second : Step.Label);
         }
@@ -696,7 +696,7 @@ bool ObserveField(const DraftingWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-verb") return Numeric(int(State.Bevel.Verb));
     if (Field == "bevel-combination")
     {
-        Text   = State.Bevel.Combination == Modeller::FeatureCombination::New ? "New" : Modeller::FeatureCombinationLabel(State.Bevel.Combination);
+        Text   = State.Bevel.Combination == GeometryProcessing::FeatureCombination::New ? "New" : GeometryProcessing::FeatureCombinationLabel(State.Bevel.Combination);
         Number = double(int(State.Bevel.Combination));
         return true;
     }

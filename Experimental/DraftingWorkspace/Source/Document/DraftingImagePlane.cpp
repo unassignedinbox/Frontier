@@ -24,7 +24,7 @@
 namespace Frontier::DraftingWorkspace
 {
 
-using namespace Frontier::SolidArcRemastered;
+using namespace Frontier::GeometryProcessing;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS

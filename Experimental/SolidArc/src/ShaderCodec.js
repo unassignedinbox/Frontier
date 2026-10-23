@@ -3,14 +3,14 @@
 //============================================================================================================================================
 // 📦 Translates the shared SolidArc shader vocabulary to GLSL ES; the CPU reference includes these same shader bodies.
 
-import Records from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/ShadingRecords.slang?raw";
-import Lattice from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/LatticeProjection.slang?raw";
-import Surface from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/SurfaceRaster.slang?raw";
-import Studio from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/MatcapStudio.slang?raw";
-import Line from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/LineRaster.slang?raw";
-import Point from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/PointRaster.slang?raw";
+import Records from "../Service/Presentation/Shaders/ShadingRecords.slang?raw";
+import Lattice from "../Service/Presentation/Shaders/LatticeProjection.slang?raw";
+import Surface from "../Service/Presentation/Shaders/SurfaceRaster.slang?raw";
+import Studio from "../Service/Presentation/Shaders/MatcapStudio.slang?raw";
+import Line from "../Service/Presentation/Shaders/LineRaster.slang?raw";
+import Point from "../Service/Presentation/Shaders/PointRaster.slang?raw";
 
-import Display from "../../../Engine/Modelling/SolidArc/Presentation/Shaders/DisplayTransfer.slang?raw";
+import Display from "../Service/Presentation/Shaders/DisplayTransfer.slang?raw";
 
 const Sources = {"ShadingRecords.slang": Records, "MatcapStudio.slang": Studio};
 function Translate(Source, Visited = new Set())

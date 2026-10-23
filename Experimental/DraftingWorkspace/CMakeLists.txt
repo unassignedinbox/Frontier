@@ -1,7 +1,7 @@
 #=====================================================================================================================================
 #                                                        CMAKELISTS.TXT
 #=====================================================================================================================================
-# 🧩 DraftingWorkspace — Vulkan + Slang + ImGui modelling workspace over the SolidArcRemastered feature tree
+# 🧩 DraftingWorkspace — Vulkan + Slang + ImGui modelling workspace over the GeometryProcessing feature tree
 
 cmake_minimum_required(VERSION 3.20)
 project(DraftingWorkspace LANGUAGES C CXX)
@@ -37,7 +37,7 @@ endforeach()
 #                                                    THIRD PARTY
 #-------------------------------------------------------------------------------------------------------------------
 
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../SolidArcRemastered" SolidArcRemastered)
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../Engine/GeometryProcessing" GeometryProcessing)
 
 # 📝 volk: the Vulkan meta-loader. No link-time dependency on vulkan-1 / libvulkan; the loader (or a driver such as
 #    SwiftShader) is resolved at run time.
@@ -134,7 +134,7 @@ add_library(DraftingWorkspace STATIC
 )
 add_dependencies(DraftingWorkspace DraftingShaderArchive)
 target_include_directories(DraftingWorkspace PUBLIC Source)
-target_link_libraries(DraftingWorkspace PUBLIC SolidArcRemastered DraftingVolk DraftingImGui DraftingTomlPlusPlus DraftingStb)
+target_link_libraries(DraftingWorkspace PUBLIC FrontierGeometryProcessing DraftingVolk DraftingImGui DraftingTomlPlusPlus DraftingStb)
 target_compile_definitions(DraftingWorkspace PRIVATE DRAFTING_FONT_PATH="${FRONTIER_ROOT}/EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf")
 if(NOT MSVC)
     target_compile_options(DraftingWorkspace PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
@@ -160,7 +160,7 @@ endif()
 add_executable(DraftingDocumentValidation Validation/DraftingDocumentValidation.cpp)
 target_link_libraries(DraftingDocumentValidation PRIVATE DraftingWorkspace)
 target_compile_definitions(DraftingDocumentValidation PRIVATE DRAFTING_VEHICLE_SAMPLE="${FRONTIER_ROOT}/Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml"
-                                                                     DRAFTING_STEP_FIXTURES="${FRONTIER_ROOT}/Experimental/SolidArcRemastered/Validation/StepFixtures")
+                                                                     DRAFTING_STEP_FIXTURES="${FRONTIER_ROOT}/Exhibits/GeometryProcessing/Code/StepFixtures")
 
 add_executable(DraftingViewportValidation Validation/DraftingViewportValidation.cpp)
 target_link_libraries(DraftingViewportValidation PRIVATE DraftingWorkspace)

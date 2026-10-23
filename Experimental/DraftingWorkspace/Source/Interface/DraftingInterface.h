@@ -74,9 +74,9 @@ enum class DraftingRepeatKind : uint8_t
 struct DraftingRepeat
 {
     DraftingRepeatKind          Kind      = DraftingRepeatKind::None;                        // [-]   - What to repeat
-    Modeller::BlendProfile      Shape     = Modeller::BlendProfile::Fillet;                  // [-]   - Blend
+    GeometryProcessing::BlendProfile      Shape     = GeometryProcessing::BlendProfile::Fillet;                  // [-]   - Blend
     double                      Size      = 0.0;                                             // [len] - Blend size
-    Modeller::FaceOperationKind Operation = Modeller::FaceOperationKind::Extrude;            // [-]   - Face verb
+    GeometryProcessing::FaceOperationKind Operation = GeometryProcessing::FaceOperationKind::Extrude;            // [-]   - Face verb
     double                      Amount    = 0.0;                                             // [-]   - Face amount (model units)
     DraftingConstructRequest    Construct = {};                                              // [-]   - Construct request
     DraftingBlendRequest        Blend     = {};                                              // [-]   - Blend request (variable sizes, flip)
@@ -96,14 +96,14 @@ struct DraftingBevelSession
     DraftingSessionVerb               Verb            = DraftingSessionVerb::Blend;          // [-]   - B (blend) / E (extrude)
     DraftingSessionVerb               PreviewVerb      = DraftingSessionVerb::Blend;          // [-]   - Verb the preview was built for
     bool                              PinnedCondition = false;                               // [-]   - Numeric entry pins the size
-    Modeller::BlendProfile            Shape           = Modeller::BlendProfile::Fillet;      // [-]   - Cross-section
+    GeometryProcessing::BlendProfile            Shape           = GeometryProcessing::BlendProfile::Fillet;      // [-]   - Cross-section
     double                            Size            = 0.25;                                // [len] - Radius / setback
     std::array<char, 32>              SizeText        = {};                                  // [-]   - Field text ("250mm", "0.25")
     std::unique_ptr<DraftingDocument> Preview         = {};                                  // [-]   - Staged document
     DraftingScene                     PreviewScene    = {};                                  // [-]   - Its display arrays
     std::string                       Refusal         = {};                                  // [-]   - Why Apply is disabled
     double                            StagedSize      = -1.0;                                // [len] - Size the preview was built at
-    Modeller::BlendProfile            StagedShape     = Modeller::BlendProfile::Fillet;      // [-]   - Shape the preview was built at
+    GeometryProcessing::BlendProfile            StagedShape     = GeometryProcessing::BlendProfile::Fillet;      // [-]   - Shape the preview was built at
     bool                              VariableEnabled = false;                               // [-]   - V: size varies along each edge
     double                            EndSize         = 0.0;                                 // [len] - Size at the far corners (0 = not chosen yet)
     std::array<char, 32>              EndSizeText     = {};                                  // [-]   - Field text
@@ -112,8 +112,8 @@ struct DraftingBevelSession
     double                            StagedEndSize   = -1.0;                                // [len] - EndSize the preview was built at
     bool                              StagedReversed  = false;                               // [-]   - Flip the preview was built at
     std::string                       ProfileLabel    = {};                                  // [-]   - Profile: sketch step extruded
-    Modeller::FeatureCombination      Combination     = Modeller::FeatureCombination::Union; // [-]   - Profile: Q union · W difference · E intersect · R new
-    Modeller::FeatureCombination      StagedCombination = Modeller::FeatureCombination::Union; // [-] - Combination the preview was built at
+    GeometryProcessing::FeatureCombination      Combination     = GeometryProcessing::FeatureCombination::Union; // [-]   - Profile: Q union · W difference · E intersect · R new
+    GeometryProcessing::FeatureCombination      StagedCombination = GeometryProcessing::FeatureCombination::Union; // [-] - Combination the preview was built at
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):
@@ -124,12 +124,12 @@ struct DraftingDrawingSession
 {
     bool                           ActiveCondition  = false;                                 // [-]   - Session open
     DraftingDrawingKind            Kind             = DraftingDrawingKind::Line;             // [-]   - Tool
-    std::vector<Modeller::Vector2> Points           = {};                                    // [len] - Committed clicks (plane coordinates)
-    Modeller::Vector2              Pointer          = {};                                    // [len] - Pointer on the plane (snapped)
+    std::vector<GeometryProcessing::Vector2> Points           = {};                                    // [len] - Committed clicks (plane coordinates)
+    GeometryProcessing::Vector2              Pointer          = {};                                    // [len] - Pointer on the plane (snapped)
     bool                           PointerCondition = false;                                 // [-]   - Pointer hits the plane
     int                            GridPlane        = 0;                                     // [-]   - 0 XY · 1 XZ · 2 YZ (fixed at open)
     bool                           CentreCondition  = false;                                 // [-]   - Rectangle: Alt centre mode · circle: V two-point mode off
-    Modeller::SketchSplineForm     Form             = Modeller::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
+    GeometryProcessing::SketchSplineForm     Form             = GeometryProcessing::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
     bool                           SquareCondition  = false;                                 // [-]   - Rectangle: s keeps the sides equal
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
 };
@@ -143,8 +143,8 @@ struct DraftingPointPicker
     DraftingSnap                           Current         = {};                             // [-]   - Snap under the pointer this frame
     DraftingSnap                           Placed          = {};                             // [-]   - Snap of the last placed point (t / n / b)
     DraftingSnapLockKind                   Lock            = DraftingSnapLockKind::None;     // [-]   - Direction lock (cleared by the next point)
-    Modeller::Vector3                      LockOrigin      = {};                             // [len] - Last placed point
-    Modeller::Vector3                      LockDirection   = {};                             // [-]   - Unit lock direction
+    GeometryProcessing::Vector3                      LockOrigin      = {};                             // [len] - Last placed point
+    GeometryProcessing::Vector3                      LockDirection   = {};                             // [-]   - Unit lock direction
     std::unique_ptr<DraftingSnapCatalogue> Catalogue       = {};                             // [-]   - Exact carriers of the shown scene
     size_t                                 SceneFaces      = 0;                              // [-]   - Scene face count the catalogue indexes
     int                                    Snapped         = 0;                              // [-]   - Points placed on object snaps (script evidence)
@@ -157,9 +157,9 @@ struct DraftingPoleDrag
     bool              ActiveCondition = false;                                               // [-]   - Pole grabbed
     std::string       Label           = {};                                                  // [-]   - SpaceCurve step
     int               Pole            = -1;                                                  // [-]   - Pole index
-    Modeller::Vector3 Origin          = {};                                                  // [len] - Pole at the press
-    Modeller::Vector3 Position        = {};                                                  // [len] - Pole under the pointer
-    Modeller::Vector3 Facing          = {};                                                  // [-]   - Drag plane normal (view ray at the press)
+    GeometryProcessing::Vector3 Origin          = {};                                                  // [len] - Pole at the press
+    GeometryProcessing::Vector3 Position        = {};                                                  // [len] - Pole under the pointer
+    GeometryProcessing::Vector3 Facing          = {};                                                  // [-]   - Drag plane normal (view ray at the press)
     std::string       HoverLabel      = {};                                                  // [-]   - Pole under the pointer (mode 1)
     int               HoverPole       = -1;                                                  // [-]   - Its index
     int               Commits         = 0;                                                   // [-]   - Accepted drags (script evidence)
@@ -192,7 +192,7 @@ struct DraftingMatcapShelf
 struct DraftingBooleanSession
 {
     bool                         ActiveCondition = false;                                    // [-] - Card open
-    Modeller::FeatureCombination Combination     = Modeller::FeatureCombination::Union;      // [-] - Chosen operation
+    GeometryProcessing::FeatureCombination Combination     = GeometryProcessing::FeatureCombination::Union;      // [-] - Chosen operation
     int                          Commits         = 0;                                        // [-] - Booleans applied (script evidence)
 };
 
@@ -204,8 +204,8 @@ struct DraftingTrimSession
     bool                           HoverCondition  = false;                                  // [-]   - A curve is under the pointer
     std::string                    Sketch          = {};                                     // [-]   - Hovered sketch step
     int                            Curve           = -1;                                     // [-]   - Hovered curve index
-    Modeller::Vector2              Pick            = {};                                     // [len] - Pointer on that sketch's plane
-    std::vector<Modeller::Vector3> Preview         = {};                                     // [len] - Piece that would come off (world)
+    GeometryProcessing::Vector2              Pick            = {};                                     // [len] - Pointer on that sketch's plane
+    std::vector<GeometryProcessing::Vector3> Preview         = {};                                     // [len] - Piece that would come off (world)
     std::string                    Refusal         = {};                                     // [-]   - Why the hovered piece cannot come off
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
 };
@@ -230,14 +230,14 @@ struct DraftingConstraintSession
     int                                 HoverConstraint      = -1;                            // [-]   - Glyph under the pointer (−1: none)
     int                                 PickedConstraint     = -1;                            // [-]   - Picked glyph (−1: none)
     bool                                PendingCondition     = false;                         // [-]   - D / N waits for a value
-    Modeller::SketchConstraint          Proposed             = {};                            // [-]   - The constraint D / N would add
+    GeometryProcessing::SketchConstraint          Proposed             = {};                            // [-]   - The constraint D / N would add
     std::string                         Typed                = {};                            // [-]   - Typed value (pending verb or picked dimension)
     bool                                PressCondition       = false;                         // [-]   - Left button went down on a point
     int                                 DragPoint            = -1;                            // [-]   - That point
     bool                                DragCondition        = false;                         // [-]   - The press travelled: dragging
-    Modeller::Vector2                   DragTarget           = {};                            // [len] - Pointer on the sketch plane (snapped)
+    GeometryProcessing::Vector2                   DragTarget           = {};                            // [len] - Pointer on the sketch plane (snapped)
     bool                                DragPreviewCondition = false;                         // [-]   - DragPreview is valid
-    Modeller::SketchModel               DragPreview          = {};                            // [-]   - The sketch as the drag would leave it
+    GeometryProcessing::SketchModel               DragPreview          = {};                            // [-]   - The sketch as the drag would leave it
     std::string                         Refusal              = {};                            // [-]   - Why the last verb / drag was refused
     int                                 Commits              = 0;                             // [-]   - Constraints added / removed / edited, drags (script evidence)
 };
@@ -265,13 +265,13 @@ struct DraftingTransformSession
     bool                              StartCondition     = false;                            // [-]   - Pointer anchor taken
     ImVec2                            Start              = {};                               // [px]  - Anchor (screen)
     ImVec2                            StartLocal         = {};                               // [px]  - Anchor (viewport)
-    Modeller::Vector3                 Pivot              = {};                               // [len] - Bounds centre of the bodies
+    GeometryProcessing::Vector3                 Pivot              = {};                               // [len] - Bounds centre of the bodies
     bool                              AnchorCondition    = false;                            // [-]   - Move started on an object snap
-    Modeller::Vector3                 Anchor             = {};                               // [len] - That snap point (moves onto the target snap)
+    GeometryProcessing::Vector3                 Anchor             = {};                               // [len] - That snap point (moves onto the target snap)
     std::string                       AnchorSource       = {};                               // [-]   - "Endpoint · Edge …"
     std::string                       Typed              = {};                               // [-]   - Typed amount
-    Modeller::AffineMap               Map                = {};                               // [-]   - Current map
-    Modeller::AffineMap               StagedMap          = {};                               // [-]   - Map the preview shows
+    GeometryProcessing::AffineMap               Map                = {};                               // [-]   - Current map
+    GeometryProcessing::AffineMap               StagedMap          = {};                               // [-]   - Map the preview shows
     bool                              StagedCondition    = false;                            // [-]   - A preview was built
     std::unique_ptr<DraftingDocument> Preview            = {};                               // [-]   - Staged document
     DraftingScene                     PreviewScene       = {};                               // [-]   - Its display arrays
@@ -307,12 +307,12 @@ struct DraftingSweepSession
     double                                      Amount            = 0.1;                     // [len] - Offset distance / pipe radius ([°] revolve angle)
     double                                      Drift             = 0.0;                     // [len] - Unsnapped pointer amount
     std::string                                 Typed             = {};                      // [-]   - Typed amount
-    Modeller::FeatureCombination                Combination       = Modeller::FeatureCombination::Separate; // [-] - Pipe: Q / W / E / R
+    GeometryProcessing::FeatureCombination                Combination       = GeometryProcessing::FeatureCombination::Separate; // [-] - Pipe: Q / W / E / R
     double                                      StagedAmount      = -1.0e300;                // [len] - Amount the preview shows
-    Modeller::FeatureCombination                StagedCombination = Modeller::FeatureCombination::Separate; // [-] - Its combination
+    GeometryProcessing::FeatureCombination                StagedCombination = GeometryProcessing::FeatureCombination::Separate; // [-] - Its combination
     std::unique_ptr<DraftingDocument>           Preview           = {};                      // [-]   - Pipe: staged document
     DraftingScene                               PreviewScene      = {};                      // [-]   - Its display arrays
-    std::vector<std::vector<Modeller::Vector3>> Outline           = {};                      // [len] - Offset: preview curves (world)
+    std::vector<std::vector<GeometryProcessing::Vector3>> Outline           = {};                      // [len] - Offset: preview curves (world)
     std::string                                 Refusal           = {};                      // [-]   - Why commit is refused
     int                                         Commits           = 0;                       // [-]   - Committed (script evidence)
 };
@@ -466,7 +466,7 @@ struct DraftingWorkspaceState
     DraftingConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
     bool                                  ConstructOpen  = false;                            // [-]   - Construct dialog requested
     bool                                  ConstructShown = false;                            // [-]   - Construct dialog drawn this frame
-    Modeller::FaceOperationKind           FaceVerb       = Modeller::FaceOperationKind::Push; // [-]  - Face-edit verb
+    GeometryProcessing::FaceOperationKind           FaceVerb       = GeometryProcessing::FaceOperationKind::Push; // [-]  - Face-edit verb
     double                                FaceAmount     = 0.25;                             // [-]   - Face-edit amount (by verb)
     std::string                           FocusedStep    = {};                               // [-]   - Outliner row (step label)
     std::string                           DocumentPath   = {};                               // [-]   - Save / Open path

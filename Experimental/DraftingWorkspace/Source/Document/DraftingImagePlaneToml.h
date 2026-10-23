@@ -57,7 +57,7 @@ namespace Frontier::DraftingWorkspace
         if (const toml::array* Crop = View["Crop"].as_array(); Crop && Crop->size() == 4)
             for (int Side = 0; Side < 4; ++Side) Plane.Crop[Side] = static_cast<int>((*Crop)[Side].value_or(int64_t{ -1 }));
         else if (View["Crop"]) return "image plane " + std::to_string(Index + 1) + ": Crop must be [left, top, right, bottom]";
-        Modeller::Vector3* Targets[3] = { &Plane.Corner, &Plane.Right, &Plane.Down };
+        GeometryProcessing::Vector3* Targets[3] = { &Plane.Corner, &Plane.Right, &Plane.Down };
         const char*        Keys[3]    = { "Corner", "Right", "Down" };
         for (int Key = 0; Key < 3; ++Key)
         {
@@ -65,7 +65,7 @@ namespace Frontier::DraftingWorkspace
             std::optional<double> Values[3];
             if (Triple && Triple->size() == 3) for (int Axis = 0; Axis < 3; ++Axis) Values[Axis] = (*Triple)[Axis].value<double>();
             if (!Values[0] || !Values[1] || !Values[2]) return "image plane " + std::to_string(Index + 1) + ": " + Keys[Key] + " is not [x, y, z]";
-            *Targets[Key] = Modeller::Vector3{ *Values[0], *Values[1], *Values[2] } * Scale;
+            *Targets[Key] = GeometryProcessing::Vector3{ *Values[0], *Values[1], *Values[2] } * Scale;
         }
         if (const std::string Refusal = ExamineDraftingImagePlane(Plane); !Refusal.empty()) return Refusal;
         Decoded.push_back(std::move(Plane));

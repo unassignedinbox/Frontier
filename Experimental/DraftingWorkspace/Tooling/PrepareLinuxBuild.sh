@@ -3,24 +3,24 @@
 #                                                    PREPARELINUXBUILD.SH
 #====================================================================================================================================
 # 🧩 The README's Linux build in one idempotent script (every step skips when its output exists), run from the repository root:
-#    bash Experimental/DraftingWorkspace/Tooling/PrepareLinuxBuild.sh [kernel] [workspace] [swiftshader] [slang] [exchange]
-#    No arguments: kernel, workspace and swiftshader. Tools (cmake, ninja) come from a venv under _ClaudeScratch/.
+#    bash Experimental/DraftingWorkspace/Tooling/PrepareLinuxBuild.sh [geometry] [workspace] [swiftshader] [slang] [exchange]
+#    No arguments: geometry, workspace and swiftshader. Tools (cmake, ninja) come from a venv under _ClaudeScratch/.
 #    exchange: trimesh and OpenCascade (cadquery-ocp) for Tooling/ExchangeCrossCheck.py, plus a no-op libGL.so.1 for hosts
 #    without OpenGL (OCP links its viewer against it; STEP reading never calls it): LD_LIBRARY_PATH=_ClaudeScratch/stubs.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-Steps="${*:-kernel workspace swiftshader}"
+Steps="${*:-geometry workspace swiftshader}"
 Venv=_ClaudeScratch/.venv
 mkdir -p _ClaudeScratch/tmp
 if [ ! -x $Venv/bin/ninja ]; then python3 -m venv $Venv && $Venv/bin/pip install -q cmake ninja matplotlib ezdxf; fi
 export PATH="$PWD/$Venv/bin:$PATH"
 
 #------------------------------------------------------------------------------------------------------------------------
-#                                                    KERNEL
+#                                              GEOMETRY PROCESSING
 #------------------------------------------------------------------------------------------------------------------------
-if [[ " $Steps " == *" kernel "* ]]; then
-    cmake -S Experimental/SolidArcRemastered -B _ClaudeScratch/build/kernel -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > /dev/null
-    ninja -C _ClaudeScratch/build/kernel -j2
+if [[ " $Steps " == *" geometry "* ]]; then
+    cmake -S Exhibits/GeometryProcessing/Code -B _ClaudeScratch/build/GeometryProcessing -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 > /dev/null
+    ninja -C _ClaudeScratch/build/GeometryProcessing -j2
 fi
 
 #------------------------------------------------------------------------------------------------------------------------

@@ -58,7 +58,7 @@ Evidence: W14 (planes, picture decode, codec, refusals, axis cylinders), `Bluepr
 | `Tooling/TraceBlueprintSections.py` | Calibration → silhouettes (side roof / underside, plan width, front width) → faired sections + image planes |
 | `Tooling/ComposeSyntheticBonnet.py` | Regenerates all three samples (SyntheticBonnet.toml stays bit-identical) |
 | `../DraftingWorkspace/Source/Document/VehicleCurveImport.*` | `DecodeVehicleCurves` · `ReadVehicleCurves` · `EncodeVehicleCurves` |
-| `../SolidArcRemastered/Source/Surfacing/` | `CurveFitting` (V2, plus end tangents and planar fits), `SectionLoft` (V4, V6), `CurveNetwork` (V5), `PanelAssembly` (V7), `SurfaceAlgebra`, `LinearSystem` |
+| `../GeometryProcessing/Source/Surfacing/` | `CurveFitting` (V2, plus end tangents and planar fits), `SectionLoft` (V4, V6), `CurveNetwork` (V5), `PanelAssembly` (V7), `SurfaceAlgebra`, `LinearSystem` |
 
 ## Workflow
 

@@ -10,7 +10,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
-#include "Geometry/VectorAlgebra.h"
+#include "Engine/GeometryProcessing/Geometry/VectorAlgebra.h"
 
 #include <array>
 #include <cstdint>
@@ -19,8 +19,6 @@
 
 namespace Frontier::DraftingWorkspace
 {
-
-namespace Modeller = Frontier::SolidArcRemastered;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    TYPES
@@ -34,9 +32,9 @@ struct DraftingImagePlane
     std::string                Name             = {};                                        // [-]    - "Side", "Top", "Front"
     std::string                Path             = {};                                        // [-]    - Picture file (PNG / JPEG / BMP / GIF)
     std::array<int, 4>         Crop             = { 0, 0, 0, 0 };                            // [px]   - Left, top, right, bottom (0 0 0 0: whole picture)
-    Modeller::Vector3          Corner           = {};                                        // [len]  - World position of the crop's top-left corner
-    Modeller::Vector3          Right            = {};                                        // [len]  - World span of the crop width
-    Modeller::Vector3          Down             = {};                                        // [len]  - World span of the crop height
+    GeometryProcessing::Vector3          Corner           = {};                                        // [len]  - World position of the crop's top-left corner
+    GeometryProcessing::Vector3          Right            = {};                                        // [len]  - World span of the crop width
+    GeometryProcessing::Vector3          Down             = {};                                        // [len]  - World span of the crop height
     double                     Opacity          = 0.6;                                       // [0-1]  - Line-art ink opacity
     bool                       VisibleCondition = true;                                      // [-]    - Drawn in the viewport
 };
@@ -62,7 +60,7 @@ struct DraftingPicture
 [[nodiscard]] std::string ResolveDraftingImagePath(const std::string& Path, const std::string& NamingFile);
 
 // The world point at crop fraction (s, t); and the plane check used by the import (non-degenerate, finite).
-[[nodiscard]] Modeller::Vector3 LocateDraftingImagePoint(const DraftingImagePlane& Plane, double Across, double Downward) noexcept;
+[[nodiscard]] GeometryProcessing::Vector3 LocateDraftingImagePoint(const DraftingImagePlane& Plane, double Across, double Downward) noexcept;
 [[nodiscard]] std::string       ExamineDraftingImagePlane(const DraftingImagePlane& Plane);
 
 } // namespace Frontier::DraftingWorkspace

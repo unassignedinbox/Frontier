@@ -16,11 +16,11 @@
 
 | Path | Contents | Now |
 |---|---|---|
-| `Engine/GeometryProcessing/` | topology, geometry, Booleans, blends, sketch solver, exchange, tessellation, assembly, drawing | `Experimental/SolidArcRemastered/Source/` |
+| `Engine/GeometryProcessing/` | topology, geometry, Booleans, blends, sketch solver, exchange, tessellation, assembly, drawing | `Engine/GeometryProcessing/` |
 | `Engine/Render/` (shared camera) | orbit camera mathematics, framing, view presets, picking ray | `Experimental/DraftingWorkspace/Source/Viewport/DraftingCamera.*` |
 | `UI/SolidArc/` | Outliner, Viewport, Inspector panels, Plasticity navigation and keymap | `Experimental/DraftingWorkspace/Source/Interface/` |
 | `Experimental/SolidArc/Native/` | `SolidArcApplication.cpp` → exe `SolidArcWorkspace` | DraftingWorkspace host |
-| `Exhibits/SolidArc/{README.md, Code, Images, Results}` | validation, walkthroughs, captures | `Exhibits/DraftingWorkspace`, `Exhibits/SolidArcRemastered` |
+| `Exhibits/SolidArc/{README.md, Code, Images, Results}` | validation, walkthroughs, captures | `Exhibits/DraftingWorkspace`, `Exhibits/GeometryProcessing` |
 
 ## 🏁 Steps
 
@@ -35,7 +35,14 @@
 | S6 | Validation to `Exhibits/SolidArc/`; Windows cross-build and package | test tables + `.exe` |
 | S7 | PR into upstream `Frontier` after PR #16 merges (Actions only with approval) | merged tree builds |
 
+## 🚧 Progress
+
+| Step | State |
+|---|---|
+| S0 | 🚧 3 HTML reference captures in `Exhibits/SolidArc/Images/HtmlReference/` (empty, example loaded, body selected) |
+| S2 (library move) | 🟢 `Experimental/SolidArcRemastered` → `Engine/GeometryProcessing` (library `FrontierGeometryProcessing`, namespace `Frontier::GeometryProcessing`, root-relative includes); validation, tooling and viewer → `Exhibits/GeometryProcessing/Code`; tables → `Results/`, galleries → `Images/`. The HTML app's legacy service `Engine/Modelling/SolidArc` → `Experimental/SolidArc/Service`. Gates: GeometryProcessing ctest 30/30 (3025 s), DraftingDocumentValidation 🟢, HTML service rebuilt from the new path |
+
 ## ⚠️ Open points
 
-- 🚩 Upstream write access: the invitation (write) to `SultanAladin/Frontier` is pending, not accepted.
+- 🟢 Upstream write access: accepted (`push: true` on `SultanAladin/Frontier`).
 - 🚩 The histories are unrelated (`git merge-base` is empty), so the port lands as new commits on top of upstream `Frontier`, not as a merge of this branch.

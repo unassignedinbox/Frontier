@@ -17,7 +17,7 @@ Full per-specimen table: [Results/RollingBallStationResults.md](Results/RollingB
 
 ## Stage 2: kernel integration, proven in the SolidArc editor
 
-`Engine/Modelling/SolidArc/Kernel/RollingBallBlend.{h,cpp}` builds the blend on real B-rep topology (imprint-and-replace,
+`Experimental/SolidArc/Service/Kernel/RollingBallBlend.{h,cpp}` builds the blend on real B-rep topology (imprint-and-replace,
 no booleans) and is the default `beveladd` route; the legacy `BlendSolver` remains only as a fallback.
 
 | Evidence | Result | File |

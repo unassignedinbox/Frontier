@@ -21,7 +21,7 @@
 namespace Frontier::DraftingWorkspace
 {
 
-using namespace Frontier::SolidArcRemastered;
+using namespace Frontier::GeometryProcessing;
 
 namespace
 {
@@ -465,7 +465,7 @@ constexpr int64_t FormatVersion = 1;                                            
 {
     static const char* Axes[] = { "X", "Y", "Z", "Face" };
     const DraftingTitleFields& Title = Settings.Title;
-    return toml::table{ { "Paper", std::string(Modeller::DrawingPaperLabel(Settings.Paper)) }, { "Angle", std::string(Settings.Angle == Modeller::DrawingProjectionAngle::First ? "First" : "Third") },
+    return toml::table{ { "Paper", std::string(GeometryProcessing::DrawingPaperLabel(Settings.Paper)) }, { "Angle", std::string(Settings.Angle == GeometryProcessing::DrawingProjectionAngle::First ? "First" : "Third") },
                         { "Scale", Settings.Scale }, { "Isometric", Settings.IsometricEnabled }, { "Section", Settings.SectionEnabled },
                         { "SectionAxis", std::string(Axes[static_cast<int>(Settings.Section.Axis)]) }, { "SectionOffset", Settings.Section.Offset },
                         { "SectionFlipped", Settings.Section.Flipped }, { "SectionFace", Settings.Section.Face }, { "HiddenLines", Settings.HiddenLinesEnabled },
@@ -483,11 +483,11 @@ constexpr int64_t FormatVersion = 1;                                            
     bool Known = false;
     for (int Index = 0; Index < 5; ++Index)
     {
-        if (Paper == Modeller::DrawingPaperLabel(static_cast<Modeller::DrawingPaperSize>(Index))) { Settings.Paper = static_cast<Modeller::DrawingPaperSize>(Index); Known = true; }
+        if (Paper == GeometryProcessing::DrawingPaperLabel(static_cast<GeometryProcessing::DrawingPaperSize>(Index))) { Settings.Paper = static_cast<GeometryProcessing::DrawingPaperSize>(Index); Known = true; }
     }
     if (!Known) return "DrawingSheet: unknown paper " + Paper + " (A4 … A0)";
     if (Angle != "First" && Angle != "Third") return "DrawingSheet: unknown projection angle " + Angle + " (First / Third)";
-    Settings.Angle = Angle == "First" ? Modeller::DrawingProjectionAngle::First : Modeller::DrawingProjectionAngle::Third;
+    Settings.Angle = Angle == "First" ? GeometryProcessing::DrawingProjectionAngle::First : GeometryProcessing::DrawingProjectionAngle::Third;
     Settings.Scale = Root["Scale"].value_or(0.0);
     if (!(Settings.Scale >= 0.0)) return "DrawingSheet: the scale must be 0 (automatic) or positive";
     static const char* Axes[] = { "X", "Y", "Z", "Face" };
@@ -536,7 +536,7 @@ std::string EncodeDraftingDocument(const DraftingDocument& Document)
     if (!DefaultAppearanceCondition(Document.Appearance)) Root.insert("Appearance", EncodeAppearance(Document.Appearance));
     if (!DefaultDraftingDrawingSheetCondition(Document.DrawingSheet)) Root.insert("DrawingSheet", EncodeDrawingSheet(Document.DrawingSheet));
     std::ostringstream Stream;
-    Stream << "# DraftingWorkspace document — feature tree of SolidArcRemastered (regenerated on load)\n";
+    Stream << "# DraftingWorkspace document — feature tree of GeometryProcessing (regenerated on load)\n";
     Stream << Root << "\n";
     return Stream.str();
 }

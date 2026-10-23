@@ -28,7 +28,7 @@
 namespace Frontier::DraftingWorkspace
 {
 
-using namespace Modeller;
+using namespace Frontier::GeometryProcessing;
 
 namespace
 {
@@ -3694,8 +3694,8 @@ std::string DescribeDrawingSheet(const DraftingWorkspaceState& State)
 {
     const DraftingDrawingSheet& Sheet = State.DrawingSheet.Sheet;
     if (!Sheet.Refusal.empty()) return Sheet.Refusal;
-    std::string Text = Compose("Drawing sheet %s · %s · ", Modeller::DrawingPaperLabel(State.Document.DrawingSheet.Paper), Sheet.Sheet.ScaleLabel.c_str());
-    Text += Sheet.Sheet.Angle == Modeller::DrawingProjectionAngle::First ? "first angle" : "third angle";
+    std::string Text = Compose("Drawing sheet %s · %s · ", GeometryProcessing::DrawingPaperLabel(State.Document.DrawingSheet.Paper), Sheet.Sheet.ScaleLabel.c_str());
+    Text += Sheet.Sheet.Angle == GeometryProcessing::DrawingProjectionAngle::First ? "first angle" : "third angle";
     Text += Compose(" · %d views · %d dimensions", int(Sheet.Sheet.Views.size()), int(Sheet.Sheet.Dimensions.size()));
     return Text;
 }
@@ -3735,7 +3735,7 @@ void ReviseDrawingSheet(DraftingWorkspaceState& State, const std::function<void(
 // − / + step through the ISO 5455 scales from the one in force (the automatic choice included); Auto returns to 0.
 void StepDrawingSheetScale(DraftingWorkspaceState& State, int Direction)
 {
-    const std::vector<double> Scales  = Modeller::EnumerateStandardScales();                 // Largest first
+    const std::vector<double> Scales  = GeometryProcessing::EnumerateStandardScales();                 // Largest first
     const double              Current = State.Document.DrawingSheet.Scale > 0.0 ? State.Document.DrawingSheet.Scale : State.DrawingSheet.Sheet.Sheet.Scale;
     int Nearest = 0;
     for (int Index = 1; Index < int(Scales.size()); ++Index)
@@ -3785,13 +3785,13 @@ void DrawDrawingSheetCard(DraftingWorkspaceState& State)
     {
         if (Paper) ImGui::SameLine();
         if (ToggleButton(State, PaperLabels[Paper], int(Settings.Paper) == Paper, ImVec2(Fifth, 0)))
-            ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Revised) { Revised.Paper = Modeller::DrawingPaperSize(Paper); });
+            ReviseDrawingSheet(State, [&](DraftingDrawingSheetSettings& Revised) { Revised.Paper = GeometryProcessing::DrawingPaperSize(Paper); });
     }
-    if (ToggleButton(State, "First angle###SheetFirstAngle", Settings.Angle == Modeller::DrawingProjectionAngle::First, ImVec2(Half, 0)))
-        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = Modeller::DrawingProjectionAngle::First; });
+    if (ToggleButton(State, "First angle###SheetFirstAngle", Settings.Angle == GeometryProcessing::DrawingProjectionAngle::First, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = GeometryProcessing::DrawingProjectionAngle::First; });
     ImGui::SameLine();
-    if (ToggleButton(State, "Third angle###SheetThirdAngle", Settings.Angle == Modeller::DrawingProjectionAngle::Third, ImVec2(Half, 0)))
-        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = Modeller::DrawingProjectionAngle::Third; });
+    if (ToggleButton(State, "Third angle###SheetThirdAngle", Settings.Angle == GeometryProcessing::DrawingProjectionAngle::Third, ImVec2(Half, 0)))
+        ReviseDrawingSheet(State, [](DraftingDrawingSheetSettings& Revised) { Revised.Angle = GeometryProcessing::DrawingProjectionAngle::Third; });
     const std::string ScaleCaption = (Settings.Scale > 0.0 ? "Scale " : "Auto ") + Session.Sheet.Sheet.ScaleLabel + "###SheetScaleAuto";
     if (PressButton(State, "-###SheetScaleSmaller", ImVec2(34, 0))) StepDrawingSheetScale(State, -1);
     ImGui::SameLine();
@@ -3839,7 +3839,7 @@ void DrawDrawingSheetCard(DraftingWorkspaceState& State)
     else
     {
         std::string Views;
-        for (const Modeller::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " · ") + View.Label;
+        for (const GeometryProcessing::PlacedDrawingView& View : Sheet.Sheet.Views) Views += (Views.empty() ? "" : " · ") + View.Label;
         ImGui::TextWrapped("%s", Views.c_str());
         ImGui::TextDisabled("%d body · %d dimensions · %d lines · %.0f ms%s", Sheet.Bodies, int(Sheet.Sheet.Dimensions.size()), int(Sheet.Sheet.Lines.size()), Sheet.Milliseconds,
                             Sheet.Sheets ? Compose(" · %d sheet(s) skipped", Sheet.Sheets).c_str() : "");
@@ -3896,8 +3896,8 @@ void DrawDrawingSheetPaper(DraftingWorkspaceState& State, ImDrawList* Canvas, Im
     RefreshDrawingSheet(State);
     ImGuiIO& Io = ImGui::GetIO();
     Canvas->AddRectFilled(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), IM_COL32(0x3a, 0x3f, 0x4a, 0xff), PanelRounding, ImDrawFlags_RoundCornersBottom);
-    const Modeller::DrawingSheet& Sheet = Session.Sheet.Sheet;
-    const Modeller::Vector2 Paper = Session.Sheet.Refusal.empty() ? Modeller::Vector2{ Sheet.Width, Sheet.Height } : Modeller::DrawingPaperDimensions(State.Document.DrawingSheet.Paper);
+    const GeometryProcessing::DrawingSheet& Sheet = Session.Sheet.Sheet;
+    const GeometryProcessing::Vector2 Paper = Session.Sheet.Refusal.empty() ? GeometryProcessing::Vector2{ Sheet.Width, Sheet.Height } : GeometryProcessing::DrawingPaperDimensions(State.Document.DrawingSheet.Paper);
     const float  Fit    = std::max(1.0e-3f, std::min((Extent.x - 48.0f) / float(Paper.X), (Extent.y - 48.0f) / float(Paper.Y)));
     const ImVec2 Centre(Image.x + 0.5f * Extent.x, Image.y + 0.5f * Extent.y);
     if (Hovered && Io.MouseWheel != 0.0f)
@@ -3917,7 +3917,7 @@ void DrawDrawingSheetPaper(DraftingWorkspaceState& State, ImDrawList* Canvas, Im
     if (Hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { Session.Zoom = 1.0f; Session.Pan = {}; }
     const float  Scale = Fit * Session.Zoom;                                                  // [px/mm]
     const ImVec2 Corner(Centre.x + Session.Pan[0] - 0.5f * float(Paper.X) * Scale, Centre.y + Session.Pan[1] - 0.5f * float(Paper.Y) * Scale);
-    const auto   Map = [&](const Modeller::Vector2& Point) { return ImVec2(Corner.x + float(Point.X) * Scale, Corner.y + float(Paper.Y - Point.Y) * Scale); };
+    const auto   Map = [&](const GeometryProcessing::Vector2& Point) { return ImVec2(Corner.x + float(Point.X) * Scale, Corner.y + float(Paper.Y - Point.Y) * Scale); };
 
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     Canvas->AddRectFilled(ImVec2(Corner.x + 4, Corner.y + 4), ImVec2(Corner.x + float(Paper.X) * Scale + 4, Corner.y + float(Paper.Y) * Scale + 4), IM_COL32(0, 0, 0, 0x50));
@@ -3933,19 +3933,19 @@ void DrawDrawingSheetPaper(DraftingWorkspaceState& State, ImDrawList* Canvas, Im
     static const LayerStyle Styles[] = { { 0.50f, {} }, { 0.25f, { 3.0f, 1.5f } }, { 0.18f, {} }, { 0.50f, {} }, { 0.18f, {} }, { 0.25f, {} },
                                          { 0.18f, { 8.0f, 1.5f, 1.0f, 1.5f } }, { 0.50f, { 8.0f, 1.5f, 1.0f, 1.5f } }, { 0.70f, {} }, { 0.35f, {} } };
     const ImU32 Ink = IM_COL32(0x10, 0x12, 0x16, 0xff);
-    for (const Modeller::SheetPolyline& Line : Sheet.Lines)
+    for (const GeometryProcessing::SheetPolyline& Line : Sheet.Lines)
     {
         const LayerStyle& Style = Styles[std::min<size_t>(size_t(Line.Layer), std::size(Styles) - 1)];
         std::vector<ImVec2> Pixels;
         Pixels.reserve(Line.Points.size());
-        for (const Modeller::Vector2& Point : Line.Points) Pixels.push_back(Map(Point));
+        for (const GeometryProcessing::Vector2& Point : Line.Points) Pixels.push_back(Map(Point));
         std::vector<float> Dashes;
         for (const float Dash : Style.Dashes) Dashes.push_back(std::max(1.5f, Dash * Scale));
         DrawPatternedPolyline(Canvas, Pixels, Dashes, Ink, std::max(1.0f, Style.Width * Scale));
     }
-    for (const Modeller::SheetSolid& Solid : Sheet.Solids) Canvas->AddTriangleFilled(Map(Solid.Corners[0]), Map(Solid.Corners[1]), Map(Solid.Corners[2]), Ink);
+    for (const GeometryProcessing::SheetSolid& Solid : Sheet.Solids) Canvas->AddTriangleFilled(Map(Solid.Corners[0]), Map(Solid.Corners[1]), Map(Solid.Corners[2]), Ink);
     ImFont* Font = ImGui::GetFont();
-    for (const Modeller::SheetText& Text : Sheet.Texts)
+    for (const GeometryProcessing::SheetText& Text : Sheet.Texts)
     {
         const float Pixels = float(Text.Height) * Scale / 0.70f;                             // [px] - Em from the cap height
         if (Pixels < 3.0f) continue;
@@ -3954,7 +3954,7 @@ void DrawDrawingSheetPaper(DraftingWorkspaceState& State, ImDrawList* Canvas, Im
         const float  Width  = Font->CalcTextSizeA(Pixels, FLT_MAX, 0.0f, Content.c_str()).x;
         const float  Ascent = Font->GetFontBaked(Pixels)->Ascent;
         const ImVec2 Anchor = Map(Text.Position);
-        const float  Shift  = Text.Anchor == Modeller::SheetTextAnchor::Middle ? -0.5f * Width : Text.Anchor == Modeller::SheetTextAnchor::End ? -Width : 0.0f;
+        const float  Shift  = Text.Anchor == GeometryProcessing::SheetTextAnchor::Middle ? -0.5f * Width : Text.Anchor == GeometryProcessing::SheetTextAnchor::End ? -Width : 0.0f;
         const int    First  = Canvas->VtxBuffer.Size;
         Canvas->AddText(Font, Pixels, ImVec2(Anchor.x + Shift, Anchor.y - Ascent), Ink, Content.c_str());
         if (Text.Angle == 0.0) continue;
@@ -4341,7 +4341,7 @@ void DrawHeader(DraftingWorkspaceState& State, const ImVec2 Frame)
     ImGui::TextUnformatted("DraftingWorkspace");
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted("SolidArcRemastered · Vulkan · Slang");
+    ImGui::TextUnformatted("GeometryProcessing · Vulkan · Slang");
     ImGui::PopStyleColor();
     ImGui::SameLine(0, 28);
     if (PressButton(State, "New###HeaderNew")) StartNewDocument(State);
@@ -5634,7 +5634,7 @@ void DrawImagePlaneCard(DraftingWorkspaceState& State)
         {
             const size_t Picture = size_t(Found - State.Pictures.Paths.begin());
             if (!State.Pictures.Refusals[Picture].empty()) ImGui::TextColored(Tint(RefusalColour), "%s", State.Pictures.Refusals[Picture].c_str());
-            else ImGui::TextDisabled("%u × %u px · %.3f × %.3f m", State.Pictures.Widths[Picture], State.Pictures.Heights[Picture], Modeller::Length(Plane.Right), Modeller::Length(Plane.Down));
+            else ImGui::TextDisabled("%u × %u px · %.3f × %.3f m", State.Pictures.Widths[Picture], State.Pictures.Heights[Picture], GeometryProcessing::Length(Plane.Right), GeometryProcessing::Length(Plane.Down));
         }
         ImGui::PopID();
     }

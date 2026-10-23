@@ -16,22 +16,22 @@
 | `Code/GenerateFeatureCorpus.py` | writes `Code/FeatureCorpus.arc`; holds every closed-form volume (`#= V`) |
 | `Code/FeatureCorpus.arc` | sections A primitives · B sketch→solid · C booleans · D blends · E face ops · F transforms · G naming · H regeneration |
 | `Code/RegenerationProbe.cpp` | section H in isolation, with and without `beveladd` |
-| `Engine/Modelling/SolidArc/Verification/FeatureSuitabilityVerification.cpp` | corpus runner; `{id:}`, `{face:}`, `{rim:}` tokens resolved against the live body |
-| `Engine/Modelling/SolidArc/Verification/BrepDefectVerification.cpp` | defect specimens |
-| `Engine/Modelling/SolidArc/Verification/DocumentAuditVerification.cpp` | document replay + audit |
-| `Engine/Modelling/SolidArc/Verification/QuadratureVolume.h` | exact-surface divergence-theorem volume shared by all harnesses |
+| `Experimental/SolidArc/Service/Verification/FeatureSuitabilityVerification.cpp` | corpus runner; `{id:}`, `{face:}`, `{rim:}` tokens resolved against the live body |
+| `Experimental/SolidArc/Service/Verification/BrepDefectVerification.cpp` | defect specimens |
+| `Experimental/SolidArc/Service/Verification/DocumentAuditVerification.cpp` | document replay + audit |
+| `Experimental/SolidArc/Service/Verification/QuadratureVolume.h` | exact-surface divergence-theorem volume shared by all harnesses |
 
 ## Run (repository root)
 
 ```
 OBJS=$(ls _ClaudeScratch/build/SolidArcNative/*.o | grep -vE "GeometryHost|GeometryExchange|/main\.o")
 for T in FeatureSuitabilityVerification BrepDefectVerification DocumentAuditVerification; do
-  g++ -std=c++20 -O2 -IEngine/Modelling/SolidArc -o _ClaudeScratch/build/$T Engine/Modelling/SolidArc/Verification/$T.cpp $OBJS; done
+  g++ -std=c++20 -O2 -IExperimental/SolidArc/Service -o _ClaudeScratch/build/$T Experimental/SolidArc/Service/Verification/$T.cpp $OBJS; done
 python3 Exhibits/DraftingArchitecture/Code/GenerateFeatureCorpus.py
 ./_ClaudeScratch/build/FeatureSuitabilityVerification Exhibits/DraftingArchitecture/Code/FeatureCorpus.arc > FeatureSuitability.md   # ~50 s
 ./_ClaudeScratch/build/BrepDefectVerification > BrepDefects.md                                                                         # ~10 s
 ./_ClaudeScratch/build/DocumentAuditVerification Exhibits/RollingBallBlend/Code/BevelLab.arc Experimental/SolidArc/Native/Fixtures/MixedCapCorner.arc \
-  Experimental/SolidArc/public/examples/*.arc Engine/Modelling/SolidArc/Samples/*.arc > DocumentAudit.md                               # ~2 min
+  Experimental/SolidArc/public/examples/*.arc Experimental/SolidArc/Service/Samples/*.arc > DocumentAudit.md                               # ~2 min
 ```
 
 The objects come from `python3 Native/CompileSequence.py --native` (cwd `Experimental/SolidArc`).

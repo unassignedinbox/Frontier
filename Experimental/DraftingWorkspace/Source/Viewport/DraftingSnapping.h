@@ -13,9 +13,9 @@
 
 #include "Viewport/DraftingCamera.h"
 
-#include "Geometry/CurveGeometry.h"
-#include "Geometry/SurfaceGeometry.h"
-#include "Sketch/SketchProfile.h"
+#include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
+#include "Engine/GeometryProcessing/Geometry/SurfaceGeometry.h"
+#include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 
 #include <cstdint>
 #include <map>
@@ -77,9 +77,9 @@ struct DraftingSnapFilter
 struct DraftingSnap
 {
     DraftingSnapKind  Kind     = DraftingSnapKind::None;                                     // [-]   - What it is
-    Modeller::Vector3 Position = {};                                                         // [len] - Snapped world point (exact)
-    Modeller::Vector3 Tangent  = {};                                                         // [-]   - Unit tangent (curves)
-    Modeller::Vector3 Normal   = {};                                                         // [-]   - Unit normal (curves, faces, circle axis)
+    GeometryProcessing::Vector3 Position = {};                                                         // [len] - Snapped world point (exact)
+    GeometryProcessing::Vector3 Tangent  = {};                                                         // [-]   - Unit tangent (curves)
+    GeometryProcessing::Vector3 Normal   = {};                                                         // [-]   - Unit normal (curves, faces, circle axis)
     std::string       Source   = {};                                                         // [-]   - "Edge E12", "Line3 · Sketch1", "Face F4"
     double            Pixels   = 0.0;                                                        // [px]  - Pointer → snapped point on screen
 };
@@ -90,26 +90,26 @@ struct DraftingSnapCurve
 {
     std::string                               Source         = {};                           // [-]   - Shown name
     std::string                               Body           = {};                           // [-]   - Owning body key (edges; empty otherwise)
-    std::optional<Modeller::CurveGeometry>    Carrier        = {};                           // [-]   - Kernel carrier (edges, SpaceCurves)
+    std::optional<GeometryProcessing::CurveGeometry>    Carrier        = {};                           // [-]   - Kernel carrier (edges, SpaceCurves)
     double                                    Low            = 0.0;                          // [-]   - Parameter range
     double                                    High           = 1.0;                          // [-]   - Parameter range
-    std::optional<Modeller::ProfileSegment>   Segment        = {};                           // [-]   - Sketch segment (fraction 0 … 1)
-    Modeller::OrthonormalFrame                Plane          = {};                           // [-]   - Sketch plane (Segment)
+    std::optional<GeometryProcessing::ProfileSegment>   Segment        = {};                           // [-]   - Sketch segment (fraction 0 … 1)
+    GeometryProcessing::OrthonormalFrame                Plane          = {};                           // [-]   - Sketch plane (Segment)
     bool                                      PlanarCondition = false;                       // [-]   - Lies in the plane ⊥ PlaneNormal
-    Modeller::Vector3                         PlaneNormal    = {};                           // [-]   - Unit (planar curves)
-    std::optional<Modeller::Vector3>          Centre         = {};                           // [len] - Circle / arc centre
+    GeometryProcessing::Vector3                         PlaneNormal    = {};                           // [-]   - Unit (planar curves)
+    std::optional<GeometryProcessing::Vector3>          Centre         = {};                           // [len] - Circle / arc centre
     double                                    Radius         = 0.0;                          // [len] - Circle / arc radius (0: not circular)
     std::vector<double>                       Parameters     = {};                           // [-]   - Sample parameters (ascending)
-    std::vector<Modeller::Vector3>            Points         = {};                           // [len] - Sample points
+    std::vector<GeometryProcessing::Vector3>            Points         = {};                           // [len] - Sample points
 };
 
 // 📝 A fixed snap point (endpoint, midpoint, centre, coplanar sketch crossing), found once per document revision.
 struct DraftingSnapPoint
 {
     DraftingSnapKind  Kind     = DraftingSnapKind::Endpoint;                                 // [-]   - Endpoint, Midpoint, Centre, Intersection
-    Modeller::Vector3 Position = {};                                                         // [len] - Exact point
-    Modeller::Vector3 Tangent  = {};                                                         // [-]   - Curve tangent there (zero: none)
-    Modeller::Vector3 Normal   = {};                                                         // [-]   - Curve normal / circle axis (zero: none)
+    GeometryProcessing::Vector3 Position = {};                                                         // [len] - Exact point
+    GeometryProcessing::Vector3 Tangent  = {};                                                         // [-]   - Curve tangent there (zero: none)
+    GeometryProcessing::Vector3 Normal   = {};                                                         // [-]   - Curve normal / circle axis (zero: none)
     std::string       Source   = {};                                                         // [-]   - Shown name
     std::string       Body     = {};                                                         // [-]   - Owning body key (empty: sketch / curve)
 };
@@ -123,10 +123,10 @@ struct DraftingSnapCatalogue
     std::string                                       ExclusionKey = {};                     // [-]   - Excluded body keys / step labels joined
     std::vector<DraftingSnapCurve>                    Curves       = {};                     // [-]   - Edges, sketch segments, SpaceCurves
     std::vector<DraftingSnapPoint>                    Points       = {};                     // [-]   - Fixed snap points
-    std::vector<std::optional<Modeller::SurfaceGeometry>> Surfaces = {};                     // [-]   - Per scene face (empty: excluded / none)
-    std::vector<Modeller::FaceToken>                  FaceTokens   = {};                     // [-]   - Per scene face
+    std::vector<std::optional<GeometryProcessing::SurfaceGeometry>> Surfaces = {};                     // [-]   - Per scene face (empty: excluded / none)
+    std::vector<GeometryProcessing::FaceToken>                  FaceTokens   = {};                     // [-]   - Per scene face
     std::vector<std::string>                          FaceNames    = {};                     // [-]   - Per scene face
-    std::map<uint32_t, std::optional<Modeller::Vector3>> FaceCentres = {};                   // [len] - Planar face centroids (lazy)
+    std::map<uint32_t, std::optional<GeometryProcessing::Vector3>> FaceCentres = {};                   // [len] - Planar face centroids (lazy)
     double                                            Scale        = 1.0;                    // [len] - Scene diagonal
 };
 
@@ -137,7 +137,7 @@ struct DraftingSnapQuery
     double                           PixelY      = 0.0;                                      // [px]  - Pointer, viewport-local
     double                           PointReach  = 12.0;                                     // [px]  - Point snaps
     double                           CurveReach  = 8.0;                                      // [px]  - Curve snaps
-    std::optional<Modeller::Vector3> Reference   = {};                                       // [len] - Last placed point (tangent, perpendicular)
+    std::optional<GeometryProcessing::Vector3> Reference   = {};                                       // [len] - Last placed point (tangent, perpendicular)
     std::vector<DraftingSnapPoint>   Transient   = {};                                       // [-]   - Extra endpoints (drawing chain)
     bool                             XRayEnabled = false;                                    // [-]   - Hidden geometry snaps too
     const DraftingSectionClip*       Section     = nullptr;                                  // [-]   - Removed side does not snap
@@ -162,10 +162,10 @@ struct DraftingSnapQuery
 [[nodiscard]] DraftingSnap FindDraftingSnap(DraftingSnapCatalogue& Catalogue, const DraftingDocument& Document, const DraftingScene& Scene, const DraftingSnapQuery& Query);
 
 // Line parameter of the point of Origin + t·Direction nearest to the ray (nothing when they run parallel).
-[[nodiscard]] std::optional<double> ApproachDraftingLine(const DraftingRay& Ray, Modeller::Vector3 Origin, Modeller::Vector3 Direction) noexcept;
+[[nodiscard]] std::optional<double> ApproachDraftingLine(const DraftingRay& Ray, GeometryProcessing::Vector3 Origin, GeometryProcessing::Vector3 Direction) noexcept;
 
 // World point → viewport-local pixel (false behind the eye).
-[[nodiscard]] bool ProjectDraftingPoint(const DraftingCameraFrame& Frame, Modeller::Vector3 Point, double& PixelX, double& PixelY) noexcept;
+[[nodiscard]] bool ProjectDraftingPoint(const DraftingCameraFrame& Frame, GeometryProcessing::Vector3 Point, double& PixelX, double& PixelY) noexcept;
 
 [[nodiscard]] const char* DraftingSnapLabel(DraftingSnapKind Kind) noexcept;
 [[nodiscard]] const char* DraftingSnapLockLabel(DraftingSnapLockKind Kind) noexcept;

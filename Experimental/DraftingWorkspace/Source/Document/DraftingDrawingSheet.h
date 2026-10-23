@@ -13,7 +13,7 @@
 
 #include "Document/DraftingMeasurement.h"
 
-#include "Drawing/DrawingSheet.h"
+#include "Engine/GeometryProcessing/Drawing/DrawingSheet.h"
 
 #include <cstdint>
 #include <string>
@@ -37,7 +37,7 @@ struct DraftingDrawingSheet
 {
     uint64_t                Revision     = 0;                                                // [-]  - Document revision drawn
     std::string             SettingsKey  = {};                                               // [-]  - DraftingDrawingSheetCacheKey drawn
-    Modeller::DrawingSheet  Sheet        = {};                                               // [-]  - Kernel sheet (millimetres)
+    GeometryProcessing::DrawingSheet  Sheet        = {};                                               // [-]  - Kernel sheet (millimetres)
     int                     Bodies       = 0;                                                // [-]  - Solid bodies drawn
     int                     Sheets       = 0;                                                // [-]  - Sheet bodies left out
     double                  Milliseconds = 0.0;                                              // [ms] - Composition time
@@ -61,7 +61,7 @@ struct DraftingDrawingSheet
 [[nodiscard]] bool DefaultDraftingDrawingSheetCondition(const DraftingDrawingSheetSettings& Settings);
 
 // Kernel section frame of a Section-card plane: the card keeps its +normal side, the sheet keeps the −ZAxis side.
-[[nodiscard]] Modeller::OrthonormalFrame DraftingSheetSectionFrame(const Modeller::OrthonormalFrame& Plane);
+[[nodiscard]] GeometryProcessing::OrthonormalFrame DraftingSheetSectionFrame(const GeometryProcessing::OrthonormalFrame& Plane);
 
 // Where the sheet is exported: "Bracket.drafting.toml" → "Bracket.svg" / "Bracket.dxf" beside it; no document path →
 // "Untitled.svg" in the working folder. Extension includes the dot.
@@ -71,8 +71,8 @@ struct DraftingDrawingSheet
 [[nodiscard]] std::string ExportDraftingDrawingSheet(const DraftingDrawingSheet& Sheet, const std::string& Path);
 
 // "A3", "First", "Y", … ↔ enums for the codec and scripts (false / empty for an unknown label).
-[[nodiscard]] const char* DraftingProjectionAngleLabel(Modeller::DrawingProjectionAngle Angle) noexcept;
-[[nodiscard]] bool        ParseDraftingPaperSize(const std::string& Label, Modeller::DrawingPaperSize& Paper) noexcept;
-[[nodiscard]] bool        ParseDraftingProjectionAngle(const std::string& Label, Modeller::DrawingProjectionAngle& Angle) noexcept;
+[[nodiscard]] const char* DraftingProjectionAngleLabel(GeometryProcessing::DrawingProjectionAngle Angle) noexcept;
+[[nodiscard]] bool        ParseDraftingPaperSize(const std::string& Label, GeometryProcessing::DrawingPaperSize& Paper) noexcept;
+[[nodiscard]] bool        ParseDraftingProjectionAngle(const std::string& Label, GeometryProcessing::DrawingProjectionAngle& Angle) noexcept;
 
 } // namespace Frontier::DraftingWorkspace

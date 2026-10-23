@@ -9,11 +9,11 @@
 
 #include "Document/DraftingMeasurement.h"
 
-#include "Assembly/AssemblyAnalysis.h"
-#include "Audit/EnclosedVolume.h"
-#include "Measurement/MassProperties.h"
-#include "Measurement/MinimumDistance.h"
-#include "Measurement/PlaneSection.h"
+#include "Engine/GeometryProcessing/Assembly/AssemblyAnalysis.h"
+#include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
+#include "Engine/GeometryProcessing/Measurement/MassProperties.h"
+#include "Engine/GeometryProcessing/Measurement/MinimumDistance.h"
+#include "Engine/GeometryProcessing/Measurement/PlaneSection.h"
 
 #include <algorithm>
 #include <chrono>
@@ -29,7 +29,7 @@ namespace Frontier::DraftingWorkspace
 namespace
 {
 
-using Modeller::Vector3;
+using GeometryProcessing::Vector3;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    TYPES
@@ -38,8 +38,8 @@ using Modeller::Vector3;
 // 📝 A selected face or edge resolved to its partition token, its owning body and an optional direction for angles.
 struct MeasureOperand
 {
-    const Modeller::RegeneratedBody* Owner     = nullptr;                                   // [-] - Owning body
-    Modeller::MeasureTarget          Target    = {};                                        // [-] - Kernel token
+    const GeometryProcessing::RegeneratedBody* Owner     = nullptr;                                   // [-] - Owning body
+    GeometryProcessing::MeasureTarget          Target    = {};                                        // [-] - Kernel token
     std::string                      Name      = {};                                        // [-] - Persistent name
     bool                             FaceCondition = false;                                 // [-] - Face (else edge)
     std::optional<Vector3>           Normal    = {};                                        // [-] - Planar face: outward unit normal
@@ -85,9 +85,9 @@ bool SheetBodyCondition(const DraftingDocument& Document, const std::string& Key
     return false;
 }
 
-const Modeller::RegeneratedBody* FindBody(const DraftingDocument& Document, const std::string& Key)
+const GeometryProcessing::RegeneratedBody* FindBody(const DraftingDocument& Document, const std::string& Key)
 {
-    for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies) if (Body.Key == Key) return &Body;
+    for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies) if (Body.Key == Key) return &Body;
     return nullptr;
 }
 
@@ -98,62 +98,62 @@ std::string BodyCaptionOf(const DraftingDocument& Document, const std::string& K
 }
 
 // Carrier caption with its defining parameters ("Cylinder r 0.5000").
-std::string DescribeSurface(const Modeller::SurfaceGeometry& Surface)
+std::string DescribeSurface(const GeometryProcessing::SurfaceGeometry& Surface)
 {
-    if (const auto* Cylinder = std::get_if<Modeller::CylinderSurface>(&Surface)) return Figure("Cylinder r %.4f", Cylinder->Radius);
-    if (const auto* Sphere = std::get_if<Modeller::SphereSurface>(&Surface)) return Figure("Sphere r %.4f", Sphere->Radius);
-    if (const auto* Torus = std::get_if<Modeller::TorusSurface>(&Surface)) return Figure("Torus R %.4f r %.4f", Torus->MajorRadius, Torus->MinorRadius);
-    if (const auto* Cone = std::get_if<Modeller::ConeSurface>(&Surface))
+    if (const auto* Cylinder = std::get_if<GeometryProcessing::CylinderSurface>(&Surface)) return Figure("Cylinder r %.4f", Cylinder->Radius);
+    if (const auto* Sphere = std::get_if<GeometryProcessing::SphereSurface>(&Surface)) return Figure("Sphere r %.4f", Sphere->Radius);
+    if (const auto* Torus = std::get_if<GeometryProcessing::TorusSurface>(&Surface)) return Figure("Torus R %.4f r %.4f", Torus->MajorRadius, Torus->MinorRadius);
+    if (const auto* Cone = std::get_if<GeometryProcessing::ConeSurface>(&Surface))
         return Figure("Cone half-angle %.3f°", std::atan(std::fabs(Cone->RadialSlope)) * 180.0 / 3.14159265358979323846);
-    return Modeller::SurfaceCategoryLabel(Surface);
+    return GeometryProcessing::SurfaceCategoryLabel(Surface);
 }
 
-std::string DescribeCurve(const Modeller::CurveGeometry& Curve, double IntervalLow, double IntervalHigh)
+std::string DescribeCurve(const GeometryProcessing::CurveGeometry& Curve, double IntervalLow, double IntervalHigh)
 {
-    if (const auto* Arc = std::get_if<Modeller::CircularArc>(&Curve))
+    if (const auto* Arc = std::get_if<GeometryProcessing::CircularArc>(&Curve))
     {
         const double Sweep = std::fabs(IntervalHigh - IntervalLow) * 180.0 / 3.14159265358979323846;
         return Sweep > 359.999 ? Figure("Circle r %.4f", Arc->Radius) : Figure("Arc r %.4f · %.2f°", Arc->Radius, Sweep);
     }
-    if (const auto* Ellipse = std::get_if<Modeller::EllipticalArc>(&Curve)) return Figure("Ellipse a %.4f b %.4f", Ellipse->MajorRadius, Ellipse->MinorRadius);
-    return Modeller::CurveCategoryLabel(Curve);
+    if (const auto* Ellipse = std::get_if<GeometryProcessing::EllipticalArc>(&Curve)) return Figure("Ellipse a %.4f b %.4f", Ellipse->MajorRadius, Ellipse->MinorRadius);
+    return GeometryProcessing::CurveCategoryLabel(Curve);
 }
 
 // Persistent face / edge names → partition tokens of the shown bodies, in the selection's order (faces, then edges).
 std::vector<MeasureOperand> ResolveOperands(const DraftingDocument& Document)
 {
     std::vector<MeasureOperand> Operands;
-    const Modeller::ModelPartition& Partition = *Document.Partition;
-    for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+    const GeometryProcessing::ModelPartition& Partition = *Document.Partition;
+    for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
         if (HiddenCondition(Document, Body.Key) || !Body.Body.PresentCondition()) continue;
-        const Modeller::BodyInventory Inventory = Partition.CollectInventory(Body.Body);
-        for (const Modeller::FaceToken Face : Inventory.Faces)
+        const GeometryProcessing::BodyInventory Inventory = Partition.CollectInventory(Body.Body);
+        for (const GeometryProcessing::FaceToken Face : Inventory.Faces)
         {
             const auto Found = Body.Naming.Faces.find(Face.Slot);
             if (Found == Body.Naming.Faces.end()) continue;
             if (std::find(Document.Selection.Faces.begin(), Document.Selection.Faces.end(), Found->second) == Document.Selection.Faces.end()) continue;
             MeasureOperand Operand{ &Body, Face, Found->second, true };
-            const Modeller::FaceProfile& Profile = Partition.Faces.Resolve(Face);
+            const GeometryProcessing::FaceProfile& Profile = Partition.Faces.Resolve(Face);
             if (Profile.Surface.PresentCondition())
             {
-                const Modeller::SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
-                const double Sense = Profile.Sense == Modeller::Orientation::Forward ? 1.0 : -1.0;
-                if (const auto* Plane = std::get_if<Modeller::PlaneSurface>(&Surface)) Operand.Normal = Plane->Frame.ZAxis * Sense;
-                if (const auto* Cylinder = std::get_if<Modeller::CylinderSurface>(&Surface)) Operand.Line = Cylinder->Frame.ZAxis;
-                if (const auto* Cone = std::get_if<Modeller::ConeSurface>(&Surface)) Operand.Line = Cone->Frame.ZAxis;
+                const GeometryProcessing::SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
+                const double Sense = Profile.Sense == GeometryProcessing::Orientation::Forward ? 1.0 : -1.0;
+                if (const auto* Plane = std::get_if<GeometryProcessing::PlaneSurface>(&Surface)) Operand.Normal = Plane->Frame.ZAxis * Sense;
+                if (const auto* Cylinder = std::get_if<GeometryProcessing::CylinderSurface>(&Surface)) Operand.Line = Cylinder->Frame.ZAxis;
+                if (const auto* Cone = std::get_if<GeometryProcessing::ConeSurface>(&Surface)) Operand.Line = Cone->Frame.ZAxis;
             }
             Operands.push_back(Operand);
         }
-        for (const Modeller::EdgeToken Edge : Inventory.Edges)
+        for (const GeometryProcessing::EdgeToken Edge : Inventory.Edges)
         {
             const auto Found = Body.Naming.Edges.find(Edge.Slot);
             if (Found == Body.Naming.Edges.end()) continue;
             if (std::find(Document.Selection.Edges.begin(), Document.Selection.Edges.end(), Found->second) == Document.Selection.Edges.end()) continue;
             MeasureOperand Operand{ &Body, Edge, Found->second, false };
-            const Modeller::EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+            const GeometryProcessing::EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
             if (Profile.Curve.PresentCondition())
-                if (const auto* Line = std::get_if<Modeller::StraightLine>(&Partition.Curves.Resolve(Profile.Curve))) Operand.Line = Line->Direction;
+                if (const auto* Line = std::get_if<GeometryProcessing::StraightLine>(&Partition.Curves.Resolve(Profile.Curve))) Operand.Line = Line->Direction;
             Operands.push_back(Operand);
         }
     }
@@ -167,11 +167,11 @@ std::vector<MeasureOperand> ResolveOperands(const DraftingDocument& Document)
     return Operands;
 }
 
-double FacePerimeter(const Modeller::ModelPartition& Partition, Modeller::FaceToken Face)
+double FacePerimeter(const GeometryProcessing::ModelPartition& Partition, GeometryProcessing::FaceToken Face)
 {
     double Perimeter = 0.0;
-    for (const Modeller::LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
-        Partition.EnumerateLoopFins(Loop, [&](Modeller::FinToken Fin) { Perimeter += Modeller::MeasureEdgeLength(Partition, Partition.Fins.Resolve(Fin).Edge); });
+    for (const GeometryProcessing::LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+        Partition.EnumerateLoopFins(Loop, [&](GeometryProcessing::FinToken Fin) { Perimeter += GeometryProcessing::MeasureEdgeLength(Partition, Partition.Fins.Resolve(Fin).Edge); });
     return Perimeter;
 }
 
@@ -184,14 +184,14 @@ void MeasureBodies(const DraftingDocument& Document, const std::vector<std::stri
     // 📝 Several bodies: totals, the volume-weighted centroid; inertia only for one body (unit density, about its centroid).
     double  Volume = 0.0, Area = 0.0;
     Vector3 Moment = {};
-    std::optional<Modeller::BodyMassProperties> Single;
+    std::optional<GeometryProcessing::BodyMassProperties> Single;
     int Sheets = 0;
     for (const std::string& Key : Keys)
     {
-        const Modeller::RegeneratedBody* Body = FindBody(Document, Key);
+        const GeometryProcessing::RegeneratedBody* Body = FindBody(Document, Key);
         if (!Body) continue;
         if (SheetBodyCondition(Document, Key)) { ++Sheets; continue; }
-        const Modeller::BodyMassProperties Mass = Modeller::MeasureBodyMass(*Document.Partition, Body->Body);
+        const GeometryProcessing::BodyMassProperties Mass = GeometryProcessing::MeasureBodyMass(*Document.Partition, Body->Body);
         if (!Mass.Refusal.empty()) { Measurement.Refusal = BodyCaptionOf(Document, Key) + ": " + Mass.Refusal; return; }
         Volume += Mass.Volume;
         Area   += Mass.SurfaceArea;
@@ -213,7 +213,7 @@ void MeasureBodies(const DraftingDocument& Document, const std::vector<std::stri
     AppendRow(Measurement, "Centroid", FigurePoint(Measurement.Centroid));
     if (Single)
     {
-        const std::array<double, 3> Principal = Modeller::ResolvePrincipalMoments(Single->Inertia);
+        const std::array<double, 3> Principal = GeometryProcessing::ResolvePrincipalMoments(Single->Inertia);
         AppendRow(Measurement, "Principal I1 I2 I3", Figure("%.5g · %.5g · %.5g", Principal[0], Principal[1], Principal[2]), Principal[0]);
         AppendRow(Measurement, "Ixx Iyy Izz", Figure("%.5g · %.5g · %.5g", Single->Inertia[0], Single->Inertia[1], Single->Inertia[2]), Single->Inertia[0]);
     }
@@ -224,37 +224,37 @@ void MeasureBodies(const DraftingDocument& Document, const std::vector<std::stri
 // the clearance's closest points or the edges of the shared volume, sampled 24 chords per edge.
 void MeasureInterference(const DraftingDocument& Document, const std::string& FirstKey, const std::string& SecondKey, DraftingMeasurement& Measurement)
 {
-    const Modeller::RegeneratedBody* First  = FindBody(Document, FirstKey);
-    const Modeller::RegeneratedBody* Second = FindBody(Document, SecondKey);
+    const GeometryProcessing::RegeneratedBody* First  = FindBody(Document, FirstKey);
+    const GeometryProcessing::RegeneratedBody* Second = FindBody(Document, SecondKey);
     if (!First || !Second || SheetBodyCondition(Document, FirstKey) || SheetBodyCondition(Document, SecondKey)) return;
-    Modeller::ModelPartition Scratch = *Document.Partition;
-    const Modeller::InterferenceMeasure Measure = Modeller::DetectBodyInterference(Scratch, First->Body, Second->Body);
+    GeometryProcessing::ModelPartition Scratch = *Document.Partition;
+    const GeometryProcessing::InterferenceMeasure Measure = GeometryProcessing::DetectBodyInterference(Scratch, First->Body, Second->Body);
     if (!Measure.Refusal.empty()) { AppendRow(Measurement, "Interference", Measure.Refusal); return; }
-    Measurement.Interference = Modeller::InterferenceConditionLabel(Measure.Condition);
+    Measurement.Interference = GeometryProcessing::InterferenceConditionLabel(Measure.Condition);
     Measurement.Subject      = BodyCaptionOf(Document, FirstKey) + " + " + BodyCaptionOf(Document, SecondKey);
     AppendRow(Measurement, "Interference", Measurement.Interference);
     switch (Measure.Condition)
     {
-    case Modeller::InterferenceCondition::Clear:
-    case Modeller::InterferenceCondition::Contact:
+    case GeometryProcessing::InterferenceCondition::Clear:
+    case GeometryProcessing::InterferenceCondition::Contact:
         Measurement.Distance          = Measure.Clearance;
-        Measurement.DistanceCondition = Measure.Condition == Modeller::InterferenceCondition::Clear;
+        Measurement.DistanceCondition = Measure.Condition == GeometryProcessing::InterferenceCondition::Clear;
         Measurement.First             = Measure.First;
         Measurement.Second            = Measure.Second;
         AppendRow(Measurement, "Clearance", Figure("%.6g m", Measure.Clearance), Measure.Clearance);
         break;
-    case Modeller::InterferenceCondition::Overlap:
-    case Modeller::InterferenceCondition::Contained:
+    case GeometryProcessing::InterferenceCondition::Overlap:
+    case GeometryProcessing::InterferenceCondition::Contained:
     {
         Measurement.OverlapVolume = Measure.Volume;
-        AppendRow(Measurement, Measure.Condition == Modeller::InterferenceCondition::Overlap ? "Overlap volume" : "Contained volume", Figure("%.6g m³", Measure.Volume), Measure.Volume);
-        for (Modeller::EdgeToken Edge : Scratch.CollectInventory(Measure.Body).Edges)
+        AppendRow(Measurement, Measure.Condition == GeometryProcessing::InterferenceCondition::Overlap ? "Overlap volume" : "Contained volume", Figure("%.6g m³", Measure.Volume), Measure.Volume);
+        for (GeometryProcessing::EdgeToken Edge : Scratch.CollectInventory(Measure.Body).Edges)
         {
-            const Modeller::EdgeProfile&   Profile = Scratch.Edges.Resolve(Edge);
-            const Modeller::CurveGeometry& Curve   = Scratch.Curves.Resolve(Profile.Curve);
+            const GeometryProcessing::EdgeProfile&   Profile = Scratch.Edges.Resolve(Edge);
+            const GeometryProcessing::CurveGeometry& Curve   = Scratch.Curves.Resolve(Profile.Curve);
             std::vector<Vector3> Polyline;
             for (int Index = 0; Index <= 24; ++Index)
-                Polyline.push_back(Modeller::EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Index / 24.0).Position);
+                Polyline.push_back(GeometryProcessing::EvaluateCurve(Curve, Profile.IntervalLow + (Profile.IntervalHigh - Profile.IntervalLow) * Index / 24.0).Position);
             Measurement.Overlap.push_back(std::move(Polyline));
         }
         break;
@@ -264,11 +264,11 @@ void MeasureInterference(const DraftingDocument& Document, const std::string& Fi
 
 void MeasureFace(const DraftingDocument& Document, const MeasureOperand& Operand, DraftingMeasurement& Measurement)
 {
-    const Modeller::ModelPartition& Partition = *Document.Partition;
-    const Modeller::FaceToken       Face      = std::get<Modeller::FaceToken>(Operand.Target);
-    const Modeller::FaceAreaMeasure Area      = Modeller::MeasureFaceArea(Partition, Face);
+    const GeometryProcessing::ModelPartition& Partition = *Document.Partition;
+    const GeometryProcessing::FaceToken       Face      = std::get<GeometryProcessing::FaceToken>(Operand.Target);
+    const GeometryProcessing::FaceAreaMeasure Area      = GeometryProcessing::MeasureFaceArea(Partition, Face);
     const double                    Perimeter = FacePerimeter(Partition, Face);
-    const Modeller::FaceProfile&    Profile   = Partition.Faces.Resolve(Face);
+    const GeometryProcessing::FaceProfile&    Profile   = Partition.Faces.Resolve(Face);
     Measurement.Subject  = "Face " + Operand.Name;
     Measurement.Area     = Area.Area;
     Measurement.Length   = Perimeter;
@@ -283,10 +283,10 @@ void MeasureFace(const DraftingDocument& Document, const MeasureOperand& Operand
 
 void MeasureEdge(const DraftingDocument& Document, const MeasureOperand& Operand, DraftingMeasurement& Measurement)
 {
-    const Modeller::ModelPartition& Partition = *Document.Partition;
-    const Modeller::EdgeToken       Edge      = std::get<Modeller::EdgeToken>(Operand.Target);
-    const Modeller::EdgeProfile&    Profile   = Partition.Edges.Resolve(Edge);
-    const double                    Length    = Modeller::MeasureEdgeLength(Partition, Edge);
+    const GeometryProcessing::ModelPartition& Partition = *Document.Partition;
+    const GeometryProcessing::EdgeToken       Edge      = std::get<GeometryProcessing::EdgeToken>(Operand.Target);
+    const GeometryProcessing::EdgeProfile&    Profile   = Partition.Edges.Resolve(Edge);
+    const double                    Length    = GeometryProcessing::MeasureEdgeLength(Partition, Edge);
     Measurement.Subject = "Edge " + Operand.Name;
     Measurement.Length  = Length;
     AppendRow(Measurement, "Length", Figure("%.6g m", Length), Length);
@@ -294,7 +294,7 @@ void MeasureEdge(const DraftingDocument& Document, const MeasureOperand& Operand
     const Vector3 Start = Partition.Vertices.Resolve(Profile.Start).Position;
     const Vector3 End   = Partition.Vertices.Resolve(Profile.End).Position;
     AppendRow(Measurement, "Start", FigurePoint(Start));
-    if (Modeller::Distance(Start, End) > 1.0e-9) AppendRow(Measurement, "End", FigurePoint(End));
+    if (GeometryProcessing::Distance(Start, End) > 1.0e-9) AppendRow(Measurement, "End", FigurePoint(End));
 }
 
 // 📝 Angles: two planes → between the outward normals (90° for adjacent block faces, 180° for opposite ones); two lines →
@@ -303,16 +303,16 @@ std::optional<double> AngleBetween(const MeasureOperand& First, const MeasureOpe
 {
     constexpr double Degrees = 180.0 / 3.14159265358979323846;
     const auto Clamp = [](double Value) { return std::clamp(Value, -1.0, 1.0); };
-    if (First.Normal && Second.Normal) return std::acos(Clamp(Modeller::Dot(*First.Normal, *Second.Normal))) * Degrees;
-    if (First.Line && Second.Line) return std::acos(std::fabs(Clamp(Modeller::Dot(*First.Line, *Second.Line)))) * Degrees;
-    if (First.Normal && Second.Line) return std::asin(std::fabs(Clamp(Modeller::Dot(*First.Normal, *Second.Line)))) * Degrees;
-    if (First.Line && Second.Normal) return std::asin(std::fabs(Clamp(Modeller::Dot(*First.Line, *Second.Normal)))) * Degrees;
+    if (First.Normal && Second.Normal) return std::acos(Clamp(GeometryProcessing::Dot(*First.Normal, *Second.Normal))) * Degrees;
+    if (First.Line && Second.Line) return std::acos(std::fabs(Clamp(GeometryProcessing::Dot(*First.Line, *Second.Line)))) * Degrees;
+    if (First.Normal && Second.Line) return std::asin(std::fabs(Clamp(GeometryProcessing::Dot(*First.Normal, *Second.Line)))) * Degrees;
+    if (First.Line && Second.Normal) return std::asin(std::fabs(Clamp(GeometryProcessing::Dot(*First.Line, *Second.Normal)))) * Degrees;
     return std::nullopt;
 }
 
 void MeasurePair(const DraftingDocument& Document, const MeasureOperand& First, const MeasureOperand& Second, DraftingMeasurement& Measurement)
 {
-    const Modeller::DistanceMeasure Measure = Modeller::MeasureMinimumDistance(*Document.Partition, First.Target, Second.Target);
+    const GeometryProcessing::DistanceMeasure Measure = GeometryProcessing::MeasureMinimumDistance(*Document.Partition, First.Target, Second.Target);
     Measurement.Subject = "Distance " + First.Name + " → " + Second.Name;
     if (!Measure.Refusal.empty()) { Measurement.Refusal = Measure.Refusal; return; }
     Measurement.Distance          = Measure.Distance;
@@ -337,8 +337,8 @@ void MeasureTotals(const DraftingDocument& Document, const std::vector<MeasureOp
     int    Faces = 0, Edges = 0;
     for (const MeasureOperand& Operand : Operands)
     {
-        if (Operand.FaceCondition) { Area += Modeller::MeasureFaceArea(*Document.Partition, std::get<Modeller::FaceToken>(Operand.Target)).Area; ++Faces; }
-        else { Length += Modeller::MeasureEdgeLength(*Document.Partition, std::get<Modeller::EdgeToken>(Operand.Target)); ++Edges; }
+        if (Operand.FaceCondition) { Area += GeometryProcessing::MeasureFaceArea(*Document.Partition, std::get<GeometryProcessing::FaceToken>(Operand.Target)).Area; ++Faces; }
+        else { Length += GeometryProcessing::MeasureEdgeLength(*Document.Partition, std::get<GeometryProcessing::EdgeToken>(Operand.Target)); ++Edges; }
     }
     Measurement.Subject = Figure("%d face(s) + %d edge(s)", Faces, Edges);
     if (Faces) { Measurement.Area = Area; AppendRow(Measurement, "Total area", Figure("%.6g m²", Area), Area); }
@@ -350,23 +350,23 @@ void MeasureTotals(const DraftingDocument& Document, const std::vector<MeasureOp
 //------------------------------------------------------------------------------------------------------------------------
 
 // Plane of a Face request: the named planar face of a shown body, moved Offset along the outward normal, kept side inward.
-bool ResolveFacePlane(const DraftingDocument& Document, const DraftingSectionRequest& Request, Modeller::OrthonormalFrame& Plane)
+bool ResolveFacePlane(const DraftingDocument& Document, const DraftingSectionRequest& Request, GeometryProcessing::OrthonormalFrame& Plane)
 {
-    const Modeller::ModelPartition& Partition = *Document.Partition;
-    for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+    const GeometryProcessing::ModelPartition& Partition = *Document.Partition;
+    for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
         if (HiddenCondition(Document, Body.Key) || !Body.Body.PresentCondition()) continue;
-        for (const Modeller::FaceToken Face : Partition.CollectInventory(Body.Body).Faces)
+        for (const GeometryProcessing::FaceToken Face : Partition.CollectInventory(Body.Body).Faces)
         {
             const auto Found = Body.Naming.Faces.find(Face.Slot);
             if (Found == Body.Naming.Faces.end() || Found->second != Request.Face) continue;
-            const Modeller::FaceProfile& Profile = Partition.Faces.Resolve(Face);
+            const GeometryProcessing::FaceProfile& Profile = Partition.Faces.Resolve(Face);
             if (!Profile.Surface.PresentCondition()) return false;
-            const auto* Carrier = std::get_if<Modeller::PlaneSurface>(&Partition.Surfaces.Resolve(Profile.Surface));
+            const auto* Carrier = std::get_if<GeometryProcessing::PlaneSurface>(&Partition.Surfaces.Resolve(Profile.Surface));
             if (!Carrier) return false;
-            const double  Sense   = Profile.Sense == Modeller::Orientation::Forward ? 1.0 : -1.0;
+            const double  Sense   = Profile.Sense == GeometryProcessing::Orientation::Forward ? 1.0 : -1.0;
             const Vector3 Outward = Carrier->Frame.ZAxis * Sense;
-            Plane = Modeller::ConstructFrame(Carrier->Frame.Origin + Outward * Request.Offset, Outward * (Request.Flipped ? 1.0 : -1.0), Carrier->Frame.XAxis);
+            Plane = GeometryProcessing::ConstructFrame(Carrier->Frame.Origin + Outward * Request.Offset, Outward * (Request.Flipped ? 1.0 : -1.0), Carrier->Frame.XAxis);
             return true;
         }
     }
@@ -413,7 +413,7 @@ DraftingMeasurement MeasureDraftingSelection(const DraftingDocument& Document)
         {
             // Nothing selected: the active body, or the only shown one.
             if (FindBody(Document, Document.Regeneration.Active) && !HiddenCondition(Document, Document.Regeneration.Active)) Keys.push_back(Document.Regeneration.Active);
-            else for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies) if (!HiddenCondition(Document, Body.Key)) { Keys.push_back(Body.Key); break; }
+            else for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies) if (!HiddenCondition(Document, Body.Key)) { Keys.push_back(Body.Key); break; }
         }
         if (Keys.empty()) Measurement.Refusal = "Measure: every body is hidden";
         else MeasureBodies(Document, Keys, Measurement);
@@ -438,9 +438,9 @@ DraftingSection ResolveDraftingSectionPlane(const DraftingDocument& Document, co
     const double Sign  = Request.Flipped ? -1.0 : 1.0;
     switch (Request.Axis)
     {
-    case DraftingSectionAxis::X: Section.Plane = Modeller::ConstructFrame({ Request.Offset, 0.0, 0.0 }, Vector3{ -1.0, 0.0, 0.0 } * Sign, { 0.0, 1.0, 0.0 }); break;
-    case DraftingSectionAxis::Y: Section.Plane = Modeller::ConstructFrame({ 0.0, Request.Offset, 0.0 }, Vector3{ 0.0, 1.0, 0.0 } * Sign, { 1.0, 0.0, 0.0 }); break;
-    case DraftingSectionAxis::Z: Section.Plane = Modeller::ConstructFrame({ 0.0, 0.0, Request.Offset }, Vector3{ 0.0, 0.0, -1.0 } * Sign, { 1.0, 0.0, 0.0 }); break;
+    case DraftingSectionAxis::X: Section.Plane = GeometryProcessing::ConstructFrame({ Request.Offset, 0.0, 0.0 }, Vector3{ -1.0, 0.0, 0.0 } * Sign, { 0.0, 1.0, 0.0 }); break;
+    case DraftingSectionAxis::Y: Section.Plane = GeometryProcessing::ConstructFrame({ 0.0, Request.Offset, 0.0 }, Vector3{ 0.0, 1.0, 0.0 } * Sign, { 1.0, 0.0, 0.0 }); break;
+    case DraftingSectionAxis::Z: Section.Plane = GeometryProcessing::ConstructFrame({ 0.0, 0.0, Request.Offset }, Vector3{ 0.0, 0.0, -1.0 } * Sign, { 1.0, 0.0, 0.0 }); break;
     case DraftingSectionAxis::Face:
         if (!Document.Partition || !ResolveFacePlane(Document, Request, Section.Plane))
         {
@@ -459,15 +459,15 @@ DraftingSection SectionDraftingDocument(const DraftingDocument& Document, const 
     DraftingSection Section = ResolveDraftingSectionPlane(Document, Request);
     if (!Section.PlaneCondition) return Section;
     if (!Document.Partition) { Section.Refusal = "Section: the document has no body"; return Section; }
-    const Modeller::OrthonormalFrame& Plane = Section.Plane;
+    const GeometryProcessing::OrthonormalFrame& Plane = Section.Plane;
     struct Piece { double Area; double U; double V; std::array<double, 3> Moments; };
     std::vector<Piece> Pieces;
     Vector3 Moment = {};
-    for (const Modeller::RegeneratedBody& Body : Document.Regeneration.Bodies)
+    for (const GeometryProcessing::RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
         if (HiddenCondition(Document, Body.Key) || !Body.Body.PresentCondition()) continue;
         if (SheetBodyCondition(Document, Body.Key)) { ++Section.Sheets; continue; }
-        Modeller::PlaneSectionMeasure Measure = Modeller::SectionBody(*Document.Partition, Body.Body, Plane, OutlineStep);
+        GeometryProcessing::PlaneSectionMeasure Measure = GeometryProcessing::SectionBody(*Document.Partition, Body.Body, Plane, OutlineStep);
         if (!Measure.Refusal.empty())
         {
             if (Measure.Refusal.find("misses") != std::string::npos) continue;                // The plane passes this body by
@@ -481,7 +481,7 @@ DraftingSection SectionDraftingDocument(const DraftingDocument& Document, const 
         Section.Loops     += Measure.Loops;
         Moment             = Moment + Measure.Centroid * Measure.Area;
         const Vector3 Local = Measure.Centroid - Plane.Origin;
-        Pieces.push_back({ Measure.Area, Modeller::Dot(Local, Plane.XAxis), Modeller::Dot(Local, Plane.YAxis), Measure.SecondMoments });
+        Pieces.push_back({ Measure.Area, GeometryProcessing::Dot(Local, Plane.XAxis), GeometryProcessing::Dot(Local, Plane.YAxis), Measure.SecondMoments });
         for (std::vector<Vector3>& Polyline : Measure.Outline) Section.Outline.push_back(std::move(Polyline));
     }
     if (Section.Area > 0.0)
@@ -489,7 +489,7 @@ DraftingSection SectionDraftingDocument(const DraftingDocument& Document, const 
         // Parallel-axis transfer of each piece's moments to the common centroid.
         Section.Centroid = Moment * (1.0 / Section.Area);
         const Vector3 Local = Section.Centroid - Plane.Origin;
-        const double  CentreU = Modeller::Dot(Local, Plane.XAxis), CentreV = Modeller::Dot(Local, Plane.YAxis);
+        const double  CentreU = GeometryProcessing::Dot(Local, Plane.XAxis), CentreV = GeometryProcessing::Dot(Local, Plane.YAxis);
         for (const Piece& Each : Pieces)
         {
             Section.SecondMoments[0] += Each.Moments[0] + Each.Area * (Each.V - CentreV) * (Each.V - CentreV);
