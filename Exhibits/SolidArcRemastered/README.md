@@ -2,6 +2,19 @@
 
 > 📝 **Showcase:** [`Exhibits/Showcase.html`](../Showcase.html) is one self-contained page (6.32 MB, no external resources) with 30 interactive kernel models (now including the variable fillet and chamfer on a curved edge, VariableArcFillet / VariableArcChamfer, the curved-edge chamfers TiltedBoreChamfer, TiltedBossChamfer and P10, plus P7, P8, the setback specimens V1 / V2, the cliff-overflow plates O1 / O2, and the notch, smooth and variable blends from `BlendValidation --export`), every table below, all 151 gallery panels and the DraftingWorkspace captures. Download it and open it in any browser.
 
+**TL;DR (STL exchange, priority 4 X1)**: `Exchange/StlExchange` writes any set of bodies as binary or ASCII STL from the watertight tessellation and reads STL back with a soundness measure.
+
+[`ExchangeValidation`](ExchangeValidation.md) EX1–EX4 passes 61 checks in 6.0 s over 17 specimens (primitives, hole, cavity, NURBS sweep / loft / pipe, mirrored Boolean, rolling-ball, variable and smooth-overflow fillets, chamfers):
+
+| Gate | Shows | Worst |
+|---|---|---|
+| EX1 | Every file welds watertight (0 open / non-manifold / misoriented sides, 0 degenerate facets); χ of the facets = the B-rep's V − E + 2F − L (2, 0 for genus 1, 4 for the cavity); components = shells | 0 defects |
+| EX2 | \|V(facets) − V(exact)\| ≤ sag · A(exact) for all 17; sphere error 4.35e-1 → 1.06e-1 → 2.63e-2 as sag ÷ 4 (quadratic); metre → millimetre exact to float | ratio 0.47 |
+| EX3 | Binary = 84 + 50 n bytes; ASCII reads back to the same welded facets; stored normals unit; byte-stable rewrite | 4.9e-8 |
+| EX4 | Refusals named (no bodies, bad unit, stale token, truncated binary, missing endsolid, two-vertex facet); removed / flipped / repeated facet → exactly 3 open / misoriented / non-manifold sides | named |
+
+🔍 Independent: [`ExchangeCrossCheck.md`](ExchangeCrossCheck.md). trimesh 5.1.1 reads all 17 files as watertight with consistent winding, with the same Euler numbers and components and volumes equal to every printed digit. The [gallery](ExchangeGallery/StlGallery.png) is shaded from the facets trimesh read.
+
 **TL;DR (drawing sheets, priority 11 D2)**: Views now become finished drawings. `Drawing/DrawingSheet` composes a sheet from bodies:
 
 - **Paper and layout:** ISO 216 A4–A0 landscape, 20 mm binding edge. Front, Top and Right views are placed by ISO 5456-2 first or third angle, with the isometric (or section A-A) in the free quadrant. Top shares Front's sheet x mapping exactly and Right its y mapping. The scale is the largest ISO 5455 standard scale (100:1 … 1:1000) whose view footprints, dimensions included, fit 12 mm apart.
@@ -395,6 +408,8 @@ Convergence slopes are ≈ 1 (volume) and ≈ −1 (triangle count). Digests are
 | `DrawingValidation.md` | DR1 block views · DR2 hole circles and hidden silhouettes · DR3 cylinder and sphere silhouettes · DR4 occlusion between bodies · DR5 section view and hatching · DR6 tangent edges · DR7 refusals · DR8 timings (D1) · DR9 sheet layout · DR10 automatic dimensions · DR11 title block and projection symbol · DR12 sheet section line and hatching · DR13 SVG round trip · DR14 DXF round trip · DR15 sheet refusals (D2) | 🟢 PASS (105) |
 | `DrawingGallery/*.svg, *.png` | 14 projected views from DrawingValidation `--svg` (visible solid, hidden dashed, silhouettes blue, tangent edges green, section outline heavy, hatch grey); `DrawingViews.png` is the contact sheet | — |
 | `DrawingGallery/*Sheet*.svg, *.dxf, *.png` | 4 drawing sheets on A4 (bracket third angle; bracket first angle with section A-A; box edge fillet; cylinder) as exported SVG and DXF R12, PNGs rendered by `Tooling/RenderDrawingSvg.py`; `DrawingSheets.png` is the contact sheet; `BracketSheetFirstAngleSectionDxfRender.png` is the DXF drawn by ezdxf 1.4.5 (0 audit errors) | — |
+| `ExchangeValidation.md` | EX1 STL closure and χ against the B-rep · EX2 volume within sag · area, sphere convergence, millimetre scaling · EX3 binary = ASCII, sizes, normals, byte stability · EX4 refusals and defect counts |
+| `ExchangeCrossCheck.md`, `ExchangeGallery/StlGallery.png` | trimesh read-back of the 17 STL files (watertight, winding, Euler, components, volume) and a shaded gallery of 8 of them |
 | `SetbackValidation.md` | S1 rims on both carriers · S2 G1 quad ↔ neighbour · S3 G1 across spokes · S4 audit, genus, tessellation, vertex categories · S5 determinism · S6 refusals; per-specimen setback / ball / cap counts | 🟢 PASS |
 | `RollingBallValidation.md` | R1 ball law · R2 rails on supports · R3 G1 at rails · R4 projection · R5 chart normal and derivatives · R6 line/circle spines ≡ cylinder/torus · R7 section closure · R8 bodies · R9 transforms; 4 bodies (one with 2 pinch vertices) | 🟢 PASS |
 | `PatternStressValidation.md` (66 rows) | Arrays → Boolean chains → blends: audit, genus, lumps, closed-form V (10⁻⁹·max(1, V*)), 300-point CSG oracle, watertight tessellation, redundant edges (L/C/M); families L linear · C circular · M mixed chains · B blends with closed forms · T tangent chains · P probes · V setback vertex blends; a refusal is ⚠️, a built wrong body 🔴 | 🟢 66 · ⚠️ 0 · 🔴 0 |
