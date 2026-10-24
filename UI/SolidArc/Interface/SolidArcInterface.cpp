@@ -6182,7 +6182,10 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         ImGui::OpenPopup("ConstructMenu");
         State.ConstructMenuRequest = false;
     }
-    const int   TileCount  = State.ConstructSection == 1 ? ConstructSketchCount : ConstructSolidCount;
+    // ⚠️ The section shown this frame is fixed here: a section click below changes State.ConstructSection, and the
+    //    tiles must still come from the array TileCount was measured on (the next frame draws the new section).
+    const int   Displayed  = State.ConstructSection == 1 ? 1 : 0;
+    const int   TileCount  = Displayed == 1 ? ConstructSketchCount : ConstructSolidCount;
     const float MenuHeight = ConstructMenuHeight(TileCount);
     ImGui::SetNextWindowPos(Anchor);
     ImGui::SetNextWindowSize(ImVec2(520, MenuHeight));
@@ -6223,7 +6226,7 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), Compose("%d", Index == 1 ? ConstructSketchCount : ConstructSolidCount).c_str());
     }
     // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
-    const SolidArcConstructTile* Tiles     = State.ConstructSection == 1 ? ConstructSketches : ConstructSolids;
+    const SolidArcConstructTile* Tiles     = Displayed == 1 ? ConstructSketches : ConstructSolids;
     const float                  TilesLeft = Left + 132.0f + 10.0f;
     const float                  TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
     for (int Index = 0; Index < TileCount; ++Index)

@@ -30,7 +30,7 @@
 
 | Capture | Shows |
 |---|---|
-| `Walkthrough/200ConstructSolids.png` · `201ConstructSketch.png` | The menu: 2 sections × 8 tiles |
+| `Walkthrough/200ConstructSolids.png` · `201ConstructSketch.png` | The menu: Solids 8 tiles · Sketch 13 tiles (every primitive and curve form) |
 | `202BoxBase.png` · `203BoxHeight.png` | Box base (W, D), then the height (H 1.000) |
 | `204CylinderHeight.png` · `205ConeHeight.png` · `206PrismHeight.png` · `207TorusTube.png` | Wireframe preview with R / Ø / H / r |
 | `208PolygonDimensions.png` · `209LineDimensions.png` | 2-D dimensions (R, side, 128.6° interior; length 0.943, 148.0°) |
