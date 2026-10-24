@@ -20,7 +20,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Property | SolidArcWorkspace.exe | Frontier.exe |
 |---|---|---|
-| Size | 6,984,704 B | 6,917,632 B |
+| Size | 7,289,344 B | 6,917,632 B |
 | Machine | 0x8664 (x64) | 0x8664 (x64) |
 | Subsystem | 2: Windows GUI (`-Wl,--subsystem,windows`; `WIN32_EXECUTABLE` alone gave 3, console) | 3: console (upstream setting, unchanged) |
 | DLL imports | GDI32, KERNEL32, SHELL32, USER32, plus `api-ms-win-crt-{convert, environment, heap, locale, math, multibyte, private, runtime, stdio, string, time, utility}` | Same, plus comdlg32 and ole32 |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,700,333 B |
-| Zip sha256 | `aa073de6bb0eba9b044105c3c014c9c7d212bcd67feea065f8988fcd1fa323da` |
-| Unpacked | 8,728,011 B (343 entries) |
+| Zip size | 3,704,458 B |
+| Zip sha256 | `9b1030e42ef834647dbb6029db3f24f5ab90a48ab310941bc83fb2e2908fbf26` |
+| Unpacked | 8,740,299 B (343 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
