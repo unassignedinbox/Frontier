@@ -99,6 +99,7 @@ namespace
     GateTally BoundGate       = { "W39", "Bevel previews from the first Windows run: an upright fillet beside a 0.4 bottom fillet (the cap foot took the wrong root of the cylinder, the guide got a random tangent at the tangential corner, C′ blew up and the volume quadrature bisected for up to 334 s) builds every radius in a fraction of a second with |V − closed form| / V; a fillet / chamfer as wide as the neighbouring face (crashed) is refused with the document untouched", "≤ 10⁻⁹, ≤ 20 s, refused" };
     GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, \\|ΔV\\| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock 1 × ½ × 2 in (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9 (STL: \\|ΔV\\| ≤ sag · A)" };
     GateTally PrimitiveGate   = { "W40", "Construct catalogue primitives drawn as new bodies: cone (up and down), wedge, 3 / 6 / 8-sided prisms, tube and the drawn polygon against closed forms; eight tiles side by side as Separate bodies keep their own exact volumes (no Boolean); prism Radius and tube bore edits regenerate exactly; codec byte-equal; refusals atomic", "≤ 10⁻⁹ · exact" };
+    GateTally InsetGate       = { "W41", "Inset (Plasticity O on faces · I): block / cylinder / triangle-prism tops split flat, pocketed and bossed against closed forms with exact face counts; a depth edit regenerates; the pocket floor takes a second inset; codec byte-equal; too-wide / zero / curved refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -3447,7 +3448,82 @@ int main()
               "refused, document unchanged: " + BoreRefused.Refusal + " · " + SidesRefused.Refusal + " · " + PolygonRefusal);
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate })
+    // ---- W41 Inset (Plasticity O on faces · I): border ring + inner face, optional boss / pocket depth
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[512]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        // A fresh document with one primitive and the face under a downward ray at (X, Y) selected.
+        const auto Prepared = [&](SolidArcConstructRequest Request, double X, double Y, std::string& Face)
+        {
+            SolidArcDocument Document = CreateSolidArcDocument("Inset");
+            Request.Combination = FeatureCombination::Separate;
+            Expect(ConstructSolidArcPrimitive(Document, Request));
+            Face = PickAndSelect(Document, RayBetween({ X, Y, 5.0 }, { X, Y, -5.0 }), false);
+            return Document;
+        };
+        struct Case { const char* Name; SolidArcConstructRequest Request; double X, Y, Distance, Depth, Expected; int Faces; };
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 2.0; Block.Depth = 1.5; Block.Height = 1.0;
+        SolidArcConstructRequest Cylinder;
+        Cylinder.Kind = SolidArcConstructKind::Cylinder; Cylinder.Radius = 0.6; Cylinder.Height = 1.0;
+        SolidArcConstructRequest Triangle;
+        Triangle.Kind = SolidArcConstructKind::Prism; Triangle.Sides = 3; Triangle.Radius = 0.6; Triangle.Height = 0.9;
+        const double TriangleArea  = 0.5 * 3.0 * 0.36 * std::sin(2.0 * π / 3.0);            // [len²] - Inradius R/2 = 0.3
+        const double TriangleScale = (0.3 - 0.1) / 0.3;                                      // [-]    - Inset 0.1 shrinks the inradius
+        const Case Cases[] = {
+            { "block top, inset 0.25, depth 0 (flat split)", Block, 1.0, 0.75, 0.25, 0.0, 3.0, 7 },
+            { "block top, inset 0.25, depth −0.2 (pocket)", Block, 1.0, 0.75, 0.25, -0.2, 3.0 - 1.5 * 1.0 * 0.2, 11 },
+            { "block top, inset 0.25, depth +0.3 (boss)", Block, 1.0, 0.75, 0.25, 0.3, 3.0 + 1.5 * 1.0 * 0.3, 11 },
+            { "cylinder top, inset 0.2, depth 0 (annulus + disc)", Cylinder, 0.1, 0.1, 0.2, 0.0, π * 0.36, 4 },
+            { "cylinder top, inset 0.2, depth −0.3 (round pocket)", Cylinder, 0.1, 0.1, 0.2, -0.3, π * 0.36 - π * 0.16 * 0.3, 5 },
+            { "triangle prism top, inset 0.1 (60° corners), depth −0.2", Triangle, 0.05, 0.05, 0.1, -0.2, TriangleArea * 0.9 - TriangleArea * TriangleScale * TriangleScale * 0.2, 9 },
+        };
+        for (const Case& Entry : Cases)
+        {
+            std::string Face;
+            SolidArcDocument Document = Prepared(Entry.Request, Entry.X, Entry.Y, Face);
+            const SolidArcCommandOutcome Outcome = InsetSolidArcSelection(Document, Entry.Distance, Entry.Depth);
+            const double Relative = std::abs(Document.Summary.Volume - Entry.Expected) / Entry.Expected;
+            Tally(InsetGate, Relative, Outcome.AcceptedCondition && Document.Summary.SoundCondition && Relative <= 1.0e-9 && Document.Summary.Faces == Entry.Faces,
+                  Format("%s on %s: V %.12f vs %.12f · %d faces (expected %d)%s", Entry.Name, Face.c_str(), Document.Summary.Volume, Entry.Expected, Document.Summary.Faces, Entry.Faces,
+                         Outcome.AcceptedCondition ? "" : (" — refused: " + Outcome.Refusal).c_str()));
+        }
+
+        // ① parameter edit regenerates (depth −0.2 → −0.5), the inner face of the inset takes a second inset, codec byte-equal
+        std::string Face;
+        SolidArcDocument Edited = Prepared(Block, 1.0, 0.75, Face);
+        Expect(InsetSolidArcSelection(Edited, 0.25, -0.2));
+        const SolidArcCommandOutcome Deeper = AssignSolidArcParameter(Edited, "Inset1.Depth", -0.5);
+        const double DeeperExpected = 3.0 - 1.5 * 1.0 * 0.5;
+        const double DeeperRelative = std::abs(Edited.Summary.Volume - DeeperExpected) / DeeperExpected;
+        Tally(InsetGate, DeeperRelative, Deeper.AcceptedCondition && DeeperRelative <= 1.0e-9, Format("Inset1.Depth −0.2 → −0.5: V %.12f vs %.12f", Edited.Summary.Volume, DeeperExpected));
+        const std::string Floor = PickAndSelect(Edited, RayBetween({ 1.0, 0.75, 5.0 }, { 1.0, 0.75, -5.0 }), false);
+        const SolidArcCommandOutcome Again = InsetSolidArcSelection(Edited, 0.1, 0.2);
+        const double AgainExpected = DeeperExpected + 1.3 * 0.8 * 0.2;
+        const double AgainRelative = std::abs(Edited.Summary.Volume - AgainExpected) / AgainExpected;
+        Tally(InsetGate, AgainRelative, Again.AcceptedCondition && AgainRelative <= 1.0e-9 && Edited.Summary.SoundCondition,
+              Format("pocket floor %s inset 0.1, boss +0.2: V %.12f vs %.12f", Floor.c_str(), Edited.Summary.Volume, AgainExpected));
+        const std::string Saved = EncodeSolidArcDocument(Edited);
+        SolidArcDocumentFile File = DecodeSolidArcDocument(Saved);
+        SolidArcDocument     Loaded = CreateSolidArcDocument(File.Title);
+        const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Loaded, File.Tree, File.Captions, "Open");
+        Tally(InsetGate, std::abs(Loaded.Summary.Volume - Edited.Summary.Volume), Opened.AcceptedCondition && EncodeSolidArcDocument(Loaded) == Saved && Loaded.Summary.Volume == Edited.Summary.Volume,
+              Format("codec: %d bytes, save → load → save byte-equal (depth kept)", int(Saved.size())));
+
+        // ② refusals leave the document untouched: too wide (1.5 deep face, inset 0.8), a curved face, zero distance
+        SolidArcDocument Refused = Prepared(Block, 1.0, 0.75, Face);
+        const std::string Before = EncodeSolidArcDocument(Refused);
+        const SolidArcCommandOutcome Wide = InsetSolidArcSelection(Refused, 0.8, 0.0);
+        const SolidArcCommandOutcome Zero = InsetSolidArcSelection(Refused, 0.0, 0.0);
+        SolidArcDocument Round = Prepared(Cylinder, 0.0, 0.0, Face);
+        PickAndSelect(Round, RayBetween({ 3.0, 0.0, 0.5 }, { 0.0, 0.0, 0.5 }), false);
+        const std::string RoundBefore = EncodeSolidArcDocument(Round);
+        const SolidArcCommandOutcome Curved = InsetSolidArcSelection(Round, 0.1, 0.0);
+        Tally(InsetGate, 0.0, !Wide.AcceptedCondition && !Zero.AcceptedCondition && !Curved.AcceptedCondition && EncodeSolidArcDocument(Refused) == Before && EncodeSolidArcDocument(Round) == RoundBefore,
+              "refused, document unchanged: " + Wide.Refusal + " · " + Zero.Refusal + " · " + Curved.Refusal);
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
