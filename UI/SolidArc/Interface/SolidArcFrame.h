@@ -70,7 +70,7 @@ public:
 private:
     const SolidArcDevice* Device       = nullptr;                                            // [-] - Borrowed
     VkDescriptorSet       Texture      = VK_NULL_HANDLE;                                     // [-] - ImGui texture of the colour target
-    VkImageView           TextureView  = VK_NULL_HANDLE;                                     // [-] - View it was registered with
+    uint64_t              TextureTargets = 0;                                                // [-] - Raster target generation it was registered with
     bool                  BackendReady = false;                                              // [-] - ImGui_ImplVulkan_Init succeeded
     std::vector<SolidArcImage>   Thumbnails      = {};                                       // [-] - Matcap swatches (64 × 64)
     std::vector<VkDescriptorSet> ThumbnailSets   = {};                                       // [-] - Their ImGui textures

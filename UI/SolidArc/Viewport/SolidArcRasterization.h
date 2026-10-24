@@ -134,6 +134,9 @@ public:
     [[nodiscard]] const uint32_t* ReadbackIdentity() const;                                  // R32, row-major, Width × Height
 
     [[nodiscard]] VkImageView ColourView() const { return Colour.View; }
+    // 💡 Changes whenever the targets are rebuilt. Compare this, not ColourView(): drivers recycle handle values, so a new
+    //    view can carry the destroyed view's handle and a descriptor keyed on it would keep sampling freed memory.
+    [[nodiscard]] uint64_t    TargetGeneration() const { return BuiltTargets; }
     [[nodiscard]] uint32_t    Width() const { return Colour.Width; }
     [[nodiscard]] uint32_t    Height() const { return Colour.Height; }
     [[nodiscard]] uint64_t    SceneGeneration() const { return UploadedGeneration; }
@@ -168,6 +171,7 @@ private:
     uint32_t       FaceCount         = 0;
     uint32_t       EdgeCount         = 0;
     uint64_t       UploadedGeneration  = UINT64_MAX;
+    uint64_t       BuiltTargets        = 0;                                                  // [-] - CreateTargets count
 
     VkDescriptorSetLayout BufferLayout     = VK_NULL_HANDLE;
     VkDescriptorPool      DescriptorPool   = VK_NULL_HANDLE;

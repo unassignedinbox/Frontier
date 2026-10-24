@@ -389,6 +389,7 @@ void SolidArcRasterization::CreateTargets(uint32_t Width, uint32_t Height)
     Depth    = Device->CreateImage(Width, Height, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
     ColourReadback   = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
     IdentityReadback = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+    ++BuiltTargets;
     // 📝 The interface samples the colour target before the first Record(): start it in the sampled layout.
     Device->SubmitImmediately([&](VkCommandBuffer Commands)
     {

@@ -62,8 +62,8 @@ void SolidArcWorkspaceFrame::Destroy()
     vkDeviceWaitIdle(Device->Device);
     ReleaseThumbnails();
     if (Texture != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(Texture);
-    Texture     = VK_NULL_HANDLE;
-    TextureView = VK_NULL_HANDLE;
+    Texture        = VK_NULL_HANDLE;
+    TextureTargets = 0;
     if (BackendReady) ImGui_ImplVulkan_Shutdown();
     BackendReady = false;
     Raster.Destroy();
@@ -133,12 +133,15 @@ void SolidArcWorkspaceFrame::PrepareViewport(SolidArcWorkspaceState& State)
     const uint32_t Width  = uint32_t(std::max(8.0f, std::round(State.ViewportRect[2])));
     const uint32_t Height = uint32_t(std::max(8.0f, std::round(State.ViewportRect[3])));
     Raster.Resize(Width, Height);
-    if (Raster.ColourView() != TextureView)
+    // ⚠️ Keyed on the target generation, not the VkImageView handle: a driver may hand the destroyed view's handle to the new
+    //    view after a resize. A handle-keyed descriptor then keeps the old image (freed memory, old size) and the viewport
+    //    comes out in displaced tiles (seen on an AMD RX 9060 XT).
+    if (Raster.TargetGeneration() != TextureTargets || Texture == VK_NULL_HANDLE)
     {
         // The previous frame has completed (fence / idle), so its descriptor set may be released now.
         if (Texture != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(Texture);
-        Texture     = ImGui_ImplVulkan_AddTexture(Raster.ColourView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        TextureView = Raster.ColourView();
+        Texture        = ImGui_ImplVulkan_AddTexture(Raster.ColourView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        TextureTargets = Raster.TargetGeneration();
     }
     const SolidArcScene& Scene = DisplayedSolidArcScene(State);
     if (Scene.Generation != Raster.SceneGeneration()) Raster.UploadScene(Scene);

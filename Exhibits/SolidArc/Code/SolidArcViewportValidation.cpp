@@ -53,6 +53,7 @@ namespace
     GateTally DeterminismGate = { "V7", "Same frame twice → identical colour and identity digests", "equal" };
     GateTally XRayGate        = { "V9", "X-ray: ghost faces = α · opaque + (1 − α) · background; every revealed stroke pixel is a CPU-hidden edge; no other identity changes; rim spill; probe and CPU pick through; box visibility = GPU edges; off → bit-identical", "≤ 2 / 255 · ≥ 99.5 % · 0 · ≤ 2 % · equal" };
     GateTally SectionGate     = { "V10", "Section (Alt+S): interior pixels = CPU pick with the clip (removed side gone, caps where the material is cut); every cap pixel within 1 px of a CPU cap; probe; grid never through a cap; off → bit-identical", "≤ 0.1 % · all · equal" };
+    GateTally ResizeGate      = { "V11", "Target rebuilds: the generation advances on every real resize and holds on an equal size (the interface re-registers its texture on it, never on the recycled VkImageView handle); a resize away and back renders the identical frame", "all hold · equal" };
     GateTally MatcapGate      = { "V8", "Matcap layers: planar faces = the bilinear texel at their view-space normal (body + 2 face overrides); Studio shader = CPU mirror; clearing restores the Studio frame bit-exact", "≤ 2 / 255" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows
@@ -624,6 +625,26 @@ int main(int ArgumentCount, char** Arguments)
         }
     }
 
+    // ---- V11 target rebuilds (the interface keys its viewport texture on TargetGeneration, not on the view handle)
+    {
+        PresentOrbitView(Camera, OrbitViewPreset::Isometric);
+        const OrbitCameraFrame Frame  = FrameOrbitCamera(Camera, Width, Height);
+        const Rendered         Before = RenderFrame(Device, Raster, Frame, Style);
+        const uint64_t         Built  = Raster.TargetGeneration();
+        const VkImageView      View   = Raster.ColourView();
+        Raster.Resize(Width, Height);
+        Tally(ResizeGate, 0.0, Raster.TargetGeneration() == Built, "equal size " + std::to_string(Width) + " × " + std::to_string(Height) + ": generation holds at " + std::to_string(Built));
+        Raster.Resize(Width - 317, Height - 211);
+        const uint64_t Shrunk = Raster.TargetGeneration();
+        Raster.Resize(Width, Height);
+        const bool RecycledCondition = Raster.ColourView() == View;
+        Tally(ResizeGate, 0.0, Shrunk == Built + 1 && Raster.TargetGeneration() == Built + 2,
+              "resize away and back: generation " + std::to_string(Built) + " → " + std::to_string(Shrunk) + " → " + std::to_string(Raster.TargetGeneration()) +
+              (RecycledCondition ? " (this driver recycled the colour view handle)" : " (new colour view handle)"));
+        const Rendered After = RenderFrame(Device, Raster, Frame, Style);
+        Tally(ResizeGate, 0.0, After.Colour == Before.Colour && After.Identity == Before.Identity, "frame after the rebuild = frame before (colour and identity)");
+    }
+
     // ---- V7 determinism
     {
         PresentOrbitView(Camera, OrbitViewPreset::Isometric);
@@ -644,7 +665,7 @@ int main(int ArgumentCount, char** Arguments)
                 Device.Describe().c_str(), Scene.Faces.size(), Scene.Edges.size(), Scene.Corners.size() / 3, Width, Height, SlowestMs, Seconds);
     std::printf("| Gate | Subject | Limit | Worst | Checks | Verdict |\n|------|---------|-------|-------|--------|---------|\n");
     long Failures = 0;
-    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate, &XRayGate, &SectionGate })
+    for (const GateTally* Gate : { &DeviceGate, &FaceGate, &EdgeGate, &ProbeGate, &TintGate, &ViewGate, &DeterminismGate, &MatcapGate, &XRayGate, &SectionGate, &ResizeGate })
     {
         std::printf("| %s | %s | %s | %.4g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
