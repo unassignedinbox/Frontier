@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/RollingBallCarrier.h"
 
@@ -275,7 +277,7 @@ double IntegrateShellVolume(const ModelPartition& Partition, SolidShellToken Sol
     return MeasureShellVolume(Partition, SolidShell).Volume;
 }
 
-double IntegrateBodyVolume(const ModelPartition& Partition, BodyToken Body)
+static double IntegrateBodyVolumeUntraced(const ModelPartition& Partition, BodyToken Body)
 {
     double Total = 0.0;                                                                      // [len³] - Body volume
     for (RegionToken Region : Partition.Bodies.Resolve(Body).Regions)
@@ -285,6 +287,17 @@ double IntegrateBodyVolume(const ModelPartition& Partition, BodyToken Body)
     }
     return Total;
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+double IntegrateBodyVolume(const ModelPartition& Partition, BodyToken Body)
+{
+    FRONTIER_TRACE_SCOPE("Volume", "IntegrateBodyVolume · body " + std::to_string(Body.Slot));
+    const double Volume = IntegrateBodyVolumeUntraced(Partition, Body);
+    FRONTIER_TRACE("Volume", "V = " + TraceNumber(Volume));
+    return Volume;
+}
+
 
 double IntegrateShellFlux(const ModelPartition& Partition, SolidShellToken SolidShell, const std::function<Vector3(Vector3)>& Field)
 {

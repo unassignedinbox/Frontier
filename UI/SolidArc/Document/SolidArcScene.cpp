@@ -9,6 +9,8 @@
 
 #include "UI/SolidArc/Document/SolidArcScene.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/SurfaceGeometry.h"
@@ -154,6 +156,7 @@ double SolidArcZebraPhase(Vector3 Normal, Vector3 Forward, Vector3 Up, double St
 
 SolidArcScene BuildSolidArcScene(const SolidArcDocument& Document, double SagRatio, bool FineCondition)
 {
+    FRONTIER_TRACE_SCOPE("Scene", std::string("BuildSolidArcScene · ") + std::to_string(Document.Regeneration.Bodies.size()) + " body(ies)" + (FineCondition ? " · fine" : " · coarse"));
     const auto    Start = std::chrono::steady_clock::now();
     SolidArcScene Scene;
     static std::atomic<uint64_t> BuildCounter{0};

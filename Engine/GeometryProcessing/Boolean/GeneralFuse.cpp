@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Boolean/GeneralFuse.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
 #include "Engine/GeometryProcessing/Construction/BodyAssembly.h"
 #include "Engine/GeometryProcessing/Intersection/CurveSurfaceIntersection.h"
@@ -1171,12 +1173,26 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
     return Outcome;
 }
 
-BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyToken Second, BooleanOperation Operation, const GeneralFuseSettings& Settings, GeneralFuseStatistics* Statistics)
+static BooleanOutcome ComputeBooleanUntraced(ModelPartition& Partition, BodyToken First, BodyToken Second, BooleanOperation Operation, const GeneralFuseSettings& Settings, GeneralFuseStatistics* Statistics)
 {
     const GeneralFuseOutcome Fuse = RunGeneralFuse(Partition, First, Second, Settings);
     if (Statistics != nullptr) *Statistics = Fuse.Statistics;
     return AssembleBoolean(Partition, Fuse, Operation, Settings.MaximalFacesEnabled);
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyToken Second, BooleanOperation Operation, const GeneralFuseSettings& Settings, GeneralFuseStatistics* Statistics)
+{
+    static const char* Verbs[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside" };
+    const size_t Verb = static_cast<size_t>(Operation);
+    FRONTIER_TRACE_SCOPE("Boolean", std::string(Verb < 6 ? Verbs[Verb] : "Boolean") + " · bodies " + std::to_string(First.Slot) + " and " + std::to_string(Second.Slot));
+    BooleanOutcome Outcome = ComputeBooleanUntraced(Partition, First, Second, Operation, Settings, Statistics);
+    FRONTIER_TRACE("Boolean", Outcome.Refusal.empty() ? std::to_string(Outcome.Solids) + " solid(s) · " + std::to_string(Outcome.Faces) + " face(s)"
+                                                      : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 const char* BooleanOperationLabel(BooleanOperation Operation) noexcept
 {

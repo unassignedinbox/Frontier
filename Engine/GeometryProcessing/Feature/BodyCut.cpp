@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Feature/BodyCut.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
@@ -159,7 +161,7 @@ std::optional<ProfileSegment> ProjectCutCurve(const NurbsCurve& Curve, const Ort
     return Segment;
 }
 
-BodyCutOutcome CutBody(ModelPartition& Partition, BodyToken Body, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Reach)
+static BodyCutOutcome CutBodyUntraced(ModelPartition& Partition, BodyToken Body, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Reach)
 {
     BodyCutOutcome Outcome;
     Outcome.Profile        = Profile;
@@ -196,5 +198,16 @@ BodyCutOutcome CutBody(ModelPartition& Partition, BodyToken Body, const SketchPr
     }
     return Outcome;
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+BodyCutOutcome CutBody(ModelPartition& Partition, BodyToken Body, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Reach)
+{
+    FRONTIER_TRACE_SCOPE("Cut", "CutBody · body " + std::to_string(Body.Slot) + " · " + std::to_string(Profile.Loops.size()) + " loop(s)");
+    BodyCutOutcome Outcome = CutBodyUntraced(Partition, Body, Profile, Plane, Reach);
+    FRONTIER_TRACE("Cut", Outcome.Refusal.empty() ? std::string("built") : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 } // namespace Frontier::GeometryProcessing

@@ -7,6 +7,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
@@ -232,6 +233,16 @@ int main(int Count, char** Arguments)
     if (!OpenPath.empty()) OpenPath = DescribeUtf8Path(std::filesystem::absolute(ResolveUtf8Path(OpenPath), AbsoluteFailure));
     if (!CurvesPath.empty()) CurvesPath = DescribeUtf8Path(std::filesystem::absolute(ResolveUtf8Path(CurvesPath), AbsoluteFailure));
     AdoptPackageFolder(OptionsPath);
+#ifdef FRONTIER_DEVELOPMENT_TRACE
+    // 📝 Development builds write SolidArcTrace.log beside the executable (the previous run is kept as
+    //    SolidArcTrace.previous.log): every command, replay step, kernel operation and status line, flushed per line.
+    {
+        const std::filesystem::path Folder    = ResolveExecutableFolder();
+        const std::filesystem::path TracePath = (Folder.empty() ? std::filesystem::current_path(AbsoluteFailure) : Folder) / "SolidArcTrace.log";
+        const bool                  Opened    = Frontier::GeometryProcessing::OpenOperationTrace(TracePath);
+        FRONTIER_TRACE("Session", std::string("SolidArc started · trace ") + (Opened ? DescribeUtf8Path(TracePath) : std::string("in memory only (file refused)")));
+    }
+#endif
     SolidArcOptions Options = LoadSolidArcOptions(OptionsPath);
     if (!CurvesPath.empty()) Options.CurvesPath = CurvesPath;                                // Import curves… starts here
 
@@ -429,6 +440,8 @@ int main(int Count, char** Arguments)
     vkDestroySurfaceKHR(Device.Instance, Surface, nullptr);
     Device.Close();
     glfwDestroyWindow(Window);
+    FRONTIER_TRACE("Session", "SolidArc closed");
+    Frontier::GeometryProcessing::CloseOperationTrace();
     glfwTerminate();
     return 0;
 }

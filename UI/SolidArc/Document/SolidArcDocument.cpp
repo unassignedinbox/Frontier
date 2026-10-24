@@ -8,6 +8,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Document/SolidArcDocument.h"
+
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcExchange.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
@@ -265,6 +267,151 @@ std::string AuthorTile(SolidArcDocument& Document, const SolidArcConstructReques
         Sweep.Angle           = LiteralValue(2.0 * Pi);
         break;
     }
+    case SolidArcConstructKind::Cone:
+    {
+        // 📝 Right triangle on XZ: the leg on the axis is a profile line (as the sphere's diameter) and the revolution axis;
+        //    the apex sits Height above the base centre (negative: the cone points down).
+        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, "axis x");
+        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, "axis y (sketch elevation)");
+        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, "base z");
+        Author.Parameter("Radius", Request.Radius, 0.05, 5.0, "base radius");
+        Author.Parameter("Height", Request.Height, 0.1, 10.0, "base → apex along +z");
+        FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
+        Section.Plane        = UprightPlane();
+        Section.Elevation    = ParameterValue(Author.Named("Y"), -1.0);
+        SketchModel& Sketch  = Section.Sketch;
+        const int Origin     = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+        const int Base       = AppendSketchPoint(Sketch, { Spot.X, Spot.Z });
+        const int Apex       = AppendSketchPoint(Sketch, { Spot.X, Spot.Z + Request.Height });
+        const int Rim        = AppendSketchPoint(Sketch, { Spot.X + Request.Radius, Spot.Z });
+        AppendSketchLine(Sketch, Apex, Base, 1);
+        AppendSketchLine(Sketch, Base, Rim, 2);
+        AppendSketchLine(Sketch, Rim, Apex, 3);
+        AppendSketchConstraint(Sketch, Kind::Fixed, Origin, -1, -1, 0.0, "Origin", 0.0);
+        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Base, "X");
+        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Base, "Z");
+        AppendSketchConstraint(Sketch, Kind::HorizontalDistance, Base, Apex, -1, 0.0, "ApexOnAxis");
+        Author.Bound(Sketch, Kind::VerticalDistance, Base, Apex, "Height");
+        AppendSketchConstraint(Sketch, Kind::VerticalDistance, Base, Rim, -1, 0.0, "Level");
+        Author.Bound(Sketch, Kind::HorizontalDistance, Base, Rim, "Radius");
+        FeatureStep& Sweep    = Author.Step(FeatureStepKind::Revolve, "Revolve#" + std::to_string(Ordinal + 1));
+        Sweep.Profile         = SketchLabel;
+        Sweep.Combination     = Combination;
+        Sweep.Target          = Request.Target;
+        Sweep.AxisIdentifier  = 1;
+        Sweep.Angle           = LiteralValue(2.0 * Pi);
+        break;
+    }
+    case SolidArcConstructKind::Wedge:
+    {
+        // 📝 Right triangle on XZ (upright sketch, normal −y, elevation −Y) extruded by −Depth, so Depth runs along +y as
+        //    the y-axis cylinder does. The high side stands at x = X; the slope falls to the floor at x = X + Width.
+        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, "corner x (high side)");
+        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, "corner y (sketch elevation)");
+        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, "corner z");
+        Author.Parameter("Width", Request.Width, 0.1, 10.0, "extent along x (slope run)");
+        Author.Parameter("Depth", Request.Depth, 0.1, 10.0, "extent along y (extrude)");
+        Author.Parameter("Height", Request.Height, 0.1, 10.0, "height of the high side");
+        FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
+        Section.Plane        = UprightPlane();
+        Section.Elevation    = ParameterValue(Author.Named("Y"), -1.0);
+        SketchModel& Sketch  = Section.Sketch;
+        const int Origin     = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+        const int Heel       = AppendSketchPoint(Sketch, { Spot.X, Spot.Z });
+        const int Toe        = AppendSketchPoint(Sketch, { Spot.X + Request.Width, Spot.Z });
+        const int Crest      = AppendSketchPoint(Sketch, { Spot.X, Spot.Z + Request.Height });
+        AppendSketchLine(Sketch, Heel, Toe, 1);
+        AppendSketchLine(Sketch, Toe, Crest, 2);
+        AppendSketchLine(Sketch, Crest, Heel, 3);
+        AppendSketchConstraint(Sketch, Kind::Fixed, Origin, -1, -1, 0.0, "Origin", 0.0);
+        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Heel, "X");
+        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Heel, "Z");
+        Author.Bound(Sketch, Kind::HorizontalDistance, Heel, Toe, "Width");
+        AppendSketchConstraint(Sketch, Kind::VerticalDistance, Heel, Toe, -1, 0.0, "Level");
+        AppendSketchConstraint(Sketch, Kind::HorizontalDistance, Heel, Crest, -1, 0.0, "Upright");
+        Author.Bound(Sketch, Kind::VerticalDistance, Heel, Crest, "Height");
+        FeatureStep& Sweep = Author.Step(FeatureStepKind::Extrude, "Extrude#" + std::to_string(Ordinal + 1));
+        Sweep.Profile      = SketchLabel;
+        Sweep.Extent       = ParameterValue(Author.Named("Depth"), -1.0);
+        Sweep.Combination  = Combination;
+        Sweep.Target       = Request.Target;
+        break;
+    }
+    case SolidArcConstructKind::Prism:
+    {
+        // 📝 Regular n-gon on XY: every vertex on a construction circle of the bound Radius, every side equal to the first,
+        //    the first vertex on a construction ray from the centre at Angle. 2n + 5 unknowns, 2n + 5 equations.
+        const int    Sides  = std::clamp(Request.Sides, 3, 64);
+        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, "centre x");
+        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, "centre y");
+        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, "base z (sketch elevation)");
+        Author.Parameter("Radius", Request.Radius, 0.05, 5.0, "circumradius (centre → vertex)");
+        Author.Parameter("Height", Request.Height, 0.1, 10.0, "extent along +z (extrude)");
+        FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
+        Section.Plane        = FloorPlane();
+        Section.Elevation    = ParameterValue(Author.Named("Z"));
+        SketchModel& Sketch  = Section.Sketch;
+        const int Origin     = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+        const int Centre     = AppendSketchPoint(Sketch, { Spot.X, Spot.Y });
+        const int Ring       = AppendSketchCircle(Sketch, Centre, Request.Radius, 1, true);
+        const GeometryProcessing::Vector2 Heading{ std::cos(Request.Angle), std::sin(Request.Angle) };
+        const int Aim        = AppendSketchPoint(Sketch, { Spot.X + Heading.X, Spot.Y + Heading.Y });
+        const int Ray        = AppendSketchLine(Sketch, Centre, Aim, 2, true);
+        std::vector<int> Corners;
+        for (int Index = 0; Index < Sides; ++Index)
+        {
+            const double θ = Request.Angle + 2.0 * Pi * Index / Sides;
+            Corners.push_back(AppendSketchPoint(Sketch, { Spot.X + Request.Radius * std::cos(θ), Spot.Y + Request.Radius * std::sin(θ) }));
+        }
+        std::vector<int> Edges;
+        for (int Index = 0; Index < Sides; ++Index) Edges.push_back(AppendSketchLine(Sketch, Corners[Index], Corners[(Index + 1) % Sides], 3 + Index));
+        AppendSketchConstraint(Sketch, Kind::Fixed, Origin, -1, -1, 0.0, "Origin", 0.0);
+        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Centre, "X");
+        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Centre, "Y");
+        Author.Bound(Sketch, Kind::Radius, Ring, -1, "Radius");
+        AppendSketchConstraint(Sketch, Kind::HorizontalDistance, Centre, Aim, -1, Heading.X, "AimX");
+        AppendSketchConstraint(Sketch, Kind::VerticalDistance, Centre, Aim, -1, Heading.Y, "AimY");
+        AppendSketchConstraint(Sketch, Kind::PointOnLine, Corners[0], Ray, -1, 0.0, "FirstOnRay");
+        for (int Index = 0; Index < Sides; ++Index)
+            AppendSketchConstraint(Sketch, Kind::PointOnCircle, Corners[Index], Ring, -1, 0.0, "OnRing" + std::to_string(Index + 1));
+        for (int Index = 1; Index < Sides; ++Index)
+            AppendSketchConstraint(Sketch, Kind::EqualLength, Edges[0], Edges[Index], -1, 0.0, "Equal" + std::to_string(Index + 1));
+        FeatureStep& Sweep = Author.Step(FeatureStepKind::Extrude, "Extrude#" + std::to_string(Ordinal + 1));
+        Sweep.Profile      = SketchLabel;
+        Sweep.Extent       = ParameterValue(Author.Named("Height"));
+        Sweep.Combination  = Combination;
+        Sweep.Target       = Request.Target;
+        break;
+    }
+    case SolidArcConstructKind::Tube:
+    {
+        // 📝 Annulus on XY: two circles on one centre point (concentric by construction), the inner one a hole of the profile.
+        Author.Parameter("X", Spot.X, Spot.X - 5.0, Spot.X + 5.0, "axis x");
+        Author.Parameter("Y", Spot.Y, Spot.Y - 5.0, Spot.Y + 5.0, "axis y");
+        Author.Parameter("Z", Spot.Z, Spot.Z - 5.0, Spot.Z + 5.0, "base z (sketch elevation)");
+        Author.Parameter("Radius", Request.Radius, 0.05, 5.0, "outer radius");
+        Author.Parameter("Inner", Request.Inner, 0.02, 5.0, "bore radius");
+        Author.Parameter("Height", Request.Height, 0.1, 10.0, "extent along +z (extrude)");
+        FeatureStep& Section = Author.Step(FeatureStepKind::Sketch, SketchLabel);
+        Section.Plane        = FloorPlane();
+        Section.Elevation    = ParameterValue(Author.Named("Z"));
+        SketchModel& Sketch  = Section.Sketch;
+        const int Origin     = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+        const int Centre     = AppendSketchPoint(Sketch, { Spot.X, Spot.Y });
+        const int Outer      = AppendSketchCircle(Sketch, Centre, Request.Radius, 1);
+        const int Bore       = AppendSketchCircle(Sketch, Centre, Request.Inner, 2);
+        AppendSketchConstraint(Sketch, Kind::Fixed, Origin, -1, -1, 0.0, "Origin", 0.0);
+        Author.Bound(Sketch, Kind::HorizontalDistance, Origin, Centre, "X");
+        Author.Bound(Sketch, Kind::VerticalDistance, Origin, Centre, "Y");
+        Author.Bound(Sketch, Kind::Radius, Outer, -1, "Radius");
+        Author.Bound(Sketch, Kind::Radius, Bore, -1, "Inner");
+        FeatureStep& Sweep = Author.Step(FeatureStepKind::Extrude, "Extrude#" + std::to_string(Ordinal + 1));
+        Sweep.Profile      = SketchLabel;
+        Sweep.Extent       = ParameterValue(Author.Named("Height"));
+        Sweep.Combination  = Combination;
+        Sweep.Target       = Request.Target;
+        break;
+    }
     }
     Document.Captions[SketchLabel]            = Caption;
     Document.Captions[Tree.Steps.back().Label] = Caption;
@@ -312,6 +459,7 @@ void Restore(SolidArcDocument& Document, SolidArcHistoryEntry Entry)
 template <typename Change>
 SolidArcCommandOutcome RunAppearanceCommand(SolidArcDocument& Document, const std::string& Label, Change&& Apply)
 {
+    FRONTIER_TRACE_SCOPE("Appearance", Label);
     const auto           Start  = std::chrono::steady_clock::now();
     SolidArcHistoryEntry Before = Snapshot(Document, Label);
     Before.AppearanceCondition  = true;
@@ -357,6 +505,7 @@ template <typename Change>
 SolidArcCommandOutcome RunCommand(SolidArcDocument& Document, const std::string& Label, bool CaptureCondition, Change&& Apply,
                                   size_t WatchFrom = std::numeric_limits<size_t>::max())
 {
+    FRONTIER_TRACE_SCOPE("Command", Label);
     const auto                  Start         = std::chrono::steady_clock::now();
     SolidArcHistoryEntry        Before        = Snapshot(Document, Label);
     const size_t                FirstNew      = std::min(Document.Tree.Steps.size(), WatchFrom);
@@ -371,10 +520,12 @@ SolidArcCommandOutcome RunCommand(SolidArcDocument& Document, const std::string&
     }
     if (!Outcome.Refusal.empty())
     {
+        FRONTIER_TRACE("Command", "refused, rolled back: " + Outcome.Refusal);
         Restore(Document, std::move(Before));
         Outcome.Milliseconds = ElapsedMs(Start);
         return Outcome;
     }
+    FRONTIER_TRACE("Command", "accepted · " + std::to_string(Document.Tree.Steps.size()) + " step(s) · " + std::to_string(Document.Regeneration.Bodies.size()) + " body(ies)");
     Document.UndoEntries.push_back(std::move(Before));
     Document.RedoEntries.clear();
     TrimHistoryReplay(Document);
@@ -437,6 +588,7 @@ SolidArcDocument CreateSolidArcDocument(const std::string& Title)
 
 void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureCondition)
 {
+    FRONTIER_TRACE_SCOPE("Document", std::string("RegenerateSolidArcDocument") + (CaptureCondition ? " · capture" : ""));
     Document.Partition    = std::make_unique<ModelPartition>();
     Document.Regeneration = RegenerateFeatureTree(*Document.Partition, Document.Tree, CaptureCondition, &Document.Replay);
     // 📝 One counter for every document in the process, so a staged preview never shares a scene key with its source.
@@ -516,9 +668,18 @@ SolidArcCommandOutcome ConstructSolidArcPrimitive(SolidArcDocument& Document, co
                               (FirstBodyCondition && Request.Combination != FeatureCombination::Separate ? "New" : FeatureCombinationLabel(Request.Combination));
     return RunCommand(Document, Label, false, [&]() -> std::string
     {
-        if (Request.Width <= 0.0 || Request.Depth <= 0.0 || Request.Height <= 0.0 || Request.Radius <= 0.0 ||
-            Request.Minor <= 0.0 || Request.Major <= Request.Minor)
-            return "every dimension must be positive (torus: Major > Minor)";
+        // 📝 Only the dimensions the tile reads are checked (a cone's Height may be negative: it points down).
+        const SolidArcConstructKind Tile = Request.Kind;
+        const bool BoxLike = Tile == SolidArcConstructKind::Block || Tile == SolidArcConstructKind::Wedge;
+        const bool Round   = Tile == SolidArcConstructKind::Cylinder || Tile == SolidArcConstructKind::Sphere || Tile == SolidArcConstructKind::Cone ||
+                             Tile == SolidArcConstructKind::Prism || Tile == SolidArcConstructKind::Tube;
+        const bool Tall    = Tile != SolidArcConstructKind::Sphere && Tile != SolidArcConstructKind::Torus;
+        if ((BoxLike && (Request.Width <= 0.0 || Request.Depth <= 0.0)) || (Round && Request.Radius <= 0.0) ||
+            (Tall && (Tile == SolidArcConstructKind::Cone ? Request.Height == 0.0 : Request.Height <= 0.0)))
+            return "every dimension must be positive";
+        if (Tile == SolidArcConstructKind::Torus && (Request.Minor <= 0.0 || Request.Major <= Request.Minor)) return "torus: Major must exceed Minor > 0";
+        if (Tile == SolidArcConstructKind::Tube && (Request.Inner <= 0.0 || Request.Inner >= Request.Radius)) return "tube: the bore must lie inside the outer radius";
+        if (Tile == SolidArcConstructKind::Prism && (Request.Sides < 3 || Request.Sides > 64)) return "prism: 3 … 64 sides";
         if (!FirstBodyCondition && Request.Combination == FeatureCombination::New)
             return "a second body needs Union, Difference, Intersection or New body";
         if (!Request.Target.empty() && !FindRegeneratedBody(Document, Request.Target)) return "no body named " + Request.Target;
@@ -754,6 +915,24 @@ std::string ComposeSolidArcSketch(const SolidArcDrawingRequest& Request, SketchM
         AppendSketchConstraint(Sketch, Kind::Tangent, Top, Cap, -1, 0.0, "T2");
         AppendSketchConstraint(Sketch, Kind::Tangent, Top, Back, -1, 0.0, "T3");
         AppendSketchConstraint(Sketch, Kind::Tangent, Bottom, Back, -1, 0.0, "T4");
+        return {};
+    }
+    case SolidArcDrawingKind::Polygon:
+    {
+        // Regular polygon: the first click is the centre, the second a vertex (size and turn); Sides closed lines.
+        if (std::string Refusal = Needs(2); !Refusal.empty()) return Refusal;
+        if (Request.Sides < 3 || Request.Sides > 64) return "Polygon needs 3 … 64 sides";
+        const Vector2 Centre = Points[0];
+        const double  Radius = Distance(Points[0], Points[1]);
+        if (Radius <= Join) return "Polygon has no radius";
+        const double  Turn = std::atan2(Points[1].Y - Centre.Y, Points[1].X - Centre.X);
+        std::vector<int> Corners;
+        for (int Index = 0; Index < Request.Sides; ++Index)
+        {
+            const double θ = Turn + 2.0 * Pi * Index / Request.Sides;
+            Corners.push_back(AppendSketchPoint(Sketch, { Centre.X + Radius * std::cos(θ), Centre.Y + Radius * std::sin(θ) }));
+        }
+        for (int Index = 0; Index < Request.Sides; ++Index) AppendSketchLine(Sketch, Corners[Index], Corners[(Index + 1) % Request.Sides], Index + 1);
         return {};
     }
     case SolidArcDrawingKind::Curve:
@@ -1005,6 +1184,7 @@ void SelectSolidArcCurve(SolidArcDocument& Document, const std::string& Label, b
 bool UndoSolidArcCommand(SolidArcDocument& Document)
 {
     if (Document.UndoEntries.empty()) return false;
+    FRONTIER_TRACE_SCOPE("History", "Undo · " + Document.UndoEntries.back().Label);
     SolidArcHistoryEntry Entry = std::move(Document.UndoEntries.back());
     Document.UndoEntries.pop_back();
     Document.RedoEntries.push_back(Snapshot(Document, Entry.Label));
@@ -1017,6 +1197,7 @@ bool UndoSolidArcCommand(SolidArcDocument& Document)
 bool RedoSolidArcCommand(SolidArcDocument& Document)
 {
     if (Document.RedoEntries.empty()) return false;
+    FRONTIER_TRACE_SCOPE("History", "Redo · " + Document.RedoEntries.back().Label);
     SolidArcHistoryEntry Entry = std::move(Document.RedoEntries.back());
     Document.RedoEntries.pop_back();
     Document.UndoEntries.push_back(Snapshot(Document, Entry.Label));
@@ -1865,6 +2046,10 @@ const char* SolidArcConstructLabel(SolidArcConstructKind Kind) noexcept
     case SolidArcConstructKind::Cylinder: return "Cylinder";
     case SolidArcConstructKind::Sphere:   return "Sphere";
     case SolidArcConstructKind::Torus:    return "Torus";
+    case SolidArcConstructKind::Cone:     return "Cone";
+    case SolidArcConstructKind::Wedge:    return "Wedge";
+    case SolidArcConstructKind::Prism:    return "Prism";
+    case SolidArcConstructKind::Tube:     return "Tube";
     }
     return "Construct";
 }
@@ -2338,6 +2523,7 @@ const char* SolidArcDrawingLabel(SolidArcDrawingKind Kind) noexcept
     case SolidArcDrawingKind::Arc:       return "Arc";
     case SolidArcDrawingKind::Slot:      return "Slot";
     case SolidArcDrawingKind::Curve:     return "Curve";
+    case SolidArcDrawingKind::Polygon:   return "Polygon";
     }
     return "Drawing";
 }

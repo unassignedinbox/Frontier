@@ -9,6 +9,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "Engine/GeometryProcessing/Audit/ModelAudit.h"
@@ -1479,7 +1481,7 @@ StepImport ReadStep(ModelPartition& Partition, const std::string& Bytes, const S
     return Finish({});
 }
 
-StepImport ImportStepFile(ModelPartition& Partition, const std::string& Path, const StepImportRequest& Request)
+static StepImport ImportStepFileUntraced(ModelPartition& Partition, const std::string& Path, const StepImportRequest& Request)
 {
     std::ifstream Stream(ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream)
@@ -1492,5 +1494,17 @@ StepImport ImportStepFile(ModelPartition& Partition, const std::string& Path, co
     Content << Stream.rdbuf();
     return ReadStep(Partition, Content.str(), Request);
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+StepImport ImportStepFile(ModelPartition& Partition, const std::string& Path, const StepImportRequest& Request)
+{
+    FRONTIER_TRACE_SCOPE("Exchange", "ImportStepFile · " + Path);
+    StepImport Outcome = ImportStepFileUntraced(Partition, Path, Request);
+    FRONTIER_TRACE("Exchange", Outcome.Refusal.empty() ? std::to_string(Outcome.Bodies.size()) + " body(ies) · " + std::to_string(Outcome.Faces) + " face(s)"
+                                                       : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 } // namespace Frontier::GeometryProcessing

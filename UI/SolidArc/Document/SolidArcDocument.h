@@ -40,6 +40,10 @@ enum class SolidArcConstructKind : uint8_t
     Cylinder = 1,                                                                            // Circle sketch on XY, extruded along +z
     Sphere   = 2,                                                                            // Half disc on XZ, revolved about its diameter
     Torus    = 3,                                                                            // Circle on XZ, revolved about a construction axis
+    Cone     = 4,                                                                            // Right triangle on XZ, revolved about its upright leg
+    Wedge    = 5,                                                                            // Right triangle on XZ (high side at x = X), extruded along +y
+    Prism    = 6,                                                                            // Regular polygon on XY, extruded along +z
+    Tube     = 7,                                                                            // Two concentric circles on XY (annulus), extruded along +z
 };
 
 // 📝 Drawing tools on the construction plane (Plasticity: Shift+A line, Shift+Q corner rectangle, Shift+W centre circle,
@@ -52,6 +56,7 @@ enum class SolidArcDrawingKind : uint8_t
     Arc       = 3,                                                                           // Start, end, a point on the arc
     Slot      = 4,                                                                           // Two cap centres + a point on the rim
     Curve     = 5,                                                                           // Spline through / on the clicks (form 1 … 4)
+    Polygon   = 6,                                                                           // Regular polygon: centre + a vertex (Sides)
 };
 
 enum class SolidArcSelectionKind : uint8_t
@@ -65,7 +70,9 @@ enum class SolidArcSelectionKind : uint8_t
 //                                                    STRUCTS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Only the fields of the chosen kind are read. Position: block corner, cylinder base centre, sphere / torus centre.
+// 📝 Only the fields of the chosen kind are read. Position: block / wedge corner (minimum x, y, z), cylinder / cone / prism /
+//    tube base centre, sphere / torus centre. Cone: Radius at the base, apex Height above it. Wedge: Height at x = X falling to
+//    0 at x = X + Width.
 struct SolidArcConstructRequest
 {
     SolidArcConstructKind        Kind        = SolidArcConstructKind::Block;                 // [-]   - Tile
@@ -79,6 +86,9 @@ struct SolidArcConstructRequest
     double                       Major       = 1.5;                                          // [len] - Torus axis → tube centre
     double                       Minor       = 0.4;                                          // [len] - Torus tube radius
     int                          Axis        = 2;                                            // [-]   - Cylinder axis: 0 x · 1 y · 2 z (Height runs along +axis)
+    double                       Inner       = 0.3;                                          // [len] - Tube bore radius (< Radius)
+    int                          Sides       = 6;                                            // [-]   - Prism sides (3 … 64)
+    double                       Angle       = 0.0;                                          // [rad] - Prism: direction of the first vertex from the centre
 };
 
 // 📝 Points are construction-plane coordinates (GridPlane 0 XY, 1 XZ, 2 YZ; see SolidArcSketchPlane). Only the fields of
@@ -91,6 +101,7 @@ struct SolidArcDrawingRequest
     bool                           ClosedCondition = false;                                  // [-]   - Line / curve: close the chain
     bool                           CentreCondition = false;                                  // [-]   - Rectangle: centre + corner · circle: centre + rim (else two diameter ends)
     GeometryProcessing::SketchSplineForm     Form            = GeometryProcessing::SketchSplineForm::CubicSpline; // [-]  - Curve form (Plasticity 1 … 4)
+    int                            Sides           = 6;                                      // [-]   - Polygon sides (3 … 64)
 };
 
 // 📝 Selection is stored as persistent names, so it survives regeneration whenever the names still resolve.

@@ -98,6 +98,7 @@ namespace
     GateTally SheetGate       = { "W37", "Drawing sheet (Alt+D) of the bracket specimen: kernel views, hidden lines and dimensions in mm (metres × 1000), automatic ISO 5455 scale (next larger refused), unit invariance against the millimetre kernel sheet, A4 third-angle placement, section A-A cap = exact section 4.116587, SVG / DXF export byte-equal beside the document, [DrawingSheet] codec round trip + refusals, hidden bodies refused", "≤ 1e-9" };
     GateTally BoundGate       = { "W39", "Bevel previews from the first Windows run: an upright fillet beside a 0.4 bottom fillet (the cap foot took the wrong root of the cylinder, the guide got a random tangent at the tangential corner, C′ blew up and the volume quadrature bisected for up to 334 s) builds every radius in a fraction of a second with |V − closed form| / V; a fillet / chamfer as wide as the neighbouring face (crashed) is refused with the document untouched", "≤ 10⁻⁹, ≤ 20 s, refused" };
     GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, \\|ΔV\\| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock 1 × ½ × 2 in (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9 (STL: \\|ΔV\\| ≤ sag · A)" };
+    GateTally PrimitiveGate   = { "W40", "Construct catalogue primitives drawn as new bodies: cone (up and down), wedge, 3 / 6 / 8-sided prisms, tube and the drawn polygon against closed forms; eight tiles side by side as Separate bodies keep their own exact volumes (no Boolean); prism Radius and tube bore edits regenerate exactly; codec byte-equal; refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -3311,7 +3312,142 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate })
+    // ---- W40 Construct catalogue: the new primitives against closed forms, every tile a body of its own
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[512]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto PrismVolume = [&](int Sides, double Radius, double Height) { return 0.5 * Sides * Radius * Radius * std::sin(2.0 * π / Sides) * Height; };
+        struct Case { const char* Name; SolidArcConstructRequest Request; double Expected; };
+        std::vector<Case> Cases;
+        {
+            SolidArcConstructRequest Request;
+            Request.Kind = SolidArcConstructKind::Cone; Request.Position = { 1.0, 2.0, 0.3 }; Request.Radius = 0.5; Request.Height = 1.2;
+            Cases.push_back({ "cone r 0.5 h 1.2", Request, π * 0.25 * 1.2 / 3.0 });
+            Request.Height = -0.8;
+            Cases.push_back({ "cone r 0.5 h −0.8 (points down)", Request, π * 0.25 * 0.8 / 3.0 });
+            Request = {};
+            Request.Kind = SolidArcConstructKind::Wedge; Request.Position = { -1.0, 0.5, 0.0 }; Request.Width = 2.0; Request.Depth = 1.5; Request.Height = 1.0;
+            Cases.push_back({ "wedge 2 × 1.5 × 1", Request, 1.5 });
+            for (const int Sides : { 3, 6, 8 })
+            {
+                Request = {};
+                Request.Kind = SolidArcConstructKind::Prism; Request.Position = { 0.5, -0.5, 0.2 }; Request.Radius = 0.6; Request.Height = 0.9; Request.Sides = Sides; Request.Angle = 0.3;
+                Cases.push_back({ Sides == 3 ? "prism 3 sides" : Sides == 6 ? "prism 6 sides" : "prism 8 sides", Request, PrismVolume(Sides, 0.6, 0.9) });
+            }
+            Request = {};
+            Request.Kind = SolidArcConstructKind::Tube; Request.Position = { 0.0, 0.0, 0.0 }; Request.Radius = 0.5; Request.Inner = 0.3; Request.Height = 1.0;
+            Cases.push_back({ "tube 0.5 / 0.3 h 1", Request, π * (0.25 - 0.09) });
+        }
+        for (const Case& Entry : Cases)
+        {
+            SolidArcDocument Single = CreateSolidArcDocument("Primitive");
+            SolidArcConstructRequest Request = Entry.Request;
+            Request.Combination = FeatureCombination::Separate;
+            const SolidArcCommandOutcome Outcome = ConstructSolidArcPrimitive(Single, Request);
+            const double Relative = std::abs(Single.Summary.Volume - Entry.Expected) / Entry.Expected;
+            Tally(PrimitiveGate, Relative, Outcome.AcceptedCondition && Single.Summary.SoundCondition && Relative <= 1.0e-9 && Single.Summary.Bodies.size() == 1,
+                  Format("%s: V %.12f vs %.12f%s", Entry.Name, Single.Summary.Volume, Entry.Expected, Outcome.AcceptedCondition ? "" : (" — refused: " + Outcome.Refusal).c_str()));
+        }
+
+        // ① eight tiles in a row, each Separate: eight bodies, each exact, total = Σ (no Boolean merged anything)
+        SolidArcDocument Row = CreateSolidArcDocument("Catalogue");
+        std::vector<std::pair<std::string, double>> Expected;
+        double Total = 0.0;
+        const SolidArcConstructKind Kinds[] = { SolidArcConstructKind::Block, SolidArcConstructKind::Cylinder, SolidArcConstructKind::Sphere, SolidArcConstructKind::Torus,
+                                                SolidArcConstructKind::Cone, SolidArcConstructKind::Wedge, SolidArcConstructKind::Prism, SolidArcConstructKind::Tube };
+        for (int Index = 0; Index < 8; ++Index)
+        {
+            SolidArcConstructRequest Request;
+            Request.Kind        = Kinds[Index];
+            Request.Combination = FeatureCombination::Separate;
+            const double Across = 4.0 * Index;
+            double       Volume = 0.0;
+            switch (Request.Kind)
+            {
+            case SolidArcConstructKind::Block:    Request.Position = { Across, 0.0, 0.0 }; Volume = 2.0 * 1.5 * 1.0; break;
+            case SolidArcConstructKind::Cylinder: Request.Position = { Across, 0.0, 0.0 }; Request.Radius = 0.6; Request.Height = 1.1; Volume = π * 0.36 * 1.1; break;
+            case SolidArcConstructKind::Sphere:   Request.Position = { Across, 0.0, 0.7 }; Request.Radius = 0.7; Volume = 4.0 / 3.0 * π * 0.343; break;
+            case SolidArcConstructKind::Torus:    Request.Position = { Across, 0.0, 0.4 }; Request.Major = 1.2; Request.Minor = 0.4; Volume = 2.0 * π * π * 1.2 * 0.16; break;
+            case SolidArcConstructKind::Cone:     Request.Position = { Across, 0.0, 0.0 }; Request.Radius = 0.8; Request.Height = 1.5; Volume = π * 0.64 * 1.5 / 3.0; break;
+            case SolidArcConstructKind::Wedge:    Request.Position = { Across, 0.0, 0.0 }; Request.Width = 1.8; Request.Depth = 1.2; Request.Height = 0.9; Volume = 0.5 * 1.8 * 1.2 * 0.9; break;
+            case SolidArcConstructKind::Prism:    Request.Position = { Across, 0.0, 0.0 }; Request.Radius = 0.7; Request.Height = 1.0; Request.Sides = 5; Volume = PrismVolume(5, 0.7, 1.0); break;
+            case SolidArcConstructKind::Tube:     Request.Position = { Across, 0.0, 0.0 }; Request.Radius = 0.7; Request.Inner = 0.45; Request.Height = 1.3; Volume = π * (0.49 - 0.2025) * 1.3; break;
+            }
+            Expect(ConstructSolidArcPrimitive(Row, Request));
+            Expected.push_back({ Row.Regeneration.Active, Volume });
+            Total += Volume;
+        }
+        int Matched = 0;
+        double Worst = 0.0;
+        for (const auto& [Key, Volume] : Expected)
+            for (const SolidArcBodyFigures& Body : Row.Summary.Bodies)
+                if (Body.Key == Key)
+                {
+                    const double Relative = std::abs(Body.Volume - Volume) / Volume;
+                    Worst = std::max(Worst, Relative);
+                    Matched += Relative <= 1.0e-9 && Body.SoundCondition ? 1 : 0;
+                }
+        Tally(PrimitiveGate, Worst, Row.Summary.Bodies.size() == 8 && Matched == 8 && Row.Summary.SoundCondition,
+              Format("8 Separate tiles (block, cylinder, sphere, torus, cone, wedge, prism, tube): %d bodies, %d exact, worst relative %.3g", int(Row.Summary.Bodies.size()), Matched, Worst));
+        const double TotalRelative = std::abs(Row.Summary.Volume - Total) / Total;
+        Tally(PrimitiveGate, TotalRelative, TotalRelative <= 1.0e-9, Format("part volume = Σ tiles: %.12f vs %.12f", Row.Summary.Volume, Total));
+
+        // ② parameter edits regenerate: prism Radius 0.7 → 0.9, tube bore 0.45 → 0.2
+        auto ParameterEndingIn = [&](const char* Stem, const char* Suffix)
+        {
+            for (const auto& Parameter : Row.Tree.Parameters)
+                if (Parameter.Name.rfind(Stem, 0) == 0 && Parameter.Name.size() > std::strlen(Suffix) && Parameter.Name.compare(Parameter.Name.size() - std::strlen(Suffix), std::string::npos, Suffix) == 0)
+                    return Parameter.Name;
+            return std::string();
+        };
+        const std::string PrismRadius = ParameterEndingIn("Prism", ".Radius");
+        const SolidArcCommandOutcome Grown = AssignSolidArcParameter(Row, PrismRadius, 0.9);
+        const double PrismExpected = Total - PrismVolume(5, 0.7, 1.0) + PrismVolume(5, 0.9, 1.0);
+        const double PrismRelative = std::abs(Row.Summary.Volume - PrismExpected) / PrismExpected;
+        Tally(PrimitiveGate, PrismRelative, Grown.AcceptedCondition && PrismRelative <= 1.0e-9 && Row.Summary.Bodies.size() == 8,
+              Format("%s 0.7 → 0.9 (equal sides + on-circle constraints follow): V %.12f vs %.12f", PrismRadius.c_str(), Row.Summary.Volume, PrismExpected));
+        const std::string TubeBore = ParameterEndingIn("Tube", ".Inner");
+        const SolidArcCommandOutcome Bored = AssignSolidArcParameter(Row, TubeBore, 0.2);
+        const double TubeExpected = PrismExpected - π * (0.49 - 0.2025) * 1.3 + π * (0.49 - 0.04) * 1.3;
+        const double TubeRelative = std::abs(Row.Summary.Volume - TubeExpected) / TubeExpected;
+        Tally(PrimitiveGate, TubeRelative, Bored.AcceptedCondition && TubeRelative <= 1.0e-9,
+              Format("%s 0.45 → 0.2: V %.12f vs %.12f", TubeBore.c_str(), Row.Summary.Volume, TubeExpected));
+
+        // ③ codec: save → load → save byte-equal, same volume
+        const std::string RowSaved = EncodeSolidArcDocument(Row);
+        SolidArcDocumentFile RowFile = DecodeSolidArcDocument(RowSaved);
+        SolidArcDocument     RowLoaded = CreateSolidArcDocument(RowFile.Title);
+        const SolidArcCommandOutcome RowOpened = ReplaceSolidArcTree(RowLoaded, RowFile.Tree, RowFile.Captions, "Open");
+        Tally(PrimitiveGate, std::abs(RowLoaded.Summary.Volume - Row.Summary.Volume), RowOpened.AcceptedCondition && EncodeSolidArcDocument(RowLoaded) == RowSaved &&
+              RowLoaded.Summary.Volume == Row.Summary.Volume && RowLoaded.Summary.Bodies.size() == 8, Format("codec: %d bytes, save → load → save byte-equal, 8 bodies", int(RowSaved.size())));
+
+        // ④ drawn polygon (5 sides, R 0.8) extruded 0.5 as a new body = (5/2) R² sin 72° · 0.5
+        SolidArcDocument Drawn = CreateSolidArcDocument("Polygon");
+        SolidArcDrawingRequest Pentagon;
+        Pentagon.Kind = SolidArcDrawingKind::Polygon; Pentagon.Sides = 5; Pentagon.Points = { { 1.0, 1.0 }, { 1.0, 1.8 } };
+        Expect(DrawSolidArcSketch(Drawn, Pentagon));
+        const std::string PentagonLabel = Drawn.Tree.Steps.back().Label;
+        const SolidArcCommandOutcome Pushed = ExtrudeSolidArcSketch(Drawn, PentagonLabel, 0.5, FeatureCombination::Separate, {});
+        const double PentagonExpected = PrismVolume(5, 0.8, 0.5);
+        const double PentagonRelative = std::abs(Drawn.Summary.Volume - PentagonExpected) / PentagonExpected;
+        Tally(PrimitiveGate, PentagonRelative, Pushed.AcceptedCondition && PentagonRelative <= 1.0e-9 && std::abs(MeasureDrawingArea(Pentagon) - 2.0 * PentagonExpected) <= 1.0e-12,
+              Format("drawn polygon 5 sides R 0.8 extruded 0.5: V %.12f vs %.12f", Drawn.Summary.Volume, PentagonExpected));
+
+        // ⑤ refusals leave the document untouched
+        const std::string Before = EncodeSolidArcDocument(Row);
+        SolidArcConstructRequest Bad;
+        Bad.Kind = SolidArcConstructKind::Tube; Bad.Radius = 0.4; Bad.Inner = 0.4; Bad.Combination = FeatureCombination::Separate;
+        const SolidArcCommandOutcome BoreRefused = ConstructSolidArcPrimitive(Row, Bad);
+        Bad.Kind = SolidArcConstructKind::Prism; Bad.Sides = 2;
+        const SolidArcCommandOutcome SidesRefused = ConstructSolidArcPrimitive(Row, Bad);
+        Pentagon.Sides = 2;
+        SketchModel Probe;
+        const std::string PolygonRefusal = ComposeSolidArcSketch(Pentagon, Probe);
+        Tally(PrimitiveGate, 0.0, !BoreRefused.AcceptedCondition && !SidesRefused.AcceptedCondition && !PolygonRefusal.empty() && EncodeSolidArcDocument(Row) == Before,
+              "refused, document unchanged: " + BoreRefused.Refusal + " · " + SidesRefused.Refusal + " · " + PolygonRefusal);
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

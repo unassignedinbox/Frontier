@@ -536,7 +536,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "section-ivv") return Numeric(State.Section.Section.SecondMoments[1]);
     if (Field == "section-refreshes") return Numeric(State.Section.Refreshes);
     if (Field == "construct-open") return Numeric(State.ConstructShown ? 1 : 0);
-    if (Field == "construct-combination") return Numeric(int(State.ConstructForm.Combination));
+    if (Field == "construct-combination") return Numeric(int(State.Drawing.ActiveCondition && State.Drawing.SolidCondition ? State.Drawing.Combination : State.ConstructForm.Combination));
+    if (Field == "construct-section") return Numeric(State.ConstructSection);
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
     if (Field == "bevel-size") return Numeric(State.Bevel.Size);
     if (Field == "bevel-pinned") return Numeric(State.Bevel.PinnedCondition ? 1 : 0);
@@ -575,6 +576,11 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         return true;
     }
     if (Field == "drawing-points") return Numeric(double(State.Drawing.Points.size()));
+    if (Field == "drawing-solid") return Numeric(State.Drawing.ActiveCondition && State.Drawing.SolidCondition ? 1 : 0);
+    if (Field == "drawing-solid-kind") { Text = SolidArcConstructLabel(State.Drawing.Solid); Number = double(int(State.Drawing.Solid)); return true; }
+    if (Field == "drawing-lift") return Numeric(State.Drawing.Lift);
+    if (Field == "drawing-elevation") return Numeric(State.Drawing.Elevation);
+    if (Field == "drawing-sides") return Numeric(State.Drawing.Sides);
     if (Field == "drawing-form") { Text = GeometryProcessing::SketchSplineFormLabel(State.Drawing.Form); Number = double(int(State.Drawing.Form)); return true; }
     if (Field == "drawing-centre") return Numeric(State.Drawing.CentreCondition ? 1 : 0);
     if (Field == "drawing-plane") return Numeric(State.Drawing.GridPlane);

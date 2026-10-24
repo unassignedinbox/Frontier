@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Blend/EdgeBlend.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Blend/FairPatch.h"
 
 #include "Engine/GeometryProcessing/Construction/BodyAssembly.h"
@@ -1784,7 +1786,7 @@ namespace
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-BlendOutcome BlendEdges(ModelPartition& Partition, BodyToken Body, const std::vector<EdgeToken>& Edges, const BlendSettings& Settings)
+static BlendOutcome BlendEdgesUntraced(ModelPartition& Partition, BodyToken Body, const std::vector<EdgeToken>& Edges, const BlendSettings& Settings)
 {
     const auto   Started = std::chrono::steady_clock::now();
     BlendOutcome Outcome;
@@ -1821,6 +1823,19 @@ BlendOutcome BlendEdges(ModelPartition& Partition, BodyToken Body, const std::ve
     Outcome.Body = Assembly.Body;
     return Finish({});
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+BlendOutcome BlendEdges(ModelPartition& Partition, BodyToken Body, const std::vector<EdgeToken>& Edges, const BlendSettings& Settings)
+{
+    FRONTIER_TRACE_SCOPE("Blend", std::string(Settings.Profile == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " · " + std::to_string(Edges.size()) +
+                                  " edge(s) · size " + TraceNumber(Settings.Size) + (Settings.EndSize ? " → " + TraceNumber(*Settings.EndSize) : std::string()));
+    BlendOutcome Outcome = BlendEdgesUntraced(Partition, Body, Edges, Settings);
+    FRONTIER_TRACE("Blend", Outcome.Refusal.empty() ? std::string("built · ") + std::to_string(Outcome.Audit.Findings.size()) + " audit finding(s)"
+                                                    : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 const char* VertexBlendCategoryLabel(VertexBlendCategory Category) noexcept
 {

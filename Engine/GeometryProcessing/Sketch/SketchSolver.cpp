@@ -4,6 +4,8 @@
 // 🧩 2D sketch model and numerical constraint solver: minimum-norm Gauss–Newton on a rank-revealing QR, DOF = n − rank
 
 #include "Engine/GeometryProcessing/Sketch/SketchSolver.h"
+
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
@@ -941,7 +943,7 @@ namespace
 //                                                    SOLVER
 //------------------------------------------------------------------------------------------------------------------------
 
-SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& Settings)
+static SketchSolveOutcome SolveSketchUntraced(SketchModel& Sketch, const SketchSolveSettings& Settings)
 {
     const auto Started = std::chrono::steady_clock::now();
     SketchSolveOutcome Outcome;
@@ -1140,6 +1142,18 @@ SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& S
     Outcome.Milliseconds      = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Started).count();
     return Outcome;
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& Settings)
+{
+    FRONTIER_TRACE_SCOPE("Sketch", "SolveSketch · " + std::to_string(Sketch.Curves.size()) + " curve(s) · " + std::to_string(Sketch.Constraints.size()) + " constraint(s)");
+    SketchSolveOutcome Outcome = SolveSketchUntraced(Sketch, Settings);
+    FRONTIER_TRACE("Sketch", std::string(Outcome.Converged ? "converged" : "NOT converged") + " · " + std::to_string(Outcome.Iterations) + " iteration(s) · DoF " +
+                             std::to_string(Outcome.DegreesOfFreedom));
+    return Outcome;
+}
+
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    BUILDERS AND LABELS

@@ -8,6 +8,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
+
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
@@ -686,6 +688,7 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
 
 bool SaveSolidArcDocument(const SolidArcDocument& Document, const std::string& Path)
 {
+    FRONTIER_TRACE_SCOPE("File", "Save · " + Path);
     // 📝 The folder is created on first save (a fresh install has no autosave folder yet); failure shows as a closed stream.
     const std::filesystem::path Target = GeometryProcessing::ResolveUtf8Path(Path);
     std::error_code Failure;
@@ -698,6 +701,7 @@ bool SaveSolidArcDocument(const SolidArcDocument& Document, const std::string& P
 
 SolidArcDocumentFile LoadSolidArcDocumentFile(const std::string& Path)
 {
+    FRONTIER_TRACE_SCOPE("File", "Load · " + Path);
     std::ifstream Stream(GeometryProcessing::ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream)
     {

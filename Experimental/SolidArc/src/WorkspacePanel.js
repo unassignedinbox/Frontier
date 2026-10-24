@@ -32,6 +32,10 @@ const Paths = {
   ellipse: '<ellipse cx="12" cy="12" rx="10" ry="6"/>',
   polygon: '<path d="m7 3 10 0 5 9-5 9H7l-5-9Z"/>',
   cone: '<ellipse cx="12" cy="19" rx="9" ry="3"/><path d="m3 19 7-16h4l7 16"/>',
+  wedge: '<path d="M3 19h13l5-4H8ZM3 19V8l5-4v11M3 8l13 11M8 4l13 11"/>',
+  prism: '<path d="m7 4h10l4 4-4 4H7L3 8ZM3 8v9l4 4h10l4-4V8M7 12v9m10-9v9"/>',
+  tube: '<ellipse cx="12" cy="5" rx="8" ry="3"/><ellipse cx="12" cy="5" rx="4" ry="1.5"/><path d="M4 5v14c0 4 16 4 16 0V5"/>',
+  centrerect: '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M10 12h4m-2-2v4"/>',
   controlcurve: '<path d="M3 18C7 0 17 24 21 6m-18 12 6-15 6 18 6-15"/>',
 
   body: '<path d="m12 2 9 5v10l-9 5-9-5V7Zm0 10L3 7m9 5 9-5m-9 5v10M7 4.5l10 5.5"/>',

@@ -4,6 +4,8 @@
 // 🧩 Solids from sketch profiles: linear extrude (planes, cylinders, holes) and revolve (plane … torus, poles, NURBS revolutions)
 
 #include "Engine/GeometryProcessing/Feature/ProfileSweep.h"
+
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Feature/SweepBlueprint.h"
 
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
@@ -28,7 +30,7 @@ using namespace Sweeping;
 //                                                    EXTRUDE
 //------------------------------------------------------------------------------------------------------------------------
 
-SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent)
+static SweepOutcome ExtrudeProfileUntraced(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent)
 {
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Extrude: " + Profile.Refusal; return Refused; }
@@ -166,11 +168,22 @@ SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Prof
     return Assemble(Partition, Writer, "Extrude");
 }
 
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent)
+{
+    FRONTIER_TRACE_SCOPE("Sweep", "Extrude · " + std::to_string(Profile.Loops.size()) + " loop(s) · extent " + TraceNumber(Extent));
+    SweepOutcome Outcome = ExtrudeProfileUntraced(Partition, Profile, Plane, Extent);
+    FRONTIER_TRACE("Sweep", Outcome.Refusal.empty() ? std::to_string(Outcome.Faces.size()) + " face(s)" : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    REVOLVE
 //------------------------------------------------------------------------------------------------------------------------
 
-SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection, double Angle)
+static SweepOutcome RevolveProfileUntraced(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection, double Angle)
 {
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Revolve: " + Profile.Refusal; return Refused; }
@@ -419,6 +432,15 @@ SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Prof
     }
     return Assemble(Partition, Writer, "Revolve");
 }
+
+SweepOutcome RevolveProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, Vector2 AxisPoint, Vector2 AxisDirection, double Angle)
+{
+    FRONTIER_TRACE_SCOPE("Sweep", "Revolve · " + std::to_string(Profile.Loops.size()) + " loop(s) · angle " + TraceNumber(Angle));
+    SweepOutcome Outcome = RevolveProfileUntraced(Partition, Profile, Plane, AxisPoint, AxisDirection, Angle);
+    FRONTIER_TRACE("Sweep", Outcome.Refusal.empty() ? std::to_string(Outcome.Faces.size()) + " face(s)" : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 std::string SweepRoleName(const SweepFace& Role)
 {

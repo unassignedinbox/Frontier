@@ -134,6 +134,13 @@ struct SolidArcDrawingSession
     GeometryProcessing::SketchSplineForm     Form             = GeometryProcessing::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
     bool                           SquareCondition  = false;                                 // [-]   - Rectangle: s keeps the sides equal
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
+    int                            Sides            = 6;                                     // [-]   - Polygon / prism sides (+ / − keys)
+    bool                           SolidCondition   = false;                                 // [-]   - Construct solid: plane clicks, then a height
+    SolidArcConstructKind          Solid            = SolidArcConstructKind::Block;          // [-]   - Which solid
+    double                         Elevation        = 0.0;                                   // [len] - Plane height (solids: z of the first click)
+    double                         PointerElevation = 0.0;                                   // [len] - Height the pointer snapped to before the first click
+    double                         Lift             = 0.0;                                   // [len] - Height from the pointer (signed, along +z)
+    GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate;   // [-] - Solid: R new body (default) · Q / W / E
 };
 
 // 📝 Point picker (Plasticity body[gizmo=point-picker]): object snaps under the pointer while drawing and moving, and
@@ -477,7 +484,10 @@ struct SolidArcWorkspaceState
     SolidArcConstructRequest              ConstructForm  = {};                               // [-]   - Construct dialog values
     bool                                  ConstructOpen  = false;                            // [-]   - Construct dialog requested
     bool                                  ConstructShown = false;                            // [-]   - Construct dialog drawn this frame
+    int                                   ConstructSection = 0;                              // [-]   - Construct menu section: 0 Solids · 1 Sketch
     bool                                  ConstructMenuRequest = false;                      // [-]   - Construct catalogue popover requested
+    bool                                  TraceShown     = false;                            // [-]   - F12 operation trace panel (development builds)
+    std::string                           TraceFilter    = {};                               // [-]   - Its substring filter
     SolidArcOutlinerState                 Outliner       = {};                               // [-]   - Scene search, filter chips, compact / folded
     bool                                  HistoryFoldedEnabled = false;                      // [-]   - History strip hidden (Construction history)
     bool                                  ViewportMaximizedEnabled = false;                  // [-]   - Scene panel spans the row (maximize button)

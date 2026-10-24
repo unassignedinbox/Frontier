@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Feature/FeatureTree.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Feature/BodyCut.h"
 #include "Engine/GeometryProcessing/Feature/PathSweep.h"
 #include "Engine/GeometryProcessing/Feature/ReplayDigest.h"
@@ -228,6 +230,7 @@ struct ReplayCheckpoint
 
 RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree& Tree, bool CaptureCondition, RegenerationCache* Cache)
 {
+    FRONTIER_TRACE_SCOPE("Replay", "RegenerateFeatureTree · " + std::to_string(Tree.Steps.size()) + " step(s)" + (CaptureCondition ? " · capture" : ""));
     const auto Started = Clock::now();
     RegenerationOutcome Outcome;
     std::map<std::string, SolvedSketch> Sketches;
@@ -440,6 +443,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Cache->Captured.resize(Tree.Steps.size());
     }
 
+    FRONTIER_TRACE("Replay", Resume > 0 ? "resumed at step " + std::to_string(Resume + 1) + " (earlier steps from the checkpoint)" : std::string("full replay"));
     for (size_t StepIndex = Resume; StepIndex < Tree.Steps.size(); ++StepIndex)
     {
         FeatureStep& Step = Tree.Steps[StepIndex];
@@ -449,6 +453,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Report.Kind  = Step.Kind;
         auto Refuse = [&](const std::string& Reason) { Report.Status = FeatureStepStatus::Refused; Report.Refusal = Reason; };
         const char* Verb = FeatureStepKindLabel(Step.Kind);
+        FRONTIER_TRACE_SCOPE("Replay", std::string(Verb) + " " + Step.Label);
         StepLabel = Step.Label;
         // Steps that touch no body report the active one.
         Target  = Active;
@@ -1139,6 +1144,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         Report.Target       = Target >= 0 ? Bodies[Target].Key : std::string();
         Report.Milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - StepStarted).count();
         Outcome.Refused    += Report.Status == FeatureStepStatus::Refused ? 1 : 0;
+        if (Report.Status == FeatureStepStatus::Refused) FRONTIER_TRACE("Replay", Step.Label + " refused: " + Report.Refusal);
         Outcome.Steps.push_back(std::move(Report));
         if (Cache)
         {

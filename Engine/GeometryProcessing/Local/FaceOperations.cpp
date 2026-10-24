@@ -9,6 +9,8 @@
 
 #include "Engine/GeometryProcessing/Local/FaceOperations.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Boolean/GeneralFuse.h"
 #include "Engine/GeometryProcessing/Local/TopologyRebuild.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
@@ -473,7 +475,7 @@ Vector3 MeasureFaceBoundaryCentre(const ModelPartition& Partition, FaceToken Fac
     return Total > 0.0 ? Sum * (1.0 / Total) : Sum;
 }
 
-FaceOperationOutcome ApplyFaceOperation(ModelPartition& Partition, BodyToken Body, const FaceOperationSettings& Settings)
+static FaceOperationOutcome ApplyFaceOperationUntraced(ModelPartition& Partition, BodyToken Body, const FaceOperationSettings& Settings)
 {
     const auto           Started = std::chrono::steady_clock::now();
     FaceOperationOutcome Outcome;
@@ -514,6 +516,18 @@ FaceOperationOutcome ApplyFaceOperation(ModelPartition& Partition, BodyToken Bod
     Outcome.Method        = "face change: " + std::to_string(Replacements.size()) + " carrier(s) replaced, edges and vertices re-solved";
     return Finish({});
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+FaceOperationOutcome ApplyFaceOperation(ModelPartition& Partition, BodyToken Body, const FaceOperationSettings& Settings)
+{
+    FRONTIER_TRACE_SCOPE("FaceChange", std::string(FaceOperationLabel(Settings.Kind)) + " · " + std::to_string(Settings.Faces.size()) + " face(s) · distance " +
+                                       TraceNumber(Settings.Distance) + " · angle " + TraceNumber(Settings.Angle));
+    FaceOperationOutcome Outcome = ApplyFaceOperationUntraced(Partition, Body, Settings);
+    FRONTIER_TRACE("FaceChange", Outcome.Refusal.empty() ? "built by " + Outcome.Method : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 const char* FaceOperationLabel(FaceOperationKind Kind) noexcept
 {

@@ -16,6 +16,7 @@ get_filename_component(FRONTIER_GEOMETRY_PROCESSING_ROOT "${CMAKE_CURRENT_SOURCE
 
 add_library(FrontierGeometryProcessing STATIC
     Precision/ExactPredicates.cpp
+    Diagnostics/OperationTrace.cpp
     Geometry/CurveGeometry.cpp
     Geometry/SurfaceGeometry.cpp
     Geometry/RollingBallCarrier.cpp
@@ -96,6 +97,13 @@ add_library(FrontierGeometryProcessing STATIC
 )
 target_include_directories(FrontierGeometryProcessing PUBLIC "${FRONTIER_GEOMETRY_PROCESSING_ROOT}")
 target_compile_features(FrontierGeometryProcessing PUBLIC cxx_std_20)
+
+# 📝 Development trace (Diagnostics/OperationTrace.h): ▶ / ◀ lines per operation with durations, flushed per line so a
+#    freeze names its operation. ON while SolidArc is in development; a release turns it OFF and every macro vanishes.
+option(FRONTIER_DEVELOPMENT_TRACE "Write the operation trace (FRONTIER_TRACE_SCOPE / FRONTIER_TRACE)" ON)
+if(FRONTIER_DEVELOPMENT_TRACE)
+    target_compile_definitions(FrontierGeometryProcessing PUBLIC FRONTIER_DEVELOPMENT_TRACE)
+endif()
 
 # 📝 Identifiers use Greek / mathematical Unicode (SKILL-formatting § 4): MSVC needs /utf-8, also in every consumer.
 if(MSVC)

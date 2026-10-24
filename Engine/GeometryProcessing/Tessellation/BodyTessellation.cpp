@@ -5,6 +5,8 @@
 
 #include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/ParallelCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/RollingBallCarrier.h"
@@ -946,7 +948,7 @@ double MeasurePeakCurvature(const SurfaceGeometry& Surface, Vector2 Parameter) n
 //                                                    TESSELLATION
 //------------------------------------------------------------------------------------------------------------------------
 
-TessellationOutcome TessellateBody(const ModelPartition& Partition, BodyToken Body, const TessellationSettings& Settings)
+static TessellationOutcome TessellateBodyUntraced(const ModelPartition& Partition, BodyToken Body, const TessellationSettings& Settings)
 {
     const Clock::time_point Start = Clock::now();
     TessellationOutcome     Outcome;
@@ -1038,5 +1040,17 @@ TessellationOutcome TessellateBody(const ModelPartition& Partition, BodyToken Bo
     Outcome.Milliseconds = ElapsedMilliseconds(Start);
     return Outcome;
 }
+
+// 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
+
+TessellationOutcome TessellateBody(const ModelPartition& Partition, BodyToken Body, const TessellationSettings& Settings)
+{
+    FRONTIER_TRACE_SCOPE("Tessellate", "TessellateBody · body " + std::to_string(Body.Slot));
+    TessellationOutcome Outcome = TessellateBodyUntraced(Partition, Body, Settings);
+    FRONTIER_TRACE("Tessellate", Outcome.Refusal.empty() ? std::to_string(Outcome.Complex.Triangles.size()) + " triangles · sag " + TraceNumber(Outcome.Sag)
+                                                         : "refused: " + Outcome.Refusal);
+    return Outcome;
+}
+
 
 } // namespace Frontier::GeometryProcessing

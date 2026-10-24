@@ -12,6 +12,8 @@
 #include "UI/SolidArc/Interface/SolidArcOutliner.h"
 #include "UI/SolidArc/Interface/SolidArcStyleSheet.h"
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 #include "Engine/Interface/ContentDirectory.h"
 #include "Engine/Interface/ControlKit.h"
 #include "Engine/Interface/IconPresentation.h"
@@ -149,6 +151,7 @@ void Announce(SolidArcWorkspaceState& State, const std::string& RawMessage)
 {
     const std::string Message = Legible(RawMessage);
     State.Status = Message;
+    FRONTIER_TRACE("Status", Message);
     State.Journal.push_back(Message);
     if (State.Journal.size() > 200) State.Journal.erase(State.Journal.begin());
 }
@@ -623,6 +626,8 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     Bevel.StagedVariable = Bevel.VariableEnabled;
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
+    static const char* Verbs[] = { "Blend", "Extrude", "Profile" };
+    FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 2)] + " · size " + TraceNumber(Bevel.Size));
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
@@ -706,6 +711,14 @@ OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State);
     return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
 }
 
+// The drawing plane of a session: the grid plane, raised by Elevation along its normal (solids: XY at the first click).
+[[nodiscard]] OrthonormalFrame DrawingPlane(const SolidArcDrawingSession& Drawing)
+{
+    OrthonormalFrame Plane = SolidArcSketchPlane(Drawing.GridPlane);
+    Plane.Origin = Plane.Origin + Plane.ZAxis * Drawing.Elevation;
+    return Plane;
+}
+
 // World point → frame pixel (absolute); false behind the eye.
 bool ProjectWorldPoint(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, Vector3 Point, ImVec2& Pixel)
 {
@@ -744,6 +757,7 @@ bool IntersectConstructionPlane(const OrbitCameraFrame& Frame, ImVec2 Local, int
     Request.CentreCondition = Drawing.CentreCondition;
     Request.Form            = Drawing.Form;
     Request.ClosedCondition = ClosedCondition;
+    Request.Sides           = Drawing.Sides;
     if (PointerCondition && Drawing.PointerCondition) Request.Points.push_back(Drawing.Pointer);
     return Request;
 }
@@ -754,7 +768,8 @@ bool IntersectConstructionPlane(const OrbitCameraFrame& Frame, ImVec2 Local, int
     switch (Kind)
     {
     case SolidArcDrawingKind::Rectangle:
-    case SolidArcDrawingKind::Circle: return 2;
+    case SolidArcDrawingKind::Circle:
+    case SolidArcDrawingKind::Polygon: return 2;
     case SolidArcDrawingKind::Arc:
     case SolidArcDrawingKind::Slot:   return 3;
     default:                          return 0;
@@ -763,7 +778,10 @@ bool IntersectConstructionPlane(const OrbitCameraFrame& Frame, ImVec2 Local, int
 
 [[nodiscard]] std::string DrawingCaption(const SolidArcDrawingSession& Drawing)
 {
+    if (Drawing.SolidCondition) return std::string(SolidArcConstructLabel(Drawing.Solid)) + (Drawing.Solid == SolidArcConstructKind::Prism ? Compose(" · %d sides", Drawing.Sides) : std::string()) +
+                                       " · " + (Drawing.Combination == GeometryProcessing::FeatureCombination::Separate ? "new body" : FeatureCombinationLabel(Drawing.Combination));
     std::string Caption = SolidArcDrawingLabel(Drawing.Kind);
+    if (Drawing.Kind == SolidArcDrawingKind::Polygon) Caption += Compose(" · %d sides", Drawing.Sides);
     if (Drawing.Kind == SolidArcDrawingKind::Curve) Caption += std::string(" · ") + SketchSplineFormLabel(Drawing.Form);
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle) Caption += Drawing.CentreCondition ? " · centre" : " · corner";
     if (Drawing.Kind == SolidArcDrawingKind::Circle) Caption += Drawing.CentreCondition ? " · centre" : " · two-point";
@@ -773,8 +791,10 @@ bool IntersectConstructionPlane(const OrbitCameraFrame& Frame, ImVec2 Local, int
 void OpenDrawingSession(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
 {
     if (State.Bevel.ActiveCondition) return;
-    const SketchSplineForm Form = State.Drawing.Form;
+    const SketchSplineForm Form  = State.Drawing.Form;
+    const int              Sides = State.Drawing.Sides;
     State.Drawing                 = {};
+    State.Drawing.Sides           = Sides;
     State.Drawing.ActiveCondition = true;
     State.Drawing.Kind            = Kind;
     State.Drawing.GridPlane       = std::clamp(State.Style.GridPlane, 0, 2);
@@ -782,7 +802,8 @@ void OpenDrawingSession(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
     State.Drawing.Form            = Form;
     static const char* Hints[] = { "click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point",
                                    "click two corners · Alt centre mode", "click centre and rim · V two-point mode", "click start, end, then a point on the arc",
-                                   "click both cap centres, then the rim", "click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point" };
+                                   "click both cap centres, then the rim", "click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point",
+                                   "click the centre, then a vertex · + / − sides" };
     static const char* Planes[] = { "XY", "XZ", "YZ" };
     Announce(State, std::string(SolidArcDrawingLabel(Kind)) + " on plane " + Planes[State.Drawing.GridPlane] + ": " + Hints[int(Kind)] + " · Esc aborts");
 }
@@ -791,7 +812,7 @@ void CancelDrawingSession(SolidArcWorkspaceState& State)
 {
     if (!State.Drawing.ActiveCondition) return;
     State.Drawing.ActiveCondition = false;
-    Announce(State, std::string(SolidArcDrawingLabel(State.Drawing.Kind)) + " aborted (document untouched)");
+    Announce(State, std::string(State.Drawing.SolidCondition ? SolidArcConstructLabel(State.Drawing.Solid) : SolidArcDrawingLabel(State.Drawing.Kind)) + " aborted (document untouched)");
 }
 
 // Commits the collected points as a sketch step; the new sketch becomes the focused step (E extrudes it).
@@ -799,6 +820,7 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
     if (!Drawing.ActiveCondition) return;
+    if (Drawing.SolidCondition) { FinishSolidSession(State); return; }
     const SolidArcDrawingRequest Request = ComposeDrawingRequest(Drawing, false, ClosedCondition);
     SketchModel Probe;
     const std::string Refusal = ComposeSolidArcSketch(Request, Probe);
@@ -818,6 +840,22 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
 void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool ClosingCondition)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
+    if (Drawing.SolidCondition)
+    {
+        // Plane clicks (the first sets the plane height), then the height click creates the solid.
+        const size_t Needed = SolidPlaneClicks(Drawing.Solid);
+        if (Drawing.Points.size() >= Needed) { FinishSolidSession(State); return; }
+        if (!Drawing.Points.empty() && Distance(Drawing.Points.back(), Point) <= 1.0e-12) { Announce(State, "Same point twice: ignored"); return; }
+        if (Drawing.Points.empty()) Drawing.Elevation = Drawing.PointerElevation;
+        Drawing.Points.push_back(Point);
+        Drawing.Refusal.clear();
+        Drawing.Lift = 0.0;
+        State.Picker.Placed = State.Picker.Current;
+        State.Picker.Lock   = SolidArcSnapLockKind::None;
+        if (Drawing.Points.size() >= Needed && !SolidLiftedCondition(Drawing.Solid)) { FinishSolidSession(State); return; }
+        Announce(State, std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + SolidPrompt(Drawing));
+        return;
+    }
     const bool Chain = DrawingClicks(Drawing.Kind) == 0;
     if (Chain && ClosingCondition) { FinishDrawingSession(State, true); return; }
     if (!Drawing.Points.empty() && Distance(Drawing.Points.back(), Point) <= 1.0e-12)
@@ -839,6 +877,8 @@ void RetractDrawingPoint(SolidArcWorkspaceState& State)
     SolidArcDrawingSession& Drawing = State.Drawing;
     if (Drawing.Points.empty()) { Announce(State, "No point to drop"); return; }
     Drawing.Points.pop_back();
+    Drawing.Lift = 0.0;
+    if (Drawing.SolidCondition && Drawing.Points.empty()) Drawing.Elevation = 0.0;
     Drawing.Refusal.clear();
     State.Picker.Placed = {};
     State.Picker.Lock   = SolidArcSnapLockKind::None;
@@ -898,7 +938,7 @@ void ChooseSnapLock(SolidArcWorkspaceState& State, SolidArcSnapLockKind Kind)
         return;
     }
     if (Drawing.Points.empty()) { Announce(State, std::string("Lock ") + SolidArcSnapLockLabel(Kind) + ": place a point first"); return; }
-    const OrthonormalFrame Plane  = SolidArcSketchPlane(Drawing.GridPlane);
+    const OrthonormalFrame Plane  = DrawingPlane(Drawing);
     const Vector3          Origin = PlacePlanePoint(Plane, Drawing.Points.back());
     Vector3 Tangent = Picker.Placed.Tangent;
     if (Length(Tangent) < 0.5 && Drawing.Points.size() >= 2)
@@ -955,7 +995,7 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
     SolidArcPointPicker&    Picker  = State.Picker;
-    const OrthonormalFrame  Plane   = SolidArcSketchPlane(Drawing.GridPlane);
+    const OrthonormalFrame  Plane   = DrawingPlane(Drawing);
     const bool              Free    = ImGui::GetIO().KeyCtrl;
     auto Flatten = [&](Vector3 World) { return Vector2{ Dot(World - Plane.Origin, Plane.XAxis), Dot(World - Plane.Origin, Plane.YAxis) }; };
     std::vector<SolidArcSnapPoint> Chain;
@@ -988,11 +1028,564 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
         if (const std::optional<Vector2> Snapped = SnapOntoPlane(State, Frame, Local, Plane, Reference, Chain, {})) Point = *Snapped;
         else if (!Free) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
     }
-    if (Drawing.Kind == SolidArcDrawingKind::Rectangle && Drawing.SquareCondition && Drawing.Points.size() == 1)
+    if (Drawing.Kind == SolidArcDrawingKind::Rectangle && Drawing.SquareCondition && Drawing.Points.size() == 1 &&
+        (!Drawing.SolidCondition || Drawing.Solid == SolidArcConstructKind::Block || Drawing.Solid == SolidArcConstructKind::Wedge))
     {
         const Vector2 From  = Drawing.Points.front();
         const double  Side  = std::max(std::abs(Point.X - From.X), std::abs(Point.Y - From.Y));
         Point = { From.X + (Point.X >= From.X ? Side : -Side), From.Y + (Point.Y >= From.Y ? Side : -Side) };
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    CONSTRUCT SOLIDS (DRAWN)
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 A Construct tile is drawn, not typed (SolidArc live reference, Plasticity box / cylinder / sphere commands): plane
+//    clicks on the ground (XY at the height of the first click — a snap onto a body starts there), then the pointer
+//    lifts the height along +z and a click creates the solid as a new body (R; Q / W / E combine with the active body).
+//
+//        Block · Wedge    corner, opposite corner, height        Sphere   centre, radius
+//        Cylinder · Cone  centre, radius, height                 Torus    centre, major radius, minor radius
+//        Prism            centre, vertex (± sides), height       Tube     centre, outer radius, bore radius, height
+
+// Plane clicks before the height (or before the solid, when it has no height).
+[[nodiscard]] size_t SolidPlaneClicks(SolidArcConstructKind Kind)
+{
+    return Kind == SolidArcConstructKind::Torus || Kind == SolidArcConstructKind::Tube ? 3 : 2;
+}
+
+[[nodiscard]] bool SolidLiftedCondition(SolidArcConstructKind Kind)
+{
+    return Kind != SolidArcConstructKind::Sphere && Kind != SolidArcConstructKind::Torus;
+}
+
+// Prompt for the next click of a solid session.
+[[nodiscard]] const char* SolidPrompt(const SolidArcDrawingSession& Drawing)
+{
+    const size_t Placed = Drawing.Points.size();
+    switch (Drawing.Solid)
+    {
+    case SolidArcConstructKind::Block:
+    case SolidArcConstructKind::Wedge:    return Placed == 0 ? (Drawing.CentreCondition ? "click the centre" : "click the first corner") : Placed == 1 ? "click the opposite corner" : "move up, click the height";
+    case SolidArcConstructKind::Cylinder:
+    case SolidArcConstructKind::Cone:     return Placed == 0 ? "click the base centre" : Placed == 1 ? "click the radius" : Drawing.Solid == SolidArcConstructKind::Cone ? "move up, click the apex height" : "move up, click the height";
+    case SolidArcConstructKind::Sphere:   return Placed == 0 ? "click the centre" : "click the radius";
+    case SolidArcConstructKind::Torus:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click the major radius (ring centre line)" : "click the tube (minor) radius";
+    case SolidArcConstructKind::Prism:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click a vertex (+ / − sides)" : "move up, click the height";
+    case SolidArcConstructKind::Tube:     return Placed == 0 ? "click the centre" : Placed == 1 ? "click the outer radius" : Placed == 2 ? "click the bore radius" : "move up, click the height";
+    }
+    return "click";
+}
+
+// The solid the clicks (and, with PointerCondition, the pointer) describe so far. Refusal text while incomplete.
+std::string ComposeSolidRequest(const SolidArcDrawingSession& Drawing, bool PointerCondition, SolidArcConstructRequest& Request)
+{
+    std::vector<Vector2> Points = Drawing.Points;
+    const size_t Needed = SolidPlaneClicks(Drawing.Solid);
+    if (PointerCondition && Drawing.PointerCondition && Points.size() < Needed) Points.push_back(Drawing.Pointer);
+    Request      = {};
+    Request.Kind = Drawing.Solid;
+    Request.Sides = std::clamp(Drawing.Sides, 3, 64);
+    if (Points.size() < 2) return std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + SolidPrompt(Drawing);
+    const bool   Lifted = Points.size() >= Needed && Drawing.Points.size() >= Needed;
+    const double Lift   = Lifted ? Drawing.Lift : 0.0;
+    const double Base   = Drawing.Elevation + std::min(0.0, Lift);                               // [len] - Bottom of an upright solid
+    const Vector2 Centre = Points[0];
+    const double  Reach  = Distance(Points[0], Points[1]);
+    switch (Drawing.Solid)
+    {
+    case SolidArcConstructKind::Block:
+    case SolidArcConstructKind::Wedge:
+    {
+        const Vector2 First  = Drawing.CentreCondition ? Points[0] * 2.0 - Points[1] : Points[0];
+        const Vector2 Second = Points[1];
+        Request.Position = { std::min(First.X, Second.X), std::min(First.Y, Second.Y), Base };
+        Request.Width    = std::abs(Second.X - First.X);
+        Request.Depth    = std::abs(Second.Y - First.Y);
+        Request.Height   = std::abs(Lift);
+        if (Request.Width < 1.0e-9 || Request.Depth < 1.0e-9) return "the base has no width or no depth";
+        break;
+    }
+    case SolidArcConstructKind::Cylinder:
+    case SolidArcConstructKind::Prism:
+        Request.Position = { Centre.X, Centre.Y, Base };
+        Request.Radius   = Reach;
+        Request.Height   = std::abs(Lift);
+        Request.Angle    = std::atan2(Points[1].Y - Centre.Y, Points[1].X - Centre.X);
+        if (Reach < 1.0e-9) return "the radius is zero";
+        break;
+    case SolidArcConstructKind::Cone:
+        Request.Position = { Centre.X, Centre.Y, Drawing.Elevation };
+        Request.Radius   = Reach;
+        Request.Height   = Lift;
+        if (Reach < 1.0e-9) return "the radius is zero";
+        break;
+    case SolidArcConstructKind::Sphere:
+        Request.Position = { Centre.X, Centre.Y, Drawing.Elevation };
+        Request.Radius   = Reach;
+        if (Reach < 1.0e-9) return "the radius is zero";
+        return {};
+    case SolidArcConstructKind::Torus:
+        Request.Position = { Centre.X, Centre.Y, Drawing.Elevation };
+        Request.Major    = Reach;
+        Request.Minor    = Points.size() >= 3 ? std::abs(Distance(Points[0], Points[2]) - Reach) : 0.0;
+        if (Reach < 1.0e-9) return "the major radius is zero";
+        if (Points.size() < 3) return "Torus: " + std::string(SolidPrompt(Drawing));
+        if (Request.Minor < 1.0e-9 || Request.Minor >= Request.Major) return "the tube radius must be between 0 and the major radius";
+        return {};
+    case SolidArcConstructKind::Tube:
+    {
+        Request.Position = { Centre.X, Centre.Y, Base };
+        const double Other = Points.size() >= 3 ? Distance(Points[0], Points[2]) : 0.0;
+        Request.Radius   = std::max(Reach, Other);
+        Request.Inner    = std::min(Reach, Other);
+        Request.Height   = std::abs(Lift);
+        if (Reach < 1.0e-9) return "the radius is zero";
+        if (Points.size() < 3) return "Tube: " + std::string(SolidPrompt(Drawing));
+        if (Request.Inner < 1.0e-9 || Request.Radius - Request.Inner < 1.0e-9) return "the bore must be a smaller, non-zero radius";
+        break;
+    }
+    }
+    if (!Lifted) return std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + SolidPrompt(Drawing);
+    if (std::abs(Lift) < 1.0e-9) return "the height is zero";
+    return {};
+}
+
+void OpenSolidSession(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
+{
+    if (State.Bevel.ActiveCondition) return;
+    const int Sides = State.Drawing.Sides;
+    State.Drawing                 = {};
+    State.Drawing.ActiveCondition = true;
+    State.Drawing.SolidCondition  = true;
+    State.Drawing.Solid           = Kind;
+    State.Drawing.Kind            = SolidArcDrawingKind::Rectangle;                          // Unused for solids (pointer rules only)
+    State.Drawing.GridPlane       = 0;
+    State.Drawing.Sides           = Sides;
+    State.Drawing.Combination     = GeometryProcessing::FeatureCombination::Separate;
+    FRONTIER_TRACE("Construct", std::string("draw ") + SolidArcConstructLabel(Kind));
+    Announce(State, std::string(SolidArcConstructLabel(Kind)) + ": " + SolidPrompt(State.Drawing) + " · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts");
+}
+
+// Creates the drawn solid; the session closes on success, stays open with the reason on a refusal.
+void FinishSolidSession(SolidArcWorkspaceState& State)
+{
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    SolidArcConstructRequest Request;
+    if (const std::string Refusal = ComposeSolidRequest(Drawing, false, Request); !Refusal.empty())
+    {
+        Drawing.Refusal = Legible(Refusal);
+        Announce(State, Drawing.Refusal);
+        return;
+    }
+    const bool FirstBody = !State.Document.Summary.PresentCondition;
+    Request.Combination  = FirstBody && Drawing.Combination != GeometryProcessing::FeatureCombination::Separate ? GeometryProcessing::FeatureCombination::New : Drawing.Combination;
+    Request.Target       = Request.Combination == GeometryProcessing::FeatureCombination::Separate || FirstBody ? std::string{} : BooleanTarget(State);
+    Drawing.ActiveCondition = false;
+    State.LastCommand = { SolidArcRepeatKind::Construct, BlendProfile::Fillet, 0.0, FaceOperationKind::Extrude, 0.0, Request };
+    const SolidArcCommandOutcome Outcome = ConstructSolidArcPrimitive(State.Document, Request);
+    if (Outcome.AcceptedCondition && Request.Combination == GeometryProcessing::FeatureCombination::Separate)
+        SelectSolidArcName(State.Document, SolidArcSelectionKind::Body, State.Document.Regeneration.Active, false);
+    Conclude(State, Outcome);
+}
+
+// Tab: the size form, filled with what is drawn so far (the session closes; Create in the form makes the solid).
+void OpenSolidExactForm(SolidArcWorkspaceState& State)
+{
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    SolidArcConstructRequest Request;
+    (void)ComposeSolidRequest(Drawing, true, Request);
+    SolidArcConstructRequest& Form = State.ConstructForm;
+    const SolidArcConstructRequest Defaults;
+    Form             = Request;
+    Form.Combination = Drawing.Combination;
+    if (Form.Width < 1.0e-9) Form.Width = Defaults.Width;
+    if (Form.Depth < 1.0e-9) Form.Depth = Defaults.Depth;
+    if (std::abs(Form.Height) < 1.0e-9) Form.Height = Defaults.Height;
+    if (Form.Radius < 1.0e-9) Form.Radius = Defaults.Radius;
+    if (Form.Major < 1.0e-9) Form.Major = Defaults.Major;
+    if (Form.Minor < 1.0e-9 || Form.Minor >= Form.Major) Form.Minor = std::min(Defaults.Minor, 0.5 * Form.Major);
+    if (Form.Inner < 1.0e-9 || Form.Inner >= Form.Radius) Form.Inner = 0.6 * Form.Radius;
+    if (Drawing.Points.empty()) Form.Position = { 0.0, 0.0, 0.0 };
+    Drawing.ActiveCondition = false;
+    State.ConstructOpen     = true;
+}
+
+// Height from the pointer: closest approach to the vertical line through the last click; 0.1 steps (Ctrl free), or
+// level with a point snap.
+void PlaceSolidLift(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    const OrthonormalFrame  Plane   = DrawingPlane(Drawing);
+    const Vector3           Anchor  = PlacePlanePoint(Plane, Drawing.Points.back());
+    const std::optional<double> Along = ApproachSolidArcLine(CastOrbitRay(Frame, Local.x, Local.y), Anchor, Plane.ZAxis);
+    State.Picker.Current = {};
+    if (!Along) return;
+    double Lift = *Along;
+    const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
+    if (PointSnapCondition(Object.Kind))
+    {
+        Lift = Dot(Object.Position - Anchor, Plane.ZAxis);
+        State.Picker.Current = { SolidArcSnapKind::Axis, Anchor + Plane.ZAxis * Lift, Plane.ZAxis, {}, std::string("level with ") + SolidArcSnapLabel(Object.Kind) + " " + Object.Source, 0.0 };
+    }
+    else if (!ImGui::GetIO().KeyCtrl) Lift = std::round(Lift / DrawingSnap) * DrawingSnap;
+    Drawing.Lift = Lift;
+}
+
+// Before the first click of a solid, a snap onto a body (face, edge, point) sets the plane height there.
+bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, Vector2& Point)
+{
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, true);
+    State.Picker.Current = {};
+    if (Object.Kind == SolidArcSnapKind::None || Object.Kind == SolidArcSnapKind::Grid) return false;
+    if (Object.Kind == SolidArcSnapKind::Face && Object.Normal.Z < 0.999) return false;              // Only an upward flat face is a floor
+    State.Picker.Current = Object;
+    Point = { Object.Position.X, Object.Position.Y };
+    Drawing.PointerElevation = Object.Position.Z;
+    return true;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    LIVE DIMENSIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 Dimension lines while drawing (SolidArc live reference drawLiveDims): a white line with arrowheads between two world
+//    points and its value in a dark pill, offset in pixels; angles as an arc with the degrees beside it.
+constexpr ImU32 DimensionInk   = IM_COL32(0xff, 0xff, 0xff, 0xc0);                         // rgba(255,255,255,.75)
+constexpr ImU32 DimensionHead  = IM_COL32(0xff, 0xff, 0xff, 0xd9);                         // rgba(255,255,255,.85)
+constexpr ImU32 DimensionPill  = IM_COL32(0x00, 0x00, 0x00, 0xb8);                         // rgba(0,0,0,.72)
+constexpr ImU32 AngleInk       = IM_COL32(0xff, 0xd2, 0x78, 0xe6);                         // rgba(255,210,120,.9)
+constexpr ImU32 ConstructionInk = IM_COL32(0xff, 0xff, 0xff, 0x5a);                        // rgba(255,255,255,.35)
+
+void DrawDimensionPill(ImDrawList* Canvas, ImVec2 Centre, const std::string& Text, ImU32 Ink = IM_COL32_WHITE)
+{
+    const ImVec2 Size = ImGui::CalcTextSize(Text.c_str());
+    const float  Half = 0.5f * Size.x + 6.0f;
+    Canvas->AddRectFilled(ImVec2(Centre.x - Half, Centre.y - 9.0f), ImVec2(Centre.x + Half, Centre.y + 9.0f), DimensionPill, 9.0f);
+    Canvas->AddText(ImVec2(Centre.x - 0.5f * Size.x, Centre.y - 0.5f * Size.y), Ink, Text.c_str());
+}
+
+void DrawDimensionLine(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImDrawList* Canvas, Vector3 From, Vector3 To, const std::string& Text,
+                       ImVec2 Offset = ImVec2(0.0f, 0.0f))
+{
+    ImVec2 Start, End;
+    if (!ProjectWorldPoint(State, Frame, From, Start) || !ProjectWorldPoint(State, Frame, To, End)) return;
+    Canvas->AddLine(Start, End, DimensionInk, 1.0f);
+    const float Span = std::hypot(End.x - Start.x, End.y - Start.y);
+    if (Span > 16.0f)
+    {
+        const float AlongX = (End.x - Start.x) / Span, AlongY = (End.y - Start.y) / Span;
+        for (const auto& [Tip, Sense] : { std::pair<ImVec2, float>{ Start, 1.0f }, std::pair<ImVec2, float>{ End, -1.0f } })
+            Canvas->AddTriangleFilled(Tip, ImVec2(Tip.x + Sense * AlongX * 7.0f - AlongY * 3.0f, Tip.y + Sense * AlongY * 7.0f + AlongX * 3.0f),
+                                      ImVec2(Tip.x + Sense * AlongX * 7.0f + AlongY * 3.0f, Tip.y + Sense * AlongY * 7.0f - AlongX * 3.0f), DimensionHead);
+    }
+    DrawDimensionPill(Canvas, ImVec2(0.5f * (Start.x + End.x) + Offset.x, 0.5f * (Start.y + End.y) + Offset.y), Text);
+}
+
+// Arc at Vertex from ray A to ray B (plane coordinates, the shorter way) with its angle in degrees.
+void DrawAngleDimension(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImDrawList* Canvas, const OrthonormalFrame& Plane, Vector2 Vertex, Vector2 A, Vector2 B)
+{
+    const double From  = std::atan2(A.Y - Vertex.Y, A.X - Vertex.X);
+    double       Sweep = std::atan2(B.Y - Vertex.Y, B.X - Vertex.X) - From;
+    while (Sweep > std::numbers::pi) Sweep -= 2.0 * std::numbers::pi;
+    while (Sweep < -std::numbers::pi) Sweep += 2.0 * std::numbers::pi;
+    const double Radius = 0.35 * std::min(Distance(A, Vertex), Distance(B, Vertex));
+    if (Radius <= 0.0) return;
+    std::vector<ImVec2> Pixels;
+    for (int Index = 0; Index <= 16; ++Index)
+    {
+        const double θ = From + Sweep * Index / 16.0;
+        ImVec2 Pixel;
+        if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, { Vertex.X + std::cos(θ) * Radius, Vertex.Y + std::sin(θ) * Radius }), Pixel)) Pixels.push_back(Pixel);
+    }
+    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), AngleInk, 0, 1.2f);
+    const double Middle = From + 0.5 * Sweep;
+    ImVec2 Label;
+    if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, { Vertex.X + std::cos(Middle) * Radius * 1.7, Vertex.Y + std::sin(Middle) * Radius * 1.7 }), Label))
+        DrawDimensionPill(Canvas, Label, Compose("%.1f°", std::abs(Sweep) * 180.0 / std::numbers::pi), AngleInk);
+}
+
+void DrawConstructionLine(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImDrawList* Canvas, Vector3 From, Vector3 To)
+{
+    ImVec2 Start, End;
+    if (!ProjectWorldPoint(State, Frame, From, Start) || !ProjectWorldPoint(State, Frame, To, End)) return;
+    const float Span = std::hypot(End.x - Start.x, End.y - Start.y);
+    for (float Travel = 0.0f; Travel < Span; Travel += 7.0f)
+    {
+        const float First = Travel / Span, Last = std::min(Travel + 3.0f, Span) / Span;
+        Canvas->AddLine(ImVec2(Start.x + (End.x - Start.x) * First, Start.y + (End.y - Start.y) * First),
+                        ImVec2(Start.x + (End.x - Start.x) * Last, Start.y + (End.y - Start.y) * Last), ConstructionInk, 1.0f);
+    }
+}
+
+[[nodiscard]] std::string DimensionText(const char* Tag, double Value)
+{
+    return Tag[0] ? Compose("%s %.3f", Tag, Value) : Compose("%.3f", Value);
+}
+
+// Live dimensions of a 2-D drawing session (clicks + pointer).
+void DrawSketchDimensions(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImDrawList* Canvas)
+{
+    const SolidArcDrawingSession& Drawing = State.Drawing;
+    const OrthonormalFrame        Plane   = DrawingPlane(Drawing);
+    std::vector<Vector2> Points = Drawing.Points;
+    if (Drawing.PointerCondition) Points.push_back(Drawing.Pointer);
+    if (Points.size() < 2) return;
+    auto World = [&](Vector2 Point) { return PlacePlanePoint(Plane, Point); };
+    const Vector2 First = Points[0], Second = Points[1];
+    switch (Drawing.Kind)
+    {
+    case SolidArcDrawingKind::Line:
+    case SolidArcDrawingKind::Curve:
+    {
+        const Vector2 From = Points[Points.size() - 2], To = Points.back();
+        if (Distance(From, To) < 1.0e-12) return;
+        DrawDimensionLine(State, Frame, Canvas, World(From), World(To), DimensionText("", Distance(From, To)), ImVec2(0.0f, -14.0f));
+        if (Drawing.Kind == SolidArcDrawingKind::Curve) return;
+        if (Points.size() >= 3) DrawAngleDimension(State, Frame, Canvas, Plane, From, Points[Points.size() - 3], To);
+        else
+        {
+            const Vector2 Reference{ From.X + std::max(0.5 * Distance(From, To), 0.2), From.Y };
+            DrawConstructionLine(State, Frame, Canvas, World(From), World(Reference));
+            DrawAngleDimension(State, Frame, Canvas, Plane, From, Reference, To);
+        }
+        return;
+    }
+    case SolidArcDrawingKind::Rectangle:
+    {
+        const Vector2 Corner = Drawing.CentreCondition ? First * 2.0 - Second : First;
+        const Vector2 Low{ std::min(Corner.X, Second.X), std::min(Corner.Y, Second.Y) }, High{ std::max(Corner.X, Second.X), std::max(Corner.Y, Second.Y) };
+        const double  Gap = 0.08 * std::max(High.X - Low.X, High.Y - Low.Y) + 0.02;
+        DrawDimensionLine(State, Frame, Canvas, World({ Low.X, Low.Y - Gap }), World({ High.X, Low.Y - Gap }), DimensionText("W", High.X - Low.X));
+        DrawDimensionLine(State, Frame, Canvas, World({ High.X + Gap, Low.Y }), World({ High.X + Gap, High.Y }), DimensionText("H", High.Y - Low.Y));
+        return;
+    }
+    case SolidArcDrawingKind::Circle:
+    {
+        const Vector2 Centre = Drawing.CentreCondition ? First : (First + Second) * 0.5;
+        const double  Radius = Drawing.CentreCondition ? Distance(First, Second) : 0.5 * Distance(First, Second);
+        if (Radius < 1.0e-12) return;
+        DrawDimensionLine(State, Frame, Canvas, World(Centre), World(Second), DimensionText("R", Radius), ImVec2(0.0f, -14.0f));
+        const Vector2 Diagonal{ Radius * 0.7071, -Radius * 0.7071 };
+        DrawDimensionLine(State, Frame, Canvas, World(Centre - Diagonal), World(Centre + Diagonal), DimensionText("Ø", 2.0 * Radius), ImVec2(0.0f, 14.0f));
+        return;
+    }
+    case SolidArcDrawingKind::Arc:
+    {
+        DrawDimensionLine(State, Frame, Canvas, World(First), World(Second), DimensionText("chord", Distance(First, Second)), ImVec2(0.0f, 14.0f));
+        if (Points.size() < 3) return;
+        SketchModel Sketch;
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Arc;
+        Request.Points = { First, Second, Points[2] };
+        if (!ComposeSolidArcSketch(Request, Sketch).empty() || Sketch.Points.empty()) return;
+        const Vector2 Centre = Sketch.Points[0].Position;
+        DrawDimensionLine(State, Frame, Canvas, World(Centre), World(Points[2]), DimensionText("R", Distance(Centre, Points[2])), ImVec2(0.0f, -14.0f));
+        return;
+    }
+    case SolidArcDrawingKind::Slot:
+    {
+        DrawDimensionLine(State, Frame, Canvas, World(First), World(Second), DimensionText("L", Distance(First, Second)), ImVec2(0.0f, -14.0f));
+        if (Points.size() < 3 || Distance(First, Second) < 1.0e-12) return;
+        const Vector2 Along = (Second - First) * (1.0 / Distance(First, Second));
+        const Vector2 Left{ -Along.Y, Along.X };
+        const double  Radius = std::abs((Points[2].X - Second.X) * Left.X + (Points[2].Y - Second.Y) * Left.Y);
+        DrawDimensionLine(State, Frame, Canvas, World(Second), World(Second + Left * Radius), DimensionText("R", Radius), ImVec2(14.0f, 0.0f));
+        return;
+    }
+    case SolidArcDrawingKind::Polygon:
+    {
+        const int    Sides  = std::clamp(Drawing.Sides, 3, 64);
+        const double Radius = Distance(First, Second);
+        if (Radius < 1.0e-12) return;
+        const double  Turn = std::atan2(Second.Y - First.Y, Second.X - First.X);
+        const Vector2 Next{ First.X + Radius * std::cos(Turn + 2.0 * std::numbers::pi / Sides), First.Y + Radius * std::sin(Turn + 2.0 * std::numbers::pi / Sides) };
+        DrawConstructionLine(State, Frame, Canvas, World(First), World(Second));
+        DrawConstructionLine(State, Frame, Canvas, World(First), World(Next));
+        DrawAngleDimension(State, Frame, Canvas, Plane, First, Second, Next);
+        DrawDimensionLine(State, Frame, Canvas, World(First), World(Second), DimensionText("R", Radius), ImVec2(0.0f, -14.0f));
+        DrawDimensionLine(State, Frame, Canvas, World(Second), World(Next), DimensionText("", Distance(Second, Next)), ImVec2(0.0f, 14.0f));
+        ImVec2 Centre;
+        if (ProjectWorldPoint(State, Frame, World(First), Centre))
+            DrawDimensionPill(Canvas, ImVec2(Centre.x, Centre.y + 24.0f), Compose("%d sides · %.1f° interior", Sides, 180.0 * (Sides - 2) / Sides));
+        return;
+    }
+    }
+}
+
+// Wireframe of the solid being drawn and its dimension lines (width, depth, height, radii).
+void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    const SolidArcDrawingSession& Drawing = State.Drawing;
+    const OrthonormalFrame        Plane   = DrawingPlane(Drawing);
+    SolidArcConstructRequest Request;
+    const std::string Refusal = ComposeSolidRequest(Drawing, true, Request);
+    const bool Lifted = Drawing.Points.size() >= SolidPlaneClicks(Drawing.Solid);
+    auto Pixel = [&](Vector3 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, Point, Out); };
+    auto Stroke = [&](const std::vector<Vector3>& Chain, bool Closed, ImU32 Ink, float Width)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector3& Point : Chain) { ImVec2 Out; if (Pixel(Point, Out)) Pixels.push_back(Out); }
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Ink, Closed ? ImDrawFlags_Closed : 0, Width);
+    };
+    auto Ring = [&](Vector3 Centre, double Radius, int Count, double Turn)
+    {
+        std::vector<Vector3> Chain;
+        for (int Index = 0; Index < Count; ++Index)
+        {
+            const double θ = Turn + 2.0 * std::numbers::pi * Index / Count;
+            Chain.push_back({ Centre.X + Radius * std::cos(θ), Centre.Y + Radius * std::sin(θ), Centre.Z });
+        }
+        return Chain;
+    };
+    const ImU32 Ink = ActiveColour;
+    std::vector<Vector2> Marks = Drawing.Points;
+    if (Drawing.PointerCondition && Drawing.Points.size() < SolidPlaneClicks(Drawing.Solid)) Marks.push_back(Drawing.Pointer);
+    const bool Shaped = Marks.size() >= 2 && (Refusal.empty() || Request.Radius > 0.0 || Request.Width > 0.0 || Request.Major > 0.0);
+    if (Shaped)
+    {
+        const Vector3 Spot = Request.Position;
+        switch (Drawing.Solid)
+        {
+        case SolidArcConstructKind::Block:
+        case SolidArcConstructKind::Wedge:
+        {
+            const double X0 = Spot.X, X1 = Spot.X + Request.Width, Y0 = Spot.Y, Y1 = Spot.Y + Request.Depth, Z0 = Spot.Z, Z1 = Spot.Z + Request.Height;
+            const bool   Wedge = Drawing.Solid == SolidArcConstructKind::Wedge;
+            Stroke({ { X0, Y0, Z0 }, { X1, Y0, Z0 }, { X1, Y1, Z0 }, { X0, Y1, Z0 } }, true, Ink, 2.0f);
+            if (Request.Height > 0.0)
+            {
+                if (Wedge)
+                {
+                    Stroke({ { X0, Y0, Z1 }, { X0, Y1, Z1 } }, false, Ink, 2.0f);
+                    for (const double Y : { Y0, Y1 }) Stroke({ { X0, Y, Z0 }, { X0, Y, Z1 }, { X1, Y, Z0 } }, false, Ink, 2.0f);
+                }
+                else
+                {
+                    Stroke({ { X0, Y0, Z1 }, { X1, Y0, Z1 }, { X1, Y1, Z1 }, { X0, Y1, Z1 } }, true, Ink, 2.0f);
+                    for (const double X : { X0, X1 }) for (const double Y : { Y0, Y1 }) Stroke({ { X, Y, Z0 }, { X, Y, Z1 } }, false, Ink, 2.0f);
+                }
+            }
+            const double Gap = 0.08 * std::max(Request.Width, Request.Depth) + 0.02;
+            DrawDimensionLine(State, Frame, Canvas, { X0, Y0 - Gap, Z0 }, { X1, Y0 - Gap, Z0 }, DimensionText("W", Request.Width));
+            DrawDimensionLine(State, Frame, Canvas, { X1 + Gap, Y0, Z0 }, { X1 + Gap, Y1, Z0 }, DimensionText("D", Request.Depth));
+            if (Lifted) DrawDimensionLine(State, Frame, Canvas, { X0 - Gap, Y0 - Gap, Z0 }, { X0 - Gap, Y0 - Gap, Z0 + Request.Height }, DimensionText("H", Request.Height), ImVec2(-18.0f, 0.0f));
+            break;
+        }
+        case SolidArcConstructKind::Cylinder:
+        case SolidArcConstructKind::Prism:
+        case SolidArcConstructKind::Cone:
+        case SolidArcConstructKind::Tube:
+        {
+            const bool   Prism = Drawing.Solid == SolidArcConstructKind::Prism;
+            const bool   Cone  = Drawing.Solid == SolidArcConstructKind::Cone;
+            const int    Count = Prism ? std::clamp(Drawing.Sides, 3, 64) : 72;
+            const double Turn  = Prism ? Request.Angle : 0.0;
+            const double Top   = Spot.Z + Request.Height;
+            Stroke(Ring(Spot, Request.Radius, Count, Turn), true, Ink, 2.0f);
+            if (Drawing.Solid == SolidArcConstructKind::Tube && Request.Inner > 0.0) Stroke(Ring(Spot, Request.Inner, 72, 0.0), true, Ink, 2.0f);
+            if (Lifted && std::abs(Request.Height) > 0.0)
+            {
+                const Vector3 Lid{ Spot.X, Spot.Y, Top };
+                if (Cone)
+                {
+                    for (int Index = 0; Index < 4; ++Index)
+                    {
+                        const double θ = 0.5 * std::numbers::pi * Index;
+                        Stroke({ { Spot.X + Request.Radius * std::cos(θ), Spot.Y + Request.Radius * std::sin(θ), Spot.Z }, Lid }, false, Ink, 2.0f);
+                    }
+                }
+                else
+                {
+                    Stroke(Ring(Lid, Request.Radius, Count, Turn), true, Ink, 2.0f);
+                    if (Drawing.Solid == SolidArcConstructKind::Tube && Request.Inner > 0.0) Stroke(Ring(Lid, Request.Inner, 72, 0.0), true, Ink, 2.0f);
+                    const int Posts = Prism ? Count : 4;
+                    for (int Index = 0; Index < Posts; ++Index)
+                    {
+                        const double θ = Turn + 2.0 * std::numbers::pi * Index / Posts;
+                        const Vector3 Foot{ Spot.X + Request.Radius * std::cos(θ), Spot.Y + Request.Radius * std::sin(θ), Spot.Z };
+                        Stroke({ Foot, { Foot.X, Foot.Y, Top } }, false, Ink, 2.0f);
+                    }
+                }
+            }
+            const Vector3 Rim{ Spot.X + Request.Radius * std::cos(Turn), Spot.Y + Request.Radius * std::sin(Turn), Spot.Z };
+            DrawDimensionLine(State, Frame, Canvas, Spot, Rim, DimensionText("R", Request.Radius), ImVec2(0.0f, -14.0f));
+            if (Drawing.Solid == SolidArcConstructKind::Tube && Request.Inner > 0.0)
+                DrawDimensionLine(State, Frame, Canvas, Spot, { Spot.X - Request.Inner, Spot.Y, Spot.Z }, DimensionText("r", Request.Inner), ImVec2(0.0f, 14.0f));
+            else if (!Prism) DrawDimensionLine(State, Frame, Canvas, { Spot.X, Spot.Y - Request.Radius, Spot.Z }, { Spot.X, Spot.Y + Request.Radius, Spot.Z },
+                                               DimensionText("Ø", 2.0 * Request.Radius), ImVec2(16.0f, 0.0f));
+            if (Prism)
+            {
+                const double  Next = Turn + 2.0 * std::numbers::pi / Count;
+                const Vector3 Corner{ Spot.X + Request.Radius * std::cos(Next), Spot.Y + Request.Radius * std::sin(Next), Spot.Z };
+                DrawDimensionLine(State, Frame, Canvas, Rim, Corner, Compose("%d × %.3f", Count, Length(Corner - Rim)), ImVec2(0.0f, 14.0f));
+            }
+            if (Lifted)
+            {
+                const double  Side = Request.Radius + 0.08 * Request.Radius + 0.02;
+                const Vector3 Foot{ Spot.X + Side * std::cos(Turn + 0.5 * std::numbers::pi), Spot.Y + Side * std::sin(Turn + 0.5 * std::numbers::pi), Spot.Z };
+                DrawDimensionLine(State, Frame, Canvas, Foot, { Foot.X, Foot.Y, Top }, DimensionText("H", std::abs(Request.Height)), ImVec2(18.0f, 0.0f));
+            }
+            break;
+        }
+        case SolidArcConstructKind::Sphere:
+        {
+            const double R = Request.Radius;
+            Stroke(Ring(Spot, R, 72, 0.0), true, Ink, 2.0f);
+            std::vector<Vector3> Meridian, Cross;
+            for (int Index = 0; Index < 72; ++Index)
+            {
+                const double θ = 2.0 * std::numbers::pi * Index / 72;
+                Meridian.push_back({ Spot.X + R * std::cos(θ), Spot.Y, Spot.Z + R * std::sin(θ) });
+                Cross.push_back({ Spot.X, Spot.Y + R * std::cos(θ), Spot.Z + R * std::sin(θ) });
+            }
+            Stroke(Meridian, true, Ink, 1.5f);
+            Stroke(Cross, true, Ink, 1.5f);
+            const Vector2 Rim = Marks[1];
+            DrawDimensionLine(State, Frame, Canvas, Spot, { Rim.X, Rim.Y, Spot.Z }, DimensionText("R", R), ImVec2(0.0f, -14.0f));
+            break;
+        }
+        case SolidArcConstructKind::Torus:
+        {
+            const double Major = Request.Major, Minor = Request.Minor;
+            Stroke(Ring(Spot, Major, 96, 0.0), true, ConstructionInk, 1.0f);
+            if (Minor > 0.0)
+            {
+                Stroke(Ring(Spot, Major + Minor, 96, 0.0), true, Ink, 2.0f);
+                Stroke(Ring(Spot, Major - Minor, 96, 0.0), true, Ink, 2.0f);
+                for (const double Sense : { 1.0, -1.0 })
+                {
+                    std::vector<Vector3> Tube;
+                    for (int Index = 0; Index < 48; ++Index)
+                    {
+                        const double θ = 2.0 * std::numbers::pi * Index / 48;
+                        Tube.push_back({ Spot.X + Sense * (Major + Minor * std::cos(θ)), Spot.Y, Spot.Z + Minor * std::sin(θ) });
+                    }
+                    Stroke(Tube, true, Ink, 1.5f);
+                }
+                DrawDimensionLine(State, Frame, Canvas, { Spot.X - Major, Spot.Y, Spot.Z }, { Spot.X - Major - Minor, Spot.Y, Spot.Z }, DimensionText("r", Minor), ImVec2(0.0f, 14.0f));
+            }
+            DrawDimensionLine(State, Frame, Canvas, Spot, { Spot.X + Major, Spot.Y, Spot.Z }, DimensionText("R", Major), ImVec2(0.0f, -14.0f));
+            break;
+        }
+        }
+    }
+    for (size_t Index = 0; Index < Marks.size(); ++Index)
+    {
+        ImVec2 Out;
+        if (!Pixel(PlacePlanePoint(Plane, Marks[Index]), Out)) continue;
+        const bool Live = Index == Drawing.Points.size();
+        Canvas->AddCircleFilled(Out, Live ? 4.5f : 3.5f, Live ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ActiveColour);
+    }
+    if (Lifted && !Drawing.Points.empty())
+    {
+        // The height line the pointer slides on.
+        const Vector3 Anchor = PlacePlanePoint(Plane, Drawing.Points.back());
+        DrawConstructionLine(State, Frame, Canvas, Anchor, Anchor + Plane.ZAxis * Drawing.Lift);
+        ImVec2 Out;
+        if (Pixel(Anchor + Plane.ZAxis * Drawing.Lift, Out)) Canvas->AddCircleFilled(Out, 4.5f, IM_COL32_WHITE);
     }
 }
 
@@ -2794,7 +3387,8 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
 void DrawDrawingPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
-    const OrthonormalFrame  Plane   = SolidArcSketchPlane(Drawing.GridPlane);
+    if (Drawing.SolidCondition) { DrawSolidPreview(State, Canvas, Frame); return; }
+    const OrthonormalFrame  Plane   = DrawingPlane(Drawing);
     auto Pixel = [&](Vector2 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Point), Out); };
     SketchModel Sketch;
     const std::string Refusal = ComposeSolidArcSketch(ComposeDrawingRequest(Drawing, true, false), Sketch);
@@ -2822,6 +3416,7 @@ void DrawDrawingPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
         const bool Live = Index == Drawing.Points.size();
         Canvas->AddCircleFilled(Out, Live ? 4.5f : 3.5f, Live ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ActiveColour);
     }
+    DrawSketchDimensions(State, Frame, Canvas);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -4688,6 +5283,33 @@ void DrawConstructDialog(SolidArcWorkspaceState& State)
         Field("Major [m]###ConstructMajor", Form.Major);
         Field("Minor [m]###ConstructMinor", Form.Minor);
         break;
+    case SolidArcConstructKind::Cone:
+        Field("Radius [m]###ConstructRadius", Form.Radius);
+        Field("Height [m]###ConstructHeight", Form.Height);
+        break;
+    case SolidArcConstructKind::Wedge:
+        Field("Width [m]###ConstructWidth", Form.Width);
+        Field("Depth [m]###ConstructDepth", Form.Depth);
+        Field("Height [m]###ConstructHeight", Form.Height);
+        break;
+    case SolidArcConstructKind::Prism:
+    {
+        Field("Radius [m]###ConstructRadius", Form.Radius);
+        Field("Height [m]###ConstructHeight", Form.Height);
+        ImGui::SetNextItemWidth(160);
+        ImGui::InputInt("Sides###ConstructSides", &Form.Sides);
+        RegisterWidget(State, "Sides###ConstructSides");
+        Form.Sides = std::clamp(Form.Sides, 3, 64);
+        double Degrees = Form.Angle * 180.0 / std::numbers::pi;
+        Field("Turn [°]###ConstructTurn", Degrees);
+        Form.Angle = Degrees * std::numbers::pi / 180.0;
+        break;
+    }
+    case SolidArcConstructKind::Tube:
+        Field("Radius [m]###ConstructRadius", Form.Radius);
+        Field("Inner [m]###ConstructInner", Form.Inner);
+        Field("Height [m]###ConstructHeight", Form.Height);
+        break;
     }
     // Plasticity box / cylinder / sphere command keys: Q union · W difference · E intersect · R new body; Enter creates.
     bool CreateCondition = false;
@@ -4725,8 +5347,9 @@ void DrawConstructDialog(SolidArcWorkspaceState& State)
     ImGui::EndPopup();
 }
 
-// 📝 Construct menu (index.html #construct-menu, Solids section): 520 × 330 popover under the viewport Construct chip,
-//    header (dot, Construct, Tab, close), a 132 px section column, 72 px catalogue tiles; a tile opens the size form.
+// 📝 Construct menu (index.html #construct-menu): 520 × 330 popover under the viewport Construct chip, header (dot,
+//    Construct, Tab, close), a 132 px section column (Solids · Sketch), 4 × 2 catalogue tiles of 72 px. A tile starts the
+//    drawing command in the viewport (live dimension lines); Tab inside a solid command opens the exact-size form.
 void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
 {
     if (State.ConstructMenuRequest)
@@ -4760,39 +5383,76 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     const float Body = Top + 41.0f;
     Sheet.Surface().FillRectangle(PlaneExtent{ Left, Body, Left + 132.0f, Bottom }, SolidArcInk(0x000000, 0.2f), 0.0f);
     Sheet.Line(Left + 131.5f, Body, Left + 131.5f, Bottom, SolidArcWash(0x12));
-    const PlaneExtent Section = Spanning(Left + 6.0f, Body + 8.0f, 132.0f - 12.0f - 1.0f, 36.0f);
-    Sheet.Box(Section, SolidArcWash(0x16), 7.0f);
-    Sheet.Text(Section.MinimumX + 10.0f, Section.MinimumY + 18.0f, 11.0f, SolidArcInk(0xeeeeee), "Solids");
-    Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), "4");
-    // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
-    const float TilesLeft = Left + 132.0f + 10.0f;
-    const float TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
-    const struct { SolidArcConstructKind Kind; IconSymbol Glyph; } Tiles[] = { { SolidArcConstructKind::Block, IconSymbol::SolidArcBody },
-        { SolidArcConstructKind::Cylinder, IconSymbol::SolidArcCylinder }, { SolidArcConstructKind::Sphere, IconSymbol::SolidArcSphere },
-        { SolidArcConstructKind::Torus, IconSymbol::SolidArcRing } };
-    for (int Index = 0; Index < 4; ++Index)
+    // Two sections (the reference catalogue's Solids and Sketch): 3-D primitives become bodies, 2-D tools become sketches.
+    static const char* const Sections[2] = { "Solids", "Sketch" };
+    for (int Index = 0; Index < 2; ++Index)
     {
-        const PlaneExtent   Tile  = Spanning(TilesLeft + float(Index) * (TileWidth + 6.0f), Body + 10.0f, TileWidth, 72.0f);
-        const char*         Label = SolidArcConstructLabel(Tiles[Index].Kind);
-        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Construct") + Label, Tile);
+        const PlaneExtent   Section = Spanning(Left + 6.0f, Body + 8.0f + float(Index) * 40.0f, 132.0f - 12.0f - 1.0f, 36.0f);
+        const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, std::string("ConstructSection") + Sections[Index], Section);
+        if (Press.ClickedCondition) State.ConstructSection = Index;
+        const bool Chosen = State.ConstructSection == Index;
+        if (Chosen || Press.HoveredCondition) Sheet.Box(Section, SolidArcWash(Chosen ? 0x16 : 0x0c), 7.0f);
+        Sheet.Text(Section.MinimumX + 10.0f, Section.MinimumY + 18.0f, 11.0f, SolidArcInk(Chosen ? 0xeeeeee : 0xaaaaaa), Sections[Index]);
+        Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), "8");
+    }
+    // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
+    struct ConstructTile
+    {
+        const char*           Label;                                                         // [-] - Caption (and widget name)
+        IconSymbol            Glyph;                                                         // [-] - 24 px glyph
+        bool                  SolidCondition;                                                // [-] - Solid (else a sketch tool)
+        SolidArcConstructKind Solid;                                                         // [-] - Solid kind
+        SolidArcDrawingKind   Sketch;                                                        // [-] - Sketch tool
+        bool                  CentreCondition;                                               // [-] - Sketch tool in centre mode
+    };
+    static const ConstructTile Solids[8] = {
+        { "Box", IconSymbol::SolidArcBody, true, SolidArcConstructKind::Block, {}, false },
+        { "Cylinder", IconSymbol::SolidArcCylinder, true, SolidArcConstructKind::Cylinder, {}, false },
+        { "Cone", IconSymbol::SolidArcCone, true, SolidArcConstructKind::Cone, {}, false },
+        { "Sphere", IconSymbol::SolidArcSphere, true, SolidArcConstructKind::Sphere, {}, false },
+        { "Torus", IconSymbol::SolidArcRing, true, SolidArcConstructKind::Torus, {}, false },
+        { "Wedge", IconSymbol::SolidArcWedge, true, SolidArcConstructKind::Wedge, {}, false },
+        { "Prism", IconSymbol::SolidArcPrism, true, SolidArcConstructKind::Prism, {}, false },
+        { "Tube", IconSymbol::SolidArcTube, true, SolidArcConstructKind::Tube, {}, false } };
+    static const ConstructTile Sketches[8] = {
+        { "Line", IconSymbol::SolidArcPolyline, false, {}, SolidArcDrawingKind::Line, false },
+        { "Rectangle", IconSymbol::SolidArcRectangle, false, {}, SolidArcDrawingKind::Rectangle, false },
+        { "Centre rect", IconSymbol::SolidArcCentrerect, false, {}, SolidArcDrawingKind::Rectangle, true },
+        { "Circle", IconSymbol::SolidArcCircle, false, {}, SolidArcDrawingKind::Circle, true },
+        { "Arc", IconSymbol::SolidArcArc, false, {}, SolidArcDrawingKind::Arc, false },
+        { "Slot", IconSymbol::SolidArcSlot, false, {}, SolidArcDrawingKind::Slot, false },
+        { "Polygon", IconSymbol::SolidArcPolygon, false, {}, SolidArcDrawingKind::Polygon, false },
+        { "Curve", IconSymbol::SolidArcCurve, false, {}, SolidArcDrawingKind::Curve, false } };
+    const ConstructTile* Tiles     = State.ConstructSection == 1 ? Sketches : Solids;
+    const float          TilesLeft = Left + 132.0f + 10.0f;
+    const float          TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
+    for (int Index = 0; Index < 8; ++Index)
+    {
+        const ConstructTile& Entry = Tiles[Index];
+        const PlaneExtent   Tile  = Spanning(TilesLeft + float(Index % 4) * (TileWidth + 6.0f), Body + 10.0f + float(Index / 4) * (72.0f + 6.0f), TileWidth, 72.0f);
+        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Construct") + Entry.Label, Tile);
         Sheet.Box(Tile, SolidArcWash(Press.HoveredCondition ? 0x1e : 0x0c), 8.0f, SolidArcWash(Press.HoveredCondition ? 0x3c : 0x12));
         const float Stack = 24.0f + 9.0f + 10.0f * SolidArcStyleTokens::FontScale;
         const float GlyphTop = Tile.MinimumY + 0.5f * (72.0f - Stack);
-        Sheet.Icon(Tiles[Index].Glyph, 0.5f * (Tile.MinimumX + Tile.MaximumX) - 12.0f, GlyphTop, 24.0f, SolidArcInk(0xdddddd));
-        const float Width = Sheet.Measure(Label, 10.0f);
+        Sheet.Icon(Entry.Glyph, 0.5f * (Tile.MinimumX + Tile.MaximumX) - 12.0f, GlyphTop, 24.0f, SolidArcInk(0xdddddd));
+        const float Width = Sheet.Measure(Entry.Label, 10.0f);
         Sheet.Text(0.5f * (Tile.MinimumX + Tile.MaximumX - Width), GlyphTop + 24.0f + 9.0f + 0.5f * 10.0f * SolidArcStyleTokens::FontScale, 10.0f,
-                   SolidArcInk(Press.HoveredCondition ? 0xeeeeee : 0xaaaaaa), Label);
+                   SolidArcInk(Press.HoveredCondition ? 0xeeeeee : 0xaaaaaa), Entry.Label);
         if (Press.ClickedCondition)
         {
-            State.ConstructForm.Kind        = Tiles[Index].Kind;
-            State.ConstructForm.Combination = State.Document.Summary.PresentCondition ? FeatureCombination::Union : FeatureCombination::New;
-            State.ConstructOpen             = true;
             ImGui::CloseCurrentPopup();
+            if (Entry.SolidCondition) OpenSolidSession(State, Entry.Solid);
+            else
+            {
+                OpenDrawingSession(State, Entry.Sketch);
+                State.Drawing.CentreCondition = Entry.CentreCondition;
+            }
         }
     }
     // .construct-catalogue footer — 28 px, #ffffff12 top border, padding 8 10, 9 px #828282.
     Sheet.Line(Left + 132.0f, Bottom - 28.0f + 0.5f, Right, Bottom - 28.0f + 0.5f, SolidArcWash(0x12));
-    Sheet.Text(Left + 132.0f + 10.0f, Bottom - 14.0f, 9.0f, SolidArcInk(0x828282), "Click a tile: set its size and place it · Enter creates");
+    Sheet.Text(Left + 132.0f + 10.0f, Bottom - 14.0f, 9.0f, SolidArcInk(0x828282), State.ConstructSection == 1 ? "Click a tool, then draw it in the viewport · Enter / right-click finishes"
+                                                                                       : "Click a solid, then draw it in the viewport · Tab types exact sizes");
     ImGui::EndPopup();
 }
 
@@ -5606,13 +6266,28 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         SolidArcDrawingSession& Drawing = State.Drawing;
         Vector2 Point;
         bool    Closing = false;
-        Drawing.PointerCondition = Hovered && IntersectConstructionPlane(Frame, Local, Drawing.GridPlane, Point);
-        if (!Drawing.PointerCondition) State.Picker.Current = {};
-        if (Drawing.PointerCondition)
+        const bool LiftStage = Drawing.SolidCondition && Drawing.Points.size() >= SolidPlaneClicks(Drawing.Solid);
+        Drawing.PointerElevation = 0.0;
+        Drawing.PointerCondition = Hovered && IntersectSketchPlane(Frame, Local, DrawingPlane(Drawing), Point);
+        if (LiftStage)
+        {
+            // Height stage: the pointer slides on the vertical line through the last click (the plane may be edge-on).
+            Drawing.PointerCondition = Hovered;
+            if (Hovered) PlaceSolidLift(State, Frame, Local);
+            Point           = Drawing.Points.back();
+            Drawing.Pointer = Point;
+        }
+        else if (Drawing.SolidCondition && Drawing.Points.empty() && Hovered && PlaceSolidStart(State, Frame, Local, Point))
+        {
+            Drawing.PointerCondition = true;                                                 // First click onto a body: the plane rises there
+            Drawing.Pointer          = Point;
+        }
+        else if (!Drawing.PointerCondition) State.Picker.Current = {};
+        if (Drawing.PointerCondition && !LiftStage && !(Drawing.SolidCondition && Drawing.Points.empty() && State.Picker.Current.Kind != SolidArcSnapKind::None))
         {
             PlaceDrawingPointer(State, Frame, Local, Point);
             ImVec2 First;
-            const OrthonormalFrame Plane = SolidArcSketchPlane(Drawing.GridPlane);
+            const OrthonormalFrame Plane = DrawingPlane(Drawing);
             if (DrawingClicks(Drawing.Kind) == 0 && Drawing.Points.size() >= 2 && ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Drawing.Points.front()), First) &&
                 std::hypot(Io.MousePos.x - First.x, Io.MousePos.y - First.y) <= ClosingTolerance)
             {
@@ -5743,7 +6418,10 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcDrawingSession& Drawing = State.Drawing;
         const std::string Pointer = Drawing.PointerCondition ? Compose(" · (%s, %s)", FormatLength(Drawing.Pointer.X).c_str(), FormatLength(Drawing.Pointer.Y).c_str()) : std::string{};
-        DrawStatusPill(Canvas, Below, Compose("%s · %d point(s)%s", DrawingCaption(Drawing).c_str(), int(Drawing.Points.size()), Pointer.c_str()), ActiveColour);
+        if (Drawing.SolidCondition)
+            DrawStatusPill(Canvas, Below, Compose("%s · %s%s", DrawingCaption(Drawing).c_str(), SolidPrompt(Drawing),
+                                                  Drawing.Points.size() >= SolidPlaneClicks(Drawing.Solid) ? Compose(" · height %s", FormatLength(Drawing.Lift).c_str()).c_str() : Pointer.c_str()), ActiveColour);
+        else DrawStatusPill(Canvas, Below, Compose("%s · %d point(s)%s", DrawingCaption(Drawing).c_str(), int(Drawing.Points.size()), Pointer.c_str()), ActiveColour);
         if (!Drawing.Refusal.empty()) DrawStatusPill(Canvas, Below, Drawing.Refusal, RefusalColour);
     }
     if (State.Trim.ActiveCondition)
@@ -5805,7 +6483,9 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Sweep.Verb == SolidArcSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
                        : State.Drawing.ActiveCondition
-                           ? (State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (snaps, Ctrl free) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                           ? (State.Drawing.SolidCondition ? "Draw on the ground or a body top (snaps, Ctrl free) · move up for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? "Click the centre, then a vertex (snaps, Ctrl free) · + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (snaps, Ctrl free) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (snaps, Ctrl free) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (snaps, Ctrl free) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (snaps, Ctrl free) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
@@ -6261,8 +6941,9 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
         static const struct { const char* Label; SolidArcDrawingKind Kind; } Tools[] = {
             { "Line (Shift+A)###DrawLine", SolidArcDrawingKind::Line }, { "Rectangle (Shift+Q)###DrawRectangle", SolidArcDrawingKind::Rectangle },
             { "Circle (Shift+W)###DrawCircle", SolidArcDrawingKind::Circle }, { "Curve (Shift+S)###DrawCurve", SolidArcDrawingKind::Curve },
-            { "Arc (3 points)###DrawArc", SolidArcDrawingKind::Arc }, { "Slot###DrawSlot", SolidArcDrawingKind::Slot } };
-        for (int Index = 0; Index < 6; ++Index)
+            { "Arc (3 points)###DrawArc", SolidArcDrawingKind::Arc }, { "Slot###DrawSlot", SolidArcDrawingKind::Slot },
+            { "Polygon###DrawPolygon", SolidArcDrawingKind::Polygon } };
+        for (int Index = 0; Index < 7; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
             if (PressButton(State, Tools[Index].Label, RowSpan(), !State.Bevel.ActiveCondition)) OpenDrawingSession(State, Tools[Index].Kind);
@@ -6281,6 +6962,43 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
         EndCard();
         return;
     }
+    if (Drawing.SolidCondition)
+    {
+        BeginCard(SolidArcConstructLabel(Drawing.Solid));
+        ImGui::TextWrapped("%s", SolidPrompt(Drawing));
+        static const std::pair<FeatureCombination, const char*> Combinations[] = { { FeatureCombination::Separate, "New body (R)###SolidSeparate" },
+            { FeatureCombination::Union, "Union (Q)###SolidUnion" }, { FeatureCombination::Difference, "Difference (W)###SolidDifference" },
+            { FeatureCombination::Intersection, "Intersect (E)###SolidIntersection" } };
+        for (int Index = 0; Index < 4; ++Index)
+        {
+            if (Index % 2 == 1) ImGui::SameLine();
+            if (ToggleButton(State, Combinations[Index].second, Drawing.Combination == Combinations[Index].first, RowSpan())) Drawing.Combination = Combinations[Index].first;
+        }
+        if (Drawing.Solid == SolidArcConstructKind::Prism)
+        {
+            ImGui::SetNextItemWidth(-1);
+            ImGui::SliderInt("###SolidSides", &Drawing.Sides, 3, 24, "%d sides (+ / −)");
+            RegisterWidget(State, "###SolidSides");
+        }
+        if (Drawing.Solid == SolidArcConstructKind::Block || Drawing.Solid == SolidArcConstructKind::Wedge)
+        {
+            if (ToggleButton(State, "Corner###SolidCorner", !Drawing.CentreCondition, RowSpan())) Drawing.CentreCondition = false;
+            ImGui::SameLine();
+            if (ToggleButton(State, "Centre (Alt)###SolidCentre", Drawing.CentreCondition, RowSpan())) Drawing.CentreCondition = true;
+        }
+        if (PressButton(State, "Exact size (Tab)###ConstructExact", RowSpan())) { OpenSolidExactForm(State); EndCard(); return; }
+        ImGui::SameLine();
+        if (PressButton(State, "Abort (Esc)###DrawAbort", RowSpan())) CancelDrawingSession(State);
+        if (PressButton(State, "Drop point (Ctrl+Z)###DrawRetract", ImVec2(-1, 0), !Drawing.Points.empty())) RetractDrawingPoint(State);
+        if (!Drawing.Refusal.empty())
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+            ImGui::TextWrapped("%s", Drawing.Refusal.c_str());
+            ImGui::PopStyleColor();
+        }
+        EndCard();
+        return;
+    }
     BeginCard(SolidArcDrawingLabel(Drawing.Kind));
     static const char* Planes[] = { "XY", "XZ", "YZ" };
     ImGui::Text("Plane %s · %d point(s)", Planes[std::clamp(Drawing.GridPlane, 0, 2)], int(Drawing.Points.size()));
@@ -6294,6 +7012,12 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
             if (Index % 2 == 1) ImGui::SameLine();
             if (ToggleButton(State, Forms[Index].Label, Drawing.Form == Forms[Index].Form, RowSpan())) { Drawing.Form = Forms[Index].Form; Drawing.Refusal.clear(); }
         }
+    }
+    if (Drawing.Kind == SolidArcDrawingKind::Polygon)
+    {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderInt("###DrawSides", &Drawing.Sides, 3, 24, "%d sides (+ / −)");
+        RegisterWidget(State, "###DrawSides");
     }
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle || Drawing.Kind == SolidArcDrawingKind::Circle)
     {
@@ -7091,10 +7815,10 @@ void RepeatLastCommand(SolidArcWorkspaceState& State)
     }
 }
 
+// Plasticity Shift+C / V / X / Z (box, cylinder, sphere, …): the drawn solid command; Tab inside it opens the size form.
 void OpenConstruct(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
 {
-    State.ConstructForm.Kind = Kind;
-    State.ConstructOpen      = true;
+    OpenSolidSession(State, Kind);
 }
 
 // 📝 Plasticity default keymap (nkallen/plasticity src/startup/default-keymap.ts). Commands this modeller does not have
@@ -7103,6 +7827,9 @@ void OpenConstruct(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
 void ApplyShortcuts(SolidArcWorkspaceState& State)
 {
     ImGuiIO& Io = ImGui::GetIO();
+#ifdef FRONTIER_DEVELOPMENT_TRACE
+    if (ImGui::IsKeyPressed(ImGuiKey_F12, false)) State.TraceShown = !State.TraceShown;          // development: operation trace panel
+#endif
     if (Io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
     const bool Control   = Io.KeyCtrl;
     const bool Shift     = Io.KeyShift;
@@ -7136,6 +7863,21 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         else if (Pressed(ImGuiKey_Escape)) CancelDrawingSession(State);
         else if (Control && Pressed(ImGuiKey_Z)) RetractDrawingPoint(State);               // gizmo:line:undo / gizmo:curve:undo
         else if (Alternate && !Control && !Io.KeyShift && Pressed(ImGuiKey_Z)) ToggleXRay(State);       // viewport:toggle-x-ray stays live (hidden snaps)
+        else if (Drawing.SolidCondition && Pressed(ImGuiKey_Tab)) OpenSolidExactForm(State);   // Exact sizes in the Construct form
+        else if (Drawing.SolidCondition && !Control && !Alternate && (Pressed(ImGuiKey_Q) || Pressed(ImGuiKey_W) || Pressed(ImGuiKey_E) || Pressed(ImGuiKey_R)))
+        {
+            // Plasticity boolean keys inside a creation command: Q union · W difference · E intersection · R new body.
+            Drawing.Combination = Pressed(ImGuiKey_Q) ? GeometryProcessing::FeatureCombination::Union : Pressed(ImGuiKey_W) ? GeometryProcessing::FeatureCombination::Difference
+                                : Pressed(ImGuiKey_E) ? GeometryProcessing::FeatureCombination::Intersection : GeometryProcessing::FeatureCombination::Separate;
+            Announce(State, std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + (Drawing.Combination == GeometryProcessing::FeatureCombination::Separate ? "new body" : FeatureCombinationLabel(Drawing.Combination)));
+        }
+        else if ((Drawing.Kind == SolidArcDrawingKind::Polygon || (Drawing.SolidCondition && Drawing.Solid == SolidArcConstructKind::Prism)) && !Control && !Alternate &&
+                 (Pressed(ImGuiKey_Equal) || Pressed(ImGuiKey_KeypadAdd) || Pressed(ImGuiKey_Minus) || Pressed(ImGuiKey_KeypadSubtract)))
+        {
+            Drawing.Sides = std::clamp(Drawing.Sides + (Pressed(ImGuiKey_Minus) || Pressed(ImGuiKey_KeypadSubtract) ? -1 : 1), 3, 64);
+            Drawing.Refusal.clear();
+            Announce(State, Compose("%d sides", Drawing.Sides));
+        }
         else if (!Control && !Alternate && !Io.KeyShift && (Pressed(ImGuiKey_X) || Pressed(ImGuiKey_Y) || Pressed(ImGuiKey_Z) || Pressed(ImGuiKey_T) || Pressed(ImGuiKey_N) || Pressed(ImGuiKey_B)))
         {
             // body[gizmo=point-picker]: x / y / z, set-tangent, set-normal, set-binormal
@@ -7332,7 +8074,12 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     }
     if (Shift)
     {
-        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V)) OpenConstruct(State, SolidArcConstructKind::Block);     // corner / centre box
+        if (Pressed(ImGuiKey_C) || Pressed(ImGuiKey_V))                                     // corner / centre box
+        {
+            const bool Centre = Pressed(ImGuiKey_V);
+            OpenConstruct(State, SolidArcConstructKind::Block);
+            State.Drawing.CentreCondition = Centre;
+        }
         if (Pressed(ImGuiKey_X)) OpenConstruct(State, SolidArcConstructKind::Cylinder);
         if (Pressed(ImGuiKey_Z)) OpenConstruct(State, SolidArcConstructKind::Sphere);
         if (Pressed(ImGuiKey_R)) RepeatLastCommand(State);
@@ -7541,6 +8288,47 @@ void InitialiseSolidArcWorkspace(SolidArcWorkspaceState& State, const SolidArcOp
     if (!Options.Refusal.empty()) Announce(State, "Options: " + Options.Refusal);
 }
 
+// 📝 F12 (development builds): the newest operation trace lines, the same text SolidArcTrace.log receives. A filter keeps
+//    the lines containing its text; Copy puts the shown lines on the clipboard for a bug report.
+void DrawTracePanel(SolidArcWorkspaceState& State)
+{
+#ifdef FRONTIER_DEVELOPMENT_TRACE
+    if (!State.TraceShown) return;
+    const ImVec2 Display = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowSize(ImVec2(std::min(980.0f, Display.x - 40.0f), 360.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(20.0f, Display.y - 400.0f), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Operation trace (F12)###OperationTrace", &State.TraceShown)) { ImGui::End(); return; }
+    const std::filesystem::path Path = OperationTracePath();
+    ImGui::TextDisabled("%s", Path.empty() ? "in memory only" : DescribeUtf8Path(Path).c_str());
+    char Filter[128] = {};
+    std::snprintf(Filter, sizeof(Filter), "%s", State.TraceFilter.c_str());
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::InputTextWithHint("###TraceFilter", "filter (Blend, Replay, refused …)", Filter, sizeof(Filter))) State.TraceFilter = Filter;
+    ImGui::SameLine();
+    const bool CopyCondition = ImGui::Button("Copy###TraceCopy");
+    const std::vector<std::string> Lines = RecentOperationTrace(1500);
+    std::string Shown;
+    ImGui::BeginChild("###TraceLines", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+    for (const std::string& Line : Lines)
+    {
+        if (!State.TraceFilter.empty() && Line.find(State.TraceFilter) == std::string::npos) continue;
+        const bool Refused = Line.find("refused") != std::string::npos || Line.find("NOT converged") != std::string::npos || Line.find("slow") != std::string::npos;
+        if (Refused) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.45f, 1.0f));
+        ImGui::TextUnformatted(Line.c_str());
+        if (Refused) ImGui::PopStyleColor();
+        if (CopyCondition) Shown += Line + "\n";
+    }
+    static size_t Seen = 0;
+    if (OperationTraceRevision() != Seen && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 40.0f) ImGui::SetScrollHereY(1.0f);
+    Seen = OperationTraceRevision();
+    ImGui::EndChild();
+    if (CopyCondition) ImGui::SetClipboardText(Shown.c_str());
+    ImGui::End();
+#else
+    State.TraceShown = false;
+#endif
+}
+
 void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds)
 {
     State.Widgets.Clear();
@@ -7569,6 +8357,7 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
     DrawStatusBar(State, Frame);
     DrawMatcapPicker(State);
     DrawWelcome(State);
+    DrawTracePanel(State);
     ApplyShortcuts(State);
     AdvanceAutosave(State, DeltaSeconds);
     StageBevelPreview(State);
@@ -7742,7 +8531,10 @@ std::string DescribeSolidArcWorkspace(const SolidArcWorkspaceState& State)
     Stream << ", \"Centre\": " << (State.Drawing.CentreCondition ? "true" : "false") << ", \"Points\": [";
     for (size_t Index = 0; Index < State.Drawing.Points.size(); ++Index)
         Stream << (Index ? ", " : "") << "[" << State.Drawing.Points[Index].X << ", " << State.Drawing.Points[Index].Y << "]";
-    Stream << "], \"Refusal\": ";
+    Stream << "], \"Solid\": " << (State.Drawing.SolidCondition ? "true" : "false") << ", \"SolidKind\": ";
+    AppendJsonText(Stream, SolidArcConstructLabel(State.Drawing.Solid));
+    Stream << ", \"Lift\": " << State.Drawing.Lift << ", \"Elevation\": " << State.Drawing.Elevation << ", \"Sides\": " << State.Drawing.Sides
+           << ", \"Combination\": " << int(State.Drawing.Combination) << ", \"Refusal\": ";
     AppendJsonText(Stream, State.Drawing.Refusal);
     Stream << "},\n  \"Undo\": " << Document.UndoEntries.size() << ",\n  \"Redo\": " << Document.RedoEntries.size() << ",\n  \"Welcome\": "
            << (State.WelcomeOpen ? "true" : "false") << ",\n  \"Status\": ";
