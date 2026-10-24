@@ -1,6 +1,6 @@
 # 📝 S5 — SolidArc in the Frontier project browser
 
-**TL;DR** — The upstream project browser now treats `.solidarc` as a CAD file. It decodes each document with the SolidArc library, renders the real bodies through the browser's own reference Vulkan renderer (thumbnail and live reader), shows a refusal for damaged files instead of a stand-in, and **Open in SolidArc** starts `SolidArcWorkspace --open <file>`. `SolidArcBrowserValidation` passes 15/15 on SwiftShader, and the started workspace process captured the opened document.
+**TL;DR** — The upstream project browser now treats `.solidarc` as a CAD file. It decodes each document with the SolidArc library, renders the real bodies through the browser's own reference Vulkan renderer (thumbnail and live reader), shows a refusal for damaged files instead of a stand-in, and **Open in SolidArc** starts `SolidArcWorkspace --open <file>`. `SolidArcBrowserValidation` passes 15/15 on SwiftShader, and the started workspace process captured the opened document. ctest 28/28 (every SolidArc test plus both upstream raster validations).
 
 ## 🏷️ What changed
 
