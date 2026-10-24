@@ -82,6 +82,9 @@ set(SOLIDARC_SHADERS
     "${SOLIDARC_UI}/Shaders/SolidArcSurface.slang"
     "${SOLIDARC_UI}/Shaders/SolidArcEdge.slang"
     "${SOLIDARC_UI}/Shaders/SolidArcGrid.slang"
+    "${SOLIDARC_UI}/Shaders/SolidArcImagePlane.slang"
+    "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/CadStroke.slang"                                # Shared with Frontier CadEdge
+    "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/MatCapLookup.slang"                             # Shared with Frontier MatCapSurface
 )
 set(SOLIDARC_SHADER_ARCHIVE "${SOLIDARC_UI}/Viewport/Generated/SolidArcShaderArchive.h")
 if(SOLIDARC_SLANG_COMPILER)

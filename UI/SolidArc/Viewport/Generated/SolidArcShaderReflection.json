@@ -3,7 +3,7 @@
  "sources": [
   {
    "file": "Shaders/SolidArcEdge.slang",
-   "sha256": "292acc1bb0c7d082dfb0b1f509b984614a9d56868ab2b5ee667cc2e4a6c44bd1"
+   "sha256": "36a56ebc2065adc0590c35bcf046d68e89e3b75c7c250934fa52d0023d6c6fa5"
   },
   {
    "file": "Shaders/SolidArcGrid.slang",
@@ -19,7 +19,15 @@
   },
   {
    "file": "Shaders/SolidArcSurface.slang",
-   "sha256": "cfefbb5820da1616d0b531a4c74d88860460b026e3251f132d1688b1efe8c0d3"
+   "sha256": "fb3393baf52bbc4daea77f75c7b07aadb5985b7c9694fb76207f52160ef15a06"
+  },
+  {
+   "file": "Engine/Render/Shader/CadStroke.slang",
+   "sha256": "87f7a3e6554e15dda455b2c5c6d748e51b4c1eaa9e08135122f6d19a076bef40"
+  },
+  {
+   "file": "Engine/Render/Shader/MatCapLookup.slang",
+   "sha256": "83405c55dceafa1fe7abc621f50bc474fad5136db5198de12834413e2f92595a"
   }
  ],
  "entries": [
@@ -1099,8 +1107,8 @@
   {
    "name": "SolidArcSurfaceFragment",
    "entry": "main",
-   "words": 2540,
-   "sha256": "44d29701766f42c2328c006e1bbcecc807f2b6a8fc5617e3f45b6896f344e3e2",
+   "words": 2703,
+   "sha256": "66531807c58068390ef39fd538f85f3fbd3ea287eac9b5e8d5009fecba9c4757",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -2182,8 +2190,8 @@
   {
    "name": "SolidArcEdgeVertex",
    "entry": "main",
-   "words": 2399,
-   "sha256": "24ddedc0cc9b98d4a536d27419b7a583f15430a0a129ef37a5f20fe111a4e6d4",
+   "words": 2749,
+   "sha256": "d4c308aff3e0ffca41ca9110af3af232430cadb257a7fbca647eab0a3ce9b246",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -3191,8 +3199,8 @@
   {
    "name": "SolidArcEdgeFragment",
    "entry": "main",
-   "words": 921,
-   "sha256": "43de2fd2e03452e5600b3581cb22004e6b91ff450e7a8d90788034b967e1a904",
+   "words": 973,
+   "sha256": "8bdf40b16666083d738dd1b1865939e18e52dcb948ec815c1a9e2c832cb05c67",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -4144,8 +4152,8 @@
   {
    "name": "SolidArcEdgeOccludedFragment",
    "entry": "main",
-   "words": 1013,
-   "sha256": "71801529a3bb8a8293eff2cce19555beeb1ff7c57e40af3c0d3d43adad4c5501",
+   "words": 1065,
+   "sha256": "7e32f41d2a4b7341f14a18290713b2a121ffe062e1b8dc4ea1f223d9025140fd",
    "reflection": {
     "version": "1.1",
     "parameters": [

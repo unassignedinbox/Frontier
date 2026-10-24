@@ -39,6 +39,14 @@ for (const File of Fs.readdirSync(ShaderDirectory).filter(Name => Name.endsWith(
     Compiler.FS.writeFile(MountedDirectory + '/' + File, Contents);
     Sources.push({ file: 'Shaders/' + File, sha256: Crypto.createHash('sha256').update(Contents).digest('hex') });
 }
+// 📝 Port step S4: the shared Frontier modules (CadStroke, MatCapLookup) sit next to the SolidArc programs in the mount.
+const ModuleDirectory = Path.resolve(Workspace, '../../Engine/Render/Shader');
+for (const File of ['CadStroke.slang', 'MatCapLookup.slang'])
+{
+    const Contents = Fs.readFileSync(Path.join(ModuleDirectory, File));
+    Compiler.FS.writeFile(MountedDirectory + '/' + File, Contents);
+    Sources.push({ file: 'Engine/Render/Shader/' + File, sha256: Crypto.createHash('sha256').update(Contents).digest('hex') });
+}
 const CompilerSource = Fs.readFileSync(Path.resolve(CompilerPath));
 const CompilerBinary = Fs.readFileSync(Path.join(Path.dirname(Path.resolve(CompilerPath)), 'slang-wasm.wasm'));
 

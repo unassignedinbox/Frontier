@@ -4,6 +4,7 @@
 // 🧩 B-rep face shading (analytic Studio or a matcap layer per face) with selection tints and the R32 identity output
 
 #include "SolidArcProjection.slang"
+#include "MatCapLookup.slang"                                                                // Frontier lit-sphere lookup
 
 [[vk::push_constant]] ConstantBuffer<SolidArcProjection> Projection;
 [[vk::binding(0, 0)]] StructuredBuffer<uint> FaceStates;
@@ -102,10 +103,12 @@ SurfaceTargets SolidArcSurfaceFragment(SurfacePixel Pixel, bool FrontFacing : SV
     }
     else
     {
-        float2 Across = View.xy;
-        float  Reach  = length(Across);
-        if (Reach > 0.995) Across *= 0.995 / Reach;                                          // Perspective can push |xy| past 1
-        Colour = Matcaps.Sample(float3(0.5 + 0.5 * Across.x, 0.5 - 0.5 * Across.y, float(Layer - 1u))).rgb;
+        // 📝 Frontier MatCapCoordinates, pulled 0.5 % inside the disc so the silhouette never samples the outer texels.
+        float2 Lookup = MatCapCoordinates(View);
+        float2 Offset = Lookup - 0.5;
+        float  Reach  = length(Offset);
+        if (Reach > 0.4975) Lookup = 0.5 + Offset * (0.4975 / Reach);
+        Colour = Matcaps.Sample(float3(Lookup, float(Layer - 1u))).rgb;
     }
     // 📝 Zebra (vehicle plan V8, ViewUp.w = stripe count): the view direction reflected in the normal, its angle to the
     //    camera up × count / π; stripe k covers phase [k, k + ½). Mirrors SolidArcZebraPhase (SolidArcScene.cpp).

@@ -14,6 +14,7 @@
 #    --copy copies instead of linking (Windows without developer mode). Rerunning is safe: present links are kept.
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -31,6 +32,8 @@ SeatedPaths = [
     'Engine/GeometryProcessing',
     'Engine/Render/OrbitCamera.h',
     'Engine/Render/OrbitCamera.cpp',
+    'Engine/Render/Shader/CadStroke.slang',
+    'Engine/Render/Shader/MatCapLookup.slang',
     'UI/SolidArc',
     'Experimental/SolidArc',
     'Experimental/VehicleSurfacing',
@@ -57,6 +60,22 @@ DomainEdits = [
      'Workspace <= IconDomain::SolidArc &&'),
 ]
 
+# 📝 Port step S4: upstream CadEdge / MatCapSurface keep their entries and ABI but take their stroke and lookup from the
+#    shared modules above, which the SolidArc programs include too. Each file is replaced only while it still has the
+#    sha256 of the pinned upstream revision (65cf0f1), so an upstream edit is never overwritten silently.
+ReplacedPaths = [
+    ('Engine/Render/Shader/CadEdge.slang',       '7dd89dcd37fb850bd7b9d9fc8fb415898688c64d266360d622ebfc01c6af3bf2'),
+    ('Engine/Render/Shader/MatCapSurface.slang', '16d05bd02b4e2f49fc90b274ce25ac094ccc37dde6c8ec4ae65d4a2734f155e5'),
+]
+# 📝 The surface shader rules rebuild when a shared module changes (both the slangc and the Slang WASM rule).
+ModuleDependency = (
+    'Automation/SurfaceRasterization.cmake',
+    '"${CMAKE_SOURCE_DIR}/Engine/Render/Shader/SurfaceProjection.slang"\n',
+    '"${CMAKE_SOURCE_DIR}/Engine/Render/Shader/SurfaceProjection.slang"\n'
+    '                    "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/CadStroke.slang"\n'
+    '                    "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/MatCapLookup.slang"\n',
+    2,
+)
 IncludeLine = 'include("${CMAKE_SOURCE_DIR}/Experimental/SolidArc/Native/SolidArc.cmake")'
 
 VolkPin = {
@@ -92,6 +111,35 @@ def SeatPath(Frontier, Relative, CopyEnabled):
         return 'copied'
     os.symlink(Source, Target, target_is_directory=Source.is_dir())
     return 'linked'
+
+
+def SeatReplacement(Frontier, Relative, PinnedDigest, CopyEnabled):
+    Source = RepositoryRoot / Relative
+    Target = Frontier / Relative
+    if Target.is_symlink() and Target.resolve() == Source.resolve():
+        return 'kept'
+    if Target.exists() and Target.read_bytes() == Source.read_bytes():
+        return 'kept'
+    if not Target.exists() or hashlib.sha256(Target.read_bytes()).hexdigest() != PinnedDigest:
+        raise RuntimeError('Upstream file differs from the pinned revision (re-port it): ' + Relative)
+    Target.unlink()
+    if CopyEnabled:
+        shutil.copy2(Source, Target)
+        return 'copied'
+    os.symlink(Source, Target)
+    return 'linked'
+
+
+def SeatModuleDependency(Frontier):
+    Relative, Anchor, Replacement, Occurrences = ModuleDependency
+    Edited = Frontier / Relative
+    Text   = Edited.read_text(encoding='utf-8')
+    if Replacement in Text:
+        return 'kept'
+    if Text.count(Anchor) != Occurrences:
+        raise RuntimeError('Shader dependency anchor not found %d times in %s' % (Occurrences, Relative))
+    Edited.write_text(Text.replace(Anchor, Replacement), encoding='utf-8')
+    return 'added'
 
 
 def SeatInclude(Frontier):
@@ -139,6 +187,9 @@ def Main():
         raise RuntimeError('Not a Frontier checkout: ' + str(Frontier))
     for Relative in SeatedPaths:
         print('%-8s %s' % (SeatPath(Frontier, Relative, Arguments.copy), Relative))
+    for Relative, PinnedDigest in ReplacedPaths:
+        print('%-8s %s' % (SeatReplacement(Frontier, Relative, PinnedDigest, Arguments.copy), Relative))
+    print('%-8s %s' % (SeatModuleDependency(Frontier), 'Automation/SurfaceRasterization.cmake shared shader modules'))
     print('%-8s %s' % (SeatInclude(Frontier), 'CMakeLists.txt include(SolidArc.cmake)'))
     print('%-8s %s' % (SeatVolk(Frontier), 'Automation/UIDependencies.json volk pin'))
     print('%-8s %s' % (SeatDomain(Frontier), 'Engine/Interface IconDomain::SolidArc'))
