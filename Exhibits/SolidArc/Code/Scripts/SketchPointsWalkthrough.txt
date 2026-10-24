@@ -151,3 +151,28 @@ key Y
 frames 3
 expect gizmo-modes == 7
 capture 229PointsGizmoAll
+
+# ⑩ body mode: mid-drag of the x scale cylinder the body is already scaled (live), Esc drops it untouched
+key 4
+frames 1
+click world 2.5 1.8 1.0
+frames 3
+expect gizmo-target == 2
+move @GizmoScaleX
+frames 1
+press left
+frames 2
+move offset 30 15
+frames 2
+move offset 60 30
+frames 3
+expect live-staged == 1
+expect live-volume > 6.1
+expect volume ~ 6
+capture 230BodyScaleLive
+key Escape
+frames 2
+release left
+frames 3
+expect gizmo-commits == 1
+expect volume ~ 6

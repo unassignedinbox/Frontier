@@ -103,6 +103,7 @@ namespace
     GateTally InsetGate       = { "W41", "Inset (Plasticity O on faces · I): block / cylinder / triangle-prism tops split flat, pocketed and bossed against closed forms with exact face counts; a depth edit regenerates; the pocket floor takes a second inset; codec byte-equal; too-wide / zero / curved refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
     GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
+    GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -3769,7 +3770,97 @@ int main()
         Tally(GizmoGate, Worst, Worst <= 1.0e-9, Format("rotate drag: pointer ray → angle about x from y (0.3, 2.0, −1.0 rad), worst |Δθ| %.3g", Worst));
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate })
+    // ---- W44 Mode-1 sketch points: DragSolidArcSketchPoint / DragSolidArcSketchPoints carry the steps built on the sketch
+    {
+        using Kind = SolidArcDrawingKind;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Gap    = [](Vector2 Point, Vector2 Expected) { return std::abs(Point.X - Expected.X) + std::abs(Point.Y - Expected.Y); };
+        const auto Solved = [](const SolidArcDocument& Document, const std::string& Label) -> const SketchModel& { return Document.Regeneration.Sketches.at(Label); };
+
+        // ① a 2 × 1 rectangle extruded 1: the corner (2, 1) dragged to (3, 1) (one point: the direct drag and the gizmo agree)
+        SolidArcDocument Plate = CreateSolidArcDocument("Points");
+        Expect(DrawSolidArcSketch(Plate, DrawingOf(Kind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Sketch = Plate.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Plate, Sketch, 1.0, FeatureCombination::New));
+        const size_t History = Plate.UndoEntries.size();
+        const SolidArcCommandOutcome One = DragSolidArcSketchPoints(Plate, Sketch, { 2 }, { { 3.0, 1.0 } });
+        const SketchModel& AfterOne = Solved(Plate, Sketch);
+        double Miss = Gap(AfterOne.Points[2].Position, { 3.0, 1.0 }) + Gap(AfterOne.Points[1].Position, { 3.0, 0.0 }) + Gap(AfterOne.Points[0].Position, { 0.0, 0.0 });
+        double Relative = std::abs(Plate.Summary.Volume - 3.0) / 3.0;
+        Tally(PointGate, Miss + Relative, One.AcceptedCondition && Miss <= 1.0e-9 && Relative <= 1.0e-9 && Plate.UndoEntries.size() == History + 1,
+              Format("%s: corner (3, 1), its H / V neighbour follows to (3, 0), V %.12f vs 3, one undo entry", One.Label.c_str(), Plate.Summary.Volume));
+
+        // ② both top corners moved up 0.5 together (the gizmo's xy square on two picked points) → 3 × 1.5 × 1
+        const SolidArcCommandOutcome Two = DragSolidArcSketchPoints(Plate, Sketch, { 2, 3 }, { { 3.0, 1.5 }, { 0.0, 1.5 } });
+        const SketchModel& AfterTwo = Solved(Plate, Sketch);
+        Miss     = Gap(AfterTwo.Points[2].Position, { 3.0, 1.5 }) + Gap(AfterTwo.Points[3].Position, { 0.0, 1.5 }) + Gap(AfterTwo.Points[1].Position, { 3.0, 0.0 });
+        Relative = std::abs(Plate.Summary.Volume - 4.5) / 4.5;
+        Tally(PointGate, Miss + Relative, Two.AcceptedCondition && Miss <= 1.0e-9 && Relative <= 1.0e-9 && Plate.UndoEntries.size() == History + 2 && Plate.Summary.SoundCondition,
+              Format("%s: (3, 1.5) and (0, 1.5), V %.12f vs 4.5, one undo entry", Two.Label.c_str(), Plate.Summary.Volume));
+
+        // ③ codec: the dragged positions survive save → load → save byte-equal
+        const std::string Saved = EncodeSolidArcDocument(Plate);
+        SolidArcDocumentFile File   = DecodeSolidArcDocument(Saved);
+        SolidArcDocument     Loaded = CreateSolidArcDocument(File.Title);
+        const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Loaded, File.Tree, File.Captions, "Open");
+        Tally(PointGate, std::abs(Loaded.Summary.Volume - Plate.Summary.Volume), Opened.AcceptedCondition && EncodeSolidArcDocument(Loaded) == Saved && Loaded.Summary.Volume == Plate.Summary.Volume,
+              Format("codec: %d bytes, save → load → save byte-equal, same volume", int(Saved.size())));
+
+        // ④ refusals leave the file and the history untouched
+        const SolidArcCommandOutcome Unpaired = DragSolidArcSketchPoints(Plate, Sketch, { 0, 1 }, { { 1.0, 1.0 } });
+        const SolidArcCommandOutcome Missing  = DragSolidArcSketchPoints(Plate, "Sketch#99", { 0, 1 }, { { 1.0, 1.0 }, { 2.0, 2.0 } });
+        const SolidArcCommandOutcome Beyond   = DragSolidArcSketchPoints(Plate, Sketch, { 0, 40 }, { { 1.0, 1.0 }, { 2.0, 2.0 } });
+        Tally(PointGate, 0.0, !Unpaired.AcceptedCondition && !Missing.AcceptedCondition && !Beyond.AcceptedCondition && EncodeSolidArcDocument(Plate) == Saved && Plate.UndoEntries.size() == History + 2,
+              "refused: " + Unpaired.Refusal + " · " + Missing.Refusal + " · " + Beyond.Refusal + "; file and history untouched");
+
+        // ⑤ Bezier poles (no constraints) turned 30° about their centre: every pole lands exactly (the gizmo z arc)
+        {
+            SolidArcDocument Curves = CreateSolidArcDocument("Points");
+            const std::vector<Vector2> Poles = { { 0.0, 0.0 }, { 0.5, 1.0 }, { 1.5, 1.0 }, { 2.0, 0.0 } };
+            Expect(DrawSolidArcSketch(Curves, DrawingOf(Kind::Curve, 0, Poles, false, false, SketchSplineForm::Bezier)));
+            const std::string Label  = Curves.Tree.Steps.back().Label;
+            const SketchModel Before = Solved(Curves, Label);
+            std::vector<int>     Picked;
+            std::vector<Vector2> Targets;
+            Vector2 Centre;
+            for (int Point = 0; Point < int(Before.Points.size()); ++Point) { Centre.X += Before.Points[Point].Position.X / double(Before.Points.size()); Centre.Y += Before.Points[Point].Position.Y / double(Before.Points.size()); }
+            const double Turn = std::numbers::pi / 6.0;
+            for (int Point = 0; Point < int(Before.Points.size()); ++Point)
+            {
+                const Vector2 Arm = { Before.Points[Point].Position.X - Centre.X, Before.Points[Point].Position.Y - Centre.Y };
+                Picked.push_back(Point);
+                Targets.push_back({ Centre.X + std::cos(Turn) * Arm.X - std::sin(Turn) * Arm.Y, Centre.Y + std::sin(Turn) * Arm.X + std::cos(Turn) * Arm.Y });
+            }
+            const SolidArcCommandOutcome Turned = DragSolidArcSketchPoints(Curves, Label, Picked, Targets);
+            double Worst = 0.0;
+            for (size_t Pick = 0; Pick < Picked.size(); ++Pick) Worst = std::max(Worst, Gap(Solved(Curves, Label).Points[Picked[Pick]].Position, Targets[Pick]));
+            Tally(PointGate, Worst, Turned.AcceptedCondition && Worst <= 1.0e-9 && Before.Points.size() == 4,
+                  Format("%s: %d Bezier poles turned 30° about (%.3f, %.3f), worst miss %.3g", Turned.Label.c_str(), int(Picked.size()), Centre.X, Centre.Y, Worst));
+        }
+
+        // ⑥ a closed triangle (0, 0) (2, 0) (1, 1.5) extruded 1 (V 1.5), its points scaled × 2 along x about (1, 0.5) → V 3
+        {
+            SolidArcDocument Prism = CreateSolidArcDocument("Points");
+            Expect(DrawSolidArcSketch(Prism, DrawingOf(Kind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 }, { 1.0, 1.5 } }, true)));
+            const std::string Label = Prism.Tree.Steps.back().Label;
+            Expect(ExtrudeSolidArcSketch(Prism, Label, 1.0, FeatureCombination::New));
+            const double      Low    = Prism.Summary.Volume;
+            const SketchModel Before = Solved(Prism, Label);
+            std::vector<int>     Picked;
+            std::vector<Vector2> Targets;
+            for (int Point = 0; Point < int(Before.Points.size()); ++Point)
+            {
+                Picked.push_back(Point);
+                Targets.push_back({ 1.0 + 2.0 * (Before.Points[Point].Position.X - 1.0), Before.Points[Point].Position.Y });
+            }
+            const SolidArcCommandOutcome Scaled = DragSolidArcSketchPoints(Prism, Label, Picked, Targets);
+            Relative = std::abs(Prism.Summary.Volume - 3.0) / 3.0;
+            Tally(PointGate, Relative + std::abs(Low - 1.5), Scaled.AcceptedCondition && Relative <= 1.0e-9 && std::abs(Low - 1.5) <= 1.0e-9 && Prism.Summary.SoundCondition,
+                  Format("%s: %d points × 2 along x, V %.12f → %.12f vs 3", Scaled.Label.c_str(), int(Picked.size()), Low, Prism.Summary.Volume));
+        }
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
