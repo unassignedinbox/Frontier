@@ -1,6 +1,6 @@
 # 📝 S6: SolidArc Windows build and package
 
-**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,697,436 B (8.7 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
+**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,700,333 B (8.7 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
 
 On Linux, the same package layout finds its content beside the executable: the frame matches the development checkout everywhere except the frame-time text. With no content beside it, the program falls back to the ImGui default font and missing-icon markers. ctest passes 28/28. It was built with MinGW, not MSVC. **First Windows run (user, AMD Radeon RX 9060 XT, Vulkan 1.4.359):** the interface, fonts and icons come up clean, but the viewport showed displaced tiles and picking missed. The cause was a stale viewport texture, now fixed in the current zip, which awaits a second run (see below).
 
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,697,436 B |
-| Zip sha256 | `c145cda2bb747eda990385cd8d9600f01f5b17424fce7efe8fd4a5676cd0b7ae` |
-| Unpacked | 8,724,682 B (342 entries) |
+| Zip size | 3,700,333 B |
+| Zip sha256 | `aa073de6bb0eba9b044105c3c014c9c7d212bcd67feea065f8988fcd1fa323da` |
+| Unpacked | 8,728,011 B (343 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
@@ -124,6 +124,7 @@ An earlier control run C, from a folder inside this repository, walked up to the
 | `SolidArcBrowserValidation` after the absolute document path | 🟢 15 / 15; the started workspace opened Bracket.solidarc |
 | ctest after the bevel-freeze fixes (kernel + W39) | 🟢 28 / 28, 1289.04 s (`NurbsBlend` 646.91 s) |
 | Kernel ctest (`Exhibits/GeometryProcessing`, PatternStress separately) | 🟢 29 / 29, 1350.31 s; PatternStress 69 / 69 🟢 in 495.9 s (was 754.4 s). Only P2's volume changed, and it is now the tessellation limit (see the GeometryProcessing README) |
+| Solid loft shells, face sketches, Ctrl snaps, hide / lock (package rebuilt, 0 warnings) | 🟢 DocumentValidation W1–W45; ctest 13 / 13 re-run walkthroughs (incl. SolidArcShellsWalkthrough 34 / 34); 1316 / 1316 expectations across 29 reports |
 
 ## ⚠️ Limits
 

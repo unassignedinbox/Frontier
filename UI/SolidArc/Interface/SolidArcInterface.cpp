@@ -1836,16 +1836,6 @@ void ApplyCut(SolidArcWorkspaceState& State)
     return Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
 }
 
-// World position of point Point of sketch Label (nullopt: no such point).
-[[nodiscard]] std::optional<Vector3> SketchPointWorld(const SolidArcDocument& Document, const std::string& Label, int Point)
-{
-    const FeatureStep* Step = FindSketchStepByLabel(Document, Label);
-    if (!Step) return std::nullopt;
-    const SketchModel& Sketch = SolvedSketchOf(Document, *Step);
-    if (Point < 0 || Point >= int(Sketch.Points.size())) return std::nullopt;
-    return PlacePlanePoint(ElevatedSketchPlane(Document, *Step), Sketch.Points[Point].Position);
-}
-
 // "SketchPointSketch3.1": the script widget of a sketch point.
 [[nodiscard]] std::string SketchPointWidget(const std::string& Label, int Point)
 {
@@ -3265,11 +3255,6 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
 {
     if (!(Gizmo.Pose.Modes & GizmoScale)) return false;
     return Gizmo.Target == SolidArcGizmoTarget::Faces || !(Gizmo.Pose.Modes & GizmoTranslate);
-}
-
-[[nodiscard]] bool GizmoTranslateHandle(SolidArcGizmoHandle Handle) noexcept
-{
-    return Handle >= SolidArcGizmoHandle::TranslateX && Handle <= SolidArcGizmoHandle::PlaneXY;
 }
 
 [[nodiscard]] bool GizmoRotateHandle(SolidArcGizmoHandle Handle) noexcept
