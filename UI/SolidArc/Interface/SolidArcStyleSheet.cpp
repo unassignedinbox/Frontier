@@ -12,6 +12,8 @@
 #include "Engine/Interface/ControlKit.h"
 #include "Engine/Interface/IconPresentation.h"
 
+#include <imgui_internal.h>
+
 #include <algorithm>
 #include <string>
 
@@ -70,7 +72,7 @@ ImU32 SolidArcPack(ColorQuad Ink)
     return ImGui::ColorConvertFloat4ToU32(ImVec4(Ink.Red, Ink.Green, Ink.Blue, Ink.Alpha));
 }
 
-SolidArcPress PressSolidArcRegion(std::map<std::string, ImVec4>& Widgets, const std::string& Key, const PlaneExtent& Extent, bool EnabledCondition)
+SolidArcPress PressSolidArcRegion(SolidArcWidgetBoard& Widgets, const std::string& Key, const PlaneExtent& Extent, bool EnabledCondition)
 {
     SolidArcPress Press;
     if (Extent.Width() <= 0.0f || Extent.Height() <= 0.0f) return Press;
@@ -82,9 +84,80 @@ SolidArcPress PressSolidArcRegion(std::map<std::string, ImVec4>& Widgets, const 
     Press.HoveredCondition = EnabledCondition && ImGui::IsItemHovered();
     Press.HeldCondition    = EnabledCondition && ImGui::IsItemActive();
     Press.DoubleCondition  = Press.HoveredCondition && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
-    Widgets[Key] = ImVec4(Extent.MinimumX, Extent.MinimumY, Extent.MaximumX, Extent.MaximumY);
+    Widgets.Record(Key, ImVec2(Extent.MinimumX, Extent.MinimumY), ImVec2(Extent.MaximumX, Extent.MaximumY));
     ImGui::SetCursorScreenPos(Restore);
     return Press;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    WIDGET BOARD
+//------------------------------------------------------------------------------------------------------------------------
+
+void SolidArcWidgetBoard::Record(const std::string& Key, ImVec2 Low, ImVec2 High)
+{
+    ImGuiWindow* Window = ImGui::GetCurrentContext() ? ImGui::GetCurrentContext()->CurrentWindow : nullptr;
+    if (Window && Window->SkipItems)
+    {
+        // ⚠️ A child scrolled wholly out of view skips its items, so the last-item rectangle is stale: stand in the
+        //    child's own rectangle so a reveal can scroll to it (the real rectangle comes back on the next frame).
+        Rectangles[Key] = ImVec4(Window->Pos.x, Window->Pos.y, Window->Pos.x + Window->Size.x, Window->Pos.y + Window->Size.y);
+        Clipped.insert(Key);
+        Low  = Window->Pos;
+        High = ImVec2(Window->Pos.x + Window->Size.x, Window->Pos.y + Window->Size.y);
+    }
+    else Rectangles[Key] = ImVec4(Low.x, Low.y, High.x, High.y);
+    if (!Window) return;
+    const ImVec2 ClipLow  = ImGui::GetWindowDrawList()->GetClipRectMin();
+    const ImVec2 ClipHigh = ImGui::GetWindowDrawList()->GetClipRectMax();
+    constexpr float Slack = 0.5f;                                                            // [px] - Sub-pixel rounding
+    const bool Inside = Low.x >= ClipLow.x - Slack && Low.y >= ClipLow.y - Slack && High.x <= ClipHigh.x + Slack && High.y <= ClipHigh.y + Slack;
+    if (!Inside) Clipped.insert(Key);
+    if (Reveal != Key) return;
+    // Centre the widget in the nearest window that scrolls (cards are auto-sized children): the change lands next frame.
+    // Per axis, since a card may overflow sideways without scrolling vertically.
+    const auto Scrolling = [Window](int Axis)
+    {
+        ImGuiWindow* Scroller = Window;
+        while (Scroller->ParentWindow && (Scroller->Flags & ImGuiWindowFlags_ChildWindow) && Scroller->ScrollMax[Axis] <= 0.0f) Scroller = Scroller->ParentWindow;
+        return Scroller;
+    };
+    if (Low.y < ClipLow.y - Slack || High.y > ClipHigh.y + Slack)
+    {
+        ImGuiWindow* Scroller = Scrolling(1);
+        const float  Shift    = 0.5f * (Low.y + High.y) - 0.5f * (Scroller->InnerClipRect.Min.y + Scroller->InnerClipRect.Max.y);
+        ImGui::SetScrollY(Scroller, std::clamp(Scroller->Scroll.y + Shift, 0.0f, Scroller->ScrollMax.y));
+    }
+    if (Low.x < ClipLow.x - Slack || High.x > ClipHigh.x + Slack)
+    {
+        ImGuiWindow* Scroller = Scrolling(0);
+        const float  Shift    = 0.5f * (Low.x + High.x) - 0.5f * (Scroller->InnerClipRect.Min.x + Scroller->InnerClipRect.Max.x);
+        ImGui::SetScrollX(Scroller, std::clamp(Scroller->Scroll.x + Shift, 0.0f, Scroller->ScrollMax.x));
+    }
+    Reveal.clear();
+}
+
+void SolidArcWidgetBoard::Clear()
+{
+    Previous.swap(Rectangles);
+    Rectangles.clear();
+    Clipped.clear();
+}
+
+// The widget sat on the same rectangle for the last two frames (ImGui clamps a scroll one frame after content shrinks).
+bool SolidArcWidgetBoard::SettledCondition(const std::string& Key) const
+{
+    const auto Now    = Rectangles.find(Key);
+    const auto Before = Previous.find(Key);
+    if (Now == Rectangles.end() || Before == Previous.end()) return false;
+    const ImVec4& A = Now->second;
+    const ImVec4& B = Before->second;
+    return A.x == B.x && A.y == B.y && A.z == B.z && A.w == B.w;
+}
+
+const ImVec4* SolidArcWidgetBoard::Find(const std::string& Key) const
+{
+    const auto Found = Rectangles.find(Key);
+    return Found == Rectangles.end() ? nullptr : &Found->second;
 }
 
 //------------------------------------------------------------------------------------------------------------------------

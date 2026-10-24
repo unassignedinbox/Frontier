@@ -83,6 +83,7 @@ struct SolidArcScript
     ImVec2                           Anchor       = {};                                      // [px] - Drag start (resolved once)
     std::vector<SolidArcExpectation> Expectations = {};                                      // [-] - Results so far
     std::string                      Refusal      = {};                                      // [-] - Parse failure
+    int                              RevealFrames = 0;                                       // [-] - Frames spent scrolling the next target into view
 };
 
 //------------------------------------------------------------------------------------------------------------------------

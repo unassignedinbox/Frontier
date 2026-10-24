@@ -15,6 +15,8 @@
 #include "Engine/Interface/ControlKit.h"
 #include "Engine/Interface/IconPresentation.h"
 
+#include <imgui_internal.h>
+
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
@@ -30,6 +32,7 @@
 #include <filesystem>
 #include <functional>
 #include <numbers>
+#include <set>
 #include <sstream>
 
 namespace Frontier::SolidArc
@@ -102,7 +105,7 @@ void RegisterWidget(SolidArcWorkspaceState& State, const char* Label)
     const std::string Key = Marker ? std::string(Marker + 3) : std::string(Label);
     const ImVec2 Low  = ImGui::GetItemRectMin();
     const ImVec2 High = ImGui::GetItemRectMax();
-    State.Widgets[Key] = ImVec4(Low.x, Low.y, High.x, High.y);
+    State.Widgets.Record(Key, Low, High);
 }
 
 bool PressButton(SolidArcWorkspaceState& State, const char* Label, ImVec2 Size = ImVec2(0, 0), bool EnabledCondition = true)
@@ -116,8 +119,9 @@ bool PressButton(SolidArcWorkspaceState& State, const char* Label, ImVec2 Size =
 
 bool ToggleButton(SolidArcWorkspaceState& State, const char* Label, bool OnCondition, ImVec2 Size = ImVec2(0, 0))
 {
-    ImGui::PushStyleColor(ImGuiCol_Button, OnCondition ? Tint(SelectedColour) : Tint(RaisedColour));
-    ImGui::PushStyleColor(ImGuiCol_Text, OnCondition ? ImVec4(1, 1, 1, 1) : Tint(MutedColour));
+    // HTML .button.active: #ffffff29 wash with white text; off is the plain #222 pill with #999 text.
+    ImGui::PushStyleColor(ImGuiCol_Button, OnCondition ? Tint(IM_COL32(0xff, 0xff, 0xff, 0x29)) : Tint(IM_COL32(0x22, 0x22, 0x22, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Text, OnCondition ? ImVec4(1, 1, 1, 1) : Tint(IM_COL32(0x99, 0x99, 0x99, 0xff)));
     const bool Pressed = ImGui::Button(Label, Size);
     ImGui::PopStyleColor(2);
     RegisterWidget(State, Label);
@@ -169,49 +173,48 @@ std::string FormatLength(double Value)
     return Compose("%.4g", Value);
 }
 
-void BeginCard(const char* Title)
+// 📝 HTML .inspector-card as an ImGui child: radius 22, #1a1a1a, #ffffff03 hairline, padding 18; its .section-heading (h3
+//    17 px Light, 8 px letter-spaced tag on the right) is drawn by the sheet, 13 px above the content.
+constexpr float CardHeadingHeight = 17.0f * SolidArcStyleTokens::FontScale + 13.0f;
+
+void DrawCardHeading(SolidArcSheet& Sheet, float Left, float Top, float Width, const char* Title, const char* Tag)
 {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Tint(CardColour));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 10));
-    ImGui::BeginChild(Title, ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding);
-    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextUnformatted(Title);
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
+    const float Centre = Top + 0.5f * 17.0f * SolidArcStyleTokens::FontScale;
+    Sheet.Text(Left, Centre, 17.0f, SolidArcInk(0xeeeeee), Title);
+    if (Tag && *Tag) Sheet.TextRight(Left + Width, Centre, 8.0f, SolidArcInk(0x777777), Tag, SolidArcWeight::Light, 1.0f);
+}
+
+void BeginCard(const char* Title, const char* Tag = nullptr)
+{
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Tint(IM_COL32(0x1a, 0x1a, 0x1a, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Border, Tint(IM_COL32(0xff, 0xff, 0xff, 0x03)));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 22.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 18));
+    ImGui::BeginChild(Title, ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_Borders);
+    ImGui::PopStyleColor();                                                                  // the card's own border only
+    SolidArcSheet Sheet;
+    if (Sheet.Begin())
+    {
+        const ImVec2 Origin = ImGui::GetCursorScreenPos();
+        DrawCardHeading(Sheet, Origin.x, Origin.y, ImGui::GetContentRegionAvail().x, Title, Tag);
+    }
+    ImGui::Dummy(ImVec2(1.0f, CardHeadingHeight - ImGui::GetStyle().ItemSpacing.y));
 }
 
 void EndCard()
 {
     ImGui::EndChild();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar(3);
     ImGui::PopStyleColor();
-    ImGui::Spacing();
 }
 
-void BeginPanel(const char* Name, ImVec2 Position, ImVec2 Size, ImVec2 Padding = ImVec2(14, 12))
+// Width of one of N buttons sharing the current card row (the card's work width, not what is left after SameLine).
+ImVec2 RowSpan(int Count = 2)
 {
-    ImGui::SetNextWindowPos(Position);
-    ImGui::SetNextWindowSize(Size);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Padding);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, PanelRounding);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, Tint(PanelColour));
-    ImGui::Begin(Name, nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-}
-
-void EndPanel()
-{
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
-}
-
-void PanelHeading(const char* Title)
-{
-    ImGui::TextUnformatted(Title);
-    ImGui::Separator();
-    ImGui::Spacing();
+    const float Spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float Width   = ImGui::GetCurrentWindow()->WorkRect.GetWidth();
+    return ImVec2(std::floor((Width - float(Count - 1) * Spacing) / float(Count)), 0.0f);
 }
 
 const FeatureStepReport* FindReport(const SolidArcDocument& Document, const std::string& Label)
@@ -2073,7 +2076,7 @@ void DrawConstraintCard(SolidArcWorkspaceState& State)
                     ConcludeConstraint(State, ChangeSolidArcDimension(State.Document, Session.Sketch, Session.PickedConstraint, Angular ? Value * std::numbers::pi / 180.0 : Value));
                 RegisterWidget(State, "DimensionValue");
             }
-            if (PressButton(State, "Remove###RemoveConstraint", ImVec2(118, 0))) RemovePickedConstraint(State);
+            if (PressButton(State, "Remove###RemoveConstraint", RowSpan())) RemovePickedConstraint(State);
         }
         if (!Session.Refusal.empty())
         {
@@ -2740,9 +2743,9 @@ void DrawBooleanCard(SolidArcWorkspaceState& State)
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
     ImGui::TextWrapped("Q union · W difference · E intersect · Enter applies · Esc cancels. The tools are consumed; the target keeps its key, matcap and history.");
     ImGui::PopStyleColor();
-    if (PressButton(State, "Apply###BooleanApply", ImVec2(118, 0))) ApplyBooleanSession(State);
+    if (PressButton(State, "Apply###BooleanApply", RowSpan())) ApplyBooleanSession(State);
     ImGui::SameLine();
-    if (PressButton(State, "Cancel###BooleanCancel", ImVec2(118, 0))) { State.Boolean.ActiveCondition = false; Announce(State, "Boolean cancelled"); }
+    if (PressButton(State, "Cancel###BooleanCancel", RowSpan())) { State.Boolean.ActiveCondition = false; Announce(State, "Boolean cancelled"); }
     EndCard();
 }
 
@@ -3319,9 +3322,9 @@ void DrawJointCard(SolidArcWorkspaceState& State)
     ImGui::TextWrapped("Edges give centres / midpoints, faces centroids / axes · R V S C P L B kind · drag a value · F flip · Enter applies · Esc cancels. "
                        "The moving body and every body jointed to it move; the fixed body stays.");
     ImGui::PopStyleColor();
-    if (PressButton(State, "Apply###JointApply", ImVec2(118, 0), Joint.Phase == 2 && Joint.Refusal.empty())) ApplyJointSession(State);
+    if (PressButton(State, "Apply###JointApply", RowSpan(), Joint.Phase == 2 && Joint.Refusal.empty())) ApplyJointSession(State);
     ImGui::SameLine();
-    if (PressButton(State, "Cancel###JointCancel", ImVec2(118, 0))) CloseJointSession(State, "Joint cancelled");
+    if (PressButton(State, "Cancel###JointCancel", RowSpan())) CloseJointSession(State, "Joint cancelled");
     EndCard();
 }
 
@@ -4948,7 +4951,7 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
     {
         const std::string Key = std::string("Cube") + Face.Label;
         const ImVec2      Point = Project({ Face.Normal[0] * 1.0, Face.Normal[1] * 1.0, Face.Normal[2] * 1.0 });
-        State.Widgets[Key] = ImVec4(Point.x - 2, Point.y - 2, Point.x + 2, Point.y + 2);
+        State.Widgets.Record(Key, ImVec2(Point.x - 2, Point.y - 2), ImVec2(Point.x + 2, Point.y + 2));
     }
     if (Hovered && ClickCondition)
     {
@@ -5545,14 +5548,14 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         for (int Index = 0; Index < 4; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
-            if (ToggleButton(State, Choices[Index].Label, Bevel.Combination == Choices[Index].Combination, ImVec2(130, 0))) ChooseProfileCombination(State, Choices[Index].Combination);
+            if (ToggleButton(State, Choices[Index].Label, Bevel.Combination == Choices[Index].Combination, RowSpan())) ChooseProfileCombination(State, Choices[Index].Combination);
         }
     }
     if (!Extrude)
     {
-        if (ToggleButton(State, "Fillet  (D)###BevelFillet", Bevel.Shape == BlendProfile::Fillet, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Fillet;
+        if (ToggleButton(State, "Fillet  (D)###BevelFillet", Bevel.Shape == BlendProfile::Fillet, RowSpan())) Bevel.Shape = BlendProfile::Fillet;
         ImGui::SameLine();
-        if (ToggleButton(State, "Chamfer  (C)###BevelChamfer", Bevel.Shape == BlendProfile::Chamfer, ImVec2(130, 0))) Bevel.Shape = BlendProfile::Chamfer;
+        if (ToggleButton(State, "Chamfer  (C)###BevelChamfer", Bevel.Shape == BlendProfile::Chamfer, RowSpan())) Bevel.Shape = BlendProfile::Chamfer;
     }
     ImGui::SetNextItemWidth(110);
     if (ImGui::InputText(Extrude ? "Distance###BevelSize" : Bevel.Shape == BlendProfile::Fillet ? "Radius###BevelSize" : "Setback###BevelSize", Bevel.SizeText.data(),
@@ -5578,11 +5581,11 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     if (!Extrude)
     {
         // Variable size (V): the end size field and the anchor flip (F).
-        if (ToggleButton(State, "Variable  (V)###BevelVariable", Bevel.VariableEnabled, ImVec2(130, 0))) ToggleBevelVariable(State);
+        if (ToggleButton(State, "Variable  (V)###BevelVariable", Bevel.VariableEnabled, RowSpan())) ToggleBevelVariable(State);
         if (Bevel.VariableEnabled)
         {
             ImGui::SameLine();
-            if (PressButton(State, "Flip anchor  (F)###BevelFlip", ImVec2(130, 0))) FlipBevelAnchor(State);
+            if (PressButton(State, "Flip anchor  (F)###BevelFlip", RowSpan())) FlipBevelAnchor(State);
             ImGui::SetNextItemWidth(110);
             if (ImGui::InputText("End size###BevelEndSize", Bevel.EndSizeText.data(), Bevel.EndSizeText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
             {
@@ -5628,57 +5631,16 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         ImGui::Text("Preview: %d faces · %.4f m³ · replayed %d/%d", Bevel.Preview->Summary.Faces, Bevel.Preview->Summary.Volume,
                     PreviewSteps - std::min(PreviewSteps, Bevel.Preview->Regeneration.Resumed), PreviewSteps);
     }
-    if (PressButton(State, "Apply###BevelApply", ImVec2(130, 0), Bevel.Refusal.empty())) ApplyBevelSession(State);
+    if (PressButton(State, "Apply###BevelApply", RowSpan(), Bevel.Refusal.empty())) ApplyBevelSession(State);
     ImGui::SameLine();
-    if (PressButton(State, "Cancel###BevelCancel", ImVec2(130, 0))) CancelBevelSession(State);
+    if (PressButton(State, "Cancel###BevelCancel", RowSpan())) CancelBevelSession(State);
     EndCard();
 }
 
-void DrawSelectionCard(SolidArcWorkspaceState& State)
+// Tool cards of the picked figures (Geometry tab): curves (loft, combs, continuity) and face edit.
+void DrawSelectionToolCards(SolidArcWorkspaceState& State)
 {
     const SolidArcSelection& Selection = State.Document.Selection;
-    BeginCard("Selection");
-    if (Selection.Faces.empty() && Selection.Edges.empty() && Selection.Curves.empty())
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-        ImGui::TextWrapped("Nothing selected. Click a curve, an edge or a face (1 control points · 2 edges · 3 faces · 4 solid · 5 all).");
-        ImGui::PopStyleColor();
-    }
-    int Shown = 0;
-    for (const SolidArcSceneFace& Face : State.Scene.Faces)
-    {
-        if (std::find(Selection.Faces.begin(), Selection.Faces.end(), Face.Name) == Selection.Faces.end() || ++Shown > 8) continue;
-        const bool Active = Selection.LastKind == SolidArcSelectionKind::Face && Selection.Faces.back() == Face.Name;
-        ImGui::TextColored(Tint(Active ? ActiveColour : SelectedColour), "Face");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s · %s · %.4f m²", Face.Name.c_str(), Face.Surface.c_str(), Face.Area);
-    }
-    for (const SolidArcSceneEdge& Edge : State.Scene.Edges)
-    {
-        if (std::find(Selection.Edges.begin(), Selection.Edges.end(), Edge.Name) == Selection.Edges.end() || ++Shown > 8) continue;
-        const bool Active = Selection.LastKind == SolidArcSelectionKind::Edge && Selection.Edges.back() == Edge.Name;
-        ImGui::TextColored(Tint(Active ? ActiveColour : SelectedColour), "Edge");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s · %s · %.4f m", Edge.Name.c_str(), Edge.Curve.c_str(), Edge.Length);
-    }
-    for (size_t Index = 0; Index < Selection.Curves.size(); ++Index)
-    {
-        const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Selection.Curves[Index]);
-        if (!Fit || ++Shown > 8) continue;
-        ImGui::TextColored(Tint(Index + 1 == Selection.Curves.size() ? ActiveColour : SelectedColour), "Curve %d", int(Index + 1));
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s · %d poles · fit %.3f mm", CaptionOf(State.Document, Selection.Curves[Index]).c_str(), int(Fit->Curve.Definition->Poles.size()), Fit->WorstDeviation * 1000.0);
-    }
-    if (Shown > 8) ImGui::Text("… %d more", Shown - 8);
-    if (!Selection.Faces.empty() || !Selection.Edges.empty() || !Selection.Curves.empty())
-    {
-        if (PressButton(State, "Clear selection###SelectionClear"))
-        {
-            ClearSolidArcSelection(State.Document);
-            Announce(State, "Selection cleared");
-        }
-    }
-    EndCard();
 
     if (!Selection.Curves.empty())
     {
@@ -5686,9 +5648,9 @@ void DrawSelectionCard(SolidArcWorkspaceState& State)
         ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
         ImGui::TextWrapped("Loft runs through the curves in the order picked (badges 1, 2, …); curves that cross make a network. Mode 1 shows the poles: drag one to reshape.");
         ImGui::PopStyleColor();
-        if (PressButton(State, "Loft  (L)###CurveLoft", ImVec2(140, 0), Selection.Curves.size() >= 2)) LoftSelectedCurves(State);
+        if (PressButton(State, "Loft  (L)###CurveLoft", RowSpan(), Selection.Curves.size() >= 2)) LoftSelectedCurves(State);
         ImGui::SameLine();
-        if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, ImVec2(140, 0))) State.CombsEnabled = !State.CombsEnabled;
+        if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, RowSpan())) State.CombsEnabled = !State.CombsEnabled;
         // Continuity of the next loft to the panel it meets at its first / last section (V6).
         static const char* const ContinuityLabels[] = { "G0###LoftG0", "G1###LoftG1", "G2###LoftG2" };
         for (int Order = 0; Order < 3; ++Order)
@@ -5698,14 +5660,6 @@ void DrawSelectionCard(SolidArcWorkspaceState& State)
         }
         ImGui::SameLine();
         ImGui::TextDisabled("to the panel it meets");
-        EndCard();
-    }
-    if (!Selection.Edges.empty())
-    {
-        BeginCard("Edges");
-        if (PressButton(State, "Fillet  (B)###EdgeFillet", ImVec2(140, 0))) OpenBevelSession(State, BlendProfile::Fillet);
-        ImGui::SameLine();
-        if (PressButton(State, "Chamfer  (B, C)###EdgeChamfer", ImVec2(140, 0))) OpenBevelSession(State, BlendProfile::Chamfer);
         EndCard();
     }
     if (!Selection.Faces.empty())
@@ -5912,9 +5866,9 @@ void DrawBodyCard(SolidArcWorkspaceState& State)
         if (Panels > 0)
         {
             ImGui::Text("%d surface panel(s)", Panels);
-            if (PressButton(State, "Mirror x  (Alt+X)###PanelMirror", ImVec2(140, 0), Summary.SheetCondition)) MirrorPanels(State);
+            if (PressButton(State, "Mirror x  (Alt+X)###PanelMirror", RowSpan(), Summary.SheetCondition)) MirrorPanels(State);
             ImGui::SameLine();
-            if (PressButton(State, "Close → solid###PanelClose", ImVec2(140, 0), Summary.SheetCondition)) ClosePanels(State);
+            if (PressButton(State, "Close → solid###PanelClose", RowSpan(), Summary.SheetCondition)) ClosePanels(State);
         }
         ImGui::TextColored(Tint(Summary.SoundCondition ? ActiveColour : RefusalColour), "%s", Summary.SoundCondition ? "Audit: sound" : "Audit: findings");
         ImGui::SameLine();
@@ -6003,12 +5957,12 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
         for (int Index = 0; Index < 6; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
-            if (PressButton(State, Tools[Index].Label, ImVec2(140, 0), !State.Bevel.ActiveCondition)) OpenDrawingSession(State, Tools[Index].Kind);
+            if (PressButton(State, Tools[Index].Label, RowSpan(), !State.Bevel.ActiveCondition)) OpenDrawingSession(State, Tools[Index].Kind);
         }
         if (FocusedSketchCondition(State))
         {
             const bool Consumed = SolidArcSketchConsumedCondition(State.Document, State.FocusedStep);
-            if (PressButton(State, "Extrude sketch (E)###ExtrudeSketch", ImVec2(284, 0), !State.Bevel.ActiveCondition)) OpenSketchExtrudeSession(State);
+            if (PressButton(State, "Extrude sketch (E)###ExtrudeSketch", ImVec2(-1, 0), !State.Bevel.ActiveCondition)) OpenSketchExtrudeSession(State);
             if (Consumed)
             {
                 ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
@@ -6030,26 +5984,26 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
         for (int Index = 0; Index < 4; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
-            if (ToggleButton(State, Forms[Index].Label, Drawing.Form == Forms[Index].Form, ImVec2(140, 0))) { Drawing.Form = Forms[Index].Form; Drawing.Refusal.clear(); }
+            if (ToggleButton(State, Forms[Index].Label, Drawing.Form == Forms[Index].Form, RowSpan())) { Drawing.Form = Forms[Index].Form; Drawing.Refusal.clear(); }
         }
     }
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle || Drawing.Kind == SolidArcDrawingKind::Circle)
     {
         const char* Off = Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Corner###ModeCorner" : "Two-point###ModeTwoPoint";
-        if (ToggleButton(State, Off, !Drawing.CentreCondition, ImVec2(140, 0))) Drawing.CentreCondition = false;
+        if (ToggleButton(State, Off, !Drawing.CentreCondition, RowSpan())) Drawing.CentreCondition = false;
         ImGui::SameLine();
-        if (ToggleButton(State, "Centre###ModeCentre", Drawing.CentreCondition, ImVec2(140, 0))) Drawing.CentreCondition = true;
+        if (ToggleButton(State, "Centre###ModeCentre", Drawing.CentreCondition, RowSpan())) Drawing.CentreCondition = true;
     }
     const bool Chain = DrawingClicks(Drawing.Kind) == 0;
     if (Chain)
     {
-        if (PressButton(State, "Finish open (Enter)###DrawFinish", ImVec2(140, 0), Drawing.Points.size() >= 2)) FinishDrawingSession(State, false);
+        if (PressButton(State, "Finish open (Enter)###DrawFinish", RowSpan(), Drawing.Points.size() >= 2)) FinishDrawingSession(State, false);
         ImGui::SameLine();
-        if (PressButton(State, "Close###DrawClose", ImVec2(140, 0), Drawing.Points.size() >= 3)) FinishDrawingSession(State, true);
+        if (PressButton(State, "Close###DrawClose", RowSpan(), Drawing.Points.size() >= 3)) FinishDrawingSession(State, true);
     }
-    if (PressButton(State, "Drop point (Ctrl+Z)###DrawRetract", ImVec2(140, 0), !Drawing.Points.empty())) RetractDrawingPoint(State);
+    if (PressButton(State, "Drop point (Ctrl+Z)###DrawRetract", RowSpan(), !Drawing.Points.empty())) RetractDrawingPoint(State);
     ImGui::SameLine();
-    if (PressButton(State, "Abort (Esc)###DrawAbort", ImVec2(140, 0))) CancelDrawingSession(State);
+    if (PressButton(State, "Abort (Esc)###DrawAbort", RowSpan())) CancelDrawingSession(State);
     if (!Drawing.Refusal.empty())
     {
         ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
@@ -6069,7 +6023,7 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     if (!State.Drawing.ActiveCondition && !Moving && !Dragging) return;
     SolidArcPointPicker& Picker = State.Picker;
     BeginCard("Snaps");
-    if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, ImVec2(140, 0))) Picker.Enabled = !Picker.Enabled;
+    if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, RowSpan())) Picker.Enabled = !Picker.Enabled;
     ImGui::SameLine();
     ImGui::Text("Lock %s", Picker.Lock == SolidArcSnapLockKind::None ? "none" : SolidArcSnapLockLabel(Picker.Lock));
     struct Choice { const char* Label; bool* Enabled; };
@@ -6082,7 +6036,7 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     for (int Index = 0; Index < 8; ++Index)
     {
         if (Index % 2 == 1) ImGui::SameLine();
-        if (ToggleButton(State, Choices[Index].Label, *Choices[Index].Enabled, ImVec2(140, 0))) *Choices[Index].Enabled = !*Choices[Index].Enabled;
+        if (ToggleButton(State, Choices[Index].Label, *Choices[Index].Enabled, RowSpan())) *Choices[Index].Enabled = !*Choices[Index].Enabled;
     }
     ImGui::EndDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
@@ -6094,26 +6048,661 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     EndCard();
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                 INSPECTOR LAYOUT
+//------------------------------------------------------------------------------------------------------------------------
+
+void OpenConstruct(SolidArcWorkspaceState& State, SolidArcConstructKind Kind);
+
+constexpr float CardSpacing   = 10.0f;                                                       // [px] - .inspector-card margin-bottom
+constexpr float CardRounding  = 22.0f;                                                       // [px] - .inspector-card border-radius
+constexpr float CardInset     = 18.0f;                                                       // [px] - .inspector-card padding
+constexpr float ParagraphLine = 9.0f * 1.85f;                                                // [px] - .inspector-card p line box (9 px × 1.85)
+
+// Words of Text broken into lines no wider than Width at CssSize (CSS white-space: normal).
+std::vector<std::string> WrapLines(SolidArcSheet& Sheet, const std::string& Text, float CssSize, float Width)
+{
+    std::vector<std::string> Lines;
+    std::string              Line;
+    std::istringstream       Words(Text);
+    std::string              Word;
+    while (Words >> Word)
+    {
+        const std::string Candidate = Line.empty() ? Word : Line + " " + Word;
+        if (!Line.empty() && Sheet.Measure(Candidate.c_str(), CssSize) > Width)
+        {
+            Lines.push_back(Line);
+            Line = Word;
+        }
+        else Line = Candidate;
+    }
+    if (!Line.empty()) Lines.push_back(Line);
+    return Lines;
+}
+
+// .inspector-card p — 9 px #888 on 1.85 line boxes; returns the height drawn.
+float DrawParagraph(SolidArcSheet& Sheet, float Left, float Top, float Width, const std::string& Text, bool CentredCondition = false)
+{
+    const std::vector<std::string> Lines = WrapLines(Sheet, Text, 9.0f, Width);
+    for (size_t Index = 0; Index < Lines.size(); ++Index)
+    {
+        const float Centre = Top + (float(Index) + 0.5f) * ParagraphLine;
+        const float Offset = CentredCondition ? 0.5f * (Width - Sheet.Measure(Lines[Index].c_str(), 9.0f)) : 0.0f;
+        Sheet.Text(Left + Offset, Centre, 9.0f, SolidArcInk(0x888888), Lines[Index].c_str());
+    }
+    return float(Lines.size()) * ParagraphLine;
+}
+
+float MeasureParagraph(SolidArcSheet& Sheet, float Width, const std::string& Text)
+{
+    return float(WrapLines(Sheet, Text, 9.0f, Width).size()) * ParagraphLine;
+}
+
+// 📝 A card drawn by the sheet sits in the ImGui flow: its box is drawn at the cursor and a dummy of its height follows
+//    (+1, so the 9 px item spacing makes the 10 px card margin).
+PlaneExtent PlaceSheetCard(SolidArcSheet& Sheet, float Height)
+{
+    const ImVec2      Origin = ImGui::GetCursorScreenPos();
+    const PlaneExtent Card   = Spanning(Origin.x, Origin.y, ImGui::GetContentRegionAvail().x, Height);
+    Sheet.Box(Card, SolidArcInk(0x1a1a1a), CardRounding, SolidArcWash(0x03));
+    return Card;
+}
+
+void CloseSheetCard(const PlaneExtent& Card)
+{
+    ImGui::Dummy(ImVec2(Card.Width(), Card.Height() + CardSpacing - ImGui::GetStyle().ItemSpacing.y));
+}
+
+// 📝 HTML .operation-button — 62 px, #212121, #ffffff05 hairline, radius 13; glyph 19 #c3c3c3 over a 9 px #aaa caption.
+bool OperationButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const std::string& Key, const PlaneExtent& Box, IconSymbol Glyph,
+                     const char* Caption, bool EnabledCondition = true)
+{
+    const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, Key, Box, EnabledCondition);
+    const float         Opacity = EnabledCondition ? 1.0f : 0.3f;
+    Sheet.Box(Box, ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0x292929 : 0x212121), Opacity), 13.0f, ControlKit::Faded(SolidArcWash(0x05), Opacity));
+    const float Stack    = 19.0f + 9.0f + 9.0f * SolidArcStyleTokens::FontScale;
+    const float GlyphTop = Box.MinimumY + 0.5f * (Box.Height() - Stack);
+    const float Middle   = 0.5f * (Box.MinimumX + Box.MaximumX);
+    Sheet.Icon(Glyph, Middle - 9.5f, GlyphTop, 19.0f, ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xc3c3c3), Opacity));
+    const float Width = Sheet.Measure(Caption, 9.0f);
+    Sheet.Text(Middle - 0.5f * Width, GlyphTop + 19.0f + 9.0f + 0.5f * 9.0f * SolidArcStyleTokens::FontScale, 9.0f,
+               ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xaaaaaa), Opacity), Caption);
+    return Press.ClickedCondition;
+}
+
+struct InspectorOperation
+{
+    std::string Key      = {};                                                               // [-] - Widget key after "Operation:"
+    IconSymbol  Glyph    = IconSymbol::SolidArcBody;                                         // [-] - 19 px glyph
+    std::string Caption  = {};                                                               // [-] - Caption under it
+    bool        Enabled  = true;                                                             // [-] - Clickable
+};
+
+// .operation-grid — 3 columns, gap 7, 62 px rows. Returns the key pressed (empty when none).
+std::string DrawOperationGrid(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, float Left, float Top, float Width, const std::vector<InspectorOperation>& Operations)
+{
+    std::string Pressed;
+    const float Column = (Width - 2.0f * 7.0f) / 3.0f;
+    for (size_t Index = 0; Index < Operations.size(); ++Index)
+    {
+        const PlaneExtent Box = Spanning(Left + float(Index % 3) * (Column + 7.0f), Top + float(Index / 3) * (62.0f + 7.0f), Column, 62.0f);
+        if (OperationButton(State, Sheet, "Operation:" + Operations[Index].Key, Box, Operations[Index].Glyph, Operations[Index].Caption.c_str(), Operations[Index].Enabled))
+            Pressed = Operations[Index].Key;
+    }
+    return Pressed;
+}
+
+float OperationGridHeight(size_t Count)
+{
+    const size_t Rows = (Count + 2) / 3;
+    return Rows == 0 ? 0.0f : float(Rows) * 62.0f + float(Rows - 1) * 7.0f;
+}
+
+void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
+{
+    if (Key == "Fillet") OpenBevelSession(State, BlendProfile::Fillet);
+    else if (Key == "Chamfer") OpenBevelSession(State, BlendProfile::Chamfer);
+    else if (Key == "ExtrudeFaces") OpenExtrudeSession(State);
+    else if (Key == "ExtrudeSketch") OpenSketchExtrudeSession(State);
+    else if (Key == "Revolve") OpenSweepSession(State, SolidArcSweepVerb::Revolve);
+    else if (Key == "Loft") LoftSelectedCurves(State);
+    else if (Key == "Move") OpenTransformSession(State, SolidArcTransformVerb::Move, false);
+    else if (Key == "Rotate") OpenTransformSession(State, SolidArcTransformVerb::Rotate, false);
+    else if (Key == "Scale") OpenTransformSession(State, SolidArcTransformVerb::Scale, false);
+    else if (Key == "Block") OpenConstruct(State, SolidArcConstructKind::Block);
+    else if (Key == "Circle") OpenDrawingSession(State, SolidArcDrawingKind::Circle);
+    else if (Key == "Rectangle") OpenDrawingSession(State, SolidArcDrawingKind::Rectangle);
+    else if (Key == "Extrude")
+    {
+        if (State.Document.Selection.Faces.empty() && FocusedSketchCondition(State)) OpenSketchExtrudeSession(State);
+        else OpenExtrudeSession(State);
+    }
+    else if (Key == "Union" || Key == "Subtract" || Key == "Intersect")
+    {
+        State.Boolean.Combination = Key == "Union" ? FeatureCombination::Union : Key == "Subtract" ? FeatureCombination::Difference : FeatureCombination::Intersection;
+        ApplyBooleanSession(State);
+    }
+}
+
+// The bodies the selection touches, in pick order: body picks, then the owners of picked faces and edges.
+std::vector<std::string> TouchedBodies(const SolidArcDocument& Document)
+{
+    std::vector<std::string> Keys = Document.Selection.Bodies;
+    const auto Touch = [&](SolidArcSelectionKind Kind, const std::string& Name)
+    {
+        const std::string Key = SolidArcBodyOfName(Document, Kind, Name);
+        if (!Key.empty() && std::find(Keys.begin(), Keys.end(), Key) == Keys.end()) Keys.push_back(Key);
+    };
+    for (const std::string& Face : Document.Selection.Faces) Touch(SolidArcSelectionKind::Face, Face);
+    for (const std::string& Edge : Document.Selection.Edges) Touch(SolidArcSelectionKind::Edge, Edge);
+    return Keys;
+}
+
+const SolidArcBodyFigures* FiguresOf(const SolidArcDocument& Document, const std::string& Key)
+{
+    for (const SolidArcBodyFigures& Figures : Document.Summary.Bodies)
+        if (Figures.Key == Key) return &Figures;
+    return nullptr;
+}
+
+// 📝 HTML .intro-card (nothing picked): body glyph 35 #777, "Select geometry", the hint; then "Start constructing" with
+//    Block · Circle · Rectangle · Extrude.
+void DrawIntroCards(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const float  Width   = ImGui::GetContentRegionAvail().x;
+    const float  Inner   = Width - 44.0f;
+    const std::string Hint = "Pick a body, sketch or surface in the viewport or outliner to inspect its native geometry.";
+    const float  HintHeight = MeasureParagraph(Sheet, Inner, Hint);
+    const float  Height  = 30.0f + 35.0f + 20.0f + 18.0f * SolidArcStyleTokens::FontScale + 15.0f + HintHeight + 30.0f;
+    const PlaneExtent Intro = PlaceSheetCard(Sheet, Height);
+    float Y = Intro.MinimumY + 30.0f;
+    Sheet.Icon(IconSymbol::SolidArcBody, 0.5f * (Intro.MinimumX + Intro.MaximumX) - 17.5f, Y, 35.0f, SolidArcInk(0x777777));
+    Y += 35.0f + 20.0f;
+    const float TitleWidth = Sheet.Measure("Select geometry", 18.0f, SolidArcWeight::Light, -0.6f);
+    Sheet.Text(0.5f * (Intro.MinimumX + Intro.MaximumX - TitleWidth), Y + 0.5f * 18.0f * SolidArcStyleTokens::FontScale, 18.0f, SolidArcInk(0xeeeeee),
+               "Select geometry", SolidArcWeight::Light, -0.6f);
+    Y += 18.0f * SolidArcStyleTokens::FontScale + 15.0f;
+    DrawParagraph(Sheet, Intro.MinimumX + 22.0f, Y, Inner, Hint, true);
+    CloseSheetCard(Intro);
+
+    const std::vector<InspectorOperation> Operations = { { "Block", IconSymbol::SolidArcBody, "Block" }, { "Circle", IconSymbol::SolidArcCircle, "Circle" },
+                                                         { "Rectangle", IconSymbol::SolidArcRectangle, "Rectangle" },
+                                                         { "Extrude", IconSymbol::SolidArcExtrude, "Extrude", FocusedSketchCondition(State) } };
+    const std::string Lead       = "Create a profile, then extrude it into a solid.";
+    const float       CardInner  = Width - 2.0f * CardInset;
+    const float       LeadHeight = MeasureParagraph(Sheet, CardInner, Lead);
+    const PlaneExtent Start = PlaceSheetCard(Sheet, 2.0f * CardInset + 17.0f * SolidArcStyleTokens::FontScale + LeadHeight + 16.0f + OperationGridHeight(Operations.size()));
+    const float Left = Start.MinimumX + CardInset;
+    Y = Start.MinimumY + CardInset;
+    Sheet.Text(Left, Y + 0.5f * 17.0f * SolidArcStyleTokens::FontScale, 17.0f, SolidArcInk(0xeeeeee), "Start constructing");
+    Y += 17.0f * SolidArcStyleTokens::FontScale;
+    Y += DrawParagraph(Sheet, Left, Y, CardInner, Lead) + 16.0f;
+    const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, CardInner, Operations);
+    CloseSheetCard(Start);
+    if (!Pressed.empty()) RunOperation(State, Pressed);
+}
+
+// 📝 HTML .selection-card: the 39 px glyph disc (amber body, blue sheet, cyan curve), the name (20 px Light), the class
+//    line (8 px, letter-spaced) and the eye; then three count tiles (9 px caption, 22 px Light value).
+void DrawSelectionSummary(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const SolidArcSelection&       Selection = State.Document.Selection;
+    const std::vector<std::string> Bodies    = TouchedBodies(State.Document);
+    IconSymbol  Glyph = IconSymbol::SolidArcBody;
+    uint32_t    Ink   = 0xe5b369;
+    std::string Name, Kind, BodyKey;
+    std::array<std::pair<const char*, std::string>, 3> Counts = {};
+    int Others = 0;
+    if (!Bodies.empty())
+    {
+        BodyKey = Selection.LastKind == SolidArcSelectionKind::Face && !Selection.Faces.empty()   ? SolidArcBodyOfName(State.Document, SolidArcSelectionKind::Face, Selection.Faces.back())
+                : Selection.LastKind == SolidArcSelectionKind::Edge && !Selection.Edges.empty()   ? SolidArcBodyOfName(State.Document, SolidArcSelectionKind::Edge, Selection.Edges.back())
+                                                                                                  : Bodies.front();
+        if (BodyKey.empty()) BodyKey = Bodies.front();
+        const SolidArcBodyFigures* Figures = FiguresOf(State.Document, BodyKey);
+        const bool Sheeted = Figures && Figures->SheetCondition;
+        Glyph = Sheeted ? IconSymbol::SolidArcSurface : IconSymbol::SolidArcBody;
+        Ink   = Sheeted ? 0x7ba9d9 : 0xe5b369;
+        Name  = SolidArcBodyCaption(State.Document, BodyKey);
+        Kind  = Sheeted ? "OPEN SHEET" : "SOLID BODY";
+        if (!Selection.Faces.empty()) Kind += Compose(" · %d FACE%s", int(Selection.Faces.size()), Selection.Faces.size() == 1 ? "" : "S");
+        if (!Selection.Edges.empty()) Kind += Compose(" · %d EDGE%s", int(Selection.Edges.size()), Selection.Edges.size() == 1 ? "" : "S");
+        Counts = { { { "Faces", std::to_string(Figures ? Figures->Faces : 0) }, { "Edges", std::to_string(Figures ? Figures->Edges : 0) },
+                     { "Vertices", std::to_string(Figures ? Figures->Vertices : 0) } } };
+        Others = int(Bodies.size()) - 1 + int(Selection.Curves.size());
+    }
+    else
+    {
+        const std::string&     Label = Selection.Curves.back();
+        const CurveFitOutcome* Fit   = FindFittedCurve(State.Document, Label);
+        Glyph  = IconSymbol::SolidArcNurbs;
+        Ink    = 0x84bdc2;
+        Name   = CaptionOf(State.Document, Label);
+        Kind   = "SPACE CURVE · NURBS";
+        Counts = { { { "Poles", Fit ? std::to_string(Fit->Curve.Definition->Poles.size()) : std::string("-") },
+                     { "Degree", Fit ? std::to_string(Fit->Curve.Definition->Degree) : std::string("-") },
+                     { "Fit mm", Fit ? Compose("%.2f", Fit->WorstDeviation * 1000.0) : std::string("-") } } };
+        Others = int(Selection.Curves.size()) - 1;
+    }
+    if (Others > 0) Kind += Compose(" · +%d SELECTED", Others);
+
+    // .selection-card padding 19 17; heading 45 px (name line + 9 + class line), margin 20; tiles 67 px.
+    const float NameLine  = 20.0f * SolidArcStyleTokens::FontScale;
+    const float ClassLine = 8.0f * SolidArcStyleTokens::FontScale;
+    const float Heading   = std::max(39.0f, NameLine + 9.0f + ClassLine);
+    const float TileValue = 22.0f * SolidArcStyleTokens::FontScale;
+    const float TileHeight = 2.0f + 20.0f + 9.0f * SolidArcStyleTokens::FontScale + 5.0f + TileValue;
+    const PlaneExtent Card = PlaceSheetCard(Sheet, 19.0f + Heading + 20.0f + TileHeight + 19.0f);
+    const float Left  = Card.MinimumX + 17.0f;
+    const float Right = Card.MaximumX - 17.0f;
+    const float Top   = Card.MinimumY + 19.0f;
+    const float Middle = Top + 0.5f * Heading;
+    Sheet.Surface().FillRectangle(Spanning(Left, Middle - 19.5f, 39.0f, 39.0f), SolidArcWash(0x04), 19.5f);
+    Sheet.Icon(Glyph, Left + 8.5f, Middle - 11.0f, 22.0f, SolidArcInk(Ink));
+    const float TextLeft  = Left + 39.0f + 10.0f;
+    const float TextRight = Right - (BodyKey.empty() ? 0.0f : 28.0f + 10.0f);
+    const float NameTop   = Middle - 0.5f * (NameLine + 9.0f + ClassLine);
+    Sheet.TextClipped(TextLeft, NameTop + 0.5f * NameLine, TextRight - TextLeft, 20.0f, SolidArcInk(0xeeeeee), Name.c_str());
+    Sheet.TextClipped(TextLeft, NameTop + NameLine + 9.0f + 0.5f * ClassLine, TextRight - TextLeft, 8.0f, SolidArcInk(0x777777), Kind.c_str());
+    if (!BodyKey.empty())
+    {
+        const bool Hidden = State.Document.Appearance.HiddenBodies.contains(BodyKey);
+        if (SheetIconButton(State, Sheet, "SelectedVisibility", Right - 14.0f, Middle, 28.0f, Hidden ? IconSymbol::SolidArcHidden : IconSymbol::SolidArcEye, 17.0f))
+        {
+            const SolidArcCommandOutcome Outcome = ToggleSolidArcBodyVisibility(State.Document, BodyKey);
+            if (Outcome.AcceptedCondition) RefreshSolidArcScene(State, true);
+            Announce(State, Outcome.AcceptedCondition ? Name + (Hidden ? " shown" : " hidden") : "Refused: " + Outcome.Refusal);
+        }
+    }
+    // .geometry-counts — 3 columns, gap 7; tile #ffffff03, #ffffff06 hairline, radius 14, padding 10.
+    const float TilesTop = Top + Heading + 20.0f;
+    const float Column   = (Right - Left - 14.0f) / 3.0f;
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        const PlaneExtent Tile = Spanning(Left + float(Index) * (Column + 7.0f), TilesTop, Column, TileHeight);
+        Sheet.Box(Tile, SolidArcWash(0x03), 14.0f, SolidArcWash(0x06));
+        Sheet.Text(Tile.MinimumX + 11.0f, Tile.MinimumY + 11.0f + 0.5f * 9.0f * SolidArcStyleTokens::FontScale, 9.0f, SolidArcInk(0x888888), Counts[size_t(Index)].first);
+        Sheet.Text(Tile.MinimumX + 11.0f, Tile.MaximumY - 11.0f - 0.5f * TileValue, 22.0f, SolidArcInk(0xeeeeee), Counts[size_t(Index)].second.c_str());
+    }
+    CloseSheetCard(Card);
+}
+
+// 📝 HTML .ordered-selection (two or more bodies): numbered rows in pick order — the first is the Boolean target (ACTIVE,
+//    green), the rest are tools (SECTION, blue) — Reverse order, then Union / Subtract / Intersect and the operand note.
+void DrawOrderedSelection(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const std::string Note  = "3D booleans: first minus the rest; Reverse order swaps operands. Refused results leave the document untouched; Undo restores the inputs.";
+    const float       Row   = 13.0f * SolidArcStyleTokens::FontScale + 16.0f;
+    const float       Height = 2.0f * CardInset + CardHeadingHeight + float(Picked.size()) * Row + 14.0f + 35.0f + 14.0f + 17.0f * SolidArcStyleTokens::FontScale + 10.0f +
+                               OperationGridHeight(3) + 12.0f + MeasureParagraph(Sheet, Width, Note);
+    const PlaneExtent Card = PlaceSheetCard(Sheet, Height);
+    const float Left = Card.MinimumX + CardInset;
+    float       Y    = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Y, Width, Compose("%d bodies selected", int(Picked.size())).c_str(), "CLICK ORDER");
+    Y += CardHeadingHeight;
+    for (size_t Index = 0; Index < Picked.size(); ++Index)
+    {
+        const bool     Active = Index == 0;
+        const uint32_t Ink    = Active ? 0x33ff73 : 0x4099ff;
+        const float    Centre = Y + 0.5f * Row;
+        const float    Number = Sheet.Text(Left, Centre, 13.0f, SolidArcInk(Ink), std::to_string(Index + 1).c_str());
+        const float    TagWidth = Sheet.TextRight(Left + Width, Centre, 9.0f, SolidArcInk(Ink), Active ? "ACTIVE" : "SECTION");
+        Sheet.TextClipped(Left + Number + 8.0f, Centre, Width - Number - 16.0f - TagWidth, 13.0f, SolidArcInk(Ink), SolidArcBodyCaption(State.Document, Picked[Index]).c_str(),
+                          SolidArcWeight::Regular);
+        Sheet.Line(Left, Y + Row - 0.5f, Left + Width, Y + Row - 0.5f, SolidArcWash(0x0d));
+        Y += Row;
+    }
+    Y += 14.0f;
+    if (SheetButton(State, Sheet, "ReverseOrder", Left, Y + 17.5f, "Reverse order"))
+    {
+        std::reverse(Picked.begin(), Picked.end());
+        Announce(State, "Order reversed: " + SolidArcBodyCaption(State.Document, Picked.front()) + " is the target");
+    }
+    Y += 35.0f + 14.0f;
+    Sheet.Text(Left, Y + 0.5f * 17.0f * SolidArcStyleTokens::FontScale, 17.0f, SolidArcInk(0xeeeeee), "Compatible operations");
+    Y += 17.0f * SolidArcStyleTokens::FontScale + 10.0f;
+    const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, Width, { { "Union", IconSymbol::SolidArcUnion, "Union" }, { "Subtract", IconSymbol::SolidArcSubtract, "Subtract" },
+                                                                                 { "Intersect", IconSymbol::SolidArcIntersect, "Intersect" } });
+    Y += OperationGridHeight(3) + 12.0f;
+    DrawParagraph(Sheet, Left, Y, Width, Note);
+    CloseSheetCard(Card);
+    if (!Pressed.empty()) RunOperation(State, Pressed);
+}
+
+// 📝 HTML Bevel history (EDITABLE FEATURES): every fillet / chamfer step (click focuses it), then the Bevel / Chamfer · B button.
+void DrawBevelHistory(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    std::vector<const FeatureStep*> Blends;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+        if (Step.Kind == FeatureStepKind::Blend) Blends.push_back(&Step);
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const std::string Empty = "No bevels yet. Pick solid edges (mode 2), then B.";
+    const float       Row   = 11.0f * SolidArcStyleTokens::FontScale + 14.0f;
+    const float       Body  = Blends.empty() ? MeasureParagraph(Sheet, Width, Empty) + 16.0f : float(Blends.size()) * Row + 14.0f;
+    const PlaneExtent Card  = PlaceSheetCard(Sheet, 2.0f * CardInset + CardHeadingHeight + Body + 35.0f);
+    const float Left = Card.MinimumX + CardInset;
+    float       Y    = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Y, Width, "Bevel history", "EDITABLE FEATURES");
+    Y += CardHeadingHeight;
+    if (Blends.empty()) Y += DrawParagraph(Sheet, Left, Y, Width, Empty) + 16.0f;
+    for (const FeatureStep* Step : Blends)
+    {
+        const PlaneExtent   Line    = Spanning(Left - 8.0f, Y, Width + 16.0f, Row);
+        const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, "Bevel:" + Step->Label, Line);
+        const bool          Focused = State.FocusedStep == Step->Label;
+        if (Press.HoveredCondition || Focused) Sheet.Box(Line, Focused ? SolidArcWash(0x10) : SolidArcInk(0x222222), 10.0f);
+        Sheet.Icon(Step->Shape == BlendProfile::Fillet ? IconSymbol::SolidArcFillet : IconSymbol::SolidArcChamfer, Left, Y + 0.5f * Row - 7.0f, 14.0f, SolidArcInk(0xb7a68c));
+        Sheet.TextClipped(Left + 22.0f, Y + 0.5f * Row, Width - 22.0f, 11.0f, SolidArcInk(Focused ? 0xffffff : 0xcccccc), DescribeSolidArcStep(State.Document, *Step).c_str());
+        if (Press.ClickedCondition) State.FocusedStep = Focused ? std::string() : Step->Label;
+        Y += Row;
+    }
+    if (!Blends.empty()) Y += 14.0f;
+    const bool Edges = !State.Document.Selection.Edges.empty() && !State.Bevel.ActiveCondition;
+    if (SheetButton(State, Sheet, "BevelLauncher", Left, Y + 17.5f, "Bevel / Chamfer · B", Edges)) OpenBevelSession(State, BlendProfile::Fillet);
+    CloseSheetCard(Card);
+}
+
+// 📝 HTML .inspector-tabs — #070707 pill (34 px, #ffffff08 hairline, padding 3, margin 13 2 16); tabs 10 px, active #292929.
+void DrawInspectorTabs(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const ImVec2      Origin = ImGui::GetCursorScreenPos();
+    const float       Spacing = ImGui::GetStyle().ItemSpacing.y;
+    const PlaneExtent Bar    = Spanning(Origin.x + 2.0f, Origin.y + 13.0f - CardSpacing, ImGui::GetContentRegionAvail().x - 4.0f, 34.0f);
+    Sheet.Box(Bar, SolidArcInk(0x070707), 30.0f, SolidArcWash(0x08));
+    const struct { SolidArcInspectorTab Tab; const char* Label; const char* Key; } Tabs[] = {
+        { SolidArcInspectorTab::Geometry, "Geometry", "InspectorGeometry" }, { SolidArcInspectorTab::Transform, "Transform", "InspectorTransform" },
+        { SolidArcInspectorTab::Topology, "Topology", "InspectorTopology" } };
+    float Widths[3], Total = 0.0f;
+    for (int Index = 0; Index < 3; ++Index) Total += Widths[Index] = 32.0f + Sheet.Measure(Tabs[Index].Label, 10.0f);
+    const float Gap    = (Bar.Width() - 2.0f - 6.0f - Total) / 2.0f;                         // justify-content: space-between
+    float       Cursor = Bar.MinimumX + 1.0f + 3.0f;
+    const float Height = 10.0f * SolidArcStyleTokens::FontScale + 12.0f;
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        const PlaneExtent   Button = Spanning(Cursor, 0.5f * (Bar.MinimumY + Bar.MaximumY) - 0.5f * Height, Widths[Index], Height);
+        const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, Tabs[Index].Key, Button);
+        const bool          Active = State.InspectorTab == Tabs[Index].Tab;
+        if (Active || Press.HoveredCondition) Sheet.Box(Button, SolidArcInk(0x292929), 30.0f);
+        Sheet.Text(Button.MinimumX + 16.0f, 0.5f * (Button.MinimumY + Button.MaximumY), 10.0f, SolidArcInk(Active ? 0xeeeeee : Press.HoveredCondition ? 0xffffff : 0x858585),
+                   Tabs[Index].Label);
+        if (Press.ClickedCondition) State.InspectorTab = Tabs[Index].Tab;
+        Cursor += Widths[Index] + Gap;
+    }
+    ImGui::Dummy(ImVec2(Bar.Width(), Bar.MaximumY + 16.0f - Origin.y - Spacing));
+}
+
+// World bounds of the picked bodies (else every shown body) and of the picked curves' poles.
+bool SelectionBounds(const SolidArcWorkspaceState& State, std::array<double, 3>& Low, std::array<double, 3>& High)
+{
+    Low  = { 1.0e300, 1.0e300, 1.0e300 };
+    High = { -1.0e300, -1.0e300, -1.0e300 };
+    bool Found = false;
+    const auto Include = [&](double X, double Y, double Z)
+    {
+        const double Point[3] = { X, Y, Z };
+        for (int Axis = 0; Axis < 3; ++Axis)
+        {
+            Low[size_t(Axis)]  = std::min(Low[size_t(Axis)], Point[Axis]);
+            High[size_t(Axis)] = std::max(High[size_t(Axis)], Point[Axis]);
+        }
+        Found = true;
+    };
+    const std::vector<std::string> Bodies = TouchedBodies(State.Document);
+    const std::set<std::string>    Keys(Bodies.begin(), Bodies.end());
+    for (const SolidArcSceneFace& Face : State.Scene.Faces)
+    {
+        if (!Keys.empty() && (Face.Body >= State.Scene.Bodies.size() || !Keys.contains(State.Scene.Bodies[Face.Body].Key))) continue;
+        for (uint32_t Corner = Face.FirstCorner; Corner < Face.FirstCorner + Face.CornerCount; ++Corner)
+        {
+            const float* Point = State.Scene.Corners[Corner].Position;
+            Include(Point[0], Point[1], Point[2]);
+        }
+    }
+    for (const std::string& Label : State.Document.Selection.Curves)
+        if (const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Label))
+            for (const Vector3& Pole : Fit->Curve.Definition->Poles) Include(Pole.X, Pole.Y, Pole.Z);
+    return Found;
+}
+
+// 📝 HTML Bounds (WORLD · m): three cells (gap 8, 33 px, #101010, radius 12, padding 0 9) — axis letter 10 px in its axis
+//    colour, the extent 11 px, the unit 8 px.
+void DrawBoundsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const char* Title)
+{
+    std::array<double, 3> Low, High;
+    if (!SelectionBounds(State, Low, High)) return;
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const PlaneExtent Card  = PlaceSheetCard(Sheet, 2.0f * CardInset + CardHeadingHeight + 33.0f);
+    const float Left = Card.MinimumX + CardInset;
+    const float Top  = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Top, Width, Title, "WORLD · m");
+    const float Column = (Width - 16.0f) / 3.0f;
+    const struct { const char* Axis; uint32_t Ink; } Axes[3] = { { "X", 0xe88585 }, { "Y", 0xa3c78e }, { "Z", 0x84aad5 } };
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        const PlaneExtent Cell   = Spanning(Left + float(Index) * (Column + 8.0f), Top + CardHeadingHeight, Column, 33.0f);
+        const float       Centre = 0.5f * (Cell.MinimumY + Cell.MaximumY);
+        Sheet.Box(Cell, SolidArcInk(0x101010), 12.0f);
+        Sheet.Text(Cell.MinimumX + 9.0f, Centre, 10.0f, SolidArcInk(Axes[Index].Ink), Axes[Index].Axis);
+        const float Unit = Sheet.TextRight(Cell.MaximumX - 9.0f, Centre, 8.0f, SolidArcInk(0x888888), "m");
+        const std::string Value = Compose("%.4g", High[size_t(Index)] - Low[size_t(Index)]);
+        Sheet.TextRight(Cell.MaximumX - 9.0f - Unit - 6.0f, Centre, 11.0f, SolidArcInk(0xeeeeee), Value.c_str());
+    }
+    CloseSheetCard(Card);
+}
+
+// 📝 HTML Operations (NATIVE SOLVERS): the commands this selection takes, then "n faces · m edges selected".
+void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const SolidArcSelection&        Selection = State.Document.Selection;
+    std::vector<InspectorOperation> Operations;
+    if (!Selection.Edges.empty())
+    {
+        Operations.push_back({ "Fillet", IconSymbol::SolidArcFillet, "Fillet · B" });
+        Operations.push_back({ "Chamfer", IconSymbol::SolidArcChamfer, "Chamfer" });
+    }
+    if (!Selection.Faces.empty()) Operations.push_back({ "ExtrudeFaces", IconSymbol::SolidArcExtrude, "Extrude · E" });
+    if (Selection.Faces.empty() && FocusedSketchCondition(State))
+    {
+        Operations.push_back({ "ExtrudeSketch", IconSymbol::SolidArcExtrude, "Extrude · E" });
+        Operations.push_back({ "Revolve", IconSymbol::SolidArcRotate, "Revolve" });
+    }
+    if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
+    if (!Selection.Bodies.empty())
+    {
+        Operations.push_back({ "Move", IconSymbol::SolidArcMove, "Move · G" });
+        Operations.push_back({ "Rotate", IconSymbol::SolidArcRotate, "Rotate · R" });
+        Operations.push_back({ "Scale", IconSymbol::SolidArcMaximize, "Scale · S" });
+    }
+    if (Operations.empty() || Selection.Bodies.size() >= 2) return;
+    for (InspectorOperation& Operation : Operations) Operation.Enabled = !State.Bevel.ActiveCondition;
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const std::string Note  = Compose("%d face%s · %d edge%s selected", int(Selection.Faces.size()), Selection.Faces.size() == 1 ? "" : "s", int(Selection.Edges.size()), Selection.Edges.size() == 1 ? "" : "s");
+    const PlaneExtent Card  = PlaceSheetCard(Sheet, 2.0f * CardInset + CardHeadingHeight + OperationGridHeight(Operations.size()) + 15.0f + ParagraphLine);
+    const float Left = Card.MinimumX + CardInset;
+    float       Y    = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Y, Width, "Operations", "NATIVE SOLVERS");
+    Y += CardHeadingHeight;
+    const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, Width, Operations);
+    Y += OperationGridHeight(Operations.size()) + 15.0f;
+    DrawParagraph(Sheet, Left, Y, Width, Note);
+    CloseSheetCard(Card);
+    if (!Pressed.empty()) RunOperation(State, Pressed);
+}
+
+// 📝 Transform tab: G / R / S on the picked bodies (Plasticity transform gizmos with typed values in the viewport).
+void DrawTransformCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const bool        Picked = !State.Document.Selection.Bodies.empty() && !State.Bevel.ActiveCondition;
+    const std::string Lead  = Picked ? "Move, rotate or scale the picked bodies: drag in the viewport or type a value, Enter commits one step."
+                                     : "Pick bodies in mode 4 (solid) to move, rotate or scale them.";
+    const float       LeadHeight = MeasureParagraph(Sheet, Width, Lead);
+    const PlaneExtent Card = PlaceSheetCard(Sheet, 2.0f * CardInset + CardHeadingHeight + LeadHeight + 16.0f + OperationGridHeight(3));
+    const float Left = Card.MinimumX + CardInset;
+    float       Y    = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Y, Width, "Transform", "G · R · S");
+    Y += CardHeadingHeight;
+    Y += DrawParagraph(Sheet, Left, Y, Width, Lead) + 16.0f;
+    const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, Width, { { "Move", IconSymbol::SolidArcMove, "Move · G", Picked },
+                                                                                 { "Rotate", IconSymbol::SolidArcRotate, "Rotate · R", Picked },
+                                                                                 { "Scale", IconSymbol::SolidArcMaximize, "Scale · S", Picked } });
+    CloseSheetCard(Card);
+    if (!Pressed.empty()) RunOperation(State, Pressed);
+}
+
+// Topology tab: what is picked, face by face and edge by edge.
+void DrawPickedCard(SolidArcWorkspaceState& State)
+{
+    const SolidArcSelection& Selection = State.Document.Selection;
+    if (Selection.Faces.empty() && Selection.Edges.empty() && Selection.Curves.empty()) return;
+    BeginCard("Picked", "CLICK ORDER");
+    int Shown = 0;
+    for (const SolidArcSceneFace& Face : State.Scene.Faces)
+    {
+        if (std::find(Selection.Faces.begin(), Selection.Faces.end(), Face.Name) == Selection.Faces.end() || ++Shown > 12) continue;
+        const bool Active = Selection.LastKind == SolidArcSelectionKind::Face && Selection.Faces.back() == Face.Name;
+        ImGui::TextColored(Tint(Active ? ActiveColour : SelectedColour), "Face");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s · %s · %.4f m²", Face.Name.c_str(), Face.Surface.c_str(), Face.Area);
+    }
+    for (const SolidArcSceneEdge& Edge : State.Scene.Edges)
+    {
+        if (std::find(Selection.Edges.begin(), Selection.Edges.end(), Edge.Name) == Selection.Edges.end() || ++Shown > 12) continue;
+        const bool Active = Selection.LastKind == SolidArcSelectionKind::Edge && Selection.Edges.back() == Edge.Name;
+        ImGui::TextColored(Tint(Active ? ActiveColour : SelectedColour), "Edge");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s · %s · %.4f m", Edge.Name.c_str(), Edge.Curve.c_str(), Edge.Length);
+    }
+    for (size_t Index = 0; Index < Selection.Curves.size(); ++Index)
+    {
+        const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Selection.Curves[Index]);
+        if (!Fit || ++Shown > 12) continue;
+        ImGui::TextColored(Tint(Index + 1 == Selection.Curves.size() ? ActiveColour : SelectedColour), "Curve %d", int(Index + 1));
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s · %d poles · fit %.3f mm", CaptionOf(State.Document, Selection.Curves[Index]).c_str(), int(Fit->Curve.Definition->Poles.size()), Fit->WorstDeviation * 1000.0);
+    }
+    if (Shown > 12) ImGui::TextDisabled("… %d more", Shown - 12);
+    if (PressButton(State, "Clear selection###SelectionClear"))
+    {
+        ClearSolidArcSelection(State.Document);
+        Announce(State, "Selection cleared");
+    }
+    EndCard();
+}
+
+// 📝 HTML .inspector card controls: .button pills (#222, #ffffff0d hairline), #0a0a0a fields (radius 14), light DM Sans
+//    11 px text, thin scrollbar; pushed around the Inspector body only.
+void PushInspectorStyle()
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 14.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14.0f, 6.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 9.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 18.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 6.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(IM_COL32(0xee, 0xee, 0xee, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_TextDisabled, Tint(IM_COL32(0x88, 0x88, 0x88, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Button, Tint(IM_COL32(0x22, 0x22, 0x22, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Tint(IM_COL32(0x29, 0x29, 0x29, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Tint(IM_COL32(0x33, 0x33, 0x33, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Border, Tint(IM_COL32(0xff, 0xff, 0xff, 0x0d)));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Tint(IM_COL32(0x0a, 0x0a, 0x0a, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Tint(IM_COL32(0x14, 0x14, 0x14, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, Tint(IM_COL32(0x1c, 0x1c, 0x1c, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, Tint(IM_COL32(0xdf, 0xdf, 0xdf, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, Tint(IM_COL32(0xff, 0xff, 0xff, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, Tint(IM_COL32(0xed, 0xed, 0xed, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Header, Tint(IM_COL32(0xff, 0xff, 0xff, 0x16)));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Tint(IM_COL32(0x29, 0x29, 0x29, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, Tint(IM_COL32(0x33, 0x33, 0x33, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(1, 1, 1, 0.12f));
+    ImGui::PushStyleColor(ImGuiCol_Separator, Tint(IM_COL32(0xff, 0xff, 0xff, 0x0d)));
+}
+
+void PopInspectorStyle()
+{
+    ImGui::PopStyleColor(18);
+    ImGui::PopStyleVar(7);
+}
+
+// 📝 HTML .panel.inspector: heading (Inspector 18 px, inspect button → Topology), the scrolling #inspector-body (padding
+//    0 10 10) and the footer. Sessions (Boolean, Joint, Bevel) take the top; otherwise the selection summary, the ordered
+//    selection, Bevel history, the tabs and the tab's cards.
 void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
-    BeginPanel("Inspector", Position, Size);
-    PanelHeading("Inspector");
+    BeginSheetWindow("Inspector", Position, Size);
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Panel = Spanning(Position.x, Position.y, Size.x, Size.y);
+    Sheet.Box(Panel, SolidArcInk(0x121212), SolidArcStyleTokens::PanelRadius, SolidArcWash(0x08));
+    const float Left  = Panel.MinimumX + 1.0f;
+    const float Top   = Panel.MinimumY + 1.0f;
+    const float Right = Panel.MaximumX - 1.0f;
+    const float HeadingCentre = Top + 20.0f + 14.0f;
+    Sheet.Text(Left + 19.0f, HeadingCentre, 18.0f, SolidArcInk(0xeeeeee), "Inspector", SolidArcWeight::Light, -0.6f);
+    if (SheetIconButton(State, Sheet, "InspectorInspect", Right - 19.0f - 14.0f, HeadingCentre, 28.0f, IconSymbol::SolidArcInspect, 17.0f))
+        State.InspectorTab = SolidArcInspectorTab::Topology;
+    // .panel-footer — 32 px, #ffffff0a top border, padding 8 13, 9 px #737373, link glyph 11, gap 6.
+    const float FooterTop = Panel.MaximumY - 1.0f - 32.0f;
+    Sheet.Line(Left, FooterTop + 0.5f, Right, FooterTop + 0.5f, SolidArcWash(0x0a));
+    Sheet.Icon(IconSymbol::SolidArcLink, Left + 13.0f, FooterTop + 16.0f - 5.5f, 11.0f, SolidArcInk(0x737373));
+    Sheet.Text(Left + 13.0f + 11.0f + 6.0f, FooterTop + 16.0f, 9.0f, SolidArcInk(0x737373), "Operations run in Engine/GeometryProcessing");
+
+    const float BodyTop = Top + 64.0f;
+    ImGui::SetCursorScreenPos(ImVec2(Left + 10.0f, BodyTop));
+    PushInspectorStyle();
+    ImGui::BeginChild("InspectorBody", ImVec2(Right - Left - 20.0f, FooterTop - 10.0f - BodyTop), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+    ImGui::PushFont(static_cast<ImFont*>(QuerySolidArcTypefaces().Light), 11.0f * SolidArcStyleTokens::FontScale);
+    SolidArcSheet Body;
+    Body.Begin();
+    const SolidArcSelection& Selection = State.Document.Selection;
+    const bool Picked = !Selection.Faces.empty() || !Selection.Edges.empty() || !Selection.Bodies.empty() || !Selection.Curves.empty();
     if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
     else if (State.Joint.ActiveCondition) DrawJointCard(State);
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
-    else if (!State.Drawing.ActiveCondition) DrawSelectionCard(State);
-    DrawMeasureCard(State);
-    DrawSectionCard(State);
-    DrawDrawingSheetCard(State);
-    DrawDrawingCard(State);
-    DrawSnapCard(State);
-    DrawConstraintCard(State);
-    DrawStepCard(State);
-    DrawBodyCard(State);
-    DrawAppearanceCard(State);
-    DrawImagePlaneCard(State);
-    DrawHistoryCard(State);
-    EndPanel();
+    else if (!State.Drawing.ActiveCondition)
+    {
+        if (!Picked) DrawIntroCards(State, Body);
+        else DrawSelectionSummary(State, Body);
+        if (Selection.Bodies.size() >= 2) DrawOrderedSelection(State, Body);
+    }
+    if (State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition) DrawBevelHistory(State, Body);
+    DrawInspectorTabs(State, Body);
+    switch (State.InspectorTab)
+    {
+    case SolidArcInspectorTab::Geometry:
+        if (!State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Boolean.ActiveCondition && !State.Joint.ActiveCondition) DrawSelectionToolCards(State);
+        DrawStepCard(State);
+        DrawBoundsCard(State, Body, "Bounds");
+        if (!State.Drawing.ActiveCondition) DrawOperationsCard(State, Body);
+        DrawMeasureCard(State);
+        DrawSectionCard(State);
+        DrawDrawingSheetCard(State);
+        DrawDrawingCard(State);
+        DrawSnapCard(State);
+        DrawConstraintCard(State);
+        DrawBodyCard(State);
+        DrawAppearanceCard(State);
+        DrawImagePlaneCard(State);
+        break;
+    case SolidArcInspectorTab::Transform:
+        DrawBoundsCard(State, Body, "Bounds");
+        DrawTransformCard(State, Body);
+        break;
+    case SolidArcInspectorTab::Topology:
+        DrawBodyCard(State);
+        DrawPickedCard(State);
+        DrawHistoryCard(State);
+        break;
+    }
+    ImGui::PopFont();
+    ImGui::EndChild();
+    PopInspectorStyle();
+    EndSheetWindow();
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -6637,7 +7226,7 @@ void InitialiseSolidArcWorkspace(SolidArcWorkspaceState& State, const SolidArcOp
 
 void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds)
 {
-    State.Widgets.clear();
+    State.Widgets.Clear();
     RefreshSolidArcMatcaps(State);
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
     StageBevelPreview(State);

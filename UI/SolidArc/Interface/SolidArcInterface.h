@@ -16,6 +16,7 @@
 #include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Interface/SolidArcOptions.h"
 #include "UI/SolidArc/Interface/SolidArcOutliner.h"
+#include "UI/SolidArc/Interface/SolidArcStyleSheet.h"
 #include "UI/SolidArc/Viewport/SolidArcCamera.h"
 #include "UI/SolidArc/Viewport/SolidArcRasterization.h"
 #include "UI/SolidArc/Viewport/SolidArcSnapping.h"
@@ -281,6 +282,14 @@ struct SolidArcTransformSession
     int                               Commits            = 0;                                // [-]   - Committed (script evidence)
 };
 
+// 📝 HTML .inspector-tabs: Geometry (the native cards), Transform (G / R / S), Topology (body audit, picks, history).
+enum class SolidArcInspectorTab : uint8_t
+{
+    Geometry  = 0,                                                                           // Dimensions, bounds, operations, tool cards
+    Transform = 1,                                                                           // Bounds and move / rotate / scale
+    Topology  = 2,                                                                           // Body audit, picked figures, history
+};
+
 enum class SolidArcSweepVerb : uint8_t
 {
     Offset = 0,                                                                              // O: offset-curve
@@ -456,6 +465,7 @@ struct SolidArcWorkspaceState
     SolidArcParameterDrag                 ParameterDrag  = {};                               // [-]   - Step card: dragged joint value
     bool                                  CombsEnabled   = true;                             // [-]   - Curvature combs on selected curves
     int                                   LoftContinuity = 0;                                // [-]   - Next loft: 0 G0 · 1 G1 · 2 G2 to the panel it meets
+    SolidArcInspectorTab                  InspectorTab   = SolidArcInspectorTab::Geometry; // [-]   - Inspector tab shown
     bool                                  ZebraEnabled   = false;                            // [-]   - Zebra stripes on the faces (fine tessellation, V8)
     bool                                  DeviationEnabled = false;                          // [-]   - Needles from imported points to the panels (V8)
     SolidArcDeviationMap                  Deviation      = {};                               // [-]   - Cached per document revision
@@ -484,7 +494,7 @@ struct SolidArcWorkspaceState
     bool                                  ViewportHovered = false;                           // [-]   - Pointer over the viewport
     std::string                           Status         = "Ready";                          // [-]   - Status line
     std::vector<std::string>              Journal        = {};                               // [-]   - Command log (newest last)
-    std::map<std::string, ImVec4>         Widgets        = {};                               // [px]  - Named widget rectangles (x0, y0, x1, y1) of the last frame
+    SolidArcWidgetBoard                   Widgets        = {};                               // [px]  - Named widget rectangles of the last frame (scripts)
     uint64_t                              FrameNumber    = 0;                                // [-]   - Frames drawn
     double                                FrameMs        = 0.0;                              // [ms]  - Last frame's CPU + GPU time
     std::string                           DeviceLabel    = {};                               // [-]   - Vulkan device description

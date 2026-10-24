@@ -24,6 +24,8 @@ namespace Frontier::SolidArc
 namespace
 {
 
+constexpr int RevealPatience = 4;                                                            // [frame] - Frames a clipped click target may take to scroll into view
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PARSING
 //------------------------------------------------------------------------------------------------------------------------
@@ -127,9 +129,9 @@ bool ResolveTarget(const SolidArcScriptTarget& Target, const SolidArcWorkspaceSt
     const auto& Rect = State.ViewportRect;
     if (!Target.Widget.empty())
     {
-        const auto Found = State.Widgets.find(Target.Widget);
-        if (Found == State.Widgets.end()) return false;
-        Point = ImVec2(0.5f * (Found->second.x + Found->second.z), 0.5f * (Found->second.y + Found->second.w));
+        const ImVec4* Found = State.Widgets.Find(Target.Widget);
+        if (!Found) return false;
+        Point = ImVec2(0.5f * (Found->x + Found->z), 0.5f * (Found->y + Found->w));
     }
     else if (Target.World)
     {
@@ -935,8 +937,23 @@ std::string AdvanceSolidArcScript(SolidArcScript& Script, SolidArcWorkspaceState
         {
             Io.AddMousePosEvent(Script.Anchor.x + Step.Target.OffsetX, Script.Anchor.y + Step.Target.OffsetY);
         }
+        else if (!Step.Target.Widget.empty() && State.Widgets.ClippedCondition(Step.Target.Widget) && Script.RevealFrames < RevealPatience)
+        {
+            // Scrolled out of its panel: ask it to scroll into view and retry this step next frame.
+            State.Widgets.RequestReveal(Step.Target.Widget);
+            ++Script.RevealFrames;
+            --Script.Cursor;
+        }
+        else if (!Step.Target.Widget.empty() && State.Widgets.Find(Step.Target.Widget) && !State.Widgets.SettledCondition(Step.Target.Widget) &&
+                 Script.RevealFrames < RevealPatience)
+        {
+            // Still moving (a scroll clamp after the panel shrank): wait for it to sit still.
+            ++Script.RevealFrames;
+            --Script.Cursor;
+        }
         else if (ResolveTarget(Step.Target, State, Point))
         {
+            Script.RevealFrames = 0;
             if (Step.Anchoring) Script.Anchor = Point;
             Io.AddMousePosEvent(Point.x, Point.y);
         }

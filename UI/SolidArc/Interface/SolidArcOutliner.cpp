@@ -262,7 +262,7 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
             Outliner.SearchFocusRequest = false;
         }
         ImGui::InputTextWithHint("##SceneSearch", "Search scene…", Outliner.Search.data(), Outliner.Search.size());
-        State.Widgets["SceneSearch"] = ImVec4(Search.MinimumX, Search.MinimumY, Search.MaximumX, Search.MaximumY);
+        State.Widgets.Record("SceneSearch", ImVec2(Search.MinimumX, Search.MinimumY), ImVec2(Search.MaximumX, Search.MaximumY));
         ImGui::SetCursorScreenPos(Restore);
         ImGui::PopStyleColor(5);
         ImGui::PopStyleVar(2);

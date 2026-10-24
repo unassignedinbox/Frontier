@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 
 namespace Frontier::SolidArc
@@ -75,6 +76,26 @@ struct SolidArcPress
 //                                                    CLASSES
 //------------------------------------------------------------------------------------------------------------------------
 
+// 💡 Named widget rectangles of the last frame, for the walkthrough scripts. A widget not wholly inside its window's clip
+//    (scrolled away in the Inspector, the history strip, the scene rows) is Clipped; the widget named Reveal scrolls its
+//    window so it sits in the middle, then Reveal clears.
+class SolidArcWidgetBoard
+{
+public:
+    void Record(const std::string& Key, ImVec2 Low, ImVec2 High);
+    void Clear();
+    [[nodiscard]] const ImVec4* Find(const std::string& Key) const;
+    [[nodiscard]] bool ClippedCondition(const std::string& Key) const { return Clipped.contains(Key); }
+    void RequestReveal(const std::string& Key) { Reveal = Key; }
+    [[nodiscard]] bool SettledCondition(const std::string& Key) const;
+
+private:
+    std::map<std::string, ImVec4> Rectangles = {};                                           // [px] - (x0, y0, x1, y1) per key
+    std::map<std::string, ImVec4> Previous   = {};                                           // [px] - The frame before (a scroll clamp can still move it)
+    std::set<std::string>         Clipped    = {};                                           // [-]  - Keys partly outside their clip
+    std::string                   Reveal     = {};                                           // [-]  - Key to scroll into view
+};
+
 // 💡 PixelSpace bound to the current ImGui window, with the CSS conventions of the HTML panels: 1 px borders drawn
 //    inside the box, text centred on a line box of 1.302 em, letter spacing, and SolidArc-domain icons tinted on draw.
 class SolidArcSheet
@@ -110,8 +131,8 @@ void ConfigureSolidArcTypefaces(const SolidArcTypefaces& Typefaces);
 [[nodiscard]] ColorQuad SolidArcWash(uint32_t Alpha);
 [[nodiscard]] ImU32     SolidArcPack(ColorQuad Ink);
 
-// An invisible button over Extent under ImGui ID Key; its rectangle is recorded in Widgets[Key] for the scripts.
-SolidArcPress PressSolidArcRegion(std::map<std::string, ImVec4>& Widgets, const std::string& Key, const PlaneExtent& Extent,
+// An invisible button over Extent under ImGui ID Key; its rectangle is recorded on the board for the scripts.
+SolidArcPress PressSolidArcRegion(SolidArcWidgetBoard& Widgets, const std::string& Key, const PlaneExtent& Extent,
                                   bool EnabledCondition = true);
 
 } // namespace Frontier::SolidArc
