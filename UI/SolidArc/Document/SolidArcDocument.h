@@ -496,6 +496,12 @@ struct SolidArcLinkedPicks
 [[nodiscard]] SolidArcCommandOutcome DragSolidArcSketchPoint(SolidArcDocument& Document, const std::string& Sketch, int Point, GeometryProcessing::Vector2 Target);
 [[nodiscard]] GeometryProcessing::SketchDragOutcome PreviewSolidArcDrag(const SolidArcDocument& Document, const std::string& Sketch, int Point, GeometryProcessing::Vector2 Target);
 
+// 💡 Several points of one sketch dragged together (gizmo on mode-1 sketch points): each point pinned at its target in
+//    turn, the rest following their constraints, swept until every free point sits on its target (or 6 sweeps); one
+//    command. Points and Targets pair up (sketch-plane coordinates); refused when nothing can move.
+[[nodiscard]] SolidArcCommandOutcome DragSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const std::vector<int>& Points,
+                                                              const std::vector<GeometryProcessing::Vector2>& Targets);
+
 // "H3", "D2": the label the next constraint of that kind gets in Sketch.
 [[nodiscard]] std::string NextSolidArcConstraintLabel(const GeometryProcessing::SketchModel& Sketch, GeometryProcessing::SketchConstraintKind Kind);
 

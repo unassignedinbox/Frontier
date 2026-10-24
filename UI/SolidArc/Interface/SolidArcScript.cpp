@@ -192,6 +192,25 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
                                         : State.Joint.Preview ? State.Joint.Preview.get() : State.ParameterDrag.Preview.get();
         return Numeric(Preview ? Preview->Regeneration.Resumed : -1);
     }
+    if (Field == "live-volume")
+    {
+        // Volume of the staged gizmo / sketch-point drag preview (mid-drag evidence); the document's volume without one.
+        const SolidArcDocument* Preview = State.Gizmo.DragCondition && State.Gizmo.Preview ? State.Gizmo.Preview.get()
+                                        : State.SketchPoints.DragCondition && State.SketchPoints.Preview ? State.SketchPoints.Preview.get() : nullptr;
+        return Numeric(Preview ? Preview->Summary.Volume : Document.Summary.Volume);
+    }
+    if (Field == "live-staged") return Numeric((State.Gizmo.DragCondition && State.Gizmo.Preview) || (State.SketchPoints.DragCondition && State.SketchPoints.Preview) ? 1 : 0);
+    if (Field == "picked-points") return Numeric(double(State.SketchPoints.Points.size()));     // picked mode-1 sketch points
+    if (Field == "point-commits") return Numeric(double(State.SketchPoints.Commits));
+    if (Field == "picked-point-x" || Field == "picked-point-y")
+    {
+        // Plane coordinates of the first picked sketch point (as solved); NaN without one.
+        const SolidArcSketchPointSession& Points = State.SketchPoints;
+        const auto Solved = Document.Regeneration.Sketches.find(Points.Sketch);
+        if (Points.Points.empty() || Solved == Document.Regeneration.Sketches.end() || Points.Points[0] >= int(Solved->second.Points.size())) return Numeric(std::nan(""));
+        const GeometryProcessing::Vector2 Position = Solved->second.Points[Points.Points[0]].Position;
+        return Numeric(Field == "picked-point-x" ? Position.X : Position.Y);
+    }
     if (Field == "undo") return Numeric(double(Document.UndoEntries.size()));
     if (Field == "redo") return Numeric(double(Document.RedoEntries.size()));
     if (Field == "selected-faces") return Join(Document.Selection.Faces);
@@ -349,8 +368,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "gizmo-target")
     {
         Text   = State.Gizmo.Target == SolidArcGizmoTarget::Faces ? "faces" : State.Gizmo.Target == SolidArcGizmoTarget::Bodies ? "bodies"
-               : State.Gizmo.Target == SolidArcGizmoTarget::Sketches ? "sketches" : "";
-        Number = double(int(State.Gizmo.Target));                                          // 0 none · 1 faces · 2 bodies · 3 sketches
+               : State.Gizmo.Target == SolidArcGizmoTarget::Sketches ? "sketches" : State.Gizmo.Target == SolidArcGizmoTarget::Points ? "points" : "";
+        Number = double(int(State.Gizmo.Target));                                          // 0 none · 1 faces · 2 bodies · 3 sketches · 4 points
         return true;
     }
     if (Field == "measure")
@@ -601,6 +620,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "drawing-pointer-x") return Numeric(State.Drawing.PointerCondition ? State.Drawing.Pointer.X : std::nan(""));
     if (Field == "drawing-pointer-y") return Numeric(State.Drawing.PointerCondition ? State.Drawing.Pointer.Y : std::nan(""));
     if (Field == "drawing-square") return Numeric(State.Drawing.SquareCondition ? 1 : 0);
+    if (Field == "drawing-segment") return Numeric(State.Drawing.SegmentCondition ? 1 : 0);
     if (Field == "snap")
     {
         const SolidArcSnap& Snap = State.Picker.Current;

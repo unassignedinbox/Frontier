@@ -2577,6 +2577,41 @@ SolidArcCommandOutcome DragSolidArcSketchPoint(SolidArcDocument& Document, const
     }, Index);
 }
 
+SolidArcCommandOutcome DragSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const std::vector<int>& Points, const std::vector<Vector2>& Targets)
+{
+    if (Points.size() == 1 && Targets.size() == 1) return DragSolidArcSketchPoint(Document, Sketch, Points[0], Targets[0]);
+    size_t Index = 0;
+    FeatureStep* Found = FindSketchStep(Document, Sketch, Index);
+    return RunCommand(Document, "Drag " + std::to_string(Points.size()) + " points of " + SketchOwner(Document, Sketch), false, [&]() -> std::string
+    {
+        if (!Found) return "no sketch step " + Sketch;
+        if (Points.empty() || Points.size() != Targets.size()) return "Drag: points and targets do not pair up";
+        SketchModel Working = {};
+        for (const FeatureStep& Step : Document.Tree.Steps)
+            if (Step.Label == Sketch && Step.Kind == FeatureStepKind::Sketch) Working = BindSketch(Document, Step);
+        for (int Point : Points)
+            if (Point < 0 || Point >= int(Working.Points.size())) return "Drag: no point " + std::to_string(Point) + " in " + Sketch;
+        const std::vector<SketchPoint> Start = Working.Points;
+        double Travel = 0.0;
+        for (int Sweep = 0; Sweep < 6; ++Sweep)
+        {
+            double Miss = 0.0;
+            for (size_t Pick = 0; Pick < Points.size(); ++Pick)
+            {
+                const SketchDragOutcome Drag = DragSketchPoint(Working, Points[Pick], Targets[Pick]);
+                if (!Drag.Refusal.empty()) return Drag.Refusal;
+                Working = Drag.Sketch;
+            }
+            for (size_t Pick = 0; Pick < Points.size(); ++Pick) Miss = std::max(Miss, Distance(Working.Points[Points[Pick]].Position, Targets[Pick]));
+            if (Miss <= 1.0e-9) break;
+        }
+        for (size_t Point = 0; Point < Start.size(); ++Point) Travel = std::max(Travel, Distance(Start[Point].Position, Working.Points[Point].Position));
+        if (!(Travel > 1.0e-12)) return "the points are fully constrained (they cannot move)";
+        WriteBackPositions(*Found, Working);
+        return {};
+    }, Index);
+}
+
 const char* SolidArcDrawingLabel(SolidArcDrawingKind Kind) noexcept
 {
     switch (Kind)

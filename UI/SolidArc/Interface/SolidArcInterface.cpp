@@ -845,6 +845,7 @@ bool IntersectSketchPlane(const OrbitCameraFrame& Frame, ImVec2 Local, const Ort
                                        " · " + (Drawing.Combination == GeometryProcessing::FeatureCombination::Separate ? "new body" : FeatureCombinationLabel(Drawing.Combination));
     std::string Caption = SolidArcDrawingLabel(Drawing.Kind);
     if (Drawing.Kind == SolidArcDrawingKind::Polygon) Caption += Compose(" · %d sides", Drawing.Sides);
+    if (Drawing.Kind == SolidArcDrawingKind::Line) Caption += Drawing.SegmentCondition ? " · segment" : " · polyline";
     if (Drawing.Kind == SolidArcDrawingKind::Curve) Caption += std::string(" · ") + SketchSplineFormLabel(Drawing.Form);
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle) Caption += Drawing.CentreCondition ? " · centre" : " · corner";
     if (Drawing.Kind == SolidArcDrawingKind::Circle) Caption += Drawing.CentreCondition ? " · centre" : " · two-point";
@@ -919,7 +920,7 @@ void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool Closi
         Announce(State, std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + SolidPrompt(Drawing));
         return;
     }
-    const bool Chain = DrawingClicks(Drawing.Kind) == 0;
+    const bool Chain = DrawingClicks(Drawing.Kind) == 0 && !Drawing.SegmentCondition;
     if (Chain && ClosingCondition) { FinishDrawingSession(State, true); return; }
     if (!Drawing.Points.empty() && Distance(Drawing.Points.back(), Point) <= 1.0e-12)
     {
@@ -932,7 +933,7 @@ void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool Closi
     Picker.Placed = Picker.Current;                                                          // t / n / b use the snapped curve or face
     if (Picker.Current.Kind >= SolidArcSnapKind::Endpoint && Picker.Current.Kind <= SolidArcSnapKind::Face) ++Picker.Snapped;
     Picker.Lock = SolidArcSnapLockKind::None;                                                // A lock serves one point (Plasticity)
-    if (!Chain && Drawing.Points.size() >= DrawingClicks(Drawing.Kind)) FinishDrawingSession(State, false);
+    if (!Chain && Drawing.Points.size() >= (Drawing.SegmentCondition ? size_t(2) : DrawingClicks(Drawing.Kind))) FinishDrawingSession(State, false);
 }
 
 void RetractDrawingPoint(SolidArcWorkspaceState& State)
@@ -1731,6 +1732,48 @@ void ApplyCut(SolidArcWorkspaceState& State)
     OrthonormalFrame Plane = Step.Plane;
     Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
     return Plane;
+}
+
+// The sketch step called Label (nullptr: none).
+[[nodiscard]] const FeatureStep* FindSketchStepByLabel(const SolidArcDocument& Document, const std::string& Label)
+{
+    for (const FeatureStep& Step : Document.Tree.Steps)
+        if (Step.Label == Label && Step.Kind == FeatureStepKind::Sketch) return &Step;
+    return nullptr;
+}
+
+// A sketch as the regeneration solved it (as authored when it did not solve).
+[[nodiscard]] const SketchModel& SolvedSketchOf(const SolidArcDocument& Document, const FeatureStep& Step)
+{
+    const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
+    return Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
+}
+
+// World position of point Point of sketch Label (nullopt: no such point).
+[[nodiscard]] std::optional<Vector3> SketchPointWorld(const SolidArcDocument& Document, const std::string& Label, int Point)
+{
+    const FeatureStep* Step = FindSketchStepByLabel(Document, Label);
+    if (!Step) return std::nullopt;
+    const SketchModel& Sketch = SolvedSketchOf(Document, *Step);
+    if (Point < 0 || Point >= int(Sketch.Points.size())) return std::nullopt;
+    return PlacePlanePoint(ElevatedSketchPlane(Document, *Step), Sketch.Points[Point].Position);
+}
+
+// "SketchPointSketch3.1": the script widget of a sketch point.
+[[nodiscard]] std::string SketchPointWidget(const std::string& Label, int Point)
+{
+    std::string Name = "SketchPoint";
+    for (char Letter : Label)
+        if (Letter != '#') Name += Letter;
+    return Name + "." + std::to_string(Point);
+}
+
+// The document the viewport overlays show: the staged preview while a gizmo or sketch-point drag runs.
+[[nodiscard]] const SolidArcDocument& DisplayedSolidArcDocument(const SolidArcWorkspaceState& State)
+{
+    if (State.SketchPoints.DragCondition && State.SketchPoints.Preview && State.SketchPoints.Refusal.empty()) return *State.SketchPoints.Preview;
+    if (State.Gizmo.DragCondition && State.Gizmo.Preview && State.Gizmo.Refusal.empty()) return *State.Gizmo.Preview;
+    return State.Document;
 }
 
 void OpenTrimSession(SolidArcWorkspaceState& State)
@@ -2979,7 +3022,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
 {
     return State.Gizmo.Modes != 0 && !State.DrawingSheet.ActiveCondition && !State.Drawing.ActiveCondition && !State.Transform.ActiveCondition && !State.Sweep.ActiveCondition
         && !State.Constrain.ActiveCondition && !State.Trim.ActiveCondition && !State.Joint.ActiveCondition && !State.Bevel.ActiveCondition && !State.PoleDrag.ActiveCondition
-        && !State.Box.ActiveCondition && State.PickMode != SolidArcPickMode::ControlPoint;
+        && !State.Box.ActiveCondition && !State.SketchPoints.DragCondition;
 }
 
 [[nodiscard]] const char* GizmoTargetLabel(SolidArcGizmoTarget Target) noexcept
@@ -2989,6 +3032,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     case SolidArcGizmoTarget::Faces:    return "Faces";
     case SolidArcGizmoTarget::Bodies:   return "Bodies";
     case SolidArcGizmoTarget::Sketches: return "Sketches";
+    case SolidArcGizmoTarget::Points:   return "Sketch points";
     case SolidArcGizmoTarget::None:     break;
     }
     return "Nothing";
@@ -3023,12 +3067,41 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
     const SolidArcDocument& Document = State.Document;
     Gizmo.Target = SolidArcGizmoTarget::None;
     Gizmo.Names.clear();
+    Gizmo.Points.clear();
     Gizmo.Pose.Hidden = 0;
     Gizmo.Pose.Axes[0] = { 1.0, 0.0, 0.0 };
     Gizmo.Pose.Axes[1] = { 0.0, 1.0, 0.0 };
     Gizmo.Pose.Axes[2] = { 0.0, 0.0, 1.0 };
     constexpr uint32_t AxisScales = (1u << uint32_t(SolidArcGizmoHandle::ScaleX)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleY)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleZ));
     constexpr uint32_t CentreBit  = 1u << uint32_t(SolidArcGizmoHandle::Centre);
+    if (State.PickMode == SolidArcPickMode::ControlPoint)
+    {
+        // 📝 Mode 1: the picked sketch points, framed in their sketch plane: x / y cones, the xy square, the z arc (turn
+        //    in the plane) and x / y cylinders (scale about the points' centre; a single point only moves).
+        SolidArcSketchPointSession& Points = State.SketchPoints;
+        const FeatureStep*          Step   = FindSketchStepByLabel(Document, Points.Sketch);
+        if (!Step) { Points.Points.clear(); Points.Sketch.clear(); return; }
+        const SketchModel& Sketch = SolvedSketchOf(Document, *Step);
+        std::erase_if(Points.Points, [&](int Point) { return Point < 0 || Point >= int(Sketch.Points.size()); });
+        if (Points.Points.empty()) { Points.Sketch.clear(); return; }
+        const OrthonormalFrame Plane = ElevatedSketchPlane(Document, *Step);
+        Vector3 Sum;
+        for (int Point : Points.Points) Sum = Sum + PlacePlanePoint(Plane, Sketch.Points[Point].Position);
+        constexpr auto Bit = [](SolidArcGizmoHandle Handle) { return 1u << uint32_t(Handle); };
+        uint32_t Hidden = Bit(SolidArcGizmoHandle::TranslateZ) | Bit(SolidArcGizmoHandle::PlaneYZ) | Bit(SolidArcGizmoHandle::PlaneXZ) | Bit(SolidArcGizmoHandle::RotateX)
+                        | Bit(SolidArcGizmoHandle::RotateY) | Bit(SolidArcGizmoHandle::ScaleZ);
+        if (Points.Points.size() == 1) Hidden |= Bit(SolidArcGizmoHandle::RotateZ) | Bit(SolidArcGizmoHandle::ScaleX) | Bit(SolidArcGizmoHandle::ScaleY);
+        if (!(Gizmo.Modes & GizmoTranslate) && (Points.Points.size() == 1 || !(Gizmo.Modes & GizmoScale))) Hidden |= CentreBit;
+        Gizmo.Target       = SolidArcGizmoTarget::Points;
+        Gizmo.Names        = { Points.Sketch };
+        Gizmo.Points       = Points.Points;
+        Gizmo.Pose.Origin  = Sum * (1.0 / double(Points.Points.size()));
+        Gizmo.Pose.Axes[0] = Plane.XAxis;
+        Gizmo.Pose.Axes[1] = Plane.YAxis;
+        Gizmo.Pose.Axes[2] = Plane.ZAxis;
+        Gizmo.Pose.Hidden  = Hidden;
+        return;
+    }
     if (State.PickMode == SolidArcPickMode::Face && !Document.Selection.Faces.empty())
     {
         Vector3 Centre, Normal;
@@ -3130,9 +3203,17 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
     if (GizmoRotateHandle(Handle)) return RotationMap(Gizmo.Pose.Origin, Gizmo.Pose.Axes[Axis], Gizmo.Angle);
     if (GizmoScaleHandle(Gizmo, Handle))
     {
-        Vector3 Factors{ Gizmo.Factor, Gizmo.Factor, Gizmo.Factor };
-        if (Axis >= 0) Factors = { Axis == 0 ? Gizmo.Factor : 1.0, Axis == 1 ? Gizmo.Factor : 1.0, Axis == 2 ? Gizmo.Factor : 1.0 };
-        return ScalingMap(Gizmo.Pose.Origin, Factors);
+        if (Axis < 0) return ScalingMap(Gizmo.Pose.Origin, Vector3{ Gizmo.Factor, Gizmo.Factor, Gizmo.Factor });
+        // Along the frame axis a (world axes for bodies, the sketch plane axes for points): M = I + (f − 1)·a·aᵀ.
+        const Vector3 Along = Gizmo.Pose.Axes[Axis];
+        const double  Grow  = Gizmo.Factor - 1.0;
+        AffineMap Map;
+        Map.ColumnX = Vector3{ 1.0, 0.0, 0.0 } + Along * (Grow * Along.X);
+        Map.ColumnY = Vector3{ 0.0, 1.0, 0.0 } + Along * (Grow * Along.Y);
+        Map.ColumnZ = Vector3{ 0.0, 0.0, 1.0 } + Along * (Grow * Along.Z);
+        const Vector3 Origin = Gizmo.Pose.Origin;
+        Map.Shift = Origin - (Map.ColumnX * Origin.X + Map.ColumnY * Origin.Y + Map.ColumnZ * Origin.Z);
+        return Map;
     }
     return TranslationMap(Gizmo.Shift);
 }
@@ -3156,6 +3237,24 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
     {
     case SolidArcGizmoTarget::Bodies:   return TransformSolidArcBodies(Document, Gizmo.Names, GizmoMap(Gizmo), Verb);
     case SolidArcGizmoTarget::Sketches: return PlaceSolidArcSketches(Document, Gizmo.Names, GizmoMap(Gizmo), Verb);
+    case SolidArcGizmoTarget::Points:
+    {
+        // Each picked point mapped in the world, then carried back into its sketch plane.
+        const FeatureStep* Step = Gizmo.Names.empty() ? nullptr : FindSketchStepByLabel(Document, Gizmo.Names[0]);
+        if (!Step) break;
+        const SketchModel&     Sketch = SolvedSketchOf(Document, *Step);
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(Document, *Step);
+        const AffineMap        Map    = GizmoMap(Gizmo);
+        std::vector<Vector2>   Targets;
+        for (int Point : Gizmo.Points)
+        {
+            if (Point < 0 || Point >= int(Sketch.Points.size())) break;
+            const Vector3 Start = PlacePlanePoint(Plane, Sketch.Points[Point].Position);
+            const Vector3 Moved = Map.ColumnX * Start.X + Map.ColumnY * Start.Y + Map.ColumnZ * Start.Z + Map.Shift;
+            Targets.push_back({ Dot(Moved - Plane.Origin, Plane.XAxis), Dot(Moved - Plane.Origin, Plane.YAxis) });
+        }
+        return DragSolidArcSketchPoints(Document, Gizmo.Names[0], Gizmo.Points, Targets);
+    }
     case SolidArcGizmoTarget::Faces:
         if (GizmoRotateHandle(Handle)) return ChangeSolidArcSelection(Document, FaceOperationKind::Rotate, Gizmo.Angle, Gizmo.Pose.Axes[Axis]);
         if (GizmoScaleHandle(Gizmo, Handle)) return ChangeSolidArcSelection(Document, FaceOperationKind::Scale, Gizmo.Factor);
@@ -3265,6 +3364,7 @@ void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     if (Gizmo.Target == SolidArcGizmoTarget::Faces)
         Gizmo.Readout += GizmoRotateHandle(Gizmo.Grab) ? " · face rotate" : GizmoScaleHandle(Gizmo, Gizmo.Grab) ? " · face scale"
                        : Gizmo.Grab == SolidArcGizmoHandle::TranslateZ ? " · push / pull" : " · face tweak";
+    if (Gizmo.Target == SolidArcGizmoTarget::Points) Gizmo.Readout += Compose(" · %d sketch point%s", int(Gizmo.Points.size()), Gizmo.Points.size() == 1 ? "" : "s");
     // Staged preview: one regeneration per distinct value.
     const std::string Key = Compose("%d %.12g %.12g %.12g %.12g %.12g", int(Gizmo.Grab), Gizmo.Shift.X, Gizmo.Shift.Y, Gizmo.Shift.Z, Gizmo.Angle, Gizmo.Factor);
     if (Key == Gizmo.StagedKey) return;
@@ -3813,7 +3913,7 @@ void ChooseProfileCombination(SolidArcWorkspaceState& State, FeatureCombination 
 // Polyline of every sketch step on its plane (solved positions), the focused one highlighted, used ones dimmed.
 void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
 {
-    const SolidArcDocument& Document = State.Document;
+    const SolidArcDocument& Document = DisplayedSolidArcDocument(State);                     // live while a drag stages a preview
     for (const FeatureStep& Step : Document.Tree.Steps)
     {
         if (Step.Kind != FeatureStepKind::Sketch) continue;
@@ -3845,7 +3945,195 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
             }
             Flush();
         }
+        if (State.PickMode != SolidArcPickMode::ControlPoint) continue;
+        // 📝 Mode 1: Bezier / NURBS control polygons (their points are poles off the curve), then every defining point.
+        for (const SketchCurve& Curve : Sketch.Curves)
+        {
+            if (Curve.Kind != SketchCurveKind::Spline || (Curve.Form != SketchSplineForm::Bezier && Curve.Form != SketchSplineForm::Nurbs)) continue;
+            std::vector<ImVec2> Hull;
+            for (int Point : Curve.Points)
+            {
+                ImVec2 Pixel;
+                if (Point >= 0 && Point < int(Sketch.Points.size()) && ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sketch.Points[Point].Position), Pixel)) Hull.push_back(Pixel);
+            }
+            if (Hull.size() >= 2) Canvas->AddPolyline(Hull.data(), int(Hull.size()), IM_COL32(0xc8, 0xc8, 0xc8, 0xa0), 1.0f);
+        }
+        const SolidArcSketchPointSession& Points = State.SketchPoints;
+        for (int Point = 0; Point < int(Sketch.Points.size()); ++Point)
+        {
+            ImVec2 Pixel;
+            if (!ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sketch.Points[Point].Position), Pixel)) continue;
+            const bool  Held   = Points.DragCondition && Points.DragSketch == Step.Label && Points.DragPoint == Point;
+            const bool  Picked = Held || (Points.Sketch == Step.Label && std::find(Points.Points.begin(), Points.Points.end(), Point) != Points.Points.end());
+            const bool  Hover  = !Points.DragCondition && Points.HoverSketch == Step.Label && Points.HoverPoint == Point;
+            const float Half   = Hover || Held ? 5.0f : 4.0f;
+            const ImVec2 Low(Pixel.x - Half, Pixel.y - Half), High(Pixel.x + Half, Pixel.y + Half);
+            Canvas->AddRectFilled(Low, High, Picked ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : IM_COL32(0x12, 0x16, 0x1c, 0xff));
+            Canvas->AddRect(Low, High, Hover || Held ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Colour, 0.0f, 0, 1.5f);
+        }
     }
+}
+
+// Nearest shown sketch point within PoleReach of Pointer (mode 1); false when none.
+bool FindSketchPointNear(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Pointer, std::string& Label, int& Point)
+{
+    float Best = 8.0f;
+    Point = -1;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
+        for (int Index = 0; Index < int(Sketch.Points.size()); ++Index)
+        {
+            ImVec2 Pixel;
+            if (!ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sketch.Points[Index].Position), Pixel)) continue;
+            const float Reach = std::hypot(Pointer.x - Pixel.x, Pointer.y - Pixel.y);
+            if (Reach <= Best) { Best = Reach; Label = Step.Label; Point = Index; }
+        }
+    }
+    return Point >= 0;
+}
+
+// Script evidence: each sketch point is a widget in mode 1 (SketchPointWidget).
+void RecordSketchPointWidgets(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame)
+{
+    if (State.PickMode != SolidArcPickMode::ControlPoint) return;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
+        for (int Index = 0; Index < int(Sketch.Points.size()); ++Index)
+        {
+            ImVec2 Pixel;
+            if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sketch.Points[Index].Position), Pixel))
+                State.Widgets.Record(SketchPointWidget(Step.Label, Index), ImVec2(Pixel.x - 2.0f, Pixel.y - 2.0f), ImVec2(Pixel.x + 2.0f, Pixel.y + 2.0f));
+        }
+    }
+}
+
+SolidArcPickIntent PickIntentOf(const ImGuiIO& Io);
+
+// A click on a sketch point: replace / add / remove in the picked set (one sketch at a time).
+void PickSketchPoint(SolidArcWorkspaceState& State, const std::string& Label, int Point, SolidArcPickIntent Intent)
+{
+    SolidArcSketchPointSession& Points = State.SketchPoints;
+    const auto Found = std::find(Points.Points.begin(), Points.Points.end(), Point);
+    const bool Member = Points.Sketch == Label && Found != Points.Points.end();
+    if (Intent == SolidArcPickIntent::Remove) { if (Member) Points.Points.erase(Found); }
+    else if (Intent == SolidArcPickIntent::Add && Points.Sketch == Label) { if (!Member) Points.Points.push_back(Point); }
+    else
+    {
+        Points.Sketch = Label;
+        Points.Points = { Point };
+    }
+    if (Points.Points.empty()) Points.Sketch.clear();
+    const FeatureStep* Step = FindSketchStepByLabel(State.Document, Label);
+    Announce(State, Compose("%s · point %d · %d picked · the gizmo moves them in the sketch plane (drag a point to move it directly)",
+                            Step ? CaptionOf(State.Document, Label).c_str() : Label.c_str(), Point, int(Points.Points.size())));
+}
+
+// Mode-1 box: the sketch points inside it (of the first sketch that has any) join / replace / leave the picked set.
+// False when the box holds no sketch point (the ordinary box selection runs instead).
+bool PickSketchPointsInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Start, ImVec2 End, SolidArcPickIntent Intent)
+{
+    const float Left = std::min(Start.x, End.x), Right = std::max(Start.x, End.x), Top = std::min(Start.y, End.y), Bottom = std::max(Start.y, End.y);
+    SolidArcSketchPointSession& Points = State.SketchPoints;
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Intent != SolidArcPickIntent::Replace && !Points.Sketch.empty() && Step.Label != Points.Sketch) continue;
+        const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
+        std::vector<int>       Inside;
+        for (int Index = 0; Index < int(Sketch.Points.size()); ++Index)
+        {
+            ImVec2 Pixel;
+            if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sketch.Points[Index].Position), Pixel) && Pixel.x >= Left && Pixel.x <= Right && Pixel.y >= Top && Pixel.y <= Bottom)
+                Inside.push_back(Index);
+        }
+        if (Inside.empty()) continue;
+        if (Intent == SolidArcPickIntent::Replace || Points.Sketch.empty()) { Points.Sketch = Step.Label; Points.Points.clear(); }
+        for (int Index : Inside)
+        {
+            const auto Found = std::find(Points.Points.begin(), Points.Points.end(), Index);
+            if (Intent == SolidArcPickIntent::Remove) { if (Found != Points.Points.end()) Points.Points.erase(Found); }
+            else if (Found == Points.Points.end()) Points.Points.push_back(Index);
+        }
+        if (Points.Points.empty()) Points.Sketch.clear();
+        Announce(State, Compose("%s · %d sketch points picked · the gizmo moves, turns and scales them in the sketch plane", CaptionOf(State.Document, Step.Label).c_str(), int(Points.Points.size())));
+        return true;
+    }
+    return false;
+}
+
+void CancelSketchPointDrag(SolidArcWorkspaceState& State)
+{
+    SolidArcSketchPointSession& Points = State.SketchPoints;
+    Points.DragCondition = false;
+    Points.Preview.reset();
+    Points.StagedKey.clear();
+    Points.Refusal.clear();
+    State.Picker.Current = {};
+}
+
+// 💡 Direct drag of a held sketch point: the pointer meets the sketch plane, 0.1 grid and object snaps (Ctrl free); each
+//    distinct target stages a preview (the sketch re-solves, extrudes / lofts regenerate live); the release commits one
+//    DragSolidArcSketchPoint, a release without movement picks the point.
+void DriveSketchPointDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    SolidArcSketchPointSession& Points = State.SketchPoints;
+    const ImGuiIO&              Io     = ImGui::GetIO();
+    const FeatureStep*          Step   = FindSketchStepByLabel(State.Document, Points.DragSketch);
+    if (!Step) { CancelSketchPointDrag(State); return; }
+    const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
+    const bool             Moved = Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance;
+    if (Moved)
+    {
+        if (const std::optional<Vector3> Hit = IntersectGizmoPlane(CastOrbitRay(Frame, Local.x, Local.y), Plane.Origin, Plane.ZAxis))
+        {
+            Vector2 Flat{ Dot(*Hit - Plane.Origin, Plane.XAxis), Dot(*Hit - Plane.Origin, Plane.YAxis) };
+            if (!Io.KeyCtrl)
+            {
+                Flat = { std::round(Flat.X / 0.1) * 0.1, std::round(Flat.Y / 0.1) * 0.1 };
+                if (const std::optional<Vector2> Snap = SnapOntoPlane(State, Frame, Local, Plane, std::nullopt, {}, { Points.DragSketch })) Flat = *Snap;
+            }
+            else State.Picker.Current = {};
+            Points.Target = Flat;
+        }
+    }
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        const std::string Label   = Points.DragSketch;
+        const int         Point   = Points.DragPoint;
+        const std::string Refusal = Points.Refusal;
+        const bool        Shifted = Distance(Points.Target, Points.Origin) > 1.0e-12;
+        CancelSketchPointDrag(State);
+        if (!Moved) { PickSketchPoint(State, Label, Point, PickIntentOf(Io)); return; }
+        if (!Shifted) { Announce(State, "Point drag: nothing changed"); return; }
+        if (!Refusal.empty()) { Announce(State, "Refused: " + Refusal); return; }
+        const SolidArcCommandOutcome Outcome = DragSolidArcSketchPoint(State.Document, Label, Point, Points.Target);
+        Conclude(State, Outcome);
+        if (Outcome.AcceptedCondition)
+        {
+            ++Points.Commits;
+            Points.Sketch = Label;
+            Points.Points = { Point };
+            Announce(State, Compose("%s · %.0f ms", Outcome.Label.c_str(), Outcome.Milliseconds));
+        }
+        return;
+    }
+    if (!Moved) return;
+    const std::string Key = Compose("%.12g %.12g", Points.Target.X, Points.Target.Y);
+    if (Key == Points.StagedKey) return;
+    Points.StagedKey = Key;
+    Points.Refusal.clear();
+    if (Distance(Points.Target, Points.Origin) <= 1.0e-12) { Points.Preview.reset(); return; }
+    Points.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
+    const SolidArcCommandOutcome Outcome = DragSolidArcSketchPoint(*Points.Preview, Points.DragSketch, Points.DragPoint, Points.Target);
+    if (!Outcome.AcceptedCondition) { Points.Refusal = Legible(Outcome.Refusal); Points.Preview.reset(); return; }
+    Points.PreviewScene = BuildSolidArcScene(*Points.Preview);
 }
 
 // The drawing in progress: the shape through the pointer, its clicks, a spline's control polygon.
@@ -5834,9 +6122,59 @@ void DrawConstructDialog(SolidArcWorkspaceState& State)
     ImGui::EndPopup();
 }
 
-// 📝 Construct menu (index.html #construct-menu): 520 × 330 popover under the viewport Construct chip, header (dot,
-//    Construct, Tab, close), a 132 px section column (Solids · Sketch), 4 × 2 catalogue tiles of 72 px. A tile starts the
-//    drawing command in the viewport (live dimension lines); Tab inside a solid command opens the exact-size form.
+// 📝 Construct menu (index.html #construct-menu): 520 px popover under the viewport Construct chip, header (dot,
+//    Construct, Tab, close), a 132 px section column (Solids · Sketch), 4-column catalogue tiles of 72 px (the menu grows
+//    past 330 px with the rows). A tile starts the drawing command in the viewport (live dimension lines); Tab inside a
+//    solid command opens the exact-size form. Sketch carries every 2-D primitive and every curve form as its own tile.
+struct SolidArcConstructTile
+{
+    const char*           Label;                                                             // [-] - Caption
+    const char*           Key;                                                               // [-] - Widget name
+    IconSymbol            Glyph;                                                             // [-] - 24 px glyph
+    bool                  SolidCondition;                                                    // [-] - Solid (else a sketch tool)
+    SolidArcConstructKind Solid;                                                             // [-] - Solid kind
+    SolidArcDrawingKind   Sketch;                                                            // [-] - Sketch tool
+    bool                  CentreCondition;                                                   // [-] - Sketch tool in centre mode
+    bool                  SegmentCondition;                                                  // [-] - Line finishes on its second click
+    SketchSplineForm      Form;                                                              // [-] - Curve form of a curve tile
+};
+
+constexpr SolidArcConstructTile ConstructSolids[] = {
+    { "Box", "ConstructBlock", IconSymbol::SolidArcBody, true, SolidArcConstructKind::Block, {}, false, false, SketchSplineForm::Hermite },
+    { "Cylinder", "ConstructCylinder", IconSymbol::SolidArcCylinder, true, SolidArcConstructKind::Cylinder, {}, false, false, SketchSplineForm::Hermite },
+    { "Cone", "ConstructCone", IconSymbol::SolidArcCone, true, SolidArcConstructKind::Cone, {}, false, false, SketchSplineForm::Hermite },
+    { "Sphere", "ConstructSphere", IconSymbol::SolidArcSphere, true, SolidArcConstructKind::Sphere, {}, false, false, SketchSplineForm::Hermite },
+    { "Torus", "ConstructTorus", IconSymbol::SolidArcRing, true, SolidArcConstructKind::Torus, {}, false, false, SketchSplineForm::Hermite },
+    { "Wedge", "ConstructWedge", IconSymbol::SolidArcWedge, true, SolidArcConstructKind::Wedge, {}, false, false, SketchSplineForm::Hermite },
+    { "Prism", "ConstructPrism", IconSymbol::SolidArcPrism, true, SolidArcConstructKind::Prism, {}, false, false, SketchSplineForm::Hermite },
+    { "Tube", "ConstructTube", IconSymbol::SolidArcTube, true, SolidArcConstructKind::Tube, {}, false, false, SketchSplineForm::Hermite } };
+
+// Lines · rectangles · circles and arcs · slot and polygon · the four curve forms (SketchSplineForm).
+constexpr SolidArcConstructTile ConstructSketches[] = {
+    { "Line", "ConstructSketchSegment", IconSymbol::SolidArcEdge, false, {}, SolidArcDrawingKind::Line, false, true, SketchSplineForm::Hermite },
+    { "Polyline", "ConstructSketchLine", IconSymbol::SolidArcPolyline, false, {}, SolidArcDrawingKind::Line, false, false, SketchSplineForm::Hermite },
+    { "Rectangle", "ConstructSketchRectangle", IconSymbol::SolidArcRectangle, false, {}, SolidArcDrawingKind::Rectangle, false, false, SketchSplineForm::Hermite },
+    { "Centre rect", "ConstructSketchRectangleCentre", IconSymbol::SolidArcCentrerect, false, {}, SolidArcDrawingKind::Rectangle, true, false, SketchSplineForm::Hermite },
+    { "Circle", "ConstructSketchCircleCentre", IconSymbol::SolidArcCircle, false, {}, SolidArcDrawingKind::Circle, true, false, SketchSplineForm::Hermite },
+    { "2-pt circle", "ConstructSketchCircle", IconSymbol::SolidArcCentre, false, {}, SolidArcDrawingKind::Circle, false, false, SketchSplineForm::Hermite },
+    { "Arc", "ConstructSketchArc", IconSymbol::SolidArcArc, false, {}, SolidArcDrawingKind::Arc, false, false, SketchSplineForm::Hermite },
+    { "Slot", "ConstructSketchSlot", IconSymbol::SolidArcSlot, false, {}, SolidArcDrawingKind::Slot, false, false, SketchSplineForm::Hermite },
+    { "Polygon", "ConstructSketchPolygon", IconSymbol::SolidArcPolygon, false, {}, SolidArcDrawingKind::Polygon, false, false, SketchSplineForm::Hermite },
+    { "Hermite", "ConstructSketchCurve", IconSymbol::SolidArcHermite, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::Hermite },
+    { "Bezier", "ConstructSketchBezier", IconSymbol::SolidArcBezier, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::Bezier },
+    { "NURBS", "ConstructSketchNurbs", IconSymbol::SolidArcNurbs, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::Nurbs },
+    { "Cubic spline", "ConstructSketchCubic", IconSymbol::SolidArcCurve, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::CubicSpline } };
+
+constexpr int ConstructSolidCount  = int(sizeof(ConstructSolids) / sizeof(ConstructSolids[0]));
+constexpr int ConstructSketchCount = int(sizeof(ConstructSketches) / sizeof(ConstructSketches[0]));
+
+// Menu height [px]: header 41 + tile rows (72, gap 6, padding 10) + footer 28, never under the reference 330.
+[[nodiscard]] float ConstructMenuHeight(int Count)
+{
+    const int Rows = (Count + 3) / 4;
+    return std::max(330.0f, 41.0f + 10.0f + float(Rows) * 72.0f + float(std::max(0, Rows - 1)) * 6.0f + 10.0f + 28.0f + 2.0f);
+}
+
 void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
 {
     if (State.ConstructMenuRequest)
@@ -5844,8 +6182,10 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         ImGui::OpenPopup("ConstructMenu");
         State.ConstructMenuRequest = false;
     }
+    const int   TileCount  = State.ConstructSection == 1 ? ConstructSketchCount : ConstructSolidCount;
+    const float MenuHeight = ConstructMenuHeight(TileCount);
     ImGui::SetNextWindowPos(Anchor);
-    ImGui::SetNextWindowSize(ImVec2(520, 330));
+    ImGui::SetNextWindowSize(ImVec2(520, MenuHeight));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0, 0, 0, 0));
@@ -5855,7 +6195,7 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     if (!Shown) return;
     SolidArcSheet Sheet;
     Sheet.Begin();
-    const PlaneExtent Menu = Spanning(Anchor.x, Anchor.y, 520.0f, 330.0f);
+    const PlaneExtent Menu = Spanning(Anchor.x, Anchor.y, 520.0f, MenuHeight);
     Sheet.Box(Menu, SolidArcInk(0x121417), 14.0f, SolidArcWash(0x22));
     const float Left = Menu.MinimumX + 1.0f, Top = Menu.MinimumY + 1.0f, Right = Menu.MaximumX - 1.0f, Bottom = Menu.MaximumY - 1.0f;
     // header — 40 px, #ffffff08, #ffffff12 bottom border, padding 0 12 0 16, gap 12.
@@ -5880,44 +6220,17 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         const bool Chosen = State.ConstructSection == Index;
         if (Chosen || Press.HoveredCondition) Sheet.Box(Section, SolidArcWash(Chosen ? 0x16 : 0x0c), 7.0f);
         Sheet.Text(Section.MinimumX + 10.0f, Section.MinimumY + 18.0f, 11.0f, SolidArcInk(Chosen ? 0xeeeeee : 0xaaaaaa), Sections[Index]);
-        Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), "8");
+        Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), Compose("%d", Index == 1 ? ConstructSketchCount : ConstructSolidCount).c_str());
     }
     // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
-    struct ConstructTile
+    const SolidArcConstructTile* Tiles     = State.ConstructSection == 1 ? ConstructSketches : ConstructSolids;
+    const float                  TilesLeft = Left + 132.0f + 10.0f;
+    const float                  TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
+    for (int Index = 0; Index < TileCount; ++Index)
     {
-        const char*           Label;                                                         // [-] - Caption (and widget name)
-        IconSymbol            Glyph;                                                         // [-] - 24 px glyph
-        bool                  SolidCondition;                                                // [-] - Solid (else a sketch tool)
-        SolidArcConstructKind Solid;                                                         // [-] - Solid kind
-        SolidArcDrawingKind   Sketch;                                                        // [-] - Sketch tool
-        bool                  CentreCondition;                                               // [-] - Sketch tool in centre mode
-    };
-    static const ConstructTile Solids[8] = {
-        { "Box", IconSymbol::SolidArcBody, true, SolidArcConstructKind::Block, {}, false },
-        { "Cylinder", IconSymbol::SolidArcCylinder, true, SolidArcConstructKind::Cylinder, {}, false },
-        { "Cone", IconSymbol::SolidArcCone, true, SolidArcConstructKind::Cone, {}, false },
-        { "Sphere", IconSymbol::SolidArcSphere, true, SolidArcConstructKind::Sphere, {}, false },
-        { "Torus", IconSymbol::SolidArcRing, true, SolidArcConstructKind::Torus, {}, false },
-        { "Wedge", IconSymbol::SolidArcWedge, true, SolidArcConstructKind::Wedge, {}, false },
-        { "Prism", IconSymbol::SolidArcPrism, true, SolidArcConstructKind::Prism, {}, false },
-        { "Tube", IconSymbol::SolidArcTube, true, SolidArcConstructKind::Tube, {}, false } };
-    static const ConstructTile Sketches[8] = {
-        { "Line", IconSymbol::SolidArcPolyline, false, {}, SolidArcDrawingKind::Line, false },
-        { "Rectangle", IconSymbol::SolidArcRectangle, false, {}, SolidArcDrawingKind::Rectangle, false },
-        { "Centre rect", IconSymbol::SolidArcCentrerect, false, {}, SolidArcDrawingKind::Rectangle, true },
-        { "Circle", IconSymbol::SolidArcCircle, false, {}, SolidArcDrawingKind::Circle, true },
-        { "Arc", IconSymbol::SolidArcArc, false, {}, SolidArcDrawingKind::Arc, false },
-        { "Slot", IconSymbol::SolidArcSlot, false, {}, SolidArcDrawingKind::Slot, false },
-        { "Polygon", IconSymbol::SolidArcPolygon, false, {}, SolidArcDrawingKind::Polygon, false },
-        { "Curve", IconSymbol::SolidArcCurve, false, {}, SolidArcDrawingKind::Curve, false } };
-    const ConstructTile* Tiles     = State.ConstructSection == 1 ? Sketches : Solids;
-    const float          TilesLeft = Left + 132.0f + 10.0f;
-    const float          TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
-    for (int Index = 0; Index < 8; ++Index)
-    {
-        const ConstructTile& Entry = Tiles[Index];
+        const SolidArcConstructTile& Entry = Tiles[Index];
         const PlaneExtent   Tile  = Spanning(TilesLeft + float(Index % 4) * (TileWidth + 6.0f), Body + 10.0f + float(Index / 4) * (72.0f + 6.0f), TileWidth, 72.0f);
-        const std::string   Name  = Entry.SolidCondition ? std::string("Construct") + SolidArcConstructLabel(Entry.Solid) : std::string("ConstructSketch") + SolidArcDrawingLabel(Entry.Sketch) + (Entry.CentreCondition ? "Centre" : "");
+        const std::string   Name  = Entry.Key;
         const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Name, Tile);
         Sheet.Box(Tile, SolidArcWash(Press.HoveredCondition ? 0x1e : 0x0c), 8.0f, SolidArcWash(Press.HoveredCondition ? 0x3c : 0x12));
         const float Stack = 24.0f + 9.0f + 10.0f * SolidArcStyleTokens::FontScale;
@@ -5933,7 +6246,11 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
             else
             {
                 OpenDrawingSession(State, Entry.Sketch);
-                State.Drawing.CentreCondition = Entry.CentreCondition;
+                State.Drawing.CentreCondition  = Entry.CentreCondition;
+                State.Drawing.SegmentCondition = Entry.SegmentCondition;
+                if (Entry.Sketch == SolidArcDrawingKind::Curve) State.Drawing.Form = Entry.Form;
+                if (Entry.SegmentCondition) Announce(State, "Line: click the start, then the end · Esc aborts");
+                if (Entry.Sketch == SolidArcDrawingKind::Curve) Announce(State, std::string("Curve · ") + SketchSplineFormLabel(Entry.Form) + ": click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts");
             }
         }
     }
@@ -6741,9 +7058,51 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     // 📝 Mode 1 (Plasticity control-point mode): press on a shown pole grabs it, the pole follows the pointer in the
     //    screen-parallel plane through its start, the release commits one MoveSolidArcPole; a press-release without
     //    movement is an ordinary click (selects the curve).
+    // 📝 Mode 1 sketch points (SolidArcSketchPointSession): press on a point holds it, the drag moves it in its sketch
+    //    plane with a live preview, a press-release without movement picks it for the gizmo.
+    SolidArcSketchPointSession& SketchPoints = State.SketchPoints;
+    bool PointGesture = false;
+    if (State.PickMode == SolidArcPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Constrain.ActiveCondition
+        && !State.PoleDrag.ActiveCondition && !GizmoOwned)
+    {
+        if (!SketchPoints.DragCondition)
+        {
+            SketchPoints.HoverPoint = -1;
+            if (Hovered && !OverCube) FindSketchPointNear(State, Frame, Io.MousePos, SketchPoints.HoverSketch, SketchPoints.HoverPoint);
+            if (SketchPoints.HoverPoint >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+                const FeatureStep* Step = FindSketchStepByLabel(State.Document, SketchPoints.HoverSketch);
+                SketchPoints.DragCondition = Step != nullptr;
+                SketchPoints.DragSketch    = SketchPoints.HoverSketch;
+                SketchPoints.DragPoint     = SketchPoints.HoverPoint;
+                SketchPoints.Origin        = Step ? SolvedSketchOf(State.Document, *Step).Points[SketchPoints.HoverPoint].Position : Vector2{};
+                SketchPoints.Target        = SketchPoints.Origin;
+                SketchPoints.StagedKey.clear();
+                SketchPoints.Refusal.clear();
+                SketchPoints.Preview.reset();
+            }
+        }
+        if (SketchPoints.DragCondition)
+        {
+            PointGesture = true;
+            DriveSketchPointDrag(State, Frame, Local);
+        }
+    }
+    else
+    {
+        SketchPoints.HoverPoint = -1;
+        if (SketchPoints.DragCondition) CancelSketchPointDrag(State);
+    }
+    if (State.PickMode != SolidArcPickMode::ControlPoint && !SketchPoints.Points.empty())
+    {
+        SketchPoints.Points.clear();
+        SketchPoints.Sketch.clear();
+    }
+    if (!SketchPoints.DragCondition) RecordSketchPointWidgets(State, Frame);
+
     SolidArcPoleDrag& Drag = State.PoleDrag;
     bool PoleGesture = false;
-    if (State.PickMode == SolidArcPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Constrain.ActiveCondition)
+    if (!PointGesture && !GizmoOwned && State.PickMode == SolidArcPickMode::ControlPoint && !State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Constrain.ActiveCondition)
     {
         if (!Drag.ActiveCondition)
         {
@@ -6796,9 +7155,9 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
     }
 
-    if (PoleGesture)
+    if (PoleGesture || PointGesture)
     {
-        // The pole drag owns the left button this frame.
+        // The pole / sketch-point drag owns the left button this frame.
     }
     else if (State.Drawing.ActiveCondition)
     {
@@ -6900,8 +7259,17 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
                 Box.ActiveCondition = false;
-                if (Moved) SelectInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io));
-                else if (LeftClick && !OverCube) PickAtPointer(State, Local, PickIntentOf(Io));
+                if (Moved && State.PickMode == SolidArcPickMode::ControlPoint && PickSketchPointsInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io))) {}
+                else if (Moved) SelectInBox(State, Frame, Box.Start, Box.End, PickIntentOf(Io));
+                else if (LeftClick && !OverCube)
+                {
+                    if (State.PickMode == SolidArcPickMode::ControlPoint && PickIntentOf(Io) == SolidArcPickIntent::Replace)
+                    {
+                        SketchPoints.Points.clear();
+                        SketchPoints.Sketch.clear();
+                    }
+                    PickAtPointer(State, Local, PickIntentOf(Io));
+                }
             }
         }
         else if (LeftClick && !OverCube)
@@ -7061,7 +7429,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Bevel.ActiveCondition
                            ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
-                           ? "Mode 1: drag a pole (release commits, Esc drops) · click a curve (Shift add in loft order, Ctrl remove) · L loft · Ctrl+Z undo · 2/3/4/5 modes"
+                           ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     {
         SolidArcSheet Instructions;
@@ -8459,6 +8827,15 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     }
 
     // Mode 1 pole drag in progress: Esc drops it (no edit).
+    if (State.SketchPoints.DragCondition)
+    {
+        if (Pressed(ImGuiKey_Escape))
+        {
+            CancelSketchPointDrag(State);
+            Announce(State, "Point drag dropped (document untouched)");
+        }
+        return;
+    }
     if (State.PoleDrag.ActiveCondition)
     {
         if (Pressed(ImGuiKey_Escape))
@@ -8994,6 +9371,7 @@ const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
     if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
     if (State.ParameterDrag.Preview) return State.ParameterDrag.PreviewScene;
     if (State.Gizmo.DragCondition && State.Gizmo.Preview && State.Gizmo.Refusal.empty()) return State.Gizmo.PreviewScene;
+    if (State.SketchPoints.DragCondition && State.SketchPoints.Preview && State.SketchPoints.Refusal.empty()) return State.SketchPoints.PreviewScene;
     return State.Scene;
 }
 

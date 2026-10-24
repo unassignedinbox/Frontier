@@ -139,6 +139,7 @@ struct SolidArcDrawingSession
     bool                           CentreCondition  = false;                                 // [-]   - Rectangle: Alt centre mode · circle: V two-point mode off
     GeometryProcessing::SketchSplineForm     Form             = GeometryProcessing::SketchSplineForm::Hermite;   // [-]   - Curve: 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline
     bool                           SquareCondition  = false;                                 // [-]   - Rectangle: s keeps the sides equal
+    bool                           SegmentCondition = false;                                 // [-]   - Line: one segment, finished on the second click
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
     int                            Sides            = 6;                                     // [-]   - Polygon / prism sides (+ / − keys)
     bool                           SolidCondition   = false;                                 // [-]   - Construct solid: plane clicks, then a height
@@ -459,6 +460,30 @@ enum class SolidArcGizmoTarget : uint8_t
     Faces    = 1,                                                                            // Offset / Tweak / Rotate / Scale face operations
     Bodies   = 2,                                                                            // TransformSolidArcBodies
     Sketches = 3,                                                                            // PlaceSolidArcSketches (rigid only)
+    Points   = 4,                                                                            // Mode-1 sketch points (DragSolidArcSketchPoints)
+};
+
+// 📝 Mode 1 sketch points: every sketch shows its defining points (line ends, arc and circle centres, spline points;
+//    Bezier / NURBS with their control polygon). A click picks a point (Shift adds, Ctrl removes) and the gizmo moves the
+//    picked points in the sketch plane (several together also rotate and scale about their centre); a press-drag on a
+//    point moves it directly (0.1 grid, Ctrl free). The sketch re-solves its constraints and every step using it
+//    (extrude, loft) regenerates live; the release commits one command.
+struct SolidArcSketchPointSession
+{
+    std::string                       Sketch        = {};                                    // [-]   - Picked points' sketch step
+    std::vector<int>                  Points        = {};                                    // [-]   - Picked point indices
+    std::string                       HoverSketch   = {};                                    // [-]   - Point under the pointer: sketch
+    int                               HoverPoint    = -1;                                    // [-]   - Its index
+    bool                              DragCondition = false;                                 // [-]   - A point is held
+    std::string                       DragSketch    = {};                                    // [-]   - Held point's sketch
+    int                               DragPoint     = -1;                                    // [-]   - Held point
+    GeometryProcessing::Vector2       Origin        = {};                                    // [len] - Held point at the press (plane)
+    GeometryProcessing::Vector2       Target        = {};                                    // [len] - Where it is dragged (plane, snapped)
+    std::string                       StagedKey     = {};                                    // [-]   - Target the preview shows
+    std::unique_ptr<SolidArcDocument> Preview       = {};                                    // [-]   - Staged document
+    SolidArcScene                     PreviewScene  = {};                                    // [-]   - Its display arrays
+    std::string                       Refusal       = {};                                    // [-]   - Why the staged target refuses
+    int                               Commits       = 0;                                     // [-]   - Committed point drags (script evidence)
 };
 
 // 💡 Viewport transform gizmo (Slate GizmoPRO): Modes picks any mix of move / rotate / scale (y cycles, toolbar chips,
@@ -469,6 +494,7 @@ struct SolidArcGizmoSession
     uint32_t                          Modes         = GizmoTranslate;                        // [-]   - GizmoTranslate | GizmoRotate | GizmoScale (0 off)
     SolidArcGizmoTarget               Target        = SolidArcGizmoTarget::None;             // [-]   - What the selection offers
     std::vector<std::string>          Names         = {};                                    // [-]   - Face names / body keys / sketch labels
+    std::vector<int>                  Points        = {};                                    // [-]   - Sketch point indices (Points target)
     SolidArcGizmoPose                 Pose          = {};                                    // [-]   - Frame shown (start frame while dragging)
     SolidArcGizmoGeometry             Geometry      = {};                                    // [-]   - CPU copy of the drawn triangles (pick)
     SolidArcGizmoHandle               Hover         = SolidArcGizmoHandle::None;             // [-]   - Handle under the pointer
@@ -500,6 +526,7 @@ struct SolidArcWorkspaceState
     SolidArcBevelSession                  Bevel          = {};                               // [-]   - B (blend) / E (extrude) session
     SolidArcDrawingSession                Drawing        = {};                               // [-]   - Line / rectangle / circle / arc / slot / curve
     SolidArcPoleDrag                      PoleDrag       = {};                               // [-]   - Mode 1 pole drag
+    SolidArcSketchPointSession            SketchPoints   = {};                               // [-]   - Mode 1 sketch points
     SolidArcPointPicker                   Picker         = {};                               // [-]   - Object snaps and direction locks
     SolidArcBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     SolidArcBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
