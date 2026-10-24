@@ -275,6 +275,13 @@ add_test(NAME SolidArcConstructDrawingWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/ConstructDrawingWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcInsetWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/InsetRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Inset.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/InsetWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcVehicleSurfacingWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/VehicleRecovery.solidarc
@@ -441,6 +448,7 @@ set_tests_properties(SolidArcPanelAssemblyWalkthrough PROPERTIES SKIP_RETURN_COD
 set_tests_properties(SolidArcSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcConstructDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcInsetWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcVehicleSurfacingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcVariableBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
