@@ -190,6 +190,8 @@ click @ConstructLauncher
 frames 2
 click @ConstructCylinder
 frames 2
+key Tab
+frames 2
 click @CombinationDifference
 click @ConstructX
 key A Ctrl

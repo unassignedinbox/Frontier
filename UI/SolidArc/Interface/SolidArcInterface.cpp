@@ -719,6 +719,37 @@ OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State);
     return Plane;
 }
 
+// Plane clicks before the height (or before the solid, when it has no height).
+[[nodiscard]] size_t SolidPlaneClicks(SolidArcConstructKind Kind)
+{
+    return Kind == SolidArcConstructKind::Torus || Kind == SolidArcConstructKind::Tube ? 3 : 2;
+}
+
+[[nodiscard]] bool SolidLiftedCondition(SolidArcConstructKind Kind)
+{
+    return Kind != SolidArcConstructKind::Sphere && Kind != SolidArcConstructKind::Torus;
+}
+
+// Prompt for the next click of a solid session.
+[[nodiscard]] const char* SolidPrompt(const SolidArcDrawingSession& Drawing)
+{
+    const size_t Placed = Drawing.Points.size();
+    switch (Drawing.Solid)
+    {
+    case SolidArcConstructKind::Block:
+    case SolidArcConstructKind::Wedge:    return Placed == 0 ? (Drawing.CentreCondition ? "click the centre" : "click the first corner") : Placed == 1 ? "click the opposite corner" : "move up, click the height";
+    case SolidArcConstructKind::Cylinder:
+    case SolidArcConstructKind::Cone:     return Placed == 0 ? "click the base centre" : Placed == 1 ? "click the radius" : Drawing.Solid == SolidArcConstructKind::Cone ? "move up, click the apex height" : "move up, click the height";
+    case SolidArcConstructKind::Sphere:   return Placed == 0 ? "click the centre" : "click the radius";
+    case SolidArcConstructKind::Torus:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click the major radius (ring centre line)" : "click the tube (minor) radius";
+    case SolidArcConstructKind::Prism:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click a vertex (+ / − sides)" : "move up, click the height";
+    case SolidArcConstructKind::Tube:     return Placed == 0 ? "click the centre" : Placed == 1 ? "click the outer radius" : Placed == 2 ? "click the bore radius" : "move up, click the height";
+    }
+    return "click";
+}
+
+void FinishSolidSession(SolidArcWorkspaceState& State);
+
 // World point → frame pixel (absolute); false behind the eye.
 bool ProjectWorldPoint(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, Vector3 Point, ImVec2& Pixel)
 {
@@ -741,11 +772,6 @@ bool IntersectSketchPlane(const OrbitCameraFrame& Frame, ImVec2 Local, const Ort
     const Vector3 Hit = Origin + Direction * (Dot(Plane.Origin - Origin, Plane.ZAxis) / Facing);
     Point = { Dot(Hit - Plane.Origin, Plane.XAxis), Dot(Hit - Plane.Origin, Plane.YAxis) };
     return true;
-}
-
-bool IntersectConstructionPlane(const OrbitCameraFrame& Frame, ImVec2 Local, int GridPlane, Vector2& Point)
-{
-    return IntersectSketchPlane(Frame, Local, SolidArcSketchPlane(GridPlane), Point);
 }
 
 [[nodiscard]] SolidArcDrawingRequest ComposeDrawingRequest(const SolidArcDrawingSession& Drawing, bool PointerCondition, bool ClosedCondition)
@@ -1049,35 +1075,6 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
 //        Cylinder · Cone  centre, radius, height                 Torus    centre, major radius, minor radius
 //        Prism            centre, vertex (± sides), height       Tube     centre, outer radius, bore radius, height
 
-// Plane clicks before the height (or before the solid, when it has no height).
-[[nodiscard]] size_t SolidPlaneClicks(SolidArcConstructKind Kind)
-{
-    return Kind == SolidArcConstructKind::Torus || Kind == SolidArcConstructKind::Tube ? 3 : 2;
-}
-
-[[nodiscard]] bool SolidLiftedCondition(SolidArcConstructKind Kind)
-{
-    return Kind != SolidArcConstructKind::Sphere && Kind != SolidArcConstructKind::Torus;
-}
-
-// Prompt for the next click of a solid session.
-[[nodiscard]] const char* SolidPrompt(const SolidArcDrawingSession& Drawing)
-{
-    const size_t Placed = Drawing.Points.size();
-    switch (Drawing.Solid)
-    {
-    case SolidArcConstructKind::Block:
-    case SolidArcConstructKind::Wedge:    return Placed == 0 ? (Drawing.CentreCondition ? "click the centre" : "click the first corner") : Placed == 1 ? "click the opposite corner" : "move up, click the height";
-    case SolidArcConstructKind::Cylinder:
-    case SolidArcConstructKind::Cone:     return Placed == 0 ? "click the base centre" : Placed == 1 ? "click the radius" : Drawing.Solid == SolidArcConstructKind::Cone ? "move up, click the apex height" : "move up, click the height";
-    case SolidArcConstructKind::Sphere:   return Placed == 0 ? "click the centre" : "click the radius";
-    case SolidArcConstructKind::Torus:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click the major radius (ring centre line)" : "click the tube (minor) radius";
-    case SolidArcConstructKind::Prism:    return Placed == 0 ? "click the centre" : Placed == 1 ? "click a vertex (+ / − sides)" : "move up, click the height";
-    case SolidArcConstructKind::Tube:     return Placed == 0 ? "click the centre" : Placed == 1 ? "click the outer radius" : Placed == 2 ? "click the bore radius" : "move up, click the height";
-    }
-    return "click";
-}
-
 // The solid the clicks (and, with PointerCondition, the pointer) describe so far. Refusal text while incomplete.
 std::string ComposeSolidRequest(const SolidArcDrawingSession& Drawing, bool PointerCondition, SolidArcConstructRequest& Request)
 {
@@ -1243,6 +1240,8 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     if (Object.Kind == SolidArcSnapKind::Face && Object.Normal.Z < 0.999) return false;              // Only an upward flat face is a floor
     State.Picker.Current = Object;
     Point = { Object.Position.X, Object.Position.Y };
+    if (Object.Kind == SolidArcSnapKind::Face)
+        Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };   // On a floor face the grid still holds
     Drawing.PointerElevation = Object.Position.Z;
     return true;
 }
@@ -1514,8 +1513,15 @@ void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
             DrawDimensionLine(State, Frame, Canvas, Spot, Rim, DimensionText("R", Request.Radius), ImVec2(0.0f, -14.0f));
             if (Drawing.Solid == SolidArcConstructKind::Tube && Request.Inner > 0.0)
                 DrawDimensionLine(State, Frame, Canvas, Spot, { Spot.X - Request.Inner, Spot.Y, Spot.Z }, DimensionText("r", Request.Inner), ImVec2(0.0f, 14.0f));
-            else if (!Prism) DrawDimensionLine(State, Frame, Canvas, { Spot.X, Spot.Y - Request.Radius, Spot.Z }, { Spot.X, Spot.Y + Request.Radius, Spot.Z },
-                                               DimensionText("Ø", 2.0 * Request.Radius), ImVec2(16.0f, 0.0f));
+            else if (!Prism)
+            {
+                // Diameter outside the base ring (on the far side from the radius line), so the pills never overlap.
+                const double Out = Request.Radius * 1.25 + 0.05;
+                DrawConstructionLine(State, Frame, Canvas, { Spot.X - Request.Radius, Spot.Y, Spot.Z }, { Spot.X - Request.Radius, Spot.Y - Out, Spot.Z });
+                DrawConstructionLine(State, Frame, Canvas, { Spot.X + Request.Radius, Spot.Y, Spot.Z }, { Spot.X + Request.Radius, Spot.Y - Out, Spot.Z });
+                DrawDimensionLine(State, Frame, Canvas, { Spot.X - Request.Radius, Spot.Y - Out, Spot.Z }, { Spot.X + Request.Radius, Spot.Y - Out, Spot.Z },
+                                  DimensionText("Ø", 2.0 * Request.Radius));
+            }
             if (Prism)
             {
                 const double  Next = Turn + 2.0 * std::numbers::pi / Count;
@@ -5430,7 +5436,8 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     {
         const ConstructTile& Entry = Tiles[Index];
         const PlaneExtent   Tile  = Spanning(TilesLeft + float(Index % 4) * (TileWidth + 6.0f), Body + 10.0f + float(Index / 4) * (72.0f + 6.0f), TileWidth, 72.0f);
-        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Construct") + Entry.Label, Tile);
+        const std::string   Name  = Entry.SolidCondition ? std::string("Construct") + SolidArcConstructLabel(Entry.Solid) : std::string("ConstructSketch") + SolidArcDrawingLabel(Entry.Sketch) + (Entry.CentreCondition ? "Centre" : "");
+        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Name, Tile);
         Sheet.Box(Tile, SolidArcWash(Press.HoveredCondition ? 0x1e : 0x0c), 8.0f, SolidArcWash(Press.HoveredCondition ? 0x3c : 0x12));
         const float Stack = 24.0f + 9.0f + 10.0f * SolidArcStyleTokens::FontScale;
         const float GlyphTop = Tile.MinimumY + 0.5f * (72.0f - Stack);

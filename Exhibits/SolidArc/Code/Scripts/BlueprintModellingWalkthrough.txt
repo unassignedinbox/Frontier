@@ -119,6 +119,8 @@ click @ConstructLauncher
 frames 2
 click @ConstructCylinder
 frames 2
+key Tab
+frames 2
 click @CombinationDifference
 click @ConstructAxisX
 click @ConstructX
@@ -151,6 +153,8 @@ click @ConstructLauncher
 frames 2
 click @ConstructCylinder
 frames 2
+key Tab
+frames 2
 click @CombinationDifference
 click @ConstructAxisX
 click @ConstructX
@@ -182,6 +186,8 @@ click @ConstructLauncher
 frames 2
 click @ConstructCylinder
 frames 2
+key Tab
+frames 2
 click @CombinationDifference
 click @ConstructAxisX
 click @ConstructX
@@ -212,6 +218,8 @@ expect volume < 6.89
 click @ConstructLauncher
 frames 2
 click @ConstructCylinder
+frames 2
+key Tab
 frames 2
 click @CombinationDifference
 click @ConstructAxisX

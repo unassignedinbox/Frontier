@@ -1,0 +1,22 @@
+{
+  "Frame": 193,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cone1 · Sketch", "Refused": false}, {"Label": "Revolve#6", "Caption": "Cone1 · Revolve", "Refused": false}],
+  "Body": {"Faces": 11, "Edges": 17, "Vertices": 12, "Genus": 0, "Volume": 4.319468915, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": true, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[1.5, 1.5], [2.1, 1.5]], "Solid": true, "SolidKind": "Prism", "Lift": 0.8, "Elevation": 0, "Sides": 7, "Combination": 4, "Refusal": ""},
+  "Undo": 3,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Prism: move up, click the height",
+  "Viewport": [322, 146, 926, 591]
+}

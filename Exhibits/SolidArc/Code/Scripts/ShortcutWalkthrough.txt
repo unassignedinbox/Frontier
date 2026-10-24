@@ -174,14 +174,17 @@ expect steps == 10
 expect volume > 10.99
 expect volume < 11.02
 
-# ⑪ Shift+X opens Construct · Cylinder; W picks Difference; Esc closes without a step
+# ⑪ Shift+X starts the drawn Cylinder (new body by default); W picks Difference; Esc aborts without a step
 key X Shift
 frames 2
-expect construct-open == 1
+expect drawing-solid == 1
+expect drawing-solid-kind == 1
+expect construct-combination == 4
 key W
 frames 1
 expect construct-combination == 2
 key Escape
 frames 2
+expect drawing-solid == 0
 expect construct-open == 0
 expect steps == 10

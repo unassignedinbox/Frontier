@@ -428,7 +428,7 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
         const float TextLeft = Launcher.MinimumX + 13.0f + 17.0f + 9.0f;
         const float TextTop  = Launcher.MinimumY + 17.0f;
         Sheet.Text(TextLeft, TextTop + 0.5f * LineOne, 13.0f, Tint, "Construct geometry");
-        Sheet.Text(TextLeft, TextTop + LineOne + 7.0f + 0.5f * LineTwo, 10.0f, Ink(0x898989), "Block · Cylinder · Sphere · Torus");
+        Sheet.Text(TextLeft, TextTop + LineOne + 7.0f + 0.5f * LineTwo, 10.0f, Ink(0x898989), "8 solids · 8 sketch tools · drawn in the viewport");
         NorthEastArrow(Sheet, Launcher.MaximumX - 13.0f - 4.0f, Centre, Tint);
         if (Press.ClickedCondition) Intent.Verb = SolidArcOutlinerVerb::Construct;
     }

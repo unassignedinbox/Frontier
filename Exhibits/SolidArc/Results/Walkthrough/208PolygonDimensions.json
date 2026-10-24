@@ -1,0 +1,22 @@
+{
+  "Frame": 312,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Cylinder1 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Cylinder1 · Extrude", "Refused": false}, {"Label": "Sketch#5", "Caption": "Cone1 · Sketch", "Refused": false}, {"Label": "Revolve#6", "Caption": "Cone1 · Revolve", "Refused": false}, {"Label": "Sketch#7", "Caption": "Prism1 · Sketch", "Refused": false}, {"Label": "Extrude#8", "Caption": "Prism1 · Extrude", "Refused": false}, {"Label": "Sketch#9", "Caption": "Torus1 · Sketch", "Refused": false}, {"Label": "Revolve#10", "Caption": "Torus1 · Revolve", "Refused": false}, {"Label": "Sketch#11", "Caption": "Block2 · Sketch", "Refused": false}, {"Label": "Extrude#12", "Caption": "Block2 · Extrude", "Refused": false}],
+  "Body": {"Faces": 27, "Edges": 52, "Vertices": 35, "Genus": 1, "Volume": 7.134083841, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
+  "Drawing": {"Active": true, "Kind": "Polygon", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[2.8, 0.3]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 7, "Combination": 4, "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Polygon on plane XY: click the centre, then a vertex · + / − sides · Esc aborts",
+  "Viewport": [322, 146, 926, 591]
+}
