@@ -113,7 +113,7 @@ An earlier control run C, from a folder inside this repository, walked up to the
 
 - 📝 **Closed form:** V = 3 − (1 − π/4)(R²·2 + r²) + ∫₀ʳ 𝑢max(𝑣)·h(𝑣) d𝑣. The integral is the overlap of the two notch prisms, where 𝑢max is the upright notch's reach and h is the bottom fillet's height. It is evaluated with Simpson's rule in 𝑠, with 𝑣 = r𝑠².
 - 🏁 **Gate:** `DocumentValidation.md` W39 (10 checks): 8 radii ≤ 2.1·10⁻¹² and ≤ 20 s each, plus the fillet and chamfer of size 1.5 refused with the document byte-equal.
-- 🔍 **Sweep:** before the fixes, a sweep of a block with a first fillet (12 edges × 4 sizes) followed by a second fillet or chamfer (12 sizes) found the six size-1.5 crashes, no stalls, and slow cases up to 2.2 s. It ran for 4,488 cases.
+- 🔍 **Sweep:** a block gets a first fillet or chamfer (12 edges × 4 sizes), then a second fillet or chamfer on every edge at 12 sizes. Before the fixes, 4,488 cases found the six size-1.5 crashes and slow cases up to 2.2 s. After the fixes, the full run of **52,128 cases** completed: 34,444 built, 17,684 refused, **0 crashes, 0 stalls, slowest 103 ms**.
 - ⚠️ **Still open:** the preview is still synchronous. A kernel case that is slow for another reason would still pause the window while it runs.
 
 ## 🏁 Linux regression
