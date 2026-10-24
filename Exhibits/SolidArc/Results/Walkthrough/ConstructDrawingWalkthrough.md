@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 376 frames · 26.472 s · slowest frame 321.421 ms
-- Script: _ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstructDrawingWalkthrough.txt
+- Frame: 1600 x 900 · 376 frames · 28.5699 s · slowest frame 362.256 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstructDrawingWalkthrough.txt
 - Expectations: 45 / 45 passed
 
 | Line | Expectation | Observed | Result |
@@ -55,18 +55,18 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 200ConstructSolids | 15 | `320c9cead11b2bf8` |
-| 201ConstructSketch | 24 | `768e5b9b3452841c` |
-| 202BoxBase | 55 | `100034b900c7f89d` |
-| 203BoxHeight | 68 | `902c41370823d482` |
-| 204CylinderHeight | 105 | `135615b63398600a` |
-| 205ConeHeight | 147 | `cf2a8caee42c7f9c` |
-| 206PrismHeight | 193 | `b3da29792c6bdadd` |
-| 207TorusTube | 235 | `3af9278142807f2d` |
-| 208PolygonDimensions | 312 | `2f6615dcdf955b6e` |
-| 209LineDimensions | 338 | `7e36d501402a268c` |
-| 210ConstructExact | 363 | `28032b6804f7ead7` |
-| 211ConstructBodies | 376 | `807f29e461512837` |
+| 200ConstructSolids | 15 | `4b6e435df7648aa6` |
+| 201ConstructSketch | 24 | `b7f9e1b9bd6a1a6a` |
+| 202BoxBase | 55 | `b907e5beb3558454` |
+| 203BoxHeight | 68 | `c53aae315bc5efcb` |
+| 204CylinderHeight | 105 | `692b6da528cb2465` |
+| 205ConeHeight | 147 | `37e15ec7ae5e6050` |
+| 206PrismHeight | 193 | `4b2e40e8bec858e5` |
+| 207TorusTube | 235 | `53c344e18fe016b1` |
+| 208PolygonDimensions | 312 | `247503de4f0e58fe` |
+| 209LineDimensions | 338 | `07a5f43bdd6151e4` |
+| 210ConstructExact | 363 | `19788885e0474ed4` |
+| 211ConstructBodies | 376 | `0075bdcf515d6e3d` |
 
 ## Journal
 
@@ -74,35 +74,35 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 8 ms
+- Block1 · New body · 6 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
-- Cylinder1 · New body · 19 ms
+- Cylinder1 · New body · 15 ms
 - Cone: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cone: click the radius
 - Cone: move up, click the apex height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Cone1 · New body · 21 ms
+- Cone1 · New body · 22 ms
 - Prism: click the centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - 7 sides
 - Prism: click a vertex (+ / − sides)
 - Prism: move up, click the height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Prism1 · New body · 29 ms
+- Prism1 · New body · 26 ms
 - Torus: click the centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Torus: click the major radius (ring centre line)
 - Torus: click the tube (minor) radius
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Torus1 · New body · 64 ms
+- Torus1 · New body · 52 ms
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block2 · New body · 50 ms
-- Polygon on plane XY: click the centre, then a vertex · + / − sides · Esc aborts
+- Block2 · New body · 38 ms
+- Polygon on plane XY (or the body face under the first click): click the centre, then a vertex · + / − sides · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Polygon1 · 40 ms
-- Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
+- Polygon1 · 35 ms
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Line aborted (document untouched)
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner

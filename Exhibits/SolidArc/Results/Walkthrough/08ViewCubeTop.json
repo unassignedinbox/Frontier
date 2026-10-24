@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 2,
   "Hover": "",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 6.232551794, "Target": [1.543576332, 1.399327478, 1.184619988], "Orthographic": false},
-  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)", "Verb": 0, "Profile": "", "Combination": 1},
-  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 6.232551794, "Target": [1.436227956, 1.434448492, 1.257440933], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
   "Status": "View Top (orientation cube)",
-  "Viewport": [320, 160, 930, 730]
+  "Viewport": [322, 146, 926, 591]
 }

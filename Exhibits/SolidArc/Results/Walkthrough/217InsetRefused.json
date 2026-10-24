@@ -17,6 +17,6 @@
   "Undo": 3,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Bevel size 0.8 m (pinned)",
-  "Viewport": [322, 146, 926, 651]
+  "Status": "Inset distance 0.8 m (pinned)",
+  "Viewport": [322, 146, 926, 591]
 }

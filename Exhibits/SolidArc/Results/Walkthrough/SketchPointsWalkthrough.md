@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 960 · 319 frames · 20.1138 s · slowest frame 365.297 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
+- Frame: 1600 x 900 · 319 frames · 18.8781 s · slowest frame 386.827 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
 | Line | Expectation | Observed | Result |
@@ -32,62 +32,62 @@
 | 121 | `picked-point-y ~ 1` | 1 | 🟢 |
 | 124 | `gizmo-target == 4` | points | 🟢 |
 | 133 | `live-staged == 1` | 1 | 🟢 |
-| 134 | `live-volume > 3.05` | 6 | 🟢 |
+| 134 | `live-volume > 3.05` | 6.6 | 🟢 |
 | 138 | `gizmo-commits == 1` | 1 | 🟢 |
-| 139 | `volume > 3.05` | 6 | 🟢 |
+| 139 | `volume > 3.05` | 6.6 | 🟢 |
 | 140 | `refused == 0` | 0 | 🟢 |
 | 145 | `picked-points == 2` | 2 | 🟢 |
 | 152 | `gizmo-modes == 7` | 7 | 🟢 |
 | 160 | `gizmo-target == 2` | bodies | 🟢 |
 | 170 | `live-staged == 1` | 1 | 🟢 |
-| 171 | `live-volume > 7.0` | 9.6 | 🟢 |
-| 172 | `volume < 7.0` | 6 | 🟢 |
+| 171 | `live-volume > 7.0` | 10.56 | 🟢 |
+| 172 | `volume < 7.0` | 6.6 | 🟢 |
 | 178 | `gizmo-commits == 1` | 1 | 🟢 |
-| 179 | `volume < 7.0` | 6 | 🟢 |
-| 180 | `volume > 3.05` | 6 | 🟢 |
+| 179 | `volume < 7.0` | 6.6 | 🟢 |
+| 180 | `volume > 3.05` | 6.6 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 23 | `d289a99170803503` |
-| 226SketchPoints | 204 | `7654700e764dc2ed` |
-| 227PointDragLive | 222 | `78ed12865f5dbcd7` |
-| 228PointGizmoLive | 245 | `7eac30d41ccc7f67` |
-| 229PointsGizmoAll | 278 | `fcb6aad84cbf76e3` |
-| 230BodyScaleLive | 308 | `7036b2d343ba8df1` |
+| 225SketchTools | 23 | `f0c13d00ffd96e8e` |
+| 226SketchPoints | 204 | `eded5762ea7447c6` |
+| 227PointDragLive | 222 | `c4f7db95292be3ec` |
+| 228PointGizmoLive | 245 | `898dac73f555a008` |
+| 229PointsGizmoAll | 278 | `5b5daa263c4b5b3e` |
+| 230BodyScaleLive | 308 | `52934c1c2c888646` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Line: click the start, then the end · Esc aborts
 - Line1 · 0 ms
-- Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Curve · Bezier: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchPoints/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Curve1 · Bezier · 0 ms
-- Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Curve · NURBS: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchPoints/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Curve2 · NURBS · 0 ms
-- Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Curve · Cubic spline: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Curve aborted (document untouched)
-- Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchPoints/Rec.solidarc
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 5 ms
-- Drag Line2.End of Rectangle1 · 7 ms
-- Drag Line2.End of Rectangle1 · 7 ms
-- Drag Line2.End of Rectangle1 · 10 ms
-- Gizmo Y move 1 · 1 sketch point · Drag Line2.End of Rectangle1 · 10 ms
+- Extrude1 · Rectangle1 · New · 6 ms
+- Drag Line2.End of Rectangle1 · 9 ms
+- Drag Line2.End of Rectangle1 · 9 ms
+- Drag Line2.End of Rectangle1 · 13 ms
+- Gizmo Y move 1.2 · 1 sketch point · Drag Line2.End of Rectangle1 · 13 ms
 - Rectangle1 · point 3 · 2 picked · the gizmo moves them in the sketch plane (drag a point to move it directly)
 - Gizmo: rotate
 - Gizmo: scale
 - Gizmo: move + rotate
 - Gizmo: rotate + scale
 - Gizmo: move + rotate + scale
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchPoints/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Selected Extrude1 (6 faces)
 - Gizmo cancelled

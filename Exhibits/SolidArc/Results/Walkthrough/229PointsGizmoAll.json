@@ -4,7 +4,7 @@
   "DocumentPath": "",
   "Dirty": true,
   "Steps": [{"Label": "Sketch#1", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Sketch#2", "Caption": "Curve1 · Sketch", "Refused": false}, {"Label": "Sketch#3", "Caption": "Curve2 · Sketch", "Refused": false}, {"Label": "Sketch#4", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Extrude#5", "Caption": "Extrude1 · Extrude", "Refused": false}],
-  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 6, "Sound": true},
+  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 6.6, "Sound": true},
   "Selection": {"Faces": [], "Edges": [], "Curves": []},
   "Curves": [],
   "Sheet": false,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Gizmo: move + rotate + scale",
-  "Viewport": [322, 146, 926, 651]
+  "Viewport": [322, 146, 926, 591]
 }
