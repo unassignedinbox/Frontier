@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 
 namespace Frontier::SolidArc
@@ -115,6 +116,23 @@ bool IconButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const std::
     return Press.ClickedCondition;
 }
 
+// The lock of a row (no SolidArc icon carries one): a 9 × 6 body under its shackle; unlocked, the shackle lifts off
+// its left leg.
+void LockGlyph(SolidArcSheet& Sheet, float CentreX, float CentreY, bool LockedCondition, ColorQuad Ink)
+{
+    Sheet.Box(Spanning(CentreX - 4.5f, CentreY - 0.5f, 9.0f, 6.0f), Ink, 1.5f);
+    const float Lift = LockedCondition ? 0.0f : 2.0f;
+    const float Top  = CentreY - 3.5f - Lift;                                                // Arc centre height
+    constexpr int Steps = 8;
+    for (int Index = 0; Index < Steps; ++Index)
+    {
+        const float From = 3.14159265f * (1.0f + float(Index) / Steps), To = 3.14159265f * (1.0f + float(Index + 1) / Steps);
+        Sheet.Line(CentreX + 3.0f * std::cos(From), Top + 3.0f * std::sin(From), CentreX + 3.0f * std::cos(To), Top + 3.0f * std::sin(To), Ink, 1.2f);
+    }
+    Sheet.Line(CentreX + 3.0f, Top, CentreX + 3.0f, CentreY - 0.5f, Ink, 1.2f);
+    Sheet.Line(CentreX - 3.0f, Top, CentreX - 3.0f, LockedCondition ? CentreY - 0.5f : Top + 1.0f, Ink, 1.2f);
+}
+
 // The ↗ of the Construct launcher (DM Sans has no U+2197): a 45° stroke with its two head strokes.
 void NorthEastArrow(SolidArcSheet& Sheet, float CentreX, float CentreY, ColorQuad Ink)
 {
@@ -144,6 +162,7 @@ std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState&
         Figure.Source          = SolidArcFigureSource::Body;
         Figure.Icon            = Body.SheetCondition ? IconSymbol::SolidArcSurface : IconSymbol::SolidArcBody;
         Figure.HiddenCondition = Document.Appearance.HiddenBodies.contains(Body.Key);
+        Figure.LockedCondition = SolidArcLockedCondition(Document, Body.Key);
         const auto Order = std::find(Picked.Bodies.begin(), Picked.Bodies.end(), Body.Key);
         Figure.Rank = Order == Picked.Bodies.end() ? -1 : int(Order - Picked.Bodies.begin());
         Figure.SelectedCondition = Figure.Rank >= 0;
@@ -159,9 +178,13 @@ std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState&
         Figure.Key      = Step.Label;
         Figure.Name     = CaptionOfStep(Document, Step.Label);
         Figure.Category = SolidArcFigureCategory::Curve;
-        if (Step.Kind == FeatureStepKind::Sketch && !SolidArcSketchConsumedCondition(Document, Step.Label))
+        Figure.HiddenCondition = SolidArcCurveHiddenCondition(Document, Step.Label);
+        Figure.LockedCondition = SolidArcLockedCondition(Document, Step.Label);
+        if (Step.Kind == FeatureStepKind::Sketch)
         {
+            // Extruded / revolved sketches stay listed, so their leftover lines can be hidden or locked too.
             const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
+            if (SolidArcSketchConsumedCondition(Document, Step.Label)) Figure.Name += " sketch";
             Figure.Source            = SolidArcFigureSource::Sketch;
             Figure.Icon              = SketchIcon(Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch);
             Figure.SelectedCondition = State.FocusedStep == Step.Label;
@@ -355,7 +378,8 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
             const float           Centre  = 0.5f * (Row.MinimumY + Row.MaximumY);
             const float           Opacity = Figure.HiddenCondition ? 0.45f : 1.0f;            // .hidden-figure
             const PlaneExtent     Eye     = Spanning(Row.MaximumX - 1.0f - 9.0f - 23.0f, Centre - 11.5f, 23.0f, 23.0f);
-            const SolidArcPress   Press   = PressSolidArcRegion(State.Widgets, "Figure:" + Figure.Key, PlaneExtent{ Row.MinimumX, Row.MinimumY, Eye.MinimumX - 4.0f, Row.MaximumY });
+            const PlaneExtent     Lock    = Spanning(Eye.MinimumX - 2.0f - 23.0f, Centre - 11.5f, 23.0f, 23.0f);
+            const SolidArcPress   Press   = PressSolidArcRegion(State.Widgets, "Figure:" + Figure.Key, PlaneExtent{ Row.MinimumX, Row.MinimumY, Lock.MinimumX - 4.0f, Row.MaximumY });
             const bool            Active  = Figure.SelectedCondition && Figure.Rank == 0;
             const ColorQuad       Accent  = Active ? Ink(ActiveInk) : Ink(SelectedInk);
             if (Figure.SelectedCondition)
@@ -373,17 +397,26 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
             char Tag[32];
             if (Figure.Rank >= 0) std::snprintf(Tag, sizeof(Tag), "%d %s", Figure.Rank + 1, Active ? "ACTIVE" : "SELECTED");
             else std::snprintf(Tag, sizeof(Tag), "%s", CategoryTag(Figure.Category));
-            const float TagWidth = Rows.TextRight(Eye.MinimumX - 9.0f, Centre, 8.0f, ControlKit::Faded(Figure.SelectedCondition ? Accent : Ink(0x666666), Opacity), Tag,
+            const float TagWidth = Rows.TextRight(Lock.MinimumX - 9.0f, Centre, 8.0f, ControlKit::Faded(Figure.SelectedCondition ? Accent : Ink(0x666666), Opacity), Tag,
                                                   SolidArcWeight::Light, 0.5f);
-            Rows.TextClipped(RowCursor, Centre, Eye.MinimumX - 9.0f - TagWidth - 9.0f - RowCursor, 11.0f, ControlKit::Faded(Ink(TextInk), Opacity), Figure.Name.c_str());
-            const SolidArcPress Toggle = PressSolidArcRegion(State.Widgets, "Visibility:" + Figure.Key, Eye, Figure.Source == SolidArcFigureSource::Body);
+            Rows.TextClipped(RowCursor, Centre, Lock.MinimumX - 9.0f - TagWidth - 9.0f - RowCursor, 11.0f, ControlKit::Faded(Ink(TextInk), Opacity), Figure.Name.c_str());
+            const SolidArcPress Toggle = PressSolidArcRegion(State.Widgets, "Visibility:" + Figure.Key, Eye);
             if (Toggle.HoveredCondition) Rows.Box(Eye, Ink(HoverFill), 11.5f);
-            const ColorQuad EyeInk = Figure.Source != SolidArcFigureSource::Body ? Ink(0x858585, 0.3f) : Toggle.HoveredCondition ? Ink(0xffffff) : Ink(0x858585);
+            const ColorQuad EyeInk = Toggle.HoveredCondition ? Ink(0xffffff) : Ink(0x858585);
             Rows.Icon(Figure.HiddenCondition ? IconSymbol::SolidArcHidden : IconSymbol::SolidArcEye, Eye.MinimumX + 4.5f, Eye.MinimumY + 4.5f, 14.0f,
                       ControlKit::Faded(EyeInk, Opacity));
+            const SolidArcPress Latch = PressSolidArcRegion(State.Widgets, "Lock:" + Figure.Key, Lock);
+            if (Latch.HoveredCondition) Rows.Box(Lock, Ink(HoverFill), 11.5f);
+            const ColorQuad LockInk = Latch.HoveredCondition ? Ink(0xffffff) : Figure.LockedCondition ? Ink(0xffd24d) : Ink(0x858585, 0.55f);
+            LockGlyph(Rows, 0.5f * (Lock.MinimumX + Lock.MaximumX), 0.5f * (Lock.MinimumY + Lock.MaximumY), Figure.LockedCondition, ControlKit::Faded(LockInk, Opacity));
             if (Toggle.ClickedCondition)
             {
                 Intent.Verb   = SolidArcOutlinerVerb::ToggleVisibility;
+                Intent.Figure = Figure;
+            }
+            else if (Latch.ClickedCondition)
+            {
+                Intent.Verb   = SolidArcOutlinerVerb::ToggleLock;
                 Intent.Figure = Figure;
             }
             else if (Press.ClickedCondition)

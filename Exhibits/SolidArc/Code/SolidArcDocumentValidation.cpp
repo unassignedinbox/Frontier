@@ -103,6 +103,7 @@ namespace
     GateTally InsetGate       = { "W41", "Inset (Plasticity O on faces · I): block / cylinder / triangle-prism tops split flat, pocketed and bossed against closed forms with exact face counts; a depth edit regenerates; the pocket floor takes a second inset; codec byte-equal; too-wide / zero / curved refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
     GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
+    GateTally ShellGate       = { "W45", "Solid shells, sketch on a face, hide / lock: closed sections loft a capped solid of its own (two in one file), open sections refuse the solid and loft a sheet; sketches drawn on a level and an upright body face extrude onto it; sketch / body hide and lock are undoable appearance entries that survive the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -3860,7 +3861,134 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate })
+    // ---- W45 Solid loft shells, sketches drawn on body faces, hide / lock of sketches and bodies
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format  = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Frustum = [](double Low, double High, double Height) { return Height / 3.0 * (Low + High + std::sqrt(Low * High)); };
+        const auto Disc    = [](SolidArcDocument& Document, Vector2 Centre, double Radius, double Height)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = SolidArcDrawingKind::Circle; Request.CentreCondition = true; Request.Points = { Centre, { Centre.X + Radius, Centre.Y } };
+            Expect(DrawSolidArcSketch(Document, Request));
+            const std::string Label = Document.Tree.Steps.back().Label;
+            if (Height != 0.0) Expect(PlaceSolidArcSketches(Document, { Label }, TranslationMap({ 0.0, 0.0, Height }), "Move"));
+            return Label;
+        };
+
+        // ① closed sections: circle r 1 → circle r 0.5 lifted 1.5 lofts a capped solid of its own (no Close step)
+        SolidArcDocument Shells = CreateSolidArcDocument("Shells");
+        const std::string Low  = Disc(Shells, { 0.0, 0.0 }, 1.0, 0.0);
+        const std::string High = Disc(Shells, { 0.0, 0.0 }, 0.5, 1.5);
+        const SolidArcCommandOutcome First = LoftSolidArcCurves(Shells, { Low, High }, 0, true);
+        const double Cone     = Frustum(π, 0.25 * π, 1.5);
+        double       Relative = std::abs(Shells.Summary.Volume - Cone) / Cone;
+        Tally(ShellGate, Relative, First.AcceptedCondition && Relative <= 1.0e-9 && Shells.Summary.SoundCondition && !Shells.Summary.SheetCondition && Shells.Summary.Faces == 3 && Shells.Summary.Bodies.size() == 1,
+              Format("%s: V %.12f vs frustum %.12f, %d faces (skin + 2 caps), sound, 1 body", First.Label.c_str(), Shells.Summary.Volume, Cone, Shells.Summary.Faces));
+
+        // ② a second solid loft in the same file (beside x = 4): two bodies, volumes add (a panel Close allows only one)
+        const std::string Left  = Disc(Shells, { 4.0, 0.0 }, 1.0, 0.0);
+        const std::string Right = Disc(Shells, { 4.0, 0.0 }, 1.0, 2.0);
+        const SolidArcCommandOutcome Second = LoftSolidArcCurves(Shells, { Left, Right }, 0, true);
+        const double Sum = Cone + 2.0 * π;
+        Relative = std::abs(Shells.Summary.Volume - Sum) / Sum;
+        Tally(ShellGate, Relative, Second.AcceptedCondition && Relative <= 1.0e-9 && Shells.Summary.Bodies.size() == 2 && Shells.Summary.SoundCondition,
+              Format("%s: 2 bodies, V %.12f vs frustum + 2π %.12f", Second.Label.c_str(), Shells.Summary.Volume, Sum));
+
+        // ③ codec: Closed = true on the solid lofts survives save → load → save byte-equal
+        {
+            const std::string          Written = EncodeSolidArcDocument(Shells);
+            const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+            SolidArcDocument Copy = CreateSolidArcDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Copy, true);
+            Tally(ShellGate, std::abs(Copy.Summary.Volume - Shells.Summary.Volume), Read.Refusal.empty() && EncodeSolidArcDocument(Copy) == Written && Copy.Summary.Volume == Shells.Summary.Volume
+                  && Written.find("Closed = true") != std::string::npos, Format("codec: %d bytes byte-equal, same volume, solid lofts carry Closed = true", int(Written.size())));
+        }
+
+        // ④ open sections (two lines) refuse the solid with the file and history untouched, then loft a sheet
+        {
+            SolidArcDocument Open = CreateSolidArcDocument("Shells");
+            Expect(DrawSolidArcSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 } })));
+            const std::string Near = Open.Tree.Steps.back().Label;
+            Expect(DrawSolidArcSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 2.0, 1.0 } })));
+            const std::string Far = Open.Tree.Steps.back().Label;
+            Expect(PlaceSolidArcSketches(Open, { Far }, TranslationMap({ 0.0, 0.0, 1.0 }), "Move"));
+            const std::string Before  = EncodeSolidArcDocument(Open);
+            const size_t      History = Open.UndoEntries.size();
+            const SolidArcCommandOutcome Solid = LoftSolidArcCurves(Open, { Near, Far }, 0, true);
+            const bool Untouched = EncodeSolidArcDocument(Open) == Before && Open.UndoEntries.size() == History;
+            const SolidArcCommandOutcome Sheet = LoftSolidArcCurves(Open, { Near, Far });
+            Tally(ShellGate, 0.0, !Solid.AcceptedCondition && Untouched && Sheet.AcceptedCondition && Open.Summary.SheetCondition,
+                  "open sections: solid refused (" + Solid.Refusal + "), file untouched; the plain loft makes a sheet");
+        }
+
+        // ⑤ sketch on a face: a 2 × 2 × 1 block; a 1 × 1 square on its top face (z = 1) and a 1 × 0.5 one on its x = 2 face,
+        //    each extruded 0.5 onto the block → V 4 + 0.5 + 0.25; a skewed frame refuses atomically
+        {
+            SolidArcDocument Block = CreateSolidArcDocument("Faces");
+            Expect(DrawSolidArcSketch(Block, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 2.0 } })));
+            Expect(ExtrudeSolidArcSketch(Block, Block.Tree.Steps.back().Label, 1.0, FeatureCombination::New));
+            SolidArcDrawingRequest Top = DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.5, 0.5 }, { 1.5, 1.5 } });
+            Top.PlaneCondition = true;
+            Top.Plane          = { { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+            const SolidArcCommandOutcome OnTop = DrawSolidArcSketch(Block, Top);
+            const std::string TopLabel = Block.Tree.Steps.back().Label;
+            const SolidArcCommandOutcome Raised = ExtrudeSolidArcSketch(Block, TopLabel, 0.5, FeatureCombination::Union);
+            Relative = std::abs(Block.Summary.Volume - 4.5) / 4.5;
+            Tally(ShellGate, Relative, OnTop.AcceptedCondition && Raised.AcceptedCondition && Relative <= 1.0e-9 && Block.Summary.SoundCondition && Block.Tree.Steps[Block.Tree.Steps.size() - 2].Plane.Origin.Z == 1.0,
+                  Format("%s on the top face (plane z = 1) → %s: V %.12f vs 4.5", OnTop.Label.c_str(), Raised.Label.c_str(), Block.Summary.Volume));
+            SolidArcDrawingRequest Side = DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.5, 0.25 }, { 1.5, 0.75 } });
+            Side.PlaneCondition = true;
+            Side.Plane          = { { 2.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } };   // x̂ = ẑ × n̂, ŷ = n̂ × x̂
+            const SolidArcCommandOutcome OnSide = DrawSolidArcSketch(Block, Side);
+            const SolidArcCommandOutcome Out    = ExtrudeSolidArcSketch(Block, Block.Tree.Steps.back().Label, 0.5, FeatureCombination::Union);
+            Relative = std::abs(Block.Summary.Volume - 4.75) / 4.75;
+            Tally(ShellGate, Relative, OnSide.AcceptedCondition && Out.AcceptedCondition && Relative <= 1.0e-9 && Block.Summary.SoundCondition,
+                  Format("%s on the x = 2 face (n̂ = x̂) → %s: V %.12f vs 4.75", OnSide.Label.c_str(), Out.Label.c_str(), Block.Summary.Volume));
+            const std::string Before = EncodeSolidArcDocument(Block);
+            SolidArcDrawingRequest Skewed = Side;
+            Skewed.Plane.XAxis = { 0.0, 1.0, 0.1 };
+            const SolidArcCommandOutcome Refused = DrawSolidArcSketch(Block, Skewed);
+            Tally(ShellGate, 0.0, !Refused.AcceptedCondition && EncodeSolidArcDocument(Block) == Before, "skewed face frame refused, file untouched: " + Refused.Refusal);
+        }
+
+        // ⑥ hide / lock: Outliner eye on a sketch, lock on a sketch and on a body — undoable appearance entries, codec byte-equal
+        {
+            SolidArcDocument Figures = CreateSolidArcDocument("Figures");
+            Expect(DrawSolidArcSketch(Figures, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
+            const std::string Plate = Figures.Tree.Steps.back().Label;
+            Expect(ExtrudeSolidArcSketch(Figures, Plate, 1.0, FeatureCombination::New));
+            const std::string Body = Figures.Summary.Bodies.front().Key;
+            Expect(DrawSolidArcSketch(Figures, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.0 }, { 3.5, 0.0 } }, false, true)));
+            const std::string Round = Figures.Tree.Steps.back().Label;
+            SelectSolidArcCurve(Figures, Round, false);
+            SelectSolidArcName(Figures, SolidArcSelectionKind::Body, Body, true);
+            const double Volume  = Figures.Summary.Volume;
+            const size_t History = Figures.UndoEntries.size();
+            const SolidArcCommandOutcome Hide     = ToggleSolidArcCurveVisibility(Figures, Round);
+            const SolidArcCommandOutcome LockOne  = ToggleSolidArcLock(Figures, Plate);
+            const SolidArcCommandOutcome LockBody = ToggleSolidArcLock(Figures, Body);
+            const bool Applied = Hide.AcceptedCondition && LockOne.AcceptedCondition && LockBody.AcceptedCondition && SolidArcCurveHiddenCondition(Figures, Round)
+                              && SolidArcLockedCondition(Figures, Plate) && SolidArcLockedCondition(Figures, Body) && Figures.Selection.Curves.empty() && Figures.Selection.Bodies.empty()
+                              && Figures.UndoEntries.size() == History + 3 && Figures.Summary.Volume == Volume;
+            Tally(ShellGate, 0.0, Applied, "hide " + Round + ", lock " + Plate + " and body " + Body + ": 3 undo entries, both leave the selection, geometry unchanged");
+            const std::string          Written = EncodeSolidArcDocument(Figures);
+            const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+            SolidArcDocument Copy = CreateSolidArcDocument(Read.Title);
+            Copy.Tree = Read.Tree; Copy.Captions = Read.Captions; Copy.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Copy, true);
+            Tally(ShellGate, 0.0, Read.Refusal.empty() && EncodeSolidArcDocument(Copy) == Written && Copy.Appearance.HiddenCurves == Figures.Appearance.HiddenCurves
+                  && Copy.Appearance.LockedFigures == Figures.Appearance.LockedFigures && Written.find("HiddenCurves") != std::string::npos && Written.find("Locked") != std::string::npos,
+                  Format("codec: HiddenCurves %d · Locked %d survive save → load → save byte-equal", int(Copy.Appearance.HiddenCurves.size()), int(Copy.Appearance.LockedFigures.size())));
+            const bool Undone = UndoSolidArcCommand(Figures) && UndoSolidArcCommand(Figures) && UndoSolidArcCommand(Figures);
+            const SolidArcCommandOutcome Unknown = ToggleSolidArcLock(Figures, "Sketch#99");
+            Tally(ShellGate, 0.0, Undone && Figures.Appearance.HiddenCurves.empty() && Figures.Appearance.LockedFigures.empty() && !Unknown.AcceptedCondition && Figures.UndoEntries.size() == History,
+                  "three undos clear hide and locks; unknown figure refused: " + Unknown.Refusal);
+        }
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

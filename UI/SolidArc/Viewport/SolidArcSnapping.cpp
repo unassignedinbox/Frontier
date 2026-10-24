@@ -511,7 +511,7 @@ SolidArcSnapCatalogue CatalogueSolidArcSnaps(const SolidArcDocument& Document, c
     std::vector<PlacedSegment> Placed;
     for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps)
     {
-        if (Step.Kind != GeometryProcessing::FeatureStepKind::Sketch || ExcludedCondition(Step.Label)) continue;
+        if (Step.Kind != GeometryProcessing::FeatureStepKind::Sketch || ExcludedCondition(Step.Label) || Document.Appearance.HiddenCurves.contains(Step.Label)) continue;
         const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
         const GeometryProcessing::SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
         GeometryProcessing::OrthonormalFrame Plane = Step.Plane;
@@ -573,7 +573,7 @@ SolidArcSnapCatalogue CatalogueSolidArcSnaps(const SolidArcDocument& Document, c
     // ---- Fitted SpaceCurves (NURBS over [0, 1])
     for (const auto& [Label, Fit] : Document.Regeneration.Curves)
     {
-        if (!Fit.Curve.Definition || ExcludedCondition(Label)) continue;
+        if (!Fit.Curve.Definition || ExcludedCondition(Label) || Document.Appearance.HiddenCurves.contains(Label)) continue;
         SolidArcSnapCurve Curve;
         const auto Caption = Document.Captions.find(Label);
         Curve.Source  = "Curve " + (Caption != Document.Captions.end() ? Caption->second : Label);

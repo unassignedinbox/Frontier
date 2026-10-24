@@ -198,6 +198,7 @@ constexpr int64_t FormatVersion = 1;                                            
         for (const std::string& Section : Step.Sections) Sections.push_back(Section);
         Table.insert("Sections", std::move(Sections));
         if (Step.Continuity != 0) Table.insert("Continuity", static_cast<int64_t>(Step.Continuity));
+        if (Step.ClosedCondition) Table.insert("Closed", true);                            // Solid loft (written only when set: older bytes stay)
         break;
     }
     case FeatureStepKind::Mirror:
@@ -390,7 +391,7 @@ constexpr int64_t FormatVersion = 1;                                            
 [[nodiscard]] bool DefaultAppearanceCondition(const SolidArcAppearance& Appearance)
 {
     return Appearance.BodyMatcap == SolidArcStudioMatcap && Appearance.BodyMatcaps.empty() && Appearance.FaceMatcaps.empty() && Appearance.HiddenBodies.empty()
-        && Appearance.CustomMatcaps.empty();
+        && Appearance.CustomMatcaps.empty() && Appearance.HiddenCurves.empty() && Appearance.LockedFigures.empty();
 }
 
 [[nodiscard]] toml::table EncodeAppearance(const SolidArcAppearance& Appearance)
@@ -410,6 +411,18 @@ constexpr int64_t FormatVersion = 1;                                            
         toml::array Hidden;
         for (const std::string& Key : Appearance.HiddenBodies) Hidden.push_back(Key);
         Table.insert("Hidden", std::move(Hidden));
+    }
+    if (!Appearance.HiddenCurves.empty())
+    {
+        toml::array Hidden;
+        for (const std::string& Label : Appearance.HiddenCurves) Hidden.push_back(Label);
+        Table.insert("HiddenCurves", std::move(Hidden));
+    }
+    if (!Appearance.LockedFigures.empty())
+    {
+        toml::array Locked;
+        for (const std::string& Key : Appearance.LockedFigures) Locked.push_back(Key);
+        Table.insert("Locked", std::move(Locked));
     }
     return Table;
 }
@@ -463,6 +476,24 @@ constexpr int64_t FormatVersion = 1;                                            
             const std::string Key = Entry.value_or(std::string{});
             if (Key.empty()) return "Appearance: a hidden entry is not a body key";
             Appearance.HiddenBodies.insert(Key);
+        }
+    }
+    if (const toml::array* Hidden = (*Table)["HiddenCurves"].as_array())
+    {
+        for (const toml::node& Entry : *Hidden)
+        {
+            const std::string Label = Entry.value_or(std::string{});
+            if (Label.empty()) return "Appearance: a hidden curve entry is not a step label";
+            Appearance.HiddenCurves.insert(Label);
+        }
+    }
+    if (const toml::array* Locked = (*Table)["Locked"].as_array())
+    {
+        for (const toml::node& Entry : *Locked)
+        {
+            const std::string Key = Entry.value_or(std::string{});
+            if (Key.empty()) return "Appearance: a locked entry is not a body key or step label";
+            Appearance.LockedFigures.insert(Key);
         }
     }
     return {};

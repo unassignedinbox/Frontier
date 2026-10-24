@@ -49,6 +49,7 @@ enum class SolidArcOutlinerVerb : uint8_t
     Pick             = 1,                                                                    // Row click (Shift / Ctrl: extend)
     ToggleVisibility = 2,                                                                    // Row eye button
     Construct        = 3,                                                                    // Construct launcher / collection +
+    ToggleLock       = 4,                                                                    // Row lock button
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -62,7 +63,8 @@ struct SolidArcFigure
     SolidArcFigureCategory Category          = SolidArcFigureCategory::Body;                 // [-] - Colour, tag, filter
     SolidArcFigureSource   Source            = SolidArcFigureSource::Body;                   // [-] - What a pick selects
     IconSymbol             Icon              = IconSymbol::SolidArcBody;                     // [-] - Row glyph
-    bool                   HiddenCondition   = false;                                        // [-] - Out of view (Plasticity H)
+    bool                   HiddenCondition   = false;                                        // [-] - Out of view (Plasticity H / Outliner eye)
+    bool                   LockedCondition   = false;                                        // [-] - In view, not pickable (Outliner lock)
     bool                   SelectedCondition = false;                                        // [-] - Picked, or a face / edge of it is
     int                    Rank              = -1;                                           // [-] - Pick order (0 = active), −1 unpicked
 };
@@ -89,7 +91,7 @@ struct SolidArcOutlinerIntent
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// Bodies (creation order), then unconsumed sketches and space curves (tree order), with selection and visibility.
+// Bodies (creation order), then sketches and space curves (tree order), with selection, visibility and lock.
 [[nodiscard]] std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState& State);
 
 // Draws the panel into the current ImGui window over Panel (logical px) and returns the action of this frame.

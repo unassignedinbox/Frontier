@@ -102,6 +102,8 @@ struct SolidArcDrawingRequest
     bool                           CentreCondition = false;                                  // [-]   - Rectangle: centre + corner · circle: centre + rim (else two diameter ends)
     GeometryProcessing::SketchSplineForm     Form            = GeometryProcessing::SketchSplineForm::CubicSpline; // [-]  - Curve form (Plasticity 1 … 4)
     int                            Sides           = 6;                                      // [-]   - Polygon sides (3 … 64)
+    bool                           PlaneCondition  = false;                                  // [-]   - Plane below replaces GridPlane (drawn on a body face)
+    GeometryProcessing::OrthonormalFrame     Plane           = {};                                     // [len] - Face plane (origin, x̂, ŷ, n̂) when PlaneCondition
 };
 
 // 📝 Selection is stored as persistent names, so it survives regeneration whenever the names still resolve.
@@ -389,6 +391,15 @@ struct SolidArcJointOrigin
 // Outliner eye: hides one body, or shows it again (appearance: undoable, saved, no regeneration).
 [[nodiscard]] SolidArcCommandOutcome ToggleSolidArcBodyVisibility(SolidArcDocument& Document, const std::string& Key);
 
+// Outliner eye on a sketch / space curve: out of view, picking and snapping (lofts and extrudes still read it).
+[[nodiscard]] SolidArcCommandOutcome ToggleSolidArcCurveVisibility(SolidArcDocument& Document, const std::string& Label);
+
+// Outliner lock on a body, sketch or space curve: stays in view but cannot be picked, dragged or moved (appearance).
+[[nodiscard]] SolidArcCommandOutcome ToggleSolidArcLock(SolidArcDocument& Document, const std::string& Key);
+
+[[nodiscard]] bool SolidArcCurveHiddenCondition(const SolidArcDocument& Document, const std::string& Label) noexcept;
+[[nodiscard]] bool SolidArcLockedCondition(const SolidArcDocument& Document, const std::string& Key) noexcept;
+
 // Plasticity J: the coplanar sketches merge into the first (ends welded, frame constraints carried); the others are
 // removed. Refused when a merged sketch feeds a later step.
 [[nodiscard]] SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Sketches);
@@ -531,7 +542,9 @@ struct SolidArcStepReading;
 //    circle, spline: Sketch/SketchSection.h) in the given order (Plasticity L), G0 / G1 / G2 (Continuity 0–2) to a
 //    panel already ending on its first or last section; when the picked curves cross each other (DetectCurveNetwork)
 //    a Network step (Gordon / Coons, V5) is made instead — order does not matter there, and G1 / G2 refuses (🚧).
-[[nodiscard]] SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels, int Continuity = 0);
+//    SolidCondition (G0 sections only): the skin and its two plane caps close into a solid of its own; open sections refuse.
+[[nodiscard]] SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels, int Continuity = 0,
+                                                       bool SolidCondition = false);
 
 // 💡 V7 (Plasticity Alt+X, gizmo x / y / z): Mirror step through the world plane normal to Axis (0 x · 1 y · 2 z) at the
 //    origin; SpaceCurves ending on that plane are re-fitted to leave it along its normal, so lofted halves meet G1.

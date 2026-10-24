@@ -52,6 +52,8 @@ struct SolidArcAppearance
     std::map<std::string, std::string> FaceMatcaps   = {};                                   // [-] - Persistent face name → matcap
     std::vector<SolidArcCustomMatcap>  CustomMatcaps = {};                                   // [-] - User pictures, in layer order
     std::set<std::string>              HiddenBodies  = {};                                   // [-] - Body keys out of view and picking (Plasticity H)
+    std::set<std::string>              HiddenCurves  = {};                                   // [-] - Sketch / curve labels out of view, picking and snapping
+    std::set<std::string>              LockedFigures = {};                                   // [-] - Body keys and curve labels shown but not pickable
 };
 
 // One built-in matcap: its name, caption and the look it was composed for.

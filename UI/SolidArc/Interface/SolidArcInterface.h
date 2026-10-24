@@ -148,10 +148,16 @@ struct SolidArcDrawingSession
     double                         PointerElevation = 0.0;                                   // [len] - Height the pointer snapped to before the first click
     double                         Lift             = 0.0;                                   // [len] - Height from the pointer (signed, along +z)
     GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate;   // [-] - Solid: R new body (default) · Q / W / E
+    bool                           FacePlaneCondition = false;                               // [-]   - Sketch: drawn on the body face under the first click
+    GeometryProcessing::OrthonormalFrame     FacePlane        = {};                                    // [len] - That face plane (grid-aligned axes, outward n̂)
+    std::string                    FaceName         = {};                                    // [-]   - Persistent name of the face (empty: grid plane)
+    uint64_t                       FaceRevision     = 0;                                     // [-]   - Document revision FacePlane was resolved at
 };
 
 // 📝 Point picker (Plasticity body[gizmo=point-picker]): object snaps under the pointer while drawing and moving, and
-//    the direction lock keys n / b / t / x / y / z through the last placed point. Ctrl suspends snapping while held.
+//    the direction lock keys n / b / t / x / y / z through the last placed point. Object snaps act only while Ctrl is
+//    held, and only at the important points (ends, midpoints, centres, crossings, tangent / square feet); without Ctrl
+//    the pointer keeps the 0.1 grid.
 struct SolidArcPointPicker
 {
     bool                                   Enabled         = true;                           // [-]   - Object snaps on (Inspector)

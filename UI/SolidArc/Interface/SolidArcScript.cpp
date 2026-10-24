@@ -259,6 +259,18 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "sweep-hover") { Text = State.Sweep.HoverSketch; Number = double(State.Sweep.HoverCurve); return true; }
     if (Field == "sweep-preview") return Numeric(State.Sweep.Preview ? 1 : 0);
     if (Field == "hidden") return Numeric(double(Document.Appearance.HiddenBodies.size()));
+    if (Field == "hidden-curves") return Numeric(double(Document.Appearance.HiddenCurves.size()));
+    if (Field == "locked") return Numeric(double(Document.Appearance.LockedFigures.size()));
+    if (Field == "face-plane") { Text = State.Drawing.FacePlaneCondition ? State.Drawing.FaceName : std::string(); Number = State.Drawing.FacePlaneCondition ? 1.0 : 0.0; return true; }
+    if (Field == "face-plane-z") return Numeric(State.Drawing.FacePlaneCondition ? State.Drawing.FacePlane.Origin.Z : 0.0);
+    if (Field == "last-sketch-z" || Field == "last-sketch-normal-z")
+    {
+        // 📝 The newest sketch step's plane: its origin height, or the z of its normal.
+        for (auto Step = Document.Tree.Steps.rbegin(); Step != Document.Tree.Steps.rend(); ++Step)
+            if (Step->Kind == GeometryProcessing::FeatureStepKind::Sketch) return Numeric(Field == "last-sketch-z" ? Step->Plane.Origin.Z : Step->Plane.ZAxis.Z);
+        return Numeric(0.0);
+    }
+    if (Field == "last-step") { Text = Document.Tree.Steps.empty() ? std::string() : Document.Tree.Steps.back().Label; Number = Document.Tree.Steps.empty() || !Document.Tree.Steps.back().ClosedCondition ? 0.0 : 1.0; return true; }
     if (Field == "scene-bodies") return Numeric(double(State.Scene.Bodies.size()));
     if (Field == "clipboard") return Numeric(double(State.Clipboard.Keys.size()));
     if (Field == "constrain") return Numeric(State.Constrain.ActiveCondition ? 1 : 0);
@@ -842,6 +854,7 @@ SolidArcScript ParseSolidArcScript(const std::string& Text)
             }
             Step.Anchoring = true;
             if (!ReadTarget(Words, Index, Step.Target)) { Refuse("move target"); continue; }
+            ReadModifiers(Words, Index, Step.Control, Step.Shift, Step.Alternate);   // move … Ctrl: hover with Ctrl held
             Push(Step);
             Push({});
         }
@@ -994,6 +1007,8 @@ std::string AdvanceSolidArcScript(SolidArcScript& Script, SolidArcWorkspaceState
         {
             Script.RevealFrames = 0;
             if (Step.Anchoring) Script.Anchor = Point;
+            Io.AddKeyEvent(ImGuiMod_Ctrl, Step.Control);                                  // held for this move (drags carry theirs)
+            Io.AddKeyEvent(ImGuiMod_Shift, Step.Shift);
             Io.AddMousePosEvent(Point.x, Point.y);
         }
         else Script.Expectations.push_back({ Step.Line, "target resolves", "unresolved target " + Step.Target.Widget, false });

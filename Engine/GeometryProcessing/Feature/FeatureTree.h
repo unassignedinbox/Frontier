@@ -140,7 +140,7 @@ struct FeatureStep
     std::vector<TopologyReference> References     = {};                                      // [-]   - Blend: edges · face operation: faces
     std::vector<Vector3>           Points         = {};                                      // [len] - SpaceCurve: imported points in order · FaceOperation
                                                                                              //         Tweak / Rotate: [0] = direction / axis (gizmo)
-    bool                           ClosedCondition = false;                                  // [-]   - SpaceCurve: the loop closes (last joins first)
+    bool                           ClosedCondition = false;                                  // [-]   - SpaceCurve: the loop closes (last joins first) · Loft: capped into a solid of its own
     bool                           PlanarCondition = false;                                  // [-]   - SpaceCurve: fit in the points' best plane (cap sections)
     FeatureValue                   Tolerance      = { 2.0e-4 };                              // [len] - SpaceCurve: fit tolerance (0.2 mm)
     std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit

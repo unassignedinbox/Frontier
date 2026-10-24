@@ -98,7 +98,7 @@ expect gizmo-commits == 5
 expect refused == 0
 capture 222GizmoFaceRotate
 
-# ⑨ loft sections: two circles drawn on the ground, the small one lifted by the gizmo, L lofts, Close caps it
+# ⑨ loft sections: two circles drawn on the ground, the small one lifted by the gizmo, L lofts them into a capped solid shell
 key N Ctrl
 frames 3
 click @GizmoMove
@@ -130,11 +130,11 @@ expect gizmo-commits == 6
 click world 1.0 0.0 0.0 Left Shift
 frames 3
 expect selected-curves == 2
+# closed sections loft a solid shell directly (the skin and its two plane caps; no Close step)
 key L
 frames 4
-expect panels > 0
-click @PanelClose
-frames 4
+expect panels == 0
+expect last-step == 1
 expect bodies == 1
 expect volume > 1
 expect sound == 1

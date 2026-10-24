@@ -750,6 +750,43 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 Sections.push_back(*Composed.Curve);
             }
             if (Report.Status == FeatureStepStatus::Refused) break;
+            if (Step.ClosedCondition)
+            {
+                // ⑤′ Solid loft (Plasticity: closed sections loft a solid): the skin and its two plane caps close into a
+                //    body of its own, keyed by the step, beside the panel-built body.
+                if (Step.Continuity != 0) { Refuse("Loft: a solid loft is G0 (G1 / G2 join a loft to neighbouring panels)"); break; }
+                // Clamped sections: a closed one starts and ends on the same pole.
+                size_t Open = Sections.size();
+                for (size_t Index = 0; Index < Sections.size() && Open == Sections.size(); ++Index)
+                {
+                    if (!Sections[Index].Definition) { Open = Index; break; }
+                    const std::vector<Vector3>& Poles = Sections[Index].Definition->Poles;
+                    if (Poles.size() < 2 || Distance(Poles.front(), Poles.back()) > 1.0e-9 * (1.0 + Length(Poles.front()))) Open = Index;
+                }
+                if (Open < Sections.size()) { Refuse("Loft: section " + Step.Sections[Open] + " is open, so the loft cannot close into a solid"); break; }
+                const LoftSurfaceOutcome Skin = LoftSectionSurface(Sections, LoftSettings{});
+                if (!Skin.Refusal.empty()) { Refuse(Skin.Refusal); break; }
+                PanelAssemblySettings Capping;
+                Capping.CapCondition = true;
+                const PanelAssemblyOutcome Assembly = AssemblePanels(Partition, { SurfacePanel{ Skin.Surface } }, Capping, "Close");
+                if (!Assembly.Refusal.empty()) { Refuse("Loft: " + Assembly.Refusal); break; }
+                if (!Assembly.SolidCondition)
+                {
+                    Refuse("Loft: open sections cannot close into a solid (" + std::to_string(Assembly.LaminarEdges) + " rim edges stay open)");
+                    break;
+                }
+                std::vector<FaceToken>   Faces = Assembly.Faces;
+                std::vector<std::string> Names = { Step.Label + ".Side(Surface)" };
+                for (size_t Cap = 0; Cap < Assembly.Caps.size(); ++Cap)
+                {
+                    Faces.push_back(Assembly.Caps[Cap]);
+                    Names.push_back(Step.Label + ".Cap(" + std::to_string(Cap) + ")");
+                }
+                Naming  = NamePanelBody(Partition, Assembly.Body, Faces, Names);
+                Current = Assembly.Body;
+                Create();
+                break;
+            }
             if (const std::string Blocked = PanelJoinRefusal("Loft"); !Blocked.empty()) { Refuse(Blocked); break; }
             // ⑥ G1 / G2 to the latest panel carrying an end section as its boundary (V6).
             LoftSettings Settings;

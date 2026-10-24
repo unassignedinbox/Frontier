@@ -749,8 +749,15 @@ OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State);
 }
 
 // The drawing plane of a session: the grid plane, raised by Elevation along its normal (solids: XY at the first click).
+// A sketch / curve the pointer may pick, drag or trim: neither hidden nor locked (Outliner eye / lock).
+[[nodiscard]] bool CurveReachableCondition(const SolidArcDocument& Document, const std::string& Label)
+{
+    return !SolidArcCurveHiddenCondition(Document, Label) && !SolidArcLockedCondition(Document, Label);
+}
+
 [[nodiscard]] OrthonormalFrame DrawingPlane(const SolidArcDrawingSession& Drawing)
 {
+    if (!Drawing.SolidCondition && Drawing.FacePlaneCondition) return Drawing.FacePlane;   // Sketch on a body face
     OrthonormalFrame Plane = SolidArcSketchPlane(Drawing.GridPlane);
     Plane.Origin = Plane.Origin + Plane.ZAxis * Drawing.Elevation;
     return Plane;
@@ -821,6 +828,8 @@ bool IntersectSketchPlane(const OrbitCameraFrame& Frame, ImVec2 Local, const Ort
     Request.Form            = Drawing.Form;
     Request.ClosedCondition = ClosedCondition;
     Request.Sides           = Drawing.Sides;
+    Request.PlaneCondition  = Drawing.FacePlaneCondition;
+    Request.Plane           = Drawing.FacePlane;
     if (PointerCondition && Drawing.PointerCondition) Request.Points.push_back(Drawing.Pointer);
     return Request;
 }
@@ -849,6 +858,7 @@ bool IntersectSketchPlane(const OrbitCameraFrame& Frame, ImVec2 Local, const Ort
     if (Drawing.Kind == SolidArcDrawingKind::Curve) Caption += std::string(" · ") + SketchSplineFormLabel(Drawing.Form);
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle) Caption += Drawing.CentreCondition ? " · centre" : " · corner";
     if (Drawing.Kind == SolidArcDrawingKind::Circle) Caption += Drawing.CentreCondition ? " · centre" : " · two-point";
+    if (Drawing.FacePlaneCondition) Caption += Drawing.FaceName.empty() ? std::string(" · level with the snap") : " · on face " + Drawing.FaceName;
     return Caption;
 }
 
@@ -869,7 +879,8 @@ void OpenDrawingSession(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
                                    "click both cap centres, then the rim", "click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point",
                                    "click the centre, then a vertex · + / − sides" };
     static const char* Planes[] = { "XY", "XZ", "YZ" };
-    Announce(State, std::string(SolidArcDrawingLabel(Kind)) + " on plane " + Planes[State.Drawing.GridPlane] + ": " + Hints[int(Kind)] + " · Esc aborts");
+    Announce(State, std::string(SolidArcDrawingLabel(Kind)) + " on plane " + Planes[State.Drawing.GridPlane] + " (or the body face under the first click): " + Hints[int(Kind)]
+                        + " · hold Ctrl to snap to ends / midpoints / centres · Esc aborts");
 }
 
 void CancelDrawingSession(SolidArcWorkspaceState& State)
@@ -963,19 +974,23 @@ SolidArcSnapCatalogue& SnapCatalogue(SolidArcWorkspaceState& State, const std::v
     SolidArcPointPicker& Picker = State.Picker;
     std::string Key;
     for (const std::string& Body : Excluded) Key += Body + ";";
+    for (const std::string& Hidden : State.Document.Appearance.HiddenCurves) Key += "~" + Hidden + ";";   // Hidden curves offer no snaps
     if (!Picker.Catalogue || Picker.Catalogue->Revision != State.Document.Revision || Picker.Catalogue->ExclusionKey != Key || Picker.SceneFaces != State.Scene.Faces.size())
     {
         Picker.Catalogue  = std::make_unique<SolidArcSnapCatalogue>(CatalogueSolidArcSnaps(State.Document, State.Scene, Excluded));
+        Picker.Catalogue->ExclusionKey = Key;                                                // Exclusions and hidden curves
         Picker.SceneFaces = State.Scene.Faces.size();
     }
     return *Picker.Catalogue;
 }
 
-// The snap under the pointer (None when snapping is off or Ctrl is held).
+// 📝 The snap under the pointer. Object snaps act only while Ctrl is held and only at the important points (ends,
+//    midpoints, centres, crossings, tangent / square feet) — never "somewhere on an edge or face" — so without Ctrl the
+//    pointer keeps the grid. AnchorCondition (the grab point of a move) snaps without Ctrl, faces and edges included.
 SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, std::optional<Vector3> Reference,
-                             std::vector<SolidArcSnapPoint> Transient, const std::vector<std::string>& Excluded, bool FaceCondition)
+                             std::vector<SolidArcSnapPoint> Transient, const std::vector<std::string>& Excluded, bool AnchorCondition)
 {
-    if (!State.Picker.Enabled || ImGui::GetIO().KeyCtrl) return {};
+    if (!State.Picker.Enabled || (!AnchorCondition && !ImGui::GetIO().KeyCtrl)) return {};
     SolidArcSnapQuery Query;
     Query.Frame       = Frame;
     Query.PixelX      = Local.x;
@@ -985,7 +1000,11 @@ SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFra
     Query.XRayEnabled = State.Style.XRayEnabled;
     Query.Section     = ActiveSectionClip(State);
     Query.Filter      = State.Picker.Filter;
-    Query.Filter.FaceEnabled = Query.Filter.FaceEnabled && FaceCondition;
+    if (!AnchorCondition)
+    {
+        Query.Filter.CurveEnabled = false;                                                   // Important points only
+        Query.Filter.FaceEnabled  = false;
+    }
     return FindSolidArcSnap(SnapCatalogue(State, Excluded), State.Document, State.Scene, Query);
 }
 
@@ -1053,8 +1072,9 @@ std::optional<Vector2> SnapOntoPlane(SolidArcWorkspaceState& State, const OrbitC
     return Vector2{ Dot(Object.Position - Plane.Origin, Plane.XAxis), Dot(Object.Position - Plane.Origin, Plane.YAxis) };
 }
 
-// The drawing pointer: on the lock line (aligned with a point snap, else 0.1 steps), else on an object snap projected
-// into the drawing plane, else on the 0.1 grid; Ctrl is free. Rectangle s squares the second corner.
+// The drawing pointer: on the lock line (aligned with a point snap, else 0.1 steps), else (Ctrl) on an important object
+// point projected into the drawing plane, else on the 0.1 grid (Ctrl with nothing in reach: free). Rectangle s squares
+// the second corner.
 void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, Vector2& Point)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
@@ -1268,19 +1288,86 @@ void PlaceSolidLift(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Drawing.Lift = Lift;
 }
 
-// Before the first click of a solid, a snap onto a body (face, edge, point) sets the plane height there.
+// 📝 Sketch on a face (Plasticity): the planar body face under the pointer offers its plane — outward normal n̂, x̂ along
+//    world x on level faces (else the horizontal n̂-perpendicular), ŷ = n̂ × x̂, origin at the foot of the world origin —
+//    so the 0.1 grid on the face lines up with the world grid. Resolved once per face and document revision.
+bool ResolveHoveredFacePlane(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, std::string& Name, OrthonormalFrame& Plane)
+{
+    const OrbitRay                    Ray  = CastOrbitRay(Frame, Local.x, Local.y);
+    const std::optional<SolidArcPick> Pick = PickSolidArcScene(State.Scene, Ray, 0.0, false, ActiveSectionClip(State));
+    if (!Pick || Pick->Identity == 0 || Pick->Identity == IdentitySectionCap || (Pick->Identity & IdentityEdgeBit)) return false;
+    const uint32_t Index = Pick->Identity - 1u;
+    if (Index >= State.Scene.Faces.size() || State.Scene.Faces[Index].Surface != "Plane") return false;
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    Name = State.Scene.Faces[Index].Name;
+    if (Name == Drawing.FaceName && Drawing.FaceRevision == State.Document.Revision) { Plane = Drawing.FacePlane; return true; }
+    const SolidArcJointOrigin Origin = ResolveSolidArcJointOrigin(State.Document, SolidArcSelectionKind::Face, Name);
+    if (!Origin.Refusal.empty() || !(Length(Origin.Frame.ZAxis) > 0.0)) return false;
+    Vector3 Normal = Normalize(Origin.Frame.ZAxis);
+    Vector3 XAxis  = { 1.0, 0.0, 0.0 };
+    if (std::abs(Normal.Z) > 1.0 - 1.0e-12) Normal = { 0.0, 0.0, Normal.Z > 0.0 ? 1.0 : -1.0 };   // Level face
+    else XAxis = Normalize(Cross(Vector3{ 0.0, 0.0, 1.0 }, Normal));
+    Plane = { Normal * Dot(Origin.Frame.Origin, Normal), XAxis, Cross(Normal, XAxis), Normal };
+    Drawing.FaceName     = Name;
+    Drawing.FacePlane    = Plane;
+    Drawing.FaceRevision = State.Document.Revision;
+    return true;
+}
+
+// Before the first click of a sketch: the drawing plane follows the planar face under the pointer; off a face, a Ctrl
+// snap keeps the face plane through it (else a grid-parallel plane through the snapped point); otherwise the grid plane.
+void FollowFacePlane(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    SolidArcDrawingSession& Drawing = State.Drawing;
+    if (Drawing.SolidCondition || !Drawing.Points.empty() || State.Picker.Lock != SolidArcSnapLockKind::None) return;
+    std::string      Name;
+    OrthonormalFrame Plane;
+    if (ResolveHoveredFacePlane(State, Frame, Local, Name, Plane))
+    {
+        Drawing.FacePlaneCondition = true;
+        Drawing.FacePlane          = Plane;
+        return;
+    }
+    const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
+    if (PointSnapCondition(Object.Kind))
+    {
+        const Vector3 Position = Object.Position;
+        if (Drawing.FacePlaneCondition && std::abs(Dot(Position - Drawing.FacePlane.Origin, Drawing.FacePlane.ZAxis)) <= 1.0e-9 * (1.0 + Length(Position))) return;
+        Plane = SolidArcSketchPlane(Drawing.GridPlane);
+        Plane.Origin = Plane.Origin + Plane.ZAxis * Dot(Position - Plane.Origin, Plane.ZAxis);   // Level with the snapped point
+        Drawing.FacePlaneCondition = std::abs(Dot(Position - SolidArcSketchPlane(Drawing.GridPlane).Origin, Plane.ZAxis)) > 1.0e-12;
+        Drawing.FacePlane          = Plane;
+        Drawing.FaceName.clear();                                                            // No face: the cache no longer holds
+        return;
+    }
+    Drawing.FacePlaneCondition = false;
+}
+
+// Before the first click of a solid: Ctrl snaps onto an important point (the plane height there); else a level body
+// face under the pointer is the floor, and the grid still holds on it.
 bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, Vector2& Point)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
-    const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, true);
+    const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
     State.Picker.Current = {};
-    if (Object.Kind == SolidArcSnapKind::None || Object.Kind == SolidArcSnapKind::Grid) return false;
-    if (Object.Kind == SolidArcSnapKind::Face && Object.Normal.Z < 0.999) return false;              // Only an upward flat face is a floor
-    State.Picker.Current = Object;
-    Point = { Object.Position.X, Object.Position.Y };
-    if (Object.Kind == SolidArcSnapKind::Face)
-        Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };   // On a floor face the grid still holds
-    Drawing.PointerElevation = Object.Position.Z;
+    if (PointSnapCondition(Object.Kind))
+    {
+        State.Picker.Current     = Object;
+        Point                    = { Object.Position.X, Object.Position.Y };
+        Drawing.PointerElevation = Object.Position.Z;
+        return true;
+    }
+    std::string      Name;
+    OrthonormalFrame Plane;
+    if (!ResolveHoveredFacePlane(State, Frame, Local, Name, Plane) || Plane.ZAxis.Z < 0.999) return false;   // Only an upward flat face is a floor
+    Vector2 Flat;
+    if (!IntersectSketchPlane(Frame, Local, Plane, Flat)) return false;
+    Point = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
+    State.Picker.Current.Kind     = SolidArcSnapKind::Face;
+    State.Picker.Current.Position = { Point.X, Point.Y, Plane.Origin.Z };
+    State.Picker.Current.Normal   = Plane.ZAxis;
+    State.Picker.Current.Source   = "Face " + Name;
+    Drawing.PointerElevation      = Plane.Origin.Z;
     return true;
 }
 
@@ -1808,7 +1895,7 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     const FeatureStep* Chosen  = nullptr;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || !CurveReachableCondition(State.Document, Step.Label)) continue;
         const auto Solved = State.Document.Regeneration.Sketches.find(Step.Label);
         if (Solved == State.Document.Regeneration.Sketches.end()) continue;
         const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, Step);
@@ -2936,7 +3023,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
                 return true;
             };
             Vector3 From, To;
-            const SolidArcSnap Target = Transform.AnchorCondition ? FindPointerSnap(State, Frame, Local, std::nullopt, {}, Transform.Keys, true) : SolidArcSnap{};
+            const SolidArcSnap Target = Transform.AnchorCondition ? FindPointerSnap(State, Frame, Local, std::nullopt, {}, Transform.Keys, false) : SolidArcSnap{};   // Ctrl
             State.Picker.Current = Target;
             if (Target.Kind != SolidArcSnapKind::None)
             {
@@ -3916,13 +4003,14 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
     const SolidArcDocument& Document = DisplayedSolidArcDocument(State);                     // live while a drag stages a preview
     for (const FeatureStep& Step : Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || SolidArcCurveHiddenCondition(Document, Step.Label)) continue;   // Outliner eye
         const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
         const SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
+        const bool  Locked   = SolidArcLockedCondition(Document, Step.Label);
         const bool  Focused  = Step.Label == State.FocusedStep
                             || std::find(Document.Selection.Curves.begin(), Document.Selection.Curves.end(), Step.Label) != Document.Selection.Curves.end();   // picked (loft order, gizmo)
         const bool  Consumed = SolidArcSketchConsumedCondition(Document, Step.Label);
-        const ImU32 Colour   = Focused ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : Consumed ? IM_COL32(0x7f, 0x9c, 0xbf, 0x90) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
+        const ImU32 Colour   = Focused ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : Consumed || Locked ? IM_COL32(0x7f, 0x9c, 0xbf, 0x90) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
         OrthonormalFrame Plane = Step.Plane;
         Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
         for (const SketchCurve& Curve : Sketch.Curves)
@@ -3945,7 +4033,7 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
             }
             Flush();
         }
-        if (State.PickMode != SolidArcPickMode::ControlPoint) continue;
+        if (State.PickMode != SolidArcPickMode::ControlPoint || Locked) continue;              // A locked sketch offers no points
         // 📝 Mode 1: Bezier / NURBS control polygons (their points are poles off the curve), then every defining point.
         for (const SketchCurve& Curve : Sketch.Curves)
         {
@@ -3981,7 +4069,7 @@ bool FindSketchPointNear(const SolidArcWorkspaceState& State, const OrbitCameraF
     Point = -1;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || !CurveReachableCondition(State.Document, Step.Label)) continue;
         const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
         const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
         for (int Index = 0; Index < int(Sketch.Points.size()); ++Index)
@@ -4001,7 +4089,7 @@ void RecordSketchPointWidgets(SolidArcWorkspaceState& State, const OrbitCameraFr
     if (State.PickMode != SolidArcPickMode::ControlPoint) return;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || !CurveReachableCondition(State.Document, Step.Label)) continue;
         const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
         const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
         for (int Index = 0; Index < int(Sketch.Points.size()); ++Index)
@@ -4042,7 +4130,7 @@ bool PickSketchPointsInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame
     SolidArcSketchPointSession& Points = State.SketchPoints;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || !CurveReachableCondition(State.Document, Step.Label)) continue;
         if (Intent != SolidArcPickIntent::Replace && !Points.Sketch.empty() && Step.Label != Points.Sketch) continue;
         const SketchModel&     Sketch = SolvedSketchOf(State.Document, Step);
         const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
@@ -4094,12 +4182,9 @@ void DriveSketchPointDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame&
         if (const std::optional<Vector3> Hit = IntersectGizmoPlane(CastOrbitRay(Frame, Local.x, Local.y), Plane.Origin, Plane.ZAxis))
         {
             Vector2 Flat{ Dot(*Hit - Plane.Origin, Plane.XAxis), Dot(*Hit - Plane.Origin, Plane.YAxis) };
-            if (!Io.KeyCtrl)
-            {
-                Flat = { std::round(Flat.X / 0.1) * 0.1, std::round(Flat.Y / 0.1) * 0.1 };
-                if (const std::optional<Vector2> Snap = SnapOntoPlane(State, Frame, Local, Plane, std::nullopt, {}, { Points.DragSketch })) Flat = *Snap;
-            }
-            else State.Picker.Current = {};
+            // Grid steps; Ctrl: the important points of other figures (free where none is in reach).
+            if (const std::optional<Vector2> Snap = SnapOntoPlane(State, Frame, Local, Plane, std::nullopt, {}, { Points.DragSketch })) Flat = *Snap;
+            else if (!Io.KeyCtrl) Flat = { std::round(Flat.X / 0.1) * 0.1, std::round(Flat.Y / 0.1) * 0.1 };
             Points.Target = Flat;
         }
     }
@@ -4256,6 +4341,7 @@ std::string FindCurveNear(const SolidArcWorkspaceState& State, const OrbitCamera
     float       Best = CurveReach;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
+        if (!CurveReachableCondition(State.Document, Step.Label)) continue;                  // Hidden or locked
         if (Step.Kind == FeatureStepKind::Sketch && !SolidArcSketchConsumedCondition(State.Document, Step.Label))
         {
             // Free sketches (loft sections, paths) pick like curves; an extruded sketch stays with its body.
@@ -4287,7 +4373,7 @@ bool FindPoleNear(const SolidArcWorkspaceState& State, const OrbitCameraFrame& F
     Pole = -1;
     for (const auto& [Candidate, Fit] : State.Document.Regeneration.Curves)
     {
-        if (!Fit.Curve.Definition || !PolesShownCondition(State, Candidate)) continue;
+        if (!Fit.Curve.Definition || !PolesShownCondition(State, Candidate) || !CurveReachableCondition(State.Document, Candidate)) continue;
         const std::vector<Vector3>& Poles = Fit.Curve.Definition->Poles;
         for (int Index = 0; Index < int(Poles.size()); ++Index)
         {
@@ -4343,7 +4429,7 @@ void DrawCurveOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const 
     for (const FeatureStep& Step : Document.Tree.Steps)
     {
         const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(Document, Step.Label) : nullptr;
-        if (!Fit) continue;
+        if (!Fit || SolidArcCurveHiddenCondition(Document, Step.Label)) continue;           // Outliner eye
         const NurbsCurveDefinition Shown  = DisplayedDefinition(State, Step.Label, *Fit->Curve.Definition);
         const int                  Order  = CurveOrder(State, Step.Label);
         const bool                 Moving = State.PoleDrag.ActiveCondition && State.PoleDrag.Label == Step.Label;
@@ -5469,17 +5555,32 @@ void ImportFile(SolidArcWorkspaceState& State, const std::string& Path)
     }
 }
 
-// L (Plasticity loft): the selected curves, in pick order, become a panel (crossing curves: a Gordon network).
+// L (Plasticity loft): the selected curves, in pick order. Closed sections loft a solid shell of its own (the skin and
+// its two plane caps); open sections — or G1 / G2 to a neighbour — loft a panel; crossing curves make a Gordon network.
 void LoftSelectedCurves(SolidArcWorkspaceState& State)
 {
     const std::vector<std::string> Curves = State.Document.Selection.Curves;
-    const SolidArcCommandOutcome   Outcome = LoftSolidArcCurves(State.Document, Curves, State.LoftContinuity);
+    SolidArcCommandOutcome         Outcome;
+    bool                           SolidCondition = false;
+    if (State.LoftContinuity == 0 && Curves.size() >= 2)
+    {
+        Outcome        = LoftSolidArcCurves(State.Document, Curves, 0, true);                // Refused (document untouched) when a section is open
+        SolidCondition = Outcome.AcceptedCondition;
+    }
+    if (!SolidCondition) Outcome = LoftSolidArcCurves(State.Document, Curves, State.LoftContinuity);
     Conclude(State, Outcome);
     if (!Outcome.AcceptedCondition) return;
+    if (SolidCondition)
+    {
+        Announce(State, Compose("Lofted %d closed section(s) into a solid shell (2 plane caps) · %s · %.0f ms", int(Curves.size()),
+                                State.Document.Summary.SoundCondition ? "sound" : "audit findings", Outcome.Milliseconds));
+        return;
+    }
     const bool NetworkCondition = !State.Document.Tree.Steps.empty() && State.Document.Tree.Steps.back().Kind == FeatureStepKind::Network;
     const char* Order = State.LoftContinuity == 2 ? " · G2" : State.LoftContinuity == 1 ? " · G1" : "";
-    Announce(State, Compose("%s %d curve(s) → panel%s (%s) · %d panel(s) · %.0f ms", NetworkCondition ? "Network of" : "Lofted", int(Curves.size()), NetworkCondition ? "" : Order,
-                            State.Document.Summary.SoundCondition ? "sound" : "audit findings", int(State.Document.Regeneration.Panels.size()), Outcome.Milliseconds));
+    Announce(State, Compose("%s %d curve(s) → panel%s (%s) · %d panel(s) · open sections stay a sheet · %.0f ms", NetworkCondition ? "Network of" : "Lofted", int(Curves.size()),
+                            NetworkCondition ? "" : Order, State.Document.Summary.SoundCondition ? "sound" : "audit findings", int(State.Document.Regeneration.Panels.size()),
+                            Outcome.Milliseconds));
 }
 
 // Alt+X (Plasticity mirror, gizmo x): every panel gets its image through x = 0; halves sew along the plane.
@@ -5591,6 +5692,18 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
         Identity = Behind ? Behind->Identity : 0;
     }
     if (Identity == IdentitySectionCap) Identity = 0;                                        // The section cap is no entity
+    if (Identity != 0)
+    {
+        // A locked body (Outliner lock) stays in view but takes no pick.
+        const uint32_t Index  = (Identity & ~IdentityEdgeBit) - 1u;
+        const uint32_t BodyAt = (Identity & IdentityEdgeBit) ? (Index < State.Scene.Edges.size() ? State.Scene.Edges[Index].Body : ~0u)
+                                                             : (Index < State.Scene.Faces.size() ? State.Scene.Faces[Index].Body : ~0u);
+        if (BodyAt < State.Scene.Bodies.size() && SolidArcLockedCondition(State.Document, State.Scene.Bodies[BodyAt].Key))
+        {
+            Announce(State, State.Scene.Bodies[BodyAt].Caption + " is locked (Outliner lock to unlock)");
+            return;
+        }
+    }
     if (Identity == 0)
     {
         if (Intent == SolidArcPickIntent::Replace && (!State.Document.Selection.Faces.empty() || !State.Document.Selection.Edges.empty()
@@ -5672,7 +5785,7 @@ void SelectInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, I
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
         const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(State.Document, Step.Label) : nullptr;
-        if (!Fit) continue;
+        if (!Fit || !CurveReachableCondition(State.Document, Step.Label)) continue;
         const std::vector<ImVec2> Pixels = ProjectFittedCurve(State, Frame, *Fit->Curve.Definition);
         if (int(Pixels.size()) != CurveSamples + 1) continue;                               // Partly off screen / behind the eye
         const bool Inside = std::all_of(Pixels.begin(), Pixels.end(), [&](ImVec2 Pixel) { return Pixel.x >= Low.x && Pixel.x <= High.x && Pixel.y >= Low.y && Pixel.y <= High.y; });
@@ -5690,6 +5803,8 @@ void SelectInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, I
         for (const uint32_t Index : EncloseSolidArcEdges(State.Scene, Frame, LocalLow, LocalHigh, State.Style.XRayEnabled, ActiveSectionClip(State)))
         {
             const std::string& Name = State.Scene.Edges[Index].Name;
+            const uint32_t     Body = State.Scene.Edges[Index].Body;
+            if (Body < State.Scene.Bodies.size() && SolidArcLockedCondition(State.Document, State.Scene.Bodies[Body].Key)) continue;   // Locked body
             const std::vector<std::string>& Edges = State.Document.Selection.Edges;
             const bool Member = std::find(Edges.begin(), Edges.end(), Name) != Edges.end();
             if (Intent == SolidArcPickIntent::Remove ? Member : !Member) SelectSolidArcName(State.Document, SolidArcSelectionKind::Edge, Name, true);
@@ -6264,6 +6379,34 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     ImGui::EndPopup();
 }
 
+// Outliner eye: a body leaves view and picking (Plasticity H); a sketch / curve also leaves snapping, and the focus.
+void ToggleFigureVisibility(SolidArcWorkspaceState& State, const SolidArcFigure& Figure)
+{
+    const bool BodyCondition = Figure.Source == SolidArcFigureSource::Body;
+    const SolidArcCommandOutcome Outcome = BodyCondition ? ToggleSolidArcBodyVisibility(State.Document, Figure.Key) : ToggleSolidArcCurveVisibility(State.Document, Figure.Key);
+    if (!Outcome.AcceptedCondition) { Announce(State, "Refused: " + Outcome.Refusal); return; }
+    const bool Hidden = BodyCondition ? State.Document.Appearance.HiddenBodies.contains(Figure.Key) : SolidArcCurveHiddenCondition(State.Document, Figure.Key);
+    if (BodyCondition) RefreshSolidArcScene(State, true);
+    else
+    {
+        if (Hidden && State.FocusedStep == Figure.Key) State.FocusedStep.clear();
+        MarkDirty(State);
+    }
+    Announce(State, Compose("%s %s", Figure.Name.c_str(), Hidden ? "hidden" : "shown"));
+}
+
+// Outliner lock: the figure stays in view but takes no pick, drag, gizmo or trim until unlocked.
+void ToggleFigureLock(SolidArcWorkspaceState& State, const SolidArcFigure& Figure)
+{
+    const SolidArcCommandOutcome Outcome = ToggleSolidArcLock(State.Document, Figure.Key);
+    if (!Outcome.AcceptedCondition) { Announce(State, "Refused: " + Outcome.Refusal); return; }
+    const bool Locked = SolidArcLockedCondition(State.Document, Figure.Key);
+    if (Locked && State.FocusedStep == Figure.Key) State.FocusedStep.clear();
+    if (Locked && State.SketchPoints.Sketch == Figure.Key) State.SketchPoints = {};
+    MarkDirty(State);
+    Announce(State, Compose("%s %s", Figure.Name.c_str(), Locked ? "locked (shown, not pickable)" : "unlocked"));
+}
+
 // The Outliner panel (SolidArcOutliner) and what its rows ask for.
 void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
@@ -6272,6 +6415,16 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     switch (Intent.Verb)
     {
     case SolidArcOutlinerVerb::Pick:
+        if (Intent.Figure.LockedCondition)
+        {
+            Announce(State, Intent.Figure.Name + " is locked · its lock button frees it");
+            break;
+        }
+        if (Intent.Figure.HiddenCondition && Intent.Figure.Source != SolidArcFigureSource::Body)
+        {
+            Announce(State, Intent.Figure.Name + " is hidden · its eye shows it");
+            break;
+        }
         switch (Intent.Figure.Source)
         {
         case SolidArcFigureSource::Body:
@@ -6295,19 +6448,11 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
         }
         break;
     case SolidArcOutlinerVerb::ToggleVisibility:
-    {
-        const SolidArcCommandOutcome Outcome = ToggleSolidArcBodyVisibility(State.Document, Intent.Figure.Key);
-        if (Outcome.AcceptedCondition)
-        {
-            RefreshSolidArcScene(State, true);
-            Announce(State, Compose("%s %s", Intent.Figure.Name.c_str(), State.Document.Appearance.HiddenBodies.contains(Intent.Figure.Key) ? "hidden" : "shown"));
-        }
-        else
-        {
-            Announce(State, "Refused: " + Outcome.Refusal);
-        }
+        ToggleFigureVisibility(State, Intent.Figure);
         break;
-    }
+    case SolidArcOutlinerVerb::ToggleLock:
+        ToggleFigureLock(State, Intent.Figure);
+        break;
     case SolidArcOutlinerVerb::Construct:
         State.ConstructMenuRequest = true;
         break;
@@ -6611,7 +6756,7 @@ void DrawViewportLabel(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, ImVe
         Sheet.Text(Box.MinimumX + 8.0f + 5.0f + 7.0f, Centre, 8.0f, SolidArcInk(0xdddddd), Text.c_str(), SolidArcWeight::Light, 1.2f);
         Cursor = Box.MaximumX + 9.0f;
     };
-    if (State.Style.XRayEnabled) ModePill("X-RAY", 0xc7d4e8);
+    if (State.Style.XRayEnabled) ModePill("X-RAY · ALT+Z", 0xc7d4e8);
     if (State.Measure.ActiveCondition) ModePill("MEASURE", 0xffc83d);
     if (State.Section.ActiveCondition) ModePill(DescribeSectionRequest(State.Section.Request), 0xdb614a);
     if (State.HoverIdentity != 0 && HoveredCondition)
@@ -6687,20 +6832,24 @@ void DrawSelectionRail(SolidArcWorkspaceState& State, ImVec2 Image)
     Sheet.Box(Rail, SolidArcInk(0x15191e, 0xdd / 255.0f), 22.0f, SolidArcWash(0x0a));
     const float Middle = 0.5f * (Rail.MinimumX + Rail.MaximumX);
     float       Y      = Rail.MinimumY + 1.0f + 7.0f;
-    const auto Round = [&](const char* Key, IconSymbol Glyph, bool Active)
+    const auto Round = [&](const char* Key, IconSymbol Glyph, bool Active, const char* Tip)
     {
         const PlaneExtent   Box   = Spanning(Middle - 0.5f * Button, Y, Button, Button);
         const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Key, Box);
+        if (Press.HoveredCondition) ImGui::SetTooltip("%s", Tip);
         if (Active || Press.HoveredCondition) Sheet.Box(Box, Active ? SolidArcWash(0x15) : SolidArcInk(0x292929), 0.5f * Button);
         Sheet.Icon(Glyph, Middle - 8.0f, Y + 0.5f * Button - 8.0f, 16.0f, SolidArcInk(Active || Press.HoveredCondition ? 0xeeeeee : 0xa7abb2));
         Y += Button + Gap;
         return Press.ClickedCondition;
     };
-    for (const RailButton& Entry : Buttons)
-        if (Round(Entry.Key, Entry.Glyph, State.PickMode == Entry.Mode)) State.PickMode = Entry.Mode;
+    static const char* const Tips[] = { "Solid mode (4): pick bodies", "Face mode (3): pick faces", "Edge mode (2): pick edges", "Point mode (1): curves, poles and sketch points" };
+    for (size_t Index = 0; Index < std::size(Buttons); ++Index)
+        if (Round(Buttons[Index].Key, Buttons[Index].Glyph, State.PickMode == Buttons[Index].Mode, Tips[Index])) State.PickMode = Buttons[Index].Mode;
     Sheet.Line(Middle - 9.0f, Y + 0.5f * Rule - 0.5f * Gap, Middle + 9.0f, Y + 0.5f * Rule - 0.5f * Gap, SolidArcWash(0x14));
     Y += Rule;
-    if (Round("XRayToggle", IconSymbol::SolidArcLayers, State.Style.XRayEnabled)) ToggleXRay(State);
+    if (Round("XRayToggle", IconSymbol::SolidArcLayers, State.Style.XRayEnabled, State.Style.XRayEnabled ? "X-ray on (Alt+Z): bodies are see-through · click for solid shading"
+                                                                                                           : "X-ray (Alt+Z): see through bodies · off by default"))
+        ToggleXRay(State);
     EndSheetWindow();
 }
 
@@ -7171,6 +7320,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         bool    Closing = false;
         const bool LiftStage = Drawing.SolidCondition && Drawing.Points.size() >= SolidPlaneClicks(Drawing.Solid);
         Drawing.PointerElevation = 0.0;
+        if (Hovered) FollowFacePlane(State, Frame, Local);                                   // Sketch: plane of the face under the first click
         Drawing.PointerCondition = Hovered && IntersectSketchPlane(Frame, Local, DrawingPlane(Drawing), Point);
         if (LiftStage)
         {
@@ -7415,12 +7565,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Drawing.ActiveCondition
                            ? (State.Drawing.SolidCondition ? "Draw on the ground or a body top (snaps, Ctrl free) · move up for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? "Click the centre, then a vertex (snaps, Ctrl free) · + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (snaps, Ctrl free) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (snaps, Ctrl free) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (snaps, Ctrl free) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (snaps, Ctrl free) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (snaps, Ctrl free) · x y z t n b lock · Ctrl+Z drop · Esc abort"
-                              : "Click both cap centres, then the rim (snaps, Ctrl free) · x y z t n b lock · Ctrl+Z drop · Esc abort")
+                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort"
+                              : "Click both cap centres, then the rim (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
@@ -7965,7 +8115,8 @@ void DrawDrawingCard(SolidArcWorkspaceState& State)
     }
     BeginCard(SolidArcDrawingLabel(Drawing.Kind));
     static const char* Planes[] = { "XY", "XZ", "YZ" };
-    ImGui::Text("Plane %s · %d point(s)", Planes[std::clamp(Drawing.GridPlane, 0, 2)], int(Drawing.Points.size()));
+    if (Drawing.FacePlaneCondition) ImGui::Text("On face %s · %d point(s)", Drawing.FaceName.c_str(), int(Drawing.Points.size()));
+    else                            ImGui::Text("Plane %s · %d point(s)", Planes[std::clamp(Drawing.GridPlane, 0, 2)], int(Drawing.Points.size()));
     if (Drawing.Kind == SolidArcDrawingKind::Curve)
     {
         static const struct { const char* Label; SketchSplineForm Form; } Forms[] = {

@@ -999,6 +999,16 @@ SolidArcCommandOutcome DrawSolidArcSketch(SolidArcDocument& Document, const Soli
         Step.Kind   = FeatureStepKind::Sketch;
         Step.Label  = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
         Step.Plane  = SolidArcSketchPlane(Request.GridPlane);
+        if (Request.PlaneCondition)
+        {
+            // Drawn on a body face: the face plane (orthonormal, finite) carries the sketch.
+            const OrthonormalFrame& Face = Request.Plane;
+            const bool Finite = std::isfinite(Face.Origin.X) && std::isfinite(Face.Origin.Y) && std::isfinite(Face.Origin.Z);
+            const bool Square = std::abs(Length(Face.XAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.YAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.ZAxis) - 1.0) < 1.0e-9
+                             && std::abs(Dot(Face.XAxis, Face.YAxis)) < 1.0e-9 && Length(Cross(Face.XAxis, Face.YAxis) - Face.ZAxis) < 1.0e-9;
+            if (!Finite || !Square) return "the face plane is not an orthonormal right-handed frame";
+            Step.Plane = Face;
+        }
         Step.Sketch = std::move(Sketch);
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
@@ -1113,7 +1123,7 @@ SolidArcCommandOutcome ImportSolidArcStep(SolidArcDocument& Document, const Soli
     });
 }
 
-SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels, int Continuity)
+SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels, int Continuity, bool SolidCondition)
 {
     // Curves that meet each other make a network; otherwise they are sections.
     std::vector<NurbsCurve> Fitted;
@@ -1125,7 +1135,7 @@ SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std:
     const bool        NetworkCondition = Fitted.size() == Labels.size() && Fitted.size() >= 4 && DetectCurveNetwork(Fitted, NetworkSettings{});
     const std::string Caption = NextCaption(Document, NetworkCondition ? "Network" : "Loft");
     const std::string Label   = Caption + " · " + std::to_string(Labels.size()) + (NetworkCondition ? " curves" : " sections")
-                              + (Continuity > 0 ? " · G" + std::to_string(Continuity) : std::string());
+                              + (Continuity > 0 ? " · G" + std::to_string(Continuity) : std::string()) + (SolidCondition && !NetworkCondition ? " · solid" : "");
     SolidArcCommandOutcome Outcome = RunCommand(Document, Label, false, [&]() -> std::string
     {
         if (Labels.size() < 2) return "loft needs at least 2 curves (select them in section order)";
@@ -1137,11 +1147,14 @@ SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std:
         }
         if (Continuity < 0 || Continuity > 2) return "continuity must be G0, G1 or G2";
         if (NetworkCondition && Continuity > 0) return "these curves cross (a network): G1 / G2 is available for section lofts only (🚧 networks)";
+        if (NetworkCondition && SolidCondition) return "these curves cross (a network): a solid loft needs closed sections in order";
+        if (SolidCondition && Continuity > 0) return "a solid loft is G0 (G1 / G2 join a loft to neighbouring panels)";
         FeatureStep Step;
         Step.Kind       = NetworkCondition ? FeatureStepKind::Network : FeatureStepKind::Loft;
         Step.Label      = (NetworkCondition ? "Network#" : "Loft#") + std::to_string(NextStepOrdinal(Document.Tree));
         Step.Sections   = Labels;
         Step.Continuity = Continuity;
+        Step.ClosedCondition = SolidCondition;
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
         return {};
@@ -1790,6 +1803,61 @@ SolidArcCommandOutcome ToggleSolidArcBodyVisibility(SolidArcDocument& Document, 
         }
         Hidden.insert(Key);
         // A hidden body leaves the selection.
+        std::erase(Document.Selection.Bodies, Key);
+        std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name) == Key; });
+        std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) == Key; });
+        return {};
+    });
+}
+
+bool SolidArcCurveHiddenCondition(const SolidArcDocument& Document, const std::string& Label) noexcept
+{
+    return Document.Appearance.HiddenCurves.contains(Label);
+}
+
+bool SolidArcLockedCondition(const SolidArcDocument& Document, const std::string& Key) noexcept
+{
+    return Document.Appearance.LockedFigures.contains(Key);
+}
+
+SolidArcCommandOutcome ToggleSolidArcCurveVisibility(SolidArcDocument& Document, const std::string& Label)
+{
+    const bool HiddenCondition = Document.Appearance.HiddenCurves.contains(Label);
+    return RunAppearanceCommand(Document, HiddenCondition ? "Show curve" : "Hide curve", [&]() -> std::string
+    {
+        const bool Present = std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step)
+                                         { return Step.Label == Label && (Step.Kind == FeatureStepKind::Sketch || Step.Kind == FeatureStepKind::SpaceCurve); });
+        if (!Present) return "no sketch or curve " + Label;
+        std::set<std::string>& Hidden = Document.Appearance.HiddenCurves;
+        if (HiddenCondition)
+        {
+            Hidden.erase(Label);
+            return {};
+        }
+        Hidden.insert(Label);
+        std::erase(Document.Selection.Curves, Label);                                       // A hidden curve leaves the selection
+        return {};
+    });
+}
+
+SolidArcCommandOutcome ToggleSolidArcLock(SolidArcDocument& Document, const std::string& Key)
+{
+    const bool LockedCondition = Document.Appearance.LockedFigures.contains(Key);
+    return RunAppearanceCommand(Document, LockedCondition ? "Unlock" : "Lock", [&]() -> std::string
+    {
+        const bool Body  = std::any_of(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(), [&](const RegeneratedBody& Entry) { return Entry.Key == Key; });
+        const bool Curve = std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step)
+                                       { return Step.Label == Key && (Step.Kind == FeatureStepKind::Sketch || Step.Kind == FeatureStepKind::SpaceCurve); });
+        if (!Body && !Curve) return "no body, sketch or curve " + Key;
+        std::set<std::string>& Locked = Document.Appearance.LockedFigures;
+        if (LockedCondition)
+        {
+            Locked.erase(Key);
+            return {};
+        }
+        Locked.insert(Key);
+        // A locked figure leaves the selection (it cannot be edited until unlocked).
+        std::erase(Document.Selection.Curves, Key);
         std::erase(Document.Selection.Bodies, Key);
         std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name) == Key; });
         std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) == Key; });

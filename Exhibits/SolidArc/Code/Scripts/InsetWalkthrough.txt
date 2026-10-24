@@ -71,8 +71,9 @@ expect volume ~ 2.7
 expect faces == 11
 capture 215InsetPocket
 
-# ⑤ I (alias): the pocket floor takes a second inset 0.1 raised +0.2 as a boss
-click world -1.0 -0.7 0.8
+# ⑤ I (alias): the pocket floor takes a second inset 0.1 raised +0.2 as a boss (picked off the gizmo standing on the
+#    floor centre: its handles fill the +x / +y quadrants)
+click world -1.5 -0.4 0.8
 frames 2
 key I
 frames 2
