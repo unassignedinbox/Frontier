@@ -167,6 +167,7 @@ constexpr int64_t FormatVersion = 1;                                            
     case FeatureStepKind::FaceOperation:
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
         Table.insert("Amount", EncodeValue(Step.Amount));
+        if (Step.Operation == FaceOperationKind::Inset) Table.insert("Extent", EncodeValue(Step.Extent));
         break;
     case FeatureStepKind::SpaceCurve:
     {

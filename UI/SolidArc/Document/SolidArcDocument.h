@@ -290,6 +290,8 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::BlendProfile Shape, double Size);
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request);
 [[nodiscard]] SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount);
+// Inset (Plasticity O on faces · I): border ring Distance wide; the inner face moves Depth along the outward normal (− pocket).
+[[nodiscard]] SolidArcCommandOutcome InsetSolidArcSelection(SolidArcDocument& Document, double Distance, double Depth);
 [[nodiscard]] SolidArcCommandOutcome AssignSolidArcParameter(SolidArcDocument& Document, const std::string& Name, double Value);
 [[nodiscard]] SolidArcCommandOutcome DeleteSolidArcStep(SolidArcDocument& Document, const std::string& Label);
 [[nodiscard]] SolidArcCommandOutcome ReplaceSolidArcTree(SolidArcDocument& Document, GeometryProcessing::FeatureTree Tree,

@@ -308,6 +308,303 @@ std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const 
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    INSET
+//------------------------------------------------------------------------------------------------------------------------
+
+namespace
+{
+    // 📝 One boundary edge offset into its face, in the face plane's chart (x, y): a line shifted along the inward
+    //    normal, or a concentric circle whose radius grows or shrinks by the distance.
+    struct InsetCarrier
+    {
+        bool    CircleCondition = false;                                                     // [-]   - Circle (else line)
+        Vector2 Origin          = {};                                                        // [len] - Line point · circle centre
+        Vector2 Direction       = {};                                                        // [-]   - Line direction (traversal)
+        double  Radius          = 0.0;                                                       // [len] - Circle radius
+    };
+
+    [[nodiscard]] Vector2 ChartPoint(const OrthonormalFrame& Plane, Vector3 Point)
+    {
+        return { Dot(Point - Plane.Origin, Plane.XAxis), Dot(Point - Plane.Origin, Plane.YAxis) };
+    }
+
+    [[nodiscard]] Vector3 SpacePoint(const OrthonormalFrame& Plane, Vector2 Point)
+    {
+        return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
+    }
+
+    [[nodiscard]] double ChartCross(Vector2 First, Vector2 Second) { return First.X * Second.Y - First.Y * Second.X; }
+
+    // Where two offset carriers meet: every crossing (0, 1 or 2 points).
+    [[nodiscard]] std::vector<Vector2> CrossInsetCarriers(const InsetCarrier& First, const InsetCarrier& Second)
+    {
+        std::vector<Vector2> Points;
+        if (!First.CircleCondition && !Second.CircleCondition)
+        {
+            const double Denominator = ChartCross(First.Direction, Second.Direction);
+            if (std::fabs(Denominator) < 1.0e-14) return Points;
+            const double Along = ChartCross(Second.Origin - First.Origin, Second.Direction) / Denominator;
+            Points.push_back(First.Origin + First.Direction * Along);
+            return Points;
+        }
+        if (First.CircleCondition != Second.CircleCondition)
+        {
+            const InsetCarrier& Line   = First.CircleCondition ? Second : First;
+            const InsetCarrier& Circle = First.CircleCondition ? First : Second;
+            const Vector2 Gap     = Line.Origin - Circle.Origin;
+            const double  Half    = Dot(Gap, Line.Direction);
+            const double  Discriminant = Half * Half - (Dot(Gap, Gap) - Circle.Radius * Circle.Radius);
+            if (Discriminant < -1.0e-12) return Points;
+            const double Root = std::sqrt(std::max(0.0, Discriminant));
+            Points.push_back(Line.Origin + Line.Direction * (-Half - Root));
+            Points.push_back(Line.Origin + Line.Direction * (-Half + Root));
+            return Points;
+        }
+        const Vector2 Gap  = Second.Origin - First.Origin;
+        const double  Span = Length(Gap);
+        if (Span < 1.0e-14) return Points;
+        const double Along  = (Span * Span + First.Radius * First.Radius - Second.Radius * Second.Radius) / (2.0 * Span);
+        const double Square = First.Radius * First.Radius - Along * Along;
+        if (Square < -1.0e-12) return Points;
+        const double  Height = std::sqrt(std::max(0.0, Square));
+        const Vector2 Unit   = Gap * (1.0 / Span);
+        const Vector2 Across{ -Unit.Y, Unit.X };
+        Points.push_back(First.Origin + Unit * Along + Across * Height);
+        Points.push_back(First.Origin + Unit * Along - Across * Height);
+        return Points;
+    }
+
+    // Proper crossing of two chart segments (shared end points do not count).
+    [[nodiscard]] bool SegmentsCross(Vector2 A, Vector2 B, Vector2 C, Vector2 D)
+    {
+        const double One   = ChartCross(B - A, C - A), Two = ChartCross(B - A, D - A);
+        const double Three = ChartCross(D - C, A - C), Four = ChartCross(D - C, B - C);
+        return One * Two < -1.0e-18 && Three * Four < -1.0e-18;
+    }
+}
+
+// 📝 Plasticity offset-curve on a face / Blender I: the boundary loop of each selected planar face is offset into the
+//    face by Distance; the face keeps its outer boundary and gains the offset loop as a hole (the border ring), and a new
+//    inner face fills the loop. With Depth ≠ 0 the inner face then moves along the outward normal (+ boss, − pocket)
+//    and a ring of side walls (planes over lines, cylinders over arcs) joins it to the border, exactly like extrude.
+//    Corners: tangent joints move along the common normal; other joints take the nearest crossing of the two offset
+//    carriers. An edge that would reverse or a loop that would cross itself is refused (inset too large).
+std::string InsetPlanarFaces(ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, double Distance, double Depth, BodyToken& Result,
+                             std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method)
+{
+    if (Faces.empty()) return "no faces selected";
+    if (!(Distance > 0.0)) return "inset distance must be positive";
+    BodyDescription Description;
+    if (std::string Refusal = DescribeBody(Partition, Body, Description); !Refusal.empty()) return Refusal;
+    BodyBlueprint&                 Blueprint = Description.Blueprint;
+    const double                   Tolerance = 1.0e-9 * Description.Scale;
+    std::vector<FaceChangeHistory> Planned;
+    for (size_t Index = 0; Index < Blueprint.Faces.size(); ++Index) Planned.push_back({ {}, FaceChangeOrigin::Unchanged, Description.Inventory.Faces[Index], {} });
+    std::set<int> Selected;
+    for (FaceToken Face : Faces) Selected.insert(Description.FaceIndex.at(Face.Slot));
+
+    int Walls = 0;
+    for (int Face : Selected)
+    {
+        const std::string Name  = LabelToken("F", Description.Inventory.Faces[Face]);
+        const auto*       Plane = std::get_if<PlaneSurface>(&Blueprint.Faces[Face].Surface);
+        if (!Plane) return Name + " is not planar";
+        if (Blueprint.Faces[Face].Loops.size() != 1) return Name + " has holes (🚧 inset of hole loops)";
+        const OrthonormalFrame Chart  = Plane->Frame;
+        const Vector3          Normal = Plane->Frame.ZAxis * SignOfSense(Blueprint.Faces[Face].Sense);
+        const std::vector<BlueprintUse> Loop = Blueprint.Faces[Face].Loops.front();
+        const size_t Count = Loop.size();
+
+        // ① Offset carriers, traversal tangents at both ends of every use.
+        std::vector<InsetCarrier> Carriers(Count);
+        std::vector<Vector3>      StartTangent(Count), EndTangent(Count);
+        std::vector<int>          FromVertex(Count), UntilVertex(Count);
+        for (size_t Index = 0; Index < Count; ++Index)
+        {
+            const BlueprintUse&  Use   = Loop[Index];
+            const BlueprintEdge& Edge  = Blueprint.Edges[Use.Edge];
+            const double         Sign  = SignOfSense(Use.Sense);
+            const double         From  = Use.Sense == Orientation::Forward ? Edge.Low : Edge.High;
+            const double         Until = Use.Sense == Orientation::Forward ? Edge.High : Edge.Low;
+            FromVertex[Index]   = Use.Sense == Orientation::Forward ? Edge.Start : Edge.End;
+            UntilVertex[Index]  = Use.Sense == Orientation::Forward ? Edge.End : Edge.Start;
+            StartTangent[Index] = Normalize(EvaluateCurve(Edge.Curve, From).Derivative) * Sign;
+            EndTangent[Index]   = Normalize(EvaluateCurve(Edge.Curve, Until).Derivative) * Sign;
+            if (const auto* Line = std::get_if<StraightLine>(&Edge.Curve))
+            {
+                const Vector3 Inward = Cross(Normal, StartTangent[Index]);
+                Carriers[Index].Origin    = ChartPoint(Chart, Line->Origin + Inward * Distance);
+                const Vector3 Ahead = Line->Direction * Sign;
+                Carriers[Index].Direction = { Dot(Ahead, Chart.XAxis), Dot(Ahead, Chart.YAxis) };
+            }
+            else if (const auto* Circle = std::get_if<CircularArc>(&Edge.Curve))
+            {
+                if (std::fabs(std::fabs(Dot(Circle->Frame.ZAxis, Normal)) - 1.0) > 1.0e-9) return "boundary arc of " + Name + " does not lie in its plane";
+                const Vector3 Point  = EvaluateCurve(Edge.Curve, From).Position;
+                const Vector3 Radial = Normalize(Point - Circle->Frame.Origin);
+                const double  Side   = Dot(Cross(Normal, StartTangent[Index]), Radial) > 0.0 ? 1.0 : -1.0;
+                Carriers[Index].CircleCondition = true;
+                Carriers[Index].Origin          = ChartPoint(Chart, Circle->Frame.Origin);
+                Carriers[Index].Radius          = Circle->Radius + Side * Distance;
+                if (Carriers[Index].Radius <= Tolerance) return "inset " + std::to_string(Distance) + " swallows a boundary arc of " + Name + " (radius " + std::to_string(Circle->Radius) + ")";
+            }
+            else return "boundary edge of " + Name + " is not a line or an arc (🚧 inset of curved boundaries)";
+        }
+
+        // ② Inset vertex at each junction (use Index ends where Index + 1 starts).
+        std::map<int, int>     Inset;                                                        // Vertex → inset vertex
+        std::map<int, Vector2> InsetChart;
+        for (size_t Index = 0; Index < Count; ++Index)
+        {
+            const size_t  Next   = (Index + 1) % Count;
+            const int     Vertex = UntilVertex[Index];
+            const Vector3 Corner = Blueprint.Vertices[Vertex].Position;
+            const Vector3 Inward = Cross(Normal, EndTangent[Index]);
+            Vector2       Placed = ChartPoint(Chart, Corner + Inward * Distance);
+            const bool    Smooth = Count == 1 || (Length(Cross(EndTangent[Index], StartTangent[Next])) < 1.0e-9 && Dot(EndTangent[Index], StartTangent[Next]) > 0.0);
+            if (!Smooth)
+            {
+                const std::vector<Vector2> Crossings = CrossInsetCarriers(Carriers[Index], Carriers[Next]);
+                if (Crossings.empty()) return "inset " + std::to_string(Distance) + " is too large for " + Name + " (offset edges no longer meet)";
+                const Vector2 Origin = ChartPoint(Chart, Corner);
+                Placed = *std::min_element(Crossings.begin(), Crossings.end(), [&](Vector2 First, Vector2 Second) { return Length(First - Origin) < Length(Second - Origin); });
+            }
+            Inset[Vertex]      = static_cast<int>(Blueprint.Vertices.size());
+            InsetChart[Vertex] = Placed;
+            Blueprint.Vertices.push_back({ SpacePoint(Chart, Placed) });
+        }
+
+        // ③ Inset edges on the offset carriers, same orientation as their source edges; reversal = inset too large.
+        std::vector<int> InsetEdges(Count);
+        std::vector<Vector2> Outline;                                                       // Sampled inset loop (chart)
+        for (size_t Index = 0; Index < Count; ++Index)
+        {
+            const BlueprintUse   Use  = Loop[Index];
+            const BlueprintEdge  Edge = Blueprint.Edges[Use.Edge];
+            BlueprintEdge        Offset;
+            Offset.Start = Inset.at(Edge.Start);
+            Offset.End   = Inset.at(Edge.End);
+            const Vector3 StartPoint = Blueprint.Vertices[Offset.Start].Position;
+            const Vector3 EndPoint   = Blueprint.Vertices[Offset.End].Position;
+            if (const auto* Line = std::get_if<StraightLine>(&Edge.Curve))
+            {
+                const Vector3 Origin = SpacePoint(Chart, Carriers[Index].Origin);
+                Offset.Curve = StraightLine{ Origin, Line->Direction };
+                Offset.Low   = Dot(StartPoint - Origin, Line->Direction);
+                Offset.High  = Dot(EndPoint - Origin, Line->Direction);
+                if (Offset.High - Offset.Low <= Tolerance) return "inset " + std::to_string(Distance) + " is too large for " + Name + " (an edge would vanish or reverse)";
+            }
+            else
+            {
+                CircularArc Circle = std::get<CircularArc>(Edge.Curve);
+                Circle.Radius = Carriers[Index].Radius;
+                const auto Angle = [&](Vector3 Point, double Near)
+                {
+                    const Vector3 Gap = Point - Circle.Frame.Origin;
+                    double θ = std::atan2(Dot(Gap, Circle.Frame.YAxis), Dot(Gap, Circle.Frame.XAxis));
+                    θ += τPeriod * std::round((Near - θ) / τPeriod);
+                    return θ;
+                };
+                Offset.Curve = Circle;
+                Offset.Low   = Angle(StartPoint, Edge.Low);
+                Offset.High  = Edge.Start == Edge.End ? Offset.Low + (Edge.High - Edge.Low) : Angle(EndPoint, Edge.High);
+                if (Offset.High - Offset.Low <= Tolerance || Offset.High - Offset.Low > τPeriod + 1.0e-9) return "inset " + std::to_string(Distance) + " is too large for " + Name + " (an arc would vanish or reverse)";
+            }
+            InsetEdges[Index] = static_cast<int>(Blueprint.Edges.size());
+            Blueprint.Edges.push_back(Offset);
+            const double From  = Use.Sense == Orientation::Forward ? Offset.Low : Offset.High;
+            const double Until = Use.Sense == Orientation::Forward ? Offset.High : Offset.Low;
+            for (int Step = 0; Step < 16; ++Step) Outline.push_back(ChartPoint(Chart, EvaluateCurve(Offset.Curve, From + (Until - From) * Step / 16.0).Position));
+        }
+        double Area = 0.0;
+        for (size_t Index = 0; Index < Outline.size(); ++Index) Area += ChartCross(Outline[Index], Outline[(Index + 1) % Outline.size()]);
+        if (Area * Dot(Chart.ZAxis, Normal) <= 0.0) return "inset " + std::to_string(Distance) + " is too large for " + Name + " (the loop turns inside out)";
+        for (size_t First = 0; First < Outline.size(); ++First)
+            for (size_t Second = First + 2; Second < Outline.size(); ++Second)
+            {
+                if (First == 0 && Second == Outline.size() - 1) continue;
+                if (SegmentsCross(Outline[First], Outline[(First + 1) % Outline.size()], Outline[Second], Outline[(Second + 1) % Outline.size()]))
+                    return "inset " + std::to_string(Distance) + " is too large for " + Name + " (the offset loop crosses itself)";
+            }
+
+        // ④ Border ring = the face with the inset loop as a hole; the inner face fills the loop.
+        std::vector<BlueprintUse> Hole, Inner;
+        for (size_t Index = Count; Index-- > 0;) Hole.push_back({ InsetEdges[Index], Loop[Index].Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward, ParameterLine{} });
+        for (size_t Index = 0; Index < Count; ++Index) Inner.push_back({ InsetEdges[Index], Loop[Index].Sense, ParameterLine{} });
+        FitLoopSurfaceCurves(Blueprint.Faces[Face].Surface, Blueprint, Hole);
+        Blueprint.Faces[Face].Loops.push_back(std::move(Hole));
+        Planned[Face].Origin = FaceChangeOrigin::Trimmed;
+        BlueprintFace Filling{ Blueprint.Faces[Face].Surface, Blueprint.Faces[Face].Sense, {} };
+
+        // ⑤ Depth: the inner face moves along ± normal, side walls over each inset edge (extrude construction).
+        if (std::fabs(Depth) > Tolerance)
+        {
+            const Vector3 Rise   = Normal * (Depth > 0.0 ? 1.0 : -1.0);
+            const Vector3 Lift   = Normal * Depth;
+            PlaneSurface  Moved  = *std::get_if<PlaneSurface>(&Filling.Surface);
+            Moved.Frame.Origin   = Moved.Frame.Origin + Lift;
+            Filling.Surface      = Moved;
+            std::map<int, int> Raised, Riser;
+            const auto RaisedVertex = [&](int Vertex)
+            {
+                if (!Raised.count(Vertex))
+                {
+                    Raised[Vertex] = static_cast<int>(Blueprint.Vertices.size());
+                    Blueprint.Vertices.push_back({ Blueprint.Vertices[Vertex].Position + Lift });
+                    Riser[Vertex] = static_cast<int>(Blueprint.Edges.size());
+                    Blueprint.Edges.push_back({ StraightLine{ Blueprint.Vertices[Vertex].Position, Rise }, 0.0, std::fabs(Depth), Vertex, Raised[Vertex] });
+                }
+                return Raised[Vertex];
+            };
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                BlueprintUse&       Use   = Inner[Index];
+                const BlueprintEdge Lower = Blueprint.Edges[Use.Edge];
+                CurveGeometry       Upper = Lower.Curve;
+                if (auto* Line = std::get_if<StraightLine>(&Upper)) Line->Origin = Line->Origin + Lift;
+                else std::get<CircularArc>(Upper).Frame.Origin = std::get<CircularArc>(Upper).Frame.Origin + Lift;
+                const int UpperStart = RaisedVertex(Lower.Start);
+                const int UpperEnd   = RaisedVertex(Lower.End);
+                const int Top        = static_cast<int>(Blueprint.Edges.size());
+                Blueprint.Edges.push_back({ Upper, Lower.Low, Lower.High, UpperStart, UpperEnd });
+                const int     From    = Use.Sense == Orientation::Forward ? Lower.Start : Lower.End;
+                const int     Until   = Use.Sense == Orientation::Forward ? Lower.End : Lower.Start;
+                const double  Middle  = 0.5 * (Lower.Low + Lower.High);
+                const Vector3 Tangent = Normalize(EvaluateCurve(Lower.Curve, Middle).Derivative) * SignOfSense(Use.Sense);
+                const Vector3 Outward = Cross(Tangent, Rise);
+                BlueprintFace Wall;
+                if (const auto* Line = std::get_if<StraightLine>(&Lower.Curve))
+                {
+                    Wall.Surface = PlaneSurface{ ConstructFrame(Line->Origin, Outward, Tangent) };
+                    Wall.Sense   = Orientation::Forward;
+                }
+                else
+                {
+                    const CircularArc& Circle = std::get<CircularArc>(Lower.Curve);
+                    Wall.Surface = CylinderSurface{ ConstructFrame(Circle.Frame.Origin, Normal, Circle.Frame.XAxis), Circle.Radius };
+                    const Vector3 Radial = EvaluateCurve(Lower.Curve, Middle).Position - Circle.Frame.Origin;
+                    Wall.Sense   = Dot(Radial, Outward) > 0.0 ? Orientation::Forward : Orientation::Reversed;
+                }
+                const Orientation Back = Use.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
+                Wall.Loops.push_back({ { Use.Edge, Use.Sense, ParameterLine{} }, { Riser[Until], Orientation::Forward, ParameterLine{} },
+                                       { Top, Back, ParameterLine{} }, { Riser[From], Orientation::Reversed, ParameterLine{} } });
+                FitLoopSurfaceCurves(Wall.Surface, Blueprint, Wall.Loops.back());
+                Blueprint.Faces.push_back(std::move(Wall));
+                Planned.push_back({ {}, FaceChangeOrigin::Generated, Description.Inventory.Faces[Face], Description.Inventory.Edges[Loop[Index].Edge] });
+                ++Walls;
+                Use.Edge = Top;
+            }
+        }
+        FitLoopSurfaceCurves(Filling.Surface, Blueprint, Inner);
+        Filling.Loops.push_back(std::move(Inner));
+        Blueprint.Faces.push_back(std::move(Filling));
+        Planned.push_back({ {}, FaceChangeOrigin::Generated, Description.Inventory.Faces[Face], {} });
+    }
+    Method = "direct rebuild: " + std::to_string(Selected.size()) + " face(s) inset " + std::to_string(Distance) + ", depth " + std::to_string(Depth) + ", " + std::to_string(Walls) + " side wall(s)";
+    return Conclude(Partition, Blueprint, "InsetFaces", Planned, Result, Histories, Audit);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    DELETE
 //------------------------------------------------------------------------------------------------------------------------
 

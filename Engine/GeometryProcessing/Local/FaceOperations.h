@@ -39,6 +39,7 @@ enum class FaceOperationKind : uint8_t
     Delete     = 11,                                                                         // Faces removed; hole loops healed, otherwise an open sheet
     Heal       = 12,                                                                         // Faces on one carrier merged, edges on one carrier merged
     Thicken    = 13,                                                                         // Sheet body grown into a solid of thickness Distance
+    Inset      = 14,                                                                         // Planar faces: border ring Distance wide + inner face raised by Depth
 };
 
 struct FaceOperationSettings
@@ -46,6 +47,7 @@ struct FaceOperationSettings
     FaceOperationKind      Kind          = FaceOperationKind::Offset;                        // [-]   - Verb
     std::vector<FaceToken> Faces         = {};                                               // [-]   - Selection (empty: verb default)
     double                 Distance      = 0.0;                                              // [len] - Offset, push, wall, extrusion
+    double                 Depth         = 0.0;                                              // [len] - Inset: inner face shift along the outward normal (− pocket)
     double                 Angle         = 0.0;                                              // [rad] - Rotate, draft
     double                 Factor        = 1.0;                                              // [-]   - Scale
     Vector3                Vector        = {};                                               // [len] - Tweak translation
@@ -70,7 +72,7 @@ struct FaceOperationOutcome
 //------------------------------------------------------------------------------------------------------------------------
 
 // 💡 One entry point; every verb is "new carriers + re-solve" (ChangeFaces) except Hollow (cavity by ChangeFaces, then
-//    General Fuse difference), Extrude (direct rebuild with a side ring), Delete / Heal (topology edits by rebuild) and
+//    General Fuse difference), Extrude (direct rebuild with a side ring), Inset (border ring + inner face, optional side ring), Delete / Heal (topology edits by rebuild) and
 //    Thicken (sheet offset + rim faces). Refusals are prefixed with the verb label and leave the input untouched.
 [[nodiscard]] FaceOperationOutcome ApplyFaceOperation(ModelPartition& Partition, BodyToken Body, const FaceOperationSettings& Settings);
 

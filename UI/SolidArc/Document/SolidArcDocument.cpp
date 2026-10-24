@@ -785,6 +785,35 @@ SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceO
     });
 }
 
+SolidArcCommandOutcome InsetSolidArcSelection(SolidArcDocument& Document, double Distance, double Depth)
+{
+    const std::string Label = "Inset " + FormatAmount(Distance) + (Depth != 0.0 ? " depth " + FormatAmount(Depth) : std::string()) + " on " +
+                              std::to_string(Document.Selection.Faces.size()) + " face(s)";
+    return RunCommand(Document, Label, true, [&]() -> std::string
+    {
+        if (Document.Selection.Faces.empty()) return "select one or more planar faces first";
+        if (!Document.Summary.PresentCondition) return "there is no body to change";
+        std::string Owner;
+        if (const std::string Problem = CommonBody(Document, SolidArcSelectionKind::Face, Document.Selection.Faces, Owner); !Problem.empty()) return Problem;
+        const std::string Caption   = NextCaption(Document, "Inset");
+        const std::string StepLabel = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
+        const double      Span      = std::max(1.0, 4.0 * std::max(std::abs(Distance), std::abs(Depth)));
+        Document.Tree.Parameters.push_back({ Caption + ".Amount", Distance, 0.0, std::max(Span, Distance), "inset distance" });
+        Document.Tree.Parameters.push_back({ Caption + ".Depth", Depth, std::min(-Span, Depth), std::max(Span, Depth), "depth (− pocket)" });
+        FeatureStep Step;
+        Step.Kind      = FeatureStepKind::FaceOperation;
+        Step.Label     = StepLabel;
+        Step.Operation = FaceOperationKind::Inset;
+        Step.Amount    = ParameterValue(Caption + ".Amount");
+        Step.Extent    = ParameterValue(Caption + ".Depth");
+        Step.Target    = Owner;
+        for (const std::string& Name : Document.Selection.Faces) Step.References.push_back({ ReferenceKind::Face, Name, {} });
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Captions[StepLabel] = Caption;
+        return {};
+    });
+}
+
 SolidArcCommandOutcome AssignSolidArcParameter(SolidArcDocument& Document, const std::string& Name, double Value)
 {
     return RunCommand(Document, Name + " = " + FormatAmount(Value), false, [&]() -> std::string
@@ -2546,6 +2575,7 @@ const char* SolidArcFaceOperationLabel(FaceOperationKind Operation) noexcept
     case FaceOperationKind::Delete:     return "DeleteFaces";
     case FaceOperationKind::Heal:       return "Heal";
     case FaceOperationKind::Thicken:    return "Thicken";
+    case FaceOperationKind::Inset:      return "Inset";
     }
     return "Change";
 }

@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                        TOPOLOGYREBUILD.H
 ====================================================================================================================================*/
-// 🧩 Face verbs that change topology: extrude (side ring), delete (heal or sheet), heal (merge), thicken (sheet → solid)
+// 🧩 Face verbs that change topology: extrude (side ring), inset (border ring + inner face), delete (heal or sheet), heal (merge),
+//    thicken (sheet → solid)
 
 #pragma once
 
@@ -25,6 +26,8 @@ namespace Frontier::GeometryProcessing
 //    never modified.
 [[nodiscard]] std::string ExtrudePlanarFaces(ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, double Distance,
                                              BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
+[[nodiscard]] std::string InsetPlanarFaces(ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, double Distance, double Depth,
+                                           BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 [[nodiscard]] std::string DeleteBodyFaces(ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, BodyToken& Result,
                                           BodyCategory& Category, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 [[nodiscard]] std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Result, std::vector<FaceChangeHistory>& Histories,

@@ -671,6 +671,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Settings.Kind = Step.Operation;
             for (uint32_t Slot : Slots) Settings.Faces.push_back(Partition.Faces.TokenAt(Slot));
             ApplySettingsAmount(Settings, Amount);
+            if (Step.Operation == FaceOperationKind::Inset) Settings.Depth = EvaluateFeatureValue(Tree, Step.Extent);
             const FaceOperationOutcome Change = ApplyFaceOperation(Partition, Current, Settings);
             if (!Change.Refusal.empty()) { Refuse(Change.Refusal); break; }
             Naming  = NameChangedBody(Partition, Change.Body, Change, Naming, Step.Label);

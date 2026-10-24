@@ -124,7 +124,7 @@ struct FeatureStep
     OrthonormalFrame               Plane          = {};                                      // [-]   - Sketch: plane frame · mirror: plane · cut by a curve: ZAxis = cut direction
     FeatureValue                   Elevation      = {};                                      // [len] - Sketch: plane shift along its normal
     std::string                    Profile        = {};                                      // [-]   - Extrude / revolve / cut: sketch step label
-    FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane)
+    FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane) · inset depth
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body
     int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch (−1: AxisOrigin / AxisDirection)
     Vector2                        AxisOrigin     = {};                                      // [len] - Revolve without an axis line: a point of the axis (sketch coordinates)
