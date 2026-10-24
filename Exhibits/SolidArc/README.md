@@ -15,7 +15,7 @@
 | S6 | Validation tables; Windows cross-build and package | `S6Windows.md`, ctest 29 / 29 | 🟢 built and packaged; first Windows run 🟢 interface, viewport fix awaiting a second run |
 | S7 | PR into upstream Frontier after PR #16 merges | | 🚧 |
 
-## 🏁 ctest (30 / 30, SwiftShader, 2026-10-24)
+## 🏁 ctest (29 / 29 full run, SwiftShader, 2026-10-24; SolidArcInsetWalkthrough added after it and passed on its own)
 
 | # | Test | Covers |
 |---|---|---|
@@ -48,7 +48,7 @@
 | 63 | SolidArcNurbsBlendWalkthrough | Fillet and chamfer on NURBS rims (725.98 s) |
 | 64 | SolidArcAssemblyWalkthrough | Joints and interference |
 | 65 | SolidArcConstructDrawingWalkthrough | Construct menu (Solids · Sketch) drawn in the viewport with live dimensions, new bodies |
-| 66 | SolidArcInsetWalkthrough | Inset on faces: O (Plasticity offset-curve on a face) and I; flat split, pocket, boss, refusal |
+| 48 | SolidArcInsetWalkthrough | Inset on faces: O (Plasticity offset-curve on a face) and I; flat split, pocket, boss, refusal |
 
 | Report (in `Results/`) | Result |
 |---|---|
