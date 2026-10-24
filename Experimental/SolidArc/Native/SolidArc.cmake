@@ -83,6 +83,7 @@ set(SOLIDARC_SHADERS
     "${SOLIDARC_UI}/Shaders/SolidArcEdge.slang"
     "${SOLIDARC_UI}/Shaders/SolidArcGrid.slang"
     "${SOLIDARC_UI}/Shaders/SolidArcImagePlane.slang"
+    "${SOLIDARC_UI}/Shaders/SolidArcGizmo.slang"
     "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/CadStroke.slang"                                # Shared with Frontier CadEdge
     "${CMAKE_SOURCE_DIR}/Engine/Render/Shader/MatCapLookup.slang"                             # Shared with Frontier MatCapSurface
 )
@@ -122,6 +123,7 @@ add_library(FrontierSolidArcUI STATIC
     ${SOLIDARC_UI}/Viewport/SolidArcCamera.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcDevice.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcRasterization.cpp
+    ${SOLIDARC_UI}/Viewport/SolidArcGizmo.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcPortableImage.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcSnapping.cpp
     ${SOLIDARC_UI}/Interface/SolidArcInterface.cpp
@@ -273,6 +275,13 @@ add_test(NAME SolidArcConstructDrawingWalkthrough
                  --recovery _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
                  --document _ClaudeScratch/SolidArcWorkspace/Construct.solidarc
                  --script "${SOLIDARC_EXHIBIT}/Scripts/ConstructDrawingWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcGizmoWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/GizmoRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Gizmo.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/GizmoWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcInsetWalkthrough
@@ -449,6 +458,7 @@ set_tests_properties(SolidArcSurfaceEvaluationWalkthrough PROPERTIES SKIP_RETURN
 set_tests_properties(SolidArcSketchDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcConstructDrawingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcInsetWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcGizmoWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcVehicleSurfacingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcShortcutWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcVariableBlendWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

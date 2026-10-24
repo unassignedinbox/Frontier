@@ -13,6 +13,7 @@
 #include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Viewport/SolidArcCamera.h"
 #include "UI/SolidArc/Viewport/SolidArcDevice.h"
+#include "UI/SolidArc/Viewport/SolidArcGizmo.h"
 
 #include <array>
 #include <cstdint>
@@ -93,6 +94,7 @@ struct SolidArcViewportStyle
     bool  SectionEnabled  = false;                                                           // [-]   - Alt+S: clip at SectionPlane, cap the solids
     std::array<double, 4> SectionPlane = { 0.0, 0.0, 1.0, 0.0 };                             // [-]   - (n, w): kept side n·P + w ≥ 0
     std::vector<SolidArcImagePlaneDraw> ImagePlanes = {};                                    // [-]   - Blueprint references, depth-tested behind the model
+    SolidArcGizmoGeometry Gizmo        = {};                                                 // [-]   - Transform gizmo (CPU points, drawn last on cleared depth)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -166,6 +168,7 @@ private:
     SolidArcBuffer FaceStateBuffer   = {};
     SolidArcBuffer EdgeStateBuffer   = {};
     SolidArcBuffer SectionBuffer     = {};                                                   // [-] - 2 × float4: plane, (eye, enabled)
+    SolidArcBuffer GizmoBuffer       = {};                                                   // [-] - Gizmo vertices (host-visible, grows)
     uint32_t       CornerCount       = 0;
     uint32_t       SegmentCount      = 0;
     uint32_t       FaceCount         = 0;
@@ -183,6 +186,7 @@ private:
     VkPipeline            EdgeOccludedPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ③: depth GREATER, pickable
     VkPipeline            EdgePipeline     = VK_NULL_HANDLE;
     VkPipeline            GridPipeline     = VK_NULL_HANDLE;
+    VkPipeline            GizmoPipeline    = VK_NULL_HANDLE;                                 // [-] - Gizmo handles (blended, own depth)
     VkDescriptorSetLayout PictureLayout    = VK_NULL_HANDLE;
     VkDescriptorPool      PicturePool      = VK_NULL_HANDLE;
     VkSampler             PictureSampler   = VK_NULL_HANDLE;

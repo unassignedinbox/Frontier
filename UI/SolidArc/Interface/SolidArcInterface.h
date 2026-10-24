@@ -451,6 +451,44 @@ struct SolidArcParameterDrag
     int                               Stagings     = 0;                                      // [-] - Previews built (script evidence)
 };
 
+// 📝 What the gizmo acts on, chosen from the selection: faces (mode 3 with faces picked) → face operations; bodies →
+//    Transform steps; sketches (loft sections, picked in mode 1 / 2 / 5 or Shift-clicked in the outliner) → plane moves.
+enum class SolidArcGizmoTarget : uint8_t
+{
+    None     = 0,
+    Faces    = 1,                                                                            // Offset / Tweak / Rotate / Scale face operations
+    Bodies   = 2,                                                                            // TransformSolidArcBodies
+    Sketches = 3,                                                                            // PlaceSolidArcSketches (rigid only)
+};
+
+// 💡 Viewport transform gizmo (Slate GizmoPRO): Modes picks any mix of move / rotate / scale (y cycles, toolbar chips,
+//    script `gizmo`). The handle triangles live here on the CPU (pick) and in Style.Gizmo (GPU draw). A drag keeps the
+//    start frame fixed, stages one preview per distinct value and commits one command on release (Esc cancels).
+struct SolidArcGizmoSession
+{
+    uint32_t                          Modes         = GizmoTranslate;                        // [-]   - GizmoTranslate | GizmoRotate | GizmoScale (0 off)
+    SolidArcGizmoTarget               Target        = SolidArcGizmoTarget::None;             // [-]   - What the selection offers
+    std::vector<std::string>          Names         = {};                                    // [-]   - Face names / body keys / sketch labels
+    SolidArcGizmoPose                 Pose          = {};                                    // [-]   - Frame shown (start frame while dragging)
+    SolidArcGizmoGeometry             Geometry      = {};                                    // [-]   - CPU copy of the drawn triangles (pick)
+    SolidArcGizmoHandle               Hover         = SolidArcGizmoHandle::None;             // [-]   - Handle under the pointer
+    bool                              DragCondition = false;                                 // [-]   - A handle is held
+    SolidArcGizmoHandle               Grab          = SolidArcGizmoHandle::None;             // [-]   - Held handle
+    GeometryProcessing::Vector3       GrabPoint     = {};                                    // [len] - Plane / screen hit at the press
+    double                            GrabValue     = 0.0;                                   // [-]   - Axis parameter [len] or angle [rad] at the press
+    ImVec2                            GrabPixel     = {};                                    // [px]  - Press position (viewport local)
+    GeometryProcessing::Vector3       Shift         = {};                                    // [len] - Current move
+    double                            Angle         = 0.0;                                   // [rad] - Current turn (snapped)
+    double                            Sweep         = 0.0;                                   // [rad] - Unsnapped turn, unwrapped past ±π
+    double                            Factor        = 1.0;                                   // [-]   - Current scale
+    std::string                       StagedKey     = {};                                    // [-]   - Value the preview shows
+    std::unique_ptr<SolidArcDocument> Preview       = {};                                    // [-]   - Staged document
+    SolidArcScene                     PreviewScene  = {};                                    // [-]   - Its display arrays
+    std::string                       Readout       = {};                                    // [-]   - "X  move 0.250"
+    std::string                       Refusal       = {};                                    // [-]   - Why the staged value refuses
+    int                               Commits       = 0;                                     // [-]   - Committed drags (script evidence)
+};
+
 struct SolidArcWorkspaceState
 {
     SolidArcOptions                       Options        = {};                               // [-]   - Loaded options
@@ -468,6 +506,7 @@ struct SolidArcWorkspaceState
     SolidArcTrimSession                   Trim           = {};                               // [-]   - T: curve trim session
     SolidArcConstraintSession             Constrain      = {};                               // [-]   - K: sketch constraint session
     SolidArcTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
+    SolidArcGizmoSession                  Gizmo          = {};                               // [-]   - Viewport move / rotate / scale gizmo
     SolidArcSweepSession                  Sweep          = {};                               // [-]   - O / P session
     SolidArcClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
     SolidArcMeasureSession                Measure        = {};                               // [-]   - I: Measure card + overlay

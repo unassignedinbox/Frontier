@@ -2970,6 +2970,427 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     Transform.PreviewScene = BuildSolidArcScene(*Transform.Preview);
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    TRANSFORM GIZMO
+//------------------------------------------------------------------------------------------------------------------------
+
+// No other session owns the pointer (the gizmo is a no-command tool, like Plasticity's selection gizmo).
+[[nodiscard]] bool GizmoAvailableCondition(const SolidArcWorkspaceState& State)
+{
+    return State.Gizmo.Modes != 0 && !State.DrawingSheet.ActiveCondition && !State.Drawing.ActiveCondition && !State.Transform.ActiveCondition && !State.Sweep.ActiveCondition
+        && !State.Constrain.ActiveCondition && !State.Trim.ActiveCondition && !State.Joint.ActiveCondition && !State.Bevel.ActiveCondition && !State.PoleDrag.ActiveCondition
+        && !State.Box.ActiveCondition && State.PickMode != SolidArcPickMode::ControlPoint;
+}
+
+[[nodiscard]] const char* GizmoTargetLabel(SolidArcGizmoTarget Target) noexcept
+{
+    switch (Target)
+    {
+    case SolidArcGizmoTarget::Faces:    return "Faces";
+    case SolidArcGizmoTarget::Bodies:   return "Bodies";
+    case SolidArcGizmoTarget::Sketches: return "Sketches";
+    case SolidArcGizmoTarget::None:     break;
+    }
+    return "Nothing";
+}
+
+[[nodiscard]] std::string GizmoModesLabel(uint32_t Modes)
+{
+    if (Modes == 0) return "off";
+    std::string Text;
+    if (Modes & GizmoTranslate) Text += "move";
+    if (Modes & GizmoRotate)    Text += Text.empty() ? "rotate" : " + rotate";
+    if (Modes & GizmoScale)     Text += Text.empty() ? "scale" : " + scale";
+    return Text;
+}
+
+// The sketch steps among the selected curve labels (loft sections the gizmo can carry).
+[[nodiscard]] std::vector<std::string> PickedSketches(const SolidArcDocument& Document)
+{
+    std::vector<std::string> Labels;
+    for (const std::string& Label : Document.Selection.Curves)
+        for (const FeatureStep& Step : Document.Tree.Steps)
+            if (Step.Label == Label && Step.Kind == FeatureStepKind::Sketch) { Labels.push_back(Label); break; }
+    return Labels;
+}
+
+// 📝 Target and frame from the selection: faces → area-weighted centroid, z = mean outward normal; bodies → bounds
+//    centre, world axes; sketches → curve-sample centroid, the first sketch's plane axes. Handles that do not apply are
+//    hidden (faces and sketches have no per-axis scale; sketches cannot scale at all).
+void ResolveGizmoTarget(SolidArcWorkspaceState& State)
+{
+    SolidArcGizmoSession&   Gizmo    = State.Gizmo;
+    const SolidArcDocument& Document = State.Document;
+    Gizmo.Target = SolidArcGizmoTarget::None;
+    Gizmo.Names.clear();
+    Gizmo.Pose.Hidden = 0;
+    Gizmo.Pose.Axes[0] = { 1.0, 0.0, 0.0 };
+    Gizmo.Pose.Axes[1] = { 0.0, 1.0, 0.0 };
+    Gizmo.Pose.Axes[2] = { 0.0, 0.0, 1.0 };
+    constexpr uint32_t AxisScales = (1u << uint32_t(SolidArcGizmoHandle::ScaleX)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleY)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleZ));
+    constexpr uint32_t CentreBit  = 1u << uint32_t(SolidArcGizmoHandle::Centre);
+    if (State.PickMode == SolidArcPickMode::Face && !Document.Selection.Faces.empty())
+    {
+        Vector3 Centre, Normal;
+        double  Area = 0.0;
+        for (const SolidArcSceneFace& Face : State.Scene.Faces)
+        {
+            if (std::find(Document.Selection.Faces.begin(), Document.Selection.Faces.end(), Face.Name) == Document.Selection.Faces.end()) continue;
+            for (uint32_t Corner = Face.FirstCorner; Corner + 2 < Face.FirstCorner + Face.CornerCount; Corner += 3)
+            {
+                const SolidArcSceneCorner* Triangle = &State.Scene.Corners[Corner];
+                Vector3 Points[3], Normals;
+                for (int Index = 0; Index < 3; ++Index)
+                {
+                    Points[Index] = { Triangle[Index].Position[0], Triangle[Index].Position[1], Triangle[Index].Position[2] };
+                    Normals       = Normals + Vector3{ Triangle[Index].Normal[0], Triangle[Index].Normal[1], Triangle[Index].Normal[2] };
+                }
+                const double Piece = 0.5 * Length(Cross(Points[1] - Points[0], Points[2] - Points[0]));
+                Centre = Centre + (Points[0] + Points[1] + Points[2]) * (Piece / 3.0);
+                Normal = Normal + Normals * Piece;
+                Area  += Piece;
+            }
+        }
+        if (Area <= 0.0 || Length(Normal) < 1.0e-12) return;
+        const Vector3 Up    = Normal * (1.0 / Length(Normal));
+        const Vector3 Seed  = std::abs(Up.X) < 0.9 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 1.0, 0.0 };
+        const Vector3 Along = Normalize(Seed - Up * Dot(Seed, Up));
+        Gizmo.Target       = SolidArcGizmoTarget::Faces;
+        Gizmo.Names        = Document.Selection.Faces;
+        Gizmo.Pose.Origin  = Centre * (1.0 / Area);
+        Gizmo.Pose.Axes[0] = Along;
+        Gizmo.Pose.Axes[1] = Cross(Up, Along);
+        Gizmo.Pose.Axes[2] = Up;
+        Gizmo.Pose.Hidden  = AxisScales | ((Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit);
+        return;
+    }
+    const std::vector<std::string> Keys = PickedBodies(Document);
+    if (!Keys.empty())
+    {
+        Gizmo.Target      = SolidArcGizmoTarget::Bodies;
+        Gizmo.Names       = Keys;
+        Gizmo.Pose.Origin = MeasureBodiesCentre(State.Scene, Keys);
+        Gizmo.Pose.Hidden = (Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit;
+        return;
+    }
+    const std::vector<std::string> Sketches = PickedSketches(Document);
+    if (Sketches.empty()) return;
+    Vector3 Sum;
+    int     Count = 0;
+    for (const std::string& Label : Sketches)
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(Document, *Found);
+        const auto             Solved = Document.Regeneration.Sketches.find(Label);
+        const SketchModel&     Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Found->Sketch;
+        if (Count == 0)
+        {
+            Gizmo.Pose.Axes[0] = Plane.XAxis;
+            Gizmo.Pose.Axes[1] = Plane.YAxis;
+            Gizmo.Pose.Axes[2] = Plane.ZAxis;
+        }
+        for (const SketchCurve& Curve : Sketch.Curves)
+            for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) { Sum = Sum + PlacePlanePoint(Plane, Sample); ++Count; }
+    }
+    if (Count == 0) return;
+    Gizmo.Target      = SolidArcGizmoTarget::Sketches;
+    Gizmo.Names       = Sketches;
+    Gizmo.Pose.Origin = Sum * (1.0 / Count);
+    Gizmo.Pose.Hidden = AxisScales | ((Gizmo.Modes & GizmoTranslate) ? 0u : CentreBit);
+}
+
+// 📝 Centre ring: on faces it scales whenever scale is on (faces have no axis cylinders); otherwise it moves in the
+//    screen plane with move on, scales uniformly with scale alone.
+[[nodiscard]] bool GizmoCentreScaleCondition(const SolidArcGizmoSession& Gizmo)
+{
+    if (!(Gizmo.Pose.Modes & GizmoScale)) return false;
+    return Gizmo.Target == SolidArcGizmoTarget::Faces || !(Gizmo.Pose.Modes & GizmoTranslate);
+}
+
+[[nodiscard]] bool GizmoTranslateHandle(SolidArcGizmoHandle Handle) noexcept
+{
+    return Handle >= SolidArcGizmoHandle::TranslateX && Handle <= SolidArcGizmoHandle::PlaneXY;
+}
+
+[[nodiscard]] bool GizmoRotateHandle(SolidArcGizmoHandle Handle) noexcept
+{
+    return Handle >= SolidArcGizmoHandle::RotateX && Handle <= SolidArcGizmoHandle::RotateZ;
+}
+
+[[nodiscard]] bool GizmoScaleHandle(const SolidArcGizmoSession& Gizmo, SolidArcGizmoHandle Handle)
+{
+    return (Handle >= SolidArcGizmoHandle::ScaleX && Handle <= SolidArcGizmoHandle::ScaleZ) || (Handle == SolidArcGizmoHandle::Centre && GizmoCentreScaleCondition(Gizmo));
+}
+
+// The rigid / affine map of the current drag (bodies and sketches).
+[[nodiscard]] AffineMap GizmoMap(const SolidArcGizmoSession& Gizmo)
+{
+    const SolidArcGizmoHandle Handle = Gizmo.Grab;
+    const int                 Axis   = GizmoHandleAxis(Handle);
+    if (GizmoRotateHandle(Handle)) return RotationMap(Gizmo.Pose.Origin, Gizmo.Pose.Axes[Axis], Gizmo.Angle);
+    if (GizmoScaleHandle(Gizmo, Handle))
+    {
+        Vector3 Factors{ Gizmo.Factor, Gizmo.Factor, Gizmo.Factor };
+        if (Axis >= 0) Factors = { Axis == 0 ? Gizmo.Factor : 1.0, Axis == 1 ? Gizmo.Factor : 1.0, Axis == 2 ? Gizmo.Factor : 1.0 };
+        return ScalingMap(Gizmo.Pose.Origin, Factors);
+    }
+    return TranslationMap(Gizmo.Shift);
+}
+
+[[nodiscard]] bool GizmoIdentityCondition(const SolidArcGizmoSession& Gizmo)
+{
+    if (GizmoRotateHandle(Gizmo.Grab)) return std::abs(Gizmo.Angle) < 1.0e-12;
+    if (GizmoScaleHandle(Gizmo, Gizmo.Grab)) return std::abs(Gizmo.Factor - 1.0) < 1.0e-12;
+    return Length(Gizmo.Shift) < 1.0e-12;
+}
+
+// 💡 One command per drag: bodies → Transform steps, sketches → plane moves, faces → face operations. The face along
+//    its normal (z handle) is a push / pull (Offset); any other move is a Tweak along the shift; rotate turns each face
+//    about the axis through its centre; scale scales each face about its centre.
+[[nodiscard]] SolidArcCommandOutcome ApplyGizmoCommand(SolidArcDocument& Document, const SolidArcGizmoSession& Gizmo)
+{
+    const SolidArcGizmoHandle Handle = Gizmo.Grab;
+    const int                 Axis   = GizmoHandleAxis(Handle);
+    const char* Verb = GizmoRotateHandle(Handle) ? "Rotate" : GizmoScaleHandle(Gizmo, Handle) ? "Scale" : "Move";
+    switch (Gizmo.Target)
+    {
+    case SolidArcGizmoTarget::Bodies:   return TransformSolidArcBodies(Document, Gizmo.Names, GizmoMap(Gizmo), Verb);
+    case SolidArcGizmoTarget::Sketches: return PlaceSolidArcSketches(Document, Gizmo.Names, GizmoMap(Gizmo), Verb);
+    case SolidArcGizmoTarget::Faces:
+        if (GizmoRotateHandle(Handle)) return ChangeSolidArcSelection(Document, FaceOperationKind::Rotate, Gizmo.Angle, Gizmo.Pose.Axes[Axis]);
+        if (GizmoScaleHandle(Gizmo, Handle)) return ChangeSolidArcSelection(Document, FaceOperationKind::Scale, Gizmo.Factor);
+        if (Handle == SolidArcGizmoHandle::TranslateZ) return ChangeSolidArcSelection(Document, FaceOperationKind::Offset, Dot(Gizmo.Shift, Gizmo.Pose.Axes[2]));
+        return ChangeSolidArcSelection(Document, FaceOperationKind::Tweak, Length(Gizmo.Shift), Normalize(Gizmo.Shift));
+    case SolidArcGizmoTarget::None: break;
+    }
+    SolidArcCommandOutcome Refused;
+    Refused.Refusal = "gizmo: nothing to transform";
+    return Refused;
+}
+
+void CancelGizmoDrag(SolidArcWorkspaceState& State, const std::string& Message)
+{
+    SolidArcGizmoSession& Gizmo = State.Gizmo;
+    Gizmo.DragCondition = false;
+    Gizmo.Grab          = SolidArcGizmoHandle::None;
+    Gizmo.Preview.reset();
+    Gizmo.StagedKey.clear();
+    Gizmo.Refusal.clear();
+    if (!Message.empty()) Announce(State, Message);
+}
+
+void CommitGizmoDrag(SolidArcWorkspaceState& State)
+{
+    SolidArcGizmoSession& Gizmo = State.Gizmo;
+    if (GizmoIdentityCondition(Gizmo)) { CancelGizmoDrag(State, "Gizmo: nothing changed"); return; }
+    const std::string            Readout = Gizmo.Readout;
+    const SolidArcCommandOutcome Outcome = ApplyGizmoCommand(State.Document, Gizmo);
+    CancelGizmoDrag(State, {});
+    Conclude(State, Outcome);
+    if (Outcome.AcceptedCondition)
+    {
+        ++Gizmo.Commits;
+        Announce(State, Compose("Gizmo %s · %s · %.0f ms", Readout.c_str(), Outcome.Label.c_str(), Outcome.Milliseconds));
+    }
+}
+
+// Pointer → value of the held handle (start frame fixed), readout, then one staged preview per distinct value.
+void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    SolidArcGizmoSession&    Gizmo = State.Gizmo;
+    const SolidArcGizmoPose& Pose  = Gizmo.Pose;
+    const ImGuiIO&           Io    = ImGui::GetIO();
+    const bool               Snap  = !Io.KeyCtrl;                                            // Snapping on by default, Ctrl free
+    const OrbitRay           Ray   = CastOrbitRay(Frame, Local.x, Local.y);
+    const int                Axis  = GizmoHandleAxis(Gizmo.Grab);
+    const Vector3            Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
+    const auto Snapped = [&](double Value, double Step) { return Snap ? std::round(Value / Step) * Step : Value; };
+    const char* Name = GizmoHandleLabel(Gizmo.Grab);
+    if (GizmoRotateHandle(Gizmo.Grab))
+    {
+        if (const std::optional<double> Raw = MeasureGizmoAngle(Ray, Pose.Origin, Pose.Axes[Axis], Pose.Axes[(Axis + 1) % 3]))
+        {
+            double Step = *Raw - Gizmo.GrabValue;                                            // unwrap: the drag may pass ±π
+            while (Step > std::numbers::pi)  Step -= 2.0 * std::numbers::pi;
+            while (Step < -std::numbers::pi) Step += 2.0 * std::numbers::pi;
+            Gizmo.Sweep    += Step;
+            Gizmo.GrabValue    = *Raw;
+        }
+        Gizmo.Angle   = Snapped(Gizmo.Sweep * 180.0 / std::numbers::pi, TurnSnap) * std::numbers::pi / 180.0;
+        Gizmo.Readout = Compose("%s %.1f°", Name, Gizmo.Angle * 180.0 / std::numbers::pi);
+    }
+    else if (GizmoScaleHandle(Gizmo, Gizmo.Grab))
+    {
+        double Ratio = 1.0;
+        if (Axis >= 0)
+        {
+            const std::optional<double> Parameter = MeasureAxisParameter(Ray, Pose.Origin, Pose.Axes[Axis]);
+            if (Parameter && std::abs(Gizmo.GrabValue) > 1.0e-12) Ratio = *Parameter / Gizmo.GrabValue;
+        }
+        else
+        {
+            ImVec2 Centre;
+            if (ProjectWorldPoint(State, Frame, Pose.Origin, Centre))
+            {
+                const double First = std::hypot(Gizmo.GrabPixel.x + State.ViewportRect[0] - Centre.x, Gizmo.GrabPixel.y + State.ViewportRect[1] - Centre.y);
+                const double Now   = std::hypot(Io.MousePos.x - Centre.x, Io.MousePos.y - Centre.y);
+                if (First > 2.0) Ratio = Now / First;
+            }
+        }
+        Gizmo.Factor  = std::max(0.05, Snapped(Ratio, FactorSnap));
+        Gizmo.Readout = Compose("%s %.3fx", Axis >= 0 ? Name : "uniform scale", Gizmo.Factor);
+    }
+    else if (Gizmo.Grab >= SolidArcGizmoHandle::TranslateX && Gizmo.Grab <= SolidArcGizmoHandle::TranslateZ)
+    {
+        if (const std::optional<double> Parameter = MeasureAxisParameter(Ray, Pose.Origin, Pose.Axes[Axis]))
+            Gizmo.Shift = Pose.Axes[Axis] * Snapped(*Parameter - Gizmo.GrabValue, MoveSnap);
+        Gizmo.Readout = Compose("%s %s", Name, FormatLength(Dot(Gizmo.Shift, Pose.Axes[Axis])).c_str());
+    }
+    else
+    {
+        // Plane quad (normal = its axis) or the centre ring (screen plane): the hit slides from the press hit.
+        const Vector3 Normal = Axis >= 0 ? Pose.Axes[Axis] : Forward;
+        if (const std::optional<Vector3> Hit = IntersectGizmoPlane(Ray, Pose.Origin, Normal))
+        {
+            const Vector3 Slide = *Hit - Gizmo.GrabPoint;
+            if (Axis >= 0)
+            {
+                const Vector3 U = Pose.Axes[(Axis + 1) % 3], V = Pose.Axes[(Axis + 2) % 3];
+                Gizmo.Shift = U * Snapped(Dot(Slide, U), MoveSnap) + V * Snapped(Dot(Slide, V), MoveSnap);
+            }
+            else Gizmo.Shift = { Snapped(Slide.X, MoveSnap), Snapped(Slide.Y, MoveSnap), Snapped(Slide.Z, MoveSnap) };
+        }
+        Gizmo.Readout = Compose("%s (%s, %s, %s)", Axis >= 0 ? Name : "screen move", FormatLength(Gizmo.Shift.X).c_str(), FormatLength(Gizmo.Shift.Y).c_str(), FormatLength(Gizmo.Shift.Z).c_str());
+    }
+    if (Gizmo.Target == SolidArcGizmoTarget::Faces)
+        Gizmo.Readout += GizmoRotateHandle(Gizmo.Grab) ? " · face rotate" : GizmoScaleHandle(Gizmo, Gizmo.Grab) ? " · face scale"
+                       : Gizmo.Grab == SolidArcGizmoHandle::TranslateZ ? " · push / pull" : " · face tweak";
+    // Staged preview: one regeneration per distinct value.
+    const std::string Key = Compose("%d %.12g %.12g %.12g %.12g %.12g", int(Gizmo.Grab), Gizmo.Shift.X, Gizmo.Shift.Y, Gizmo.Shift.Z, Gizmo.Angle, Gizmo.Factor);
+    if (Key == Gizmo.StagedKey) return;
+    Gizmo.StagedKey = Key;
+    Gizmo.Refusal.clear();
+    if (GizmoIdentityCondition(Gizmo)) { Gizmo.Preview.reset(); return; }
+    Gizmo.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
+    const SolidArcCommandOutcome Outcome = ApplyGizmoCommand(*Gizmo.Preview, Gizmo);
+    if (!Outcome.AcceptedCondition) { Gizmo.Refusal = Legible(Outcome.Refusal); Gizmo.Preview.reset(); return; }
+    Gizmo.PreviewScene = BuildSolidArcScene(*Gizmo.Preview);
+}
+
+// 📝 Script evidence: each drawn handle is a widget ("GizmoTranslateZ", "GizmoPlaneXY", "GizmoRotateX", "GizmoScaleY",
+//    "GizmoCentre") at a point that picks it — tips, cylinder middles, the plane quads' free corners, arc middles.
+void RecordGizmoWidgets(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame)
+{
+    const SolidArcGizmoSession& Gizmo = State.Gizmo;
+    if (Gizmo.Target == SolidArcGizmoTarget::None) return;
+    uint32_t Drawn = 0;
+    for (const SolidArcGizmoVertex& Vertex : Gizmo.Geometry.Vertices) Drawn |= 1u << Vertex.Handle;
+    static const char* Keys[] = { "", "GizmoTranslateX", "GizmoTranslateY", "GizmoTranslateZ", "GizmoPlaneYZ", "GizmoPlaneXZ", "GizmoPlaneXY",
+                                  "GizmoRotateX", "GizmoRotateY", "GizmoRotateZ", "GizmoScaleX", "GizmoScaleY", "GizmoScaleZ", "GizmoCentre" };
+    const SolidArcGizmoPose& Pose = Gizmo.Pose;
+    for (int Code = 1; Code <= 13; ++Code)
+    {
+        if (!(Drawn & (1u << Code))) continue;
+        const int Axis = (Code - 1) % 3, U = (Axis + 1) % 3, V = (Axis + 2) % 3;
+        Vector3 Local;
+        if (Code <= 3)       Local = Pose.Axes[Axis] * 0.95;
+        else if (Code <= 6)  Local = Pose.Axes[U] * 0.92 + Pose.Axes[V] * 0.82;
+        else if (Code <= 9)  Local = (Pose.Axes[U] + Pose.Axes[V]) * (0.62 * 0.95 / std::numbers::sqrt2);
+        else if (Code <= 12) Local = Pose.Axes[Axis] * 0.67;
+        else                 Local = Vector3{ Frame.Right[0], Frame.Right[1], Frame.Right[2] } * 0.16;
+        ImVec2 Pixel;
+        if (ProjectWorldPoint(State, Frame, Pose.Origin + Local * Pose.Size, Pixel))
+            State.Widgets.Record(Keys[Code], ImVec2(Pixel.x - 2.0f, Pixel.y - 2.0f), ImVec2(Pixel.x + 2.0f, Pixel.y + 2.0f));
+    }
+}
+
+// 💡 Every viewport frame: resolve the target (unless a handle is held), size the gizmo to GizmoPixels on screen, hover
+//    pick, press / drag / release; the triangles go to Style.Gizmo for the GPU and stay here for the pick. Returns true
+//    when the gizmo owns the left button this frame (a held handle, or the pointer over one), so the selection click and
+//    box selection stand aside.
+bool DriveGizmo(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
+{
+    SolidArcGizmoSession& Gizmo = State.Gizmo;
+    State.Style.Gizmo = {};
+    Gizmo.Geometry    = {};
+    if (!GizmoAvailableCondition(State))
+    {
+        if (Gizmo.DragCondition) CancelGizmoDrag(State, {});
+        Gizmo.Hover  = SolidArcGizmoHandle::None;
+        Gizmo.Target = SolidArcGizmoTarget::None;
+        return false;
+    }
+    if (!Gizmo.DragCondition) ResolveGizmoTarget(State);
+    if (Gizmo.Target == SolidArcGizmoTarget::None) { Gizmo.Hover = SolidArcGizmoHandle::None; return false; }
+    Gizmo.Pose.Modes = Gizmo.Modes;
+    Gizmo.Pose.Size  = MeasureGizmoSize(Frame, Gizmo.Pose.Origin, GizmoPixels);
+    Gizmo.Geometry   = BuildSolidArcGizmo(Gizmo.Pose, Frame, Gizmo.DragCondition ? SolidArcGizmoHandle::None : Gizmo.Hover, Gizmo.Grab);
+    bool Owned = false;
+    if (!Gizmo.DragCondition)
+    {
+        Gizmo.Hover = PointerCondition && !ImGui::IsMouseDown(ImGuiMouseButton_Middle) && !ImGui::IsMouseDown(ImGuiMouseButton_Right)
+                    ? PickSolidArcGizmo(Gizmo.Geometry, Frame, Local.x, Local.y, 6.0) : SolidArcGizmoHandle::None;
+        Owned = Gizmo.Hover != SolidArcGizmoHandle::None;
+        if (Owned && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            // Press: the handle's reference value at the pointer (axis parameter, angle, plane / screen hit).
+            const OrbitRay Ray  = CastOrbitRay(Frame, Local.x, Local.y);
+            const int      Axis = GizmoHandleAxis(Gizmo.Hover);
+            const Vector3  Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
+            Gizmo.DragCondition = true;
+            Gizmo.Grab          = Gizmo.Hover;
+            Gizmo.GrabPixel     = Local;
+            Gizmo.Shift         = {};
+            Gizmo.Angle         = 0.0;
+            Gizmo.Sweep         = 0.0;
+            Gizmo.Factor        = 1.0;
+            Gizmo.GrabValue     = 0.0;
+            Gizmo.GrabPoint     = Gizmo.Pose.Origin;
+            Gizmo.StagedKey     = {};
+            Gizmo.Refusal       = {};
+            Gizmo.Readout       = GizmoHandleLabel(Gizmo.Grab);
+            if (GizmoRotateHandle(Gizmo.Grab))
+            {
+                Gizmo.GrabValue = MeasureGizmoAngle(Ray, Gizmo.Pose.Origin, Gizmo.Pose.Axes[Axis], Gizmo.Pose.Axes[(Axis + 1) % 3]).value_or(0.0);
+            }
+            else if (Axis >= 0 && (Gizmo.Grab <= SolidArcGizmoHandle::TranslateZ || Gizmo.Grab >= SolidArcGizmoHandle::ScaleX))
+                Gizmo.GrabValue = MeasureAxisParameter(Ray, Gizmo.Pose.Origin, Gizmo.Pose.Axes[Axis]).value_or(0.0);
+            else
+                Gizmo.GrabPoint = IntersectGizmoPlane(Ray, Gizmo.Pose.Origin, Axis >= 0 ? Gizmo.Pose.Axes[Axis] : Forward).value_or(Gizmo.Pose.Origin);
+        }
+    }
+    if (Gizmo.DragCondition)
+    {
+        Owned = true;
+        DriveGizmoDrag(State, Frame, Local);
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            if (!Gizmo.Refusal.empty()) CancelGizmoDrag(State, "Refused: " + Gizmo.Refusal);
+            else CommitGizmoDrag(State);
+        }
+        else if (Length(Gizmo.Shift) > 0.0)
+        {
+            // The gizmo rides with a move (axes stay fixed for the whole drag).
+            SolidArcGizmoPose Riding = Gizmo.Pose;
+            Riding.Origin = Riding.Origin + Gizmo.Shift;
+            Gizmo.Geometry = BuildSolidArcGizmo(Riding, Frame, SolidArcGizmoHandle::None, Gizmo.Grab);
+        }
+    }
+    if (Gizmo.Target != SolidArcGizmoTarget::None) State.Style.Gizmo = Gizmo.Geometry;
+    if (!Gizmo.DragCondition) RecordGizmoWidgets(State, Frame);
+    return Owned;
+}
+
+// y (free in Plasticity's map): off → move → rotate → scale → move + rotate → rotate + scale → all three → off.
+void CycleGizmoModes(SolidArcWorkspaceState& State)
+{
+    static const uint32_t Cycle[] = { 0u, GizmoTranslate, GizmoRotate, GizmoScale, GizmoTranslate | GizmoRotate, GizmoRotate | GizmoScale, GizmoTranslate | GizmoRotate | GizmoScale };
+    size_t Index = 0;
+    while (Index < std::size(Cycle) && Cycle[Index] != State.Gizmo.Modes) ++Index;
+    State.Gizmo.Modes = Cycle[(Index + 1) % std::size(Cycle)];
+    Announce(State, "Gizmo: " + GizmoModesLabel(State.Gizmo.Modes));
+}
+
 [[nodiscard]] const char* SweepVerbName(SolidArcSweepVerb Verb)
 {
     switch (Verb)
@@ -3398,7 +3819,8 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
         if (Step.Kind != FeatureStepKind::Sketch) continue;
         const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
         const SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
-        const bool  Focused  = Step.Label == State.FocusedStep;
+        const bool  Focused  = Step.Label == State.FocusedStep
+                            || std::find(Document.Selection.Curves.begin(), Document.Selection.Curves.end(), Step.Label) != Document.Selection.Curves.end();   // picked (loft order, gizmo)
         const bool  Consumed = SolidArcSketchConsumedCondition(Document, Step.Label);
         const ImU32 Colour   = Focused ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : Consumed ? IM_COL32(0x7f, 0x9c, 0xbf, 0x90) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
         OrthonormalFrame Plane = Step.Plane;
@@ -3546,6 +3968,22 @@ std::string FindCurveNear(const SolidArcWorkspaceState& State, const OrbitCamera
     float       Best = CurveReach;
     for (const FeatureStep& Step : State.Document.Tree.Steps)
     {
+        if (Step.Kind == FeatureStepKind::Sketch && !SolidArcSketchConsumedCondition(State.Document, Step.Label))
+        {
+            // Free sketches (loft sections, paths) pick like curves; an extruded sketch stays with its body.
+            const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, Step);
+            const auto             Solved = State.Document.Regeneration.Sketches.find(Step.Label);
+            const SketchModel&     Sketch = Solved != State.Document.Regeneration.Sketches.end() ? Solved->second : Step.Sketch;
+            for (const SketchCurve& Curve : Sketch.Curves)
+            {
+                if (Curve.Construction) continue;
+                std::vector<ImVec2> Pixels;
+                for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Sample), Pixel)) Pixels.push_back(Pixel); }
+                const float Distance = DistanceToPolyline(Pixels, Pointer);
+                if (Distance <= Best) { Best = Distance; Nearest = Step.Label; }
+            }
+            continue;
+        }
         const CurveFitOutcome* Fit = Step.Kind == FeatureStepKind::SpaceCurve ? FindFittedCurve(State.Document, Step.Label) : nullptr;
         if (!Fit) continue;
         const float Distance = DistanceToPolyline(ProjectFittedCurve(State, Frame, *Fit->Curve.Definition), Pointer);
@@ -4793,6 +5231,12 @@ void PickCurve(SolidArcWorkspaceState& State, const std::string& Label, SolidArc
         break;
     }
     const CurveFitOutcome* Fit = FindFittedCurve(State.Document, Label);
+    if (!Fit)
+    {
+        Announce(State, Compose("%s sketch %s · %d selected · L lofts the picks in order · the gizmo moves / turns them", Intent == SolidArcPickIntent::Remove ? "Removed" : "Selected",
+                                Caption.c_str(), int(State.Document.Selection.Curves.size())));
+        return;
+    }
     Announce(State, Compose("%s curve %s · %d poles · fit %.3f mm · %d selected", Intent == SolidArcPickIntent::Remove ? "Removed" : "Selected", Caption.c_str(),
                             Fit ? int(Fit->Curve.Definition->Poles.size()) : 0, Fit ? Fit->WorstDeviation * 1000.0 : 0.0, int(State.Document.Selection.Curves.size())));
 }
@@ -5516,7 +5960,14 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
             Announce(State, Compose("%s · %d bodies picked", Intent.Figure.Name.c_str(), int(State.Document.Selection.Bodies.size())));
             break;
         case SolidArcFigureSource::Sketch:
-            State.FocusedStep = State.FocusedStep == Intent.Figure.Key ? std::string() : Intent.Figure.Key;
+            // Click focuses and picks the sketch (gizmo, loft); Shift+click adds it in loft order; a second click lets go.
+            if (Intent.AdditiveCondition) PickCurve(State, Intent.Figure.Key, SolidArcPickIntent::Add);
+            else if (State.FocusedStep == Intent.Figure.Key)
+            {
+                State.FocusedStep = {};
+                if (CurveOrder(State, Intent.Figure.Key) > 0) SelectSolidArcCurve(State.Document, Intent.Figure.Key, true);
+            }
+            else PickCurve(State, Intent.Figure.Key, SolidArcPickIntent::Replace);
             break;
         case SolidArcFigureSource::SpaceCurve:
             PickCurve(State, Intent.Figure.Key, Intent.AdditiveCondition ? SolidArcPickIntent::Add : SolidArcPickIntent::Replace);
@@ -5982,6 +6433,49 @@ void DrawDisplayMenu(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
     EndSheetWindow();
 }
 
+// 📝 Gizmo chips (under the Display pill, same #191919e8 pill): Move / Rotate / Scale toggle independently, so any mix
+//    (move + rotate, rotate + scale, all three) is one click away; y cycles the same set from the keyboard.
+void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
+{
+    struct GizmoChip
+    {
+        const char* Key;
+        const char* Label;
+        uint32_t    Mode;
+    };
+    static const GizmoChip Chips[] = { { "GizmoMove", "Move", GizmoTranslate }, { "GizmoRotate", "Rotate", GizmoRotate }, { "GizmoScale", "Scale", GizmoScale } };
+    SolidArcSheet Probe;
+    Probe.Begin();
+    float Extent = 2.0f + 12.0f + Probe.Measure("Gizmo", 10.0f) + 8.0f + 5.0f;
+    for (const GizmoChip& Chip : Chips) Extent += Probe.Measure(Chip.Label, 11.0f) + 16.0f + 3.0f;
+    const float  Height = 2.0f + 8.0f + 26.0f;
+    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f + Height + 8.0f);
+    BeginSheetWindow("ViewportGizmo", Corner, ImVec2(Extent, Height), true);
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Pill   = Spanning(Corner.x, Corner.y, Extent, Height);
+    const float       Centre = 0.5f * (Pill.MinimumY + Pill.MaximumY);
+    Sheet.Box(Pill, SolidArcInk(0x191919, 0xe8 / 255.0f), 18.0f, SolidArcWash(0x12));
+    float X = Pill.MinimumX + 1.0f + 12.0f;
+    X += Sheet.Text(X, Centre, 10.0f, SolidArcInk(0x999999), "Gizmo") + 8.0f;
+    for (const GizmoChip& Chip : Chips)
+    {
+        const float         Span   = Probe.Measure(Chip.Label, 11.0f) + 16.0f;
+        const PlaneExtent   Box    = PlaneExtent{ X, Centre - 13.0f, X + Span, Centre + 13.0f };
+        const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, Chip.Key, Box);
+        const bool          Active = (State.Gizmo.Modes & Chip.Mode) != 0;
+        if (Active || Press.HoveredCondition) Sheet.Box(Box, Active ? SolidArcWash(0x15) : SolidArcInk(0x292929), 13.0f);
+        Sheet.Text(X + 8.0f, Centre, 11.0f, SolidArcInk(Active ? 0xffffff : Press.HoveredCondition ? 0xdddddd : 0x8a8f96), Chip.Label);
+        if (Press.ClickedCondition)
+        {
+            State.Gizmo.Modes ^= Chip.Mode;
+            Announce(State, "Gizmo: " + GizmoModesLabel(State.Gizmo.Modes));
+        }
+        X += Span + 3.0f;
+    }
+    EndSheetWindow();
+}
+
 // 📝 HTML .sketch-toolbar (bottom 52, centred): #171717f5, #343434 hairline, radius 13, padding 5, gap 4; buttons
 //    padding 9 12, radius 8, gap 7, glyph 17, #aaa (active / hover #303030 / #fff), a 1 × 22 #3a3a3a divider after Select.
 //    Select ends Trim, Cut splits the body by the focused sketch / picked curve (C), Trim opens the trim session (T).
@@ -6208,6 +6702,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     RegisterWidget(State, "ViewportSurface");
     const bool Hovered = ImGui::IsItemHovered();
     State.ViewportHovered = Hovered;
+    State.Style.Gizmo     = {};
     if (State.DrawingSheet.ActiveCondition)
     {
         State.ViewportHovered = false;
@@ -6240,6 +6735,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     Navigation.CapturedCondition   = ImGui::IsItemActive() || Hovered;
     Navigation.HoveredCondition    = Hovered;
     NavigateSolidArcPointer(State.Camera, Frame, Navigation);
+    // Transform gizmo (no command running): a held or hovered handle owns the left button this frame.
+    const bool GizmoOwned = DriveGizmo(State, Frame, Local, Hovered && !OverCube);
 
     // 📝 Mode 1 (Plasticity control-point mode): press on a shown pole grabs it, the pole follows the pointer in the
     //    screen-parallel plane through its start, the release commits one MoveSolidArcPole; a press-release without
@@ -6383,6 +6880,10 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
         if (RightClick && !OverCube) ApplyBevelSession(State);
     }
+    else if (GizmoOwned)
+    {
+        // The gizmo took the press / hover: no selection click, no box.
+    }
     else
     {
         SolidArcBoxSelection& Box = State.Box;
@@ -6452,6 +6953,14 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
     }
+    if (State.Gizmo.DragCondition)
+    {
+        ImVec2 Below(Image.x + 72, Image.y + 64);
+        const SolidArcGizmoSession& Gizmo = State.Gizmo;
+        DrawStatusPill(Canvas, Below, Compose("Gizmo · %s %d · %s%s", GizmoTargetLabel(Gizmo.Target), int(Gizmo.Names.size()), Gizmo.Readout.c_str(), ImGui::GetIO().KeyCtrl ? " · free" : " · snapped"),
+                       Gizmo.Refusal.empty() ? ActiveColour : RefusalColour);
+        if (!Gizmo.Refusal.empty()) DrawStatusPill(Canvas, Below, Gizmo.Refusal, RefusalColour);
+    }
     if (Drag.ActiveCondition)
     {
         ImVec2 Below(Image.x + 72, Image.y + 64);
@@ -6519,7 +7028,11 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
         if (!Sweep.Refusal.empty()) DrawStatusPill(Canvas, Below, Sweep.Refusal, RefusalColour);
     }
-    const char* Hint = State.Transform.ActiveCondition
+    const char* Hint = State.Gizmo.DragCondition
+                           ? "Gizmo: drag the handle (snaps: 0.1 move · 5° turn · ×0.1 scale; Ctrl free) · release commits · Esc cancels"
+                       : State.Gizmo.Hover != SolidArcGizmoHandle::None
+                           ? "Gizmo: press and drag · cones move along an axis · squares move in a plane · arcs rotate · cylinders scale · ring screen move / uniform scale · y cycles modes"
+                       : State.Transform.ActiveCondition
                            ? (State.Transform.Verb == SolidArcTransformVerb::Move ? "Move: pointer snaps to points / edges / faces (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / Enter commit · Esc / right-click cancel"
                               : State.Transform.Verb == SolidArcTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / Enter commit · Esc / right-click cancel"
                               : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / Enter commit · Esc / right-click cancel")
@@ -6559,6 +7072,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     // The overlay clusters are top-level windows of their own (begun here so they measure inside a window).
     DrawSelectionRail(State, Image);
     DrawDisplayMenu(State, Image, Extent.x);
+    DrawGizmoChips(State, Image, Extent.x);
     DrawSketchToolbar(State, Image, Extent);
     ImGui::End();
     ImGui::PopStyleVar(2);
@@ -7394,6 +7908,14 @@ void DrawSelectionSummary(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         Counts = { { { "Poles", Fit ? std::to_string(Fit->Curve.Definition->Poles.size()) : std::string("-") },
                      { "Degree", Fit ? std::to_string(Fit->Curve.Definition->Degree) : std::string("-") },
                      { "Fit mm", Fit ? Compose("%.2f", Fit->WorstDeviation * 1000.0) : std::string("-") } } };
+        const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+        if (!Fit && Solved != State.Document.Regeneration.Sketches.end())
+        {
+            // A picked sketch (loft section / gizmo target): its curves, points and constraints.
+            Kind   = "SKETCH · LOFT SECTION";
+            Counts = { { { "Curves", std::to_string(Solved->second.Curves.size()) }, { "Points", std::to_string(Solved->second.Points.size()) },
+                         { "Constraints", std::to_string(Solved->second.Constraints.size()) } } };
+        }
         Others = int(Selection.Curves.size()) - 1;
     }
     if (Others > 0) Kind += Compose(" · +%d SELECTED", Others);
@@ -7929,6 +8451,13 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         return;
     }
 
+    // Gizmo handle held: Esc drops the drag (no edit).
+    if (State.Gizmo.DragCondition)
+    {
+        if (Pressed(ImGuiKey_Escape)) CancelGizmoDrag(State, "Gizmo cancelled");
+        return;
+    }
+
     // Mode 1 pole drag in progress: Esc drops it (no edit).
     if (State.PoleDrag.ActiveCondition)
     {
@@ -8223,6 +8752,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     // command:offset-curve — on selected faces it offsets the face boundary inward: the inset.
     if (Pressed(ImGuiKey_O)) { if (State.Document.Selection.Faces.empty()) OpenSweepSession(State, SolidArcSweepVerb::Offset); else OpenInsetSession(State); }
     if (Pressed(ImGuiKey_P)) OpenSweepSession(State, SolidArcSweepVerb::Pipe);             // command:pipe
+    if (Pressed(ImGuiKey_Y)) CycleGizmoModes(State);                                       // gizmo modes (y is free in Plasticity's map)
     if (Pressed(ImGuiKey_Escape))
     {
         ClearSolidArcSelection(State.Document);
@@ -8463,6 +8993,7 @@ const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
     if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
     if (State.ParameterDrag.Preview) return State.ParameterDrag.PreviewScene;
+    if (State.Gizmo.DragCondition && State.Gizmo.Preview && State.Gizmo.Refusal.empty()) return State.Gizmo.PreviewScene;
     return State.Scene;
 }
 
@@ -8482,6 +9013,7 @@ SolidArcSceneStates DisplayedSolidArcStates(const SolidArcWorkspaceState& State)
                                : &Scene == &State.Sweep.PreviewScene ? ComposeSolidArcStates(Scene, State.Sweep.Preview->Selection, 0)
                                : &Scene == &State.Joint.PreviewScene ? ComposeSolidArcStates(Scene, State.Joint.Preview->Selection, 0)
                                : &Scene == &State.ParameterDrag.PreviewScene ? ComposeSolidArcStates(Scene, State.ParameterDrag.Preview->Selection, 0)
+                               : &Scene == &State.Gizmo.PreviewScene ? ComposeSolidArcStates(Scene, State.Gizmo.Preview->Selection, 0)
                                                                       : ComposeSolidArcStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
     // 📝 Matcap layers ride in bits 8 … 15 of each face word (SolidArcSurface.slang).
     const std::vector<uint32_t> Layers = ComposeSolidArcMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);

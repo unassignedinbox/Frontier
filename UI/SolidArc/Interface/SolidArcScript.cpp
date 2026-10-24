@@ -343,6 +343,16 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "pick-mode") return Numeric(int(State.PickMode));
     if (Field == "surfaces") return Numeric(State.Style.SurfacesEnabled ? 1 : 0);
     if (Field == "xray") return Numeric(State.Style.XRayEnabled ? 1 : 0);
+    if (Field == "gizmo-modes") return Numeric(double(State.Gizmo.Modes));                  // 1 move · 2 rotate · 4 scale (sums)
+    if (Field == "gizmo-commits") return Numeric(double(State.Gizmo.Commits));
+    if (Field == "gizmo-targets") return Numeric(double(State.Gizmo.Target == SolidArcGizmoTarget::None ? 0 : State.Gizmo.Names.size()));
+    if (Field == "gizmo-target")
+    {
+        Text   = State.Gizmo.Target == SolidArcGizmoTarget::Faces ? "faces" : State.Gizmo.Target == SolidArcGizmoTarget::Bodies ? "bodies"
+               : State.Gizmo.Target == SolidArcGizmoTarget::Sketches ? "sketches" : "";
+        Number = double(int(State.Gizmo.Target));                                          // 0 none · 1 faces · 2 bodies · 3 sketches
+        return true;
+    }
     if (Field == "measure")
     {
         // Text = subject (or the refusal), Number = 1 while Measure (I) is shown.

@@ -17,6 +17,7 @@
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
 #include "UI/SolidArc/Viewport/SolidArcCamera.h"
+#include "UI/SolidArc/Viewport/SolidArcGizmo.h"
 #include "UI/SolidArc/Viewport/SolidArcSnapping.h"
 
 #include "Engine/GeometryProcessing/Blend/BlendCatalogue.h"
@@ -100,6 +101,8 @@ namespace
     GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, \\|ΔV\\| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock 1 × ½ × 2 in (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9 (STL: \\|ΔV\\| ≤ sag · A)" };
     GateTally PrimitiveGate   = { "W40", "Construct catalogue primitives drawn as new bodies: cone (up and down), wedge, 3 / 6 / 8-sided prisms, tube and the drawn polygon against closed forms; eight tiles side by side as Separate bodies keep their own exact volumes (no Boolean); prism Radius and tube bore edits regenerate exactly; codec byte-equal; refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally InsetGate       = { "W41", "Inset (Plasticity O on faces · I): block / cylinder / triangle-prism tops split flat, pocketed and bossed against closed forms with exact face counts; a depth edit regenerates; the pocket floor takes a second inset; codec byte-equal; too-wide / zero / curved refusals atomic", "≤ 10⁻⁹ · exact" };
+    GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
+    GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -3523,7 +3526,250 @@ int main()
               "refused, document unchanged: " + Wide.Refusal + " · " + Zero.Refusal + " · " + Curved.Refusal);
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate })
+    // ---- W42 Loft through drawn sketches (line, polyline, rectangle, circle, slot, spline) + gizmo document verbs
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        // One drawn sketch on the XY grid, lifted by Height with the gizmo verb; returns its step label.
+        const auto Drawn = [&](SolidArcDocument& Document, SolidArcDrawingRequest Request, double Height)
+        {
+            Request.GridPlane = 0;
+            Expect(DrawSolidArcSketch(Document, Request));
+            const std::string Label = Document.Tree.Steps.back().Label;
+            if (Height != 0.0) Expect(PlaceSolidArcSketches(Document, { Label }, TranslationMap({ 0.0, 0.0, Height }), "Move"));
+            return Label;
+        };
+        const auto Circle = [](double Radius)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = SolidArcDrawingKind::Circle; Request.CentreCondition = true; Request.Points = { { 0.0, 0.0 }, { Radius, 0.0 } };
+            return Request;
+        };
+        const auto Rectangle = [](double HalfX, double HalfY)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = SolidArcDrawingKind::Rectangle; Request.CentreCondition = true; Request.Points = { { 0.0, 0.0 }, { HalfX, HalfY } };
+            return Request;
+        };
+        const auto Slot = [](double Half, double Radius)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = SolidArcDrawingKind::Slot; Request.Points = { { -Half, 0.0 }, { Half, 0.0 }, { 0.0, Radius } };
+            return Request;
+        };
+        const auto Frustum = [](double Low, double High, double Height) { return Height / 3.0 * (Low + High + std::sqrt(Low * High)); };
+        const double SlotArea = [&](double Half, double Radius) { return 4.0 * Half * Radius + π * Radius * Radius; }(0.5, 0.3);
+
+        // ① closed sections with closed forms: loft (Plasticity L) then Close (plane caps) → solid
+        struct Case { const char* Name; SolidArcDrawingRequest Low, High; double Height, Expected; };
+        const Case Cases[] = {
+            { "circle r 1 → circle r 1 lifted 2 (cylinder 2π)", Circle(1.0), Circle(1.0), 2.0, 2.0 * π },
+            { "circle r 1 → circle r 0.5 lifted 1.5 (cone frustum)", Circle(1.0), Circle(0.5), 1.5, Frustum(π, π * 0.25, 1.5) },
+            { "rectangle 2 × 1 → rectangle 1 × 0.5 lifted 1 (pyramid frustum)", Rectangle(1.0, 0.5), Rectangle(0.5, 0.25), 1.0, Frustum(2.0, 0.5, 1.0) },
+            { "slot (2 lines + 2 arcs) → slot × 0.5 lifted 0.8 (similar sections)", Slot(0.5, 0.3), Slot(0.25, 0.15), 0.8, Frustum(SlotArea, SlotArea * 0.25, 0.8) },
+        };
+        for (const Case& Entry : Cases)
+        {
+            SolidArcDocument Document = CreateSolidArcDocument("Loft");
+            const std::string First  = Drawn(Document, Entry.Low, 0.0);
+            const std::string Second = Drawn(Document, Entry.High, Entry.Height);
+            const SolidArcCommandOutcome Loft   = LoftSolidArcCurves(Document, { First, Second });
+            const SolidArcCommandOutcome Closed = CloseSolidArcPanels(Document);
+            const double Relative = std::abs(Document.Summary.Volume - Entry.Expected) / Entry.Expected;
+            Tally(SectionLoftGate, Relative, Loft.AcceptedCondition && Closed.AcceptedCondition && Document.Summary.SoundCondition && Relative <= 1.0e-9,
+                  Format("%s: %s → %s, V %.12f vs %.12f%s", Entry.Name, First.c_str(), Second.c_str(), Document.Summary.Volume, Entry.Expected,
+                         Loft.AcceptedCondition ? (Closed.AcceptedCondition ? "" : (" — close refused: " + Closed.Refusal).c_str()) : (" — loft refused: " + Loft.Refusal).c_str()));
+        }
+
+        // ② rectangle → circle (no closed form): sound, 3 faces, between the circle and rectangle prisms; then the top
+        //    section moved up 1 with the gizmo verb regenerates the loft (volume scales with the height for parallel sections)
+        {
+            SolidArcDocument Document = CreateSolidArcDocument("Loft");
+            const std::string Square = Drawn(Document, Rectangle(1.0, 1.0), 0.0);
+            const std::string Round  = Drawn(Document, Circle(1.0), 1.0);
+            const SolidArcCommandOutcome Loft   = LoftSolidArcCurves(Document, { Square, Round });
+            const SolidArcCommandOutcome Closed = CloseSolidArcPanels(Document);
+            const double Volume = Document.Summary.Volume;
+            Tally(SectionLoftGate, 0.0, Loft.AcceptedCondition && Closed.AcceptedCondition && Document.Summary.SoundCondition && Document.Summary.Faces == 3 && Volume > π && Volume < 4.0,
+                  Format("square 2 × 2 → circle r 1 lifted 1: sound %d, %d faces, π < V %.9f < 4%s", int(Document.Summary.SoundCondition), Document.Summary.Faces, Volume,
+                         Loft.AcceptedCondition ? "" : (" — refused: " + Loft.Refusal).c_str()));
+            const SolidArcCommandOutcome Lifted = PlaceSolidArcSketches(Document, { Round }, TranslationMap({ 0.0, 0.0, 1.0 }), "Move");
+            const double Relative = std::abs(Document.Summary.Volume - 2.0 * Volume) / (2.0 * Volume);
+            Tally(SectionLoftGate, Relative, Lifted.AcceptedCondition && Relative <= 1.0e-9 && Document.Summary.SoundCondition,
+                  Format("gizmo move of %s by +1 z regenerates the loft: V %.12f vs 2 × %.12f", Round.c_str(), Document.Summary.Volume, Volume));
+            // codec: sketch sections and their moved planes survive save → load → save
+            const std::string Saved = EncodeSolidArcDocument(Document);
+            SolidArcDocumentFile File = DecodeSolidArcDocument(Saved);
+            SolidArcDocument     Loaded = CreateSolidArcDocument(File.Title);
+            const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Loaded, File.Tree, File.Captions, "Open");
+            Tally(SectionLoftGate, std::abs(Loaded.Summary.Volume - Document.Summary.Volume), Opened.AcceptedCondition && EncodeSolidArcDocument(Loaded) == Saved && Loaded.Summary.Volume == Document.Summary.Volume,
+                  Format("codec: %d bytes, save → load → save byte-equal, same volume", int(Saved.size())));
+        }
+
+        // ③ open sections: a line → a 3-point polyline lifted 1 → an open sheet; a closed spline (4 points) → a circle
+        {
+            SolidArcDocument Document = CreateSolidArcDocument("Loft");
+            SolidArcDrawingRequest Line;
+            Line.Kind = SolidArcDrawingKind::Line; Line.Points = { { -1.0, 0.0 }, { 1.0, 0.0 } };
+            SolidArcDrawingRequest Polyline;
+            Polyline.Kind = SolidArcDrawingKind::Line; Polyline.Points = { { -1.0, 0.5 }, { 0.0, 1.0 }, { 1.0, 0.5 } };
+            const std::string Bottom = Drawn(Document, Line, 0.0);
+            const std::string Top    = Drawn(Document, Polyline, 1.0);
+            const SolidArcCommandOutcome Loft = LoftSolidArcCurves(Document, { Bottom, Top });
+            Tally(SectionLoftGate, 0.0, Loft.AcceptedCondition && Document.Regeneration.Panels.size() == 1,
+                  Format("line %s → polyline %s (2 segments) lifted 1: open panel, %d panel(s)%s", Bottom.c_str(), Top.c_str(), int(Document.Regeneration.Panels.size()),
+                         Loft.AcceptedCondition ? "" : (" — refused: " + Loft.Refusal).c_str()));
+
+            SolidArcDocument Spline = CreateSolidArcDocument("Loft");
+            SolidArcDrawingRequest Curve;
+            Curve.Kind = SolidArcDrawingKind::Curve; Curve.ClosedCondition = true; Curve.Points = { { 1.0, 0.0 }, { 0.0, 0.8 }, { -1.0, 0.0 }, { 0.0, -0.8 } };
+            const std::string Freeform = Drawn(Spline, Curve, 0.0);
+            const std::string Disc     = Drawn(Spline, Circle(0.6), 1.2);
+            const SolidArcCommandOutcome Skin   = LoftSolidArcCurves(Spline, { Freeform, Disc });
+            const SolidArcCommandOutcome Closed = CloseSolidArcPanels(Spline);
+            Tally(SectionLoftGate, 0.0, Skin.AcceptedCondition && Closed.AcceptedCondition && Spline.Summary.SoundCondition && Spline.Summary.Volume > 0.0,
+                  Format("closed spline (4 points) → circle r 0.6 lifted 1.2: closed solid, V %.9f, sound %d%s", Spline.Summary.Volume, int(Spline.Summary.SoundCondition),
+                         Skin.AcceptedCondition ? (Closed.AcceptedCondition ? "" : (" — close refused: " + Closed.Refusal).c_str()) : (" — refused: " + Skin.Refusal).c_str()));
+        }
+
+        // ④ refusals leave the document untouched: open + closed mixed, a scaled or mirrored sketch, an unknown label
+        {
+            SolidArcDocument Document = CreateSolidArcDocument("Loft");
+            SolidArcDrawingRequest Line;
+            Line.Kind = SolidArcDrawingKind::Line; Line.Points = { { -1.0, 0.0 }, { 1.0, 0.0 } };
+            const std::string Open   = Drawn(Document, Line, 0.0);
+            const std::string Closed = Drawn(Document, Circle(1.0), 1.0);
+            const std::string Before = EncodeSolidArcDocument(Document);
+            const SolidArcCommandOutcome Mixed    = LoftSolidArcCurves(Document, { Open, Closed });
+            const SolidArcCommandOutcome Scaled   = PlaceSolidArcSketches(Document, { Closed }, ScalingMap({ 0.0, 0.0, 0.0 }, { 2.0, 2.0, 2.0 }), "Scale");
+            const SolidArcCommandOutcome Mirrored = PlaceSolidArcSketches(Document, { Closed }, ReflectionMap({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }), "Mirror");
+            const SolidArcCommandOutcome Unknown  = PlaceSolidArcSketches(Document, { "Nothing#9" }, TranslationMap({ 0.0, 0.0, 1.0 }), "Move");
+            Tally(SectionLoftGate, 0.0, !Mixed.AcceptedCondition && !Scaled.AcceptedCondition && !Mirrored.AcceptedCondition && !Unknown.AcceptedCondition && EncodeSolidArcDocument(Document) == Before,
+                  "refused, document unchanged: " + Mixed.Refusal + " · " + Scaled.Refusal + " · " + Mirrored.Refusal + " · " + Unknown.Refusal);
+            // a quarter turn about x through the origin carries the plane exactly: x̂ stays, ẑ → −ŷ
+            const SolidArcCommandOutcome Turned = PlaceSolidArcSketches(Document, { Closed }, RotationMap({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, π / 2.0), "Rotate");
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Closed; });
+            const double Gap = Found == Document.Tree.Steps.end() ? 1.0 : Length(Found->Plane.XAxis - Vector3{ 1.0, 0.0, 0.0 }) + Length(Found->Plane.ZAxis - Vector3{ 0.0, -1.0, 0.0 })
+                                                                          + Length(Found->Plane.Origin - Vector3{ 0.0, -1.0, 0.0 });
+            Tally(SectionLoftGate, Gap, Turned.AcceptedCondition && Gap <= 1.0e-12, Format("gizmo rotate of %s 90° about x: plane x̂ (1, 0, 0), ẑ (0, −1, 0), origin (0, −1, 0), gap %.3g", Closed.c_str(), Gap));
+        }
+
+        // ⑤ face gizmo verbs on a block 2 × 1.5 × 1: tweak along a direction, rotate about an axis, scale, push / pull (offset)
+        {
+            const auto Block = [&](const OrbitRay& Ray, std::string& Face)
+            {
+                SolidArcDocument Document = CreateSolidArcDocument("Gizmo");
+                SolidArcConstructRequest Request;
+                Request.Kind = SolidArcConstructKind::Block; Request.Width = 2.0; Request.Depth = 1.5; Request.Height = 1.0; Request.Combination = FeatureCombination::Separate;
+                Expect(ConstructSolidArcPrimitive(Document, Request));
+                Face = PickAndSelect(Document, Ray, false);
+                return Document;
+            };
+            const OrbitRay Side = RayBetween({ 5.0, 0.75, 0.5 }, { 0.0, 0.75, 0.5 });
+            const OrbitRay Top  = RayBetween({ 1.0, 0.75, 5.0 }, { 1.0, 0.75, 0.0 });
+            struct Verb { const char* Name; OrbitRay Ray; FaceOperationKind Operation; double Amount; std::optional<Vector3> Direction; double Expected; };
+            const Verb Verbs[] = {
+                { "side x = 2 pulled +0.3 along its normal (offset)", Side, FaceOperationKind::Offset, 0.3, std::nullopt, 3.0 + 1.5 * 0.3 },
+                { "side x = 2 tweaked along (1, 0, 1) by 0.2√2 (x moves 0.2)", Side, FaceOperationKind::Tweak, 0.2 * std::sqrt(2.0), Vector3{ 1.0, 0.0, 1.0 }, 3.0 + 1.5 * 0.2 },
+                { "top rotated 0.1 rad about x through its centre (volume kept)", Top, FaceOperationKind::Rotate, 0.1, Vector3{ 1.0, 0.0, 0.0 }, 3.0 },
+                { "top scaled × 0.5 about its centre (pyramid frustum)", Top, FaceOperationKind::Scale, 0.5, std::nullopt, Frustum(3.0 / 1.0, 0.75, 1.0) },
+            };
+            std::string Saved;
+            for (const Verb& Entry : Verbs)
+            {
+                std::string Face;
+                SolidArcDocument Document = Block(Entry.Ray, Face);
+                const SolidArcCommandOutcome Outcome = ChangeSolidArcSelection(Document, Entry.Operation, Entry.Amount, Entry.Direction);
+                const double Relative = std::abs(Document.Summary.Volume - Entry.Expected) / Entry.Expected;
+                Tally(SectionLoftGate, Relative, Outcome.AcceptedCondition && Document.Summary.SoundCondition && Relative <= 1.0e-9,
+                      Format("%s on %s: V %.12f vs %.12f%s", Entry.Name, Face.c_str(), Document.Summary.Volume, Entry.Expected, Outcome.AcceptedCondition ? "" : (" — refused: " + Outcome.Refusal).c_str()));
+                if (Entry.Operation == FaceOperationKind::Tweak)
+                {
+                    Saved = EncodeSolidArcDocument(Document);
+                    SolidArcDocumentFile File = DecodeSolidArcDocument(Saved);
+                    SolidArcDocument     Loaded = CreateSolidArcDocument(File.Title);
+                    const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Loaded, File.Tree, File.Captions, "Open");
+                    Tally(SectionLoftGate, std::abs(Loaded.Summary.Volume - Document.Summary.Volume), Opened.AcceptedCondition && EncodeSolidArcDocument(Loaded) == Saved && Loaded.Summary.Volume == Document.Summary.Volume
+                          && Saved.find("Points") != std::string::npos, "codec: the tweak direction is saved (Points) and replays byte-equal");
+                }
+            }
+        }
+    }
+
+    // ---- W43 Transform gizmo: the CPU triangles the GPU draws are the ones picked; drag maths from pixel rays
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const OrbitCameraFrame Frame = FrameOrbitCamera(OrbitCamera{}, 1600.0, 900.0);
+        const auto Project = [&](Vector3 Point, double& X, double& Y)
+        {
+            double Clip[4] = {};
+            for (int Row = 0; Row < 4; ++Row)
+                Clip[Row] = Frame.ClipFromWorld[Row] * Point.X + Frame.ClipFromWorld[4 + Row] * Point.Y + Frame.ClipFromWorld[8 + Row] * Point.Z + Frame.ClipFromWorld[12 + Row];
+            X = (Clip[0] / Clip[3] * 0.5 + 0.5) * Frame.Width;
+            Y = (Clip[1] / Clip[3] * 0.5 + 0.5) * Frame.Height;
+        };
+        struct ModeSet { uint32_t Modes; const char* Name; };
+        const ModeSet Sets[] = { { GizmoTranslate, "T" }, { GizmoRotate, "R" }, { GizmoScale, "S" }, { GizmoTranslate | GizmoRotate, "T+R" },
+                                 { GizmoRotate | GizmoScale, "R+S" }, { GizmoTranslate | GizmoRotate | GizmoScale, "T+R+S" } };
+        for (const ModeSet& Set : Sets)
+        {
+            SolidArcGizmoPose Pose;
+            Pose.Modes = Set.Modes;
+            Pose.Size  = MeasureGizmoSize(Frame, Pose.Origin, GizmoPixels);
+            const SolidArcGizmoGeometry Geometry = BuildSolidArcGizmo(Pose, Frame, SolidArcGizmoHandle::None, SolidArcGizmoHandle::None);
+            // 📝 Slate proportions (L = 1, tip 0.95): cone at the tip, cylinder 0.28 inside, plane quad at (u + v)(tip − 0.08),
+            //    arc on the 45° bisector at 0.62 · tip.
+            const double Tip = 0.95, Arc = 0.62 * Tip / std::sqrt(2.0), Size = Pose.Size;
+            struct Probe { Vector3 Point; SolidArcGizmoHandle Handle; uint32_t Mode; };
+            const Probe Probes[] = {
+                { { Tip * Size, 0.0, 0.0 }, SolidArcGizmoHandle::TranslateX, GizmoTranslate }, { { 0.0, Tip * Size, 0.0 }, SolidArcGizmoHandle::TranslateY, GizmoTranslate },
+                { { 0.0, 0.0, Tip * Size }, SolidArcGizmoHandle::TranslateZ, GizmoTranslate },
+                { { (Tip - 0.08) * Size, (Tip - 0.08) * Size, 0.0 }, SolidArcGizmoHandle::PlaneXY, GizmoTranslate },
+                // 📝 In the exact isometric view the x–z quad centre lies on the eye ray through the y cone (their offset
+                //    (0.87, −0.95, 0.87) runs along the view axis), and the opaque cone rightly wins; probe the quad's free corner.
+                { { (Tip - 0.03) * Size, 0.0, (Tip - 0.13) * Size }, SolidArcGizmoHandle::PlaneXZ, GizmoTranslate },
+                { { (Tip - 0.28) * Size, 0.0, 0.0 }, SolidArcGizmoHandle::ScaleX, GizmoScale }, { { 0.0, (Tip - 0.28) * Size, 0.0 }, SolidArcGizmoHandle::ScaleY, GizmoScale },
+                { { 0.0, 0.0, (Tip - 0.28) * Size }, SolidArcGizmoHandle::ScaleZ, GizmoScale },
+                { { Arc * Size, Arc * Size, 0.0 }, SolidArcGizmoHandle::RotateZ, GizmoRotate }, { { 0.0, Arc * Size, Arc * Size }, SolidArcGizmoHandle::RotateX, GizmoRotate },
+                { { Arc * Size, 0.0, Arc * Size }, SolidArcGizmoHandle::RotateY, GizmoRotate } };
+            int Picks = 0, Misses = 0;
+            std::string Wrong;
+            for (const Probe& Entry : Probes)
+            {
+                if (!(Set.Modes & Entry.Mode)) continue;
+                double X = 0.0, Y = 0.0;
+                Project(Entry.Point, X, Y);
+                const SolidArcGizmoHandle Found = PickSolidArcGizmo(Geometry, Frame, X, Y, 6.0);
+                ++Picks;
+                if (Found != Entry.Handle) { ++Misses; Wrong += std::string(" ") + GizmoHandleLabel(Entry.Handle) + "→" + GizmoHandleLabel(Found); }
+            }
+            double FarX = 0.0, FarY = 0.0;
+            Project({ 0.0, 0.0, 0.0 }, FarX, FarY);
+            const bool Far = PickSolidArcGizmo(Geometry, Frame, FarX + 400.0, FarY, 6.0) == SolidArcGizmoHandle::None;
+            Tally(GizmoGate, double(Misses), Misses == 0 && Far && Geometry.OpaqueCount <= Geometry.Vertices.size() && !Geometry.Vertices.empty(),
+                  Format("%s: %d handle(s) picked at their projected centres, far pixel misses, %zu vertices (%u opaque)%s", Set.Name, Picks, Geometry.Vertices.size(), Geometry.OpaqueCount, Wrong.c_str()));
+        }
+        double Worst = 0.0;
+        for (const double Parameter : { 0.3, 1.7, -0.4 })
+        {
+            double X = 0.0, Y = 0.0;
+            Project({ 0.0, 0.0, Parameter }, X, Y);
+            const std::optional<double> Found = MeasureAxisParameter(CastOrbitRay(Frame, X, Y), { 0.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 });
+            Worst = std::max(Worst, Found ? std::abs(*Found - Parameter) : 1.0);
+        }
+        Tally(GizmoGate, Worst, Worst <= 1.0e-9, Format("axis drag: pointer ray → parameter on the z axis (0.3, 1.7, −0.4), worst |Δt| %.3g", Worst));
+        Worst = 0.0;
+        for (const double Angle : { 0.3, 2.0, -1.0 })
+        {
+            double X = 0.0, Y = 0.0;
+            Project({ 0.0, std::cos(Angle), std::sin(Angle) }, X, Y);
+            const std::optional<double> Found = MeasureGizmoAngle(CastOrbitRay(Frame, X, Y), { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 });
+            Worst = std::max(Worst, Found ? std::abs(*Found - Angle) : 1.0);
+        }
+        Tally(GizmoGate, Worst, Worst <= 1.0e-9, Format("rotate drag: pointer ray → angle about x from y (0.3, 2.0, −1.0 rad), worst |Δθ| %.3g", Worst));
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

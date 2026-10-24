@@ -62,6 +62,7 @@ const Programs = [
     ['SolidArcEdge.slang',    ['SolidArcEdgeVertex', 'SolidArcEdgeFragment', 'SolidArcEdgeOccludedFragment'], ProjectionFields, [['EdgeStates', 1], ['Section', 2]]],
     ['SolidArcGrid.slang',    ['SolidArcGridVertex', 'SolidArcGridFragment'],       GridFields,       []],
     ['SolidArcImagePlane.slang', ['SolidArcImagePlaneVertex', 'SolidArcImagePlaneFragment'], PlaneFields, [['Picture', 0, 1]]],
+    ['SolidArcGizmo.slang',   ['SolidArcGizmoVertex', 'SolidArcGizmoFragment'],     ProjectionFields, []],
 ];
 const Entries = [];
 for (const [File, Names, Fields, Buffers] of Programs)

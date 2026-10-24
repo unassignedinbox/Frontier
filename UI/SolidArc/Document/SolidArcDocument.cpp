@@ -643,7 +643,8 @@ void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureConditio
     KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
     KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
     std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
-    std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label); });
+    // Picked curves are SpaceCurves or sketches (loft sections, gizmo); either kind survives while its label still solves.
+    std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label) && !Document.Regeneration.Sketches.contains(Label); });
 }
 
 SolidArcDocument CloneSolidArcDocument(const SolidArcDocument& Source)

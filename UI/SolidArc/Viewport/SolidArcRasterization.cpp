@@ -279,6 +279,8 @@ void SolidArcRasterization::CreatePipelines()
     const VkShaderModule GridFragment    = CreateModule(Device->Device, SolidArcGridFragmentCode);
     const VkShaderModule PlaneVertex     = CreateModule(Device->Device, SolidArcImagePlaneVertexCode);
     const VkShaderModule PlaneFragment   = CreateModule(Device->Device, SolidArcImagePlaneFragmentCode);
+    const VkShaderModule GizmoVertex     = CreateModule(Device->Device, SolidArcGizmoVertexCode);
+    const VkShaderModule GizmoFragment   = CreateModule(Device->Device, SolidArcGizmoFragmentCode);
 
     PipelineRecipe Surface;
     Surface.Vertex        = SurfaceVertex;
@@ -341,7 +343,20 @@ void SolidArcRasterization::CreatePipelines()
     Plane.IdentityWrite = false;
     PlanePipeline       = CreatePipeline(Device->Device, PlaneLayout, Plane);
 
-    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, EdgeOccluded, GridVertex, GridFragment, PlaneVertex, PlaneFragment })
+    // 📝 Gizmo: drawn after a depth clear, so the model never hides it while its own handles still occlude each other;
+    //    never written to the identity target (the CPU pick on the same triangles decides hover / grab).
+    PipelineRecipe Gizmo;
+    Gizmo.Vertex        = GizmoVertex;
+    Gizmo.Fragment      = GizmoFragment;
+    Gizmo.VertexEntry   = SolidArcGizmoVertexEntry;
+    Gizmo.FragmentEntry = SolidArcGizmoFragmentEntry;
+    Gizmo.Bindings      = { { 0, sizeof(SolidArcGizmoVertex), VK_VERTEX_INPUT_RATE_VERTEX } };
+    Gizmo.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R8G8B8A8_UNORM, 24 } };
+    Gizmo.ColourBlend   = true;
+    Gizmo.IdentityWrite = false;
+    GizmoPipeline       = CreatePipeline(Device->Device, PipelineLayout, Gizmo);
+
+    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, EdgeOccluded, GridVertex, GridFragment, PlaneVertex, PlaneFragment, GizmoVertex, GizmoFragment })
         vkDestroyShaderModule(Device->Device, Module, nullptr);
 }
 
@@ -350,14 +365,14 @@ void SolidArcRasterization::Destroy()
     if (!Device || !Device->Device) return;
     vkDeviceWaitIdle(Device->Device);
     DestroyTargets();
-    for (SolidArcBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer, &SectionBuffer }) Device->DestroyBuffer(*Buffer);
+    for (SolidArcBuffer* Buffer : { &ProbeReadback, &CornerBuffer, &SegmentBuffer, &FaceStateBuffer, &EdgeStateBuffer, &SectionBuffer, &GizmoBuffer }) Device->DestroyBuffer(*Buffer);
     ReleasePictures();
     Device->DestroyImage(MatcapArray);
     if (MatcapPool) vkDestroyDescriptorPool(Device->Device, MatcapPool, nullptr);
     MatcapPool   = VK_NULL_HANDLE;
     MatcapSet    = VK_NULL_HANDLE;
     MatcapLayers = 0;
-    for (VkPipeline* Pipeline : { &SurfacePipeline, &SurfaceDepthPipeline, &SurfaceGhostPipeline, &EdgePipeline, &EdgeOccludedPipeline, &GridPipeline, &PlanePipeline })
+    for (VkPipeline* Pipeline : { &SurfacePipeline, &SurfaceDepthPipeline, &SurfaceGhostPipeline, &EdgePipeline, &EdgeOccludedPipeline, &GridPipeline, &PlanePipeline, &GizmoPipeline })
     {
         if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
         *Pipeline = VK_NULL_HANDLE;
@@ -714,6 +729,27 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
         DrawEdges(EdgePipeline, Style.EdgeDepthBias);
         DrawPlanes();
         DrawGrid();
+    }
+    // ②′ gizmo on a cleared depth (handles occlude each other, never the model them)
+    if (!Style.Gizmo.Vertices.empty() && GizmoPipeline)
+    {
+        const VkDeviceSize Needed = sizeof(SolidArcGizmoVertex) * Style.Gizmo.Vertices.size();
+        if (GizmoBuffer.Size < Needed)
+        {
+            vkDeviceWaitIdle(Device->Device);
+            Device->DestroyBuffer(GizmoBuffer);
+            GizmoBuffer = Device->CreateBuffer(std::max<VkDeviceSize>(Needed * 2, 64 * 1024), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        }
+        std::memcpy(GizmoBuffer.Mapped, Style.Gizmo.Vertices.data(), size_t(Needed));
+        VkClearAttachment DepthClear{};
+        DepthClear.aspectMask                      = VK_IMAGE_ASPECT_DEPTH_BIT;
+        DepthClear.clearValue.depthStencil         = { 1.0f, 0 };
+        const VkClearRect Whole{ { { 0, 0 }, { Colour.Width, Colour.Height } }, 0, 1 };
+        vkCmdClearAttachments(Commands, 1, &DepthClear, 1, &Whole);
+        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, GizmoPipeline);
+        vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Projection), &Projection);
+        vkCmdBindVertexBuffers(Commands, 0, 1, &GizmoBuffer.Buffer, &Origin);
+        vkCmdDraw(Commands, uint32_t(Style.Gizmo.Vertices.size()), 1, 0, 0);
     }
     vkCmdEndRendering(Commands);
 
