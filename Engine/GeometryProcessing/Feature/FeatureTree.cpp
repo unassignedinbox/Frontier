@@ -15,6 +15,7 @@
 #include "Engine/GeometryProcessing/Local/FaceOperations.h"
 #include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSection.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 #include "Engine/GeometryProcessing/Surfacing/CurveNetwork.h"
 #include "Engine/GeometryProcessing/Surfacing/PanelAssembly.h"
@@ -671,6 +672,13 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Settings.Kind = Step.Operation;
             for (uint32_t Slot : Slots) Settings.Faces.push_back(Partition.Faces.TokenAt(Slot));
             ApplySettingsAmount(Settings, Amount);
+            // 📝 Gizmo tweaks carry their direction (Tweak: Vector = d̂·Amount) or axis (Rotate) in Points[0]; without it
+            //    Tweak runs along +z and Rotate about +x as before.
+            if (!Step.Points.empty() && Length(Step.Points.front()) > 1.0e-12)
+            {
+                if (Step.Operation == FaceOperationKind::Tweak)  Settings.Vector = Normalize(Step.Points.front()) * Amount;
+                if (Step.Operation == FaceOperationKind::Rotate) Settings.Axis   = Normalize(Step.Points.front());
+            }
             if (Step.Operation == FaceOperationKind::Inset) Settings.Depth = EvaluateFeatureValue(Tree, Step.Extent);
             const FaceOperationOutcome Change = ApplyFaceOperation(Partition, Current, Settings);
             if (!Change.Refusal.empty()) { Refuse(Change.Refusal); break; }
@@ -729,13 +737,17 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         }
         case FeatureStepKind::Loft:
         {
-            // ⑤ Skin a sheet through the named SpaceCurve results, in order.
+            // ⑤ Skin a sheet through the named sections, in order: SpaceCurve results, or sketches holding one chain
+            //    (line, polyline, arc, slot, rectangle, circle, spline) composed into one exact NURBS each.
             std::vector<NurbsCurve> Sections;
             for (const std::string& Section : Step.Sections)
             {
-                const auto Found = Outcome.Curves.find(Section);
-                if (Found == Outcome.Curves.end()) { Refuse("Loft: section " + Section + " is unavailable"); break; }
-                Sections.push_back(Found->second.Curve);
+                if (const auto Found = Outcome.Curves.find(Section); Found != Outcome.Curves.end()) { Sections.push_back(Found->second.Curve); continue; }
+                const auto Drawn = Sketches.find(Section);
+                if (Drawn == Sketches.end() || !Drawn->second.UsableCondition) { Refuse("Loft: section " + Section + " is unavailable"); break; }
+                const SketchSectionOutcome Composed = ComposeSketchSection(Drawn->second.Model, Drawn->second.Plane);
+                if (!Composed.Curve) { Refuse("Loft: section " + Section + ": " + Composed.Refusal); break; }
+                Sections.push_back(*Composed.Curve);
             }
             if (Report.Status == FeatureStepStatus::Refused) break;
             if (const std::string Blocked = PanelJoinRefusal("Loft"); !Blocked.empty()) { Refuse(Blocked); break; }

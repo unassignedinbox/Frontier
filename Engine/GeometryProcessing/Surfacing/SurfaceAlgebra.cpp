@@ -417,4 +417,85 @@ std::optional<NurbsSurfaceDefinition> SkinCurveFamily(const std::vector<NurbsCur
     return Surface;
 }
 
+std::optional<std::pair<NurbsCurveDefinition, NurbsCurveDefinition>> SplitNurbsCurve(const NurbsCurveDefinition& Definition, double τ)
+{
+    const int Degree = Definition.Degree;
+    const int Count  = static_cast<int>(Definition.Poles.size());
+    if (Degree < 1 || Count < Degree + 1 || static_cast<int>(Definition.Knots.size()) != Count + Degree + 1) return std::nullopt;
+    if (!(τ > Definition.Knots[Degree] && τ < Definition.Knots[Count])) return std::nullopt;
+    // ① τ to multiplicity p (RefineNurbsCurveKnots skips values already at p)
+    const int Present = static_cast<int>(std::count(Definition.Knots.begin(), Definition.Knots.end(), τ));
+    NurbsCurveDefinition Refined = Definition;
+    if (Present < Degree) Refined = RefineNurbsCurveKnots(Definition, std::vector<double>(static_cast<size_t>(Degree - Present), τ));
+    const auto First = std::find(Refined.Knots.begin(), Refined.Knots.end(), τ);
+    if (First == Refined.Knots.end() || static_cast<int>(std::count(Refined.Knots.begin(), Refined.Knots.end(), τ)) < Degree) return std::nullopt;
+    // ② s = index of the first τ: the first half owns poles 0 … s − 1, the second s − 1 … n (pole s − 1 lies on τ)
+    const int Start = static_cast<int>(First - Refined.Knots.begin());
+    std::pair<NurbsCurveDefinition, NurbsCurveDefinition> Halves;
+    NurbsCurveDefinition& Low  = Halves.first;
+    NurbsCurveDefinition& High = Halves.second;
+    Low.Degree = High.Degree = Degree;
+    Low.Knots.assign(Refined.Knots.begin(), Refined.Knots.begin() + Start + Degree);
+    Low.Knots.push_back(τ);
+    Low.Poles.assign(Refined.Poles.begin(), Refined.Poles.begin() + Start);
+    Low.Weights.assign(Refined.Weights.begin(), Refined.Weights.begin() + Start);
+    High.Knots.push_back(τ);
+    High.Knots.insert(High.Knots.end(), Refined.Knots.begin() + Start, Refined.Knots.end());
+    High.Poles.assign(Refined.Poles.begin() + Start - 1, Refined.Poles.end());
+    High.Weights.assign(Refined.Weights.begin() + Start - 1, Refined.Weights.end());
+    return Halves;
+}
+
+std::optional<NurbsCurveDefinition> JoinNurbsCurves(const std::vector<NurbsCurveDefinition>& Pieces, const std::vector<double>& Spans, double Join)
+{
+    if (Pieces.empty() || Spans.size() != Pieces.size()) return std::nullopt;
+    // ① one degree (exact elevation)
+    int Degree = 1;
+    for (const NurbsCurveDefinition& Piece : Pieces) Degree = std::max(Degree, Piece.Degree);
+    std::vector<NurbsCurveDefinition> Raised;
+    for (const NurbsCurveDefinition& Piece : Pieces)
+    {
+        if (Piece.Poles.size() < 2 || Piece.Weights.size() != Piece.Poles.size()) return std::nullopt;
+        if (Piece.Degree == Degree) { Raised.push_back(Piece); continue; }
+        std::optional<NurbsCurveDefinition> Elevated = ElevateNurbsCurveDegree(Piece, Degree);
+        if (!Elevated) return std::nullopt;
+        Raised.push_back(std::move(*Elevated));
+    }
+    // ② concatenate: [a₀]^(p+1) I₀ [b₀]^p I₁ [b₁]^p … I_last [b_last]^(p+1); poles P₀ then P_k without their first pole
+    NurbsCurveDefinition Result;
+    Result.Degree = Degree;
+    double Along  = 0.0;                                                                     // [-] - Parameter where piece k starts
+    for (size_t Index = 0; Index < Raised.size(); ++Index)
+    {
+        const NurbsCurveDefinition& Piece = Raised[Index];
+        if (!(Spans[Index] > 0.0) || !std::isfinite(Spans[Index])) return std::nullopt;
+        const NurbsDomain Domain = MeasureNurbsCurveDomain(Piece);
+        const double      Width  = Domain.High - Domain.Low;
+        if (!(Width > 0.0)) return std::nullopt;
+        const auto Map = [&](double Knot) { return Along + (Knot - Domain.Low) / Width * Spans[Index]; };
+        double Scale = 1.0;                                                                  // [-] - Weight rescale of this piece
+        if (Index == 0)
+        {
+            Result.Knots.assign(static_cast<size_t>(Degree + 1), Along);
+        }
+        else
+        {
+            if (Length(Piece.Poles.front() - Result.Poles.back()) > Join) return std::nullopt;
+            Scale = Result.Weights.back() / Piece.Weights.front();
+        }
+        const size_t Last = Piece.Knots.size() - static_cast<size_t>(Degree) - 1;            // Index of the first end knot
+        for (size_t Knot = static_cast<size_t>(Degree) + 1; Knot < Last; ++Knot) Result.Knots.push_back(Map(Piece.Knots[Knot]));
+        Along += Spans[Index];
+        for (int Repeat = 0; Repeat < Degree; ++Repeat) Result.Knots.push_back(Along);
+        for (size_t Pole = Index == 0 ? 0 : 1; Pole < Piece.Poles.size(); ++Pole)
+        {
+            Result.Poles.push_back(Piece.Poles[Pole]);
+            Result.Weights.push_back(Piece.Weights[Pole] * Scale);
+        }
+    }
+    Result.Knots.push_back(Along);
+    if (Result.Knots.size() != Result.Poles.size() + static_cast<size_t>(Degree) + 1) return std::nullopt;
+    return Result;
+}
+
 } // namespace Frontier::GeometryProcessing

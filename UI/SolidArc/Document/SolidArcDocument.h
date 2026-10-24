@@ -289,7 +289,9 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome ConstructSolidArcPrimitive(SolidArcDocument& Document, const SolidArcConstructRequest& Request);
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::BlendProfile Shape, double Size);
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request);
-[[nodiscard]] SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount);
+// Direction (gizmo): Tweak moves along it by Amount, Rotate turns about it (through each face centre) by Amount [rad].
+[[nodiscard]] SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount,
+                                                             std::optional<GeometryProcessing::Vector3> Direction = std::nullopt);
 // Inset (Plasticity O on faces · I): border ring Distance wide; the inner face moves Depth along the outward normal (− pocket).
 [[nodiscard]] SolidArcCommandOutcome InsetSolidArcSelection(SolidArcDocument& Document, double Distance, double Depth);
 [[nodiscard]] SolidArcCommandOutcome AssignSolidArcParameter(SolidArcDocument& Document, const std::string& Name, double Value);
@@ -334,6 +336,12 @@ struct VehicleCurveFile;
 // ("Move", "Rotate", "Scale"). Names, selection and every later step that references the bodies follow them.
 [[nodiscard]] SolidArcCommandOutcome TransformSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys,
                                                              const GeometryProcessing::AffineMap& Map, const std::string& Verb);
+
+// 📝 Gizmo on sketches (loft sections): every listed Sketch step's plane is carried by the rigid Map (rotation +
+//    translation; the elevation rides along its normal). Scale and mirror maps are refused (🚧), as are labels that are
+//    not sketches. Later steps (lofts through the sketch, extrudes of it) regenerate from the new plane.
+[[nodiscard]] SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels,
+                                                           const GeometryProcessing::AffineMap& Map, const std::string& Verb);
 
 // Shift+D / Ctrl+V: one Duplicate step per body, placed by Map; each copy is a new body (key = its step label), the last
 // one active, the copies selected. Source (paste) copies each body as it stood right after that step — the clipboard.
@@ -513,7 +521,8 @@ struct SolidArcLinkedPicks
 struct SolidArcStepReading;
 [[nodiscard]] SolidArcCommandOutcome ImportSolidArcStep(SolidArcDocument& Document, const SolidArcStepReading& Reading);
 
-// 💡 V4–V6: a Loft step through the SpaceCurve steps in the given order (Plasticity L), G0 / G1 / G2 (Continuity 0–2) to a
+// 💡 V4–V6: a Loft step through the SpaceCurve steps and / or one-chain sketches (line, polyline, arc, slot, rectangle,
+//    circle, spline: Sketch/SketchSection.h) in the given order (Plasticity L), G0 / G1 / G2 (Continuity 0–2) to a
 //    panel already ending on its first or last section; when the picked curves cross each other (DetectCurveNetwork)
 //    a Network step (Gordon / Coons, V5) is made instead — order does not matter there, and G1 / G2 refuses (🚧).
 [[nodiscard]] SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels, int Continuity = 0);

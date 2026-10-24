@@ -13,6 +13,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Frontier::GeometryProcessing
@@ -47,6 +48,16 @@ struct FamilySkinning
 //    reproduces it — exact up to rounding (collocation at Greville points is well conditioned). Empty when the
 //    collocation is singular or the target degree is out of range.
 [[nodiscard]] std::optional<NurbsCurveDefinition> ElevateNurbsCurveDegree(const NurbsCurveDefinition& Definition, int Degree);
+
+// Exact split at τ inside the open domain (knot insertion to multiplicity p): the halves share the pole at τ and keep
+// their knot values (first half on [Low, τ], second on [τ, High]). Empty when τ is not strictly inside the domain.
+[[nodiscard]] std::optional<std::pair<NurbsCurveDefinition, NurbsCurveDefinition>> SplitNurbsCurve(const NurbsCurveDefinition& Definition, double τ);
+
+// 💡 One clamped curve through pieces joined end to start (piece k's start within Join of piece k − 1's end): every
+//    piece raised exactly to the highest degree, piece k mapped onto a parameter span proportional to Spans[k] (e.g.
+//    its length), its weights rescaled so the shared pole carries one weight (a uniform weight scale leaves a rational
+//    curve unchanged), junctions at full multiplicity p (G0, exact). Empty on a gap, a bad span or a failed elevation.
+[[nodiscard]] std::optional<NurbsCurveDefinition> JoinNurbsCurves(const std::vector<NurbsCurveDefinition>& Pieces, const std::vector<double>& Spans, double Join);
 
 // Interior knots of a clamped vector, value → multiplicity.
 [[nodiscard]] std::vector<std::pair<double, int>> CollectInteriorKnots(const std::vector<double>& Knots, int Degree);

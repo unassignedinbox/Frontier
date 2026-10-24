@@ -168,6 +168,12 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
         Table.insert("Amount", EncodeValue(Step.Amount));
         if (Step.Operation == FaceOperationKind::Inset) Table.insert("Extent", EncodeValue(Step.Extent));
+        if (!Step.Points.empty())
+        {
+            toml::array Points;                                                              // Tweak direction / rotation axis (gizmo)
+            for (const Vector3& Point : Step.Points) Points.push_back(EncodeVector(Point));
+            Table.insert("Points", std::move(Points));
+        }
         break;
     case FeatureStepKind::SpaceCurve:
     {

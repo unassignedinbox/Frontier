@@ -755,7 +755,7 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const 
     });
 }
 
-SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceOperationKind Operation, double Amount)
+SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceOperationKind Operation, double Amount, std::optional<Vector3> Direction)
 {
     const std::string Stem  = SolidArcFaceOperationLabel(Operation);
     const std::string Label = Stem + " " + FormatAmount(Amount) + " on " + std::to_string(Document.Selection.Faces.size()) + " face(s)";
@@ -771,13 +771,19 @@ SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceO
         const std::string StepLabel = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
         const double      Span = std::max(1.0, 4.0 * std::abs(Amount));
         Document.Tree.Parameters.push_back({ Caption + ".Amount", Amount, std::min(-Span, Amount), std::max(Span, Amount),
-                                             Operation == FaceOperationKind::Draft ? "draft angle [rad]" : "distance" });
+                                             Operation == FaceOperationKind::Draft ? "draft angle [rad]" : Operation == FaceOperationKind::Rotate ? "angle [rad]"
+                                             : Operation == FaceOperationKind::Scale ? "factor" : "distance" });
         FeatureStep Step;
         Step.Kind      = FeatureStepKind::FaceOperation;
         Step.Label     = StepLabel;
         Step.Operation = Operation;
         Step.Amount    = ParameterValue(Caption + ".Amount");
         Step.Target    = Owner;
+        if (Direction && (Operation == FaceOperationKind::Tweak || Operation == FaceOperationKind::Rotate))
+        {
+            if (!(Length(*Direction) > 1.0e-12)) return "the direction is zero";
+            Step.Points = { Normalize(*Direction) };
+        }
         for (const std::string& Name : Document.Selection.Faces) Step.References.push_back({ ReferenceKind::Face, Name, {} });
         Document.Tree.Steps.push_back(std::move(Step));
         Document.Captions[StepLabel] = Caption;
@@ -1125,7 +1131,7 @@ SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std:
         for (size_t Index = 0; Index < Labels.size(); ++Index)
         {
             const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Labels[Index]; });
-            if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::SpaceCurve) return "no curve step labelled " + Labels[Index];
+            if (Found == Document.Tree.Steps.end() || (Found->Kind != FeatureStepKind::SpaceCurve && Found->Kind != FeatureStepKind::Sketch)) return "no curve or sketch step labelled " + Labels[Index];
             if (std::find(Labels.begin(), Labels.begin() + Index, Labels[Index]) != Labels.begin() + Index) return "curve " + Labels[Index] + " is selected twice";
         }
         if (Continuity < 0 || Continuity > 2) return "continuity must be G0, G1 or G2";
@@ -1588,6 +1594,34 @@ SolidArcCommandOutcome TransformSolidArcBodies(SolidArcDocument& Document, const
             Step.Placement = Map;
             Document.Captions[Step.Label] = Caption;
             Document.Tree.Steps.push_back(std::move(Step));
+        }
+        return {};
+    });
+}
+
+SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels, const AffineMap& Map, const std::string& Verb)
+{
+    const std::vector<std::string> Unique = UniqueKeys(Labels);
+    return RunCommand(Document, Verb + " (" + ListCaptions(Document, Unique) + ")", false, [&]() -> std::string
+    {
+        if (Unique.empty()) return "pick the sketches to " + Verb;
+        // ① rigid only: orthonormal columns, right-handed
+        const Vector3 Columns[3] = { Map.ColumnX, Map.ColumnY, Map.ColumnZ };
+        for (int First = 0; First < 3; ++First)
+            for (int Second = 0; Second < 3; ++Second)
+                if (std::abs(Dot(Columns[First], Columns[Second]) - (First == Second ? 1.0 : 0.0)) > 1.0e-9) return "a sketch moves and turns only (🚧 scaling a sketch)";
+        if (Dot(Cross(Map.ColumnX, Map.ColumnY), Map.ColumnZ) < 0.0) return "a sketch cannot be mirrored (🚧)";
+        const auto Turn = [&](Vector3 Vector) { return Map.ColumnX * Vector.X + Map.ColumnY * Vector.Y + Map.ColumnZ * Vector.Z; };
+        // ② carry each plane
+        for (const std::string& Label : Unique)
+        {
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+            if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Label;
+            OrthonormalFrame& Plane = Found->Plane;
+            Plane.Origin = Turn(Plane.Origin) + Map.Shift;
+            Plane.XAxis  = Normalize(Turn(Plane.XAxis));
+            Plane.YAxis  = Normalize(Turn(Plane.YAxis));
+            Plane.ZAxis  = Normalize(Turn(Plane.ZAxis));
         }
         return {};
     });
