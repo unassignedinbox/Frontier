@@ -1,6 +1,6 @@
 # 🧩 SolidArc — application evidence
 
-**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes **28 / 28** (both upstream raster validations plus every SolidArc test, 1303.74 s, re-run for S6 on 2026-10-24). SolidArc also cross-builds for Windows x64 as a 3.6 MB preview package that has not yet been run on Windows (`Results/S6Windows.md`). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
+**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes **28 / 28** (both upstream raster validations plus every SolidArc test, 1303.74 s, re-run for S6 on 2026-10-24). SolidArc also cross-builds for Windows x64 as a 3.6 MB preview package; the first Windows run brought up the interface, and the viewport fix it led to awaits a second run (`Results/S6Windows.md`). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
 
 
 ## 🏁 Port stages (SolidArc inside upstream Frontier)
@@ -12,7 +12,7 @@
 | S3 | 1:1 Outliner, viewport and Inspector port (S3a / S3b / S3c) | `HtmlParity.md` 🟢 72 · ⚠️ 1 · 🚧 3 | 🟢 |
 | S4 | Shared Slang shaders (`CadStroke`, `MatCapLookup`) and `Engine/Render/OrbitCamera` | `MatCapRasterizationValidation`, `SurfaceRasterizationValidation`, ctest 27 / 27 | 🟢 |
 | S5 | Project browser: CAD category, thumbnails, live reader, Open in SolidArc | `S5Browser.md`, `SolidArcBrowserValidation` 15 / 15 | 🟢 |
-| S6 | Validation tables; Windows cross-build and package | `S6Windows.md`, ctest 28 / 28 | 🟢 built and packaged; 🔴 first Windows run pending |
+| S6 | Validation tables; Windows cross-build and package | `S6Windows.md`, ctest 28 / 28 | 🟢 built and packaged; first Windows run 🟢 interface, viewport fix awaiting a second run |
 | S7 | PR into upstream Frontier after PR #16 merges | | 🚧 |
 
 ## 🏁 ctest (28 / 28, SwiftShader, 2026-10-24)
