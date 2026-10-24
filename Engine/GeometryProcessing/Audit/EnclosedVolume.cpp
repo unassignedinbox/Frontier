@@ -35,6 +35,13 @@ namespace
     // ⚠️ PanelSpan is an angle; plane charts and line parameters are lengths, so a body at 10³ cut them into ~10⁵ panels
     //    per sample. 64 × π/16 = 4π leaves every angular span untouched.
     constexpr int    PanelLimit = 64;                                                        // [-] - Initial panels per interval
+    // ⚠️ Safety net: a hard cap on the halvings of one refined interval. A traced intersection whose C′ was inconsistent
+    //    with C near a tangential crossing (fixed in EvaluateIntersectionCurve) kept every gap above the floor; the
+    //    bisection spread to depth 24 across a whole neighbourhood: 1 to 330 s per volume, and the SolidArc bevel preview
+    //    froze the workspace. The cap bounds the work whatever the integrand; the stagnation floor below normally
+    //    accepts noisy panels long before the cap is reached.
+    constexpr long   SplitLimit      = 2048;                                                 // [-] - Halvings per refined interval
+    constexpr double StagnationRatio = 1.0e3;                                                // [-] - Stagnation floor / acceptance floor
 
     // Composite Gauss–Legendre of a scalar integrand over [Low, High].
     template <typename Integrand>
@@ -89,16 +96,21 @@ namespace
     //    on every panel. A gap already inside the noise band (≤ 10⁻⁹ of ∫|f|) shrinking slower than ¼ per level (noise,
     //    or a sub-tolerance jump whose error is the gap itself) is accepted; larger
     //    gaps (an unresolved pole swing) always refine.
-    [[nodiscard]] double IntegrateAdaptive(double Low, double High, double Coarse, const Integrand& Function, double Floor, int Depth, double ParentGap = std::numeric_limits<double>::infinity())
+    // ⚠️ Noisy carrier: a gap that stagnates (shrinks slower than ¼ per level) below StagnationRatio × Floor is noise in
+    //    the integrand (absolute, so a tiny panel's relative gap may be large); refining it only spends evaluations.
+    [[nodiscard]] double IntegrateAdaptive(double Low, double High, double Coarse, const Integrand& Function, double Floor, long& Splits, int Depth,
+                                           double ParentGap = std::numeric_limits<double>::infinity())
     {
         const double        Middle = 0.5 * (Low + High);
         const PanelEstimate Left   = IntegratePanel(Low, Middle, Function);
         const PanelEstimate Right  = IntegratePanel(Middle, High, Function);
         const double        Gap    = std::fabs(Left.Value + Right.Value - Coarse);           // [-] - Halves vs whole
         const double        Scale  = Left.Magnitude + Right.Magnitude;                       // [-] - ∫|f| over the panel
-        if (Depth >= 24 || Gap <= 1.0e-14 * Scale || Gap <= Floor) return Left.Value + Right.Value;
-        if (Gap <= 1.0e-9 * Scale && Gap > 0.25 * ParentGap) return Left.Value + Right.Value;
-        return IntegrateAdaptive(Low, Middle, Left.Value, Function, Floor, Depth + 1, Gap) + IntegrateAdaptive(Middle, High, Right.Value, Function, Floor, Depth + 1, Gap);
+        if (Depth >= 24 || Splits <= 0 || Gap <= 1.0e-14 * Scale || Gap <= Floor) return Left.Value + Right.Value;
+        if (Gap > 0.25 * ParentGap && (Gap <= 1.0e-9 * Scale || Gap <= StagnationRatio * Floor)) return Left.Value + Right.Value;
+        --Splits;
+        const double LeftTotal = IntegrateAdaptive(Low, Middle, Left.Value, Function, Floor, Splits, Depth + 1, Gap);
+        return LeftTotal + IntegrateAdaptive(Middle, High, Right.Value, Function, Floor, Splits, Depth + 1, Gap);
     }
 
     template <typename Integrand>
@@ -107,10 +119,11 @@ namespace
         const int    PanelCount = std::clamp(static_cast<int>(std::ceil(std::fabs(High - Low) / PanelWidth)), 1, PanelLimit);
         const double Width      = (High - Low) / PanelCount;                                 // [-] - Signed panel width
         double       Total      = 0.0;
+        long         Splits     = SplitLimit;                                                // [-] - Halvings left for this interval
         for (int PanelIndex = 0; PanelIndex < PanelCount; ++PanelIndex)
         {
             const double PanelLow = Low + Width * PanelIndex, PanelHigh = PanelLow + Width;
-            Total += IntegrateAdaptive(PanelLow, PanelHigh, IntegratePanel(PanelLow, PanelHigh, Function).Value, Function, Floor, 0);
+            Total += IntegrateAdaptive(PanelLow, PanelHigh, IntegratePanel(PanelLow, PanelHigh, Function).Value, Function, Floor, Splits, 0);
         }
         return Total;
     }

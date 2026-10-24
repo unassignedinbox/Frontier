@@ -215,7 +215,15 @@ CurveSurfaceOutcome IntersectCurveSurface(const CurveGeometry& Curve, double Low
     {
         if (!Merged.empty() && (Distance(Merged.back().Position, Touch.Position) <= 2.0 * Settings.Precision || StretchWithinPrecision(Merged.back().CurveParameter, Touch.CurveParameter)))
         {
-            if (Touch.Residual < Merged.back().Residual) Merged.back() = Touch;
+            // ⚠️ At a touch |d| is flat to second order: a point 5·10⁻⁹ along a line tangent to a cylinder still reads
+            //    |d| ≈ 3·10⁻¹⁷, so comparing residuals picks by rounding. The extremum condition d′ = 0 is first order —
+            //    keep the duplicate with the smaller |d′| / |C′| (it moved a tangent cap foot by 4.9·10⁻⁹).
+            const auto Flatness = [&](const CurveSurfaceCrossing& Crossing)
+            {
+                const DistanceProbe Probe = ProbeDistance(Curve, Surface, Crossing.CurveParameter);
+                return std::fabs(Probe.Slope) / std::max(Probe.Speed, 1.0e-300);
+            };
+            if (Flatness(Touch) < Flatness(Merged.back())) Merged.back() = Touch;
             continue;
         }
         Merged.push_back(Touch);

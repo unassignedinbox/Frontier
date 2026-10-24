@@ -1,6 +1,6 @@
 # 📝 S6: SolidArc Windows build and package
 
-**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,555,933 B (8.4 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
+**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,557,295 B (8.4 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
 
 On Linux, the same package layout finds its content beside the executable: the frame matches the development checkout everywhere except the frame-time text. With no content beside it, the program falls back to the ImGui default font and missing-icon markers. ctest passes 28/28. It was built with MinGW, not MSVC. **First Windows run (user, AMD Radeon RX 9060 XT, Vulkan 1.4.359):** the interface, fonts and icons come up clean, but the viewport showed displaced tiles and picking missed. The cause was a stale viewport texture, now fixed in the current zip, which awaits a second run (see below).
 
@@ -20,7 +20,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Property | SolidArcWorkspace.exe | Frontier.exe |
 |---|---|---|
-| Size | 6,981,120 B | 6,913,536 B |
+| Size | 6,984,704 B | 6,917,632 B |
 | Machine | 0x8664 (x64) | 0x8664 (x64) |
 | Subsystem | 2: Windows GUI (`-Wl,--subsystem,windows`; `WIN32_EXECUTABLE` alone gave 3, console) | 3: console (upstream setting, unchanged) |
 | DLL imports | GDI32, KERNEL32, SHELL32, USER32, plus `api-ms-win-crt-{convert, environment, heap, locale, math, multibyte, private, runtime, stdio, string, time, utility}` | Same, plus comdlg32 and ole32 |
@@ -32,7 +32,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Entry | Size | Purpose |
 |---|---|---|
-| `SolidArc/SolidArcWorkspace.exe` | 6,981,120 B | The application |
+| `SolidArc/SolidArcWorkspace.exe` | 6,984,704 B | The application |
 | `SolidArc/SolidArcWorkspace.toml` | 940 B | Package options: window, viewport, font, and file paths (autosave in `Autosave/`, documents in `Documents/`, both inside the package folder), plus Vulkan |
 | `SolidArc/README.md` | 1,671 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
 | `SolidArc/EngineContent/FontArchives/…` | | DM Sans (the upstream interface typeface) |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,555,933 B |
-| Zip sha256 | `e9601c3d5c1b1fb6700ed9f2c9f12442567063299b1864edc561f308d226c19f` |
-| Unpacked | 8,445,666 B |
+| Zip size | 3,557,295 B |
+| Zip sha256 | `75033cc88adade061a5846b81e3d35977b5a1e8c8b468c0269a96b8a39e58053` |
+| Unpacked | 8,434,082 B (337 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
@@ -91,12 +91,39 @@ An earlier control run C, from a folder inside this repository, walked up to the
 | Linux recheck | SolidArcViewportValidation, BrowserValidation, Workspace, Matcap and XRay walkthroughs 🟢. A maximise → restore capture is identical, old code against new, on SwiftShader (the bug cannot show there) |
 | Open | 🔴 Second Windows run with the fixed zip |
 
+## 🐞 Bevel freeze (second Windows report)
+
+**TL;DR**: Beveling an upright edge beside the earlier 0.4 bottom fillet froze the workspace: the window stopped responding but kept using CPU. The bevel preview runs on the interface thread, and one preview took **334 s** at r 0.1. Four kernel defects were behind it. All four are fixed, every radius now builds exactly in about 0.05 s, and a fillet or chamfer as wide as its neighbouring face is refused instead of crashing.
+
+| Defect | Where | Effect before | Fix |
+|---|---|---|---|
+| Cap foot took the wrong root | `EdgeBlend.cpp` `ResolveCap` | The contact line meets the bottom fillet's cylinder twice, at the same distance from the vertex. Rounding picked the root on the far side of the axis, so r 0.01 / 0.03 / 0.05 / 0.12 / 0.3 were refused as "consumed by the blend" while the radii next to them built | `CrossCurveFace` keeps only crossings that lie on the face (`ClassifyFacePosition`), nearest first |
+| Touch picked by residual | `CurveSurfaceIntersection.cpp` merge | At a tangential touch \|d\| is flat to second order, so the duplicate kept was chosen by rounding. The foot sat 4.9·10⁻⁹ off the tangency | The duplicate with the smaller \|d′\| / \|C′\| is kept, so the foot lands exactly on the tangency |
+| Random tangent at a singular knot | `IntersectionCurve.cpp` `CurveDirection` | Where the two fillets touch, N₁ × N₂ is rounding noise. Normalising it gave the guide a random tangent: speed 21× and C′ off by 80 % | No direction below \|N₁ × N₂\| 10⁻⁶. The chord stands in, and the segment is refined until the regular end agrees with it |
+| C′ blew up near the tangency | `EvaluateIntersectionCurve` | \|C′\| reached 168 against a true 1.0 within 10⁻⁶ of the end. The volume quadrature integrated this as 1.7·10⁻⁵ of spurious volume and kept bisecting it | Below \|N₁ × N₂\| 10⁻³, C′ is the central difference of the evaluation map, so it stays consistent with C |
+| Unbounded bisection | `EnclosedVolume.cpp` | A noisy integrand was halved without limit | At most 2048 halvings per interval, and a stagnation floor of 10³ × the acceptance floor (a safety net; it no longer triggers here) |
+| Blend as wide as the face | `EdgeBlend.cpp` `ComposeFaces` | Size 1.5 (the cap's depth) read `Uses.back()` of an empty vector: SIGSEGV | Refused: "blend consumes the face next to the corner … (size reaches the face width)" |
+
+| Upright r beside the 0.4 fillet | Before | After | \|V − closed form\| / V after |
+|---|---|---|---|
+| 0.01 / 0.03 / 0.05 / 0.12 / 0.3 | refused | 0.05–0.08 s | ≤ 1.3·10⁻¹² |
+| 0.02 | 4.5 s, 3.5·10⁻⁶ off | 0.05 s | 2.1·10⁻¹² |
+| 0.1 | **334 s** | 0.06 s | 8.5·10⁻¹³ |
+| 0.1137 (the screenshot) | 4.3 s, 5.6·10⁻⁶ off | 0.06 s | 6.4·10⁻¹³ |
+
+- 📝 **Closed form:** V = 3 − (1 − π/4)(R²·2 + r²) + ∫₀ʳ 𝑢max(𝑣)·h(𝑣) d𝑣. The integral is the overlap of the two notch prisms, where 𝑢max is the upright notch's reach and h is the bottom fillet's height. It is evaluated with Simpson's rule in 𝑠, with 𝑣 = r𝑠².
+- 🏁 **Gate:** `DocumentValidation.md` W39 (10 checks): 8 radii ≤ 2.1·10⁻¹² and ≤ 20 s each, plus the fillet and chamfer of size 1.5 refused with the document byte-equal.
+- 🔍 **Sweep:** before the fixes, a sweep of a block with a first fillet (12 edges × 4 sizes) followed by a second fillet or chamfer (12 sizes) found the six size-1.5 crashes, no stalls, and slow cases up to 2.2 s. It ran for 4,488 cases.
+- ⚠️ **Still open:** the preview is still synchronous. A kernel case that is slow for another reason would still pause the window while it runs.
+
 ## 🏁 Linux regression
 
 | Gate | Result |
 |---|---|
 | ctest after the S6 source changes (both upstream raster validations + every SolidArc test) | 🟢 28 / 28, 1303.74 s (`NurbsBlend` 725.98 s) |
 | `SolidArcBrowserValidation` after the absolute document path | 🟢 15 / 15; the started workspace opened Bracket.solidarc |
+| ctest after the bevel-freeze fixes (kernel + W39) | 🟢 28 / 28, 1289.04 s (`NurbsBlend` 646.91 s) |
+| Kernel ctest (`Exhibits/GeometryProcessing`, PatternStress separately) | 🟢 29 / 29, 1350.31 s; PatternStress 69 / 69 🟢 in 495.9 s (was 754.4 s). Only P2's volume changed, and it is now the tessellation limit (see the GeometryProcessing README) |
 
 ## ⚠️ Limits
 

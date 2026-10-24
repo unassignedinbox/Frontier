@@ -1,6 +1,6 @@
 # Rolling-ball carrier validation (procedural pipe on traced spines)
 
-**🟢 PASS** · 4 bodies · 5 transforms · 51613 ms
+**🟢 PASS** · 4 bodies · 5 transforms · 31770 ms
 
 ## Gates
 
@@ -15,7 +15,7 @@
 | 🟢 | R6 | Analytic reproduction: line spine ≡ cylinder, circle spine ≡ torus (distance) | ≤ 1e-12 | 8.33e-16 | 1 | 0 |
 | 🟢 | R7 | Carrier ∩ normal plane: a closed branch on the section circle (distance) | ≤ 1e-8 | 4.44e-16 | 9 | 0 |
 | 🟢 | R8 | Bodies: audit sound, \|V − V_polygon\| ≤ peak deviation × area, fillet removes material | pass | 0.00e+00 | 4 | 0 |
-| 🟢 | R9 | Transforms there and back: audit sound, V·s³ (relative), vertices home | ≤ 1e-9 | 8.22e-12 | 5 | 0 |
+| 🟢 | R9 | Transforms there and back: audit sound, V·s³ (relative), vertices home | ≤ 1e-9 | 8.58e-12 | 5 | 0 |
 | 🟢 | R10 | Ball law on a constant wedge (cylinder rim, θ = 90°): spine ≡ circle (R − d, H − d), reversal C(−τ), chord ≡ cone, chord projection round trip (distance) | ≤ 1e-11 | 2.21e-15 | 1 | 0 |
 | 🟢 | R10′ | Ball law rates: C′ vs the circle's (relative), chord normal ∥ cone normal [rad] | ≤ 1e-8 | 7.50e-11 | 1 | 0 |
 | 🟢 | R11 | Canal (r = r₀ + k·𝑢) on a line spine ≡ cone of sin β = k: chart, projection round trip, signed distance, offset (distance) | ≤ 1e-11 | 7.78e-16 | 1 | 0 |
@@ -25,17 +25,17 @@
 
 | | Specimen | Edges | Sheets | Pipes | Faces | Genus | V | Removed | \|V − V_polygon\| | Bound | ms | Outcome |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 🟢 | Radial bore through the axis (crosses both seams), r 0.03 | 2 | 2 | 2 | 7 | 0 | 28.022941899773 | 2.741e-04 | 8.7e-04 | 1.3e-02 | 5582 | blended |
-| 🟢 | Radial bore through the axis, r 0.06 | 2 | 2 | 2 | 7 | 0 | 28.022072222398 | 1.144e-03 | 8.7e-04 | 1.3e-02 | 5655 | blended |
-| 🟢 | Offset bore (y 0.8, asymmetric mouth), r 0.04 | 1 | 1 | 1 | 6 | 0 | 27.902839245926 | 6.976e-04 | 8.4e-04 | 1.3e-02 | 7665 | blended |
-| 🟢 | Equal crossing bore at x 2 (Steinmetz: 4 half-ellipses, 2 pinch vertices), r 0.03 | 4 | 4 | 4 | 12 | 2 | 27.504721216622 | 1.930e-04 | 5.7e-04 | 1.4e-02 | 6105 | blended · 2 pinch vertices |
+| 🟢 | Radial bore through the axis (crosses both seams), r 0.03 | 2 | 2 | 2 | 7 | 0 | 28.022941899773 | 2.741e-04 | 8.7e-04 | 1.3e-02 | 3548 | blended |
+| 🟢 | Radial bore through the axis, r 0.06 | 2 | 2 | 2 | 7 | 0 | 28.022072222398 | 1.144e-03 | 8.7e-04 | 1.3e-02 | 3615 | blended |
+| 🟢 | Offset bore (y 0.8, asymmetric mouth), r 0.04 | 1 | 1 | 1 | 6 | 0 | 27.902839245926 | 6.976e-04 | 8.4e-04 | 1.3e-02 | 5224 | blended |
+| 🟢 | Equal crossing bore at x 2 (Steinmetz: 4 half-ellipses, 2 pinch vertices), r 0.03 | 4 | 4 | 4 | 12 | 2 | 27.504721216622 | 1.930e-04 | 5.7e-04 | 1.4e-02 | 2772 | blended · 2 pinch vertices |
 
 ## Transforms
 
 | | Journey | \|V − V*·s³\| / V* | Vertices home | Outcome |
 |---|---|---|---|---|
-| 🟢 | Rotation 37° about a skew axis + translation | 8.2e-12 | 1.5e-15 | round trip |
-| 🟢 | Reflection in a skew plane | 2.7e-12 | 5.7e-16 | round trip |
-| 🟢 | Uniform scale × 2.5 about (1, 1, 1) | 7.5e-14 | 4.7e-16 | round trip |
-| 🟢 | Curved-edge chamfer (tilted bore, d 0.1): rotation + scale × 2 + skew reflection | 1.2e-13 | 1.2e-15 | round trip |
+| 🟢 | Rotation 37° about a skew axis + translation | 8.6e-12 | 1.5e-15 | round trip |
+| 🟢 | Reflection in a skew plane | 2.6e-12 | 5.7e-16 | round trip |
+| 🟢 | Uniform scale × 2.5 about (1, 1, 1) | 4.3e-14 | 4.7e-16 | round trip |
+| 🟢 | Curved-edge chamfer (tilted bore, d 0.1): rotation + scale × 2 + skew reflection | 1.5e-13 | 1.2e-15 | round trip |
 | 🟢 | Non-uniform scale (1, 1, 2) — must refuse | 0.0e+00 | 0.0e+00 | Transform: a non-similar map on a traced or contact edge (its chord-length τ does not stretch uniformly, 🚧) |

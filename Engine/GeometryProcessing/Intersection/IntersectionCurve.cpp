@@ -26,9 +26,10 @@ namespace Frontier::GeometryProcessing
 
 namespace
 {
-    constexpr double FullTurn     = 2.0 * std::numbers::pi;                                  // [rad] - Period of closed curves
-    constexpr double TurnLimit    = 0.1;                                                     // [rad] - Guide tangent turn per segment
-    constexpr int    RefineLimit  = 8;                                                       // [-]   - Midpoint refinement rounds
+    constexpr double FullTurn          = 2.0 * std::numbers::pi;                             // [rad] - Period of closed curves
+    constexpr double SingularDirection = 1.0e-6;                                             // [-]   - |N₁ × N₂| with no usable direction
+    constexpr double TurnLimit         = 0.1;                                                // [rad] - Guide tangent turn per segment
+    constexpr int    RefineLimit       = 8;                                                  // [-]   - Midpoint refinement rounds
 
     struct GuideSample
     {
@@ -83,7 +84,10 @@ namespace
     {
         const Vector3 Direction = Cross(MeasureSurfaceDistance(First, Position).Normal, MeasureSurfaceDistance(Second, Position).Normal);
         const double  Magnitude = Length(Direction);                                         // [-] - |N₁ × N₂|
-        return Magnitude > 1.0e-300 ? Direction * (1.0 / Magnitude) : Vector3{};
+        // ⚠️ At a tangential crossing (a cap foot exactly where two fillets touch) N₁ × N₂ is rounding noise: normalising
+        //    it gave the guide knot a random tangent and the Hermite guide a 21× speed over its last segment (C′ off
+        //    by 80 %, volume off by 10⁻⁶). Report no direction; the caller uses the chord instead.
+        return Magnitude > SingularDirection ? Direction * (1.0 / Magnitude) : Vector3{};
     }
 
     // Folds τ of a closed curve into [Knots.front(), Knots.front() + 2π).
@@ -319,7 +323,12 @@ CurveGeometry BuildIntersectionCurve(const SurfaceGeometry& First, const Surface
             Refined.push_back(Guide[Index]);
             if (Index >= Segments) continue;
             const Vector3 Start = Guide[Index], End = Guide[(Index + 1) % Guide.size()];
-            const Vector3 StartDirection = CurveDirection(First, Second, Start), EndDirection = CurveDirection(First, Second, End);
+            Vector3 StartDirection = CurveDirection(First, Second, Start), EndDirection = CurveDirection(First, Second, End);
+            // A singular end has no direction: the chord stands in, so the segment is refined until the regular end's
+            // tangent agrees with the chord (the singular knot's tangent below is that chord).
+            if (Length(StartDirection) == 0.0 && Length(EndDirection) == 0.0) continue;
+            if (Length(StartDirection) == 0.0) StartDirection = Normalize(End - Start);
+            if (Length(EndDirection) == 0.0)   EndDirection   = Normalize(End - Start);
             const double  Turn = std::atan2(Length(Cross(StartDirection, EndDirection)), std::fabs(Dot(StartDirection, EndDirection)));
             if (Turn <= TurnLimit) continue;
             Vector3 Middle = (Start + End) * 0.5;
@@ -463,6 +472,36 @@ double MeasureIntersectionCurveResidual(const TracedIntersection& Trace, double 
 //                                                    CURVEGEOMETRY DISPATCH
 //------------------------------------------------------------------------------------------------------------------------
 
+namespace
+{
+    constexpr double SingularSine = 1.0e-3;                                                  // [-] - |N₁ × N₂| below which 𝐭 is not trusted
+
+    // Position of the evaluation map alone (guide point corrected onto both carriers), Guide when the corrector fails.
+    [[nodiscard]] Vector3 PositionOnBoth(const TracedIntersection& Trace, double τ) noexcept
+    {
+        const double      Folded   = FoldParameter(Trace, τ);
+        const GuideSample Guide    = EvaluateGuide(Trace, Folded);
+        Vector3           Position = Guide.Position;
+        if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter, nullptr, { 0.0, 0.0 }, InterpolateFeet(Trace, Folded))) return Guide.Position;
+        return Position;
+    }
+
+    // C′ by central difference over 10⁻⁶ of the guide's τ span (one-sided at the ends of an open curve).
+    [[nodiscard]] Vector3 DifferenceDerivative(const TracedIntersection& Trace, double τ) noexcept
+    {
+        const double Low  = Trace.Knots.front(), High = Trace.Knots.back();                  // [-] - τ range
+        const double Step = 1.0e-6 * std::max(High - Low, 1.0e-12);                          // [-] - Difference step
+        double Before = τ - Step, After = τ + Step;
+        if (!Trace.Closed)
+        {
+            Before = std::max(Before, Low);
+            After  = std::min(After, High);
+        }
+        if (!(After > Before)) return EvaluateGuide(Trace, FoldParameter(Trace, τ)).First;
+        return (PositionOnBoth(Trace, After) - PositionOnBoth(Trace, Before)) * (1.0 / (After - Before));
+    }
+}
+
 CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ) noexcept
 {
     if (Trace.Law)
@@ -479,7 +518,12 @@ CurveSample EvaluateIntersectionCurve(const TracedIntersection& Trace, double τ
     if (!CorrectOntoBoth(Trace.First, Trace.Second, Position, Guide.First, Guide.Position, Trace.Perimeter, &Normals, { 0.0, 0.0 }, InterpolateFeet(Trace, FoldParameter(Trace, τ)))) return { Guide.Position, Guide.First };
     const Vector3 Direction = Cross(Normals[0], Normals[1]);
     const double  Sine      = Length(Direction);                                             // [-] - |N₁ × N₂|
-    if (Sine <= 1.0e-10) return { Position, Guide.First };
+    // ⚠️ Near a tangential crossing of the carriers (a fillet's cap meeting the earlier fillet it is tangent to) 𝐭 is
+    //    N₁ × N₂ of nearly parallel normals: its direction carries the corrector's rounding / Sine, and σ divides by
+    //    𝐭·H′. Measured on a cylinder–cylinder cap: |C′| 168 against a true 1.0 within 10⁻⁶ of the range end, which the
+    //    volume quadrature integrated as 1.7·10⁻⁵ of spurious volume (and bisected for minutes). Inside the band the
+    //    derivative is the central difference of the evaluation map itself, so C′ stays consistent with C.
+    if (Sine <= SingularSine) return { Position, DifferenceDerivative(Trace, τ) };
     Vector3 Unit = Direction * (1.0 / Sine);                                                 // [-] - 𝐭
     if (Dot(Unit, Guide.First) < 0.0) Unit = -Unit;
     const double Speed = (Dot(Guide.First, Guide.First) - Dot(Position - Guide.Position, Guide.Second)) / Dot(Unit, Guide.First);

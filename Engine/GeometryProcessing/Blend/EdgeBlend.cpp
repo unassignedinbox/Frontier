@@ -447,6 +447,37 @@ namespace
             return Best;
         }
 
+        // ⚠️ Point where a curve meets a FACE nearest a vertex: crossings on the carrier outside the face's loops are passed over.
+        //    A contact line crossing a cylindrical third face (a fillet beside an earlier fillet) meets the carrier twice,
+        //    symmetric about the vertex; nearest-only picked the root on the far side of the axis by rounding, and the sharp
+        //    edge was then trimmed past its end (beside a 0.4 fillet, r 0.01 / 0.03 / 0.05 / 0.12 / 0.3 were refused as
+        //    "consumed by the blend" while their neighbours built). Falls back to the nearest carrier crossing when none
+        //    lies on the face.
+        [[nodiscard]] std::optional<Vector3> CrossCurveFace(const CurveGeometry& Curve, Vector3 Near, FaceToken Face) const
+        {
+            double Low = 0.0, High = 2.0 * std::numbers::pi;                                 // [-] - Search window (as CrossCurveSurface)
+            if (!PeriodicCondition(Curve))
+            {
+                const double Centre = ProjectOntoCurve(Curve, Near, 0.0);
+                Low  = Centre - 4.0 * Scale;
+                High = Centre + 4.0 * Scale;
+                const CarrierRange Range = MeasureCarrierRange(Curve);
+                if (std::isfinite(Range.Low))  Low  = std::max(Low, Range.Low);
+                if (std::isfinite(Range.High)) High = std::min(High, Range.High);
+            }
+            const CurveSurfaceOutcome Crossing = IntersectCurveSurface(Curve, Low, High, SurfaceOf(Face));
+            if (Crossing.Crossings.size() < 2) return Crossing.Crossings.empty() ? std::nullopt : std::optional<Vector3>(Crossing.Crossings.front().Position);
+            const FaceDomain       Domain = DescribeFaceDomain(Partition, Face);
+            std::optional<Vector3> Best, BestOnFace;
+            for (const CurveSurfaceCrossing& Point : Crossing.Crossings)
+            {
+                if (!Best || Distance(Point.Position, Near) < Distance(*Best, Near)) Best = Point.Position;
+                if (ClassifyFacePosition(Domain, Point.Position, Agreement).Membership == PointMembership::Outside) continue;
+                if (!BestOnFace || Distance(Point.Position, Near) < Distance(*BestOnFace, Near)) BestOnFace = Point.Position;
+            }
+            return BestOnFace ? BestOnFace : Best;
+        }
+
         // Closest approach of two straight contacts on one face (chamfer mitres and apexes).
         [[nodiscard]] std::optional<Vector3> MeetLines(const CurveGeometry& First, const CurveGeometry& Second)
         {
@@ -1153,7 +1184,7 @@ namespace
             int Feet[2] = { -1, -1 };
             for (int Side = 0; Side < 2; ++Side)
             {
-                const std::optional<Vector3> Foot = CrossCurveSurface(Sheet.Contacts[Side], Position, SurfaceOf(Third));
+                const std::optional<Vector3> Foot = CrossCurveFace(Sheet.Contacts[Side], Position, Third);
                 if (!Foot) return "cap: contact curve misses the third face";
                 Feet[Side] = IssueVertex(*Foot);
             }
@@ -1621,6 +1652,10 @@ namespace
                         }
                         else Uses.push_back({ Pieces[FinRecord.Edge.Slot], FinRecord.Sense, *FinRecord.SurfaceCurve });
                         const auto Cap = CapEdges.find({ Face.Slot, Partition.FinEnd(Fin).Slot });
+                        // ⚠️ A loop that starts with a consumed fin has no use yet to hang the cap or setback on (radius equal to
+                        //    the neighbouring face's width): Uses.back() read past an empty vector and crashed the workspace.
+                        if ((Cap != CapEdges.end() || SetbackLinks.count({ Face.Slot, Partition.FinEnd(Fin).Slot }) != 0) && Uses.empty())
+                            return "blend consumes the face next to the corner on " + LabelToken("F", Face) + " (size reaches the face width)";
                         if (Cap != CapEdges.end())
                         {
                             const int From = UseEnd(Uses.back());

@@ -96,6 +96,7 @@ namespace
     GateTally SnapGate        = { "W35", "Object snapping on a 4 × 2 × 1 block, a separate cylinder r 0.5 and coplanar sketches (isometric camera, pointer at projected pixels): endpoint, midpoint, edge / face / circle centres, on edge, on face, on circle, sketch crossing, tangent and perpendicular points from a reference, arc-length midpoint of a spline; hidden corners need x-ray, the section and excluded bodies drop candidates, the filter disables kinds, a dragged sketch excludes itself, direction lock lines", "≤ 1e-12 (on carrier)" };
     GateTally JointGate       = { "W36", "Joints (Alt+J) + interference on the bracket specimen: hover origins (rim centres, face centroids); a pin r 0.25 jointed revolute, flipped, offset 0.25 into the hole r 0.3 → centroid (3, 1.25, 0.5); a lever on the pin cap at 90° → exact bounds; measure lever + bracket clear 0.25, bracket + pin clear 0.05; pin offset −0.1 → lever overlaps (0.8 − 2 (0.2 √0.05 + 0.09 asin ⅔)) · 0.1; moving the bracket carries both; refusals; codec (joints, geometry, fixed point); undo", "≤ 1e-9" };
     GateTally SheetGate       = { "W37", "Drawing sheet (Alt+D) of the bracket specimen: kernel views, hidden lines and dimensions in mm (metres × 1000), automatic ISO 5455 scale (next larger refused), unit invariance against the millimetre kernel sheet, A4 third-angle placement, section A-A cap = exact section 4.116587, SVG / DXF export byte-equal beside the document, [DrawingSheet] codec round trip + refusals, hidden bodies refused", "≤ 1e-9" };
+    GateTally BoundGate       = { "W39", "Bevel previews from the first Windows run: an upright fillet beside a 0.4 bottom fillet (the cap foot took the wrong root of the cylinder, the guide got a random tangent at the tangential corner, C′ blew up and the volume quadrature bisected for up to 334 s) builds every radius in a fraction of a second with |V − closed form| / V; a fillet / chamfer as wide as the neighbouring face (crashed) is refused with the document untouched", "≤ 10⁻⁹, ≤ 20 s, refused" };
     GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, \\|ΔV\\| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock 1 × ½ × 2 in (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9 (STL: \\|ΔV\\| ≤ sag · A)" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -3246,7 +3247,71 @@ int main()
         Tally(ExchangeGate, 0.0, Back1 && Forth, "undo removes the import (both bodies), redo restores it");
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate })
+    // ---- W39 bevel previews after the first Windows run: an upright fillet beside a 0.4 bottom fillet (froze / refused /
+    //      off by 10⁻⁶), and a blend as wide as the neighbouring face (crashed)
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[512]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        constexpr double Bottom = 0.4;                                                       // [len] - First fillet radius R
+        constexpr double Notch  = 1.0 - std::numbers::pi / 4.0;                              // [-]   - Fillet cross-section / r²
+        // 📝 Closed form: V = 2·1.5·1 − Notch·(R²·2 + r²·1) + overlap of the two notch prisms. In the corner the upright
+        //    notch (offsets 𝑢, 𝑣 from the two side faces, 𝑢 < r − √(r² − (r − 𝑣)²)) reaches down to the bottom fillet at
+        //    height h(𝑣) = R − √(R² − (R − 𝑣)²), so overlap = ∫₀ʳ 𝑢max(𝑣)·h(𝑣) d𝑣 — Simpson in 𝑠 with 𝑣 = r𝑠² (the √
+        //    end points become smooth), converged to rounding at 40 000 panels.
+        const auto Overlap = [&](double Radius)
+        {
+            constexpr int Panels = 40000;                                                    // [-] - Even
+            double Sum = 0.0;                                                                // [len³] - Simpson sum
+            for (int Index = 0; Index <= Panels; ++Index)
+            {
+                const double Unit   = static_cast<double>(Index) / Panels;                   // [-]   - 𝑠
+                const double Offset = Radius * Unit * Unit;                                  // [len] - 𝑣
+                const double Height = Bottom - std::sqrt(std::max(0.0, Bottom * Bottom - (Bottom - Offset) * (Bottom - Offset)));
+                const double Reach  = Radius - std::sqrt(std::max(0.0, Radius * Radius - (Radius - Offset) * (Radius - Offset)));
+                const double Weight = (Index == 0 || Index == Panels) ? 1.0 : (Index % 2 == 1 ? 4.0 : 2.0);
+                Sum += Weight * Reach * Height * 2.0 * Radius * Unit;
+            }
+            return Sum / (3.0 * Panels);
+        };
+        SolidArcDocument Base = CreateSolidArcDocument("Bounded");
+        Expect(ConstructSolidArcPrimitive(Base, SolidArcConstructRequest{}));
+        SelectSolidArcName(Base, SolidArcSelectionKind::Edge, "Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))", false);
+        SolidArcBlendRequest First;
+        First.Size = Bottom;
+        Expect(BlendSolidArcSelection(Base, First));
+        // 0.1137 = the screenshot; 0.1 bisected for 334 s; 0.01 / 0.03 / 0.05 / 0.12 / 0.3 were refused; 0.02 / 0.1137 were 10⁻⁶ off.
+        for (const double Radius : { 0.01, 0.02, 0.03, 0.05, 0.1, 0.1137, 0.12, 0.3 })
+        {
+            SolidArcDocument Preview = CloneSolidArcDocument(Base);
+            ClearSolidArcSelection(Preview);
+            SelectSolidArcName(Preview, SolidArcSelectionKind::Edge, "Edge(Extrude#2.Side(Line1)|Extrude#2.Side(Line2))", false);
+            SolidArcBlendRequest Upright;
+            Upright.Size = Radius;
+            const auto   Begun    = std::chrono::steady_clock::now();
+            const SolidArcCommandOutcome Outcome = BlendSolidArcSelection(Preview, Upright);
+            const double Seconds  = std::chrono::duration<double>(std::chrono::steady_clock::now() - Begun).count();
+            const double Expected = 3.0 - Notch * (Bottom * Bottom * 2.0 + Radius * Radius) + Overlap(Radius);   // [len³]
+            const double Relative = std::abs(Preview.Summary.Volume - Expected) / Expected;
+            Tally(BoundGate, Relative, Outcome.AcceptedCondition && Preview.Summary.SoundCondition && Relative <= 1.0e-9 && Seconds <= 20.0,
+                  Format("upright fillet r %.4g beside the 0.4 bottom fillet: V %.12f vs %.12f, %.2f s%s", Radius, Preview.Summary.Volume, Expected, Seconds,
+                         Outcome.AcceptedCondition ? "" : (" — refused: " + Outcome.Refusal).c_str()));
+        }
+        for (const BlendProfile Shape : { BlendProfile::Fillet, BlendProfile::Chamfer })
+        {
+            SolidArcDocument Plain = CreateSolidArcDocument("Width");
+            Expect(ConstructSolidArcPrimitive(Plain, SolidArcConstructRequest{}));
+            const std::string Before = EncodeSolidArcDocument(Plain);
+            SelectSolidArcName(Plain, SolidArcSelectionKind::Edge, "Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))", false);
+            SolidArcBlendRequest Wide;
+            Wide.Shape = Shape;
+            Wide.Size  = 1.5;
+            const SolidArcCommandOutcome Outcome = BlendSolidArcSelection(Plain, Wide);
+            Plain.Selection = {};
+            Tally(BoundGate, 0.0, !Outcome.AcceptedCondition && EncodeSolidArcDocument(Plain) == Before,
+                  std::string(Shape == BlendProfile::Fillet ? "fillet" : "chamfer") + " 1.5 = the bottom cap's depth: refused, document unchanged: " + Outcome.Refusal);
+        }
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

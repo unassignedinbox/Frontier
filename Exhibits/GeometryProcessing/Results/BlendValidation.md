@@ -1,6 +1,6 @@
 # Blend validation (step 5, I)
 
-**🟢 PASS** · rolling-ball harness 15/15 · BevelLab 6/6 · 50 specimens · 126270 ms
+**🟢 PASS** · rolling-ball harness 15/15 · BevelLab 6/6 · 50 specimens · 93270 ms
 
 ## Gates
 
@@ -23,55 +23,55 @@ Carriers: P plane · C cylinder · K cone · T torus · R procedural rolling bal
 
 | | Specimen | Family | Edges | Faces | Genus | ΔV | ΔV* (closed form) | \|error\| | Carriers | Vertices | Triangles | ms |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 🟢 | BoxEdgeFillet | Harness | 1 | 7 | 0 | -0.077256661177 | -0.077256661177 | 2.8e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1028 | 44.4 |
-| 🟢 | BoxEdgeChamfer | Harness | 1 | 7 | 0 | -0.180000000000 | -0.180000000000 | 6.8e-15 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 150 | 30.5 |
-| 🟢 | BoxTopFillet | Harness | 4 | 10 | 0 | -0.260044317413 | -0.260044317413 | 4.9e-15 | 0P 4C 0K 0T 0R 0S | 0 · 4 · 0 · 0 | 2530 | 84.9 |
-| 🟢 | BoxTopChamfer | Harness | 4 | 10 | 0 | -0.594000000000 | -0.594000000000 | 8.3e-15 | 4P 0C 0K 0T 0R 0S | 0 · 4 · 0 · 0 | 150 | 32.9 |
-| 🟢 | BoxCornerFillet | Harness | 3 | 10 | 0 | -0.169307571942 | -0.169307571942 | 3.4e-15 | 0P 3C 0K 0T 0R 1S | 3 · 0 · 1 · 0 | 1806 | 64.1 |
-| 🟢 | BoxAllFillet | Harness | 12 | 26 | 0 | -0.659150624945 | -0.659150624945 | 2.0e-15 | 0P 12C 0K 0T 0R 8S | 0 · 0 · 8 · 0 | 5616 | 231.1 |
-| 🟢 | BoxAllChamfer | Harness | 12 | 18 | 0 | -1.458000000000 | -1.458000000000 | 1.6e-14 | 12P 0C 0K 0T 0R 0S | 0 · 0 · 8 · 0 | 196 | 39.1 |
-| 🟢 | CylinderRimFillet | Harness | 1 | 4 | 0 | -0.113222469600 | -0.113222469600 | 1.7e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 3016 | 29.4 |
-| 🟢 | CylinderRimsChamfer | Harness | 2 | 5 | 0 | -0.508938009882 | -0.508938009882 | 3.3e-16 | 0P 0C 2K 0T 0R 0S | 0 · 0 · 0 · 2 | 1690 | 16.5 |
-| 🟢 | BossRootFillet | Harness | 1 | 9 | 0 | 0.034770679003 | 0.034770679003 | 3.1e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1222 | 74.5 |
-| 🟢 | BossRimFillet | Harness | 1 | 9 | 0 | -0.029951710116 | -0.029951710116 | 2.8e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1196 | 54.4 |
-| 🟢 | HoleRimFillet | Harness | 1 | 8 | 1 | -0.034770679003 | -0.034770679003 | 4.8e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1884 | 63.3 |
-| 🟢 | FrustumRimFillet | Harness | 1 | 4 | 0 | -0.006788683186 | -0.006788683186 | 1.7e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1848 | 16.7 |
+| 🟢 | BoxEdgeFillet | Harness | 1 | 7 | 0 | -0.077256661177 | -0.077256661177 | 2.8e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1028 | 39.0 |
+| 🟢 | BoxEdgeChamfer | Harness | 1 | 7 | 0 | -0.180000000000 | -0.180000000000 | 6.8e-15 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 150 | 29.0 |
+| 🟢 | BoxTopFillet | Harness | 4 | 10 | 0 | -0.260044317413 | -0.260044317413 | 4.9e-15 | 0P 4C 0K 0T 0R 0S | 0 · 4 · 0 · 0 | 2530 | 78.5 |
+| 🟢 | BoxTopChamfer | Harness | 4 | 10 | 0 | -0.594000000000 | -0.594000000000 | 8.3e-15 | 4P 0C 0K 0T 0R 0S | 0 · 4 · 0 · 0 | 150 | 25.0 |
+| 🟢 | BoxCornerFillet | Harness | 3 | 10 | 0 | -0.169307571942 | -0.169307571942 | 3.4e-15 | 0P 3C 0K 0T 0R 1S | 3 · 0 · 1 · 0 | 1806 | 51.4 |
+| 🟢 | BoxAllFillet | Harness | 12 | 26 | 0 | -0.659150624945 | -0.659150624945 | 2.0e-15 | 0P 12C 0K 0T 0R 8S | 0 · 0 · 8 · 0 | 5616 | 160.9 |
+| 🟢 | BoxAllChamfer | Harness | 12 | 18 | 0 | -1.458000000000 | -1.458000000000 | 1.6e-14 | 12P 0C 0K 0T 0R 0S | 0 · 0 · 8 · 0 | 196 | 29.9 |
+| 🟢 | CylinderRimFillet | Harness | 1 | 4 | 0 | -0.113222469600 | -0.113222469600 | 1.7e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 3016 | 14.5 |
+| 🟢 | CylinderRimsChamfer | Harness | 2 | 5 | 0 | -0.508938009882 | -0.508938009882 | 3.3e-16 | 0P 0C 2K 0T 0R 0S | 0 · 0 · 0 · 2 | 1690 | 12.6 |
+| 🟢 | BossRootFillet | Harness | 1 | 9 | 0 | 0.034770679003 | 0.034770679003 | 3.1e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1222 | 39.7 |
+| 🟢 | BossRimFillet | Harness | 1 | 9 | 0 | -0.029951710116 | -0.029951710116 | 2.8e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1196 | 40.5 |
+| 🟢 | HoleRimFillet | Harness | 1 | 8 | 1 | -0.034770679003 | -0.034770679003 | 4.8e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1884 | 47.9 |
+| 🟢 | FrustumRimFillet | Harness | 1 | 4 | 0 | -0.006788683186 | -0.006788683186 | 1.7e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1848 | 14.0 |
 | 🟢 | CylinderChamferOversize | Harness | 1 | – | – | refused | – | – | – | – | – | 0.0 |
 | 🟢 | CylinderFilletOversize | Harness | 1 | – | – | refused | – | – | – | – | – | 0.0 |
-| 🟢 | RoundedBlock | BevelLab | 12 | 26 | 0 | -0.143799448088 | -0.143799448088 | 1.8e-15 | 0P 12C 0K 0T 0R 8S | 0 · 0 · 8 · 0 | 5408 | 132.7 |
-| 🟢 | ChamferBlock | BevelLab | 12 | 18 | 0 | -0.182250000000 | -0.182250000000 | 2.5e-16 | 12P 0C 0K 0T 0R 0S | 0 · 0 · 8 · 0 | 196 | 14.6 |
-| 🟢 | BossPlate | BevelLab | 6 | 14 | 0 | -0.044958161148 | -0.044958161148 | 2.9e-15 | 0P 4C 0K 2T 0R 0S | 0 · 4 · 0 · 2 | 4160 | 79.6 |
-| 🟢 | Puck | BevelLab | 2 | 5 | 0 | -0.108571473223 | -0.108571473223 | 5.4e-16 | 0P 0C 0K 2T 0R 0S | 0 · 0 · 0 · 2 | 3970 | 21.6 |
-| 🟢 | HoleSlab | BevelLab | 5 | 12 | 1 | -0.039497979852 | -0.039497979852 | 8.6e-16 | 0P 4C 0K 1T 0R 0S | 0 · 4 · 0 · 1 | 3974 | 77.9 |
-| 🟢 | Frustum | BevelLab | 2 | 5 | 0 | -0.053175862484 | -0.053175862484 | 6.7e-16 | 0P 0C 2K 0T 0R 0S | 0 · 0 · 0 · 2 | 1294 | 11.1 |
-| 🟢 | PrismAcuteFillet | Extra | 1 | 6 | 0 | -0.054788260510 | -0.054788260510 | 5.4e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 674 | 28.6 |
-| 🟢 | HexagonPrismChamfer | Extra | 1 | 9 | 0 | -0.025980762114 | -0.025980762114 | 5.6e-16 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 134 | 18.4 |
-| 🟢 | SkewPrismFillet | Extra | 1 | 7 | 0 | -0.077256661177 | -0.077256661177 | 2.8e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 890 | 53.7 |
-| 🟢 | CliffBoxFillet | Overflow | 1 | 6 | 0 | -5.331509667726 | -5.331509667726 | 1.8e-14 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 604 | 33.9 |
-| 🟢 | CliffPlateFillet | Overflow | 1 | 6 | 0 | -0.074995847374 | -0.074995847374 | 6.7e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 872 | 21.7 |
-| 🟢 | CliffPlateChamfer | Overflow | 1 | 6 | 0 | -0.160000000000 | -0.160000000000 | 8.3e-17 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 84 | 15.0 |
-| 🟢 | CliffPlateFlush | Overflow | 1 | 6 | 0 | -0.034336293856 | -0.034336293856 | 4.9e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1000 | 24.2 |
-| 🟢 | CliffDiscFillet | Overflow | 1 | 3 | 0 | -0.109689377437 | -0.109689377437 | 1.9e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1624 | 9.9 |
-| 🟢 | CliffDiscChamfer | Overflow | 1 | 3 | 0 | -0.224100275956 | -0.224100275956 | 5.6e-17 | 0P 0C 1K 0T 0R 0S | 0 · 0 · 0 · 1 | 612 | 6.2 |
+| 🟢 | RoundedBlock | BevelLab | 12 | 26 | 0 | -0.143799448088 | -0.143799448088 | 1.8e-15 | 0P 12C 0K 0T 0R 8S | 0 · 0 · 8 · 0 | 5408 | 124.8 |
+| 🟢 | ChamferBlock | BevelLab | 12 | 18 | 0 | -0.182250000000 | -0.182250000000 | 2.5e-16 | 12P 0C 0K 0T 0R 0S | 0 · 0 · 8 · 0 | 196 | 11.4 |
+| 🟢 | BossPlate | BevelLab | 6 | 14 | 0 | -0.044958161148 | -0.044958161148 | 2.9e-15 | 0P 4C 0K 2T 0R 0S | 0 · 4 · 0 · 2 | 4160 | 61.2 |
+| 🟢 | Puck | BevelLab | 2 | 5 | 0 | -0.108571473223 | -0.108571473223 | 5.4e-16 | 0P 0C 0K 2T 0R 0S | 0 · 0 · 0 · 2 | 3970 | 15.7 |
+| 🟢 | HoleSlab | BevelLab | 5 | 12 | 1 | -0.039497979852 | -0.039497979852 | 8.6e-16 | 0P 4C 0K 1T 0R 0S | 0 · 4 · 0 · 1 | 3974 | 58.2 |
+| 🟢 | Frustum | BevelLab | 2 | 5 | 0 | -0.053175862484 | -0.053175862484 | 6.7e-16 | 0P 0C 2K 0T 0R 0S | 0 · 0 · 0 · 2 | 1294 | 8.6 |
+| 🟢 | PrismAcuteFillet | Extra | 1 | 6 | 0 | -0.054788260510 | -0.054788260510 | 5.4e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 674 | 22.0 |
+| 🟢 | HexagonPrismChamfer | Extra | 1 | 9 | 0 | -0.025980762114 | -0.025980762114 | 5.6e-16 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 134 | 14.6 |
+| 🟢 | SkewPrismFillet | Extra | 1 | 7 | 0 | -0.077256661177 | -0.077256661177 | 2.8e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 890 | 39.7 |
+| 🟢 | CliffBoxFillet | Overflow | 1 | 6 | 0 | -5.331509667726 | -5.331509667726 | 1.8e-14 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 604 | 26.1 |
+| 🟢 | CliffPlateFillet | Overflow | 1 | 6 | 0 | -0.074995847374 | -0.074995847374 | 6.7e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 872 | 24.8 |
+| 🟢 | CliffPlateChamfer | Overflow | 1 | 6 | 0 | -0.160000000000 | -0.160000000000 | 8.3e-17 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 84 | 11.8 |
+| 🟢 | CliffPlateFlush | Overflow | 1 | 6 | 0 | -0.034336293856 | -0.034336293856 | 4.9e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1000 | 17.5 |
+| 🟢 | CliffDiscFillet | Overflow | 1 | 3 | 0 | -0.109689377437 | -0.109689377437 | 1.9e-16 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 1624 | 6.9 |
+| 🟢 | CliffDiscChamfer | Overflow | 1 | 3 | 0 | -0.224100275956 | -0.224100275956 | 5.6e-17 | 0P 0C 1K 0T 0R 0S | 0 · 0 · 0 · 1 | 612 | 4.3 |
 | 🟢 | CliffPartial | Refusal | 1 | – | – | refused | – | – | – | – | – | 0.1 |
 | 🟢 | CliffOverlap | Refusal | 2 | – | – | refused | – | – | – | – | – | 0.1 |
-| 🟢 | NotchStepFillet | Overflow | 1 | 8 | 0 | -0.028123442765 | -0.028123442765 | 3.1e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 612 | 14.6 |
-| 🟢 | NotchStepChamfer | Overflow | 1 | 8 | 0 | -0.060000000000 | -0.060000000000 | 5.6e-17 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 170 | 10.8 |
-| 🟢 | NotchBossFillet | Overflow | 1 | 8 | 0 | -0.086128737121 | -0.086128737121 | 2.2e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 994 | 27.7 |
-| 🟢 | SmoothFillet | Overflow | 1 | 7 | 0 | -0.100448113101 | -0.100448113101 | 3.0e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1602 | 43.5 |
-| 🟢 | SmoothChamfer | Overflow | 1 | 7 | 0 | -0.259735796010 | -0.259735796010 | 3.6e-15 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 692 | 33.3 |
-| 🟢 | SmoothTight | Refusal | 1 | – | – | refused | – | – | – | – | – | 0.1 |
-| 🟢 | VariableFillet | Variable | 1 | 7 | 0 | -0.059977332307 | -0.059977332307 | 2.1e-17 | 0P 0C 1K 0T 0R 0S | 2 · 0 · 0 · 0 | 988 | 50.2 |
-| 🟢 | VariableChamfer | Variable | 1 | 7 | 0 | -0.140000000000 | -0.140000000000 | 5.3e-16 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 154 | 39.4 |
+| 🟢 | NotchStepFillet | Overflow | 1 | 8 | 0 | -0.028123442765 | -0.028123442765 | 3.1e-16 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 612 | 9.8 |
+| 🟢 | NotchStepChamfer | Overflow | 1 | 8 | 0 | -0.060000000000 | -0.060000000000 | 5.6e-17 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 170 | 6.9 |
+| 🟢 | NotchBossFillet | Overflow | 1 | 8 | 0 | -0.086128737121 | -0.086128737121 | 2.2e-15 | 0P 0C 0K 1T 0R 0S | 0 · 0 · 0 · 1 | 994 | 18.1 |
+| 🟢 | SmoothFillet | Overflow | 1 | 7 | 0 | -0.100448113101 | -0.100448113101 | 3.0e-15 | 0P 1C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 1602 | 31.3 |
+| 🟢 | SmoothChamfer | Overflow | 1 | 7 | 0 | -0.259735796010 | -0.259735796010 | 3.6e-15 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 692 | 26.9 |
+| 🟢 | SmoothTight | Refusal | 1 | – | – | refused | – | – | – | – | – | 0.0 |
+| 🟢 | VariableFillet | Variable | 1 | 7 | 0 | -0.059977332307 | -0.059977332307 | 2.1e-17 | 0P 0C 1K 0T 0R 0S | 2 · 0 · 0 · 0 | 988 | 33.8 |
+| 🟢 | VariableChamfer | Variable | 1 | 7 | 0 | -0.140000000000 | -0.140000000000 | 5.3e-16 | 1P 0C 0K 0T 0R 0S | 2 · 0 · 0 · 0 | 154 | 34.5 |
 | 🟢 | VariableShared | Refusal | 4 | – | – | refused | – | – | – | – | – | 0.1 |
-| 🟢 | VariableAnchored | Variable | 1 | 7 | 0 | -0.059977332307 | -0.059977332307 | 7.1e-15 | 0P 0C 1K 0T 0R 0S | 2 · 0 · 0 · 0 | 958 | 50.3 |
+| 🟢 | VariableAnchored | Variable | 1 | 7 | 0 | -0.059977332307 | -0.059977332307 | 7.1e-15 | 0P 0C 1K 0T 0R 0S | 2 · 0 · 0 · 0 | 958 | 46.4 |
 | 🟢 | VariableUnanchored | Refusal | 1 | – | – | refused | – | – | – | – | – | 0.0 |
-| 🟢 | TiltedBoreChamfer | CurvedChamfer | 1 | 8 | 1 | -0.016460987609 | -0.016460987612 | 3.8e-12 | 0P 0C 0K 0T 1R 0S | 0 · 0 · 0 · 1 | 860 | 2962.3 |
-| 🟢 | TiltedBossChamfer | CurvedChamfer | 1 | 9 | 0 | 0.016460987608 | 0.016460987612 | 4.4e-12 | 0P 0C 0K 0T 1R 0S | 0 · 0 · 0 · 1 | 736 | 2739.8 |
+| 🟢 | TiltedBoreChamfer | CurvedChamfer | 1 | 8 | 1 | -0.016460987608 | -0.016460987612 | 4.3e-12 | 0P 0C 0K 0T 1R 0S | 0 · 0 · 0 · 1 | 860 | 1957.3 |
+| 🟢 | TiltedBossChamfer | CurvedChamfer | 1 | 9 | 0 | 0.016460987608 | 0.016460987612 | 4.4e-12 | 0P 0C 0K 0T 1R 0S | 0 · 0 · 0 · 1 | 736 | 1810.1 |
 | 🟢 | VariableRim | Refusal | 1 | – | – | refused | – | – | – | – | – | 0.0 |
-| 🟢 | VariableArcFillet | Variable | 1 | 5 | 0 | -0.027658230632 | -0.027658230629 | 3.0e-12 | 0P 0C 0K 0T 1R 0S | 2 · 0 · 0 · 0 | 1644 | 828.0 |
-| 🟢 | VariableArcChamfer | Variable | 1 | 5 | 0 | -0.062831853075 | -0.062831853072 | 3.1e-12 | 0P 0C 0K 0T 1R 0S | 2 · 0 · 0 · 0 | 792 | 154.8 |
-| 🟢 | FilletRailsCross | Refusal | 12 | – | – | refused | – | – | – | – | – | 0.6 |
+| 🟢 | VariableArcFillet | Variable | 1 | 5 | 0 | -0.027658230632 | -0.027658230629 | 3.0e-12 | 0P 0C 0K 0T 1R 0S | 2 · 0 · 0 · 0 | 1644 | 567.8 |
+| 🟢 | VariableArcChamfer | Variable | 1 | 5 | 0 | -0.062831853075 | -0.062831853072 | 3.1e-12 | 0P 0C 0K 0T 1R 0S | 2 · 0 · 0 · 0 | 770 | 109.0 |
+| 🟢 | FilletRailsCross | Refusal | 12 | – | – | refused | – | – | – | – | – | 0.5 |
 | 🟢 | MixedConvexity | Refusal | 2 | – | – | refused | – | – | – | – | – | 0.1 |
 
 ## Refusals
