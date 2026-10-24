@@ -4452,27 +4452,30 @@ bool SheetTextButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const 
 
 // 📝 HTML .icon-button: circle of Size, glyph centred (#888, hover #292929 / #fff), optional hairline border.
 bool SheetIconButton(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const char* Key, float CentreX, float CentreY, float Size, IconSymbol Glyph,
-                     float GlyphSize, uint32_t BorderAlpha = 0, bool EnabledCondition = true)
+                     float GlyphSize, uint32_t BorderAlpha = 0, bool EnabledCondition = true, bool ActiveCondition = false)
 {
     const PlaneExtent   Box   = Spanning(CentreX - 0.5f * Size, CentreY - 0.5f * Size, Size, Size);
     const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Key, Box, EnabledCondition);
     const float         Opacity = EnabledCondition ? 1.0f : 0.3f;
-    Sheet.Box(Box, Press.HoveredCondition ? SolidArcInk(0x292929) : SolidArcInk(0, 0.0f), 0.5f * Size,
+    const bool          Lit     = Press.HoveredCondition || ActiveCondition;                 // .icon-button.active: #292929 / #e0e0e0
+    Sheet.Box(Box, Lit ? SolidArcInk(0x292929) : SolidArcInk(0, 0.0f), 0.5f * Size,
               BorderAlpha ? ControlKit::Faded(SolidArcWash(BorderAlpha), Opacity) : SolidArcInk(0, 0.0f));
     Sheet.Icon(Glyph, CentreX - 0.5f * GlyphSize, CentreY - 0.5f * GlyphSize, GlyphSize,
-               ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : 0x888888), Opacity));
+               ControlKit::Faded(SolidArcInk(Press.HoveredCondition ? 0xffffff : ActiveCondition ? 0xe0e0e0 : 0x888888), Opacity));
     return Press.ClickedCondition;
 }
 
 // A borderless, transparent ImGui window over Extent that the sheet draws into (it owns the ID stack of its buttons).
-void BeginSheetWindow(const char* Name, ImVec2 Position, ImVec2 Size)
+// 📝 ImGui inserts NoBringToFrontOnFocus windows at the *back* of the display order when created; overlays drawn over
+//    another sheet window (the viewport chrome) pass OverlayCondition so they are appended in front of it instead.
+void BeginSheetWindow(const char* Name, ImVec2 Position, ImVec2 Size, bool OverlayCondition = false)
 {
     ImGui::SetNextWindowPos(Position);
     ImGui::SetNextWindowSize(Size);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::Begin(Name, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
-                                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse);
+                                (OverlayCondition ? 0 : ImGuiWindowFlags_NoBringToFrontOnFocus) | ImGuiWindowFlags_NoScrollWithMouse);
 }
 
 void EndSheetWindow()
@@ -4839,7 +4842,6 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
         break;
     }
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false) && !ImGui::GetIO().WantTextInput) State.Outliner.SearchFocusRequest = true;
-    DrawConstructMenu(State, ImVec2(Position.x + Size.x + ColumnGap + 13.0f, Position.y + 48.0f));
     DrawConstructDialog(State);
     EndSheetWindow();
 }
@@ -4924,7 +4926,6 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
         }
         if (Contained) Hovered = Entry.Face;
     }
-    Canvas->AddRectFilled(Corner, ImVec2(Corner.x + CubeExtent, Corner.y + CubeExtent), PillColour, 12.0f);
     for (const Visible& Entry : Shown)
     {
         const bool  Lit    = Entry.Face == Hovered;
@@ -4961,67 +4962,381 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
     return Inside;
 }
 
+// 📝 HTML #gizmo-readout look for the session readouts: #171717e8, #ffffff18 hairline, radius 12, padding 8 14, 11 px #eee;
+//    a 7 px accent dot leads. Cursor advances past the pill (gap 6).
 void DrawStatusPill(ImDrawList* Canvas, ImVec2& Cursor, const std::string& Text, ImU32 Accent)
 {
-    const ImVec2 Extent(ImGui::CalcTextSize(Text.c_str()).x + 26, 26);
-    Canvas->AddRectFilled(Cursor, ImVec2(Cursor.x + Extent.x, Cursor.y + Extent.y), PillColour, 13.0f);
-    Canvas->AddCircleFilled(ImVec2(Cursor.x + 11, Cursor.y + 13), 3.5f, Accent);
-    Canvas->AddText(ImVec2(Cursor.x + 19, Cursor.y + (Extent.y - ImGui::GetFontSize()) * 0.5f), IM_COL32(0xdd, 0xdd, 0xdd, 0xff), Text.c_str());
-    Cursor.x += Extent.x + 6;
+    (void)Canvas;
+    SolidArcSheet Sheet;
+    if (!Sheet.Begin()) return;
+    const ImVec4      Dot    = ImGui::ColorConvertU32ToFloat4(Accent);
+    const float       Height = 2.0f + 16.0f + 11.0f * SolidArcStyleTokens::FontScale;
+    const PlaneExtent Pill   = Spanning(Cursor.x, Cursor.y, 2.0f + 28.0f + 7.0f + 8.0f + Sheet.Measure(Text.c_str(), 11.0f), Height);
+    const float       Centre = Cursor.y + 0.5f * Height;
+    Sheet.Box(Pill, SolidArcInk(0x171717, 0xe8 / 255.0f), 12.0f, SolidArcWash(0x18));
+    Sheet.Surface().FillRectangle(Spanning(Pill.MinimumX + 15.0f, Centre - 3.5f, 7.0f, 7.0f), ColorQuad{ Dot.x, Dot.y, Dot.z, Dot.w }, 3.5f);
+    Sheet.Text(Pill.MinimumX + 15.0f + 7.0f + 8.0f, Centre, 11.0f, SolidArcInk(0xeeeeee), Text.c_str());
+    Cursor.x = Pill.MaximumX + 6.0f;
 }
 
-void DrawViewportBar(SolidArcWorkspaceState& State)
+std::vector<std::string> TouchedBodies(const SolidArcDocument& Document);
+
+// HTML #camera-view: the preset the camera sits on, else "Orbit" (the select's disabled first option).
+const char* CurrentViewLabel(const OrbitCamera& Camera)
 {
-    ImGui::SetCursorPos(ImVec2(12, 8));
-    for (OrbitViewPreset Preset : { OrbitViewPreset::Isometric, OrbitViewPreset::Top, OrbitViewPreset::Front, OrbitViewPreset::Right })
+    constexpr double Tolerance = 1.0e-2;                                                     // [rad] - Same view
+    for (OrbitViewPreset Preset : { OrbitViewPreset::Isometric, OrbitViewPreset::Front, OrbitViewPreset::Right, OrbitViewPreset::Top, OrbitViewPreset::Back,
+                                    OrbitViewPreset::Left, OrbitViewPreset::Bottom })
     {
-        const std::string Label = std::string(OrbitViewLabel(Preset)) + "###View" + OrbitViewLabel(Preset);
-        if (PressButton(State, Label.c_str()))
-        {
-            PresentView(State, Preset);
-            Announce(State, std::string("View ") + OrbitViewLabel(Preset));
-        }
-        ImGui::SameLine(0, 4);
+        OrbitCamera Probe = Camera;
+        PresentOrbitView(Probe, Preset);
+        const bool   Polar = std::abs(Probe.Elevation) > 1.5;                                // Top / Bottom: any azimuth
+        const double Turn  = std::remainder(Camera.Azimuth - Probe.Azimuth, 2.0 * std::numbers::pi);
+        if (std::abs(Camera.Elevation - Probe.Elevation) < Tolerance && (Polar || std::abs(Turn) < Tolerance)) return OrbitViewLabel(Preset);
     }
-    if (PressButton(State, "More…###ViewMore")) ImGui::OpenPopup("MoreViews");
-    if (ImGui::BeginPopup("MoreViews"))
+    return "Orbit";
+}
+
+// The ⌄ of a select, as two strokes (DM Sans has no chevron glyph).
+void SelectChevron(SolidArcSheet& Sheet, float CentreX, float CentreY, ColorQuad Ink)
+{
+    Sheet.Line(CentreX - 3.5f, CentreY - 1.75f, CentreX, CentreY + 1.75f, Ink, 1.3f);
+    Sheet.Line(CentreX, CentreY + 1.75f, CentreX + 3.5f, CentreY - 1.75f, Ink, 1.3f);
+}
+
+// 📝 Popup list under a select (#121417, #ffffff22 hairline, radius 12): one Selectable per entry, keyed for the scripts.
+bool BeginSelectList(const char* Name, ImVec2 Anchor)
+{
+    ImGui::SetNextWindowPos(Anchor);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 2));
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, Tint(IM_COL32(0x12, 0x14, 0x17, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_Border, Tint(IM_COL32(0xff, 0xff, 0xff, 0x22)));
+    ImGui::PushStyleColor(ImGuiCol_Header, Tint(IM_COL32(0xff, 0xff, 0xff, 0x15)));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Tint(IM_COL32(0x29, 0x29, 0x29, 0xff)));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, Tint(IM_COL32(0x30, 0x30, 0x30, 0xff)));
+    const bool Shown = ImGui::BeginPopup(Name, ImGuiWindowFlags_NoMove);
+    if (!Shown)
     {
-        for (OrbitViewPreset Preset : { OrbitViewPreset::Bottom, OrbitViewPreset::Back, OrbitViewPreset::Left })
+        ImGui::PopStyleColor(5);
+        ImGui::PopStyleVar(4);
+        return false;
+    }
+    ImGui::PushFont(static_cast<ImFont*>(QuerySolidArcTypefaces().Light), 11.0f * SolidArcStyleTokens::FontScale);
+    return true;
+}
+
+// 📝 The entry colours stay pushed while the list is open (Selectable reads Header* when it draws).
+void EndSelectList()
+{
+    ImGui::PopFont();
+    ImGui::EndPopup();
+    ImGui::PopStyleColor(5);
+    ImGui::PopStyleVar(4);
+}
+
+bool SelectListEntry(SolidArcWorkspaceState& State, const std::string& Label, bool SelectedCondition)
+{
+    const bool Pressed = ImGui::Selectable(Label.c_str(), SelectedCondition, ImGuiSelectableFlags_None, ImVec2(150.0f, 26.0f));
+    RegisterWidget(State, Label.c_str());
+    return Pressed;
+}
+
+// 📝 HTML .viewport-bar (44 px, padding 0 12, gap 4): the Construct chip, a divider, the camera-view select … the
+//    Perspective text button and the edges / fit / maximize icon buttons.
+void DrawViewportBar(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const PlaneExtent& Bar)
+{
+    const float Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
+    float       Cursor = Bar.MinimumX + 12.0f;
+
+    // .construct-chip — #202020, #ffffff12 hairline, radius 20, padding 7 13, gap 9; plus glyph 15, 11 px #e0e0e0.
+    const float         ChipHeight = 2.0f + 14.0f + 11.0f * SolidArcStyleTokens::FontScale;
+    const PlaneExtent   Chip       = Spanning(Cursor, Centre - 0.5f * ChipHeight, 2.0f + 26.0f + 15.0f + 9.0f + Sheet.Measure("Construct", 11.0f), ChipHeight);
+    const SolidArcPress Construct  = PressSolidArcRegion(State.Widgets, "ViewportConstruct", Chip);
+    const ColorQuad     ChipInk    = SolidArcInk(Construct.HoveredCondition ? 0xffffff : 0xe0e0e0);
+    Sheet.Box(Chip, SolidArcInk(Construct.HoveredCondition ? 0x292929 : 0x202020), 20.0f, SolidArcWash(0x12));
+    Sheet.Icon(IconSymbol::SolidArcPlus, Chip.MinimumX + 14.0f, Centre - 7.5f, 15.0f, ChipInk);
+    Sheet.Text(Chip.MinimumX + 14.0f + 15.0f + 9.0f, Centre, 11.0f, ChipInk, "Construct");
+    if (Construct.ClickedCondition) State.ConstructMenuRequest = true;
+    Cursor = Chip.MaximumX + 4.0f;
+
+    // .bar-divider — 1 × 15, #ffffff10, margin 0 9.
+    Sheet.Surface().FillRectangle(Spanning(Cursor + 9.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Cursor += 9.0f + 1.0f + 9.0f + 4.0f;
+
+    // #camera-view — 98 px select, 11 px #a0a0a0, padding 5; lists the seven presets.
+    const PlaneExtent   Select = Spanning(Cursor, Centre - 13.0f, 98.0f, 26.0f);
+    const SolidArcPress View   = PressSolidArcRegion(State.Widgets, "ViewMenu", Select);
+    if (View.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
+    const ColorQuad ViewInk = SolidArcInk(View.HoveredCondition ? 0xffffff : 0xa0a0a0);
+    Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, ViewInk, CurrentViewLabel(State.Camera));
+    SelectChevron(Sheet, Select.MaximumX - 12.0f, Centre, ViewInk);
+    if (View.ClickedCondition) ImGui::OpenPopup("ViewMenu");
+    if (BeginSelectList("ViewMenu", ImVec2(Select.MinimumX, Select.MaximumY + 4.0f)))
+    {
+        const char* Current = CurrentViewLabel(State.Camera);
+        for (OrbitViewPreset Preset : { OrbitViewPreset::Isometric, OrbitViewPreset::Front, OrbitViewPreset::Right, OrbitViewPreset::Top, OrbitViewPreset::Back,
+                                        OrbitViewPreset::Left, OrbitViewPreset::Bottom })
         {
             const std::string Label = std::string(OrbitViewLabel(Preset)) + "###View" + OrbitViewLabel(Preset);
-            if (ImGui::Selectable(Label.c_str())) PresentView(State, Preset);
-            RegisterWidget(State, Label.c_str());
+            if (SelectListEntry(State, Label, std::strcmp(Current, OrbitViewLabel(Preset)) == 0))
+            {
+                PresentView(State, Preset);
+                Announce(State, std::string("View ") + OrbitViewLabel(Preset));
+            }
         }
-        ImGui::EndPopup();
+        EndSelectList();
     }
-    ImGui::SameLine(0, 16);
-    if (ToggleButton(State, State.Camera.OrthographicEnabled ? "Parallel###Projection" : "Perspective###Projection", State.Camera.OrthographicEnabled))
+
+    // Right end, right to left: maximize, fit, edges (28 px icon buttons, gap 4), then the projection text button.
+    float Right = Bar.MaximumX - 12.0f;
+    if (SheetIconButton(State, Sheet, "ViewportMaximize", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcMaximize, 18.0f, 0, true, State.ViewportMaximizedEnabled))
+        State.ViewportMaximizedEnabled = !State.ViewportMaximizedEnabled;
+    Right -= 28.0f + 4.0f;
+    if (SheetIconButton(State, Sheet, "FitView", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcFocus, 18.0f) && !State.Scene.Faces.empty())
+        FitSolidArcCamera(State.Camera, State.Scene);
+    Right -= 28.0f + 4.0f;
+    if (SheetIconButton(State, Sheet, "EdgeToggle", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcBody, 18.0f, 0, true, State.Style.EdgesEnabled))
+        State.Style.EdgesEnabled = !State.Style.EdgesEnabled;
+    Right -= 28.0f + 4.0f;
+    if (SheetTextButton(State, Sheet, "Projection", Right, Centre, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective"))
         State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Grid###GridToggle", State.Style.GridEnabled)) State.Style.GridEnabled = !State.Style.GridEnabled;
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Edges###EdgeToggle", State.Style.EdgesEnabled)) State.Style.EdgesEnabled = !State.Style.EdgesEnabled;
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "X-ray###XRayToggle", State.Style.XRayEnabled)) ToggleXRay(State);
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Combs###CombToggle", State.CombsEnabled)) State.CombsEnabled = !State.CombsEnabled;
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Zebra###ZebraToggle", State.ZebraEnabled)) ToggleZebra(State);
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Deviation###DeviationToggle", State.DeviationEnabled)) State.DeviationEnabled = !State.DeviationEnabled;
-    ImGui::SameLine(0, 4);
-    if (ToggleButton(State, "Images###ImagesToggle", State.ImagePlanesEnabled)) State.ImagePlanesEnabled = !State.ImagePlanesEnabled;
-    ImGui::SameLine(0, 4);
-    if (PressButton(State, "Fit###FitView") && !State.Scene.Faces.empty()) FitSolidArcCamera(State.Camera, State.Scene);
-    ImGui::SameLine(0, 16);
-    const std::pair<SolidArcPickMode, const char*> Modes[] = { { SolidArcPickMode::ControlPoint, "1 Point###Mode1" }, { SolidArcPickMode::Edge, "2 Edge###Mode2" }, { SolidArcPickMode::Face, "3 Face###Mode3" },
-                                                               { SolidArcPickMode::Solid, "4 Solid###Mode4" }, { SolidArcPickMode::Any, "5 All###Mode5" } };
-    for (const auto& [Mode, Label] : Modes)
+}
+
+// 📝 HTML .viewport-label (top 21, left 20, gap 9): the NURBS / B-REP pill (8 px, 1.2 spacing, #161a21ae, radius 10),
+//    the selection caption (10 px #afb0b3) and the active mode pills; below, the 9 px #8a8f98 kernel line.
+void DrawViewportLabel(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, ImVec2 Image, bool HoveredCondition)
+{
+    const float PillHeight = 2.0f + 10.0f + 8.0f * SolidArcStyleTokens::FontScale;
+    float       Cursor     = Image.x + 20.0f;
+    const float Top        = Image.y + 21.0f;
+    const float Centre     = Top + 0.5f * PillHeight;
+    const PlaneExtent Pill = Spanning(Cursor, Top, 2.0f + 16.0f + Sheet.Measure("NURBS / B-REP", 8.0f, SolidArcWeight::Light, 1.2f), PillHeight);
+    Sheet.Box(Pill, SolidArcInk(0x161a21, 0xae / 255.0f), 10.0f, SolidArcWash(0x10));
+    Sheet.Text(Pill.MinimumX + 9.0f, Centre, 8.0f, SolidArcInk(0xdddddd), "NURBS / B-REP", SolidArcWeight::Light, 1.2f);
+    Cursor = Pill.MaximumX + 9.0f;
+
+    const SolidArcSelection&       Selection = State.Document.Selection;
+    const std::vector<std::string> Bodies    = TouchedBodies(State.Document);
+    const int Picked = int(Bodies.size() + Selection.Curves.size());
+    std::string Caption = State.Document.Title;
+    if (!Selection.Faces.empty() || !Selection.Edges.empty())
+        Caption = Compose("%d face%s · %d edge%s · ", int(Selection.Faces.size()), Selection.Faces.size() == 1 ? "" : "s", int(Selection.Edges.size()),
+                          Selection.Edges.size() == 1 ? "" : "s") + (Bodies.empty() ? Caption : SolidArcBodyCaption(State.Document, Bodies.front()));
+    else if (Picked > 0)
+        Caption = Compose("%d selected · ", Picked) + (Bodies.empty() ? CaptionOf(State.Document, Selection.Curves.front()) : SolidArcBodyCaption(State.Document, Bodies.front()));
+    Cursor += Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0xafb0b3), Caption.c_str()) + 9.0f;
+
+    // Modes the viewport is in (X-ray, Measure, Section) and the hovered figure, as accent pills on the same row.
+    const auto ModePill = [&](const std::string& Text, uint32_t Accent)
     {
-        if (ToggleButton(State, Label, State.PickMode == Mode)) State.PickMode = Mode;
-        ImGui::SameLine(0, 4);
+        const PlaneExtent Box = Spanning(Cursor, Top, 2.0f + 16.0f + 5.0f + 7.0f + Sheet.Measure(Text.c_str(), 8.0f, SolidArcWeight::Light, 1.2f), PillHeight);
+        Sheet.Box(Box, SolidArcInk(0x161a21, 0xae / 255.0f), 10.0f, SolidArcWash(0x10));
+        Sheet.Surface().FillRectangle(Spanning(Box.MinimumX + 8.0f, Centre - 2.5f, 5.0f, 5.0f), SolidArcInk(Accent), 2.5f);
+        Sheet.Text(Box.MinimumX + 8.0f + 5.0f + 7.0f, Centre, 8.0f, SolidArcInk(0xdddddd), Text.c_str(), SolidArcWeight::Light, 1.2f);
+        Cursor = Box.MaximumX + 9.0f;
+    };
+    if (State.Style.XRayEnabled) ModePill("X-RAY", 0xc7d4e8);
+    if (State.Measure.ActiveCondition) ModePill("MEASURE", 0xffc83d);
+    if (State.Section.ActiveCondition) ModePill(DescribeSectionRequest(State.Section.Request), 0xdb614a);
+    if (State.HoverIdentity != 0 && HoveredCondition)
+        ModePill(State.HoverIdentity == IdentitySectionCap ? std::string("Section cap") : NameSolidArcIdentity(DisplayedSolidArcScene(State), State.HoverIdentity), 0xffd24d);
+
+    // Second row: the kernel, the drawing plane, the audit and the curve count.
+    static const char* const PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
+    std::string Line = std::string("Native C++ · Vulkan viewport · ") + PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)];
+    const SolidArcBodySummary& Summary = State.Document.Summary;
+    if (Summary.PresentCondition)
+        Line += Summary.SheetCondition        ? std::string(Summary.SoundCondition ? " · Sound sheet" : " · Sheet audit findings")
+              : Summary.Bodies.size() > 1     ? Compose(" · %d bodies · %s", int(Summary.Bodies.size()), Summary.SoundCondition ? "sound" : "audit findings")
+                                              : Compose(" · %s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus);
+    if (!State.Document.Regeneration.Curves.empty()) Line += Compose(" · %d curve(s)", int(State.Document.Regeneration.Curves.size()));
+    Sheet.Text(Image.x + 20.0f, Top + PillHeight + 9.0f + 1.0f + 0.5f * 9.0f * SolidArcStyleTokens::FontScale, 9.0f, SolidArcInk(0x8a8f98), Line.c_str());
+}
+
+// 📝 HTML .viewport-instructions (bottom 12, left 17, 9 px, gap 12, wrapping): the first group #8f9297, the rest #747b84.
+//    The native hint's " · " groups wrap upwards inside Width.
+void DrawViewportInstructions(SolidArcSheet& Sheet, float Left, float Bottom, float Width, const std::string& Hint)
+{
+    std::vector<std::string> Groups;
+    for (size_t Start = 0; Start <= Hint.size();)
+    {
+        const size_t Split = Hint.find(" · ", Start);
+        Groups.push_back(Hint.substr(Start, Split == std::string::npos ? std::string::npos : Split - Start));
+        if (Split == std::string::npos) break;
+        Start = Split + std::strlen(" · ");
     }
-    ImGui::NewLine();
+    std::vector<std::vector<size_t>> Lines(1);
+    float Run = 0.0f;
+    for (size_t Index = 0; Index < Groups.size(); ++Index)
+    {
+        const float Extent = Sheet.Measure(Groups[Index].c_str(), 9.0f);
+        if (!Lines.back().empty() && Run + 12.0f + Extent > Width)
+        {
+            Lines.emplace_back();
+            Run = 0.0f;
+        }
+        Run += (Lines.back().empty() ? 0.0f : 12.0f) + Extent;
+        Lines.back().push_back(Index);
+    }
+    const float LineHeight = 9.0f * SolidArcStyleTokens::FontScale + 3.0f;
+    for (size_t Row = 0; Row < Lines.size(); ++Row)
+    {
+        const float Centre = Bottom - float(Lines.size() - 1 - Row) * LineHeight - 0.5f * 9.0f * SolidArcStyleTokens::FontScale;
+        float       Cursor = Left;
+        for (const size_t Index : Lines[Row])
+            Cursor += Sheet.Text(Cursor, Centre, 9.0f, SolidArcInk(Index == 0 ? 0x8f9297 : 0x747b84), Groups[Index].c_str()) + 12.0f;
+    }
+}
+
+// 📝 HTML .selection-tools (top 98, left 17): #15191edd column, #ffffff0a hairline, radius 22, padding 7 5, gap 5;
+//    30 px round buttons (#a7abb2, active #ffffff15 / #eee, glyph 16). Native order: modes 4 · 3 · 2 · 1 · 5, a rule,
+//    then X-ray (Alt+Z). Its own window, so the viewport surface underneath does not take the clicks.
+void DrawSelectionRail(SolidArcWorkspaceState& State, ImVec2 Image)
+{
+    struct RailButton
+    {
+        const char*      Key;
+        IconSymbol       Glyph;
+        SolidArcPickMode Mode;
+    };
+    static const RailButton Buttons[] = { { "Mode4", IconSymbol::SolidArcBody, SolidArcPickMode::Solid }, { "Mode3", IconSymbol::SolidArcSurface, SolidArcPickMode::Face },
+                                          { "Mode2", IconSymbol::SolidArcEdge, SolidArcPickMode::Edge },  { "Mode1", IconSymbol::SolidArcPoints, SolidArcPickMode::ControlPoint } };   // 5 (any) stays on the keyboard, as in the HTML rail
+    constexpr float Button = 30.0f, Gap = 5.0f, Rule = 9.0f;
+    const float Height = 2.0f + 14.0f + float(std::size(Buttons) + 1) * Button + float(std::size(Buttons) + 1) * Gap + Rule;
+    const ImVec2 Corner(Image.x + 17.0f, Image.y + 98.0f);
+    BeginSheetWindow("ViewportRail", Corner, ImVec2(2.0f + 10.0f + Button, Height), true);
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Rail = Spanning(Corner.x, Corner.y, 2.0f + 10.0f + Button, Height);
+    Sheet.Box(Rail, SolidArcInk(0x15191e, 0xdd / 255.0f), 22.0f, SolidArcWash(0x0a));
+    const float Middle = 0.5f * (Rail.MinimumX + Rail.MaximumX);
+    float       Y      = Rail.MinimumY + 1.0f + 7.0f;
+    const auto Round = [&](const char* Key, IconSymbol Glyph, bool Active)
+    {
+        const PlaneExtent   Box   = Spanning(Middle - 0.5f * Button, Y, Button, Button);
+        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, Key, Box);
+        if (Active || Press.HoveredCondition) Sheet.Box(Box, Active ? SolidArcWash(0x15) : SolidArcInk(0x292929), 0.5f * Button);
+        Sheet.Icon(Glyph, Middle - 8.0f, Y + 0.5f * Button - 8.0f, 16.0f, SolidArcInk(Active || Press.HoveredCondition ? 0xeeeeee : 0xa7abb2));
+        Y += Button + Gap;
+        return Press.ClickedCondition;
+    };
+    for (const RailButton& Entry : Buttons)
+        if (Round(Entry.Key, Entry.Glyph, State.PickMode == Entry.Mode)) State.PickMode = Entry.Mode;
+    Sheet.Line(Middle - 9.0f, Y + 0.5f * Rule - 0.5f * Gap, Middle + 9.0f, Y + 0.5f * Rule - 0.5f * Gap, SolidArcWash(0x14));
+    Y += Rule;
+    if (Round("XRayToggle", IconSymbol::SolidArcLayers, State.Style.XRayEnabled)) ToggleXRay(State);
+    EndSheetWindow();
+}
+
+// 📝 HTML .gizmo-toolbar slot (top 18, right 15): #191919e8 pill, #ffffff12 hairline, padding 4 5 4 12, gap 8; a 10 px
+//    #999 label and an 11 px select. Native: the display overlays (grid, combs, zebra, deviation, reference images).
+void DrawDisplayMenu(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
+{
+    struct DisplayToggle
+    {
+        const char* Label;
+        bool*       Enabled;
+    };
+    const DisplayToggle Toggles[] = { { "Grid###GridToggle", &State.Style.GridEnabled }, { "Combs###CombToggle", &State.CombsEnabled },
+                                      { "Zebra###ZebraToggle", &State.ZebraEnabled },    { "Deviation###DeviationToggle", &State.DeviationEnabled },
+                                      { "Images###ImagesToggle", &State.ImagePlanesEnabled } };
+    std::string Summary;
+    for (const DisplayToggle& Toggle : Toggles)
+        if (*Toggle.Enabled) Summary += (Summary.empty() ? "" : " · ") + std::string(Toggle.Label, std::strstr(Toggle.Label, "###"));
+    if (Summary.empty()) Summary = "Off";
+
+    SolidArcSheet Probe;
+    Probe.Begin();
+    const float  Height = 2.0f + 8.0f + 26.0f;
+    const float  Extent = 2.0f + 12.0f + Probe.Measure("Display", 10.0f) + 8.0f + 7.0f + Probe.Measure(Summary.c_str(), 11.0f) + 22.0f + 5.0f;
+    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f);
+    BeginSheetWindow("ViewportDisplay", Corner, ImVec2(Extent, Height), true);
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Pill   = Spanning(Corner.x, Corner.y, Extent, Height);
+    const float       Centre = 0.5f * (Pill.MinimumY + Pill.MaximumY);
+    Sheet.Box(Pill, SolidArcInk(0x191919, 0xe8 / 255.0f), 18.0f, SolidArcWash(0x12));
+    const float Label = Sheet.Text(Pill.MinimumX + 1.0f + 12.0f, Centre, 10.0f, SolidArcInk(0x999999), "Display");
+    const PlaneExtent   Select = PlaneExtent{ Pill.MinimumX + 1.0f + 12.0f + Label + 8.0f, Centre - 13.0f, Pill.MaximumX - 1.0f - 5.0f, Centre + 13.0f };
+    const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, "DisplayMenu", Select);
+    if (Press.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
+    const ColorQuad Ink = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xdddddd);
+    Sheet.Text(Select.MinimumX + 7.0f, Centre, 11.0f, Ink, Summary.c_str());
+    SelectChevron(Sheet, Select.MaximumX - 11.0f, Centre, Ink);
+    if (Press.ClickedCondition) ImGui::OpenPopup("DisplayMenu");
+    if (BeginSelectList("DisplayMenu", ImVec2(Pill.MaximumX - 162.0f, Pill.MaximumY + 6.0f)))
+    {
+        for (const DisplayToggle& Toggle : Toggles)
+        {
+            if (!SelectListEntry(State, Toggle.Label, *Toggle.Enabled)) continue;
+            if (Toggle.Enabled == &State.ZebraEnabled) ToggleZebra(State);
+            else *Toggle.Enabled = !*Toggle.Enabled;
+        }
+        EndSelectList();
+    }
+    EndSheetWindow();
+}
+
+// 📝 HTML .sketch-toolbar (bottom 52, centred): #171717f5, #343434 hairline, radius 13, padding 5, gap 4; buttons
+//    padding 9 12, radius 8, gap 7, glyph 17, #aaa (active / hover #303030 / #fff), a 1 × 22 #3a3a3a divider after Select.
+//    Select ends Trim, Cut splits the body by the focused sketch / picked curve (C), Trim opens the trim session (T).
+void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Extent)
+{
+    const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
+    const bool CutCondition    = FocusedSketchCondition(State) || !State.Document.Selection.Curves.empty();
+    struct ToolButton
+    {
+        const char* Key;
+        IconSymbol  Glyph;
+        const char* Label;
+        bool        Active;
+        bool        Enabled;
+    };
+    const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition, true },
+                                 { "SketchCut", IconSymbol::SolidArcCut, "Cut", false, CutCondition && !State.Bevel.ActiveCondition },
+                                 { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition } };
+    SolidArcSheet Probe;
+    Probe.Begin();
+    float Widths[3], Total = 2.0f + 10.0f + 2.0f * 4.0f + 1.0f + 6.0f + 4.0f;
+    for (int Index = 0; Index < 3; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
+    const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
+    const float  Height       = 2.0f + 10.0f + ButtonHeight;
+    const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Total)), Image.y + Extent.y - 52.0f - Height);
+    BeginSheetWindow("ViewportTools", Corner, ImVec2(Total, Height), true);
+    SolidArcSheet Sheet;
+    Sheet.Begin();
+    const PlaneExtent Bar    = Spanning(Corner.x, Corner.y, Total, Height);
+    const float       Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
+    Sheet.Box(Bar, SolidArcInk(0x171717, 0xf5 / 255.0f), 13.0f, SolidArcInk(0x343434));
+    float Cursor = Bar.MinimumX + 1.0f + 5.0f;
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        const ToolButton&   Tool    = Tools[Index];
+        const PlaneExtent   Box     = Spanning(Cursor, Centre - 0.5f * ButtonHeight, Widths[Index], ButtonHeight);
+        const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, Tool.Key, Box, Tool.Enabled);
+        const float         Opacity = Tool.Enabled ? 1.0f : 0.32f;
+        const bool          Lit     = Tool.Active || Press.HoveredCondition;
+        if (Lit) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
+        const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
+        Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
+        Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        if (Press.ClickedCondition)
+        {
+            if (Index == 0 && State.Trim.ActiveCondition) CloseTrimSession(State);
+            if (Index == 1) ApplyCut(State);
+            if (Index == 2) State.Trim.ActiveCondition ? CloseTrimSession(State) : OpenTrimSession(State);
+        }
+        Cursor = Box.MaximumX + 4.0f;
+        if (Index == 0)
+        {
+            Sheet.Surface().FillRectangle(Spanning(Cursor + 3.0f, Centre - 11.0f, 1.0f, 22.0f), SolidArcInk(0x3a3a3a));
+            Cursor += 3.0f + 1.0f + 3.0f + 4.0f;
+        }
+    }
+    EndSheetWindow();
 }
 
 // WorkspacePanel.js history-step: the glyph and the one-word caption of a feature step.
@@ -5161,7 +5476,7 @@ void DrawConstructionHistory(SolidArcWorkspaceState& State, ImVec2 Position, flo
 
 void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, ImVec2 Position, ImVec2 Size)
 {
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.090f, 0.106f, 0.137f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
     ImGui::SetNextWindowPos(Position);
     ImGui::SetNextWindowSize(Size);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -5170,8 +5485,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar |
                                       ImGuiWindowFlags_NoScrollWithMouse);
     ImDrawList* Canvas = ImGui::GetWindowDrawList();
-    Canvas->AddRectFilled(Position, ImVec2(Position.x + Size.x, Position.y + ViewportBar), IM_COL32(0x1e, 0x22, 0x2b, 0xff), PanelRounding, ImDrawFlags_RoundCornersTop);
-    DrawViewportBar(State);
+    // 📝 HTML .scene-panel: #151515, radius 23, #ffffff08 hairline; the .viewport (#171b23) between the bar and the history.
+    SolidArcSheet Chrome;
+    Chrome.Begin();
+    Chrome.Box(Spanning(Position.x, Position.y, Size.x, Size.y), SolidArcInk(0x151515), SolidArcStyleTokens::PanelRadius, SolidArcWash(0x08));
+    DrawViewportBar(State, Chrome, Spanning(Position.x, Position.y, Size.x, ViewportBar));
+    DrawConstructMenu(State, ImVec2(Position.x + 13.0f, Position.y + 48.0f));              // under the Construct chip
 
     const ImVec2 Image(Position.x, Position.y + ViewportBar);
     const float  History = ActionBarHeight + (State.HistoryFoldedEnabled ? 0.0f : HistoryHeight);
@@ -5197,16 +5516,15 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImGui::PopStyleColor();
         return;
     }
-    if (ViewportTexture)
-        Canvas->AddImageRounded(ViewportTexture, Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, PanelRounding,
-                                ImDrawFlags_RoundCornersBottom);
+    Canvas->AddRectFilled(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), IM_COL32(0x17, 0x1b, 0x23, 0xff));
+    if (ViewportTexture) Canvas->AddImage(ViewportTexture, Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y));
 
     // 📝 Gestures (Plasticity orbit-controls / viewport-selector): middle drag orbit (yaw about world z, elevation about
     //    camera right), right drag pan, wheel dolly; LMB click replaces the selection, Shift+click adds, Ctrl+click
     //    removes, Alt+click adds the edge's tangent chain. In a command: click edits the selection, right-click finishes.
     ImGuiIO&     Io        = ImGui::GetIO();
     const ImVec2 Local(Io.MousePos.x - Image.x, Io.MousePos.y - Image.y);
-    const ImVec2 CubeCorner(Image.x + Extent.x - CubeExtent - 12, Image.y + 12);
+    const ImVec2 CubeCorner(Image.x + Extent.x - CubeExtent - 18, Image.y + Extent.y - CubeExtent - 45);     // HTML .orientation: right 18, bottom 45
     const bool   LeftClick  = Hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] <= ClickTolerance * ClickTolerance;
     const bool   RightClick = Hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] <= ClickTolerance * ClickTolerance;
     const bool   OverCube   = DrawOrientationCube(State, Canvas, CubeCorner, LeftClick);
@@ -5395,30 +5713,14 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         Canvas->AddRect(Low, High, IM_COL32(0x4d, 0x9f, 0xff, 0xcc));
     }
     Canvas->PopClipRect();
-    ImVec2 Pill(Image.x + 12, Image.y + 12);
-    static const char* ModeNames[] = { "", "Mode 1 · control points", "Mode 2 · edges", "Mode 3 · faces", "Mode 4 · solid", "Mode 5 · all" };
-    DrawStatusPill(Canvas, Pill, ModeNames[int(State.PickMode)], SelectedColour);
-    DrawStatusPill(Canvas, Pill, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective", MutedColour);
-    static const char* PlaneNames[] = { "Plane XY", "Plane XZ", "Plane YZ" };
-    DrawStatusPill(Canvas, Pill, PlaneNames[std::clamp(State.Style.GridPlane, 0, 2)], AxisColours[State.Style.GridPlane == 2 ? 1 : 0]);
-    if (State.Style.XRayEnabled) DrawStatusPill(Canvas, Pill, "X-ray", IM_COL32(0xc7, 0xd4, 0xe8, 0xff));
-    if (State.Measure.ActiveCondition) DrawStatusPill(Canvas, Pill, "Measure", IM_COL32(0xff, 0xc8, 0x3d, 0xff));
-    if (State.Section.ActiveCondition) DrawStatusPill(Canvas, Pill, DescribeSectionRequest(State.Section.Request), IM_COL32(0xdb, 0x61, 0x4a, 0xff));
-    const SolidArcBodySummary& Summary = State.Document.Summary;
-    if (Summary.PresentCondition)
-        DrawStatusPill(Canvas, Pill, Summary.SheetCondition ? std::string(Summary.SoundCondition ? "Sound sheet" : "Sheet audit findings")
-                                                            : Summary.Bodies.size() > 1
-                                                            ? Compose("%d bodies · %s", int(Summary.Bodies.size()), Summary.SoundCondition ? "sound" : "audit findings")
-                                                            : Compose("%s · genus %d", Summary.SoundCondition ? "Sound solid" : "Audit findings", Summary.Genus),
-                       Summary.SoundCondition ? ActiveColour : RefusalColour);
-    if (!State.Document.Regeneration.Curves.empty())
-        DrawStatusPill(Canvas, Pill, Compose("%d curve(s) · %d selected", int(State.Document.Regeneration.Curves.size()), int(State.Document.Selection.Curves.size())), IM_COL32(0x9f, 0xd8, 0xff, 0xff));
-    if (State.HoverIdentity != 0 && Hovered)
-        DrawStatusPill(Canvas, Pill, State.HoverIdentity == IdentitySectionCap ? std::string("Section cap") : NameSolidArcIdentity(DisplayedSolidArcScene(State), State.HoverIdentity),
-                       IM_COL32(0xff, 0xd2, 0x4d, 0xff));
+    {
+        SolidArcSheet Label;
+        Label.Begin();
+        DrawViewportLabel(State, Label, Image, Hovered);
+    }
     if (State.Bevel.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const bool Refused = !State.Bevel.Refusal.empty();
         const char* Caption = State.Bevel.Verb == SolidArcSessionVerb::Profile ? "Extrude sketch d" : State.Bevel.Verb == SolidArcSessionVerb::Extrude ? "Extrude d"
                             : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
@@ -5433,14 +5735,14 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     }
     if (Drag.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const Vector3 Shift = Drag.Position - Drag.Origin;
         DrawStatusPill(Canvas, Below, Compose("Pole %d of %s · moved %.2f mm (%.2f, %.2f, %.2f)", Drag.Pole, CaptionOf(State.Document, Drag.Label).c_str(), Length(Shift) * 1000.0,
                                               Shift.X * 1000.0, Shift.Y * 1000.0, Shift.Z * 1000.0), ActiveColour);
     }
     if (State.Drawing.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcDrawingSession& Drawing = State.Drawing;
         const std::string Pointer = Drawing.PointerCondition ? Compose(" · (%s, %s)", FormatLength(Drawing.Pointer.X).c_str(), FormatLength(Drawing.Pointer.Y).c_str()) : std::string{};
         DrawStatusPill(Canvas, Below, Compose("%s · %d point(s)%s", DrawingCaption(Drawing).c_str(), int(Drawing.Points.size()), Pointer.c_str()), ActiveColour);
@@ -5448,33 +5750,33 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     }
     if (State.Trim.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcTrimSession& Trim = State.Trim;
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
     if (State.Constrain.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         bool Trouble = false;
         const std::string Readout = ConstraintSessionReadout(State, Trouble);
         DrawStatusPill(Canvas, Below, Readout, Trouble ? RefusalColour : ActiveColour);
         if (!State.Constrain.Refusal.empty())
         {
-            ImVec2 Next(Image.x + 12, Image.y + 76);
+            ImVec2 Next(Image.x + 72, Image.y + 96);
             DrawStatusPill(Canvas, Next, State.Constrain.Refusal, RefusalColour);
         }
     }
     if (State.Transform.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcTransformSession& Transform = State.Transform;
         DrawStatusPill(Canvas, Below, Compose("%s%s · %d body(ies)", Transform.DuplicateCondition ? "Duplicate · " : "", Transform.Readout.c_str(), int(Transform.Keys.size())), Transform.Refusal.empty() ? ActiveColour : RefusalColour);
         if (!Transform.Refusal.empty()) DrawStatusPill(Canvas, Below, Transform.Refusal, RefusalColour);
     }
     if (State.Sweep.ActiveCondition)
     {
-        ImVec2 Below(Image.x + 12, Image.y + 44);
+        ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcSweepSession& Sweep = State.Sweep;
         const std::string Boolean = Sweep.Verb != SolidArcSweepVerb::Offset ? std::string(" · ") + (Sweep.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(Sweep.Combination)) : std::string{};
         const std::string Typed   = Sweep.Typed.empty() ? std::string{} : " · typed " + Sweep.Typed;
@@ -5522,8 +5824,16 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a pole (release commits, Esc drops) · click a curve (Shift add in loft order, Ctrl remove) · L loft · Ctrl+Z undo · 2/3/4/5 modes"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
-    Canvas->AddText(ImVec2(Image.x + 14, Image.y + Extent.y - 26), MutedColour, Hint);
+    {
+        SolidArcSheet Instructions;
+        Instructions.Begin();
+        DrawViewportInstructions(Instructions, Image.x + 17.0f, Image.y + Extent.y - 12.0f, Extent.x - 34.0f - CubeExtent - 18.0f, Hint);
+    }
 
+    // The overlay clusters are top-level windows of their own (begun here so they measure inside a window).
+    DrawSelectionRail(State, Image);
+    DrawDisplayMenu(State, Image, Extent.x);
+    DrawSketchToolbar(State, Image, Extent);
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -7238,9 +7548,17 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
     const float Top    = HeaderHeight + DocumentHeight;
     const float Height = std::max(100.0f, Frame.y - Top - StatusHeight);
     const float Middle = std::max(100.0f, Frame.x - 2 * FrameMargin - 2 * ColumnGap - OutlinerWidth - InspectorWidth);
-    DrawOutliner(State, ImVec2(FrameMargin, Top), ImVec2(OutlinerWidth, Height));
-    DrawViewport(State, ViewportTexture, ImVec2(FrameMargin + OutlinerWidth + ColumnGap, Top), ImVec2(Middle, Height));
-    DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height));
+    if (State.ViewportMaximizedEnabled)
+    {
+        // HTML maximize: the scene panel takes the whole row (Outliner and Inspector step aside).
+        DrawViewport(State, ViewportTexture, ImVec2(FrameMargin, Top), ImVec2(Frame.x - 2 * FrameMargin, Height));
+    }
+    else
+    {
+        DrawOutliner(State, ImVec2(FrameMargin, Top), ImVec2(OutlinerWidth, Height));
+        DrawViewport(State, ViewportTexture, ImVec2(FrameMargin + OutlinerWidth + ColumnGap, Top), ImVec2(Middle, Height));
+        DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height));
+    }
     DrawStatusBar(State, Frame);
     DrawMatcapPicker(State);
     DrawWelcome(State);

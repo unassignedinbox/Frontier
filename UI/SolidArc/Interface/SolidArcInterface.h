@@ -480,6 +480,7 @@ struct SolidArcWorkspaceState
     bool                                  ConstructMenuRequest = false;                      // [-]   - Construct catalogue popover requested
     SolidArcOutlinerState                 Outliner       = {};                               // [-]   - Scene search, filter chips, compact / folded
     bool                                  HistoryFoldedEnabled = false;                      // [-]   - History strip hidden (Construction history)
+    bool                                  ViewportMaximizedEnabled = false;                  // [-]   - Scene panel spans the row (maximize button)
     size_t                                HistoryCount   = 0;                                // [-]   - Steps when the strip last scrolled to the newest
     GeometryProcessing::FaceOperationKind           FaceVerb       = GeometryProcessing::FaceOperationKind::Push; // [-]  - Face-edit verb
     double                                FaceAmount     = 0.25;                             // [-]   - Face-edit amount (by verb)

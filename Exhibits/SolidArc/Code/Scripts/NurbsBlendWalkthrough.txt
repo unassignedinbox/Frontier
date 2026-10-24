@@ -69,6 +69,8 @@ key X
 frames 3
 expect bodies == 1
 expect sound == 1
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space

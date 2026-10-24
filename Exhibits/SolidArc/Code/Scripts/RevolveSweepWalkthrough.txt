@@ -74,6 +74,8 @@ expect sweep-amount ~ 360
 expect sweep-preview == 1
 expect sweep-refusal == 0
 capture 134RevolvePreview
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 3
 capture 135RevolvePreviewIsometric
@@ -114,6 +116,8 @@ frames 3
 expect sweep-amount ~ 90
 key R
 frames 3
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 3
 capture 136RevolveEdgeAxis
@@ -160,6 +164,8 @@ frames 2
 key Enter
 frames 2
 expect sketches == 5
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 3
 key P Shift

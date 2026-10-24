@@ -30,17 +30,23 @@ frames 1
 expect orthographic == 1
 
 # ② the blueprint behind the sections: Right (side), Top (plan), Front
+click @ViewMenu
+frames 2
 click @ViewRight
 frames 2
 key Space
 frames 3
 expect image-planes-drawn == 3
 capture 80BlueprintSide
+click @ViewMenu
+frames 2
 click @ViewTop
 frames 2
 key Space
 frames 3
 capture 81BlueprintTop
+click @ViewMenu
+frames 2
 click @ViewFront
 frames 2
 key Space
@@ -48,9 +54,13 @@ frames 3
 capture 82BlueprintFront
 
 # ③ Images toggle and per-plane Visible (Inspector · Image planes)
+click @DisplayMenu
+frames 2
 click @ImagesToggle
 frames 2
 expect image-planes-drawn == 0
+click @DisplayMenu
+frames 2
 click @ImagesToggle
 frames 2
 expect image-planes-drawn == 3
@@ -63,6 +73,8 @@ frames 2
 expect image-planes-drawn == 3
 
 # ④ mode 1 + left-drag box over the side view: all 24 sections, in station order
+click @ViewMenu
+frames 2
 click @ViewRight
 frames 2
 key Space
@@ -93,6 +105,8 @@ expect sound == 1
 expect faces == 4
 expect volume > 7.14
 expect volume < 7.16
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -229,19 +243,27 @@ expect volume < 6.8
 key 3
 frames 2
 expect pick-mode == 3
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
 frames 3
 capture 86ArchesIso
+click @ViewMenu
+frames 2
 click @ViewRight
 frames 2
 key Space
 frames 3
 capture 87ArchesSide
+click @DisplayMenu
+frames 2
 click @ImagesToggle
 frames 2
 expect image-planes-drawn == 0
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space

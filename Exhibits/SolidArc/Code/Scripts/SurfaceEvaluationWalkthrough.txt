@@ -18,6 +18,8 @@ frames 3
 click @PathImport
 frames 3
 expect steps == 11
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -58,11 +60,15 @@ expect panels == 2
 expect sound == 1
 key Escape
 frames 1
+click @DisplayMenu
+frames 2
 click @ZebraToggle
 frames 3
 expect zebra == 1
 expect triangles > 1500
 expect status contains Zebra on
+click @ViewMenu
+frames 2
 click @ViewTop
 frames 3
 capture 70ZebraG0
@@ -89,21 +95,31 @@ expect status contains · G2
 key Escape
 frames 1
 expect zebra == 1
+click @ViewMenu
+frames 2
 click @ViewTop
 frames 3
 capture 71ZebraG2
 
 # ③ deviation map: zebra off, needles on (magnified; the legend states the factor)
+click @DisplayMenu
+frames 2
 click @ZebraToggle
 frames 2
 expect zebra == 0
+click @DisplayMenu
+frames 2
 click @DeviationToggle
 frames 3
 expect deviation-points == 286
 expect deviation-worst > 0.002
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 3
 capture 72DeviationMap
+click @DisplayMenu
+frames 2
 click @DeviationToggle
 frames 1
 
@@ -131,9 +147,13 @@ expect panels == 2
 expect sound == 1
 key Escape
 frames 1
+click @DisplayMenu
+frames 2
 click @ZebraToggle
 frames 3
 expect zebra == 1
+click @ViewMenu
+frames 2
 click @ViewTop
 frames 2
 key Space

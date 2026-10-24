@@ -17,7 +17,8 @@ key Keypad5
 frames 2
 wheel viewport 0.5 0.5 -4
 frames 2
-drag Right viewport 0.5 0.5 by -228 228 24
+# (pans the origin to 228 px left of / 150 px below the centre: the sketch stays above the Select / Cut / Trim toolbar)
+drag Right viewport 0.5 0.5 by -228 150 24
 frames 2
 key Q Shift
 frames 2

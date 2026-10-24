@@ -81,6 +81,8 @@ frames 3
 expect transform-commits == 2
 expect steps == 4
 expect volume ~ 2
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -263,6 +265,8 @@ frames 3
 key R
 frames 3
 expect sweep-amount ~ 0.2
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 capture 120PipePreview

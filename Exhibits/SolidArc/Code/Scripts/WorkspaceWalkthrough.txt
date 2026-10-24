@@ -125,21 +125,35 @@ expect grid-plane == 0
 capture 08ViewCubeTop
 click @Projection
 expect orthographic == 1
+click @ViewMenu
+frames 2
 click @ViewFront
 expect camera-pitch ~ 0
 expect camera-yaw ~ -1.5707963268
 expect grid-plane == 1
 capture 09FrontParallel
+click @ViewMenu
+frames 2
 click @ViewRight
 expect grid-plane == 2
 capture 09RightParallel
+click @ViewMenu
+frames 2
 click @ViewIsometric
 expect grid-plane == 2
+click @ViewMenu
+frames 2
 click @ViewTop
 click @Projection
+click @DisplayMenu
+frames 2
 click @GridToggle
 expect grid == 0
+click @DisplayMenu
+frames 2
 click @GridToggle
+click @ViewMenu
+frames 2
 click @ViewIsometric
 click @FitView
 expect camera-pitch ~ 0.6154797087

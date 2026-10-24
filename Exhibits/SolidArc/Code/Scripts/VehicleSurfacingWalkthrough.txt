@@ -24,6 +24,8 @@ expect curves contains Between5
 expect curve-fit-worst < 0.0002
 expect sheet == 0
 expect status contains Imported 11 curve(s)
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -152,6 +154,8 @@ frames 3
 capture 56SheetUnderside
 key Keypad7
 frames 1
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 

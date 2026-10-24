@@ -61,6 +61,8 @@ expect selected-bodies contains Cut#4
 expect pick-mode == 4
 expect sound == 1
 expect status contains Cut
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -98,6 +100,8 @@ expect bodies == 2
 expect body-volumes contains Cut2 0.282743
 # genus sums over the bodies: the core is genus 0, the holed block genus 1
 expect genus == 1
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 capture 104CutCore
@@ -116,6 +120,8 @@ frames 3
 click @PathImport
 frames 3
 expect curves == 11
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -158,6 +164,8 @@ expect refused == 0
 expect bodies == 2
 expect sound == 1
 expect selected-bodies contains Cut#
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -244,6 +252,8 @@ key Enter
 frames 2
 expect volume ~ 1.237928331467
 expect sound == 1
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space

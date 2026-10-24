@@ -203,6 +203,8 @@ frames 3
 click @PathImport
 frames 3
 expect steps == 11
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space

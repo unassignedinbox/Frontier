@@ -201,6 +201,8 @@ expect drawing == 0
 expect steps == 8
 
 # ⑧ the solid from an isometric view, sketches overlaid (used ones dimmed)
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 3
 capture 33DrawnSolid

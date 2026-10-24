@@ -139,6 +139,8 @@ key Z Alt
 expect xray == 0
 
 # ⑨ E opens the extrude command on the selected face (0.5 by default), Enter finishes: boss r 0.5 grows by π · 0.5² · 0.5
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key 3

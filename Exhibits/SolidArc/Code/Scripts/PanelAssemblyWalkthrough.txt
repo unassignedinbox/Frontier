@@ -17,6 +17,8 @@ click @PathImport
 frames 3
 expect steps == 11
 expect refused == 0
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -96,6 +98,8 @@ click @PathImport
 frames 3
 expect steps == 5
 expect refused == 0
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space
@@ -147,6 +151,8 @@ type Experimental/VehicleSurfacing/Samples/SyntheticBonnetNetwork.toml
 click @PathImport
 frames 3
 expect steps == 10
+click @ViewMenu
+frames 2
 click @ViewIsometric
 frames 2
 key Space

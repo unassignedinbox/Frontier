@@ -41,6 +41,8 @@ frames 2
 expect bevel-end-size ~ 0.1
 expect bevel-refusal == 0
 expect bevel-preview-volume ~ 10.185606734
+click @ViewMenu
+frames 2
 click @ViewFront
 frames 3
 expect bevel-active == 1
