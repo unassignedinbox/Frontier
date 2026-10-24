@@ -1,6 +1,52 @@
 # 🧩 SolidArc — application evidence
 
-**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes 25 / 25 (26 / 26 with the BMW picture), re-run after the SolidArc rename (2026-10-23). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
+**TL;DR**: These are real Vulkan frames from SwiftShader Device (Subzero) · Vulkan 1.3.0, driven by real ImGui input. ctest passes **28 / 28** (both upstream raster validations plus every SolidArc test, 1303.74 s, re-run for S6 on 2026-10-24). SolidArc also cross-builds for Windows x64 as a 3.6 MB preview package that has not yet been run on Windows (`Results/S6Windows.md`). **1139 / 1139** walkthrough expectations pass across 24 reports, and the parity checklist scores 🟢 72 · ⚠️ 1 · 🚧 3 out of 76 rows (`Exhibits/SolidArc/Results/HtmlParity.md`).
+
+
+## 🏁 Port stages (SolidArc inside upstream Frontier)
+
+| Stage | Scope | Evidence | State |
+|---|---|---|---|
+| S1 | SolidArc app target, Vulkan host, upstream ControlKit / Theme / PanelDockspace | `Walkthrough/01Workspace.png`, `WorkspaceWalkthrough.md` | 🟢 (windowed host and standalone overlay build open) |
+| S2 | Kernel in `Engine/GeometryProcessing/` | `DocumentValidation.md` W1–W38 | 🟢 |
+| S3 | 1:1 Outliner, viewport and Inspector port (S3a / S3b / S3c) | `HtmlParity.md` 🟢 72 · ⚠️ 1 · 🚧 3 | 🟢 |
+| S4 | Shared Slang shaders (`CadStroke`, `MatCapLookup`) and `Engine/Render/OrbitCamera` | `MatCapRasterizationValidation`, `SurfaceRasterizationValidation`, ctest 27 / 27 | 🟢 |
+| S5 | Project browser: CAD category, thumbnails, live reader, Open in SolidArc | `S5Browser.md`, `SolidArcBrowserValidation` 15 / 15 | 🟢 |
+| S6 | Validation tables; Windows cross-build and package | `S6Windows.md`, ctest 28 / 28 | 🟢 built and packaged; 🔴 first Windows run pending |
+| S7 | PR into upstream Frontier after PR #16 merges | | 🚧 |
+
+## 🏁 ctest (28 / 28, SwiftShader, 2026-10-24)
+
+| # | Test | Covers |
+|---|---|---|
+| 4 | MatCapRasterizationValidation | Upstream raster check of the shared matcap shader |
+| 5 | SurfaceRasterizationValidation | Upstream raster check of the shared CAD surface and edge shaders |
+| 39 | SolidArcBrowserValidation | Project browser decode, thumbnails, refusal, process hand-off |
+| 40 | SolidArcDocumentValidation | Kernel and document W1–W38 |
+| 41 | SolidArcViewportValidation | Viewport rendering, picking and camera |
+| 42 | SolidArcWorkspaceWalkthrough | Shell, selection, bevel, navigation, views |
+| 43 | SolidArcRecoveryWalkthrough | Autosave and recovery |
+| 44 | SolidArcShortcutWalkthrough | Plasticity key map |
+| 45 | SolidArcVariableBlendWalkthrough | Variable fillet and chamfer |
+| 46 | SolidArcSketchDrawingWalkthrough | Sketch drawing tools |
+| 47 | SolidArcVehicleSurfacingWalkthrough | Blueprint planes, sections, loft |
+| 48 | SolidArcPanelAssemblyWalkthrough | Panel trimming and assembly |
+| 49 | SolidArcSurfaceEvaluationWalkthrough | Curvature combs and evaluation |
+| 50 | SolidArcMatcapWalkthrough | Per-face and per-body matcaps |
+| 51 | SolidArcMultiBodyWalkthrough | Multiple bodies and Booleans |
+| 52 | SolidArcTrimSplitWalkthrough | Cut, split and trim |
+| 53 | SolidArcEditingWalkthrough | Move, rotate, scale, duplicate, hide, join, offset, pipe |
+| 54 | SolidArcConstraintsWalkthrough | Sketch constraints |
+| 55 | SolidArcLinkedConstraintsWalkthrough | Constraints linked across sketches |
+| 56 | SolidArcRevolveSweepWalkthrough | Revolve and sweep |
+| 57 | SolidArcIncrementalReplayWalkthrough | Incremental replay |
+| 58 | SolidArcXRayWalkthrough | X-ray |
+| 59 | SolidArcMeasureSectionWalkthrough | Measure and section |
+| 60 | SolidArcDrawingSheetWalkthrough | Drawing sheets, SVG / DXF |
+| 61 | SolidArcExchangeWalkthrough | STEP / STL import and export |
+| 62 | SolidArcSnappingWalkthrough | Object snapping |
+| 63 | SolidArcNurbsBlendWalkthrough | Fillet and chamfer on NURBS rims (725.98 s) |
+| 64 | SolidArcAssemblyWalkthrough | Joints and interference |
 
 | Report (in `Results/`) | Result |
 |---|---|

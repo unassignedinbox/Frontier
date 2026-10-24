@@ -112,10 +112,14 @@ bool LaunchSolidArcWorkspace(const std::filesystem::path& Workspace, const std::
         Refusal = "The document no longer exists: " + Utf8(Document);
         return false;
     }
+
+    // 💡 The workspace may chdir to its own folder at start-up (package layout), so a relative document path would dangle.
+    const std::filesystem::path Absolute = std::filesystem::absolute(Document, Failure);
+    const std::filesystem::path Opened   = Failure ? Document : Absolute.lexically_normal();
 #if defined(_WIN32)
     std::wstring CommandLine = QuoteArgument(Workspace.wstring());
     for (const std::string& Argument : Arguments) CommandLine += L" " + QuoteArgument(Widen(Argument));
-    CommandLine += L" --open " + QuoteArgument(Document.wstring());
+    CommandLine += L" --open " + QuoteArgument(Opened.wstring());
     STARTUPINFOW        Startup{};
     PROCESS_INFORMATION Started{};
     Startup.cb = sizeof(Startup);
@@ -131,7 +135,7 @@ bool LaunchSolidArcWorkspace(const std::filesystem::path& Workspace, const std::
     std::vector<std::string> Words = { Utf8(Workspace) };
     Words.insert(Words.end(), Arguments.begin(), Arguments.end());
     Words.push_back("--open");
-    Words.push_back(Utf8(Document));
+    Words.push_back(Utf8(Opened));
     std::vector<char*> Vector;
     for (std::string& Word : Words) Vector.push_back(Word.data());
     Vector.push_back(nullptr);

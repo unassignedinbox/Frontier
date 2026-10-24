@@ -11,6 +11,7 @@ cd "$(dirname "$0")/../../../.."
 RepositoryRoot="$PWD"
 Frontier="$(cd "${1:?Frontier checkout}" && pwd)"
 Build="${2:-$RepositoryRoot/_ClaudeScratch/build/Windows}"
+Build="$(realpath -m "$Build")"
 shift $(( $# > 2 ? 2 : $# ))
 Targets="${*:-SolidArc Frontier}"
 

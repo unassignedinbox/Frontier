@@ -22,4 +22,5 @@
 
 - Built on Linux with Zig's clang for `x86_64-windows-gnu` (MinGW-w64, static C++ runtime). The MSVC build of the same sources is the release build.
 - Not yet started on a Windows machine by the build: please report the first launch (window, viewport, opening a document).
-- If the window does not open, start it from a terminal (`cmd`) to see the Vulkan or GLFW message.
+- If the window does not open, a message box names the cause (no Vulkan 1.3 driver, missing `EngineContent/`, unreadable options file).
+- Unsigned preview: Windows SmartScreen may ask for confirmation on the first start (More info → Run anyway).
