@@ -33,7 +33,7 @@
 | S4 | Viewport on upstream `CadSurface` / `CadEdge` / `MatCapSurface`, shared camera in Engine, Plasticity navigation kept | viewport gates + captures |
 | S5 | Project browser: Cad category, launch path, thumbnails | browser capture |
 | S6 | Validation to `Exhibits/SolidArc/`; Windows cross-build and package | test tables + `.exe` |
-| S7 | PR into upstream `Frontier` after PR #16 merges (Actions only with approval) | merged tree builds |
+| S7 | PR into upstream `Frontier` after PR #16 merges (Actions only with approval); 🚩 first remove `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` | merged tree builds |
 
 ## 🚧 Progress
 

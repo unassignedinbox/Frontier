@@ -45,7 +45,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 | Zip size | 3,555,963 B |
 | Zip sha256 | `1761cda8854e3dfb2c36160cd9c4cc80bab7b819a3ee3a8258a7d59fa4513ab0` |
 | Unpacked | 8,445,666 B |
-| Location (untracked) | `_ClaudeScratch/build/Windows/Package/SolidArc-Windows-x64.zip` |
+| Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
 The zip records file times, so its sha256 changes every time it is repackaged. The value above belongs to the zip that sits at the location shown.
