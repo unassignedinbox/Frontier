@@ -66,6 +66,12 @@ DomainEdits = [
 ReplacedPaths = [
     ('Engine/Render/Shader/CadEdge.slang',       '7dd89dcd37fb850bd7b9d9fc8fb415898688c64d266360d622ebfc01c6af3bf2'),
     ('Engine/Render/Shader/MatCapSurface.slang', '16d05bd02b4e2f49fc90b274ce25ac094ccc37dde6c8ec4ae65d4a2734f155e5'),
+    # 📝 S5 project browser: .solidarc classification, document thumbnails and the SolidArc hand-off (pinned at 65cf0f1).
+    ('Engine/ContentInterchange/ProjectBrowserCatalogue.h', '73d473183eae0f40b64fb600001bac2f2680988522a40341cb712ef03a4f2acb'),
+    ('Engine/Render/BrowserPreviewRendering.cpp',           '6a4516895acd30aa5c05eb0a8167792c9f254fc5b7a52cbbade44f91ea7d58e2'),
+    ('UI/Editor/ProjectBrowserPanel.h',                     '36098e13ca77b6ac74a4380a1088e8d18a3a1879440046dd336bbaa8a112d0ac'),
+    ('UI/Editor/ProjectBrowserPanel.cpp',                   '980b616c057913ad98d7f1eeb45e65666f01bffd9a5554482e9b07362d43de25'),
+    ('Experimental/Frontier/Native/WindowsFrontier.cpp',    'b394c403ecfa86ade777e4b45a91842fac8cd1f140bd8512edc16f1f428bdde2'),
 ]
 # 📝 The surface shader rules rebuild when a shared module changes (both the slangc and the Slang WASM rule).
 ModuleDependency = (

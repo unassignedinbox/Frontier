@@ -10,6 +10,7 @@
 #include "UI/SolidArc/Document/SolidArcImagePlane.h"
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC                                                                     // 📝 Internal linkage: upstream Engine/Render links its own stb_image
 #define STBI_NO_PSD
 #define STBI_NO_PIC
 #define STBI_NO_PNM

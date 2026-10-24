@@ -102,7 +102,8 @@ add_custom_target(SolidArcShaderArchive DEPENDS "${SOLIDARC_SHADER_ARCHIVE}")
 #                                                    LIBRARY
 #-------------------------------------------------------------------------------------------------------------------
 
-add_library(FrontierSolidArcUI STATIC
+# 📝 Document layer without Vulkan / ImGui: the project browser host links it (with the browser link) next to its own backend.
+add_library(FrontierSolidArcDocument STATIC
     ${SOLIDARC_UI}/Document/SolidArcDocument.cpp
     ${SOLIDARC_UI}/Document/SolidArcDocumentCodec.cpp
     ${SOLIDARC_UI}/Document/VehicleCurveImport.cpp
@@ -113,6 +114,11 @@ add_library(FrontierSolidArcUI STATIC
     ${SOLIDARC_UI}/Document/SolidArcExchange.cpp
     ${SOLIDARC_UI}/Document/SolidArcScene.cpp
     ${SOLIDARC_UI}/Document/SolidArcSpecimen.cpp
+)
+target_include_directories(FrontierSolidArcDocument PUBLIC "${FRONTIER_ROOT}")
+target_link_libraries(FrontierSolidArcDocument PUBLIC FrontierGeometryProcessing FrontierOrbitCamera SolidArcTomlPlusPlus SolidArcStb)
+
+add_library(FrontierSolidArcUI STATIC
     ${SOLIDARC_UI}/Viewport/SolidArcCamera.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcDevice.cpp
     ${SOLIDARC_UI}/Viewport/SolidArcRasterization.cpp
@@ -128,10 +134,24 @@ add_library(FrontierSolidArcUI STATIC
 )
 add_dependencies(FrontierSolidArcUI SolidArcShaderArchive)
 target_include_directories(FrontierSolidArcUI PUBLIC "${FRONTIER_ROOT}")
-target_link_libraries(FrontierSolidArcUI PUBLIC FrontierGeometryProcessing FrontierOrbitCamera FrontierInterface SolidArcVolk SolidArcImGuiVulkan SolidArcTomlPlusPlus SolidArcStb)
+target_link_libraries(FrontierSolidArcUI PUBLIC FrontierSolidArcDocument FrontierInterface SolidArcVolk SolidArcImGuiVulkan SolidArcTomlPlusPlus SolidArcStb)
 target_compile_definitions(FrontierSolidArcUI PRIVATE SOLIDARC_FONT_PATH="${SOLIDARC_FONT_FILE}" SOLIDARC_CONTENT_ROOT="${FRONTIER_ROOT}")
 if(NOT MSVC)
     target_compile_options(FrontierSolidArcUI PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+    target_compile_options(FrontierSolidArcDocument PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+endif()
+
+# 📝 S5 project browser link: .solidarc previews (Engine/Render/BrowserPreviewGeometry.h layout) and the workspace launch.
+#    Upstream only (FrontierEditorUI owns ProjectBrowserPanel); the Windows Frontier host links it below.
+if(TARGET FrontierEditorUI)
+    add_library(FrontierSolidArcBrowser STATIC
+        ${SOLIDARC_UI}/Browser/SolidArcBrowserPreview.cpp
+        ${SOLIDARC_UI}/Browser/SolidArcBrowserLink.cpp
+    )
+    target_link_libraries(FrontierSolidArcBrowser PUBLIC FrontierSolidArcDocument FrontierEditorUI)
+    if(NOT MSVC)
+        target_compile_options(FrontierSolidArcBrowser PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+    endif()
 endif()
 
 #-------------------------------------------------------------------------------------------------------------------
@@ -151,6 +171,28 @@ if(SOLIDARC_WINDOWED_HOST AND TARGET glfw)
         set_target_properties(SolidArc PROPERTIES WIN32_EXECUTABLE ON)
         target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/ENTRY:mainCRTStartup>)
     endif()
+endif()
+
+# 📝 The Windows Frontier browser host decodes .solidarc previews and starts SolidArcWorkspace beside itself.
+if(TARGET FrontierSolidArcBrowser AND TARGET Frontier)
+    target_link_libraries(Frontier PRIVATE FrontierSolidArcBrowser)
+    if(TARGET SolidArc)
+        add_dependencies(Frontier SolidArc)
+    endif()
+endif()
+
+# 📝 S5 evidence: the upstream project browser + reference preview renderer, offscreen, with the SolidArc link. The hand-off
+#    starts SolidArcCapture (same --open contract as SolidArcWorkspace) and waits for its first capture.
+if(TARGET FrontierSolidArcBrowser AND TARGET FrontierSurfaceRasterization)
+    add_executable(SolidArcBrowserValidation "${SOLIDARC_EXHIBIT}/SolidArcBrowserValidation.cpp")
+    target_link_libraries(SolidArcBrowserValidation PRIVATE FrontierSolidArcUI FrontierSolidArcBrowser FrontierSurfaceRasterization)
+    if(TARGET FrontierSurfaceShaders)
+        add_dependencies(SolidArcBrowserValidation FrontierSurfaceShaders SolidArcCapture)
+    endif()
+    add_test(NAME SolidArcBrowserValidation
+             COMMAND SolidArcBrowserValidation --exhibits "${CMAKE_BINARY_DIR}/SolidArc/BrowserValidation"
+                     --shaders "${FRONTIER_SURFACE_SHADER_DIRECTORY}" --workspace "$<TARGET_FILE:SolidArcCapture>")
+    set_tests_properties(SolidArcBrowserValidation PROPERTIES WORKING_DIRECTORY "${FRONTIER_ROOT}" SKIP_RETURN_CODE 77 TIMEOUT 900)
 endif()
 
 add_executable(SolidArcDocumentValidation "${SOLIDARC_EXHIBIT}/SolidArcDocumentValidation.cpp")
