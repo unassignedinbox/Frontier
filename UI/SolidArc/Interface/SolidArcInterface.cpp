@@ -77,7 +77,7 @@ constexpr ImU32 AxisColours[3]  = { IM_COL32(0xe0, 0x4b, 0x4b, 0xff), IM_COL32(0
 
 constexpr FaceOperationKind FaceVerbs[] = { FaceOperationKind::Push, FaceOperationKind::Offset, FaceOperationKind::Extrude, FaceOperationKind::Draft,
                                             FaceOperationKind::Extend, FaceOperationKind::Trim, FaceOperationKind::Scale, FaceOperationKind::Hollow,
-                                            FaceOperationKind::Delete };
+                                            FaceOperationKind::Delete, FaceOperationKind::Inset };
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    HELPERS
@@ -540,6 +540,7 @@ void WriteBevelText(SolidArcBevelSession& Bevel)
 {
     std::snprintf(Bevel.SizeText.data(), Bevel.SizeText.size(), "%.4g", Bevel.Size);
     std::snprintf(Bevel.EndSizeText.data(), Bevel.EndSizeText.size(), "%.4g", Bevel.EndSize);
+    std::snprintf(Bevel.DepthText.data(), Bevel.DepthText.size(), "%.4g", Bevel.Depth);
 }
 
 // The blend the session would apply (variable sizes and the flip only when V is on).
@@ -612,13 +613,33 @@ void OpenExtrudeSession(SolidArcWorkspaceState& State)
     Announce(State, "Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts");
 }
 
+// Plasticity O on faces (offset-curve of the face boundary) · Blender I: inset the selected planar faces. The pointer sets
+// the inset distance (D) or the depth of the inner face (H: + boss, − pocket); Tab-free, the card fields take typed values.
+void OpenInsetSession(SolidArcWorkspaceState& State)
+{
+    if (State.Document.Selection.Faces.empty())
+    {
+        Announce(State, "Inset needs selected planar faces (mode 3)");
+        return;
+    }
+    const bool Remembered = State.LastCommand.Kind == SolidArcRepeatKind::Face && State.LastCommand.Operation == FaceOperationKind::Inset;
+    State.Bevel                 = {};
+    State.Bevel.ActiveCondition = true;
+    State.Bevel.Verb            = SolidArcSessionVerb::Inset;
+    State.Bevel.Size            = Remembered ? State.LastCommand.Amount : 0.1;
+    State.Bevel.Depth           = Remembered ? State.LastCommand.Depth : 0.0;
+    WriteBevelText(State.Bevel);
+    Announce(State, "Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts");
+}
+
 void StageBevelPreview(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
     if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
         Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
-        Bevel.StagedCombination == Bevel.Combination) return;
+        Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth) return;
+    Bevel.StagedDepth       = Bevel.Depth;
     Bevel.StagedCombination = Bevel.Combination;
     Bevel.StagedSize     = Bevel.Size;
     Bevel.StagedShape    = Bevel.Shape;
@@ -626,11 +647,12 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     Bevel.StagedVariable = Bevel.VariableEnabled;
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
-    static const char* Verbs[] = { "Blend", "Extrude", "Profile" };
-    FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 2)] + " · size " + TraceNumber(Bevel.Size));
+    static const char* Verbs[] = { "Blend", "Extrude", "Profile", "Inset" };
+    FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 3)] + " · size " + TraceNumber(Bevel.Size));
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
+                                         : Bevel.Verb == SolidArcSessionVerb::Inset   ? InsetSolidArcSelection(*Bevel.Preview, Bevel.Size, Bevel.Depth)
                                                                                       : BlendSolidArcSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
     if (Outcome.AcceptedCondition)
     {
@@ -658,6 +680,14 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
         Conclude(State, Outcome);
         return;
     }
+    if (State.Bevel.Verb == SolidArcSessionVerb::Inset)
+    {
+        const double                 Depth   = State.Bevel.Depth;
+        const SolidArcCommandOutcome Outcome = InsetSolidArcSelection(State.Document, Size, Depth);
+        if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, Shape, 0.0, FaceOperationKind::Inset, Size, {}, {}, Depth };
+        Conclude(State, Outcome);
+        return;
+    }
     if (State.Bevel.Verb == SolidArcSessionVerb::Extrude)
     {
         const SolidArcCommandOutcome Outcome = ChangeSolidArcSelection(State.Document, FaceOperationKind::Extrude, Size);
@@ -682,6 +712,13 @@ void CancelBevelSession(SolidArcWorkspaceState& State)
 void AdjustBevelSize(SolidArcWorkspaceState& State, double Delta)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
+    if (Bevel.Verb == SolidArcSessionVerb::Inset)
+    {
+        if (Bevel.DepthEnabled) Bevel.Depth = std::round((Bevel.Depth + Delta) * 1.0e4) * 1.0e-4;          // [len] - Signed: + boss, − pocket
+        else Bevel.Size = std::round(std::max(1.0e-3, Bevel.Size + Delta) * 1.0e4) * 1.0e-4;             // [len] - Inset distance > 0
+        WriteBevelText(Bevel);
+        return;
+    }
     if (Bevel.Verb == SolidArcSessionVerb::Extrude || Bevel.Verb == SolidArcSessionVerb::Profile)
     {
         double Distance = Bevel.Size + Delta;                                                // [len] - Signed extrusion
@@ -6337,7 +6374,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     else if (State.Bevel.ActiveCondition)
     {
         const bool Idle = !ImGui::IsAnyMouseDown();
-        if (Hovered && Idle && !State.Bevel.PinnedCondition && Io.MouseDelta.x != 0.0f)
+        if (Hovered && Idle && (!State.Bevel.PinnedCondition || (State.Bevel.Verb == SolidArcSessionVerb::Inset && State.Bevel.DepthEnabled)) && Io.MouseDelta.x != 0.0f)
             AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
         if (LeftClick && !OverCube)
         {
@@ -6403,9 +6440,11 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImVec2 Below(Image.x + 72, Image.y + 64);
         const bool Refused = !State.Bevel.Refusal.empty();
         const char* Caption = State.Bevel.Verb == SolidArcSessionVerb::Profile ? "Extrude sketch d" : State.Bevel.Verb == SolidArcSessionVerb::Extrude ? "Extrude d"
+                            : State.Bevel.Verb == SolidArcSessionVerb::Inset ? (State.Bevel.DepthEnabled ? "Inset · H depth · d" : "Inset · D distance · d")
                             : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
         const std::string Sizes = State.Bevel.VariableEnabled && State.Bevel.Verb == SolidArcSessionVerb::Blend
                                 ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
+                                : State.Bevel.Verb == SolidArcSessionVerb::Inset ? FormatLength(State.Bevel.Size) + " m · depth " + FormatLength(State.Bevel.Depth)
                                 : FormatLength(State.Bevel.Size);
         const std::string Boolean = State.Bevel.Verb != SolidArcSessionVerb::Profile ? std::string{}
                                   : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
@@ -6504,6 +6543,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? "Trim: hover a curve (the red piece comes off between its crossings) · click removes it · Esc / T / right-click end"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Profile
                            ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
+                       : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Inset
+                           ? "Move: inset distance or depth (Shift fine) · D distance · H depth (− pocket) · click edits the faces · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition
                            ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
@@ -6532,8 +6573,16 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel   = State.Bevel;
     const bool            Profile = Bevel.Verb == SolidArcSessionVerb::Profile;
-    const bool            Extrude = Bevel.Verb == SolidArcSessionVerb::Extrude || Profile;
-    BeginCard(Profile ? "Extrude sketch" : Extrude ? "Extrude" : "Bevel");
+    const bool            Inset   = Bevel.Verb == SolidArcSessionVerb::Inset;
+    const bool            Extrude = Bevel.Verb == SolidArcSessionVerb::Extrude || Profile || Inset;
+    BeginCard(Inset ? "Inset" : Profile ? "Extrude sketch" : Extrude ? "Extrude" : "Bevel");
+    if (Inset)
+    {
+        // The pointer drives one value: D the inset distance, H the depth of the inner face (+ boss, − pocket).
+        if (ToggleButton(State, "Distance  (D)###InsetDistance", !Bevel.DepthEnabled, RowSpan())) Bevel.DepthEnabled = false;
+        ImGui::SameLine();
+        if (ToggleButton(State, "Depth  (H)###InsetDepth", Bevel.DepthEnabled, RowSpan())) Bevel.DepthEnabled = true;
+    }
     if (Profile)
     {
         // Plasticity extrude Boolean keys: q union · w difference · e intersect · r new body.
@@ -6560,7 +6609,7 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         if (ParseSolidArcLength(Bevel.SizeText.data(), Parsed) && Parsed != 0.0)
         {
             if (Parsed < 0.0 && !Extrude) Bevel.Shape = BlendProfile::Chamfer;
-            Bevel.Size            = Extrude ? Parsed : std::abs(Parsed);
+            Bevel.Size            = Extrude && !Inset ? Parsed : std::abs(Parsed);
             Bevel.PinnedCondition = true;
             Announce(State, Compose("Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
         }
@@ -6573,6 +6622,28 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     RegisterWidget(State, "BevelSize");
     ImGui::SameLine();
     if (PressButton(State, "Mouse adjust###BevelMouse", ImVec2(0, 0), Bevel.PinnedCondition)) Bevel.PinnedCondition = false;
+    if (Inset)
+    {
+        ImGui::SetNextItemWidth(110);
+        if (ImGui::InputText("Depth###InsetDepthText", Bevel.DepthText.data(), Bevel.DepthText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
+        {
+            double Parsed = 0.0;
+            if (ParseSolidArcLength(Bevel.DepthText.data(), Parsed))
+            {
+                Bevel.Depth = Parsed;
+                Announce(State, Compose("Inset depth %s m", FormatLength(Bevel.Depth).c_str()));
+            }
+            else
+            {
+                Announce(State, std::string("Unreadable depth: ") + Bevel.DepthText.data());
+            }
+            WriteBevelText(Bevel);
+        }
+        RegisterWidget(State, "InsetDepthText");
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextWrapped("Border ring %s m wide · inner face %s m along the normal (0 = flat split, − pocket)", FormatLength(Bevel.Size).c_str(), FormatLength(Bevel.Depth).c_str());
+        ImGui::PopStyleColor();
+    }
     if (!Extrude)
     {
         // Variable size (V): the end size field and the anchor flip (F).
@@ -6685,7 +6756,8 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
         if (PressButton(State, "Apply  (E: extrude)###FaceApply", ImVec2(-1, 0)))
         {
             const double                 Amount  = FaceAmountToModel(State.FaceVerb, State.FaceAmount);
-            const SolidArcCommandOutcome Outcome = ChangeSolidArcSelection(State.Document, State.FaceVerb, Amount);
+            const SolidArcCommandOutcome Outcome = State.FaceVerb == FaceOperationKind::Inset ? InsetSolidArcSelection(State.Document, Amount, 0.0)
+                                                                                              : ChangeSolidArcSelection(State.Document, State.FaceVerb, Amount);
             if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, BlendProfile::Fillet, 0.0, State.FaceVerb, Amount, {} };
             Conclude(State, Outcome);
         }
@@ -7202,6 +7274,7 @@ void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
     if (Key == "Fillet") OpenBevelSession(State, BlendProfile::Fillet);
     else if (Key == "Chamfer") OpenBevelSession(State, BlendProfile::Chamfer);
     else if (Key == "ExtrudeFaces") OpenExtrudeSession(State);
+    else if (Key == "Inset") OpenInsetSession(State);
     else if (Key == "ExtrudeSketch") OpenSketchExtrudeSession(State);
     else if (Key == "Revolve") OpenSweepSession(State, SolidArcSweepVerb::Revolve);
     else if (Key == "Loft") LoftSelectedCurves(State);
@@ -7541,7 +7614,11 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         Operations.push_back({ "Fillet", IconSymbol::SolidArcFillet, "Fillet · B" });
         Operations.push_back({ "Chamfer", IconSymbol::SolidArcChamfer, "Chamfer" });
     }
-    if (!Selection.Faces.empty()) Operations.push_back({ "ExtrudeFaces", IconSymbol::SolidArcExtrude, "Extrude · E" });
+    if (!Selection.Faces.empty())
+    {
+        Operations.push_back({ "ExtrudeFaces", IconSymbol::SolidArcExtrude, "Extrude · E" });
+        Operations.push_back({ "Inset", IconSymbol::SolidArcInset, "Inset · O / I" });
+    }
     if (Selection.Faces.empty() && FocusedSketchCondition(State))
     {
         Operations.push_back({ "ExtrudeSketch", IconSymbol::SolidArcExtrude, "Extrude · E" });
@@ -7817,7 +7894,8 @@ void RepeatLastCommand(SolidArcWorkspaceState& State)
     {
     case SolidArcRepeatKind::None:      Announce(State, "Nothing to repeat yet"); return;
     case SolidArcRepeatKind::Blend:     Conclude(State, BlendSolidArcSelection(State.Document, Last.Blend)); return;
-    case SolidArcRepeatKind::Face:      Conclude(State, ChangeSolidArcSelection(State.Document, Last.Operation, Last.Amount)); return;
+    case SolidArcRepeatKind::Face:      Conclude(State, Last.Operation == FaceOperationKind::Inset ? InsetSolidArcSelection(State.Document, Last.Amount, Last.Depth)
+                                                                                              : ChangeSolidArcSelection(State.Document, Last.Operation, Last.Amount)); return;
     case SolidArcRepeatKind::Construct: Conclude(State, ConstructSolidArcPrimitive(State.Document, Last.Construct)); return;
     }
 }
@@ -7965,6 +8043,11 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
             if (Pressed(ImGuiKey_C)) State.Bevel.Shape = BlendProfile::Chamfer;               // gizmo:fillet-solid:chamfer
             if (Pressed(ImGuiKey_V)) ToggleBevelVariable(State);                              // gizmo:fillet-solid:add (variable size)
             if (Pressed(ImGuiKey_F)) FlipBevelAnchor(State);                                  // as gizmo:place:flip
+        }
+        if (State.Bevel.Verb == SolidArcSessionVerb::Inset && !Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_D)) State.Bevel.DepthEnabled = false;                        // as gizmo:offset-face:distance
+            if (Pressed(ImGuiKey_H)) State.Bevel.DepthEnabled = true;                         // depth (height) of the inner face
         }
         if (State.Bevel.Verb == SolidArcSessionVerb::Profile && !Control && !Alternate)
         {
@@ -8134,9 +8217,11 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
     if (Pressed(ImGuiKey_K)) OpenConstraintSession(State);                                 // constrain (K is free in Plasticity's map)
-    if (Pressed(ImGuiKey_I)) ToggleMeasure(State);                                         // measure (I is free in Plasticity's map)
+    // I: inset with faces selected (Blender habit), else measure (I is free in Plasticity's map).
+    if (Pressed(ImGuiKey_I)) { if (State.Document.Selection.Faces.empty()) ToggleMeasure(State); else OpenInsetSession(State); }
     if (Pressed(ImGuiKey_J)) JoinSketches(State);                                          // command:join-curves
-    if (Pressed(ImGuiKey_O)) OpenSweepSession(State, SolidArcSweepVerb::Offset);           // command:offset-curve
+    // command:offset-curve — on selected faces it offsets the face boundary inward: the inset.
+    if (Pressed(ImGuiKey_O)) { if (State.Document.Selection.Faces.empty()) OpenSweepSession(State, SolidArcSweepVerb::Offset); else OpenInsetSession(State); }
     if (Pressed(ImGuiKey_P)) OpenSweepSession(State, SolidArcSweepVerb::Pipe);             // command:pipe
     if (Pressed(ImGuiKey_Escape))
     {
@@ -8530,7 +8615,7 @@ std::string DescribeSolidArcWorkspace(const SolidArcWorkspaceState& State)
     AppendJsonText(Stream, State.Bevel.Refusal);
     Stream << ", \"Verb\": " << int(State.Bevel.Verb) << ", \"Profile\": ";
     AppendJsonText(Stream, State.Bevel.ProfileLabel);
-    Stream << ", \"Combination\": " << int(State.Bevel.Combination) << "},\n";
+    Stream << ", \"Combination\": " << int(State.Bevel.Combination) << ", \"Depth\": " << State.Bevel.Depth << ", \"DepthPointer\": " << (State.Bevel.DepthEnabled ? "true" : "false") << "},\n";
     Stream << "  \"Drawing\": {\"Active\": " << (State.Drawing.ActiveCondition ? "true" : "false") << ", \"Kind\": ";
     AppendJsonText(Stream, SolidArcDrawingLabel(State.Drawing.Kind));
     Stream << ", \"Plane\": " << State.Drawing.GridPlane << ", \"Form\": ";

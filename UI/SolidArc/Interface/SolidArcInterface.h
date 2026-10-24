@@ -62,6 +62,7 @@ enum class SolidArcSessionVerb : uint8_t
     Blend   = 0,                                                                             // Fillet / chamfer on the selected edges
     Extrude = 1,                                                                             // Extrude the selected faces
     Profile = 2,                                                                             // Extrude the focused sketch's profile (Q / W / E / R Boolean)
+    Inset   = 3,                                                                             // Inset the selected planar faces (O / I; D distance · H depth)
 };
 
 // Shift+R repeats the last applied command on the current selection.
@@ -82,6 +83,7 @@ struct SolidArcRepeat
     double                      Amount    = 0.0;                                             // [-]   - Face amount (model units)
     SolidArcConstructRequest    Construct = {};                                              // [-]   - Construct request
     SolidArcBlendRequest        Blend     = {};                                              // [-]   - Blend request (variable sizes, flip)
+    double                      Depth     = 0.0;                                             // [len] - Inset depth (Amount = inset distance)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -116,6 +118,10 @@ struct SolidArcBevelSession
     std::string                       ProfileLabel    = {};                                  // [-]   - Profile: sketch step extruded
     GeometryProcessing::FeatureCombination      Combination     = GeometryProcessing::FeatureCombination::Union; // [-]   - Profile: Q union · W difference · E intersect · R new
     GeometryProcessing::FeatureCombination      StagedCombination = GeometryProcessing::FeatureCombination::Union; // [-] - Combination the preview was built at
+    double                            Depth           = 0.0;                                 // [len] - Inset: inner face shift (− pocket)
+    std::array<char, 32>              DepthText       = {};                                  // [-]   - Inset: depth field text
+    double                            StagedDepth     = 0.0;                                 // [len] - Depth the preview was built at
+    bool                              DepthEnabled    = false;                               // [-]   - Inset: the pointer drives the depth (H) instead of the distance (D)
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):
