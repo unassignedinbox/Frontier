@@ -9,6 +9,7 @@
 
 #include "UI/SolidArc/Document/SolidArcImagePlane.h"
 
+#define STBI_WINDOWS_UTF8                                                                 // UTF-8 file names on Windows
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC                                                                     // 📝 Internal linkage: upstream Engine/Render links its own stb_image
 #define STBI_NO_PSD

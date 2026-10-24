@@ -13,7 +13,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <numbers>
 
 namespace Frontier::GeometryProcessing
 {
@@ -24,7 +23,6 @@ namespace Frontier::GeometryProcessing
 
 namespace
 {
-    constexpr double FullTurn         = 2.0 * std::numbers::pi;                              // [rad]
     constexpr int    SamplesPerPiece  = 24;                                                  // [-]   - Polyline samples per polynomial piece
     constexpr double MergeFraction    = 1.0e-9;                                              // [-]   - Crossings closer than this are one
     constexpr double SeedMargin       = 0.02;                                                // [-]   - Polyline crossing parameter slack

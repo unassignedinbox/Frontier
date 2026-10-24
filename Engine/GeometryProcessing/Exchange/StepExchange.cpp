@@ -9,6 +9,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "Engine/GeometryProcessing/Containment/FaceDomain.h"
 #include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
@@ -548,7 +549,7 @@ StepExport WriteStep(const ModelPartition& Partition, const std::vector<BodyToke
 std::string ExportStepFile(const StepExport& Export, const std::string& Path)
 {
     if (!Export.Refusal.empty()) return "STEP: nothing to write (" + Export.Refusal + ")";
-    std::ofstream Stream(Path, std::ios::binary);
+    std::ofstream Stream(ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream) return "STEP: cannot open " + Path;
     Stream.write(Export.Bytes.data(), static_cast<std::streamsize>(Export.Bytes.size()));
     return Stream ? std::string() : "STEP: write failed for " + Path;

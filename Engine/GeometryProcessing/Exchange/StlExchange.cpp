@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Exchange/StlExchange.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include <algorithm>
 #include <chrono>
@@ -285,7 +286,7 @@ StlSoundness MeasureStlSoundness(const StlReading& Reading)
 std::string ExportStlFile(const StlExport& Export, const std::string& Path)
 {
     if (!Export.Refusal.empty()) return Export.Refusal;
-    std::ofstream Stream(Path, std::ios::binary | std::ios::trunc);
+    std::ofstream Stream(ResolveUtf8Path(Path), std::ios::binary | std::ios::trunc);
     if (!Stream) return "STL: cannot open " + Path + " for writing";
     Stream.write(Export.Bytes.data(), static_cast<std::streamsize>(Export.Bytes.size()));
     return Stream.good() ? std::string() : "STL: writing " + Path + " failed";

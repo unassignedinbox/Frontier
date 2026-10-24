@@ -9,6 +9,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "Engine/GeometryProcessing/Audit/ModelAudit.h"
 #include "Engine/GeometryProcessing/Construction/BodyAssembly.h"
@@ -1480,7 +1481,7 @@ StepImport ReadStep(ModelPartition& Partition, const std::string& Bytes, const S
 
 StepImport ImportStepFile(ModelPartition& Partition, const std::string& Path, const StepImportRequest& Request)
 {
-    std::ifstream Stream(Path, std::ios::binary);
+    std::ifstream Stream(ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream)
     {
         StepImport Out;

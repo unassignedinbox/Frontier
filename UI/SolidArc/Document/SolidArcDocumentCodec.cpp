@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcImagePlaneToml.h"
@@ -685,7 +686,11 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
 
 bool SaveSolidArcDocument(const SolidArcDocument& Document, const std::string& Path)
 {
-    std::ofstream Stream(Path, std::ios::binary);
+    // 📝 The folder is created on first save (a fresh install has no autosave folder yet); failure shows as a closed stream.
+    const std::filesystem::path Target = GeometryProcessing::ResolveUtf8Path(Path);
+    std::error_code Failure;
+    if (Target.has_parent_path()) std::filesystem::create_directories(Target.parent_path(), Failure);
+    std::ofstream Stream(Target, std::ios::binary);
     if (!Stream) return false;
     Stream << EncodeSolidArcDocument(Document);
     return static_cast<bool>(Stream);
@@ -693,7 +698,7 @@ bool SaveSolidArcDocument(const SolidArcDocument& Document, const std::string& P
 
 SolidArcDocumentFile LoadSolidArcDocumentFile(const std::string& Path)
 {
-    std::ifstream Stream(Path, std::ios::binary);
+    std::ifstream Stream(GeometryProcessing::ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream)
     {
         SolidArcDocumentFile File;

@@ -105,7 +105,10 @@ SolidArcBrowserPreview ComposeSolidArcBrowserPreview(const std::filesystem::path
     const std::u8string Encoded  = Path.u8string();
     const std::string   Readable(Encoded.begin(), Encoded.end());
     Preview.Key  = Readable;
-    Preview.Key += ":" + std::to_string(Bytes) + ":" + std::to_string(Written.time_since_epoch().count());
+    // 📝 Microsecond ticks as long long: libc++ on Windows counts file_time_type in a 128-bit representation (no to_string
+    //    overload) from 1601, so nanoseconds would not fit 64 bits either.
+    const long long WrittenTicks = std::chrono::duration_cast<std::chrono::duration<long long, std::micro>>(Written.time_since_epoch()).count();
+    Preview.Key += ":" + std::to_string(Bytes) + ":" + std::to_string(WrittenTicks);
 
     const SolidArcDocumentFile File = LoadSolidArcDocumentFile(Readable);
     if (!File.Refusal.empty())

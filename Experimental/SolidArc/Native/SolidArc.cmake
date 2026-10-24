@@ -170,7 +170,29 @@ if(SOLIDARC_WINDOWED_HOST AND TARGET glfw)
     if(WIN32)
         set_target_properties(SolidArc PROPERTIES WIN32_EXECUTABLE ON)
         target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/ENTRY:mainCRTStartup>)
+        # 📝 MinGW-style toolchains (the Zig cross-build) keep a console window unless the subsystem is named explicitly.
+        if(NOT MSVC)
+            target_link_options(SolidArc PRIVATE "-Wl,--subsystem,windows")
+        endif()
     endif()
+endif()
+
+# 📝 S6 package (cmake --install <build> --component SolidArc): the workspace with its package options, DM Sans, the icon
+#    artwork, the curve sample and the third-party notices. Experimental/SolidArc/Native/Tooling/CrossBuildWindows.sh zips it.
+if(TARGET SolidArc)
+    install(TARGETS SolidArc RUNTIME DESTINATION . COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_NATIVE}/Package/SolidArcWorkspace.toml" "${SOLIDARC_NATIVE}/Package/README.md"
+            DESTINATION . COMPONENT SolidArc)
+    install(DIRECTORY "${FRONTIER_ROOT}/EngineContent/FontArchives/DMSans" DESTINATION EngineContent/FontArchives COMPONENT SolidArc)
+    install(DIRECTORY "${FRONTIER_ROOT}/EngineContent/Icons" DESTINATION EngineContent COMPONENT SolidArc)
+    install(FILES "${FRONTIER_ROOT}/Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml" DESTINATION Samples COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/imgui/LICENSE.txt"   DESTINATION Notices RENAME ImGui-LICENSE.txt      COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/glfw/LICENSE.md"     DESTINATION Notices RENAME GLFW-LICENSE.md        COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/tomlpp/LICENSE"      DESTINATION Notices RENAME TomlPlusPlus-LICENSE.txt COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/stb/LICENSE"         DESTINATION Notices RENAME Stb-LICENSE.txt        COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/volk/LICENSE.md"     DESTINATION Notices RENAME Volk-LICENSE.md        COMPONENT SolidArc)
+    install(FILES "${SOLIDARC_PACKAGES}/thorvg/LICENSE"      DESTINATION Notices RENAME ThorVG-LICENSE.txt     COMPONENT SolidArc)
+    install(DIRECTORY "${SOLIDARC_PACKAGES}/vulkan-headers/LICENSES" DESTINATION Notices/Vulkan-Headers COMPONENT SolidArc)
 endif()
 
 # 📝 The Windows Frontier browser host decodes .solidarc previews and starts SolidArcWorkspace beside itself.

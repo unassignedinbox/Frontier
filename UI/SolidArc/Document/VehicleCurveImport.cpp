@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include "UI/SolidArc/Document/SolidArcImagePlaneToml.h"
 
@@ -82,7 +83,7 @@ VehicleCurveFile DecodeVehicleCurves(const std::string& Text)
 
 VehicleCurveFile ReadVehicleCurves(const std::string& Path)
 {
-    std::ifstream Stream(Path, std::ios::binary);
+    std::ifstream Stream(GeometryProcessing::ResolveUtf8Path(Path), std::ios::binary);
     if (!Stream) { VehicleCurveFile File; File.Refusal = "cannot open " + Path; return File; }
     std::ostringstream Text;
     Text << Stream.rdbuf();

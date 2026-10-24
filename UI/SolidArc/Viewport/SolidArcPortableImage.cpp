@@ -9,6 +9,7 @@
 
 #include "UI/SolidArc/Viewport/SolidArcPortableImage.h"
 
+#define STBIW_WINDOWS_UTF8                                                                // UTF-8 file names on Windows
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 

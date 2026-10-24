@@ -7,6 +7,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Interface/SolidArcFrame.h"
@@ -23,8 +24,14 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 using namespace Frontier::SolidArc;
 
@@ -128,9 +135,73 @@ bool BuildSwapchain(const SolidArcDevice& Device, VkSurfaceKHR Surface, GLFWwind
     return true;
 }
 
+// 📝 The Windows executable is a GUI program (no console), so a start-up failure is also shown in a message box.
+void ReportStartupFailure(const std::string& Message)
+{
+    std::fprintf(stderr, "%s\n", Message.c_str());
+#if defined(_WIN32)
+    const std::wstring Wide = Frontier::GeometryProcessing::ResolveUtf8Path(Message).wstring();
+    MessageBoxW(nullptr, Wide.c_str(), L"SolidArc could not start", MB_OK | MB_ICONERROR);
+#endif
+}
+
 void ReportGlfwFailure(int Code, const char* Description)
 {
     std::fprintf(stderr, "GLFW %d: %s\n", Code, Description);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    LAUNCH CONTEXT
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 The command line as UTF-8 words. On Windows main() receives the words in the active code page, so a document in
+//    "C:\Users\Zoë" handed over by the Frontier browser (CreateProcessW) would arrive damaged: the wide command line is
+//    split again with CommandLineToArgvW and converted.
+std::vector<std::string> CollectArguments(int Count, char** Arguments)
+{
+    std::vector<std::string> Words;
+#if defined(_WIN32)
+    int             WideCount = 0;
+    wchar_t** const WideWords = CommandLineToArgvW(GetCommandLineW(), &WideCount);
+    if (WideWords)
+    {
+        for (int Index = 0; Index < WideCount; ++Index)
+            Words.push_back(Frontier::GeometryProcessing::DescribeUtf8Path(std::filesystem::path(WideWords[Index])));
+        LocalFree(WideWords);
+        return Words;
+    }
+#endif
+    for (int Index = 0; Index < Count; ++Index) Words.emplace_back(Arguments[Index]);
+    return Words;
+}
+
+std::filesystem::path ResolveExecutableFolder()
+{
+#if defined(_WIN32)
+    std::wstring Buffer(32768, L'\0');
+    const DWORD  Length = GetModuleFileNameW(nullptr, Buffer.data(), DWORD(Buffer.size()));
+    if (Length == 0 || Length >= Buffer.size()) return {};
+    Buffer.resize(Length);
+    return std::filesystem::path(Buffer).parent_path();
+#elif defined(__linux__)
+    std::error_code             Failure;
+    const std::filesystem::path Executable = std::filesystem::read_symlink("/proc/self/exe", Failure);
+    return Failure ? std::filesystem::path() : Executable.parent_path();
+#else
+    return {};
+#endif
+}
+
+// 📝 Started from Explorer, a shortcut or the Frontier browser, the working directory is arbitrary. An installed package
+//    keeps SolidArcWorkspace.toml beside the executable: when the working directory has none, the executable's folder
+//    becomes the working directory, so the relative paths of the options (autosave, Save, Import curves) stay in the package.
+void AdoptPackageFolder(const std::string& OptionsPath)
+{
+    std::error_code Failure;
+    if (std::filesystem::exists(Frontier::GeometryProcessing::ResolveUtf8Path(OptionsPath), Failure)) return;
+    const std::filesystem::path Folder = ResolveExecutableFolder();
+    if (!Folder.empty() && std::filesystem::exists(Folder / "SolidArcWorkspace.toml", Failure))
+        std::filesystem::current_path(Folder, Failure);
 }
 
 } // namespace
@@ -141,18 +212,26 @@ void ReportGlfwFailure(int Code, const char* Description)
 
 int main(int Count, char** Arguments)
 {
+    using Frontier::GeometryProcessing::DescribeUtf8Path;
+    using Frontier::GeometryProcessing::ResolveUtf8Path;
+    const std::vector<std::string> Words = CollectArguments(Count, Arguments);
     std::string OptionsPath = "SolidArcWorkspace.toml";
     std::string OpenPath;
     std::string CurvesPath;
     bool        Specimen = false;
-    for (int Index = 1; Index < Count; ++Index)
+    for (size_t Index = 1; Index < Words.size(); ++Index)
     {
-        const std::string Flag = Arguments[Index];
-        if (Flag == "--options" && Index + 1 < Count) OptionsPath = Arguments[++Index];
-        else if (Flag == "--open" && Index + 1 < Count) OpenPath = Arguments[++Index];
-        else if (Flag == "--curves" && Index + 1 < Count) CurvesPath = Arguments[++Index];
+        const std::string& Flag = Words[Index];
+        if (Flag == "--options" && Index + 1 < Words.size()) OptionsPath = Words[++Index];
+        else if (Flag == "--open" && Index + 1 < Words.size()) OpenPath = Words[++Index];
+        else if (Flag == "--curves" && Index + 1 < Words.size()) CurvesPath = Words[++Index];
         else if (Flag == "--specimen") Specimen = true;
     }
+    // 📝 Paths given on the command line are fixed against the launch folder before the package folder is adopted.
+    std::error_code AbsoluteFailure;
+    if (!OpenPath.empty()) OpenPath = DescribeUtf8Path(std::filesystem::absolute(ResolveUtf8Path(OpenPath), AbsoluteFailure));
+    if (!CurvesPath.empty()) CurvesPath = DescribeUtf8Path(std::filesystem::absolute(ResolveUtf8Path(CurvesPath), AbsoluteFailure));
+    AdoptPackageFolder(OptionsPath);
     SolidArcOptions Options = LoadSolidArcOptions(OptionsPath);
     if (!CurvesPath.empty()) Options.CurvesPath = CurvesPath;                                // Import curves… starts here
 
@@ -160,18 +239,23 @@ int main(int Count, char** Arguments)
     glfwSetErrorCallback(ReportGlfwFailure);
     if (!glfwInit())
     {
-        std::fprintf(stderr, "no windowing platform (headless build); use SolidArcCapture for offscreen frames\n");
+        ReportStartupFailure("GLFW found no window system (on a headless host, SolidArcCapture renders offscreen).");
         return 77;
     }
     if (!glfwVulkanSupported())
     {
-        std::fprintf(stderr, "GLFW reports no Vulkan loader on this platform\n");
+        ReportStartupFailure("No Vulkan loader was found (vulkan-1.dll comes with the GPU driver).");
         glfwTerminate();
         return 77;
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* Window = glfwCreateWindow(Options.WindowWidth, Options.WindowHeight, "SolidArc", nullptr, nullptr);
-    if (!Window) return 1;
+    if (!Window)
+    {
+        ReportStartupFailure("The SolidArc window could not be created (GLFW).");
+        glfwTerminate();
+        return 1;
+    }
     uint32_t                 ExtensionCount = 0;
     const char**             Extensions     = glfwGetRequiredInstanceExtensions(&ExtensionCount);
     SolidArcDeviceSettings   DeviceSettings{ .DriverPath = Options.DriverPath, .PresentationEnabled = true, .ValidationEnabled = Options.ValidationEnabled };
@@ -180,24 +264,28 @@ int main(int Count, char** Arguments)
     std::string    Refusal;
     if (!Device.Open(DeviceSettings, Refusal))
     {
-        std::fprintf(stderr, "no Vulkan device: %s\n", Refusal.c_str());
+        ReportStartupFailure("No usable Vulkan device: " + Refusal);
         return 77;
     }
     VkSurfaceKHR Surface = VK_NULL_HANDLE;
     if (glfwCreateWindowSurface(Device.Instance, Window, nullptr, &Surface) != VK_SUCCESS)
     {
-        std::fprintf(stderr, "window surface refused\n");
+        ReportStartupFailure("The Vulkan window surface was refused.");
         return 1;
     }
     VkBool32 PresentCondition = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(Device.Physical, Device.QueueFamily, Surface, &PresentCondition);
     if (!PresentCondition)
     {
-        std::fprintf(stderr, "the graphics queue cannot present to this window\n");
+        ReportStartupFailure("The graphics queue cannot present to this window.");
         return 1;
     }
     HostSwapchain Chain;
-    if (!BuildSwapchain(Device, Surface, Window, Chain)) return 1;
+    if (!BuildSwapchain(Device, Surface, Window, Chain))
+    {
+        ReportStartupFailure("The Vulkan swapchain could not be built for this window.");
+        return 1;
+    }
 
     // ② ImGui (GLFW input + Vulkan renderer) and the workspace
     IMGUI_CHECKVERSION();
@@ -207,7 +295,7 @@ int main(int Count, char** Arguments)
     SolidArcWorkspaceFrame Frame;
     if (!Frame.Create(Device, Chain.Format, uint32_t(Chain.Images.size()), Refusal))
     {
-        std::fprintf(stderr, "workspace frame refused: %s\n", Refusal.c_str());
+        ReportStartupFailure("The workspace frame was refused: " + Refusal);
         return 1;
     }
     SolidArcWorkspaceState State;

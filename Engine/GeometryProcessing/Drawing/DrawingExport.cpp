@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Drawing/DrawingExport.h"
+#include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
 
 #include <cmath>
 #include <cstdio>
@@ -301,7 +302,7 @@ std::string ExportDrawingFile(const DrawingSheet& Sheet, const std::string& Path
     if (Ends(".svg") || Ends(".SVG")) Content = WriteDrawingSvg(Sheet);
     else if (Ends(".dxf") || Ends(".DXF")) Content = WriteDrawingDxf(Sheet);
     else return "Export: unknown drawing format (use .svg or .dxf)";
-    std::ofstream File(Path, std::ios::binary);
+    std::ofstream File(ResolveUtf8Path(Path), std::ios::binary);
     if (!File) return "Export: cannot write " + Path;
     File << Content;
     return File.good() ? std::string() : "Export: write failed for " + Path;

@@ -12,6 +12,7 @@
 #include "UI/SolidArc/Interface/SolidArcOutliner.h"
 #include "UI/SolidArc/Interface/SolidArcStyleSheet.h"
 
+#include "Engine/Interface/ContentDirectory.h"
 #include "Engine/Interface/ControlKit.h"
 #include "Engine/Interface/IconPresentation.h"
 
@@ -48,7 +49,6 @@ namespace
 //------------------------------------------------------------------------------------------------------------------------
 
 // 📝 SolidArc WorkspacePanel.css: header + document bar, Outliner 300 px | viewport | Inspector 330 px, 10 px gaps.
-constexpr float PanelGap        = 10.0f;                                                     // [px] - Between panels and at the frame edge
 constexpr float  ZebraStripeCount = 64.0f;                                                  // [-]   - Zebra stripes over the reflection angle (V8)
 constexpr double DeviationLimit   = 2.0e-4;                                                 // [len] - Red end of the deviation scale (fit tolerance)
 constexpr float HeaderHeight    = 68.0f;                                                     // [px] - HTML .app-header
@@ -65,12 +65,10 @@ constexpr float PanelRounding   = 16.0f;                                        
 constexpr float CubeExtent      = 92.0f;                                                     // [px] - Orientation cube box
 constexpr float ClickTolerance  = 4.0f;                                                      // [px] - Press → release travel still counted as a click
 
-constexpr ImU32 PanelColour     = IM_COL32(0x1a, 0x1a, 0x1a, 0xff);                          // #1a1a1a
 constexpr ImU32 CardColour      = IM_COL32(0x22, 0x22, 0x22, 0xff);                          // #222
 constexpr ImU32 RaisedColour    = IM_COL32(0x29, 0x29, 0x29, 0xff);                          // #292929
 constexpr ImU32 SelectedColour  = IM_COL32(0x40, 0x99, 0xff, 0xff);                          // #4099ff
 constexpr ImU32 ActiveColour    = IM_COL32(0x33, 0xff, 0x73, 0xff);                          // #33ff73
-constexpr ImU32 PillColour      = IM_COL32(0x16, 0x1a, 0x21, 0xae);                          // #161a21ae
 constexpr ImU32 MutedColour     = IM_COL32(0xaa, 0xaa, 0xaa, 0xff);                          // #aaa
 constexpr ImU32 RefusalColour   = IM_COL32(0xff, 0x6b, 0x6b, 0xff);                          // Refused step / reason
 constexpr ImU32 AxisColours[3]  = { IM_COL32(0xe0, 0x4b, 0x4b, 0xff), IM_COL32(0x4b, 0xc8, 0x5a, 0xff), IM_COL32(0x4b, 0x7c, 0xe8, 0xff) };
@@ -7471,10 +7469,19 @@ void ConfigureSolidArcInterface(const SolidArcOptions& Options)
     ImGuiIO& Io = ImGui::GetIO();
     Io.IniFilename = nullptr;
     Io.LogFilename = nullptr;
-    // 📝 Content root: the Frontier checkout (DM Sans archives, EngineContent/Icons/SolidArc); the working directory otherwise.
+    // 📝 Content root, first one holding DM Sans: the Frontier checkout the build came from (development), the folder whose
+    //    EngineContent sits beside or above the executable (installed package, upstream ResolveContentDirectory), the
+    //    working directory.
+    const auto HoldsTypeface = [](const std::filesystem::path& Candidate)
+    {
+        std::error_code Failure;
+        return std::filesystem::exists(Candidate / "EngineContent/FontArchives/DMSans/DMSans-Regular.ttf", Failure)
+            || std::filesystem::exists(Candidate / "EngineContent/FontArchives/DM Sans/DMSans-Regular.ttf", Failure);
+    };
     std::filesystem::path Root = ".";
+    if (const std::filesystem::path Packaged = ResolveContentDirectory("EngineContent").parent_path(); HoldsTypeface(Packaged)) Root = Packaged;
 #ifdef SOLIDARC_CONTENT_ROOT
-    if (std::filesystem::exists(SOLIDARC_CONTENT_ROOT)) Root = SOLIDARC_CONTENT_ROOT;
+    if (HoldsTypeface(SOLIDARC_CONTENT_ROOT)) Root = SOLIDARC_CONTENT_ROOT;                      // Development checkout wins
 #endif
     std::filesystem::path Family;
     for (const char* Candidate : { "EngineContent/FontArchives/DMSans", "EngineContent/FontArchives/DM Sans" })
