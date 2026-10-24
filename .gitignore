@@ -6,3 +6,6 @@ dist/
 Exhibits/RollingBallBlend/Results/*.svg
 __pycache__/
 /build/
+
+# Written by the font preparation step during builds; never committed
+/EngineContent/FontArchives/DM Sans/DMSans.toml
