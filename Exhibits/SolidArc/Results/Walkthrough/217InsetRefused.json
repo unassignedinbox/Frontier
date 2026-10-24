@@ -1,0 +1,22 @@
+{
+  "Frame": 195,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Change#3", "Caption": "Inset1 · FaceOperation", "Refused": false}, {"Label": "Change#4", "Caption": "Inset2 · FaceOperation", "Refused": false}],
+  "Body": {"Faces": 16, "Edges": 36, "Vertices": 24, "Genus": 0, "Volume": 2.908, "Sound": true},
+  "Selection": {"Faces": ["Extrude#2.Cap(End)"], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 3,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": true, "Shape": "Fillet", "Size": 0.8, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 16, "Refusal": "Change#5: InsetFaces: F22 has holes (inset of hole loops)", "Verb": 3, "Profile": "", "Combination": 1, "Depth": 0.2, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-2, -1.5], [-0, 0]], "Solid": true, "SolidKind": "Block", "Lift": 1, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 3,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Bevel size 0.8 m (pinned)",
+  "Viewport": [322, 146, 926, 651]
+}

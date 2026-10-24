@@ -6611,7 +6611,7 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
             if (Parsed < 0.0 && !Extrude) Bevel.Shape = BlendProfile::Chamfer;
             Bevel.Size            = Extrude && !Inset ? Parsed : std::abs(Parsed);
             Bevel.PinnedCondition = true;
-            Announce(State, Compose("Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
+            Announce(State, Compose(Inset ? "Inset distance %s m (pinned)" : "Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
         }
         else
         {
