@@ -3516,10 +3516,10 @@ int main()
         const SolidArcCommandOutcome Wide = InsetSolidArcSelection(Refused, 0.8, 0.0);
         const SolidArcCommandOutcome Zero = InsetSolidArcSelection(Refused, 0.0, 0.0);
         SolidArcDocument Round = Prepared(Cylinder, 0.0, 0.0, Face);
-        PickAndSelect(Round, RayBetween({ 3.0, 0.0, 0.5 }, { 0.0, 0.0, 0.5 }), false);
+        PickAndSelect(Round, RayBetween({ 0.0, 3.0, 0.5 }, { 0.0, 0.0, 0.5 }), false);
         const std::string RoundBefore = EncodeSolidArcDocument(Round);
         const SolidArcCommandOutcome Curved = InsetSolidArcSelection(Round, 0.1, 0.0);
-        Tally(InsetGate, 0.0, !Wide.AcceptedCondition && !Zero.AcceptedCondition && !Curved.AcceptedCondition && EncodeSolidArcDocument(Refused) == Before && EncodeSolidArcDocument(Round) == RoundBefore,
+        Tally(InsetGate, 0.0, !Wide.AcceptedCondition && !Zero.AcceptedCondition && !Curved.AcceptedCondition && Curved.Refusal.find("not planar") != std::string::npos && EncodeSolidArcDocument(Refused) == Before && EncodeSolidArcDocument(Round) == RoundBefore,
               "refused, document unchanged: " + Wide.Refusal + " · " + Zero.Refusal + " · " + Curved.Refusal);
     }
 

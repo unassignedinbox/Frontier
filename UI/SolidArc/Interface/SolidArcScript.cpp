@@ -703,6 +703,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         return true;
     }
     if (Field == "bevel-verb") return Numeric(int(State.Bevel.Verb));
+    if (Field == "bevel-depth") return Numeric(State.Bevel.Depth);
+    if (Field == "bevel-depth-pointer") return Numeric(State.Bevel.DepthEnabled ? 1 : 0);
     if (Field == "bevel-combination")
     {
         Text   = State.Bevel.Combination == GeometryProcessing::FeatureCombination::New ? "New" : GeometryProcessing::FeatureCombinationLabel(State.Bevel.Combination);
