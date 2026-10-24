@@ -1,6 +1,6 @@
 # SolidArcDocumentValidation
 
-Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
+Document layer of SolidArc over the GeometryProcessing feature tree (72.86 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -21,7 +21,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W15 | Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals | exact · 1 / 255 | 0 | 13 | 🟢 |
 | W16 | Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec | ≤ 10⁻⁹ · exact | 1.83e-15 | 10 | 🟢 |
 | W17 | Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec | ≤ 10⁻⁹ · exact | 3.25e-15 | 6 | 🟢 |
-| W18 | Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude is refused; an emptied sketch goes; codec | ≤ 10⁻¹² · ≤ 10⁻⁹ · exact | 1.11e-15 | 6 | 🟢 |
+| W18 | Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude detaches (W46); an emptied sketch goes; codec | ≤ 10⁻¹² · ≤ 10⁻⁹ · exact | 1.11e-15 | 6 | 🟢 |
 | W19 | Move / rotate / scale (G / R / S): Transform steps keep volume (×8 for scale 2), the scene and picking follow the body, face selection survives by name, undo exact; refusals untouched | ≤ 10⁻⁹ · exact | 3.22e-15 | 4 | 🟢 |
 | W20 | Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals | ≤ 10⁻⁹ · exact | 1.89e-15 | 3 | 🟢 |
 | W21 | Hide family (H, Shift+H, Alt+H, Ctrl+H): scene bodies and picking follow, selection drops hidden bodies, undo, codec round trip, refusals | exact | 0 | 2 | 🟢 |
@@ -34,7 +34,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
 | W29 | Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line | ≤ 10⁻⁹ · exact | 1.88e-16 | 5 | 🟢 |
 | W30 | Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path | ≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin | 5.28e-09 | 5 | 🟢 |
-| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 1.71e+03 | 10 | 🟢 |
+| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 2.21e+03 | 10 | 🟢 |
 | W32 | X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none | all equal | 0 | 5 | 🟢 |
 | W33 | Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals | ≤ 1e-9 relative | 3.8e-12 | 15 | 🟢 |
 | W34 | Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeSolidArcSectionClip marks sheet bodies | exact | 0 | 9 | 🟢 |
@@ -49,6 +49,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W43 | Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays | ≤ 10⁻⁹ · exact | 7.65e-14 | 8 | 🟢 |
 | W44 | Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic | ≤ 10⁻⁹ · exact | 8.88e-16 | 6 | 🟢 |
 | W45 | Solid shells, sketch on a face, hide / lock: closed sections loft a capped solid of its own (two in one file), open sections refuse the solid and loft a sheet; sketches drawn on a level and an upright body face extrude onto it; sketch / body hide and lock are undoable appearance entries that survive the codec byte-equal | ≤ 10⁻⁹ · exact | 3.95e-16 | 10 | 🟢 |
+| W46 | Trim / join on sketches a body reads: the trim detaches (original kept hidden for its extrude, the trimmed curves a new sketch, the body unchanged, one undo entry); a whole-curve trim only hides; picked sketches join (disjoint profiles extrude together), a read one stays hidden; codec byte-equal | ≤ 10⁻⁹ · exact | 8.48e-16 | 6 | 🟢 |
 
 ## Walkthrough
 
@@ -190,7 +191,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W17 | save → load → save byte-equal with Cut (11) and Remove (12): Cut 2 bodies · Bonnet 1 bodies, volumes bit-equal | 0 | 🟢 |
 | W18 | preview T on Line1 of the pentagram: removed piece between its two crossings (off 2.22044604925e-16), 2 pieces left; document unchanged | 2.22e-16 | 🟢 |
 | W18 | pentagram: extrude refused first (Extrude#2: Extrude: profile crosses itself: Line1 × Line3…); 5 × T → 10 lines, area 1.23792833147 vs shoelace 1.23792833147, extrude 1 → V 1.23792833147, sound | 1.11e-15 | 🟢 |
-| W18 | T on a star tip after the extrude: refused (Extrude#2: Extrude: open profile: Line10 ends at a point joined to 0 other curves); untouched | 0 | 🟢 |
+| W18 | T on a star tip after the extrude: detached (Trim Line1 of Line1 into Line2 (Line1 kept hidden for the steps that read it)), the extrude keeps the star, Sketch#3 holds 9 lines; undo byte-equal | 0 | 🟢 |
 | W18 | Trim Circle1 of Circle1: the circle (another sketch than the rectangle) becomes the arc (2, 0.8) → (2, 0.2) inside it (off 2.22044604925e-16); undo → circle, redo → arc; Trim Line2 of Rectangle1 splits the right side (5 curves) | 2.22e-16 | 🟢 |
 | W18 | Trim Line1 of Line1: nothing crosses it → the curve and its emptied sketch step go; undo restores | 0 | 🟢 |
 | W18 | save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal | 0 | 🟢 |
@@ -206,7 +207,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W22 | Join (Line1, Line2): the open L refuses to extrude; joined (one sketch fewer) the square extrudes to V 1 | 0 | 🟢 |
 | W22 | Offset Line1 by 0.25: new sketch Offset1, extruded V 2.25 = 1.5²; the preview left the document alone | 1.97e-16 | 🟢 |
 | W22 | Pipe r 0.25 along Line2: tube V π r² L = π/8 exact, sound, active | 5.65e-16 | 🟢 |
-| W22 | refused: pick two or more sketches to join · Line1 feeds a later step (join into it instead) · Offset: the offset turns Line1 inside out (🚧 no loop clean-up) · Pipe#7: Pipe: radius must be positive · choose the path: focus a sketch step or select a curve | 0 | 🟢 |
+| W22 | refused: pick two or more sketches to join · Offset: the offset turns Line1 inside out (🚧 no loop clean-up) · Pipe#7: Pipe: radius must be positive · choose the path: focus a sketch step or select a curve; the pipe's rail joins detached (kept hidden, tube unchanged), undone | 0 | 🟢 |
 | W22 | save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step | 0 | 🟢 |
 | W23 | DOF 4 → Constrain Rectangle1: Fixed (0, 0) · Line1.Start 2 → Constrain Rectangle1: Length 3 · Line1 1 (V 3) → Constrain Rectangle1: Length 2 · Line2 0 (V 6); labels F1 D1 D2 | 2.96e-16 | 🟢 |
 | W23 | D1 = 4 in Rectangle1: V 8, far corner written back at (4, 2); undo V 6, redo V 8 | 5.18e-16 | 🟢 |
@@ -243,15 +244,15 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W30 | refused: the path must be another sketch than the profile · choose the path: click a one-curve sketch or select a curve · Evolution#5: Evolution: path sketch Sketch#1 has 4 curves (🚧 one line, arc or spline; J joins a chain into a spline first) · Evolution#5: Evolution: the path starts along the profile plane (it must leave the plane) · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
 | W30 | save → load → save byte-equal with the Evolution (16) steps and Path = 'Sketch#2' | 0 | 🟢 |
 | W31 | 14 commands → 27 steps: 14 identical to a full replay, 14 resumed at the new step | 0 | 🟢 |
-| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 526.2 ms vs full 1403.6 ms · 2.7× · identical | 2.67 | 🟢 |
-| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 1285.5 ms vs full 1403.6 ms · 1.1× · identical | 1.09 | 🟢 |
-| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 1.3 ms vs full 1403.6 ms · 1119.3× · identical | 1.12e+03 | 🟢 |
-| W31 | redo: resumed at 27/27 · 1.1 ms vs full 1403.6 ms · 1305.9× · identical | 1.31e+03 | 🟢 |
-| W31 | undo again: resumed at 27/27 · 1.3 ms vs full 1403.6 ms · 1040.0× · identical | 1.04e+03 | 🟢 |
-| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.8 ms · 1710.8× | 1.71e+03 | 🟢 |
-| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 613.8 ms · source untouched | 0 | 🟢 |
+| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 584.5 ms vs full 1592.1 ms · 2.7× · identical | 2.72 | 🟢 |
+| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 1355.2 ms vs full 1592.1 ms · 1.2× · identical | 1.17 | 🟢 |
+| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 1.4 ms vs full 1592.1 ms · 1174.8× · identical | 1.17e+03 | 🟢 |
+| W31 | redo: resumed at 27/27 · 1.2 ms vs full 1592.1 ms · 1354.7× · identical | 1.35e+03 | 🟢 |
+| W31 | undo again: resumed at 27/27 · 1.0 ms vs full 1592.1 ms · 1607.3× · identical | 1.61e+03 | 🟢 |
+| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.7 ms · 2206.7× | 2.21e+03 | 🟢 |
+| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 595.3 ms · source untouched | 0 | 🟢 |
 | W31 | 25 undo entries, 8 with checkpoints; 10 undos identical, 8 restored every step (older ones resume at the edited step) | 0 | 🟢 |
-| W31 | bonnet (12 steps, full 2.5 ms): pole move resumed at 5 · 1.8 ms; undo restored all · 0.2 ms · identical | 15.7 | 🟢 |
+| W31 | bonnet (12 steps, full 2.0 ms): pole move resumed at 5 · 1.3 ms; undo restored all · 0.1 ms · identical | 15.1 | 🟢 |
 | W32 | ray at the hidden back-bottom edge: opaque → Extrude#2.Cap(End) · x-ray → Edge(Extrude#2.Cap(Start)\|Extrude#2.Side(Line3)) (1.600781 farther) | 0 | 🟢 |
 | W32 | ray at the visible front-top edge: opaque = x-ray → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line1)) | 0 | 🟢 |
 | W32 | full box without x-ray → 9 edges, none at the far corner (closed form 9 of 12) | 0 | 🟢 |
@@ -318,20 +319,20 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W36 | refused: "both joint origins are on Cylinder3 (pick one on each body)" · "Joint#16: Joint: Extrude#10 is already jointed to Extrude#2 (🚧 one joint per placed body)"; no undo entry | 0 | 🟢 |
 | W36 | save → load: 2 joints with equal kind / flip / values / bodies, pin and lever centroids within 0.000000; the second round trip is byte-equal (JointFlipped = true for the pin) | 0 | 🟢 |
 | W36 | 2 × undo → pin centroid (3, 1.25, 0.5) again | 7.11e-16 | 🟢 |
-| W37 | default: A3 first angle, Front Top Right Isometric, scale 1:50, 122 lines, 9 dimensions, 51 ms | 0 | 🟢 |
+| W37 | default: A3 first angle, Front Top Right Isometric, scale 1:50, 122 lines, 9 dimensions, 65 ms | 0 | 🟢 |
 | W37 | automatic 1:50 is standard and the next larger scale is refused | 0 | 🟢 |
 | W37 | dimensions in mm: 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 — span vs value × scale 1.4e-14 mm | 1.42e-14 | 🟢 |
 | W37 | metres × 1000 at 1:50 = millimetres at 20:1: 101 of 122 strokes (all but dimensions) coincide per view, worst 2.8e-14 mm (views moved ≤ 3.15 mm by the longer texts) | 2.84e-14 | 🟢 |
 | W37 | A4 third angle at 1:50: Top above / Right right of Front (first angle: below / left) | 0 | 🟢 |
-| W37 | Front Top Right Section A-A: cap 4.116587385 m² = section 4.116587385 m², 743 ms | 0 | 🟢 |
+| W37 | Front Top Right Section A-A: cap 4.116587385 m² = section 4.116587385 m², 755 ms | 0 | 🟢 |
 | W37 | Bracket.svg 113781 B + Bracket.dxf 346500 B byte-equal to the writers | 0 | 🟢 |
 | W37 | codec: no table at the defaults, A2 / third / 1:50 / section x flipped / title fields round trip (fixed point), DrawingSheet: unknown paper A5 (A4 … A0) · DrawingSheet: unknown projection angle Fifth (First / Third) | 0 | 🟢 |
 | W37 | refusals: Drawing sheet: no shown solid body · Drawing sheet: section A-A — Section: select a planar face first | 0 | 🟢 |
-| W38 | Export… Bracket.step: 2 bodies, 12 faces, 0 stand-in(s), 13002 B = WriteStep bytes, 4 ms | 0 | 🟢 |
+| W38 | Export… Bracket.step: 2 bodies, 12 faces, 0 stand-in(s), 13002 B = WriteStep bytes, 3 ms | 0 | 🟢 |
 | W38 | read back in mm: 2 solids, volumes = metres³ × 10⁹ (worst 3.0e-15) | 2.99e-15 | 🟢 |
 | W38 | Export… Bracket.stl: 7078 facets, watertight, 2 components, \|ΔV\| 4007959.498 mm³ ≤ sag 5.03 mm × A 39173973 mm² | 0.000373 | 🟢 |
 | W38 | selected sphere → 1 body; bracket hidden → 1 body; Sphere.stp names its PRODUCT 'Sphere' | 0 | 🟢 |
-| W38 | Import Bracket · 2 solid(s): Bracket.1 (Import#1, 11 faces) · Bracket.2 (Import#2, 1 faces) · volumes, faces, edges, vertices, genus equal (worst 1.1e-15) · 96 ms | 1.06e-15 | 🟢 |
+| W38 | Import Bracket · 2 solid(s): Bracket.1 (Import#1, 11 faces) · Bracket.2 (Import#2, 1 faces) · volumes, faces, edges, vertices, genus equal (worst 1.1e-15) · 93 ms | 1.06e-15 | 🟢 |
 | W38 | every imported face is named <Import#k>.Face(n), e.g. Import#1.Face(1) | 0 | 🟢 |
 | W38 | export → import → export: same entities, 3 of 374 numbers differ in the last digit (worst 2.8e-16, mm ↔ m scaling); the embedded text is the canonical writing | 2.76e-16 | 🟢 |
 | W38 | codec: 14953 B of TOML carry both files; save → load → save byte-equal, volumes and names equal, digests equal (and change with the text) | 0 | 🟢 |
@@ -416,6 +417,12 @@ Document layer of SolidArc over the GeometryProcessing feature tree (72.76 s).
 | W45 | hide Sketch#3, lock Sketch#1 and body Extrude#2: 3 undo entries, both leave the selection, geometry unchanged | 0 | 🟢 |
 | W45 | codec: HiddenCurves 1 · Locked 2 survive save → load → save byte-equal | 0 | 🟢 |
 | W45 | three undos clear hide and locks; unknown figure refused: no body, sketch or curve Sketch#99 | 0 | 🟢 |
+| W46 | Trim Circle1 of Circle1 into Circle2 (Circle1 kept hidden for the steps that read it): V 0.785398163397 vs π/4 kept, Sketch#2 hidden, new Sketch#4 (Circle2) = quarter arc, sweep 1.570796326795 vs π/2, one undo entry | 8.48e-16 | 🟢 |
+| W46 | a second trim on Sketch#4 edits it in place (Trim Arc1 of Circle2); two undos restore the shown circle and the step count | 0 | 🟢 |
+| W46 | whole-curve trim of Sketch#4 (read by an extrude): hidden only, no new step, volume unchanged | 0 | 🟢 |
+| W46 | Join (Rectangle1, Circle1): one sketch of 5 curves, Sketch#2 removed; Extrude1 · Rectangle1 · New → V 1.502654824574 vs 1 + 0.16π 1.502654824574 | 0 | 🟢 |
+| W46 | Join (Rectangle1, Circle1): Sketch#1 kept hidden for its extrude, Sketch#3 merged away, new Sketch#4 holds 6 curves, V unchanged | 0 | 🟢 |
+| W46 | codec: 4617 bytes byte-equal after the detached join | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

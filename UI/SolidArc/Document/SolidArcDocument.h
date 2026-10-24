@@ -324,9 +324,11 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome CutSolidArcBody(SolidArcDocument& Document, const SolidArcCutRequest& Request);
 
 // 💡 Plasticity T (command:trim): the piece of the curve under Pick, between its crossings with the sketch's other curves
-//    and with every coplanar sketch, comes off (GeometryProcessing::TrimSketchCurve); one undo entry. A sketch left without
-//    curves is deleted when nothing uses it. Refused (document untouched) when a step that regenerated before now refuses
-//    (e.g. an extrude losing its closed profile), or when the trim itself refuses.
+//    and with every visible coplanar sketch, comes off (GeometryProcessing::TrimSketchCurve); one undo entry. A sketch left
+//    without curves is deleted when nothing uses it. When a later step reads the sketch (an extrude, a loft section …)
+//    and the trimmed sketch would break it, the trim detaches (Plasticity: curves are free of the solids made from them):
+//    the original sketch stays for its body, hidden, and the trimmed curves become a new sketch step at the end. Refused
+//    (document untouched) only when the trim itself refuses.
 [[nodiscard]] SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const SolidArcTrimRequest& Request);
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
 [[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const SolidArcTrimRequest& Request);
@@ -401,7 +403,8 @@ struct SolidArcJointOrigin
 [[nodiscard]] bool SolidArcLockedCondition(const SolidArcDocument& Document, const std::string& Key) noexcept;
 
 // Plasticity J: the coplanar sketches merge into the first (ends welded, frame constraints carried); the others are
-// removed. Refused when a merged sketch feeds a later step.
+// removed. A sketch some later step reads (an extrude profile, a loft section …) is not removed but hidden, so its body
+// keeps its input; when the first one is read, the joined sketch becomes a new step at the end instead.
 [[nodiscard]] SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Sketches);
 
 // J from one sketch: Sketch first, then every coplanar sketch no later step uses that touches the group (end to end or
@@ -527,6 +530,9 @@ struct SolidArcLinkedPicks
 
 // A sketch step some extrude / revolve already uses as its profile.
 [[nodiscard]] bool SolidArcSketchConsumedCondition(const SolidArcDocument& Document, const std::string& SketchLabel);
+
+// A sketch step any later step reads: a profile (extrude / revolve / sweep), a loft or pipe section, a cutter or a path.
+[[nodiscard]] bool SolidArcSketchReferencedCondition(const SolidArcDocument& Document, const std::string& SketchLabel);
 
 // Undo / redo restore the tree snapshot and regenerate; false when the stack is empty.
 // 💡 Vehicle plan V1: every curve of the file becomes a SpaceCurve step ("Curve#n", captioned with the loop name) fitted

@@ -1931,6 +1931,9 @@ void ApplyTrim(SolidArcWorkspaceState& State)
     const SolidArcCommandOutcome Outcome = TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick });
     if (Outcome.AcceptedCondition)
     {
+        // Detached trim (a later step reads the sketch): the original is hidden, the trimmed copy is the last step.
+        if (SolidArcCurveHiddenCondition(State.Document, Trim.Sketch) && State.FocusedStep == Trim.Sketch && !State.Document.Tree.Steps.empty())
+            State.FocusedStep = State.Document.Tree.Steps.back().Label;
         ++Trim.Commits;
         Trim.HoverCondition = false;
         Trim.Preview.clear();
@@ -3904,9 +3907,36 @@ void DrawSweepOutline(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
     }
 }
 
-// J: the focused sketch (else the newest) welds with every coplanar sketch touching it.
+// Picked sketches (Shift-click in the viewport / Outliner), in pick order; space curves are left out.
+[[nodiscard]] std::vector<std::string> SelectedSketchLabels(const SolidArcDocument& Document)
+{
+    std::vector<std::string> Labels;
+    for (const std::string& Label : Document.Selection.Curves)
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+        if (Found != Document.Tree.Steps.end() && Found->Kind == FeatureStepKind::Sketch && std::find(Labels.begin(), Labels.end(), Label) == Labels.end()) Labels.push_back(Label);
+    }
+    return Labels;
+}
+
+// J / Inspector Join: two or more picked sketches join into the first picked (touching or not: one sketch, several
+// profiles); otherwise the focused sketch (else the newest) welds with every coplanar sketch touching it.
 void JoinSketches(SolidArcWorkspaceState& State)
 {
+    const std::vector<std::string> Picked = SelectedSketchLabels(State.Document);
+    if (Picked.size() >= 2)
+    {
+        const SolidArcCommandOutcome Outcome = JoinSolidArcSketches(State.Document, Picked);
+        if (Outcome.AcceptedCondition)
+        {
+            // The first picked sketch carries the join, unless a later step reads it (kept hidden): then the join is the
+            // new last step.
+            State.FocusedStep = SolidArcCurveHiddenCondition(State.Document, Picked.front()) ? State.Document.Tree.Steps.back().Label : Picked.front();
+            State.Document.Selection.Curves = { State.FocusedStep };
+        }
+        Conclude(State, Outcome);
+        return;
+    }
     std::string Base = FocusedSketchCondition(State) ? State.FocusedStep : std::string{};
     if (Base.empty()) for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend() && Base.empty(); ++Step) if (Step->Kind == FeatureStepKind::Sketch) Base = Step->Label;
     if (Base.empty()) { Announce(State, "Join (J) needs sketches: draw some first"); return; }
@@ -7736,6 +7766,12 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
         ImGui::PopStyleColor();
         if (PressButton(State, "Loft  (L)###CurveLoft", RowSpan(), Selection.Curves.size() >= 2)) LoftSelectedCurves(State);
         ImGui::SameLine();
+        const size_t Sketches = SelectedSketchLabels(State.Document).size();
+        if (PressButton(State, "Join  (J)###CurveJoin", RowSpan(), Sketches >= 2 && !State.Bevel.ActiveCondition)) JoinSketches(State);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", Sketches >= 2 ? "Join the picked sketches into one (in pick order); a sketch a body still reads is kept hidden"
+                                                  : "Shift-click two or more coplanar sketches to join them");
+        ImGui::SameLine();
         if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, RowSpan())) State.CombsEnabled = !State.CombsEnabled;
         // Continuity of the next loft to the panel it meets at its first / last section (V6).
         static const char* const ContinuityLabels[] = { "G0###LoftG0", "G1###LoftG1", "G2###LoftG2" };
@@ -8299,6 +8335,7 @@ void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
     else if (Key == "ExtrudeSketch") OpenSketchExtrudeSession(State);
     else if (Key == "Revolve") OpenSweepSession(State, SolidArcSweepVerb::Revolve);
     else if (Key == "Loft") LoftSelectedCurves(State);
+    else if (Key == "Join") JoinSketches(State);
     else if (Key == "Move") OpenTransformSession(State, SolidArcTransformVerb::Move, false);
     else if (Key == "Rotate") OpenTransformSession(State, SolidArcTransformVerb::Rotate, false);
     else if (Key == "Scale") OpenTransformSession(State, SolidArcTransformVerb::Scale, false);
@@ -8654,6 +8691,7 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         Operations.push_back({ "Revolve", IconSymbol::SolidArcRotate, "Revolve" });
     }
     if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
+    if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Join", IconSymbol::SolidArcLink, "Join · J" });
     if (!Selection.Bodies.empty())
     {
         Operations.push_back({ "Move", IconSymbol::SolidArcMove, "Move · G" });

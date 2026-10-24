@@ -82,7 +82,7 @@ namespace
     GateTally BlueprintGate   = { "W14", "Blueprint study: image planes (BMW calibration landmarks → world, picture decode, codec round trip, refusals, re-import by name) and x / y-axis Construct cylinders", "≤ 10⁻⁵ m · ≤ 10⁻⁹" };
     GateTally MatcapGate      = { "W15", "Matcaps: built-in library optics (tinted metal / white plastic highlights, brushed anisotropy, roughness), picture fitting, per-face / body assignment without regeneration, undo, regeneration by persistent name, codec, refusals", "exact · 1 / 255" };
     GateTally BodiesGate      = { "W16", "Multi-body: New body (R) tiles keep exact separate volumes; per-body matcaps resolve face → body → default without regeneration; Combine (Q) difference consumes the tool and its delete restores it; targeted Construct / blend touch one body; cross-body refusals; scene body spans; undo; codec", "≤ 10⁻⁹ · exact" };
-    GateTally TrimGate        = { "W18", "Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude is refused; an emptied sketch goes; codec", "≤ 10⁻¹² · ≤ 10⁻⁹ · exact" };
+    GateTally TrimGate        = { "W18", "Curve trim (Plasticity T): a pentagram drawn as one chain refuses to extrude, T on the five inner pieces leaves the star (area vs shoelace, extrude exact); preview leaves the document alone; cross-sketch trims (circle → arc, side split) with undo / redo; a trim that would break an extrude detaches (W46); an emptied sketch goes; codec", "≤ 10⁻¹² · ≤ 10⁻⁹ · exact" };
     GateTally CutGate         = { "W17", "Trim / split: C cuts a block by a drawn line (2 + 6 exact) and a circle (π/4), the outside piece keeps key and matcap; X removes picked bodies (undo / redo); vehicle loft cut by a character line along −z → two sound sheets, X the piece; refusals; codec", "≤ 10⁻⁹ · exact" };
     GateTally MoveGate        = { "W19", "Move / rotate / scale (G / R / S): Transform steps keep volume (×8 for scale 2), the scene and picking follow the body, face selection survives by name, undo exact; refusals untouched", "≤ 10⁻⁹ · exact" };
     GateTally CopyGate        = { "W20", "Duplicate (Shift+D) and copy / paste (Ctrl+C / Ctrl+V): moved copy = new active selected body with its own caption; paste after X copies the body as it stood at copy time; refusals", "≤ 10⁻⁹ · exact" };
@@ -104,6 +104,7 @@ namespace
     GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
     GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
     GateTally ShellGate       = { "W45", "Solid shells, sketch on a face, hide / lock: closed sections loft a capped solid of its own (two in one file), open sections refuse the solid and loft a sheet; sketches drawn on a level and an upright body face extrude onto it; sketch / body hide and lock are undoable appearance entries that survive the codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally DetachGate      = { "W46", "Trim / join on sketches a body reads: the trim detaches (original kept hidden for its extrude, the trimmed curves a new sketch, the body unchanged, one undo entry); a whole-curve trim only hides; picked sketches join (disjoint profiles extrude together), a read one stays hidden; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -1434,12 +1435,18 @@ int main()
               && AreaError <= 1.0e-12 && Raised.AcceptedCondition && VolumeError <= 1.0e-9 && Star.Summary.SoundCondition && Star.UndoEntries.size() == 7,
               "pentagram: extrude refused first (" + Early.Refusal.substr(0, 60) + "…); 5 × T → 10 lines, area " + Format(Loop.Area) + " vs shoelace " + Format(StarArea) + ", extrude 1 → V " + Format(Star.Summary.Volume) + ", sound");
 
-        // ④ a trim that would open the extruded star is refused, document untouched
+        // ④ a trim that would open the extruded star detaches (W46): the extrude keeps the star (hidden), the opened
+        //    chain is a new sketch of 9 lines; undo returns the file byte-equal
         const std::string BeforeBreak = EncodeSolidArcDocument(Star);
         const size_t      Entries     = Star.UndoEntries.size();
+        const double      StarVolume  = Star.Summary.Volume;
         const SolidArcCommandOutcome Break = TrimSolidArcSketch(Star, { StarSketch, 0, Tips[0] + (Tips[1] - Tips[0]) * 0.1 });
-        Tally(TrimGate, 0.0, !Break.AcceptedCondition && Break.Refusal.find("Extrude") != std::string::npos && EncodeSolidArcDocument(Star) == BeforeBreak && Star.UndoEntries.size() == Entries,
-              "T on a star tip after the extrude: refused (" + Break.Refusal + "); untouched");
+        const std::string Opened = Star.Tree.Steps.back().Label;
+        const bool Detached = Break.AcceptedCondition && SolidArcCurveHiddenCondition(Star, StarSketch) && Opened != StarSketch && CurvesOf(Star, Opened) == 9
+                           && Star.Summary.Volume == StarVolume && Star.UndoEntries.size() == Entries + 1;
+        UndoSolidArcCommand(Star);
+        Tally(TrimGate, 0.0, Detached && EncodeSolidArcDocument(Star) == BeforeBreak && Star.UndoEntries.size() == Entries,
+              "T on a star tip after the extrude: detached (" + Break.Label + "), the extrude keeps the star, " + Opened + " holds 9 lines; undo byte-equal");
 
         // ⑤ cross-sketch: circle r 0.3 at (2, 0.5) over the right side of a 2 × 1 rectangle (two sketches)
         SolidArcDocument Plan = CreateSolidArcDocument("Plan");
@@ -1643,12 +1650,16 @@ int main()
 
         // W22 ④ refusals and codec
         const SolidArcCommandOutcome Lone     = JoinSolidArcSketches(Plan, { Lower });
+        // The pipe's rail joins too since W46: kept hidden for the pipe (volume unchanged), the join a new step; undone.
+        const double                 Tube     = VolumeOf(Plan, PipeKey);
         const SolidArcCommandOutcome Consumed = JoinSolidArcSketches(Plan, { Rail, Lower });
+        const bool RailKept = Consumed.AcceptedCondition && SolidArcCurveHiddenCondition(Plan, Rail) && VolumeOf(Plan, PipeKey) == Tube;
+        if (Consumed.AcceptedCondition) UndoSolidArcCommand(Plan);
         const SolidArcCommandOutcome Vanish   = OffsetSolidArcSketch(Plan, Lower, -0.6);
         const SolidArcCommandOutcome Fat      = PipeSolidArcPath(Plan, Rail, 0.0);
         const SolidArcCommandOutcome NoPath   = PipeSolidArcPath(Plan, PipeKey, 0.1);
-        Tally(CurveGate, 0.0, !Lone.AcceptedCondition && !Consumed.AcceptedCondition && !Vanish.AcceptedCondition && !Fat.AcceptedCondition && !NoPath.AcceptedCondition,
-              "refused: " + Lone.Refusal + " · " + Consumed.Refusal + " · " + Vanish.Refusal + " · " + Fat.Refusal + " · " + NoPath.Refusal);
+        Tally(CurveGate, 0.0, !Lone.AcceptedCondition && RailKept && !Vanish.AcceptedCondition && !Fat.AcceptedCondition && !NoPath.AcceptedCondition,
+              "refused: " + Lone.Refusal + " · " + Vanish.Refusal + " · " + Fat.Refusal + " · " + NoPath.Refusal + "; the pipe's rail joins detached (kept hidden, tube unchanged), undone");
         Tally(CurveGate, 0.0, RoundTrip(Plan) && EncodeSolidArcDocument(Plan).find("Kind = 15") != std::string::npos, "save → load → save byte-equal with the joined / offset sketches and the Pipe (15) step");
     }
 
@@ -3988,7 +3999,109 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate })
+    // ---- W46 Trim and join on sketches some later step reads (detach), join of picked sketches
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Steps  = [](const SolidArcDocument& Document, const std::string& Label)
+        {
+            return std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+        };
+
+        // ① a circle r 0.5 at the corner (2, 1) of a 2 × 1 rectangle, extruded 1: trimming its outer ¾ detaches — the
+        //    extrude keeps the whole circle (V π/4), the original is hidden, the inner quarter arc is a new sketch
+        SolidArcDocument Detach = CreateSolidArcDocument("Detach");
+        Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 2.0, 1.0 }, { 2.5, 1.0 } }, false, true)));
+        const std::string Round = Detach.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Detach, Round, 1.0, FeatureCombination::New));
+        const size_t StepCount = Detach.Tree.Steps.size();
+        const size_t History   = Detach.UndoEntries.size();
+        const double Puck      = 0.25 * π;
+        const SolidArcCommandOutcome Trimmed = TrimSolidArcSketch(Detach, { Round, 0, { 2.0 + 0.5 * std::sqrt(0.5), 1.0 + 0.5 * std::sqrt(0.5) } });
+        const FeatureStep& Copy   = Detach.Tree.Steps.back();
+        const auto         Solved = Detach.Regeneration.Sketches.find(Copy.Label);
+        double             Sweep  = 0.0;
+        if (Solved != Detach.Regeneration.Sketches.end() && Solved->second.Curves.size() == 1 && Solved->second.Curves[0].Kind == SketchCurveKind::Arc)
+        {
+            const SketchModel& Arc   = Solved->second;
+            const Vector2      Centre = Arc.Points[Arc.Curves[0].Centre].Position;
+            const Vector2      From   = Arc.Points[Arc.Curves[0].Start].Position - Centre;
+            const Vector2      To     = Arc.Points[Arc.Curves[0].End].Position - Centre;
+            Sweep = std::atan2(From.X * To.Y - From.Y * To.X, From.X * To.X + From.Y * To.Y);
+            if (Sweep < 0.0) Sweep += 2.0 * π;
+        }
+        double Relative = std::abs(Detach.Summary.Volume - Puck) / Puck;
+        Tally(DetachGate, std::max(Relative, std::abs(Sweep - 0.5 * π)), Trimmed.AcceptedCondition && Relative <= 1.0e-9 && std::abs(Sweep - 0.5 * π) <= 1.0e-9
+              && SolidArcCurveHiddenCondition(Detach, Round) && Detach.Tree.Steps.size() == StepCount + 1 && Copy.Kind == FeatureStepKind::Sketch && Detach.UndoEntries.size() == History + 1
+              && SolidArcSketchConsumedCondition(Detach, Round) && !SolidArcSketchReferencedCondition(Detach, Copy.Label),
+              Format("%s: V %.12f vs π/4 kept, %s hidden, new %s (%s) = quarter arc, sweep %.12f vs π/2, one undo entry", Trimmed.Label.c_str(), Detach.Summary.Volume,
+                     Round.c_str(), Copy.Label.c_str(), SolidArcBodyCaption(Detach, Copy.Label).c_str(), Sweep));
+
+        // ② the copy is free: trimming it again edits it in place (no further copy); undo × 2 restores the circle, shown
+        {
+            const size_t Count = Detach.Tree.Steps.size();
+            const std::string Free = Copy.Label;
+            const SolidArcCommandOutcome Again = TrimSolidArcSketch(Detach, { Free, 0, { 2.0 - 0.5 * std::sqrt(0.5), 1.0 - 0.5 * std::sqrt(0.5) } });
+            const bool InPlace = Again.AcceptedCondition && Detach.Tree.Steps.size() <= Count && Steps(Detach, Round) != Detach.Tree.Steps.end();
+            const bool Undone  = UndoSolidArcCommand(Detach) && UndoSolidArcCommand(Detach);
+            Tally(DetachGate, 0.0, InPlace && Undone && Detach.Tree.Steps.size() == StepCount && !SolidArcCurveHiddenCondition(Detach, Round) && Detach.UndoEntries.size() == History,
+                  "a second trim on " + Free + " edits it in place (" + Again.Label + "); two undos restore the shown circle and the step count");
+        }
+
+        // ③ a lone circle some extrude reads, no crossings: the whole curve goes, so the trim only hides it
+        {
+            Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 6.0, 0.0 }, { 6.5, 0.0 } }, false, true)));
+            const std::string Lone = Detach.Tree.Steps.back().Label;
+            Expect(ExtrudeSolidArcSketch(Detach, Lone, 1.0, FeatureCombination::Separate));
+            const size_t Count  = Detach.Tree.Steps.size();
+            const double Volume = Detach.Summary.Volume;
+            const SolidArcCommandOutcome Whole = TrimSolidArcSketch(Detach, { Lone, 0, { 6.5, 0.0 } });
+            Tally(DetachGate, std::abs(Detach.Summary.Volume - Volume), Whole.AcceptedCondition && Detach.Tree.Steps.size() == Count && SolidArcCurveHiddenCondition(Detach, Lone)
+                  && Detach.Summary.Volume == Volume, "whole-curve trim of " + Lone + " (read by an extrude): hidden only, no new step, volume unchanged");
+        }
+
+        // ④ picked sketches join in pick order, touching or not: a 1 × 1 square and a disjoint circle r 0.4 become one
+        //    sketch of 5 curves; extruded 1 → V 1 + 0.16π
+        {
+            SolidArcDocument Picked = CreateSolidArcDocument("Join");
+            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
+            const std::string Square = Picked.Tree.Steps.back().Label;
+            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.5 }, { 3.4, 0.5 } }, false, true)));
+            const std::string Disc = Picked.Tree.Steps.back().Label;
+            const SolidArcCommandOutcome Joined = JoinSolidArcSketches(Picked, { Square, Disc });
+            const auto   Kept  = Steps(Picked, Square);
+            const size_t Curves = Kept != Picked.Tree.Steps.end() ? Picked.Regeneration.Sketches[Square].Curves.size() : 0;
+            const SolidArcCommandOutcome Raised = ExtrudeSolidArcSketch(Picked, Square, 1.0, FeatureCombination::New);
+            const double Expected = 1.0 + 0.16 * π;
+            Relative = std::abs(Picked.Summary.Volume - Expected) / Expected;
+            Tally(DetachGate, Relative, Joined.AcceptedCondition && Curves == 5 && Steps(Picked, Disc) == Picked.Tree.Steps.end() && Raised.AcceptedCondition && Relative <= 1.0e-9,
+                  Format("%s: one sketch of %d curves, %s removed; %s → V %.12f vs 1 + 0.16π %.12f", Joined.Label.c_str(), int(Curves), Disc.c_str(), Raised.Label.c_str(),
+                         Picked.Summary.Volume, Expected));
+
+            // ⑤ join into a read sketch: the extruded square stays (hidden) for its extrude, the join is a new last step
+            //    holding square + a new circle; the free circle merges away; volume unchanged; codec byte-equal
+            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.5, 3.0 }, { 0.8, 3.0 } }, false, true)));
+            const std::string Ring   = Picked.Tree.Steps.back().Label;
+            const size_t      Count  = Picked.Tree.Steps.size();
+            const double      Volume = Picked.Summary.Volume;
+            const SolidArcCommandOutcome Into = JoinSolidArcSketches(Picked, { Square, Ring });
+            const FeatureStep& Last = Picked.Tree.Steps.back();
+            const size_t Held = Picked.Regeneration.Sketches.contains(Last.Label) ? Picked.Regeneration.Sketches[Last.Label].Curves.size() : 0;
+            Tally(DetachGate, std::abs(Picked.Summary.Volume - Volume), Into.AcceptedCondition && SolidArcCurveHiddenCondition(Picked, Square) && Steps(Picked, Ring) == Picked.Tree.Steps.end()
+                  && Picked.Tree.Steps.size() == Count && Last.Label != Square && Held == 6 && Picked.Summary.Volume == Volume,
+                  Format("%s: %s kept hidden for its extrude, %s merged away, new %s holds %d curves, V unchanged", Into.Label.c_str(), Square.c_str(), Ring.c_str(), Last.Label.c_str(), int(Held)));
+            const std::string          Written = EncodeSolidArcDocument(Picked);
+            const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+            SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+            Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Loaded, true);
+            Tally(DetachGate, 0.0, Read.Refusal.empty() && EncodeSolidArcDocument(Loaded) == Written && Loaded.Summary.Volume == Picked.Summary.Volume,
+                  Format("codec: %d bytes byte-equal after the detached join", int(Written.size())));
+        }
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

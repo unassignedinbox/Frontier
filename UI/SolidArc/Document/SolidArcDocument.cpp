@@ -1064,6 +1064,15 @@ bool SolidArcSketchConsumedCondition(const SolidArcDocument& Document, const std
     return std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Profile == SketchLabel; });
 }
 
+bool SolidArcSketchReferencedCondition(const SolidArcDocument& Document, const std::string& SketchLabel)
+{
+    return std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step)
+    {
+        return Step.Label != SketchLabel && (Step.Profile == SketchLabel || Step.Path == SketchLabel ||
+               std::find(Step.Sections.begin(), Step.Sections.end(), SketchLabel) != Step.Sections.end());
+    });
+}
+
 SolidArcCommandOutcome ImportSolidArcCurves(SolidArcDocument& Document, const VehicleCurveFile& File, double Tolerance)
 {
     const std::string Label = "Import " + std::to_string(File.Curves.size()) + " curve(s)";
@@ -1521,7 +1530,7 @@ SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const So
     std::vector<ProfileSegment> Foreign;
     for (const FeatureStep& Step : Document.Tree.Steps)
     {
-        if (Step.Kind != FeatureStepKind::Sketch || Step.Label == Request.Sketch) continue;
+        if (Step.Kind != FeatureStepKind::Sketch || Step.Label == Request.Sketch || Document.Appearance.HiddenCurves.contains(Step.Label)) continue;
         const OrthonormalFrame Other = ElevatedPlane(Document.Tree, Step);
         const Vector3          Apart = Other.Origin - Plane.Origin;
         if (std::fabs(Dot(Other.ZAxis, Plane.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Plane.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart))) continue;
@@ -1547,7 +1556,10 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
         const SketchModel& Sketch = SolvedSketch(Document, Step);
         if (Request.Curve >= 0 && Request.Curve < static_cast<int>(Sketch.Curves.size())) CurveName = SketchCurveName(Sketch.Curves[Request.Curve]);
     }
-    return RunCommand(Document, "Trim " + CurveName + " of " + Owner, false, [&]() -> std::string
+    const bool Referenced = SolidArcSketchReferencedCondition(Document, Request.Sketch);
+
+    // ① in place: the sketch itself changes (later steps follow when they still regenerate).
+    SolidArcCommandOutcome InPlace = RunCommand(Document, "Trim " + CurveName + " of " + Owner, false, [&]() -> std::string
     {
         const SketchTrimOutcome Trim = PreviewSolidArcTrim(Document, Request);
         if (!Trim.Refusal.empty()) return Trim.Refusal;
@@ -1557,11 +1569,35 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
             Found->Sketch = Trim.Sketch;
             return {};
         }
-        if (SolidArcSketchConsumedCondition(Document, Request.Sketch)) return "the trim would leave " + Owner + " without curves, and a later step uses it";
+        if (Referenced) return "the trim would leave " + Owner + " without curves, and a later step uses it";
         Document.Tree.Steps.erase(Found);
         Document.Captions.erase(Request.Sketch);
         return {};
     }, 0);
+    if (InPlace.AcceptedCondition || !Referenced || !PreviewSolidArcTrim(Document, Request).Refusal.empty()) return InPlace;
+
+    // ② detached: the original stays (hidden) for the steps that read it; the trimmed curves become a free sketch.
+    std::string Stem = Owner;
+    while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
+    if (Stem.empty()) Stem = "Sketch";
+    const std::string Copy = NextCaption(Document, Stem);
+    return RunCommand(Document, "Trim " + CurveName + " of " + Owner + " into " + Copy + " (" + Owner + " kept hidden for the steps that read it)", false,
+                      [&]() -> std::string
+    {
+        const SketchTrimOutcome Trim = PreviewSolidArcTrim(Document, Request);
+        if (!Trim.Refusal.empty()) return Trim.Refusal;
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Request.Sketch; });
+        if (Found == Document.Tree.Steps.end()) return "no sketch step labelled " + Request.Sketch;
+        Document.Appearance.HiddenCurves.insert(Request.Sketch);
+        std::erase(Document.Selection.Curves, Request.Sketch);
+        if (Trim.Sketch.Curves.empty()) return {};
+        FeatureStep Detached = *Found;
+        Detached.Label  = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Detached.Sketch = Trim.Sketch;
+        Document.Captions[Detached.Label] = Copy;
+        Document.Tree.Steps.push_back(std::move(Detached));
+        return {};
+    });
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1881,7 +1917,6 @@ SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const st
             const FeatureStep* Other = FindStep(Document, Sketches[Index]);
             if (!Other || Other->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Sketches[Index];
             if (Sketches[Index] == Sketches.front()) return SolidArcBodyCaption(Document, Sketches[Index]) + " is picked twice";
-            if (SolidArcSketchConsumedCondition(Document, Other->Label)) return SolidArcBodyCaption(Document, Other->Label) + " feeds a later step (join into it instead)";
             const OrthonormalFrame Plane = ElevatedPlane(Document.Tree, *Other);
             const Vector3          Apart = Plane.Origin - Base.Origin;
             if (std::fabs(Dot(Plane.ZAxis, Base.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Base.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart)))
@@ -1895,13 +1930,33 @@ SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const st
             if (!Outcome.Refusal.empty()) return Outcome.Refusal;
             Joined = Outcome.Sketch;
         }
+        // A sketch a later step reads stays (hidden) so that step keeps its input; the others merge away.
+        std::set<std::string>& Hidden = Document.Appearance.HiddenCurves;
         const auto Keep = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketches.front(); });
-        Keep->Sketch = std::move(Joined);
+        if (SolidArcSketchReferencedCondition(Document, Sketches.front()))
+        {
+            std::string Stem = SolidArcBodyCaption(Document, Sketches.front());
+            while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
+            FeatureStep Copy = *Keep;
+            Copy.Label  = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Copy.Sketch = std::move(Joined);
+            Document.Captions[Copy.Label] = NextCaption(Document, Stem.empty() ? std::string("Sketch") : Stem);
+            Hidden.insert(Sketches.front());
+            Document.Tree.Steps.push_back(std::move(Copy));
+        }
+        else Keep->Sketch = std::move(Joined);
         for (size_t Index = 1; Index < Sketches.size(); ++Index)
         {
+            if (SolidArcSketchReferencedCondition(Document, Sketches[Index]))
+            {
+                Hidden.insert(Sketches[Index]);
+                continue;
+            }
             std::erase_if(Document.Tree.Steps, [&](const FeatureStep& Step) { return Step.Label == Sketches[Index]; });
             Document.Captions.erase(Sketches[Index]);
         }
+        for (const std::string& Label : Sketches)
+            if (Hidden.contains(Label) || !FindStep(Document, Label)) std::erase(Document.Selection.Curves, Label);
         return {};
     }, 0);
 }

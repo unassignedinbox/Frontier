@@ -1,0 +1,22 @@
+{
+  "Frame": 89,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Sketch#2", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Extrude#3", "Caption": "Extrude1 · Extrude", "Refused": false}],
+  "Body": {"Faces": 3, "Edges": 3, "Vertices": 2, "Genus": 0, "Volume": 0.7853981634, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "Extrude#3.Cap(End)",
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#2", "Combination": 0, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Circle", "Plane": 0, "Form": "Hermite", "Centre": true, "Points": [[2, 1], [2.5, 1]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 3,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Trim: click the piece of a curve to remove (between its crossings) · Esc ends",
+  "Viewport": [322, 146, 926, 651]
+}
