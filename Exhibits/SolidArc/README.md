@@ -8,7 +8,7 @@
 | Stage | Scope | Evidence | State |
 |---|---|---|---|
 | S1 | SolidArc app target, Vulkan host, upstream ControlKit / Theme / PanelDockspace | `Walkthrough/01Workspace.png`, `WorkspaceWalkthrough.md` | 🟢 (windowed host and standalone overlay build open) |
-| S2 | Kernel in `Engine/GeometryProcessing/` | `DocumentValidation.md` W1–W48 | 🟢 |
+| S2 | Kernel in `Engine/GeometryProcessing/` | `DocumentValidation.md` W1–W49 | 🟢 |
 | S3 | 1:1 Outliner, viewport and Inspector port (S3a / S3b / S3c) | `HtmlParity.md` 🟢 72 · ⚠️ 1 · 🚧 3 | 🟢 |
 | S4 | Shared Slang shaders (`CadStroke`, `MatCapLookup`) and `Engine/Render/OrbitCamera` | `MatCapRasterizationValidation`, `SurfaceRasterizationValidation`, ctest 27 / 27 | 🟢 |
 | S5 | Project browser: CAD category, thumbnails, live reader, Open in SolidArc | `S5Browser.md`, `SolidArcBrowserValidation` 15 / 15 | 🟢 |
@@ -22,7 +22,7 @@
 | 4 | MatCapRasterizationValidation | Upstream raster check of the shared matcap shader |
 | 5 | SurfaceRasterizationValidation | Upstream raster check of the shared CAD surface and edge shaders |
 | 39 | SolidArcBrowserValidation | Project browser decode, thumbnails, refusal, process hand-off |
-| 40 | SolidArcDocumentValidation | Kernel and document W1–W48 |
+| 40 | SolidArcDocumentValidation | Kernel and document W1–W49 |
 | 41 | SolidArcViewportValidation | Viewport rendering, picking and camera |
 | 42 | SolidArcWorkspaceWalkthrough | Shell, selection, bevel, navigation, views |
 | 43 | SolidArcRecoveryWalkthrough | Autosave and recovery |
@@ -53,6 +53,7 @@
 | 50 | SolidArcSketchPointsWalkthrough | 13 Construct Sketch tools (each curve form its own tile); mode-1 sketch points dragged directly and with the gizmo, the extrude following live mid-drag |
 | 51 | SolidArcShellsWalkthrough | Sketches on a body face, Ctrl snaps to an off-grid edge midpoint, closed sections lofted into a capped solid, Outliner hide / lock |
 | 55 | SolidArcFillWalkthrough | Fresh closed drawings unfilled (faint tint); the Fill tool beside Trim previews and fills the lens and a crescent of two circles; F / Inspector › Filled toggles; unfilled extrude = walls; Alt+N flips a sheet's normals; Construct › Reference › Image plane |
+| 56 | SolidArcFilletDragWalkthrough | Mode-1 drags on a rectangle with four fillets: the bottom-left fillet's centre dragged out past the corner keeps every arc 90° (the lines follow; tangency keeps its starting side, an inside-out fillet is refused); the orientation cube in Parallel and Perspective |
 | 54 | SolidArcAltSlideWalkthrough | Alt held while sketching / dragging slides the point along a line / curve / arc (Ctrl keeps ends / midpoints / centres); an Alt tap still toggles rectangle centre mode; round mode-1 point handles |
 | 53 | SolidArcSketchCornersWalkthrough | B on a sketch: every corner of a rectangle filleted r 0.25 (live preview, the extrude follows), one corner chamfered 0.3 (C); a loft through the section of an earlier loft joins its sheet (fan loft) |
 | 52 | SolidArcTrimJoinWalkthrough | T on a circle an extrude reads (detached: original kept hidden, the arc a new sketch); two picked sketches joined from the Inspector and extruded together |
@@ -251,6 +252,10 @@
 | `243AltSlideCircle` | Alt held: the line's end slides onto the circle ("On curve · Circle1") |
 | `244RoundHandles` | Mode 1: sketch points as round handles |
 | `245AltSlidePoint` | A mode-1 point dragged with Alt held, on the circle |
+| `253FilletCentreDragLive` | Mode 1, mid-drag of the bottom-left fillet centre out past the corner: the staged preview keeps all four arcs at 90° (the Windows report showed this arc inside out, ~270°) |
+| `254FilletCentreDragged` | Released: one command, every arc 90°, the rounded rectangle intact |
+| `255CubeParallel` | Isometric view, Keypad 5 → Parallel: the orientation cube drawn orthographically (parallel edges) |
+| `256CubePerspective` | Keypad 5 again → Perspective: the cube in perspective with the viewport's field of view (its verticals converge) |
 
 Every capture also has a `.json` state snapshot. Seven frames (03, 08, 11, 12, 14, 15, 18) are regenerated but not committed; see `.gitignore`. `Viewport/` holds the V-gate colour and identity frames (Isometric, Top, Front, Selection, Matcaps).
 

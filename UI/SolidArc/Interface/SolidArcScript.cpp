@@ -295,7 +295,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "constrain") return Numeric(State.Constrain.ActiveCondition ? 1 : 0);
     if (Field == "constrain-commits") return Numeric(double(State.Constrain.Commits));
     if (Field == "constrain-refusal") { Text = State.Constrain.Refusal; Number = double(Text.size()); return true; }
-    if (Field.starts_with("constrain") || Field.starts_with("constraint") || Field.starts_with("sketch-") || Field == "picked-constraint")
+    if (Field.starts_with("constrain") || Field.starts_with("constraint") || (Field.starts_with("sketch-") && Field != "sketch-curve-total") || Field == "picked-constraint")
     {
         // 📝 The K session's sketch (else the focused sketch step) as regenerated.
         const std::string Label  = SolidArcConstraintSketch(State);
