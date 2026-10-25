@@ -159,6 +159,7 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
     Writer.Word(Step.Points.size());
     for (const Vector3& Point : Step.Points) Writer.Point(Point);
     Writer.Flag(Step.ClosedCondition);
+    if (!Step.FillCondition) Writer.Phrase("Unfilled");                                     // Absent when filled: older digests hold
     Writer.Flag(Step.PlanarCondition);
     Writer.Value(Step.Tolerance);
     Writer.Word(Step.PoleEdits.size());

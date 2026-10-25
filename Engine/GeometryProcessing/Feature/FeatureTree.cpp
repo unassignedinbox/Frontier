@@ -40,6 +40,7 @@ namespace
     struct SolvedSketch
     {
         SketchModel        Model    = {};                                                    // [-] - Solved positions
+        bool               FillCondition = true;                                             // [-] - Closed loops are filled faces
         OrthonormalFrame   Plane    = {};                                                    // [-] - Plane with elevation applied
         bool               UsableCondition = false;                                          // [-] - Converged without conflicts
     };
@@ -490,6 +491,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 else if (!Report.Solve.Converged) Refuse("Sketch: no solution reached (max residual " + std::to_string(Report.Solve.MaxResidual) + ")");
                 else Solved.UsableCondition = true;
             }
+            Solved.FillCondition = Step.FillCondition;
             Outcome.Sketches[Step.Label] = Solved.Model;
             Sketches[Step.Label] = Solved;
             break;
@@ -504,7 +506,14 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             const SolvedSketch& Solved  = Found->second;
             const SketchProfile Profile = ExtractSketchProfile(Solved.Model);
             SweepOutcome Sweep;
-            if (Step.Kind == FeatureStepKind::Extrude) Sweep = ExtrudeProfile(Partition, Profile, Solved.Plane, EvaluateFeatureValue(Tree, Step.Extent));
+            // An unfilled profile (Plasticity's fresh curves) extrudes into walls: an open sheet, a body of its own.
+            const bool WallsCondition = Step.Kind == FeatureStepKind::Extrude && !Solved.FillCondition;
+            if (WallsCondition && (Step.Combination == FeatureCombination::Difference || Step.Combination == FeatureCombination::Intersection))
+            {
+                Refuse("Extrude: " + Step.Profile + " is unfilled, so it makes walls (a sheet) — fill it (F) to " + FeatureCombinationLabel(Step.Combination));
+                break;
+            }
+            if (Step.Kind == FeatureStepKind::Extrude) Sweep = ExtrudeProfile(Partition, Profile, Solved.Plane, EvaluateFeatureValue(Tree, Step.Extent), !WallsCondition);
             else if (Step.Kind == FeatureStepKind::Evolution)
             {
                 // ⑯ Path: a SpaceCurve, or another sketch holding exactly one open curve (line, arc or spline).
@@ -585,7 +594,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (!Sweep.Refusal.empty()) { Refuse(Sweep.Refusal); break; }
             const BodyNaming ToolNaming = NameSweptBody(Partition, Sweep, Step.Label);
             // A separate sweep (Plasticity "new body"), or the first body of the part, starts a body of its own.
-            const bool SeparateCondition = Step.Combination == FeatureCombination::Separate;
+            const bool SeparateCondition = Step.Combination == FeatureCombination::Separate || WallsCondition;
             if (SeparateCondition || Bodies.empty())
             {
                 if (!SeparateCondition && Step.Combination != FeatureCombination::New && Step.Combination != FeatureCombination::Union) { Refuse(std::string(Verb) + ": nothing to " + FeatureCombinationLabel(Step.Combination) + " with"); break; }
@@ -994,6 +1003,18 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             }
             break;
         }
+        case FeatureStepKind::Flip:
+        {
+            // ⑲ A sheet turned over (flip normals): same carriers, every face sense and loop reversed, every name kept.
+            if (!Load(Step.Target)) { Refuse("Flip: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            const TransformOutcome Turned = ReverseBody(Partition, Current);
+            if (!Turned.Refusal.empty()) { Refuse(Turned.Refusal); break; }
+            Naming  = CarryNaming(Partition, Turned, Naming, {});
+            Current = Turned.Body;
+            if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would turn them back
+            Store();
+            break;
+        }
         case FeatureStepKind::Duplicate:
         {
             // ⑭ Copy of a body (Plasticity Shift+D / Ctrl+V) as it is now, or as it stood after step Source.
@@ -1251,6 +1272,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Evolution:     return "Evolution";
     case FeatureStepKind::Joint:         return "Joint";
     case FeatureStepKind::Import:        return "Import";
+    case FeatureStepKind::Flip:          return "Flip";
     }
     return "?";
 }

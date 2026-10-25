@@ -30,7 +30,7 @@ using namespace Sweeping;
 //                                                    EXTRUDE
 //------------------------------------------------------------------------------------------------------------------------
 
-static SweepOutcome ExtrudeProfileUntraced(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent)
+static SweepOutcome ExtrudeProfileUntraced(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent, bool CapsCondition)
 {
     SweepOutcome Refused;
     if (!Profile.Refusal.empty()) { Refused.Refusal = "Extrude: " + Profile.Refusal; return Refused; }
@@ -142,7 +142,13 @@ static SweepOutcome ExtrudeProfileUntraced(ModelPartition& Partition, const Sket
         }
     }
 
-    // Caps: one pair per outer loop with the holes it directly encloses.
+    // Caps: one pair per outer loop with the holes it directly encloses. Without caps (an unfilled profile) the side walls
+    // alone are an open sheet of zero thickness, its rims laminar.
+    if (!CapsCondition)
+    {
+        Writer.Blueprint.Category = BodyCategory::Sheet;
+        return Assemble(Partition, Writer, "Extrude");
+    }
     for (size_t Outer = 0; Outer < Profile.Loops.size(); ++Outer)
     {
         if (Profile.Loops[Outer].Depth % 2 != 0) continue;
@@ -170,10 +176,10 @@ static SweepOutcome ExtrudeProfileUntraced(ModelPartition& Partition, const Sket
 
 // 📝 Traced entry (Diagnostics/OperationTrace.h): the request on entry, the outcome before the duration line.
 
-SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent)
+SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent, bool CapsCondition)
 {
-    FRONTIER_TRACE_SCOPE("Sweep", "Extrude · " + std::to_string(Profile.Loops.size()) + " loop(s) · extent " + TraceNumber(Extent));
-    SweepOutcome Outcome = ExtrudeProfileUntraced(Partition, Profile, Plane, Extent);
+    FRONTIER_TRACE_SCOPE("Sweep", "Extrude · " + std::to_string(Profile.Loops.size()) + " loop(s) · extent " + TraceNumber(Extent) + (CapsCondition ? "" : " · walls"));
+    SweepOutcome Outcome = ExtrudeProfileUntraced(Partition, Profile, Plane, Extent, CapsCondition);
     FRONTIER_TRACE("Sweep", Outcome.Refusal.empty() ? std::to_string(Outcome.Faces.size()) + " face(s)" : "refused: " + Outcome.Refusal);
     return Outcome;
 }

@@ -52,6 +52,7 @@ enum class FeatureStepKind : uint8_t
     Evolution     = 16,                                                                      // Sketch profile swept along a path (Plasticity Shift+P / Alt+E)
     Joint         = 17,                                                                      // Place a body by a joint to another body (Fusion joints, priority 11)
     Import        = 18,                                                                      // One solid read from embedded STEP text (priority 4 X4)
+    Flip          = 19,                                                                      // A sheet turned over: every face normal reversed (loft inside out)
 };
 
 enum class FeatureCombination : uint8_t
@@ -123,6 +124,8 @@ struct FeatureStep
     SketchModel                    Sketch         = {};                                      // [-]   - Sketch: unsolved model (constraints may bind parameters)
     OrthonormalFrame               Plane          = {};                                      // [-]   - Sketch: plane frame · mirror: plane · cut by a curve: ZAxis = cut direction
     FeatureValue                   Elevation      = {};                                      // [len] - Sketch: plane shift along its normal
+    bool                           FillCondition  = true;                                    // [-]   - Sketch: closed loops are filled faces (extrude → solid);
+                                                                                             //         unfilled (Plasticity's fresh curves) → extrude makes walls
     std::string                    Profile        = {};                                      // [-]   - Extrude / revolve / cut: sketch step label
     FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane) · inset depth
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body

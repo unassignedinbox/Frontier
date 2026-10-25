@@ -272,7 +272,7 @@ namespace
     //    With Approximation (PromoteAll only) the procedural carriers left over — rolling-ball / parallel faces, traced
     //    edges — are replaced by certified cubic B-splines in their own parameterisation, tallied into Tally.
     [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll,
-                                                     const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr)
+                                                     const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr, bool ReverseCondition = false)
     {
         TransformOutcome Outcome;
         const MapAnalysis Analysis = AnalyseMap(Map);
@@ -350,7 +350,7 @@ namespace
             if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
             BlueprintFace Image;
             Image.Surface = Mapped.Surface;
-            Image.Sense   = Mapped.Flip ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
+            Image.Sense   = Mapped.Flip != ReverseCondition ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
             for (LoopToken Loop : Profile.Loops)
             {
                 std::vector<BlueprintUse> Uses;
@@ -372,7 +372,7 @@ namespace
                     Uses.push_back(std::move(Placement));
                 });
                 if (!Valid) { Outcome.Refusal = "Transform: fin without an SP-curve"; return Outcome; }
-                if (Analysis.Determinant < 0.0)
+                if ((Analysis.Determinant < 0.0) != ReverseCondition)                        // Mirror or flip: loops run the other way
                 {
                     std::reverse(Uses.begin(), Uses.end());
                     for (BlueprintUse& Placement : Uses) Placement.Sense = Placement.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
@@ -465,6 +465,17 @@ ApproximationOutcome ApproximateBodyAsNurbs(ModelPartition& Partition, BodyToken
 TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map)
 {
     return TransformBodyAcross(Partition, Source, Partition, Map);
+}
+
+TransformOutcome ReverseBody(ModelPartition& Partition, BodyToken Source)
+{
+    if (Partition.Bodies.Resolve(Source).Category != BodyCategory::Sheet)
+    {
+        TransformOutcome Refused;
+        Refused.Refusal = "Flip: only a sheet (open surface) turns over; a solid's faces point out of its material by definition";
+        return Refused;
+    }
+    return TransformBodyWith(Partition, Source, Partition, TranslationMap({}), false, nullptr, nullptr, true);
 }
 
 TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal)

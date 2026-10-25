@@ -82,6 +82,10 @@ struct ApproximationOutcome
 //    source body stays the reference; the copy is refused atomically when any carrier cannot be certified.
 [[nodiscard]] ApproximationOutcome ApproximateBodyAsNurbs(ModelPartition& Partition, BodyToken Source, const ApproximationSettings& Settings = {});
 
+// 💡 The same sheet turned over (flip normals): every face sense reversed and every loop walked the other way, carriers,
+//    vertices and edges unchanged. Refused for solids (their faces point out of the material by definition).
+[[nodiscard]] TransformOutcome ReverseBody(ModelPartition& Partition, BodyToken Source);
+
 // Mirror copy across the plane through PlanePoint with normal PlaneNormal.
 [[nodiscard]] TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal);
 

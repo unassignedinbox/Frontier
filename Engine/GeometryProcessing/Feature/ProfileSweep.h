@@ -52,8 +52,9 @@ struct SweepOutcome
 
 // 💡 Extrude: the profile on Plane (sketch x → XAxis, y → YAxis) swept along ZAxis·Extent (negative: below the
 //    plane). Lines → planar sides, arcs / circles → cylinders (full circles get a seam), one cap pair per outer loop with
-//    its holes; multiple outer loops make multiple solid regions.
-[[nodiscard]] SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent);
+//    its holes; multiple outer loops make multiple solid regions. Without caps (CapsCondition false: an unfilled profile)
+//    the side walls alone make an open sheet of zero thickness.
+[[nodiscard]] SweepOutcome ExtrudeProfile(ModelPartition& Partition, const SketchProfile& Profile, const OrthonormalFrame& Plane, double Extent, bool CapsCondition = true);
 
 // 💡 Revolve by Angle (default 360°) about the sketch line through AxisPoint along AxisDirection, turning from the sketch
 //    plane toward the side the right-hand rule about the axis gives: segments ⟂ axis → planes (disc / annulus / sector),
