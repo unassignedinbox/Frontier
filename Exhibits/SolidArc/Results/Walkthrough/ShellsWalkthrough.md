@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 201 frames · 16.318 s · slowest frame 488.456 ms
+- Frame: 1600 x 900 · 201 frames · 16.4917 s · slowest frame 457.357 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShellsWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,10 +44,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 231SketchFacePlane | 61 | `6500c1ff59aa876d` |
-| 232SketchMidpointOnFace | 86 | `0c500f219fc40d63` |
-| 233SolidLoftShell | 161 | `b33059c3eabb2306` |
-| 234HiddenLocked | 186 | `9e993da044cc4787` |
+| 231SketchFacePlane | 61 | `f1c90fa444202ba8` |
+| 232SketchMidpointOnFace | 86 | `3831ae3ce6d3cfbf` |
+| 233SolidLoftShell | 161 | `b9a4c95c2b1980f3` |
+| 234HiddenLocked | 186 | `80cdea34b7ad56f1` |
 
 ## Journal
 
@@ -55,14 +55,14 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 12 ms
-- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Block1 · New body · 13 ms
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 0 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShellsRecovery.solidarc
 - Rectangle1 · 8 ms
-- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 8 ms
-- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle2 · 8 ms
 - Selected sketch Circle1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Circle2 · 2 selected · L lofts the picks in order · the gizmo moves / turns them

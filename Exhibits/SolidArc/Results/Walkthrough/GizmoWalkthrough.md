@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 323 frames · 25.2063 s · slowest frame 468.713 ms
+- Frame: 1600 x 900 · 323 frames · 26.6078 s · slowest frame 498.168 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/GizmoWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,13 +44,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 218GizmoMove | 64 | `2b9d3cff1ffee929` |
-| 219GizmoCombined | 103 | `0447145447522046` |
-| 220GizmoScaled | 143 | `37859299ec4934c8` |
-| 221GizmoFace | 169 | `f0e19763f4eca50e` |
-| 222GizmoFaceRotate | 215 | `3d27964de7185a42` |
-| 223GizmoSketch | 286 | `18e7dd385fa99a90` |
-| 224GizmoLoft | 323 | `5e60ee0f7bd39926` |
+| 218GizmoMove | 64 | `e8a20a0edc28dd32` |
+| 219GizmoCombined | 103 | `7b70823422eac266` |
+| 220GizmoScaled | 143 | `4c5feb0855273a72` |
+| 221GizmoFace | 169 | `f116e6960e2229fa` |
+| 222GizmoFaceRotate | 215 | `f88befc50edb5e8d` |
+| 223GizmoSketch | 286 | `c8d2e52d680fe8af` |
+| 224GizmoLoft | 323 | `835d0e078a74a100` |
 
 ## Journal
 
@@ -84,9 +84,9 @@
 - New document (previous recovery copy kept)
 - Gizmo: move + rotate
 - Gizmo: move
-- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 0 ms
-- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle2 · 0 ms
 - Selected sketch Circle2 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Move (Circle2) · 0 ms

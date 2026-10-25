@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 386 frames · 40.185 s · slowest frame 2367.17 ms
+- Frame: 1600 x 900 · 386 frames · 40.5869 s · slowest frame 2198.4 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -38,10 +38,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 155 | `f898efb7038ec13e` |
-| 71ZebraG2 | 216 | `1dfef570fb694897` |
-| 72DeviationMap | 262 | `bead7404958110da` |
-| 73ZebraMirrored | 386 | `039294ce0bef841c` |
+| 70ZebraG0 | 155 | `d990c3a7c9db7458` |
+| 71ZebraG2 | 216 | `38cc527752ea449b` |
+| 72DeviationMap | 262 | `cef304c081d1bbe2` |
+| 73ZebraMirrored | 386 | `261a7d9e4f9da52f` |
 
 ## Journal
 
@@ -62,8 +62,8 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · 1 ms
-- Lofted 4 curve(s) into a panel (sound) · 2 panel(s) · open sections stay a sheet · 1 ms
+- Loft2 · 4 sections · 2 ms
+- Lofted 4 curve(s) into a panel (sound) · 2 panel(s) · open sections stay a sheet · 2 ms
 - Selection cleared
 - Zebra on · 64 stripes · 5818 triangles
 - View Top

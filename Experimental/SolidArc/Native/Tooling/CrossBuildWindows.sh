@@ -37,6 +37,7 @@ done
 #                                                    CONFIGURE AND BUILD
 #------------------------------------------------------------------------------------------------------------------------
 Python="${SOLIDARC_FONT_PYTHON:-$RepositoryRoot/_ClaudeScratch/FontVenv/bin/python}"
+[ -x "$Python" ] || Python="$RepositoryRoot/_ClaudeScratch/.venv/bin/python"                   # Font tools also live in the build venv
 cmake -S "$Frontier" -B "$Build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_TOOLCHAIN_FILE="$RepositoryRoot/Experimental/SolidArc/Native/Tooling/WindowsZigToolchain.cmake" \
       -DSOLIDARC_ZIG_TOOLS="$Tools" -DPython3_EXECUTABLE="$Python" -DBUILD_TESTING=OFF \

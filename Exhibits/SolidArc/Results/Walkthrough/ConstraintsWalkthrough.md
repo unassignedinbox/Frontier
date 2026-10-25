@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 460 frames · 36.602 s · slowest frame 492.093 ms
+- Frame: 1600 x 900 · 460 frames · 35.2971 s · slowest frame 489.563 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,17 +85,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `82646233326c1fe9` |
-| 123ConstrainFull | 174 | `892f6b73bb8c65f8` |
-| 124ConstrainConflict | 202 | `763e850e71be6d73` |
-| 125ConstrainEdit | 240 | `e37c1f4d3f322e72` |
-| 126ConstrainDragging | 275 | `170d1cb7d2969835` |
-| 127ConstrainAngle | 454 | `c0880f06cbef3992` |
+| 122ConstrainOpen | 109 | `e99498d95fed458a` |
+| 123ConstrainFull | 174 | `7d250cb2dd979b6d` |
+| 124ConstrainConflict | 202 | `f5199192c731fc62` |
+| 125ConstrainEdit | 240 | `d890ed5634073bc9` |
+| 126ConstrainDragging | 275 | `fd3c97066519f491` |
+| 127ConstrainAngle | 454 | `20c796eef86dc4cc` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
@@ -106,7 +106,7 @@
 - Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 3 · Line1 · 11 ms
+- Constrain Rectangle1: Length 3 · Line1 · 10 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
@@ -129,12 +129,12 @@
 - Drag Line2.End of Rectangle1 · 22 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstraintsRecovery.solidarc
 - Line1 · 15 ms
 - Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 16 ms
+- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 15 ms
 - Picked Line1
 - Constrain Line1: Horizontal · Line1 · 15 ms
 - Picked Line1
@@ -144,9 +144,9 @@
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 16 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 15 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
-- Constrain Line1: Equal length · Line1 · Line2 · 18 ms
+- Constrain Line1: Equal length · Line1 · Line2 · 15 ms
 - Constrain ended

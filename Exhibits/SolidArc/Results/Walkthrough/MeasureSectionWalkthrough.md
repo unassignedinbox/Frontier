@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 123 frames · 16.1402 s · slowest frame 699.148 ms
+- Frame: 1600 x 900 · 123 frames · 15.1199 s · slowest frame 668.807 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MeasureSectionWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -42,14 +42,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 152MeasureBody | 10 | `df08f4ca3157f5f5` |
-| 153MeasureFace | 22 | `e632c81248b50660` |
-| 154MeasureDistance | 31 | `7383a9d5ba8ca8f8` |
-| 155MeasureEdges | 50 | `5d7b2903126e720f` |
-| 156SectionY | 65 | `f63d5e2de5485fde` |
-| 157SectionCapHover | 81 | `276b120e852dd5bc` |
-| 158SectionX | 108 | `fb7f5f2c1bfca59c` |
-| 159SectionFlipped | 117 | `362c2fe716280feb` |
+| 152MeasureBody | 10 | `3630a1097c8aa45d` |
+| 153MeasureFace | 22 | `f5901d4a2ea1bc57` |
+| 154MeasureDistance | 31 | `453fd691d6c38f5c` |
+| 155MeasureEdges | 50 | `98c7a6d3fa8191bf` |
+| 156SectionY | 65 | `d1a7ef721d475667` |
+| 157SectionCapHover | 81 | `36787d25fbcac960` |
+| 158SectionX | 108 | `01c99a2900adc915` |
+| 159SectionFlipped | 117 | `2183d9d680426a38` |
 
 ## Journal
 

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 531 frames · 45.2438 s · slowest frame 1273.51 ms
+- Frame: 1600 x 900 · 531 frames · 44.7156 s · slowest frame 1373.55 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/TrimSplitWalkthrough.txt
 - Expectations: 54 / 54 passed
 
@@ -64,27 +64,27 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 102CutLine | 116 | `b2adb859c80f077e` |
-| 103CutRemoved | 136 | `0fd5d99aec4ad29a` |
-| 104CutCore | 182 | `a22fee1b230c3f53` |
-| 105CutHole | 190 | `57419ddb13dfb585` |
-| 106PanelCut | 345 | `4a4ffc795c9a158d` |
-| 107PanelTrimmed | 353 | `bec8dd77c164d2a9` |
-| 108TrimHover | 422 | `5ff1bf9c93600941` |
-| 109TrimStar | 479 | `0f5132aa45d85fbf` |
-| 110StarExtruded | 531 | `cd5c1f4550a611c9` |
+| 102CutLine | 116 | `e91ea4c4451ac6af` |
+| 103CutRemoved | 136 | `09575856d6753caa` |
+| 104CutCore | 182 | `99de5eaf916bc2f2` |
+| 105CutHole | 190 | `bafe3f04f7f60171` |
+| 106PanelCut | 345 | `79a0697f204cf483` |
+| 107PanelTrimmed | 353 | `f7fb1879528adb84` |
+| 108TrimHover | 422 | `3273b247b221a5ce` |
+| 109TrimStar | 479 | `620c1e48b8dc3471` |
+| 110StarExtruded | 531 | `be54c6678268e22d` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Rectangle1 · New · 7 ms
 - Selection cleared
 - Cut (C): focus a sketch step or select a curve (the cutter), pick the body in mode 4 (else the active body)
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line1 · 5 ms
 - Cut (Extrude1 by Line1) · 275 ms
 - View Isometric
@@ -92,13 +92,13 @@
 - Remove (Cut1) · 6 ms
 - Undo
 - Redo
-- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 6 ms
-- Cut (Extrude1 by Circle1) · 78 ms
+- Cut (Extrude1 by Circle1) · 77 ms
 - View Isometric
 - Remove (Cut2) · 15 ms
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 3 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
@@ -112,15 +112,15 @@
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected
 - Loft1 · 6 sections · 1 ms
 - Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
-- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/TrimSplitRecovery.solidarc
 - Curve1 · Hermite · 1 ms
-- Cut (Loft1 by Curve1) · 1107 ms
+- Cut (Loft1 by Curve1) · 1202 ms
 - View Isometric
 - Framed the document (Space)
-- Remove (Cut1) · 28 ms
+- Remove (Cut1) · 26 ms
 - New document (previous recovery copy kept)
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/TrimSplitRecovery.solidarc
 - Line1 · 0 ms
 - Trim: click the piece of a curve to remove (between its crossings) · Esc ends

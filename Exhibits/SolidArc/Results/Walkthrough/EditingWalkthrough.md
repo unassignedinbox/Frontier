@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 490 frames · 41.8115 s · slowest frame 497.193 ms
+- Frame: 1600 x 900 · 490 frames · 38.3106 s · slowest frame 460.67 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EditingWalkthrough.txt
 - Expectations: 76 / 76 passed
 
@@ -23,7 +23,7 @@
 | 66 | `steps == 3` | 3 | 🟢 |
 | 67 | `volume ~ 2` | 2 | 🟢 |
 | 68 | `sound == 1` | 1 | 🟢 |
-| 69 | `status contains Move` | Move (Extrude1) · 8 ms | 🟢 |
+| 69 | `status contains Move` | Move (Extrude1) · 7 ms | 🟢 |
 | 78 | `transform-readout contains Rotate z 45` | Rotate z 45° · typed 45 | 🟢 |
 | 81 | `transform-commits == 2` | 2 | 🟢 |
 | 82 | `steps == 4` | 4 | 🟢 |
@@ -86,22 +86,22 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 98 | `607e17c0bcfed4b5` |
-| 112Rotate | 149 | `1e448cd7f9350b9a` |
-| 113Scale | 187 | `eaeb78c2121a9d63` |
-| 114Duplicate | 216 | `21d8d71fc5ad66bb` |
-| 115Paste | 235 | `97d8cd5cb45f4d1b` |
-| 116Hide | 243 | `3a2bcdb2e048822a` |
-| 117InvertHidden | 280 | `9948630ee5b32ead` |
-| 118Join | 372 | `195e387d6d480eb8` |
-| 119OffsetPreview | 414 | `f28d5d98ac4b889d` |
-| 120PipePreview | 476 | `81b051597199042f` |
-| 121Pipe | 490 | `df67fb9a60bc7eff` |
+| 111MovePreview | 98 | `9cb6b6ef35943161` |
+| 112Rotate | 149 | `074b7909a02ee0f2` |
+| 113Scale | 187 | `f06bb8996a7fe5df` |
+| 114Duplicate | 216 | `54a21098147f15b0` |
+| 115Paste | 235 | `376aa1838351c4fd` |
+| 116Hide | 243 | `bda8296f9a31d4bf` |
+| 117InvertHidden | 280 | `8412994f39d76e08` |
+| 118Join | 372 | `c9a4aba76614fd09` |
+| 119OffsetPreview | 414 | `cf69aeec89e68f1c` |
+| 120PipePreview | 476 | `00d44d932c2f3e00` |
+| 121Pipe | 490 | `737d1a993f0a9c84` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
@@ -111,7 +111,7 @@
 - Selected Extrude1 (6 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Move (Extrude1) · 8 ms
+- Move (Extrude1) · 7 ms
 - Rotate 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Rotate (Extrude1) · 7 ms
 - View Isometric
@@ -123,7 +123,7 @@
 - Scale cancelled
 - Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Duplicate (Extrude1) · 21 ms
+- Duplicate (Extrude1) · 18 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
 - Remove (Extrude1Copy1) · 7 ms
@@ -136,10 +136,10 @@
 - Undo
 - Unhide all · 0 hidden
 - New document (previous recovery copy kept)
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
 - Line1 · 0 ms
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line2 · 0 ms
 - Join (Line2, Line1) · 0 ms
 - Extrude Line2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
@@ -147,10 +147,10 @@
 - Extrude1 · Line2 · New · 5 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
 - Offset Line2 by 0.25 · 3 ms
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line1 · 3 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric
-- Pipe r 0.2 along Line1 · 14 ms
+- Pipe r 0.2 along Line1 · 11 ms
 - Framed the document (Space)

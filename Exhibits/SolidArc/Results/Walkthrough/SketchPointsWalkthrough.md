@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 319 frames · 25.2674 s · slowest frame 459.094 ms
+- Frame: 1600 x 900 · 319 frames · 24.4877 s · slowest frame 479.649 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
@@ -48,36 +48,36 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 23 | `500c3f9f92f36fc5` |
-| 226SketchPoints | 204 | `1e03ce131fd5de88` |
-| 227PointDragLive | 222 | `6ec31bc2a061d4bd` |
-| 228PointGizmoLive | 245 | `d38dc03865a1c457` |
-| 229PointsGizmoAll | 278 | `ff731ed631f9cfde` |
-| 230BodyScaleLive | 308 | `b4138208781ef744` |
+| 225SketchTools | 23 | `87a923c915092289` |
+| 226SketchPoints | 204 | `139591497b5c470e` |
+| 227PointDragLive | 222 | `d1b49240ec43b5ff` |
+| 228PointGizmoLive | 245 | `6aed78d4bcdea0e6` |
+| 229PointsGizmoAll | 278 | `de2bea98e497fd3a` |
+| 230BodyScaleLive | 308 | `505d65cb41e9f357` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line: click the start, then the end · Esc aborts
 - Line1 · 0 ms
-- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Curve · Bezier: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Curve1 · Bezier · 0 ms
-- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Curve · NURBS: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Curve2 · NURBS · 0 ms
-- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Curve · Cubic spline: click points · 1-4 switch form · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
 - Curve aborted (document untouched)
-- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 8 ms
+- Extrude1 · Rectangle1 · New · 7 ms
 - Drag Line2.End of Rectangle1 · 10 ms
 - Drag Line2.End of Rectangle1 · 10 ms
 - Drag Line2.End of Rectangle1 · 15 ms

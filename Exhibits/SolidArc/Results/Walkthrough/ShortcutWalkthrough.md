@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 263 frames · 25.2207 s · slowest frame 468.268 ms
+- Frame: 1600 x 900 · 263 frames · 26.4561 s · slowest frame 522.644 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
 - Expectations: 73 / 73 passed
 
@@ -83,9 +83,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `5681f10c60ad5257` |
-| 21TangentChain | 144 | `992c335e5bb34d9e` |
-| 20ShortcutExtrude | 231 | `e09137f5c1ddcfb9` |
+| 19BevelSignChamfer | 64 | `03c965fccd9e6714` |
+| 21TangentChain | 144 | `d5413935f2c5b290` |
+| 20ShortcutExtrude | 231 | `3f6700ee58e7b281` |
 
 ## Journal
 
@@ -107,7 +107,7 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShortcutRecovery.solidarc
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 46 ms
+- Delete Fillet2 · 44 ms
 - Selection cleared
 - Framed the document (Space)
 - X-ray on · faces 45 % · hidden edges pickable
@@ -119,7 +119,7 @@
 - ExtrudeFaces 0.5 on 1 face(s) · 94 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 98 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 100 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: Difference
 - Cylinder aborted (document untouched)
