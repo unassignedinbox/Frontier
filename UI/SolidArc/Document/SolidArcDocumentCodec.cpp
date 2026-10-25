@@ -134,6 +134,7 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("PlaneYAxis", EncodeVector(Step.Plane.YAxis));
         Table.insert("PlaneZAxis", EncodeVector(Step.Plane.ZAxis));
         Table.insert("Elevation", EncodeValue(Step.Elevation));
+        if (!Step.FillCondition) Table.insert("Fill", false);                                // Absent: filled (older files)
         Table.insert("Sketch", EncodeSketch(Step.Sketch));
         break;
     case FeatureStepKind::Extrude:
@@ -251,6 +252,9 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("PlacementZ", EncodeVector(Step.Placement.ColumnZ));
         Table.insert("PlacementShift", EncodeVector(Step.Placement.Shift));
         if (!Step.Source.empty()) Table.insert("Source", Step.Source);                     // Paste: the copy-time step
+        break;
+    case FeatureStepKind::Flip:
+        // Only the body key (Target, below): the sheet is turned over as it stands.
         break;
     case FeatureStepKind::Import:
         // The kernel's canonical STEP text of the body (millimetres) and the model unit it is read at.
@@ -622,7 +626,7 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Import)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer SolidArc?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Flip)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer SolidArc?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }
@@ -632,6 +636,7 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             Step.Plane.YAxis    = DecodeVector(View["PlaneYAxis"], Step.Plane.YAxis);
             Step.Plane.ZAxis    = DecodeVector(View["PlaneZAxis"], Step.Plane.ZAxis);
             Step.Elevation      = DecodeValue(View["Elevation"]);
+            Step.FillCondition  = View["Fill"].value_or(true);
             Step.Sketch         = DecodeSketch(View["Sketch"]);
             Step.Profile        = View["Profile"].value_or(std::string{});
             Step.Extent         = DecodeValue(View["Extent"]);

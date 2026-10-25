@@ -17,6 +17,7 @@
 #include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
 #include "Engine/GeometryProcessing/Sketch/SketchCorner.h"
 #include "Engine/GeometryProcessing/Sketch/SketchEditing.h"
+#include "Engine/GeometryProcessing/Sketch/SketchRegion.h"
 #include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
 #include "Engine/GeometryProcessing/Topology/ModelPartition.h"
 
@@ -105,6 +106,7 @@ struct SolidArcDrawingRequest
     int                            Sides           = 6;                                      // [-]   - Polygon sides (3 … 64)
     bool                           PlaneCondition  = false;                                  // [-]   - Plane below replaces GridPlane (drawn on a body face)
     GeometryProcessing::OrthonormalFrame     Plane           = {};                                     // [len] - Face plane (origin, x̂, ŷ, n̂) when PlaneCondition
+    bool                           FillCondition   = false;                                  // [-]   - Closed loops start filled (Plasticity: unfilled until F / Fill)
 };
 
 // 📝 Selection is stored as persistent names, so it survives regeneration whenever the names still resolve.
@@ -140,6 +142,23 @@ struct SolidArcTrimRequest
     std::string       Sketch = {};                                                           // [-]   - Sketch step label
     int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
     GeometryProcessing::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
+};
+
+// 📝 Fill tool: the closed region under Pick (coordinates of Sketch's plane) among Sketch and every shown sketch coplanar
+//    with it.
+struct SolidArcRegionRequest
+{
+    std::string                 Sketch = {};                                                 // [-]   - Sketch step whose plane carries Pick
+    GeometryProcessing::Vector2 Pick   = {};                                                 // [len] - Pointer on that plane
+};
+
+struct SolidArcRegionPreview
+{
+    GeometryProcessing::SketchRegion     Region      = {};                                   // [-] - Loops in Plane coordinates
+    GeometryProcessing::OrthonormalFrame Plane       = {};                                   // [-] - Plane of Region (elevation applied)
+    std::vector<std::string>             Sources     = {};                                   // [-] - Sketch label per input segment
+    std::string                          WholeSketch = {};                                   // [-] - Region is exactly this sketch's own loops
+    std::string                          Refusal     = {};                                   // [-] - Why no region
 };
 
 // Plasticity H family: H hides the selected bodies, Shift+H every other body, Alt+H shows all, Ctrl+H swaps shown and hidden.
@@ -412,6 +431,20 @@ struct SolidArcJointOrigin
 
 // Outliner eye on a sketch / space curve: out of view, picking and snapping (lofts and extrudes still read it).
 [[nodiscard]] SolidArcCommandOutcome ToggleSolidArcCurveVisibility(SolidArcDocument& Document, const std::string& Label);
+
+// 💡 Fill on / off for a sketch (Inspector toggle, F): filled closed loops extrude into solids, unfilled ones into walls
+//    of zero thickness (an open sheet). Filling an open sketch is refused. One undo entry, regenerates.
+[[nodiscard]] SolidArcCommandOutcome FillSolidArcSketch(SolidArcDocument& Document, const std::string& Sketch, bool FillCondition);
+
+// 💡 Fill tool: the region under the pointer. A region that is exactly one sketch's own loops fills that sketch; any other
+//    (a lens of two circles, a crescent, a cell of crossing lines) becomes a new filled sketch "Fill<n>" holding its exact
+//    boundary pieces. One undo entry, regenerates.
+[[nodiscard]] SolidArcRegionPreview  PreviewSolidArcRegion(const SolidArcDocument& Document, const SolidArcRegionRequest& Request);
+[[nodiscard]] SolidArcCommandOutcome FillSolidArcRegion(SolidArcDocument& Document, const SolidArcRegionRequest& Request);
+
+// 💡 Flip normals: each sheet body (loft panels, walls) turned over by a Flip step; flipping a body whose last step is
+//    its own Flip removes that step instead (a toggle). Solids are refused (their faces point out by definition).
+[[nodiscard]] SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys);
 
 // Outliner lock on a body, sketch or space curve: stays in view but cannot be picked, dragged or moved (appearance).
 [[nodiscard]] SolidArcCommandOutcome ToggleSolidArcLock(SolidArcDocument& Document, const std::string& Key);

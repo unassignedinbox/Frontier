@@ -176,6 +176,14 @@ namespace
         return Worst;
     }
 
+    // 📝 Gates W1–W47 predate unfilled drawings (Plasticity's fresh curves): they draw filled shapes, so E still makes
+    //    solids. W48 draws unfilled ones on purpose.
+    [[nodiscard]] SolidArcCommandOutcome DrawFilledSketch(SolidArcDocument& Document, SolidArcDrawingRequest Request)
+    {
+        Request.FillCondition = true;
+        return DrawSolidArcSketch(Document, Request);
+    }
+
     [[nodiscard]] SolidArcDrawingRequest DrawingOf(SolidArcDrawingKind Kind, int GridPlane, std::vector<Vector2> Points, bool ClosedCondition = false,
                                                    bool CentreCondition = false, SketchSplineForm Form = SketchSplineForm::Hermite)
     {
@@ -369,7 +377,7 @@ int main()
         const FeatureCombination Union = FeatureCombination::Union, Difference = FeatureCombination::Difference, New = FeatureCombination::New;
         auto DrawAndExtrude = [&](SolidArcDocument& Target, const SolidArcDrawingRequest& Request, double Distance, FeatureCombination Combination)
         {
-            Expect(DrawSolidArcSketch(Target, Request));
+            Expect(DrawFilledSketch(Target, Request));
             const SolidArcCommandOutcome Outcome = ExtrudeSolidArcSketch(Target, Target.Tree.Steps.back().Label, Distance, Combination);
             Expect(Outcome);
             return Outcome;
@@ -398,12 +406,12 @@ int main()
             // Refusals leave the document untouched.
             const size_t Steps = Drawn.Tree.Steps.size();
             const double Volume = Drawn.Summary.Volume;
-            const SolidArcCommandOutcome Collinear = DrawSolidArcSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 1.0, 2.0 }, { 2.0, 2.0 } }));
-            const SolidArcCommandOutcome Coincident = DrawSolidArcSketch(Drawn, DrawingOf(Kind::Curve, 0, { { 0.0, 2.0 }, { 0.0, 2.0 }, { 1.0, 2.0 } }));
+            const SolidArcCommandOutcome Collinear = DrawFilledSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 1.0, 2.0 }, { 2.0, 2.0 } }));
+            const SolidArcCommandOutcome Coincident = DrawFilledSketch(Drawn, DrawingOf(Kind::Curve, 0, { { 0.0, 2.0 }, { 0.0, 2.0 }, { 1.0, 2.0 } }));
             const SolidArcCommandOutcome SecondBody = ExtrudeSolidArcSketch(Drawn, Drawn.Tree.Steps.front().Label, 1.0, New);
             Tally(DrawingGate, 0.0, !Collinear.AcceptedCondition && !Coincident.AcceptedCondition && !SecondBody.AcceptedCondition && Drawn.Tree.Steps.size() == Steps &&
                   Drawn.Summary.Volume == Volume, "refused untouched: \"" + Collinear.Refusal + "\" · \"" + Coincident.Refusal + "\" · \"" + SecondBody.Refusal + "\"");
-            Expect(DrawSolidArcSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 2.0, 2.0 }, { 1.0, 2.5 } })));
+            Expect(DrawFilledSketch(Drawn, DrawingOf(Kind::Arc, 0, { { 0.0, 2.0 }, { 2.0, 2.0 }, { 1.0, 2.5 } })));
             const SolidArcCommandOutcome OpenArc = ExtrudeSolidArcSketch(Drawn, Drawn.Tree.Steps.back().Label, 1.0, Union);
             Tally(DrawingGate, 0.0, !OpenArc.AcceptedCondition && Drawn.Summary.Volume == Volume, "open arc profile refused: \"" + OpenArc.Refusal + "\"");
 
@@ -1254,7 +1262,7 @@ int main()
         {
             SolidArcDrawingRequest Drawing;
             Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.CentreCondition = CentreCondition;
-            const SolidArcCommandOutcome Outcome = DrawSolidArcSketch(Target, Drawing);
+            const SolidArcCommandOutcome Outcome = DrawFilledSketch(Target, Drawing);
             return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
         };
 
@@ -1380,7 +1388,7 @@ int main()
         {
             SolidArcDrawingRequest Drawing;
             Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.ClosedCondition = ClosedCondition; Drawing.CentreCondition = CentreCondition;
-            const SolidArcCommandOutcome Outcome = DrawSolidArcSketch(Target, Drawing);
+            const SolidArcCommandOutcome Outcome = DrawFilledSketch(Target, Drawing);
             return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
         };
         auto CurvesOf = [](const SolidArcDocument& Target, const std::string& Label)
@@ -1521,7 +1529,7 @@ int main()
         {
             SolidArcDrawingRequest Drawing;
             Drawing.Kind = Kind; Drawing.Points = std::move(Points);
-            const SolidArcCommandOutcome Outcome = DrawSolidArcSketch(Target, Drawing);
+            const SolidArcCommandOutcome Outcome = DrawFilledSketch(Target, Drawing);
             return Outcome.AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
         };
         auto Hits = [](const SolidArcDocument& Target, std::array<double, 3> At)
@@ -1683,7 +1691,7 @@ int main()
         SolidArcDocument Plate = CreateSolidArcDocument("Constraints");
         SolidArcDrawingRequest Drawing;
         Drawing.Kind = SolidArcDrawingKind::Rectangle; Drawing.Points = { { 0.0, 0.0 }, { 2.0, 1.0 } };
-        const SolidArcCommandOutcome Drawn = DrawSolidArcSketch(Plate, Drawing);
+        const SolidArcCommandOutcome Drawn = DrawFilledSketch(Plate, Drawing);
         const std::string Sketch = Drawn.AcceptedCondition ? Plate.Tree.Steps.back().Label : std::string{};
         const SolidArcCommandOutcome Raised = ExtrudeSolidArcSketch(Plate, Sketch, 1.0, FeatureCombination::Separate);
         const std::string Key = Raised.AcceptedCondition ? Plate.Tree.Steps.back().Label : std::string{};
@@ -1800,7 +1808,7 @@ int main()
         {
             SolidArcDrawingRequest Drawing;
             Drawing.Kind = SolidArcDrawingKind::Rectangle; Drawing.Points = { Low, High };
-            return DrawSolidArcSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+            return DrawFilledSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
         };
         auto Scientific = [](double Value) { char Text[32]; std::snprintf(Text, sizeof(Text), "%.3e", Value); return std::string(Text); };
         const SketchPick Bottom = { SketchPickKind::Curve, 0 };
@@ -1867,11 +1875,11 @@ int main()
         SolidArcDocument Joint = CreateSolidArcDocument("Spline joint");
         SolidArcDrawingRequest Lead;
         Lead.Kind = SolidArcDrawingKind::Line; Lead.Points = { { -2.0, 0.5 }, { 0.0, 0.0 } };
-        Expect(DrawSolidArcSketch(Joint, Lead));
+        Expect(DrawFilledSketch(Joint, Lead));
         const std::string LineSketch = Joint.Tree.Steps.back().Label;
         SolidArcDrawingRequest Sweep;
         Sweep.Kind = SolidArcDrawingKind::Curve; Sweep.Form = SketchSplineForm::Nurbs; Sweep.Points = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, 1.2 }, { 3.0, 0.4 } };
-        Expect(DrawSolidArcSketch(Joint, Sweep));
+        Expect(DrawFilledSketch(Joint, Sweep));
         const std::string CurveSketch = Joint.Tree.Steps.back().Label;
         const SolidArcCommandOutcome Joined = JoinSolidArcSketches(Joint, { LineSketch, CurveSketch });
         int LineCurve = -1, SplineCurve = -1;
@@ -1905,11 +1913,11 @@ int main()
 
         // W27 ② refusals: G2 on a natural cubic spline, L on a spline and a curve that do not meet; save → load → save byte-equal
         SolidArcDocument Natural = CreateSolidArcDocument("Natural");
-        Expect(DrawSolidArcSketch(Natural, Lead));
+        Expect(DrawFilledSketch(Natural, Lead));
         const std::string NaturalSketch = Natural.Tree.Steps.back().Label;
         SolidArcDrawingRequest Cubic = Sweep;
         Cubic.Form = SketchSplineForm::CubicSpline;
-        Expect(DrawSolidArcSketch(Natural, Cubic));
+        Expect(DrawFilledSketch(Natural, Cubic));
         Expect(JoinSolidArcSketches(Natural, { NaturalSketch, Natural.Tree.Steps.back().Label }));
         const SketchConstraintProposal NaturalProposal = ProposeSketchConstraint(DiagnoseSolidArcSketch(Natural, NaturalSketch).Sketch, { { SketchPickKind::Curve, SplineCurve }, { SketchPickKind::Curve, LineCurve } }, SketchConstraintVerb::Curvature);
         Tally(SplineGate, 0.0, !NaturalProposal.Refusal.empty() && NaturalProposal.Refusal.find("zero curvature") != std::string::npos, "refused: " + NaturalProposal.Refusal);
@@ -1927,7 +1935,7 @@ int main()
         Expect(ConstrainSolidArcSketch(Linked, Source, Propose(Linked, Source, { Side }, SketchConstraintVerb::Dimension, 2.0)));
         SolidArcDrawingRequest Spoke;
         Spoke.Kind = SolidArcDrawingKind::Line; Spoke.Points = { { 5.0, 3.0 }, { 6.0, 4.0 } };
-        Expect(DrawSolidArcSketch(Linked, Spoke));
+        Expect(DrawFilledSketch(Linked, Spoke));
         const std::string Follower = Linked.Tree.Steps.back().Label;
         const std::vector<std::string> Sources = SolidArcLinkSources(Linked, Follower);
         const int Unlinked = Freedom(Linked, Follower);
@@ -2005,7 +2013,7 @@ int main()
         {
             SolidArcDrawingRequest Drawing;
             Drawing.Kind = Kind; Drawing.Points = std::move(Points); Drawing.GridPlane = GridPlane;
-            return DrawSolidArcSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
+            return DrawFilledSketch(Target, Drawing).AcceptedCondition ? Target.Tree.Steps.back().Label : std::string{};
         };
         auto RoundTrip = [](const SolidArcDocument& Source)
         {
@@ -2563,10 +2571,10 @@ int main()
         Post.Kind = SolidArcConstructKind::Cylinder; Post.Position = { 6.0, 1.0, 0.0 }; Post.Radius = 0.5; Post.Height = 1.0;
         Post.Combination = FeatureCombination::Separate;
         Expect(ConstructSolidArcPrimitive(Snaps, Post));
-        Expect(DrawSolidArcSketch(Snaps, DrawingOf(SolidArcDrawingKind::Line, 0, { { -3.0, -2.0 }, { -1.0, -4.0 } })));
-        Expect(DrawSolidArcSketch(Snaps, DrawingOf(SolidArcDrawingKind::Line, 0, { { -3.0, -4.0 }, { -1.0, -2.0 } })));
-        Expect(DrawSolidArcSketch(Snaps, DrawingOf(SolidArcDrawingKind::Circle, 0, { { -5.0, -3.0 }, { -4.2, -3.0 } }, false, true)));
-        Expect(DrawSolidArcSketch(Snaps, DrawingOf(SolidArcDrawingKind::Curve, 0, { { -8.0, -1.0 }, { -7.0, 0.5 }, { -6.0, -0.5 }, { -5.0, 1.0 } })));
+        Expect(DrawFilledSketch(Snaps, DrawingOf(SolidArcDrawingKind::Line, 0, { { -3.0, -2.0 }, { -1.0, -4.0 } })));
+        Expect(DrawFilledSketch(Snaps, DrawingOf(SolidArcDrawingKind::Line, 0, { { -3.0, -4.0 }, { -1.0, -2.0 } })));
+        Expect(DrawFilledSketch(Snaps, DrawingOf(SolidArcDrawingKind::Circle, 0, { { -5.0, -3.0 }, { -4.2, -3.0 } }, false, true)));
+        Expect(DrawFilledSketch(Snaps, DrawingOf(SolidArcDrawingKind::Curve, 0, { { -8.0, -1.0 }, { -7.0, 0.5 }, { -6.0, -0.5 }, { -5.0, 1.0 } })));
         const SolidArcScene   Scene     = BuildSolidArcScene(Snaps);
         SolidArcSnapCatalogue Catalogue = CatalogueSolidArcSnaps(Snaps, Scene);
         OrbitCamera Camera;
@@ -3443,7 +3451,7 @@ int main()
         SolidArcDocument Drawn = CreateSolidArcDocument("Polygon");
         SolidArcDrawingRequest Pentagon;
         Pentagon.Kind = SolidArcDrawingKind::Polygon; Pentagon.Sides = 5; Pentagon.Points = { { 1.0, 1.0 }, { 1.0, 1.8 } };
-        Expect(DrawSolidArcSketch(Drawn, Pentagon));
+        Expect(DrawFilledSketch(Drawn, Pentagon));
         const std::string PentagonLabel = Drawn.Tree.Steps.back().Label;
         const SolidArcCommandOutcome Pushed = ExtrudeSolidArcSketch(Drawn, PentagonLabel, 0.5, FeatureCombination::Separate, {});
         const double PentagonExpected = PrismVolume(5, 0.8, 0.5);
@@ -3548,7 +3556,7 @@ int main()
         const auto Drawn = [&](SolidArcDocument& Document, SolidArcDrawingRequest Request, double Height)
         {
             Request.GridPlane = 0;
-            Expect(DrawSolidArcSketch(Document, Request));
+            Expect(DrawFilledSketch(Document, Request));
             const std::string Label = Document.Tree.Steps.back().Label;
             if (Height != 0.0) Expect(PlaceSolidArcSketches(Document, { Label }, TranslationMap({ 0.0, 0.0, Height }), "Move"));
             return Label;
@@ -3792,7 +3800,7 @@ int main()
 
         // ① a 2 × 1 rectangle extruded 1: the corner (2, 1) dragged to (3, 1) (one point: the direct drag and the gizmo agree)
         SolidArcDocument Plate = CreateSolidArcDocument("Points");
-        Expect(DrawSolidArcSketch(Plate, DrawingOf(Kind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        Expect(DrawFilledSketch(Plate, DrawingOf(Kind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
         const std::string Sketch = Plate.Tree.Steps.back().Label;
         Expect(ExtrudeSolidArcSketch(Plate, Sketch, 1.0, FeatureCombination::New));
         const size_t History = Plate.UndoEntries.size();
@@ -3830,7 +3838,7 @@ int main()
         {
             SolidArcDocument Curves = CreateSolidArcDocument("Points");
             const std::vector<Vector2> Poles = { { 0.0, 0.0 }, { 0.5, 1.0 }, { 1.5, 1.0 }, { 2.0, 0.0 } };
-            Expect(DrawSolidArcSketch(Curves, DrawingOf(Kind::Curve, 0, Poles, false, false, SketchSplineForm::Bezier)));
+            Expect(DrawFilledSketch(Curves, DrawingOf(Kind::Curve, 0, Poles, false, false, SketchSplineForm::Bezier)));
             const std::string Label  = Curves.Tree.Steps.back().Label;
             const SketchModel Before = Solved(Curves, Label);
             std::vector<int>     Picked;
@@ -3854,7 +3862,7 @@ int main()
         // ⑥ a closed triangle (0, 0) (2, 0) (1, 1.5) extruded 1 (V 1.5), its points scaled × 2 along x about (1, 0.5) → V 3
         {
             SolidArcDocument Prism = CreateSolidArcDocument("Points");
-            Expect(DrawSolidArcSketch(Prism, DrawingOf(Kind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 }, { 1.0, 1.5 } }, true)));
+            Expect(DrawFilledSketch(Prism, DrawingOf(Kind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 }, { 1.0, 1.5 } }, true)));
             const std::string Label = Prism.Tree.Steps.back().Label;
             Expect(ExtrudeSolidArcSketch(Prism, Label, 1.0, FeatureCombination::New));
             const double      Low    = Prism.Summary.Volume;
@@ -3882,7 +3890,7 @@ int main()
         {
             SolidArcDrawingRequest Request;
             Request.Kind = SolidArcDrawingKind::Circle; Request.CentreCondition = true; Request.Points = { Centre, { Centre.X + Radius, Centre.Y } };
-            Expect(DrawSolidArcSketch(Document, Request));
+            Expect(DrawFilledSketch(Document, Request));
             const std::string Label = Document.Tree.Steps.back().Label;
             if (Height != 0.0) Expect(PlaceSolidArcSketches(Document, { Label }, TranslationMap({ 0.0, 0.0, Height }), "Move"));
             return Label;
@@ -3921,9 +3929,9 @@ int main()
         // ④ open sections (two lines) refuse the solid with the file and history untouched, then loft a sheet
         {
             SolidArcDocument Open = CreateSolidArcDocument("Shells");
-            Expect(DrawSolidArcSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 } })));
+            Expect(DrawFilledSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 2.0, 0.0 } })));
             const std::string Near = Open.Tree.Steps.back().Label;
-            Expect(DrawSolidArcSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 2.0, 1.0 } })));
+            Expect(DrawFilledSketch(Open, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 2.0, 1.0 } })));
             const std::string Far = Open.Tree.Steps.back().Label;
             Expect(PlaceSolidArcSketches(Open, { Far }, TranslationMap({ 0.0, 0.0, 1.0 }), "Move"));
             const std::string Before  = EncodeSolidArcDocument(Open);
@@ -3939,12 +3947,12 @@ int main()
         //    each extruded 0.5 onto the block → V 4 + 0.5 + 0.25; a skewed frame refuses atomically
         {
             SolidArcDocument Block = CreateSolidArcDocument("Faces");
-            Expect(DrawSolidArcSketch(Block, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 2.0 } })));
+            Expect(DrawFilledSketch(Block, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 2.0 } })));
             Expect(ExtrudeSolidArcSketch(Block, Block.Tree.Steps.back().Label, 1.0, FeatureCombination::New));
             SolidArcDrawingRequest Top = DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.5, 0.5 }, { 1.5, 1.5 } });
             Top.PlaneCondition = true;
             Top.Plane          = { { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
-            const SolidArcCommandOutcome OnTop = DrawSolidArcSketch(Block, Top);
+            const SolidArcCommandOutcome OnTop = DrawFilledSketch(Block, Top);
             const std::string TopLabel = Block.Tree.Steps.back().Label;
             const SolidArcCommandOutcome Raised = ExtrudeSolidArcSketch(Block, TopLabel, 0.5, FeatureCombination::Union);
             Relative = std::abs(Block.Summary.Volume - 4.5) / 4.5;
@@ -3953,7 +3961,7 @@ int main()
             SolidArcDrawingRequest Side = DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.5, 0.25 }, { 1.5, 0.75 } });
             Side.PlaneCondition = true;
             Side.Plane          = { { 2.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } };   // x̂ = ẑ × n̂, ŷ = n̂ × x̂
-            const SolidArcCommandOutcome OnSide = DrawSolidArcSketch(Block, Side);
+            const SolidArcCommandOutcome OnSide = DrawFilledSketch(Block, Side);
             const SolidArcCommandOutcome Out    = ExtrudeSolidArcSketch(Block, Block.Tree.Steps.back().Label, 0.5, FeatureCombination::Union);
             Relative = std::abs(Block.Summary.Volume - 4.75) / 4.75;
             Tally(ShellGate, Relative, OnSide.AcceptedCondition && Out.AcceptedCondition && Relative <= 1.0e-9 && Block.Summary.SoundCondition,
@@ -3961,18 +3969,18 @@ int main()
             const std::string Before = EncodeSolidArcDocument(Block);
             SolidArcDrawingRequest Skewed = Side;
             Skewed.Plane.XAxis = { 0.0, 1.0, 0.1 };
-            const SolidArcCommandOutcome Refused = DrawSolidArcSketch(Block, Skewed);
+            const SolidArcCommandOutcome Refused = DrawFilledSketch(Block, Skewed);
             Tally(ShellGate, 0.0, !Refused.AcceptedCondition && EncodeSolidArcDocument(Block) == Before, "skewed face frame refused, file untouched: " + Refused.Refusal);
         }
 
         // ⑥ hide / lock: Outliner eye on a sketch, lock on a sketch and on a body — undoable appearance entries, codec byte-equal
         {
             SolidArcDocument Figures = CreateSolidArcDocument("Figures");
-            Expect(DrawSolidArcSketch(Figures, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
+            Expect(DrawFilledSketch(Figures, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
             const std::string Plate = Figures.Tree.Steps.back().Label;
             Expect(ExtrudeSolidArcSketch(Figures, Plate, 1.0, FeatureCombination::New));
             const std::string Body = Figures.Summary.Bodies.front().Key;
-            Expect(DrawSolidArcSketch(Figures, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.0 }, { 3.5, 0.0 } }, false, true)));
+            Expect(DrawFilledSketch(Figures, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.0 }, { 3.5, 0.0 } }, false, true)));
             const std::string Round = Figures.Tree.Steps.back().Label;
             SelectSolidArcCurve(Figures, Round, false);
             SelectSolidArcName(Figures, SolidArcSelectionKind::Body, Body, true);
@@ -4012,7 +4020,7 @@ int main()
 
         // ① every corner of a 2 × 1 rectangle extruded 1, filleted r 0.25 afterwards: the extrude follows, V = 2 − (4 − π)/16
         SolidArcDocument Rounded = CreateSolidArcDocument("Rounded");
-        Expect(DrawSolidArcSketch(Rounded, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        Expect(DrawFilledSketch(Rounded, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
         const std::string Plate = Rounded.Tree.Steps.back().Label;
         Expect(ExtrudeSolidArcSketch(Rounded, Plate, 1.0, FeatureCombination::New));
         const size_t History = Rounded.UndoEntries.size();
@@ -4046,7 +4054,7 @@ int main()
         // ③ one picked corner (0, 0) chamfered 0.3: 5 lines, area 2 − 0.045, Chamfer distances on the sketch
         {
             SolidArcDocument Cut = CreateSolidArcDocument("Chamfered");
-            Expect(DrawSolidArcSketch(Cut, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+            Expect(DrawFilledSketch(Cut, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
             const std::string Sketch = Cut.Tree.Steps.back().Label;
             int Origin = -1;
             const SketchModel& Model = Cut.Regeneration.Sketches.at(Sketch);
@@ -4071,7 +4079,7 @@ int main()
             Large.Sketches = { Sketch };
             Large.Size     = 0.6;
             const SolidArcCommandOutcome TooLarge = CutSolidArcSketchCorners(Cut, Large);
-            Expect(DrawSolidArcSketch(Cut, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 5.0, 0.0 }, { 5.5, 0.0 } }, false, true)));
+            Expect(DrawFilledSketch(Cut, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 5.0, 0.0 }, { 5.5, 0.0 } }, false, true)));
             const std::string Ring = Cut.Tree.Steps.back().Label;
             const std::string WithRing = EncodeSolidArcDocument(Cut);
             SolidArcCornerRequest Centre;
@@ -4088,11 +4096,11 @@ int main()
         //    second panel turns and both sew into one sheet
         {
             SolidArcDocument Fan = CreateSolidArcDocument("Fan");
-            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 1.0, 0.0 } })));
+            Expect(DrawFilledSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 1.0, 0.0 } })));
             const std::string A = Fan.Tree.Steps.back().Label;
-            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 1, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
+            Expect(DrawFilledSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 1, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
             const std::string B = Fan.Tree.Steps.back().Label;
-            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
+            Expect(DrawFilledSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
             const std::string C = Fan.Tree.Steps.back().Label;
             const SolidArcCommandOutcome Upright = LoftSolidArcCurves(Fan, { A, B }, 0, false);
             const SolidArcCommandOutcome Level   = LoftSolidArcCurves(Fan, { A, C }, 0, false);
@@ -4122,8 +4130,8 @@ int main()
         // ① a circle r 0.5 at the corner (2, 1) of a 2 × 1 rectangle, extruded 1: trimming its outer ¾ detaches — the
         //    extrude keeps the whole circle (V π/4), the original is hidden, the inner quarter arc is a new sketch
         SolidArcDocument Detach = CreateSolidArcDocument("Detach");
-        Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
-        Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 2.0, 1.0 }, { 2.5, 1.0 } }, false, true)));
+        Expect(DrawFilledSketch(Detach, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        Expect(DrawFilledSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 2.0, 1.0 }, { 2.5, 1.0 } }, false, true)));
         const std::string Round = Detach.Tree.Steps.back().Label;
         Expect(ExtrudeSolidArcSketch(Detach, Round, 1.0, FeatureCombination::New));
         const size_t StepCount = Detach.Tree.Steps.size();
@@ -4162,7 +4170,7 @@ int main()
 
         // ③ a lone circle some extrude reads, no crossings: the whole curve goes, so the trim only hides it
         {
-            Expect(DrawSolidArcSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 6.0, 0.0 }, { 6.5, 0.0 } }, false, true)));
+            Expect(DrawFilledSketch(Detach, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 6.0, 0.0 }, { 6.5, 0.0 } }, false, true)));
             const std::string Lone = Detach.Tree.Steps.back().Label;
             Expect(ExtrudeSolidArcSketch(Detach, Lone, 1.0, FeatureCombination::Separate));
             const size_t Count  = Detach.Tree.Steps.size();
@@ -4176,9 +4184,9 @@ int main()
         //    sketch of 5 curves; extruded 1 → V 1 + 0.16π
         {
             SolidArcDocument Picked = CreateSolidArcDocument("Join");
-            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
+            Expect(DrawFilledSketch(Picked, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 1.0, 1.0 } })));
             const std::string Square = Picked.Tree.Steps.back().Label;
-            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.5 }, { 3.4, 0.5 } }, false, true)));
+            Expect(DrawFilledSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 3.0, 0.5 }, { 3.4, 0.5 } }, false, true)));
             const std::string Disc = Picked.Tree.Steps.back().Label;
             const SolidArcCommandOutcome Joined = JoinSolidArcSketches(Picked, { Square, Disc });
             const auto   Kept  = Steps(Picked, Square);
@@ -4192,7 +4200,7 @@ int main()
 
             // ⑤ join into a read sketch: the extruded square stays (hidden) for its extrude, the join is a new last step
             //    holding square + a new circle; the free circle merges away; volume unchanged; codec byte-equal
-            Expect(DrawSolidArcSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.5, 3.0 }, { 0.8, 3.0 } }, false, true)));
+            Expect(DrawFilledSketch(Picked, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.5, 3.0 }, { 0.8, 3.0 } }, false, true)));
             const std::string Ring   = Picked.Tree.Steps.back().Label;
             const size_t      Count  = Picked.Tree.Steps.size();
             const double      Volume = Picked.Summary.Volume;

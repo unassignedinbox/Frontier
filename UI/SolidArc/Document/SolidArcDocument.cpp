@@ -1009,9 +1009,71 @@ SolidArcCommandOutcome DrawSolidArcSketch(SolidArcDocument& Document, const Soli
             if (!Finite || !Square) return "the face plane is not an orthonormal right-handed frame";
             Step.Plane = Face;
         }
-        Step.Sketch = std::move(Sketch);
+        Step.Sketch        = std::move(Sketch);
+        Step.FillCondition = Request.FillCondition;
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+SolidArcCommandOutcome FillSolidArcSketch(SolidArcDocument& Document, const std::string& Sketch, bool FillCondition)
+{
+    const auto Source = Document.Captions.find(Sketch);
+    const std::string Caption = Source != Document.Captions.end() ? Source->second : Sketch;
+    return RunCommand(Document, std::string(FillCondition ? "Fill " : "Unfill ") + Caption, false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketch; });
+        if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Sketch;
+        if (Found->FillCondition == FillCondition) return Caption + (FillCondition ? " is already filled" : " is already unfilled");
+        if (FillCondition)
+        {
+            const auto Solved = Document.Regeneration.Sketches.find(Sketch);
+            if (Solved == Document.Regeneration.Sketches.end()) return Caption + " did not solve";
+            const SketchProfile Profile = ExtractSketchProfile(Solved->second);
+            if (!Profile.Refusal.empty()) return Caption + " cannot be filled: " + Profile.Refusal;
+        }
+        Found->FillCondition = FillCondition;
+        return {};
+    });
+}
+
+SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys)
+{
+    std::vector<std::string> Unique;
+    for (const std::string& Key : Keys) if (std::find(Unique.begin(), Unique.end(), Key) == Unique.end()) Unique.push_back(Key);
+    std::string Operands;
+    for (const std::string& Key : Unique) Operands += (Operands.empty() ? "" : ", ") + SolidArcBodyCaption(Document, Key);
+    return RunCommand(Document, "Flip normals (" + Operands + ")", false, [&]() -> std::string
+    {
+        if (Unique.empty()) return "pick the sheets to flip (mode 4)";
+        for (const std::string& Key : Unique)
+        {
+            const RegeneratedBody* Body = FindRegeneratedBody(Document, Key);
+            if (!Body) return "no body named " + Key;
+            if (Document.Partition && Document.Partition->Bodies.Resolve(Body->Body).Category != BodyCategory::Sheet)
+                return SolidArcBodyCaption(Document, Key) + " is a solid: only sheets (lofts, walls) turn over";
+        }
+        for (const std::string& Key : Unique)
+        {
+            // ① a Flip that is the body's last step is undone instead of stacking a second one
+            auto Last = Document.Tree.Steps.end();
+            for (auto Step = Document.Tree.Steps.begin(); Step != Document.Tree.Steps.end(); ++Step)
+                if (Step->Target == Key || Step->Label == Key) Last = Step;
+            if (Last != Document.Tree.Steps.end() && Last->Kind == FeatureStepKind::Flip && Last->Target == Key)
+            {
+                Document.Captions.erase(Last->Label);
+                Document.Tree.Steps.erase(Last);
+                continue;
+            }
+            // ② else a new Flip step
+            FeatureStep Step;
+            Step.Kind   = FeatureStepKind::Flip;
+            Step.Label  = "Flip#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Target = Key;
+            Document.Captions[Step.Label] = NextCaption(Document, "Flip");
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
         return {};
     });
 }
@@ -1543,6 +1605,79 @@ SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const So
         }
     }
     return TrimSketchCurve(SolvedSketch(Document, *Found), Request.Curve, Request.Pick, Foreign);
+}
+
+SolidArcRegionPreview PreviewSolidArcRegion(const SolidArcDocument& Document, const SolidArcRegionRequest& Request)
+{
+    SolidArcRegionPreview Preview;
+    const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Request.Sketch; });
+    if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) { Preview.Refusal = "no sketch step labelled " + Request.Sketch; return Preview; }
+    Preview.Plane = ElevatedPlane(Document.Tree, *Found);
+    // ① every drawn curve of this sketch and of the shown sketches in its plane, in its coordinates
+    std::vector<ProfileSegment> Segments;
+    std::map<std::string, int>  Drawn;                                                       // Sketch label → curves it gave
+    double Scale = 1.0;
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch) continue;
+        if (Step.Label != Request.Sketch && Document.Appearance.HiddenCurves.contains(Step.Label)) continue;
+        const OrthonormalFrame Other = ElevatedPlane(Document.Tree, Step);
+        const Vector3          Apart = Other.Origin - Preview.Plane.Origin;
+        if (std::fabs(Dot(Other.ZAxis, Preview.Plane.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Preview.Plane.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart))) continue;
+        const SketchModel& Sketch = SolvedSketch(Document, Step);
+        Scale = std::max(Scale, MeasureSketchScale(Sketch));
+        for (int Curve = 0; Curve < static_cast<int>(Sketch.Curves.size()); ++Curve)
+        {
+            if (Sketch.Curves[Curve].Construction) continue;
+            std::string    Refusal;
+            ProfileSegment Segment = ResolveSketchCurveSegment(Sketch, Curve, 1.0e-9, Refusal);
+            if (!Refusal.empty()) continue;
+            Segments.push_back(Step.Label == Request.Sketch ? std::move(Segment) : MapSegment(std::move(Segment), Other, Preview.Plane));
+            Preview.Sources.push_back(Step.Label);
+            ++Drawn[Step.Label];
+        }
+    }
+    // ② the region, and whether it is one sketch's own loops (every piece a whole curve of it, all its curves used)
+    Preview.Region = LocateSketchRegion(Segments, Request.Pick, Scale);
+    if (!Preview.Region.Refusal.empty()) { Preview.Refusal = Preview.Region.Refusal; return Preview; }
+    std::set<int> Used;
+    std::string   Owner;
+    bool          WholeCondition = true;
+    for (const std::vector<RegionPiece>& Loop : Preview.Region.Loops)
+        for (const RegionPiece& Piece : Loop)
+        {
+            const std::string& Source = Preview.Sources[Piece.Source];
+            if (Owner.empty()) Owner = Source;
+            WholeCondition = WholeCondition && Source == Owner && Piece.FromFraction <= 1.0e-9 && Piece.ToFraction >= 1.0 - 1.0e-9;
+            Used.insert(Piece.Source);
+        }
+    if (WholeCondition && static_cast<int>(Used.size()) == Drawn[Owner])
+    {
+        const auto Solved = Document.Regeneration.Sketches.find(Owner);
+        if (Solved != Document.Regeneration.Sketches.end() && ExtractSketchProfile(Solved->second).Refusal.empty()) Preview.WholeSketch = Owner;
+    }
+    return Preview;
+}
+
+SolidArcCommandOutcome FillSolidArcRegion(SolidArcDocument& Document, const SolidArcRegionRequest& Request)
+{
+    const SolidArcRegionPreview Preview = PreviewSolidArcRegion(Document, Request);
+    if (Preview.Refusal.empty() && !Preview.WholeSketch.empty()) return FillSolidArcSketch(Document, Preview.WholeSketch, true);
+    const std::string Caption = NextCaption(Document, "Fill");
+    return RunCommand(Document, "Fill region into " + Caption, false, [&]() -> std::string
+    {
+        if (!Preview.Refusal.empty()) return "Fill: " + Preview.Refusal;
+        FeatureStep Step;
+        Step.Kind          = FeatureStepKind::Sketch;
+        Step.Label         = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Plane         = Preview.Plane;
+        Step.Sketch        = ComposeRegionSketch(Preview.Region);
+        Step.FillCondition = true;
+        if (Step.Sketch.Curves.empty()) return "Fill: the region has no boundary";
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
 }
 
 SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const SolidArcTrimRequest& Request)
