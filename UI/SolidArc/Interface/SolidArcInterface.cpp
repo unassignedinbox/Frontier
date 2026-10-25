@@ -5644,7 +5644,7 @@ void LoftSelectedCurves(SolidArcWorkspaceState& State)
     }
     const bool NetworkCondition = !State.Document.Tree.Steps.empty() && State.Document.Tree.Steps.back().Kind == FeatureStepKind::Network;
     const char* Order = State.LoftContinuity == 2 ? " · G2" : State.LoftContinuity == 1 ? " · G1" : "";
-    Announce(State, Compose("%s %d curve(s) → panel%s (%s) · %d panel(s) · open sections stay a sheet · %.0f ms", NetworkCondition ? "Network of" : "Lofted", int(Curves.size()),
+    Announce(State, Compose("%s %d curve(s) into a panel%s (%s) · %d panel(s) · open sections stay a sheet · %.0f ms", NetworkCondition ? "Network of" : "Lofted", int(Curves.size()),
                             NetworkCondition ? "" : Order, State.Document.Summary.SoundCondition ? "sound" : "audit findings", int(State.Document.Regeneration.Panels.size()),
                             Outcome.Milliseconds));
 }
@@ -6500,11 +6500,13 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
             break;
         case SolidArcFigureSource::Sketch:
             // Click focuses and picks the sketch (gizmo, loft); Shift+click adds it in loft order; a second click lets go.
+            // Only a focused sketch that is still picked lets go: after a loft (which clears the picks) the focus stays,
+            // and the next click must pick it again, not drop it (the loft that seemed to ignore its first section).
             if (Intent.AdditiveCondition) PickCurve(State, Intent.Figure.Key, SolidArcPickIntent::Add);
-            else if (State.FocusedStep == Intent.Figure.Key)
+            else if (State.FocusedStep == Intent.Figure.Key && CurveOrder(State, Intent.Figure.Key) > 0)
             {
                 State.FocusedStep = {};
-                if (CurveOrder(State, Intent.Figure.Key) > 0) SelectSolidArcCurve(State.Document, Intent.Figure.Key, true);
+                SelectSolidArcCurve(State.Document, Intent.Figure.Key, true);
             }
             else PickCurve(State, Intent.Figure.Key, SolidArcPickIntent::Replace);
             break;

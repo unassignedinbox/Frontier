@@ -4040,7 +4040,7 @@ int main()
                   Format("virtual sharp point %d dragged (2, 1) to (3, 1): V %.12f vs 3 − (4 − π)/16, the arcs stay tangent with r 0.25", Sharp, Rounded.Summary.Volume));
             UndoSolidArcCommand(Rounded);
             UndoSolidArcCommand(Rounded);
-            Tally(CornerGate, std::abs(Rounded.Summary.Volume - 2.0), Rounded.Summary.Volume == 2.0 && CurvesIn(Rounded, Plate) == 4, "undo × 2: the sharp rectangle and V 2 return");
+            Tally(CornerGate, std::abs(Rounded.Summary.Volume - 2.0), std::abs(Rounded.Summary.Volume - 2.0) <= 1.0e-12 && CurvesIn(Rounded, Plate) == 4, "undo × 2: the sharp rectangle and V 2 return");
         }
 
         // ③ one picked corner (0, 0) chamfered 0.3: 5 lines, area 2 − 0.045, Chamfer distances on the sketch

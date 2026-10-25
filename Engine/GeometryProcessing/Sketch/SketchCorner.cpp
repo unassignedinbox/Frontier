@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <numbers>
 
 namespace Frontier::GeometryProcessing
@@ -36,6 +37,13 @@ namespace
         double Largest = 1.0;
         for (const SketchPoint& Point : Sketch.Points) Largest = std::max({ Largest, std::abs(Point.Position.X), std::abs(Point.Position.Y) });
         return Largest;
+    }
+
+    [[nodiscard]] std::string Decimal(double Value)
+    {
+        char Text[32];
+        std::snprintf(Text, sizeof Text, "%.4g", Value);
+        return Text;
     }
 
     [[nodiscard]] int CornerPoint(const SketchCurve& Line, bool EndCondition) { return EndCondition ? Line.End : Line.Start; }
@@ -147,8 +155,8 @@ SketchCornerOutcome CutSketchCorners(const SketchModel& Sketch, const std::vecto
             const double  Span  = Length(Along);
             if (Setback >= Span - Join)
             {
-                return Refuse(std::string(Verb) + " " + std::to_string(Size).substr(0, 6) + " at point " + std::to_string(Point) + " needs " + std::to_string(Setback).substr(0, 6)
-                              + " along " + SketchCurveName(Line) + ", which has only " + std::to_string(Span).substr(0, 6) + " left");
+                return Refuse(std::string(Verb) + " " + Decimal(Size) + " at point " + std::to_string(Point) + " needs " + Decimal(Setback) + " along " + SketchCurveName(Line)
+                              + ", which has only " + Decimal(Span) + " left");
             }
             Units[Side] = Along * (1.0 / Span);
         }
