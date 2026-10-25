@@ -7,7 +7,7 @@
 # Volumes: the kernel's own closed-form gates live in FreeformBlendValidation C1 / C2; here the session values are pinned
 # against the same kernel run headless on the cut rim (chamfer 0.25 → 2.050097333727, 0.15 → 2.118687354516).
 
-# ① empty document, Top view: closed Hermite (seam at (0, 0.5), away from the blended rim) extruded 1
+# ① empty document, Top view: closed Hermite (seam at (0, 0.5), away from the blended rim), F fills it, extruded 1
 key N Ctrl
 frames 2
 expect steps == 0
@@ -34,6 +34,9 @@ click world 0.0 0.5 0.0
 frames 2
 expect drawing == 0
 expect sketch-curves == 1
+key F
+frames 2
+expect sketch-filled == 1
 key E
 frames 2
 click @BevelSize

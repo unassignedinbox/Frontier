@@ -1,5 +1,5 @@
 {
-  "Frame": 191,
+  "Frame": 196,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -14,7 +14,7 @@
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 4.093093431, "Target": [1.462500006, 1.000032714, 0.5], "Orthographic": false},
   "Bevel": {"Active": true, "Shape": "Chamfer", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 5, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.8, -0.5], [0.8, 2.5]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
-  "Undo": 5,
+  "Undo": 6,
   "Redo": 0,
   "Welcome": false,
   "Status": "Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts",

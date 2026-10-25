@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 201 frames · 17.6526 s · slowest frame 475.775 ms
+- Frame: 1600 x 900 · 201 frames · 16.5328 s · slowest frame 501.927 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShellsWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,10 +44,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 231SketchFacePlane | 61 | `868d8a201e974fa4` |
-| 232SketchMidpointOnFace | 86 | `cad4b0b603ffa994` |
-| 233SolidLoftShell | 161 | `a23ca5604fa25010` |
-| 234HiddenLocked | 186 | `69e2f5ff6ee70427` |
+| 231SketchFacePlane | 61 | `44d690ae6f8b96e5` |
+| 232SketchMidpointOnFace | 86 | `3d008e6223cd696b` |
+| 233SolidLoftShell | 161 | `51b28a1aefde0839` |
+| 234HiddenLocked | 186 | `6f8202c3d85a9146` |
 
 ## Journal
 
@@ -55,7 +55,7 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 12 ms
+- Block1 · New body · 11 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 0 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShellsRecovery.solidarc

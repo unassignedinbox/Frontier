@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 312 frames · 27.4157 s · slowest frame 455.293 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/OrientWalkthrough.txt
+- Frame: 1600 x 900 · 312 frames · 28.3153 s · slowest frame 489.92 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/OrientWalkthrough.txt
 - Expectations: 43 / 43 passed
 
 | Line | Expectation | Observed | Result |
@@ -53,11 +53,11 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 257CircleOnSideFace | 76 | `f42c4a574f5ace92` |
-| 258CylinderOnFrontFace | 147 | `989093efc31e9301` |
-| 259CylinderOnSlope | 236 | `12a0feddcf79a576` |
-| 260OrientOff | 289 | `1819c17089275c26` |
-| 261OrientedBodies | 312 | `e376153cd316c4c0` |
+| 257CircleOnSideFace | 76 | `89119d9b81a3e11d` |
+| 258CylinderOnFrontFace | 147 | `eed842cd1b638e94` |
+| 259CylinderOnSlope | 236 | `6458b994f4af6b69` |
+| 260OrientOff | 289 | `4f54e78371964a53` |
+| 261OrientedBodies | 312 | `738a681a0ef5240a` |
 
 ## Journal
 
@@ -65,30 +65,30 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 18 ms
+- Block1 · New body · 15 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 10 ms
 - Fill Circle1 · 10 ms
 - Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Circle1 · Union · 32 ms
+- Extrude1 · Circle1 · Union · 33 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
-- Autosaved ../tmp/rt/Orient/R.solidarc
-- Cylinder1 · New body · 23 ms
+- Autosaved _ClaudeScratch/SolidArcWorkspace/OrientRecovery.solidarc
+- Cylinder1 · New body · 22 ms
 - Wedge: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Wedge: click the opposite corner
 - Wedge: move up, click the height
-- Autosaved ../tmp/rt/Orient/R.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/OrientRecovery.solidarc
 - Wedge1 · New body · 39 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
-- Autosaved ../tmp/rt/Orient/R.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/OrientRecovery.solidarc
 - Cylinder2 · New body · 51 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle2 · 45 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle3 · 51 ms
+- Circle3 · 44 ms
 - Framed the document (Space)

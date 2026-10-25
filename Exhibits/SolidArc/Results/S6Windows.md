@@ -32,7 +32,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Entry | Size | Purpose |
 |---|---|---|
-| `SolidArc/SolidArcWorkspace.exe` | 7,435,264 B | The application |
+| `SolidArc/SolidArcWorkspace.exe` | 7,447,552 B | The application |
 | `SolidArc/SolidArcWorkspace.toml` | 940 B | Package options: window, viewport, font, and file paths (autosave in `Autosave/`, documents in `Documents/`, both inside the package folder), plus Vulkan |
 | `SolidArc/README.md` | 1,671 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
 | `SolidArc/EngineContent/FontArchives/…` | | DM Sans (the upstream interface typeface) |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,780,431 B |
-| Zip sha256 | `52e66ade588e4ba00d7b2d25a35ff02eae55ff711882a2bf886f290a907e3d31` |
-| Unpacked | 8,886,795 B (345 entries) |
+| Zip size | 3,784,658 B |
+| Zip sha256 | `db2bfccf6f28b6182fd6070f510b7a7b80a61dd1e833455d70f902376a4303ed` |
+| Unpacked | 8,899,083 B (345 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
@@ -125,6 +125,7 @@ An earlier control run C, from a folder inside this repository, walked up to the
 | ctest after the bevel-freeze fixes (kernel + W39) | 🟢 28 / 28, 1289.04 s (`NurbsBlend` 646.91 s) |
 | Kernel ctest (`Exhibits/GeometryProcessing`, PatternStress separately) | 🟢 29 / 29, 1350.31 s; PatternStress 69 / 69 🟢 in 495.9 s (was 754.4 s). Only P2's volume changed, and it is now the tessellation limit (see the GeometryProcessing README) |
 | Solid loft shells, face sketches, Ctrl snaps, hide / lock (package rebuilt, 0 warnings) | 🟢 DocumentValidation W1–W45; ctest 13 / 13 re-run walkthroughs (incl. SolidArcShellsWalkthrough 34 / 34); 1316 / 1316 expectations across 29 reports |
+| Orient to faces (package rebuilt) | 🟢 DocumentValidation W1–W50; all 34 walkthrough ctest rows (SolidArcOrientWalkthrough 43 / 43; WorkspaceWalkthrough needed the cube's eye distance raised to 6 so a low orbit keeps Top clickable; NurbsBlend 44 / 44 after its F fill step, 913 s); 1480 / 1480 expectations across 35 reports |
 
 ## ⚠️ Limits
 
