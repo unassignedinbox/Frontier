@@ -4367,9 +4367,22 @@ int main()
         for (const SketchCurve& Curve : SlotModel.Curves)                                    // The right end's centre
             if (Curve.Kind == SketchCurveKind::Arc && (Far < 0 || SlotModel.Points[Curve.Centre].Position.X > SlotModel.Points[Far].Position.X)) Far = Curve.Centre;
         const SketchDragOutcome Stretched = Far >= 0 ? PreviewSolidArcDrag(Slotted, Slot, Far, SlotModel.Points[Far].Position + Vector2{ 1.0, 0.0 }) : SketchDragOutcome{};
-        const double Half = Stretched.Refusal.empty() ? std::abs(Widest(Stretched.Sketch) - 180.0) : 1.0;
-        Tally(FilletDragGate, Half, Stretched.Refusal.empty() && Half <= 1.0e-6,
-              Format("slot: %zu curves, its right centre dragged 1 m along: end arcs %.9f° (|Δ| from 180° %.3g)%s", SlotModel.Curves.size(), Widest(Stretched.Sketch), Half, Stretched.Refusal.empty() ? "" : (" · " + Stretched.Refusal).c_str()));
+        // No Equal radius on a drawn slot: the far cap may grow, the lines tilt; tangent at all four joints, the two caps
+        // still turn one full turn between them (the convex stadium, no cap inside out).
+        double Turned = 0.0;
+        for (const SketchCurve& Curve : Stretched.Sketch.Curves)
+        {
+            if (Curve.Kind != SketchCurveKind::Arc) continue;
+            const Vector2 Middle = Stretched.Sketch.Points[Curve.Centre].Position;
+            const Vector2 From   = Stretched.Sketch.Points[Curve.Start].Position - Middle;
+            const Vector2 To     = Stretched.Sketch.Points[Curve.End].Position - Middle;
+            double Sweep = std::atan2(Cross(From, To), Dot(From, To));
+            if (Sweep <= 0.0) Sweep += 2.0 * std::numbers::pi;
+            Turned += Sweep;
+        }
+        const double Full = Stretched.Refusal.empty() ? std::abs(Turned - 2.0 * std::numbers::pi) : 1.0;
+        Tally(FilletDragGate, Full, Stretched.Refusal.empty() && Stretched.Solve.Converged && Full <= 1.0e-9,
+              Format("slot: %zu curves, its right centre dragged 1 m along: the caps turn %.12f rad together (2π), widest %.6f°%s", SlotModel.Curves.size(), Turned, Widest(Stretched.Sketch), Stretched.Refusal.empty() ? "" : (" · " + Stretched.Refusal).c_str()));
     }
 
     // ---- W46 Trim and join on sketches some later step reads (detach), join of picked sketches
