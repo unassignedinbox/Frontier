@@ -16,6 +16,8 @@ click world 0.0 0.0 0.0
 frames 2
 click world 2.0 1.0 0.0
 frames 3
+key F
+frames 2
 key E
 frames 2
 click @BevelSize

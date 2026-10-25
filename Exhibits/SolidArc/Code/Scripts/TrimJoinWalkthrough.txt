@@ -23,6 +23,8 @@ click world 2.0 1.0 0.0
 frames 2
 click world 2.5 1.0 0.0
 frames 3
+key F
+frames 2
 key E
 frames 2
 click @BevelSize
@@ -83,6 +85,8 @@ expect sketch-curves == 5
 expect selected-curves == 1
 
 # ④ E extrudes the joined sketch: both profiles rise together as a new body
+key F
+frames 2
 key E
 frames 2
 key R

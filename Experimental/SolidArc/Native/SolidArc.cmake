@@ -133,8 +133,12 @@ add_library(FrontierSolidArcUI STATIC
     ${SOLIDARC_UI}/Interface/SolidArcFrame.cpp
     ${SOLIDARC_UI}/Interface/SolidArcOptions.cpp
     ${SOLIDARC_UI}/Interface/SolidArcScript.cpp
+    ${SOLIDARC_UI}/Interface/SolidArcFileDialog.cpp
 )
 add_dependencies(FrontierSolidArcUI SolidArcShaderArchive)
+if(WIN32)
+    target_link_libraries(FrontierSolidArcUI PUBLIC comdlg32)                                # GetOpenFileNameW (Image plane › Browse)
+endif()
 target_include_directories(FrontierSolidArcUI PUBLIC "${FRONTIER_ROOT}")
 target_link_libraries(FrontierSolidArcUI PUBLIC FrontierSolidArcDocument FrontierInterface SolidArcVolk SolidArcImGuiVulkan SolidArcTomlPlusPlus SolidArcStb)
 target_compile_definitions(FrontierSolidArcUI PRIVATE SOLIDARC_FONT_PATH="${SOLIDARC_FONT_FILE}" SOLIDARC_CONTENT_ROOT="${FRONTIER_ROOT}")

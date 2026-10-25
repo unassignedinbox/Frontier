@@ -39,6 +39,8 @@ expect focused-caption == Rectangle1
 expect sketch-curves == 4
 
 # ③ E on the focused sketch: no body yet, so the Boolean is New; distance typed 1.5
+key F
+frames 2
 key E
 frames 2
 expect bevel-active == 1
@@ -71,6 +73,8 @@ click world 1.4 0.5 1.5
 frames 2
 expect steps == 3
 expect focused-caption == Circle1
+key F
+frames 2
 key E
 frames 2
 expect bevel-combination == Union

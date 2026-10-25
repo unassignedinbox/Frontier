@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "UI/SolidArc/Interface/SolidArcInterface.h"
+#include "UI/SolidArc/Interface/SolidArcFileDialog.h"
 #include "UI/SolidArc/Interface/SolidArcNavigation.h"
 #include "UI/SolidArc/Interface/SolidArcOutliner.h"
 #include "UI/SolidArc/Interface/SolidArcStyleSheet.h"
@@ -34,7 +35,9 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <numbers>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -6182,8 +6185,87 @@ SolidArcPickIntent PickIntentOf(const ImGuiIO& Io)
 //------------------------------------------------------------------------------------------------------------------------
 
 // The Open / Save / Import / Export path forms and the Examples list (on the header ID stack).
+// 📝 Construct › Image plane: decode the picture (refuse unreadable files), size it Width wide with the picture's aspect,
+//    centred on the origin of the chosen view plane, upright (top of the picture up, or −y on the top plane).
+bool AddImagePlane(SolidArcWorkspaceState& State)
+{
+    const std::string Path = State.PicturePath.data();
+    if (Path.empty()) { Announce(State, "Image plane: type a picture path (or Browse…)"); return false; }
+    const std::string     DocumentPath = State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath;
+    const SolidArcPicture Picture      = DecodeSolidArcPicture(ResolveSolidArcImagePath(Path, DocumentPath));
+    if (!Picture.Refusal.empty() || Picture.Width == 0 || Picture.Height == 0)
+    {
+        Announce(State, "Image plane refused: " + (Picture.Refusal.empty() ? std::string("empty picture") : Picture.Refusal));
+        return false;
+    }
+    const double Width  = std::clamp(double(State.PictureWidth), 1.0e-3, 1.0e4);                      // [len]
+    const double Height = Width * double(Picture.Height) / double(Picture.Width);                    // [len]
+    SolidArcImagePlane Plane;
+    std::string Stem = std::filesystem::path(Path).stem().string();
+    if (Stem.empty()) Stem = "Picture";
+    Plane.Name = Stem;
+    for (int Suffix = 2; std::any_of(State.Document.ImagePlanes.begin(), State.Document.ImagePlanes.end(), [&](const SolidArcImagePlane& Other) { return Other.Name == Plane.Name; }); ++Suffix)
+        Plane.Name = Stem + " " + std::to_string(Suffix);
+    Plane.Path = Path;
+    static const char* const PlaneNames[3] = { "top (XY)", "front (XZ)", "right (YZ)" };
+    const int Choice = std::clamp(State.PicturePlane, 0, 2);
+    if (Choice == 0) { Plane.Corner = { -0.5 * Width, 0.5 * Height, 0.0 }; Plane.Right = { Width, 0.0, 0.0 }; Plane.Down = { 0.0, -Height, 0.0 }; }
+    if (Choice == 1) { Plane.Corner = { -0.5 * Width, 0.0, 0.5 * Height }; Plane.Right = { Width, 0.0, 0.0 }; Plane.Down = { 0.0, 0.0, -Height }; }
+    if (Choice == 2) { Plane.Corner = { 0.0, -0.5 * Width, 0.5 * Height }; Plane.Right = { 0.0, Width, 0.0 }; Plane.Down = { 0.0, 0.0, -Height }; }
+    State.Document.ImagePlanes.push_back(Plane);
+    State.ImagePlanesEnabled = true;
+    State.DirtyCondition     = true;
+    State.AutosaveTimer      = State.Options.AutosaveDelay;
+    Announce(State, Compose("Image plane %s: %u × %u px on the %s plane, %.3f × %.3f m (Inspector: opacity, crop, placement)", Plane.Name.c_str(), Picture.Width, Picture.Height,
+                            PlaneNames[Choice], Width, Height));
+    return true;
+}
+
+void DrawImagePlanePopup(SolidArcWorkspaceState& State)
+{
+    if (!ImGui::BeginPopupModal("Image plane", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::TextUnformatted("A reference picture (PNG / JPEG / BMP / GIF) on a view plane, to trace over · not part of the history");
+    ImGui::SetNextItemWidth(SolidArcFileDialogAvailableCondition() ? 360.0f : 460.0f);
+    const bool Entered = ImGui::InputText("##PicturePath", State.PicturePath.data(), State.PicturePath.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+    RegisterWidget(State, "PicturePathField");
+    if (SolidArcFileDialogAvailableCondition())
+    {
+        ImGui::SameLine();
+        if (PressButton(State, "Browse…###PictureBrowse", ImVec2(90, 0)))
+        {
+            const std::string Chosen = BrowseSolidArcPicture();
+            if (!Chosen.empty()) std::snprintf(State.PicturePath.data(), State.PicturePath.size(), "%s", Chosen.c_str());
+        }
+    }
+    ImGui::TextUnformatted("Plane");
+    ImGui::SameLine();
+    ImGui::RadioButton("Top (XY)###PictureTop", &State.PicturePlane, 0);
+    RegisterWidget(State, "PictureTop");
+    ImGui::SameLine();
+    ImGui::RadioButton("Front (XZ)###PictureFront", &State.PicturePlane, 1);
+    RegisterWidget(State, "PictureFront");
+    ImGui::SameLine();
+    ImGui::RadioButton("Right (YZ)###PictureRight", &State.PicturePlane, 2);
+    RegisterWidget(State, "PictureRight");
+    ImGui::SetNextItemWidth(140);
+    ImGui::InputFloat("Width (m)###PictureWidth", &State.PictureWidth, 0.5f, 1.0f, "%.3f");
+    RegisterWidget(State, "PictureWidth");
+    if (PressButton(State, "Add###PictureAdd", ImVec2(120, 0)) || Entered)
+    {
+        if (AddImagePlane(State))
+        {
+            State.PicturePath[0] = 0;
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::SameLine();
+    if (PressButton(State, "Cancel###PictureCancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
 void DrawPathPopups(SolidArcWorkspaceState& State)
 {
+    DrawImagePlanePopup(State);
     for (const char* Title : { "Open document", "Save document", "Import", "Export" })
     {
         const bool OpenCondition   = std::strcmp(Title, "Open document") == 0;
@@ -6629,8 +6711,13 @@ constexpr SolidArcConstructTile ConstructSketches[] = {
     { "NURBS", "ConstructSketchNurbs", IconSymbol::SolidArcNurbs, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::Nurbs },
     { "Cubic spline", "ConstructSketchCubic", IconSymbol::SolidArcCurve, false, {}, SolidArcDrawingKind::Curve, false, false, SketchSplineForm::CubicSpline } };
 
-constexpr int ConstructSolidCount  = int(sizeof(ConstructSolids) / sizeof(ConstructSolids[0]));
-constexpr int ConstructSketchCount = int(sizeof(ConstructSketches) / sizeof(ConstructSketches[0]));
+// Reference: a picture on a view plane (blueprints to trace over); the tile opens the Image plane form.
+constexpr SolidArcConstructTile ConstructReferences[] = {
+    { "Image plane", "ConstructImagePlane", IconSymbol::SolidArcImage, false, {}, {}, false, false, SketchSplineForm::Hermite } };
+
+constexpr int ConstructSolidCount     = int(sizeof(ConstructSolids) / sizeof(ConstructSolids[0]));
+constexpr int ConstructSketchCount    = int(sizeof(ConstructSketches) / sizeof(ConstructSketches[0]));
+constexpr int ConstructReferenceCount = int(sizeof(ConstructReferences) / sizeof(ConstructReferences[0]));
 
 // Menu height [px]: header 41 + tile rows (72, gap 6, padding 10) + footer 28, never under the reference 330.
 [[nodiscard]] float ConstructMenuHeight(int Count)
@@ -6648,8 +6735,8 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     }
     // ⚠️ The section shown this frame is fixed here: a section click below changes State.ConstructSection, and the
     //    tiles must still come from the array TileCount was measured on (the next frame draws the new section).
-    const int   Displayed  = State.ConstructSection == 1 ? 1 : 0;
-    const int   TileCount  = Displayed == 1 ? ConstructSketchCount : ConstructSolidCount;
+    const int   Displayed  = std::clamp(State.ConstructSection, 0, 2);
+    const int   TileCount  = Displayed == 2 ? ConstructReferenceCount : Displayed == 1 ? ConstructSketchCount : ConstructSolidCount;
     const float MenuHeight = ConstructMenuHeight(TileCount);
     ImGui::SetNextWindowPos(Anchor);
     ImGui::SetNextWindowSize(ImVec2(520, MenuHeight));
@@ -6677,9 +6764,11 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     const float Body = Top + 41.0f;
     Sheet.Surface().FillRectangle(PlaneExtent{ Left, Body, Left + 132.0f, Bottom }, SolidArcInk(0x000000, 0.2f), 0.0f);
     Sheet.Line(Left + 131.5f, Body, Left + 131.5f, Bottom, SolidArcWash(0x12));
-    // Two sections (the reference catalogue's Solids and Sketch): 3-D primitives become bodies, 2-D tools become sketches.
-    static const char* const Sections[2] = { "Solids", "Sketch" };
-    for (int Index = 0; Index < 2; ++Index)
+    // Sections: the reference catalogue's Solids and Sketch (3-D primitives become bodies, 2-D tools become sketches), and
+    // Reference (image planes, outside the history).
+    static const char* const Sections[3] = { "Solids", "Sketch", "Reference" };
+    static const int         Counts[3]   = { ConstructSolidCount, ConstructSketchCount, ConstructReferenceCount };
+    for (int Index = 0; Index < 3; ++Index)
     {
         const PlaneExtent   Section = Spanning(Left + 6.0f, Body + 8.0f + float(Index) * 40.0f, 132.0f - 12.0f - 1.0f, 36.0f);
         const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, std::string("ConstructSection") + Sections[Index], Section);
@@ -6687,10 +6776,10 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         const bool Chosen = State.ConstructSection == Index;
         if (Chosen || Press.HoveredCondition) Sheet.Box(Section, SolidArcWash(Chosen ? 0x16 : 0x0c), 7.0f);
         Sheet.Text(Section.MinimumX + 10.0f, Section.MinimumY + 18.0f, 11.0f, SolidArcInk(Chosen ? 0xeeeeee : 0xaaaaaa), Sections[Index]);
-        Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), Compose("%d", Index == 1 ? ConstructSketchCount : ConstructSolidCount).c_str());
+        Sheet.TextRight(Section.MaximumX - 10.0f, Section.MinimumY + 18.0f, 9.0f, SolidArcInk(0x777777), Compose("%d", Counts[Index]).c_str());
     }
     // #construct-tiles — 4 columns, gap 6, padding 10; .catalogue-tile 72 px, #ffffff0c, #ffffff12 border, radius 8, glyph 24.
-    const SolidArcConstructTile* Tiles     = Displayed == 1 ? ConstructSketches : ConstructSolids;
+    const SolidArcConstructTile* Tiles     = Displayed == 2 ? ConstructReferences : Displayed == 1 ? ConstructSketches : ConstructSolids;
     const float                  TilesLeft = Left + 132.0f + 10.0f;
     const float                  TileWidth = 0.25f * (Right - TilesLeft - 10.0f - 3.0f * 6.0f);
     for (int Index = 0; Index < TileCount; ++Index)
@@ -6709,7 +6798,8 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
         if (Press.ClickedCondition)
         {
             ImGui::CloseCurrentPopup();
-            if (Entry.SolidCondition) OpenSolidSession(State, Entry.Solid);
+            if (Displayed == 2) State.PopupRequest = "Image plane";
+            else if (Entry.SolidCondition) OpenSolidSession(State, Entry.Solid);
             else
             {
                 OpenDrawingSession(State, Entry.Sketch);
@@ -6723,7 +6813,8 @@ void DrawConstructMenu(SolidArcWorkspaceState& State, ImVec2 Anchor)
     }
     // .construct-catalogue footer — 28 px, #ffffff12 top border, padding 8 10, 9 px #828282.
     Sheet.Line(Left + 132.0f, Bottom - 28.0f + 0.5f, Right, Bottom - 28.0f + 0.5f, SolidArcWash(0x12));
-    Sheet.Text(Left + 132.0f + 10.0f, Bottom - 14.0f, 9.0f, SolidArcInk(0x828282), State.ConstructSection == 1 ? "Click a tool, then draw it in the viewport · Enter / right-click finishes"
+    Sheet.Text(Left + 132.0f + 10.0f, Bottom - 14.0f, 9.0f, SolidArcInk(0x828282), Displayed == 2 ? "A picture on the top, front or right plane to trace over (not in the history)"
+                                                                                   : Displayed == 1 ? "Click a tool, then draw it in the viewport · Enter / right-click finishes"
                                                                                        : "Click a solid, then draw it in the viewport · Tab types exact sizes");
     ImGui::EndPopup();
 }
@@ -7385,6 +7476,7 @@ std::pair<IconSymbol, const char*> StepGlyph(const FeatureStep& Step)
     case FeatureStepKind::Evolution:     return { IconSymbol::SolidArcExtrude, "sweep" };
     case FeatureStepKind::Joint:         return { IconSymbol::SolidArcLink, "joint" };
     case FeatureStepKind::Import:        return { IconSymbol::SolidArcFile, "import" };
+    case FeatureStepKind::Flip:          return { IconSymbol::SolidArcFlip, "flip" };
     }
     return { IconSymbol::SolidArcBody, "step" };
 }
@@ -8260,6 +8352,8 @@ void DrawStepCard(SolidArcWorkspaceState& State)
         ImGui::TextWrapped("%s joint: %s onto %s · %d degree(s) of freedom%s · drag a value (Ctrl+click types it)", JointKindLabel(Step->Joint.Kind),
                            SolidArcBodyCaption(State.Document, Step->Target).c_str(), SolidArcBodyCaption(State.Document, Step->Tool).c_str(), JointFreedom(Step->Joint.Kind),
                            Step->Joint.FlippedCondition ? " · flipped" : "");
+    if (Step->Kind == FeatureStepKind::Flip)
+        ImGui::TextWrapped("Normals of %s turned over (every face's sense reversed) · Alt+N on it again removes this step", SolidArcBodyCaption(State.Document, Step->Target).c_str());
     if (Step->Kind == FeatureStepKind::Import)
     {
         // The embedded file's PRODUCT name and size; faces are named Face(k) in file order.
