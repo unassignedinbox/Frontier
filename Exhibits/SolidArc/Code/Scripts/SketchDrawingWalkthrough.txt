@@ -110,6 +110,8 @@ frames 2
 expect drawing == 0
 expect sketches == Rectangle1,Circle1,Line1
 expect sketch-curves == 3
+key F
+frames 2
 key E
 frames 2
 key E
@@ -170,6 +172,8 @@ frames 2
 expect drawing == 0
 expect focused-caption == Curve1
 expect sketch-curves == 1
+key F
+frames 2
 key E
 frames 2
 key W

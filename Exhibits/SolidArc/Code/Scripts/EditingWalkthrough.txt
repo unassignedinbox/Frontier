@@ -220,6 +220,9 @@ expect sketches == 1
 expect sketch-curves == 4
 expect status contains Join
 capture 118Join
+key F
+frames 2
+expect sketch-filled == 1
 key E
 frames 2
 click @BevelSize
