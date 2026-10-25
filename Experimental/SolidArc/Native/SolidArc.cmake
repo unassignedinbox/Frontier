@@ -330,6 +330,15 @@ add_test(NAME SolidArcOrientWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/OrientWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcResponsivenessWalkthrough
+         COMMAND SolidArcCapture --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ResponsivenessRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Responsiveness.solidarc
+                 --open "${SOLIDARC_EXHIBIT}/Documents/SideCylinderUnion.solidarc"
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/ResponsivenessWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+                 --trace _ClaudeScratch/SolidArcWorkspace/ResponsivenessTrace.log
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcSketchCornersWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/SketchCornersRecovery.solidarc

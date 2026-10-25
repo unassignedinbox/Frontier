@@ -1,0 +1,22 @@
+{
+  "Frame": 152,
+  "Title": "Side cylinder union",
+  "DocumentPath": "/home/user/Frontier/Exhibits/SolidArc/Code/Documents/SideCylinderUnion.solidarc",
+  "Dirty": false,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Circle2 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Extrude2 · Extrude", "Refused": false}],
+  "Body": {"Faces": 6, "Edges": 9, "Vertices": 6, "Genus": 0, "Volume": 5.5629587, "Sound": true},
+  "Selection": {"Faces": [], "Edges": ["Edge(Extrude#4.Cap(End)|Extrude#4.Side(Circle1))"], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 2,
+  "Hover": "Extrude#2.Side(Circle1)",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 7.988914347, "Target": [0.14975, 0, 0.3], "Orthographic": false},
+  "Bevel": {"Active": true, "Shape": "Chamfer", "Size": 1.0679, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 6, "Refusal": "Blend#5: Blend: E14: size exceeds the curvature radius of the Cylinder support", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 0,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts",
+  "Viewport": [322, 146, 926, 591]
+}

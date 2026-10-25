@@ -11,12 +11,20 @@
 | Import curves sample | `Samples/SyntheticBonnet.toml` |
 | UI font and icons | `EngineContent/` |
 | Third-party licences | `Notices/` |
+| **Log** (every command, preview, kernel step, refusal and slow frame) | `SolidArcTrace.log` (the run before: `SolidArcTrace.previous.log`) |
 
 ## 💡 Start
 
 - Double-click `SolidArcWorkspace.exe`, or open a document: `SolidArcWorkspace.exe --open "C:\Parts\Bracket.solidarc"`.
 - `--specimen` starts with the fillet / chamfer specimen; `--options <file>` uses another options file.
 - Navigation and commands follow Plasticity (orbit, pan and zoom on the mouse; `B` fillet, `E` extrude, `1`–`5` modes, `Alt+Z` x-ray).
+
+## 🔍 Log
+
+- `SolidArcTrace.log` sits next to `SolidArcWorkspace.exe` and is rewritten on each start (the previous run is kept as `SolidArcTrace.previous.log`).
+- In the app: the **Log** button at the bottom right of the status bar (or `F12`) opens the log panel. It shows the file path (Copy path), filters (Slow frames, Refusals) and Copy.
+- A frame over 50 ms writes a `Frame` line: the total, the interface / upload / GPU wait split, the open session and the costliest phases (for example `bevel preview · stage 39 ms`). The button reads `Log · N slow` once that has happened.
+- When something is slow or refused, send `SolidArcTrace.log` (or the panel's Copy).
 
 ## ⚠️ Preview limits
 

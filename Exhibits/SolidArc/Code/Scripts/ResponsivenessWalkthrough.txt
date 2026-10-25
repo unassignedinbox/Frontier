@@ -133,3 +133,23 @@ frames 3
 expect refused == 0
 expect gizmo-commits == 4
 capture 264MovedFourTimes
+
+# ⑤ G (Plasticity move) shows the rigid preview: the shown triangles carried, no regeneration until the click commits
+move viewport 0.50 0.50
+frames 2
+key G
+frames 2
+expect transform == 1
+key Y
+frames 2
+move viewport 0.50 0.50 offset 0 -60
+frames 3
+expect transform-rigid == 1
+expect transform-preview-volume > 5.5603
+expect transform-preview-volume < 5.5604
+click viewport 0.50 0.50 offset 0 -60
+frames 3
+expect transform == 0
+expect transform-commits == 1
+expect refused == 0
+capture 265RigidMove
