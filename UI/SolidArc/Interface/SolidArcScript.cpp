@@ -360,12 +360,12 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     }
     if (Field == "sketch-filled")
     {
-        for (const FeatureStep& Step : Document.Tree.Steps)
-            if (Step.Label == State.FocusedStep && Step.Kind == FeatureStepKind::Sketch) return Numeric(Step.FillCondition ? 1 : 0);
+        for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps)
+            if (Step.Label == State.FocusedStep && Step.Kind == GeometryProcessing::FeatureStepKind::Sketch) return Numeric(Step.FillCondition ? 1 : 0);
         return Numeric(-1);
     }
     if (Field == "flips")
-        return Numeric(double(std::count_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Flip; })));
+        return Numeric(double(std::count_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [](const GeometryProcessing::FeatureStep& Step) { return Step.Kind == GeometryProcessing::FeatureStepKind::Flip; })));
     if (Field == "tint-loops")
     {
         size_t Loops = 0;
