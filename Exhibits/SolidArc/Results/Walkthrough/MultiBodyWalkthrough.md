@@ -1,60 +1,62 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 305 frames · 35.0439 s · slowest frame 656.814 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
+- Frame: 1600 x 900 · 329 frames · 36.0864 s · slowest frame 536.367 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
 - Expectations: 32 / 32 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
 | 10 | `bodies == 1` | 1 | 🟢 |
 | 11 | `steps == 8` | 8 | 🟢 |
-| 37 | `refused == 0` | 0 | 🟢 |
-| 38 | `bodies == 2` | 2 | 🟢 |
-| 39 | `steps == 10` | 10 | 🟢 |
-| 40 | `body-volumes contains Block2 3.000000` | Block1 10.222774 · Block2 3.000000 | 🟢 |
-| 41 | `status contains New body` | Block2 · New body · 76 ms | 🟢 |
-| 69 | `refused == 0` | 0 | 🟢 |
-| 70 | `bodies == 3` | 3 | 🟢 |
-| 71 | `body-captions contains Cylinder3` | Block1,Block2,Cylinder3 | 🟢 |
-| 72 | `sound == 1` | 1 | 🟢 |
-| 80 | `selected-bodies == 1` | Extrude#2 | 🟢 |
-| 81 | `selected-faces == 0` |  | 🟢 |
-| 89 | `selected-bodies contains Extrude` | Extrude#10 | 🟢 |
-| 101 | `body-matcaps == 3` | 3 | 🟢 |
-| 102 | `selection-matcap contains Brass` | Brass | 🟢 |
-| 103 | `body-matcap contains Studio` | Studio | 🟢 |
-| 104 | `steps == 12` | 12 | 🟢 |
-| 116 | `selected-bodies == 2` | Extrude#10,Extrude#12 | 🟢 |
-| 119 | `boolean == 1` | 1 | 🟢 |
-| 122 | `status contains Difference` | Boolean: Difference | 🟢 |
-| 126 | `boolean == 0` | 0 | 🟢 |
-| 127 | `boolean-commits == 1` | 1 | 🟢 |
-| 128 | `bodies == 2` | 2 | 🟢 |
-| 129 | `refused == 0` | 0 | 🟢 |
-| 130 | `sound == 1` | 1 | 🟢 |
-| 131 | `body-volumes contains Block2 2.497345` | Block1 10.222774 · Block2 2.497345 | 🟢 |
-| 132 | `matcap-dangling == 1` | 1 | 🟢 |
-| 140 | `bodies == 3` | 3 | 🟢 |
-| 141 | `matcap-dangling == 0` | 0 | 🟢 |
-| 144 | `bodies == 2` | 2 | 🟢 |
-| 145 | `body-volumes contains Block2 2.497345` | Block1 10.222774 · Block2 2.497345 | 🟢 |
+| 41 | `refused == 0` | 0 | 🟢 |
+| 42 | `bodies == 2` | 2 | 🟢 |
+| 43 | `steps == 10` | 10 | 🟢 |
+| 44 | `body-volumes contains Block2 3.000000` | Block1 10.222774 · Block2 3.000000 | 🟢 |
+| 45 | `status contains New body` | Block2 · New body · 73 ms | 🟢 |
+| 77 | `refused == 0` | 0 | 🟢 |
+| 78 | `bodies == 3` | 3 | 🟢 |
+| 79 | `body-captions contains Cylinder3` | Block1,Block2,Cylinder3 | 🟢 |
+| 80 | `sound == 1` | 1 | 🟢 |
+| 88 | `selected-bodies == 1` | Extrude#2 | 🟢 |
+| 89 | `selected-faces == 0` |  | 🟢 |
+| 97 | `selected-bodies contains Extrude` | Extrude#10 | 🟢 |
+| 109 | `body-matcaps == 3` | 3 | 🟢 |
+| 110 | `selection-matcap contains Brass` | Brass | 🟢 |
+| 111 | `body-matcap contains Studio` | Studio | 🟢 |
+| 112 | `steps == 12` | 12 | 🟢 |
+| 124 | `selected-bodies == 2` | Extrude#10,Extrude#12 | 🟢 |
+| 127 | `boolean == 1` | 1 | 🟢 |
+| 130 | `status contains Difference` | Boolean: Difference | 🟢 |
+| 134 | `boolean == 0` | 0 | 🟢 |
+| 135 | `boolean-commits == 1` | 1 | 🟢 |
+| 136 | `bodies == 2` | 2 | 🟢 |
+| 137 | `refused == 0` | 0 | 🟢 |
+| 138 | `sound == 1` | 1 | 🟢 |
+| 139 | `body-volumes contains Block2 2.497345` | Block1 10.222774 · Block2 2.497345 | 🟢 |
+| 140 | `matcap-dangling == 1` | 1 | 🟢 |
+| 148 | `bodies == 3` | 3 | 🟢 |
+| 149 | `matcap-dangling == 0` | 0 | 🟢 |
+| 152 | `bodies == 2` | 2 | 🟢 |
+| 153 | `body-volumes contains Block2 2.497345` | Block1 10.222774 · Block2 2.497345 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 96MultiBodyNew | 98 | `be08fe06fc18ebe0` |
-| 97MultiBodyThree | 175 | `bd13482f9725b783` |
-| 98MultiBodyMatcaps | 248 | `63f9555a093687e1` |
-| 99MultiBodyBoolean | 278 | `5afef54f7368815e` |
-| 100MultiBodyDrilled | 291 | `cfa260e476442a6d` |
-| 101MultiBodyUndo | 305 | `aa7e8986a39c8f84` |
+| 96MultiBodyNew | 110 | `58d16386019836b2` |
+| 97MultiBodyThree | 199 | `b71de532ed0c80c8` |
+| 98MultiBodyMatcaps | 272 | `8f3d88a1883f6ad4` |
+| 99MultiBodyBoolean | 302 | `fbe6d0785dbcd757` |
+| 100MultiBodyDrilled | 315 | `8c8571d05599ca8a` |
+| 101MultiBodyUndo | 329 | `407087dc753e6cbb` |
 
 ## Journal
 
-- Block2 · New body · 76 ms
+- Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
+- Block2 · New body · 73 ms
 - Framed the document (Space)
+- Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Cylinder3 · New body · 124 ms
+- Cylinder3 · New body · 109 ms
 - Selected Block1 (11 faces)
 - Matcap BrushedSteel → 1 body(ies)
 - Selected Block2 (6 faces)
@@ -67,7 +69,7 @@
 - Boolean: Block2 with 1 tool(s) · Q union · W difference · E intersect · Enter applies
 - Boolean: Difference
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Combine · Difference (Block2 − Cylinder3) · 130 ms
+- Combine · Difference (Block2 − Cylinder3) · 125 ms
 - Selection cleared
 - Undo
 - Redo

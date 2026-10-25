@@ -1,9 +1,9 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 256 frames · 28.0186 s · slowest frame 439.066 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
-- Expectations: 70 / 70 passed
+- Frame: 1600 x 900 · 263 frames · 25.2207 s · slowest frame 468.268 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
+- Expectations: 73 / 73 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
@@ -48,7 +48,7 @@
 | 111 | `steps == 8` | 8 | 🟢 |
 | 112 | `faces == 11` | 11 | 🟢 |
 | 113 | `focused-step != Blend#9` |  | 🟢 |
-| 118 | `camera-target-x != 2` | 1.422371101 | 🟢 |
+| 118 | `camera-target-x != 2` | 1.286515912 | 🟢 |
 | 120 | `camera-target-x ~ 2` | 2 | 🟢 |
 | 121 | `camera-target-z ~ 0.875` | 0.875 | 🟢 |
 | 123 | `camera-pitch ~ 1.5707963268` | 1.570796327 | 🟢 |
@@ -60,29 +60,32 @@
 | 136 | `xray == 1` | 1 | 🟢 |
 | 137 | `surfaces == 1` | 1 | 🟢 |
 | 139 | `xray == 0` | 0 | 🟢 |
-| 148 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
-| 151 | `bevel-active == 1` | 1 | 🟢 |
-| 152 | `bevel-size ~ 0.5` | 0.5 | 🟢 |
-| 155 | `bevel-active == 0` | 0 | 🟢 |
-| 156 | `steps == 9` | 9 | 🟢 |
-| 157 | `refused == 0` | 0 | 🟢 |
-| 158 | `sound == 1` | 1 | 🟢 |
-| 159 | `volume > 10.60` | 10.61547283 | 🟢 |
-| 160 | `volume < 10.63` | 10.61547283 | 🟢 |
-| 168 | `selected-faces == 1` | Extrude#4.Cap(End) | 🟢 |
-| 171 | `steps == 10` | 10 | 🟢 |
-| 172 | `volume > 10.99` | 11.00817191 | 🟢 |
-| 173 | `volume < 11.02` | 11.00817191 | 🟢 |
-| 178 | `construct-open == 1` | 1 | 🟢 |
-| 181 | `construct-combination == 2` | 2 | 🟢 |
-| 184 | `construct-open == 0` | 0 | 🟢 |
-| 185 | `steps == 10` | 10 | 🟢 |
+| 150 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
+| 153 | `bevel-active == 1` | 1 | 🟢 |
+| 154 | `bevel-size ~ 0.5` | 0.5 | 🟢 |
+| 157 | `bevel-active == 0` | 0 | 🟢 |
+| 158 | `steps == 9` | 9 | 🟢 |
+| 159 | `refused == 0` | 0 | 🟢 |
+| 160 | `sound == 1` | 1 | 🟢 |
+| 161 | `volume > 10.60` | 10.61547283 | 🟢 |
+| 162 | `volume < 10.63` | 10.61547283 | 🟢 |
+| 170 | `selected-faces == 1` | Extrude#4.Cap(End) | 🟢 |
+| 173 | `steps == 10` | 10 | 🟢 |
+| 174 | `volume > 10.99` | 11.00817191 | 🟢 |
+| 175 | `volume < 11.02` | 11.00817191 | 🟢 |
+| 180 | `drawing-solid == 1` | 1 | 🟢 |
+| 181 | `drawing-solid-kind == 1` | Cylinder | 🟢 |
+| 182 | `construct-combination == 4` | 4 | 🟢 |
+| 185 | `construct-combination == 2` | 2 | 🟢 |
+| 188 | `drawing-solid == 0` | 0 | 🟢 |
+| 189 | `construct-open == 0` | 0 | 🟢 |
+| 190 | `steps == 10` | 10 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `8e1b888f7da960ca` |
-| 21TangentChain | 144 | `2802285100c8c548` |
-| 20ShortcutExtrude | 224 | `6b7d0932efa9a18b` |
+| 19BevelSignChamfer | 64 | `5681f10c60ad5257` |
+| 21TangentChain | 144 | `992c335e5bb34d9e` |
+| 20ShortcutExtrude | 231 | `e09137f5c1ddcfb9` |
 
 ## Journal
 
@@ -104,7 +107,7 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShortcutRecovery.solidarc
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 61 ms
+- Delete Fillet2 · 46 ms
 - Selection cleared
 - Framed the document (Space)
 - X-ray on · faces 45 % · hidden edges pickable
@@ -113,8 +116,10 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 98 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 94 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 116 ms
-- Selection cleared
+- ExtrudeFaces 0.5 on 1 face(s) · 98 ms
+- Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
+- Cylinder: Difference
+- Cylinder aborted (document untouched)

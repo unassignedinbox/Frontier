@@ -3268,7 +3268,8 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
         Gizmo.Pose.Hidden  = AxisScales | ((Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit);
         return;
     }
-    const std::vector<std::string> Keys = PickedBodies(Document);
+    // 📝 Edges alone raise no gizmo: they are picked for fillets, and a body gizmo would sit on the next Shift+click.
+    const std::vector<std::string> Keys = (Document.Selection.Bodies.empty() && Document.Selection.Faces.empty()) ? std::vector<std::string>{} : PickedBodies(Document);
     if (!Keys.empty())
     {
         Gizmo.Target      = SolidArcGizmoTarget::Bodies;

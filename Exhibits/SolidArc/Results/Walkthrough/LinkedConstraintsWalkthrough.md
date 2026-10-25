@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 609 frames · 44.0371 s · slowest frame 407.575 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/LinkedConstraintsWalkthrough.txt
+- Frame: 1600 x 900 · 617 frames · 46.0985 s · slowest frame 518.062 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
 | Line | Expectation | Observed | Result |
@@ -65,19 +65,19 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `ea6716950c98130f` |
-| 129ConstrainSplineG2 | 221 | `81ba2789440674e2` |
-| 130ConstrainReference | 415 | `3e6f4ea3cf79e037` |
-| 131ConstrainReferenceFollows | 449 | `fbb23ffb11a6baac` |
-| 132ConstrainLinkPick | 508 | `b496552228072a4d` |
-| 133ConstrainLinked | 595 | `89273bf6d92f303b` |
+| 128ConstrainSplineG1 | 179 | `8118754bc855d9db` |
+| 129ConstrainSplineG2 | 221 | `52ee7b0be7dd3787` |
+| 130ConstrainReference | 415 | `c6f6d024acbe5efb` |
+| 131ConstrainReferenceFollows | 453 | `d114d4c9761cf953` |
+| 132ConstrainLinkPick | 512 | `a164d49e7b9d5be9` |
+| 133ConstrainLinked | 603 | `e8bdad24d843d26c` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Line1 · 0 ms
-- Curve on plane XY: click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · Esc aborts
+- Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Curve form: NURBS
 - Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
 - Curve1 · NURBS · 0 ms
@@ -100,7 +100,7 @@
 - Selection cleared
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
-- Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
@@ -108,7 +108,7 @@
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
+- Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 9 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
 - Constrain Rectangle1: Length 1.5 · Line1 · 6 ms
@@ -119,16 +119,16 @@
 - Picks cleared
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End
-- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 7 ms
+- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms
 - Picks cleared
-- D2 = 2 in Rectangle1 · 10 ms
+- D2 = 2 in Rectangle1 · 9 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
 - Picks cleared
 - Constrain ended
 - Selection cleared
-- Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
-- Line1 · 7 ms
+- Line1 · 6 ms
 - Constrain Line1 · 0 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End of Rectangle1

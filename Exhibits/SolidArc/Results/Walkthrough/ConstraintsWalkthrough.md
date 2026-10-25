@@ -1,101 +1,101 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 457 frames · 34.4235 s · slowest frame 446.248 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
+- Frame: 1600 x 900 · 460 frames · 36.602 s · slowest frame 492.093 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
 | 13 | `steps == 0` | 0 | 🟢 |
-| 37 | `steps == 2` | 2 | 🟢 |
-| 38 | `volume ~ 2` | 2 | 🟢 |
-| 45 | `constrain == 1` | 1 | 🟢 |
-| 46 | `constraint-count == 4` | 4 | 🟢 |
-| 47 | `constraints == H1,V1,H2,V2` | H1,V1,H2,V2 | 🟢 |
-| 48 | `sketch-dof == 4` | 4 | 🟢 |
-| 49 | `sketch-status == under-constrained` | under-constrained | 🟢 |
-| 50 | `status contains Constrain Rectangle1` | Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sket... | 🟢 |
-| 56 | `constrain-picks == Line1.Start` | Line1.Start | 🟢 |
-| 59 | `constraint-count == 5` | 5 | 🟢 |
-| 60 | `sketch-dof == 2` | 2 | 🟢 |
-| 61 | `constrain-picks == 0` |  | 🟢 |
-| 62 | `constrain-commits == 1` | 1 | 🟢 |
-| 67 | `constrain-picks == Line1` | Line1 | 🟢 |
-| 70 | `status contains type a value` | Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops | 🟢 |
-| 75 | `constraint-count == 6` | 6 | 🟢 |
-| 76 | `sketch-dof == 1` | 1 | 🟢 |
-| 77 | `volume ~ 3` | 3 | 🟢 |
-| 78 | `picked-constraint contains D1` | D1 Length 3 · Line1 | 🟢 |
-| 85 | `constrain-picks == Line2` | Line2 | 🟢 |
-| 91 | `sketch-dof == 0` | 0 | 🟢 |
-| 92 | `sketch-status == fully constrained` | fully constrained | 🟢 |
-| 93 | `constraints == H1,V1,H2,V2,F1,D1,D2` | H1,V1,H2,V2,F1,D1,D2 | 🟢 |
-| 94 | `volume ~ 6` | 6 | 🟢 |
-| 95 | `sketch-points == (0, 0) (3, 0) (3, 2) (0, 2)` | (0, 0) (3, 0) (3, 2) (0, 2) | 🟢 |
-| 107 | `constraint-count == 7` | 7 | 🟢 |
-| 108 | `constrain-refusal contains is already implied by` | Length 3 · Line3 is already implied by V1 (Vertical · Line2), V2 (Vertical · Line4),... | 🟢 |
-| 109 | `constrain-refusal contains D1` | Length 3 · Line3 is already implied by V1 (Vertical · Line2), V2 (Vertical · Line4),... | 🟢 |
-| 113 | `constraint-count == 7` | 7 | 🟢 |
-| 114 | `constrain-refusal contains conflicts with` | Length 5 · Line3 conflicts with V1 (Vertical · Line2), V2 (Vertical · Line4), D1 (Le... | 🟢 |
-| 115 | `volume ~ 6` | 6 | 🟢 |
-| 121 | `constrain-picks == 0` |  | 🟢 |
-| 122 | `constrain == 1` | 1 | 🟢 |
-| 127 | `picked-constraint contains D1` | D1 Length 3 · Line1 | 🟢 |
-| 131 | `volume ~ 8` | 8 | 🟢 |
-| 132 | `sketch-points contains (4, 2)` | (0, 0) (4, 0) (4, 2) (0, 2) | 🟢 |
-| 135 | `volume ~ 6` | 6 | 🟢 |
-| 138 | `volume ~ 8` | 8 | 🟢 |
-| 139 | `constrain == 1` | 1 | 🟢 |
-| 147 | `picked-constraint contains D2` | D2 Length 2 · Line2 | 🟢 |
-| 150 | `constraint-count == 6` | 6 | 🟢 |
-| 151 | `constraints == H1,V1,H2,V2,F1,D1` | H1,V1,H2,V2,F1,D1 | 🟢 |
-| 152 | `sketch-dof == 1` | 1 | 🟢 |
-| 153 | `volume ~ 8` | 8 | 🟢 |
-| 164 | `constrain == 1` | 1 | 🟢 |
-| 165 | `volume ~ 8` | 8 | 🟢 |
-| 169 | `sketch-points == (0, 0) (4, 0) (4, 3) (0, 3)` | (0, 0) (4, 0) (4, 3) (0, 3) | 🟢 |
-| 170 | `volume ~ 12` | 12 | 🟢 |
-| 171 | `constrain-commits == 6` | 6 | 🟢 |
-| 184 | `constrain-refusal contains fully constrained` | Line1.Start is fully constrained (it cannot move) | 🟢 |
-| 185 | `volume ~ 12` | 12 | 🟢 |
-| 186 | `constrain-commits == 6` | 6 | 🟢 |
-| 192 | `constrain == 0` | 0 | 🟢 |
-| 205 | `constrain == 1` | 1 | 🟢 |
-| 206 | `constraint-count == 0` | 0 | 🟢 |
-| 207 | `sketch-dof == 6` | 6 | 🟢 |
-| 210 | `constrain-picks == Line1.Start` | Line1.Start | 🟢 |
-| 213 | `sketch-dof == 4` | 4 | 🟢 |
-| 216 | `constrain-picks == Line1` | Line1 | 🟢 |
-| 219 | `constraints == F1,H1` | F1,H1 | 🟢 |
-| 220 | `sketch-dof == 3` | 3 | 🟢 |
-| 228 | `constraints == F1,H1,D1` | F1,H1,D1 | 🟢 |
-| 229 | `sketch-dof == 2` | 2 | 🟢 |
-| 230 | `sketch-points == (0.5, 3.4) (2, 3.4) (3.5, 4.4)` | (0.5, 3.4) (2, 3.4) (3.5, 4.4) | 🟢 |
-| 239 | `constrain-picks == Line1,Line2` | Line1,Line2 | 🟢 |
-| 245 | `constraints == F1,H1,D1,A1` | F1,H1,D1,A1 | 🟢 |
-| 246 | `sketch-dof == 1` | 1 | 🟢 |
-| 253 | `constrain-picks == Line1,Line2` | Line1,Line2 | 🟢 |
-| 256 | `constraints == F1,H1,D1,A1,Q1` | F1,H1,D1,A1,Q1 | 🟢 |
-| 257 | `sketch-dof == 0` | 0 | 🟢 |
-| 258 | `sketch-status == fully constrained` | fully constrained | 🟢 |
-| 259 | `sketch-points == (0.5, 3.4) (2, 3.4) (3.06066, 4.46066)` | (0.5, 3.4) (2, 3.4) (3.06066, 4.46066) | 🟢 |
-| 267 | `constrain == 0` | 0 | 🟢 |
-| 268 | `refused == 0` | 0 | 🟢 |
+| 38 | `steps == 2` | 2 | 🟢 |
+| 39 | `volume ~ 2` | 2 | 🟢 |
+| 46 | `constrain == 1` | 1 | 🟢 |
+| 47 | `constraint-count == 4` | 4 | 🟢 |
+| 48 | `constraints == H1,V1,H2,V2` | H1,V1,H2,V2 | 🟢 |
+| 49 | `sketch-dof == 4` | 4 | 🟢 |
+| 50 | `sketch-status == under-constrained` | under-constrained | 🟢 |
+| 51 | `status contains Constrain Rectangle1` | Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sket... | 🟢 |
+| 57 | `constrain-picks == Line1.Start` | Line1.Start | 🟢 |
+| 60 | `constraint-count == 5` | 5 | 🟢 |
+| 61 | `sketch-dof == 2` | 2 | 🟢 |
+| 62 | `constrain-picks == 0` |  | 🟢 |
+| 63 | `constrain-commits == 1` | 1 | 🟢 |
+| 68 | `constrain-picks == Line1` | Line1 | 🟢 |
+| 71 | `status contains type a value` | Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops | 🟢 |
+| 76 | `constraint-count == 6` | 6 | 🟢 |
+| 77 | `sketch-dof == 1` | 1 | 🟢 |
+| 78 | `volume ~ 3` | 3 | 🟢 |
+| 79 | `picked-constraint contains D1` | D1 Length 3 · Line1 | 🟢 |
+| 86 | `constrain-picks == Line2` | Line2 | 🟢 |
+| 92 | `sketch-dof == 0` | 0 | 🟢 |
+| 93 | `sketch-status == fully constrained` | fully constrained | 🟢 |
+| 94 | `constraints == H1,V1,H2,V2,F1,D1,D2` | H1,V1,H2,V2,F1,D1,D2 | 🟢 |
+| 95 | `volume ~ 6` | 6 | 🟢 |
+| 96 | `sketch-points == (0, 0) (3, 0) (3, 2) (0, 2)` | (0, 0) (3, 0) (3, 2) (0, 2) | 🟢 |
+| 108 | `constraint-count == 7` | 7 | 🟢 |
+| 109 | `constrain-refusal contains is already implied by` | Length 3 · Line3 is already implied by V1 (Vertical · Line2), V2 (Vertical · Line4),... | 🟢 |
+| 110 | `constrain-refusal contains D1` | Length 3 · Line3 is already implied by V1 (Vertical · Line2), V2 (Vertical · Line4),... | 🟢 |
+| 114 | `constraint-count == 7` | 7 | 🟢 |
+| 115 | `constrain-refusal contains conflicts with` | Length 5 · Line3 conflicts with V1 (Vertical · Line2), V2 (Vertical · Line4), D1 (Le... | 🟢 |
+| 116 | `volume ~ 6` | 6 | 🟢 |
+| 122 | `constrain-picks == 0` |  | 🟢 |
+| 123 | `constrain == 1` | 1 | 🟢 |
+| 128 | `picked-constraint contains D1` | D1 Length 3 · Line1 | 🟢 |
+| 132 | `volume ~ 8` | 8 | 🟢 |
+| 133 | `sketch-points contains (4, 2)` | (0, 0) (4, 0) (4, 2) (0, 2) | 🟢 |
+| 136 | `volume ~ 6` | 6 | 🟢 |
+| 139 | `volume ~ 8` | 8 | 🟢 |
+| 140 | `constrain == 1` | 1 | 🟢 |
+| 148 | `picked-constraint contains D2` | D2 Length 2 · Line2 | 🟢 |
+| 151 | `constraint-count == 6` | 6 | 🟢 |
+| 152 | `constraints == H1,V1,H2,V2,F1,D1` | H1,V1,H2,V2,F1,D1 | 🟢 |
+| 153 | `sketch-dof == 1` | 1 | 🟢 |
+| 154 | `volume ~ 8` | 8 | 🟢 |
+| 165 | `constrain == 1` | 1 | 🟢 |
+| 166 | `volume ~ 8` | 8 | 🟢 |
+| 170 | `sketch-points == (0, 0) (4, 0) (4, 3) (0, 3)` | (0, 0) (4, 0) (4, 3) (0, 3) | 🟢 |
+| 171 | `volume ~ 12` | 12 | 🟢 |
+| 172 | `constrain-commits == 6` | 6 | 🟢 |
+| 185 | `constrain-refusal contains fully constrained` | Line1.Start is fully constrained (it cannot move) | 🟢 |
+| 186 | `volume ~ 12` | 12 | 🟢 |
+| 187 | `constrain-commits == 6` | 6 | 🟢 |
+| 193 | `constrain == 0` | 0 | 🟢 |
+| 206 | `constrain == 1` | 1 | 🟢 |
+| 207 | `constraint-count == 0` | 0 | 🟢 |
+| 208 | `sketch-dof == 6` | 6 | 🟢 |
+| 211 | `constrain-picks == Line1.Start` | Line1.Start | 🟢 |
+| 214 | `sketch-dof == 4` | 4 | 🟢 |
+| 217 | `constrain-picks == Line1` | Line1 | 🟢 |
+| 220 | `constraints == F1,H1` | F1,H1 | 🟢 |
+| 221 | `sketch-dof == 3` | 3 | 🟢 |
+| 229 | `constraints == F1,H1,D1` | F1,H1,D1 | 🟢 |
+| 230 | `sketch-dof == 2` | 2 | 🟢 |
+| 231 | `sketch-points == (0.5, 3.4) (2, 3.4) (3.5, 4.4)` | (0.5, 3.4) (2, 3.4) (3.5, 4.4) | 🟢 |
+| 240 | `constrain-picks == Line1,Line2` | Line1,Line2 | 🟢 |
+| 246 | `constraints == F1,H1,D1,A1` | F1,H1,D1,A1 | 🟢 |
+| 247 | `sketch-dof == 1` | 1 | 🟢 |
+| 254 | `constrain-picks == Line1,Line2` | Line1,Line2 | 🟢 |
+| 257 | `constraints == F1,H1,D1,A1,Q1` | F1,H1,D1,A1,Q1 | 🟢 |
+| 258 | `sketch-dof == 0` | 0 | 🟢 |
+| 259 | `sketch-status == fully constrained` | fully constrained | 🟢 |
+| 260 | `sketch-points == (0.5, 3.4) (2, 3.4) (3.06066, 4.46066)` | (0.5, 3.4) (2, 3.4) (3.06066, 4.46066) | 🟢 |
+| 268 | `constrain == 0` | 0 | 🟢 |
+| 269 | `refused == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 109 | `2a16745c309adba4` |
-| 123ConstrainFull | 174 | `3ff5cc680f16f231` |
-| 124ConstrainConflict | 202 | `4b6824d97b40c918` |
-| 125ConstrainEdit | 240 | `ceb75962dbf8b696` |
-| 126ConstrainDragging | 275 | `a2dbd46777e47fcb` |
-| 127ConstrainAngle | 451 | `c9ad51574e4b6096` |
+| 122ConstrainOpen | 109 | `82646233326c1fe9` |
+| 123ConstrainFull | 174 | `892f6b73bb8c65f8` |
+| 124ConstrainConflict | 202 | `763e850e71be6d73` |
+| 125ConstrainEdit | 240 | `e37c1f4d3f322e72` |
+| 126ConstrainDragging | 275 | `170d1cb7d2969835` |
+| 127ConstrainAngle | 454 | `c0880f06cbef3992` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Rectangle on plane XY: click two corners · Alt centre mode · Esc aborts
+- Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
@@ -106,7 +106,7 @@
 - Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 3 · Line1 · 10 ms
+- Constrain Rectangle1: Length 3 · Line1 · 11 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
@@ -129,12 +129,12 @@
 - Drag Line2.End of Rectangle1 · 22 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
-- Line on plane XY: click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · Esc aborts
+- Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstraintsRecovery.solidarc
 - Line1 · 15 ms
 - Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 15 ms
+- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 16 ms
 - Picked Line1
 - Constrain Line1: Horizontal · Line1 · 15 ms
 - Picked Line1
@@ -144,9 +144,9 @@
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 15 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 16 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
-- Constrain Line1: Equal length · Line1 · Line2 · 15 ms
+- Constrain Line1: Equal length · Line1 · Line2 · 18 ms
 - Constrain ended

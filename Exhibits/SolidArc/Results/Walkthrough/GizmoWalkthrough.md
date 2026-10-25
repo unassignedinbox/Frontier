@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 323 frames · 19.7251 s · slowest frame 345.053 ms
+- Frame: 1600 x 900 · 323 frames · 25.2063 s · slowest frame 468.713 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/GizmoWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,13 +44,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 218GizmoMove | 64 | `4a7e1c34d6c1d7f8` |
-| 219GizmoCombined | 103 | `980ded3770871372` |
-| 220GizmoScaled | 143 | `f52c68c166635c55` |
-| 221GizmoFace | 169 | `2cb0ae27f0a0d118` |
-| 222GizmoFaceRotate | 215 | `1217dd230ae4b584` |
-| 223GizmoSketch | 286 | `e27d26f0b1138e1f` |
-| 224GizmoLoft | 323 | `72f76b39d4d3e767` |
+| 218GizmoMove | 64 | `2b9d3cff1ffee929` |
+| 219GizmoCombined | 103 | `0447145447522046` |
+| 220GizmoScaled | 143 | `37859299ec4934c8` |
+| 221GizmoFace | 169 | `f0e19763f4eca50e` |
+| 222GizmoFaceRotate | 215 | `3d27964de7185a42` |
+| 223GizmoSketch | 286 | `18e7dd385fa99a90` |
+| 224GizmoLoft | 323 | `5e60ee0f7bd39926` |
 
 ## Journal
 
@@ -58,29 +58,29 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 7 ms
+- Block1 · New body · 9 ms
 - Selected Block1 (6 faces)
-- Move (Block1) · 7 ms
-- Gizmo Z move 0.5 · Move (Block1) · 7 ms
+- Move (Block1) · 9 ms
+- Gizmo Z move 0.5 · Move (Block1) · 9 ms
 - Gizmo: rotate
 - Gizmo: scale
 - Gizmo: move + rotate
 - Gizmo: rotate + scale
 - Gizmo: move + rotate + scale
-- Rotate (Block1) · 8 ms
-- Gizmo Z rotate -20.0° · Rotate (Block1) · 8 ms
-- Scale (Block1) · 17 ms
-- Gizmo X scale 1.400x · Scale (Block1) · 17 ms
+- Rotate (Block1) · 9 ms
+- Gizmo Z rotate -20.0° · Rotate (Block1) · 9 ms
+- Scale (Block1) · 20 ms
+- Gizmo X scale 1.400x · Scale (Block1) · 20 ms
 - Undo
 - Undo
 - Undo
 - Selected Extrude#2.Cap(End)
-- Offset 0.4 on 1 face(s) · 16 ms
-- Gizmo Z move 0.4 · push / pull · Offset 0.4 on 1 face(s) · 16 ms
+- Offset 0.4 on 1 face(s) · 17 ms
+- Gizmo Z move 0.4 · push / pull · Offset 0.4 on 1 face(s) · 17 ms
 - Gizmo: rotate + scale
 - Gizmo: rotate
-- Rotate -0.08727 on 1 face(s) · 17 ms
-- Gizmo X rotate -5.0° · face rotate · Rotate -0.08727 on 1 face(s) · 17 ms
+- Rotate -0.08727 on 1 face(s) · 18 ms
+- Gizmo X rotate -5.0° · face rotate · Rotate -0.08727 on 1 face(s) · 18 ms
 - New document (previous recovery copy kept)
 - Gizmo: move + rotate
 - Gizmo: move
@@ -92,5 +92,5 @@
 - Move (Circle2) · 0 ms
 - Gizmo Z move 0.7 · Move (Circle2) · 0 ms
 - Selected sketch Circle1 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · solid · 7 ms
-- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 7 ms
+- Loft1 · 2 sections · solid · 9 ms
+- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 9 ms

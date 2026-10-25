@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 122 frames · 15.6433 s · slowest frame 1027.99 ms
+- Frame: 1600 x 900 · 122 frames · 20.5399 s · slowest frame 1237.12 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/DrawingSheetWalkthrough.txt
 - Expectations: 35 / 35 passed
 
@@ -45,11 +45,11 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 190DrawingSheetFirstAngle | 10 | `c3544899cf56d08f` |
-| 191DrawingSheetThirdAngle | 22 | `c6b72017acc60601` |
-| 192DrawingSheetSection | 31 | `88552db88ca11adc` |
-| 193DrawingSheetZoom | 83 | `5da0d3abf051974d` |
-| 194DrawingSheetExport | 106 | `2e9a2a08ae6f38ab` |
+| 190DrawingSheetFirstAngle | 10 | `81d1cddb2e16be78` |
+| 191DrawingSheetThirdAngle | 22 | `3ba64b367921056a` |
+| 192DrawingSheetSection | 31 | `b4371bf8f909fe0d` |
+| 193DrawingSheetZoom | 83 | `19419a45683f02a3` |
+| 194DrawingSheetExport | 106 | `e9e5e63a4b78e7ad` |
 
 ## Journal
 

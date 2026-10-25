@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 211 frames · 16.5274 s · slowest frame 353.172 ms
+- Frame: 1600 x 900 · 211 frames · 22.7855 s · slowest frame 499.395 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ExchangeWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,24 +46,24 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 195ExchangeExportStep | 19 | `457730baa77927f3` |
-| 196ExchangeSaveAsStl | 68 | `985d2e92c1dfdd90` |
-| 197ExchangeImported | 123 | `652df59eac0330be` |
-| 198ExchangeFilletImported | 165 | `f26beae03cde38f4` |
-| 199ExchangeImportStep | 174 | `fc5bb921312f0e03` |
+| 195ExchangeExportStep | 19 | `69868ac4636c9123` |
+| 196ExchangeSaveAsStl | 68 | `45de554226be71c8` |
+| 197ExchangeImported | 123 | `e95ceaa3b946dec1` |
+| 198ExchangeFilletImported | 165 | `ce330f8e5c652919` |
+| 199ExchangeImportStep | 174 | `9314b306370c1e59` |
 
 ## Journal
 
 - Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 2 ms
-- Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 9 ms
+- Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 10 ms
 - New document (previous recovery copy kept)
-- Import Exchange · 1 solid(s) · 62 ms
+- Import Exchange · 1 solid(s) · 91 ms
 - Framed the document (Space)
-- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 95 ms
+- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 138 ms
 - Selection cleared
 - Selected Edge(Import#1.Face(1)|Import#1.Face(5))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.1 m (pinned)
-- Fillet 0.1 on 1 edge(s) · 90 ms
+- Fillet 0.1 on 1 edge(s) · 141 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ExchangeRecovery.solidarc
 - Refused: Import: Experimental/VehicleSurfacing/Samples/SyntheticBonnet.obj is neither .step / .stp nor a VehicleCurves .toml
