@@ -20,7 +20,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Property | SolidArcWorkspace.exe | Frontier.exe |
 |---|---|---|
-| Size | 7,289,344 B | 6,917,632 B |
+| Size | 7,319,040 B | 6,917,632 B |
 | Machine | 0x8664 (x64) | 0x8664 (x64) |
 | Subsystem | 2: Windows GUI (`-Wl,--subsystem,windows`; `WIN32_EXECUTABLE` alone gave 3, console) | 3: console (upstream setting, unchanged) |
 | DLL imports | GDI32, KERNEL32, SHELL32, USER32, plus `api-ms-win-crt-{convert, environment, heap, locale, math, multibyte, private, runtime, stdio, string, time, utility}` | Same, plus comdlg32 and ole32 |
@@ -32,7 +32,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Entry | Size | Purpose |
 |---|---|---|
-| `SolidArc/SolidArcWorkspace.exe` | 6,984,704 B | The application |
+| `SolidArc/SolidArcWorkspace.exe` | 7,319,040 B | The application |
 | `SolidArc/SolidArcWorkspace.toml` | 940 B | Package options: window, viewport, font, and file paths (autosave in `Autosave/`, documents in `Documents/`, both inside the package folder), plus Vulkan |
 | `SolidArc/README.md` | 1,671 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
 | `SolidArc/EngineContent/FontArchives/…` | | DM Sans (the upstream interface typeface) |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,704,458 B |
-| Zip sha256 | `9b1030e42ef834647dbb6029db3f24f5ab90a48ab310941bc83fb2e2908fbf26` |
-| Unpacked | 8,740,299 B (343 entries) |
+| Zip size | 3,719,466 B |
+| Zip sha256 | `f1f450a3503112a173e83a475f8b30552f8e89e4807492949a4568adf844b3a4` |
+| Unpacked | 8,769,738 B (342 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
