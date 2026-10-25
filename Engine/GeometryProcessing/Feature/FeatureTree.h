@@ -128,6 +128,8 @@ struct FeatureStep
                                                                                              //         unfilled (Plasticity's fresh curves) → extrude makes walls
     std::string                    Profile        = {};                                      // [-]   - Extrude / revolve / cut: sketch step label
     FeatureValue                   Extent         = {};                                      // [len] - Extrude distance (negative: below the plane) · inset depth
+    FeatureValue                   Start          = {};                                      // [len] - Extrude: where the sweep starts along the normal (negative: sunk
+                                                                                             //         into the curved face the sketch is tangent to, so a Union closes)
     FeatureCombination             Combination    = FeatureCombination::New;                 // [-]   - Extrude / revolve: Boolean with the current body
     int                            AxisIdentifier = -1;                                      // [-]   - Revolve: identifier of the axis line in the sketch (−1: AxisOrigin / AxisDirection)
     Vector2                        AxisOrigin     = {};                                      // [len] - Revolve without an axis line: a point of the axis (sketch coordinates)

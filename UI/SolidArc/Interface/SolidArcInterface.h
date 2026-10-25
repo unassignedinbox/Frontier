@@ -117,6 +117,7 @@ struct SolidArcBevelSession
     double                            StagedEndSize   = -1.0;                                // [len] - EndSize the preview was built at
     bool                              StagedReversed  = false;                               // [-]   - Flip the preview was built at
     std::string                       ProfileLabel    = {};                                  // [-]   - Profile: sketch step extruded
+    double                            ProfileSink     = 0.0;                                 // [len] - Profile on a curved face's tangent plane: Union starts this deep
     GeometryProcessing::FeatureCombination      Combination     = GeometryProcessing::FeatureCombination::Union; // [-]   - Profile: Q union · W difference · E intersect · R new
     GeometryProcessing::FeatureCombination      StagedCombination = GeometryProcessing::FeatureCombination::Union; // [-] - Combination the preview was built at
     double                            Depth           = 0.0;                                 // [len] - Inset: inner face shift (− pocket)

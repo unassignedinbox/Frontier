@@ -270,6 +270,14 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "transform-preview-volume")
         return Numeric(State.Transform.Preview ? State.Transform.Preview->Summary.Volume
                        : State.Transform.RigidCondition ? RigidPreviewVolume(Document, State.Transform.Keys, State.Transform.StagedMap) : 0.0);
+    if (Field == "profile-sink") return Numeric(State.Bevel.ProfileSink);
+    if (Field == "extrude-start")
+    {
+        // Start offset of the last Extrude step (0 without one).
+        for (auto Step = Document.Tree.Steps.rbegin(); Step != Document.Tree.Steps.rend(); ++Step)
+            if (Step->Kind == GeometryProcessing::FeatureStepKind::Extrude) return Numeric(GeometryProcessing::EvaluateFeatureValue(Document.Tree, Step->Start));
+        return Numeric(0.0);
+    }
     if (Field == "transform-rigid") return Numeric(State.Transform.RigidCondition ? 1 : 0);
     if (Field == "gizmo-rigid") return Numeric(State.Gizmo.DragCondition && State.Gizmo.RigidCondition ? 1 : 0);
     if (Field == "sweep") return Numeric(State.Sweep.ActiveCondition ? 1 : 0);

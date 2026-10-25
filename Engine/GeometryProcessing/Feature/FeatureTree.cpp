@@ -513,7 +513,16 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 Refuse("Extrude: " + Step.Profile + " is unfilled, so it makes walls (a sheet) — fill it (F) to " + FeatureCombinationLabel(Step.Combination));
                 break;
             }
-            if (Step.Kind == FeatureStepKind::Extrude) Sweep = ExtrudeProfile(Partition, Profile, Solved.Plane, EvaluateFeatureValue(Tree, Step.Extent), !WallsCondition);
+            if (Step.Kind == FeatureStepKind::Extrude)
+            {
+                // A start offset slides the sketch plane along its normal; the far end stays at Extent.
+                const double     Start  = EvaluateFeatureValue(Tree, Step.Start);
+                const double     Extent = EvaluateFeatureValue(Tree, Step.Extent);
+                OrthonormalFrame Plane  = Solved.Plane;
+                Plane.Origin            = Plane.Origin + Plane.ZAxis * Start;
+                if (Start != 0.0 && !((Extent - Start) * (Extent >= 0.0 ? 1.0 : -1.0) > 1.0e-9)) { Refuse("Extrude: the start " + std::to_string(Start) + " passes the end " + std::to_string(Extent)); break; }
+                Sweep = ExtrudeProfile(Partition, Profile, Plane, Extent - Start, !WallsCondition);
+            }
             else if (Step.Kind == FeatureStepKind::Evolution)
             {
                 // ⑯ Path: a SpaceCurve, or another sketch holding exactly one open curve (line, arc or spline).

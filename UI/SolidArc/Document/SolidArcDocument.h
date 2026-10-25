@@ -95,6 +95,7 @@ struct SolidArcConstructRequest
     double                       Angle       = 0.0;                                          // [rad] - Prism: direction of the first vertex from the centre
     bool                         PlaneCondition = false;                                     // [-]   - Built on Plane (a body face) instead of the world floor
     GeometryProcessing::OrthonormalFrame   Plane       = {};                                           // [len] - Face frame (origin, x̂, ŷ, outward n̂) when PlaneCondition
+    double                       Start       = 0.0;                                          // [len] - ≤ 0: Union extrudes start this far below Plane (curved face)
 };
 
 // 📝 Points are construction-plane coordinates (GridPlane 0 XY, 1 XZ, 2 YZ; see SolidArcSketchPlane). Only the fields of
@@ -343,8 +344,11 @@ struct VehicleCurveFile;
 
 // Extrude a sketch step's profile by Distance along its plane normal; the first body is always New, a later one must
 // combine (Union, Difference, Intersection). Refused (document untouched) when the profile or the Boolean refuses.
+// Start (≤ 0) sinks the start of the sweep below the sketch plane: a profile on the tangent plane of a curved face
+// (MeasureSolidArcProfileSink) then reaches into the body, so a Union closes instead of touching along a line.
 [[nodiscard]] SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Distance,
-                                                           GeometryProcessing::FeatureCombination Combination, const std::string& Target = {});
+                                                           GeometryProcessing::FeatureCombination Combination, const std::string& Target = {},
+                                                           double Start = 0.0);
 
 // Plasticity Q (command:boolean): Combine steps merging each tool body into Target (Union / Difference / Intersection);
 // the tools are consumed. One undo entry; refused (document untouched) unless every Boolean succeeds.
@@ -422,6 +426,17 @@ struct SolidArcJointOrigin
 };
 
 [[nodiscard]] SolidArcJointOrigin ResolveSolidArcJointOrigin(const SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name);
+
+// 📝 Exact foot of a point on a named face's surface: the closest surface point and the outward unit normal there (the
+//    face sense applied). The tangent plane of a curved face for sketching on it (Orient to faces).
+struct SolidArcFaceFoot
+{
+    bool                        FoundCondition = false;                                      // [-]   - The face exists and the inversion converged
+    GeometryProcessing::Vector3 Position       = {};                                         // [len] - Surface point (world)
+    GeometryProcessing::Vector3 Normal         = {};                                         // [-]   - Outward unit normal
+};
+
+[[nodiscard]] SolidArcFaceFoot ProjectOntoSolidArcFace(const SolidArcDocument& Document, const std::string& Name, GeometryProcessing::Vector3 Position);
 
 // One Joint step: the moving body (and every body jointed to it) moves; refused (document untouched) when both origins
 // are on one body, the moving body is already jointed, or the joint would close a loop.

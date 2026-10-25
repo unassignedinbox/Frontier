@@ -709,7 +709,18 @@ SolidArcCommandOutcome ConstructSolidArcPrimitive(SolidArcDocument& Document, co
                              && std::abs(Dot(Face.XAxis, Face.YAxis)) < 1.0e-9 && Length(Cross(Face.XAxis, Face.YAxis) - Face.ZAxis) < 1.0e-9;
             if (!Finite || !Square) return "the face plane is not an orthonormal right-handed frame";
         }
+        if (Request.Start > 0.0) return "a construct start lies on or below its plane (start ≤ 0)";
+        const size_t Authored = Document.Tree.Steps.size();
         AuthorTile(Document, Request, FirstBodyCondition && Request.Combination != FeatureCombination::Separate ? FeatureCombination::New : Request.Combination);
+        // A footprint on the tangent plane of a curved face starts sunk into it (MeasureSolidArcProfileSink), so the
+        // Union closes instead of touching along a line.
+        if (Request.Start < 0.0)
+            for (size_t Index = Authored; Index < Document.Tree.Steps.size(); ++Index)
+            {
+                FeatureStep& Step = Document.Tree.Steps[Index];
+                if (Step.Kind == FeatureStepKind::Extrude && Step.Combination == FeatureCombination::Union && EvaluateFeatureValue(Document.Tree, Step.Extent) > 0.0)
+                    Step.Start = FeatureValue{ Request.Start };
+            }
         return {};
     });
 }
@@ -1104,7 +1115,7 @@ SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std:
 }
 
 SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination,
-                                             const std::string& Target)
+                                             const std::string& Target, double Start)
 {
     const bool        FirstBodyCondition = !Document.Summary.PresentCondition && Combination != FeatureCombination::Separate;
     const std::string Caption = NextCaption(Document, "Extrude");
@@ -1120,8 +1131,10 @@ SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const s
             return std::string("nothing to ") + (Combination == FeatureCombination::Difference ? "subtract from" : "intersect with") + " yet (no body)";
         if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference, Intersection or New body";
         if (!Target.empty() && !FindRegeneratedBody(Document, Target)) return "no body named " + Target;
+        if (Start > 0.0) return "an extrude start lies on or below the sketch plane (start ≤ 0)";
         FeatureStep Step;
         Step.Kind        = FeatureStepKind::Extrude;
+        if (Start < 0.0) Step.Start = FeatureValue{ Start };
         Step.Label       = "Extrude#" + std::to_string(NextStepOrdinal(Document.Tree));
         Step.Profile     = SketchLabel;
         Step.Extent      = FeatureValue{ Distance };
@@ -1888,6 +1901,31 @@ SolidArcJointOrigin ResolveSolidArcJointOrigin(const SolidArcDocument& Document,
     }
     Origin.Refusal = "no edge or face named " + Name;
     return Origin;
+}
+
+SolidArcFaceFoot ProjectOntoSolidArcFace(const SolidArcDocument& Document, const std::string& Name, Vector3 Position)
+{
+    SolidArcFaceFoot Foot;
+    if (!Document.Partition) return Foot;
+    for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+        for (const auto& [Slot, Candidate] : Body.Naming.Faces)
+        {
+            if (Candidate != Name) continue;
+            const ModelPartition& Partition = *Document.Partition;
+            const FaceToken       Face      = Partition.Faces.TokenAt(Slot);
+            if (!Partition.Faces.Authenticate(Face)) return Foot;
+            const FaceProfile&     Profile   = Partition.Faces.Resolve(Face);
+            const SurfaceGeometry& Surface   = Partition.Surfaces.Resolve(Profile.Surface);
+            const Vector2          Parameter = ProjectOntoSurface(Surface, Position, Vector2{});
+            const Vector3          Point     = EvaluateSurface(Surface, Parameter).Position;
+            const Vector3          Natural   = EvaluateSurfaceNormal(Surface, Parameter);
+            if (!std::isfinite(Point.X + Point.Y + Point.Z) || !(Length(Natural) > 0.5)) return Foot;
+            Foot.FoundCondition = true;
+            Foot.Position       = Point;
+            Foot.Normal         = Profile.Sense == Orientation::Forward ? Natural : Natural * -1.0;
+            return Foot;
+        }
+    return Foot;
 }
 
 SolidArcCommandOutcome JointSolidArcBodies(SolidArcDocument& Document, const SolidArcJointRequest& Request)

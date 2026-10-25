@@ -679,6 +679,12 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
     Announce(State, "Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts");
 }
 
+// Profile extrude start: a Union pointing out of the curved face the sketch is tangent to starts sunk into it.
+[[nodiscard]] double ProfileStart(const SolidArcBevelSession& Bevel)
+{
+    return Bevel.Combination == FeatureCombination::Union && Bevel.Size > 0.0 ? -Bevel.ProfileSink : 0.0;
+}
+
 void StageBevelPreview(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
@@ -698,7 +704,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 4)] + " · size " + TraceNumber(Bevel.Size));
     SolidArcPhaseClock StageClock(State.Profile, "bevel preview · stage");
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
-    const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
+    const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State), ProfileStart(Bevel))
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
                                          : Bevel.Verb == SolidArcSessionVerb::Inset   ? InsetSolidArcSelection(*Bevel.Preview, Bevel.Size, Bevel.Depth)
                                          : Bevel.Verb == SolidArcSessionVerb::Corner  ? CutSolidArcSketchCorners(*Bevel.Preview, ComposeCornerRequest(Bevel))
@@ -731,7 +737,8 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
     }
     if (State.Bevel.Verb == SolidArcSessionVerb::Profile)
     {
-        const SolidArcCommandOutcome Outcome = ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State));
+        const SolidArcCommandOutcome Outcome = ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State),
+                                                                     State.Bevel.Combination == FeatureCombination::Union && Size > 0.0 ? -State.Bevel.ProfileSink : 0.0);
         if (Outcome.AcceptedCondition) State.FocusedStep = {};
         Conclude(State, Outcome);
         return;
@@ -1326,6 +1333,18 @@ void FinishSolidSession(SolidArcWorkspaceState& State)
     const bool FirstBody = !State.Document.Summary.PresentCondition;
     Request.Combination  = FirstBody && Drawing.Combination != GeometryProcessing::FeatureCombination::Separate ? GeometryProcessing::FeatureCombination::New : Drawing.Combination;
     Request.Target       = Request.Combination == GeometryProcessing::FeatureCombination::Separate || FirstBody ? std::string{} : BooleanTarget(State);
+    if (Request.PlaneCondition && Request.Combination == GeometryProcessing::FeatureCombination::Union)
+    {
+        // The footprint on the tangent plane of a curved face: measured on a new-body copy (a touching Union refuses).
+        SolidArcDocument         Probe     = CloneSolidArcDocument(State.Document);
+        SolidArcConstructRequest Footprint = Request;
+        Footprint.Combination            = GeometryProcessing::FeatureCombination::Separate;
+        Footprint.Target.clear();
+        const size_t Before = Probe.Tree.Steps.size();
+        if (ConstructSolidArcPrimitive(Probe, Footprint).AcceptedCondition)
+            for (size_t Index = Before; Index < Probe.Tree.Steps.size(); ++Index)
+                if (Probe.Tree.Steps[Index].Kind == FeatureStepKind::Sketch) { Request.Start = -MeasureSolidArcProfileSink(Probe, State.Scene, Probe.Tree.Steps[Index].Label); break; }
+    }
     Drawing.ActiveCondition = false;
     State.LastCommand = { SolidArcRepeatKind::Construct, BlendProfile::Fillet, 0.0, FaceOperationKind::Extrude, 0.0, Request };
     const SolidArcCommandOutcome Outcome = ConstructSolidArcPrimitive(State.Document, Request);
@@ -1430,10 +1449,21 @@ bool ResolveHoveredFacePlane(SolidArcWorkspaceState& State, const OrbitCameraFra
     }
     else
     {
+        // The exact tangent plane: the facet hit carried to its foot on the face's surface, the surface normal there (the
+        // blended facet normal only when the inversion fails). A facet hit alone sits up to the sag inside the surface.
         Anchor = Vector3{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] } + Vector3{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] } * Pick->Distance;
-        const std::optional<Vector3> Tangent = SceneNormalAt(State.Scene, Index, Anchor);
-        if (!Tangent) return false;
-        Normal = *Tangent;
+        const SolidArcFaceFoot Foot = ProjectOntoSolidArcFace(State.Document, Name, Anchor);
+        if (Foot.FoundCondition && Length(Foot.Position - Anchor) < 4.0 * std::max(State.Scene.Sag, 1.0e-3))
+        {
+            Anchor = Foot.Position;
+            Normal = Normalize(Foot.Normal);
+        }
+        else
+        {
+            const std::optional<Vector3> Tangent = SceneNormalAt(State.Scene, Index, Anchor);
+            if (!Tangent) return false;
+            Normal = *Tangent;
+        }
     }
     Vector3 XAxis = { 1.0, 0.0, 0.0 };
     if (std::abs(Normal.Z) > 1.0 - 1.0e-12) Normal = { 0.0, 0.0, Normal.Z > 0.0 ? 1.0 : -1.0 };   // Level face
@@ -1885,6 +1915,7 @@ void OpenSketchExtrudeSession(SolidArcWorkspaceState& State)
     State.Bevel.ActiveCondition = true;
     State.Bevel.Verb            = SolidArcSessionVerb::Profile;
     State.Bevel.ProfileLabel    = Label;
+    State.Bevel.ProfileSink     = MeasureSolidArcProfileSink(State.Document, State.Scene, Label);
     State.Bevel.Combination     = State.Document.Summary.PresentCondition ? FeatureCombination::Union : FeatureCombination::New;
     State.Bevel.Size            = Remembered;
     WriteBevelText(State.Bevel);
@@ -8347,6 +8378,8 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     {
         const auto Caption = State.Document.Captions.find(Bevel.ProfileLabel);
         ImGui::TextWrapped("Profile: %s (%s)", Caption != State.Document.Captions.end() ? Caption->second.c_str() : "-", Bevel.ProfileLabel.c_str());
+        if (ProfileStart(Bevel) < 0.0)
+            ImGui::TextWrapped("On a curved face: starts %s inside it, so the union closes", FormatLength(Bevel.ProfileSink).c_str());
     }
     else if (Corner)
     {

@@ -140,6 +140,7 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
     Writer.Value(Step.Elevation);
     Writer.Phrase(Step.Profile);
     Writer.Value(Step.Extent);
+    if (Step.Start.Literal != 0.0 || !Step.Start.Parameter.empty()) Writer.Value(Step.Start);   // Absent before start offsets: digests unchanged
     Writer.Kind(Step.Combination);
     Writer.Integer(Step.AxisIdentifier);
     Writer.Point(Step.AxisOrigin);

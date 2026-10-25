@@ -141,6 +141,7 @@ constexpr int64_t FormatVersion = 1;                                            
     case FeatureStepKind::Revolve:
         Table.insert("Profile", Step.Profile);
         Table.insert("Extent", EncodeValue(Step.Extent));
+        if (Step.Start.Literal != 0.0 || !Step.Start.Parameter.empty()) Table.insert("Start", EncodeValue(Step.Start));   // Absent: 0 (older files)
         Table.insert("Combination", static_cast<int64_t>(Step.Combination));
         Table.insert("AxisIdentifier", Step.AxisIdentifier);
         Table.insert("Angle", EncodeValue(Step.Angle));
@@ -640,6 +641,7 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             Step.Sketch         = DecodeSketch(View["Sketch"]);
             Step.Profile        = View["Profile"].value_or(std::string{});
             Step.Extent         = DecodeValue(View["Extent"]);
+            Step.Start          = DecodeValue(View["Start"]);
             const int64_t Combination = View["Combination"].value_or(int64_t{ 0 });
             if (Combination < 0 || Combination > static_cast<int64_t>(FeatureCombination::Separate))
             {

@@ -167,6 +167,13 @@ struct SolidArcDeviationMap
 [[nodiscard]] std::optional<SolidArcPick> PickSolidArcScene(const SolidArcScene& Scene, const OrbitRay& Ray, double EdgeReach, bool XRayEnabled = false,
                                                             const SolidArcSectionClip* Section = nullptr);
 
+// 💡 How deep a sketch's profile must start below its plane to reach into the body under it: each profile sample casts a
+//    ray down the plane normal into the scene; when every sample lands on a curved face (the plane is tangent to a
+//    cylinder, cone, sphere, …) the deepest landing plus the tessellation sag (facets lie inside a convex surface, so the
+//    facet depth already over-reaches the exact one). 0 when the profile is flush (a planar face), overhangs the body,
+//    or lands farther than its own size.
+[[nodiscard]] double MeasureSolidArcProfileSink(const SolidArcDocument& Document, const SolidArcScene& Scene, const std::string& SketchLabel);
+
 // Section clip of a scene: the plane and the faces of the document's sheet bodies.
 [[nodiscard]] SolidArcSectionClip ComposeSolidArcSectionClip(const SolidArcScene& Scene, const SolidArcDocument& Document, std::array<double, 4> Plane);
 

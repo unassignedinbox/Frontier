@@ -14,6 +14,7 @@
 #include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/SurfaceGeometry.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 #include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
 #include <algorithm>
@@ -422,6 +423,48 @@ size_t CountDanglingMatcaps(const SolidArcScene& Scene, const SolidArcAppearance
     for (const SolidArcSceneBody& Body : Scene.Bodies) Keys.insert(Body.Key);
     for (const auto& Entry : Appearance.BodyMatcaps) Dangling += Keys.contains(Entry.first) ? 0 : 1;
     return Dangling;
+}
+
+double MeasureSolidArcProfileSink(const SolidArcDocument& Document, const SolidArcScene& Scene, const std::string& SketchLabel)
+{
+    const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(),
+                                    [&](const FeatureStep& Step) { return Step.Label == SketchLabel && Step.Kind == FeatureStepKind::Sketch; });
+    if (Found == Document.Tree.Steps.end()) return 0.0;
+    OrthonormalFrame Plane = Found->Plane;
+    Plane.Origin           = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Found->Elevation);
+    const auto        Solved = Document.Regeneration.Sketches.find(SketchLabel);
+    const SketchModel& Sketch = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Found->Sketch;
+    std::vector<Vector3> Samples;
+    for (const SketchCurve& Curve : Sketch.Curves)
+    {
+        if (Curve.Construction) continue;
+        for (const Vector2& Point : SampleSketchCurve(Sketch, Curve)) Samples.push_back(Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y);
+    }
+    if (Samples.empty()) return 0.0;
+    Vector3 Low = Samples.front(), High = Samples.front();
+    for (const Vector3& Point : Samples)
+    {
+        Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
+        High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
+    }
+    const double Reach = Length(High - Low);                                                 // [len] - Profile size: the deepest landing allowed
+    const double Lead  = 1.0e-4;                                                             // [len] - Ray start above the plane
+    double       Depth = 0.0;
+    for (const Vector3& Point : Samples)
+    {
+        OrbitRay Ray;
+        const Vector3 Start = Point + Plane.ZAxis * Lead;
+        Ray.Origin    = { Start.X, Start.Y, Start.Z };
+        Ray.Direction = { -Plane.ZAxis.X, -Plane.ZAxis.Y, -Plane.ZAxis.Z };
+        const std::optional<SolidArcPick> Pick = PickSolidArcScene(Scene, Ray, 0.0);
+        if (!Pick || Pick->Identity == 0 || Pick->Identity == IdentitySectionCap || (Pick->Identity & IdentityEdgeBit)) return 0.0;
+        const uint32_t Face = Pick->Identity - 1u;
+        if (Face >= Scene.Faces.size() || Scene.Faces[Face].Surface == "Plane") return 0.0;
+        const double Landing = Pick->Distance - Lead;
+        if (Landing > Reach) return 0.0;
+        Depth = std::max(Depth, Landing);
+    }
+    return Depth > 1.0e-7 ? Depth + std::max(Scene.Sag, 1.0e-4) : 0.0;
 }
 
 } // namespace Frontier::SolidArc
