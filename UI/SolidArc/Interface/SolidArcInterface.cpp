@@ -6919,6 +6919,9 @@ struct CubeFace
 
 // 💡 Orientation cube: the six faces projected with the camera basis, back faces culled, painter-sorted; a click
 //    presents that view. Returns true when the pointer is over the cube (viewport gestures are then ignored).
+// 📝 The cube follows the viewport projection: parallel draws it orthographically; perspective puts an eye at E on −Forward
+//    with the viewport's own field of view (E = 1.6 / tan(fov / 2), the cube filling that cone) and divides by E + depth,
+//    the near corners spreading and the far ones drawing in. A face is seen when the eye is outside its plane (n·eye > 1).
 bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVec2 Corner, bool ClickCondition)
 {
     static const CubeFace Faces[] = {
@@ -6928,12 +6931,16 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
     };
     const OrbitCameraFrame Frame  = ViewportFrame(State);
     const ImVec2              Centre(Corner.x + CubeExtent * 0.5f, Corner.y + CubeExtent * 0.5f);
-    const float               Scale  = CubeExtent * 0.29f;
+    const bool                PerspectiveCondition = !Frame.OrthographicEnabled;
+    const float               Scale  = CubeExtent * (PerspectiveCondition ? 0.255f : 0.29f);
+    const double              EyeDistance = std::max(3.5, 1.6 / std::tan(0.5 * std::clamp(State.Camera.FieldOfView, 0.1, 2.5))); // [cube] - Eye to cube centre
     auto Project = [&](const std::array<double, 3>& Point)
     {
         const double Across = Point[0] * Frame.Right[0] + Point[1] * Frame.Right[1] + Point[2] * Frame.Right[2];
         const double Upward = Point[0] * Frame.Up[0] + Point[1] * Frame.Up[1] + Point[2] * Frame.Up[2];
-        return ImVec2(Centre.x + float(Across) * Scale, Centre.y - float(Upward) * Scale);
+        const double Depth  = Point[0] * Frame.Forward[0] + Point[1] * Frame.Forward[1] + Point[2] * Frame.Forward[2];
+        const double Spread = PerspectiveCondition ? EyeDistance / std::max(0.25, EyeDistance + Depth) : 1.0;
+        return ImVec2(Centre.x + float(Across * Spread) * Scale, Centre.y - float(Upward * Spread) * Scale);
     };
     struct Visible
     {
@@ -6945,7 +6952,7 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
     for (const CubeFace& Face : Faces)
     {
         const double Facing = -(Face.Normal[0] * Frame.Forward[0] + Face.Normal[1] * Frame.Forward[1] + Face.Normal[2] * Frame.Forward[2]);
-        if (Facing <= 1.0e-3) continue;
+        if ((PerspectiveCondition ? EyeDistance * Facing - 1.0 : Facing) <= 1.0e-3) continue;
         int Axis = 0;
         while (Face.Normal[Axis] == 0) ++Axis;
         const int FirstAxis = (Axis + 1) % 3, SecondAxis = (Axis + 2) % 3;

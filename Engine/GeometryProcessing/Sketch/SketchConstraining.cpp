@@ -202,6 +202,42 @@ namespace
         }
         return {};
     }
+
+    // 📝 A fillet arc (tangent to a line at both ends) turns less than π. A drag that solves to the far root, the same
+    //    tangent circle swept the long way, has turned the fillet inside out: the sign of (start − centre) × (end − centre)
+    //    flips. Returns the first such arc of After (−1: none); arcs at π (slot ends) carry no sign and are skipped.
+    [[nodiscard]] int InvertedFillet(const SketchModel& Before, const SketchModel& After)
+    {
+        std::vector<int> TangentEnds(Before.Curves.size(), 0);
+        for (const SketchConstraint& Constraint : Before.Constraints)
+        {
+            if (Constraint.Kind != Kind::Tangent || Constraint.First < 0 || Constraint.Second < 0) continue;
+            if (Constraint.First >= int(Before.Curves.size()) || Constraint.Second >= int(Before.Curves.size())) continue;
+            const SketchCurve& Line = Before.Curves[Constraint.First];
+            const SketchCurve& Arc  = Before.Curves[Constraint.Second];
+            if (Line.Kind != SketchCurveKind::Line || Arc.Kind != SketchCurveKind::Arc) continue;
+            const bool Joined = Line.Start == Arc.Start || Line.Start == Arc.End || Line.End == Arc.Start || Line.End == Arc.End;
+            TangentEnds[Constraint.Second] += Joined ? 1 : 0;
+        }
+        const auto Turn = [](const SketchModel& Sketch, const SketchCurve& Arc, double& Reach)
+        {
+            const Vector2 Centre = Sketch.Points[Arc.Centre].Position;
+            const Vector2 Start  = Sketch.Points[Arc.Start].Position - Centre;
+            const Vector2 End    = Sketch.Points[Arc.End].Position - Centre;
+            Reach = Length(Start) * Length(End);
+            return Cross(Start, End);
+        };
+        for (size_t Curve = 0; Curve < Before.Curves.size() && Curve < After.Curves.size(); ++Curve)
+        {
+            if (TangentEnds[Curve] < 2) continue;
+            double       ReachBefore = 0.0, ReachAfter = 0.0;
+            const double Earlier = Turn(Before, Before.Curves[Curve], ReachBefore);
+            const double Later   = Turn(After, After.Curves[Curve], ReachAfter);
+            if (std::fabs(Earlier) <= 1.0e-9 * ReachBefore || std::fabs(Later) <= 1.0e-9 * ReachAfter) continue;
+            if ((Earlier > 0.0) != (Later > 0.0)) return static_cast<int>(Curve);
+        }
+        return -1;
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -523,7 +559,7 @@ SketchDragOutcome DragSketchPoint(const SketchModel& Sketch, int Point, Vector2 
     Pinned.Points[Point].Position = Target;
     Pinned.Constraints.push_back(Make(Kind::Fixed, Point, -1, -1, Target.X, Target.Y));
     const SketchSolveOutcome PinnedSolve = SolveSketch(Pinned, Settings);
-    if (PinnedSolve.Converged && PinnedSolve.ConflictGroups.empty())
+    if (PinnedSolve.Converged && PinnedSolve.ConflictGroups.empty() && InvertedFillet(Sketch, Pinned) < 0)
     {
         Pinned.Constraints.pop_back();
         Outcome.Sketch          = std::move(Pinned);
@@ -539,6 +575,11 @@ SketchDragOutcome DragSketchPoint(const SketchModel& Sketch, int Point, Vector2 
     Free.Points[Point].Position = Target;
     Outcome.Solve = SolveSketch(Free, Settings);
     if (!Outcome.Solve.Converged || !Outcome.Solve.ConflictGroups.empty()) { Outcome.Refusal = "Drag: the sketch has no solution near there"; return Outcome; }
+    if (const int Inverted = InvertedFillet(Sketch, Free); Inverted >= 0)
+    {
+        Outcome.Refusal = "Drag: " + NameSketchPick(Sketch, { SketchPickKind::Curve, Inverted }) + " would turn inside out (a fillet stays under a half turn)";
+        return Outcome;
+    }
     Release(Free);
     Outcome.Sketch = std::move(Free);
     Outcome.Travel = Distance(Outcome.Sketch.Points[Point].Position, Origin);
