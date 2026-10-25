@@ -235,6 +235,33 @@ struct SolidArcTrimSession
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
 };
 
+// 📝 Fill tool (bottom toolbar, next to Trim): while open, the closed region under the pointer among the shown coplanar
+//    sketch curves previews filled (any cell of overlapping curves: a lens, a crescent, a square around a hole); a click
+//    fills it — the sketch itself when the region is its own loop, else a new filled sketch. Esc or right-click ends it.
+struct SolidArcFillSession
+{
+    bool                                    ActiveCondition = false;                         // [-]   - Fill tool open
+    bool                                    HoverCondition  = false;                         // [-]   - A region is under the pointer
+    std::string                             Sketch          = {};                            // [-]   - Sketch whose plane carries Pick
+    GeometryProcessing::Vector2             Pick            = {};                            // [len] - Pointer on that plane
+    std::vector<std::vector<GeometryProcessing::Vector3>> Outlines = {};                     // [len] - Region loops (world; [0] outer)
+    std::string                             WholeSketch     = {};                            // [-]   - The region is this sketch's own loop
+    std::string                             Refusal         = {};                            // [-]   - Why nothing fills under the pointer
+    ImVec2                                  Pointer         = { -1.0f, -1.0f };              // [px]  - Pointer of the cached hover
+    uint64_t                                Revision        = 0;                             // [-]   - Document revision of the cached hover
+    int                                     Commits         = 0;                             // [-]   - Fills applied (script evidence)
+};
+
+// 📝 Closed-sketch tint (Plasticity: fresh closed curves show a faint fill until filled): loops per sketch, cached by a
+//    fingerprint of the solved points and the fill flag.
+struct SolidArcSketchTint
+{
+    double                                               Fingerprint   = 0.0;                // [-]   - Points / curves / fill digest
+    bool                                                 FillCondition = false;              // [-]   - Filled (stronger tint)
+    std::vector<std::vector<GeometryProcessing::Vector2>> Outers       = {};                 // [len] - Outer loops (plane coordinates)
+    std::vector<std::vector<std::vector<GeometryProcessing::Vector2>>> Holes = {};           // [len] - Holes per outer loop
+};
+
 // 📝 K (constrain, SolveSpace's verbs on Plasticity's free K key) on one sketch step: click points / curves to pick them
 //    (a click on a constraint glyph or dimension picks that constraint, a click on empty space clears), then D distance /
 //    length / radius and N angle wait for a typed value (Enter; nothing typed keeps the measured one), H V O Q M Y L [ ]
@@ -540,6 +567,8 @@ struct SolidArcWorkspaceState
     SolidArcBoxSelection                  Box            = {};                               // [-]   - Left-drag box selection of curves
     SolidArcBooleanSession                Boolean        = {};                               // [-]   - Q: Boolean card on picked bodies
     SolidArcTrimSession                   Trim           = {};                               // [-]   - T: curve trim session
+    SolidArcFillSession                   Fill           = {};                               // [-]   - Fill tool: closed regions
+    std::map<std::string, SolidArcSketchTint> Tints      = {};                               // [-]   - Closed-sketch tints by step label
     SolidArcConstraintSession             Constrain      = {};                               // [-]   - K: sketch constraint session
     SolidArcTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
     SolidArcGizmoSession                  Gizmo          = {};                               // [-]   - Viewport move / rotate / scale gizmo
@@ -578,6 +607,9 @@ struct SolidArcWorkspaceState
     std::string                           FocusedStep    = {};                               // [-]   - Outliner row (step label)
     std::string                           DocumentPath   = {};                               // [-]   - Save / Open path
     std::array<char, 260>                 PathText       = {};                               // [-]   - Path field
+    std::array<char, 260>                 PicturePath    = {};                               // [-]   - Construct › Image plane: picture file
+    int                                   PicturePlane   = 1;                                // [-]   - 0 top (XY) · 1 front (XZ) · 2 right (YZ)
+    float                                 PictureWidth   = 4.0f;                             // [len] - World width of the new plane
     bool                                  DirtyCondition = false;                            // [-]   - Unsaved edits
     double                                AutosaveTimer  = -1.0;                             // [s]   - Countdown (< 0: idle)
     bool                                  WelcomeOpen    = false;                            // [-]   - Recovery prompt pending

@@ -237,9 +237,23 @@ SketchRegion LocateSketchRegion(const std::vector<ProfileSegment>& Segments, Vec
         }
     }
 
+    // ②′ Coincident pieces (the same curve drawn twice, or a filled region over the curves it came from) count once.
+    for (size_t First = 0; First < Pieces.size(); ++First)
+    {
+        if (!Pieces[First].AliveCondition) continue;
+        const Vector2 Middle = EvaluateProfileSegment(Segments[Pieces[First].Source], 0.5 * (Pieces[First].From + Pieces[First].To));
+        for (size_t Second = First + 1; Second < Pieces.size(); ++Second)
+        {
+            ArrangementPiece& Other = Pieces[Second];
+            const bool Same = (Other.Start == Pieces[First].Start && Other.End == Pieces[First].End) || (Other.Start == Pieces[First].End && Other.End == Pieces[First].Start);
+            if (!Other.AliveCondition || !Same) continue;
+            if (Distance(EvaluateProfileSegment(Segments[Other.Source], 0.5 * (Other.From + Other.To)), Middle) <= Share) Other.AliveCondition = false;
+        }
+    }
+
     // ③ Dangling pieces (an end met by nothing else) bound no region.
     std::vector<int> Degree(Vertices.size(), 0);
-    for (const ArrangementPiece& Piece : Pieces) { ++Degree[Piece.Start]; ++Degree[Piece.End]; }
+    for (const ArrangementPiece& Piece : Pieces) if (Piece.AliveCondition) { ++Degree[Piece.Start]; ++Degree[Piece.End]; }
     for (bool Pruned = true; Pruned;)
     {
         Pruned = false;
@@ -371,18 +385,51 @@ SketchModel ComposeRegionSketch(const SketchRegion& Region)
     for (const std::vector<Vector2>& Outline : Region.Outlines)
         for (const Vector2& Point : Outline) Scale = std::max({ Scale, std::fabs(Point.X), std::fabs(Point.Y) });
     const double Share = 1.0e-9 * Scale;
+    std::vector<int> Junctions;                                                              // Curve end points (centres and inner poles never join)
     const auto Shared = [&](Vector2 Position) -> int
     {
-        for (size_t Index = 0; Index < Sketch.Points.size(); ++Index) if (Distance(Sketch.Points[Index].Position, Position) <= Share) return static_cast<int>(Index);
+        for (int Index : Junctions) if (Distance(Sketch.Points[Index].Position, Position) <= Share) return Index;
         Sketch.Points.push_back({ Position });
-        return static_cast<int>(Sketch.Points.size()) - 1;
+        Junctions.push_back(static_cast<int>(Sketch.Points.size()) - 1);
+        return Junctions.back();
     };
     const auto Fresh = [&](Vector2 Position) { Sketch.Points.push_back({ Position }); return static_cast<int>(Sketch.Points.size()) - 1; };
-    int Identifier = 1;
+
+    // Consecutive arcs of one circle (a circle's seam inside the region) become one arc.
+    const auto Continues = [&](const ProfileSegment& One, const ProfileSegment& Two)
+    {
+        const bool Round = (One.Kind == ProfileSegmentKind::Arc || One.Kind == ProfileSegmentKind::Circle) && (Two.Kind == ProfileSegmentKind::Arc || Two.Kind == ProfileSegmentKind::Circle);
+        return Round && Distance(One.Centre, Two.Centre) <= Share && std::fabs(One.Radius - Two.Radius) <= Share && (One.Sweep > 0.0) == (Two.Sweep > 0.0)
+            && Distance(One.End, Two.Start) <= Share && std::fabs(One.Sweep + Two.Sweep) < 2.0 * std::numbers::pi;
+    };
+    std::vector<std::vector<ProfileSegment>> Loops;
     for (const std::vector<RegionPiece>& Loop : Region.Loops)
+    {
+        std::vector<ProfileSegment> Merged;
         for (const RegionPiece& Piece : Loop)
         {
-            const ProfileSegment& Segment = Piece.Segment;
+            if (!Merged.empty() && Continues(Merged.back(), Piece.Segment))
+            {
+                Merged.back().Kind  = ProfileSegmentKind::Arc;
+                Merged.back().Sweep += Piece.Segment.Sweep;
+                Merged.back().End   = Piece.Segment.End;
+            }
+            else Merged.push_back(Piece.Segment);
+        }
+        if (Merged.size() > 1 && Continues(Merged.back(), Merged.front()))
+        {
+            Merged.back().Kind  = ProfileSegmentKind::Arc;
+            Merged.back().Sweep += Merged.front().Sweep;
+            Merged.back().End   = Merged.front().End;
+            Merged.erase(Merged.begin());
+        }
+        Loops.push_back(std::move(Merged));
+    }
+
+    int Identifier = 1;
+    for (const std::vector<ProfileSegment>& Loop : Loops)
+        for (const ProfileSegment& Segment : Loop)
+        {
             SketchCurve Curve;
             Curve.Identifier = Identifier++;
             switch (Segment.Kind)

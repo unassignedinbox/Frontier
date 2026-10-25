@@ -107,6 +107,7 @@ namespace
     GateTally CornerGate      = { "W47", "Sketch corner fillet / chamfer and fan lofts: every corner of an extruded rectangle rounded (the extrude follows, V = A − (4 − π) r²), one picked corner chamfered, the kept corner (virtual sharp) dragged with the fillets following, refusals leave the file untouched; two lofts out of one section sew into one sheet (one turned); codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DetachGate      = { "W46", "Trim / join on sketches a body reads: the trim detaches (original kept hidden for its extrude, the trimmed curves a new sketch, the body unchanged, one undo entry); a whole-curve trim only hides; picked sketches join (disjoint profiles extrude together), a read one stays hidden; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
+    GateTally FillGate        = { "W48", "Fill and flip: a fresh (unfilled) rectangle extrudes into 4 walls (an open sheet), filling it (Inspector / F) makes the solid 2 and one undo entry; regions of overlapping curves (Fill tool): the lens and a crescent of two circles, a square with a circular hole, a spline arch cut by a line, each filled into a new sketch and extruded against closed forms; a lone circle fills itself; flip normals turns every face of a loft sheet and of extruded walls, a second flip removes the step, solids refuse; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4118,6 +4119,175 @@ int main()
         }
     }
 
+    // ---- W48 Fill (unfilled drawings extrude into walls, Fill toggle, Fill tool regions) and flip normals
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Senses = [](const SolidArcDocument& Document, const std::string& Key)
+        {
+            std::vector<int> Found;
+            for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+                if (Body.Key == Key)
+                    for (FaceToken Face : Document.Partition->CollectInventory(Body.Body).Faces) Found.push_back(static_cast<int>(Document.Partition->Faces.Resolve(Face).Sense));
+            return Found;
+        };
+        const auto Reload = [](const SolidArcDocument& Document, std::string& Written)
+        {
+            Written = EncodeSolidArcDocument(Document);
+            const SolidArcDocumentFile Read = DecodeSolidArcDocument(Written);
+            SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+            Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Loaded, true);
+            return Loaded;
+        };
+
+        // ① a fresh rectangle is unfilled: E makes 4 walls of zero thickness (an open sheet, a body of its own)
+        SolidArcDocument Walls = CreateSolidArcDocument("Walls");
+        Expect(DrawSolidArcSketch(Walls, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Box = Walls.Tree.Steps.back().Label;
+        const bool Unfilled = !Walls.Tree.Steps.back().FillCondition;
+        Expect(ExtrudeSolidArcSketch(Walls, Box, 1.0, FeatureCombination::New));
+        Tally(FillGate, Walls.Summary.Volume, Unfilled && Walls.Summary.SheetCondition && Walls.Summary.Faces == 4 && Walls.Summary.SoundCondition && std::abs(Walls.Summary.Volume) <= 1.0e-12,
+              Format("unfilled rectangle extruded 1: open sheet of %d walls, no volume (%.3g), sound", Walls.Summary.Faces, Walls.Summary.Volume));
+
+        // ② fill it: the extrude regenerates as the solid 2 × 1 × 1 (6 faces), one undo entry; undo returns the walls
+        const size_t History = Walls.UndoEntries.size();
+        const SolidArcCommandOutcome Filled = FillSolidArcSketch(Walls, Box, true);
+        const double Error = std::abs(Walls.Summary.Volume - 2.0) / 2.0;
+        Tally(FillGate, Error, Filled.AcceptedCondition && Error <= 1.0e-9 && !Walls.Summary.SheetCondition && Walls.Summary.Faces == 6 && Walls.UndoEntries.size() == History + 1,
+              Format("%s: the extrude follows, V %.12f vs 2, 6 faces, one undo entry", Filled.Label.c_str(), Walls.Summary.Volume));
+        const SolidArcCommandOutcome Again = FillSolidArcSketch(Walls, Box, true);
+        UndoSolidArcCommand(Walls);
+        Tally(FillGate, 0.0, !Again.AcceptedCondition && Walls.Summary.SheetCondition && Walls.Summary.Faces == 4, "filling twice refused (" + Again.Refusal + "); undo returns the 4 walls");
+        RedoSolidArcCommand(Walls);
+
+        // ③ an open drawing cannot be filled; unfilled closed drawings refuse to cut (walls are a sheet)
+        Expect(DrawSolidArcSketch(Walls, DrawingOf(SolidArcDrawingKind::Line, 0, { { 5.0, 0.0 }, { 6.0, 0.0 } })));
+        const SolidArcCommandOutcome Open = FillSolidArcSketch(Walls, Walls.Tree.Steps.back().Label, true);
+        Expect(DrawSolidArcSketch(Walls, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 1.0, 0.5 }, { 1.3, 0.5 } }, false, true)));
+        const SolidArcCommandOutcome Cut = ExtrudeSolidArcSketch(Walls, Walls.Tree.Steps.back().Label, 1.0, FeatureCombination::Difference, Walls.Regeneration.Bodies.front().Key);
+        Tally(FillGate, 0.0, !Open.AcceptedCondition && !Cut.AcceptedCondition && std::abs(Walls.Summary.Volume - 2.0) <= 1.0e-9, "refused: " + Open.Refusal + " · " + Cut.Refusal);
+
+        // ④ two unit circles 1 apart (separate sketches): the lens and the left crescent become filled sketches
+        SolidArcDocument Overlap = CreateSolidArcDocument("Overlap");
+        Expect(DrawSolidArcSketch(Overlap, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.0 }, { 1.0, 0.0 } }, false, true)));
+        const std::string Left = Overlap.Tree.Steps.back().Label;
+        Expect(DrawSolidArcSketch(Overlap, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 1.0, 0.0 }, { 2.0, 0.0 } }, false, true)));
+        const double Lens = 2.0 * π / 3.0 - std::sqrt(3.0) / 2.0;                            // 2r² acos(d/2r) − (d/2)√(4r² − d²)
+        const SolidArcRegionPreview LensView = PreviewSolidArcRegion(Overlap, { Left, { 0.5, 0.0 } });
+        const SolidArcCommandOutcome LensFill = FillSolidArcRegion(Overlap, { Left, { 0.5, 0.0 } });
+        const std::string LensSketch = Overlap.Tree.Steps.back().Label;
+        const bool LensShape = Overlap.Tree.Steps.back().FillCondition && Overlap.Regeneration.Sketches.at(LensSketch).Curves.size() == 2;
+        Expect(ExtrudeSolidArcSketch(Overlap, LensSketch, 1.0, FeatureCombination::New));
+        double Drift = std::abs(Overlap.Summary.Volume - Lens) / Lens;
+        Tally(FillGate, Drift, LensFill.AcceptedCondition && LensShape && LensView.Region.Loops.size() == 1 && Drift <= 1.0e-9 && Overlap.Summary.SoundCondition,
+              Format("%s: 2 arcs, extruded 1 → V %.12f vs lens 2π/3 − √3/2 %.12f (preview outline %.6f)", LensFill.Label.c_str(), Overlap.Summary.Volume, Lens, LensView.Region.Area));
+        const SolidArcCommandOutcome Crescent = FillSolidArcRegion(Overlap, { Left, { -0.5, 0.0 } });
+        const std::string CrescentSketch = Overlap.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Overlap, CrescentSketch, 1.0, FeatureCombination::Separate));
+        const double Moon = π - Lens;
+        Drift = std::abs(Overlap.Summary.Volume - Lens - Moon) / (Lens + Moon);
+        Tally(FillGate, Drift, Crescent.AcceptedCondition && Overlap.Regeneration.Bodies.size() == 2 && Drift <= 1.0e-9,
+              Format("%s: crescent π − lens as a second body, total V %.12f vs π %.12f", Crescent.Label.c_str(), Overlap.Summary.Volume, π));
+
+        // ⑤ a lone unfilled circle: its region is its own loop, so Fill fills that sketch (no new step)
+        Expect(DrawSolidArcSketch(Overlap, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 6.0, 0.0 }, { 6.5, 0.0 } }, false, true)));
+        const std::string Lone = Overlap.Tree.Steps.back().Label;
+        const size_t Steps = Overlap.Tree.Steps.size();
+        const SolidArcRegionPreview LoneView = PreviewSolidArcRegion(Overlap, { Lone, { 6.1, 0.1 } });
+        const SolidArcCommandOutcome LoneFill = FillSolidArcRegion(Overlap, { Lone, { 6.1, 0.1 } });
+        const SolidArcRegionPreview Outside = PreviewSolidArcRegion(Overlap, { Lone, { 9.0, 9.0 } });
+        Tally(FillGate, 0.0, LoneFill.AcceptedCondition && LoneView.WholeSketch == Lone && Overlap.Tree.Steps.size() == Steps && Overlap.Tree.Steps.back().FillCondition && !Outside.Refusal.empty(),
+              LoneFill.Label + ": the sketch itself filled, no new step · outside every loop: " + Outside.Refusal);
+
+        // ⑥ a 4 × 4 square around a circle r 0.5 (separate sketches): the region between is the square with a hole
+        SolidArcDocument Holed = CreateSolidArcDocument("Holed");
+        Expect(DrawSolidArcSketch(Holed, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 8.0, -2.0 }, { 12.0, 2.0 } })));
+        const std::string Square = Holed.Tree.Steps.back().Label;
+        Expect(DrawSolidArcSketch(Holed, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 10.0, 0.0 }, { 10.5, 0.0 } }, false, true)));
+        const SolidArcRegionPreview HoleView = PreviewSolidArcRegion(Holed, { Square, { 11.5, 0.0 } });
+        const SolidArcCommandOutcome HoleFill = FillSolidArcRegion(Holed, { Square, { 11.5, 0.0 } });
+        Expect(ExtrudeSolidArcSketch(Holed, Holed.Tree.Steps.back().Label, 1.0, FeatureCombination::New));
+        const double Ring = 16.0 - π / 4.0;
+        Drift = std::abs(Holed.Summary.Volume - Ring) / Ring;
+        Tally(FillGate, Drift, HoleFill.AcceptedCondition && HoleView.Region.Loops.size() == 2 && HoleView.WholeSketch.empty() && Drift <= 1.0e-9 && Holed.Summary.Genus == 1,
+              Format("%s: outer square + circular hole, extruded 1 → V %.12f vs 16 − π/4, genus %d", HoleFill.Label.c_str(), Holed.Summary.Volume, Holed.Summary.Genus));
+
+        // ⑦ a Hermite arch cut by the line y = 0.25: the cap above the line takes a spline piece as exact Bézier spans
+        SolidArcDocument Arch = CreateSolidArcDocument("Arch");
+        Expect(DrawSolidArcSketch(Arch, DrawingOf(SolidArcDrawingKind::Curve, 0, { { 0.0, 0.0 }, { 1.5, 1.0 }, { 3.0, 0.0 } })));
+        const std::string Curve = Arch.Tree.Steps.back().Label;
+        Expect(DrawSolidArcSketch(Arch, DrawingOf(SolidArcDrawingKind::Line, 0, { { -1.0, 0.25 }, { 4.0, 0.25 } })));
+        const SolidArcRegionPreview CapView = PreviewSolidArcRegion(Arch, { Curve, { 1.5, 0.5 } });
+        const SolidArcCommandOutcome CapFill = FillSolidArcRegion(Arch, { Curve, { 1.5, 0.5 } });
+        const std::string Cap = Arch.Tree.Steps.back().Label;
+        double Off = 1.0;
+        int    Beziers = 0;
+        if (CapFill.AcceptedCondition)
+        {
+            Off = 0.0;
+            const SketchModel& Model = Arch.Regeneration.Sketches.at(Cap);
+            // The Bézier chain must start and end on the line piece's own end points (shared, within 10⁻⁹).
+            std::vector<int> Ends;
+            for (const SketchCurve& Piece : Model.Curves)
+            {
+                if (Piece.Kind == SketchCurveKind::Line)
+                    for (int End : { Piece.Start, Piece.End }) Off = std::max(Off, std::abs(Model.Points[End].Position.Y - 0.25));
+                if (Piece.Kind != SketchCurveKind::Spline) continue;
+                ++Beziers;
+                Ends.push_back(Piece.Points.front());
+                Ends.push_back(Piece.Points.back());
+            }
+            for (const SketchCurve& Piece : Model.Curves)
+                if (Piece.Kind == SketchCurveKind::Line)
+                    for (int End : { Piece.Start, Piece.End }) if (std::find(Ends.begin(), Ends.end(), End) == Ends.end()) Off = 1.0;
+        }
+        Expect(ExtrudeSolidArcSketch(Arch, Cap, 1.0, FeatureCombination::New));
+        const double Sampled = std::abs(Arch.Summary.Volume - CapView.Region.Area) / std::max(1.0e-12, CapView.Region.Area);
+        Tally(FillGate, Sampled, CapFill.AcceptedCondition && Beziers >= 1 && Off <= 1.0e-9 && Sampled <= 1.0e-3 && Arch.Summary.SoundCondition,
+              Format("%s: %d Bézier span(s) + the line piece, ends on y = 0.25 within %.2g; V %.9f vs sampled outline %.9f", CapFill.Label.c_str(), Beziers, Off, Arch.Summary.Volume, CapView.Region.Area));
+
+        // ⑧ flip normals: a loft sheet turns (every face sense reversed), a second flip removes the step, a solid refuses
+        SolidArcDocument Sheet = CreateSolidArcDocument("Flip");
+        Expect(DrawSolidArcSketch(Sheet, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 1.0, 0.0 } })));
+        const std::string A = Sheet.Tree.Steps.back().Label;
+        Expect(DrawSolidArcSketch(Sheet, DrawingOf(SolidArcDrawingKind::Line, 1, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
+        const std::string B = Sheet.Tree.Steps.back().Label;
+        Expect(LoftSolidArcCurves(Sheet, { A, B }, 0, false));
+        const std::string Panel = Sheet.Regeneration.Bodies.empty() ? std::string{} : Sheet.Regeneration.Bodies.front().Key;
+        const std::vector<int> Before = Senses(Sheet, Panel);
+        const SolidArcCommandOutcome Flipped = FlipSolidArcBodies(Sheet, { Panel });
+        const std::vector<int> After = Senses(Sheet, Panel);
+        bool Turned = !Before.empty() && Before.size() == After.size();
+        for (size_t Index = 0; Turned && Index < Before.size(); ++Index) Turned = Before[Index] != After[Index];
+        Tally(FillGate, 0.0, Flipped.AcceptedCondition && Turned && Sheet.Summary.SheetCondition && Sheet.Summary.SoundCondition && Sheet.Tree.Steps.back().Kind == FeatureStepKind::Flip,
+              Format("%s: %d face(s), every sense reversed, sound", Flipped.Label.c_str(), int(After.size())));
+        std::string FlipText;
+        SolidArcDocument FlipLoaded = Reload(Sheet, FlipText);
+        Tally(FillGate, 0.0, EncodeSolidArcDocument(FlipLoaded) == FlipText && Senses(FlipLoaded, Panel) == After, Format("codec: %d bytes byte-equal with the Flip step, senses kept", int(FlipText.size())));
+        const SolidArcCommandOutcome Back = FlipSolidArcBodies(Sheet, { Panel });
+        Tally(FillGate, 0.0, Back.AcceptedCondition && Senses(Sheet, Panel) == Before && Sheet.Tree.Steps.back().Kind != FeatureStepKind::Flip, "flip again: the Flip step goes, the senses return");
+        const SolidArcCommandOutcome WallFlip = FlipSolidArcBodies(Walls, { Walls.Regeneration.Bodies.front().Key });
+        Expect(FillSolidArcSketch(Walls, Box, false));                                       // Unfill: walls again
+        const std::string WallKey = Walls.Regeneration.Bodies.front().Key;
+        const std::vector<int> WallBefore = Senses(Walls, WallKey);
+        const SolidArcCommandOutcome WallTurn = FlipSolidArcBodies(Walls, { WallKey });
+        const std::vector<int> WallAfter = Senses(Walls, WallKey);
+        bool WallTurned = !WallBefore.empty() && WallBefore.size() == WallAfter.size();
+        for (size_t Index = 0; WallTurned && Index < WallBefore.size(); ++Index) WallTurned = WallBefore[Index] != WallAfter[Index];
+        Tally(FillGate, 0.0, !WallFlip.AcceptedCondition && WallTurn.AcceptedCondition && WallTurned && WallAfter.size() == 4 && Walls.Summary.SheetCondition && Walls.Summary.SoundCondition,
+              "solid refused (" + WallFlip.Refusal + "); the unfilled walls turn: " + std::to_string(WallAfter.size()) + " faces reversed");
+
+        // ⑨ codec: Fill = false only on unfilled sketches; byte-equal reloads with the filled regions and the walls
+        std::string RegionText, WallText;
+        SolidArcDocument RegionLoaded = Reload(Overlap, RegionText);
+        SolidArcDocument WallLoaded   = Reload(Walls, WallText);
+        const double Total = std::abs(RegionLoaded.Summary.Volume - π) / π;
+        Tally(FillGate, Total, EncodeSolidArcDocument(RegionLoaded) == RegionText && EncodeSolidArcDocument(WallLoaded) == WallText && Total <= 1.0e-9
+              && WallLoaded.Summary.SheetCondition && RegionText.find("Fill = false") != std::string::npos,
+              Format("codec: %d + %d bytes byte-equal (Fill = false on the drawn circles), V %.12f after reload, walls stay a sheet", int(RegionText.size()), int(WallText.size()), RegionLoaded.Summary.Volume));
+    }
+
     // ---- W46 Trim and join on sketches some later step reads (detach), join of picked sketches
     {
         constexpr double π = std::numbers::pi;
@@ -4220,7 +4390,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

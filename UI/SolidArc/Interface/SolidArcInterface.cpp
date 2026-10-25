@@ -1935,11 +1935,15 @@ void ApplyCut(SolidArcWorkspaceState& State)
     return State.Document;
 }
 
+std::vector<std::string> TouchedBodies(const SolidArcDocument& Document);
+void CloseFillSession(SolidArcWorkspaceState& State);
+
 void OpenTrimSession(SolidArcWorkspaceState& State)
 {
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
     if (!SketchCondition) { Announce(State, "Trim needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
     State.Trim = { true, false, {}, -1, {}, {}, {}, State.Trim.Commits };
+    State.Fill.ActiveCondition = false;
     State.Drawing.ActiveCondition = false;
     State.Constrain.ActiveCondition = false;
     Announce(State, "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
@@ -2031,6 +2035,250 @@ void DrawTrimPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
     std::vector<ImVec2> Pixels;
     for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
     if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0xff, 0x4d, 0x4d, 0xff), 4.0f);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    FILL TOOL AND CLOSED-SKETCH TINTS
+//------------------------------------------------------------------------------------------------------------------------
+
+[[nodiscard]] float MeasurePixelArea(const std::vector<ImVec2>& Polygon)
+{
+    float Twice = 0.0f;
+    for (size_t Index = 0; Index < Polygon.size(); ++Index)
+    {
+        const ImVec2& Here = Polygon[Index];
+        const ImVec2& Next = Polygon[(Index + 1) % Polygon.size()];
+        Twice += Here.x * Next.y - Next.x * Here.y;
+    }
+    return 0.5f * Twice;
+}
+
+// Proper crossing of the open segments AB and CD (shared end points do not count).
+[[nodiscard]] bool PixelSegmentsCross(ImVec2 A, ImVec2 B, ImVec2 C, ImVec2 D)
+{
+    const auto Side = [](ImVec2 P, ImVec2 Q, ImVec2 R) { return (Q.x - P.x) * (R.y - P.y) - (Q.y - P.y) * (R.x - P.x); };
+    const float First = Side(A, B, C), Second = Side(A, B, D), Third = Side(C, D, A), Fourth = Side(C, D, B);
+    return ((First > 0.0f && Second < 0.0f) || (First < 0.0f && Second > 0.0f)) && ((Third > 0.0f && Fourth < 0.0f) || (Third < 0.0f && Fourth > 0.0f));
+}
+
+// 📝 A polygon with holes filled in one draw: each hole is bridged to the nearest polygon vertex it can see (keyhole),
+//    rightmost hole first, then ImGui's ear clipping fills the single weakly simple outline.
+void FillPixelPolygon(ImDrawList* Canvas, std::vector<ImVec2> Polygon, std::vector<std::vector<ImVec2>> Holes, ImU32 Colour)
+{
+    if (Polygon.size() < 3) return;
+    if (MeasurePixelArea(Polygon) < 0.0f) std::reverse(Polygon.begin(), Polygon.end());
+    std::erase_if(Holes, [](const std::vector<ImVec2>& Hole) { return Hole.size() < 3; });
+    for (std::vector<ImVec2>& Hole : Holes) if (MeasurePixelArea(Hole) > 0.0f) std::reverse(Hole.begin(), Hole.end());
+    const auto Rightmost = [](const std::vector<ImVec2>& Loop) { return size_t(std::max_element(Loop.begin(), Loop.end(), [](ImVec2 Left, ImVec2 Right) { return Left.x < Right.x; }) - Loop.begin()); };
+    std::sort(Holes.begin(), Holes.end(), [&](const std::vector<ImVec2>& Left, const std::vector<ImVec2>& Right) { return Left[Rightmost(Left)].x > Right[Rightmost(Right)].x; });
+    for (size_t HoleIndex = 0; HoleIndex < Holes.size(); ++HoleIndex)
+    {
+        const std::vector<ImVec2>& Hole = Holes[HoleIndex];
+        const size_t Start  = Rightmost(Hole);
+        const ImVec2 Anchor = Hole[Start];
+        std::vector<size_t> Order(Polygon.size());
+        std::iota(Order.begin(), Order.end(), size_t(0));
+        const auto Gap = [&](size_t Index) { return (Polygon[Index].x - Anchor.x) * (Polygon[Index].x - Anchor.x) + (Polygon[Index].y - Anchor.y) * (Polygon[Index].y - Anchor.y); };
+        std::sort(Order.begin(), Order.end(), [&](size_t Left, size_t Right) { return Gap(Left) < Gap(Right); });
+        size_t Bridge = Order.front();
+        for (size_t Candidate : Order)
+        {
+            bool Blocked = false;
+            const ImVec2 Target = Polygon[Candidate];
+            for (size_t Edge = 0; Edge < Polygon.size() && !Blocked; ++Edge) Blocked = PixelSegmentsCross(Anchor, Target, Polygon[Edge], Polygon[(Edge + 1) % Polygon.size()]);
+            for (size_t Other = HoleIndex; Other < Holes.size() && !Blocked; ++Other)
+                for (size_t Edge = 0; Edge < Holes[Other].size() && !Blocked; ++Edge) Blocked = PixelSegmentsCross(Anchor, Target, Holes[Other][Edge], Holes[Other][(Edge + 1) % Holes[Other].size()]);
+            if (!Blocked) { Bridge = Candidate; break; }
+        }
+        std::vector<ImVec2> Joined(Polygon.begin(), Polygon.begin() + std::ptrdiff_t(Bridge) + 1);
+        for (size_t Step = 0; Step <= Hole.size(); ++Step) Joined.push_back(Hole[(Start + Step) % Hole.size()]);
+        Joined.insert(Joined.end(), Polygon.begin() + std::ptrdiff_t(Bridge), Polygon.end());
+        Polygon = std::move(Joined);
+    }
+    Canvas->AddConcavePolyFilled(Polygon.data(), int(Polygon.size()), Colour);
+}
+
+// One profile loop as a closed polyline in plane coordinates (arcs ≤ 0.05 rad, 16 samples per spline span).
+[[nodiscard]] std::vector<Vector2> SampleProfileLoop(const ProfileLoop& Loop)
+{
+    std::vector<Vector2> Points;
+    for (const ProfileSegment& Segment : Loop.Segments)
+    {
+        int Count = 1;
+        if (Segment.Kind == ProfileSegmentKind::Arc || Segment.Kind == ProfileSegmentKind::Circle) Count = std::max(4, int(std::ceil(std::fabs(Segment.Sweep) / 0.05)));
+        if (Segment.Kind == ProfileSegmentKind::Spline) Count = 16 * std::max(1, int(Segment.Spline.Knots.size()) - 2 * Segment.Spline.Degree - 1);
+        for (int Index = 0; Index < Count; ++Index) Points.push_back(EvaluateProfileSegment(Segment, double(Index) / Count));
+    }
+    return Points;
+}
+
+// 📝 The tint loops of a closed sketch (cached by a digest of the solved points, curves and fill flag); empty when open.
+const SolidArcSketchTint& SketchTintOf(SolidArcWorkspaceState& State, const FeatureStep& Step, const SketchModel& Sketch)
+{
+    double Fingerprint = 1.0 + 7.0 * double(Sketch.Points.size()) + 13.0 * double(Sketch.Curves.size()) + (Step.FillCondition ? 0.5 : 0.0);
+    for (size_t Index = 0; Index < Sketch.Points.size(); ++Index) Fingerprint += (1.37 * Sketch.Points[Index].Position.X + 2.11 * Sketch.Points[Index].Position.Y) * double(Index + 1);
+    for (size_t Index = 0; Index < Sketch.Curves.size(); ++Index)
+        Fingerprint += (Sketch.Curves[Index].Radius * 3.7 + double(Sketch.Curves[Index].Kind) * 0.3 + (Sketch.Curves[Index].Construction ? 0.11 : 0.0)) * double(Index + 1);
+    SolidArcSketchTint& Tint = State.Tints[Step.Label];
+    if (Tint.Fingerprint == Fingerprint) return Tint;
+    Tint = {};
+    Tint.Fingerprint   = Fingerprint;
+    Tint.FillCondition = Step.FillCondition;
+    const SketchProfile Profile = ExtractSketchProfile(Sketch);
+    if (!Profile.Refusal.empty()) return Tint;
+    for (size_t Outer = 0; Outer < Profile.Loops.size(); ++Outer)
+    {
+        if (Profile.Loops[Outer].Depth % 2 != 0) continue;
+        Tint.Outers.push_back(SampleProfileLoop(Profile.Loops[Outer]));
+        Tint.Holes.emplace_back();
+        for (const ProfileLoop& Hole : Profile.Loops) if (Hole.Enclosure == int(Outer)) Tint.Holes.back().push_back(SampleProfileLoop(Hole));
+    }
+    return Tint;
+}
+
+// Closed sketches show a faint tint (unfilled, Plasticity's fresh curves) or a stronger one (filled: E makes a solid).
+void DrawSketchTint(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame, const FeatureStep& Step, const SketchModel& Sketch,
+                    const OrthonormalFrame& Plane, bool FocusedCondition)
+{
+    const SolidArcSketchTint& Tint = SketchTintOf(State, Step, Sketch);
+    const ImU32 Colour = Tint.FillCondition ? IM_COL32(0x9f, 0xd8, 0xff, FocusedCondition ? 0x60 : 0x48) : IM_COL32(0x9f, 0xd8, 0xff, FocusedCondition ? 0x26 : 0x16);
+    const auto Project = [&](const std::vector<Vector2>& Loop)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector2& Point : Loop) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Point), Pixel)) Pixels.push_back(Pixel); }
+        return Pixels.size() == Loop.size() ? Pixels : std::vector<ImVec2>{};
+    };
+    for (size_t Outer = 0; Outer < Tint.Outers.size(); ++Outer)
+    {
+        std::vector<std::vector<ImVec2>> Holes;
+        for (const std::vector<Vector2>& Hole : Tint.Holes[Outer]) Holes.push_back(Project(Hole));
+        FillPixelPolygon(Canvas, Project(Tint.Outers[Outer]), std::move(Holes), Colour);
+    }
+}
+
+void OpenFillSession(SolidArcWorkspaceState& State)
+{
+    const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
+    if (!SketchCondition) { Announce(State, "Fill needs closed sketch curves: draw some first (Shift+W circle, Shift+Q rectangle …)"); return; }
+    const int Commits = State.Fill.Commits;
+    State.Fill = {};
+    State.Fill.ActiveCondition    = true;
+    State.Fill.Commits            = Commits;
+    State.Trim.ActiveCondition    = false;
+    State.Drawing.ActiveCondition = false;
+    State.Constrain.ActiveCondition = false;
+    Announce(State, "Fill: hover a closed region (overlaps split into their own regions) · click fills it · Esc ends");
+}
+
+void CloseFillSession(SolidArcWorkspaceState& State)
+{
+    State.Fill.ActiveCondition = false;
+    State.Fill.HoverCondition  = false;
+    State.Fill.Outlines.clear();
+    Announce(State, "Fill ended");
+}
+
+// 📝 The region under the pointer on the nearest shown sketch plane (each distinct plane tried once, nearest hit that
+//    holds a region wins); cached while the pointer and the document stay put.
+void HoverFillRegion(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
+{
+    SolidArcFillSession& Fill = State.Fill;
+    if (!PointerCondition)
+    {
+        Fill.HoverCondition = false;
+        Fill.Outlines.clear();
+        Fill.Pointer = ImVec2(-1.0f, -1.0f);
+        return;
+    }
+    const ImVec2 Mouse = ImGui::GetIO().MousePos;
+    if (Mouse.x == Fill.Pointer.x && Mouse.y == Fill.Pointer.y && Fill.Revision == State.Document.Revision) return;
+    Fill.Pointer        = Mouse;
+    Fill.Revision       = State.Document.Revision;
+    Fill.HoverCondition = false;
+    Fill.Outlines.clear();
+    Fill.WholeSketch.clear();
+    Fill.Refusal = "no closed region under the pointer";
+    std::vector<OrthonormalFrame> Tried;
+    double Nearest = std::numeric_limits<double>::infinity();
+    const Vector3 Eye{ Frame.Eye[0], Frame.Eye[1], Frame.Eye[2] };
+    for (const FeatureStep& Step : State.Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch || SolidArcCurveHiddenCondition(State.Document, Step.Label)) continue;
+        const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, Step);
+        const bool Seen = std::any_of(Tried.begin(), Tried.end(), [&](const OrthonormalFrame& Other)
+        {
+            return std::fabs(Dot(Other.ZAxis, Plane.ZAxis)) >= 1.0 - 1.0e-9 && std::fabs(Dot(Other.Origin - Plane.Origin, Plane.ZAxis)) <= 1.0e-9 * std::max(1.0, Length(Other.Origin - Plane.Origin));
+        });
+        if (Seen) continue;
+        Tried.push_back(Plane);
+        Vector2 Pick;
+        if (!IntersectSketchPlane(Frame, Local, Plane, Pick)) continue;
+        const double Depth = Length(PlacePlanePoint(Plane, Pick) - Eye);
+        if (Depth >= Nearest) continue;
+        const SolidArcRegionPreview Preview = PreviewSolidArcRegion(State.Document, { Step.Label, Pick });
+        if (!Preview.Refusal.empty()) continue;
+        Nearest             = Depth;
+        Fill.HoverCondition = true;
+        Fill.Sketch         = Step.Label;
+        Fill.Pick           = Pick;
+        Fill.WholeSketch    = Preview.WholeSketch;
+        Fill.Refusal.clear();
+        Fill.Outlines.clear();
+        for (const std::vector<Vector2>& Outline : Preview.Region.Outlines)
+        {
+            Fill.Outlines.emplace_back();
+            for (const Vector2& Point : Outline) Fill.Outlines.back().push_back(PlacePlanePoint(Preview.Plane, Point));
+        }
+    }
+}
+
+void ApplyFill(SolidArcWorkspaceState& State)
+{
+    SolidArcFillSession& Fill = State.Fill;
+    if (!Fill.HoverCondition) { Announce(State, "Fill: no closed region under the pointer"); return; }
+    const SolidArcCommandOutcome Outcome = FillSolidArcRegion(State.Document, { Fill.Sketch, Fill.Pick });
+    if (Outcome.AcceptedCondition)
+    {
+        ++Fill.Commits;
+        State.FocusedStep = !Fill.WholeSketch.empty() ? Fill.WholeSketch : State.Document.Tree.Steps.back().Label;   // E extrudes it next
+        Fill.Revision = 0;                                                                   // Hover again on the new document
+        Fill.HoverCondition = false;
+        Fill.Outlines.clear();
+    }
+    Conclude(State, Outcome);
+}
+
+void DrawFillPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    if (!State.Fill.ActiveCondition || !State.Fill.HoverCondition || State.Fill.Outlines.empty()) return;
+    std::vector<std::vector<ImVec2>> Loops;
+    for (const std::vector<Vector3>& Outline : State.Fill.Outlines)
+    {
+        Loops.emplace_back();
+        for (const Vector3& Point : Outline) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Loops.back().push_back(Pixel); }
+        if (Loops.back().size() != Outline.size()) return;
+    }
+    FillPixelPolygon(Canvas, Loops.front(), std::vector<std::vector<ImVec2>>(Loops.begin() + 1, Loops.end()), IM_COL32(0x4f, 0xd8, 0xe0, 0x70));
+    for (const std::vector<ImVec2>& Loop : Loops) Canvas->AddPolyline(Loop.data(), int(Loop.size()), IM_COL32(0x4f, 0xd8, 0xe0, 0xff), ImDrawFlags_Closed, 2.0f);
+}
+
+// F: fill on / off for the focused and picked sketches (closed ones); with no sketch picked, the Fill tool opens.
+void ToggleSketchFill(SolidArcWorkspaceState& State)
+{
+    std::vector<std::string> Labels = SelectedSketchLabels(State.Document);
+    if (FocusedSketchCondition(State) && std::find(Labels.begin(), Labels.end(), State.FocusedStep) == Labels.end()) Labels.insert(Labels.begin(), State.FocusedStep);
+    if (Labels.empty()) { State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State); return; }
+    bool Filled = false;
+    for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == Labels.front()) Filled = Step.FillCondition;
+    for (const std::string& Label : Labels) Conclude(State, FillSolidArcSketch(State.Document, Label, !Filled));
+}
+
+// Alt+N: flip normals of the picked sheets (bodies in mode 4, or the owners of picked faces / edges).
+void FlipPickedNormals(SolidArcWorkspaceState& State)
+{
+    const std::vector<std::string> Keys = TouchedBodies(State.Document);
+    if (Keys.empty()) { Announce(State, "Flip normals: pick a sheet first (a loft or walls: a body in mode 4, or one of its faces)"); return; }
+    Conclude(State, FlipSolidArcBodies(State.Document, Keys));
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -2347,6 +2595,7 @@ void OpenConstraintSession(SolidArcWorkspaceState& State)
     State.Constrain.Commits         = Commits;
     State.Drawing.ActiveCondition   = false;
     State.Trim.ActiveCondition      = false;
+    State.Fill.ActiveCondition      = false;
     State.FocusedStep               = Label;
     const ConstraintView View = ViewConstraintSketch(State, Label);
     Announce(State, Compose("Constrain %s · %d constraint(s) · DOF %d · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends", CaptionOf(State.Document, Label).c_str(),
@@ -3007,6 +3256,7 @@ void OpenTransformSession(SolidArcWorkspaceState& State, SolidArcTransformVerb V
     Transform.Pivot              = MeasureBodiesCentre(State.Scene, Keys);
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
+    State.Fill.ActiveCondition    = false;
     State.Constrain.ActiveCondition = false;
     Announce(State, Compose("%s%s %d body(ies) · X / Y / Z axis%s · type a value · click / Enter commits · Esc cancels", DuplicateCondition ? "Duplicate + " : "",
                             TransformVerbLabel(Verb), int(Keys.size()), Verb == SolidArcTransformVerb::Move ? " · Shift+X / Y / Z plane" : ""));
@@ -3183,7 +3433,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
 [[nodiscard]] bool GizmoAvailableCondition(const SolidArcWorkspaceState& State)
 {
     return State.Gizmo.Modes != 0 && !State.DrawingSheet.ActiveCondition && !State.Drawing.ActiveCondition && !State.Transform.ActiveCondition && !State.Sweep.ActiveCondition
-        && !State.Constrain.ActiveCondition && !State.Trim.ActiveCondition && !State.Joint.ActiveCondition && !State.Bevel.ActiveCondition && !State.PoleDrag.ActiveCondition
+        && !State.Constrain.ActiveCondition && !State.Trim.ActiveCondition && !State.Fill.ActiveCondition && !State.Joint.ActiveCondition && !State.Bevel.ActiveCondition && !State.PoleDrag.ActiveCondition
         && !State.Box.ActiveCondition && !State.SketchPoints.DragCondition;
 }
 
@@ -3725,6 +3975,7 @@ void OpenSweepSession(SolidArcWorkspaceState& State, SolidArcSweepVerb Verb)
     Sweep.Combination     = State.Document.Regeneration.Bodies.empty() ? FeatureCombination::New : FeatureCombination::Separate;
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
+    State.Fill.ActiveCondition    = false;
     State.Constrain.ActiveCondition = false;
     const char* Booleans = " · Q union · W difference · E intersect · R new body";
     if (Verb == SolidArcSweepVerb::Revolve)
@@ -4111,6 +4362,7 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
         const ImU32 Colour   = Focused ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : Consumed || Locked ? IM_COL32(0x7f, 0x9c, 0xbf, 0x90) : IM_COL32(0x9f, 0xd8, 0xff, 0xff);
         OrthonormalFrame Plane = Step.Plane;
         Plane.Origin = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Step.Elevation);
+        if (!Consumed || Focused) DrawSketchTint(State, Canvas, Frame, Step, Sketch, Plane, Focused);   // a solid covers a consumed one
         for (const SketchCurve& Curve : Sketch.Curves)
         {
             // 📝 Section (Alt+S): samples on the removed side break the polyline, as the model is clipped there.
@@ -7059,13 +7311,14 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         bool        Active;
         bool        Enabled;
     };
-    const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition, true },
+    const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition && !State.Fill.ActiveCondition, true },
                                  { "SketchCut", IconSymbol::SolidArcCut, "Cut", false, CutCondition && !State.Bevel.ActiveCondition },
-                                 { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition } };
+                                 { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition },
+                                 { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition } };
     SolidArcSheet Probe;
     Probe.Begin();
-    float Widths[3], Total = 2.0f + 10.0f + 2.0f * 4.0f + 1.0f + 6.0f + 4.0f;
-    for (int Index = 0; Index < 3; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
+    float Widths[4], Total = 2.0f + 10.0f + 3.0f * 4.0f + 1.0f + 6.0f + 4.0f;
+    for (int Index = 0; Index < 4; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
     const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Total)), Image.y + Extent.y - 52.0f - Height);
@@ -7076,7 +7329,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     const float       Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
     Sheet.Box(Bar, SolidArcInk(0x171717, 0xf5 / 255.0f), 13.0f, SolidArcInk(0x343434));
     float Cursor = Bar.MinimumX + 1.0f + 5.0f;
-    for (int Index = 0; Index < 3; ++Index)
+    for (int Index = 0; Index < 4; ++Index)
     {
         const ToolButton&   Tool    = Tools[Index];
         const PlaneExtent   Box     = Spanning(Cursor, Centre - 0.5f * ButtonHeight, Widths[Index], ButtonHeight);
@@ -7090,8 +7343,10 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         if (Press.ClickedCondition)
         {
             if (Index == 0 && State.Trim.ActiveCondition) CloseTrimSession(State);
+            if (Index == 0 && State.Fill.ActiveCondition) CloseFillSession(State);
             if (Index == 1) ApplyCut(State);
             if (Index == 2) State.Trim.ActiveCondition ? CloseTrimSession(State) : OpenTrimSession(State);
+            if (Index == 3) State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State);
         }
         Cursor = Box.MaximumX + 4.0f;
         if (Index == 0)
@@ -7473,6 +7728,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (LeftClick && !OverCube) ApplyTrim(State);
         if (RightClick && !OverCube) CloseTrimSession(State);
     }
+    else if (State.Fill.ActiveCondition)
+    {
+        HoverFillRegion(State, Frame, Local, Hovered && !OverCube);
+        if (LeftClick && !OverCube) ApplyFill(State);
+        if (RightClick && !OverCube) CloseFillSession(State);
+    }
     else if (State.Joint.ActiveCondition)
     {
         HoverJointOrigin(State, Frame, Local, Hovered && !OverCube);
@@ -7607,6 +7868,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
+    if (State.Fill.ActiveCondition)
+    {
+        ImVec2 Below(Image.x + 72, Image.y + 64);
+        const SolidArcFillSession& Fill = State.Fill;
+        DrawStatusPill(Canvas, Below, Compose("Fill · %d filled · %s", Fill.Commits, Fill.HoverCondition ? (Fill.WholeSketch.empty() ? "click fills this region into a new sketch" : Compose("click fills %s", CaptionOf(State.Document, Fill.WholeSketch).c_str()).c_str()) : Fill.Refusal.c_str()), ActiveColour);
+    }
     if (State.Constrain.ActiveCondition)
     {
         ImVec2 Below(Image.x + 72, Image.y + 64);
@@ -7675,6 +7942,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
                            ? "Trim: hover a curve (the red piece comes off between its crossings) · click removes it · Esc / T / right-click end"
+                       : State.Fill.ActiveCondition
+                           ? "Fill: hover inside closed curves (overlaps are their own regions) · click fills the highlighted region · E then extrudes a solid · Esc / F / right-click end"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Profile
                            ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Inset
@@ -8050,6 +8319,29 @@ void DrawStepCard(SolidArcWorkspaceState& State)
             Conclude(State, AssignSolidArcParameter(State.Document, Parameter.Name, Value));
             break;
         }
+    }
+    const FeatureStep* Current = nullptr;                                                    // A parameter edit above may have moved Step
+    for (const FeatureStep& Candidate : State.Document.Tree.Steps) if (Candidate.Label == Label) Current = &Candidate;
+    if (Current && Current->Kind == FeatureStepKind::Sketch)
+    {
+        // Fill on / off (closed sketches only): filled loops extrude into solids, unfilled ones into walls (a sheet).
+        const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+        const bool Closed = Solved != State.Document.Regeneration.Sketches.end() && ExtractSketchProfile(Solved->second).Refusal.empty();
+        bool       Filled = Current->FillCondition;
+        if (Closed)
+        {
+            const bool Toggled = ImGui::Checkbox("Filled  (F)###SketchFill", &Filled);
+            RegisterWidget(State, "SketchFill");
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", Filled ? "E extrudes a solid" : "E extrudes walls (an open sheet)");
+            if (Toggled)
+            {
+                Conclude(State, FillSolidArcSketch(State.Document, Label, Filled));
+                EndCard();
+                return;                                                                      // The step may have moved
+            }
+        }
+        else ImGui::TextDisabled("Open curves: nothing to fill (close the loop, or use the Fill tool on crossings)");
     }
     if (PressButton(State, "Delete step  (Del)###StepDelete"))
     {
@@ -8440,6 +8732,8 @@ void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
     else if (Key == "Revolve") OpenSweepSession(State, SolidArcSweepVerb::Revolve);
     else if (Key == "Loft") LoftSelectedCurves(State);
     else if (Key == "Join") JoinSketches(State);
+    else if (Key == "FillSketch") ToggleSketchFill(State);
+    else if (Key == "FlipNormals") FlipPickedNormals(State);
     else if (Key == "Move") OpenTransformSession(State, SolidArcTransformVerb::Move, false);
     else if (Key == "Rotate") OpenTransformSession(State, SolidArcTransformVerb::Rotate, false);
     else if (Key == "Scale") OpenTransformSession(State, SolidArcTransformVerb::Scale, false);
@@ -8794,6 +9088,19 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
     {
         Operations.push_back({ "ExtrudeSketch", IconSymbol::SolidArcExtrude, "Extrude · E" });
         Operations.push_back({ "Revolve", IconSymbol::SolidArcRotate, "Revolve" });
+        const auto Solved = State.Document.Regeneration.Sketches.find(State.FocusedStep);
+        if (Solved != State.Document.Regeneration.Sketches.end() && ExtractSketchProfile(Solved->second).Refusal.empty())
+        {
+            bool Filled = false;
+            for (const FeatureStep& Step : State.Document.Tree.Steps) if (Step.Label == State.FocusedStep) Filled = Step.FillCondition;
+            Operations.push_back({ "FillSketch", IconSymbol::SolidArcFill, Filled ? "Unfill · F" : "Fill · F" });
+        }
+    }
+    {
+        bool SheetCondition = false;
+        for (const std::string& Key : TouchedBodies(State.Document))
+            if (const SolidArcBodyFigures* Figures = FiguresOf(State.Document, Key)) SheetCondition = SheetCondition || Figures->SheetCondition;
+        if (SheetCondition) Operations.push_back({ "FlipNormals", IconSymbol::SolidArcFlip, "Flip normals · Alt+N" });
     }
     if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
     if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Join", IconSymbol::SolidArcLink, "Join · J" });
@@ -9316,6 +9623,13 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         return;
     }
 
+    // Fill tool — click regions to fill · Esc / F ends (the view keys above stay live).
+    if (State.Fill.ActiveCondition)
+    {
+        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_F)) CloseFillSession(State);
+        return;
+    }
+
     if (Control)
     {
         if (Pressed(ImGuiKey_Z)) { if (Shift) Redo(State); else Undo(State); }
@@ -9350,6 +9664,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         if (Pressed(ImGuiKey_X)) MirrorPanels(State);                                       // mirror (gizmo x: plane x = 0)
         if (Pressed(ImGuiKey_M)) RemoveMatcap(State);                                       // remove-material
         if (Pressed(ImGuiKey_H)) ChangeVisibility(State, SolidArcVisibilityVerb::UnhideAll);       // unhide-all
+        if (Pressed(ImGuiKey_N)) FlipPickedNormals(State);                                  // flip normals (Alt+N is free in Plasticity's map)
         if (Pressed(ImGuiKey_G) || Pressed(ImGuiKey_Q)) Announce(State, "Not available in this modeller");
         return;
     }
@@ -9407,6 +9722,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     if (Pressed(ImGuiKey_H)) ChangeVisibility(State, SolidArcVisibilityVerb::HideSelected);         // hide-selected
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
+    if (Pressed(ImGuiKey_F)) ToggleSketchFill(State);                                      // fill on / off (f is free in Plasticity's map)
     if (Pressed(ImGuiKey_K)) OpenConstraintSession(State);                                 // constrain (K is free in Plasticity's map)
     // I: inset with faces selected (Blender habit), else measure (I is free in Plasticity's map).
     if (Pressed(ImGuiKey_I)) { if (State.Document.Selection.Faces.empty()) ToggleMeasure(State); else OpenInsetSession(State); }
