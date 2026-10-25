@@ -172,6 +172,7 @@ struct SolidArcPointPicker
     std::unique_ptr<SolidArcSnapCatalogue> Catalogue       = {};                             // [-]   - Exact carriers of the shown scene
     size_t                                 SceneFaces      = 0;                              // [-]   - Scene face count the catalogue indexes
     int                                    Snapped         = 0;                              // [-]   - Points placed on object snaps (script evidence)
+    bool                                   AlongUsedCondition = false;                       // [-]   - Alt slid along a curve since it went down
 };
 
 // 📝 Mode 1 pole drag: pressing on a shown pole grabs it; the pole follows the pointer in the screen-parallel plane

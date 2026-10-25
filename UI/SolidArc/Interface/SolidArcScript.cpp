@@ -906,6 +906,7 @@ SolidArcScript ParseSolidArcScript(const std::string& Text)
                 Along.Target.OffsetY = float(Frame) / float(Count) * TravelY;
                 Along.Control         = Control;
                 Along.Shift           = Shift;
+                Along.Alternate       = Alternate;
                 Push(Along);
             }
             SolidArcScriptStep Up = Down;
@@ -1009,6 +1010,7 @@ std::string AdvanceSolidArcScript(SolidArcScript& Script, SolidArcWorkspaceState
             if (Step.Anchoring) Script.Anchor = Point;
             Io.AddKeyEvent(ImGuiMod_Ctrl, Step.Control);                                  // held for this move (drags carry theirs)
             Io.AddKeyEvent(ImGuiMod_Shift, Step.Shift);
+            Io.AddKeyEvent(ImGuiMod_Alt, Step.Alternate);
             Io.AddMousePosEvent(Point.x, Point.y);
         }
         else Script.Expectations.push_back({ Step.Line, "target resolves", "unresolved target " + Step.Target.Widget, false });

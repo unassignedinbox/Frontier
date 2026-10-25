@@ -931,7 +931,7 @@ void OpenDrawingSession(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
                                    "click the centre, then a vertex · + / − sides" };
     static const char* Planes[] = { "XY", "XZ", "YZ" };
     Announce(State, std::string(SolidArcDrawingLabel(Kind)) + " on plane " + Planes[State.Drawing.GridPlane] + " (or the body face under the first click): " + Hints[int(Kind)]
-                        + " · hold Ctrl to snap to ends / midpoints / centres · Esc aborts");
+                        + " · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts");
 }
 
 void CancelDrawingSession(SolidArcWorkspaceState& State)
@@ -1035,13 +1035,17 @@ SolidArcSnapCatalogue& SnapCatalogue(SolidArcWorkspaceState& State, const std::v
     return *Picker.Catalogue;
 }
 
-// 📝 The snap under the pointer. Object snaps act only while Ctrl is held and only at the important points (ends,
-//    midpoints, centres, crossings, tangent / square feet) — never "somewhere on an edge or face" — so without Ctrl the
-//    pointer keeps the grid. AnchorCondition (the grab point of a move) snaps without Ctrl, faces and edges included.
+// 📝 The snap under the pointer. Ctrl snaps to the important points only (ends, midpoints, centres, crossings, tangent /
+//    square feet); Alt slides along the nearest line / curve / arc / edge (the point stays on it); Ctrl+Alt offers both,
+//    the important points winning. Without either the pointer keeps the grid. AnchorCondition (the grab point of a move)
+//    snaps without a key, faces and edges included.
 SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, std::optional<Vector3> Reference,
                              std::vector<SolidArcSnapPoint> Transient, const std::vector<std::string>& Excluded, bool AnchorCondition)
 {
-    if (!State.Picker.Enabled || (!AnchorCondition && !ImGui::GetIO().KeyCtrl)) return {};
+    const ImGuiIO& Io             = ImGui::GetIO();
+    const bool     AlongCondition = !AnchorCondition && Io.KeyAlt;                            // Alt: on the curve
+    const bool     PointCondition = AnchorCondition || Io.KeyCtrl;                            // Ctrl: important points
+    if (!State.Picker.Enabled || (!PointCondition && !AlongCondition)) return {};
     SolidArcSnapQuery Query;
     Query.Frame       = Frame;
     Query.PixelX      = Local.x;
@@ -1053,10 +1057,22 @@ SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFra
     Query.Filter      = State.Picker.Filter;
     if (!AnchorCondition)
     {
-        Query.Filter.CurveEnabled = false;                                                   // Important points only
+        Query.Filter.CurveEnabled = AlongCondition;                                          // Alt slides along curves
         Query.Filter.FaceEnabled  = false;
+        if (!PointCondition)                                                                 // Alt alone: the curve only
+        {
+            Query.Filter.EndpointEnabled      = false;
+            Query.Filter.MidpointEnabled      = false;
+            Query.Filter.CentreEnabled        = false;
+            Query.Filter.IntersectionEnabled  = false;
+            Query.Filter.TangentEnabled       = false;
+            Query.Filter.PerpendicularEnabled = false;
+            Query.Transient.clear();
+        }
     }
-    return FindSolidArcSnap(SnapCatalogue(State, Excluded), State.Document, State.Scene, Query);
+    const SolidArcSnap Found = FindSolidArcSnap(SnapCatalogue(State, Excluded), State.Document, State.Scene, Query);
+    if (AlongCondition && Found.Kind == SolidArcSnapKind::Curve) State.Picker.AlongUsedCondition = true;   // Alt was a snap, not a tap
+    return Found;
 }
 
 // n / b / t / x / y / z while drawing: a line through the last point the next point slides along; the same key again
@@ -1117,7 +1133,21 @@ std::optional<Vector2> SnapOntoPlane(SolidArcWorkspaceState& State, const OrbitC
                                      std::optional<Vector3> Reference, std::vector<SolidArcSnapPoint> Transient, const std::vector<std::string>& Excluded)
 {
     SolidArcSnap Object = FindPointerSnap(State, Frame, Local, Reference, std::move(Transient), Excluded, false);
-    if (Object.Kind == SolidArcSnapKind::Curve && std::abs(Dot(Object.Position - Plane.Origin, Plane.ZAxis)) > 1.0e-9 * (1.0 + Length(Object.Position))) Object = {};
+    // A curve off the plane (an edge above the sketch, a loft rim) counts by its foot on the plane, and only when that
+    // foot is still under the pointer (a top view onto the plane); in a slanted view it would jump away from the click.
+    const double Height = Dot(Object.Position - Plane.Origin, Plane.ZAxis);
+    if (Object.Kind == SolidArcSnapKind::Curve && std::abs(Height) > 1.0e-9 * (1.0 + Length(Object.Position)))
+    {
+        const Vector3 Foot = Object.Position - Plane.ZAxis * Height;
+        ImVec2 Pixel;
+        const ImVec2 Pointer(State.ViewportRect[0] + Local.x, State.ViewportRect[1] + Local.y);
+        if (ProjectWorldPoint(State, Frame, Foot, Pixel) && std::hypot(Pixel.x - Pointer.x, Pixel.y - Pointer.y) <= 8.0f)
+        {
+            Object.Position = Foot;
+            Object.Source  += " (foot on the plane)";
+        }
+        else Object = {};
+    }
     State.Picker.Current = Object;
     if (Object.Kind == SolidArcSnapKind::None) return std::nullopt;
     return Vector2{ Dot(Object.Position - Plane.Origin, Plane.XAxis), Dot(Object.Position - Plane.Origin, Plane.YAxis) };
@@ -4121,10 +4151,9 @@ void DrawSketchOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
             const bool  Held   = Points.DragCondition && Points.DragSketch == Step.Label && Points.DragPoint == Point;
             const bool  Picked = Held || (Points.Sketch == Step.Label && std::find(Points.Points.begin(), Points.Points.end(), Point) != Points.Points.end());
             const bool  Hover  = !Points.DragCondition && Points.HoverSketch == Step.Label && Points.HoverPoint == Point;
-            const float Half   = Hover || Held ? 5.0f : 4.0f;
-            const ImVec2 Low(Pixel.x - Half, Pixel.y - Half), High(Pixel.x + Half, Pixel.y + Half);
-            Canvas->AddRectFilled(Low, High, Picked ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : IM_COL32(0x12, 0x16, 0x1c, 0xff));
-            Canvas->AddRect(Low, High, Hover || Held ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Colour, 0.0f, 0, 1.5f);
+            const float Radius = Hover || Held ? 5.5f : 4.5f;                                  // [px] - Round point handle
+            Canvas->AddCircleFilled(Pixel, Radius, Picked ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : IM_COL32(0x12, 0x16, 0x1c, 0xff), 20);
+            Canvas->AddCircle(Pixel, Radius, Hover || Held ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Colour, 20, 1.5f);
         }
     }
 }
@@ -4520,9 +4549,9 @@ void DrawCurveOverlays(SolidArcWorkspaceState& State, ImDrawList* Canvas, const 
             if (!ProjectWorldPoint(State, Frame, Shown.Poles[Index], Pixel)) continue;
             const bool  Grabbed = Moving && State.PoleDrag.Pole == Index;
             const bool  Hover   = !State.PoleDrag.ActiveCondition && State.PoleDrag.HoverLabel == Step.Label && State.PoleDrag.HoverPole == Index;
-            const float Half    = Grabbed || Hover ? 5.0f : 3.5f;
-            Canvas->AddRectFilled(ImVec2(Pixel.x - Half, Pixel.y - Half), ImVec2(Pixel.x + Half, Pixel.y + Half), Grabbed ? ActiveColour : Hover ? IM_COL32_WHITE : IM_COL32(0xff, 0xd2, 0x4d, 0xff));
-            Canvas->AddRect(ImVec2(Pixel.x - Half, Pixel.y - Half), ImVec2(Pixel.x + Half, Pixel.y + Half), IM_COL32(0x10, 0x10, 0x10, 0xff));
+            const float Radius  = Grabbed || Hover ? 5.5f : 4.0f;                              // [px] - Round pole handle
+            Canvas->AddCircleFilled(Pixel, Radius, Grabbed ? ActiveColour : Hover ? IM_COL32_WHITE : IM_COL32(0xff, 0xd2, 0x4d, 0xff), 20);
+            Canvas->AddCircle(Pixel, Radius, IM_COL32(0x10, 0x10, 0x10, 0xff), 20, 1.0f);
         }
     }
 }
@@ -7652,7 +7681,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Bevel.ActiveCondition
                            ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
-                           ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
+                           ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     {
         SolidArcSheet Instructions;
@@ -9061,6 +9090,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     const bool Control   = Io.KeyCtrl;
     const bool Shift     = Io.KeyShift;
     const bool Alternate = Io.KeyAlt;
+    if (ImGui::IsKeyPressed(ImGuiKey_LeftAlt, false) || ImGui::IsKeyPressed(ImGuiKey_RightAlt, false)) State.Picker.AlongUsedCondition = false;
     auto Pressed = [](ImGuiKey Key) { return ImGui::IsKeyPressed(Key, false); };
 
     // Drawing sheet (Alt+D): the paper replaces the model — Esc or Alt+D returns, Ctrl+S still saves.
@@ -9144,8 +9174,10 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
                     Announce(State, std::string("Curve form: ") + SketchSplineFormLabel(Drawing.Form));
                 }
         }
-        else if (Drawing.Kind == SolidArcDrawingKind::Rectangle && (Pressed(ImGuiKey_LeftAlt) || Pressed(ImGuiKey_RightAlt)))
+        else if (Drawing.Kind == SolidArcDrawingKind::Rectangle && (ImGui::IsKeyReleased(ImGuiKey_LeftAlt) || ImGui::IsKeyReleased(ImGuiKey_RightAlt)) &&
+                 !std::exchange(State.Picker.AlongUsedCondition, false))
         {
+            // 📝 A tap of Alt toggles centre mode on release; an Alt held to slide along a curve does not.
             Drawing.CentreCondition = !Drawing.CentreCondition;                               // keyboard:rectangle:mode
             Announce(State, Drawing.CentreCondition ? "Rectangle: centre mode (first click is the centre)" : "Rectangle: corner mode");
         }
