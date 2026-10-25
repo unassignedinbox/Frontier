@@ -7887,6 +7887,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     DrawSketchOverlays(State, Canvas, Frame);
     DrawTrimPreview(State, Canvas, Frame);
+    DrawFillPreview(State, Canvas, Frame);
     DrawConstraintOverlay(State, Canvas, Frame);
     DrawSweepOutline(State, Canvas, Frame);
     DrawSectionOutline(State, Canvas, Frame);

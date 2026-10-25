@@ -86,9 +86,9 @@ key Keypad7
 frames 2
 key Q Shift
 frames 2
-click world 3.0 0.0 0.0
+click world 1.2 -0.6 0.0
 frames 2
-click world 5.0 1.0 0.0
+click world 1.8 0.6 0.0
 frames 2
 expect steps == 6
 expect sketch-filled == 0
@@ -121,7 +121,7 @@ capture 249FillWalls
 # ⑥ Alt+N on the picked walls turns their normals (a Flip step); Alt+N again removes it
 key 4
 frames 2
-click world 4.0 0.0 0.5
+click world 1.5 -0.6 0.5
 frames 3
 expect selected-bodies contains Extrude#7
 key N Alt
