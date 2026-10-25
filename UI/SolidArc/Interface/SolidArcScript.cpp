@@ -644,6 +644,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "construct-section") return Numeric(State.ConstructSection);
     if (Field == "bevel-active") return Numeric(State.Bevel.ActiveCondition ? 1 : 0);
     if (Field == "bevel-size") return Numeric(State.Bevel.Size);
+    if (Field == "bevel-stages") return Numeric(State.Bevel.StageCount);
     if (Field == "bevel-pinned") return Numeric(State.Bevel.PinnedCondition ? 1 : 0);
     if (Field == "bevel-chamfer") return Numeric(State.Bevel.Shape == GeometryProcessing::BlendProfile::Chamfer ? 1 : 0);
     if (Field == "bevel-variable") return Numeric(State.Bevel.VariableEnabled ? 1 : 0);

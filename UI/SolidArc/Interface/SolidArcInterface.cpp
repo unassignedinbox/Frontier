@@ -731,6 +731,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
         Bevel.Refusal = Legible(Outcome.Refusal);
     }
     Bevel.StageMs = (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - Now) * 1.0e3;
+    ++Bevel.StageCount;
 }
 
 void ApplyBevelSession(SolidArcWorkspaceState& State)

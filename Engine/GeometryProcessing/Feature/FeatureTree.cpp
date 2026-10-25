@@ -992,7 +992,8 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         {
             // ⑬ Move / rotate / scale a body in place (Plasticity G / R / S): exact image, every name kept.
             if (!Load(Step.Target)) { Refuse("Transform: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
-            const TransformOutcome Moved = TransformBody(Partition, Current, Step.Placement);
+            const auto KnownVolume = std::find_if(Outcome.Volumes.rbegin(), Outcome.Volumes.rend(), [&](const auto& Entry) { return Entry.first == Current; });
+            const TransformOutcome Moved = TransformBody(Partition, Current, Step.Placement, KnownVolume != Outcome.Volumes.rend() ? KnownVolume->second : std::numeric_limits<double>::quiet_NaN());
             if (!Moved.Refusal.empty()) { Refuse(Moved.Refusal); break; }
             Naming  = CarryNaming(Partition, Moved, Naming, {});
             Current = Moved.Body;

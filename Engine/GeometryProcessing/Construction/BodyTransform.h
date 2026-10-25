@@ -68,7 +68,10 @@ struct ApproximationOutcome
 //    Other affine maps (non-uniform scale, shear) promote curved analytic faces and conic edges to their exact NURBS
 //    form first and map its poles — exact as well. NURBS carriers map by their poles under any affine map.
 //    Intersection-curve edges and rolling-ball faces map exactly under similarities only (refused otherwise).
-[[nodiscard]] TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map);
+//    KnownVolume: the source's volume when the caller already has it (a body moved before); a one-shell image then
+//    skips the assembly's volume integral (det M · V).
+[[nodiscard]] TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map,
+                                             double KnownVolume = std::numeric_limits<double>::quiet_NaN());
 
 // As TransformBody, reading Source from Partition and assembling the copy into Target (Map = TranslationMap({}) is a
 // plain transfer): composite constructions can be built in a scratch partition and only the result kept.

@@ -272,7 +272,8 @@ namespace
     //    With Approximation (PromoteAll only) the procedural carriers left over — rolling-ball / parallel faces, traced
     //    edges — are replaced by certified cubic B-splines in their own parameterisation, tallied into Tally.
     [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll,
-                                                     const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr, bool ReverseCondition = false)
+                                                     const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr, bool ReverseCondition = false,
+                                                     double KnownVolume = std::numeric_limits<double>::quiet_NaN())
     {
         TransformOutcome Outcome;
         const MapAnalysis Analysis = AnalyseMap(Map);
@@ -398,6 +399,9 @@ namespace
                 ++Tally->TolerantEdges;
             }
         }
+        // 📝 A one-shell source of known volume V maps to det M · V: handed to the assembly, which uses it only when the
+        //    image is one shell too (a cavity or a second lump falls back to integration).
+        if (std::isfinite(KnownVolume) && !ReverseCondition && Approximation == nullptr && !PromoteAll) Blueprint.ShellVolumes = { KnownVolume * Analysis.Determinant };
         // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
         const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, Approximation != nullptr ? "Approximate" : PromoteAll ? "Promote" : "Transform");
         if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
@@ -469,9 +473,9 @@ ApproximationOutcome ApproximateBodyAsNurbs(ModelPartition& Partition, BodyToken
     return Outcome;
 }
 
-TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map)
+TransformOutcome TransformBody(ModelPartition& Partition, BodyToken Source, const AffineMap& Map, double KnownVolume)
 {
-    return TransformBodyAcross(Partition, Source, Partition, Map);
+    return TransformBodyWith(Partition, Source, Partition, Map, false, nullptr, nullptr, false, KnownVolume);
 }
 
 TransformOutcome ReverseBody(ModelPartition& Partition, BodyToken Source)
