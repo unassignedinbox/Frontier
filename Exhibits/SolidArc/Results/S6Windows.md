@@ -1,6 +1,6 @@
 # 📝 S6: SolidArc Windows build and package
 
-**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,719,466 B (8.8 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
+**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,719,715 B (8.8 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
 
 On Linux, the same package layout finds its content beside the executable: the frame matches the development checkout everywhere except the frame-time text. With no content beside it, the program falls back to the ImGui default font and missing-icon markers. ctest passes 28/28. It was built with MinGW, not MSVC. **First Windows run (user, AMD Radeon RX 9060 XT, Vulkan 1.4.359):** the interface, fonts and icons come up clean, but the viewport showed displaced tiles and picking missed. The cause was a stale viewport texture, now fixed in the current zip, which awaits a second run (see below).
 
@@ -20,7 +20,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Property | SolidArcWorkspace.exe | Frontier.exe |
 |---|---|---|
-| Size | 7,319,040 B | 6,917,632 B |
+| Size | 7,320,576 B | 6,917,632 B |
 | Machine | 0x8664 (x64) | 0x8664 (x64) |
 | Subsystem | 2: Windows GUI (`-Wl,--subsystem,windows`; `WIN32_EXECUTABLE` alone gave 3, console) | 3: console (upstream setting, unchanged) |
 | DLL imports | GDI32, KERNEL32, SHELL32, USER32, plus `api-ms-win-crt-{convert, environment, heap, locale, math, multibyte, private, runtime, stdio, string, time, utility}` | Same, plus comdlg32 and ole32 |
@@ -32,7 +32,7 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Entry | Size | Purpose |
 |---|---|---|
-| `SolidArc/SolidArcWorkspace.exe` | 7,319,040 B | The application |
+| `SolidArc/SolidArcWorkspace.exe` | 7,320,576 B | The application |
 | `SolidArc/SolidArcWorkspace.toml` | 940 B | Package options: window, viewport, font, and file paths (autosave in `Autosave/`, documents in `Documents/`, both inside the package folder), plus Vulkan |
 | `SolidArc/README.md` | 1,671 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
 | `SolidArc/EngineContent/FontArchives/…` | | DM Sans (the upstream interface typeface) |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,719,466 B |
-| Zip sha256 | `f1f450a3503112a173e83a475f8b30552f8e89e4807492949a4568adf844b3a4` |
-| Unpacked | 8,769,738 B (342 entries) |
+| Zip size | 3,719,715 B |
+| Zip sha256 | `d23b1948e8564d6fdbf856fbafc66f06611f0590e7c3e4f0c86014166239c840` |
+| Unpacked | 8,771,274 B (342 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
