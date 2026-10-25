@@ -198,6 +198,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         // Volume of the staged gizmo / sketch-point drag preview (mid-drag evidence); the document's volume without one.
         const SolidArcDocument* Preview = State.Gizmo.DragCondition && State.Gizmo.Preview ? State.Gizmo.Preview.get()
                                         : State.SketchPoints.DragCondition && State.SketchPoints.Preview ? State.SketchPoints.Preview.get() : nullptr;
+        if (!Preview && State.Gizmo.DragCondition && State.Gizmo.RigidCondition)
+            return Numeric(RigidPreviewVolume(Document, State.Gizmo.Names, GizmoPreviewMap(State.Gizmo)));
         return Numeric(Preview ? Preview->Summary.Volume : Document.Summary.Volume);
     }
     if (Field == "arc-widest" || Field == "live-arc-widest")
@@ -218,7 +220,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
             }
         return Numeric(Widest);
     }
-    if (Field == "live-staged") return Numeric((State.Gizmo.DragCondition && State.Gizmo.Preview) || (State.SketchPoints.DragCondition && State.SketchPoints.Preview) ? 1 : 0);
+    if (Field == "live-staged") return Numeric((State.Gizmo.DragCondition && (State.Gizmo.Preview || State.Gizmo.RigidCondition)) || (State.SketchPoints.DragCondition && State.SketchPoints.Preview) ? 1 : 0);
     if (Field == "picked-points") return Numeric(double(State.SketchPoints.Points.size()));     // picked mode-1 sketch points
     if (Field == "point-commits") return Numeric(double(State.SketchPoints.Commits));
     if (Field == "picked-point-x" || Field == "picked-point-y")
@@ -265,7 +267,11 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "transform-shift-x") return Numeric(State.Transform.Map.Shift.X);
     if (Field == "transform-shift-y") return Numeric(State.Transform.Map.Shift.Y);
     if (Field == "transform-shift-z") return Numeric(State.Transform.Map.Shift.Z);
-    if (Field == "transform-preview-volume") return Numeric(State.Transform.Preview ? State.Transform.Preview->Summary.Volume : 0.0);
+    if (Field == "transform-preview-volume")
+        return Numeric(State.Transform.Preview ? State.Transform.Preview->Summary.Volume
+                       : State.Transform.RigidCondition ? RigidPreviewVolume(Document, State.Transform.Keys, State.Transform.StagedMap) : 0.0);
+    if (Field == "transform-rigid") return Numeric(State.Transform.RigidCondition ? 1 : 0);
+    if (Field == "gizmo-rigid") return Numeric(State.Gizmo.DragCondition && State.Gizmo.RigidCondition ? 1 : 0);
     if (Field == "sweep") return Numeric(State.Sweep.ActiveCondition ? 1 : 0);
     if (Field == "sweep-commits") return Numeric(double(State.Sweep.Commits));
     if (Field == "sweep-amount") return Numeric(State.Sweep.Amount);

@@ -1,0 +1,135 @@
+# SolidArc responsiveness walkthrough — the reported slow scene: a cylinder r 1.7 h 0.6 with a cylinder r 0.35 h 0.3
+# drawn on its side and joined (Union; the sketch plane sits 0.5 mm inside the side, as a tessellation hit gives), then
+# a chamfer on the small cylinder's rim with the pointer sweeping, then four gizmo moves. Run with --trace to read the
+# slow-frame lines (phase timing) and every command / preview / kernel scope with its duration.
+# Run: SolidArcCapture --reset-files --recovery …/ResponsivenessRecovery.solidarc --document …/Responsiveness.solidarc
+#      --open Exhibits/SolidArc/Code/Documents/SideCylinderUnion.solidarc --script Scripts/ResponsivenessWalkthrough.txt
+#      --trace …/ResponsivenessTrace.log
+
+# ① the opened document: one body, the small cylinder joined on the side
+frames 3
+expect bodies == 1
+expect steps == 4
+capture 262UnionOnSide
+
+# ③ edge mode, the small cylinder's outer rim, B → C chamfer; the pointer sweeps (mouse adjust) for 40 frames, then Enter
+key 2
+frames 1
+move world 1.9995 0.0 0.65
+frames 2
+click world 1.9995 0.0 0.65
+frames 2
+expect selected-edges == 1
+key B
+frames 2
+key C
+frames 2
+expect bevel-active == 1
+move viewport 0.45 0.70 offset -40 0
+frames 1
+move viewport 0.45 0.70 offset -38 0
+frames 1
+move viewport 0.45 0.70 offset -36 0
+frames 1
+move viewport 0.45 0.70 offset -34 0
+frames 1
+move viewport 0.45 0.70 offset -32 0
+frames 1
+move viewport 0.45 0.70 offset -30 0
+frames 1
+move viewport 0.45 0.70 offset -28 0
+frames 1
+move viewport 0.45 0.70 offset -26 0
+frames 1
+move viewport 0.45 0.70 offset -24 0
+frames 1
+move viewport 0.45 0.70 offset -22 0
+frames 1
+move viewport 0.45 0.70 offset -20 0
+frames 1
+move viewport 0.45 0.70 offset -18 0
+frames 1
+move viewport 0.45 0.70 offset -16 0
+frames 1
+move viewport 0.45 0.70 offset -14 0
+frames 1
+move viewport 0.45 0.70 offset -12 0
+frames 1
+move viewport 0.45 0.70 offset -10 0
+frames 1
+move viewport 0.45 0.70 offset -8 0
+frames 1
+move viewport 0.45 0.70 offset -6 0
+frames 1
+move viewport 0.45 0.70 offset -4 0
+frames 1
+move viewport 0.45 0.70 offset -2 0
+frames 1
+move viewport 0.45 0.70 offset 0 0
+frames 1
+move viewport 0.45 0.70 offset 2 0
+frames 1
+move viewport 0.45 0.70 offset 4 0
+frames 1
+move viewport 0.45 0.70 offset 6 0
+frames 1
+move viewport 0.45 0.70 offset 8 0
+frames 1
+move viewport 0.45 0.70 offset 10 0
+frames 1
+move viewport 0.45 0.70 offset 12 0
+frames 1
+move viewport 0.45 0.70 offset 14 0
+frames 1
+move viewport 0.45 0.70 offset 16 0
+frames 1
+move viewport 0.45 0.70 offset 18 0
+frames 1
+move viewport 0.45 0.70 offset 20 0
+frames 1
+move viewport 0.45 0.70 offset 22 0
+frames 1
+move viewport 0.45 0.70 offset 24 0
+frames 1
+move viewport 0.45 0.70 offset 26 0
+frames 1
+move viewport 0.45 0.70 offset 28 0
+frames 1
+move viewport 0.45 0.70 offset 30 0
+frames 1
+move viewport 0.45 0.70 offset 32 0
+frames 1
+move viewport 0.45 0.70 offset 34 0
+frames 1
+move viewport 0.45 0.70 offset 36 0
+frames 1
+move viewport 0.45 0.70 offset 38 0
+frames 1
+capture 263ChamferSweep
+click @BevelSize
+key A Ctrl
+type 0.05
+key Enter
+frames 2
+key Enter
+frames 3
+expect bevel-active == 0
+expect refused == 0
+
+# ④ body mode, pick it, four gizmo moves along x
+key 4
+frames 1
+click world 0.0 0.0 0.6
+frames 3
+expect selected-bodies == 1
+drag left @GizmoTranslateX by 40 0 12
+frames 3
+drag left @GizmoTranslateX by 40 0 12
+frames 3
+drag left @GizmoTranslateX by 40 0 12
+frames 3
+drag left @GizmoTranslateX by 40 0 12
+frames 3
+expect refused == 0
+expect gizmo-commits == 4
+capture 264MovedFourTimes

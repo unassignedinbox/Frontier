@@ -7,6 +7,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Interface/SolidArcFrame.h"
@@ -53,6 +54,8 @@ struct CaptureSettings
     bool        ResetFiles   = false;                                                        // [-]  - Delete document / recovery files first
     int         Width        = 0;                                                            // [px] - Override of the frame width
     int         Height       = 0;                                                            // [px] - Override of the frame height
+    std::string TracePath    = {};                                                           // [-]  - Operation trace file (empty: memory only)
+    double      SlowFrame    = 0.0;                                                          // [ms] - Slow-frame line threshold (0: the default)
 };
 
 struct CaptureRecord
@@ -94,6 +97,8 @@ CaptureSettings ReadArguments(int Count, char** Arguments)
         else if (Flag == "--reset-files") Settings.ResetFiles = true;
         else if (Flag == "--width") Settings.Width = std::atoi(Value().c_str());
         else if (Flag == "--height") Settings.Height = std::atoi(Value().c_str());
+        else if (Flag == "--trace") Settings.TracePath = Value();
+        else if (Flag == "--slow-frame") Settings.SlowFrame = std::atof(Value().c_str());
     }
     return Settings;
 }
@@ -114,6 +119,7 @@ int main(int Count, char** Arguments)
     if (!Settings.DriverPath.empty()) Options.DriverPath = Settings.DriverPath;
     if (!Settings.DocumentPath.empty()) Options.DocumentPath = Settings.DocumentPath;
     if (!Settings.CurvesPath.empty()) Options.CurvesPath = Settings.CurvesPath;
+    if (!Settings.TracePath.empty()) Frontier::GeometryProcessing::OpenOperationTrace(Settings.TracePath);
 
     if (Settings.ResetFiles)
     {
@@ -197,7 +203,9 @@ int main(int Count, char** Arguments)
     {
         const auto        FrameStart = std::chrono::steady_clock::now();
         const std::string Capture    = AdvanceSolidArcScript(Script, State);
+        const auto        Uploading  = std::chrono::steady_clock::now();
         Frame.PrepareViewport(State);
+        State.Profile.UploadMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Uploading).count();
         ImGui_ImplVulkan_NewFrame();
         ImGui::NewFrame();
         DrawSolidArcInterface(State, Frame.ViewportTexture(), 1.0 / 60.0);
@@ -217,6 +225,8 @@ int main(int Count, char** Arguments)
         Frame.Conclude(State);
         State.FrameMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - FrameStart).count();
         SlowestMs     = std::max(SlowestMs, State.FrameMs);
+        if (Settings.SlowFrame > 0.0) State.Profile.SlowThreshold = Settings.SlowFrame, State.Profile.LineGap = 0.0;
+        ConcludeSolidArcFrame(State);
         if (!Capture.empty())
         {
             const uint32_t*   Pixels = static_cast<const uint32_t*>(Readback.Mapped);

@@ -328,6 +328,7 @@ struct SolidArcTransformSession
     bool                              StagedCondition    = false;                            // [-]   - A preview was built
     std::unique_ptr<SolidArcDocument> Preview            = {};                               // [-]   - Staged document
     SolidArcScene                     PreviewScene       = {};                               // [-]   - Its display arrays
+    bool                              RigidCondition     = false;                            // [-]   - PreviewScene is the shown scene mapped (no regeneration)
     std::string                       Readout            = {};                               // [-]   - "Move x 0.3"
     std::string                       Refusal            = {};                               // [-]   - Why commit is refused
     int                               Commits            = 0;                                // [-]   - Committed (script evidence)
@@ -547,9 +548,49 @@ struct SolidArcGizmoSession
     std::string                       StagedKey     = {};                                    // [-]   - Value the preview shows
     std::unique_ptr<SolidArcDocument> Preview       = {};                                    // [-]   - Staged document
     SolidArcScene                     PreviewScene  = {};                                    // [-]   - Its display arrays
+    bool                              RigidCondition = false;                                // [-]   - PreviewScene is the shown scene mapped (no regeneration)
     std::string                       Readout       = {};                                    // [-]   - "X  move 0.250"
     std::string                       Refusal       = {};                                    // [-]   - Why the staged value refuses
     int                               Commits       = 0;                                     // [-]   - Committed drags (script evidence)
+};
+
+// 📝 Frame timing for the trace (SolidArcTrace.log / F12): each frame records named CPU phases; a frame slower than
+//    SlowThreshold writes one "Frame" line with the total, the host's GPU wait and upload, and the costliest phases.
+struct SolidArcFramePhase
+{
+    const char* Name         = "";                                                            // [-]  - Static phase name
+    double      Milliseconds = 0.0;                                                           // [ms] - Time this frame
+    int         Calls        = 0;                                                             // [-]  - Entries this frame
+};
+
+struct SolidArcFrameProfile
+{
+    std::vector<SolidArcFramePhase> Phases        = {};                                       // [-]  - This frame's phases (entry order)
+    double                          InterfaceMs   = 0.0;                                      // [ms] - DrawSolidArcInterface, whole
+    double                          UploadMs      = 0.0;                                      // [ms] - Host: PrepareViewport (scene / matcap uploads)
+    double                          GpuWaitMs     = 0.0;                                      // [ms] - Host: fence wait for the previous frame
+    double                          SlowThreshold = 50.0;                                     // [ms] - Frame time that writes a trace line
+    uint64_t                        SlowFrames    = 0;                                        // [-]  - Lines written this session
+    double                          WorstMs       = 0.0;                                      // [ms] - Slowest frame this session
+    double                          LineGap       = 0.25;                                     // [s]  - Least time between two lines (a slow drag stays legible)
+    double                          LineSeconds   = -1.0e9;                                   // [s]  - When the last line was written
+    uint64_t                        Suppressed    = 0;                                        // [-]  - Slow frames since the last line (inside LineGap)
+};
+
+// Adds the scope's duration to the named phase of Profile (one entry per name per frame).
+class SolidArcPhaseClock
+{
+public:
+    SolidArcPhaseClock(SolidArcFrameProfile& Profile, const char* Name);
+    ~SolidArcPhaseClock();
+
+    SolidArcPhaseClock(const SolidArcPhaseClock&)            = delete;
+    SolidArcPhaseClock& operator=(const SolidArcPhaseClock&) = delete;
+
+private:
+    SolidArcFrameProfile& Profile;                                                            // [-]  - Where the time goes
+    const char*           Name;                                                               // [-]  - Phase name (static text)
+    double                Start;                                                              // [s]  - Entry time (steady clock)
 };
 
 struct SolidArcWorkspaceState
@@ -622,6 +663,7 @@ struct SolidArcWorkspaceState
     SolidArcWidgetBoard                   Widgets        = {};                               // [px]  - Named widget rectangles of the last frame (scripts)
     uint64_t                              FrameNumber    = 0;                                // [-]   - Frames drawn
     double                                FrameMs        = 0.0;                              // [ms]  - Last frame's CPU + GPU time
+    SolidArcFrameProfile                  Profile        = {};                               // [-]   - Phase timing of the current frame
     std::string                           DeviceLabel    = {};                               // [-]   - Vulkan device description
 };
 
@@ -634,6 +676,14 @@ void ConfigureSolidArcInterface(const SolidArcOptions& Options);
 
 // Empty document + defaults; offers recovery when Options.RecoveryPath holds an autosave.
 void InitialiseSolidArcWorkspace(SolidArcWorkspaceState& State, const SolidArcOptions& Options);
+
+// Host hook, once per frame after present: writes the slow-frame trace line for the frame just shown (FrameMs set).
+void ConcludeSolidArcFrame(SolidArcWorkspaceState& State);
+
+// Rigid previews (a move / rotate / scale of whole bodies shows the scene carried by the map, no regeneration): the map a
+// gizmo drag shows, and the volume the commit will give (each keyed body's volume × det M).
+[[nodiscard]] GeometryProcessing::AffineMap GizmoPreviewMap(const SolidArcGizmoSession& Gizmo);
+[[nodiscard]] double                        RigidPreviewVolume(const SolidArcDocument& Document, const std::vector<std::string>& Keys, const GeometryProcessing::AffineMap& Map);
 
 // 💡 Builds the whole frame (between ImGui::NewFrame and ImGui::Render). ViewportTexture is the colour target of the
 //    previous viewport render. Serves every shortcut and viewport gesture; DeltaSeconds drives the autosave timer.

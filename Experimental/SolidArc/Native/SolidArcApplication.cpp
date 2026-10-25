@@ -373,7 +373,9 @@ int main(int Count, char** Arguments)
             RebuildCondition = false;
         }
 
+        const auto Waiting = std::chrono::steady_clock::now();
         vkWaitForFences(Device.Device, 1, &InFlight, VK_TRUE, UINT64_MAX);
+        State.Profile.GpuWaitMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Waiting).count();
         if (!FirstFrame) Frame.Conclude(State);
         FirstFrame = false;
         const auto Now   = std::chrono::steady_clock::now();
@@ -381,6 +383,7 @@ int main(int Count, char** Arguments)
         Previous         = Now;
 
         Frame.PrepareViewport(State);
+        State.Profile.UploadMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Now).count();
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -424,6 +427,7 @@ int main(int Count, char** Arguments)
         const VkResult Presented = vkQueuePresentKHR(Device.Queue, &Presentation);
         if (Presented == VK_ERROR_OUT_OF_DATE_KHR || Presented == VK_SUBOPTIMAL_KHR) RebuildCondition = true;
         State.FrameMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Now).count();
+        ConcludeSolidArcFrame(State);                                                         // Slow frames → SolidArcTrace.log
     }
 
     // ④ flush a pending autosave, then release in reverse order

@@ -696,6 +696,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     Bevel.StagedReversed = Bevel.ReversedCondition;
     static const char* Verbs[] = { "Blend", "Extrude", "Profile", "Inset", "Corner" };
     FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 4)] + " · size " + TraceNumber(Bevel.Size));
+    SolidArcPhaseClock StageClock(State.Profile, "bevel preview · stage");
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
@@ -1050,6 +1051,7 @@ SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFra
     const bool     AlongCondition = !AnchorCondition && Io.KeyAlt;                            // Alt: on the curve
     const bool     PointCondition = AnchorCondition || Io.KeyCtrl;                            // Ctrl: important points
     if (!State.Picker.Enabled || (!PointCondition && !AlongCondition)) return {};
+    SolidArcPhaseClock Clock(State.Profile, "snaps");
     SolidArcSnapQuery Query;
     Query.Frame       = Frame;
     Query.PixelX      = Local.x;
@@ -3275,6 +3277,53 @@ constexpr double SweepSnap  = 0.01;                                             
     return Keys;
 }
 
+// 💡 Rigid preview: the shown scene with the keyed bodies' corners and edge segments carried by the map — what a move /
+//    rotate / scale regeneration would tessellate, at the cost of a copy (no clone, no replay, no tessellation). Normals
+//    follow the inverse transpose (M⁻ᵀ = [b×c | c×a | a×b] / det). The release still commits through the kernel.
+[[nodiscard]] SolidArcScene MapSceneBodies(const SolidArcScene& Scene, const std::vector<std::string>& Keys, const AffineMap& Map)
+{
+    static uint64_t Counter = 0;
+    SolidArcScene Mapped = Scene;
+    Mapped.Generation    = (uint64_t(1) << 62) + ++Counter;                                  // Distinct from every built scene: re-upload
+    const Vector3 NormalX = Cross(Map.ColumnY, Map.ColumnZ), NormalY = Cross(Map.ColumnZ, Map.ColumnX), NormalZ = Cross(Map.ColumnX, Map.ColumnY);
+    const auto Carry = [&](float* Position)
+    {
+        const Vector3 Moved = Map.ColumnX * Position[0] + Map.ColumnY * Position[1] + Map.ColumnZ * Position[2] + Map.Shift;
+        Position[0] = float(Moved.X), Position[1] = float(Moved.Y), Position[2] = float(Moved.Z);
+    };
+    for (const SolidArcSceneBody& Body : Mapped.Bodies)
+    {
+        if (std::find(Keys.begin(), Keys.end(), Body.Key) == Keys.end()) continue;
+        for (uint32_t Face = Body.FirstFace; Face < Body.FirstFace + Body.FaceCount && Face < Mapped.Faces.size(); ++Face)
+            for (uint32_t Corner = Mapped.Faces[Face].FirstCorner; Corner < Mapped.Faces[Face].FirstCorner + Mapped.Faces[Face].CornerCount && Corner < Mapped.Corners.size(); ++Corner)
+            {
+                SolidArcSceneCorner& Point = Mapped.Corners[Corner];
+                Carry(Point.Position);
+                const Vector3 Turned = Normalize(NormalX * Point.Normal[0] + NormalY * Point.Normal[1] + NormalZ * Point.Normal[2]);
+                Point.Normal[0] = float(Turned.X), Point.Normal[1] = float(Turned.Y), Point.Normal[2] = float(Turned.Z);
+            }
+        for (uint32_t Edge = Body.FirstEdge; Edge < Body.FirstEdge + Body.EdgeCount && Edge < Mapped.Edges.size(); ++Edge)
+            for (uint32_t Segment = Mapped.Edges[Edge].FirstSegment; Segment < Mapped.Edges[Edge].FirstSegment + Mapped.Edges[Edge].SegmentCount && Segment < Mapped.Segments.size(); ++Segment)
+            {
+                Carry(Mapped.Segments[Segment].Start);
+                Carry(Mapped.Segments[Segment].End);
+            }
+    }
+    if (!Mapped.Corners.empty())
+    {
+        Mapped.BoundsLow  = { 1.0e300, 1.0e300, 1.0e300 };
+        Mapped.BoundsHigh = { -1.0e300, -1.0e300, -1.0e300 };
+        for (const SolidArcSceneCorner& Point : Mapped.Corners)
+            for (int Axis = 0; Axis < 3; ++Axis)
+            {
+                Mapped.BoundsLow[Axis]  = std::min(Mapped.BoundsLow[Axis], double(Point.Position[Axis]));
+                Mapped.BoundsHigh[Axis] = std::max(Mapped.BoundsHigh[Axis], double(Point.Position[Axis]));
+            }
+    }
+    Mapped.Milliseconds = 0.0;
+    return Mapped;
+}
+
 // Bounds centre of the bodies in the shown scene (their tessellation corners).
 [[nodiscard]] Vector3 MeasureBodiesCentre(const SolidArcScene& Scene, const std::vector<std::string>& Keys)
 {
@@ -3337,6 +3386,7 @@ void OpenTransformSession(SolidArcWorkspaceState& State, SolidArcTransformVerb V
 void CancelTransformSession(SolidArcWorkspaceState& State)
 {
     State.Transform.ActiveCondition = false;
+    State.Transform.RigidCondition  = false;
     State.Transform.Preview.reset();
     Announce(State, std::string(TransformVerbLabel(State.Transform.Verb)) + " cancelled");
 }
@@ -3350,13 +3400,14 @@ void ApplyTransformSession(SolidArcWorkspaceState& State)
 {
     SolidArcTransformSession& Transform = State.Transform;
     if (!Transform.Refusal.empty()) { Announce(State, "Refused: " + Transform.Refusal); return; }
-    if (!Transform.DuplicateCondition && IdentityMapCondition(Transform.Map)) { Transform.ActiveCondition = false; Transform.Preview.reset(); Announce(State, std::string(TransformVerbLabel(Transform.Verb)) + ": nothing changed"); return; }
+    if (!Transform.DuplicateCondition && IdentityMapCondition(Transform.Map)) { Transform.ActiveCondition = false; Transform.RigidCondition = false; Transform.Preview.reset(); Announce(State, std::string(TransformVerbLabel(Transform.Verb)) + ": nothing changed"); return; }
     const SolidArcCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateSolidArcBodies(State.Document, Transform.Keys, Transform.Map)
                                                                         : TransformSolidArcBodies(State.Document, Transform.Keys, Transform.Map, TransformVerbLabel(Transform.Verb));
     if (Outcome.AcceptedCondition)
     {
         ++Transform.Commits;
         Transform.ActiveCondition = false;
+        Transform.RigidCondition  = false;
         Transform.Preview.reset();
         State.PickMode = SolidArcPickMode::Solid;
     }
@@ -3489,7 +3540,19 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     Transform.StagedMap       = Map;
     Transform.StagedCondition = true;
     Transform.Refusal.clear();
+    Transform.RigidCondition  = false;
     if (!Transform.DuplicateCondition && IdentityMapCondition(Map)) { Transform.Preview.reset(); return; }
+    if (!Transform.DuplicateCondition)
+    {
+        // A move / rotate / scale of whole bodies: carry the shown triangles (the kernel runs once, on commit).
+        SolidArcPhaseClock RigidClock(State.Profile, "transform preview · rigid");
+        Transform.Preview.reset();
+        Transform.PreviewScene   = MapSceneBodies(State.Scene, Transform.Keys, Map);
+        Transform.RigidCondition = true;
+        return;
+    }
+    FRONTIER_TRACE_SCOPE("Preview", "StageTransformPreview · " + Transform.Readout);
+    SolidArcPhaseClock StageClock(State.Profile, "transform preview · stage");
     Transform.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateSolidArcBodies(*Transform.Preview, Transform.Keys, Map)
                                                                         : TransformSolidArcBodies(*Transform.Preview, Transform.Keys, Map, TransformVerbLabel(Transform.Verb));
@@ -3753,6 +3816,7 @@ void CancelGizmoDrag(SolidArcWorkspaceState& State, const std::string& Message)
     Gizmo.DragCondition = false;
     Gizmo.Grab          = SolidArcGizmoHandle::None;
     Gizmo.Preview.reset();
+    Gizmo.RigidCondition = false;
     Gizmo.StagedKey.clear();
     Gizmo.Refusal.clear();
     if (!Message.empty()) Announce(State, Message);
@@ -3850,7 +3914,19 @@ void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     if (Key == Gizmo.StagedKey) return;
     Gizmo.StagedKey = Key;
     Gizmo.Refusal.clear();
+    Gizmo.RigidCondition = false;
     if (GizmoIdentityCondition(Gizmo)) { Gizmo.Preview.reset(); return; }
+    if (Gizmo.Target == SolidArcGizmoTarget::Bodies)
+    {
+        // Whole bodies: carry the shown triangles (the kernel runs once, on release).
+        SolidArcPhaseClock RigidClock(State.Profile, "gizmo preview · rigid");
+        Gizmo.Preview.reset();
+        Gizmo.PreviewScene   = MapSceneBodies(State.Scene, Gizmo.Names, GizmoMap(Gizmo));
+        Gizmo.RigidCondition = true;
+        return;
+    }
+    FRONTIER_TRACE_SCOPE("Preview", "StageGizmoPreview · " + Gizmo.Readout);
+    SolidArcPhaseClock StageClock(State.Profile, "gizmo preview · stage");
     Gizmo.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = ApplyGizmoCommand(*Gizmo.Preview, Gizmo);
     if (!Outcome.AcceptedCondition) { Gizmo.Refusal = Legible(Outcome.Refusal); Gizmo.Preview.reset(); return; }
@@ -6596,6 +6672,13 @@ void DrawStatusBar(SolidArcWorkspaceState& State, const ImVec2 Frame)
     Right -= 1.0f + 9.0f + 14.0f;
     const std::string Device = Compose("%.1f ms frame · %s", State.FrameMs, State.DeviceLabel.c_str());
     Right -= Sheet.TextRight(Right, Centre, 9.0f, Ink, Device.c_str()) + 14.0f;
+#ifdef FRONTIER_DEVELOPMENT_TRACE
+    // 📝 The log is one click away: the button opens the trace panel (F12), which names SolidArcTrace.log beside the exe.
+    float             LogWidth = 0.0f;
+    const std::string LogLabel = State.Profile.SlowFrames > 0 ? Compose("Log · %llu slow", static_cast<unsigned long long>(State.Profile.SlowFrames)) : std::string("Log (F12)");
+    if (SheetTextButton(State, Sheet, "StatusLog", Right, Centre, LogLabel.c_str(), IconSymbol::Count, &LogWidth)) State.TraceShown = !State.TraceShown;
+    Right -= LogWidth + 10.0f;
+#endif
     const std::string Message = Legible(State.Status);
     Sheet.TextClipped(Cursor, Centre, std::max(0.0f, Right - Cursor), 9.0f, SolidArcInk(0xb0b0b0), Message.c_str());
     EndSheetWindow();
@@ -7729,7 +7812,11 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     Navigation.HoveredCondition    = Hovered;
     NavigateSolidArcPointer(State.Camera, Frame, Navigation);
     // Transform gizmo (no command running): a held or hovered handle owns the left button this frame.
-    const bool GizmoOwned = DriveGizmo(State, Frame, Local, Hovered && !OverCube);
+    bool GizmoOwned = false;
+    {
+        SolidArcPhaseClock Clock(State.Profile, "viewport · gizmo");
+        GizmoOwned = DriveGizmo(State, Frame, Local, Hovered && !OverCube);
+    }
 
     // 📝 Mode 1 (Plasticity control-point mode): press on a shown pole grabs it, the pole follows the pointer in the
     //    screen-parallel plane through its start, the release commits one MoveSolidArcPole; a press-release without
@@ -7831,6 +7918,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
     }
 
+    {
+    SolidArcPhaseClock PointerClock(State.Profile, "viewport · pointer");               // Sessions, snaps, picks
     if (PoleGesture || PointGesture)
     {
         // The pole / sketch-point drag owns the left button this frame.
@@ -7961,20 +8050,22 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         }
     }
 
+    }
+
     // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
-    DrawSketchOverlays(State, Canvas, Frame);
-    DrawTrimPreview(State, Canvas, Frame);
-    DrawFillPreview(State, Canvas, Frame);
-    DrawConstraintOverlay(State, Canvas, Frame);
-    DrawSweepOutline(State, Canvas, Frame);
-    DrawSectionOutline(State, Canvas, Frame);
-    DrawMeasureOverlay(State, Canvas, Frame);
-    DrawJointOverlay(State, Canvas, Frame);
-    DrawCurveOverlays(State, Canvas, Frame);
-    if (State.DeviationEnabled) DrawDeviationOverlay(State, Canvas, Frame);
-    if (State.Drawing.ActiveCondition) DrawDrawingPreview(State, Canvas, Frame);
-    DrawSnapOverlay(State, Canvas, Frame);
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSketchOverlays"); DrawSketchOverlays(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawTrimPreview"); DrawTrimPreview(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawFillPreview"); DrawFillPreview(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawConstraintOverlay"); DrawConstraintOverlay(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSweepOutline"); DrawSweepOutline(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSectionOutline"); DrawSectionOutline(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawMeasureOverlay"); DrawMeasureOverlay(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawJointOverlay"); DrawJointOverlay(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawCurveOverlays"); DrawCurveOverlays(State, Canvas, Frame); }
+    if (State.DeviationEnabled) { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawDeviationOverlay"); DrawDeviationOverlay(State, Canvas, Frame); }
+    if (State.Drawing.ActiveCondition) { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawDrawingPreview"); DrawDrawingPreview(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSnapOverlay"); DrawSnapOverlay(State, Canvas, Frame); }
     if (State.Box.ActiveCondition && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance)
     {
         const ImVec2 Low(std::min(State.Box.Start.x, State.Box.End.x), std::min(State.Box.Start.y, State.Box.End.y));
@@ -10079,13 +10170,22 @@ void DrawTracePanel(SolidArcWorkspaceState& State)
     ImGui::SetNextWindowPos(ImVec2(20.0f, Display.y - 400.0f), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Operation trace (F12)###OperationTrace", &State.TraceShown)) { ImGui::End(); return; }
     const std::filesystem::path Path = OperationTracePath();
-    ImGui::TextDisabled("%s", Path.empty() ? "in memory only" : DescribeUtf8Path(Path).c_str());
+    const std::string           Where = Path.empty() ? std::string("in memory only") : DescribeUtf8Path(Path);
+    ImGui::TextDisabled("Log file: %s", Where.c_str());
+    ImGui::SameLine();
+    if (!Path.empty() && ImGui::SmallButton("Copy path###TraceCopyPath")) ImGui::SetClipboardText(Where.c_str());
+    ImGui::TextDisabled("Frames over %.0f ms: %llu · slowest %.0f ms · each slow frame writes a \"Frame\" line with its costliest phases",
+                        State.Profile.SlowThreshold, static_cast<unsigned long long>(State.Profile.SlowFrames), State.Profile.WorstMs);
     char Filter[128] = {};
     std::snprintf(Filter, sizeof(Filter), "%s", State.TraceFilter.c_str());
     ImGui::SetNextItemWidth(260.0f);
     if (ImGui::InputTextWithHint("###TraceFilter", "filter (Blend, Replay, refused …)", Filter, sizeof(Filter))) State.TraceFilter = Filter;
     ImGui::SameLine();
     const bool CopyCondition = ImGui::Button("Copy###TraceCopy");
+    ImGui::SameLine();
+    if (ImGui::Button("Slow frames###TraceSlow")) State.TraceFilter = State.TraceFilter == "slow frame" ? std::string() : std::string("slow frame");
+    ImGui::SameLine();
+    if (ImGui::Button("Refusals###TraceRefused")) State.TraceFilter = State.TraceFilter == "refused" ? std::string() : std::string("refused");
     const std::vector<std::string> Lines = RecentOperationTrace(1500);
     std::string Shown;
     ImGui::BeginChild("###TraceLines", ImVec2(0, 0), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
@@ -10109,49 +10209,139 @@ void DrawTracePanel(SolidArcWorkspaceState& State)
 #endif
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    FRAME TIMING
+//------------------------------------------------------------------------------------------------------------------------
+
+[[nodiscard]] double SteadySeconds()
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+SolidArcPhaseClock::SolidArcPhaseClock(SolidArcFrameProfile& Profile, const char* Name) : Profile(Profile), Name(Name), Start(SteadySeconds())
+{
+}
+
+SolidArcPhaseClock::~SolidArcPhaseClock()
+{
+    const double Milliseconds = (SteadySeconds() - Start) * 1.0e3;
+    for (SolidArcFramePhase& Phase : Profile.Phases)
+        if (Phase.Name == Name) { Phase.Milliseconds += Milliseconds; ++Phase.Calls; return; }
+    Profile.Phases.push_back({ Name, Milliseconds, 1 });
+}
+
+// What owns the pointer this frame, for the slow-frame line ("bevel session", "gizmo drag", "idle", …).
+[[nodiscard]] std::string ActiveSessionLabel(const SolidArcWorkspaceState& State)
+{
+    if (State.Bevel.ActiveCondition) return State.Bevel.Preview ? "bevel session (preview staged)" : "bevel session";
+    if (State.Transform.ActiveCondition) return std::string(TransformVerbLabel(State.Transform.Verb)) + " session";
+    if (State.Gizmo.DragCondition) return "gizmo drag";
+    if (State.Drawing.ActiveCondition) return State.Drawing.SolidCondition ? "Construct drawing" : "sketch drawing";
+    if (State.SketchPoints.DragCondition) return "sketch point drag";
+    if (State.PoleDrag.ActiveCondition) return "pole drag";
+    if (State.Constrain.ActiveCondition) return "constraint session";
+    if (State.Trim.ActiveCondition) return "trim session";
+    if (State.Fill.ActiveCondition) return "fill session";
+    if (State.Sweep.ActiveCondition) return "sweep session";
+    if (State.Joint.ActiveCondition) return "joint session";
+    if (ImGui::IsAnyMouseDown()) return "pointer held";
+    return "idle";
+}
+
+void ConcludeSolidArcFrame(SolidArcWorkspaceState& State)
+{
+    SolidArcFrameProfile& Profile = State.Profile;
+    const double Total = State.FrameMs + Profile.GpuWaitMs;
+    Profile.WorstMs = std::max(Profile.WorstMs, Total);
+    const double Now  = SteadySeconds();
+    const bool   Slow = Total >= Profile.SlowThreshold && State.FrameNumber > 2;            // Start-up frames load fonts and matcaps
+    if (Slow && Now - Profile.LineSeconds < Profile.LineGap) ++Profile.Suppressed;
+    else if (Slow)
+    {
+        // 📝 Phases nest ("viewport" holds "viewport · overlays"), so the list is a ranking, not a sum.
+        std::vector<SolidArcFramePhase> Ranked = Profile.Phases;
+        std::sort(Ranked.begin(), Ranked.end(), [](const SolidArcFramePhase& Left, const SolidArcFramePhase& Right) { return Left.Milliseconds > Right.Milliseconds; });
+        const SolidArcScene& Scene = DisplayedSolidArcScene(State);
+        std::string Line = Compose("slow frame %llu · %.0f ms (CPU %.0f · interface %.0f · upload %.0f · GPU wait %.0f) · %s · %zu triangles · %zu steps",
+                                   static_cast<unsigned long long>(State.FrameNumber), Total, State.FrameMs, Profile.InterfaceMs, Profile.UploadMs, Profile.GpuWaitMs,
+                                   ActiveSessionLabel(State).c_str(), Scene.Corners.size() / 3, State.Document.Tree.Steps.size());
+        int Listed = 0;
+        for (const SolidArcFramePhase& Phase : Ranked)
+        {
+            if (Listed == 6 || Phase.Milliseconds < 1.0) break;
+            Line += Phase.Calls > 1 ? Compose(" · %s %.0f ms ×%d", Phase.Name, Phase.Milliseconds, Phase.Calls) : Compose(" · %s %.0f ms", Phase.Name, Phase.Milliseconds);
+            ++Listed;
+        }
+        if (Profile.Suppressed > 0) Line += Compose(" · +%llu slow frame%s since the last line", static_cast<unsigned long long>(Profile.Suppressed), Profile.Suppressed == 1 ? "" : "s");
+        FRONTIER_TRACE("Frame", Line);
+        ++Profile.SlowFrames;
+        Profile.Suppressed  = 0;
+        Profile.LineSeconds = Now;
+    }
+    Profile.Phases.clear();
+    Profile.InterfaceMs = 0.0;
+}
+
+AffineMap GizmoPreviewMap(const SolidArcGizmoSession& Gizmo)
+{
+    return GizmoMap(Gizmo);
+}
+
+double RigidPreviewVolume(const SolidArcDocument& Document, const std::vector<std::string>& Keys, const AffineMap& Map)
+{
+    const double Determinant = Dot(Map.ColumnX, Cross(Map.ColumnY, Map.ColumnZ));
+    double       Volume      = 0.0;
+    for (const SolidArcBodyFigures& Body : Document.Summary.Bodies)
+        Volume += std::find(Keys.begin(), Keys.end(), Body.Key) != Keys.end() ? Body.Volume * std::abs(Determinant) : Body.Volume;
+    return Volume;
+}
+
 void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, double DeltaSeconds)
 {
+    const double Entered = SteadySeconds();
+    SolidArcFrameProfile& Profile = State.Profile;
     State.Widgets.Clear();
-    RefreshSolidArcMatcaps(State);
+    { SolidArcPhaseClock Clock(Profile, "matcaps"); RefreshSolidArcMatcaps(State); }
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
-    StageBevelPreview(State);
-    RefreshMeasure(State);
-    RefreshSection(State);
+    { SolidArcPhaseClock Clock(Profile, "bevel preview"); StageBevelPreview(State); }
+    { SolidArcPhaseClock Clock(Profile, "measure"); RefreshMeasure(State); }
+    { SolidArcPhaseClock Clock(Profile, "section"); RefreshSection(State); }
     // 📝 HTML grid at 1600 px: header 68, document bar 34, columns 300 | 1fr | 330 (gap 10, margin 12), status bar 31.
-    DrawHeader(State, Frame);
-    DrawDocumentBar(State, Frame);
+    { SolidArcPhaseClock Clock(Profile, "header"); DrawHeader(State, Frame); DrawDocumentBar(State, Frame); }
     const float Top    = HeaderHeight + DocumentHeight;
     const float Height = std::max(100.0f, Frame.y - Top - StatusHeight);
     const float Middle = std::max(100.0f, Frame.x - 2 * FrameMargin - 2 * ColumnGap - OutlinerWidth - InspectorWidth);
     if (State.ViewportMaximizedEnabled)
     {
         // HTML maximize: the scene panel takes the whole row (Outliner and Inspector step aside).
+        SolidArcPhaseClock Clock(Profile, "viewport");
         DrawViewport(State, ViewportTexture, ImVec2(FrameMargin, Top), ImVec2(Frame.x - 2 * FrameMargin, Height));
     }
     else
     {
-        DrawOutliner(State, ImVec2(FrameMargin, Top), ImVec2(OutlinerWidth, Height));
-        DrawViewport(State, ViewportTexture, ImVec2(FrameMargin + OutlinerWidth + ColumnGap, Top), ImVec2(Middle, Height));
-        DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height));
+        { SolidArcPhaseClock Clock(Profile, "outliner"); DrawOutliner(State, ImVec2(FrameMargin, Top), ImVec2(OutlinerWidth, Height)); }
+        { SolidArcPhaseClock Clock(Profile, "viewport"); DrawViewport(State, ViewportTexture, ImVec2(FrameMargin + OutlinerWidth + ColumnGap, Top), ImVec2(Middle, Height)); }
+        { SolidArcPhaseClock Clock(Profile, "inspector"); DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height)); }
     }
-    DrawStatusBar(State, Frame);
+    { SolidArcPhaseClock Clock(Profile, "status bar"); DrawStatusBar(State, Frame); }
     DrawMatcapPicker(State);
     DrawWelcome(State);
-    DrawTracePanel(State);
-    ApplyShortcuts(State);
-    AdvanceAutosave(State, DeltaSeconds);
-    StageBevelPreview(State);
+    { SolidArcPhaseClock Clock(Profile, "trace panel"); DrawTracePanel(State); }
+    { SolidArcPhaseClock Clock(Profile, "shortcuts"); ApplyShortcuts(State); }
+    { SolidArcPhaseClock Clock(Profile, "autosave"); AdvanceAutosave(State, DeltaSeconds); }
+    { SolidArcPhaseClock Clock(Profile, "bevel preview"); StageBevelPreview(State); }
     State.FrameNumber += 1;
+    Profile.InterfaceMs = (SteadySeconds() - Entered) * 1.0e3;
 }
 
 const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
-    if (State.Transform.ActiveCondition && State.Transform.Preview && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
+    if (State.Transform.ActiveCondition && (State.Transform.Preview || State.Transform.RigidCondition) && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
     if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
     if (State.ParameterDrag.Preview) return State.ParameterDrag.PreviewScene;
-    if (State.Gizmo.DragCondition && State.Gizmo.Preview && State.Gizmo.Refusal.empty()) return State.Gizmo.PreviewScene;
+    if (State.Gizmo.DragCondition && (State.Gizmo.Preview || State.Gizmo.RigidCondition) && State.Gizmo.Refusal.empty()) return State.Gizmo.PreviewScene;
     if (State.SketchPoints.DragCondition && State.SketchPoints.Preview && State.SketchPoints.Refusal.empty()) return State.SketchPoints.PreviewScene;
     return State.Scene;
 }
@@ -10168,11 +10358,11 @@ SolidArcSceneStates DisplayedSolidArcStates(const SolidArcWorkspaceState& State)
 {
     const SolidArcScene& Scene = DisplayedSolidArcScene(State);
     SolidArcSceneStates States = &Scene == &State.Bevel.PreviewScene ? ComposeSolidArcStates(Scene, State.Bevel.Preview->Selection, State.HoverIdentity)
-                               : &Scene == &State.Transform.PreviewScene ? ComposeSolidArcStates(Scene, State.Transform.Preview->Selection, 0)
+                               : &Scene == &State.Transform.PreviewScene ? ComposeSolidArcStates(Scene, State.Transform.Preview ? State.Transform.Preview->Selection : State.Document.Selection, 0)
                                : &Scene == &State.Sweep.PreviewScene ? ComposeSolidArcStates(Scene, State.Sweep.Preview->Selection, 0)
                                : &Scene == &State.Joint.PreviewScene ? ComposeSolidArcStates(Scene, State.Joint.Preview->Selection, 0)
                                : &Scene == &State.ParameterDrag.PreviewScene ? ComposeSolidArcStates(Scene, State.ParameterDrag.Preview->Selection, 0)
-                               : &Scene == &State.Gizmo.PreviewScene ? ComposeSolidArcStates(Scene, State.Gizmo.Preview->Selection, 0)
+                               : &Scene == &State.Gizmo.PreviewScene ? ComposeSolidArcStates(Scene, State.Gizmo.Preview ? State.Gizmo.Preview->Selection : State.Document.Selection, 0)
                                                                       : ComposeSolidArcStates(Scene, State.Document.Selection, State.ViewportHovered ? State.HoverIdentity : 0);
     // 📝 Matcap layers ride in bits 8 … 15 of each face word (SolidArcSurface.slang).
     const std::vector<uint32_t> Layers = ComposeSolidArcMatcapLayers(Scene, State.Document.Appearance, State.Matcaps.Library);
@@ -10186,6 +10376,7 @@ SolidArcSceneStates DisplayedSolidArcStates(const SolidArcWorkspaceState& State)
 
 void RefreshSolidArcScene(SolidArcWorkspaceState& State, bool DirtyCondition)
 {
+    SolidArcPhaseClock Clock(State.Profile, "scene rebuild");
     State.Scene = BuildSolidArcScene(State.Document, 1.5e-3, State.ZebraEnabled);
     State.Camera.SceneRadius = std::max(1.0, 0.5 * std::hypot(State.Scene.BoundsHigh[0] - State.Scene.BoundsLow[0], State.Scene.BoundsHigh[1] - State.Scene.BoundsLow[1],
                                                               State.Scene.BoundsHigh[2] - State.Scene.BoundsLow[2]));

@@ -1,0 +1,88 @@
+# SolidArc document — feature tree of GeometryProcessing (regenerated on load)
+Description = ''
+Format = 'SolidArc'
+FormatVersion = 1
+Parameters = []
+Title = 'Side cylinder union'
+
+[[Steps]]
+Caption = 'Circle1'
+Kind = 0
+KindLabel = 'Sketch'
+Label = 'Sketch#1'
+PlaneOrigin = [ 0.0, 0.0, 0.0 ]
+PlaneXAxis = [ 1.0, 0.0, 0.0 ]
+PlaneYAxis = [ 0.0, 1.0, 0.0 ]
+PlaneZAxis = [ 0.0, 0.0, 1.0 ]
+
+    [Steps.Elevation]
+    Literal = 0.0
+
+    [Steps.Sketch]
+    Constraints = []
+    Points = [ [ 0.0, 0.0 ] ]
+
+        [[Steps.Sketch.Curves]]
+        Centre = 0
+        Construction = false
+        End = -1
+        Identifier = 1
+        Kind = 1
+        Radius = 1.7
+        Start = -1
+
+[[Steps]]
+AxisIdentifier = -1
+Caption = 'Extrude1'
+Combination = 0
+Kind = 1
+KindLabel = 'Extrude'
+Label = 'Extrude#2'
+Profile = 'Sketch#1'
+
+    [Steps.Angle]
+    Literal = 6.2831853071795862
+
+    [Steps.Extent]
+    Literal = 0.59999999999999998
+
+[[Steps]]
+Caption = 'Circle2'
+Kind = 0
+KindLabel = 'Sketch'
+Label = 'Sketch#3'
+PlaneOrigin = [ 1.6995, 0.0, 0.0 ]
+PlaneXAxis = [ -0.0, 1.0, 0.0 ]
+PlaneYAxis = [ 0.0, 0.0, 1.0 ]
+PlaneZAxis = [ 1.0, 0.0, 0.0 ]
+
+    [Steps.Elevation]
+    Literal = 0.0
+
+    [Steps.Sketch]
+    Constraints = []
+    Points = [ [ 0.0, 0.29999999999999999 ] ]
+
+        [[Steps.Sketch.Curves]]
+        Centre = 0
+        Construction = false
+        End = -1
+        Identifier = 1
+        Kind = 1
+        Radius = 0.34999999999999998
+        Start = -1
+
+[[Steps]]
+AxisIdentifier = -1
+Caption = 'Extrude2'
+Combination = 1
+Kind = 1
+KindLabel = 'Extrude'
+Label = 'Extrude#4'
+Profile = 'Sketch#3'
+
+    [Steps.Angle]
+    Literal = 6.2831853071795862
+
+    [Steps.Extent]
+    Literal = 0.29999999999999999
