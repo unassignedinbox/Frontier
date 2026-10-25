@@ -37,6 +37,7 @@
 #include <numbers>
 #include <set>
 #include <sstream>
+#include <utility>
 
 namespace Frontier::SolidArc
 {
@@ -7664,12 +7665,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Drawing.ActiveCondition
                            ? (State.Drawing.SolidCondition ? "Draw on the ground or a body top (snaps, Ctrl free) · move up for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? "Click the centre, then a vertex (snaps, Ctrl free) · + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort"
-                              : "Click both cap centres, then the rim (grid; hold Ctrl for ends / midpoints / centres; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
+                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort"
+                              : "Click both cap centres, then the rim (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
@@ -8311,9 +8312,9 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     }
     ImGui::EndDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextWrapped(State.Drawing.ActiveCondition ? "x y z t n b lock a direction through the last point (again releases) · s squares a rectangle · Ctrl held: free"
+    ImGui::TextWrapped(State.Drawing.ActiveCondition ? "x y z t n b lock a direction through the last point (again releases) · s squares a rectangle · Ctrl held: ends / midpoints / centres (free where none) · Alt held: along a line / curve / arc"
                        : Moving ? "The grab point snaps, then lands on the snap under the pointer · X / Y / Z still constrain · Ctrl held: free"
-                       : State.Constrain.ActiveCondition ? "A dragged sketch point lands on points and in-plane curves of other geometry, else the grid · Ctrl held: free"
+                       : State.Constrain.ActiveCondition ? "A dragged sketch point lands on points and in-plane curves of other geometry, else the grid · Ctrl held: important points (free where none) · Alt held: along a curve"
                                                          : "A dragged pole lands on points, curves and edges of other geometry · Ctrl held: free");
     ImGui::PopStyleColor();
     EndCard();
