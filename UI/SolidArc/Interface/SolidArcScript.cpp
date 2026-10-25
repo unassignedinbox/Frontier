@@ -343,6 +343,35 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
             return true;
         }
     }
+    if (Field == "fill") return Numeric(State.Fill.ActiveCondition ? 1 : 0);
+    if (Field == "fill-commits") return Numeric(double(State.Fill.Commits));
+    if (Field == "fill-loops") return Numeric(State.Fill.HoverCondition ? double(State.Fill.Outlines.size()) : 0.0);
+    if (Field == "fill-hover")
+    {
+        // "Circle1" when the region is a sketch's own loop, "region" for a new cell, empty when nothing is under the pointer
+        Text.clear();
+        if (State.Fill.HoverCondition)
+        {
+            const auto Caption = Document.Captions.find(State.Fill.WholeSketch);
+            Text = State.Fill.WholeSketch.empty() ? std::string("region") : Caption != Document.Captions.end() ? Caption->second : State.Fill.WholeSketch;
+        }
+        Number = State.Fill.HoverCondition ? 1.0 : 0.0;
+        return true;
+    }
+    if (Field == "sketch-filled")
+    {
+        for (const FeatureStep& Step : Document.Tree.Steps)
+            if (Step.Label == State.FocusedStep && Step.Kind == FeatureStepKind::Sketch) return Numeric(Step.FillCondition ? 1 : 0);
+        return Numeric(-1);
+    }
+    if (Field == "flips")
+        return Numeric(double(std::count_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Flip; })));
+    if (Field == "tint-loops")
+    {
+        size_t Loops = 0;
+        for (const auto& [Label, Tint] : State.Tints) Loops += Tint.Outers.size();
+        return Numeric(double(Loops));
+    }
     if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
     if (Field == "trim-refusal")

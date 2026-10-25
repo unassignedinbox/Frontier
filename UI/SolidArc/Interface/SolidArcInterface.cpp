@@ -8424,8 +8424,8 @@ void DrawStepCard(SolidArcWorkspaceState& State)
         bool       Filled = Current->FillCondition;
         if (Closed)
         {
-            const bool Toggled = ImGui::Checkbox("Filled  (F)###SketchFill", &Filled);
-            RegisterWidget(State, "SketchFill");
+            const bool Toggled = ImGui::Checkbox("Filled  (F)###StepFill", &Filled);
+            RegisterWidget(State, "StepFill");
             ImGui::SameLine();
             ImGui::TextDisabled("%s", Filled ? "E extrudes a solid" : "E extrudes walls (an open sheet)");
             if (Toggled)
