@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <numbers>
 #include <sstream>
 
 namespace Frontier::SolidArc
@@ -198,6 +199,24 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         const SolidArcDocument* Preview = State.Gizmo.DragCondition && State.Gizmo.Preview ? State.Gizmo.Preview.get()
                                         : State.SketchPoints.DragCondition && State.SketchPoints.Preview ? State.SketchPoints.Preview.get() : nullptr;
         return Numeric(Preview ? Preview->Summary.Volume : Document.Summary.Volume);
+    }
+    if (Field == "arc-widest" || Field == "live-arc-widest")
+    {
+        // Widest sketch arc sweep [deg] (a fillet stays under 180); live-: of the staged sketch-point drag preview.
+        const SolidArcDocument* Preview = Field == "live-arc-widest" && State.SketchPoints.DragCondition && State.SketchPoints.Preview ? State.SketchPoints.Preview.get() : &Document;
+        double Widest = 0.0;
+        for (const auto& [Label, Sketch] : Preview->Regeneration.Sketches)
+            for (const GeometryProcessing::SketchCurve& Curve : Sketch.Curves)
+            {
+                if (Curve.Kind != GeometryProcessing::SketchCurveKind::Arc || Curve.Centre < 0) continue;
+                const GeometryProcessing::Vector2 Centre = Sketch.Points[Curve.Centre].Position;
+                const GeometryProcessing::Vector2 Start  = Sketch.Points[Curve.Start].Position - Centre;
+                const GeometryProcessing::Vector2 End    = Sketch.Points[Curve.End].Position - Centre;
+                double Sweep = std::atan2(GeometryProcessing::Cross(Start, End), GeometryProcessing::Dot(Start, End));
+                if (Sweep <= 0.0) Sweep += 2.0 * std::numbers::pi;
+                Widest = std::max(Widest, Sweep * 180.0 / std::numbers::pi);
+            }
+        return Numeric(Widest);
     }
     if (Field == "live-staged") return Numeric((State.Gizmo.DragCondition && State.Gizmo.Preview) || (State.SketchPoints.DragCondition && State.SketchPoints.Preview) ? 1 : 0);
     if (Field == "picked-points") return Numeric(double(State.SketchPoints.Points.size()));     // picked mode-1 sketch points

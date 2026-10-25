@@ -108,6 +108,7 @@ namespace
     GateTally DetachGate      = { "W46", "Trim / join on sketches a body reads: the trim detaches (original kept hidden for its extrude, the trimmed curves a new sketch, the body unchanged, one undo entry); a whole-curve trim only hides; picked sketches join (disjoint profiles extrude together), a read one stays hidden; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally FillGate        = { "W48", "Fill and flip: a fresh (unfilled) rectangle extrudes into 4 walls (an open sheet), filling it (Inspector / F) makes the solid 2 and one undo entry; regions of overlapping curves (Fill tool): the lens and a crescent of two circles, a square with a circular hole, a spline arch cut by a line, each filled into a new sketch and extruded against closed forms; a lone circle fills itself; flip normals turns every face of a loft sheet and of extruded walls, a second flip removes the step, solids refuse; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally FilletDragGate  = { "W49", "Fillet drags (the Windows report: a corner drag turned a fillet inside out, ~270°): on a 3 × 1.5 rectangle with four r 0.3 fillets, the bottom-left fillet's centre, both tangent points and the virtual sharp are dragged to 1 024 targets up to 3 m away; every accepted drag keeps every arc under a half turn (tangency keeps its starting side), the rest refuse; the reported drag (centre out past the corner) lands with 90° arcs; slots keep their tangent ends", "0 inverted · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4288,6 +4289,89 @@ int main()
               Format("codec: %d + %d bytes byte-equal (Fill = false on the drawn circles), V %.12f after reload, walls stay a sheet", int(RegionText.size()), int(WallText.size()), RegionLoaded.Summary.Volume));
     }
 
+    // ---- W49 Fillet drags keep every fillet under a half turn
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Widest = [](const SketchModel& Sketch)
+        {
+            double Largest = 0.0;
+            for (const SketchCurve& Curve : Sketch.Curves)
+            {
+                if (Curve.Kind != SketchCurveKind::Arc || Curve.Centre < 0) continue;
+                const Vector2 Centre = Sketch.Points[Curve.Centre].Position;
+                const Vector2 Start  = Sketch.Points[Curve.Start].Position - Centre;
+                const Vector2 End    = Sketch.Points[Curve.End].Position - Centre;
+                double Sweep = std::atan2(Cross(Start, End), Dot(Start, End));
+                if (Sweep <= 0.0) Sweep += 2.0 * std::numbers::pi;
+                Largest = std::max(Largest, Sweep);
+            }
+            return Largest * 180.0 / std::numbers::pi;                                       // [deg]
+        };
+        const auto PointAt = [](const SketchModel& Sketch, Vector2 Position)
+        {
+            for (size_t Index = 0; Index < Sketch.Points.size(); ++Index) if (Length(Sketch.Points[Index].Position - Position) <= 1.0e-9) return static_cast<int>(Index);
+            return -1;
+        };
+
+        // ① rectangle 3 × 1.5, four r 0.3 fillets
+        SolidArcDocument Rounded = CreateSolidArcDocument("FilletDrag");
+        Expect(DrawFilledSketch(Rounded, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 3.0, 1.5 } })));
+        const std::string Plate = Rounded.Tree.Steps.back().Label;
+        SolidArcCornerRequest Every;
+        Every.Sketches = { Plate };
+        Every.Size     = 0.3;
+        const SolidArcCommandOutcome Filleted = CutSolidArcSketchCorners(Rounded, Every);
+        const SketchModel& Model = Rounded.Regeneration.Sketches.at(Plate);
+        const double       Start = Widest(Model);
+        Tally(FilletDragGate, std::abs(Start - 90.0), Filleted.AcceptedCondition && Model.Curves.size() == 8 && std::abs(Start - 90.0) <= 1.0e-9, Format("%s: 8 curves, widest arc %.9f°", Filleted.Label.c_str(), Start));
+
+        // ② 4 points × 256 targets (a 16 × 16 lattice, ±3 m): no accepted drag inverts an arc
+        const Vector2 Sources[] = { { 0.3, 0.3 }, { 0.3, 0.0 }, { 0.0, 0.3 }, { 0.0, 0.0 } };
+        int Accepted = 0, Refused = 0, Inverted = 0;
+        double Worst = 0.0;
+        for (const Vector2 Source : Sources)
+        {
+            const int Point = PointAt(Model, Source);
+            if (Point < 0) { ++Inverted; continue; }
+            for (int Across = -15; Across <= 15; Across += 2)
+                for (int Upward = -15; Upward <= 15; Upward += 2)
+                {
+                    const SketchDragOutcome Drag = PreviewSolidArcDrag(Rounded, Plate, Point, Source + Vector2{ Across * 0.2, Upward * 0.2 });
+                    if (!Drag.Refusal.empty()) { ++Refused; continue; }
+                    ++Accepted;
+                    const double Sweep = Widest(Drag.Sketch);
+                    Worst = std::max(Worst, Sweep);
+                    Inverted += Sweep > 180.0 + 1.0e-6 ? 1 : 0;
+                }
+        }
+        Tally(FilletDragGate, double(Inverted), Inverted == 0 && Accepted > 2 * Refused,
+              Format("1 024 drags of the centre / tangent points / virtual sharp: %d accepted, %d refused, %d inverted; widest accepted arc %.6f°", Accepted, Refused, Inverted, Worst));
+
+        // ③ the reported drag: the fillet centre (0.3, 0.3) out past the corner to (−0.9, −0.8), committed; undo returns
+        const std::string Before   = EncodeSolidArcDocument(Rounded);
+        const SolidArcCommandOutcome Dragged = DragSolidArcSketchPoint(Rounded, Plate, PointAt(Model, { 0.3, 0.3 }), { -0.9, -0.8 });
+        const SketchModel& After   = Rounded.Regeneration.Sketches.at(Plate);
+        const int          Centre  = PointAt(After, { -0.9, -0.8 });
+        const double       Quarter = std::abs(Widest(After) - 90.0);
+        Tally(FilletDragGate, Quarter, Dragged.AcceptedCondition && Centre >= 0 && Quarter <= 1.0e-9 && After.Curves.size() == 8,
+              Format("%s: the centre lands on (−0.9, −0.8), the lines follow, every arc 90° (|Δ| %.3g°)", Dragged.Label.c_str(), Quarter));
+        UndoSolidArcCommand(Rounded);
+        Tally(FilletDragGate, 0.0, EncodeSolidArcDocument(Rounded) == Before, "undo: the file returns byte-equal");
+
+        // ④ slots (two tangent semicircles) still solve and drag: the end arcs stay half turns
+        SolidArcDocument Slotted = CreateSolidArcDocument("Slot");
+        Expect(DrawFilledSketch(Slotted, DrawingOf(SolidArcDrawingKind::Slot, 0, { { 0.0, 0.0 }, { 2.0, 0.0 }, { 1.0, 0.5 } })));
+        const std::string  Slot     = Slotted.Tree.Steps.back().Label;
+        const SketchModel& SlotModel = Slotted.Regeneration.Sketches.at(Slot);
+        int Far = -1;
+        for (const SketchCurve& Curve : SlotModel.Curves)                                    // The right end's centre
+            if (Curve.Kind == SketchCurveKind::Arc && (Far < 0 || SlotModel.Points[Curve.Centre].Position.X > SlotModel.Points[Far].Position.X)) Far = Curve.Centre;
+        const SketchDragOutcome Stretched = Far >= 0 ? PreviewSolidArcDrag(Slotted, Slot, Far, SlotModel.Points[Far].Position + Vector2{ 1.0, 0.0 }) : SketchDragOutcome{};
+        const double Half = Stretched.Refusal.empty() ? std::abs(Widest(Stretched.Sketch) - 180.0) : 1.0;
+        Tally(FilletDragGate, Half, Stretched.Refusal.empty() && Half <= 1.0e-6,
+              Format("slot: %zu curves, its right centre dragged 1 m along: end arcs %.9f° (|Δ| from 180° %.3g)%s", SlotModel.Curves.size(), Widest(Stretched.Sketch), Half, Stretched.Refusal.empty() ? "" : (" · " + Stretched.Refusal).c_str()));
+    }
+
     // ---- W46 Trim and join on sketches some later step reads (detach), join of picked sketches
     {
         constexpr double π = std::numbers::pi;
@@ -4390,7 +4474,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
