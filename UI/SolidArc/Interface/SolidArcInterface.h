@@ -123,6 +123,9 @@ struct SolidArcBevelSession
     double                            Depth           = 0.0;                                 // [len] - Inset: inner face shift (− pocket)
     std::array<char, 32>              DepthText       = {};                                  // [-]   - Inset: depth field text
     double                            StagedDepth     = 0.0;                                 // [len] - Depth the preview was built at
+    double                            StageMs         = 0.0;                                 // [ms]  - Last preview build (slow ones wait for the pointer to rest)
+    double                            PendingSize     = -1.0;                                // [len] - Pointer size waiting for the pointer to rest
+    double                            PendingSince    = 0.0;                                 // [s]   - When PendingSize last changed
     bool                              DepthEnabled    = false;                               // [-]   - Inset: the pointer drives the depth (H) instead of the distance (D)
     SolidArcCornerRequest             Corner          = {};                                  // [-]   - Corner: the sketches / corner points (size and shape from the session)
 };

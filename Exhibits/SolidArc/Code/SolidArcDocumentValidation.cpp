@@ -110,6 +110,7 @@ namespace
     GateTally FillGate        = { "W48", "Fill and flip: a fresh (unfilled) rectangle extrudes into 4 walls (an open sheet), filling it (Inspector / F) makes the solid 2 and one undo entry; regions of overlapping curves (Fill tool): the lens and a crescent of two circles, a square with a circular hole, a spline arch cut by a line, each filled into a new sketch and extruded against closed forms; a lone circle fills itself; flip normals turns every face of a loft sheet and of extruded walls, a second flip removes the step, solids refuse; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally FilletDragGate  = { "W49", "Fillet drags (the Windows report: a corner drag turned a fillet inside out, ~270°): on a 3 × 1.5 rectangle with four r 0.3 fillets, the bottom-left fillet's centre, both tangent points and the virtual sharp are dragged to 1 024 targets up to 3 m away; every accepted drag keeps every arc under a half turn (tangency keeps its starting side), the rest refuse; the reported drag (centre out past the corner) lands with 90° arcs; slots keep their tangent ends", "0 inverted · exact" };
     GateTally OrientGate      = { "W50", "Orient to faces: Construct solids drawn on a body face are built in the face frame (x / y on the face, height along the outward normal): a cylinder on the +x face of a 2 m cube unites to 8 + π/4 and reaches x = 3; all eight tiles on a face tilted 30° about x and 40° about z keep their closed-form volumes, a unit block's bounds are those of the turned cube; a circle sketched on the tilted plane extrudes along its normal; a skewed frame is refused untouched; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally TangentGate     = { "W51", "Curved-face sketches (the Windows report: a cylinder joined on a cylinder's side, then a chamfer and moves, felt slow and refused the junction chamfer): the sketch plane is the exact tangent plane (surface foot and normal, not the facet hit); the extrude start sinks below it by the measured profile depth so a Union closes (an exactly tangent Union only touches and is refused); the joined body has its closed-form volume, the junction (a cylinder–cylinder saddle curve) takes a chamfer; a Construct boss with a start unites the same way; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4401,6 +4402,110 @@ int main()
               Format("skewed frame refused (%s), file untouched; codec %d bytes byte-equal, V %.12f after reload", Refused.Refusal.c_str(), int(Written.size()), Loaded.Summary.Volume));
     }
 
+    // ---- W51 Curved-face sketches: exact tangent plane, extrude start sunk so a Union closes
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const double Major = 1.7, Tall = 0.6, Minor = 0.25, Reach = 0.3;                     // [len] - Drum radius, height · boss radius, length
+        // Volume the boss adds outside the drum: π r² L plus the cap between the tangent plane and the drum,
+        // ∫ (R − √(R² − y²)) · 2√(r² − y²) dy over |y| ≤ r (y = r sin t, Simpson on 4000 panels).
+        const auto Bulge = [&]()
+        {
+            const int Panels = 4000;
+            double    Sum    = 0.0;
+            for (int Index = 0; Index <= Panels; ++Index)
+            {
+                const double Angle  = -0.5 * π + π * Index / Panels;
+                const double Lateral = Minor * std::sin(Angle);
+                const double Value  = (Major - std::sqrt(Major * Major - Lateral * Lateral)) * 2.0 * Minor * Minor * std::cos(Angle) * std::cos(Angle);
+                Sum += Value * (Index == 0 || Index == Panels ? 1.0 : (Index % 2 ? 4.0 : 2.0));
+            }
+            return Sum * (π / Panels) / 3.0;
+        };
+        const double Expected = π * Major * Major * Tall + π * Minor * Minor * Reach + Bulge();
+        const auto Drum = [&](const char* Title)
+        {
+            SolidArcDocument Document = CreateSolidArcDocument(Title);
+            SolidArcConstructRequest Base;
+            Base.Kind = SolidArcConstructKind::Cylinder; Base.Radius = Major; Base.Height = Tall; Base.Combination = FeatureCombination::New;
+            Expect(ConstructSolidArcPrimitive(Document, Base));
+            return Document;
+        };
+
+        // ① the exact foot: a point 3 mm inside the side (a facet hit) lands on the surface, normal +y
+        SolidArcDocument Joined = Drum("Joined");
+        const SolidArcScene DrumScene = BuildSolidArcScene(Joined);
+        std::string Side;
+        for (const SolidArcSceneFace& Face : DrumScene.Faces) if (Face.Surface == "Cylinder") Side = Face.Name;
+        const SolidArcFaceFoot Foot = ProjectOntoSolidArcFace(Joined, Side, { 0.0, Major - 0.003, 0.3 });
+        const double FootError = Length(Foot.Position - Vector3{ 0.0, Major, 0.3 }) + Length(Foot.Normal - Vector3{ 0.0, 1.0, 0.0 });
+        Tally(TangentGate, FootError, Foot.FoundCondition && FootError <= 1.0e-12,
+              Format("foot of (0, 1.697, 0.3) on %s: (%.12f, %.12f, %.12f), n̂ (%.3f, %.3f, %.3f)", Side.c_str(), Foot.Position.X, Foot.Position.Y, Foot.Position.Z, Foot.Normal.X, Foot.Normal.Y, Foot.Normal.Z));
+
+        // ② a circle r 0.25 on the tangent plane at (0, R, 0.3): the measured sink covers R − √(R² − r²) (the profile rim's
+        //    depth to the drum), over-reaching by at most the tessellation sag
+        const OrthonormalFrame Tangent{ { 0.0, Major, 0.0 }, { -1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, 1.0, 0.0 } };
+        SolidArcDrawingRequest Ring = DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.3 }, { Minor, 0.3 } }, false, true);
+        Ring.PlaneCondition = true;
+        Ring.Plane          = Tangent;
+        Expect(DrawFilledSketch(Joined, Ring));
+        const std::string Disc  = Joined.Tree.Steps.back().Label;
+        const double      Sink  = MeasureSolidArcProfileSink(Joined, BuildSolidArcScene(Joined), Disc);
+        const double      Depth = Major - std::sqrt(Major * Major - Minor * Minor);
+        Tally(TangentGate, Sink - Depth, Sink >= Depth && Sink <= Depth + 2.0 * DrumScene.Sag + 1.0e-3,
+              Format("profile sink %.6f ≥ rim depth %.6f (over-reach %.2g ≤ 2 · sag %.4f + 1 mm)", Sink, Depth, Sink - Depth, DrumScene.Sag));
+
+        // ③ the exactly tangent Union only touches: refused, file untouched; started at −sink: one sound body, closed-form V
+        const std::string            Before   = EncodeSolidArcDocument(Joined);
+        const SolidArcCommandOutcome Touching = ExtrudeSolidArcSketch(Joined, Disc, Reach, FeatureCombination::Union);
+        const bool                   Untouched = !Touching.AcceptedCondition && EncodeSolidArcDocument(Joined) == Before;
+        const SolidArcCommandOutcome Sunk     = ExtrudeSolidArcSketch(Joined, Disc, Reach, FeatureCombination::Union, {}, -Sink);
+        const double                 Error    = std::abs(Joined.Summary.Volume - Expected) / Expected;
+        Tally(TangentGate, Error, Untouched && Sunk.AcceptedCondition && Error <= 1.0e-9 && Joined.Summary.SoundCondition && Joined.Summary.Bodies.size() == 1,
+              Format("tangent Union %s; sunk Union V %.12f vs π R² H + π r² L + cap %.12f, %d face(s), sound %d", Touching.AcceptedCondition ? "ACCEPTED" : "refused",
+                     Joined.Summary.Volume, Expected, Joined.Summary.Faces, int(Joined.Summary.SoundCondition)));
+
+        // ④ chamfer 0.02 on the junction (the cylinder–cylinder saddle curve): accepted, sound, material added in the corner
+        const std::string Boss = Joined.Tree.Steps.back().Label;
+        const SolidArcScene JoinedScene = BuildSolidArcScene(Joined);
+        ClearSolidArcSelection(Joined);
+        int Junctions = 0;
+        for (const SolidArcSceneEdge& Edge : JoinedScene.Edges)
+        {
+            size_t Count = 0;
+            for (size_t At = Edge.Name.find(Boss + "."); At != std::string::npos; At = Edge.Name.find(Boss + ".", At + 1)) ++Count;
+            if (Count == 1 && Edge.Name.find("Cap") == std::string::npos) { SelectSolidArcName(Joined, SolidArcSelectionKind::Edge, Edge.Name, true); ++Junctions; }
+        }
+        const double                 Unchamfered = Joined.Summary.Volume;
+        const SolidArcCommandOutcome Chamfered   = BlendSolidArcSelection(Joined, BlendProfile::Chamfer, 0.02);
+        Tally(TangentGate, 0.0, Junctions == 1 && Chamfered.AcceptedCondition && Joined.Summary.SoundCondition && Joined.Summary.Volume > Unchamfered,
+              Format("junction chamfer 0.02 on %d edge: %s, V %.9f → %.9f (%.0f ms)", Junctions, Chamfered.AcceptedCondition ? "accepted" : Chamfered.Refusal.c_str(),
+                     Unchamfered, Joined.Summary.Volume, Chamfered.Milliseconds));
+
+        // ⑤ the start round-trips: written as Start, byte-equal after reload, same volume
+        const std::string          Written = EncodeSolidArcDocument(Joined);
+        const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+        SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+        Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+        RegenerateSolidArcDocument(Loaded, true);
+        const double Drift = std::abs(Loaded.Summary.Volume - Joined.Summary.Volume) / Joined.Summary.Volume;
+        Tally(TangentGate, Drift, Read.Refusal.empty() && Written.find("Start") != std::string::npos && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-12,
+              Format("codec %d bytes byte-equal with the extrude Start, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
+
+        // ⑥ a Construct cylinder r 0.25, h 0.3 on the tangent plane at (0, −R, 0.3), started below it: the same closed form
+        SolidArcDocument Built = Drum("Built");
+        SolidArcConstructRequest Pin;
+        Pin.Kind = SolidArcConstructKind::Cylinder; Pin.Radius = Minor; Pin.Height = Reach; Pin.Combination = FeatureCombination::Union;
+        Pin.Position       = { 0.0, 0.3, 0.0 };
+        Pin.PlaneCondition = true;
+        Pin.Plane          = OrthonormalFrame{ { 0.0, -Major, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };
+        Pin.Start          = -Sink;
+        const SolidArcCommandOutcome Pinned  = ConstructSolidArcPrimitive(Built, Pin);
+        const double                 Matched = std::abs(Built.Summary.Volume - Expected) / Expected;
+        Tally(TangentGate, Matched, Pinned.AcceptedCondition && Matched <= 1.0e-9 && Built.Summary.SoundCondition && Built.Summary.Bodies.size() == 1,
+              Format("Construct cylinder on the −y tangent plane, start %.6f: V %.12f (%s)", Pin.Start, Built.Summary.Volume, Pinned.AcceptedCondition ? "united" : Pinned.Refusal.c_str()));
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -4599,7 +4704,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

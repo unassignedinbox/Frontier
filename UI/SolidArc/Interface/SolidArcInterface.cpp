@@ -692,6 +692,18 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
         Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
         Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth) return;
+    // 💡 A slow preview (a blend along a cylinder–cylinder junction takes seconds) is rebuilt once the pointer rests
+    //    (0.15 s on one size), not on every pixel of mouse adjust: the last preview stays up meanwhile. A typed (pinned)
+    //    size, a new shape, verb or Boolean, and every fast preview still restage at once.
+    const double Now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const bool SizeOnly = Bevel.Preview && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb && Bevel.StagedVariable == Bevel.VariableEnabled &&
+                          Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition && Bevel.StagedCombination == Bevel.Combination &&
+                          Bevel.StagedDepth == Bevel.Depth;
+    if (SizeOnly && !Bevel.PinnedCondition && Bevel.StageMs > 40.0)
+    {
+        if (Bevel.PendingSize != Bevel.Size) { Bevel.PendingSize = Bevel.Size; Bevel.PendingSince = Now; return; }
+        if (Now - Bevel.PendingSince < 0.15) return;
+    }
     Bevel.StagedDepth       = Bevel.Depth;
     Bevel.StagedCombination = Bevel.Combination;
     Bevel.StagedSize     = Bevel.Size;
@@ -718,11 +730,13 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     {
         Bevel.Refusal = Legible(Outcome.Refusal);
     }
+    Bevel.StageMs = (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - Now) * 1.0e3;
 }
 
 void ApplyBevelSession(SolidArcWorkspaceState& State)
 {
-    if (!State.Bevel.ActiveCondition || !State.Bevel.Refusal.empty()) return;
+    // A refusal of a stale preview (the pointer moved on while a slow preview waited) does not block: the kernel decides.
+    if (!State.Bevel.ActiveCondition || (!State.Bevel.Refusal.empty() && State.Bevel.StagedSize == State.Bevel.Size)) return;
     const BlendProfile         Shape   = State.Bevel.Shape;
     const double               Size    = State.Bevel.Size;
     const SolidArcBlendRequest Request = ComposeBlendRequest(State.Bevel);
