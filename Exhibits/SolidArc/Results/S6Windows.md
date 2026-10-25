@@ -1,6 +1,6 @@
 # 📝 S6: SolidArc Windows build and package
 
-**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 243 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,778,530 B (8.9 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
+**TL;DR**: SolidArc builds for Windows x64 from this Linux sandbox using Zig 0.17.0 (clang 22.1.8, `x86_64-windows-gnu`, static C++ runtime). A clean build of 249 steps finishes with **0 warnings in SolidArc code**. The two warnings it does report come from unmodified upstream UI code. `SolidArcWorkspace.exe` is a 64-bit GUI program that imports only Windows system DLLs and the UCRT, and it loads Vulkan at runtime. The preview package `SolidArc-Windows-x64.zip` is 3,780,431 B (8.9 MB unpacked). It holds the executable, its options file, the fonts and icons, a sample, a README and the licence notices.
 
 On Linux, the same package layout finds its content beside the executable: the frame matches the development checkout everywhere except the frame-time text. With no content beside it, the program falls back to the ImGui default font and missing-icon markers. ctest passes 28/28. It was built with MinGW, not MSVC. **First Windows run (user, AMD Radeon RX 9060 XT, Vulkan 1.4.359):** the interface, fonts and icons come up clean, but the viewport showed displaced tiles and picking missed. The cause was a stale viewport texture, now fixed in the current zip, which awaits a second run (see below).
 
@@ -42,8 +42,8 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,778,530 B |
-| Zip sha256 | `829a21fbda833fcd058494848744c134692bb97039a6288e4c579d8081029b87` |
+| Zip size | 3,780,431 B |
+| Zip sha256 | `52e66ade588e4ba00d7b2d25a35ff02eae55ff711882a2bf886f290a907e3d31` |
 | Unpacked | 8,886,795 B (345 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
