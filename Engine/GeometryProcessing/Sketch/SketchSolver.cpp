@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace Frontier::GeometryProcessing
 {
@@ -76,6 +77,15 @@ namespace
         return Root;
     }
     LocalDual Magnitude(const LocalDual& Argument) { return Argument.Value < 0.0 ? Argument * -1.0 : Argument; }
+    // atan2(y, x) ∈ (−π, π]: ∂ = (x·∂y − y·∂x) / (x² + y²); the cut at ±π stays far from the roots it is used for.
+    LocalDual Bearing(const LocalDual& Rise, const LocalDual& Run)
+    {
+        LocalDual Angle;
+        Angle.Value = std::atan2(Rise.Value, Run.Value);
+        const double Square = Rise.Value * Rise.Value + Run.Value * Run.Value;
+        if (Square > 1.0e-300) for (int Slot = 0; Slot < LocalUnknowns; ++Slot) Angle.Derivative[Slot] = (Run.Value * Rise.Derivative[Slot] - Rise.Value * Run.Derivative[Slot]) / Square;
+        return Angle;
+    }
 
     struct DualPoint
     {
@@ -497,14 +507,21 @@ namespace
             const int          Joint  = SharedEndpoint(First, Second);
             if (Joint >= 0)
             {
+                // 📝 Side kept (Value = ±1, set by the solver from the starting positions): radius ⟂ line has two roots,
+                //    the centre on either side of the line, and the far one turns a fillet into its 2π − sweep complement
+                //    (a corner drag flipped the arc inside out). The bearing from the line to the radius, minus ±π/2, has
+                //    only the starting side as a root and the same slope there as the cosine form. Value 0: either side.
                 const DualPoint Contact = Context.Point(Joint);
                 const DualPoint Radial  = Difference(Contact, Context.Point(Second.Centre));
                 if (First.Kind == SketchCurveKind::Line)
                 {
                     const DualPoint Direction = Context.LineDirection(Constraint.First);
+                    if (Constraint.Value != 0.0) return Bearing(CrossProduct(Direction, Radial), DotProduct(Direction, Radial)) - Constraint.Value * 0.5 * std::numbers::pi;
                     return DotProduct(Radial, Direction) / (Norm(Radial) * Norm(Direction));
                 }
+                // Arc to arc: centres on one line through the joint, on the same side (Value +1) or opposite (−1).
                 const DualPoint Other = Difference(Contact, Context.Point(First.Centre));
+                if (Constraint.Value != 0.0) return Bearing(CrossProduct(Other, Radial) * Constraint.Value, DotProduct(Other, Radial) * Constraint.Value);
                 return CrossProduct(Other, Radial) / (Norm(Other) * Norm(Radial));
             }
             if (First.Kind == SketchCurveKind::Line)
@@ -943,6 +960,45 @@ namespace
 //                                                    SOLVER
 //------------------------------------------------------------------------------------------------------------------------
 
+// Side of each shared-endpoint tangency as it stands (±1 into Value; already held rows and other kinds untouched).
+static void HoldTangentSides(const SketchModel& Sketch, std::vector<SketchConstraint>& Constraints, int Count)
+{
+    for (int Index = 0; Index < Count; ++Index)
+    {
+        SketchConstraint& Constraint = Constraints[Index];
+        if (Constraint.Kind != SketchConstraintKind::Tangent || Constraint.Value != 0.0 || !ReferenceCondition(Sketch, Constraint)) continue;
+        const SketchCurve& First  = Sketch.Curves[Constraint.First];
+        const SketchCurve& Second = Sketch.Curves[Constraint.Second];
+        const int          Joint  = SharedEndpoint(First, Second);
+        if (Joint < 0 || Second.Centre < 0) continue;
+        const Vector2 Contact = Sketch.Points[Joint].Position;
+        const Vector2 Radial  = Contact - Sketch.Points[Second.Centre].Position;
+        if (First.Kind == SketchCurveKind::Line)
+        {
+            const Vector2 Direction = Sketch.Points[First.End].Position - Sketch.Points[First.Start].Position;
+            const double  Turn      = Cross(Direction, Radial);
+            const double  Reach     = Length(Direction) * Length(Radial);
+            if (Reach <= 1.0e-300) continue;
+            if (std::fabs(Turn) > 1.0e-6 * Reach) { Constraint.Value = Turn > 0.0 ? 1.0 : -1.0; continue; }
+            // Radius along the line (no side to keep yet): the smooth join. With the line running into the joint, the centre
+            // of a counter-clockwise arc lies on its left when the joint starts the arc and on its right when it ends it.
+            const double IntoArc = Joint == Second.Start ? -1.0 : 1.0;                       // sign of (into-joint direction × radius)
+            Constraint.Value = Joint == First.End ? IntoArc : -IntoArc;
+        }
+        else if (First.Centre >= 0)
+        {
+            const Vector2 Other = Contact - Sketch.Points[First.Centre].Position;
+            const double  Along = Dot(Other, Radial);
+            if (std::fabs(Along) > 1.0e-6 * Length(Other) * Length(Radial)) Constraint.Value = Along > 0.0 ? 1.0 : -1.0;
+        }
+    }
+}
+
+void HoldSketchTangentSides(SketchModel& Sketch)
+{
+    HoldTangentSides(Sketch, Sketch.Constraints, static_cast<int>(Sketch.Constraints.size()));
+}
+
 static SketchSolveOutcome SolveSketchUntraced(SketchModel& Sketch, const SketchSolveSettings& Settings)
 {
     const auto Started = std::chrono::steady_clock::now();
@@ -960,6 +1016,8 @@ static SketchSolveOutcome SolveSketchUntraced(SketchModel& Sketch, const SketchS
         Rule.Label = "ArcRule(" + SketchCurveName(Sketch.Curves[Curve]) + ")";
         Constraints.push_back(Rule);
     }
+    // Tangency at a shared endpoint keeps the side it starts on (EvaluateEquation, Tangent): Value = ±1 in this copy.
+    HoldTangentSides(Sketch, Constraints, UserConstraints);
     std::vector<bool> Excluded(Constraints.size(), false);
     for (int Index = 0; Index < UserConstraints; ++Index) Excluded[Index] = !ReferenceCondition(Sketch, Constraints[Index]) || Constraints[Index].DrivenCondition;
     const double Scale = MeasureScale(Sketch, Constraints);

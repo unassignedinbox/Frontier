@@ -184,6 +184,9 @@ struct SketchSolveOutcome
 //       (consistent) or conflicting groups, null space of J → which points are fully constrained, and the rank at a
 //       generic perturbation (a lower rank at the solution is a positional singularity, not a structural one).
 [[nodiscard]] SketchSolveOutcome SolveSketch(SketchModel& Sketch, const SketchSolveSettings& Settings = {});
+// Writes the side each shared-endpoint tangency (line or arc into arc) stands on now into its Value (±1), so a later solve
+// from moved positions keeps that side; a solve holds the starting side by itself. Rows already holding a side stay.
+void HoldSketchTangentSides(SketchModel& Sketch);
 
 // Point / curve helpers for builders: append and return the index.
 int AppendSketchPoint(SketchModel& Sketch, Vector2 Position);

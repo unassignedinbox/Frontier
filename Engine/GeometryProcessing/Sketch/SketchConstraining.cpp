@@ -509,8 +509,17 @@ SketchDragOutcome DragSketchPoint(const SketchModel& Sketch, int Point, Vector2 
         return Outcome;
     }
 
+    // Tangent joints keep the side they stand on before the move (a fillet stays a fillet, never its 2π complement);
+    // the held sides go back to the sketch's own values in the outcome.
+    SketchModel Held = Sketch;
+    HoldSketchTangentSides(Held);
+    const auto Release = [&Sketch](SketchModel& Moved)
+    {
+        for (size_t Index = 0; Index < Sketch.Constraints.size() && Index < Moved.Constraints.size(); ++Index) Moved.Constraints[Index].Value = Sketch.Constraints[Index].Value;
+    };
+
     // ① Pinned: the point held at the target by a temporary Fixed constraint, the rest follows.
-    SketchModel Pinned = Sketch;
+    SketchModel Pinned = Held;
     Pinned.Points[Point].Position = Target;
     Pinned.Constraints.push_back(Make(Kind::Fixed, Point, -1, -1, Target.X, Target.Y));
     const SketchSolveOutcome PinnedSolve = SolveSketch(Pinned, Settings);
@@ -519,16 +528,18 @@ SketchDragOutcome DragSketchPoint(const SketchModel& Sketch, int Point, Vector2 
         Pinned.Constraints.pop_back();
         Outcome.Sketch          = std::move(Pinned);
         Outcome.Solve           = SolveSketch(Outcome.Sketch, Settings);
+        Release(Outcome.Sketch);
         Outcome.PinnedCondition = Distance(Outcome.Sketch.Points[Point].Position, Target) <= 1.0e-9 * std::max(1.0, Outcome.Solve.Scale);
         Outcome.Travel          = Distance(Outcome.Sketch.Points[Point].Position, Origin);
         return Outcome;
     }
 
     // ② Unpinned: solved from the dragged configuration, so the point lands as near the target as it may.
-    SketchModel Free = Sketch;
+    SketchModel Free = Held;
     Free.Points[Point].Position = Target;
     Outcome.Solve = SolveSketch(Free, Settings);
     if (!Outcome.Solve.Converged || !Outcome.Solve.ConflictGroups.empty()) { Outcome.Refusal = "Drag: the sketch has no solution near there"; return Outcome; }
+    Release(Free);
     Outcome.Sketch = std::move(Free);
     Outcome.Travel = Distance(Outcome.Sketch.Points[Point].Position, Origin);
     return Outcome;
