@@ -1,5 +1,5 @@
 {
-  "Frame": 186,
+  "Frame": 210,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -12,11 +12,11 @@
   "PickMode": 5,
   "Hover": "Edge(Extrude#10.Cap(End)|Extrude#10.Side(Circle1))",
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 14.64004685, "Target": [4, 2.200000048, 0.875], "Orthographic": false},
-  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
-  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Refusal": ""},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": true, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 7,
   "Redo": 0,
   "Welcome": false,
   "Status": "Joint: pick the joint origin on the moving body (an edge or a face)",
-  "Viewport": [320, 160, 930, 730]
+  "Viewport": [322, 146, 926, 591]
 }

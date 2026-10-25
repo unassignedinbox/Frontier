@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 319 frames · 24.4877 s · slowest frame 479.649 ms
+- Frame: 1600 x 900 · 324 frames · 26.5106 s · slowest frame 524.961 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
@@ -18,42 +18,42 @@
 | 66 | `sketches == 3` | Line1,Curve1,Curve2 | 🟢 |
 | 71 | `drawing-form == 4` | Cubic spline | 🟢 |
 | 74 | `drawing == 0` |  | 🟢 |
-| 92 | `volume ~ 2` | 2 | 🟢 |
-| 93 | `bodies == 1` | 1 | 🟢 |
-| 98 | `pick-mode == 1` | 1 | 🟢 |
-| 110 | `live-staged == 1` | 1 | 🟢 |
-| 111 | `live-volume ~ 3` | 3 | 🟢 |
-| 112 | `volume ~ 2` | 2 | 🟢 |
-| 116 | `point-commits == 1` | 1 | 🟢 |
-| 117 | `volume ~ 3` | 3 | 🟢 |
-| 118 | `refused == 0` | 0 | 🟢 |
-| 119 | `picked-points == 1` | 1 | 🟢 |
-| 120 | `picked-point-x ~ 3` | 3 | 🟢 |
-| 121 | `picked-point-y ~ 1` | 1 | 🟢 |
-| 124 | `gizmo-target == 4` | points | 🟢 |
-| 133 | `live-staged == 1` | 1 | 🟢 |
-| 134 | `live-volume > 3.05` | 6.6 | 🟢 |
-| 138 | `gizmo-commits == 1` | 1 | 🟢 |
-| 139 | `volume > 3.05` | 6.6 | 🟢 |
-| 140 | `refused == 0` | 0 | 🟢 |
-| 145 | `picked-points == 2` | 2 | 🟢 |
-| 152 | `gizmo-modes == 7` | 7 | 🟢 |
-| 160 | `gizmo-target == 2` | bodies | 🟢 |
-| 170 | `live-staged == 1` | 1 | 🟢 |
-| 171 | `live-volume > 7.0` | 10.56 | 🟢 |
-| 172 | `volume < 7.0` | 6.6 | 🟢 |
-| 178 | `gizmo-commits == 1` | 1 | 🟢 |
-| 179 | `volume < 7.0` | 6.6 | 🟢 |
-| 180 | `volume > 3.05` | 6.6 | 🟢 |
+| 94 | `volume ~ 2` | 2 | 🟢 |
+| 95 | `bodies == 1` | 1 | 🟢 |
+| 100 | `pick-mode == 1` | 1 | 🟢 |
+| 112 | `live-staged == 1` | 1 | 🟢 |
+| 113 | `live-volume ~ 3` | 3 | 🟢 |
+| 114 | `volume ~ 2` | 2 | 🟢 |
+| 118 | `point-commits == 1` | 1 | 🟢 |
+| 119 | `volume ~ 3` | 3 | 🟢 |
+| 120 | `refused == 0` | 0 | 🟢 |
+| 121 | `picked-points == 1` | 1 | 🟢 |
+| 122 | `picked-point-x ~ 3` | 3 | 🟢 |
+| 123 | `picked-point-y ~ 1` | 1 | 🟢 |
+| 126 | `gizmo-target == 4` | points | 🟢 |
+| 135 | `live-staged == 1` | 1 | 🟢 |
+| 136 | `live-volume > 3.05` | 6.6 | 🟢 |
+| 140 | `gizmo-commits == 1` | 1 | 🟢 |
+| 141 | `volume > 3.05` | 6.6 | 🟢 |
+| 142 | `refused == 0` | 0 | 🟢 |
+| 147 | `picked-points == 2` | 2 | 🟢 |
+| 154 | `gizmo-modes == 7` | 7 | 🟢 |
+| 162 | `gizmo-target == 2` | bodies | 🟢 |
+| 172 | `live-staged == 1` | 1 | 🟢 |
+| 173 | `live-volume > 7.0` | 10.56 | 🟢 |
+| 174 | `volume < 7.0` | 6.6 | 🟢 |
+| 180 | `gizmo-commits == 1` | 1 | 🟢 |
+| 181 | `volume < 7.0` | 6.6 | 🟢 |
+| 182 | `volume > 3.05` | 6.6 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 23 | `87a923c915092289` |
-| 226SketchPoints | 204 | `139591497b5c470e` |
-| 227PointDragLive | 222 | `d1b49240ec43b5ff` |
-| 228PointGizmoLive | 245 | `6aed78d4bcdea0e6` |
-| 229PointsGizmoAll | 278 | `de2bea98e497fd3a` |
-| 230BodyScaleLive | 308 | `505d65cb41e9f357` |
+| 225SketchTools | 23 | `0c87bac8f8e825ca` |
+| 226SketchPoints | 209 | `885a810eda506feb` |
+| 227PointDragLive | 227 | `80ad98bb5fb08b78` |
+| 228PointGizmoLive | 250 | `579fcaacb810fcf7` |
+| 229PointsGizmoAll | 283 | `be5f2b813fd22083` |
+| 230BodyScaleLive | 313 | `6ac0192ac5f1323a` |
 
 ## Journal
 
@@ -75,6 +75,7 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Rectangle1 · 0 ms
+- Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Rectangle1 · New · 7 ms

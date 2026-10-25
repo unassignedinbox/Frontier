@@ -1,0 +1,142 @@
+# SolidArc document — feature tree of GeometryProcessing (regenerated on load)
+Description = ''
+Format = 'SolidArc'
+FormatVersion = 1
+Parameters = []
+Title = 'Untitled'
+
+[[Steps]]
+Caption = 'Rectangle1'
+Kind = 0
+KindLabel = 'Sketch'
+Label = 'Sketch#1'
+PlaneOrigin = [ 0.0, 0.0, 0.0 ]
+PlaneXAxis = [ 1.0, 0.0, 0.0 ]
+PlaneYAxis = [ 0.0, 1.0, 0.0 ]
+PlaneZAxis = [ 0.0, 0.0, 1.0 ]
+
+    [Steps.Elevation]
+    Literal = 0.0
+
+    [Steps.Sketch]
+    Points = [ [ -0.0, 0.0 ], [ 2.0, 0.0 ], [ 2.0, 1.0 ], [ -0.0, 1.0 ] ]
+
+        [[Steps.Sketch.Constraints]]
+        First = 0
+        Kind = 2
+        Label = 'H1'
+        Second = -1
+        SecondValue = 0.0
+        Third = -1
+        Value = 0.0
+
+        [[Steps.Sketch.Constraints]]
+        First = 1
+        Kind = 3
+        Label = 'V1'
+        Second = -1
+        SecondValue = 0.0
+        Third = -1
+        Value = 0.0
+
+        [[Steps.Sketch.Constraints]]
+        First = 2
+        Kind = 2
+        Label = 'H2'
+        Second = -1
+        SecondValue = 0.0
+        Third = -1
+        Value = 0.0
+
+        [[Steps.Sketch.Constraints]]
+        First = 3
+        Kind = 3
+        Label = 'V2'
+        Second = -1
+        SecondValue = 0.0
+        Third = -1
+        Value = 0.0
+
+        [[Steps.Sketch.Curves]]
+        Centre = -1
+        Construction = false
+        End = 1
+        Identifier = 1
+        Kind = 0
+        Radius = 1.0
+        Start = 0
+
+        [[Steps.Sketch.Curves]]
+        Centre = -1
+        Construction = false
+        End = 2
+        Identifier = 2
+        Kind = 0
+        Radius = 1.0
+        Start = 1
+
+        [[Steps.Sketch.Curves]]
+        Centre = -1
+        Construction = false
+        End = 3
+        Identifier = 3
+        Kind = 0
+        Radius = 1.0
+        Start = 2
+
+        [[Steps.Sketch.Curves]]
+        Centre = -1
+        Construction = false
+        End = 0
+        Identifier = 4
+        Kind = 0
+        Radius = 1.0
+        Start = 3
+
+[[Steps]]
+AxisIdentifier = -1
+Caption = 'Extrude1'
+Combination = 0
+Kind = 1
+KindLabel = 'Extrude'
+Label = 'Extrude#2'
+Profile = 'Sketch#1'
+
+    [Steps.Angle]
+    Literal = 6.2831853071795862
+
+    [Steps.Extent]
+    Literal = 1.0
+
+[[Steps]]
+Caption = 'Move1'
+Kind = 13
+KindLabel = 'Transform'
+Label = 'Transform#3'
+PlacementShift = [ 1.0, 0.0, 0.0 ]
+PlacementX = [ 1.0, 0.0, 0.0 ]
+PlacementY = [ 0.0, 1.0, 0.0 ]
+PlacementZ = [ 0.0, 0.0, 1.0 ]
+Target = 'Extrude#2'
+
+[[Steps]]
+Caption = 'Rotate1'
+Kind = 13
+KindLabel = 'Transform'
+Label = 'Transform#4'
+PlacementShift = [ 0.93933982822017859, -1.2677669529663687, 0.0 ]
+PlacementX = [ 0.70710678118654757, 0.70710678118654746, 0.0 ]
+PlacementY = [ -0.70710678118654746, 0.70710678118654757, 0.0 ]
+PlacementZ = [ 0.0, 0.0, 1.0 ]
+Target = 'Extrude#2'
+
+[[Steps]]
+Caption = 'Scale1'
+Kind = 13
+KindLabel = 'Transform'
+Label = 'Transform#5'
+PlacementShift = [ 0.0, 0.0, -0.5 ]
+PlacementX = [ 1.0, 0.0, 0.0 ]
+PlacementY = [ 0.0, 1.0, 0.0 ]
+PlacementZ = [ 0.0, 0.0, 2.0 ]
+Target = 'Extrude#2'

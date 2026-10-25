@@ -1,5 +1,5 @@
 {
-  "Frame": 87,
+  "Frame": 92,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -14,7 +14,7 @@
   "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
   "Bevel": {"Active": true, "Shape": "Fillet", "Size": 0.25, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 10, "Refusal": "", "Verb": 4, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0, 0], [2, 1]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
-  "Undo": 2,
+  "Undo": 3,
   "Redo": 0,
   "Welcome": false,
   "Status": "Bevel size 0.25 m (pinned)",

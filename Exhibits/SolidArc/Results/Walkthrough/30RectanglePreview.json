@@ -17,6 +17,6 @@
   "Undo": 0,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres · Esc aborts",
+  "Status": "Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts",
   "Viewport": [322, 146, 926, 591]
 }

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 332 frames · 31.3207 s · slowest frame 455.147 ms
+- Frame: 1600 x 900 · 332 frames · 32.7548 s · slowest frame 479.227 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
 - Expectations: 62 / 62 passed
 
@@ -72,24 +72,24 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 29 | `2101463af32d76c5` |
-| 161SnapTangent | 42 | `b2c4d7531a83e47c` |
-| 162SnapLockTangent | 60 | `1f82d8c6a918d877` |
-| 163SnapLockNormal | 78 | `9864fc7aaf8f6fa3` |
-| 164SnapBinormalRefused | 92 | `1f207889b9aadd8b` |
-| 165SnapCentre | 98 | `36c2188884793e64` |
-| 166SnapMidpoint | 104 | `3402d71fab0dd66a` |
-| 167SnapPerpendicular | 117 | `85d9c3c3afe3509d` |
-| 168SnapSquare | 150 | `1572e5154a863f40` |
-| 169SnapConstraintDrag | 180 | `0ae4ddba5a6db59c` |
-| 170SnapMove | 216 | `78bff9b79870788c` |
-| 171SnapXRay | 249 | `4ac3607fd3fd44cb` |
-| 172SnapPoleDrag | 321 | `15e5a3961103949c` |
+| 160SnapEndpoint | 29 | `6854f7e1bcd4f4ad` |
+| 161SnapTangent | 42 | `eabd7b6508f9eab7` |
+| 162SnapLockTangent | 60 | `30b7c70a865db893` |
+| 163SnapLockNormal | 78 | `180e651b274b9703` |
+| 164SnapBinormalRefused | 92 | `7e949ce4703ee667` |
+| 165SnapCentre | 98 | `5862c9206122647d` |
+| 166SnapMidpoint | 104 | `3a08d40c922b45e1` |
+| 167SnapPerpendicular | 117 | `a4309da8615d06a7` |
+| 168SnapSquare | 150 | `b22fe944aae8673b` |
+| 169SnapConstraintDrag | 180 | `5791be009980211d` |
+| 170SnapMove | 216 | `02b89b77968a2a7f` |
+| 171SnapXRay | 249 | `732cf18f856e8770` |
+| 172SnapPoleDrag | 321 | `385f63873e07da3f` |
 
 ## Journal
 
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 45 ms
+- Circle1 · 46 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Lock tangent through the last point · the same key releases it · object snaps align along it
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
@@ -100,12 +100,12 @@
 - Rectangle: square (s releases)
 - Rectangle1 · 44 ms
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- Drag Line1.End of Rectangle1 · 45 ms
+- Drag Line1.End of Rectangle1 · 44 ms
 - Constrain ended
 - Selected Block1 (11 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
-- Move (Block1) · 65 ms
+- Move (Block1) · 68 ms
 - Undo
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - X-ray on · faces 45 % · hidden edges pickable

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 387 frames · 35.2484 s · slowest frame 738.121 ms
+- Frame: 1600 x 900 · 387 frames · 35.094 s · slowest frame 734.089 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
@@ -54,7 +54,7 @@
 | 135 | `sound == 1` | 1 | 🟢 |
 | 136 | `volume > 0.791` | 0.7928018098 | 🟢 |
 | 137 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 138 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 34 ms | 🟢 |
+| 138 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 33 ms | 🟢 |
 | 153 | `steps == 10` | 10 | 🟢 |
 | 173 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
 | 179 | `steps == 11` | 11 | 🟢 |
@@ -67,14 +67,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 100 | `ad9f5cdb56cb54d2` |
-| 61FrontRearG2 | 108 | `e8abd10836316f22` |
-| 62BonnetMirrored | 122 | `a18e06eded0d4a16` |
-| 63CloseRefused | 136 | `55917e4b29fec97b` |
-| 64PodHalves | 238 | `256d9a68075c18d0` |
-| 65PodSolid | 258 | `a9c075734ce28c22` |
-| 66NetworkCurves | 373 | `1b8dd1a96dd056f6` |
-| 67NetworkPanel | 381 | `5ed5acd09d57ad5f` |
+| 60RearSectionsG2 | 100 | `dcd45c7742c50f5e` |
+| 61FrontRearG2 | 108 | `e060723c96199703` |
+| 62BonnetMirrored | 122 | `f4e9169952cde370` |
+| 63CloseRefused | 136 | `fb33d208e23b496e` |
+| 64PodHalves | 238 | `9966790a4ca60595` |
+| 65PodSolid | 258 | `ef0ebae2df543ffc` |
+| 66NetworkCurves | 373 | `936593f4a507a9af` |
+| 67NetworkPanel | 381 | `e89c81025a88dd43` |
 
 ## Journal
 
@@ -102,7 +102,7 @@
 - Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps )
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/PanelRecovery.solidarc
-- Import 5 curve(s) · 8 ms
+- Import 5 curve(s) · 7 ms
 - Framed the document (Space)
 - Imported 5 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticPod.toml · 46 poles · worst fit 0.066 mm
 - View Isometric
@@ -117,8 +117,8 @@
 - Lofted 5 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
 - Mirror1 · plane x = 0 · 8 ms
 - Mirrored through x = 0 → 2 panel(s), sound · 8 ms
-- Close1 · plane caps · 34 ms
-- Closed → solid · volume 0.79280 m³ · sound · 34 ms
+- Close1 · plane caps · 33 ms
+- Closed → solid · volume 0.79280 m³ · sound · 33 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 129 frames · 14.2018 s · slowest frame 477.717 ms
+- Frame: 1600 x 900 · 129 frames · 13.6139 s · slowest frame 466.309 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/IncrementalReplayWalkthrough.txt
 - Expectations: 29 / 29 passed
 
@@ -15,7 +15,7 @@
 | 25 | `refused == 0` | 0 | 🟢 |
 | 26 | `sound == 1` | 1 | 🟢 |
 | 27 | `replay-resumed == 6` | 6 | 🟢 |
-| 37 | `status contains Cylinder2.Radius` | Cylinder2.Radius = 0.35 · 214 ms | 🟢 |
+| 37 | `status contains Cylinder2.Radius` | Cylinder2.Radius = 0.35 · 215 ms | 🟢 |
 | 38 | `refused == 0` | 0 | 🟢 |
 | 39 | `replay-resumed == 4` | 4 | 🟢 |
 | 45 | `replay-resumed == 8` | 8 | 🟢 |
@@ -26,7 +26,7 @@
 | 63 | `status contains Block1.Height` | Block1.Height = 1.2 · 247 ms | 🟢 |
 | 64 | `refused == 0` | 0 | 🟢 |
 | 65 | `replay-resumed == 1` | 1 | 🟢 |
-| 71 | `status contains Block1.Width` | Block1.Width = 4.4 · 263 ms | 🟢 |
+| 71 | `status contains Block1.Width` | Block1.Width = 4.4 · 254 ms | 🟢 |
 | 72 | `refused == 0` | 0 | 🟢 |
 | 73 | `sound == 1` | 1 | 🟢 |
 | 74 | `replay-resumed == 0` | 0 | 🟢 |
@@ -39,21 +39,21 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 140ReplayTailEdit | 28 | `a847cf8e6b3259dd` |
-| 141ReplayMiddleEdit | 50 | `77977cac99ce8606` |
-| 142ReplayUndo | 57 | `f5efa10face165d0` |
-| 143ReplayRedo | 64 | `d273ee2039e64133` |
-| 144ReplayFullEdit | 101 | `7ddf6a95e457c74f` |
-| 145ReplayPreview | 123 | `88cd3eb1266eac1f` |
+| 140ReplayTailEdit | 28 | `1754f90834c9200f` |
+| 141ReplayMiddleEdit | 50 | `11fba9038f2e36af` |
+| 142ReplayUndo | 57 | `3e2acfe7aa08cbe2` |
+| 143ReplayRedo | 64 | `6f9aed0be477688a` |
+| 144ReplayFullEdit | 101 | `f58917e8e9e8e0bb` |
+| 145ReplayPreview | 123 | `a284bd555bb9af80` |
 
 ## Journal
 
 - Fillet1.Size = 0.3 · 175 ms
-- Cylinder2.Radius = 0.35 · 214 ms
+- Cylinder2.Radius = 0.35 · 215 ms
 - Undo
 - Redo
 - Block1.Height = 1.2 · 247 ms
-- Block1.Width = 4.4 · 263 ms
+- Block1.Width = 4.4 · 254 ms
 - Selection cleared
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts

@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Edge(Revolve#4.Side(Line3)|Revolve#4.Side(Line4))",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 11.46663532, "Target": [1.720129574, 1.376103659, 8.426204708e-17], "Orthographic": true},
-  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1},
-  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[0.6, 2], [-0, 2], [0, 0]], "Refusal": ""},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 11.46663532, "Target": [2.124694736, 1.699755789, 1.040800243e-16], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Bezier", "Centre": false, "Points": [[0.6, 2], [0, 2], [0, 0]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 4,
   "Redo": 0,
   "Welcome": false,
   "Status": "Revolve Line2 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels",
-  "Viewport": [320, 160, 930, 730]
+  "Viewport": [322, 146, 926, 591]
 }

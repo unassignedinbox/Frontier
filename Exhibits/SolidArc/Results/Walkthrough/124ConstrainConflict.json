@@ -1,5 +1,5 @@
 {
-  "Frame": 202,
+  "Frame": 207,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line3))",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
-  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
-  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0, -0], [2, 1]], "Refusal": ""},
-  "Undo": 5,
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [3.641291671, 2.395586626, 1.466873747e-16], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0, 0], [2, 1]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 6,
   "Redo": 0,
   "Welcome": false,
   "Status": "Refused: Length 5 · Line3 conflicts with V1 (Vertical · Line2), V2 (Vertical · Line4), D1 (Length 3 · Line1)",
-  "Viewport": [320, 160, 930, 730]
+  "Viewport": [322, 146, 926, 591]
 }

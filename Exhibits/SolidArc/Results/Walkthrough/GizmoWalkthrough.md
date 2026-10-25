@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 323 frames · 26.6078 s · slowest frame 498.168 ms
+- Frame: 1600 x 900 · 323 frames · 25.9896 s · slowest frame 462.193 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/GizmoWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,13 +44,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 218GizmoMove | 64 | `e8a20a0edc28dd32` |
-| 219GizmoCombined | 103 | `7b70823422eac266` |
-| 220GizmoScaled | 143 | `4c5feb0855273a72` |
-| 221GizmoFace | 169 | `f116e6960e2229fa` |
-| 222GizmoFaceRotate | 215 | `f88befc50edb5e8d` |
-| 223GizmoSketch | 286 | `c8d2e52d680fe8af` |
-| 224GizmoLoft | 323 | `835d0e078a74a100` |
+| 218GizmoMove | 64 | `af4fdb666dfe99db` |
+| 219GizmoCombined | 103 | `20b52fb2d7e6a82b` |
+| 220GizmoScaled | 143 | `f9782a554c5ad0ef` |
+| 221GizmoFace | 169 | `9345f5c805aa7c3c` |
+| 222GizmoFaceRotate | 215 | `b892eddd1393686d` |
+| 223GizmoSketch | 286 | `c18cc188cceddcf0` |
+| 224GizmoLoft | 323 | `5d47c6c8daada260` |
 
 ## Journal
 
@@ -69,8 +69,8 @@
 - Gizmo: move + rotate + scale
 - Rotate (Block1) · 9 ms
 - Gizmo Z rotate -20.0° · Rotate (Block1) · 9 ms
-- Scale (Block1) · 20 ms
-- Gizmo X scale 1.400x · Scale (Block1) · 20 ms
+- Scale (Block1) · 21 ms
+- Gizmo X scale 1.400x · Scale (Block1) · 21 ms
 - Undo
 - Undo
 - Undo

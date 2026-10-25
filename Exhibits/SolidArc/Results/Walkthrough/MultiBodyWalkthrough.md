@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 329 frames · 34.0171 s · slowest frame 460.305 ms
+- Frame: 1600 x 900 · 329 frames · 36.5839 s · slowest frame 503.545 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -13,7 +13,7 @@
 | 42 | `bodies == 2` | 2 | 🟢 |
 | 43 | `steps == 10` | 10 | 🟢 |
 | 44 | `body-volumes contains Block2 3.000000` | Block1 10.222774 · Block2 3.000000 | 🟢 |
-| 45 | `status contains New body` | Block2 · New body · 76 ms | 🟢 |
+| 45 | `status contains New body` | Block2 · New body · 74 ms | 🟢 |
 | 77 | `refused == 0` | 0 | 🟢 |
 | 78 | `bodies == 3` | 3 | 🟢 |
 | 79 | `body-captions contains Cylinder3` | Block1,Block2,Cylinder3 | 🟢 |
@@ -42,21 +42,21 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 96MultiBodyNew | 110 | `5c5b87a4a98b3e61` |
-| 97MultiBodyThree | 199 | `51e9c69543876886` |
-| 98MultiBodyMatcaps | 272 | `647abaf7fb9d412d` |
-| 99MultiBodyBoolean | 302 | `13708401cda397b4` |
-| 100MultiBodyDrilled | 315 | `81558e81a1e3aa0d` |
-| 101MultiBodyUndo | 329 | `afa5ddcae60229dc` |
+| 96MultiBodyNew | 110 | `9bc39d8bd5d17033` |
+| 97MultiBodyThree | 199 | `e0dc574b54025a7b` |
+| 98MultiBodyMatcaps | 272 | `c053069892cc184d` |
+| 99MultiBodyBoolean | 302 | `c26408527a9e69bb` |
+| 100MultiBodyDrilled | 315 | `e6af91e99395579c` |
+| 101MultiBodyUndo | 329 | `e0cd5b6733496202` |
 
 ## Journal
 
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
-- Block2 · New body · 76 ms
+- Block2 · New body · 74 ms
 - Framed the document (Space)
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Cylinder3 · New body · 107 ms
+- Cylinder3 · New body · 106 ms
 - Selected Block1 (11 faces)
 - Matcap BrushedSteel → 1 body(ies)
 - Selected Block2 (6 faces)
@@ -69,7 +69,7 @@
 - Boolean: Block2 with 1 tool(s) · Q union · W difference · E intersect · Enter applies
 - Boolean: Difference
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Combine · Difference (Block2 − Cylinder3) · 126 ms
+- Combine · Difference (Block2 − Cylinder3) · 125 ms
 - Selection cleared
 - Undo
 - Redo

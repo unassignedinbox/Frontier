@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 201 frames · 15.8376 s · slowest frame 457.287 ms
+- Frame: 1600 x 900 · 201 frames · 17.2758 s · slowest frame 471.675 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/InsetWalkthrough.txt
 - Expectations: 26 / 26 passed
 
@@ -36,12 +36,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 212InsetOpened | 68 | `79f8b278b74c9356` |
-| 213InsetFlat | 86 | `ae7cf4bb66cdce66` |
-| 214InsetPocketPreview | 108 | `c130edfeb8e6f389` |
-| 215InsetPocket | 116 | `be930895696f5195` |
-| 216InsetBoss | 165 | `471f146bc7e30763` |
-| 217InsetRefused | 195 | `0d5e9b455ec0e888` |
+| 212InsetOpened | 68 | `aab8cc014d1d3b98` |
+| 213InsetFlat | 86 | `79a8048c93423cbf` |
+| 214InsetPocketPreview | 108 | `4574436d6df3b498` |
+| 215InsetPocket | 116 | `277e1033d8cc1fd2` |
+| 216InsetBoss | 165 | `2fc3d4d78cdb20b9` |
+| 217InsetRefused | 195 | `9e5d953a528d99fa` |
 
 ## Journal
 
@@ -54,12 +54,12 @@
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.25 m (pinned)
 - Inset depth -0.2 m
-- Inset 0.25 depth -0.2 on 1 face(s) · 17 ms
+- Inset 0.25 depth -0.2 on 1 face(s) · 19 ms
 - Selected Change#3.Generated(Extrude#2.Cap(End))
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.1 m (pinned)
 - Inset depth 0.2 m
-- Inset 0.1 depth 0.2 on 1 face(s) · 23 ms
+- Inset 0.1 depth 0.2 on 1 face(s) · 25 ms
 - Selected Extrude#2.Cap(End)
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.8 m (pinned)

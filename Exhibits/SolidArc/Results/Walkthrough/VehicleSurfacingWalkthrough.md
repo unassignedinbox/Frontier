@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 265 frames · 23.8787 s · slowest frame 468.915 ms
+- Frame: 1600 x 900 · 265 frames · 24.9661 s · slowest frame 484.561 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -63,13 +63,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 43 | `a0b7fb1c93cc3364` |
-| 51ControlPoints | 50 | `37ef2a2d85870614` |
-| 52SectionsSelected | 147 | `21e458aaf604e32b` |
-| 53BonnetLoft | 155 | `42250f9b5d16cba1` |
-| 54PoleDragLive | 192 | `41c25d9edb75cf42` |
-| 55PoleMoved | 206 | `81e58ca4d8dfdd36` |
-| 56SheetUnderside | 241 | `1d2cd6d3af52c0b0` |
+| 50CurvesImported | 43 | `90707bd731c8ce06` |
+| 51ControlPoints | 50 | `f2c4a0c89b0c7278` |
+| 52SectionsSelected | 147 | `1a97a7e1af69c053` |
+| 53BonnetLoft | 155 | `18cd5f64ef068c13` |
+| 54PoleDragLive | 192 | `73e2a622e088a107` |
+| 55PoleMoved | 206 | `25ef3ca831606704` |
+| 56SheetUnderside | 241 | `237b4a021e30309c` |
 
 ## Journal
 

@@ -1,5 +1,5 @@
 {
-  "Frame": 595,
+  "Frame": 608,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [2.947949832, 2.947949832, 1.805098663e-16], "Orthographic": true},
-  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0},
-  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[2.5, 2.5], [3.2, 3]], "Refusal": ""},
-  "Undo": 11,
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [3.641291671, 3.641291671, 2.229648095e-16], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[2.5, 2.5], [3.2, 3]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 12,
   "Redo": 0,
   "Welcome": false,
   "Status": "Constrain Line1 · 2 constraint(s) · DOF 1 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends",
-  "Viewport": [320, 160, 930, 730]
+  "Viewport": [322, 146, 926, 591]
 }
