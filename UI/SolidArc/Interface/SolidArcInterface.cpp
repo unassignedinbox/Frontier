@@ -7001,8 +7001,10 @@ bool DrawOrientationCube(SolidArcWorkspaceState& State, ImDrawList* Canvas, ImVe
     const OrbitCameraFrame Frame  = ViewportFrame(State);
     const ImVec2              Centre(Corner.x + CubeExtent * 0.5f, Corner.y + CubeExtent * 0.5f);
     const bool                PerspectiveCondition = !Frame.OrthographicEnabled;
-    const float               Scale  = CubeExtent * (PerspectiveCondition ? 0.255f : 0.29f);
-    const double              EyeDistance = std::max(3.5, 1.6 / std::tan(0.5 * std::clamp(State.Camera.FieldOfView, 0.1, 2.5))); // [cube] - Eye to cube centre
+    const float               Scale  = CubeExtent * (PerspectiveCondition ? 0.27f : 0.29f);
+    // 📝 A face shows while EyeDistance · facing > 1: at 6 a face 10° off edge-on still shows (a low orbit keeps Top
+    //    clickable), where the old 3.5 hid everything under 17°.
+    const double              EyeDistance = std::max(6.0, 2.4 / std::tan(0.5 * std::clamp(State.Camera.FieldOfView, 0.1, 2.5))); // [cube] - Eye to cube centre
     auto Project = [&](const std::array<double, 3>& Point)
     {
         const double Across = Point[0] * Frame.Right[0] + Point[1] * Frame.Right[1] + Point[2] * Frame.Right[2];
@@ -8099,7 +8101,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Sweep.Verb == SolidArcSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
                        : State.Drawing.ActiveCondition
-                           ? (State.Drawing.SolidCondition ? "Draw on the ground or a body top (snaps, Ctrl free) · move up for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
+                           ? (State.Drawing.SolidCondition ? "Draw on the ground or any body face (oriented to it; snaps, Ctrl free) · move out for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? "Click the centre, then a vertex (snaps, Ctrl free) · + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"

@@ -323,6 +323,13 @@ add_test(NAME SolidArcFilletDragWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/FilletDragWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcOrientWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/OrientRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Orient.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/OrientWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcSketchCornersWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/SketchCornersRecovery.solidarc

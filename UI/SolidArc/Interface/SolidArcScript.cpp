@@ -701,6 +701,12 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         const GeometryProcessing::Vector3 Normal = Newest->Plane.ZAxis;
         return Numeric(Field.back() == 'x' ? Normal.X : Field.back() == 'y' ? Normal.Y : Normal.Z);
     }
+    if (Field.rfind("scene-high-", 0) == 0 || Field.rfind("scene-low-", 0) == 0)
+    {
+        // World bounds of the displayed bodies (scene-high-x … scene-low-z).
+        const int Axis = Field.back() == 'x' ? 0 : Field.back() == 'y' ? 1 : 2;
+        return Numeric(Field[6] == 'h' ? State.Scene.BoundsHigh[Axis] : State.Scene.BoundsLow[Axis]);
+    }
     if (Field == "face-orient") return Numeric(State.Picker.FaceOrientEnabled ? 1 : 0);
     if (Field == "drawing-on-face") return Numeric(State.Drawing.ActiveCondition && State.Drawing.FacePlaneCondition ? 1 : 0);
     if (Field == "drawing-normal-x" || Field == "drawing-normal-y" || Field == "drawing-normal-z")

@@ -109,6 +109,7 @@ namespace
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally FillGate        = { "W48", "Fill and flip: a fresh (unfilled) rectangle extrudes into 4 walls (an open sheet), filling it (Inspector / F) makes the solid 2 and one undo entry; regions of overlapping curves (Fill tool): the lens and a crescent of two circles, a square with a circular hole, a spline arch cut by a line, each filled into a new sketch and extruded against closed forms; a lone circle fills itself; flip normals turns every face of a loft sheet and of extruded walls, a second flip removes the step, solids refuse; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally FilletDragGate  = { "W49", "Fillet drags (the Windows report: a corner drag turned a fillet inside out, ~270°): on a 3 × 1.5 rectangle with four r 0.3 fillets, the bottom-left fillet's centre, both tangent points and the virtual sharp are dragged to 1 024 targets up to 3 m away; every accepted drag keeps every arc under a half turn (tangency keeps its starting side), the rest refuse; the reported drag (centre out past the corner) lands with 90° arcs; slots keep their tangent ends", "0 inverted · exact" };
+    GateTally OrientGate      = { "W50", "Orient to faces: Construct solids drawn on a body face are built in the face frame (x / y on the face, height along the outward normal): a cylinder on the +x face of a 2 m cube unites to 8 + π/4 and reaches x = 3; all eight tiles on a face tilted 30° about x and 40° about z keep their closed-form volumes, a unit block's bounds are those of the turned cube; a circle sketched on the tilted plane extrudes along its normal; a skewed frame is refused untouched; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4289,6 +4290,117 @@ int main()
               Format("codec: %d + %d bytes byte-equal (Fill = false on the drawn circles), V %.12f after reload, walls stay a sheet", int(RegionText.size()), int(WallText.size()), RegionLoaded.Summary.Volume));
     }
 
+    // ---- W50 Orient to faces: solids and sketches built in the frame of the face they are drawn on
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        // The interface's face frame: n̂ outward, x̂ = ẑ × n̂ (world x on level faces), ŷ = n̂ × x̂, origin = foot of the world origin.
+        const auto FaceFrame = [](Vector3 Normal, Vector3 OnFace)
+        {
+            Normal = Normalize(Normal);
+            const Vector3 XAxis = std::abs(Normal.Z) > 1.0 - 1.0e-12 ? Vector3{ 1.0, 0.0, 0.0 } : Normalize(Cross(Vector3{ 0.0, 0.0, 1.0 }, Normal));
+            return OrthonormalFrame{ Normal * Dot(OnFace, Normal), XAxis, Cross(Normal, XAxis), Normal };
+        };
+        const auto Tile = [](SolidArcConstructKind Kind, Vector3 Position, FeatureCombination Combination)
+        {
+            SolidArcConstructRequest Request;
+            Request.Kind = Kind; Request.Position = Position; Request.Combination = Combination;
+            return Request;
+        };
+
+        // ① a 2 m cube; a cylinder r 0.5, h 1 drawn on its +x face at face point (1, 1): x̂ = +y, ŷ = +z, n̂ = +x
+        SolidArcDocument Cube = CreateSolidArcDocument("Oriented");
+        SolidArcConstructRequest Base = Tile(SolidArcConstructKind::Block, { 0.0, 0.0, 0.0 }, FeatureCombination::New);
+        Base.Width = Base.Depth = Base.Height = 2.0;
+        Expect(ConstructSolidArcPrimitive(Cube, Base));
+        SolidArcConstructRequest Boss = Tile(SolidArcConstructKind::Cylinder, { 1.0, 1.0, 0.0 }, FeatureCombination::Union);
+        Boss.Radius = 0.5; Boss.Height = 1.0;
+        Boss.PlaneCondition = true;
+        Boss.Plane          = FaceFrame({ 1.0, 0.0, 0.0 }, { 2.0, 0.7, 0.4 });
+        const SolidArcCommandOutcome Bossed = ConstructSolidArcPrimitive(Cube, Boss);
+        const SolidArcScene CubeScene = BuildSolidArcScene(Cube);
+        const double Expected = 8.0 + 0.25 * π;
+        const double Error    = std::abs(Cube.Summary.Volume - Expected) / Expected;
+        const double Reach    = std::abs(CubeScene.BoundsHigh[0] - 3.0);
+        Tally(OrientGate, Error, Bossed.AcceptedCondition && Error <= 1.0e-9 && Reach <= 1.0e-6 && Cube.Summary.SoundCondition && Cube.Summary.Bodies.size() == 1,
+              Format("%s on the +x face: V %.12f vs 8 + π/4, reaches x = %.9f (3, float scene), one sound body", Bossed.Label.c_str(), Cube.Summary.Volume, CubeScene.BoundsHigh[0]));
+
+        // ② a face tilted 30° about x then 40° about z: every tile in that frame keeps its closed-form volume
+        const double  Tilt = π / 6.0, Turn = 2.0 * π / 9.0;
+        const Vector3 Leaning{ std::sin(Tilt) * std::sin(Turn), -std::sin(Tilt) * std::cos(Turn), std::cos(Tilt) };
+        const OrthonormalFrame Tilted = FaceFrame(Leaning, Leaning * 0.75 + Vector3{ 0.3, 0.1, 0.0 });
+        struct Case { SolidArcConstructKind Kind; double Volume; const char* Name; };
+        const double Cylinder = π * 0.25 * 1.0, Cone = π * 0.25 * 1.0 / 3.0, Sphere = 4.0 / 3.0 * π * 0.125, Torus = 2.0 * π * π * 1.5 * 0.16;
+        const double Prism = 0.5 * 6.0 * 0.25 * std::sin(2.0 * π / 6.0) * 1.0, Tube = π * (0.25 - 0.09) * 1.0, Wedge = 0.5 * 2.0 * 1.5 * 1.0;
+        const Case Cases[] = { { SolidArcConstructKind::Block, 3.0, "block" }, { SolidArcConstructKind::Cylinder, Cylinder, "cylinder" }, { SolidArcConstructKind::Cone, Cone, "cone" },
+                               { SolidArcConstructKind::Sphere, Sphere, "sphere" }, { SolidArcConstructKind::Torus, Torus, "torus" }, { SolidArcConstructKind::Prism, Prism, "prism" },
+                               { SolidArcConstructKind::Tube, Tube, "tube" }, { SolidArcConstructKind::Wedge, Wedge, "wedge" } };
+        double Worst = 0.0;
+        int    Kept  = 0;
+        for (const Case& Each : Cases)
+        {
+            SolidArcDocument Alone = CreateSolidArcDocument(Each.Name);
+            SolidArcConstructRequest Request = Tile(Each.Kind, { 0.4, -0.2, 0.0 }, FeatureCombination::New);
+            Request.PlaneCondition = true;
+            Request.Plane          = Tilted;
+            const SolidArcCommandOutcome Built = ConstructSolidArcPrimitive(Alone, Request);
+            const double Miss = std::abs(Alone.Summary.Volume - Each.Volume) / Each.Volume;
+            Worst = std::max(Worst, Miss);
+            Kept += Built.AcceptedCondition && Miss <= 1.0e-9 && Alone.Summary.SoundCondition ? 1 : 0;
+        }
+        Tally(OrientGate, Worst, Kept == 8, Format("8 tiles on the tilted face (n̂ = (%.4f, %.4f, %.4f)): %d / 8 sound and exact, worst |V − closed form| / V %.3g", Leaning.X, Leaning.Y, Leaning.Z, Kept, Worst));
+
+        // ③ a unit block at face point (0, 0): its eight corners are F.o + {0, 1}·x̂ + {0, 1}·ŷ + {0, 1}·n̂, the scene bounds theirs
+        SolidArcDocument Turned = CreateSolidArcDocument("Turned");
+        SolidArcConstructRequest Unit = Tile(SolidArcConstructKind::Block, { 0.0, 0.0, 0.0 }, FeatureCombination::New);
+        Unit.Width = Unit.Depth = Unit.Height = 1.0;
+        Unit.PlaneCondition = true;
+        Unit.Plane          = Tilted;
+        Expect(ConstructSolidArcPrimitive(Turned, Unit));
+        std::array<double, 3> Low{ 1e300, 1e300, 1e300 }, High{ -1e300, -1e300, -1e300 };
+        for (int Corner = 0; Corner < 8; ++Corner)
+        {
+            const Vector3 Point = Tilted.Origin + Tilted.XAxis * double(Corner & 1) + Tilted.YAxis * double((Corner >> 1) & 1) + Tilted.ZAxis * double((Corner >> 2) & 1);
+            const double  Axes[3] = { Point.X, Point.Y, Point.Z };
+            for (int Axis = 0; Axis < 3; ++Axis) { Low[Axis] = std::min(Low[Axis], Axes[Axis]); High[Axis] = std::max(High[Axis], Axes[Axis]); }
+        }
+        const SolidArcScene TurnedScene = BuildSolidArcScene(Turned);
+        double Bounds = 0.0;
+        for (int Axis = 0; Axis < 3; ++Axis) Bounds = std::max({ Bounds, std::abs(TurnedScene.BoundsLow[Axis] - Low[Axis]), std::abs(TurnedScene.BoundsHigh[Axis] - High[Axis]) });
+        Tally(OrientGate, std::abs(Turned.Summary.Volume - 1.0), Bounds <= 1.0e-6 && std::abs(Turned.Summary.Volume - 1.0) <= 1.0e-12,
+              Format("unit block in the tilted frame: scene bounds = the turned cube's within %.3g (float scene), V %.12f", Bounds, Turned.Summary.Volume));
+
+        // ④ a circle sketched on the tilted plane extrudes 1 along its normal: V π/4, the far cap 1 above the plane
+        SolidArcDocument Sketched = CreateSolidArcDocument("Sketched");
+        SolidArcDrawingRequest Ring = DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.0 }, { 0.5, 0.0 } }, false, true);
+        Ring.PlaneCondition = true;
+        Ring.Plane          = Tilted;
+        Expect(DrawFilledSketch(Sketched, Ring));
+        const std::string Disc = Sketched.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Sketched, Disc, 1.0, FeatureCombination::New));
+        const SolidArcScene DiscScene = BuildSolidArcScene(Sketched);
+        double Height = 0.0;
+        for (const SolidArcSceneCorner& Corner : DiscScene.Corners)
+            Height = std::max(Height, Dot(Vector3{ Corner.Position[0], Corner.Position[1], Corner.Position[2] } - Tilted.Origin, Tilted.ZAxis));
+        const double DiscError = std::abs(Sketched.Summary.Volume - 0.25 * π) / (0.25 * π);
+        Tally(OrientGate, DiscError, DiscError <= 1.0e-9 && std::abs(Height - 1.0) <= 1.0e-5,
+              Format("circle r 0.5 on the tilted plane extruded 1: V %.12f vs π/4, far cap %.7f along n̂ (float scene)", Sketched.Summary.Volume, Height));
+
+        // ⑤ a skewed frame (x̂ not ⟂ ŷ) is refused, the file untouched; the cube with its face boss round-trips byte-equal
+        const std::string Before = EncodeSolidArcDocument(Cube);
+        SolidArcConstructRequest Skewed = Boss;
+        Skewed.Plane.YAxis = Normalize(Skewed.Plane.YAxis + Skewed.Plane.XAxis * 0.1);
+        const SolidArcCommandOutcome Refused = ConstructSolidArcPrimitive(Cube, Skewed);
+        const std::string          Written = EncodeSolidArcDocument(Cube);
+        const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+        SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+        Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+        RegenerateSolidArcDocument(Loaded, true);
+        const double Drift = std::abs(Loaded.Summary.Volume - Expected) / Expected;
+        Tally(OrientGate, Drift, !Refused.AcceptedCondition && Written == Before && Read.Refusal.empty() && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-9,
+              Format("skewed frame refused (%s), file untouched; codec %d bytes byte-equal, V %.12f after reload", Refused.Refusal.c_str(), int(Written.size()), Loaded.Summary.Volume));
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -4487,7 +4599,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
