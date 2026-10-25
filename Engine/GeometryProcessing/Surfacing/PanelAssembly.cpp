@@ -142,6 +142,7 @@ PanelAssemblyOutcome AssemblePanels(ModelPartition& Partition, const std::vector
     if (Input.empty()) return Refuse("no panels");
     std::vector<SurfacePanel> Panels = Input;
 
+    bool ReorientedCondition = false;                                                        // [-] - Panels already turned to agree
     for (int Attempt = 0; Attempt < 2; ++Attempt)
     {
         // ① Sides and merged corners.
@@ -272,6 +273,53 @@ PanelAssemblyOutcome AssemblePanels(ModelPartition& Partition, const std::vector
             for (int Side : Loops[Panel]) Loop.push_back(UseOf(Sides[Side]));
             Face.Loops.push_back(std::move(Loop));
             Blueprint.Faces.push_back(std::move(Face));
+        }
+
+        // ③′ Consistent orientation (sewing): a boundary two panels share must be walked once each way. Two lofts out of
+        //    the same section run along it the same way, so one of them turns (𝑢 reversed) before the faces are made.
+        //    Breadth-first over the shared boundaries; a panel asked to be both turned and kept is a one-sided loop.
+        {
+            std::vector<std::vector<int>> UsesOfEdge(Blueprint.Edges.size());
+            for (size_t Index = 0; Index < Sides.size(); ++Index)
+            {
+                if (Sides[Index].SeamCondition || Sides[Index].SeamOf >= 0) continue;
+                UsesOfEdge[Sides[Index].Edge].push_back(static_cast<int>(Index));
+            }
+            std::vector<int> Turn(Panels.size(), -1);                                        // [-] - −1 unvisited, 0 kept, 1 turned
+            bool AnyTurnCondition = false;
+            for (size_t Seed = 0; Seed < Panels.size(); ++Seed)
+            {
+                if (Turn[Seed] >= 0) continue;
+                Turn[Seed] = 0;
+                std::vector<int> Queue = { static_cast<int>(Seed) };
+                for (size_t Head = 0; Head < Queue.size(); ++Head)
+                {
+                    const int Panel = Queue[Head];
+                    for (const std::vector<int>& Uses : UsesOfEdge)
+                    {
+                        if (Uses.size() != 2) continue;
+                        const PanelSide& First  = Sides[Uses[0]];
+                        const PanelSide& Second = Sides[Uses[1]];
+                        if (First.Panel != Panel && Second.Panel != Panel) continue;
+                        if (First.Panel == Second.Panel) continue;
+                        const int Other   = First.Panel == Panel ? Second.Panel : First.Panel;
+                        const int Wanted  = Turn[Panel] ^ (UseOf(First).Sense == UseOf(Second).Sense ? 1 : 0);
+                        if (Turn[Other] < 0) { Turn[Other] = Wanted; AnyTurnCondition = AnyTurnCondition || Wanted == 1; Queue.push_back(Other); }
+                        else if (Turn[Other] != Wanted) return Refuse("the panels cannot face one way (one-sided, like a Möbius band)");
+                    }
+                }
+            }
+            if (AnyTurnCondition)
+            {
+                if (ReorientedCondition) return Refuse("orientation did not settle after turning panels");
+                for (size_t Panel = 0; Panel < Panels.size(); ++Panel)
+                {
+                    if (Turn[Panel] == 1) Panels[Panel] = SurfacePanel{ *FinishNurbsSurface(ReverseNurbsSurface(*Panels[Panel].Surface.Definition, true)) };
+                }
+                ReorientedCondition = true;
+                --Attempt;
+                continue;
+            }
         }
 
         // ④ Rim: edges with one use. Each rim use is walked by the cap the other way: chain them into loops.

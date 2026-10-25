@@ -104,6 +104,7 @@ namespace
     GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
     GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
     GateTally ShellGate       = { "W45", "Solid shells, sketch on a face, hide / lock: closed sections loft a capped solid of its own (two in one file), open sections refuse the solid and loft a sheet; sketches drawn on a level and an upright body face extrude onto it; sketch / body hide and lock are undoable appearance entries that survive the codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally CornerGate      = { "W47", "Sketch corner fillet / chamfer and fan lofts: every corner of an extruded rectangle rounded (the extrude follows, V = A − (4 − π) r²), one picked corner chamfered, the kept corner (virtual sharp) dragged with the fillets following, refusals leave the file untouched; two lofts out of one section sew into one sheet (one turned); codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DetachGate      = { "W46", "Trim / join on sketches a body reads: the trim detaches (original kept hidden for its extrude, the trimmed curves a new sketch, the body unchanged, one undo entry); a whole-curve trim only hides; picked sketches join (disjoint profiles extrude together), a read one stays hidden; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PointGate       = { "W44", "Mode-1 sketch points (direct drag, gizmo on picked points): a rectangle corner dragged keeps H / V and the extrude follows; two corners moved together; Bezier poles turned 30° and a triangle scaled × 2 along x about their centre land exactly; one undo entry per drag; codec byte-equal; mismatched / missing / out-of-range refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
@@ -3999,6 +4000,116 @@ int main()
         }
     }
 
+    // ---- W47 Sketch corner fillet / chamfer (B on 2D sketches), fan lofts out of one section
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto CurvesIn = [](SolidArcDocument& Document, const std::string& Label) -> size_t
+        {
+            const auto Found = Document.Regeneration.Sketches.find(Label);
+            return Found != Document.Regeneration.Sketches.end() ? Found->second.Curves.size() : 0;
+        };
+
+        // ① every corner of a 2 × 1 rectangle extruded 1, filleted r 0.25 afterwards: the extrude follows, V = 2 − (4 − π)/16
+        SolidArcDocument Rounded = CreateSolidArcDocument("Rounded");
+        Expect(DrawSolidArcSketch(Rounded, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Plate = Rounded.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Rounded, Plate, 1.0, FeatureCombination::New));
+        const size_t History = Rounded.UndoEntries.size();
+        SolidArcCornerRequest Every;
+        Every.Sketches = { Plate };
+        Every.Size     = 0.25;
+        const SolidArcCommandOutcome Filleted = CutSolidArcSketchCorners(Rounded, Every);
+        const double Expected = 2.0 - (4.0 - π) * 0.0625;
+        double Relative = std::abs(Rounded.Summary.Volume - Expected) / Expected;
+        Tally(CornerGate, Relative, Filleted.AcceptedCondition && Relative <= 1.0e-9 && CurvesIn(Rounded, Plate) == 8 && Rounded.Summary.SoundCondition && Rounded.Summary.Faces == 10
+              && Rounded.UndoEntries.size() == History + 1,
+              Format("%s: 4 lines + 4 tangent arcs, the extrude follows: V %.12f vs 2 − (4 − π)/16 %.12f, %d faces, sound, one undo entry", Filleted.Label.c_str(), Rounded.Summary.Volume, Expected, Rounded.Summary.Faces));
+
+        // ② the corner (2, 1) stays as the virtual sharp: dragged to (3, 1) the rectangle widens and the fillets follow
+        {
+            const auto Found = Rounded.Regeneration.Sketches.find(Plate);
+            int Sharp = -1;
+            if (Found != Rounded.Regeneration.Sketches.end())
+                for (size_t Index = 0; Index < Found->second.Points.size(); ++Index)
+                    if (Length(Found->second.Points[Index].Position - Vector2{ 2.0, 1.0 }) <= 1.0e-12) Sharp = static_cast<int>(Index);
+            const SolidArcCommandOutcome Dragged = Sharp >= 0 ? DragSolidArcSketchPoints(Rounded, Plate, { Sharp }, { { 3.0, 1.0 } }) : SolidArcCommandOutcome{};
+            const double Wider = 3.0 - (4.0 - π) * 0.0625;
+            const double Error = std::abs(Rounded.Summary.Volume - Wider) / Wider;
+            Tally(CornerGate, Error, Dragged.AcceptedCondition && Error <= 1.0e-9 && CurvesIn(Rounded, Plate) == 8 && Rounded.Summary.SoundCondition,
+                  Format("virtual sharp point %d dragged (2, 1) to (3, 1): V %.12f vs 3 − (4 − π)/16, the arcs stay tangent with r 0.25", Sharp, Rounded.Summary.Volume));
+            UndoSolidArcCommand(Rounded);
+            UndoSolidArcCommand(Rounded);
+            Tally(CornerGate, std::abs(Rounded.Summary.Volume - 2.0), Rounded.Summary.Volume == 2.0 && CurvesIn(Rounded, Plate) == 4, "undo × 2: the sharp rectangle and V 2 return");
+        }
+
+        // ③ one picked corner (0, 0) chamfered 0.3: 5 lines, area 2 − 0.045, Chamfer distances on the sketch
+        {
+            SolidArcDocument Cut = CreateSolidArcDocument("Chamfered");
+            Expect(DrawSolidArcSketch(Cut, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+            const std::string Sketch = Cut.Tree.Steps.back().Label;
+            int Origin = -1;
+            const SketchModel& Model = Cut.Regeneration.Sketches.at(Sketch);
+            for (size_t Index = 0; Index < Model.Points.size(); ++Index) if (Length(Model.Points[Index].Position) <= 1.0e-12) Origin = static_cast<int>(Index);
+            SolidArcCornerRequest One;
+            One.Sketches = { Sketch };
+            One.Points   = { Origin };
+            One.Size     = 0.3;
+            One.Shape    = SketchCornerShape::Chamfer;
+            const SolidArcCommandOutcome Chamfered = CutSolidArcSketchCorners(Cut, One);
+            int Labelled = 0;
+            for (const FeatureStep& Step : Cut.Tree.Steps)
+                if (Step.Label == Sketch) for (const SketchConstraint& Constraint : Step.Sketch.Constraints) Labelled += Constraint.Label == "Chamfer" ? 1 : 0;
+            Expect(ExtrudeSolidArcSketch(Cut, Sketch, 1.0, FeatureCombination::New));
+            const double Error = std::abs(Cut.Summary.Volume - 1.955) / 1.955;
+            Tally(CornerGate, Error, Chamfered.AcceptedCondition && CurvesIn(Cut, Sketch) == 5 && Labelled == 2 && Error <= 1.0e-9 && Cut.Summary.SoundCondition,
+                  Format("%s: 5 lines, 2 Chamfer distances; extruded 1 → V %.12f vs 2 − 0.3²/2 = 1.955", Chamfered.Label.c_str(), Cut.Summary.Volume));
+
+            // ④ refusals, file untouched: r 0.6 (the second corner on the 1-long side has only 0.4 left), a circle centre, size 0
+            const std::string Before = EncodeSolidArcDocument(Cut);
+            SolidArcCornerRequest Large = Every;
+            Large.Sketches = { Sketch };
+            Large.Size     = 0.6;
+            const SolidArcCommandOutcome TooLarge = CutSolidArcSketchCorners(Cut, Large);
+            Expect(DrawSolidArcSketch(Cut, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 5.0, 0.0 }, { 5.5, 0.0 } }, false, true)));
+            const std::string Ring = Cut.Tree.Steps.back().Label;
+            const std::string WithRing = EncodeSolidArcDocument(Cut);
+            SolidArcCornerRequest Centre;
+            Centre.Sketches = { Ring };
+            Centre.Points   = { 0 };
+            const SolidArcCommandOutcome NoCorner = CutSolidArcSketchCorners(Cut, Centre);
+            Large.Size = 0.0;
+            const SolidArcCommandOutcome Zero = CutSolidArcSketchCorners(Cut, Large);
+            Tally(CornerGate, 0.0, !TooLarge.AcceptedCondition && !NoCorner.AcceptedCondition && !Zero.AcceptedCondition && EncodeSolidArcDocument(Cut) == WithRing && WithRing != Before,
+                  "refused: " + TooLarge.Refusal + " · " + NoCorner.Refusal + " · " + Zero.Refusal);
+        }
+
+        // ⑤ fan lofts (the Windows report): A → B and A → C both start on line A, so they run along it the same way; the
+        //    second panel turns and both sew into one sheet
+        {
+            SolidArcDocument Fan = CreateSolidArcDocument("Fan");
+            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 0.0 }, { 1.0, 0.0 } })));
+            const std::string A = Fan.Tree.Steps.back().Label;
+            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 1, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
+            const std::string B = Fan.Tree.Steps.back().Label;
+            Expect(DrawSolidArcSketch(Fan, DrawingOf(SolidArcDrawingKind::Line, 0, { { 0.0, 1.0 }, { 1.0, 1.0 } })));
+            const std::string C = Fan.Tree.Steps.back().Label;
+            const SolidArcCommandOutcome Upright = LoftSolidArcCurves(Fan, { A, B }, 0, false);
+            const SolidArcCommandOutcome Level   = LoftSolidArcCurves(Fan, { A, C }, 0, false);
+            Tally(CornerGate, 0.0, Upright.AcceptedCondition && Level.AcceptedCondition && Fan.Summary.SheetCondition && Fan.Summary.Faces == 2 && Fan.Summary.SoundCondition && Fan.Regeneration.Panels.size() == 2,
+                  Upright.Label + " and " + Level.Label + ": one sheet of 2 faces sharing " + A + (Level.AcceptedCondition ? "" : " · refused: " + Level.Refusal));
+            RedoSolidArcCommand(Rounded);                                                    // The four fillets again
+            const std::string          Written = EncodeSolidArcDocument(Rounded);
+            const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+            SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+            Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Loaded, true);
+            const double Drift = std::abs(Loaded.Summary.Volume - Expected) / Expected;
+            Tally(CornerGate, Drift, Read.Refusal.empty() && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-9 && CurvesIn(Rounded, Plate) == 8,
+                  Format("codec: %d bytes byte-equal with the filleted sketch (arcs, Tangent / Radius / PointOnLine), V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
+        }
+    }
+
     // ---- W46 Trim and join on sketches some later step reads (detach), join of picked sketches
     {
         constexpr double π = std::numbers::pi;
@@ -4101,7 +4212,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

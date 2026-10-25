@@ -54,6 +54,7 @@ add_library(FrontierGeometryProcessing STATIC
     Sketch/SketchSection.cpp
     Sketch/SketchSpline.cpp
     Sketch/SketchCatalogue.cpp
+    Sketch/SketchCorner.cpp
     Sketch/SketchTrim.cpp
     Sketch/SketchEditing.cpp
     Sketch/SketchConstraining.cpp

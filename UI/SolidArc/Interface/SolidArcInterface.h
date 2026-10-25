@@ -63,6 +63,7 @@ enum class SolidArcSessionVerb : uint8_t
     Extrude = 1,                                                                             // Extrude the selected faces
     Profile = 2,                                                                             // Extrude the focused sketch's profile (Q / W / E / R Boolean)
     Inset   = 3,                                                                             // Inset the selected planar faces (O / I; D distance · H depth)
+    Corner  = 4,                                                                             // Fillet / chamfer 2D sketch corners (B on sketch points or sketches)
 };
 
 // Shift+R repeats the last applied command on the current selection.
@@ -122,6 +123,7 @@ struct SolidArcBevelSession
     std::array<char, 32>              DepthText       = {};                                  // [-]   - Inset: depth field text
     double                            StagedDepth     = 0.0;                                 // [len] - Depth the preview was built at
     bool                              DepthEnabled    = false;                               // [-]   - Inset: the pointer drives the depth (H) instead of the distance (D)
+    SolidArcCornerRequest             Corner          = {};                                  // [-]   - Corner: the sketches / corner points (size and shape from the session)
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):

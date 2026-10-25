@@ -536,6 +536,34 @@ void DrawMatcapPicker(SolidArcWorkspaceState& State)
 //                                                    BEVEL SESSION
 //------------------------------------------------------------------------------------------------------------------------
 
+[[nodiscard]] std::vector<std::string> SelectedSketchLabels(const SolidArcDocument& Document);
+[[nodiscard]] bool FocusedSketchCondition(const SolidArcWorkspaceState& State);
+
+// B on sketches (Plasticity fillet-curve): the picked mode-1 points of one sketch, else every corner of the picked
+// sketches, else of the focused sketch.
+[[nodiscard]] SolidArcCornerRequest CornerTargets(const SolidArcWorkspaceState& State)
+{
+    SolidArcCornerRequest Request;
+    if (!State.SketchPoints.Sketch.empty() && !State.SketchPoints.Points.empty())
+    {
+        Request.Sketches = { State.SketchPoints.Sketch };
+        Request.Points   = State.SketchPoints.Points;
+        return Request;
+    }
+    Request.Sketches = SelectedSketchLabels(State.Document);
+    if (Request.Sketches.empty() && FocusedSketchCondition(State)) Request.Sketches = { State.FocusedStep };
+    return Request;
+}
+
+// The corner request the session would apply.
+[[nodiscard]] SolidArcCornerRequest ComposeCornerRequest(const SolidArcBevelSession& Bevel)
+{
+    SolidArcCornerRequest Request = Bevel.Corner;
+    Request.Size  = Bevel.Size;
+    Request.Shape = Bevel.Shape == BlendProfile::Fillet ? SketchCornerShape::Fillet : SketchCornerShape::Chamfer;
+    return Request;
+}
+
 void WriteBevelText(SolidArcBevelSession& Bevel)
 {
     std::snprintf(Bevel.SizeText.data(), Bevel.SizeText.size(), "%.4g", Bevel.Size);
@@ -583,7 +611,22 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
 {
     if (State.Document.Selection.Edges.empty())
     {
-        Announce(State, "Bevel needs selected edges (mode 2)");
+        // 2D: sketch corners (picked points in mode 1, or whole sketches).
+        SolidArcCornerRequest Corner = CornerTargets(State);
+        if (Corner.Sketches.empty())
+        {
+            Announce(State, "Bevel needs selected edges (mode 2), sketch corner points (mode 1) or a picked sketch");
+            return;
+        }
+        const double Previous = State.Bevel.Verb == SolidArcSessionVerb::Corner ? State.Bevel.Size : 0.0;
+        State.Bevel                 = {};
+        State.Bevel.ActiveCondition = true;
+        State.Bevel.Verb            = SolidArcSessionVerb::Corner;
+        State.Bevel.Shape           = Shape;
+        State.Bevel.Size            = Previous > 0.0 ? Previous : 0.1;
+        State.Bevel.Corner          = std::move(Corner);
+        WriteBevelText(State.Bevel);
+        Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " sketch corners (B): move horizontally · D fillet · C chamfer · Enter / right-click applies · Esc aborts");
         return;
     }
     const double Previous = State.Bevel.Verb == SolidArcSessionVerb::Blend ? State.Bevel.Size : 0.0;
@@ -647,12 +690,13 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     Bevel.StagedVariable = Bevel.VariableEnabled;
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
-    static const char* Verbs[] = { "Blend", "Extrude", "Profile", "Inset" };
-    FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 3)] + " · size " + TraceNumber(Bevel.Size));
+    static const char* Verbs[] = { "Blend", "Extrude", "Profile", "Inset", "Corner" };
+    FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 4)] + " · size " + TraceNumber(Bevel.Size));
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State))
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
                                          : Bevel.Verb == SolidArcSessionVerb::Inset   ? InsetSolidArcSelection(*Bevel.Preview, Bevel.Size, Bevel.Depth)
+                                         : Bevel.Verb == SolidArcSessionVerb::Corner  ? CutSolidArcSketchCorners(*Bevel.Preview, ComposeCornerRequest(Bevel))
                                                                                       : BlendSolidArcSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
     if (Outcome.AcceptedCondition)
     {
@@ -673,6 +717,13 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
     const SolidArcBlendRequest Request = ComposeBlendRequest(State.Bevel);
     State.Bevel.ActiveCondition = false;
     State.Bevel.Preview.reset();
+    if (State.Bevel.Verb == SolidArcSessionVerb::Corner)
+    {
+        const SolidArcCommandOutcome Outcome = CutSolidArcSketchCorners(State.Document, ComposeCornerRequest(State.Bevel));
+        if (Outcome.AcceptedCondition) State.SketchPoints.Points.clear();
+        Conclude(State, Outcome);
+        return;
+    }
     if (State.Bevel.Verb == SolidArcSessionVerb::Profile)
     {
         const SolidArcCommandOutcome Outcome = ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State));
@@ -7478,6 +7529,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         const bool Refused = !State.Bevel.Refusal.empty();
         const char* Caption = State.Bevel.Verb == SolidArcSessionVerb::Profile ? "Extrude sketch d" : State.Bevel.Verb == SolidArcSessionVerb::Extrude ? "Extrude d"
                             : State.Bevel.Verb == SolidArcSessionVerb::Inset ? (State.Bevel.DepthEnabled ? "Inset · H depth · d" : "Inset · D distance · d")
+                            : State.Bevel.Verb == SolidArcSessionVerb::Corner ? (State.Bevel.Shape == BlendProfile::Fillet ? "Sketch fillet r" : "Sketch chamfer d")
                             : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
         const std::string Sizes = State.Bevel.VariableEnabled && State.Bevel.Verb == SolidArcSessionVerb::Blend
                                 ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
@@ -7625,7 +7677,8 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     const bool            Profile = Bevel.Verb == SolidArcSessionVerb::Profile;
     const bool            Inset   = Bevel.Verb == SolidArcSessionVerb::Inset;
     const bool            Extrude = Bevel.Verb == SolidArcSessionVerb::Extrude || Profile || Inset;
-    BeginCard(Inset ? "Inset" : Profile ? "Extrude sketch" : Extrude ? "Extrude" : "Bevel");
+    const bool            Corner  = Bevel.Verb == SolidArcSessionVerb::Corner;
+    BeginCard(Inset ? "Inset" : Profile ? "Extrude sketch" : Extrude ? "Extrude" : Corner ? "Sketch corners" : "Bevel");
     if (Inset)
     {
         // The pointer drives one value: D the inset distance, H the depth of the inner face (+ boss, − pocket).
@@ -7694,7 +7747,7 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         ImGui::TextWrapped("Border ring %s m wide · inner face %s m along the normal (0 = flat split, − pocket)", FormatLength(Bevel.Size).c_str(), FormatLength(Bevel.Depth).c_str());
         ImGui::PopStyleColor();
     }
-    if (!Extrude)
+    if (!Extrude && !Corner)
     {
         // Variable size (V): the end size field and the anchor flip (F).
         if (ToggleButton(State, "Variable  (V)###BevelVariable", Bevel.VariableEnabled, RowSpan())) ToggleBevelVariable(State);
@@ -7730,6 +7783,17 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     {
         const auto Caption = State.Document.Captions.find(Bevel.ProfileLabel);
         ImGui::TextWrapped("Profile: %s (%s)", Caption != State.Document.Captions.end() ? Caption->second.c_str() : "-", Bevel.ProfileLabel.c_str());
+    }
+    else if (Corner)
+    {
+        std::string Owners;
+        for (const std::string& Sketch : Bevel.Corner.Sketches)
+        {
+            const auto Caption = State.Document.Captions.find(Sketch);
+            Owners += (Owners.empty() ? "" : ", ") + (Caption != State.Document.Captions.end() ? Caption->second : Sketch);
+        }
+        ImGui::TextWrapped("%s of %s · lines meeting at a corner get a %s", Bevel.Corner.Points.empty() ? "Every corner" : Compose("%d picked corner(s)", int(Bevel.Corner.Points.size())).c_str(),
+                           Owners.c_str(), Bevel.Shape == BlendProfile::Fillet ? "tangent arc" : "straight cut");
     }
     else ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
     ImGui::TextUnformatted("Units: 250mm, -25cm, 0.25m, 1in, 1ft");
@@ -7771,17 +7835,24 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", Sketches >= 2 ? "Join the picked sketches into one (in pick order); a sketch a body still reads is kept hidden"
                                                   : "Shift-click two or more coplanar sketches to join them");
+        // Plasticity fillet-curve: B rounds every corner of the picked sketches (or the picked mode-1 corner points).
+        const bool CornerCondition = !CornerTargets(State).Sketches.empty() && !State.Bevel.ActiveCondition;
+        if (PressButton(State, "Fillet  (B)###CurveFillet", RowSpan(), CornerCondition)) OpenBevelSession(State, BlendProfile::Fillet);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Round the corners where two lines meet (every corner of the picked sketches, or the corner points picked in mode 1)");
         ImGui::SameLine();
-        if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, RowSpan())) State.CombsEnabled = !State.CombsEnabled;
+        if (PressButton(State, "Chamfer###CurveChamfer", RowSpan(), CornerCondition)) OpenBevelSession(State, BlendProfile::Chamfer);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Cut the corners straight, the same distance back along both lines");
+        if (ToggleButton(State, "Combs###CurveCombs", State.CombsEnabled, ImVec2(70, 0))) State.CombsEnabled = !State.CombsEnabled;
+        ImGui::SameLine();
         // Continuity of the next loft to the panel it meets at its first / last section (V6).
         static const char* const ContinuityLabels[] = { "G0###LoftG0", "G1###LoftG1", "G2###LoftG2" };
         for (int Order = 0; Order < 3; ++Order)
         {
             if (Order) ImGui::SameLine();
             if (ToggleButton(State, ContinuityLabels[Order], State.LoftContinuity == Order, ImVec2(44, 0))) State.LoftContinuity = Order;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Continuity of the next loft to the panel it meets at its first / last section");
         }
-        ImGui::SameLine();
-        ImGui::TextDisabled("to the panel it meets");
         EndCard();
     }
     if (!Selection.Faces.empty())
@@ -8675,8 +8746,9 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
 {
     const SolidArcSelection&        Selection = State.Document.Selection;
     std::vector<InspectorOperation> Operations;
-    if (!Selection.Edges.empty())
+    if (!Selection.Edges.empty() || !CornerTargets(State).Sketches.empty())
     {
+        // Edges: solid blends; otherwise sketch corners (picked mode-1 points or picked / focused sketches).
         Operations.push_back({ "Fillet", IconSymbol::SolidArcFillet, "Fillet · B" });
         Operations.push_back({ "Chamfer", IconSymbol::SolidArcChamfer, "Chamfer" });
     }
@@ -9120,7 +9192,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     {
         if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyBevelSession(State);
         if (Pressed(ImGuiKey_Escape)) CancelBevelSession(State);
-        if (State.Bevel.Verb == SolidArcSessionVerb::Blend && !Control && !Alternate)
+        if ((State.Bevel.Verb == SolidArcSessionVerb::Blend || State.Bevel.Verb == SolidArcSessionVerb::Corner) && !Control && !Alternate)
         {
             if (Pressed(ImGuiKey_D)) State.Bevel.Shape = BlendProfile::Fillet;                // gizmo:fillet-solid:fillet
             if (Pressed(ImGuiKey_C)) State.Bevel.Shape = BlendProfile::Chamfer;               // gizmo:fillet-solid:chamfer

@@ -1600,6 +1600,36 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
     });
 }
 
+SolidArcCommandOutcome CutSolidArcSketchCorners(SolidArcDocument& Document, const SolidArcCornerRequest& Request)
+{
+    const bool        FilletCondition = Request.Shape == SketchCornerShape::Fillet;
+    std::string       Owners;
+    for (const std::string& Sketch : Request.Sketches)
+    {
+        const auto Caption = Document.Captions.find(Sketch);
+        Owners += (Owners.empty() ? "" : ", ") + (Caption != Document.Captions.end() ? Caption->second : Sketch);
+    }
+    char Amount[48];
+    std::snprintf(Amount, sizeof Amount, "%.4g", Request.Size);
+    const std::string Corners = Request.Points.empty() ? std::string("every corner") : std::to_string(Request.Points.size()) + (Request.Points.size() == 1 ? " corner" : " corners");
+    const std::string Label   = std::string(FilletCondition ? "Fillet r " : "Chamfer ") + Amount + " · " + Corners + " of " + Owners;
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Request.Sketches.empty()) return std::string("pick a sketch, or corner points of one (mode 1), to ") + (FilletCondition ? "fillet" : "chamfer");
+        if (!Request.Points.empty() && Request.Sketches.size() != 1) return "corner points belong to one sketch";
+        for (const std::string& Sketch : Request.Sketches)
+        {
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketch; });
+            if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Sketch;
+            const SketchCornerOutcome Cut = CutSketchCorners(SolvedSketch(Document, *Found), Request.Points, Request.Size, Request.Shape);
+            const auto Caption = Document.Captions.find(Sketch);
+            if (!Cut.Refusal.empty()) return (Caption != Document.Captions.end() ? Caption->second : Sketch) + ": " + Cut.Refusal;
+            Found->Sketch = Cut.Sketch;
+        }
+        return {};
+    });
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    EDITING (G / R / S · SHIFT+D · CTRL+V · H · J · O · P)
 //------------------------------------------------------------------------------------------------------------------------

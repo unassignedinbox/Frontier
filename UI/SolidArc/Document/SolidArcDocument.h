@@ -15,6 +15,7 @@
 #include "Engine/GeometryProcessing/Feature/FeatureTree.h"
 #include "Engine/GeometryProcessing/Local/FaceOperations.h"
 #include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
+#include "Engine/GeometryProcessing/Sketch/SketchCorner.h"
 #include "Engine/GeometryProcessing/Sketch/SketchEditing.h"
 #include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
 #include "Engine/GeometryProcessing/Topology/ModelPartition.h"
@@ -121,6 +122,16 @@ struct SolidArcCutRequest
     std::string       Target    = {};                                                        // [-] - Body key (empty = active body)
     std::string       Cutter    = {};                                                        // [-] - Sketch step or SpaceCurve label
     GeometryProcessing::Vector3 Direction = { 0.0, 0.0, -1.0 };                                        // [-] - SpaceCurve cutters: projection direction
+};
+
+// 📝 Plasticity fillet-curve on sketch corners: the picked corner points of one sketch (mode 1), or every corner of each
+//    listed sketch when Points is empty.
+struct SolidArcCornerRequest
+{
+    std::vector<std::string>              Sketches = {};                                     // [-]   - Sketch step labels
+    std::vector<int>                      Points   = {};                                     // [-]   - Corner points (one sketch only; empty: all)
+    double                                Size     = 0.25;                                   // [len] - Fillet radius / chamfer setback
+    GeometryProcessing::SketchCornerShape Shape    = GeometryProcessing::SketchCornerShape::Fillet; // [-] - Fillet or chamfer
 };
 
 // 📝 Pick is in the sketch's plane coordinates (the pointer met that plane).
@@ -332,6 +343,12 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const SolidArcTrimRequest& Request);
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
 [[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const SolidArcTrimRequest& Request);
+
+// 💡 Fillet / chamfer of 2D sketch corners (GeometryProcessing::CutSketchCorners): two lines meeting at a corner get a
+//    tangent arc of radius Size, or a cut line Size back along both. The sketch changes in place, so an extrude or loft
+//    made from it follows (parametric); one undo entry for all the sketches. Refused (document untouched) when a corner
+//    cannot take the size, or when a step that reads the sketch refuses the rounded profile.
+[[nodiscard]] SolidArcCommandOutcome CutSolidArcSketchCorners(SolidArcDocument& Document, const SolidArcCornerRequest& Request);
 
 // Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
 [[nodiscard]] SolidArcCommandOutcome RemoveSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys);
