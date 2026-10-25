@@ -217,6 +217,7 @@ struct RegenerationOutcome
     std::vector<RegeneratedJoint>      Joints       = {};                                    // [-]  - Joints whose bodies still exist, in tree order
     int                                Refused      = 0;                                     // [-]  - Steps refused
     int                                Resumed      = 0;                                     // [-]  - First step replayed (earlier ones restored from a checkpoint)
+    std::vector<std::pair<BodyToken, double>> Volumes = {};                                  // [len³] - Volumes a step already integrated (a moved body's image), by body token
     double                             Milliseconds = 0.0;                                   // [ms] - Whole replay
 };
 

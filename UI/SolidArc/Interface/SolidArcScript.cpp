@@ -715,6 +715,13 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         const GeometryProcessing::Vector3 Normal = Newest->Plane.ZAxis;
         return Numeric(Field.back() == 'x' ? Normal.X : Field.back() == 'y' ? Normal.Y : Normal.Z);
     }
+    if (Field == "plane-offset")
+    {
+        // Signed distance of the newest sketch plane from the world origin along its normal (n̂ · origin, elevation included).
+        const auto Newest = std::find_if(Document.Tree.Steps.rbegin(), Document.Tree.Steps.rend(), [](const GeometryProcessing::FeatureStep& Step) { return Step.Kind == GeometryProcessing::FeatureStepKind::Sketch; });
+        if (Newest == Document.Tree.Steps.rend()) return Numeric(0.0);
+        return Numeric(GeometryProcessing::Dot(Newest->Plane.Origin, Newest->Plane.ZAxis) + GeometryProcessing::EvaluateFeatureValue(Document.Tree, Newest->Elevation));
+    }
     if (Field.rfind("scene-high-", 0) == 0 || Field.rfind("scene-low-", 0) == 0)
     {
         // World bounds of the displayed bodies (scene-high-x … scene-low-z).

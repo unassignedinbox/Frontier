@@ -996,6 +996,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (!Moved.Refusal.empty()) { Refuse(Moved.Refusal); break; }
             Naming  = CarryNaming(Partition, Moved, Naming, {});
             Current = Moved.Body;
+            if (std::isfinite(Moved.Volume)) Outcome.Volumes.emplace_back(Moved.Body, Moved.Volume);   // The image was integrated by its assembly
             if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would undo the move
             Store();
             // Bodies jointed to it follow a rigid move (an assembly moves as one); a scale leaves them where they are.
@@ -1122,6 +1123,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             const TransformOutcome Moved = TransformBody(Partition, Current, Placement.Map);
             if (!Moved.Refusal.empty()) { Refuse("Joint: " + Moved.Refusal); break; }
             Naming  = CarryNaming(Partition, Moved, Naming, {});
+            if (std::isfinite(Moved.Volume)) Outcome.Volumes.emplace_back(Moved.Body, Moved.Volume);   // The image was integrated by its assembly
             Current = Moved.Body;
             if (Target == PanelBody) ClosedBy = Step.Label;                                  // Re-sewing the panels would undo the move
             Store();

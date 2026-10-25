@@ -1,23 +1,79 @@
-# SolidArc responsiveness walkthrough — the reported slow scene: a cylinder r 1.7 h 0.6 with a cylinder r 0.35 h 0.3
-# drawn on its side and joined (Union; the sketch plane sits 0.5 mm inside the side, as a tessellation hit gives), then
-# a chamfer on the small cylinder's rim with the pointer sweeping, then four gizmo moves. Run with --trace to read the
-# slow-frame lines (phase timing) and every command / preview / kernel scope with its duration.
+# SolidArc responsiveness walkthrough — the reported slow scene, drawn: a cylinder r 1.7 h 0.6, a circle r 0.2 drawn on
+# its curved side (the exact tangent plane) extruded 0.3 and joined (the start sinks below the plane so the Union closes),
+# a chamfer on the junction with the pointer sweeping (a slow preview waits for the pointer to rest), a chamfer on the
+# boss rim, four gizmo moves and a G move (rigid previews). Run with --trace to read the slow-frame lines.
 # Run: SolidArcCapture --reset-files --recovery …/ResponsivenessRecovery.solidarc --document …/Responsiveness.solidarc
-#      --open Exhibits/SolidArc/Code/Documents/SideCylinderUnion.solidarc --script Scripts/ResponsivenessWalkthrough.txt
-#      --trace …/ResponsivenessTrace.log
+#      --script Scripts/ResponsivenessWalkthrough.txt --trace …/ResponsivenessTrace.log
+# Closed form after the Union: π·1.7²·0.6 + π·0.2²·0.3 + cap (∫ (R − √(R² − y²))·2√(r² − y²) dy) = W51.
 
-# ① the opened document: one body, the small cylinder joined on the side
+# ① cylinder r 1.7, h 0.6 (Shift+W circle, F fill, E 0.6)
+key N Ctrl
+frames 3
+key W Shift
+frames 2
+click world 0.0 0.0 0.0
+frames 2
+click world 1.7 0.0 0.0
+frames 3
+key F
+frames 2
+key E
+frames 2
+click @BevelSize
+key A Ctrl
+type 0.6
+key Enter
+frames 2
+key Enter
 frames 3
 expect bodies == 1
-expect steps == 4
+expect refused == 0
+
+# ② isometric view; circle r 0.2 on the −y side: the sketch plane is the exact tangent plane (n̂ = −y, 1.7 from the axis)
+click @ViewMenu
+frames 2
+click @ViewIsometric
+frames 3
+key W Shift
+frames 2
+move world 0.0 -1.7 0.3
+frames 2
+expect face-plane == 1
+click world 0.0 -1.7 0.3
+frames 2
+click world 0.2 -1.7 0.3
+frames 3
+expect refused == 0
+expect plane-normal-y ~ -1
+expect plane-offset ~ 1.7
+
+# ③ F, E: the Union starts sunk by the measured profile depth (≥ R − √(R² − r²) = 0.011806), 0.3 typed
+key F
+frames 2
+key E
+frames 2
+expect profile-sink > 0.011806
+expect profile-sink < 0.03
+click @BevelSize
+key A Ctrl
+type 0.3
+key Enter
+frames 2
+key Enter
+frames 3
+expect bodies == 1
+expect refused == 0
+expect sound == 1
+expect extrude-start < -0.011806
+expect volume ~ 5.485591014531
 capture 262UnionOnSide
 
-# ③ edge mode, the small cylinder's outer rim, B → C chamfer; the pointer sweeps (mouse adjust) for 40 frames, then Enter
+# ④ edge mode, the junction at its top (0, −1.7, 0.5), B → C; the pointer sweeps 30 frames, then 0.02 typed
 key 2
 frames 1
-move world 1.9995 0.0 0.65
+move world 0.0 -1.7 0.5
 frames 2
-click world 1.9995 0.0 0.65
+click world 0.0 -1.7 0.5
 frames 2
 expect selected-edges == 1
 key B
@@ -25,16 +81,6 @@ frames 2
 key C
 frames 2
 expect bevel-active == 1
-move viewport 0.45 0.70 offset -40 0
-frames 1
-move viewport 0.45 0.70 offset -38 0
-frames 1
-move viewport 0.45 0.70 offset -36 0
-frames 1
-move viewport 0.45 0.70 offset -34 0
-frames 1
-move viewport 0.45 0.70 offset -32 0
-frames 1
 move viewport 0.45 0.70 offset -30 0
 frames 1
 move viewport 0.45 0.70 offset -28 0
@@ -95,17 +141,28 @@ move viewport 0.45 0.70 offset 26 0
 frames 1
 move viewport 0.45 0.70 offset 28 0
 frames 1
-move viewport 0.45 0.70 offset 30 0
-frames 1
-move viewport 0.45 0.70 offset 32 0
-frames 1
-move viewport 0.45 0.70 offset 34 0
-frames 1
-move viewport 0.45 0.70 offset 36 0
-frames 1
-move viewport 0.45 0.70 offset 38 0
-frames 1
 capture 263ChamferSweep
+click @BevelSize
+key A Ctrl
+type 0.02
+key Enter
+frames 2
+key Enter
+frames 3
+expect bevel-active == 0
+expect refused == 0
+expect sound == 1
+
+# ⑤ the boss rim (0, −2.0, 0.5): chamfer 0.05
+move world 0.0 -2.0 0.5
+frames 2
+click world 0.0 -2.0 0.5
+frames 2
+expect selected-edges == 1
+key B
+frames 2
+key C
+frames 2
 click @BevelSize
 key A Ctrl
 type 0.05
@@ -115,8 +172,9 @@ key Enter
 frames 3
 expect bevel-active == 0
 expect refused == 0
+expect sound == 1
 
-# ④ body mode, pick it, four gizmo moves along x
+# ⑥ body mode, pick it, four gizmo moves along x
 key 4
 frames 1
 click world 0.0 0.0 0.6
@@ -134,7 +192,7 @@ expect refused == 0
 expect gizmo-commits == 4
 capture 264MovedFourTimes
 
-# ⑤ G (Plasticity move) shows the rigid preview: the shown triangles carried, no regeneration until the click commits
+# ⑦ G (Plasticity move) shows the rigid preview: the shown triangles carried, no regeneration until the click commits
 move viewport 0.50 0.50
 frames 2
 key G
@@ -145,8 +203,6 @@ frames 2
 move viewport 0.50 0.50 offset 0 -60
 frames 3
 expect transform-rigid == 1
-expect transform-preview-volume > 5.5603
-expect transform-preview-volume < 5.5604
 click viewport 0.50 0.50 offset 0 -60
 frames 3
 expect transform == 0

@@ -13,6 +13,7 @@
 #include "Engine/GeometryProcessing/Topology/ModelPartition.h"
 
 #include <string>
+#include <limits>
 #include <vector>
 
 namespace Frontier::GeometryProcessing
@@ -37,6 +38,7 @@ struct TransformOutcome
     std::string            Refusal     = {};                                                 // [-] - "Transform: …" when refused
     std::vector<FaceToken> SourceFaces = {};                                                 // [-] - Source faces, in copy order
     std::vector<FaceToken> Faces       = {};                                                 // [-] - Their images (same order: names carry over)
+    double                 Volume      = std::numeric_limits<double>::quiet_NaN();           // [len³] - Image volume: Σ of the assembly's signed shell volumes (NaN for a sheet)
 };
 
 // 📝 ApproximateBodyAsNurbs: the copy plus the certified worst deviations of the approximated carriers.

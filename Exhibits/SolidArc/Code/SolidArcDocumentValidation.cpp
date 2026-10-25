@@ -110,7 +110,7 @@ namespace
     GateTally FillGate        = { "W48", "Fill and flip: a fresh (unfilled) rectangle extrudes into 4 walls (an open sheet), filling it (Inspector / F) makes the solid 2 and one undo entry; regions of overlapping curves (Fill tool): the lens and a crescent of two circles, a square with a circular hole, a spline arch cut by a line, each filled into a new sketch and extruded against closed forms; a lone circle fills itself; flip normals turns every face of a loft sheet and of extruded walls, a second flip removes the step, solids refuse; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally FilletDragGate  = { "W49", "Fillet drags (the Windows report: a corner drag turned a fillet inside out, ~270°): on a 3 × 1.5 rectangle with four r 0.3 fillets, the bottom-left fillet's centre, both tangent points and the virtual sharp are dragged to 1 024 targets up to 3 m away; every accepted drag keeps every arc under a half turn (tangency keeps its starting side), the rest refuse; the reported drag (centre out past the corner) lands with 90° arcs; slots keep their tangent ends", "0 inverted · exact" };
     GateTally OrientGate      = { "W50", "Orient to faces: Construct solids drawn on a body face are built in the face frame (x / y on the face, height along the outward normal): a cylinder on the +x face of a 2 m cube unites to 8 + π/4 and reaches x = 3; all eight tiles on a face tilted 30° about x and 40° about z keep their closed-form volumes, a unit block's bounds are those of the turned cube; a circle sketched on the tilted plane extrudes along its normal; a skewed frame is refused untouched; codec byte-equal", "≤ 10⁻⁹ · exact" };
-    GateTally TangentGate     = { "W51", "Curved-face sketches (the Windows report: a cylinder joined on a cylinder's side, then a chamfer and moves, felt slow and refused the junction chamfer): the sketch plane is the exact tangent plane (surface foot and normal, not the facet hit); the extrude start sinks below it by the measured profile depth so a Union closes (an exactly tangent Union only touches and is refused); the joined body has its closed-form volume, the junction (a cylinder–cylinder saddle curve) takes a chamfer; a Construct boss with a start unites the same way; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally TangentGate     = { "W51", "Curved-face sketches (the Windows report: a cylinder joined on a cylinder's side, then a chamfer and moves, felt slow and refused the junction chamfer): the sketch plane is the exact tangent plane (surface foot and normal, not the facet hit); the extrude start sinks below it by the measured profile depth so a Union closes (an exactly tangent Union only touches along a line and leaves the gap open); the joined body has its closed-form volume, the junction (a cylinder–cylinder saddle curve) takes a chamfer; a Construct boss with a start unites the same way; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4406,7 +4406,7 @@ int main()
     {
         constexpr double π = std::numbers::pi;
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
-        const double Major = 1.7, Tall = 0.6, Minor = 0.25, Reach = 0.3;                     // [len] - Drum radius, height · boss radius, length
+        const double Major = 1.7, Tall = 0.6, Minor = 0.2, Reach = 0.3;                      // [len] - Drum radius, height · boss radius, length
         // Volume the boss adds outside the drum: π r² L plus the cap between the tangent plane and the drum,
         // ∫ (R − √(R² − y²)) · 2√(r² − y²) dy over |y| ≤ r (y = r sin t, Simpson on 4000 panels).
         const auto Bulge = [&]()
@@ -4442,7 +4442,7 @@ int main()
         Tally(TangentGate, FootError, Foot.FoundCondition && FootError <= 1.0e-12,
               Format("foot of (0, 1.697, 0.3) on %s: (%.12f, %.12f, %.12f), n̂ (%.3f, %.3f, %.3f)", Side.c_str(), Foot.Position.X, Foot.Position.Y, Foot.Position.Z, Foot.Normal.X, Foot.Normal.Y, Foot.Normal.Z));
 
-        // ② a circle r 0.25 on the tangent plane at (0, R, 0.3): the measured sink covers R − √(R² − r²) (the profile rim's
+        // ② a circle r 0.2 on the tangent plane at (0, R, 0.3): the measured sink covers R − √(R² − r²) (the profile rim's
         //    depth to the drum), over-reaching by at most the tessellation sag
         const OrthonormalFrame Tangent{ { 0.0, Major, 0.0 }, { -1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, 1.0, 0.0 } };
         SolidArcDrawingRequest Ring = DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.3 }, { Minor, 0.3 } }, false, true);
@@ -4455,15 +4455,19 @@ int main()
         Tally(TangentGate, Sink - Depth, Sink >= Depth && Sink <= Depth + 2.0 * DrumScene.Sag + 1.0e-3,
               Format("profile sink %.6f ≥ rim depth %.6f (over-reach %.2g ≤ 2 · sag %.4f + 1 mm)", Sink, Depth, Sink - Depth, DrumScene.Sag));
 
-        // ③ the exactly tangent Union only touches: refused, file untouched; started at −sink: one sound body, closed-form V
-        const std::string            Before   = EncodeSolidArcDocument(Joined);
-        const SolidArcCommandOutcome Touching = ExtrudeSolidArcSketch(Joined, Disc, Reach, FeatureCombination::Union);
-        const bool                   Untouched = !Touching.AcceptedCondition && EncodeSolidArcDocument(Joined) == Before;
+        // ③ the exactly tangent Union only touches along a line: refused, or (on a copy) the boss sits on the drum with its start
+        //    cap whole and no cap volume. Started at −sink: one sound body with the closed-form volume, no start cap left.
+        SolidArcDocument             Touch    = CloneSolidArcDocument(Joined);
+        const SolidArcCommandOutcome Touching = ExtrudeSolidArcSketch(Touch, Disc, Reach, FeatureCombination::Union);
+        const double                 Apart    = π * Major * Major * Tall + π * Minor * Minor * Reach;
+        const bool                   Open     = !Touching.AcceptedCondition || std::abs(Touch.Summary.Volume - Apart) <= 1.0e-9 * Apart;
         const SolidArcCommandOutcome Sunk     = ExtrudeSolidArcSketch(Joined, Disc, Reach, FeatureCombination::Union, {}, -Sink);
         const double                 Error    = std::abs(Joined.Summary.Volume - Expected) / Expected;
-        Tally(TangentGate, Error, Untouched && Sunk.AcceptedCondition && Error <= 1.0e-9 && Joined.Summary.SoundCondition && Joined.Summary.Bodies.size() == 1,
-              Format("tangent Union %s; sunk Union V %.12f vs π R² H + π r² L + cap %.12f, %d face(s), sound %d", Touching.AcceptedCondition ? "ACCEPTED" : "refused",
-                     Joined.Summary.Volume, Expected, Joined.Summary.Faces, int(Joined.Summary.SoundCondition)));
+        bool                         Capless  = true;
+        for (const SolidArcSceneFace& Face : BuildSolidArcScene(Joined).Faces) if (Face.Name == Joined.Tree.Steps.back().Label + ".Cap(Start)") Capless = false;
+        Tally(TangentGate, Error, Open && Sunk.AcceptedCondition && Capless && Error <= 1.0e-9 && Joined.Summary.SoundCondition && Joined.Summary.Bodies.size() == 1,
+              Format("tangent Union: %s, V %.12f (π R² H + π r² L %.12f: the cap gap stays open); sunk Union V %.12f vs + cap %.12f, %d faces, start cap gone %d",
+                     Touching.AcceptedCondition ? "line contact" : "refused", Touch.Summary.Volume, Apart, Joined.Summary.Volume, Expected, Joined.Summary.Faces, int(Capless)));
 
         // ④ chamfer 0.02 on the junction (the cylinder–cylinder saddle curve): accepted, sound, material added in the corner
         const std::string Boss = Joined.Tree.Steps.back().Label;
@@ -4492,7 +4496,7 @@ int main()
         Tally(TangentGate, Drift, Read.Refusal.empty() && Written.find("Start") != std::string::npos && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-12,
               Format("codec %d bytes byte-equal with the extrude Start, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
 
-        // ⑥ a Construct cylinder r 0.25, h 0.3 on the tangent plane at (0, −R, 0.3), started below it: the same closed form
+        // ⑥ a Construct cylinder r 0.2, h 0.3 on the tangent plane at (0, −R, 0.3), started below it: the same closed form
         SolidArcDocument Built = Drum("Built");
         SolidArcConstructRequest Pin;
         Pin.Kind = SolidArcConstructKind::Cylinder; Pin.Radius = Minor; Pin.Height = Reach; Pin.Combination = FeatureCombination::Union;

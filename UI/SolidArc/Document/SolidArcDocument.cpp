@@ -644,7 +644,9 @@ void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureConditio
             Figures.Edges          = static_cast<int>(Inventory.Edges.size());
             Figures.Vertices       = static_cast<int>(Inventory.Vertices.size());
             Figures.Genus          = Audit.Genus;
-            Figures.Volume         = Figures.SheetCondition ? 0.0 : IntegrateBodyVolume(*Document.Partition, Body);
+            // A moved body's volume was integrated by the move's own assembly (same shells, same integral): reused.
+            const auto Known       = std::find_if(Document.Regeneration.Volumes.begin(), Document.Regeneration.Volumes.end(), [&](const auto& Entry) { return Entry.first == Body; });
+            Figures.Volume         = Figures.SheetCondition ? 0.0 : Known != Document.Regeneration.Volumes.end() ? Known->second : IntegrateBodyVolume(*Document.Partition, Body);
             Summary.PresentCondition = true;
             Summary.SoundCondition   = Summary.SoundCondition && Figures.SoundCondition;
             Summary.SheetCondition   = Summary.SheetCondition || Figures.SheetCondition;
