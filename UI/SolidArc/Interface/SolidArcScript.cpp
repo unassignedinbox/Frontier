@@ -693,6 +693,22 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "snap-z") return Numeric(State.Picker.Current.Position.Z);
     if (Field == "snap-lock") { Text = State.Picker.Lock == SolidArcSnapLockKind::None ? std::string("none") : std::string(SolidArcSnapLockLabel(State.Picker.Lock)); Number = double(int(State.Picker.Lock)); return true; }
     if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
+    if (Field == "plane-normal-x" || Field == "plane-normal-y" || Field == "plane-normal-z")
+    {
+        // Plane normal of the newest sketch step (a drawn sketch, or the section of a Construct solid); 0 without one.
+        const auto Newest = std::find_if(Document.Tree.Steps.rbegin(), Document.Tree.Steps.rend(), [](const GeometryProcessing::FeatureStep& Step) { return Step.Kind == GeometryProcessing::FeatureStepKind::Sketch; });
+        if (Newest == Document.Tree.Steps.rend()) return Numeric(0.0);
+        const GeometryProcessing::Vector3 Normal = Newest->Plane.ZAxis;
+        return Numeric(Field.back() == 'x' ? Normal.X : Field.back() == 'y' ? Normal.Y : Normal.Z);
+    }
+    if (Field == "face-orient") return Numeric(State.Picker.FaceOrientEnabled ? 1 : 0);
+    if (Field == "drawing-on-face") return Numeric(State.Drawing.ActiveCondition && State.Drawing.FacePlaneCondition ? 1 : 0);
+    if (Field == "drawing-normal-x" || Field == "drawing-normal-y" || Field == "drawing-normal-z")
+    {
+        // Normal of the open drawing's plane (the face it is oriented to, else the grid plane's).
+        const GeometryProcessing::Vector3 Normal = State.Drawing.FacePlaneCondition ? State.Drawing.FacePlane.ZAxis : SolidArcSketchPlane(State.Drawing.GridPlane).ZAxis;
+        return Numeric(Field.back() == 'x' ? Normal.X : Field.back() == 'y' ? Normal.Y : Normal.Z);
+    }
     if (Field == "pole-snap-gap") return Numeric(State.PoleDrag.ActiveCondition && State.Picker.Current.Kind != SolidArcSnapKind::None ? GeometryProcessing::Distance(State.PoleDrag.Position, State.Picker.Current.Position) : std::nan(""));
     if (Field == "pole-drag-x") return Numeric(State.PoleDrag.Position.X);
     if (Field == "pole-drag-y") return Numeric(State.PoleDrag.Position.Y);

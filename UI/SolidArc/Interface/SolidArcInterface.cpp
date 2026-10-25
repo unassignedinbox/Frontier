@@ -812,7 +812,7 @@ OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State);
 
 [[nodiscard]] OrthonormalFrame DrawingPlane(const SolidArcDrawingSession& Drawing)
 {
-    if (!Drawing.SolidCondition && Drawing.FacePlaneCondition) return Drawing.FacePlane;   // Sketch on a body face
+    if (Drawing.FacePlaneCondition) return Drawing.FacePlane;                              // Sketch / solid on a body face
     OrthonormalFrame Plane = SolidArcSketchPlane(Drawing.GridPlane);
     Plane.Origin = Plane.Origin + Plane.ZAxis * Drawing.Elevation;
     return Plane;
@@ -1227,6 +1227,8 @@ std::string ComposeSolidRequest(const SolidArcDrawingSession& Drawing, bool Poin
     Request      = {};
     Request.Kind = Drawing.Solid;
     Request.Sides = std::clamp(Drawing.Sides, 3, 64);
+    Request.PlaneCondition = Drawing.FacePlaneCondition;                                     // On a body face: face-frame coordinates
+    if (Drawing.FacePlaneCondition) Request.Plane = Drawing.FacePlane;
     if (Points.size() < 2) return std::string(SolidArcConstructLabel(Drawing.Solid)) + ": " + SolidPrompt(Drawing);
     const bool   Lifted = Points.size() >= Needed && Drawing.Points.size() >= Needed;
     const double Lift   = Lifted ? Drawing.Lift : 0.0;
@@ -1373,29 +1375,72 @@ void PlaceSolidLift(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Drawing.Lift = Lift;
 }
 
-// 📝 Sketch on a face (Plasticity): the planar body face under the pointer offers its plane — outward normal n̂, x̂ along
-//    world x on level faces (else the horizontal n̂-perpendicular), ŷ = n̂ × x̂, origin at the foot of the world origin —
-//    so the 0.1 grid on the face lines up with the world grid. Resolved once per face and document revision.
+// Outward normal of a curved scene face at a ray hit: the facet holding the hit (smallest barycentric miss), its three
+// exact corner normals blended barycentrically. Empty when the face has no facets.
+[[nodiscard]] std::optional<Vector3> SceneNormalAt(const SolidArcScene& Scene, uint32_t Face, Vector3 Hit)
+{
+    const SolidArcSceneFace& Entry = Scene.Faces[Face];
+    double  Best = std::numeric_limits<double>::infinity();
+    Vector3 Normal{};
+    for (uint32_t Corner = Entry.FirstCorner; Corner + 2 < Entry.FirstCorner + Entry.CornerCount; Corner += 3)
+    {
+        const auto At = [&](uint32_t Index) { const float* P = Scene.Corners[Index].Position; return Vector3{ P[0], P[1], P[2] }; };
+        const auto Up = [&](uint32_t Index) { const float* N = Scene.Corners[Index].Normal; return Vector3{ N[0], N[1], N[2] }; };
+        const Vector3 A = At(Corner), B = At(Corner + 1), C = At(Corner + 2);
+        const Vector3 Facet = Cross(B - A, C - A);
+        const double  Twice = Dot(Facet, Facet);
+        if (!(Twice > 0.0)) continue;
+        const double Alpha = Dot(Cross(C - B, Hit - B), Facet) / Twice;                      // Barycentric weights of A, B, C
+        const double Beta  = Dot(Cross(A - C, Hit - C), Facet) / Twice;
+        const double Gamma = 1.0 - Alpha - Beta;
+        const double Miss  = std::max({ 0.0, -Alpha, -Beta, -Gamma }) + std::abs(Dot(Hit - A, Facet)) / std::sqrt(Twice);
+        if (Miss >= Best) continue;
+        Best   = Miss;
+        Normal = Up(Corner) * std::clamp(Alpha, 0.0, 1.0) + Up(Corner + 1) * std::clamp(Beta, 0.0, 1.0) + Up(Corner + 2) * std::clamp(Gamma, 0.0, 1.0);
+    }
+    if (!(Length(Normal) > 0.0)) return std::nullopt;
+    return Normalize(Normal);
+}
+
+// 📝 Sketch on a face (Plasticity): the body face under the pointer offers its plane — outward normal n̂, x̂ along world x
+//    on level faces (else the horizontal n̂-perpendicular), ŷ = n̂ × x̂, origin at the foot of the world origin — so the
+//    0.1 grid on the face lines up with the world grid. A planar face gives its exact plane (resolved once per face and
+//    document revision); a curved face gives the tangent plane at the point under the pointer (Orient to faces).
 bool ResolveHoveredFacePlane(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, std::string& Name, OrthonormalFrame& Plane)
 {
     const OrbitRay                    Ray  = CastOrbitRay(Frame, Local.x, Local.y);
     const std::optional<SolidArcPick> Pick = PickSolidArcScene(State.Scene, Ray, 0.0, false, ActiveSectionClip(State));
     if (!Pick || Pick->Identity == 0 || Pick->Identity == IdentitySectionCap || (Pick->Identity & IdentityEdgeBit)) return false;
     const uint32_t Index = Pick->Identity - 1u;
-    if (Index >= State.Scene.Faces.size() || State.Scene.Faces[Index].Surface != "Plane") return false;
+    if (Index >= State.Scene.Faces.size()) return false;
     SolidArcDrawingSession& Drawing = State.Drawing;
+    const bool Flat = State.Scene.Faces[Index].Surface == "Plane";
+    if (!Flat && !State.Picker.FaceOrientEnabled) return false;
     Name = State.Scene.Faces[Index].Name;
-    if (Name == Drawing.FaceName && Drawing.FaceRevision == State.Document.Revision) { Plane = Drawing.FacePlane; return true; }
-    const SolidArcJointOrigin Origin = ResolveSolidArcJointOrigin(State.Document, SolidArcSelectionKind::Face, Name);
-    if (!Origin.Refusal.empty() || !(Length(Origin.Frame.ZAxis) > 0.0)) return false;
-    Vector3 Normal = Normalize(Origin.Frame.ZAxis);
-    Vector3 XAxis  = { 1.0, 0.0, 0.0 };
+    if (Flat && Name == Drawing.FaceName && Drawing.FaceRevision == State.Document.Revision) { Plane = Drawing.FacePlane; return true; }
+    Vector3 Normal, Anchor;
+    if (Flat)
+    {
+        const SolidArcJointOrigin Origin = ResolveSolidArcJointOrigin(State.Document, SolidArcSelectionKind::Face, Name);
+        if (!Origin.Refusal.empty() || !(Length(Origin.Frame.ZAxis) > 0.0)) return false;
+        Normal = Normalize(Origin.Frame.ZAxis);
+        Anchor = Origin.Frame.Origin;
+    }
+    else
+    {
+        Anchor = Vector3{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] } + Vector3{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] } * Pick->Distance;
+        const std::optional<Vector3> Tangent = SceneNormalAt(State.Scene, Index, Anchor);
+        if (!Tangent) return false;
+        Normal = *Tangent;
+    }
+    Vector3 XAxis = { 1.0, 0.0, 0.0 };
     if (std::abs(Normal.Z) > 1.0 - 1.0e-12) Normal = { 0.0, 0.0, Normal.Z > 0.0 ? 1.0 : -1.0 };   // Level face
     else XAxis = Normalize(Cross(Vector3{ 0.0, 0.0, 1.0 }, Normal));
-    Plane = { Normal * Dot(Origin.Frame.Origin, Normal), XAxis, Cross(Normal, XAxis), Normal };
-    Drawing.FaceName     = Name;
+    Plane = { Normal * Dot(Anchor, Normal), XAxis, Cross(Normal, XAxis), Normal };
+    Drawing.FaceName     = Flat ? Name : std::string();                                      // A tangent plane is never reused
     Drawing.FacePlane    = Plane;
     Drawing.FaceRevision = State.Document.Revision;
+    if (!Flat) Name = State.Scene.Faces[Index].Name;
     return true;
 }
 
@@ -1407,10 +1452,11 @@ void FollowFacePlane(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     if (Drawing.SolidCondition || !Drawing.Points.empty() || State.Picker.Lock != SolidArcSnapLockKind::None) return;
     std::string      Name;
     OrthonormalFrame Plane;
-    if (ResolveHoveredFacePlane(State, Frame, Local, Name, Plane))
+    if (State.Picker.FaceOrientEnabled && ResolveHoveredFacePlane(State, Frame, Local, Name, Plane))
     {
         Drawing.FacePlaneCondition = true;
         Drawing.FacePlane          = Plane;
+        Drawing.FaceName           = Name;
         return;
     }
     const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
@@ -1434,7 +1480,8 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
     const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
-    State.Picker.Current = {};
+    State.Picker.Current       = {};
+    Drawing.FacePlaneCondition = false;
     if (PointSnapCondition(Object.Kind))
     {
         State.Picker.Current     = Object;
@@ -1444,9 +1491,26 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     }
     std::string      Name;
     OrthonormalFrame Plane;
-    if (!ResolveHoveredFacePlane(State, Frame, Local, Name, Plane) || Plane.ZAxis.Z < 0.999) return false;   // Only an upward flat face is a floor
+    if (!ResolveHoveredFacePlane(State, Frame, Local, Name, Plane)) return false;
+    const bool Floor = Plane.ZAxis.Z > 0.999;                                                // An upward flat face: the floor rises there
+    if (!Floor && !State.Picker.FaceOrientEnabled) return false;
     Vector2 Flat;
     if (!IntersectSketchPlane(Frame, Local, Plane, Flat)) return false;
+    if (!Floor)
+    {
+        // 📝 Any other face (upright, tilted, curved: its tangent plane) carries the solid: its clicks are face coordinates,
+        //    the height runs along the outward normal and the tile is built in that frame (Orient to faces).
+        Point = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
+        Drawing.FacePlaneCondition    = true;
+        Drawing.FacePlane             = Plane;
+        Drawing.FaceName              = Name;
+        State.Picker.Current.Kind     = SolidArcSnapKind::Face;
+        State.Picker.Current.Position = PlacePlanePoint(Plane, Point);
+        State.Picker.Current.Normal   = Plane.ZAxis;
+        State.Picker.Current.Source   = "Face " + Name;
+        Drawing.PointerElevation      = 0.0;
+        return true;
+    }
     Point = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
     State.Picker.Current.Kind     = SolidArcSnapKind::Face;
     State.Picker.Current.Position = { Point.X, Point.Y, Plane.Origin.Z };
@@ -1632,7 +1696,12 @@ void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
     SolidArcConstructRequest Request;
     const std::string Refusal = ComposeSolidRequest(Drawing, true, Request);
     const bool Lifted = Drawing.Points.size() >= SolidPlaneClicks(Drawing.Solid);
-    auto Pixel = [&](Vector3 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, Point, Out); };
+    // Request coordinates are world ones on the floor; on a body face they are face-frame ones, carried into the world.
+    const auto World = [&](Vector3 Point) { return Request.PlaneCondition ? PlacePlanePoint(Request.Plane, { Point.X, Point.Y }) + Request.Plane.ZAxis * Point.Z : Point; };
+    auto Pixel    = [&](Vector3 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, World(Point), Out); };
+    auto RawPixel = [&](Vector3 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, Point, Out); };   // Already a world point
+    const auto DrawDimensionLine = [&](const SolidArcWorkspaceState& Workspace, const OrbitCameraFrame& Camera, ImDrawList* List, Vector3 From, Vector3 To, const std::string& Text,
+                                       ImVec2 Offset = ImVec2(0.0f, 0.0f)) { ::Frontier::SolidArc::DrawDimensionLine(Workspace, Camera, List, World(From), World(To), Text, Offset); };
     auto Stroke = [&](const std::vector<Vector3>& Chain, bool Closed, ImU32 Ink, float Width)
     {
         std::vector<ImVec2> Pixels;
@@ -1727,8 +1796,8 @@ void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
             {
                 // Diameter outside the base ring (on the far side from the radius line), so the pills never overlap.
                 const double Out = Request.Radius * 1.25 + 0.05;
-                DrawConstructionLine(State, Frame, Canvas, { Spot.X - Request.Radius, Spot.Y, Spot.Z }, { Spot.X - Request.Radius, Spot.Y - Out, Spot.Z });
-                DrawConstructionLine(State, Frame, Canvas, { Spot.X + Request.Radius, Spot.Y, Spot.Z }, { Spot.X + Request.Radius, Spot.Y - Out, Spot.Z });
+                DrawConstructionLine(State, Frame, Canvas, World({ Spot.X - Request.Radius, Spot.Y, Spot.Z }), World({ Spot.X - Request.Radius, Spot.Y - Out, Spot.Z }));
+                DrawConstructionLine(State, Frame, Canvas, World({ Spot.X + Request.Radius, Spot.Y, Spot.Z }), World({ Spot.X + Request.Radius, Spot.Y - Out, Spot.Z }));
                 DrawDimensionLine(State, Frame, Canvas, { Spot.X - Request.Radius, Spot.Y - Out, Spot.Z }, { Spot.X + Request.Radius, Spot.Y - Out, Spot.Z },
                                   DimensionText("Ø", 2.0 * Request.Radius));
             }
@@ -1791,7 +1860,7 @@ void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
     for (size_t Index = 0; Index < Marks.size(); ++Index)
     {
         ImVec2 Out;
-        if (!Pixel(PlacePlanePoint(Plane, Marks[Index]), Out)) continue;
+        if (!RawPixel(PlacePlanePoint(Plane, Marks[Index]), Out)) continue;
         const bool Live = Index == Drawing.Points.size();
         Canvas->AddCircleFilled(Out, Live ? 4.5f : 3.5f, Live ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ActiveColour);
     }
@@ -1801,7 +1870,7 @@ void DrawSolidPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
         const Vector3 Anchor = PlacePlanePoint(Plane, Drawing.Points.back());
         DrawConstructionLine(State, Frame, Canvas, Anchor, Anchor + Plane.ZAxis * Drawing.Lift);
         ImVec2 Out;
-        if (Pixel(Anchor + Plane.ZAxis * Drawing.Lift, Out)) Canvas->AddCircleFilled(Out, 4.5f, IM_COL32_WHITE);
+        if (RawPixel(Anchor + Plane.ZAxis * Drawing.Lift, Out)) Canvas->AddCircleFilled(Out, 4.5f, IM_COL32_WHITE);
     }
 }
 
@@ -8692,6 +8761,13 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, RowSpan())) Picker.Enabled = !Picker.Enabled;
     ImGui::SameLine();
     ImGui::Text("Lock %s", Picker.Lock == SolidArcSnapLockKind::None ? "none" : SolidArcSnapLockLabel(Picker.Lock));
+    if (State.Drawing.ActiveCondition)
+    {
+        // Sketches and Construct solids drawn on a body face take its orientation (curved faces: the tangent plane there).
+        if (ToggleButton(State, "Orient to faces###FaceOrient", Picker.FaceOrientEnabled, RowSpan())) Picker.FaceOrientEnabled = !Picker.FaceOrientEnabled;
+        ImGui::SameLine();
+        ImGui::Text("%s", State.Drawing.FacePlaneCondition ? "on a face" : "grid plane");
+    }
     struct Choice { const char* Label; bool* Enabled; };
     SolidArcSnapFilter& Filter = Picker.Filter;
     const Choice Choices[] = { { "Endpoint###SnapEndpoint", &Filter.EndpointEnabled }, { "Midpoint###SnapMidpoint", &Filter.MidpointEnabled },

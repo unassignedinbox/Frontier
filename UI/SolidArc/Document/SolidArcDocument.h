@@ -75,6 +75,8 @@ enum class SolidArcSelectionKind : uint8_t
 // 📝 Only the fields of the chosen kind are read. Position: block / wedge corner (minimum x, y, z), cylinder / cone / prism /
 //    tube base centre, sphere / torus centre. Cone: Radius at the base, apex Height above it. Wedge: Height at x = X falling to
 //    0 at x = X + Width.
+//    PlaneCondition (drawn on a body face, oriented to it): Position and the axes are in the face frame — x / y on the face,
+//    z (and every Height) along its outward normal — so the solid stands on the face whatever its tilt.
 struct SolidArcConstructRequest
 {
     SolidArcConstructKind        Kind        = SolidArcConstructKind::Block;                 // [-]   - Tile
@@ -91,6 +93,8 @@ struct SolidArcConstructRequest
     double                       Inner       = 0.3;                                          // [len] - Tube bore radius (< Radius)
     int                          Sides       = 6;                                            // [-]   - Prism sides (3 … 64)
     double                       Angle       = 0.0;                                          // [rad] - Prism: direction of the first vertex from the centre
+    bool                         PlaneCondition = false;                                     // [-]   - Built on Plane (a body face) instead of the world floor
+    GeometryProcessing::OrthonormalFrame   Plane       = {};                                           // [len] - Face frame (origin, x̂, ŷ, outward n̂) when PlaneCondition
 };
 
 // 📝 Points are construction-plane coordinates (GridPlane 0 XY, 1 XZ, 2 YZ; see SolidArcSketchPlane). Only the fields of

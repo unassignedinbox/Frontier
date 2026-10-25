@@ -139,6 +139,8 @@ std::string AuthorTile(SolidArcDocument& Document, const SolidArcConstructReques
     const std::string SketchLabel = "Sketch#" + std::to_string(Ordinal);
     TileAuthoring     Author{ Tree, Caption };
     const Vector3     Spot    = Request.Position;
+    const size_t      FirstStep      = Tree.Steps.size();
+    const size_t      FirstParameter = Tree.Parameters.size();
 
     switch (Request.Kind)
     {
@@ -413,6 +415,21 @@ std::string AuthorTile(SolidArcDocument& Document, const SolidArcConstructReques
         break;
     }
     }
+    if (Request.PlaneCondition)
+    {
+        // 📝 Oriented to a body face: the tile is authored in its own floor frame, then every sketch plane it made is carried
+        //    rigidly into the face frame F (o ↦ F.o + F.x̂·oₓ + F.ŷ·o_y + F.n̂·o_z, axes rotated alike). Elevations run along
+        //    the carried normals and extrusions / revolutions follow their sketches, so the whole solid turns with the face.
+        const OrthonormalFrame& Face = Request.Plane;
+        const auto Carry  = [&Face](Vector3 Point) { return Face.XAxis * Point.X + Face.YAxis * Point.Y + Face.ZAxis * Point.Z; };
+        for (size_t Index = FirstStep; Index < Tree.Steps.size(); ++Index)
+        {
+            FeatureStep& Step = Tree.Steps[Index];
+            if (Step.Kind != FeatureStepKind::Sketch) continue;
+            Step.Plane = { Face.Origin + Carry(Step.Plane.Origin), Carry(Step.Plane.XAxis), Carry(Step.Plane.YAxis), Carry(Step.Plane.ZAxis) };
+        }
+        for (size_t Index = FirstParameter; Index < Tree.Parameters.size(); ++Index) Tree.Parameters[Index].Description += " · face frame";
+    }
     Document.Captions[SketchLabel]            = Caption;
     Document.Captions[Tree.Steps.back().Label] = Caption;
     return Caption;
@@ -684,6 +701,14 @@ SolidArcCommandOutcome ConstructSolidArcPrimitive(SolidArcDocument& Document, co
         if (!FirstBodyCondition && Request.Combination == FeatureCombination::New)
             return "a second body needs Union, Difference, Intersection or New body";
         if (!Request.Target.empty() && !FindRegeneratedBody(Document, Request.Target)) return "no body named " + Request.Target;
+        if (Request.PlaneCondition)
+        {
+            const OrthonormalFrame& Face = Request.Plane;
+            const bool Finite = std::isfinite(Face.Origin.X) && std::isfinite(Face.Origin.Y) && std::isfinite(Face.Origin.Z);
+            const bool Square = std::abs(Length(Face.XAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.YAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.ZAxis) - 1.0) < 1.0e-9
+                             && std::abs(Dot(Face.XAxis, Face.YAxis)) < 1.0e-9 && Length(Cross(Face.XAxis, Face.YAxis) - Face.ZAxis) < 1.0e-9;
+            if (!Finite || !Square) return "the face plane is not an orthonormal right-handed frame";
+        }
         AuthorTile(Document, Request, FirstBodyCondition && Request.Combination != FeatureCombination::Separate ? FeatureCombination::New : Request.Combination);
         return {};
     });

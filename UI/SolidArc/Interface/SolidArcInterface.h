@@ -150,7 +150,7 @@ struct SolidArcDrawingSession
     double                         PointerElevation = 0.0;                                   // [len] - Height the pointer snapped to before the first click
     double                         Lift             = 0.0;                                   // [len] - Height from the pointer (signed, along +z)
     GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Separate;   // [-] - Solid: R new body (default) · Q / W / E
-    bool                           FacePlaneCondition = false;                               // [-]   - Sketch: drawn on the body face under the first click
+    bool                           FacePlaneCondition = false;                               // [-]   - Drawn on the body face under the first click (sketch or solid)
     GeometryProcessing::OrthonormalFrame     FacePlane        = {};                                    // [len] - That face plane (grid-aligned axes, outward n̂)
     std::string                    FaceName         = {};                                    // [-]   - Persistent name of the face (empty: grid plane)
     uint64_t                       FaceRevision     = 0;                                     // [-]   - Document revision FacePlane was resolved at
@@ -163,6 +163,7 @@ struct SolidArcDrawingSession
 struct SolidArcPointPicker
 {
     bool                                   Enabled         = true;                           // [-]   - Object snaps on (Inspector)
+    bool                                   FaceOrientEnabled = true;                         // [-]   - Drawing on a body face orients the sketch / solid to it (Inspector)
     SolidArcSnapFilter                     Filter          = {};                             // [-]   - Enabled kinds (Inspector)
     SolidArcSnap                           Current         = {};                             // [-]   - Snap under the pointer this frame
     SolidArcSnap                           Placed          = {};                             // [-]   - Snap of the last placed point (t / n / b)
