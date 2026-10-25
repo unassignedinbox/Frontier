@@ -1,5 +1,3 @@
-#include <chrono>
-#include <cstdio>
 /*====================================================================================================================================
                                                        BODYTRANSFORM.CPP
 ====================================================================================================================================*/
@@ -370,9 +368,7 @@ namespace
                     Placement.Edge         = Edge;
                     if (StandIn) { TolerantEdges.resize(Blueprint.Edges.size(), 0); TolerantEdges[Edge] = 1; }
                     Placement.Sense        = Use.Sense;
-                    const auto ProbeStart = std::chrono::steady_clock::now();
                     Placement.SurfaceCurve = FitSurfaceCurve(Image.Surface, EdgeImage.Curve, EdgeImage.Low, EdgeImage.High, { Anchor - Vector2{ 1.0, 1.0 }, Anchor + Vector2{ 1.0, 1.0 } }, Anchor);
-                    std::fprintf(stderr, "PROBE fit %s %d %.2f ms\n", SurfaceCategoryLabel(Image.Surface), int(Placement.SurfaceCurve.index()), std::chrono::duration<double>(std::chrono::steady_clock::now() - ProbeStart).count() * 1e3);
                     Uses.push_back(std::move(Placement));
                 });
                 if (!Valid) { Outcome.Refusal = "Transform: fin without an SP-curve"; return Outcome; }
@@ -403,9 +399,7 @@ namespace
             }
         }
         // ③ The blueprint is complete: assembling into Target (possibly the same partition) cannot disturb the reads above.
-        const auto ProbeAssembly = std::chrono::steady_clock::now();
         const AssemblyOutcome Assembly = AssembleBody(Target, Blueprint, Approximation != nullptr ? "Approximate" : PromoteAll ? "Promote" : "Transform");
-        std::fprintf(stderr, "PROBE assemble %.2f ms\n", std::chrono::duration<double>(std::chrono::steady_clock::now() - ProbeAssembly).count() * 1e3);
         if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
         Outcome.Body        = Assembly.Body;
         Outcome.SourceFaces = Inventory.Faces;
