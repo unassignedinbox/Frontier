@@ -32,9 +32,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Entry | Size | Purpose |
 |---|---|---|
-| `SolidArc/SolidArcWorkspace.exe` | 7,486,976 B | The application |
+| `SolidArc/SolidArcWorkspace.exe` | 7,495,680 B | The application |
 | `SolidArc/SolidArcWorkspace.toml` | 940 B | Package options: window, viewport, font, and file paths (autosave in `Autosave/`, documents in `Documents/`, both inside the package folder), plus Vulkan |
-| `SolidArc/README.md` | 2,838 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
+| `SolidArc/README.md` | 3,424 B | Requirements (a Vulkan 1.3 driver), start-up, file locations, keys, preview limits |
 | `SolidArc/EngineContent/FontArchives/…` | | DM Sans (the upstream interface typeface) |
 | `SolidArc/EngineContent/Icons/…` | | Interface icons |
 | `SolidArc/Samples/SyntheticBonnet.toml` | 19,820 B | Curve import sample |
@@ -42,9 +42,9 @@ On Linux, the same package layout finds its content beside the executable: the f
 
 | Metric | Value |
 |---|---|
-| Zip size | 3,803,658 B |
-| Zip sha256 | `af1ad6b784c662054a565420d5225d84c826ac82b1807b4e399a840cb75ceb99` |
-| Unpacked | 8,939,674 B (345 entries) |
+| Zip size | 3,806,731 B |
+| Zip sha256 | `a9d4337e96fe0b0fa644b96a5a1530677b4c76d1df8ab209b888005573306a3b` |
+| Unpacked | 8,948,964 B (345 entries) |
 | Location | `Exhibits/SolidArc/Package/SolidArc-Windows-x64.zip` (committed on this branch for the first Windows run; 🚩 remove before the S7 PR) |
 | Excluded | `Frontier.exe`: the package is SolidArc only (install component `SolidArc`) |
 
