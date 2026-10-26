@@ -339,6 +339,13 @@ add_test(NAME SolidArcKnifeWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/KnifeWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcBevelHandlesWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/BevelHandlesRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/BevelHandles.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/BevelHandlesWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcResponsivenessWalkthrough
          COMMAND SolidArcCapture --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/ResponsivenessRecovery.solidarc
@@ -547,6 +554,7 @@ set_tests_properties(SolidArcSketchPointsWalkthrough PROPERTIES SKIP_RETURN_CODE
 set_tests_properties(SolidArcShellsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcTrimJoinWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcKnifeWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcBevelHandlesWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcSketchCornersWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcAltSlideWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcVehicleSurfacingWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

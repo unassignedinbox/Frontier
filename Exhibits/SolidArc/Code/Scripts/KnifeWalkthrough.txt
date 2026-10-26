@@ -194,3 +194,61 @@ expect knife-commits == 6
 expect bodies == 2
 expect volume ~ 7.541828330588459
 expect sound == 1
+
+# ⑧ the toolbar cutter menu (beside the knife icon): Rectangle opens the knife drawing a rectangle; 0.4 × 0.4 on the top
+#    face cut 0.1 deep removes 0.016; the menu remembers it (Shift+K starts a rectangle), Insert / Object switch modes,
+#    Circle brings the default back
+key Escape
+frames 2
+click viewport 0.08 0.15
+frames 2
+click @SketchKnifeTool
+frames 3
+capture 275KnifeToolMenu
+click @KnifeToolRectangle
+frames 3
+expect knife == 1
+expect knife-mode == Sketch
+expect knife-pending == 1
+expect drawing == Rectangle
+move world 0.4 -0.8 2.0
+frames 2
+click world 0.4 -0.8 2.0
+frames 2
+move world 0.8 -0.4 2.0
+frames 2
+click world 0.8 -0.4 2.0
+frames 3
+expect knife-pending == 0
+type 0.1
+frames 6
+expect knife-depth ~ 0.1
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 7
+expect volume ~ 7.525828330588459
+key K Shift
+frames 2
+expect knife-mode == Sketch
+expect drawing == Rectangle
+click @SketchKnifeTool
+frames 3
+click @KnifeToolInsert0
+frames 3
+expect knife-mode == Insert
+expect knife-insert == Square pocket
+click @SketchKnifeTool
+frames 3
+click @KnifeToolCircle
+frames 3
+expect knife-mode == Sketch
+expect drawing == Circle
+key Escape
+frames 2
+expect knife == 0
+key K Shift
+frames 2
+expect drawing == Circle
+key Escape
+frames 2

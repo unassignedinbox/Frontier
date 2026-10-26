@@ -114,6 +114,7 @@ namespace
     GateTally OrientGate      = { "W50", "Orient to faces: Construct solids drawn on a body face are built in the face frame (x / y on the face, height along the outward normal): a cylinder on the +x face of a 2 m cube unites to 8 + π/4 and reaches x = 3; all eight tiles on a face tilted 30° about x and 40° about z keep their closed-form volumes, a unit block's bounds are those of the turned cube; a circle sketched on the tilted plane extrudes along its normal; a skewed frame is refused untouched; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally TangentGate     = { "W51", "Curved-face sketches (the Windows report: a cylinder joined on a cylinder's side, then a chamfer and moves, felt slow and refused the junction chamfer): the sketch plane is the exact tangent plane (surface foot and normal, not the facet hit); the extrude start sinks below it by the measured profile depth so a Union closes (an exactly tangent Union only touches along a line and leaves the gap open); the joined body has its closed-form volume, the junction (a cylinder–cylinder saddle curve) takes a chamfer; a Construct boss with a start unites the same way; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally KnifeGate       = { "W52", "Knife (Shift+K, Blender KitOps style): an unfilled circle on a 2 m cube's top face is filled and cut 0.5 deep from a lift above the face (8 − 0.045π); a rectangle on the −y face cuts straight through (− 0.32); open profiles, zero depth and a missing target refuse untouched; the built-in boolean library (7 cutters drawn and swept by the document's own commands) is normalized to unit width, top at +0.05; the square pocket placed at width 0.4 turned 15° cuts 0.0192, raised on the +x face adds 0.0192, left separate is a 0.0224 body; Object mode cuts the cube with the kept cutter; each knife is one undo entry; a saved insert joins the library; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally HandleGate      = { "W53", "Bevel handles (Plasticity pull / push): the front-top edge of a 4 × 2 × 1 block shows a uniform handle at mid-edge plus one per corner, each along the outward bisector; corner sizes 0.1 / 0.3 equal the V taper (closed form, rails at each corner); the top loop takes 4 corner sizes between the uniform 0.1 and 0.2 bodies; Corner parameters regenerate; refusals (foreign vertex, two sizes, non-positive); the start-size fit (≈ 15 % of the bounding span, round 1 · 2 · 5 step); undo / redo; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4665,6 +4666,152 @@ int main()
               Format("codec %d bytes byte-equal, V %.12f after reload, %d steps", int(Written.size()), Loaded.Summary.Volume, int(Loaded.Tree.Steps.size())));
     }
 
+    // ---- W53 Bevel handles: per-corner sizes along the outward bisectors (Plasticity's pull / push controller)
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        const auto Fresh = [&](const char* Title)
+        {
+            SolidArcDocument Made = CreateSolidArcDocument(Title);
+            Expect(ConstructSolidArcPrimitive(Made, Block));
+            return Made;
+        };
+
+        // ① Handles on the front-top edge (y = 0, z = 1): the uniform one at (2, 0, 1), corners at x = 0 and x = 4, all along (0, −1, 1)/√2.
+        SolidArcDocument Single = Fresh("Handles");
+        const std::string FrontEdge = PickAndSelect(Single, RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), false);
+        const std::vector<SolidArcBlendHandle> Handles = MeasureSolidArcBlendHandles(Single, Single.Selection.Edges);
+        const Vector3 Outward = Normalize(Vector3{ 0.0, -1.0, 1.0 });
+        double HandleGap = Handles.size() == 3 ? Distance(Handles[0].Position, { 2.0, 0.0, 1.0 }) : 1.0;
+        for (const SolidArcBlendHandle& Handle : Handles) HandleGap = std::max(HandleGap, Distance(Handle.Direction, Outward));
+        const bool Cornered = Handles.size() == 3 && Handles[0].Vertex.empty() && !Handles[1].Vertex.empty() && !Handles[2].Vertex.empty() &&
+                              std::abs(std::abs(Handles[1].Position.X - Handles[2].Position.X) - 4.0) <= 1.0e-12;
+        Tally(HandleGate, HandleGap, Cornered && HandleGap <= 1.0e-12, Format("%d handles on %s: uniform at mid-edge, corners %s / %s, all along (0, −1, 1)/√2",
+              int(Handles.size()), FrontEdge.c_str(), Handles.size() > 1 ? Handles[1].Vertex.c_str() : "-", Handles.size() > 2 ? Handles[2].Vertex.c_str() : "-"));
+
+        // ② Corner sizes 0.1 / 0.3 = the V taper 0.1 → 0.3 anchored at the same corner (closed form and rails).
+        if (Handles.size() == 3)
+        {
+            const double AnchorX = Handles[1].Position.X, FarX = Handles[2].Position.X;
+            SolidArcBlendRequest Request;
+            Request.Shape = BlendProfile::Fillet; Request.Size = 0.2;
+            Request.VertexSizes = { { Handles[1].Vertex, 0.1 }, { Handles[2].Vertex, 0.3 } };
+            const SolidArcCommandOutcome Applied = BlendSolidArcSelection(Single, Request);
+            Expect(Applied);
+            TallyVolume(HandleGate, Single, 8.0 - MeasureVariableFilletLoss(4.0, 0.1, 0.3), "corner sizes 0.1 / 0.3 = the closed form of the 0.1 → 0.3 taper · " + Applied.Label);
+            const double Gap = MeasureCapGap(Single, AnchorX, FarX, 1.0, 0.1, 0.3);
+            Tally(HandleGate, Gap, Gap <= 1.0e-9, Format("rails 0.1 from x = %.0f, 0.3 from x = %.0f", AnchorX, FarX));
+
+            SolidArcDocument Tapered = Fresh("Taper");
+            SelectSolidArcName(Tapered, SolidArcSelectionKind::Edge, FrontEdge, false);
+            SolidArcBlendRequest Taper;
+            Taper.Shape = BlendProfile::Fillet; Taper.Size = 0.1; Taper.EndSize = 0.3;
+            Taper.ReversedCondition = std::abs(EdgeEndPosition(Tapered, FrontEdge, false).X - AnchorX) > 1.0e-9;
+            Expect(BlendSolidArcSelection(Tapered, Taper));
+            const double Apart = std::abs(Tapered.Summary.Volume - Single.Summary.Volume);
+            Tally(HandleGate, Apart, Apart <= 1.0e-12 * Tapered.Summary.Volume, Format("same body as V 0.1 → 0.3: V %.15f vs %.15f", Single.Summary.Volume, Tapered.Summary.Volume));
+
+            // Corner parameters regenerate: Fillet1.Corner2 = 0.2 → the 0.1 → 0.2 taper.
+            const bool Named = std::any_of(Single.Tree.Parameters.begin(), Single.Tree.Parameters.end(), [](const auto& Parameter) { return Parameter.Name == "Fillet1.Corner2"; });
+            Expect(AssignSolidArcParameter(Single, "Fillet1.Corner2", 0.2));
+            Tally(HandleGate, 0.0, Named, "parameters Fillet1.Corner1 / Fillet1.Corner2 in the tree");
+            TallyVolume(HandleGate, Single, 8.0 - MeasureVariableFilletLoss(4.0, 0.1, 0.2), "Fillet1.Corner2 = 0.2 regenerates the 0.1 → 0.2 taper");
+
+            // Undo / redo, then the codec.
+            const double Edited = Single.Summary.Volume;
+            const bool Undone = UndoSolidArcCommand(Single) && std::abs(Single.Summary.Volume - (8.0 - MeasureVariableFilletLoss(4.0, 0.1, 0.3))) <= 1.0e-9 * 8.0;
+            const bool Redone = RedoSolidArcCommand(Single) && Single.Summary.Volume == Edited;
+            Tally(HandleGate, 0.0, Undone && Redone, "undo restores 0.1 / 0.3, redo 0.1 / 0.2");
+            const std::string Written = EncodeSolidArcDocument(Single);
+            SolidArcDocumentFile Read = DecodeSolidArcDocument(Written);
+            SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+            const bool Opened = Read.Refusal.empty() && ReplaceSolidArcTree(Loaded, Read.Tree, Read.Captions, "Open").AcceptedCondition;
+            Tally(HandleGate, std::abs(Loaded.Summary.Volume - Edited), Opened && Loaded.Summary.Volume == Edited && EncodeSolidArcDocument(Loaded) == Written &&
+                  Written.find("AnchorSizes") != std::string::npos, Format("codec %d bytes byte-equal with AnchorSizes, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
+            std::string Damaged = Written;
+            const size_t At = Damaged.find("AnchorSizes = [ ");
+            if (At != std::string::npos) Damaged.insert(At + 16, "0.5, ");
+            Tally(HandleGate, 0.0, At != std::string::npos && !DecodeSolidArcDocument(Damaged).Refusal.empty(), "a file with more corner sizes than corners is refused");
+        }
+
+        // ③ Refusals leave the body untouched.
+        {
+            SolidArcDocument Refused = Fresh("Refusals");
+            SelectSolidArcName(Refused, SolidArcSelectionKind::Edge, FrontEdge, false);
+            const std::vector<SolidArcBlendHandle> Own = MeasureSolidArcBlendHandles(Refused, Refused.Selection.Edges);
+            const double Before = Refused.Summary.Volume;
+            std::string Foreign;
+            for (const auto& [Slot, Name] : Refused.Regeneration.Naming.Vertices)
+                if (std::none_of(Own.begin(), Own.end(), [&](const SolidArcBlendHandle& Handle) { return Handle.Vertex == Name; })) { Foreign = Name; break; }
+            SolidArcBlendRequest Request;
+            Request.Shape = BlendProfile::Chamfer; Request.Size = 0.1;
+            Request.VertexSizes = { { Foreign, 0.2 } };
+            const SolidArcCommandOutcome Off = BlendSolidArcSelection(Refused, Request);
+            Request.VertexSizes = { { Own.size() > 1 ? Own[1].Vertex : std::string(), 0.2 }, { Own.size() > 1 ? Own[1].Vertex : std::string(), 0.3 } };
+            const SolidArcCommandOutcome Twice = BlendSolidArcSelection(Refused, Request);
+            Request.VertexSizes = { { Own.size() > 1 ? Own[1].Vertex : std::string(), 0.0 } };
+            const SolidArcCommandOutcome Zero = BlendSolidArcSelection(Refused, Request);
+            Tally(HandleGate, 0.0, !Off.AcceptedCondition && !Twice.AcceptedCondition && !Zero.AcceptedCondition && Refused.Summary.Volume == Before && Refused.Tree.Steps.size() == 1,
+                  "refused untouched: " + Off.Refusal + " · " + Twice.Refusal + " · " + Zero.Refusal);
+        }
+
+        // ④ The top loop: 4 corner handles along (±1, ±1, 1)/√3 (2 edges each); corner sizes 0.1 / 0.2 / 0.1 / 0.15 sit between the uniform bodies.
+        {
+            const OrbitRay Rays[] = { RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), RayBetween({ 2.0, 3.0, 2.0 }, { 2.0, 2.0, 1.0 }),
+                                      RayBetween({ -1.0, 1.0, 2.0 }, { 0.0, 1.0, 1.0 }), RayBetween({ 5.0, 1.0, 2.0 }, { 4.0, 1.0, 1.0 }) };
+            const auto Looped = [&](const char* Title)
+            {
+                SolidArcDocument Made = Fresh(Title);
+                for (const OrbitRay& Ray : Rays) PickAndSelect(Made, Ray, true);
+                return Made;
+            };
+            SolidArcDocument Loop = Looped("Loop");
+            const std::vector<SolidArcBlendHandle> Corners = MeasureSolidArcBlendHandles(Loop, Loop.Selection.Edges);
+            double Skew = Corners.size() == 5 ? 0.0 : 1.0;
+            for (size_t Index = 1; Index < Corners.size(); ++Index)
+            {
+                const Vector3 Expected = Normalize(Vector3{ Corners[Index].Position.X < 2.0 ? -1.0 : 1.0, Corners[Index].Position.Y < 1.0 ? -1.0 : 1.0, 1.0 });
+                Skew = std::max(Skew, Distance(Corners[Index].Direction, Expected));
+                if (Corners[Index].Edges != 2) Skew = 1.0;
+            }
+            Tally(HandleGate, Skew, Loop.Selection.Edges.size() == 4 && Skew <= 1.0e-12, Format("top loop: %d handles, each corner on 2 picked edges along (±1, ±1, 1)/√3", int(Corners.size())));
+            const auto Uniform = [&](double Size)
+            {
+                SolidArcDocument Made = Looped("Uniform");
+                Expect(BlendSolidArcSelection(Made, BlendProfile::Fillet, Size));
+                return Made.Summary.Volume;
+            };
+            const double Small = Uniform(0.1), Large = Uniform(0.2);
+            if (Corners.size() == 5)
+            {
+                SolidArcBlendRequest Request;
+                Request.Shape = BlendProfile::Fillet; Request.Size = 0.1;
+                Request.VertexSizes = { { Corners[2].Vertex, 0.2 }, { Corners[4].Vertex, 0.15 } };
+                const SolidArcCommandOutcome Applied = BlendSolidArcSelection(Loop, Request);
+                const bool Between = Applied.AcceptedCondition && Loop.Summary.SoundCondition && Loop.Summary.Volume < Small && Loop.Summary.Volume > Large;
+                Tally(HandleGate, 0.0, Between, Format("loop with 2 corner sizes: V %.9f between uniform 0.2 (%.9f) and 0.1 (%.9f), sound · %s", Loop.Summary.Volume, Large, Small,
+                      Applied.AcceptedCondition ? Applied.Label.c_str() : Applied.Refusal.c_str()));
+            }
+        }
+
+        // ⑤ Start-size fit: block front edge spans 1 (its 1 m side edges) → 0.1; a 2 m cube edge spans 2 → 0.2 (the 0.25 default stays: ≤ 0.35 · 2).
+        {
+            SolidArcDocument Fitted = Fresh("Fit");
+            PickAndSelect(Fitted, RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), false);
+            const SolidArcBlendFit BlockFit = MeasureSolidArcBlendFit(Fitted, Fitted.Selection.Edges);
+            SolidArcDocument Cube = CreateSolidArcDocument("Cube");
+            SolidArcConstructRequest Box;
+            Box.Kind = SolidArcConstructKind::Block; Box.Width = 2.0; Box.Depth = 2.0; Box.Height = 2.0;
+            Expect(ConstructSolidArcPrimitive(Cube, Box));
+            PickAndSelect(Cube, RayBetween({ 1.0, -1.0, 3.0 }, { 1.0, 0.0, 2.0 }), false);
+            const SolidArcBlendFit CubeFit = MeasureSolidArcBlendFit(Cube, Cube.Selection.Edges);
+            const SolidArcBlendFit Empty   = MeasureSolidArcBlendFit(Cube, {});
+            const double Off = std::max({ std::abs(BlockFit.Span - 1.0), std::abs(BlockFit.Fitted - 0.1), std::abs(CubeFit.Span - 2.0), std::abs(CubeFit.Fitted - 0.2) });
+            Tally(HandleGate, Off, Off <= 1.0e-12 && 0.25 <= 0.35 * CubeFit.Span && !Empty.Refusal.empty(),
+                  Format("fit: block edge span %.3f → %.3f · 2 m cube edge span %.3f → %.3f (0.25 kept) · no edges: %s", BlockFit.Span, BlockFit.Fitted, CubeFit.Span, CubeFit.Fitted,
+                         Empty.Refusal.c_str()));
+        }
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -4863,7 +5010,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

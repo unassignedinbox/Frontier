@@ -1,0 +1,133 @@
+# SolidArc bevel handles walkthrough (Plasticity's pull / push fillet controller) — B on an edge shows a uniform handle
+# at mid-edge and one per corner along the outward bisector; dragging a handle sets the size with more control than the
+# pointer (Shift fine), a corner handle gives that corner its own size (a variable fillet), the card types them. The bevel
+# shows at once: the start size fits the edges, a left drag on empty space adjusts it, a click off an edge keeps the pick,
+# and an oversized size keeps showing the last good preview.
+# Run: SolidArcCapture --specimen --reset-files --recovery …/BevelHandlesRecovery.solidarc
+#      --document …/BevelHandles.solidarc --script Scripts/BevelHandlesWalkthrough.txt
+# Closed forms (2 m cube, z 0 … 2): fillet r on one edge removes (1 − π/4) · r² · 2 → r 0.25: 7.973174770424681.
+
+# ① a 2 m cube from the Construct menu
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -1.0 -1.0 0.0
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+expect refused == 0
+expect volume ~ 8
+
+# ② edge mode, the top front edge (y = −1, z = 2), B: 0.25 fits (span 2 → fitted 0.2; 0.25 ≤ 0.35 · 2) and the preview
+#    is there without any pointer hunting; three handles (uniform + 2 corners)
+key 2
+frames 2
+click world 0.0 -1.0 2.0
+frames 2
+expect selected-edges == 1
+key B
+frames 8
+expect bevel-active == 1
+expect bevel-size ~ 0.25
+expect bevel-span ~ 2
+expect bevel-fitted ~ 0.2
+expect bevel-handles == 3
+expect bevel-corners == 0
+expect bevel-refusal == 0
+expect bevel-preview-volume ~ 7.973174770424681
+capture 276BevelHandles
+
+# ③ a click on empty space keeps the picked edge (it used to clear it); a left drag on empty space adjusts the size
+click viewport 0.1 0.2
+frames 3
+expect bevel-active == 1
+expect selected-edges == 1
+drag left viewport 0.1 0.2 by 80 0 8
+frames 8
+expect bevel-active == 1
+expect selected-edges == 1
+expect bevel-size != 0.25
+expect bevel-refusal == 0
+
+# ④ the uniform handle typed back via the card, then a corner handle dragged: that corner takes its own size, V is off
+click @BevelSize
+key A Ctrl
+type 0.25
+key Enter
+frames 8
+expect bevel-size ~ 0.25
+expect bevel-pinned == 1
+drag left @BevelHandle1 by 30 -30 6
+frames 8
+expect bevel-corners == 1
+expect bevel-variable == 0
+expect bevel-corner-1 != 0.25
+expect bevel-corner-2 ~ 0.25
+expect bevel-refusal == 0
+capture 277BevelCornerDragged
+
+# ⑤ the card's corner field: Corner 1 typed 0.4 → the 0.4 → 0.25 variable fillet (the V taper's body)
+click @BevelCornerSize
+key A Ctrl
+type 0.4
+key Enter
+frames 8
+expect bevel-corners == 1
+expect bevel-corner-1 ~ 0.4
+expect bevel-refusal == 0
+capture 278BevelCornerTyped
+key Enter
+frames 3
+expect bevel-active == 0
+expect refused == 0
+expect sound == 1
+expect status contains corner size
+
+# ⑥ a 0.2 m cube: the last size (0.25) would not fit, so B starts at the fitted 0.02 and shows it at once
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -0.1 -0.1 0.0
+frames 2
+click world -0.1 -0.1 0.0
+frames 2
+move world 0.1 0.1 0.0
+frames 2
+click world 0.1 0.1 0.0
+frames 2
+move world 0.1 0.1 0.2
+frames 2
+click world 0.1 0.1 0.2
+frames 3
+expect volume ~ 0.008
+key F
+frames 3
+key 2
+frames 2
+click world 0.0 -0.1 0.2
+frames 2
+expect selected-edges == 1
+key B
+frames 8
+expect bevel-active == 1
+expect bevel-span ~ 0.2
+expect bevel-size ~ 0.02
+expect bevel-refusal == 0
+expect bevel-handles == 3
+capture 279BevelFitted
+key Escape
+frames 2
