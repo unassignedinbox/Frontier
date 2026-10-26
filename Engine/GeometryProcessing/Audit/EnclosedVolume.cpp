@@ -152,8 +152,65 @@ namespace
     // Magnitude mode returns ∫|G 𝑣′| dτ over the initial panels instead (no adaptive refinement).
     // ⚠️ Knots: a traced rolling-ball spine is only C¹ at its knots, so the flux density (through T′) jumps there; the
     //    inner 𝑢 integral is split at the chart's breakpoints (Chart may be null: density without a surface).
+    // 📝 How a density depends on 𝑢 along one chart row (fixed 𝑣): the inner integral ∫ density d𝑢 is then closed form.
+    //    Constant: a plane's flux density P·(P𝑢 × P𝑣) (P𝑢 × P𝑣 is the constant normal, P·n the constant distance) and the
+    //    unit density of the parametric area. Trigonometric: the analytic carriers of revolution (cylinder, cone, sphere,
+    //    torus) put 𝑢 only into cos 𝑢·X + sin 𝑢·Y, so P, P𝑢 and P𝑣 are trigonometric of degree 1 in 𝑢 and the flux density
+    //    is a trigonometric polynomial of degree ≤ 3: seven equally spaced samples give its coefficients exactly (discrete
+    //    Fourier, 7 > 2·3) and its primitive is closed form. Both replace up to 64 Gauss panels (512 evaluations) per
+    //    outer node with 1 or 7 and agree with them to round-off.
+    enum class RowForm : uint8_t
+    {
+        General       = 0,                                                                   // Composite Gauss–Legendre
+        Constant      = 1,                                                                   // density(𝑢, 𝑣) = c(𝑣)
+        Trigonometric = 2,                                                                   // degree ≤ 3 in 𝑢
+    };
+
+    // ∫_{Low}^{High} Row(𝑢) d𝑢 of a trigonometric polynomial of degree ≤ 3 from its values at 2πk/7.
+    template <typename Row>
+    [[nodiscard]] double IntegrateTrigonometricRow(double Low, double High, const Row& Function)
+    {
+        constexpr int SampleCount = 7;                                                       // [-] - 2·3 + 1 nodes
+        static const std::array<std::array<double, 2>, SampleCount * 3> Basis = []
+        {
+            std::array<std::array<double, 2>, SampleCount * 3> Table{};
+            for (int Index = 0; Index < SampleCount; ++Index)
+                for (int Order = 1; Order <= 3; ++Order)
+                {
+                    const double Angle = Order * 2.0 * std::numbers::pi * Index / SampleCount;
+                    Table[Index * 3 + Order - 1] = { std::cos(Angle), std::sin(Angle) };
+                }
+            return Table;
+        }();
+        double Mean = 0.0;                                                                   // [-] - a₀
+        std::array<double, 3> Cosine{}, Sine{};                                              // [-] - a_k, b_k
+        for (int Index = 0; Index < SampleCount; ++Index)
+        {
+            const double Value = Function(2.0 * std::numbers::pi * Index / SampleCount);
+            Mean += Value;
+            for (int Order = 0; Order < 3; ++Order)
+            {
+                Cosine[Order] += Value * Basis[Index * 3 + Order][0];
+                Sine[Order]   += Value * Basis[Index * 3 + Order][1];
+            }
+        }
+        Mean /= SampleCount;
+        const auto Primitive = [&](double Angle)
+        {
+            double Total = Mean * Angle;
+            for (int Order = 0; Order < 3; ++Order)
+            {
+                const double Frequency = Order + 1.0;
+                Total += (2.0 / SampleCount) * (Cosine[Order] * std::sin(Frequency * Angle) - Sine[Order] * std::cos(Frequency * Angle)) / Frequency;
+            }
+            return Total;
+        };
+        return Primitive(High) - Primitive(Low);
+    }
+
     template <typename Density>
-    [[nodiscard]] double IntegrateFin(const ModelPartition& Partition, FinToken Fin, const Density& Function, double Floor, bool MagnitudeMode = false, const SurfaceGeometry* Chart = nullptr)
+    [[nodiscard]] double IntegrateFin(const ModelPartition& Partition, FinToken Fin, const Density& Function, double Floor, bool MagnitudeMode = false, const SurfaceGeometry* Chart = nullptr,
+                                      RowForm Form = RowForm::General)
     {
         const FinProfile& Use = Partition.Fins.Resolve(Fin);
         if (!Use.SurfaceCurve.has_value()) return std::nan("");
@@ -172,6 +229,8 @@ namespace
             if (Sample.Derivative.Y == 0.0) return 0.0;
             const auto   Row   = [&](double s) { return Function(Vector2{ s, Sample.Position.Y }); };
             const double Reach = Sample.Position.X;                                          // [-] - Inner upper limit
+            if (Form == RowForm::Constant) return Row(0.5 * (LowerLimit + Reach)) * (Reach - LowerLimit) * Sample.Derivative.Y;
+            if (Form == RowForm::Trigonometric) return IntegrateTrigonometricRow(LowerLimit, Reach, Row) * Sample.Derivative.Y;
             std::vector<double> Knots = Chart != nullptr ? CollectSurfaceBreakpoints(*Chart, std::min(LowerLimit, Reach), std::max(LowerLimit, Reach)) : std::vector<double>{};
             if (Reach < LowerLimit) std::reverse(Knots.begin(), Knots.end());
             double Primitive = 0.0, From = LowerLimit;                                             // [-] - ∫_lower^𝑢 density, running piece start
@@ -226,14 +285,24 @@ namespace
 
     // Σ over a face's fins: integral (absolute acceptance floor supplied) or, in magnitude mode, Σ∫|G 𝑣′| dτ.
     template <typename Density>
-    [[nodiscard]] double IntegrateFaceLoops(const ModelPartition& Partition, FaceToken Face, const Density& Function, double Floor, bool MagnitudeMode, const SurfaceGeometry* Chart = nullptr)
+    [[nodiscard]] double IntegrateFaceLoops(const ModelPartition& Partition, FaceToken Face, const Density& Function, double Floor, bool MagnitudeMode, const SurfaceGeometry* Chart = nullptr,
+                                            RowForm Form = RowForm::General)
     {
         double Total = 0.0;
         for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
         {
-            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin) { Total += IntegrateFin(Partition, Fin, Function, Floor, MagnitudeMode, Chart); });
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin) { Total += IntegrateFin(Partition, Fin, Function, Floor, MagnitudeMode, Chart, Form); });
         }
         return Total;
+    }
+
+    // Row form of the flux density on a carrier (see RowForm).
+    [[nodiscard]] RowForm ResolveFluxRowForm(const SurfaceGeometry& Surface) noexcept
+    {
+        if (std::holds_alternative<PlaneSurface>(Surface)) return RowForm::Constant;
+        if (std::holds_alternative<CylinderSurface>(Surface) || std::holds_alternative<ConeSurface>(Surface) || std::holds_alternative<SphereSurface>(Surface) ||
+            std::holds_alternative<TorusSurface>(Surface)) return RowForm::Trigonometric;
+        return RowForm::General;
     }
 
     [[nodiscard]] double IntegrateFaceFlux(const ModelPartition& Partition, FaceToken Face, double Floor, bool MagnitudeMode)
@@ -241,7 +310,8 @@ namespace
         const FaceProfile& Profile = Partition.Faces.Resolve(Face);
         if (!Profile.Surface.PresentCondition()) return std::nan("");
         const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Profile.Surface);
-        return IntegrateFaceLoops(Partition, Face, [&](Vector2 Parameter) { return FluxDensity(Surface, Parameter); }, Floor, MagnitudeMode, &Surface);
+        return IntegrateFaceLoops(Partition, Face, [&](Vector2 Parameter) { return FluxDensity(Surface, Parameter); }, Floor, MagnitudeMode, &Surface,
+                                  ResolveFluxRowForm(Surface));
     }
 }
 
@@ -390,7 +460,8 @@ double IntegrateParametricArea(const ModelPartition& Partition, FaceToken Face)
     const auto Unit = [](Vector2) { return 1.0; };
     const FaceProfile& Profile = Partition.Faces.Resolve(Face);
     const double Noise = std::max(1.0e-15, Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0);
-    return IntegrateFaceLoops(Partition, Face, Unit, Noise * IntegrateFaceLoops(Partition, Face, Unit, 0.0, true), false);  // Σ ∮ 𝑢 d𝑣
+    const double Magnitude = IntegrateFaceLoops(Partition, Face, Unit, 0.0, true, nullptr, RowForm::Constant);
+    return IntegrateFaceLoops(Partition, Face, Unit, Noise * Magnitude, false, nullptr, RowForm::Constant);  // Σ ∮ 𝑢 d𝑣
 }
 
 } // namespace Frontier::GeometryProcessing

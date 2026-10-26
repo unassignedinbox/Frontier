@@ -130,9 +130,28 @@ double MeasureFaceSolidAngle(const FaceDomain& Domain, Vector3 Position, const W
         if (!(Radius > 1.0e-300)) return 0.0;
         return Dot(Offset, Cross(Sample.DerivativeU, Sample.DerivativeV)) / (Radius * Radius * Radius);
     };
+    // 📝 Plane chart P = O + 𝑢X + 𝑣Y: S − P = (𝑢 − 𝑢f)X + (𝑣 − 𝑣f)Y + h·n with n = X × Y, so the density is h / r³ with
+    //    r² = (𝑢 − 𝑢f)² + c², c² = (𝑣 − 𝑣f)² + h², and its 𝑢-primitive is closed form: h·t / (c²·√(t² + c²)), t = 𝑢 − 𝑢f.
+    //    Same integrand as the adaptive rule (which it replaces on planes), exact instead of to InnerTolerance.
+    const PlaneSurface* Flat   = std::get_if<PlaneSurface>(&Domain.Surface);
+    const Vector3       Normal = Flat != nullptr ? Cross(Flat->Frame.XAxis, Flat->Frame.YAxis) : Vector3{};
+    const Vector3       Lever  = Flat != nullptr ? Position - Flat->Frame.Origin : Vector3{};  // [len] - P − O
+    const double        Height = Flat != nullptr ? -Dot(Lever, Normal) : 0.0;                // [len] - h = (O − P)·n
+    const double        FootX  = Flat != nullptr ? Dot(Lever, Flat->Frame.XAxis) : 0.0;      // [len] - 𝑢f
+    const double        FootY  = Flat != nullptr ? Dot(Lever, Flat->Frame.YAxis) : 0.0;      // [len] - 𝑣f
+    const auto FlatPrimitive = [&](double ParameterU, double ParameterV)
+    {
+        ++Tally.Evaluations;
+        const double Across = ParameterV - FootY;                                            // [len] - 𝑣 − 𝑣f
+        const double Square = Across * Across + Height * Height;                             // [len²] - c²
+        if (Height == 0.0 || !(Square > 1.0e-300)) return 0.0;
+        const auto Antiderivative = [&](double Along) { return Height * Along / (Square * std::sqrt(Along * Along + Square)); };
+        return Antiderivative(ParameterU - FootX) - Antiderivative(Reference - FootX);
+    };
     // G(𝑢, 𝑣) = ∫_{𝑢ref}^{𝑢} density ds, split at the foot images.
     const auto Primitive = [&](double ParameterU, double ParameterV)
     {
+        if (Flat != nullptr) return FlatPrimitive(ParameterU, ParameterV);
         return IntegrateBroken(Reference, ParameterU, FootU, [&](double Abscissa) { return Density(Abscissa, ParameterV); },
                                Settings.InnerTolerance, Settings.DepthLimit);
     };
