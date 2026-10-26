@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 154 frames · 14.7985 s · slowest frame 395.798 ms
+- Frame: 1600 x 900 · 154 frames · 19.7975 s · slowest frame 516.386 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MatcapWalkthrough.txt
 - Expectations: 30 / 30 passed
 
@@ -40,12 +40,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 90MatcapStudio | 5 | `6d69a998bb899f75` |
-| 91MatcapBody | 17 | `c4a71c4a2fe24ffd` |
-| 92MatcapPicker | 42 | `7ff57c9751efca5d` |
-| 93MatcapFaces | 56 | `37e919f168260b43` |
-| 94MatcapMixed | 115 | `6dd3af99e455fb08` |
-| 95MatcapUndo | 154 | `ed08af0655b17302` |
+| 90MatcapStudio | 5 | `4084fdaa2ca7b9a0` |
+| 91MatcapBody | 17 | `45a01f1327f874d3` |
+| 92MatcapPicker | 42 | `2a91cf6d15eb2625` |
+| 93MatcapFaces | 56 | `b115c0aa3cc87626` |
+| 94MatcapMixed | 115 | `04ff6e9bd4cf6f70` |
+| 95MatcapUndo | 154 | `d43cd8e406248475` |
 
 ## Journal
 

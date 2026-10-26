@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 465 frames · 28.8954 s · slowest frame 412.665 ms
+- Frame: 1600 x 900 · 465 frames · 41.7776 s · slowest frame 539.395 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 114 | `56a65e889aac3176` |
-| 123ConstrainFull | 179 | `d8d59271005468f7` |
-| 124ConstrainConflict | 207 | `143737024aeb04c7` |
-| 125ConstrainEdit | 245 | `3271bea1865eeefd` |
-| 126ConstrainDragging | 280 | `3ba8873d0acdcf8b` |
-| 127ConstrainAngle | 459 | `8e61ab715fe96005` |
+| 122ConstrainOpen | 114 | `a4e92190b5fb4a94` |
+| 123ConstrainFull | 179 | `3e27353824b0f88e` |
+| 124ConstrainConflict | 207 | `d32d34acc15a933d` |
+| 125ConstrainEdit | 245 | `64554797c90f7c17` |
+| 126ConstrainDragging | 280 | `52f203d8fcba584c` |
+| 127ConstrainAngle | 459 | `d29a1b6ab71be85f` |
 
 ## Journal
 
@@ -100,18 +100,18 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 5 ms
+- Extrude1 · Rectangle1 · New · 9 ms
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
 - Constrain Rectangle1: Fixed (0, 0) · Line1.Start · 7 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 3 · Line1 · 7 ms
+- Constrain Rectangle1: Length 3 · Line1 · 10 ms
 - Picks cleared
 - Picked Line2
 - Length 1 · Line2: type a value (now 1) · Enter applies · Esc drops
-- Constrain Rectangle1: Length 2 · Line2 · 10 ms
+- Constrain Rectangle1: Length 2 · Line2 · 14 ms
 - Picks cleared
 - Picked Line3
 - Length 3 · Line3: type a value (now 3) · Enter applies · Esc drops
@@ -121,33 +121,33 @@
 - Constraint dropped
 - Picks cleared
 - D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
-- D1 = 4 in Rectangle1 · 13 ms
+- D1 = 4 in Rectangle1 · 18 ms
 - Undo
 - Redo
 - Picks cleared
 - D2 Length 2 · Line2 · type a value + Enter · E makes it a reference · Delete removes
-- Remove D2 (Length 2 · Line2) from Rectangle1 · 13 ms
-- Drag Line2.End of Rectangle1 · 17 ms
+- Remove D2 (Length 2 · Line2) from Rectangle1 · 17 ms
+- Drag Line2.End of Rectangle1 · 22 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstraintsRecovery.solidarc
-- Line1 · 10 ms
+- Line1 · 15 ms
 - Constrain Line1 · 0 constraint(s) · DOF 6 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
-- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 12 ms
+- Constrain Line1: Fixed (0.5, 3.4) · Line1.Start · 15 ms
 - Picked Line1
-- Constrain Line1: Horizontal · Line1 · 12 ms
+- Constrain Line1: Horizontal · Line1 · 15 ms
 - Picked Line1
 - Length 2 · Line1: type a value (now 2) · Enter applies · Esc drops
-- Constrain Line1: Length 1.5 · Line1 · 12 ms
+- Constrain Line1: Length 1.5 · Line1 · 15 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
 - Angle 33.6901° · Line1 · Line2: type a value (now 33.69°) · Enter applies · Esc drops
-- Constrain Line1: Angle 45° · Line1 · Line2 · 12 ms
+- Constrain Line1: Angle 45° · Line1 · Line2 · 15 ms
 - Picks cleared
 - Picked Line1
 - Picked Line1, Line2
-- Constrain Line1: Equal length · Line1 · Line2 · 10 ms
+- Constrain Line1: Equal length · Line1 · Line2 · 15 ms
 - Constrain ended

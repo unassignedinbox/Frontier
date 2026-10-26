@@ -21,6 +21,11 @@
 - On a curved face, a sketch lies on the exact tangent plane under the pointer. `E` → Union starts the extrude slightly inside the face (the Inspector shows how far), so the joined body closes and its junction edge takes a chamfer.
 - A slow fillet / chamfer preview is rebuilt when the pointer rests, not on every pixel. A typed size applies at once.
 - **Right-click or `Enter` confirms** every command (fillet / chamfer, extrude, inset, move / rotate / scale, offset, pipe, joint, boolean, a pending dimension) and ends Trim / Fill; `Esc` cancels. A right-drag still pans. A size typed in the field and not yet entered is the one a right-click applies.
+- **Knife (`Shift+K`, or the knife icon at the right end of the viewport toolbar)**, in the style of Blender KitOps. The Inspector card switches between three modes (`Tab`):
+    - **Sketch**: draw a circle / rectangle / polygon / slot / line on the face under the pointer, then move sideways for the depth or type it. `T` cuts straight through.
+    - **Insert**: pick a cutter from the boolean library (7 built-ins plus every `.step` in `Inserts/`), point at a face and click to place it. Move to size it or type a width; `[` / `]` turns it 15°. **Save picked body** adds a body to the library.
+    - **Object**: pick the target, then Shift-pick the cutter bodies. `K` keeps the cutters.
+    - `Q` add · `W` cut · `E` intersect · `R` separate. Each knife is one undo entry.
 - Edges are soft-edged (antialiased) strokes held a few pixels in front of their faces at every zoom, so curved edges no longer break into dashes. The viewport renders with 4× multisampling (the status bar shows `4× MSAA` next to the GPU name), so face silhouettes are smooth too.
 
 ## 🔍 Log

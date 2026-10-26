@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 222 frames · 18.5859 s · slowest frame 351.868 ms
+- Frame: 1600 x 900 · 222 frames · 26.4229 s · slowest frame 447.54 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EdgeStrokeWalkthrough.txt
 - Expectations: 20 / 20 passed
 
@@ -30,10 +30,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 267EdgeStrokesWhole | 180 | `573fff04723f3b68` |
-| 268EdgeStrokesCloser | 194 | `a499f2572b6dd4ff` |
-| 269EdgeStrokesCloseUp | 208 | `4b2e19c1ed281b9d` |
-| 270EdgeStrokesVeryClose | 222 | `d24558cc5c96f475` |
+| 267EdgeStrokesWhole | 180 | `47f561fa339ffaac` |
+| 268EdgeStrokesCloser | 194 | `ba54ad3757d3f44b` |
+| 269EdgeStrokesCloseUp | 208 | `60ec92ca114c4006` |
+| 270EdgeStrokesVeryClose | 222 | `6a67b1875947137b` |
 
 ## Journal
 
@@ -43,17 +43,17 @@
 - Fill Circle1 · 0 ms
 - Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 0.6 m (pinned)
-- Extrude1 · Circle1 · New · 8 ms
+- Extrude1 · Circle1 · New · 12 ms
 - View Isometric
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EdgeStrokeRecovery.solidarc
-- Circle2 · 6 ms
-- Fill Circle2 · 6 ms
+- Circle2 · 7 ms
+- Fill Circle2 · 7 ms
 - Extrude Circle2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Extrude2 · Circle2 · Union · 93 ms
+- Extrude2 · Circle2 · Union · 131 ms
 - Selected Edge(Extrude#4.Cap(End)|Extrude#4.Side(Circle1))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.05 m (pinned)
-- Fillet 0.05 on 1 edge(s) · 157 ms
+- Fillet 0.05 on 1 edge(s) · 216 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EdgeStrokeRecovery.solidarc

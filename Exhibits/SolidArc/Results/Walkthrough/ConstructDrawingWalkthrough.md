@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 376 frames · 46.6249 s · slowest frame 503.604 ms
+- Frame: 1600 x 900 · 376 frames · 55.5534 s · slowest frame 533.61 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstructDrawingWalkthrough.txt
 - Expectations: 45 / 45 passed
 
@@ -55,18 +55,18 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 200ConstructSolids | 15 | `8f1ced29ed3d45c9` |
-| 201ConstructSketch | 24 | `e63bc7575e419b2a` |
-| 202BoxBase | 55 | `173b2b74371ff9b8` |
-| 203BoxHeight | 68 | `4b7ede06ffdc306d` |
-| 204CylinderHeight | 105 | `b91b4dc61a969402` |
-| 205ConeHeight | 147 | `5cacb5d6b6d9536a` |
-| 206PrismHeight | 193 | `e24c9ed8a82dab0f` |
-| 207TorusTube | 235 | `b4b8fef9cf545c45` |
-| 208PolygonDimensions | 312 | `42cd81b922e98141` |
-| 209LineDimensions | 338 | `b28fd3e5bcc21d0f` |
-| 210ConstructExact | 363 | `22730a7f7c40fe49` |
-| 211ConstructBodies | 376 | `63e953b868edcbb0` |
+| 200ConstructSolids | 15 | `946a8e3fdda4cc44` |
+| 201ConstructSketch | 24 | `2a899f4564777dfc` |
+| 202BoxBase | 55 | `7fee8acc18a90bf0` |
+| 203BoxHeight | 68 | `a08983803eae892f` |
+| 204CylinderHeight | 105 | `f033a1d3d04a1f6a` |
+| 205ConeHeight | 147 | `7e17312d1944f37a` |
+| 206PrismHeight | 193 | `75a172b2b438ea46` |
+| 207TorusTube | 235 | `bc3ba4b1e295fe52` |
+| 208PolygonDimensions | 312 | `ffc48744723c3c02` |
+| 209LineDimensions | 338 | `5b069d522ed02c32` |
+| 210ConstructExact | 363 | `86f13770b367d93c` |
+| 211ConstructBodies | 376 | `7883bf69b9b1ffe5` |
 
 ## Journal
 
@@ -74,34 +74,34 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 9 ms
+- Block1 · New body · 10 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
-- Cylinder1 · New body · 23 ms
+- Cylinder1 · New body · 22 ms
 - Cone: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cone: click the radius
 - Cone: move up, click the apex height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Cone1 · New body · 25 ms
+- Cone1 · New body · 41 ms
 - Prism: click the centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - 7 sides
 - Prism: click a vertex (+ / − sides)
 - Prism: move up, click the height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Prism1 · New body · 32 ms
+- Prism1 · New body · 31 ms
 - Torus: click the centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Torus: click the major radius (ring centre line)
 - Torus: click the tube (minor) radius
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Torus1 · New body · 68 ms
+- Torus1 · New body · 75 ms
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block2 · New body · 56 ms
+- Block2 · New body · 68 ms
 - Polygon on plane XY (or the body face under the first click): click the centre, then a vertex · + / − sides · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Polygon1 · 55 ms
+- Polygon1 · 56 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line aborted (document untouched)
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts

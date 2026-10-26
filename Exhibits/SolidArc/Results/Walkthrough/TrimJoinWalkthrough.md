@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 211 frames · 14.9884 s · slowest frame 385.073 ms
+- Frame: 1600 x 900 · 211 frames · 20.3804 s · slowest frame 504.557 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/TrimJoinWalkthrough.txt
 - Expectations: 17 / 17 passed
 
@@ -27,10 +27,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 235TrimHoverExtruded | 94 | `239df402f5a035cb` |
-| 236TrimDetached | 104 | `0b6e7ef7b5800b23` |
-| 237JoinPicked | 165 | `86866fea240730aa` |
-| 238JoinExtruded | 211 | `c042d13fd02b70bd` |
+| 235TrimHoverExtruded | 94 | `d5d7ac1ac64dc219` |
+| 236TrimDetached | 104 | `88427b70ca798c60` |
+| 237JoinPicked | 165 | `89da8e67edb31902` |
+| 238JoinExtruded | 211 | `3b186edfeca4a96a` |
 
 ## Journal
 
@@ -42,19 +42,19 @@
 - Fill Circle1 · 0 ms
 - Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Circle1 · New · 13 ms
+- Extrude1 · Circle1 · New · 18 ms
 - Trim: click the piece of a curve to remove (between its crossings) · Esc ends
-- Trim Circle1 of Circle1 into Circle2 (Circle1 kept hidden for the steps that read it) · 10 ms
+- Trim Circle1 of Circle1 into Circle2 (Circle1 kept hidden for the steps that read it) · 14 ms
 - Trim ended
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Rectangle2 · 10 ms
+- Rectangle2 · 12 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle3 · 11 ms
+- Circle3 · 13 ms
 - Selected sketch Rectangle2 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Circle3 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Join (Rectangle2, Circle3) · 10 ms
-- Fill Rectangle2 · 10 ms
+- Join (Rectangle2, Circle3) · 12 ms
+- Fill Rectangle2 · 12 ms
 - Extrude Rectangle2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: New body
 - Bevel size 1 m (pinned)
-- Extrude2 · Rectangle2 · New body · 16 ms
+- Extrude2 · Rectangle2 · New body · 23 ms

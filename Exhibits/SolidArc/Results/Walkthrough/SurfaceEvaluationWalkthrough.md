@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 386 frames · 37.4675 s · slowest frame 1854.35 ms
+- Frame: 1600 x 900 · 386 frames · 48.6033 s · slowest frame 2306.69 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -9,7 +9,7 @@
 |-----:|-------------|----------|--------|
 | 20 | `steps == 11` | 11 | 🟢 |
 | 37 | `pole-edits == 1` | 1 | 🟢 |
-| 38 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 25.86 mm · 1 ms | 🟢 |
+| 38 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 25.86 mm · 2 ms | 🟢 |
 | 45 | `loft-continuity == 0` | 0 | 🟢 |
 | 48 | `panels == 1` | 1 | 🟢 |
 | 54 | `selected-curves == Section3,Section4,Section5,Section6` | Section3,Section4,Section5,Section6 | 🟢 |
@@ -38,21 +38,21 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 155 | `1c5b0418dc5cfbb6` |
-| 71ZebraG2 | 216 | `da16d85263a0e923` |
-| 72DeviationMap | 262 | `2a069037ba2e15ad` |
-| 73ZebraMirrored | 386 | `973a0de307e45d03` |
+| 70ZebraG0 | 155 | `0a5080fb7eebf10a` |
+| 71ZebraG2 | 216 | `a93967f18074ba48` |
+| 72DeviationMap | 262 | `54788b7f520f920e` |
+| 73ZebraMirrored | 386 | `fd619d84809b2958` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 1 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
 - Framed the document (Space)
-- Move pole 2 of Section3 · 1 ms
-- Moved pole 2 of Section3 by 25.86 mm · 1 ms
+- Move pole 2 of Section3 · 2 ms
+- Moved pole 2 of Section3 by 25.86 mm · 2 ms
 - Selected curve Section1 · 4 poles · fit 0.045 mm · 1 selected
 - Selected curve Section2 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 3 selected
@@ -73,15 +73,15 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 1 ms
-- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 1 ms
+- Loft2 · 4 sections · G2 · 2 ms
+- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 2 ms
 - Selection cleared
 - View Top
 - Zebra off
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EvaluationRecovery.solidarc
 - View Isometric
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 1 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - Selected curve Section1 · 4 poles · fit 0.045 mm · 1 selected

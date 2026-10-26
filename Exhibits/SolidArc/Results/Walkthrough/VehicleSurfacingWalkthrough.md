@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 265 frames · 19.1988 s · slowest frame 402.311 ms
+- Frame: 1600 x 900 · 265 frames · 26.9012 s · slowest frame 512.754 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -50,7 +50,7 @@
 | 126 | `refused == 0` | 0 | 🟢 |
 | 127 | `sheet == 1` | 1 | 🟢 |
 | 128 | `sound == 1` | 1 | 🟢 |
-| 129 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 2 ms | 🟢 |
+| 129 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 3 ms | 🟢 |
 | 132 | `selected-curves == Section3` | Section3 | 🟢 |
 | 136 | `pole-edits == 0` | 0 | 🟢 |
 | 137 | `sheet == 1` | 1 | 🟢 |
@@ -63,18 +63,18 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 43 | `9af5f88ebe2c1b4a` |
-| 51ControlPoints | 50 | `d20bae1d83e99d7e` |
-| 52SectionsSelected | 147 | `fe047f5625296d81` |
-| 53BonnetLoft | 155 | `b3699ab6cda395d9` |
-| 54PoleDragLive | 192 | `9582f8362075a547` |
-| 55PoleMoved | 206 | `87aa698fd1004798` |
-| 56SheetUnderside | 241 | `7bb6cfa78218cb7c` |
+| 50CurvesImported | 43 | `169e5ef7902d3c31` |
+| 51ControlPoints | 50 | `1d582ea9dc87a04d` |
+| 52SectionsSelected | 147 | `b33d94081968ce2d` |
+| 53BonnetLoft | 155 | `bef0f1bf24f8ad4a` |
+| 54PoleDragLive | 192 | `a36e00eb88d1d7c8` |
+| 55PoleMoved | 206 | `1718f32435025f5a` |
+| 56SheetUnderside | 241 | `ba17071402288217` |
 
 ## Journal
 
 - New document (previous recovery copy kept)
-- Import 11 curve(s) · 1 ms
+- Import 11 curve(s) · 2 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
@@ -100,8 +100,8 @@
 - Loft1 · 6 sections · 1 ms
 - Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
 - Pole drag dropped
-- Move pole 2 of Section3 · 2 ms
-- Moved pole 2 of Section3 by 40.32 mm · 2 ms
+- Move pole 2 of Section3 · 3 ms
+- Moved pole 2 of Section3 by 40.32 mm · 3 ms
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 1 selected
 - Undo
 - Redo

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 622 frames · 53.1049 s · slowest frame 526.296 ms
+- Frame: 1600 x 900 · 622 frames · 53.2493 s · slowest frame 500.989 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
@@ -59,18 +59,18 @@
 | 262 | `volume ~ 4` | 4 | 🟢 |
 | 271 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
 | 272 | `sketch-dof == 1` | 1 | 🟢 |
-| 282 | `status contains Unlink` | Unlink Line2.Start of Line1 · 7 ms | 🟢 |
+| 282 | `status contains Unlink` | Unlink Line2.Start of Line1 · 17 ms | 🟢 |
 | 283 | `sketch-dof == 3` | 3 | 🟢 |
 | 284 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `2a473189d29a33b3` |
-| 129ConstrainSplineG2 | 221 | `435c9f8d7e12f5a2` |
-| 130ConstrainReference | 420 | `3a501a90fd2517e2` |
-| 131ConstrainReferenceFollows | 458 | `def33aee05fff50b` |
-| 132ConstrainLinkPick | 517 | `f0b6e5899247b61e` |
-| 133ConstrainLinked | 608 | `d0547b45ede75555` |
+| 128ConstrainSplineG1 | 179 | `f65963d06f5940d8` |
+| 129ConstrainSplineG2 | 221 | `8498da44a8a69d57` |
+| 130ConstrainReference | 420 | `d2615626a083d523` |
+| 131ConstrainReferenceFollows | 458 | `689a10810035929f` |
+| 132ConstrainLinkPick | 517 | `23873d0f720208c4` |
+| 133ConstrainLinked | 608 | `cb6da1ecb0dc12ff` |
 
 ## Journal
 
@@ -122,7 +122,7 @@
 - Picked Line1.Start, Line2.End
 - Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms
 - Picks cleared
-- D2 = 2 in Rectangle1 · 13 ms
+- D2 = 2 in Rectangle1 · 9 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
 - Picks cleared
 - Constrain ended
@@ -145,4 +145,4 @@
 - Constrain Line1 · 2 constraint(s) · DOF 1 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line2.Start
 - Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
-- Unlink Line2.Start of Line1 · 7 ms
+- Unlink Line2.Start of Line1 · 17 ms
