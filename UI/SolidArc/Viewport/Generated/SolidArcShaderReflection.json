@@ -23,7 +23,7 @@
   },
   {
    "file": "Shaders/SolidArcSurface.slang",
-   "sha256": "fb3393baf52bbc4daea77f75c7b07aadb5985b7c9694fb76207f52160ef15a06"
+   "sha256": "a9f166b70f3d816b5dbc76b5cd4b57af65d6f840130011b4d5267e30912f909c"
   },
   {
    "file": "Engine/Render/Shader/CadStroke.slang",
@@ -38,8 +38,8 @@
   {
    "name": "SolidArcSurfaceVertex",
    "entry": "main",
-   "words": 492,
-   "sha256": "04d258f39c687adf306687c309a5e80ccfb201328b8705218bbef2eb01e64e56",
+   "words": 498,
+   "sha256": "2b99fc7b27902b28835c2094381e5c100d33e8adcecb10a61bd25d791b9c1c8c",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -1111,8 +1111,8 @@
   {
    "name": "SolidArcSurfaceFragment",
    "entry": "main",
-   "words": 2703,
-   "sha256": "66531807c58068390ef39fd538f85f3fbd3ea287eac9b5e8d5009fecba9c4757",
+   "words": 2709,
+   "sha256": "3e8ef1895facaf599cfeb64d1761c406730473fd79a637f2fb013d901874a6cb",
    "reflection": {
     "version": "1.1",
     "parameters": [

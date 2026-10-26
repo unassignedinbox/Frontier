@@ -9962,17 +9962,17 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         return;
     }
 
-    // body[command='trim'] — click pieces to remove · Esc / T ends (the view keys above stay live).
+    // body[command='trim'] — click pieces to remove · Enter / right-click / Esc / T ends (the view keys above stay live).
     if (State.Trim.ActiveCondition)
     {
-        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_T)) CloseTrimSession(State);
+        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_T)) CloseTrimSession(State);
         return;
     }
 
-    // Fill tool — click regions to fill · Esc / F ends (the view keys above stay live).
+    // Fill tool — click regions to fill · Enter / right-click / Esc / F ends (the view keys above stay live).
     if (State.Fill.ActiveCondition)
     {
-        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_F)) CloseFillSession(State);
+        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_F)) CloseFillSession(State);
         return;
     }
 

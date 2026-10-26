@@ -75,8 +75,9 @@ public:
     [[nodiscard]] SolidArcBuffer CreateBuffer(VkDeviceSize Size, VkBufferUsageFlags Usage, bool HostVisibleCondition) const;
     void                         DestroyBuffer(SolidArcBuffer& Buffer) const;
     // ArrayLayers 0: a plain 2D image; ≥ 1: a 2D array with a 2D_ARRAY view over every layer (matcap library).
+    // Samples > 1: a multisampled attachment (resolved into a single-sample image at the end of rendering).
     [[nodiscard]] SolidArcImage  CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect,
-                                             uint32_t ArrayLayers = 0) const;
+                                             uint32_t ArrayLayers = 0, VkSampleCountFlagBits Samples = VK_SAMPLE_COUNT_1_BIT) const;
     void                         DestroyImage(SolidArcImage& Image) const;
 
     VkInstance                       Instance       = VK_NULL_HANDLE;

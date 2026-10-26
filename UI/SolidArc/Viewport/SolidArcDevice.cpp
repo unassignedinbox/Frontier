@@ -266,7 +266,7 @@ void SolidArcDevice::DestroyBuffer(SolidArcBuffer& Buffer) const
 }
 
 SolidArcImage SolidArcDevice::CreateImage(uint32_t Width, uint32_t Height, VkFormat Format, VkImageUsageFlags Usage, VkImageAspectFlags Aspect,
-                                         uint32_t ArrayLayers) const
+                                         uint32_t ArrayLayers, VkSampleCountFlagBits Samples) const
 {
     SolidArcImage Image;
     Image.Format = Format;
@@ -278,7 +278,7 @@ SolidArcImage SolidArcDevice::CreateImage(uint32_t Width, uint32_t Height, VkFor
     Request.extent        = { Width, Height, 1 };
     Request.mipLevels     = 1;
     Request.arrayLayers   = std::max<uint32_t>(ArrayLayers, 1);
-    Request.samples       = VK_SAMPLE_COUNT_1_BIT;
+    Request.samples       = Samples;
     Request.tiling        = VK_IMAGE_TILING_OPTIMAL;
     Request.usage         = Usage;
     Request.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;

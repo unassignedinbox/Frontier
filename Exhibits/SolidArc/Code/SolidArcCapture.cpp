@@ -166,7 +166,7 @@ int main(int Count, char** Arguments)
     }
     SolidArcWorkspaceState State;
     InitialiseSolidArcWorkspace(State, Options);
-    State.DeviceLabel = Device.Describe();
+    State.DeviceLabel = Device.Describe() + (Frame.Raster.SampleCount() > 1 ? " · " + std::to_string(Frame.Raster.SampleCount()) + "× MSAA" : std::string(" · no MSAA"));
     State.ViewportRect = { 0.0f, 0.0f, float(Width) - 680.0f, float(Height) - 200.0f };
     if (Settings.Specimen)
     {

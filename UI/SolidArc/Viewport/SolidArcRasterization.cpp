@@ -67,7 +67,27 @@ struct PipelineRecipe
     bool                                           IdentityWrite  = true;
     bool                                           ColourWrite    = true;
     VkCompareOp                                    DepthCompare   = VK_COMPARE_OP_LESS_OR_EQUAL;
+    VkSampleCountFlagBits                          Samples        = VK_SAMPLE_COUNT_1_BIT;
 };
+
+// 📝 The largest count ≤ Wish (a power of two) that the device supports for the colour, identity and depth attachments.
+VkSampleCountFlagBits SupportedSamples(const SolidArcDevice& Device, uint32_t Wish)
+{
+    VkSampleCountFlags Common = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
+    const std::pair<VkFormat, VkImageUsageFlags> Attachments[] = { { ColourFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT },
+                                                                   { IdentityFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT },
+                                                                   { DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT } };
+    for (const auto& [Format, Usage] : Attachments)
+    {
+        VkImageFormatProperties Described{};
+        if (vkGetPhysicalDeviceImageFormatProperties(Device.Physical, Format, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, Usage, 0, &Described) != VK_SUCCESS)
+            return VK_SAMPLE_COUNT_1_BIT;
+        Common &= Described.sampleCounts;
+    }
+    for (uint32_t Count = 8; Count > 1; Count /= 2)
+        if (Count <= Wish && (Common & Count) != 0u) return VkSampleCountFlagBits(Count);
+    return VK_SAMPLE_COUNT_1_BIT;
+}
 
 VkPipeline CreatePipeline(VkDevice Device, VkPipelineLayout Layout, const PipelineRecipe& Recipe)
 {
@@ -91,7 +111,7 @@ VkPipeline CreatePipeline(VkDevice Device, VkPipelineLayout Layout, const Pipeli
     Raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;                                    // 📝 Outward CCW triangles (y-flip in ClipFromWorld)
     Raster.lineWidth   = 1.0f;
     VkPipelineMultisampleStateCreateInfo Samples{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
-    Samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    Samples.rasterizationSamples = Recipe.Samples;
     VkPipelineDepthStencilStateCreateInfo DepthState{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
     DepthState.depthTestEnable  = VK_TRUE;
     DepthState.depthWriteEnable = Recipe.DepthWrite ? VK_TRUE : VK_FALSE;
@@ -163,9 +183,10 @@ SolidArcRasterization::~SolidArcRasterization()
     Destroy();
 }
 
-bool SolidArcRasterization::Create(const SolidArcDevice& Borrowed, std::string& Refusal)
+bool SolidArcRasterization::Create(const SolidArcDevice& Borrowed, std::string& Refusal, uint32_t SampleWish)
 {
-    Device = &Borrowed;
+    Device  = &Borrowed;
+    Samples = SupportedSamples(Borrowed, SampleWish);
     try
     {
         // ① descriptor set: face states (binding 0), edge states (binding 1), section plane (binding 2; the push block is full)
@@ -284,6 +305,7 @@ void SolidArcRasterization::CreatePipelines()
     const VkShaderModule GizmoFragment   = CreateModule(Device->Device, SolidArcGizmoFragmentCode);
 
     PipelineRecipe Surface;
+    Surface.Samples       = Samples;
     Surface.Vertex        = SurfaceVertex;
     Surface.Fragment      = SurfaceFragment;
     Surface.VertexEntry   = SolidArcSurfaceVertexEntry;
@@ -305,6 +327,7 @@ void SolidArcRasterization::CreatePipelines()
     SurfaceGhostPipeline        = CreatePipeline(Device->Device, PlaneLayout, SurfaceGhost);
 
     PipelineRecipe Edge;
+    Edge.Samples       = Samples;
     Edge.Vertex        = EdgeVertex;
     Edge.Fragment      = EdgeFragment;
     Edge.VertexEntry   = SolidArcEdgeVertexEntry;
@@ -337,6 +360,7 @@ void SolidArcRasterization::CreatePipelines()
     EdgeOccludedIdentityPipeline = CreatePipeline(Device->Device, PipelineLayout, OccludedCodes);
 
     PipelineRecipe Grid;
+    Grid.Samples       = Samples;
     Grid.Vertex        = GridVertex;
     Grid.Fragment      = GridFragment;
     Grid.VertexEntry   = SolidArcGridVertexEntry;
@@ -348,6 +372,7 @@ void SolidArcRasterization::CreatePipelines()
 
     // 📝 Image planes: depth-tested (the model hides them), never written to depth or to the identity target (not pickable).
     PipelineRecipe Plane;
+    Plane.Samples       = Samples;
     Plane.Vertex        = PlaneVertex;
     Plane.Fragment      = PlaneFragment;
     Plane.VertexEntry   = SolidArcImagePlaneVertexEntry;
@@ -360,6 +385,7 @@ void SolidArcRasterization::CreatePipelines()
     // 📝 Gizmo: drawn after a depth clear, so the model never hides it while its own handles still occlude each other;
     //    never written to the identity target (the CPU pick on the same triangles decides hover / grab).
     PipelineRecipe Gizmo;
+    Gizmo.Samples       = Samples;
     Gizmo.Vertex        = GizmoVertex;
     Gizmo.Fragment      = GizmoFragment;
     Gizmo.VertexEntry   = SolidArcGizmoVertexEntry;
@@ -415,7 +441,14 @@ void SolidArcRasterization::CreateTargets(uint32_t Width, uint32_t Height)
     Colour   = Device->CreateImage(Width, Height, ColourFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                                    VK_IMAGE_ASPECT_COLOR_BIT);
     Identity = Device->CreateImage(Width, Height, IdentityFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    Depth    = Device->CreateImage(Width, Height, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    Depth    = Device->CreateImage(Width, Height, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, Samples);
+    // 📝 Multisampling: the passes draw into these and the end of rendering resolves them (colour averaged, identity
+    //    sample 0), so silhouettes and strokes get smooth borders while picks stay whole codes.
+    if (Samples != VK_SAMPLE_COUNT_1_BIT)
+    {
+        ColourSamples   = Device->CreateImage(Width, Height, ColourFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, Samples);
+        IdentitySamples = Device->CreateImage(Width, Height, IdentityFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, Samples);
+    }
     ColourReadback   = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
     IdentityReadback = Device->CreateBuffer(VkDeviceSize(Width) * Height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
     ++BuiltTargets;
@@ -428,7 +461,8 @@ void SolidArcRasterization::CreateTargets(uint32_t Width, uint32_t Height)
 
 void SolidArcRasterization::DestroyTargets()
 {
-    for (SolidArcImage* Image : { &Colour, &Identity, &Depth }) Device->DestroyImage(*Image);
+    for (SolidArcImage* Image : { &Colour, &Identity, &Depth, &ColourSamples, &IdentitySamples })
+        if (Image->Image) Device->DestroyImage(*Image);
     for (SolidArcBuffer* Buffer : { &ColourReadback, &IdentityReadback }) Device->DestroyBuffer(*Buffer);
 }
 
@@ -599,6 +633,12 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
     TransitionSolidArcImage(Commands, Colour.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     TransitionSolidArcImage(Commands, Identity.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     TransitionSolidArcImage(Commands, Depth.Image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    const bool Multisampled = Samples != VK_SAMPLE_COUNT_1_BIT;
+    if (Multisampled)
+    {
+        TransitionSolidArcImage(Commands, ColourSamples.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        TransitionSolidArcImage(Commands, IdentitySamples.Image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
 
     VkRenderingAttachmentInfo ColourTargets[2]{};
     ColourTargets[0] = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
@@ -613,6 +653,19 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
     ColourTargets[1].clearValue.color.uint32[1] = 0u;
     ColourTargets[1].clearValue.color.uint32[2] = 0u;
     ColourTargets[1].clearValue.color.uint32[3] = 0u;
+    if (Multisampled)
+    {
+        ColourTargets[0].imageView          = ColourSamples.View;
+        ColourTargets[0].storeOp            = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        ColourTargets[0].resolveMode        = VK_RESOLVE_MODE_AVERAGE_BIT;
+        ColourTargets[0].resolveImageView   = Colour.View;
+        ColourTargets[0].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ColourTargets[1].imageView          = IdentitySamples.View;
+        ColourTargets[1].storeOp            = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        ColourTargets[1].resolveMode        = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;                // Integer codes are never averaged
+        ColourTargets[1].resolveImageView   = Identity.View;
+        ColourTargets[1].resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
     VkRenderingAttachmentInfo DepthTarget{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
     DepthTarget.imageView               = Depth.View;
     DepthTarget.imageLayout             = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;

@@ -23,11 +23,13 @@ struct SurfaceCorner
     [[vk::location(2)]] uint   Face     : BLENDINDICES0;                                     // [idx] - Scene face
 };
 
+// 📝 Centroid: with multisampling a border pixel is shaded once at a point inside the covered samples, so the section
+//    test and the lighting never extrapolate past the triangle.
 struct SurfacePixel
 {
     float4                 Position : SV_Position;                                           // [-]   - Clip position
-    float3                 Normal   : NORMAL0;                                               // [-]   - World normal
-    float3                 World    : TEXCOORD1;                                             // [len] - World point
+    centroid float3        Normal   : NORMAL0;                                               // [-]   - World normal
+    centroid float3        World    : TEXCOORD1;                                             // [len] - World point
     nointerpolation uint   Face     : BLENDINDICES0;                                         // [idx] - Scene face
 };
 

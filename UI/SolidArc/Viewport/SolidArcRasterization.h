@@ -111,7 +111,10 @@ public:
     SolidArcRasterization& operator=(const SolidArcRasterization&) = delete;
     ~SolidArcRasterization();
 
-    bool Create(const SolidArcDevice& Device, std::string& Refusal);
+    // SampleWish: multisample count for the viewport edges and silhouettes (lowered to what the device supports for all
+    // three attachments; 1 = off).
+    bool Create(const SolidArcDevice& Device, std::string& Refusal, uint32_t SampleWish = 4);
+    [[nodiscard]] uint32_t SampleCount() const { return uint32_t(Samples); }
     void Destroy();
 
     // Recreates the targets when the extent changes (waits for the device first).
@@ -159,7 +162,10 @@ private:
 
     SolidArcImage  Colour            = {};
     SolidArcImage  Identity          = {};
-    SolidArcImage  Depth             = {};
+    SolidArcImage  Depth             = {};                                                   // [-] - Multisampled when Samples > 1
+    SolidArcImage  ColourSamples     = {};                                                   // [-] - Multisampled colour (resolved into Colour)
+    SolidArcImage  IdentitySamples   = {};                                                   // [-] - Multisampled identity (sample 0 into Identity)
+    VkSampleCountFlagBits Samples    = VK_SAMPLE_COUNT_1_BIT;                                // [-] - Viewport multisample count
     SolidArcBuffer ColourReadback    = {};
     SolidArcBuffer IdentityReadback  = {};
     SolidArcBuffer ProbeReadback     = {};
