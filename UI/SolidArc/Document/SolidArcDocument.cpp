@@ -2394,6 +2394,80 @@ SolidArcCommandOutcome KnifeSolidArcPlacedBody(SolidArcDocument& Document, const
     });
 }
 
+SolidArcCommandOutcome KnifeSolidArcPrimitive(SolidArcDocument& Document, const SolidArcConstructRequest& Request, const std::string& Target,
+                                              FeatureCombination Combination, bool KeepCondition)
+{
+    const std::string Cut     = Target;
+    const std::string Caption = NextCaption(Document, "Knife");
+    const std::string Label   = Caption + " · " + SolidArcConstructLabel(Request.Kind) + " · " + FeatureCombinationLabel(Combination) +
+                                (Combination != FeatureCombination::Separate && !Cut.empty() ? " (" + SolidArcBodyCaption(Document, Cut) + ")" : std::string()) +
+                                (KeepCondition && Combination != FeatureCombination::Separate ? " · cutter kept" : "");
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Combination != FeatureCombination::Union && Combination != FeatureCombination::Difference && Combination != FeatureCombination::Intersection &&
+            Combination != FeatureCombination::Separate)
+            return "choose Difference, Union, Intersection or Separate";
+        if (Combination != FeatureCombination::Separate)
+        {
+            if (!Document.Summary.PresentCondition) return "nothing to cut yet (no body)";
+            if (Cut.empty()) return "no body under the knife: draw the cutter on a face of the body to cut";
+            if (!FindRegeneratedBody(Document, Cut)) return "no body named " + Cut;
+        }
+        // The same checks as a Construct tile (a cone's Height may be negative: it points down).
+        const SolidArcConstructKind Tile = Request.Kind;
+        const bool BoxLike = Tile == SolidArcConstructKind::Block || Tile == SolidArcConstructKind::Wedge;
+        const bool Round   = Tile == SolidArcConstructKind::Cylinder || Tile == SolidArcConstructKind::Sphere || Tile == SolidArcConstructKind::Cone ||
+                             Tile == SolidArcConstructKind::Prism || Tile == SolidArcConstructKind::Tube;
+        const bool Tall    = Tile != SolidArcConstructKind::Sphere && Tile != SolidArcConstructKind::Torus;
+        if ((BoxLike && (Request.Width <= 0.0 || Request.Depth <= 0.0)) || (Round && Request.Radius <= 0.0) ||
+            (Tall && (Tile == SolidArcConstructKind::Cone ? Request.Height == 0.0 : Request.Height <= 0.0)))
+            return "every dimension must be positive";
+        if (Tile == SolidArcConstructKind::Torus && (Request.Minor <= 0.0 || Request.Major <= Request.Minor)) return "torus: Major must exceed Minor > 0";
+        if (Tile == SolidArcConstructKind::Tube && (Request.Inner <= 0.0 || Request.Inner >= Request.Radius)) return "tube: the bore must lie inside the outer radius";
+        if (Tile == SolidArcConstructKind::Prism && (Request.Sides < 3 || Request.Sides > 64)) return "prism: 3 … 64 sides";
+        if (Request.PlaneCondition)
+        {
+            const OrthonormalFrame& Face = Request.Plane;
+            const bool Finite = std::isfinite(Face.Origin.X) && std::isfinite(Face.Origin.Y) && std::isfinite(Face.Origin.Z);
+            const bool Square = std::abs(Length(Face.XAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.YAxis) - 1.0) < 1.0e-9 && std::abs(Length(Face.ZAxis) - 1.0) < 1.0e-9
+                             && std::abs(Dot(Face.XAxis, Face.YAxis)) < 1.0e-9 && Length(Cross(Face.XAxis, Face.YAxis) - Face.ZAxis) < 1.0e-9;
+            if (!Finite || !Square) return "the face plane is not an orthonormal right-handed frame";
+        }
+        SolidArcConstructRequest Cutter = Request;
+        const bool Direct = Combination != FeatureCombination::Separate && !KeepCondition;
+        Cutter.Target      = Direct ? Cut : std::string{};
+        Cutter.Combination = Direct ? Combination : FeatureCombination::Separate;
+        AuthorTile(Document, Cutter, Cutter.Combination);
+        const std::string Made = Document.Tree.Steps.back().Label;                           // The sweep: the new body when Separate
+        if (Direct) Document.Captions[Made] = Caption;                                       // The sweep is the cut itself
+        Document.Selection = {};
+        if (Combination == FeatureCombination::Separate)
+        {
+            Document.Selection.Bodies   = { Made };
+            Document.Selection.LastKind = SolidArcSelectionKind::Body;
+            return {};
+        }
+        if (Direct) return {};
+        FeatureStep Copy;
+        Copy.Kind      = FeatureStepKind::Duplicate;
+        Copy.Label     = "Duplicate#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Copy.Target    = Made;
+        Copy.Placement = AffineMap{};
+        const std::string Tool = Copy.Label;
+        Document.Captions[Tool] = NextCaption(Document, Document.Captions[Made] + "Cutter");
+        Document.Tree.Steps.push_back(std::move(Copy));
+        FeatureStep Combine;
+        Combine.Kind        = FeatureStepKind::Combine;
+        Combine.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Combine.Combination = Combination;
+        Combine.Target      = Cut;
+        Combine.Tool        = Tool;
+        Document.Captions[Combine.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Combine));
+        return {};
+    });
+}
+
 SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, SolidArcVisibilityVerb Verb)
 {
     // The picked bodies: body picks plus the owners of picked faces and edges.

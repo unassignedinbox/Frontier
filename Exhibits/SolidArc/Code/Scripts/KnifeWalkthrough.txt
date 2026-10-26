@@ -443,3 +443,96 @@ key Enter
 frames 3
 expect refused == 0
 expect knife-commits == 12
+
+# ⑬ 3D cutters, drawn as the Construct menu's primitives (base on the face, then the height into the body with live
+#    dimension lines; the cut stages behind the outline as it is pulled). A fresh 2 m cube (volume 8):
+#    box 0.4 × 0.4 pulled 0.3 into the top face = 0.048 → 7.952 · cylinder r 0.2 pulled 0.5 in, cutter kept (K):
+#    −0.02π for the hole, +0.0208π for the kept cutter (0.5 + the 0.02 knife lift above the face) → 7.952 + 0.0008π ·
+#    a sphere centred on the +x face cuts a half ball (right-click is its rim)
+key Escape
+frames 2
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+expect bodies == 1
+expect volume ~ 8
+click @FitView
+frames 3
+click @SketchKnifeTool
+frames 3
+click @KnifeToolBlock
+frames 3
+expect knife == 1
+expect knife-pending == 1
+expect drawing-solid == 1
+expect drawing-solid-kind == Block
+click world -0.6 -0.6 2.0
+frames 2
+move world -0.2 -0.2 2.0
+frames 2
+click world -0.2 -0.2 2.0
+frames 2
+move world -0.2 -0.2 1.7
+frames 6
+expect drawing-lift ~ -0.3
+expect knife-target == Block1
+capture 288KnifeBoxCutter
+click world -0.2 -0.2 1.7
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 13
+expect bodies == 1
+expect volume ~ 7.952
+click @SketchKnifeTool
+frames 3
+click @KnifeToolCylinder
+frames 3
+expect drawing-solid-kind == Cylinder
+click world 0.4 0.4 2.0
+frames 2
+move world 0.6 0.4 2.0
+frames 2
+click world 0.6 0.4 2.0
+frames 2
+move world 0.6 0.4 1.5
+frames 6
+expect drawing-lift ~ -0.5
+key K
+frames 2
+click world 0.6 0.4 1.5 Right
+frames 3
+expect refused == 0
+expect knife-commits == 14
+expect bodies == 2
+expect volume ~ 7.954513274122872
+click @SketchKnifeTool
+frames 3
+click @KnifeToolSphere
+frames 3
+expect drawing-solid-kind == Sphere
+click world 1.0 0.0 1.0
+frames 2
+move world 1.0 0.3 1.0
+frames 8
+expect knife-target == Block1
+capture 289KnifeSphereCutter
+click world 1.0 0.3 1.0 Right
+frames 3
+expect refused == 0
+expect knife-commits == 15
+expect bodies == 2
+expect volume < 7.95

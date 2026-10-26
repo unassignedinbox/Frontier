@@ -465,6 +465,8 @@ struct SolidArcKnifeSession
     // 📝 Toolbar tool menu: the cutter Shift+K and the knife icon open with (kept across sessions).
     SolidArcKnifeMode                      PreferredMode        = SolidArcKnifeMode::Sketch; // [-]   - Sketch shape or library insert
     SolidArcDrawingKind                    PreferredShape       = SolidArcDrawingKind::Circle; // [-] - Sketch: the shape drawn first
+    bool                                   PreferredSolidCondition = false;                  // [-]   - The cutter is a Construct primitive (3D)
+    SolidArcConstructKind                  PreferredSolid       = SolidArcConstructKind::Block; // [-] - That primitive (box, cylinder, …)
 };
 
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).

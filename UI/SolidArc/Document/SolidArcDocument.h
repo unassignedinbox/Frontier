@@ -451,6 +451,13 @@ struct SolidArcInsertPlacement
                                                              const GeometryProcessing::AffineMap& Map, GeometryProcessing::FeatureCombination Combination,
                                                              bool KeepCondition);
 
+// 📝 Knife with a Construct primitive drawn as the cutter (box, cylinder, cone, prism, sphere, torus, wedge, tube): the
+//    tile Request describes (its own Combination / Target ignored) is authored and combined into Target — directly
+//    (the sweep's own Boolean) or, with KeepCondition, as a new body whose Duplicate cuts so the cutter stays. Separate
+//    only adds the cutter as a new body (selected). One undo entry; refused (document untouched) as Construct refuses.
+[[nodiscard]] SolidArcCommandOutcome KnifeSolidArcPrimitive(SolidArcDocument& Document, const SolidArcConstructRequest& Request, const std::string& Target,
+                                                           GeometryProcessing::FeatureCombination Combination, bool KeepCondition);
+
 // 📝 Alt+J (Fusion Joint; Plasticity has none): place the body owning MovingName onto the body owning FixedName by a
 //    joint between the two joint origins (an edge or a face each; Assembly/JointSolver.h reads the origin off it).
 //    Angles in degrees; each value becomes a step parameter (caption.Angle, .Offset, .Slide, .SecondSlide, .Pitch, .Roll)
