@@ -88,7 +88,7 @@ Evidence key: **S** = asserted by a walkthrough script line (`Main` = `Workspace
 | # | SolidArc browser editor | SolidArc | Status | Evidence |
 |---|---|---|---|---|
 | 39 | Staged preview never mutates the document, undo stack or journal | Preview body drawn from a staged clone | 🟢 | S Main ④ (`preview-faces == 12` while `faces == 11`, undo unchanged) · C 04BevelPreview |
-| 40 | Horizontal pointer movement adjusts the signed size: positive fillet, negative chamfer | Same (½ world-per-pixel per px) | 🟢 | S Main ④ (`bevel-size > 0.25`), Short ② (`bevel-chamfer == 1`) · C 19BevelSignChamfer |
+| 40 | Horizontal pointer movement adjusts the signed size: positive fillet, negative chamfer | Size only (½ world-per-pixel per px), floor 1 mm, no flip into a chamfer — deliberate change after the Windows report that a wandering pointer turned the fillet into a chamfer; D / C pick the shape; a left drag sizes too and pins | 🟢 | S Main ④ (`bevel-size > 0.25`), Short ② (`bevel-chamfer == 0`, `bevel-size ~ 0.001`) · C 19BevelSizeFloor |
 | 41 | Shift scales pointer increments for fine adjustment | × 0.1 with Shift | 🟢 | Src |
 | 42 | Typed sizes `250mm`, `-25cm`, `0.25m`, `1in`, `1ft`; numeric entry pins | Same units; Mouse adjust unpins | 🟢 | S Main ④ (`300mm` → 0.3, pinned) |
 | 43 | Enter / Apply / viewport left-click commits | Same | 🟢 | S Main ④ (Enter), Short ③ (viewport click) · C 05FilletApplied |

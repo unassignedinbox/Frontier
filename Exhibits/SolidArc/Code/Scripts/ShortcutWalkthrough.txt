@@ -26,7 +26,7 @@ expect pick-mode == 1
 key 5
 expect pick-mode == 5
 
-# ② B opens the fillet command; C / D switch chamfer / fillet; moving left past zero is a chamfer too; Esc aborts
+# ② B opens the fillet command; C / D switch chamfer / fillet; moving left shrinks the size to 1 mm and stops (no flip into a chamfer); Esc aborts
 #    (selection changes are undoable, so the undo depth stays 5 across the aborted command)
 key 2
 move world 2.0 0.0 0.0
@@ -46,9 +46,10 @@ move viewport 0.40 0.70
 frames 1
 move viewport 0.40 0.70 offset -300 0
 frames 2
-expect bevel-chamfer == 1
+expect bevel-chamfer == 0
+expect bevel-size ~ 0.001
 expect bevel-pinned == 0
-capture 19BevelSignChamfer
+capture 19BevelSizeFloor
 key Escape
 frames 1
 expect bevel-active == 0

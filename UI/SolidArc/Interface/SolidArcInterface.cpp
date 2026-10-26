@@ -887,10 +887,9 @@ void AdjustBevelSize(SolidArcWorkspaceState& State, double Delta)
         WriteBevelText(Bevel);
         return;
     }
-    double Signed = (Bevel.Shape == BlendProfile::Fillet ? Bevel.Size : -Bevel.Size) + Delta;
-    if (std::abs(Signed) < 1.0e-3) Signed = Signed < 0.0 ? -1.0e-3 : 1.0e-3;
-    Bevel.Shape = Signed > 0.0 ? BlendProfile::Fillet : BlendProfile::Chamfer;
-    Bevel.Size  = std::round(std::abs(Signed) * 1.0e4) * 1.0e-4;
+    // 📝 The pointer only sizes the blend; it stops at 1 mm instead of crossing 0 into the other shape (that flip turned
+    //    fillets into chamfers whenever the pointer wandered left). D / C pick the shape.
+    Bevel.Size = std::round(std::max(1.0e-3, Bevel.Size + Delta) * 1.0e4) * 1.0e-4;
     WriteBevelText(Bevel);
 }
 
@@ -8907,7 +8906,11 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
             if (Io.MousePos.x != Bevel.DragLast) AdjustBevelSize(State, (Io.MousePos.x - Bevel.DragLast) * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
             Bevel.DragLast = Io.MousePos.x;
         }
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) Bevel.PointerDragCondition = false;
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && Bevel.PointerDragCondition)
+        {
+            Bevel.PointerDragCondition = false;
+            Bevel.PinnedCondition      = true;                                                   // The dragged size stays when the pointer moves on
+        }
         if (!HandleOwned && Hovered && Idle && (!Bevel.PinnedCondition || (Bevel.Verb == SolidArcSessionVerb::Inset && Bevel.DepthEnabled)) && Io.MouseDelta.x != 0.0f)
             AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
         if (LeftClick && !OverCube && !HandleOwned)

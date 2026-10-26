@@ -196,7 +196,7 @@ expect volume ~ 7.541828330588459
 expect sound == 1
 
 # ⑧ the toolbar cutter menu (beside the knife icon): Rectangle opens the knife drawing a rectangle; 0.4 × 0.4 on the top
-#    face cut 0.1 deep removes 0.016; the menu remembers it (Shift+K starts a rectangle), Insert / Object switch modes,
+#    face (T back to depth: Through is remembered from ③) cut 0.1 deep removes 0.016; the menu remembers it (Shift+K starts a rectangle), Insert / Object switch modes,
 #    Circle brings the default back
 key Escape
 frames 2
@@ -220,6 +220,10 @@ frames 2
 click world 0.8 -0.4 2.0
 frames 3
 expect knife-pending == 0
+expect knife-through == 1
+key T
+frames 2
+expect knife-through == 0
 type 0.1
 frames 6
 expect knife-depth ~ 0.1
