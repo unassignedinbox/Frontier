@@ -4728,8 +4728,8 @@ int main()
             Tally(HandleGate, std::abs(Loaded.Summary.Volume - Edited), Opened && Loaded.Summary.Volume == Edited && EncodeSolidArcDocument(Loaded) == Written &&
                   Written.find("AnchorSizes") != std::string::npos, Format("codec %d bytes byte-equal with AnchorSizes, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
             std::string Damaged = Written;
-            const size_t At = Damaged.find("AnchorSizes = [ ");
-            if (At != std::string::npos) Damaged.insert(At + 16, "0.5, ");
+            const size_t At = Damaged.find("AnchorSizes = [");
+            if (At != std::string::npos) Damaged.insert(At + 15, " 0.5,");
             Tally(HandleGate, 0.0, At != std::string::npos && !DecodeSolidArcDocument(Damaged).Refusal.empty(), "a file with more corner sizes than corners is refused");
         }
 

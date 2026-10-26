@@ -682,10 +682,13 @@ namespace
             }
             for (const auto& End : Ends) (SheetOf(End.first) ? Blended : Sharp).push_back(End);
             if (Blended.empty()) return {};
-            // ⚠️ A variable sheet only ends in a plain cap (its contacts do not share the spine's τ, see VariableCondition).
+            // ⚠️ A variable sheet ends in a plain cap or a mitre with one other blend at a degree-3 vertex (its contacts do not
+            //    share the spine's τ, see VariableCondition, so the mitre takes the general carrier section).
+            const bool MitrePair = Blended.size() == 2 && Blended[0].first != Blended[1].first && Ends.size() == 3;   // [-] - Two blends + one sharp edge
             for (const auto& End : Blended)
             {
-                if (SheetOf(End.first)->VariableCondition() && (Blended.size() != 1 || Ends.size() != 3)) return "variable size where blends meet or at a vertex of degree ≠ 3 (🚧)";
+                if (SheetOf(End.first)->VariableCondition() && !((Blended.size() == 1 && Ends.size() == 3) || MitrePair))
+                    return "variable size where three blends meet or at a vertex of degree ≠ 3 (🚧)";
                 if (!SheetOf(End.first)->LawCondition()) continue;
                 // 📝 A ball-law sheet ends in a cap, runs through a seam (continuation) or meets its own curve's next edge at
                 //    a seams-only vertex (the law is geometric, so both sheets share the section ball); elsewhere it refuses.
@@ -1280,15 +1283,32 @@ namespace
             {
                 const Vector3 NormalA = EvaluateSurfaceNormal(SurfaceOf(FaceA), ProjectOntoSurface(SurfaceOf(FaceA), Position, {}));
                 const Vector3 NormalB = EvaluateSurfaceNormal(SurfaceOf(FaceB), ProjectOntoSurface(SurfaceOf(FaceB), Position, {}));
-                if (Length(Cross(NormalA, NormalB)) < 1.0e-9) return ResolveSmoothJoint(Vertex, EndA, EndB, Sharp, SharedA, SharedB);
+                if (Length(Cross(NormalA, NormalB)) < 1.0e-9)
+                {
+                    if (SheetA.VariableCondition() || SheetB.VariableCondition()) return "variable size across a smooth joint (🚧)";
+                    return ResolveSmoothJoint(Vertex, EndA, EndB, Sharp, SharedA, SharedB);
+                }
             }
+            const bool Variable = SheetA.VariableCondition() || SheetB.VariableCondition();   // [-] - A cone or tilted chamfer plane
             const std::optional<Vector3> PointA = CrossCurveSurface(SheetA.Contacts[OuterA], Position, SurfaceOf(FaceB));
             const std::optional<Vector3> PointB = CrossCurveSurface(SheetB.Contacts[OuterB], Position, SurfaceOf(FaceA));
             if (!PointA || !PointB) return "mitre: outer contacts miss the far faces";
             if (!Agree(Distance(*PointA, *PointB))) return "unequal mitre: outer contacts meet the sharp edge apart (setback, 🚧)";
             const int Outer = IssueVertex((*PointA + *PointB) * 0.5);
             int Inner = -1, Mitre = -1;
-            if (Settings.Profile == BlendProfile::Fillet)
+            if (Settings.Profile == BlendProfile::Fillet && Variable)
+            {
+                // 📝 Variable fillets (cones): the sizes match at this corner (the outer contacts met above), but the spines
+                //    are skew, so there is no corner ball. Both cones touch the shared face along their contact lines, which
+                //    cross at M; the mitre is the general cone ∩ cone section from M (tangent there) to the sharp edge.
+                std::optional<Vector3> Meet = MeetLines(SheetA.Contacts[SharedA], SheetB.Contacts[SharedB]);
+                if (!Meet) return "variable mitre: fillet contacts on the shared face do not meet";
+                Inner = IssueVertex(*Meet);
+                Mitre = IssueSection(SheetA.Surface, SheetB.Surface, Inner, Outer);
+                if (Mitre < 0) return std::string("variable mitre: no exact section of the ") + SurfaceCategoryLabel(SheetA.Surface) + " and " + SurfaceCategoryLabel(SheetB.Surface)
+                                    + " fillets from the shared face to the sharp edge (🚧)";
+            }
+            else if (Settings.Profile == BlendProfile::Fillet)
             {
                 const std::optional<Vector3> Ball = CrossCurveSurface(SheetA.Spine, Position, SheetB.Offsets[OuterB]);
                 if (!Ball || !Agree(DistanceToCurve(SheetB.Spine, *Ball))) return "mitre: spines do not meet at a corner ball";
