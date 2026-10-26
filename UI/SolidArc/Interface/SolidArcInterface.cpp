@@ -4827,7 +4827,7 @@ void ChooseKnifeMode(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode)
         return;
     }
     Announce(State, Knife.Sketch.empty() ? "Knife · Sketch · draw a closed shape on a face (card: Circle / Rectangle / Polygon / Slot / Line)"
-                                         : "Knife · Sketch " + CaptionOf(State.Document, Knife.Sketch) + " · move sideways for the depth · T through");
+                                         : "Knife · Sketch " + CaptionOf(State.Document, Knife.Sketch) + " · pull along the face normal for the depth (as Construct heights) · T through");
 }
 
 void ChooseKnifeCombination(SolidArcWorkspaceState& State, FeatureCombination Combination)
@@ -4891,7 +4891,7 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     if (Knife.PreferredMode == SolidArcKnifeMode::Insert) { ChooseKnifeMode(State, SolidArcKnifeMode::Insert); return; }
     if (Knife.PreferredMode == SolidArcKnifeMode::Object) { ChooseKnifeMode(State, SolidArcKnifeMode::Object); return; }
     DrawKnifeShape(State, Knife.PreferredShape);
-    Announce(State, std::string("Knife · draw a ") + SolidArcDrawingLabel(Knife.PreferredShape) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels");
+    Announce(State, std::string("Knife · draw a ") + SolidArcDrawingLabel(Knife.PreferredShape) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line) · then pull along the normal for the depth · Tab: Insert library · Esc cancels");
 }
 
 // Toolbar tool menu: remembers the cutter and opens (or switches) the knife on it.
@@ -4906,7 +4906,7 @@ void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, Soli
     if (Mode == SolidArcKnifeMode::Sketch)
     {
         if (!(Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.Kind == Shape && State.Drawing.Points.empty())) DrawKnifeShape(State, Shape);
-        Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face, then move sideways for the depth (T through)");
+        Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face (live W / H / R dimensions), then pull along the normal for the depth (T through)");
         return;
     }
     if (Knife.Mode != Mode || Mode == SolidArcKnifeMode::Insert) ChooseKnifeMode(State, Mode);
@@ -4946,7 +4946,7 @@ void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, 
     Knife.Drift  = Knife.Depth;
     DropKnifePreview(Knife);
     Announce(State, "Knife · " + CaptionOf(State.Document, Sketch) + " into " + SolidArcBodyCaption(State.Document, KnifeSketchTarget(State, Sketch)) +
-                        " · move sideways for the depth (Shift fine, Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies");
+                        " · pull along the face normal for the depth (Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies");
 }
 
 void ApplyKnifeSession(SolidArcWorkspaceState& State)
@@ -4989,6 +4989,52 @@ void HoverKnifeSpot(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Knife.SpotBody = Body;
 }
 
+// 📝 The knife's drawn cutter as the Construct primitives show theirs: the profile's plane and its sampled outline
+//    (one polyline per profile curve, construction curves skipped). Empty when no sketch cutter is drawn yet.
+struct KnifeCutterOutline
+{
+    OrthonormalFrame                  Plane    = {};                                         // [len] - Elevated sketch plane
+    std::vector<std::vector<Vector2>> Chains   = {};                                         // [len] - Outline samples per curve
+    Vector2                           Low      = {};                                         // [len] - Plane bounding box
+    Vector2                           High     = {};                                         // [len]
+    Vector2                           Centre   = {};                                         // [len] - Sample centroid
+    double                            Diameter = 0.0;                                        // [len] - Lone circle: its Ø (else 0)
+};
+
+[[nodiscard]] bool MeasureKnifeCutter(const SolidArcWorkspaceState& State, KnifeCutterOutline& Outline)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.Sketch.empty()) return false;
+    const FeatureStep* Step   = FindSketchStepByLabel(State.Document, Knife.Sketch);
+    const auto         Solved = State.Document.Regeneration.Sketches.find(Knife.Sketch);
+    if (!Step || Solved == State.Document.Regeneration.Sketches.end()) return false;
+    Outline.Plane = ElevatedSketchPlane(State.Document, *Step);
+    Outline.Low   = { std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity() };
+    Outline.High  = { -std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity() };
+    Vector2 Sum{};
+    int     Count = 0, Profiles = 0, Circles = 0;
+    double  Radius = 0.0;
+    for (const SketchCurve& Curve : Solved->second.Curves)
+    {
+        if (Curve.Construction) continue;
+        ++Profiles;
+        if (Curve.Kind == SketchCurveKind::Circle) { ++Circles; Radius = Curve.Radius; }
+        std::vector<Vector2> Chain = SampleSketchCurve(Solved->second, Curve);
+        for (const Vector2& Sample : Chain)
+        {
+            Outline.Low  = { std::min(Outline.Low.X, Sample.X), std::min(Outline.Low.Y, Sample.Y) };
+            Outline.High = { std::max(Outline.High.X, Sample.X), std::max(Outline.High.Y, Sample.Y) };
+            Sum = Sum + Sample;
+            ++Count;
+        }
+        Outline.Chains.push_back(std::move(Chain));
+    }
+    if (Count == 0) return false;
+    Outline.Centre   = Sum * (1.0 / Count);
+    Outline.Diameter = Profiles == 1 && Circles == 1 ? 2.0 * Radius : 0.0;
+    return true;
+}
+
 void DriveKnifeSession(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool HoveredCondition)
 {
     SolidArcKnifeSession& Knife = State.Knife;
@@ -5001,7 +5047,24 @@ void DriveKnifeSession(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
     const auto Snapped = [&](double Value) { return Io.KeyCtrl ? Value : std::round(Value / SweepSnap) * SweepSnap; };
     if (Knife.Mode == SolidArcKnifeMode::Sketch)
     {
+        // 💡 As the Construct primitives' height: the depth follows the pointer along the face normal through the
+        //    profile's centre (pull into the body to cut deeper; out of it for a Q boss). A view straight down the
+        //    normal has no such line, so there horizontal motion sizes it as before.
+        KnifeCutterOutline Outline;
+        std::optional<double> Along;
+        if (!TypedCondition && Moving && HoveredCondition && !ImGui::IsAnyMouseDown() && !Knife.DrawPendingCondition && MeasureKnifeCutter(State, Outline))
+        {
+            const OrbitRay Ray    = CastOrbitRay(Frame, Local.x, Local.y);
+            const Vector3  Facing = { Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+            if (std::abs(Dot(Facing, Outline.Plane.ZAxis)) < 0.97) Along = ApproachSolidArcLine(Ray, PlacePlanePoint(Outline.Plane, Outline.Centre), Outline.Plane.ZAxis);
+        }
         if (TypedCondition) Knife.Depth = Typed;
+        else if (Along)
+        {
+            const double Pulled = Knife.Combination == FeatureCombination::Union ? *Along : -*Along;   // [len] - Into the body (out of it for Q)
+            Knife.Drift = std::max(0.001, Pulled);
+            Knife.Depth = std::max(0.001, Snapped(Knife.Drift));
+        }
         else
         {
             Knife.Drift += Drift;
@@ -5065,6 +5128,68 @@ void ClickKnifeSession(SolidArcWorkspaceState& State, ImVec2 Local)
     ApplyKnifeSession(State);
 }
 
+// Sketch cutter, drawn like a Construct primitive: the profile on the face, the same outline at the depth (or through
+// the body, or out of it for a Q boss), the side lines at the outline's extremes, and dimension lines: Ø for a lone
+// circle else W / H of its box, and the depth along the normal ("through" with T).
+void DrawKnifeCutter(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    if (!Knife.ActiveCondition || Knife.Mode != SolidArcKnifeMode::Sketch || Knife.DrawPendingCondition) return;
+    KnifeCutterOutline Outline;
+    if (!MeasureKnifeCutter(State, Outline)) return;
+    const bool   Boss    = Knife.Combination == FeatureCombination::Union;
+    const bool   Through = Knife.ThroughCondition && !Boss;
+    double Top = 0.0, Bottom = 0.0;
+    if (Through) KnifeSketchSpan(State, KnifeSketchTarget(State, Knife.Sketch), Top, Bottom);
+    const double Far    = Boss ? Knife.Depth : Through ? Bottom : -Knife.Depth;                // [len] - Far outline along the plane normal
+    const ImU32  Ink    = Boss ? IM_COL32(0x4c, 0xd9, 0x7b, 0xff) : IM_COL32(0xff, 0xc8, 0x3d, 0xff);
+    const ImU32  Faint  = Boss ? IM_COL32(0x4c, 0xd9, 0x7b, 0x90) : IM_COL32(0xff, 0xc8, 0x3d, 0x90);
+    const auto   World  = [&](Vector2 Point, double Height) { return PlacePlanePoint(Outline.Plane, Point) + Outline.Plane.ZAxis * Height; };
+    const auto   Stroke = [&](const std::vector<Vector2>& Chain, double Height, ImU32 Colour, float Width)
+    {
+        std::vector<ImVec2> Pixels;
+        for (const Vector2& Point : Chain) { ImVec2 Out; if (ProjectWorldPoint(State, Frame, World(Point, Height), Out)) Pixels.push_back(Out); }
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, 0, Width);
+    };
+    for (const std::vector<Vector2>& Chain : Outline.Chains)
+    {
+        Stroke(Chain, 0.0, Ink, 2.0f);
+        Stroke(Chain, Far, Faint, 1.5f);
+    }
+    // Side lines at the outline's extreme samples along the plane axes.
+    std::vector<Vector2> Extremes;
+    for (const std::vector<Vector2>& Chain : Outline.Chains)
+        for (const Vector2& Point : Chain)
+        {
+            const bool Edge = std::abs(Point.X - Outline.Low.X) < 1.0e-9 || std::abs(Point.X - Outline.High.X) < 1.0e-9 || std::abs(Point.Y - Outline.Low.Y) < 1.0e-9 ||
+                              std::abs(Point.Y - Outline.High.Y) < 1.0e-9;
+            if (Edge && std::none_of(Extremes.begin(), Extremes.end(), [&](const Vector2& Kept) { return Distance(Kept, Point) < 1.0e-6; })) Extremes.push_back(Point);
+        }
+    for (const Vector2& Point : Extremes)
+    {
+        ImVec2 Near, Deep;
+        if (ProjectWorldPoint(State, Frame, World(Point, 0.0), Near) && ProjectWorldPoint(State, Frame, World(Point, Far), Deep)) Canvas->AddLine(Near, Deep, Faint, 1.0f);
+    }
+    // Dimension lines.
+    const Vector2 Low = Outline.Low, High = Outline.High;
+    const double  Gap = 0.08 * std::max(High.X - Low.X, High.Y - Low.Y) + 0.02;              // [len] - Off the outline
+    if (Outline.Diameter > 0.0)
+    {
+        const double Half = 0.5 * Outline.Diameter;
+        DrawDimensionLine(State, Frame, Canvas, World({ Outline.Centre.X - Half, Low.Y - Gap }, 0.0), World({ Outline.Centre.X + Half, Low.Y - Gap }, 0.0),
+                          DimensionText("Ø", Outline.Diameter));
+    }
+    else
+    {
+        DrawDimensionLine(State, Frame, Canvas, World({ Low.X, Low.Y - Gap }, 0.0), World({ High.X, Low.Y - Gap }, 0.0), DimensionText("W", High.X - Low.X));
+        DrawDimensionLine(State, Frame, Canvas, World({ High.X + Gap, Low.Y }, 0.0), World({ High.X + Gap, High.Y }, 0.0), DimensionText("H", High.Y - Low.Y));
+    }
+    const Vector2     Foot = { Low.X - Gap, Low.Y - Gap };
+    const std::string Text = Through ? std::string("through") : DimensionText(Boss ? "height" : "depth", Knife.Depth);
+    DrawConstructionLine(State, Frame, Canvas, World({ Low.X, Low.Y }, 0.0), World(Foot, 0.0));
+    DrawDimensionLine(State, Frame, Canvas, World(Foot, 0.0), World(Foot, Far), Text, ImVec2(-18.0f, 0.0f));
+}
+
 // Insert ghost: the cutter's edges at the spot (amber; cyan once placed).
 void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
 {
@@ -5082,6 +5207,13 @@ void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Orb
     }
     ImVec2 Centre;
     if (ProjectWorldPoint(State, Frame, Knife.Spot.Origin, Centre)) Canvas->AddCircle(Centre, 4.0f, Colour, 16, 1.5f);
+    // Width dimension across the footprint (inserts are normalized to unit width), as the Construct primitives show it.
+    const Vector3 Across = Knife.Spot.XAxis * std::cos(Knife.Turn) + Knife.Spot.YAxis * std::sin(Knife.Turn);
+    const Vector3 Along  = Knife.Spot.YAxis * std::cos(Knife.Turn) - Knife.Spot.XAxis * std::sin(Knife.Turn);
+    const Vector3 Below  = Knife.Spot.Origin - Along * (0.5 * Knife.Size + 0.08 * Knife.Size + 0.02);
+    DrawDimensionLine(State, Frame, Canvas, Below - Across * (0.5 * Knife.Size), Below + Across * (0.5 * Knife.Size), DimensionText("W", Knife.Size));
+    if (std::abs(Knife.Turn) > 1.0e-9 && ProjectWorldPoint(State, Frame, Knife.Spot.Origin, Centre))
+        DrawDimensionPill(Canvas, ImVec2(Centre.x, Centre.y - 22.0f), Compose("%.1f°", Knife.Turn * 180.0 / std::numbers::pi), AngleInk);
 }
 
 // 📝 Bevel handles under the pointer: a press on one starts its drag — the size follows the pointer along the handle's
@@ -9005,6 +9137,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawConstraintOverlay"); DrawConstraintOverlay(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSweepOutline"); DrawSweepOutline(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawKnifeGhost"); DrawKnifeGhost(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawKnifeCutter"); DrawKnifeCutter(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawBevelHandles"); DrawBevelHandles(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSectionOutline"); DrawSectionOutline(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawMeasureOverlay"); DrawMeasureOverlay(State, Canvas, Frame); }
@@ -9145,7 +9278,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Knife.ActiveCondition && !State.Knife.DrawPendingCondition
                            ? (State.Knife.Mode == SolidArcKnifeMode::Insert ? "Knife insert: point at a face · click places · move sideways to size (Shift fine, Ctrl free) · [ / ] turn 15° · type a width · Q add · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel"
                               : State.Knife.Mode == SolidArcKnifeMode::Object ? "Knife object: the first picked body is cut by the others (Shift-click adds cutters) · K keep cutters · Q add · W cut · E intersect · right-click / Enter apply · Tab mode · Esc cancel"
-                              : "Knife sketch: move sideways for the depth (Shift fine, Ctrl free) · type a depth · T through · Q add (boss) · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel")
+                              : "Knife sketch: pull along the face normal for the depth (Ctrl free) · type a depth · T through · Q add (boss) · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel")
                        : State.Sweep.ActiveCondition
                            ? (State.Sweep.Verb == SolidArcSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / right-click / Enter commit · Esc cancel"
                               : State.Sweep.Verb == SolidArcSweepVerb::Revolve ? "Revolve: type degrees (360) · X / Y sketch axis · click a profile line for the axis · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
