@@ -54,7 +54,7 @@ struct SolidArcInsertLibrary
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 💡 Built-ins (round hole, countersink, square pocket, slot, hex pocket, triangle, cross) are drawn and swept in a
+// 💡 Built-ins (square pocket, round hole, countersink, slot, hex pocket, triangle, cross) are drawn and swept in a
 //    scratch document by the same commands a user runs; every STEP file in Folder is read by ReadSolidArcStepFile (first
 //    solid). Each body is scaled to unit width, centred and lifted (NormalizeSolidArcInsert) before its text is written.
 [[nodiscard]] SolidArcInsertLibrary AssembleSolidArcInserts(const std::string& Folder);

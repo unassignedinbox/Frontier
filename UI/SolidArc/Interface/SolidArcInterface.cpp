@@ -979,11 +979,14 @@ void OpenDrawingSession(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
                         + " · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts");
 }
 
+void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, const std::string& Face);
+
 void CancelDrawingSession(SolidArcWorkspaceState& State)
 {
     if (!State.Drawing.ActiveCondition) return;
     State.Drawing.ActiveCondition = false;
     Announce(State, std::string(State.Drawing.SolidCondition ? SolidArcConstructLabel(State.Drawing.Solid) : SolidArcDrawingLabel(State.Drawing.Kind)) + " aborted (document untouched)");
+    AdoptKnifeSketch(State, {}, {});                                                         // A knife shape aborted: the knife closes
 }
 
 // Commits the collected points as a sketch step; the new sketch becomes the focused step (E extrudes it).
@@ -992,7 +995,9 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
     SolidArcDrawingSession& Drawing = State.Drawing;
     if (!Drawing.ActiveCondition) return;
     if (Drawing.SolidCondition) { FinishSolidSession(State); return; }
-    const SolidArcDrawingRequest Request = ComposeDrawingRequest(Drawing, false, ClosedCondition);
+    const bool KnifeCondition = State.Knife.ActiveCondition && State.Knife.DrawPendingCondition;
+    SolidArcDrawingRequest Request = ComposeDrawingRequest(Drawing, false, ClosedCondition);
+    if (KnifeCondition) Request.FillCondition = true;                                        // A knife cutter is solid
     SketchModel Probe;
     const std::string Refusal = ComposeSolidArcSketch(Request, Probe);
     if (!Refusal.empty())
@@ -1006,6 +1011,9 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
     const SolidArcCommandOutcome Outcome = DrawSolidArcSketch(State.Document, Request);
     if (Outcome.AcceptedCondition && State.Document.Tree.Steps.size() > Before) State.FocusedStep = State.Document.Tree.Steps.back().Label;
     Conclude(State, Outcome);
+    if (KnifeCondition)
+        AdoptKnifeSketch(State, Outcome.AcceptedCondition && State.Document.Tree.Steps.size() > Before ? State.Document.Tree.Steps.back().Label : std::string{},
+                         Drawing.FacePlaneCondition ? Drawing.FaceName : std::string{});
 }
 
 void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool ClosingCondition)
@@ -3636,7 +3644,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
 // No other session owns the pointer (the gizmo is a no-command tool, like Plasticity's selection gizmo).
 [[nodiscard]] bool GizmoAvailableCondition(const SolidArcWorkspaceState& State)
 {
-    return State.Gizmo.Modes != 0 && !State.DrawingSheet.ActiveCondition && !State.Drawing.ActiveCondition && !State.Transform.ActiveCondition && !State.Sweep.ActiveCondition
+    return State.Gizmo.Modes != 0 && !State.DrawingSheet.ActiveCondition && !State.Drawing.ActiveCondition && !State.Transform.ActiveCondition && !State.Sweep.ActiveCondition && !State.Knife.ActiveCondition
         && !State.Constrain.ActiveCondition && !State.Trim.ActiveCondition && !State.Fill.ActiveCondition && !State.Joint.ActiveCondition && !State.Bevel.ActiveCondition && !State.PoleDrag.ActiveCondition
         && !State.Box.ActiveCondition && !State.SketchPoints.DragCondition;
 }
@@ -4526,6 +4534,575 @@ void PasteBodies(SolidArcWorkspaceState& State)
     const SolidArcCommandOutcome Outcome = DuplicateSolidArcBodies(State.Document, State.Clipboard.Keys, TranslationMap({}), State.Clipboard.Source.empty() ? std::string("—") : State.Clipboard.Source);
     if (Outcome.AcceptedCondition) State.PickMode = SolidArcPickMode::Solid;
     Conclude(State, Outcome);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    KNIFE
+//------------------------------------------------------------------------------------------------------------------------
+
+SolidArcPickIntent PickIntentOf(const ImGuiIO& Io);
+void               PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickIntent Intent);
+
+[[nodiscard]] double KnifeClock()
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] const char* KnifeModeLabel(SolidArcKnifeMode Mode) noexcept
+{
+    switch (Mode)
+    {
+    case SolidArcKnifeMode::Sketch: return "Sketch";
+    case SolidArcKnifeMode::Insert: return "Insert";
+    case SolidArcKnifeMode::Object: return "Object";
+    }
+    return "Sketch";
+}
+
+[[nodiscard]] const char* KnifeCombinationLabel(FeatureCombination Combination) noexcept
+{
+    switch (Combination)
+    {
+    case FeatureCombination::Union:        return "Add";
+    case FeatureCombination::Intersection: return "Intersect";
+    case FeatureCombination::Separate:     return "Separate";
+    default:                               return "Cut";
+    }
+}
+
+// Box of one scene body's facets; false when the scene does not show it.
+bool MeasureSceneBody(const SolidArcScene& Scene, const std::string& Key, Vector3& Low, Vector3& High)
+{
+    const auto Body = std::find_if(Scene.Bodies.begin(), Scene.Bodies.end(), [&](const SolidArcSceneBody& Each) { return Each.Key == Key; });
+    if (Body == Scene.Bodies.end() || Body->FaceCount == 0) return false;
+    Low  = { 1.0e300, 1.0e300, 1.0e300 };
+    High = { -1.0e300, -1.0e300, -1.0e300 };
+    for (uint32_t Face = Body->FirstFace; Face < Body->FirstFace + Body->FaceCount; ++Face)
+        for (uint32_t Corner = Scene.Faces[Face].FirstCorner; Corner < Scene.Faces[Face].FirstCorner + Scene.Faces[Face].CornerCount; ++Corner)
+        {
+            const float* Point = Scene.Corners[Corner].Position;
+            Low  = { std::min(Low.X, double(Point[0])), std::min(Low.Y, double(Point[1])), std::min(Low.Z, double(Point[2])) };
+            High = { std::max(High.X, double(Point[0])), std::max(High.Y, double(Point[1])), std::max(High.Z, double(Point[2])) };
+        }
+    return true;
+}
+
+// The body key of the face a scene pick landed on ("" for edges, caps and background).
+[[nodiscard]] std::string PickedSceneBody(const SolidArcScene& Scene, const std::optional<SolidArcPick>& Pick)
+{
+    if (!Pick || Pick->Identity == 0 || Pick->Identity == IdentitySectionCap || (Pick->Identity & IdentityEdgeBit)) return {};
+    const uint32_t Face = Pick->Identity - 1u;
+    if (Face >= Scene.Faces.size() || Scene.Faces[Face].Body >= Scene.Bodies.size()) return {};
+    return Scene.Bodies[Scene.Faces[Face].Body].Key;
+}
+
+// 📝 Lift of a cutter top above its plane: 1 % of the target's size (≥ 1 mm) so a flush face is cleared, never touched.
+[[nodiscard]] double KnifeLift(const SolidArcScene& Scene, const std::string& Target)
+{
+    Vector3 Low, High;
+    if (!MeasureSceneBody(Scene, Target, Low, High)) return 1.0e-3;
+    return std::max(1.0e-3, 0.01 * std::max({ High.X - Low.X, High.Y - Low.Y, High.Z - Low.Z }));
+}
+
+// 💡 The body a sketch cutter cuts: the owner of the face it was drawn on, else the first body met by a ray down the
+//    sketch normal through the middle of its curves (from just above the plane, then from outside the scene), else the
+//    first picked body, else the only body.
+[[nodiscard]] std::string KnifeSketchTarget(const SolidArcWorkspaceState& State, const std::string& Label)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    if (!Knife.Face.empty())
+    {
+        const std::string Owner = SolidArcBodyOfName(State.Document, SolidArcSelectionKind::Face, Knife.Face);
+        if (!Owner.empty()) return Owner;
+    }
+    const auto Step   = std::find_if(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Each) { return Each.Label == Label; });
+    const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+    if (Step != State.Document.Tree.Steps.end() && Solved != State.Document.Regeneration.Sketches.end())
+    {
+        Vector2 Sum{};
+        int     Count = 0;
+        for (const SketchCurve& Curve : Solved->second.Curves)
+        {
+            if (Curve.Construction) continue;
+            for (const Vector2& Sample : SampleSketchCurve(Solved->second, Curve)) { Sum = Sum + Sample; ++Count; }
+        }
+        if (Count > 0)
+        {
+            const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, *Step);
+            const Vector3          Middle = PlacePlanePoint(Plane, Sum * (1.0 / Count));
+            const double           Reach  = 2.0 * std::hypot(State.Scene.BoundsHigh[0] - State.Scene.BoundsLow[0], State.Scene.BoundsHigh[1] - State.Scene.BoundsLow[1],
+                                                             State.Scene.BoundsHigh[2] - State.Scene.BoundsLow[2]) + 1.0;
+            for (const double Height : { 1.0e-3, Reach })
+            {
+                const Vector3 Start = Middle + Plane.ZAxis * Height;
+                OrbitRay      Ray;
+                Ray.Origin    = { Start.X, Start.Y, Start.Z };
+                Ray.Direction = { -Plane.ZAxis.X, -Plane.ZAxis.Y, -Plane.ZAxis.Z };
+                const std::string Owner = PickedSceneBody(State.Scene, PickSolidArcScene(State.Scene, Ray, 0.0, false, nullptr));
+                if (!Owner.empty()) return Owner;
+            }
+        }
+    }
+    if (!BooleanTarget(State).empty()) return BooleanTarget(State);
+    return State.Scene.Bodies.size() == 1 ? State.Scene.Bodies.front().Key : std::string{};
+}
+
+// Sketch cutter span along the plane normal: Cut / Intersect / Separate from a lift above the plane down to the depth
+// (through: past both sides of the target); Add rises from just inside the face up to the depth (a boss).
+void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Target, double& Top, double& Bottom)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    const double Lift = KnifeLift(State.Scene, Target);
+    Top    = Lift;
+    Bottom = -Knife.Depth;
+    if (Knife.Combination == FeatureCombination::Union) { Top = Knife.Depth; Bottom = -Lift; return; }
+    if (!Knife.ThroughCondition) return;
+    const auto Step = std::find_if(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Each) { return Each.Label == Knife.Sketch; });
+    const auto Body = std::find_if(State.Scene.Bodies.begin(), State.Scene.Bodies.end(), [&](const SolidArcSceneBody& Each) { return Each.Key == Target; });
+    if (Step == State.Document.Tree.Steps.end() || Body == State.Scene.Bodies.end()) return;
+    const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Step);
+    double Above = 0.0, Below = 0.0;                                                         // [len] - Body reach either side of the plane
+    for (uint32_t Face = Body->FirstFace; Face < Body->FirstFace + Body->FaceCount; ++Face)
+        for (uint32_t Corner = State.Scene.Faces[Face].FirstCorner; Corner < State.Scene.Faces[Face].FirstCorner + State.Scene.Faces[Face].CornerCount; ++Corner)
+        {
+            const float*  Point = State.Scene.Corners[Corner].Position;
+            const double  Along = Dot(Vector3{ Point[0], Point[1], Point[2] } - Plane.Origin, Plane.ZAxis);
+            Above = std::max(Above, Along);
+            Below = std::min(Below, Along);
+        }
+    const double Margin = Lift + 0.02 * (Above - Below);
+    Top    = Above + Margin;
+    Bottom = Below - Margin;
+}
+
+[[nodiscard]] SolidArcCommandOutcome RefusedKnife(const std::string& Reason)
+{
+    SolidArcCommandOutcome Outcome;
+    Outcome.Refusal = Reason;
+    return Outcome;
+}
+
+// The knife as it stands, applied to Document (the workspace document or a preview clone).
+[[nodiscard]] SolidArcCommandOutcome RunKnife(const SolidArcWorkspaceState& State, SolidArcDocument& Document)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    switch (Knife.Mode)
+    {
+    case SolidArcKnifeMode::Sketch:
+    {
+        if (Knife.Sketch.empty()) return RefusedKnife("draw a closed shape for the knife (Circle / Rectangle / Polygon / Slot / Line) or focus a closed sketch");
+        const std::string Target = KnifeSketchTarget(State, Knife.Sketch);
+        double Top = 0.0, Bottom = 0.0;
+        KnifeSketchSpan(State, Target, Top, Bottom);
+        return KnifeSolidArcSketch(Document, Knife.Sketch, Top, Bottom, Knife.Combination, Target);
+    }
+    case SolidArcKnifeMode::Insert:
+    {
+        if (Knife.Insert < 0 || Knife.Insert >= int(Knife.Library.Inserts.size())) return RefusedKnife("pick an insert from the library");
+        if (!Knife.PlacedCondition && !Knife.HoverCondition) return RefusedKnife("point at a body face to place the insert");
+        const SolidArcInsert&   Insert = Knife.Library.Inserts[Knife.Insert];
+        SolidArcInsertPlacement Placement;
+        Placement.Name        = Insert.Name;
+        Placement.Exchange    = Insert.Exchange;
+        Placement.Map         = PlaceSolidArcInsert(Knife.Spot, Knife.Size, Knife.Turn, Knife.Combination == FeatureCombination::Union);
+        Placement.Combination = Knife.Combination;
+        Placement.Target      = Knife.SpotBody;
+        return KnifeSolidArcInsert(Document, Placement);
+    }
+    case SolidArcKnifeMode::Object:
+    {
+        const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+        if (Picked.size() < 2) return RefusedKnife("pick the body to cut, then Shift-pick the cutter bodies (mode 4)");
+        if (Knife.Combination == FeatureCombination::Separate) return RefusedKnife("Separate is for sketch and insert cutters (Q / W / E here)");
+        return KnifeSolidArcBodies(Document, Picked.front(), std::vector<std::string>(Picked.begin() + 1, Picked.end()), Knife.Combination, Knife.KeepCondition);
+    }
+    }
+    return RefusedKnife("unknown knife mode");
+}
+
+void EnsureKnifeLibrary(SolidArcWorkspaceState& State)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.LibraryCondition) return;
+    FRONTIER_TRACE_SCOPE("Knife", "library");
+    Knife.Library          = AssembleSolidArcInserts(State.Options.InsertFolder);
+    Knife.LibraryCondition = true;
+    Knife.Insert           = std::clamp(Knife.Insert, 0, std::max(0, int(Knife.Library.Inserts.size()) - 1));
+    for (const std::string& Note : Knife.Library.Notes) FRONTIER_TRACE("Knife", "insert skipped: " + Note);
+}
+
+void DropKnifePreview(SolidArcKnifeSession& Knife)
+{
+    Knife.Preview.reset();
+    Knife.StagedKey.clear();
+    Knife.Refusal.clear();
+}
+
+void ChooseKnifeMode(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    Knife.Mode = Mode;
+    DropKnifePreview(Knife);
+    if (Mode != SolidArcKnifeMode::Sketch && Knife.DrawPendingCondition)
+    {
+        Knife.DrawPendingCondition    = false;
+        State.Drawing.ActiveCondition = false;
+    }
+    if (Mode == SolidArcKnifeMode::Insert)
+    {
+        EnsureKnifeLibrary(State);
+        Knife.PlacedCondition = false;
+        Knife.Typed.clear();
+        Announce(State, Compose("Knife · Insert %s · point at a face, click to place, move to size, [ / ] turn · %d insert(s) in %.0f ms",
+                                Knife.Library.Inserts.empty() ? "(none)" : Knife.Library.Inserts[Knife.Insert].Name.c_str(), int(Knife.Library.Inserts.size()), Knife.Library.Milliseconds));
+        return;
+    }
+    if (Mode == SolidArcKnifeMode::Object)
+    {
+        if (Knife.Combination == FeatureCombination::Separate) Knife.Combination = FeatureCombination::Difference;
+        Announce(State, "Knife · Object · the first picked body is cut by the others (Shift-pick cutters) · K keeps the cutters · click / right-click / Enter applies");
+        return;
+    }
+    Announce(State, Knife.Sketch.empty() ? "Knife · Sketch · draw a closed shape on a face (card: Circle / Rectangle / Polygon / Slot / Line)"
+                                         : "Knife · Sketch " + CaptionOf(State.Document, Knife.Sketch) + " · move sideways for the depth · T through");
+}
+
+void ChooseKnifeCombination(SolidArcWorkspaceState& State, FeatureCombination Combination)
+{
+    if (State.Knife.Mode == SolidArcKnifeMode::Object && Combination == FeatureCombination::Separate) return;
+    State.Knife.Combination = Combination;
+    Announce(State, std::string("Knife: ") + KnifeCombinationLabel(Combination));
+}
+
+// Starts a drawing for the knife: the shape is filled, and once finished becomes the knife's cutter on that face.
+void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    Knife.Mode = SolidArcKnifeMode::Sketch;
+    Knife.Sketch.clear();
+    Knife.Face.clear();
+    DropKnifePreview(Knife);
+    OpenDrawingSession(State, Kind);
+    Knife.DrawPendingCondition = State.Drawing.ActiveCondition;
+}
+
+void OpenKnifeSession(SolidArcWorkspaceState& State)
+{
+    if (State.Bevel.ActiveCondition) { Announce(State, "Knife: finish the bevel first"); return; }
+    if (!State.Document.Summary.PresentCondition) { Announce(State, "Knife needs a body to cut: make one first (Shift+C box, E extrude …)"); return; }
+    SolidArcKnifeSession& Knife = State.Knife;
+    const int  Commits = Knife.Commits;
+    const int  Insert  = Knife.Insert;
+    const bool Through = Knife.ThroughCondition;
+    SolidArcInsertLibrary Library   = std::move(Knife.Library);
+    const bool            Assembled = Knife.LibraryCondition;
+    Knife                  = {};
+    Knife.Commits          = Commits;
+    Knife.Insert           = Insert;
+    Knife.ThroughCondition = Through;
+    Knife.Library          = std::move(Library);
+    Knife.LibraryCondition = Assembled;
+    Knife.ActiveCondition  = true;
+    State.Sweep.ActiveCondition     = false;
+    State.Sweep.Preview.reset();
+    State.Trim.ActiveCondition      = false;
+    State.Fill.ActiveCondition      = false;
+    State.Constrain.ActiveCondition = false;
+    State.Transform.ActiveCondition = false;
+    State.Boolean.ActiveCondition   = false;
+    State.Drawing.ActiveCondition   = false;
+    std::string Sketch = FocusedSketchCondition(State) ? State.FocusedStep : std::string{};
+    if (Sketch.empty())
+        for (const std::string& Label : SelectedSketchLabels(State.Document)) { Sketch = Label; break; }
+    if (State.Document.Selection.Bodies.size() >= 2) { ChooseKnifeMode(State, SolidArcKnifeMode::Object); return; }
+    if (!Sketch.empty())
+    {
+        Knife.Sketch = Sketch;
+        ChooseKnifeMode(State, SolidArcKnifeMode::Sketch);
+        return;
+    }
+    DrawKnifeShape(State, SolidArcDrawingKind::Circle);
+    Announce(State, "Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels");
+}
+
+void CloseKnifeSession(SolidArcWorkspaceState& State, const std::string& Message)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.DrawPendingCondition) State.Drawing.ActiveCondition = false;
+    Knife.ActiveCondition      = false;
+    Knife.DrawPendingCondition = false;
+    DropKnifePreview(Knife);
+    if (!Message.empty()) Announce(State, Message);
+}
+
+// FinishDrawingSession / CancelDrawingSession: the shape drawn for the knife (empty Sketch: refused or aborted).
+void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, const std::string& Face)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    if (!Knife.ActiveCondition || !Knife.DrawPendingCondition) return;
+    Knife.DrawPendingCondition = false;
+    if (Sketch.empty()) { CloseKnifeSession(State, "Knife cancelled (document untouched)"); return; }
+    Knife.Sketch = Sketch;
+    Knife.Face   = Face;
+    Knife.Drift  = Knife.Depth;
+    DropKnifePreview(Knife);
+    Announce(State, "Knife · " + CaptionOf(State.Document, Sketch) + " into " + SolidArcBodyCaption(State.Document, KnifeSketchTarget(State, Sketch)) +
+                        " · move sideways for the depth (Shift fine, Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies");
+}
+
+void ApplyKnifeSession(SolidArcWorkspaceState& State)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.DrawPendingCondition) { Announce(State, "Knife: finish the shape first"); return; }
+    const SolidArcCommandOutcome Outcome = RunKnife(State, State.Document);
+    if (Outcome.AcceptedCondition)
+    {
+        ++Knife.Commits;
+        CloseKnifeSession(State, {});
+        State.FocusedStep = {};
+        State.PickMode    = SolidArcPickMode::Solid;
+    }
+    else Knife.Refusal = Legible(Outcome.Refusal);
+    Conclude(State, Outcome);
+}
+
+// Insert hover: the face under the pointer gives the spot (the hit carried onto its plane) and the body it cuts.
+void HoverKnifeSpot(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    Knife.HoverCondition = false;
+    const OrbitRay                    Ray  = CastOrbitRay(Frame, Local.x, Local.y);
+    const std::optional<SolidArcPick> Pick = PickSolidArcScene(State.Scene, Ray, 0.0, false, ActiveSectionClip(State));
+    const std::string                 Body = PickedSceneBody(State.Scene, Pick);
+    std::string      Name;
+    OrthonormalFrame Plane;
+    if (Body.empty() || !ResolveHoveredFacePlane(State, Frame, Local, Name, Plane)) return;
+    const Vector3 Hit = Vector3{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] } + Vector3{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] } * Pick->Distance;
+    Plane.Origin = Hit - Plane.ZAxis * Dot(Hit - Plane.Origin, Plane.ZAxis);
+    Knife.HoverCondition = true;
+    Knife.Spot           = Plane;
+    if (Body != Knife.SpotBody && !Knife.SizedCondition)
+    {
+        Vector3 Low, High;
+        if (MeasureSceneBody(State.Scene, Body, Low, High))
+            Knife.Size = std::max(0.01, std::round(0.25 * std::max({ High.X - Low.X, High.Y - Low.Y, High.Z - Low.Z }) / 0.01) * 0.01);
+    }
+    Knife.SpotBody = Body;
+}
+
+void DriveKnifeSession(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool HoveredCondition)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    ImGuiIO& Io = ImGui::GetIO();
+    const bool Moving = Io.MouseDelta.x != 0.0f || Io.MouseDelta.y != 0.0f;
+    if (Moving) Knife.QuietSince = KnifeClock();
+    double Typed = 0.0;
+    const bool TypedCondition = ParseTypedAmount(Knife.Typed, Typed) && Typed > 0.0;
+    const double Drift = HoveredCondition && !ImGui::IsAnyMouseDown() ? Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5 : 0.0;
+    const auto Snapped = [&](double Value) { return Io.KeyCtrl ? Value : std::round(Value / SweepSnap) * SweepSnap; };
+    if (Knife.Mode == SolidArcKnifeMode::Sketch)
+    {
+        if (TypedCondition) Knife.Depth = Typed;
+        else
+        {
+            Knife.Drift += Drift;
+            Knife.Depth  = std::max(0.001, Snapped(Knife.Drift));
+        }
+    }
+    else if (Knife.Mode == SolidArcKnifeMode::Insert)
+    {
+        if (!Knife.PlacedCondition)
+        {
+            if (HoveredCondition) HoverKnifeSpot(State, Frame, Local);
+            if (Moving && Knife.Preview) DropKnifePreview(Knife);                            // The ghost leads; the cut follows at rest
+            if (TypedCondition) { Knife.Size = Typed; Knife.SizedCondition = true; }
+        }
+        else if (TypedCondition) Knife.Size = Typed;
+        else
+        {
+            Knife.Drift += Drift;
+            Knife.Size   = std::max(0.01, Snapped(Knife.Drift));
+        }
+    }
+    const SolidArcSelection& Selection = State.Document.Selection;
+    std::string Picked;
+    for (const std::string& Key : Selection.Bodies) Picked += Key + ",";
+    const std::string Key = Compose("%d|%d|%s|%.17g|%d|%d|%d|%d|%.17g,%.17g,%.17g|%.17g,%.17g,%.17g|%.17g|%.17g|%d|%s|%s|%llu", int(Knife.Mode), int(Knife.Combination), Knife.Sketch.c_str(),
+                                    Knife.Depth, Knife.ThroughCondition ? 1 : 0, Knife.Insert, Knife.HoverCondition ? 1 : 0, Knife.PlacedCondition ? 1 : 0, Knife.Spot.Origin.X, Knife.Spot.Origin.Y,
+                                    Knife.Spot.Origin.Z, Knife.Spot.ZAxis.X, Knife.Spot.ZAxis.Y, Knife.Spot.ZAxis.Z, Knife.Size, Knife.Turn, Knife.KeepCondition ? 1 : 0, Knife.SpotBody.c_str(),
+                                    Picked.c_str(), static_cast<unsigned long long>(State.Document.Revision));
+    if (Key == Knife.StagedKey || Knife.DrawPendingCondition) return;
+    const double Quiet = KnifeClock() - Knife.QuietSince;
+    if (Knife.Mode == SolidArcKnifeMode::Insert && !Knife.PlacedCondition && Quiet < 0.3) return;   // Hover: stage at rest only
+    if (Knife.StageMilliseconds > 120.0 && Quiet < 0.25) return;                                  // Slow stage: wait for a pause
+    Knife.StagedKey = Key;
+    Knife.Refusal.clear();
+    if (Knife.Mode == SolidArcKnifeMode::Insert && !Knife.PlacedCondition && !Knife.HoverCondition) { Knife.Preview.reset(); return; }
+    SolidArcPhaseClock Clock(State.Profile, "viewport · knife stage");
+    const double Start = KnifeClock();
+    Knife.Target  = Knife.Mode == SolidArcKnifeMode::Sketch ? KnifeSketchTarget(State, Knife.Sketch)
+                  : Knife.Mode == SolidArcKnifeMode::Insert ? Knife.SpotBody : (Selection.Bodies.empty() ? std::string{} : Selection.Bodies.front());
+    Knife.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
+    const SolidArcCommandOutcome Outcome = RunKnife(State, *Knife.Preview);
+    if (!Outcome.AcceptedCondition) { Knife.Refusal = Legible(Outcome.Refusal); Knife.Preview.reset(); }
+    else Knife.PreviewScene = BuildSolidArcScene(*Knife.Preview);
+    Knife.StageMilliseconds = (KnifeClock() - Start) * 1.0e3;
+}
+
+// Left-click: Insert places (then applies), Object picks bodies, Sketch applies.
+void ClickKnifeSession(SolidArcWorkspaceState& State, ImVec2 Local)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.Mode == SolidArcKnifeMode::Object) { PickAtPointer(State, Local, PickIntentOf(ImGui::GetIO())); return; }
+    if (Knife.Mode == SolidArcKnifeMode::Insert && !Knife.PlacedCondition)
+    {
+        if (!Knife.HoverCondition) { Announce(State, "Knife: point at a body face to place the insert"); return; }
+        Knife.PlacedCondition = true;
+        Knife.Drift           = Knife.Size;
+        Announce(State, Compose("Knife · %s placed on %s · move sideways to size it (Shift fine, Ctrl free) or type a width · [ / ] turn 15° · click / right-click / Enter applies",
+                                Knife.Library.Inserts[Knife.Insert].Name.c_str(), SolidArcBodyCaption(State.Document, Knife.SpotBody).c_str()));
+        return;
+    }
+    ApplyKnifeSession(State);
+}
+
+// Insert ghost: the cutter's edges at the spot (amber; cyan once placed).
+void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    if (!Knife.ActiveCondition || Knife.Mode != SolidArcKnifeMode::Insert || !(Knife.HoverCondition || Knife.PlacedCondition)) return;
+    if (Knife.Insert < 0 || Knife.Insert >= int(Knife.Library.Inserts.size())) return;
+    const AffineMap Map    = PlaceSolidArcInsert(Knife.Spot, Knife.Size, Knife.Turn, Knife.Combination == FeatureCombination::Union);
+    const ImU32     Colour = Knife.PlacedCondition ? IM_COL32(0x4d, 0xd2, 0xff, 0xff) : IM_COL32(0xff, 0xc8, 0x3d, 0xff);
+    for (const std::array<Vector3, 2>& Segment : Knife.Library.Inserts[Knife.Insert].Segments)
+    {
+        ImVec2 Start, End;
+        const Vector3 From = Map.ColumnX * Segment[0].X + Map.ColumnY * Segment[0].Y + Map.ColumnZ * Segment[0].Z + Map.Shift;
+        const Vector3 To   = Map.ColumnX * Segment[1].X + Map.ColumnY * Segment[1].Y + Map.ColumnZ * Segment[1].Z + Map.Shift;
+        if (ProjectWorldPoint(State, Frame, From, Start) && ProjectWorldPoint(State, Frame, To, End)) Canvas->AddLine(Start, End, Colour, 1.5f);
+    }
+    ImVec2 Centre;
+    if (ProjectWorldPoint(State, Frame, Knife.Spot.Origin, Centre)) Canvas->AddCircle(Centre, 4.0f, Colour, 16, 1.5f);
+}
+
+[[nodiscard]] std::string KnifeReadout(const SolidArcWorkspaceState& State)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    const std::string Typed = Knife.Typed.empty() ? std::string{} : " · typed " + Knife.Typed;
+    if (Knife.Mode == SolidArcKnifeMode::Sketch)
+    {
+        if (Knife.Sketch.empty()) return "Knife · draw a closed shape";
+        return Compose("Knife %s → %s · %s · %s%s", CaptionOf(State.Document, Knife.Sketch).c_str(), Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str(),
+                       KnifeCombinationLabel(Knife.Combination), Knife.ThroughCondition && Knife.Combination != FeatureCombination::Union ? "through" : ("depth " + FormatLength(Knife.Depth) + " m").c_str(),
+                       Typed.c_str());
+    }
+    if (Knife.Mode == SolidArcKnifeMode::Insert)
+    {
+        if (Knife.Library.Inserts.empty()) return "Knife · the insert library is empty";
+        return Compose("Knife %s · %s · width %s m · %.0f°%s%s", Knife.Library.Inserts[Knife.Insert].Name.c_str(), KnifeCombinationLabel(Knife.Combination), FormatLength(Knife.Size).c_str(),
+                       Knife.Turn * 180.0 / std::numbers::pi, Knife.PlacedCondition ? " · placed" : Knife.HoverCondition ? (" · on " + SolidArcBodyCaption(State.Document, Knife.SpotBody)).c_str() : " · point at a face",
+                       Typed.c_str());
+    }
+    const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+    return Compose("Knife %s · %s · %d cutter(s)%s", Picked.empty() ? "?" : SolidArcBodyCaption(State.Document, Picked.front()).c_str(), KnifeCombinationLabel(Knife.Combination),
+                   std::max(0, int(Picked.size()) - 1), Knife.KeepCondition ? " · kept" : "");
+}
+
+void DrawKnifeCard(SolidArcWorkspaceState& State)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    BeginCard("Knife", KnifeModeLabel(Knife.Mode));
+    static const struct { const char* Label; SolidArcKnifeMode Mode; } Modes[] = {
+        { "Sketch###KnifeModeSketch", SolidArcKnifeMode::Sketch }, { "Insert###KnifeModeInsert", SolidArcKnifeMode::Insert }, { "Object###KnifeModeObject", SolidArcKnifeMode::Object } };
+    for (int Index = 0; Index < 3; ++Index)
+    {
+        if (Index > 0) ImGui::SameLine();
+        if (ToggleButton(State, Modes[Index].Label, Knife.Mode == Modes[Index].Mode, RowSpan(3)) && Knife.Mode != Modes[Index].Mode) ChooseKnifeMode(State, Modes[Index].Mode);
+    }
+    static const struct { const char* Label; FeatureCombination Combination; } Choices[] = {
+        { "Cut###KnifeCut", FeatureCombination::Difference }, { "Add###KnifeAdd", FeatureCombination::Union },
+        { "Intersect###KnifeIntersect", FeatureCombination::Intersection }, { "Separate###KnifeSeparate", FeatureCombination::Separate } };
+    for (int Index = 0; Index < 4; ++Index)
+    {
+        if (Index > 0) ImGui::SameLine();
+        if (ToggleButton(State, Choices[Index].Label, Knife.Combination == Choices[Index].Combination, RowSpan(4))) ChooseKnifeCombination(State, Choices[Index].Combination);
+    }
+    if (Knife.Mode == SolidArcKnifeMode::Sketch)
+    {
+        if (Knife.Sketch.empty() || Knife.DrawPendingCondition)
+        {
+            ImGui::TextDisabled("%s", Knife.DrawPendingCondition ? (std::string("Drawing a ") + SolidArcDrawingLabel(State.Drawing.Kind) + " for the knife").c_str() : "Draw a shape for the knife");
+            static const struct { const char* Label; SolidArcDrawingKind Kind; } Shapes[] = {
+                { "Circle###KnifeDrawCircle", SolidArcDrawingKind::Circle }, { "Rectangle###KnifeDrawRectangle", SolidArcDrawingKind::Rectangle },
+                { "Polygon###KnifeDrawPolygon", SolidArcDrawingKind::Polygon }, { "Slot###KnifeDrawSlot", SolidArcDrawingKind::Slot }, { "Line###KnifeDrawLine", SolidArcDrawingKind::Line } };
+            for (int Index = 0; Index < 5; ++Index)
+            {
+                if (Index > 0 && Index != 3) ImGui::SameLine();
+                if (ToggleButton(State, Shapes[Index].Label, Knife.DrawPendingCondition && State.Drawing.Kind == Shapes[Index].Kind, RowSpan(3))) DrawKnifeShape(State, Shapes[Index].Kind);
+            }
+        }
+        else
+        {
+            ImGui::Text("Cutter  %s", CaptionOf(State.Document, Knife.Sketch).c_str());
+            ImGui::Text("Target  %s", Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str());
+            ImGui::Text("Depth   %s m%s", FormatLength(Knife.Depth).c_str(), Knife.Typed.empty() ? "" : (" (typed " + Knife.Typed + ")").c_str());
+            if (ToggleButton(State, "Through###KnifeThrough", Knife.ThroughCondition, RowSpan(2))) { Knife.ThroughCondition = !Knife.ThroughCondition; Announce(State, Knife.ThroughCondition ? "Knife: through" : "Knife: to depth"); }
+            ImGui::SameLine();
+            if (PressButton(State, "New shape###KnifeNewShape", RowSpan(2))) DrawKnifeShape(State, SolidArcDrawingKind::Circle);
+        }
+    }
+    else if (Knife.Mode == SolidArcKnifeMode::Insert)
+    {
+        for (int Index = 0; Index < int(Knife.Library.Inserts.size()); ++Index)
+        {
+            if (Index % 2 == 1) ImGui::SameLine();
+            const std::string Label = Knife.Library.Inserts[Index].Name + "###KnifeInsert" + std::to_string(Index);
+            if (ToggleButton(State, Label.c_str(), Knife.Insert == Index, RowSpan(2)))
+            {
+                Knife.Insert = Index;
+                DropKnifePreview(Knife);
+                Announce(State, "Knife insert: " + Knife.Library.Inserts[Index].Name + (Knife.Library.Inserts[Index].Path.empty() ? std::string(" (built in)") : " (" + Knife.Library.Inserts[Index].Path + ")"));
+            }
+        }
+        ImGui::Text("Width  %s m · turn %.0f°%s", FormatLength(Knife.Size).c_str(), Knife.Turn * 180.0 / std::numbers::pi, Knife.PlacedCondition ? " · placed" : "");
+        for (const std::string& Note : Knife.Library.Notes) ImGui::TextDisabled("%s", Note.c_str());
+        const bool OneBody = State.Document.Selection.Bodies.size() == 1;
+        if (PressButton(State, "Save picked body###KnifeSaveInsert", RowSpan(2), OneBody))
+        {
+            const std::string Key = State.Document.Selection.Bodies.front();
+            std::string Path;
+            const std::string Refusal = SaveSolidArcInsert(State.Document, Key, State.Options.InsertFolder, SolidArcBodyCaption(State.Document, Key), Path);
+            if (!Refusal.empty()) Announce(State, "Refused: " + Legible(Refusal));
+            else
+            {
+                Knife.LibraryCondition = false;
+                EnsureKnifeLibrary(State);
+                Announce(State, "Insert saved: " + Path + Compose(" · library %d insert(s)", int(Knife.Library.Inserts.size())));
+            }
+        }
+        ImGui::SameLine();
+        if (PressButton(State, "Reload###KnifeReload", RowSpan(2))) { Knife.LibraryCondition = false; EnsureKnifeLibrary(State); DropKnifePreview(Knife); }
+    }
+    else
+    {
+        const std::vector<std::string>& Picked = State.Document.Selection.Bodies;
+        ImGui::Text("Target  %s", Picked.empty() ? "?" : SolidArcBodyCaption(State.Document, Picked.front()).c_str());
+        for (size_t Index = 1; Index < Picked.size(); ++Index) ImGui::TextDisabled("Cutter %d  %s", int(Index), SolidArcBodyCaption(State.Document, Picked[Index]).c_str());
+        if (ToggleButton(State, "Keep cutters###KnifeKeep", Knife.KeepCondition, RowSpan(1))) { Knife.KeepCondition = !Knife.KeepCondition; Announce(State, Knife.KeepCondition ? "Knife: cutters kept" : "Knife: cutters consumed"); }
+    }
+    if (!Knife.Refusal.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
+        ImGui::TextWrapped("%s", Knife.Refusal.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextWrapped("Tab mode · Q add · W cut · E intersect · R separate · T through · [ / ] turn · K keep · type a value · click / right-click / Enter applies · Esc cancels");
+    ImGui::PopStyleColor();
+    if (PressButton(State, "Apply###KnifeApply", RowSpan())) ApplyKnifeSession(State);
+    ImGui::SameLine();
+    if (PressButton(State, "Cancel###KnifeCancel", RowSpan())) CloseKnifeSession(State, "Knife cancelled");
+    EndCard();
 }
 
 void DrawBooleanCard(SolidArcWorkspaceState& State)
@@ -7635,11 +8212,12 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition && !State.Fill.ActiveCondition, true },
                                  { "SketchCut", IconSymbol::SolidArcCut, "Cut", false, CutCondition && !State.Bevel.ActiveCondition },
                                  { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition },
-                                 { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition } };
+                                 { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition },
+                                 { "SketchKnife", IconSymbol::SolidArcSubtract, "Knife", State.Knife.ActiveCondition, State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition } };
     SolidArcSheet Probe;
     Probe.Begin();
-    float Widths[4], Total = 2.0f + 10.0f + 3.0f * 4.0f + 1.0f + 6.0f + 4.0f;
-    for (int Index = 0; Index < 4; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
+    float Widths[5], Total = 2.0f + 10.0f + 4.0f * 4.0f + 1.0f + 6.0f + 4.0f;
+    for (int Index = 0; Index < 5; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
     const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Total)), Image.y + Extent.y - 52.0f - Height);
@@ -7650,7 +8228,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     const float       Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
     Sheet.Box(Bar, SolidArcInk(0x171717, 0xf5 / 255.0f), 13.0f, SolidArcInk(0x343434));
     float Cursor = Bar.MinimumX + 1.0f + 5.0f;
-    for (int Index = 0; Index < 4; ++Index)
+    for (int Index = 0; Index < 5; ++Index)
     {
         const ToolButton&   Tool    = Tools[Index];
         const PlaneExtent   Box     = Spanning(Cursor, Centre - 0.5f * ButtonHeight, Widths[Index], ButtonHeight);
@@ -7668,6 +8246,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
             if (Index == 1) ApplyCut(State);
             if (Index == 2) State.Trim.ActiveCondition ? CloseTrimSession(State) : OpenTrimSession(State);
             if (Index == 3) State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State);
+            if (Index == 4) State.Knife.ActiveCondition ? CloseKnifeSession(State, "Knife closed") : OpenKnifeSession(State);
         }
         Cursor = Box.MaximumX + 4.0f;
         if (Index == 0)
@@ -8039,6 +8618,16 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         DriveTransformSession(State, Frame, Local);
         if ((LeftClick || RightClick) && !OverCube) ApplyTransformSession(State);   // Plasticity: click, right-click or Enter commits
     }
+    else if (State.Knife.ActiveCondition)
+    {
+        DriveKnifeSession(State, Frame, Local, Hovered && !OverCube);
+        if (LeftClick && !OverCube) ClickKnifeSession(State, Local);
+        else if (RightClick && !OverCube)
+        {
+            if (State.Knife.Mode == SolidArcKnifeMode::Insert && !State.Knife.PlacedCondition && State.Knife.HoverCondition) State.Knife.PlacedCondition = true;   // Place and apply
+            ApplyKnifeSession(State);                                                        // Right-click applies like Enter
+        }
+    }
     else if (State.Sweep.ActiveCondition)
     {
         DriveSweepSession(State, Frame, Hovered);
@@ -8131,6 +8720,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawFillPreview"); DrawFillPreview(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawConstraintOverlay"); DrawConstraintOverlay(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSweepOutline"); DrawSweepOutline(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawKnifeGhost"); DrawKnifeGhost(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSectionOutline"); DrawSectionOutline(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawMeasureOverlay"); DrawMeasureOverlay(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawJointOverlay"); DrawJointOverlay(State, Canvas, Frame); }
@@ -8227,6 +8817,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         DrawStatusPill(Canvas, Below, Compose("%s%s · %d body(ies)", Transform.DuplicateCondition ? "Duplicate · " : "", Transform.Readout.c_str(), int(Transform.Keys.size())), Transform.Refusal.empty() ? ActiveColour : RefusalColour);
         if (!Transform.Refusal.empty()) DrawStatusPill(Canvas, Below, Transform.Refusal, RefusalColour);
     }
+    if (State.Knife.ActiveCondition && !State.Knife.DrawPendingCondition)
+    {
+        ImVec2 Below(Image.x + 72, Image.y + 64);
+        DrawStatusPill(Canvas, Below, KnifeReadout(State), State.Knife.Refusal.empty() ? ActiveColour : RefusalColour);
+        if (!State.Knife.Refusal.empty()) DrawStatusPill(Canvas, Below, State.Knife.Refusal, RefusalColour);
+    }
     if (State.Sweep.ActiveCondition)
     {
         ImVec2 Below(Image.x + 72, Image.y + 64);
@@ -8258,6 +8854,10 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? (State.Transform.Verb == SolidArcTransformVerb::Move ? "Move: pointer snaps to points / edges / faces (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / right-click / Enter commit · Esc cancel"
                               : State.Transform.Verb == SolidArcTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / right-click / Enter commit · Esc cancel"
                               : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / right-click / Enter commit · Esc cancel")
+                       : State.Knife.ActiveCondition && !State.Knife.DrawPendingCondition
+                           ? (State.Knife.Mode == SolidArcKnifeMode::Insert ? "Knife insert: point at a face · click places · move sideways to size (Shift fine, Ctrl free) · [ / ] turn 15° · type a width · Q add · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel"
+                              : State.Knife.Mode == SolidArcKnifeMode::Object ? "Knife object: the first picked body is cut by the others (Shift-click adds cutters) · K keep cutters · Q add · W cut · E intersect · right-click / Enter apply · Tab mode · Esc cancel"
+                              : "Knife sketch: move sideways for the depth (Shift fine, Ctrl free) · type a depth · T through · Q add (boss) · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel")
                        : State.Sweep.ActiveCondition
                            ? (State.Sweep.Verb == SolidArcSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / right-click / Enter commit · Esc cancel"
                               : State.Sweep.Verb == SolidArcSweepVerb::Revolve ? "Revolve: type degrees (360) · X / Y sketch axis · click a profile line for the axis · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
@@ -9602,7 +10202,8 @@ void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     Body.Begin();
     const SolidArcSelection& Selection = State.Document.Selection;
     const bool Picked = !Selection.Faces.empty() || !Selection.Edges.empty() || !Selection.Bodies.empty() || !Selection.Curves.empty();
-    if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
+    if (State.Knife.ActiveCondition) DrawKnifeCard(State);
+    else if (State.Boolean.ActiveCondition) DrawBooleanCard(State);
     else if (State.Joint.ActiveCondition) DrawJointCard(State);
     else if (State.Bevel.ActiveCondition) DrawBevelCard(State);
     else if (!State.Drawing.ActiveCondition)
@@ -9616,7 +10217,7 @@ void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     switch (State.InspectorTab)
     {
     case SolidArcInspectorTab::Geometry:
-        if (!State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Boolean.ActiveCondition && !State.Joint.ActiveCondition) DrawSelectionToolCards(State);
+        if (!State.Drawing.ActiveCondition && !State.Bevel.ActiveCondition && !State.Boolean.ActiveCondition && !State.Joint.ActiveCondition && !State.Knife.ActiveCondition) DrawSelectionToolCards(State);
         DrawStepCard(State);
         DrawBoundsCard(State, Body, "Bounds");
         if (!State.Drawing.ActiveCondition) DrawOperationsCard(State, Body);
@@ -9926,6 +10527,35 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         return;
     }
 
+    // Shift+K knife — digits type the depth / width, Q / W / E / R combine, T through, K keep, [ / ] turn, Tab mode.
+    if (State.Knife.ActiveCondition && !State.Knife.DrawPendingCondition)
+    {
+        SolidArcKnifeSession& Knife = State.Knife;
+        if (CollectTypedAmount(Knife.Typed)) Knife.StagedKey.clear();
+        if (Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter)) ApplyKnifeSession(State);
+        else if (Pressed(ImGuiKey_Escape))
+        {
+            if (Knife.Mode == SolidArcKnifeMode::Insert && Knife.PlacedCondition) { Knife.PlacedCondition = false; Knife.Typed.clear(); Announce(State, "Knife: insert lifted (point at a face again)"); }
+            else CloseKnifeSession(State, "Knife cancelled (document untouched)");
+        }
+        else if (!Control && !Alternate)
+        {
+            if (Pressed(ImGuiKey_Q)) ChooseKnifeCombination(State, FeatureCombination::Union);          // keyboard:knife:add
+            if (Pressed(ImGuiKey_W)) ChooseKnifeCombination(State, FeatureCombination::Difference);     // keyboard:knife:cut
+            if (Pressed(ImGuiKey_E)) ChooseKnifeCombination(State, FeatureCombination::Intersection);   // keyboard:knife:intersect
+            if (Pressed(ImGuiKey_R)) ChooseKnifeCombination(State, FeatureCombination::Separate);       // keyboard:knife:separate
+            if (Pressed(ImGuiKey_T) && Knife.Mode == SolidArcKnifeMode::Sketch) { Knife.ThroughCondition = !Knife.ThroughCondition; Announce(State, Knife.ThroughCondition ? "Knife: through" : "Knife: to depth"); }
+            if (Pressed(ImGuiKey_K) && Knife.Mode == SolidArcKnifeMode::Object) { Knife.KeepCondition = !Knife.KeepCondition; Announce(State, Knife.KeepCondition ? "Knife: cutters kept" : "Knife: cutters consumed"); }
+            if (Pressed(ImGuiKey_LeftBracket) || Pressed(ImGuiKey_RightBracket))
+            {
+                Knife.Turn = std::remainder(Knife.Turn + (Pressed(ImGuiKey_LeftBracket) ? -1.0 : 1.0) * std::numbers::pi / 12.0, 2.0 * std::numbers::pi);
+                Announce(State, Compose("Knife: turn %.0f°", Knife.Turn * 180.0 / std::numbers::pi));
+            }
+            if (Pressed(ImGuiKey_Tab)) ChooseKnifeMode(State, SolidArcKnifeMode((int(Knife.Mode) + 1) % 3));
+        }
+        return;
+    }
+
     // [command='offset-curve' | 'pipe'] — digits type the amount, Q / W / E / R combine (pipe), Enter commits, Esc cancels.
     if (State.Sweep.ActiveCondition)
     {
@@ -10032,6 +10662,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         if (Pressed(ImGuiKey_W)) OpenDrawingSession(State, SolidArcDrawingKind::Circle);                // center-circle
         if (Pressed(ImGuiKey_H)) ChangeVisibility(State, SolidArcVisibilityVerb::HideUnselected);       // hide-unselected
         if (Pressed(ImGuiKey_P)) OpenSweepSession(State, SolidArcSweepVerb::Evolution);     // command:evolution
+        if (Pressed(ImGuiKey_K)) OpenKnifeSession(State);                                   // knife (KitOps-style cutters; free in Plasticity's map)
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Mode toggles: one mode at a time (2 / 3 / 4 / 5)");
         return;
     }
@@ -10318,6 +10949,7 @@ SolidArcPhaseClock::~SolidArcPhaseClock()
     if (State.Trim.ActiveCondition) return "trim session";
     if (State.Fill.ActiveCondition) return "fill session";
     if (State.Sweep.ActiveCondition) return "sweep session";
+    if (State.Knife.ActiveCondition) return "knife session";
     if (State.Joint.ActiveCondition) return "joint session";
     if (ImGui::IsAnyMouseDown()) return "pointer held";
     return "idle";
@@ -10414,6 +11046,7 @@ const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
     if (State.Transform.ActiveCondition && (State.Transform.Preview || State.Transform.RigidCondition) && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
+    if (State.Knife.ActiveCondition && State.Knife.Preview && State.Knife.Refusal.empty()) return State.Knife.PreviewScene;
     if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
     if (State.ParameterDrag.Preview) return State.ParameterDrag.PreviewScene;
     if (State.Gizmo.DragCondition && (State.Gizmo.Preview || State.Gizmo.RigidCondition) && State.Gizmo.Refusal.empty()) return State.Gizmo.PreviewScene;

@@ -1,0 +1,196 @@
+# SolidArc knife walkthrough (Shift+K, Blender KitOps style) — a shape drawn on a face is filled and cut into the body to
+# a typed depth or straight through; a library insert (boolean library) follows the faces, is placed, sized and cut,
+# added as a boss (Q), or left as a body of its own (R); picked bodies cut each other with the cutters kept (K).
+# Run: SolidArcCapture --specimen --reset-files --recovery …/KnifeRecovery.solidarc --document …/Knife.solidarc
+#      --inserts …/KnifeInserts --script Scripts/KnifeWalkthrough.txt
+# Closed forms (2 m cube, z 0 … 2): circle r 0.3 cut 0.5 deep = 0.045π · rectangle 0.4 × 0.4 through 2 m = 0.32 ·
+# square pocket insert of width 0.4 (depth 0.3 widths) = 0.4² × 0.12 = 0.0192 · the same insert raised (Q) adds 0.0192 ·
+# a separate insert body (0.35 widths tall) = 0.4² × 0.14 = 0.0224.
+
+# ① a 2 m cube from the Construct menu
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -1.0 -1.0 0.0
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+expect refused == 0
+expect bodies == 1
+expect volume ~ 8
+
+# ② Shift+K with nothing focused: the knife starts a circle on the face under the pointer; the finished circle is the
+#    cutter (filled by itself), typed 0.5 is the depth, Enter cuts it into the cube
+key K Shift
+frames 2
+expect knife == 1
+expect knife-pending == 1
+expect knife-mode == Sketch
+move world 0.0 0.0 2.0
+frames 2
+expect face-plane == 1
+click world 0.0 0.0 2.0
+frames 2
+move world 0.3 0.0 2.0
+frames 2
+click world 0.3 0.0 2.0
+frames 3
+expect knife-pending == 0
+expect sketch-filled == 1
+type 0.5
+frames 6
+expect knife-depth ~ 0.5
+expect knife-target == Block1
+expect knife-refusal == 0
+capture 271KnifeSketchStaged
+key Enter
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 1
+expect bodies == 1
+expect volume ~ 7.858628330588459
+
+# ③ a rectangle (card) on the −y face, T straight through: a 0.4 × 0.4 window through the 2 m cube
+key K Shift
+frames 2
+click @KnifeDrawRectangle
+frames 2
+move world -0.6 -1.0 0.4
+frames 2
+click world -0.6 -1.0 0.4
+frames 2
+move world -0.2 -1.0 0.8
+frames 2
+click world -0.2 -1.0 0.8
+frames 3
+expect knife-pending == 0
+key T
+frames 6
+expect knife-through == 1
+capture 272KnifeThrough
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 2
+expect volume ~ 7.538628330588459
+
+# ④ Insert mode (the boolean library): the square pocket ghost follows the top face, typed 0.4 is its width, a click
+#    places it, ] turns it 15° (a square at 15° still removes 0.0192), Enter cuts
+key K Shift
+frames 2
+click @KnifeModeInsert
+frames 2
+expect knife-mode == Insert
+expect knife-pending == 0
+expect knife-inserts > 6
+expect knife-insert == Square pocket
+move world 0.5 0.5 2.0
+frames 2
+move world 0.5 0.5 2.0
+frames 2
+expect knife-hover == 1
+type 0.4
+frames 2
+expect knife-size ~ 0.4
+click world 0.5 0.5 2.0
+frames 2
+expect knife-placed == 1
+key RightBracket
+frames 6
+expect knife-turn ~ 15
+capture 273KnifeInsertPlaced
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 3
+expect bodies == 1
+expect volume ~ 7.519428330588459
+
+# ⑤ Q (Add): the same insert raised out of the +x face is a boss of 0.0192
+key K Shift
+frames 2
+click @KnifeModeInsert
+frames 2
+key Q
+frames 1
+move world 1.0 0.5 1.0
+frames 2
+move world 1.0 0.5 1.0
+frames 2
+expect knife-hover == 1
+type 0.4
+frames 2
+click world 1.0 0.5 1.0
+frames 2
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 4
+expect bodies == 1
+expect volume ~ 7.538628330588459
+
+# ⑥ R (Separate): the insert stays a body of its own on the top face (0.0224), then it is saved to the library folder
+key K Shift
+frames 2
+click @KnifeModeInsert
+frames 2
+key R
+frames 1
+move world -0.5 -0.5 2.0
+frames 2
+move world -0.5 -0.5 2.0
+frames 2
+type 0.4
+frames 2
+click world -0.5 -0.5 2.0
+frames 2
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 5
+expect bodies == 2
+expect volume ~ 7.561028330588459
+expect selected-bodies contains Import
+key K Shift
+frames 2
+click @KnifeModeInsert
+frames 2
+click @KnifeSaveInsert
+frames 2
+expect knife-inserts > 7
+key Escape
+frames 2
+expect knife == 0
+
+# ⑦ Object mode: pick the cube, Shift-pick the insert body, Shift+K, K keeps the cutter, Enter cuts 0.0192 out of the cube
+key 4
+frames 1
+click world 0.5 -0.5 2.0
+frames 2
+click world -0.5 -0.5 2.02 Left Shift
+frames 2
+key K Shift
+frames 2
+expect knife-mode == Object
+key K
+frames 6
+capture 274KnifeObject
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 6
+expect bodies == 2
+expect volume ~ 7.541828330588459
+expect sound == 1

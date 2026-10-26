@@ -184,9 +184,9 @@ SolidArcInsertLibrary AssembleSolidArcInserts(const std::string& Folder)
     {
         return [Request, Bottom](SolidArcDocument& Scratch, std::string& Key) { return SweepFlatCutter(Scratch, Request, 0.05, Bottom, Key); };
     };
+    AddBuiltIn(Library, "Square pocket", Flat(Shape(SolidArcDrawingKind::Rectangle, { { 0.0, 0.0 }, { 0.5, 0.5 } }, true), -0.3));
     AddBuiltIn(Library, "Round hole", Flat(Shape(SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true), -0.5));
     AddBuiltIn(Library, "Countersink", TurnCountersink);
-    AddBuiltIn(Library, "Square pocket", Flat(Shape(SolidArcDrawingKind::Rectangle, { { 0.0, 0.0 }, { 0.5, 0.5 } }, true), -0.3));
     AddBuiltIn(Library, "Slot", Flat(Shape(SolidArcDrawingKind::Slot, { { -0.35, 0.0 }, { 0.35, 0.0 }, { 0.35, 0.15 } }), -0.3));
     AddBuiltIn(Library, "Hex pocket", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true, 6), -0.3));
     AddBuiltIn(Library, "Triangle", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.0, 0.5 } }, true, 3), -0.3));

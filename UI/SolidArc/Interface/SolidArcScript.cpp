@@ -376,6 +376,45 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
             return true;
         }
     }
+    if (Field == "knife") return Numeric(State.Knife.ActiveCondition ? 1 : 0);
+    if (Field == "knife-commits") return Numeric(double(State.Knife.Commits));
+    if (Field == "knife-depth") return Numeric(State.Knife.Depth);
+    if (Field == "knife-size") return Numeric(State.Knife.Size);
+    if (Field == "knife-turn") return Numeric(State.Knife.Turn * 180.0 / std::numbers::pi);
+    if (Field == "knife-through") return Numeric(State.Knife.ThroughCondition ? 1 : 0);
+    if (Field == "knife-placed") return Numeric(State.Knife.PlacedCondition ? 1 : 0);
+    if (Field == "knife-hover") return Numeric(State.Knife.HoverCondition ? 1 : 0);
+    if (Field == "knife-pending") return Numeric(State.Knife.DrawPendingCondition ? 1 : 0);
+    if (Field == "knife-inserts") return Numeric(double(State.Knife.Library.Inserts.size()));
+    if (Field == "knife-mode")
+    {
+        // "Sketch" / "Insert" / "Object", Number = 0 / 1 / 2
+        static const char* Modes[] = { "Sketch", "Insert", "Object" };
+        Text   = Modes[std::clamp(int(State.Knife.Mode), 0, 2)];
+        Number = double(int(State.Knife.Mode));
+        return true;
+    }
+    if (Field == "knife-insert")
+    {
+        // The picked library insert's name, Number = its index (−1: library not assembled)
+        const bool Present = State.Knife.Insert >= 0 && State.Knife.Insert < int(State.Knife.Library.Inserts.size());
+        Text   = Present ? State.Knife.Library.Inserts[State.Knife.Insert].Name : std::string{};
+        Number = Present ? double(State.Knife.Insert) : -1.0;
+        return true;
+    }
+    if (Field == "knife-target")
+    {
+        // Caption of the body the staged knife cuts (empty: none yet)
+        Text   = State.Knife.Target.empty() ? std::string{} : SolidArcBodyCaption(Document, State.Knife.Target);
+        Number = State.Knife.Target.empty() ? 0.0 : 1.0;
+        return true;
+    }
+    if (Field == "knife-refusal")
+    {
+        Text   = State.Knife.Refusal;
+        Number = State.Knife.Refusal.empty() ? 0.0 : 1.0;
+        return true;
+    }
     if (Field == "fill") return Numeric(State.Fill.ActiveCondition ? 1 : 0);
     if (Field == "fill-commits") return Numeric(double(State.Fill.Commits));
     if (Field == "fill-loops") return Numeric(State.Fill.HoverCondition ? double(State.Fill.Outlines.size()) : 0.0);
