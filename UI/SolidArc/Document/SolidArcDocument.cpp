@@ -2354,6 +2354,46 @@ SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std
     });
 }
 
+SolidArcCommandOutcome KnifeSolidArcPlacedBody(SolidArcDocument& Document, const std::string& Target, const std::string& Tool, const AffineMap& Map,
+                                               FeatureCombination Combination, bool KeepCondition)
+{
+    const std::string Cut     = Target;                                                      // Both may live in the selection this command clears
+    const std::string Moved   = Tool;
+    const std::string Caption = NextCaption(Document, "Knife");
+    const char*       Sign    = Combination == FeatureCombination::Difference ? " − " : Combination == FeatureCombination::Intersection ? " ∩ " : " ∪ ";
+    const std::string Label   = Caption + " · " + FeatureCombinationLabel(Combination) + " (" + SolidArcBodyCaption(Document, Cut) + Sign + SolidArcBodyCaption(Document, Moved) +
+                                " placed)" + (KeepCondition ? " · cutter kept" : "");
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Combination != FeatureCombination::Union && Combination != FeatureCombination::Difference && Combination != FeatureCombination::Intersection)
+            return "choose Difference, Union or Intersection";
+        if (Cut.empty()) return "point at a face of the body to cut";
+        if (!FindRegeneratedBody(Document, Cut)) return "no body named " + Cut;
+        if (!FindRegeneratedBody(Document, Moved)) return "no body named " + Moved;
+        if (Cut == Moved) return "the cutter cannot cut itself: point at another body";
+        const double Volume = Dot(Map.ColumnX, Cross(Map.ColumnY, Map.ColumnZ));
+        if (!(Volume > 1.0e-15)) return "the cutter placement is degenerate (zero size or mirrored)";
+        FeatureStep Place;
+        Place.Kind      = KeepCondition ? FeatureStepKind::Duplicate : FeatureStepKind::Transform;
+        Place.Label     = (KeepCondition ? "Duplicate#" : "Transform#") + std::to_string(NextStepOrdinal(Document.Tree));
+        Place.Target    = Moved;
+        Place.Placement = Map;
+        const std::string Cutter = KeepCondition ? Place.Label : Moved;
+        Document.Captions[Place.Label] = NextCaption(Document, KeepCondition ? SolidArcBodyCaption(Document, Moved) + "Cutter" : std::string("Place"));
+        Document.Tree.Steps.push_back(std::move(Place));
+        FeatureStep Combine;
+        Combine.Kind        = FeatureStepKind::Combine;
+        Combine.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Combine.Combination = Combination;
+        Combine.Target      = Cut;
+        Combine.Tool        = Cutter;
+        Document.Captions[Combine.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Combine));
+        Document.Selection = {};
+        return {};
+    });
+}
+
 SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, SolidArcVisibilityVerb Verb)
 {
     // The picked bodies: body picks plus the owners of picked faces and edges.

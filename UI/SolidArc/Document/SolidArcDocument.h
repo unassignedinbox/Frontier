@@ -444,6 +444,13 @@ struct SolidArcInsertPlacement
 [[nodiscard]] SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools,
                                                          GeometryProcessing::FeatureCombination Combination, bool KeepCondition);
 
+// 📝 Knife with one picked body placed by the pointer (KitOps cutter object): the Tool body is carried by Map (Transform
+//    step; KeepCondition places a Duplicate instead so the cutter stays where it was) and combined into Target. One undo
+//    entry; refused (document untouched) for a degenerate or mirrored Map, Tool == Target, or Separate.
+[[nodiscard]] SolidArcCommandOutcome KnifeSolidArcPlacedBody(SolidArcDocument& Document, const std::string& Target, const std::string& Tool,
+                                                             const GeometryProcessing::AffineMap& Map, GeometryProcessing::FeatureCombination Combination,
+                                                             bool KeepCondition);
+
 // 📝 Alt+J (Fusion Joint; Plasticity has none): place the body owning MovingName onto the body owning FixedName by a
 //    joint between the two joint origins (an edge or a face each; Assembly/JointSolver.h reads the origin off it).
 //    Angles in degrees; each value becomes a step parameter (caption.Angle, .Offset, .Slide, .SecondSlide, .Pitch, .Roll)

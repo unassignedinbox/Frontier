@@ -173,7 +173,9 @@ struct SolidArcDrawingSession
     bool                           SquareCondition  = false;                                 // [-]   - Rectangle: s keeps the sides equal
     bool                           SegmentCondition = false;                                 // [-]   - Line: one segment, finished on the second click
     std::string                    Refusal          = {};                                    // [-]   - Why the preview cannot finish
-    int                            Sides            = 6;                                     // [-]   - Polygon / prism sides (+ / − keys)
+    int                            Sides            = 6;                                     // [-]   - Polygon / prism sides (+ / − keys, wheel)
+    bool                           PressCondition   = false;                                 // [-]   - Left button went down on the plane (click-drag)
+    bool                           PressPlacedCondition = false;                             // [-]   - That press placed the first point (its release is no click)
     bool                           SolidCondition   = false;                                 // [-]   - Construct solid: plane clicks, then a height
     SolidArcConstructKind          Solid            = SolidArcConstructKind::Block;          // [-]   - Which solid
     double                         Elevation        = 0.0;                                   // [len] - Plane height (solids: z of the first click)
@@ -413,7 +415,7 @@ enum class SolidArcKnifeMode : uint8_t
 {
     Sketch = 0,                                                                              // A closed sketch cut to a depth / through
     Insert = 1,                                                                              // A library cutter placed on a face
-    Object = 2,                                                                              // Picked bodies: the first is cut by the rest
+    Object = 2,                                                                              // Picked bodies: the first is cut by the rest (one: placed by the pointer)
 };
 
 // 📝 Shift+K Knife (Blender KitOps style). Sketch: the focused closed sketch (or a shape drawn for it on a face) is filled
@@ -443,6 +445,12 @@ struct SolidArcKnifeSession
     double                                 Size                 = 0.25;                      // [len] - Insert: width
     double                                 Turn                 = 0.0;                       // [rad] - Insert: about the face normal
     bool                                   KeepCondition        = false;                     // [-]   - Object: K, cutters survive
+    // 📝 Object with one picked body: that body is the cutter, carried to the face under the pointer (Ctrl: its z along
+    //    the face normal); a click / right-click places it, then the pointer pushes it in / pulls it out along the normal.
+    bool                                   AlignCondition       = false;                     // [-]   - Placement: cutter z along the face normal (Ctrl)
+    double                                 Sink                 = 0.0;                       // [len] - Placement: cutter centre below the face (− above)
+    bool                                   RigidCondition       = false;                     // [-]   - PreviewScene is the carried cutter (no Boolean yet)
+    std::string                            GhostKey             = {};                        // [-]   - Placement the carried cutter shows
     std::string                            Target               = {};                        // [-]   - Body the staged knife cuts
     std::string                            StagedKey            = {};                        // [-]   - Parameters the preview shows
     SolidArcCommandOutcome                 PreviewOutcome       = {};                        // [-]   - The staged command (adopted on apply)

@@ -148,7 +148,8 @@ expect refused == 0
 expect bodies == 6
 expect volume ~ 7.134083841
 
-# ⑧ Sketch section · Polygon: centre, then a vertex; R, side and interior angle shown while drawing
+# ⑧ Sketch section · Polygon: centre, then a vertex; R, side and interior angle shown while drawing; then (the HTML
+#    reference) it waits: the wheel changes its sides (7, as the prism left it, → 8, then down to a pentagon) and a right-click confirms it
 click @ConstructLauncher
 frames 2
 click @ConstructSectionSketch
@@ -162,6 +163,22 @@ move world 3.4 0.3 0.0
 frames 2
 capture 208PolygonDimensions
 click world 3.4 0.3 0.0
+frames 3
+expect drawing == Polygon
+expect drawing-sides == 7
+wheel world 3.4 0.3 0.0 1
+frames 2
+expect drawing-sides == 8
+wheel world 3.4 0.3 0.0 -1
+frames 2
+wheel world 3.4 0.3 0.0 -1
+frames 2
+expect drawing-sides == 6
+wheel world 3.4 0.3 0.0 -1
+frames 2
+expect drawing-sides == 5
+capture 284PolygonSides
+click world 3.4 0.3 0.0 Right
 frames 3
 expect drawing == 0
 expect refused == 0

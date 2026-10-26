@@ -336,3 +336,110 @@ frames 2
 expect selected-bodies > 0
 key Escape
 frames 2
+
+# ⑪ a picked body is the cutter (KitOps cutter object): pick the separate insert body (0.4 × 0.4 × 0.14), Shift+K, it
+#    follows the pointer onto the cube's +x face, Ctrl turns its z onto the face normal (0.14 along x), a right-click
+#    places it, the pointer along the normal pulls it out, typed 0.03 sinks its centre 0.03 in: x 0.90 … 1.04 cuts
+#    0.10 × 0.4 × 0.4 = 0.016 out of the cube and the cutter is used up (0.0224): 7.525828330588459 − 0.0384
+key 4
+frames 1
+click world -0.5 -0.5 2.02
+frames 2
+expect selected-bodies == 1
+key K Shift
+frames 2
+expect knife == 1
+expect knife-mode == Object
+expect knife-placed == 0
+move world 1.0 -0.4 0.5 Ctrl
+frames 3
+expect knife-hover == 1
+expect knife-align == 1
+expect knife-rigid == 1
+expect knife-target == Block1
+capture 285KnifeCutterFollows
+press Right Ctrl
+frames 1
+release Right Ctrl
+frames 2
+expect knife-placed == 1
+expect knife-align == 1
+move world 1.25 -0.4 0.5
+frames 3
+expect knife-sink < -0.1
+type 0.03
+frames 8
+expect knife-sink ~ 0.03
+expect knife-refusal == 0
+capture 286KnifeCutterPlaced
+key Enter
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 9
+expect bodies == 2
+expect volume ~ 7.487428330588459
+
+# ⑫ cutter shapes drawn as the Construct solids are: a rectangle by press-drag-release on the top face, then its depth
+#    (typed 0.1), right-click cuts; a circle whose rim is the right-click (centre clicked, the pointer is the rim:
+#    r 0.1, 0.05 deep = 0.0005π); a polygon by press-drag, the wheel down to a pentagon, right-click confirms it
+key Escape
+frames 2
+click @SketchKnifeTool
+frames 3
+click @KnifeToolRectangle
+frames 3
+expect knife-pending == 1
+drag Left world -0.75 0.35 2.0 by 40 -24 6
+frames 3
+expect knife-pending == 0
+expect sketch-filled == 1
+type 0.1
+frames 6
+expect knife-depth ~ 0.1
+click world -0.6 0.5 2.0 Right
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 10
+expect volume < 7.487428330588459
+click @SketchKnifeTool
+frames 3
+click @KnifeToolCircle
+frames 3
+click world 0.5 -0.1 2.0
+frames 2
+move world 0.6 -0.1 2.0
+frames 2
+click world 0.6 -0.1 2.0 Right
+frames 3
+expect knife-pending == 0
+type 0.05
+frames 6
+expect knife-depth ~ 0.05
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 11
+click @SketchKnifeTool
+frames 3
+click @KnifeToolPolygon
+frames 3
+expect drawing == Polygon
+drag Left world 0.0 0.7 2.0 by 30 0 6
+frames 3
+expect drawing == Polygon
+expect knife-pending == 1
+wheel world 0.0 0.7 2.0 -1
+frames 2
+expect drawing-sides == 5
+capture 287KnifePolygonSides
+click world 0.0 0.7 2.0 Right
+frames 3
+expect knife-pending == 0
+type 0.05
+frames 6
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 12

@@ -387,6 +387,9 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "knife-placed") return Numeric(State.Knife.PlacedCondition ? 1 : 0);
     if (Field == "knife-hover") return Numeric(State.Knife.HoverCondition ? 1 : 0);
     if (Field == "knife-pending") return Numeric(State.Knife.DrawPendingCondition ? 1 : 0);
+    if (Field == "knife-sink") return Numeric(State.Knife.Sink);
+    if (Field == "knife-align") return Numeric(State.Knife.AlignCondition ? 1 : 0);
+    if (Field == "knife-rigid") return Numeric(State.Knife.RigidCondition ? 1 : 0);
     if (Field == "knife-slice")
     {
         // An open chain slices (as the interface's KnifeSliceCondition).
