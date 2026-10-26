@@ -2106,8 +2106,9 @@ SolidArcCommandOutcome KnifeSolidArcInsert(SolidArcDocument& Document, const Sol
 SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools, FeatureCombination Combination,
                                            bool KeepCondition)
 {
+    const std::string Cut = Target;                                                          // Target may live in the selection this command clears
     const std::string Caption = NextCaption(Document, "Knife");
-    std::string Operands = SolidArcBodyCaption(Document, Target);
+    std::string Operands = SolidArcBodyCaption(Document, Cut);
     const char* Sign = Combination == FeatureCombination::Difference ? " − " : Combination == FeatureCombination::Intersection ? " ∩ " : " ∪ ";
     for (const std::string& Tool : Tools) Operands += Sign + SolidArcBodyCaption(Document, Tool);
     const std::string Label = Caption + " · " + FeatureCombinationLabel(Combination) + " (" + Operands + ")" + (KeepCondition ? " · cutters kept" : "");
@@ -2116,8 +2117,8 @@ SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std
         if (Combination != FeatureCombination::Union && Combination != FeatureCombination::Difference && Combination != FeatureCombination::Intersection)
             return "choose Difference, Union or Intersection";
         if (Tools.empty()) return "select the target body, then the cutter bodies";
-        if (!FindRegeneratedBody(Document, Target)) return "no body named " + Target;
-        std::set<std::string> Seen{ Target };
+        if (!FindRegeneratedBody(Document, Cut)) return "no body named " + Cut;
+        std::set<std::string> Seen{ Cut };
         for (const std::string& Tool : Tools)
         {
             if (!FindRegeneratedBody(Document, Tool)) return "no body named " + Tool;
@@ -2142,13 +2143,13 @@ SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std
             Step.Kind        = FeatureStepKind::Combine;
             Step.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
             Step.Combination = Combination;
-            Step.Target      = Target;
+            Step.Target      = Cut;
             Step.Tool        = Cutter;
             Document.Captions[Step.Label] = Caption;
             Document.Tree.Steps.push_back(std::move(Step));
         }
         Document.Selection          = {};
-        Document.Selection.Bodies   = { Target };
+        Document.Selection.Bodies   = { Cut };
         Document.Selection.LastKind = SolidArcSelectionKind::Body;
         return {};
     });

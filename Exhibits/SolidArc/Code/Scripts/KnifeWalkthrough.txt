@@ -174,10 +174,10 @@ key Escape
 frames 2
 expect knife == 0
 
-# ⑦ Object mode: pick the cube, Shift-pick the insert body, Shift+K, K keeps the cutter, Enter cuts 0.0192 out of the cube
+# ⑦ Object mode: pick the cube (its +x face, clear of the gizmo), Shift-pick the insert body, Shift+K, K keeps the cutter, Enter cuts 0.0192 out of the cube
 key 4
 frames 1
-click world 0.5 -0.5 2.0
+click world 1.0 -0.5 0.6
 frames 2
 click world -0.5 -0.5 2.02 Left Shift
 frames 2

@@ -14,6 +14,7 @@
 #include "UI/SolidArc/Document/SolidArcScene.h"
 
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
+#include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
 #include <algorithm>
 #include <cctype>
@@ -53,24 +54,24 @@ namespace
     return nullptr;
 }
 
-// 📝 ① box of the body's facets ② Transform step: unit width, centred, top at +Lift ③ canonical STEP text of the result
-//    ④ its edge polylines. Refusal (empty on success) when the body is missing, flat or the writer refuses it.
+// 📝 ① box of the body's facets (kernel tessellation, doubles) ② Transform step: unit width, centred, top at +Lift
+//    ③ canonical STEP text of the result ④ its edge polylines. Refusal (empty on success) when the body is missing, flat or the writer refuses it.
 [[nodiscard]] std::string NormalizeSolidArcInsert(SolidArcDocument& Scratch, const std::string& Key, SolidArcInsert& Insert)
 {
-    const SolidArcScene      Before = BuildSolidArcScene(Scratch);
-    const SolidArcSceneBody* Span   = FindSceneBody(Before, Key);
-    if (!Span) return "the cutter body was not made";
+    const RegeneratedBody* Source = FindBody(Scratch, Key);
+    if (!Source || !Source->Body.PresentCondition() || !Scratch.Partition) return "the cutter body was not made";
+    const TessellationOutcome Facets = TessellateBody(*Scratch.Partition, Source->Body, TessellationSettings{});   // Double positions: planar cutters stay exact
+    if (!Facets.Refusal.empty() || Facets.Complex.Positions.empty()) return Facets.Refusal.empty() ? std::string("the cutter body has no facets") : Facets.Refusal;
     double Low[3]  = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() };
     double High[3] = { -std::numeric_limits<double>::max(), -std::numeric_limits<double>::max(), -std::numeric_limits<double>::max() };
-    for (uint32_t Face = Span->FirstFace; Face < Span->FirstFace + Span->FaceCount; ++Face)
+    for (const Vector3& Point : Facets.Complex.Positions)
     {
-        const SolidArcSceneFace& Each = Before.Faces[Face];
-        for (uint32_t Corner = Each.FirstCorner; Corner < Each.FirstCorner + Each.CornerCount; ++Corner)
-            for (int Axis = 0; Axis < 3; ++Axis)
-            {
-                Low[Axis]  = std::min(Low[Axis], double(Before.Corners[Corner].Position[Axis]));
-                High[Axis] = std::max(High[Axis], double(Before.Corners[Corner].Position[Axis]));
-            }
+        const double Axis[3] = { Point.X, Point.Y, Point.Z };
+        for (int Index = 0; Index < 3; ++Index)
+        {
+            Low[Index]  = std::min(Low[Index], Axis[Index]);
+            High[Index] = std::max(High[Index], Axis[Index]);
+        }
     }
     const double Width = std::max(High[0] - Low[0], High[1] - Low[1]);                      // [len]
     if (!(Width > 1.0e-9) || !(High[2] - Low[2] > 1.0e-9)) return "the cutter body is flat";

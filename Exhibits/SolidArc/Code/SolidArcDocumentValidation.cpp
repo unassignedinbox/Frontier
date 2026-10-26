@@ -13,6 +13,7 @@
 #include "UI/SolidArc/Document/SolidArcDocumentCodec.h"
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcExchange.h"
+#include "UI/SolidArc/Document/SolidArcKnife.h"
 #include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Document/SolidArcSpecimen.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
@@ -112,6 +113,7 @@ namespace
     GateTally FilletDragGate  = { "W49", "Fillet drags (the Windows report: a corner drag turned a fillet inside out, ~270°): on a 3 × 1.5 rectangle with four r 0.3 fillets, the bottom-left fillet's centre, both tangent points and the virtual sharp are dragged to 1 024 targets up to 3 m away; every accepted drag keeps every arc under a half turn (tangency keeps its starting side), the rest refuse; the reported drag (centre out past the corner) lands with 90° arcs; slots keep their tangent ends", "0 inverted · exact" };
     GateTally OrientGate      = { "W50", "Orient to faces: Construct solids drawn on a body face are built in the face frame (x / y on the face, height along the outward normal): a cylinder on the +x face of a 2 m cube unites to 8 + π/4 and reaches x = 3; all eight tiles on a face tilted 30° about x and 40° about z keep their closed-form volumes, a unit block's bounds are those of the turned cube; a circle sketched on the tilted plane extrudes along its normal; a skewed frame is refused untouched; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally TangentGate     = { "W51", "Curved-face sketches (the Windows report: a cylinder joined on a cylinder's side, then a chamfer and moves, felt slow and refused the junction chamfer): the sketch plane is the exact tangent plane (surface foot and normal, not the facet hit); the extrude start sinks below it by the measured profile depth so a Union closes (an exactly tangent Union only touches along a line and leaves the gap open); the joined body has its closed-form volume, the junction (a cylinder–cylinder saddle curve) takes a chamfer; a Construct boss with a start unites the same way; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally KnifeGate       = { "W52", "Knife (Shift+K, Blender KitOps style): an unfilled circle on a 2 m cube's top face is filled and cut 0.5 deep from a lift above the face (8 − 0.045π); a rectangle on the −y face cuts straight through (− 0.32); open profiles, zero depth and a missing target refuse untouched; the built-in boolean library (7 cutters drawn and swept by the document's own commands) is normalized to unit width, top at +0.05; the square pocket placed at width 0.4 turned 15° cuts 0.0192, raised on the +x face adds 0.0192, left separate is a 0.0224 body; Object mode cuts the cube with the kept cutter; each knife is one undo entry; a saved insert joins the library; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4524,6 +4526,145 @@ int main()
               Format("Construct cylinder on the −y tangent plane, start %.6f: V %.12f (%s)", Pin.Start, Built.Summary.Volume, Pinned.AcceptedCondition ? "united" : Pinned.Refusal.c_str()));
     }
 
+    // ---- W52 Knife: sketch cutters to a depth / through, the boolean library, object cutters
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[720]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        SolidArcDocument Cube = CreateSolidArcDocument("Knife");
+        Expect(DrawFilledSketch(Cube, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { -1.0, -1.0 }, { 1.0, 1.0 } })));
+        Expect(ExtrudeSolidArcSketch(Cube, Cube.Tree.Steps.back().Label, 2.0, FeatureCombination::New));
+        const std::string Block = Cube.Regeneration.Bodies.front().Key;
+
+        // ① an unfilled circle r 0.3 on the top face: the knife fills it and cuts from +0.02 down to −0.5
+        SolidArcDrawingRequest Ring = DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.0 }, { 0.3, 0.0 } }, false, true);
+        Ring.PlaneCondition = true;
+        Ring.Plane          = OrthonormalFrame{ { 0.0, 0.0, 2.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+        Expect(DrawSolidArcSketch(Cube, Ring));
+        const std::string Circle  = Cube.Tree.Steps.back().Label;
+        const size_t      Undos   = Cube.UndoEntries.size();
+        const SolidArcCommandOutcome Cut = KnifeSolidArcSketch(Cube, Circle, 0.02, -0.5, FeatureCombination::Difference, Block);
+        bool Filled = false;
+        for (const FeatureStep& Step : Cube.Tree.Steps) if (Step.Label == Circle) Filled = Step.FillCondition;
+        TallyVolume(KnifeGate, Cube, 8.0 - 0.045 * π, Format("circle r 0.3 knifed 0.5 deep (%s, filled %d, %d undo entry)", Cut.AcceptedCondition ? Cut.Label.c_str() : Cut.Refusal.c_str(),
+                                                              int(Filled), int(Cube.UndoEntries.size() - Undos)));
+        Tally(KnifeGate, 0.0, Filled && Cube.UndoEntries.size() == Undos + 1 && Cube.Summary.Bodies.size() == 1, "the knife filled the unfilled circle in the same undo entry, one body");
+
+        // ② a rectangle on the −y face (x̂ = x, ŷ = z, n̂ = −y) straight through: Top / Bottom past both sides
+        SolidArcDrawingRequest Window = DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { -0.6, 0.4 }, { -0.2, 0.8 } });
+        Window.PlaneCondition = true;
+        Window.Plane          = OrthonormalFrame{ { 0.0, -1.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };
+        Expect(DrawSolidArcSketch(Cube, Window));
+        const SolidArcCommandOutcome Through = KnifeSolidArcSketch(Cube, Cube.Tree.Steps.back().Label, 0.05, -2.05, FeatureCombination::Difference, Block);
+        TallyVolume(KnifeGate, Cube, 8.0 - 0.045 * π - 0.32, "rectangle 0.4 × 0.4 knifed through the 2 m cube (" + (Through.AcceptedCondition ? Through.Label : Through.Refusal) + ")");
+
+        // ③ refusals leave the document untouched: an open line, zero depth, no target, a mirrored insert
+        Expect(DrawFilledSketch(Cube, DrawingOf(SolidArcDrawingKind::Line, 0, { { -0.9, 0.9 }, { -0.5, 0.9 } })));
+        const std::string Open  = Cube.Tree.Steps.back().Label;
+        const size_t      Steps = Cube.Tree.Steps.size();
+        const double      Held  = Cube.Summary.Volume;
+        const SolidArcCommandOutcome OpenRefused   = KnifeSolidArcSketch(Cube, Open, 0.02, -0.5, FeatureCombination::Difference, Block);
+        const SolidArcCommandOutcome DepthRefused  = KnifeSolidArcSketch(Cube, Circle, 0.0, 0.0, FeatureCombination::Difference, Block);
+        const SolidArcCommandOutcome TargetRefused = KnifeSolidArcSketch(Cube, Circle, 0.02, -0.5, FeatureCombination::Difference, "Nowhere#9");
+        SolidArcInsertPlacement Mirror;
+        Mirror.Name = "Mirror"; Mirror.Exchange = "x"; Mirror.Target = Block;
+        Mirror.Map.ColumnZ = { 0.0, 0.0, -1.0 };
+        const SolidArcCommandOutcome MirrorRefused = KnifeSolidArcInsert(Cube, Mirror);
+        Tally(KnifeGate, 0.0, !OpenRefused.AcceptedCondition && !DepthRefused.AcceptedCondition && !TargetRefused.AcceptedCondition && !MirrorRefused.AcceptedCondition &&
+                              Cube.Tree.Steps.size() == Steps && Cube.Summary.Volume == Held,
+              "refused untouched: open (" + OpenRefused.Refusal + ") · zero depth (" + DepthRefused.Refusal + ") · target (" + TargetRefused.Refusal + ") · mirror (" + MirrorRefused.Refusal + ")");
+
+        // ④ the built-in library: unit width, top at +lift, depth below in widths
+        const SolidArcInsertLibrary Library = AssembleSolidArcInserts({});
+        const auto Widths = [](const SolidArcInsert& Insert, double& Top, double& Bottom)
+        {
+            double Low[3] = { 1e300, 1e300, 1e300 }, High[3] = { -1e300, -1e300, -1e300 };
+            for (const auto& Segment : Insert.Segments)
+                for (const Vector3& Point : Segment)
+                {
+                    const double Axis[3] = { Point.X, Point.Y, Point.Z };
+                    for (int Index = 0; Index < 3; ++Index) { Low[Index] = std::min(Low[Index], Axis[Index]); High[Index] = std::max(High[Index], Axis[Index]); }
+                }
+            Top = High[2]; Bottom = Low[2];
+            return std::max(High[0] - Low[0], High[1] - Low[1]);
+        };
+        std::string Shelf;
+        double      Worst = 0.0;
+        for (const SolidArcInsert& Insert : Library.Inserts)
+        {
+            double Top = 0.0, Bottom = 0.0;
+            const double Width = Widths(Insert, Top, Bottom);
+            Worst  = std::max({ Worst, std::abs(Width - 1.0), std::abs(Top - SolidArcInsertLift), std::abs(-Bottom - Insert.Depth) });
+            Shelf += Format("%s%s %.4f", Shelf.empty() ? "" : " · ", Insert.Name.c_str(), Insert.Depth);
+        }
+        Tally(KnifeGate, Worst, Library.Inserts.size() == 7 && Library.Notes.empty() && Worst <= 1.0e-6 && Library.Inserts.front().Name == "Square pocket" &&
+                                std::abs(Library.Inserts.front().Depth - 0.3) <= 1.0e-9,
+              Format("library %d built-ins in %.0f ms (edge boxes: width 1, top +0.05, worst %.2g): %s%s", int(Library.Inserts.size()), Library.Milliseconds, Worst, Shelf.c_str(),
+                     Library.Notes.empty() ? "" : (" · " + Library.Notes.front()).c_str()));
+
+        // ⑤ the square pocket at width 0.4 turned 15° on the top face (Import + Transform + Combine, one undo entry)
+        const SolidArcInsert& Square = Library.Inserts.front();
+        const OrthonormalFrame Top{ { 0.5, 0.5, 2.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+        SolidArcInsertPlacement Pocket;
+        Pocket.Name = Square.Name; Pocket.Exchange = Square.Exchange; Pocket.Target = Block; Pocket.Combination = FeatureCombination::Difference;
+        Pocket.Map  = PlaceSolidArcInsert(Top, 0.4, π / 12.0, false);
+        const size_t PocketUndos = Cube.UndoEntries.size();
+        const SolidArcCommandOutcome Pocketed = KnifeSolidArcInsert(Cube, Pocket);
+        const double AfterPocket = 8.0 - 0.045 * π - 0.32 - 0.0192;
+        TallyVolume(KnifeGate, Cube, AfterPocket, "square pocket insert, width 0.4 turned 15° (" + (Pocketed.AcceptedCondition ? Pocketed.Label : Pocketed.Refusal) + ")");
+        Tally(KnifeGate, 0.0, Cube.UndoEntries.size() == PocketUndos + 1 && Cube.Summary.Bodies.size() == 1, Format("insert knife: %d undo entry, %d body", int(Cube.UndoEntries.size() - PocketUndos), int(Cube.Summary.Bodies.size())));
+
+        // ⑥ raised (Union) on the +x face: a 0.4 × 0.4 × 0.12 boss · ⑦ Separate on the top face: a body of 0.4² × 0.14
+        Pocket.Map         = PlaceSolidArcInsert(OrthonormalFrame{ { 1.0, 0.5, 1.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } }, 0.4, 0.0, true);
+        Pocket.Combination = FeatureCombination::Union;
+        const SolidArcCommandOutcome Bossed = KnifeSolidArcInsert(Cube, Pocket);
+        TallyVolume(KnifeGate, Cube, AfterPocket + 0.0192, "the same insert raised out of the +x face (" + (Bossed.AcceptedCondition ? Bossed.Label : Bossed.Refusal) + ")");
+        Pocket.Map         = PlaceSolidArcInsert(OrthonormalFrame{ { -0.5, -0.5, 2.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, 0.4, 0.0, false);
+        Pocket.Combination = FeatureCombination::Separate;
+        const SolidArcCommandOutcome Separate = KnifeSolidArcInsert(Cube, Pocket);
+        const std::string Cutter = Cube.Selection.Bodies.empty() ? std::string{} : Cube.Selection.Bodies.front();
+        TallyVolume(KnifeGate, Cube, AfterPocket + 0.0192 + 0.0224, "the insert left separate: body " + Cutter + " (" + (Separate.AcceptedCondition ? Separate.Label : Separate.Refusal) + ")");
+
+        // ⑧ Object: the cube cut by the separate insert, the cutter kept (duplicated first); the target as its own tool refuses
+        const SolidArcCommandOutcome Self   = KnifeSolidArcBodies(Cube, Block, { Block }, FeatureCombination::Difference, true);
+        const SolidArcCommandOutcome Object = KnifeSolidArcBodies(Cube, Block, { Cutter }, FeatureCombination::Difference, true);
+        TallyVolume(KnifeGate, Cube, AfterPocket + 0.0192 + 0.0224 - 0.0192, Format("object knife with the cutter kept: %d bodies (%s) · self refused (%s)", int(Cube.Summary.Bodies.size()),
+                                                                                     Object.AcceptedCondition ? Object.Label.c_str() : Object.Refusal.c_str(), Self.Refusal.c_str()));
+        Tally(KnifeGate, 0.0, !Self.AcceptedCondition && Object.AcceptedCondition && Cube.Summary.Bodies.size() == 2, "object knife: 2 bodies remain (cube + kept cutter)");
+
+        // ⑨ undo removes the whole object knife; redo restores it
+        const double Cutted = Cube.Summary.Volume;
+        const bool   Undone = UndoSolidArcCommand(Cube);
+        const double Before = Cube.Summary.Volume;
+        const bool   Redone = RedoSolidArcCommand(Cube);
+        Tally(KnifeGate, std::abs(Cube.Summary.Volume - Cutted), Undone && Redone && std::abs(Before - (AfterPocket + 0.0192 + 0.0224)) <= 1.0e-9 * Before && std::abs(Cube.Summary.Volume - Cutted) <= 1.0e-12,
+              Format("undo → V %.12f · redo → V %.12f", Before, Cube.Summary.Volume));
+
+        // ⑩ save the kept cutter as an insert: the library grows by one, normalized like the built-ins
+        const std::filesystem::path Folder = std::filesystem::temp_directory_path() / "SolidArcKnifeInserts";
+        std::error_code Error;
+        std::filesystem::remove_all(Folder, Error);
+        std::string Saved;
+        const std::string SaveRefusal = SaveSolidArcInsert(Cube, Cutter, Folder.string(), "Pocket Cutter", Saved);
+        const SolidArcInsertLibrary Grown = AssembleSolidArcInserts(Folder.string());
+        double GrownTop = 0.0, GrownBottom = 0.0;
+        const double GrownWidth = Grown.Inserts.size() == 8 ? Widths(Grown.Inserts.back(), GrownTop, GrownBottom) : 0.0;
+        Tally(KnifeGate, std::abs(GrownWidth - 1.0), SaveRefusal.empty() && Grown.Inserts.size() == 8 && Grown.Inserts.back().Name == "PocketCutter" && std::abs(GrownWidth - 1.0) <= 1.0e-6 &&
+                                                     std::abs(Grown.Inserts.back().Depth - 0.3) <= 1.0e-6,
+              Format("saved %s → library %d (%s: width %.9f, depth %.9f)%s", std::filesystem::path(Saved).filename().string().c_str(), int(Grown.Inserts.size()),
+                     Grown.Inserts.empty() ? "" : Grown.Inserts.back().Name.c_str(), GrownWidth, Grown.Inserts.empty() ? 0.0 : Grown.Inserts.back().Depth, SaveRefusal.c_str()));
+        std::filesystem::remove_all(Folder, Error);
+
+        // ⑪ codec: the lifted extrude Start, the imported cutters and their placements round-trip byte-equal
+        const std::string          Written = EncodeSolidArcDocument(Cube);
+        const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+        SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+        Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+        RegenerateSolidArcDocument(Loaded, true);
+        const double Drift = std::abs(Loaded.Summary.Volume - Cube.Summary.Volume) / Cube.Summary.Volume;
+        Tally(KnifeGate, Drift, Read.Refusal.empty() && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-12 && Loaded.Summary.SoundCondition,
+              Format("codec %d bytes byte-equal, V %.12f after reload, %d steps", int(Written.size()), Loaded.Summary.Volume, int(Loaded.Tree.Steps.size())));
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -4722,7 +4863,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
