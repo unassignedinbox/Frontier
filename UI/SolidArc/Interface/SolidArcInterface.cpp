@@ -571,6 +571,7 @@ void DrawMatcapPicker(SolidArcWorkspaceState& State)
 void WriteBevelText(SolidArcBevelSession& Bevel)
 {
     std::snprintf(Bevel.SizeText.data(), Bevel.SizeText.size(), "%.4g", Bevel.Size);
+    Bevel.SizeTypedCondition = false;
     std::snprintf(Bevel.EndSizeText.data(), Bevel.EndSizeText.size(), "%.4g", Bevel.EndSize);
     std::snprintf(Bevel.DepthText.data(), Bevel.DepthText.size(), "%.4g", Bevel.Depth);
 }
@@ -738,7 +739,23 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
 void ApplyBevelSession(SolidArcWorkspaceState& State)
 {
     // A refusal of a stale preview (the pointer moved on while a slow preview waited) does not block: the kernel decides.
-    if (!State.Bevel.ActiveCondition || (!State.Bevel.Refusal.empty() && State.Bevel.StagedSize == State.Bevel.Size)) return;
+    if (!State.Bevel.ActiveCondition) return;
+    // A size typed in the field but not entered (right-click straight after typing) is the size the user means.
+    SolidArcBevelSession& Typed = State.Bevel;
+    double TypedSize = 0.0;
+    if (Typed.SizeTypedCondition && ParseSolidArcLength(Typed.SizeText.data(), TypedSize) && TypedSize != 0.0)
+    {
+        const bool Signed = Typed.Verb == SolidArcSessionVerb::Extrude || Typed.Verb == SolidArcSessionVerb::Profile;
+        if (TypedSize < 0.0 && (Typed.Verb == SolidArcSessionVerb::Blend || Typed.Verb == SolidArcSessionVerb::Corner)) Typed.Shape = BlendProfile::Chamfer;
+        Typed.Size            = Signed ? TypedSize : std::abs(TypedSize);
+        Typed.PinnedCondition = true;
+    }
+    Typed.SizeTypedCondition = false;
+    if (!State.Bevel.Refusal.empty() && State.Bevel.StagedSize == State.Bevel.Size)
+    {
+        Announce(State, "Not applied: " + State.Bevel.Refusal + " · change the size, or Esc");
+        return;
+    }
     const BlendProfile         Shape   = State.Bevel.Shape;
     const double               Size    = State.Bevel.Size;
     const SolidArcBlendRequest Request = ComposeBlendRequest(State.Bevel);
@@ -3022,7 +3039,12 @@ void DriveConstraintSession(SolidArcWorkspaceState& State, const OrbitCameraFram
         }
     }
     if (LeftClick) ClickConstraintTarget(State);
-    if (RightClick) CloseConstraintSession(State);
+    // Right-click: a pending constraint (its value typed or not) is committed like Enter; otherwise the session ends.
+    if (RightClick)
+    {
+        if (Session.PendingCondition) CommitPendingConstraint(State);
+        else CloseConstraintSession(State);
+    }
 }
 
 // Pixel polyline of one sketch curve.
@@ -5129,7 +5151,7 @@ void CloseJointSession(SolidArcWorkspaceState& State, const char* Message)
 void AnnounceJointAdjust(SolidArcWorkspaceState& State)
 {
     const SolidArcJointSession& Joint = State.Joint;
-    Announce(State, Compose("Joint: %s onto %s · R V S C P L B kind · drag the values · F flip · Enter applies", SolidArcBodyCaption(State.Document, Joint.Moving.Body).c_str(),
+    Announce(State, Compose("Joint: %s onto %s · R V S C P L B kind · drag the values · F flip · Enter / right-click applies", SolidArcBodyCaption(State.Document, Joint.Moving.Body).c_str(),
                             SolidArcBodyCaption(State.Document, Joint.Fixed.Body).c_str()));
 }
 
@@ -8015,14 +8037,13 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     else if (State.Transform.ActiveCondition)
     {
         DriveTransformSession(State, Frame, Local);
-        if (LeftClick && !OverCube) ApplyTransformSession(State);
-        else if (RightClick && !OverCube) CancelTransformSession(State);
+        if ((LeftClick || RightClick) && !OverCube) ApplyTransformSession(State);   // Plasticity: click, right-click or Enter commits
     }
     else if (State.Sweep.ActiveCondition)
     {
         DriveSweepSession(State, Frame, Hovered);
         if (LeftClick && !OverCube) ClickSweepSession(State);
-        else if (RightClick && !OverCube) CancelSweepSession(State);
+        else if (RightClick && !OverCube) ApplySweepSession(State);                       // Right-click commits like Enter
     }
     else if (State.Constrain.ActiveCondition)
     {
@@ -8044,7 +8065,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     {
         HoverJointOrigin(State, Frame, Local, Hovered && !OverCube);
         if (LeftClick && !OverCube) ClickJointSession(State);
-        if (RightClick && !OverCube) CloseJointSession(State, "Joint cancelled");
+        if (RightClick && !OverCube) ApplyJointSession(State);                           // Right-click applies like Enter
     }
     else if (State.Bevel.ActiveCondition)
     {
@@ -8057,6 +8078,10 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
             State.Bevel.StagedSize = -1.0;                                                   // Selection changed: rebuild the preview
         }
         if (RightClick && !OverCube) ApplyBevelSession(State);
+    }
+    else if (State.Boolean.ActiveCondition && RightClick && !OverCube)
+    {
+        ApplyBooleanSession(State);                                                          // Right-click applies like Enter
     }
     else if (GizmoOwned)
     {
@@ -8230,11 +8255,11 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Gizmo.Hover != SolidArcGizmoHandle::None
                            ? "Gizmo: press and drag · cones move along an axis · squares move in a plane · arcs rotate · cylinders scale · ring screen move / uniform scale · y cycles modes"
                        : State.Transform.ActiveCondition
-                           ? (State.Transform.Verb == SolidArcTransformVerb::Move ? "Move: pointer snaps to points / edges / faces (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / Enter commit · Esc / right-click cancel"
-                              : State.Transform.Verb == SolidArcTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / Enter commit · Esc / right-click cancel"
-                              : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / Enter commit · Esc / right-click cancel")
+                           ? (State.Transform.Verb == SolidArcTransformVerb::Move ? "Move: pointer snaps to points / edges / faces (Ctrl free) · X / Y / Z axis · Shift+X / Y / Z plane · G screen · type a distance · click / right-click / Enter commit · Esc cancel"
+                              : State.Transform.Verb == SolidArcTransformVerb::Rotate ? "Rotate: sweep about the centre (5° steps, Ctrl free) · X / Y / Z axis · R screen · type degrees · click / right-click / Enter commit · Esc cancel"
+                              : "Scale: distance to the centre (×0.1 steps, Ctrl free) · X / Y / Z one axis · S uniform · type a factor · click / right-click / Enter commit · Esc cancel")
                        : State.Sweep.ActiveCondition
-                           ? (State.Sweep.Verb == SolidArcSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / Enter commit · Esc / right-click cancel"
+                           ? (State.Sweep.Verb == SolidArcSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / right-click / Enter commit · Esc cancel"
                               : State.Sweep.Verb == SolidArcSweepVerb::Revolve ? "Revolve: type degrees (360) · X / Y sketch axis · click a profile line for the axis · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : State.Sweep.Verb == SolidArcSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
@@ -8333,6 +8358,7 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         }
         WriteBevelText(Bevel);
     }
+    else if (ImGui::IsItemEdited()) Bevel.SizeTypedCondition = true;
     RegisterWidget(State, "BevelSize");
     ImGui::SameLine();
     if (PressButton(State, "Mouse adjust###BevelMouse", ImVec2(0, 0), Bevel.PinnedCondition)) Bevel.PinnedCondition = false;

@@ -104,6 +104,7 @@ struct SolidArcBevelSession
     GeometryProcessing::BlendProfile            Shape           = GeometryProcessing::BlendProfile::Fillet;      // [-]   - Cross-section
     double                            Size            = 0.25;                                // [len] - Radius / setback
     std::array<char, 32>              SizeText        = {};                                  // [-]   - Field text ("250mm", "0.25")
+    bool                              SizeTypedCondition = false;                            // [-]   - SizeText typed but not yet entered
     std::unique_ptr<SolidArcDocument> Preview         = {};                                  // [-]   - Staged document
     SolidArcScene                     PreviewScene    = {};                                  // [-]   - Its display arrays
     std::string                       Refusal         = {};                                  // [-]   - Why Apply is disabled
