@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 263 frames · 36.7091 s · slowest frame 538.197 ms
+- Frame: 1600 x 900 · 263 frames · 32.2495 s · slowest frame 505.928 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
 - Expectations: 74 / 74 passed
 
@@ -84,9 +84,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSizeFloor | 64 | `f365e3d4c6f8cc6f` |
-| 21TangentChain | 144 | `f71c369e57b16e7d` |
-| 20ShortcutExtrude | 231 | `6e8953d04a2a6238` |
+| 19BevelSizeFloor | 64 | `32895ba6f303320e` |
+| 21TangentChain | 144 | `3d0b6ca92b34694f` |
+| 20ShortcutExtrude | 231 | `cbf6447caed0c3ef` |
 
 ## Journal
 
@@ -117,10 +117,10 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 94 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 95 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 100 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 99 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: Difference
 - Cylinder aborted (document untouched)

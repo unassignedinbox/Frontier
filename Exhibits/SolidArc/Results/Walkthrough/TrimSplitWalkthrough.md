@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 563 frames · 56.0317 s · slowest frame 1245.66 ms
+- Frame: 1600 x 900 · 563 frames · 54.2004 s · slowest frame 1289.32 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/TrimSplitWalkthrough.txt
 - Expectations: 60 / 60 passed
 
@@ -22,7 +22,7 @@
 | 62 | `selected-bodies contains Cut#4` | Cut#4 | 🟢 |
 | 63 | `pick-mode == 4` | 4 | 🟢 |
 | 64 | `sound == 1` | 1 | 🟢 |
-| 65 | `status contains Cut` | Cut (Extrude1 by Line1) · 312 ms | 🟢 |
+| 65 | `status contains Cut` | Cut (Extrude1 by Line1) · 272 ms | 🟢 |
 | 77 | `bodies == 1` | 1 | 🟢 |
 | 78 | `steps == 5` | 5 | 🟢 |
 | 79 | `body-volumes contains 1.400000` | Extrude1 1.400000 | 🟢 |
@@ -70,15 +70,15 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 102CutLine | 121 | `5e5ae40424712524` |
-| 103CutRemoved | 141 | `b0cdd2621f1f8d63` |
-| 104CutCore | 187 | `c8809378309c718c` |
-| 105CutHole | 195 | `16071f155230fa90` |
-| 106PanelCut | 350 | `ee51c05bac4d5569` |
-| 107PanelTrimmed | 358 | `4b4bf3a366042aa8` |
-| 108TrimHover | 427 | `92d1ecc0197d3e3e` |
-| 109TrimStar | 484 | `a70df93a1d623a74` |
-| 110StarExtruded | 563 | `f9a40e1ae59305e7` |
+| 102CutLine | 121 | `67b1f5c84b0a88a3` |
+| 103CutRemoved | 141 | `afe2fbf326db027e` |
+| 104CutCore | 187 | `eb0e91850fe6f9fd` |
+| 105CutHole | 195 | `00f37bdecc27eeef` |
+| 106PanelCut | 350 | `962381388f2cf670` |
+| 107PanelTrimmed | 358 | `435e3583bfee8f04` |
+| 108TrimHover | 427 | `54a064ba0718dafe` |
+| 109TrimStar | 484 | `e3cc7c0707552cae` |
+| 110StarExtruded | 563 | `868a7015e5602ff8` |
 
 ## Journal
 
@@ -92,8 +92,8 @@
 - Selection cleared
 - Cut (C): focus a sketch step or select a curve (the cutter), pick the body in mode 4 (else the active body)
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 6 ms
-- Cut (Extrude1 by Line1) · 312 ms
+- Line1 · 5 ms
+- Cut (Extrude1 by Line1) · 272 ms
 - View Isometric
 - Framed the document (Space)
 - Remove (Cut1) · 6 ms
@@ -101,9 +101,9 @@
 - Redo
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 6 ms
-- Cut (Extrude1 by Circle1) · 75 ms
+- Cut (Extrude1 by Circle1) · 78 ms
 - View Isometric
-- Remove (Cut2) · 16 ms
+- Remove (Cut2) · 14 ms
 - New document (previous recovery copy kept)
 - Import 11 curve(s) · 2 ms
 - Framed the document (Space)
@@ -122,10 +122,10 @@
 - Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/TrimSplitRecovery.solidarc
 - Curve1 · Hermite · 1 ms
-- Cut (Loft1 by Curve1) · 1078 ms
+- Cut (Loft1 by Curve1) · 1133 ms
 - View Isometric
 - Framed the document (Space)
-- Remove (Cut1) · 27 ms
+- Remove (Cut1) · 28 ms
 - New document (previous recovery copy kept)
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/TrimSplitRecovery.solidarc

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 386 frames · 47.1173 s · slowest frame 2245.72 ms
+- Frame: 1600 x 900 · 386 frames · 46.4581 s · slowest frame 2466.27 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SurfaceEvaluationWalkthrough.txt
 - Expectations: 28 / 28 passed
 
@@ -9,7 +9,7 @@
 |-----:|-------------|----------|--------|
 | 20 | `steps == 11` | 11 | 🟢 |
 | 37 | `pole-edits == 1` | 1 | 🟢 |
-| 38 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 25.86 mm · 2 ms | 🟢 |
+| 38 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 25.86 mm · 3 ms | 🟢 |
 | 45 | `loft-continuity == 0` | 0 | 🟢 |
 | 48 | `panels == 1` | 1 | 🟢 |
 | 54 | `selected-curves == Section3,Section4,Section5,Section6` | Section3,Section4,Section5,Section6 | 🟢 |
@@ -38,10 +38,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 70ZebraG0 | 155 | `4ccf7dc8343efc25` |
-| 71ZebraG2 | 216 | `8b3c712e31fd3931` |
-| 72DeviationMap | 262 | `3a812a9bab66092c` |
-| 73ZebraMirrored | 386 | `55e8c19d7ac77517` |
+| 70ZebraG0 | 155 | `9408de4b5eb6dea7` |
+| 71ZebraG2 | 216 | `752430af874c78b8` |
+| 72DeviationMap | 262 | `f06555e42b1a8ba2` |
+| 73ZebraMirrored | 386 | `0c50a1ceac3e0e46` |
 
 ## Journal
 
@@ -51,8 +51,8 @@
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
 - Framed the document (Space)
-- Move pole 2 of Section3 · 2 ms
-- Moved pole 2 of Section3 by 25.86 mm · 2 ms
+- Move pole 2 of Section3 · 3 ms
+- Moved pole 2 of Section3 by 25.86 mm · 3 ms
 - Selected curve Section1 · 4 poles · fit 0.045 mm · 1 selected
 - Selected curve Section2 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 3 selected
@@ -92,8 +92,8 @@
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected
 - Loft1 · 6 sections · 1 ms
 - Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
-- Mirror1 · plane x = 0 · 4 ms
-- Mirrored through x = 0 → 2 panel(s), sound · 4 ms
+- Mirror1 · plane x = 0 · 7 ms
+- Mirrored through x = 0 → 2 panel(s), sound · 7 ms
 - Selection cleared
 - Zebra on · 64 stripes · 6068 triangles
 - View Top

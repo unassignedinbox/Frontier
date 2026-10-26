@@ -17,6 +17,6 @@
   "Undo": 2,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Knife · Circle1 into Block1 · move sideways for the depth (Shift fine, Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies",
+  "Status": "Knife · Circle1 into Block1 · pull along the face normal for the depth (Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies",
   "Viewport": [322, 146, 926, 591]
 }

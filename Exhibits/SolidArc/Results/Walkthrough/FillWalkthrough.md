@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 321 frames · 33.7038 s · slowest frame 551.322 ms
+- Frame: 1600 x 900 · 321 frames · 33.437 s · slowest frame 501.627 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/FillWalkthrough.txt
 - Expectations: 50 / 50 passed
 
@@ -51,7 +51,7 @@
 | 145 | `refused == 0` | 0 | 🟢 |
 | 146 | `flips == 1` | 1 | 🟢 |
 | 147 | `steps == 8` | 8 | 🟢 |
-| 148 | `status contains Flip` | Flip normals (Extrude2) · 9 ms | 🟢 |
+| 148 | `status contains Flip` | Flip normals (Extrude2) · 10 ms | 🟢 |
 | 152 | `flips == 0` | 0 | 🟢 |
 | 153 | `steps == 7` | 7 | 🟢 |
 | 160 | `construct-section == 2` | 2 | 🟢 |
@@ -60,13 +60,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 246FillTint | 50 | `93dec029acee124e` |
-| 247FillLens | 64 | `37330ef5c1063c99` |
-| 248FillCrescent | 79 | `88d04cf93e9684c8` |
-| 249FillWalls | 224 | `6973b07178447f19` |
-| 250FlipNormals | 245 | `1513650f66aae54e` |
-| 251ConstructReference | 267 | `2620d5ef58146308` |
-| 252ImagePlane | 321 | `bb3d1f1d7482df29` |
+| 246FillTint | 50 | `495c7a39dfe7e055` |
+| 247FillLens | 64 | `5e8e837290180de7` |
+| 248FillCrescent | 79 | `31f39f49944231d7` |
+| 249FillWalls | 224 | `aaa7ca2593a3e48c` |
+| 250FlipNormals | 245 | `82d1f2b6e1173674` |
+| 251ConstructReference | 267 | `5c002bff951881f1` |
+| 252ImagePlane | 321 | `14b851a73e5d19c1` |
 
 ## Journal
 
@@ -89,15 +89,15 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 9 ms
 - Fill Rectangle1 · 9 ms
-- Unfill Rectangle1 · 10 ms
+- Unfill Rectangle1 · 9 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude2 · Rectangle1 · Union · 10 ms
+- Extrude2 · Rectangle1 · Union · 9 ms
 - View Isometric
 - Framed the document (Space)
 - Selected Extrude2 (4 faces)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/FillRecovery.solidarc
-- Flip normals (Extrude2) · 9 ms
+- Flip normals (Extrude2) · 10 ms
 - Flip normals (Extrude2) · 9 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/FillRecovery.solidarc
 - Image plane EmptyWorkspace: 1600 × 960 px on the front (XZ) plane, 4.000 × 2.400 m (Inspector: opacity, crop, placement)

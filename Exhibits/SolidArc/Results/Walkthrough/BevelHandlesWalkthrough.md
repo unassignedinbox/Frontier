@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 344 frames · 35.1425 s · slowest frame 502.045 ms
+- Frame: 1600 x 900 · 344 frames · 34.695 s · slowest frame 526.589 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/BevelHandlesWalkthrough.txt
 - Expectations: 49 / 49 passed
 
@@ -39,7 +39,7 @@
 | 95 | `bevel-active == 0` | 0 | 🟢 |
 | 96 | `refused == 0` | 0 | 🟢 |
 | 97 | `sound == 1` | 1 | 🟢 |
-| 98 | `status contains corner size` | Fillet 0.25 · 1 corner size(s) on 1 edge(s) · 48 ms | 🟢 |
+| 98 | `status contains corner size` | Fillet 0.25 · 1 corner size(s) on 1 edge(s) · 49 ms | 🟢 |
 | 119 | `volume ~ 0.008` | 0.008 | 🟢 |
 | 128 | `selected-edges == 1` | Edge(Extrude#2.Cap(End)/Extrude#2.Side(Line1)) | 🟢 |
 | 131 | `bevel-active == 1` | 1 | 🟢 |
@@ -59,11 +59,11 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 276BevelHandles | 79 | `582e5598db44222e` |
-| 277BevelCornerDragged | 150 | `b938db41f5ce5775` |
-| 278BevelCornerTyped | 173 | `7991d91cc10e8eb7` |
-| 279BevelFitted | 272 | `e3a441f28c75c308` |
-| 280BevelLoopCorner | 337 | `2e7ffd4910db12f3` |
+| 276BevelHandles | 79 | `48094438cddb970f` |
+| 277BevelCornerDragged | 150 | `a50d62a80666f2a1` |
+| 278BevelCornerTyped | 173 | `5eaaeb111c94b5e5` |
+| 279BevelFitted | 272 | `2e47bbc3f59ca708` |
+| 280BevelLoopCorner | 337 | `d06533c0bdb4775a` |
 
 ## Journal
 
@@ -78,7 +78,7 @@
 - Bevel size 0.25 m (pinned)
 - Corner 1: 0.193 m (variable · 1 corner size(s))
 - Corner 1: 0.4 m
-- Fillet 0.25 · 1 corner size(s) on 1 edge(s) · 48 ms
+- Fillet 0.25 · 1 corner size(s) on 1 edge(s) · 49 ms
 - New document (previous recovery copy kept)
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
@@ -96,4 +96,4 @@
 - Added Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line4))
 - Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts
 - Corner 2: 0.047 m (variable · 1 corner size(s))
-- Fillet 0.02 · 1 corner size(s) on 4 edge(s) · 112 ms
+- Fillet 0.02 · 1 corner size(s) on 4 edge(s) · 111 ms

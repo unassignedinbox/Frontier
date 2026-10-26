@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 39 frames · 6.05149 s · slowest frame 631.622 ms
+- Frame: 1600 x 900 · 39 frames · 5.61872 s · slowest frame 612.018 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/RecoveryWalkthrough.txt
 - Expectations: 12 / 12 passed
 
@@ -22,9 +22,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 16WelcomeBack | 4 | `6501652351e221ea` |
-| 17Recovered | 13 | `17067a46d29c626e` |
-| 18Opened | 39 | `749327a7d343e542` |
+| 16WelcomeBack | 4 | `5bbe7d4493ec9617` |
+| 17Recovered | 13 | `ff663fc0c2ccbd4a` |
+| 18Opened | 39 | `319d2cb3c8255d77` |
 
 ## Journal
 

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 376 frames · 49.3138 s · slowest frame 639.047 ms
+- Frame: 1600 x 900 · 376 frames · 44.5012 s · slowest frame 519.276 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstructDrawingWalkthrough.txt
 - Expectations: 45 / 45 passed
 
@@ -55,18 +55,18 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 200ConstructSolids | 15 | `8e6ae14d2d4f4377` |
-| 201ConstructSketch | 24 | `69aa07b3f377eee1` |
-| 202BoxBase | 55 | `01504d600b8065d2` |
-| 203BoxHeight | 68 | `208dfdc1b3b3e673` |
-| 204CylinderHeight | 105 | `9c752df7e7303055` |
-| 205ConeHeight | 147 | `9ae8e83579774b07` |
-| 206PrismHeight | 193 | `d07ff0363f75fd65` |
-| 207TorusTube | 235 | `977d30a585b35b34` |
-| 208PolygonDimensions | 312 | `6f09f42ddb4afc6e` |
-| 209LineDimensions | 338 | `8ab53992adc93549` |
-| 210ConstructExact | 363 | `08a8af6d1e125566` |
-| 211ConstructBodies | 376 | `bab374c0bd83ed7d` |
+| 200ConstructSolids | 15 | `9af7a42670f9cd70` |
+| 201ConstructSketch | 24 | `a0ddbf123c4325ae` |
+| 202BoxBase | 55 | `24cac4266006ae27` |
+| 203BoxHeight | 68 | `3d7f4154991c586f` |
+| 204CylinderHeight | 105 | `8c4f32e5516c0f52` |
+| 205ConeHeight | 147 | `64fc59247c7c907d` |
+| 206PrismHeight | 193 | `e41eec3190dbaaf5` |
+| 207TorusTube | 235 | `c9a38db85299b98e` |
+| 208PolygonDimensions | 312 | `76e603365eb8c2ba` |
+| 209LineDimensions | 338 | `9df66fb0f0a2d530` |
+| 210ConstructExact | 363 | `0fd0bd9cb6273c07` |
+| 211ConstructBodies | 376 | `72e107869cd5f2a6` |
 
 ## Journal
 
@@ -78,12 +78,12 @@
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
-- Cylinder1 · New body · 23 ms
+- Cylinder1 · New body · 22 ms
 - Cone: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cone: click the radius
 - Cone: move up, click the apex height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Cone1 · New body · 24 ms
+- Cone1 · New body · 25 ms
 - Prism: click the centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - 7 sides
 - Prism: click a vertex (+ / − sides)
@@ -94,14 +94,14 @@
 - Torus: click the major radius (ring centre line)
 - Torus: click the tube (minor) radius
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Torus1 · New body · 71 ms
+- Torus1 · New body · 68 ms
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
 - Block2 · New body · 56 ms
 - Polygon on plane XY (or the body face under the first click): click the centre, then a vertex · + / − sides · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ConstructRecovery.solidarc
-- Polygon1 · 55 ms
+- Polygon1 · 70 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line aborted (document untouched)
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts

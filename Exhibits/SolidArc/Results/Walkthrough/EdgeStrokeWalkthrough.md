@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 222 frames · 24.8159 s · slowest frame 419.338 ms
+- Frame: 1600 x 900 · 222 frames · 25.3644 s · slowest frame 424.121 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EdgeStrokeWalkthrough.txt
 - Expectations: 20 / 20 passed
 
@@ -30,10 +30,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 267EdgeStrokesWhole | 180 | `859dfa5352d506e3` |
-| 268EdgeStrokesCloser | 194 | `c1a4d6c801646c47` |
-| 269EdgeStrokesCloseUp | 208 | `c0c7c85943a41520` |
-| 270EdgeStrokesVeryClose | 222 | `bc8343988807eb64` |
+| 267EdgeStrokesWhole | 180 | `8d4832b32576915f` |
+| 268EdgeStrokesCloser | 194 | `fa467e3976acaae2` |
+| 269EdgeStrokesCloseUp | 208 | `570e9b2823b96e3f` |
+| 270EdgeStrokesVeryClose | 222 | `eb1602facbaa0ce1` |
 
 ## Journal
 
@@ -51,9 +51,9 @@
 - Fill Circle2 · 7 ms
 - Extrude Circle2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Extrude2 · Circle2 · Union · 131 ms
+- Extrude2 · Circle2 · Union · 135 ms
 - Selected Edge(Extrude#4.Cap(End)|Extrude#4.Side(Circle1))
 - Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts · starts at 0.02 m to fit the edges
 - Bevel size 0.05 m (pinned)
-- Fillet 0.05 on 1 edge(s) · 213 ms
+- Fillet 0.05 on 1 edge(s) · 211 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EdgeStrokeRecovery.solidarc

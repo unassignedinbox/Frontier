@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 622 frames · 53.0067 s · slowest frame 511.248 ms
+- Frame: 1600 x 900 · 622 frames · 50.6741 s · slowest frame 518.73 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
@@ -65,12 +65,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 179 | `e06169d6a52524f9` |
-| 129ConstrainSplineG2 | 221 | `190d30c82f66b376` |
-| 130ConstrainReference | 420 | `e40105701d2b87e3` |
-| 131ConstrainReferenceFollows | 458 | `47ff3b8babefdd4d` |
-| 132ConstrainLinkPick | 517 | `4899b111f92ad8f0` |
-| 133ConstrainLinked | 608 | `f2635148366ac935` |
+| 128ConstrainSplineG1 | 179 | `4a0e71802fb1c504` |
+| 129ConstrainSplineG2 | 221 | `223c2103d8c60c4f` |
+| 130ConstrainReference | 420 | `b4528418589a3a1c` |
+| 131ConstrainReferenceFollows | 458 | `7521e1c721f73814` |
+| 132ConstrainLinkPick | 517 | `64e712ae933ea664` |
+| 133ConstrainLinked | 608 | `62ac96d037608a72` |
 
 ## Journal
 
@@ -120,7 +120,7 @@
 - Picks cleared
 - Picked Line1.Start
 - Picked Line1.Start, Line2.End
-- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 6 ms
+- Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 7 ms
 - Picks cleared
 - D2 = 2 in Rectangle1 · 9 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
@@ -139,7 +139,7 @@
 - Constrain Line1: Point on line · Line1.End · Line2 · 6 ms
 - Constrain ended
 - Constrain Rectangle1 · 8 constraint(s) · DOF 0 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- D1 = 2 in Rectangle1 · 12 ms
+- D1 = 2 in Rectangle1 · 11 ms
 - Picks cleared
 - Constrain ended
 - Constrain Line1 · 2 constraint(s) · DOF 1 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends

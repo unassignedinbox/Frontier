@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 387 frames · 39.584 s · slowest frame 872.594 ms
+- Frame: 1600 x 900 · 387 frames · 39.188 s · slowest frame 736.322 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
@@ -34,7 +34,7 @@
 | 73 | `faces == 4` | 4 | 🟢 |
 | 74 | `sound == 1` | 1 | 🟢 |
 | 75 | `panel-names contains Mirror#14.Image(Loft#12.Side(Surface))` | Loft#12.Side(Surface),Loft#13.Side(Surface),Mirror#14.Image(Loft#12.Side(Surface)),Mirr... | 🟢 |
-| 76 | `status contains Mirrored through x = 0` | Mirrored through x = 0 → 4 panel(s), sound · 6 ms | 🟢 |
+| 76 | `status contains Mirrored through x = 0` | Mirrored through x = 0 → 4 panel(s), sound · 9 ms | 🟢 |
 | 84 | `steps == 14` | 14 | 🟢 |
 | 85 | `panels == 4` | 4 | 🟢 |
 | 86 | `status contains not planar` | Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps ) | 🟢 |
@@ -54,7 +54,7 @@
 | 135 | `sound == 1` | 1 | 🟢 |
 | 136 | `volume > 0.791` | 0.7928018098 | 🟢 |
 | 137 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 138 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 33 ms | 🟢 |
+| 138 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 34 ms | 🟢 |
 | 153 | `steps == 10` | 10 | 🟢 |
 | 173 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
 | 179 | `steps == 11` | 11 | 🟢 |
@@ -67,14 +67,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 100 | `9ec42d47230aa510` |
-| 61FrontRearG2 | 108 | `a2438b836c794894` |
-| 62BonnetMirrored | 122 | `80dc153effde59c0` |
-| 63CloseRefused | 136 | `12a6906d91276992` |
-| 64PodHalves | 238 | `0abd892732cb14bc` |
-| 65PodSolid | 258 | `01ee2fbc9da64d6c` |
-| 66NetworkCurves | 373 | `afadb61abb0e6946` |
-| 67NetworkPanel | 381 | `910b670126614cae` |
+| 60RearSectionsG2 | 100 | `2e319bdabbbdd076` |
+| 61FrontRearG2 | 108 | `d603160b09f553f3` |
+| 62BonnetMirrored | 122 | `5dba68827b6ba173` |
+| 63CloseRefused | 136 | `c722a6baab24fe1d` |
+| 64PodHalves | 238 | `4ec387fcf4b190aa` |
+| 65PodSolid | 258 | `430b9bfb1e36e6dd` |
+| 66NetworkCurves | 373 | `717fee6e8e73d299` |
+| 67NetworkPanel | 381 | `78d11b96821ea18f` |
 
 ## Journal
 
@@ -94,10 +94,10 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 1 ms
-- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 1 ms
-- Mirror1 · plane x = 0 · 6 ms
-- Mirrored through x = 0 → 4 panel(s), sound · 6 ms
+- Loft2 · 4 sections · G2 · 2 ms
+- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 2 ms
+- Mirror1 · plane x = 0 · 9 ms
+- Mirrored through x = 0 → 4 panel(s), sound · 9 ms
 - Framed the document (Space)
 - Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps )
 - New document (previous recovery copy kept)
@@ -115,10 +115,10 @@
 - Selected curve Hoop5 · 10 poles · fit 0.066 mm · 5 selected
 - Loft1 · 5 sections · 1 ms
 - Lofted 5 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
-- Mirror1 · plane x = 0 · 10 ms
-- Mirrored through x = 0 → 2 panel(s), sound · 10 ms
-- Close1 · plane caps · 33 ms
-- Closed → solid · volume 0.79280 m³ · sound · 33 ms
+- Mirror1 · plane x = 0 · 8 ms
+- Mirrored through x = 0 → 2 panel(s), sound · 8 ms
+- Close1 · plane caps · 34 ms
+- Closed → solid · volume 0.79280 m³ · sound · 34 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms

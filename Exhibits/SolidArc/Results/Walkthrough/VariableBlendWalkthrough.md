@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 104 frames · 15.77 s · slowest frame 556.734 ms
+- Frame: 1600 x 900 · 104 frames · 13.4529 s · slowest frame 523.184 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VariableBlendWalkthrough.txt
 - Expectations: 31 / 31 passed
 
@@ -41,10 +41,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 22VariableFillet | 71 | `70258219a88d10c7` |
-| 23VariableFlipped | 78 | `3679fb09dc7e4322` |
-| 24VariableChamfer | 85 | `52b81022a7e3e419` |
-| 25VariableApplied | 97 | `19aa718156d9153f` |
+| 22VariableFillet | 71 | `98bed98ad9368a64` |
+| 23VariableFlipped | 78 | `e8ba36f921b88293` |
+| 24VariableChamfer | 85 | `71913fd61da1030a` |
+| 25VariableApplied | 97 | `8031c5c4d9962bf7` |
 
 ## Journal
 

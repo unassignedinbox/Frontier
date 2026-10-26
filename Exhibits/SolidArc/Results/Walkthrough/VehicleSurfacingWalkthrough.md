@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 265 frames · 27.6986 s · slowest frame 575.883 ms
+- Frame: 1600 x 900 · 265 frames · 26.2602 s · slowest frame 519.594 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
@@ -35,7 +35,7 @@
 | 84 | `volume == 0` | 0 | 🟢 |
 | 85 | `undo == 2` | 2 | 🟢 |
 | 86 | `selected-curves == 0` |  | 🟢 |
-| 87 | `status contains Lofted 6 curve(s)` | Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 2 ms | 🟢 |
+| 87 | `status contains Lofted 6 curve(s)` | Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms | 🟢 |
 | 96 | `pole-drag-active == 1` | 1 | 🟢 |
 | 101 | `pole-drag-active == 0` | 0 | 🟢 |
 | 102 | `pole-drags == 0` | 0 | 🟢 |
@@ -50,7 +50,7 @@
 | 126 | `refused == 0` | 0 | 🟢 |
 | 127 | `sheet == 1` | 1 | 🟢 |
 | 128 | `sound == 1` | 1 | 🟢 |
-| 129 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 5 ms | 🟢 |
+| 129 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 3 ms | 🟢 |
 | 132 | `selected-curves == Section3` | Section3 | 🟢 |
 | 136 | `pole-edits == 0` | 0 | 🟢 |
 | 137 | `sheet == 1` | 1 | 🟢 |
@@ -63,13 +63,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 43 | `17f87201b914992f` |
-| 51ControlPoints | 50 | `03e815436f5e79d3` |
-| 52SectionsSelected | 147 | `991baa317c0facc7` |
-| 53BonnetLoft | 155 | `c5f61043e084d723` |
-| 54PoleDragLive | 192 | `49f5108e52ae9874` |
-| 55PoleMoved | 206 | `7004bf2e083f8335` |
-| 56SheetUnderside | 241 | `2e5b53dcb6e70b56` |
+| 50CurvesImported | 43 | `04ae5119fe7a7015` |
+| 51ControlPoints | 50 | `6ef966455ebd4fcf` |
+| 52SectionsSelected | 147 | `0833ace4a2458b0c` |
+| 53BonnetLoft | 155 | `cd451fdc6a3a8251` |
+| 54PoleDragLive | 192 | `dd99b1e6eaa19661` |
+| 55PoleMoved | 206 | `da0759466e3f64af` |
+| 56SheetUnderside | 241 | `c0f676677f74d759` |
 
 ## Journal
 
@@ -97,11 +97,11 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 4 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 5 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 6 selected
-- Loft1 · 6 sections · 2 ms
-- Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 2 ms
+- Loft1 · 6 sections · 1 ms
+- Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
 - Pole drag dropped
-- Move pole 2 of Section3 · 5 ms
-- Moved pole 2 of Section3 by 40.32 mm · 5 ms
+- Move pole 2 of Section3 · 3 ms
+- Moved pole 2 of Section3 by 40.32 mm · 3 ms
 - Selected curve Section3 · 4 poles · fit 0.042 mm · 1 selected
 - Undo
 - Redo

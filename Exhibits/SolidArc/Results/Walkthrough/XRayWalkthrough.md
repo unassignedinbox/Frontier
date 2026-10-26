@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 131 frames · 21.1689 s · slowest frame 519.77 ms
+- Frame: 1600 x 900 · 131 frames · 18.9685 s · slowest frame 505.742 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/XRayWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,12 +46,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 146XRayBoxOpaque | 31 | `437b24c9c9853d03` |
-| 147XRayBoxThrough | 60 | `70ac827aee54a053` |
-| 148XRayHover | 69 | `b6ec88b99ac63bf7` |
-| 149XRayPicked | 78 | `e79533afcfc9598c` |
-| 150XRayFillet | 85 | `e6dd292cafec455e` |
-| 151XRayFilleted | 92 | `592bd73e64691299` |
+| 146XRayBoxOpaque | 31 | `892e136bf470f395` |
+| 147XRayBoxThrough | 60 | `a0d5d678a969c314` |
+| 148XRayHover | 69 | `d2f78fad6e6381bc` |
+| 149XRayPicked | 78 | `a789d3695cc979d8` |
+| 150XRayFillet | 85 | `c50b0fda3b7faa55` |
+| 151XRayFilleted | 92 | `fe58d79218c0ab39` |
 
 ## Journal
 
@@ -62,7 +62,7 @@
 - Selection cleared
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3))
 - Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts
-- Fillet 0.25 on 1 edge(s) · 140 ms
+- Fillet 0.25 on 1 edge(s) · 138 ms
 - Selection cleared
 - Selected Extrude#2.Cap(End)
 - Selection cleared

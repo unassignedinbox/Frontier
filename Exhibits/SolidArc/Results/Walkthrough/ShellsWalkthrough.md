@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 201 frames · 20.8378 s · slowest frame 544.048 ms
+- Frame: 1600 x 900 · 201 frames · 19.9063 s · slowest frame 505.83 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShellsWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,10 +44,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 231SketchFacePlane | 61 | `b090ee0c18d3f61b` |
-| 232SketchMidpointOnFace | 86 | `32cbf1215563cec4` |
-| 233SolidLoftShell | 161 | `982369dc47957e83` |
-| 234HiddenLocked | 186 | `bc5a974dc15e588d` |
+| 231SketchFacePlane | 61 | `48b5aefa47b80dfa` |
+| 232SketchMidpointOnFace | 86 | `38fee6dc744b92c0` |
+| 233SolidLoftShell | 161 | `4ea2524403cca6a0` |
+| 234HiddenLocked | 186 | `6a1b5fe1394aeec8` |
 
 ## Journal
 
@@ -55,7 +55,7 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 11 ms
+- Block1 · New body · 12 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 0 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShellsRecovery.solidarc
@@ -66,8 +66,8 @@
 - Circle2 · 8 ms
 - Selected sketch Circle1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Circle2 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · solid · 24 ms
-- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 24 ms
+- Loft1 · 2 sections · solid · 18 ms
+- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 18 ms
 - Rectangle1 hidden
 - Block1 locked (shown, not pickable)
 - Block1 is locked (Outliner lock to unlock)

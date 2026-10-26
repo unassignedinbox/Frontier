@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 175 frames · 15.4544 s · slowest frame 600.832 ms
+- Frame: 1600 x 900 · 175 frames · 14.674 s · slowest frame 503.578 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/FilletDragWalkthrough.txt
 - Expectations: 12 / 12 passed
 
@@ -22,10 +22,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 253FilletCentreDragLive | 94 | `aaeb2c28db341fec` |
-| 254FilletCentreDragged | 101 | `100b264fd221bb6c` |
-| 255CubeParallel | 167 | `9d14a1f7130f2cd4` |
-| 256CubePerspective | 175 | `ac0442ad07d99002` |
+| 253FilletCentreDragLive | 94 | `83afa148ada58ed7` |
+| 254FilletCentreDragged | 101 | `24cf3c80607c7eaf` |
+| 255CubeParallel | 167 | `2341fd962f884e6b` |
+| 256CubePerspective | 175 | `e7e230c521e52d49` |
 
 ## Journal
 

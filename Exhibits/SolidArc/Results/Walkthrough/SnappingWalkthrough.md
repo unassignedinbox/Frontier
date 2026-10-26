@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 332 frames · 41.1212 s · slowest frame 518.523 ms
+- Frame: 1600 x 900 · 332 frames · 38.9725 s · slowest frame 545.731 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
 - Expectations: 62 / 62 passed
 
@@ -72,40 +72,40 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 29 | `e91e3b44a259808a` |
-| 161SnapTangent | 42 | `c3c1a39055fb9364` |
-| 162SnapLockTangent | 60 | `3ffe6378ade7a208` |
-| 163SnapLockNormal | 78 | `4e58c92826bd15b4` |
-| 164SnapBinormalRefused | 92 | `31cfcfd7a912b5aa` |
-| 165SnapCentre | 98 | `07befc7b7ba0c04f` |
-| 166SnapMidpoint | 104 | `555b5f05e8fb4644` |
-| 167SnapPerpendicular | 117 | `674d291599fb1bb3` |
-| 168SnapSquare | 150 | `d728329e7e0ae497` |
-| 169SnapConstraintDrag | 180 | `07e94d8ee01fc8a5` |
-| 170SnapMove | 216 | `89bcdb7887f5975c` |
-| 171SnapXRay | 249 | `432f98cbd1cb7cfa` |
-| 172SnapPoleDrag | 321 | `ef8ada214d6ee7e2` |
+| 160SnapEndpoint | 29 | `84ee883243f17483` |
+| 161SnapTangent | 42 | `c5baf1a2342e540d` |
+| 162SnapLockTangent | 60 | `74ae901fce7460f2` |
+| 163SnapLockNormal | 78 | `8463f6cf3cdddd28` |
+| 164SnapBinormalRefused | 92 | `152e63e753371dfc` |
+| 165SnapCentre | 98 | `4b0d7c5c6a923883` |
+| 166SnapMidpoint | 104 | `918dded995762b97` |
+| 167SnapPerpendicular | 117 | `aed02f4ef894e86d` |
+| 168SnapSquare | 150 | `232f4f6375002214` |
+| 169SnapConstraintDrag | 180 | `205931fff36a9eca` |
+| 170SnapMove | 216 | `1102da05510d2a1f` |
+| 171SnapXRay | 249 | `51302239bb22a816` |
+| 172SnapPoleDrag | 321 | `36538c27c381f191` |
 
 ## Journal
 
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 44 ms
+- Circle1 · 45 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Lock tangent through the last point · the same key releases it · object snaps align along it
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
 - Lock normal through the last point · the same key releases it · object snaps align along it
 - Lock binormal leaves the XY drawing plane: refused
-- Line1 · 44 ms
+- Line1 · 45 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle: square (s releases)
-- Rectangle1 · 45 ms
+- Rectangle1 · 44 ms
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- Drag Line1.End of Rectangle1 · 46 ms
+- Drag Line1.End of Rectangle1 · 45 ms
 - Constrain ended
 - Selected Block1 (11 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
-- Move (Block1) · 47 ms
+- Move (Block1) · 46 ms
 - Undo
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - X-ray on · faces 45 % · hidden edges pickable
@@ -113,7 +113,7 @@
 - X-ray off
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
-- Import 11 curve(s) · 2 ms
+- Import 11 curve(s) · 4 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric

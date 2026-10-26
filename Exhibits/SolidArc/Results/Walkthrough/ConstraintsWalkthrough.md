@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 465 frames · 40.4282 s · slowest frame 514.013 ms
+- Frame: 1600 x 900 · 465 frames · 41.3704 s · slowest frame 575.603 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 114 | `c601d6a645528afe` |
-| 123ConstrainFull | 179 | `13a9536fd7cebd18` |
-| 124ConstrainConflict | 207 | `1dc571a041c9d9d3` |
-| 125ConstrainEdit | 245 | `d66d2dee2c00329e` |
-| 126ConstrainDragging | 280 | `96f02826c7937520` |
-| 127ConstrainAngle | 459 | `f2e14f78a261f38e` |
+| 122ConstrainOpen | 114 | `6df38cb737e48ad3` |
+| 123ConstrainFull | 179 | `8ecc5743c956e332` |
+| 124ConstrainConflict | 207 | `44d521331cf6a985` |
+| 125ConstrainEdit | 245 | `b2842abbb3834b3f` |
+| 126ConstrainDragging | 280 | `9d4cb21fd8b9c37f` |
+| 127ConstrainAngle | 459 | `864de1b9dad91d4f` |
 
 ## Journal
 

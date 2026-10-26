@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 329 frames · 44.7306 s · slowest frame 513.782 ms
+- Frame: 1600 x 900 · 329 frames · 43.3997 s · slowest frame 516.825 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -42,12 +42,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 96MultiBodyNew | 110 | `3054d2665438cd5d` |
-| 97MultiBodyThree | 199 | `1a6b013b440fe40b` |
-| 98MultiBodyMatcaps | 272 | `5fab763215b8f594` |
-| 99MultiBodyBoolean | 302 | `53889820e769d6f0` |
-| 100MultiBodyDrilled | 315 | `7f06d4df5fa60258` |
-| 101MultiBodyUndo | 329 | `40f04c22b851edf1` |
+| 96MultiBodyNew | 110 | `56d437190f240ba0` |
+| 97MultiBodyThree | 199 | `2e064f54b4ef7581` |
+| 98MultiBodyMatcaps | 272 | `e42430e5949db997` |
+| 99MultiBodyBoolean | 302 | `4c531b4f05cb0cf6` |
+| 100MultiBodyDrilled | 315 | `99cc11e8ee7a441e` |
+| 101MultiBodyUndo | 329 | `3f659002870a191d` |
 
 ## Journal
 
@@ -56,7 +56,7 @@
 - Framed the document (Space)
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Cylinder3 · New body · 106 ms
+- Cylinder3 · New body · 107 ms
 - Selected Block1 (11 faces)
 - Matcap BrushedSteel → 1 body(ies)
 - Selected Block2 (6 faces)
