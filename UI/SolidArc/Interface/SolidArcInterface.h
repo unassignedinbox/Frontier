@@ -127,6 +127,7 @@ struct SolidArcBevelSession
     double                            PendingSize     = -1.0;                                // [len] - Pointer size waiting for the pointer to rest
     double                            PendingSince    = 0.0;                                 // [s]   - When PendingSize last changed
     int                               StageCount      = 0;                                   // [-]   - Previews built this session
+    uint64_t                          PendingFrame    = 0;                                   // [-]   - Frame number when PendingSize last changed
     bool                              DepthEnabled    = false;                               // [-]   - Inset: the pointer drives the depth (H) instead of the distance (D)
     SolidArcCornerRequest             Corner          = {};                                  // [-]   - Corner: the sketches / corner points (size and shape from the session)
 };

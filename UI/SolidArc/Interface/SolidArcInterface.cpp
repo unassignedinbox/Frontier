@@ -693,16 +693,17 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
         Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
         Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth) return;
     // 💡 A slow preview (a blend along a cylinder–cylinder junction takes seconds) is rebuilt once the pointer rests
-    //    (0.15 s on one size), not on every pixel of mouse adjust: the last preview stays up meanwhile. A typed (pinned)
-    //    size, a new shape, verb or Boolean, and every fast preview still restage at once.
+    //    (one size held for 0.15 s and 6 frames: a slow frame alone is no rest), not on every pixel of mouse adjust: the
+    //    last preview stays up meanwhile. A typed (pinned) size, a new shape, verb or Boolean, and every fast preview
+    //    still restage at once.
     const double Now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     const bool SizeOnly = Bevel.Preview && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb && Bevel.StagedVariable == Bevel.VariableEnabled &&
                           Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition && Bevel.StagedCombination == Bevel.Combination &&
                           Bevel.StagedDepth == Bevel.Depth;
     if (SizeOnly && !Bevel.PinnedCondition && Bevel.StageMs > 40.0)
     {
-        if (Bevel.PendingSize != Bevel.Size) { Bevel.PendingSize = Bevel.Size; Bevel.PendingSince = Now; return; }
-        if (Now - Bevel.PendingSince < 0.15) return;
+        if (Bevel.PendingSize != Bevel.Size) { Bevel.PendingSize = Bevel.Size; Bevel.PendingSince = Now; Bevel.PendingFrame = State.FrameNumber; return; }
+        if (State.FrameNumber < Bevel.PendingFrame + 6 || Now - Bevel.PendingSince < 0.15) return;
     }
     Bevel.StagedDepth       = Bevel.Depth;
     Bevel.StagedCombination = Bevel.Combination;

@@ -115,7 +115,7 @@ move viewport 0.45 0.70 offset 24 0
 move viewport 0.45 0.70 offset 26 0
 move viewport 0.45 0.70 offset 28 0
 expect bevel-stages < 5
-frames 4
+frames 10
 expect bevel-stages < 6
 capture 263ChamferSweep
 key C
@@ -170,6 +170,7 @@ drag left @GizmoTranslateX by 40 0 12
 frames 3
 expect refused == 0
 expect gizmo-commits == 4
+expect volume ~ 5.484407611
 capture 264MovedFourTimes
 
 # ⑦ G (Plasticity move) shows the rigid preview: the shown triangles carried, no regeneration until the click commits

@@ -18,6 +18,8 @@
 - Double-click `SolidArcWorkspace.exe`, or open a document: `SolidArcWorkspace.exe --open "C:\Parts\Bracket.solidarc"`.
 - `--specimen` starts with the fillet / chamfer specimen; `--options <file>` uses another options file.
 - Navigation and commands follow Plasticity (orbit, pan and zoom on the mouse; `B` fillet, `E` extrude, `1`–`5` modes, `Alt+Z` x-ray).
+- On a curved face, a sketch lies on the exact tangent plane under the pointer. `E` → Union starts the extrude slightly inside the face (the Inspector shows how far), so the joined body closes and its junction edge takes a chamfer.
+- A slow fillet / chamfer preview is rebuilt when the pointer rests, not on every pixel. A typed size applies at once.
 
 ## 🔍 Log
 

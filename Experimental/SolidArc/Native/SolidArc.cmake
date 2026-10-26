@@ -334,7 +334,6 @@ add_test(NAME SolidArcResponsivenessWalkthrough
          COMMAND SolidArcCapture --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/ResponsivenessRecovery.solidarc
                  --document _ClaudeScratch/SolidArcWorkspace/Responsiveness.solidarc
-                 --open "${SOLIDARC_EXHIBIT}/Documents/SideCylinderUnion.solidarc"
                  --script "${SOLIDARC_EXHIBIT}/Scripts/ResponsivenessWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
                  --trace _ClaudeScratch/SolidArcWorkspace/ResponsivenessTrace.log

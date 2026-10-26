@@ -20,6 +20,7 @@
 #include "UI/SolidArc/Viewport/SolidArcGizmo.h"
 #include "UI/SolidArc/Viewport/SolidArcSnapping.h"
 
+#include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
 #include "Engine/GeometryProcessing/Blend/BlendCatalogue.h"
 #include "Engine/GeometryProcessing/Drawing/DrawingExport.h"
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
@@ -4496,7 +4497,20 @@ int main()
         Tally(TangentGate, Drift, Read.Refusal.empty() && Written.find("Start") != std::string::npos && EncodeSolidArcDocument(Loaded) == Written && Drift <= 1.0e-12,
               Format("codec %d bytes byte-equal with the extrude Start, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
 
-        // ⑥ a Construct cylinder r 0.2, h 0.3 on the tangent plane at (0, −R, 0.3), started below it: the same closed form
+        // ⑥ four moves of the chamfered body: each move's assembly already integrated the image, so the summary reuses
+        //    that volume (and the next move hands it on); it must equal an independent integration of the moved body
+        const double Chamfered4 = Joined.Summary.Volume;
+        const auto   Moving     = std::chrono::steady_clock::now();
+        bool         Moved      = true;
+        for (int Move = 0; Move < 4; ++Move)
+            Moved = TransformSolidArcBodies(Joined, { Joined.Regeneration.Active }, TranslationMap({ 0.25, 0.0, 0.0 }), "Move").AcceptedCondition && Moved;
+        const double MoveMs      = std::chrono::duration<double>(std::chrono::steady_clock::now() - Moving).count() * 1.0e3 / 4.0;
+        const double Independent = IntegrateBodyVolume(*Joined.Partition, Joined.Regeneration.Bodies.back().Body);
+        const double Carried     = std::max(std::abs(Joined.Summary.Volume - Independent), std::abs(Joined.Summary.Volume - Chamfered4)) / Chamfered4;
+        Tally(TangentGate, Carried, Moved && Carried <= 1.0e-12 && Joined.Summary.SoundCondition,
+              Format("4 moves (%.0f ms each): summary V %.12f · independent integral %.12f · before the moves %.12f", MoveMs, Joined.Summary.Volume, Independent, Chamfered4));
+
+        // ⑦ a Construct cylinder r 0.2, h 0.3 on the tangent plane at (0, −R, 0.3), started below it: the same closed form
         SolidArcDocument Built = Drum("Built");
         SolidArcConstructRequest Pin;
         Pin.Kind = SolidArcConstructKind::Cylinder; Pin.Radius = Minor; Pin.Height = Reach; Pin.Combination = FeatureCombination::Union;
