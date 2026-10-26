@@ -71,7 +71,8 @@ expect undo == 6
 expect sound == 1
 capture 05FilletApplied
 
-# ⑤ B then C (Plasticity chamfer) on an edge that meets the earlier fillet on an edge that meets the earlier fillet: refusal shown, Apply disabled, Esc cancels
+# ⑤ B then C (Plasticity chamfer) on an edge that meets the earlier fillet: the start size fits the short neighbour
+#    (span 0.28 → 0.02, shown at once); a typed 0.3 is refused (the last good 0.02 stays on screen), Apply disabled, Esc cancels
 move world 2.0 0.0 1.0
 frames 2
 click world 2.0 0.0 1.0
@@ -82,7 +83,15 @@ key C
 frames 2
 expect bevel-active == 1
 expect bevel-chamfer == 1
+expect bevel-size ~ 0.02
+expect bevel-refusal == 0
+click @BevelSize
+key A Ctrl
+type 0.3
+key Enter
+frames 2
 expect bevel-refusal contains consumed by the blend
+expect bevel-showing ~ 0.02
 capture 06BevelRefusal
 key Escape
 frames 1

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 465 frames · 41.7776 s · slowest frame 539.395 ms
+- Frame: 1600 x 900 · 465 frames · 40.4282 s · slowest frame 514.013 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 114 | `a4e92190b5fb4a94` |
-| 123ConstrainFull | 179 | `3e27353824b0f88e` |
-| 124ConstrainConflict | 207 | `d32d34acc15a933d` |
-| 125ConstrainEdit | 245 | `64554797c90f7c17` |
-| 126ConstrainDragging | 280 | `52f203d8fcba584c` |
-| 127ConstrainAngle | 459 | `d29a1b6ab71be85f` |
+| 122ConstrainOpen | 114 | `c601d6a645528afe` |
+| 123ConstrainFull | 179 | `13a9536fd7cebd18` |
+| 124ConstrainConflict | 207 | `1dc571a041c9d9d3` |
+| 125ConstrainEdit | 245 | `d66d2dee2c00329e` |
+| 126ConstrainDragging | 280 | `96f02826c7937520` |
+| 127ConstrainAngle | 459 | `f2e14f78a261f38e` |
 
 ## Journal
 
@@ -100,7 +100,7 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 9 ms
+- Extrude1 · Rectangle1 · New · 7 ms
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
@@ -121,7 +121,7 @@
 - Constraint dropped
 - Picks cleared
 - D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
-- D1 = 4 in Rectangle1 · 18 ms
+- D1 = 4 in Rectangle1 · 17 ms
 - Undo
 - Redo
 - Picks cleared

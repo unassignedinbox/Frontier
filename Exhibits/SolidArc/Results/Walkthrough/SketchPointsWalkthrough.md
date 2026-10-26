@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 324 frames · 31.359 s · slowest frame 523.169 ms
+- Frame: 1600 x 900 · 324 frames · 30.6301 s · slowest frame 566.099 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
@@ -48,12 +48,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 23 | `ef263c9de669f019` |
-| 226SketchPoints | 209 | `11d77623900561d5` |
-| 227PointDragLive | 227 | `d23d0b88b1eaea44` |
-| 228PointGizmoLive | 250 | `000fab96716c7719` |
-| 229PointsGizmoAll | 283 | `7761e2480efe91a9` |
-| 230BodyScaleLive | 313 | `fbc896e9e861fd5f` |
+| 225SketchTools | 23 | `2a21a92af08d4055` |
+| 226SketchPoints | 209 | `2780ec16954e3305` |
+| 227PointDragLive | 227 | `546945a4b8289af4` |
+| 228PointGizmoLive | 250 | `dc0ad45781f18f94` |
+| 229PointsGizmoAll | 283 | `81461ed3c94f08b1` |
+| 230BodyScaleLive | 313 | `83d5825a5ca51190` |
 
 ## Journal
 
@@ -78,9 +78,9 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 8 ms
-- Drag Line2.End of Rectangle1 · 10 ms
-- Drag Line2.End of Rectangle1 · 10 ms
+- Extrude1 · Rectangle1 · New · 7 ms
+- Drag Line2.End of Rectangle1 · 11 ms
+- Drag Line2.End of Rectangle1 · 11 ms
 - Drag Line2.End of Rectangle1 · 15 ms
 - Gizmo Y move 1.2 · 1 sketch point · Drag Line2.End of Rectangle1 · 15 ms
 - Rectangle1 · point 3 · 2 picked · the gizmo moves them in the sketch plane (drag a point to move it directly)

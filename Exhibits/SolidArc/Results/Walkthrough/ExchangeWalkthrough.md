@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 211 frames · 26.1144 s · slowest frame 623.293 ms
+- Frame: 1600 x 900 · 211 frames · 26.7113 s · slowest frame 505.66 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ExchangeWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,23 +46,23 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 195ExchangeExportStep | 19 | `b3fbdfa5a112bb60` |
-| 196ExchangeSaveAsStl | 68 | `c366a189d25a5260` |
-| 197ExchangeImported | 123 | `86317a34b2d5a9cd` |
-| 198ExchangeFilletImported | 165 | `64790e9208720e92` |
-| 199ExchangeImportStep | 174 | `39bb6f173b854c45` |
+| 195ExchangeExportStep | 19 | `4af0365723249a4d` |
+| 196ExchangeSaveAsStl | 68 | `abd59a965bce51b6` |
+| 197ExchangeImported | 123 | `405cdd681c6f6bd6` |
+| 198ExchangeFilletImported | 165 | `10aa3abcf3044aba` |
+| 199ExchangeImportStep | 174 | `a684ac2f3cfaeab8` |
 
 ## Journal
 
 - Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 2 ms
 - Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 11 ms
 - New document (previous recovery copy kept)
-- Import Exchange · 1 solid(s) · 92 ms
+- Import Exchange · 1 solid(s) · 90 ms
 - Framed the document (Space)
-- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 140 ms
+- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 138 ms
 - Selection cleared
 - Selected Edge(Import#1.Face(1)|Import#1.Face(5))
-- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
+- Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts
 - Bevel size 0.1 m (pinned)
 - Fillet 0.1 on 1 edge(s) · 139 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ExchangeRecovery.solidarc

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 201 frames · 19.4508 s · slowest frame 512.828 ms
+- Frame: 1600 x 900 · 201 frames · 19.1431 s · slowest frame 528.753 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/InsetWalkthrough.txt
 - Expectations: 26 / 26 passed
 
@@ -36,12 +36,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 212InsetOpened | 68 | `152fd93ec379b9a8` |
-| 213InsetFlat | 86 | `d1ead754358adc08` |
-| 214InsetPocketPreview | 108 | `1940fd8c6c0972b6` |
-| 215InsetPocket | 116 | `74bd48e269b32b1f` |
-| 216InsetBoss | 165 | `e48c6b7d69950180` |
-| 217InsetRefused | 195 | `709857c1cf9b4807` |
+| 212InsetOpened | 68 | `6411269e3f5e979a` |
+| 213InsetFlat | 86 | `08172738d6fcaea4` |
+| 214InsetPocketPreview | 108 | `69cd90786d5f451c` |
+| 215InsetPocket | 116 | `aafcf2146dd0040e` |
+| 216InsetBoss | 165 | `2e5255b73b527b3a` |
+| 217InsetRefused | 195 | `78129d7b75900e1d` |
 
 ## Journal
 

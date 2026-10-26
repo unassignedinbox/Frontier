@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 131 frames · 20.1341 s · slowest frame 542.488 ms
+- Frame: 1600 x 900 · 131 frames · 21.1689 s · slowest frame 519.77 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/XRayWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,12 +46,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 146XRayBoxOpaque | 31 | `8aafcec638b7546b` |
-| 147XRayBoxThrough | 60 | `547ad27765e6db79` |
-| 148XRayHover | 69 | `862edf4446987c3d` |
-| 149XRayPicked | 78 | `00997ac834eed4f3` |
-| 150XRayFillet | 85 | `a54e711847b9c991` |
-| 151XRayFilleted | 92 | `9e75c1c355d659e0` |
+| 146XRayBoxOpaque | 31 | `437b24c9c9853d03` |
+| 147XRayBoxThrough | 60 | `70ac827aee54a053` |
+| 148XRayHover | 69 | `b6ec88b99ac63bf7` |
+| 149XRayPicked | 78 | `e79533afcfc9598c` |
+| 150XRayFillet | 85 | `e6dd292cafec455e` |
+| 151XRayFilleted | 92 | `592bd73e64691299` |
 
 ## Journal
 
@@ -61,8 +61,8 @@
 - Box selected 0 curve(s) + 24 edge(s) (x-ray) · 24 edge(s) selected
 - Selection cleared
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3))
-- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
-- Fillet 0.25 on 1 edge(s) · 145 ms
+- Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts
+- Fillet 0.25 on 1 edge(s) · 140 ms
 - Selection cleared
 - Selected Extrude#2.Cap(End)
 - Selection cleared

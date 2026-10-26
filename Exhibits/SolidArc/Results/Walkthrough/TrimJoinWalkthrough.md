@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 211 frames · 20.3804 s · slowest frame 504.557 ms
+- Frame: 1600 x 900 · 211 frames · 20.359 s · slowest frame 562.258 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/TrimJoinWalkthrough.txt
 - Expectations: 17 / 17 passed
 
@@ -27,10 +27,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 235TrimHoverExtruded | 94 | `d5d7ac1ac64dc219` |
-| 236TrimDetached | 104 | `88427b70ca798c60` |
-| 237JoinPicked | 165 | `89da8e67edb31902` |
-| 238JoinExtruded | 211 | `3b186edfeca4a96a` |
+| 235TrimHoverExtruded | 94 | `220a1b2d0fd68a14` |
+| 236TrimDetached | 104 | `f912ed0010fc2a84` |
+| 237JoinPicked | 165 | `81c8e3b7db88854b` |
+| 238JoinExtruded | 211 | `6fa8297d2a9efe17` |
 
 ## Journal
 
@@ -44,7 +44,7 @@
 - Bevel size 1 m (pinned)
 - Extrude1 · Circle1 · New · 18 ms
 - Trim: click the piece of a curve to remove (between its crossings) · Esc ends
-- Trim Circle1 of Circle1 into Circle2 (Circle1 kept hidden for the steps that read it) · 14 ms
+- Trim Circle1 of Circle1 into Circle2 (Circle1 kept hidden for the steps that read it) · 12 ms
 - Trim ended
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle2 · 12 ms

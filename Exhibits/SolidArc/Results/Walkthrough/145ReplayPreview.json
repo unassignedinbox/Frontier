@@ -17,6 +17,6 @@
   "Undo": 9,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts",
+  "Status": "Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts",
   "Viewport": [322, 146, 926, 591]
 }

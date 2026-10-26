@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 457 frames · 70.4666 s · slowest frame 4449.55 ms
+- Frame: 1600 x 900 · 457 frames · 63.6923 s · slowest frame 3867.25 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ResponsivenessWalkthrough.txt
 - Expectations: 45 / 45 passed
 
@@ -24,8 +24,8 @@
 | 84 | `bevel-chamfer == 1` | 1 | 🟢 |
 | 85 | `bevel-active == 1` | 1 | 🟢 |
 | 86 | `bevel-stages == 2` | 2 | 🟢 |
-| 117 | `bevel-stages < 5` | 3 | 🟢 |
-| 119 | `bevel-stages < 6` | 4 | 🟢 |
+| 117 | `bevel-stages < 5` | 2 | 🟢 |
+| 119 | `bevel-stages < 6` | 3 | 🟢 |
 | 123 | `bevel-chamfer == 1` | 1 | 🟢 |
 | 131 | `bevel-active == 0` | 0 | 🟢 |
 | 132 | `refused == 0` | 0 | 🟢 |
@@ -55,11 +55,11 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 262UnionOnSide | 129 | `85eefb58c1896a79` |
-| 263ChamferSweep | 226 | `f672306b460f83f0` |
-| 264MovedFourTimes | 388 | `daf1ffdb9cffa963` |
-| 265RigidMove | 417 | `a69212c63a2aad7b` |
-| 266RightClickCommit | 457 | `08b72f5152ba805d` |
+| 262UnionOnSide | 129 | `e5d19229e4147afb` |
+| 263ChamferSweep | 226 | `0af2ae754441e47c` |
+| 264MovedFourTimes | 388 | `44964ca7fafd7107` |
+| 265RigidMove | 417 | `347eec85d68b7fc5` |
+| 266RightClickCommit | 457 | `50f275d5d9160b98` |
 
 ## Journal
 
@@ -74,29 +74,29 @@
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ResponsivenessRecovery.solidarc
 - Circle2 · 7 ms
-- Fill Circle2 · 11 ms
+- Fill Circle2 · 8 ms
 - Extrude Circle2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
 - Extrude2 · Circle2 · Union · 132 ms
 - Selected Edge(Extrude#2.Side(Circle1)|Extrude#4.Side(Circle1))
-- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
+- Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts · starts at 0.02 m to fit the edges
 - Bevel size 0.02 m (pinned)
-- Chamfer 0.02 on 1 edge(s) · 1105 ms
+- Chamfer 0.02 on 1 edge(s) · 1073 ms
 - Selected Edge(Extrude#4.Cap(End)|Extrude#4.Side(Circle1))
-- Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
+- Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts
 - Bevel size 0.05 m (pinned)
-- Chamfer 0.05 on 1 edge(s) · 1266 ms
+- Chamfer 0.05 on 1 edge(s) · 1254 ms
 - Selected Extrude1 (7 faces)
-- Move (Extrude1) · 383 ms
-- Gizmo X move 0.3 · Move (Extrude1) · 383 ms
-- Move (Extrude1) · 235 ms
-- Gizmo X move 0.3 · Move (Extrude1) · 235 ms
+- Move (Extrude1) · 403 ms
+- Gizmo X move 0.3 · Move (Extrude1) · 403 ms
 - Move (Extrude1) · 236 ms
 - Gizmo X move 0.3 · Move (Extrude1) · 236 ms
-- Move (Extrude1) · 261 ms
-- Gizmo X move 0.3 · Move (Extrude1) · 261 ms
-- Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
+- Move (Extrude1) · 235 ms
+- Gizmo X move 0.3 · Move (Extrude1) · 235 ms
 - Move (Extrude1) · 229 ms
+- Gizmo X move 0.3 · Move (Extrude1) · 229 ms
+- Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
+- Move (Extrude1) · 223 ms
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Move (Extrude1) · 226 ms
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels

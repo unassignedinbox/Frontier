@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 500 frames · 46.8797 s · slowest frame 512.197 ms
+- Frame: 1600 x 900 · 500 frames · 45.7275 s · slowest frame 495.686 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EditingWalkthrough.txt
 - Expectations: 77 / 77 passed
 
@@ -87,17 +87,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 103 | `a0cafc9077604564` |
-| 112Rotate | 154 | `68b5a8ecbf1ae60c` |
-| 113Scale | 192 | `7cdcf9616aa4e374` |
-| 114Duplicate | 221 | `fe0627c5d9f012be` |
-| 115Paste | 240 | `3cb8ade2e46aa34c` |
-| 116Hide | 248 | `52a822db9d22aad3` |
-| 117InvertHidden | 285 | `5da28c7c4861501e` |
-| 118Join | 377 | `b4e2318e96070c07` |
-| 119OffsetPreview | 424 | `e84dc71b7768b7b3` |
-| 120PipePreview | 486 | `69226f9666ad7c8e` |
-| 121Pipe | 500 | `2a74ce93aac4e2b8` |
+| 111MovePreview | 103 | `5e515ca162846808` |
+| 112Rotate | 154 | `32a2f96913a35c23` |
+| 113Scale | 192 | `3f6bcb7c736af9a6` |
+| 114Duplicate | 221 | `66181b635a379880` |
+| 115Paste | 240 | `5437972ed551c7e1` |
+| 116Hide | 248 | `071e20f0ddcd419c` |
+| 117InvertHidden | 285 | `ec08a6c8af2a8eed` |
+| 118Join | 377 | `8ff988792c9c3c90` |
+| 119OffsetPreview | 424 | `7283a82e190c305b` |
+| 120PipePreview | 486 | `05d0d25febbebe0f` |
+| 121Pipe | 500 | `3be9f2a0d2972230` |
 
 ## Journal
 
@@ -120,7 +120,7 @@
 - Framed the document (Space)
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Scale (Extrude1) · 5 ms
+- Scale (Extrude1) · 4 ms
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Scale cancelled
 - Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
@@ -149,9 +149,9 @@
 - Bevel size 1 m (pinned)
 - Extrude1 · Line2 · New · 5 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
-- Offset Line2 by 0.25 · 4 ms
+- Offset Line2 by 0.25 · 3 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 3 ms
+- Line1 · 4 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric

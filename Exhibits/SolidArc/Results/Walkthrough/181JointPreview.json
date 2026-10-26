@@ -17,6 +17,6 @@
   "Undo": 7,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Joint: Cylinder3 onto Block1 · R V S C P L B kind · drag the values · F flip · Enter applies",
+  "Status": "Joint: Cylinder3 onto Block1 · R V S C P L B kind · drag the values · F flip · Enter / right-click applies",
   "Viewport": [322, 146, 926, 591]
 }
