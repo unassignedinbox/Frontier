@@ -13,7 +13,7 @@
 | SolidArc link | `ConnectSolidArcBrowser`, `LaunchSolidArcWorkspace` (CreateProcessW / fork + exec with an exec-failure pipe), `LocateSolidArcWorkspace` (beside the running exe) | `UI/SolidArc/Browser/SolidArcBrowserLink.{h,cpp}` |
 | Windows host | Connects the link; adds `QueryConfiguredThumbnail` on the shared preview renderer | `Experimental/Frontier/Native/WindowsFrontier.cpp` |
 | Build | `FrontierSolidArcDocument` (no Vulkan / ImGui) split from `FrontierSolidArcUI`; `FrontierSolidArcBrowser`; `Frontier` links it and depends on `SolidArc`; `stb_image` made internal (`STB_IMAGE_STATIC`) so it can sit beside upstream's copy | `Experimental/SolidArc/Native/SolidArc.cmake`, `UI/SolidArc/Document/SolidArcImagePlane.cpp` |
-| Overlay | The five upstream files are replaced only while their sha256 matches the 65cf0f1 pin | `Experimental/SolidArc/Native/Tooling/OverlayFrontier.py` |
+| Overlay | The five upstream files are replaced only while their sha256 matches the 65cf0f1 pin (still matching at 18d988e) | `Experimental/SolidArc/Native/Tooling/OverlayFrontier.py` |
 
 ## 🏁 SolidArcBrowserValidation (SwiftShader, 1600 × 960)
 

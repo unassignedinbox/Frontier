@@ -62,11 +62,11 @@ DomainEdits = [
 
 # 📝 Port step S4: upstream CadEdge / MatCapSurface keep their entries and ABI but take their stroke and lookup from the
 #    shared modules above, which the SolidArc programs include too. Each file is replaced only while it still has the
-#    sha256 of the pinned upstream revision (65cf0f1), so an upstream edit is never overwritten silently.
+#    sha256 of the pinned upstream revision (65cf0f1; the same bytes at 18d988e, arena/5e581235-frontier), so an upstream edit is never overwritten silently.
 ReplacedPaths = [
     ('Engine/Render/Shader/CadEdge.slang',       '7dd89dcd37fb850bd7b9d9fc8fb415898688c64d266360d622ebfc01c6af3bf2'),
     ('Engine/Render/Shader/MatCapSurface.slang', '16d05bd02b4e2f49fc90b274ce25ac094ccc37dde6c8ec4ae65d4a2734f155e5'),
-    # 📝 S5 project browser: .solidarc classification, document thumbnails and the SolidArc hand-off (pinned at 65cf0f1).
+    # 📝 S5 project browser: .solidarc classification, document thumbnails and the SolidArc hand-off (pinned at 65cf0f1, unchanged at 18d988e).
     ('Engine/ContentInterchange/ProjectBrowserCatalogue.h', '73d473183eae0f40b64fb600001bac2f2680988522a40341cb712ef03a4f2acb'),
     ('Engine/Render/BrowserPreviewRendering.cpp',           '6a4516895acd30aa5c05eb0a8167792c9f254fc5b7a52cbbade44f91ea7d58e2'),
     ('UI/Editor/ProjectBrowserPanel.h',                     '36098e13ca77b6ac74a4380a1088e8d18a3a1879440046dd336bbaa8a112d0ac'),

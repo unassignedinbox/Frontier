@@ -8213,14 +8213,15 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
                                  { "SketchCut", IconSymbol::SolidArcCut, "Cut", false, CutCondition && !State.Bevel.ActiveCondition },
                                  { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition },
                                  { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition },
-                                 { "SketchKnife", IconSymbol::SolidArcSubtract, "Knife", State.Knife.ActiveCondition, State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition } };
+                                 { "SketchKnife", IconSymbol::SolidArcSubtract, "", State.Knife.ActiveCondition, State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition } };
     SolidArcSheet Probe;
     Probe.Begin();
     float Widths[5], Total = 2.0f + 10.0f + 4.0f * 4.0f + 1.0f + 6.0f + 4.0f;
-    for (int Index = 0; Index < 5; ++Index) Total += Widths[Index] = 24.0f + 17.0f + 7.0f + Probe.Measure(Tools[Index].Label, 13.0f);
+    for (int Index = 0; Index < 5; ++Index) Total += Widths[Index] = 24.0f + 17.0f + (*Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
+    const float Labelled = Total - Widths[4] - 4.0f;                                       // [px] - Labelled tools stay centred; the knife icon extends right
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
-    const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Total)), Image.y + Extent.y - 52.0f - Height);
+    const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Labelled)), Image.y + Extent.y - 52.0f - Height);
     BeginSheetWindow("ViewportTools", Corner, ImVec2(Total, Height), true);
     SolidArcSheet Sheet;
     Sheet.Begin();
@@ -8238,7 +8239,8 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         if (Lit) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
         Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
-        Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        if (*Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        if (Index == 4 && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): sketch cutters, boolean-library inserts, object cutters");
         if (Press.ClickedCondition)
         {
             if (Index == 0 && State.Trim.ActiveCondition) CloseTrimSession(State);

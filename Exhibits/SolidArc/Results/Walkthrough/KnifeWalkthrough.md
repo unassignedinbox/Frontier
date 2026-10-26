@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 345 frames · 39.4614 s · slowest frame 535.061 ms
-- Script: ../../Exhibits/SolidArc/Code/Scripts/KnifeWalkthrough.txt
+- Frame: 1600 x 900 · 345 frames · 39.0196 s · slowest frame 520.427 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/KnifeWalkthrough.txt
 - Expectations: 52 / 52 passed
 
 | Line | Expectation | Observed | Result |
@@ -31,7 +31,7 @@
 | 87 | `volume ~ 7.538628330588459` | 7.538628331 | 🟢 |
 | 95 | `knife-mode == Insert` | Insert | 🟢 |
 | 96 | `knife-pending == 0` | 0 | 🟢 |
-| 97 | `knife-inserts > 6` | 7 | 🟢 |
+| 97 | `knife-inserts > 6` | 8 | 🟢 |
 | 98 | `knife-insert == Square pocket` | Square pocket | 🟢 |
 | 103 | `knife-hover == 1` | 1 | 🟢 |
 | 106 | `knife-size ~ 0.4` | 0.4 | 🟢 |
@@ -51,7 +51,7 @@
 | 163 | `bodies == 2` | 2 | 🟢 |
 | 164 | `volume ~ 7.561028330588459` | 7.561028331 | 🟢 |
 | 165 | `selected-bodies contains Import` | Import#13 | 🟢 |
-| 172 | `knife-inserts > 7` | 8 | 🟢 |
+| 172 | `knife-inserts > 7` | 9 | 🟢 |
 | 175 | `knife == 0` | 0 | 🟢 |
 | 186 | `knife-mode == Object` | Object | 🟢 |
 | 192 | `refused == 0` | 0 | 🟢 |
@@ -62,10 +62,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 271KnifeSketchStaged | 92 | `5f2d5a2b6e413820` |
-| 272KnifeThrough | 144 | `335bc279ac759a16` |
-| 273KnifeInsertPlaced | 192 | `021b7cbecec9eb3f` |
-| 274KnifeObject | 338 | `f56a116fa1b84c22` |
+| 271KnifeSketchStaged | 92 | `75d760da68a5d33a` |
+| 272KnifeThrough | 144 | `efbe9f5f44d1bf88` |
+| 273KnifeInsertPlaced | 192 | `22bb6c3ec1d73ebf` |
+| 274KnifeObject | 338 | `1c1f161d0df2c985` |
 
 ## Journal
 
@@ -73,48 +73,48 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 16 ms
+- Block1 · New body · 15 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
-- Circle1 · 12 ms
+- Circle1 · 10 ms
 - Knife · Circle1 into Block1 · move sideways for the depth (Shift fine, Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies
-- Knife1 · Circle1 · Difference · depth 0.5 · 35 ms
+- Knife1 · Circle1 · Difference · depth 0.5 · 36 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Rectangle1 · 16 ms
+- Rectangle1 · 14 ms
 - Knife · Rectangle1 into Block1 · move sideways for the depth (Shift fine, Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies
 - Knife: through
 - Knife2 · Rectangle1 · Difference · depth 2.06 · 62 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
-- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 7 insert(s) in 175 ms
+- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 8 insert(s) in 123 ms
 - Knife · Square pocket placed on Block1 · move sideways to size it (Shift fine, Ctrl free) or type a width · [ / ] turn 15° · click / right-click / Enter applies
 - Knife: turn 15°
-- Autosaved ../tmp/rt/Knife/Rec.solidarc
-- Knife3 · Square pocket · Difference · 71 ms
+- Autosaved _ClaudeScratch/SolidArcWorkspace/KnifeRecovery.solidarc
+- Knife3 · Square pocket · Difference · 73 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
-- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 7 insert(s) in 175 ms
+- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 8 insert(s) in 123 ms
 - Knife: Add
 - Knife · Square pocket placed on Block1 · move sideways to size it (Shift fine, Ctrl free) or type a width · [ / ] turn 15° · click / right-click / Enter applies
-- Autosaved ../tmp/rt/Knife/Rec.solidarc
-- Knife4 · Square pocket · Union · 81 ms
+- Autosaved _ClaudeScratch/SolidArcWorkspace/KnifeRecovery.solidarc
+- Knife4 · Square pocket · Union · 82 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
-- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 7 insert(s) in 175 ms
+- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 8 insert(s) in 123 ms
 - Knife: Separate
 - Knife · Square pocket placed on Block1 · move sideways to size it (Shift fine, Ctrl free) or type a width · [ / ] turn 15° · click / right-click / Enter applies
-- Autosaved ../tmp/rt/Knife/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/KnifeRecovery.solidarc
 - Knife5 · Square pocket · New body · 22 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels
-- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 7 insert(s) in 175 ms
-- Insert saved: ../tmp/rt/Knife/Inserts/Squarepocket3.step · library 8 insert(s)
+- Knife · Insert Square pocket · point at a face, click to place, move to size, [ / ] turn · 8 insert(s) in 123 ms
+- Insert saved: _ClaudeScratch/SolidArcWorkspace/KnifeInserts/Squarepocket32.step · library 9 insert(s)
 - Knife cancelled (document untouched)
 - Selected Block1 (22 faces)
-- Autosaved ../tmp/rt/Knife/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/KnifeRecovery.solidarc
 - Added Square pocket3 · 2 bodies picked
 - Knife · Object · the first picked body is cut by the others (Shift-pick cutters) · K keeps the cutters · click / right-click / Enter applies
 - Knife: cutters kept
-- Knife5 · Difference (Block1 − Square pocket3) · cutters kept · 110 ms
+- Knife5 · Difference (Block1 − Square pocket3) · cutters kept · 98 ms

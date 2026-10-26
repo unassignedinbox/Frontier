@@ -8,8 +8,8 @@
 | Stage | Scope | Evidence | State |
 |---|---|---|---|
 | S1 | SolidArc app target, Vulkan host, upstream ControlKit / Theme / PanelDockspace | `Walkthrough/01Workspace.png`, `WorkspaceWalkthrough.md` | 🟢 (windowed host and standalone overlay build open) |
-| S2 | Kernel in `Engine/GeometryProcessing/` | `DocumentValidation.md` W1–W51 | 🟢 |
-| S3 | 1:1 Outliner, viewport and Inspector port (S3a / S3b / S3c) | `HtmlParity.md` 🟢 72 · ⚠️ 1 · 🚧 3 | 🟢 |
+| S2 | Kernel in `Engine/GeometryProcessing/` | `DocumentValidation.md` W1–W52 | 🟢 |
+| S3 | 1:1 Outliner, viewport and Inspector port (S3a / S3b / S3c) | `HtmlParity.md` 🟢 73 · ⚠️ 1 · 🚧 3 | 🟢 |
 | S4 | Shared Slang shaders (`CadStroke`, `MatCapLookup`) and `Engine/Render/OrbitCamera` | `MatCapRasterizationValidation`, `SurfaceRasterizationValidation`, ctest 27 / 27 | 🟢 |
 | S5 | Project browser: CAD category, thumbnails, live reader, Open in SolidArc | `S5Browser.md`, `SolidArcBrowserValidation` 15 / 15 | 🟢 |
 | S6 | Validation tables; Windows cross-build and package | `S6Windows.md`, ctest 29 / 29 | 🟢 built and packaged; first Windows run 🟢 interface, viewport fix awaiting a second run |
@@ -56,6 +56,7 @@
 | 56 | SolidArcFilletDragWalkthrough | Mode-1 drags on a rectangle with four fillets: the bottom-left fillet's centre dragged out past the corner keeps every arc 90° (the lines follow; tangency keeps its starting side, an inside-out fillet is refused); the orientation cube in Parallel and Perspective |
 | 57 | SolidArcOrientWalkthrough | Orient to faces: a circle on a cube's side face (normal +x) extruded outward; Construct cylinders on the −y face and on a wedge's slope stand square to the face; a circle on a curved face takes the tangent plane; the Snaps card toggle off keeps the ground plane |
 | 58 | SolidArcResponsivenessWalkthrough | The reported lag scene, drawn: a circle on a cylinder's curved side lies on the exact tangent plane (`plane-offset` 1.7), its Union extrude starts below it (`profile-sink`, `extrude-start`) and closes with the closed-form volume; a junction chamfer while the pointer sweeps builds 1 preview, not 30 (`bevel-stages`); a rim chamfer, four gizmo moves, a G move (rigid previews) with `--trace`; see `Results/Responsiveness.md` |
+| 60 | SolidArcKnifeWalkthrough | Knife (Shift+K, Blender KitOps style): a circle drawn on a cube's top face cut 0.5 deep; a rectangle on the −y face cut straight through (T); the built-in boolean library's Square pocket placed on faces at width 0.4, turned 15°, cut / raised / left separate and saved as a new insert; Object mode cuts the cube with a kept cutter body (captures 271–274) |
 | 59 | SolidArcEdgeStrokeWalkthrough | The reported jagged / dashed edges: a cylinder with a boss joined on its curved side and a 0.05 rim fillet, seen whole and at three zooms (captures 267–270); soft strokes held 3 px in front of their faces, 4× MSAA faces (`Results/EdgeStrokeComparison.png`) |
 | 54 | SolidArcAltSlideWalkthrough | Alt held while sketching / dragging slides the point along a line / curve / arc (Ctrl keeps ends / midpoints / centres); an Alt tap still toggles rectangle centre mode; round mode-1 point handles |
 | 53 | SolidArcSketchCornersWalkthrough | B on a sketch: every corner of a rectangle filleted r 0.25 (live preview, the extrude follows), one corner chamfered 0.3 (C); a loft through the section of an earlier loft joins its sheet (fan loft) |
@@ -64,6 +65,7 @@
 | Report (in `Results/`) | Result |
 |---|---|
 | `ConstructAndTrace.md` | Drawn Construct primitives (8 solids, 13 sketch tools, live dimension lines, new body by default) and the development operation trace (`FRONTIER_DEVELOPMENT_TRACE`, `SolidArcTrace.log`, F12 panel) |
+| `Walkthrough/KnifeWalkthrough.md` | 52 / 52: cube 2³ (V 8); Shift+K draws a circle r 0.3 on the top face (unfilled, the knife fills it), depth 0.5 → V 8 − 0.045π (271); Rectangle 0.4² on the −y face, T through → − 0.32 (272); Tab → Insert, Square pocket placed at (0.5, 0.5, 2), typed width 0.4, ] turns 15°, Enter → − 0.0192 (273); Q raises it on the +x face (+ 0.0192), R leaves it separate (2 bodies) and Save picked body adds an 8th insert; Object mode: cube then the insert, K keeps the cutter → − 0.0192 with 2 bodies left (274) |
 | `Walkthrough/ConstructDrawingWalkthrough.md` | 45 / 45: menu Solids / Sketch; Box drawn corner → corner → height (V 3); Shift+X cylinder, Cone, 7-sided Prism (+), Torus (no height) each a new body with exact volumes; a box started on the first box's top (elevation 1); Polygon and Line dimensions; Tab exact-size form |
 | `Walkthrough/InsetWalkthrough.md` | 26 / 26: box top picked in mode 3, O opens Inset; typed 0.25 splits the top (V 3, preview); H + depth −0.2 pockets it (V 2.7, 11 faces); I on the pocket floor, 0.1 / +0.2 boss (V 2.908, 16 faces); inset 0.8 refused live, Esc leaves the document untouched |
 | `Walkthrough/GizmoWalkthrough.md` | 33 / 33: box picked in mode 4 shows the move gizmo; z cone drag → Move 0.5 (V 3); y × 5 → move + rotate + scale; z arc −20° (V 3), x cylinder ×1.4 (V 4.2); face mode on the top: z cone = push / pull (Offset 0.4), rotate-only chips, x arc −5° face rotate; two drawn circles, the small one lifted 0.7 by its sketch gizmo, Shift-click, L, Close → frustum V 1.282817 = π · 0.7 / 3 · 1.75 |
