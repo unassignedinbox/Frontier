@@ -57,6 +57,17 @@ A preview that took more than 40 ms is rebuilt only when the size rests. The las
 | Bevel preview, mouse adjust | every new size | when the pointer rests (slow ones) |
 | Idle frame (interface) | 0 – 2 ms | 0 – 2 ms |
 
+## 📝 Right-click and Enter confirm
+
+| Session | Enter | Right-click (no drag) | Esc | Walkthrough evidence |
+|---|---|---|---|---|
+| Move / Rotate / Scale (G / R / S, gizmo) | commits | commits | cancels | Responsiveness ⑧ / ⑨ (`transform-commits` 1 → 2, then held at 2; capture 266) |
+| Trim (T) | ends | ends | ends | TrimSplit ⑩b (`trim` 1 → 0 both ways, 10 curves kept) |
+| Fill | ends | ends | ends | Fill ③b (`fill` 1 → 0 both ways, steps held at 4) |
+| Fillet / chamfer, extrude, inset, offset, pipe, joint, Boolean, pending dimension | applies | applies | cancels | existing walkthroughs (Enter) + the shared right-click dispatch |
+
+- A right-drag still pans; only a press-and-release without movement confirms.
+
 ## 💡 Logging
 
 - `SolidArcTrace.log` sits next to the exe; the previous run is kept as `SolidArcTrace.previous.log`. The status-bar **Log** button or `F12` opens the panel: path, Copy path, Slow frames / Refusals filters, Copy.

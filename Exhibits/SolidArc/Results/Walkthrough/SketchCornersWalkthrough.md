@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 299 frames · 25.6845 s · slowest frame 466.54 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 299 frames · 22.4567 s · slowest frame 389.89 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchCornersWalkthrough.txt
 - Expectations: 18 / 18 passed
 
@@ -28,10 +28,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 239SketchFilletPreview | 92 | `3a63948b6d5f2a1e` |
-| 240SketchFillet | 100 | `4b83ee05078a29d1` |
-| 241SketchChamferCorner | 172 | `0c9d2d46f8ed52d4` |
-| 242FanLoft | 299 | `dfc11717626c7191` |
+| 239SketchFilletPreview | 92 | `01fa75b283714e30` |
+| 240SketchFillet | 100 | `8a89196a058e5170` |
+| 241SketchChamferCorner | 172 | `34dd5fe80f9a00e2` |
+| 242FanLoft | 299 | `213c4eebdf6ce340` |
 
 ## Journal
 
@@ -41,30 +41,30 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 7 ms
+- Extrude1 · Rectangle1 · New · 6 ms
 - Selected sketch Rectangle1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Fillet sketch corners (B): move horizontally · D fillet · C chamfer · Enter / right-click applies · Esc aborts
 - Bevel size 0.25 m (pinned)
-- Fillet r 0.25 · every corner of Rectangle1 · 32 ms
+- Fillet r 0.25 · every corner of Rectangle1 · 20 ms
 - Selection cleared
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Rectangle2 · 21 ms
+- Rectangle2 · 13 ms
 - Rectangle2 · point 2 · 1 picked · the gizmo moves them in the sketch plane (drag a point to move it directly)
 - Fillet sketch corners (B): move horizontally · D fillet · C chamfer · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Chamfer 0.3 · 1 corner of Rectangle2 · 21 ms
+- Chamfer 0.3 · 1 corner of Rectangle2 · 15 ms
 - Selection cleared
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 22 ms
+- Line1 · 14 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line2 · 20 ms
+- Line2 · 16 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line3 · 21 ms
+- Line3 · 13 ms
 - Selected sketch Line1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Line2 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · 21 ms
-- Lofted 2 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 21 ms
+- Loft1 · 2 sections · 17 ms
+- Lofted 2 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 17 ms
 - Selected sketch Line1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Line3 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft2 · 2 sections · 21 ms
-- Lofted 2 curve(s) into a panel (sound) · 2 panel(s) · open sections stay a sheet · 21 ms
+- Loft2 · 2 sections · 16 ms
+- Lofted 2 curve(s) into a panel (sound) · 2 panel(s) · open sections stay a sheet · 16 ms

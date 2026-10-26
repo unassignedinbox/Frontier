@@ -20,8 +20,8 @@
 - Navigation and commands follow Plasticity (orbit, pan and zoom on the mouse; `B` fillet, `E` extrude, `1`–`5` modes, `Alt+Z` x-ray).
 - On a curved face, a sketch lies on the exact tangent plane under the pointer. `E` → Union starts the extrude slightly inside the face (the Inspector shows how far), so the joined body closes and its junction edge takes a chamfer.
 - A slow fillet / chamfer preview is rebuilt when the pointer rests, not on every pixel. A typed size applies at once.
-- **Right-click or `Enter` confirms** every command (fillet / chamfer, extrude, inset, move / rotate / scale, offset, pipe, joint, boolean, a pending dimension); `Esc` cancels. A right-drag still pans. A size typed in the field and not yet entered is the one a right-click applies.
-- Edges are soft-edged (antialiased) strokes held a few pixels in front of their faces at every zoom, so curved edges no longer break into dashes.
+- **Right-click or `Enter` confirms** every command (fillet / chamfer, extrude, inset, move / rotate / scale, offset, pipe, joint, boolean, a pending dimension) and ends Trim / Fill; `Esc` cancels. A right-drag still pans. A size typed in the field and not yet entered is the one a right-click applies.
+- Edges are soft-edged (antialiased) strokes held a few pixels in front of their faces at every zoom, so curved edges no longer break into dashes. The viewport renders with 4× multisampling (the status bar shows `4× MSAA` next to the GPU name), so face silhouettes are smooth too.
 
 ## 🔍 Log
 

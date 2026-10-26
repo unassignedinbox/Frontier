@@ -243,6 +243,22 @@ frames 2
 expect trim == 0
 expect focused-caption == Line1
 
+# ⑩b Enter and a right-click (no drag) end Trim like Escape: nothing more comes off
+key T
+frames 2
+expect trim == 1
+key Enter
+frames 2
+expect trim == 0
+key T
+frames 2
+expect trim == 1
+click viewport 0.90 0.20 Right
+frames 2
+expect trim == 0
+expect sketch-curves == 10
+expect focused-caption == Line1
+
 # ⑪ E extrudes the trimmed star: volume = shoelace area × 1
 key F
 frames 2

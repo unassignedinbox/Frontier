@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 211 frames · 21.6471 s · slowest frame 485.784 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 211 frames · 20.184 s · slowest frame 363.816 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ExchangeWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,24 +46,24 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 195ExchangeExportStep | 19 | `d1ec771114edbea0` |
-| 196ExchangeSaveAsStl | 68 | `6e9c0802380fc2d9` |
-| 197ExchangeImported | 123 | `1d96f8da97bde8d7` |
-| 198ExchangeFilletImported | 165 | `a5dee010ec5c96ac` |
-| 199ExchangeImportStep | 174 | `7a3755a71aa62c4e` |
+| 195ExchangeExportStep | 19 | `66d167c2000bb60e` |
+| 196ExchangeSaveAsStl | 68 | `962997fa8d00e535` |
+| 197ExchangeImported | 123 | `aa474f6205c585c5` |
+| 198ExchangeFilletImported | 165 | `9c58ecac3febbbe5` |
+| 199ExchangeImportStep | 174 | `d0f9457ee9a39244` |
 
 ## Journal
 
-- Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 2 ms
-- Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 10 ms
+- Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 5 ms
+- Exported 1 body(ies) as STL → _ClaudeScratch/SolidArcWorkspace/Exchange.stl · 1906 facet(s) · 95384 bytes · 7 ms
 - New document (previous recovery copy kept)
-- Import Exchange · 1 solid(s) · 90 ms
+- Import Exchange · 1 solid(s) · 64 ms
 - Framed the document (Space)
-- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 137 ms
+- Imported _ClaudeScratch/SolidArcWorkspace/Exchange.step · 1 solid(s) · 11 face(s) · file unit mm · 0 loop(s) reoriented · 0 tolerant edge(s) · 102 ms
 - Selection cleared
 - Selected Edge(Import#1.Face(1)|Import#1.Face(5))
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.1 m (pinned)
-- Fillet 0.1 on 1 edge(s) · 138 ms
+- Fillet 0.1 on 1 edge(s) · 108 ms
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ExchangeRecovery.solidarc
 - Refused: Import: Experimental/VehicleSurfacing/Samples/SyntheticBonnet.obj is neither .step / .stp nor a VehicleCurves .toml

@@ -338,6 +338,13 @@ add_test(NAME SolidArcResponsivenessWalkthrough
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
                  --trace _ClaudeScratch/SolidArcWorkspace/ResponsivenessTrace.log
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcEdgeStrokeWalkthrough
+         COMMAND SolidArcCapture --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/EdgeStrokeRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/EdgeStroke.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/EdgeStrokeWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcSketchCornersWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/SketchCornersRecovery.solidarc

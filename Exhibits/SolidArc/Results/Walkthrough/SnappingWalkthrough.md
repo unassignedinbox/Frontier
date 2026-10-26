@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 332 frames · 32.7548 s · slowest frame 479.227 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 332 frames · 28.5754 s · slowest frame 354.466 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
 - Expectations: 62 / 62 passed
 
@@ -72,40 +72,40 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 29 | `6854f7e1bcd4f4ad` |
-| 161SnapTangent | 42 | `eabd7b6508f9eab7` |
-| 162SnapLockTangent | 60 | `30b7c70a865db893` |
-| 163SnapLockNormal | 78 | `180e651b274b9703` |
-| 164SnapBinormalRefused | 92 | `7e949ce4703ee667` |
-| 165SnapCentre | 98 | `5862c9206122647d` |
-| 166SnapMidpoint | 104 | `3a08d40c922b45e1` |
-| 167SnapPerpendicular | 117 | `a4309da8615d06a7` |
-| 168SnapSquare | 150 | `b22fe944aae8673b` |
-| 169SnapConstraintDrag | 180 | `5791be009980211d` |
-| 170SnapMove | 216 | `02b89b77968a2a7f` |
-| 171SnapXRay | 249 | `732cf18f856e8770` |
-| 172SnapPoleDrag | 321 | `385f63873e07da3f` |
+| 160SnapEndpoint | 29 | `9e8f5dcc6cfea780` |
+| 161SnapTangent | 42 | `40448507c3bf6fd1` |
+| 162SnapLockTangent | 60 | `8cd5de7e0781afb9` |
+| 163SnapLockNormal | 78 | `a435702a6d7ce60e` |
+| 164SnapBinormalRefused | 92 | `2b400552d3eb489a` |
+| 165SnapCentre | 98 | `d5c922134cbdcead` |
+| 166SnapMidpoint | 104 | `0a2f5007d6b37adc` |
+| 167SnapPerpendicular | 117 | `27b71b575a6fc719` |
+| 168SnapSquare | 150 | `4bf1b19ec311b3ea` |
+| 169SnapConstraintDrag | 180 | `9b8da31a6784c10c` |
+| 170SnapMove | 216 | `586b46aa4c5a236c` |
+| 171SnapXRay | 249 | `d01b1f9bf6ad1f0e` |
+| 172SnapPoleDrag | 321 | `7ba294fc3f0e2d20` |
 
 ## Journal
 
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 46 ms
+- Circle1 · 31 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Lock tangent through the last point · the same key releases it · object snaps align along it
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
 - Lock normal through the last point · the same key releases it · object snaps align along it
 - Lock binormal leaves the XY drawing plane: refused
-- Line1 · 45 ms
+- Line1 · 30 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle: square (s releases)
-- Rectangle1 · 44 ms
+- Rectangle1 · 36 ms
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
-- Drag Line1.End of Rectangle1 · 44 ms
+- Drag Line1.End of Rectangle1 · 30 ms
 - Constrain ended
 - Selected Block1 (11 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
-- Move (Block1) · 68 ms
+- Move (Block1) · 35 ms
 - Undo
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - X-ray on · faces 45 % · hidden edges pickable
@@ -118,6 +118,6 @@
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
 - Framed the document (Space)
-- Move pole 2 of Section3 · 2 ms
-- Moved pole 2 of Section3 by 350.00 mm · 2 ms
+- Move pole 2 of Section3 · 1 ms
+- Moved pole 2 of Section3 by 350.00 mm · 1 ms
 - Undo

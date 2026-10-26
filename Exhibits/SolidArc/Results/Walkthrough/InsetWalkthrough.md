@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 201 frames · 17.2758 s · slowest frame 471.675 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 201 frames · 14.3145 s · slowest frame 341.586 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/InsetWalkthrough.txt
 - Expectations: 26 / 26 passed
 
@@ -36,12 +36,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 212InsetOpened | 68 | `aab8cc014d1d3b98` |
-| 213InsetFlat | 86 | `79a8048c93423cbf` |
-| 214InsetPocketPreview | 108 | `4574436d6df3b498` |
-| 215InsetPocket | 116 | `277e1033d8cc1fd2` |
-| 216InsetBoss | 165 | `2fc3d4d78cdb20b9` |
-| 217InsetRefused | 195 | `9e5d953a528d99fa` |
+| 212InsetOpened | 68 | `3a8ed05c3053d694` |
+| 213InsetFlat | 86 | `6604e07cc0705449` |
+| 214InsetPocketPreview | 108 | `e5b37a0595cdcb16` |
+| 215InsetPocket | 116 | `49d1a17c49e51b70` |
+| 216InsetBoss | 165 | `732fa94b61530a85` |
+| 217InsetRefused | 195 | `0a348c0e04168ec0` |
 
 ## Journal
 
@@ -49,17 +49,17 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 9 ms
+- Block1 · New body · 7 ms
 - Selected Extrude#2.Cap(End)
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.25 m (pinned)
 - Inset depth -0.2 m
-- Inset 0.25 depth -0.2 on 1 face(s) · 19 ms
+- Inset 0.25 depth -0.2 on 1 face(s) · 14 ms
 - Selected Change#3.Generated(Extrude#2.Cap(End))
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.1 m (pinned)
 - Inset depth 0.2 m
-- Inset 0.1 depth 0.2 on 1 face(s) · 25 ms
+- Inset 0.1 depth 0.2 on 1 face(s) · 19 ms
 - Selected Extrude#2.Cap(End)
 - Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts
 - Inset distance 0.8 m (pinned)

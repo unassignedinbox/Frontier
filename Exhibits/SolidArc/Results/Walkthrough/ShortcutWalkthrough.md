@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 263 frames · 33.3805 s · slowest frame 651.58 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 263 frames · 25.0513 s · slowest frame 374.878 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShortcutWalkthrough.txt
 - Expectations: 73 / 73 passed
 
@@ -83,9 +83,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 19BevelSignChamfer | 64 | `45936af3d0edfe21` |
-| 21TangentChain | 144 | `dc121a8ec927366c` |
-| 20ShortcutExtrude | 231 | `6f7e700bcca8feb9` |
+| 19BevelSignChamfer | 64 | `b622b0171246c82b` |
+| 21TangentChain | 144 | `6c43be8e1722b0a3` |
+| 20ShortcutExtrude | 231 | `7b2bf0c20225b610` |
 
 ## Journal
 
@@ -96,7 +96,7 @@
 - Bevel cancelled (document untouched)
 - Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
-- Fillet 0.3 on 1 edge(s) · 178 ms
+- Fillet 0.3 on 1 edge(s) · 109 ms
 - Undo
 - Redo
 - Selection cleared
@@ -107,7 +107,7 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShortcutRecovery.solidarc
 - Extended along the tangent chain: 5 edge(s)
 - Selection cleared
-- Delete Fillet2 · 45 ms
+- Delete Fillet2 · 34 ms
 - Selection cleared
 - Framed the document (Space)
 - X-ray on · faces 45 % · hidden edges pickable
@@ -116,10 +116,10 @@
 - View Isometric
 - Selected Extrude#4.Cap(End)
 - Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts
-- ExtrudeFaces 0.5 on 1 face(s) · 127 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 71 ms
 - Selection cleared
 - Selected Extrude#4.Cap(End)
-- ExtrudeFaces 0.5 on 1 face(s) · 133 ms
+- ExtrudeFaces 0.5 on 1 face(s) · 72 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: Difference
 - Cylinder aborted (document untouched)

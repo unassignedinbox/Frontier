@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 201 frames · 16.5328 s · slowest frame 501.927 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 201 frames · 15.6885 s · slowest frame 439.705 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShellsWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,10 +44,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 231SketchFacePlane | 61 | `44d690ae6f8b96e5` |
-| 232SketchMidpointOnFace | 86 | `3d008e6223cd696b` |
-| 233SolidLoftShell | 161 | `51b28a1aefde0839` |
-| 234HiddenLocked | 186 | `6f8202c3d85a9146` |
+| 231SketchFacePlane | 61 | `d7dd3614a179a6c8` |
+| 232SketchMidpointOnFace | 86 | `bfd75b9f4fbfa4ce` |
+| 233SolidLoftShell | 161 | `c7523b6ed693b8de` |
+| 234HiddenLocked | 186 | `bca40dd99000cc89` |
 
 ## Journal
 
@@ -55,19 +55,19 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 11 ms
+- Block1 · New body · 8 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 0 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ShellsRecovery.solidarc
-- Rectangle1 · 8 ms
+- Rectangle1 · 6 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 8 ms
+- Circle1 · 6 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle2 · 8 ms
 - Selected sketch Circle1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Circle2 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · solid · 17 ms
-- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 17 ms
+- Loft1 · 2 sections · solid · 15 ms
+- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 15 ms
 - Rectangle1 hidden
 - Block1 locked (shown, not pickable)
 - Block1 is locked (Outliner lock to unlock)

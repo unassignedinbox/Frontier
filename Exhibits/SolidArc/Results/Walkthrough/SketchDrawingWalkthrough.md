@@ -1,8 +1,8 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 369 frames · 32.5541 s · slowest frame 1070.77 ms
-- Script: /home/user/Frontier/Exhibits/SolidArc/Code/Scripts/SketchDrawingWalkthrough.txt
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 369 frames · 30.7307 s · slowest frame 787.725 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
 | Line | Expectation | Observed | Result |
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 32 | `bb1bf609477a58a4` |
-| 31CurveForms | 258 | `aaf783ed7ba3717b` |
-| 32HermiteClosing | 269 | `96a45fe3b61e7844` |
-| 33DrawnSolid | 369 | `fd46b25db83c745b` |
+| 30RectanglePreview | 32 | `dd03556d00f79b7d` |
+| 31CurveForms | 258 | `2c8588c33d41cc18` |
+| 32HermiteClosing | 269 | `1c2b18c4aee90226` |
+| 33DrawnSolid | 369 | `d39c17008a1129fa` |
 
 ## Journal
 
@@ -87,38 +87,38 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1.5 m (pinned)
-- Extrude1 · Rectangle1 · New · 9 ms
+- Extrude1 · Rectangle1 · New · 6 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 6 ms
-- Fill Circle1 · 6 ms
+- Circle1 · 5 ms
+- Fill Circle1 · 5 ms
 - Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size -1.5 m (pinned)
-- Extrude2 · Circle1 · Difference · 35 ms
+- Extrude2 · Circle1 · Difference · 23 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 15 ms
-- Fill Line1 · 15 ms
+- Line1 · 13 ms
+- Fill Line1 · 12 ms
 - Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 51 ms
+- Extrude3 · Line1 · Union · 34 ms
 - Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 2 left
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchDrawing/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchRecovery.solidarc
 - Curve form: Bezier
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 19 ms
-- Fill Curve1 · 19 ms
+- Curve1 · Hermite · 16 ms
+- Fill Curve1 · 13 ms
 - Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size -0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 819 ms
+- Extrude4 · Curve1 · Difference · 555 ms
 - Arc on plane XY (or the body face under the first click): click start, end, then a point on the arc · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left
-- Autosaved /home/user/Frontier/_ClaudeScratch/tmp/rt/SketchDrawing/Rec.solidarc
+- Autosaved _ClaudeScratch/SolidArcWorkspace/SketchRecovery.solidarc
 - Arc aborted (document untouched)
 - View Isometric

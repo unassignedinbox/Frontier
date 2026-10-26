@@ -65,6 +65,22 @@ key Escape
 frames 2
 expect fill == 0
 
+# ③b Enter and a right-click (no drag) end the Fill tool like Escape, committing nothing more
+click @SketchFill
+frames 2
+expect fill == 1
+key Enter
+frames 2
+expect fill == 0
+expect steps == 4
+click @SketchFill
+frames 2
+expect fill == 1
+click viewport 0.90 0.20 Right
+frames 2
+expect fill == 0
+expect steps == 4
+
 # ④ E extrudes the filled crescent into a solid (New, 1 up)
 key E
 frames 2

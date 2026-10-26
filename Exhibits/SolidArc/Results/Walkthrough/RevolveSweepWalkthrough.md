@@ -1,7 +1,7 @@
 # SolidArcCapture
 
-- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0
-- Frame: 1600 x 900 · 445 frames · 50.6321 s · slowest frame 2106 ms
+- Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
+- Frame: 1600 x 900 · 445 frames · 42.397 s · slowest frame 1538.96 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/RevolveSweepWalkthrough.txt
 - Expectations: 47 / 47 passed
 
@@ -57,12 +57,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 134RevolvePreview | 171 | `4b5d3c936dc4d07d` |
-| 135RevolvePreviewIsometric | 188 | `7ecfb320c2b23063` |
-| 136RevolveEdgeAxis | 272 | `7f4db76047c2adde` |
-| 137EvolutionProposed | 397 | `4c383ece237478c8` |
-| 138EvolutionPath | 407 | `c334f2db31d1fafa` |
-| 139Evolution | 421 | `bb70f8a34a5d4041` |
+| 134RevolvePreview | 171 | `90c70f4e9c9fe3c8` |
+| 135RevolvePreviewIsometric | 188 | `055585ea78d3d36d` |
+| 136RevolveEdgeAxis | 272 | `8d68c76f3a680766` |
+| 137EvolutionProposed | 397 | `973cc530cd06fc1a` |
+| 138EvolutionPath | 407 | `d853b2a636573238` |
+| 139Evolution | 421 | `fc30ab3df817a748` |
 
 ## Journal
 
@@ -78,9 +78,9 @@
 - Join (Line2, Line1, Curve1) · 0 ms
 - Revolve Line2 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - View Isometric
-- Revolve1 · Line2 · 360° about sketch y-axis · New · 450 ms
+- Revolve1 · Line2 · 360° about sketch y-axis · New · 292 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Rectangle1 · 274 ms
+- Rectangle1 · 202 ms
 - Revolve Rectangle1 about sketch y-axis · type degrees (360) · X / Y sketch axis · click one of its lines for the axis · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Revolve about the sketch x-axis
 - Revolve about the sketch y-axis
@@ -88,19 +88,19 @@
 - Revolve: New body
 - Autosaved _ClaudeScratch/SolidArcWorkspace/RevolveSweepRecovery.solidarc
 - View Isometric
-- Revolve2 · Rectangle1 · 90° about Line4 · New body · 274 ms
+- Revolve2 · Rectangle1 · 90° about Line4 · New body · 192 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Circle1 · 282 ms
+- Circle1 · 230 ms
 - Curve on plane XZ (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Curve form: Bezier
 - Autosaved _ClaudeScratch/SolidArcWorkspace/RevolveSweepRecovery.solidarc
-- Curve1 · Bezier · 277 ms
+- Curve1 · Bezier · 185 ms
 - Line on plane XZ (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 277 ms
+- Line1 · 218 ms
 - View Isometric
 - Evolution Circle1 along Line1 · click another sketch's curve for the path · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Evolution along Curve1
-- Evolution1 · Circle1 along Curve1 · New body · 352 ms
+- Evolution1 · Circle1 along Curve1 · New body · 275 ms
 - Framed the document (Space)
 - Evolution Circle1 along Line1 · click another sketch's curve for the path · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Evolution cancelled

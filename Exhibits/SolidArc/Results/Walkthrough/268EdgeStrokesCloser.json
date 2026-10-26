@@ -1,0 +1,22 @@
+{
+  "Frame": 194,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Extrude1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Circle2 · Sketch", "Refused": false}, {"Label": "Extrude#4", "Caption": "Extrude2 · Extrude", "Refused": false}, {"Label": "Blend#5", "Caption": "Fillet1 · Blend", "Refused": false}],
+  "Body": {"Faces": 6, "Edges": 8, "Vertices": 5, "Genus": 0, "Volume": 5.484954471, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 2,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 5.581410609, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.05, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Circle", "Plane": 0, "Form": "Hermite", "Centre": true, "Points": [[0, 0.3], [0.2, 0.3]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 7,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Fillet 0.05 on 1 edge(s) · 157 ms",
+  "Viewport": [322, 146, 926, 591]
+}
