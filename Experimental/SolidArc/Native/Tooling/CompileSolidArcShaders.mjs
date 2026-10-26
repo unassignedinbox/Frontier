@@ -59,7 +59,7 @@ const GridFields       = [['PlaneFromClip', 0, 64], ['AlongU', 64, 16], ['AlongV
 const PlaneFields      = [['ClipFromWorld', 0, 64], ['Corner', 64, 16], ['Right', 80, 16], ['Down', 96, 16], ['Crop', 112, 16]];
 const Programs = [
     ['SolidArcSurface.slang', ['SolidArcSurfaceVertex', 'SolidArcSurfaceFragment'], ProjectionFields, [['FaceStates', 0], ['Section', 2], ['Matcaps', 0, 1]]],
-    ['SolidArcEdge.slang',    ['SolidArcEdgeVertex', 'SolidArcEdgeFragment', 'SolidArcEdgeOccludedFragment'], ProjectionFields, [['EdgeStates', 1], ['Section', 2]]],
+    ['SolidArcEdge.slang',    ['SolidArcEdgeVertex', 'SolidArcEdgeFragment', 'SolidArcEdgeOccludedFragment', 'SolidArcEdgeIdentityFragment'], ProjectionFields, [['EdgeStates', 1], ['Section', 2]]],
     ['SolidArcGrid.slang',    ['SolidArcGridVertex', 'SolidArcGridFragment'],       GridFields,       []],
     ['SolidArcImagePlane.slang', ['SolidArcImagePlaneVertex', 'SolidArcImagePlaneFragment'], PlaneFields, [['Picture', 0, 1]]],
     ['SolidArcGizmo.slang',   ['SolidArcGizmoVertex', 'SolidArcGizmoFragment'],     ProjectionFields, []],

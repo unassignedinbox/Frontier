@@ -190,3 +190,30 @@ expect transform == 0
 expect transform-commits == 1
 expect refused == 0
 capture 265RigidMove
+
+# ⑧ right-click commits like Enter (the Plasticity habit): G · Y · move · right-click, the move is kept
+key G
+frames 2
+expect transform == 1
+key Y
+frames 2
+move viewport 0.50 0.50 offset 0 -40
+frames 3
+click viewport 0.50 0.50 offset 0 -40 Right
+frames 3
+expect transform == 0
+expect transform-commits == 2
+expect refused == 0
+expect volume ~ 5.484407611
+
+# ⑨ Esc still cancels: G · move · Esc leaves the commits at 2
+key G
+frames 2
+expect transform == 1
+move viewport 0.50 0.50 offset 30 0
+frames 3
+key Escape
+frames 2
+expect transform == 0
+expect transform-commits == 2
+capture 266RightClickCommit

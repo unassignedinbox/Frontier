@@ -275,6 +275,7 @@ void SolidArcRasterization::CreatePipelines()
     const VkShaderModule EdgeVertex      = CreateModule(Device->Device, SolidArcEdgeVertexCode);
     const VkShaderModule EdgeFragment    = CreateModule(Device->Device, SolidArcEdgeFragmentCode);
     const VkShaderModule EdgeOccluded    = CreateModule(Device->Device, SolidArcEdgeOccludedFragmentCode);
+    const VkShaderModule EdgeIdentity    = CreateModule(Device->Device, SolidArcEdgeIdentityFragmentCode);
     const VkShaderModule GridVertex      = CreateModule(Device->Device, SolidArcGridVertexCode);
     const VkShaderModule GridFragment    = CreateModule(Device->Device, SolidArcGridFragmentCode);
     const VkShaderModule PlaneVertex     = CreateModule(Device->Device, SolidArcImagePlaneVertexCode);
@@ -311,7 +312,17 @@ void SolidArcRasterization::CreatePipelines()
     Edge.Bindings      = { { 0, sizeof(SolidArcSceneSegment), VK_VERTEX_INPUT_RATE_INSTANCE } };
     Edge.Attributes    = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 }, { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12 }, { 2, 0, VK_FORMAT_R32_UINT, 24 } };
     Edge.ColourBlend   = true;
+    Edge.DepthWrite    = false;                                                              // 📝 Strokes never hide each other's fringe
+    Edge.IdentityWrite = false;
     EdgePipeline       = CreatePipeline(Device->Device, PipelineLayout, Edge);
+
+    // 📝 Pick codes for the stroke cores: the same quads with the colour masked (the soft fringe stays unpickable).
+    PipelineRecipe EdgeCodes  = Edge;
+    EdgeCodes.Fragment        = EdgeIdentity;
+    EdgeCodes.FragmentEntry   = SolidArcEdgeIdentityFragmentEntry;
+    EdgeCodes.ColourWrite     = false;
+    EdgeCodes.IdentityWrite   = true;
+    EdgeIdentityPipeline      = CreatePipeline(Device->Device, PipelineLayout, EdgeCodes);
 
     // 📝 X-ray ③: only stroke pixels behind the surface depth (GREATER), never writing depth; the identity is written so
     //    hidden edges hover and pick through the faces (the visible-edge draw afterwards wins where both cover a pixel).
@@ -321,6 +332,9 @@ void SolidArcRasterization::CreatePipelines()
     Occluded.DepthWrite     = false;
     Occluded.DepthCompare   = VK_COMPARE_OP_GREATER;
     EdgeOccludedPipeline    = CreatePipeline(Device->Device, PipelineLayout, Occluded);
+    PipelineRecipe OccludedCodes = EdgeCodes;
+    OccludedCodes.DepthCompare   = VK_COMPARE_OP_GREATER;
+    EdgeOccludedIdentityPipeline = CreatePipeline(Device->Device, PipelineLayout, OccludedCodes);
 
     PipelineRecipe Grid;
     Grid.Vertex        = GridVertex;
@@ -356,7 +370,7 @@ void SolidArcRasterization::CreatePipelines()
     Gizmo.IdentityWrite = false;
     GizmoPipeline       = CreatePipeline(Device->Device, PipelineLayout, Gizmo);
 
-    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, EdgeOccluded, GridVertex, GridFragment, PlaneVertex, PlaneFragment, GizmoVertex, GizmoFragment })
+    for (VkShaderModule Module : { SurfaceVertex, SurfaceFragment, EdgeVertex, EdgeFragment, EdgeOccluded, EdgeIdentity, GridVertex, GridFragment, PlaneVertex, PlaneFragment, GizmoVertex, GizmoFragment })
         vkDestroyShaderModule(Device->Device, Module, nullptr);
 }
 
@@ -372,7 +386,7 @@ void SolidArcRasterization::Destroy()
     MatcapPool   = VK_NULL_HANDLE;
     MatcapSet    = VK_NULL_HANDLE;
     MatcapLayers = 0;
-    for (VkPipeline* Pipeline : { &SurfacePipeline, &SurfaceDepthPipeline, &SurfaceGhostPipeline, &EdgePipeline, &EdgeOccludedPipeline, &GridPipeline, &PlanePipeline, &GizmoPipeline })
+    for (VkPipeline* Pipeline : { &SurfacePipeline, &SurfaceDepthPipeline, &SurfaceGhostPipeline, &EdgePipeline, &EdgeIdentityPipeline, &EdgeOccludedPipeline, &EdgeOccludedIdentityPipeline, &GridPipeline, &PlanePipeline, &GizmoPipeline })
     {
         if (*Pipeline) vkDestroyPipeline(Device->Device, *Pipeline, nullptr);
         *Pipeline = VK_NULL_HANDLE;
@@ -619,7 +633,7 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
     vkCmdSetScissor(Commands, 0, 1, &Scissor);
     vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
 
-    // ② surfaces, then edges (depth-biased toward the eye), then the grid behind both (x-ray: see below)
+    // ② surfaces, the grid and image planes behind them, then the edges pulled toward the eye (x-ray: see below)
     SolidArcProjectionBlock Projection;
     Narrow(Frame.ClipFromWorld, Projection.ClipFromWorld);
     Narrow(Frame.Right, Projection.ViewRight, Frame.OrthographicEnabled ? 1.0f : 0.0f);
@@ -628,7 +642,7 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
     Projection.DisplayStroke[0] = float(Colour.Width);
     Projection.DisplayStroke[1] = float(Colour.Height);
     Projection.DisplayStroke[2] = Style.EdgeStroke;
-    Projection.DisplayStroke[3] = Style.EdgeDepthBias;
+    Projection.DisplayStroke[3] = Style.EdgeDepthMargin;
     // 📝 Section block (binding 2): (n, w) and (eye, enabled); written through the persistent mapping like the states.
     if (SectionBuffer.Mapped)
     {
@@ -649,15 +663,19 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
         vkCmdDraw(Commands, CornerCount, 1, 0, 0);
         vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, PipelineLayout, 0, 1, &BufferSet, 0, nullptr);
     };
-    const auto DrawEdges = [&](VkPipeline Pipeline, float DepthBias)
+    // 📝 Each stroke set is drawn twice: the soft colour fringe, then the pick codes of the cores (same quads and depth).
+    const auto DrawEdges = [&](VkPipeline Pipeline, VkPipeline CodesPipeline, float DepthMargin)
     {
         if (!Style.EdgesEnabled || !SegmentCount) return;
         SolidArcProjectionBlock Stroke = Projection;
-        Stroke.DisplayStroke[3] = DepthBias;
-        vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, Pipeline);
+        Stroke.DisplayStroke[3] = DepthMargin;
         vkCmdPushConstants(Commands, PipelineLayout, PushStages, 0, sizeof(Stroke), &Stroke);
         vkCmdBindVertexBuffers(Commands, 0, 1, &SegmentBuffer.Buffer, &Origin);
-        vkCmdDraw(Commands, 6, SegmentCount, 0, 0);
+        for (VkPipeline Each : { Pipeline, CodesPipeline })
+        {
+            vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_GRAPHICS, Each);
+            vkCmdDraw(Commands, 6, SegmentCount, 0, 0);
+        }
     };
     const auto DrawPlanes = [&]()
     {
@@ -712,8 +730,8 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
         DrawGrid();
         DrawSurfaces(SurfaceDepthPipeline);
         DrawSurfaces(SurfaceGhostPipeline);
-        DrawEdges(EdgeOccludedPipeline, -float(OccludedMarginPixels * Frame.WorldPerPixel));  // < 0: world margin [len]
-        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
+        DrawEdges(EdgeOccludedPipeline, EdgeOccludedIdentityPipeline, -float(OccludedMarginPixels * Frame.WorldPerPixel));  // < 0: world margin [len]
+        DrawEdges(EdgePipeline, EdgeIdentityPipeline, Style.EdgeDepthMargin);
     }
     else if (Style.SectionEnabled)
     {
@@ -721,14 +739,16 @@ void SolidArcRasterization::Record(VkCommandBuffer Commands, const OrbitCameraFr
         DrawPlanes();
         DrawGrid();
         DrawSurfaces(SurfacePipeline);
-        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
+        DrawEdges(EdgePipeline, EdgeIdentityPipeline, Style.EdgeDepthMargin);
     }
     else
     {
+        // 📝 Grid and image planes before the strokes: the strokes write no depth, so their fringe beyond a silhouette
+        //    would otherwise be painted over by the grid drawn after them.
         DrawSurfaces(SurfacePipeline);
-        DrawEdges(EdgePipeline, Style.EdgeDepthBias);
         DrawPlanes();
         DrawGrid();
+        DrawEdges(EdgePipeline, EdgeIdentityPipeline, Style.EdgeDepthMargin);
     }
     // ②′ gizmo on a cleared depth (handles occlude each other, never the model them)
     if (!Style.Gizmo.Vertices.empty() && GizmoPipeline)

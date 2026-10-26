@@ -3,7 +3,7 @@
  "sources": [
   {
    "file": "Shaders/SolidArcEdge.slang",
-   "sha256": "36a56ebc2065adc0590c35bcf046d68e89e3b75c7c250934fa52d0023d6c6fa5"
+   "sha256": "beff1502fe9cc39bbcc9d4b8b3138f32b21ea317232d35dd54ccfa8c12849aed"
   },
   {
    "file": "Shaders/SolidArcGizmo.slang",
@@ -2194,8 +2194,8 @@
   {
    "name": "SolidArcEdgeVertex",
    "entry": "main",
-   "words": 2749,
-   "sha256": "d4c308aff3e0ffca41ca9110af3af232430cadb257a7fbca647eab0a3ce9b246",
+   "words": 3060,
+   "sha256": "0e995126465421899660c9d931977501a23ecdfc0ed605770564355986f98600",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -3203,8 +3203,8 @@
   {
    "name": "SolidArcEdgeFragment",
    "entry": "main",
-   "words": 973,
-   "sha256": "8bdf40b16666083d738dd1b1865939e18e52dcb948ec815c1a9e2c832cb05c67",
+   "words": 1022,
+   "sha256": "a245f10e1806d88f5cfa8a26f3db07ea5980e6d7f7ac05da486a13895d8b4116",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -4156,8 +4156,8 @@
   {
    "name": "SolidArcEdgeOccludedFragment",
    "entry": "main",
-   "words": 1065,
-   "sha256": "7e32f41d2a4b7341f14a18290713b2a121ffe062e1b8dc4ea1f223d9025140fd",
+   "words": 1114,
+   "sha256": "4c812999d6299908e71f7a1acbb96d31cbbac88af1b6341e52935a67ff11cc9c",
    "reflection": {
     "version": "1.1",
     "parameters": [
@@ -4886,6 +4886,959 @@
     "entryPoints": [
      {
       "name": "SolidArcEdgeOccludedFragment",
+      "stage": "fragment",
+      "scope": {
+       "kind": "none",
+       "parameters": [
+        {
+         "name": "Pixel",
+         "stage": "fragment",
+         "binding": {
+          "kind": "varyingInput",
+          "index": 0,
+          "count": 2
+         },
+         "type": {
+          "kind": "struct",
+          "name": "EdgePixel",
+          "fields": [
+           {
+            "name": "Position",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": []
+            },
+            "semanticName": "SV_POSITION"
+           },
+           {
+            "name": "Distance",
+            "type": {
+             "kind": "scalar",
+             "scalarType": "float32",
+             "sizes": [
+              {
+               "kind": "varyingInput",
+               "value": 1
+              }
+             ]
+            },
+            "stage": "fragment",
+            "binding": {
+             "kind": "varyingInput",
+             "index": 0
+            },
+            "semanticName": "TEXCOORD"
+           },
+           {
+            "name": "Edge",
+            "type": {
+             "kind": "scalar",
+             "scalarType": "uint32",
+             "sizes": [
+              {
+               "kind": "varyingInput",
+               "value": 1
+              }
+             ]
+            },
+            "stage": "fragment",
+            "binding": {
+             "kind": "varyingInput",
+             "index": 1
+            },
+            "semanticName": "BLENDINDICES"
+           }
+          ],
+          "sizes": [
+           {
+            "kind": "varyingInput",
+            "value": 2
+           }
+          ]
+         }
+        }
+       ]
+      },
+      "parameters": [
+       {
+        "name": "Pixel",
+        "stage": "fragment",
+        "binding": {
+         "kind": "varyingInput",
+         "index": 0,
+         "count": 2
+        },
+        "type": {
+         "kind": "struct",
+         "name": "EdgePixel",
+         "fields": [
+          {
+           "name": "Position",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": []
+           },
+           "semanticName": "SV_POSITION"
+          },
+          {
+           "name": "Distance",
+           "type": {
+            "kind": "scalar",
+            "scalarType": "float32",
+            "sizes": [
+             {
+              "kind": "varyingInput",
+              "value": 1
+             }
+            ]
+           },
+           "stage": "fragment",
+           "binding": {
+            "kind": "varyingInput",
+            "index": 0
+           },
+           "semanticName": "TEXCOORD"
+          },
+          {
+           "name": "Edge",
+           "type": {
+            "kind": "scalar",
+            "scalarType": "uint32",
+            "sizes": [
+             {
+              "kind": "varyingInput",
+              "value": 1
+             }
+            ]
+           },
+           "stage": "fragment",
+           "binding": {
+            "kind": "varyingInput",
+            "index": 1
+           },
+           "semanticName": "BLENDINDICES"
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "varyingInput",
+           "value": 2
+          }
+         ]
+        }
+       }
+      ],
+      "result": {
+       "stage": "fragment",
+       "binding": {
+        "kind": "varyingOutput",
+        "index": 0,
+        "count": 2
+       },
+       "type": {
+        "kind": "struct",
+        "name": "EdgeTargets",
+        "fields": [
+         {
+          "name": "Colour",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "varyingOutput",
+             "value": 1
+            }
+           ]
+          },
+          "stage": "fragment",
+          "binding": {
+           "kind": "varyingOutput",
+           "index": 0
+          },
+          "semanticName": "SV_TARGET"
+         },
+         {
+          "name": "Identity",
+          "type": {
+           "kind": "scalar",
+           "scalarType": "uint32",
+           "sizes": [
+            {
+             "kind": "varyingOutput",
+             "value": 1
+            }
+           ]
+          },
+          "stage": "fragment",
+          "binding": {
+           "kind": "varyingOutput",
+           "index": 1
+          },
+          "semanticName": "SV_TARGET",
+          "semanticIndex": 1
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "varyingOutput",
+          "value": 2
+         }
+        ]
+       }
+      }
+     }
+    ],
+    "bindlessSpaceIndex": 1
+   }
+  },
+  {
+   "name": "SolidArcEdgeIdentityFragment",
+   "entry": "main",
+   "words": 914,
+   "sha256": "fcbf44f95a988d624e2df9a4e2fa1f83f4b6b247fe67126b5d6897044a96da15",
+   "reflection": {
+    "version": "1.1",
+    "parameters": [
+     {
+      "name": "Projection",
+      "binding": {
+       "kind": "pushConstantBuffer",
+       "index": 0
+      },
+      "type": {
+       "kind": "constantBuffer",
+       "elementType": {
+        "kind": "struct",
+        "name": "SolidArcProjection",
+        "fields": [
+         {
+          "name": "ClipFromWorld",
+          "type": {
+           "kind": "matrix",
+           "rowCount": 4,
+           "columnCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 64,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 0,
+           "size": 64,
+           "elementStride": 0
+          }
+         },
+         {
+          "name": "ViewRight",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 64,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "ViewUp",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 80,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "ViewForward",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 96,
+           "size": 16,
+           "elementStride": 4
+          }
+         },
+         {
+          "name": "DisplayStroke",
+          "type": {
+           "kind": "vector",
+           "elementCount": 4,
+           "elementType": {
+            "kind": "scalar",
+            "scalarType": "float32"
+           },
+           "sizes": [
+            {
+             "kind": "uniform",
+             "value": 16,
+             "alignment": 16
+            }
+           ]
+          },
+          "binding": {
+           "kind": "uniform",
+           "offset": 112,
+           "size": 16,
+           "elementStride": 4
+          }
+         }
+        ],
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 128,
+          "alignment": 16
+         }
+        ]
+       },
+       "containerVarLayout": {
+        "binding": {
+         "kind": "pushConstantBuffer",
+         "index": 0
+        }
+       },
+       "elementVarLayout": {
+        "type": {
+         "kind": "struct",
+         "name": "SolidArcProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "ViewRight",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ViewUp",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ViewForward",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "DisplayStroke",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "binding": {
+         "kind": "uniform",
+         "offset": 0,
+         "size": 128,
+         "elementStride": 0
+        }
+       },
+       "sizes": [
+        {
+         "kind": "pushConstantBuffer",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "EdgeStates",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 1
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "scalar",
+        "scalarType": "uint32",
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 4,
+          "alignment": 4
+         }
+        ]
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     },
+     {
+      "name": "Section",
+      "binding": {
+       "kind": "descriptorTableSlot",
+       "index": 2
+      },
+      "type": {
+       "kind": "resource",
+       "baseShape": "structuredBuffer",
+       "resultType": {
+        "kind": "vector",
+        "elementCount": 4,
+        "elementType": {
+         "kind": "scalar",
+         "scalarType": "float32"
+        },
+        "sizes": [
+         {
+          "kind": "uniform",
+          "value": 16,
+          "alignment": 16
+         }
+        ]
+       },
+       "sizes": [
+        {
+         "kind": "descriptorTableSlot",
+         "value": 1
+        }
+       ]
+      }
+     }
+    ],
+    "globalScope": {
+     "kind": "none",
+     "parameters": [
+      {
+       "name": "Projection",
+       "binding": {
+        "kind": "pushConstantBuffer",
+        "index": 0
+       },
+       "type": {
+        "kind": "constantBuffer",
+        "elementType": {
+         "kind": "struct",
+         "name": "SolidArcProjection",
+         "fields": [
+          {
+           "name": "ClipFromWorld",
+           "type": {
+            "kind": "matrix",
+            "rowCount": 4,
+            "columnCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 64,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 0,
+            "size": 64,
+            "elementStride": 0
+           }
+          },
+          {
+           "name": "ViewRight",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 64,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ViewUp",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 80,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "ViewForward",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 96,
+            "size": 16,
+            "elementStride": 4
+           }
+          },
+          {
+           "name": "DisplayStroke",
+           "type": {
+            "kind": "vector",
+            "elementCount": 4,
+            "elementType": {
+             "kind": "scalar",
+             "scalarType": "float32"
+            },
+            "sizes": [
+             {
+              "kind": "uniform",
+              "value": 16,
+              "alignment": 16
+             }
+            ]
+           },
+           "binding": {
+            "kind": "uniform",
+            "offset": 112,
+            "size": 16,
+            "elementStride": 4
+           }
+          }
+         ],
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 128,
+           "alignment": 16
+          }
+         ]
+        },
+        "containerVarLayout": {
+         "binding": {
+          "kind": "pushConstantBuffer",
+          "index": 0
+         }
+        },
+        "elementVarLayout": {
+         "type": {
+          "kind": "struct",
+          "name": "SolidArcProjection",
+          "fields": [
+           {
+            "name": "ClipFromWorld",
+            "type": {
+             "kind": "matrix",
+             "rowCount": 4,
+             "columnCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 64,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 0,
+             "size": 64,
+             "elementStride": 0
+            }
+           },
+           {
+            "name": "ViewRight",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 64,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "ViewUp",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 80,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "ViewForward",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 96,
+             "size": 16,
+             "elementStride": 4
+            }
+           },
+           {
+            "name": "DisplayStroke",
+            "type": {
+             "kind": "vector",
+             "elementCount": 4,
+             "elementType": {
+              "kind": "scalar",
+              "scalarType": "float32"
+             },
+             "sizes": [
+              {
+               "kind": "uniform",
+               "value": 16,
+               "alignment": 16
+              }
+             ]
+            },
+            "binding": {
+             "kind": "uniform",
+             "offset": 112,
+             "size": 16,
+             "elementStride": 4
+            }
+           }
+          ],
+          "sizes": [
+           {
+            "kind": "uniform",
+            "value": 128,
+            "alignment": 16
+           }
+          ]
+         },
+         "binding": {
+          "kind": "uniform",
+          "offset": 0,
+          "size": 128,
+          "elementStride": 0
+         }
+        },
+        "sizes": [
+         {
+          "kind": "pushConstantBuffer",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "EdgeStates",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 1
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "scalar",
+         "scalarType": "uint32",
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 4,
+           "alignment": 4
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      },
+      {
+       "name": "Section",
+       "binding": {
+        "kind": "descriptorTableSlot",
+        "index": 2
+       },
+       "type": {
+        "kind": "resource",
+        "baseShape": "structuredBuffer",
+        "resultType": {
+         "kind": "vector",
+         "elementCount": 4,
+         "elementType": {
+          "kind": "scalar",
+          "scalarType": "float32"
+         },
+         "sizes": [
+          {
+           "kind": "uniform",
+           "value": 16,
+           "alignment": 16
+          }
+         ]
+        },
+        "sizes": [
+         {
+          "kind": "descriptorTableSlot",
+          "value": 1
+         }
+        ]
+       }
+      }
+     ]
+    },
+    "entryPoints": [
+     {
+      "name": "SolidArcEdgeIdentityFragment",
       "stage": "fragment",
       "scope": {
        "kind": "none",

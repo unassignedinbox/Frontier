@@ -83,7 +83,7 @@ struct SolidArcViewportStyle
 {
     float Background[4]   = { 0.090f, 0.106f, 0.137f, 1.0f };                                // [0-1] - SolidArc viewport #171b23
     float EdgeStroke      = 1.5f;                                                            // [px]  - Edge stroke width
-    float EdgeDepthBias   = 1.5e-5f;                                                         // [-]   - Clip-depth pull toward the eye
+    float EdgeDepthMargin = 3.0f;                                                            // [px]  - Edge pull toward the eye (world length of this many pixels)
     bool  GridEnabled     = true;                                                            // [-]   - Drawing-plane grid
     int   GridPlane       = 0;                                                               // [-]   - 0 XY (Top/Bottom), 1 XZ (Front/Back), 2 YZ (Right/Left)
     bool  EdgesEnabled    = true;                                                            // [-]   - B-rep edges
@@ -184,7 +184,9 @@ private:
     VkPipeline            SurfaceDepthPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ①: depth + identity, no colour
     VkPipeline            SurfaceGhostPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ②: front fragments blended at α
     VkPipeline            EdgeOccludedPipeline = VK_NULL_HANDLE;                             // [-] - X-ray ③: depth GREATER, pickable
-    VkPipeline            EdgePipeline     = VK_NULL_HANDLE;
+    VkPipeline            EdgePipeline     = VK_NULL_HANDLE;                                 // [-] - Soft strokes, colour only
+    VkPipeline            EdgeIdentityPipeline = VK_NULL_HANDLE;                             // [-] - Stroke cores, identity only
+    VkPipeline            EdgeOccludedIdentityPipeline = VK_NULL_HANDLE;                     // [-] - X-ray ③′: hidden cores, identity only
     VkPipeline            GridPipeline     = VK_NULL_HANDLE;
     VkPipeline            GizmoPipeline    = VK_NULL_HANDLE;                                 // [-] - Gizmo handles (blended, own depth)
     VkDescriptorSetLayout PictureLayout    = VK_NULL_HANDLE;
