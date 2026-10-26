@@ -587,7 +587,56 @@ void WriteBevelText(SolidArcBevelSession& Bevel)
         Request.EndSize           = Bevel.EndSize;
         Request.ReversedCondition = Bevel.ReversedCondition;
     }
+    for (size_t Index = 1; Index < Bevel.Handles.size() && Index < Bevel.CornerSizes.size(); ++Index)
+        if (Bevel.CornerSizes[Index] > 0.0) Request.VertexSizes.push_back({ Bevel.Handles[Index].Vertex, Bevel.CornerSizes[Index] });
     return Request;
+}
+
+// 📝 Handles: re-measured when the picked edges change (a corner keeps its size while its vertex stays picked).
+void RefreshBevelHandles(SolidArcWorkspaceState& State, bool ForceCondition)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    if (!Bevel.ActiveCondition || Bevel.Verb != SolidArcSessionVerb::Blend)
+    {
+        Bevel.Handles.clear();
+        Bevel.CornerSizes.clear();
+        return;
+    }
+    if (!ForceCondition && Bevel.HandleEdges == State.Document.Selection.Edges) return;
+    std::map<std::string, double> Kept;
+    for (size_t Index = 1; Index < Bevel.Handles.size() && Index < Bevel.CornerSizes.size(); ++Index)
+        if (Bevel.CornerSizes[Index] > 0.0) Kept[Bevel.Handles[Index].Vertex] = Bevel.CornerSizes[Index];
+    Bevel.HandleEdges = State.Document.Selection.Edges;
+    Bevel.Handles     = MeasureSolidArcBlendHandles(State.Document, Bevel.HandleEdges);
+    Bevel.CornerSizes.assign(Bevel.Handles.size(), 0.0);
+    for (size_t Index = 1; Index < Bevel.Handles.size(); ++Index)
+        if (const auto Found = Kept.find(Bevel.Handles[Index].Vertex); Found != Kept.end()) Bevel.CornerSizes[Index] = Found->second;
+    Bevel.HoverHandle   = -1;
+    Bevel.DragHandle    = -1;
+    Bevel.GoodCondition = false;
+}
+
+// Size a handle stands for: its corner size, or the uniform size.
+[[nodiscard]] double BevelHandleSize(const SolidArcBevelSession& Bevel, int Index)
+{
+    return Index > 0 && Index < int(Bevel.CornerSizes.size()) && Bevel.CornerSizes[Index] > 0.0 ? Bevel.CornerSizes[Index] : Bevel.Size;
+}
+
+constexpr float BevelHandleLead  = 26.0f;                                                    // [px] - Handle tip beyond the size along its bisector
+constexpr float BevelHandleReach = 11.0f;                                                    // [px] - Pointer distance that grabs a handle
+
+// Handle tip: the corner / mid-edge point moved out along the bisector by the size plus a lead that keeps it off the edge.
+[[nodiscard]] Vector3 BevelHandleTip(const SolidArcBevelSession& Bevel, int Index, double Lead)
+{
+    const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Index)];
+    return Handle.Position + Handle.Direction * (BevelHandleSize(Bevel, Index) + Lead);
+}
+
+[[nodiscard]] int CountBevelCorners(const SolidArcBevelSession& Bevel)
+{
+    int Count = 0;
+    for (size_t Index = 1; Index < Bevel.CornerSizes.size(); ++Index) Count += Bevel.CornerSizes[Index] > 0.0 ? 1 : 0;
+    return Count;
 }
 
 // V: variable size on / off; the far size starts at half the current size so the taper is visible at once (a typed far
@@ -640,8 +689,15 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
     State.Bevel.Verb            = SolidArcSessionVerb::Blend;
     State.Bevel.Shape           = Shape;
     State.Bevel.Size            = Previous > 0.0 ? Previous : 0.25;
+    // 💡 The start size fits the picked edges: the remembered size (or 0.25) when it is under 35 % of what the edges
+    //    allow, else a round 15 % — so the first preview shows at once instead of a refusal of a size too large.
+    State.Bevel.Fit = MeasureSolidArcBlendFit(State.Document, State.Document.Selection.Edges);
+    const bool Refitted = State.Bevel.Fit.Span > 0.0 && State.Bevel.Size > 0.35 * State.Bevel.Fit.Span;
+    if (Refitted) State.Bevel.Size = State.Bevel.Fit.Fitted;
+    RefreshBevelHandles(State, true);
     WriteBevelText(State.Bevel);
-    Announce(State, "Fillet (B): move horizontally · D fillet · C chamfer · V variable size · F flip its anchor · click edits the edges · Enter / right-click applies · Esc aborts");
+    Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts"
+                    + (Refitted ? " · starts at " + FormatLength(State.Bevel.Size) + " m to fit the edges" : std::string{}));
 }
 
 // Plasticity E: extrude the selected faces; the pointer sets the signed distance like the fillet size.
@@ -692,7 +748,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     if (!Bevel.ActiveCondition) return;
     if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
         Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
-        Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth) return;
+        Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth && Bevel.StagedCorners == Bevel.CornerSizes) return;
     // 💡 A slow preview (a blend along a cylinder–cylinder junction takes seconds) is rebuilt once the pointer rests
     //    (one size held for 0.15 s and 6 frames: a slow frame alone is no rest), not on every pixel of mouse adjust: the
     //    last preview stays up meanwhile. A typed (pinned) size, a new shape, verb or Boolean, and every fast preview
@@ -701,7 +757,8 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     const bool SizeOnly = Bevel.Preview && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb && Bevel.StagedVariable == Bevel.VariableEnabled &&
                           Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition && Bevel.StagedCombination == Bevel.Combination &&
                           Bevel.StagedDepth == Bevel.Depth;
-    if (SizeOnly && !Bevel.PinnedCondition && Bevel.StageMs > 40.0)
+    const bool Dragging = Bevel.DragHandle >= 0 || Bevel.PointerDragCondition;               // A handle / empty-space drag is mouse adjust too
+    if (SizeOnly && (!Bevel.PinnedCondition || Dragging) && Bevel.StageMs > 40.0)
     {
         if (Bevel.PendingSize != Bevel.Size) { Bevel.PendingSize = Bevel.Size; Bevel.PendingSince = Now; Bevel.PendingFrame = State.FrameNumber; return; }
         if (State.FrameNumber < Bevel.PendingFrame + 6 || Now - Bevel.PendingSince < 0.15) return;
@@ -714,6 +771,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     Bevel.StagedVariable = Bevel.VariableEnabled;
     Bevel.StagedEndSize  = Bevel.EndSize;
     Bevel.StagedReversed = Bevel.ReversedCondition;
+    Bevel.StagedCorners  = Bevel.CornerSizes;
     static const char* Verbs[] = { "Blend", "Extrude", "Profile", "Inset", "Corner" };
     FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 4)] + " · size " + TraceNumber(Bevel.Size));
     SolidArcPhaseClock StageClock(State.Profile, "bevel preview · stage");
@@ -727,6 +785,12 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     {
         Bevel.PreviewScene = BuildSolidArcScene(*Bevel.Preview);
         Bevel.Refusal      = Legible(Bevel.PreviewScene.Refusal);
+        if (Bevel.Refusal.empty())
+        {
+            Bevel.GoodScene     = Bevel.PreviewScene;
+            Bevel.GoodSize      = Bevel.Size;
+            Bevel.GoodCondition = true;
+        }
     }
     else
     {
@@ -4796,7 +4860,11 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     const bool Through = Knife.ThroughCondition;
     SolidArcInsertLibrary Library   = std::move(Knife.Library);
     const bool            Assembled = Knife.LibraryCondition;
+    const SolidArcKnifeMode   PreferredMode  = Knife.PreferredMode;
+    const SolidArcDrawingKind PreferredShape = Knife.PreferredShape;
     Knife                  = {};
+    Knife.PreferredMode    = PreferredMode;
+    Knife.PreferredShape   = PreferredShape;
     Knife.Commits          = Commits;
     Knife.Insert           = Insert;
     Knife.ThroughCondition = Through;
@@ -4821,8 +4889,40 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
         ChooseKnifeMode(State, SolidArcKnifeMode::Sketch);
         return;
     }
-    DrawKnifeShape(State, SolidArcDrawingKind::Circle);
-    Announce(State, "Knife · draw a circle on a face (card: Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels");
+    if (Knife.PreferredMode == SolidArcKnifeMode::Insert) { ChooseKnifeMode(State, SolidArcKnifeMode::Insert); return; }
+    if (Knife.PreferredMode == SolidArcKnifeMode::Object) { ChooseKnifeMode(State, SolidArcKnifeMode::Object); return; }
+    DrawKnifeShape(State, Knife.PreferredShape);
+    Announce(State, std::string("Knife · draw a ") + SolidArcDrawingLabel(Knife.PreferredShape) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line) · then move sideways for the depth · Tab: Insert library · Esc cancels");
+}
+
+// Toolbar tool menu: remembers the cutter and opens (or switches) the knife on it.
+void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, SolidArcDrawingKind Shape, int Insert)
+{
+    SolidArcKnifeSession& Knife = State.Knife;
+    Knife.PreferredMode  = Mode;
+    Knife.PreferredShape = Shape;
+    if (Insert >= 0) Knife.Insert = Insert;
+    if (!Knife.ActiveCondition) OpenKnifeSession(State);
+    if (!Knife.ActiveCondition) return;
+    if (Mode == SolidArcKnifeMode::Sketch)
+    {
+        if (!(Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.Kind == Shape && State.Drawing.Points.empty())) DrawKnifeShape(State, Shape);
+        Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face, then move sideways for the depth (T through)");
+        return;
+    }
+    if (Knife.Mode != Mode || Mode == SolidArcKnifeMode::Insert) ChooseKnifeMode(State, Mode);
+}
+
+// Toolbar caption of the cutter the knife uses (or opens with).
+[[nodiscard]] std::string KnifeToolLabel(SolidArcWorkspaceState& State)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    const SolidArcKnifeMode Mode = Knife.ActiveCondition ? Knife.Mode : Knife.PreferredMode;
+    if (Mode == SolidArcKnifeMode::Object) return "Objects";
+    if (Mode == SolidArcKnifeMode::Insert)
+        return Knife.Insert >= 0 && Knife.Insert < int(Knife.Library.Inserts.size()) ? Knife.Library.Inserts[size_t(Knife.Insert)].Name : std::string("Insert");
+    const SolidArcDrawingKind Shape = Knife.ActiveCondition && Knife.DrawPendingCondition && State.Drawing.ActiveCondition ? State.Drawing.Kind : Knife.PreferredShape;
+    return SolidArcDrawingLabel(Shape);
 }
 
 void CloseKnifeSession(SolidArcWorkspaceState& State, const std::string& Message)
@@ -4983,6 +5083,96 @@ void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Orb
     }
     ImVec2 Centre;
     if (ProjectWorldPoint(State, Frame, Knife.Spot.Origin, Centre)) Canvas->AddCircle(Centre, 4.0f, Colour, 16, 1.5f);
+}
+
+// 📝 Bevel handles under the pointer: a press on one starts its drag — the size follows the pointer along the handle's
+//    bisector (the closest point of the pointer ray to that line), snapped to 1 mm (Ctrl free, Shift fine). The
+//    uniform handle sets the size; a corner handle gives its corner its own size. True while a handle owns the pointer.
+bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    Bevel.HoverHandle = -1;
+    if (Bevel.Handles.empty()) { Bevel.DragHandle = -1; return false; }
+    const ImGuiIO& Io   = ImGui::GetIO();
+    const double   Lead = BevelHandleLead * Frame.WorldPerPixel;
+    const OrbitRay Ray  = CastOrbitRay(Frame, Local.x, Local.y);
+    if (Bevel.DragHandle >= 0 && Bevel.DragHandle < int(Bevel.Handles.size()))
+    {
+        const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Bevel.DragHandle)];
+        if (const std::optional<double> Parameter = MeasureAxisParameter(Ray, Handle.Position, Handle.Direction))
+        {
+            double Size = Bevel.DragSize + (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);
+            Size = std::max(1.0e-3, Io.KeyCtrl ? std::round(Size * 1.0e6) * 1.0e-6 : std::round(Size * 1.0e3) * 1.0e-3);
+            if (Bevel.DragHandle == 0) Bevel.Size = Size;
+            else Bevel.CornerSizes[size_t(Bevel.DragHandle)] = Size;
+            WriteBevelText(Bevel);
+            if (Bevel.DragHandle > 0) std::snprintf(Bevel.CornerText.data(), Bevel.CornerText.size(), "%.4g", Size);
+        }
+        Bevel.HoverHandle = Bevel.DragHandle;
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+        {
+            Announce(State, Bevel.DragHandle == 0 ? Compose("Bevel size %s m (handle)", FormatLength(Bevel.Size).c_str())
+                                                  : Compose("Corner %d: %s m (variable · %d corner size(s))", Bevel.DragHandle, FormatLength(Bevel.CornerSizes[size_t(Bevel.DragHandle)]).c_str(), CountBevelCorners(Bevel)));
+            Bevel.DragHandle = -1;
+        }
+        return true;
+    }
+    Bevel.DragHandle = -1;
+    if (!PointerCondition) return false;
+    const ImVec2 Pointer(State.ViewportRect[0] + Local.x, State.ViewportRect[1] + Local.y);
+    float Nearest = BevelHandleReach;
+    for (int Index = int(Bevel.Handles.size()) - 1; Index >= 0; --Index)                     // Corners first, the uniform handle wins a tie
+    {
+        ImVec2 Tip;
+        if (!ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) continue;
+        const float Distance = std::hypot(Tip.x - Pointer.x, Tip.y - Pointer.y);
+        if (Distance <= Nearest) { Nearest = Distance; Bevel.HoverHandle = Index; }
+    }
+    if (Bevel.HoverHandle >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Bevel.HoverHandle)];
+        Bevel.DragHandle      = Bevel.HoverHandle;
+        Bevel.DragOrigin      = MeasureAxisParameter(Ray, Handle.Position, Handle.Direction).value_or(0.0);
+        Bevel.DragSize        = BevelHandleSize(Bevel, Bevel.HoverHandle);
+        Bevel.PinnedCondition = true;                                                        // The handles drive the size from now on
+        if (Bevel.DragHandle > 0)
+        {
+            Bevel.VariableEnabled = false;                                                   // Corner sizes replace the V taper
+            Bevel.FocusCorner     = Bevel.DragHandle;
+        }
+    }
+    return Bevel.HoverHandle >= 0;
+}
+
+// Handles: a line from the corner / mid-edge point to the tip; the uniform tip a cyan ring, corner tips diamonds (amber
+// once they carry their own size). The size shows beside a hovered, dragged or sized handle. Tips register as
+// widgets BevelHandle0 (uniform), BevelHandle1 … for scripts.
+void DrawBevelHandles(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    const SolidArcBevelSession& Bevel = State.Bevel;
+    if (!Bevel.ActiveCondition || Bevel.Verb != SolidArcSessionVerb::Blend || Bevel.Handles.empty()) return;
+    const double Lead = BevelHandleLead * Frame.WorldPerPixel;
+    for (int Index = int(Bevel.Handles.size()) - 1; Index >= 0; --Index)
+    {
+        ImVec2 Base, Tip;
+        if (!ProjectWorldPoint(State, Frame, Bevel.Handles[size_t(Index)].Position, Base) || !ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) continue;
+        const bool  Lit    = Index == Bevel.HoverHandle || Index == Bevel.DragHandle;
+        const bool  Sized  = Index > 0 && Bevel.CornerSizes[size_t(Index)] > 0.0;
+        const ImU32 Colour = Lit ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Index == 0 ? IM_COL32(0x4d, 0xd2, 0xff, 0xff) : Sized ? IM_COL32(0xff, 0xc8, 0x3d, 0xff) : IM_COL32(0xc8, 0xc8, 0xc8, 0xe0);
+        Canvas->AddLine(Base, Tip, Colour, 1.5f);
+        if (Index == 0)
+        {
+            Canvas->AddCircleFilled(Tip, 5.5f, Colour, 20);
+            Canvas->AddCircle(Tip, 9.0f, Colour, 24, 1.5f);
+        }
+        else
+        {
+            const float Half = Lit ? 6.5f : 5.0f;
+            Canvas->AddQuadFilled(ImVec2(Tip.x, Tip.y - Half), ImVec2(Tip.x + Half, Tip.y), ImVec2(Tip.x, Tip.y + Half), ImVec2(Tip.x - Half, Tip.y), Colour);
+        }
+        if (Lit || Sized) Canvas->AddText(ImVec2(Tip.x + 12.0f, Tip.y - 8.0f), Colour, (FormatLength(BevelHandleSize(Bevel, Index)) + " m").c_str());
+        State.Widgets.Record("BevelHandle" + std::to_string(Index), ImVec2(Tip.x - 4.0f, Tip.y - 4.0f), ImVec2(Tip.x + 4.0f, Tip.y + 4.0f));
+    }
 }
 
 [[nodiscard]] std::string KnifeReadout(const SolidArcWorkspaceState& State)
@@ -7872,9 +8062,9 @@ void SelectChevron(SolidArcSheet& Sheet, float CentreX, float CentreY, ColorQuad
 }
 
 // 📝 Popup list under a select (#121417, #ffffff22 hairline, radius 12): one Selectable per entry, keyed for the scripts.
-bool BeginSelectList(const char* Name, ImVec2 Anchor)
+bool BeginSelectList(const char* Name, ImVec2 Anchor, ImVec2 Pivot = ImVec2(0.0f, 0.0f))
 {
-    ImGui::SetNextWindowPos(Anchor);
+    ImGui::SetNextWindowPos(Anchor, ImGuiCond_Always, Pivot);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
     ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 2));
@@ -8218,7 +8408,10 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     Probe.Begin();
     float Widths[5], Total = 2.0f + 10.0f + 4.0f * 4.0f + 1.0f + 6.0f + 4.0f;
     for (int Index = 0; Index < 5; ++Index) Total += Widths[Index] = 24.0f + 17.0f + (*Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
+    const std::string ToolCaption = KnifeToolLabel(State);
+    const float       ToolWidth   = 10.0f + std::max(Probe.Measure(ToolCaption.c_str(), 13.0f), 44.0f) + 22.0f;   // [px] - Knife tool menu (caption + chevron)
     const float Labelled = Total - Widths[4] - 4.0f;                                       // [px] - Labelled tools stay centred; the knife icon extends right
+    Total += ToolWidth + 2.0f;
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
     const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Labelled)), Image.y + Extent.y - 52.0f - Height);
@@ -8255,6 +8448,46 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         {
             Sheet.Surface().FillRectangle(Spanning(Cursor + 3.0f, Centre - 11.0f, 1.0f, 22.0f), SolidArcInk(0x3a3a3a));
             Cursor += 3.0f + 1.0f + 3.0f + 4.0f;
+        }
+    }
+
+    // Knife tool menu: the cutter the knife draws or places (sketch shapes, the boolean library, picked objects).
+    {
+        const bool          Enabled = Tools[4].Enabled;
+        const PlaneExtent   Box     = Spanning(Cursor - 2.0f, Centre - 0.5f * ButtonHeight, ToolWidth, ButtonHeight);
+        const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, "SketchKnifeTool", Box, Enabled);
+        if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
+        const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Press.HoveredCondition || State.Knife.ActiveCondition ? 0xffffff : 0xaaaaaa), Enabled ? 1.0f : 0.32f);
+        Sheet.Text(Box.MinimumX + 8.0f, Centre, 13.0f, Ink, ToolCaption.c_str());
+        SelectChevron(Sheet, Box.MaximumX - 12.0f, Centre, Ink);
+        if (Press.HoveredCondition) ImGui::SetTooltip("Knife cutter: sketch shape, boolean-library insert or picked objects");
+        if (Press.ClickedCondition)
+        {
+            EnsureKnifeLibrary(State);
+            ImGui::OpenPopup("KnifeToolMenu");
+        }
+        if (BeginSelectList("KnifeToolMenu", ImVec2(Box.MinimumX, Bar.MinimumY - 6.0f), ImVec2(0.0f, 1.0f)))
+        {
+            const SolidArcKnifeSession& Knife = State.Knife;
+            const SolidArcKnifeMode     Mode  = Knife.ActiveCondition ? Knife.Mode : Knife.PreferredMode;
+            ImGui::TextDisabled("Sketch cutter");
+            static const SolidArcDrawingKind Shapes[] = { SolidArcDrawingKind::Circle, SolidArcDrawingKind::Rectangle, SolidArcDrawingKind::Polygon, SolidArcDrawingKind::Slot,
+                                                          SolidArcDrawingKind::Line };
+            for (SolidArcDrawingKind Shape : Shapes)
+            {
+                const std::string Label = std::string(SolidArcDrawingLabel(Shape)) + "###KnifeTool" + SolidArcDrawingLabel(Shape);
+                if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Sketch && Knife.PreferredShape == Shape)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Shape, -1);
+            }
+            ImGui::TextDisabled("Boolean library");
+            for (size_t Index = 0; Index < Knife.Library.Inserts.size(); ++Index)
+            {
+                const std::string Label = Knife.Library.Inserts[Index].Name + "###KnifeToolInsert" + std::to_string(Index);
+                if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Insert && Knife.Insert == int(Index)))
+                    ChooseKnifeTool(State, SolidArcKnifeMode::Insert, Knife.PreferredShape, int(Index));
+            }
+            ImGui::TextDisabled("Objects");
+            if (SelectListEntry(State, "Picked bodies###KnifeToolObject", Mode == SolidArcKnifeMode::Object)) ChooseKnifeTool(State, SolidArcKnifeMode::Object, Knife.PreferredShape, -1);
+            EndSelectList();
         }
     }
     EndSheetWindow();
@@ -8660,13 +8893,39 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     }
     else if (State.Bevel.ActiveCondition)
     {
-        const bool Idle = !ImGui::IsAnyMouseDown();
-        if (Hovered && Idle && (!State.Bevel.PinnedCondition || (State.Bevel.Verb == SolidArcSessionVerb::Inset && State.Bevel.DepthEnabled)) && Io.MouseDelta.x != 0.0f)
-            AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
-        if (LeftClick && !OverCube)
+        SolidArcBevelSession& Bevel = State.Bevel;
+        RefreshBevelHandles(State, false);
+        const bool HandleOwned = DriveBevelHandles(State, Frame, Local, Hovered && !OverCube);
+        const bool Idle        = !ImGui::IsAnyMouseDown();
+        // 💡 Diagnosis (the bevel that "does not appear until dragged in and out"): the size only followed the pointer
+        //    with no button held, so a press-drag did nothing and its release could deselect the edge. Now a left drag
+        //    on empty space sizes it too, and a click away from an edge keeps the picked edges.
+        if (!HandleOwned && Hovered && !OverCube && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { Bevel.PointerDragCondition = false; Bevel.DragLast = Io.MousePos.x; }
+        if (!HandleOwned && ImGui::IsMouseDown(ImGuiMouseButton_Left) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance && Hovered)
         {
-            PickAtPointer(State, Local, PickIntentOf(Io));
-            State.Bevel.StagedSize = -1.0;                                                   // Selection changed: rebuild the preview
+            if (!Bevel.PointerDragCondition) { Bevel.PointerDragCondition = true; Bevel.PinnedCondition = false; }
+            if (Io.MousePos.x != Bevel.DragLast) AdjustBevelSize(State, (Io.MousePos.x - Bevel.DragLast) * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
+            Bevel.DragLast = Io.MousePos.x;
+        }
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) Bevel.PointerDragCondition = false;
+        if (!HandleOwned && Hovered && Idle && (!Bevel.PinnedCondition || (Bevel.Verb == SolidArcSessionVerb::Inset && Bevel.DepthEnabled)) && Io.MouseDelta.x != 0.0f)
+            AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
+        if (LeftClick && !OverCube && !HandleOwned)
+        {
+            bool EdgeCondition = Bevel.Verb != SolidArcSessionVerb::Blend || (State.HoverIdentity & IdentityEdgeBit) != 0;
+            if (!EdgeCondition)
+            {
+                const OrbitRay Ray = CastOrbitRay(Frame, Local.x, Local.y);
+                const std::optional<SolidArcPick> Nearby = PickSolidArcScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled, ActiveSectionClip(State));
+                EdgeCondition = Nearby && (Nearby->Identity & IdentityEdgeBit);
+            }
+            if (EdgeCondition)
+            {
+                PickAtPointer(State, Local, PickIntentOf(Io));
+                Bevel.StagedSize = -1.0;                                                     // Selection changed: rebuild the preview
+                RefreshBevelHandles(State, false);
+            }
+            else Announce(State, "Bevel: the edges stay picked (click an edge to add / remove it) · drag the handles or drag / move anywhere to size");
         }
         if (RightClick && !OverCube) ApplyBevelSession(State);
     }
@@ -8723,6 +8982,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawConstraintOverlay"); DrawConstraintOverlay(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSweepOutline"); DrawSweepOutline(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawKnifeGhost"); DrawKnifeGhost(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawBevelHandles"); DrawBevelHandles(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSectionOutline"); DrawSectionOutline(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawMeasureOverlay"); DrawMeasureOverlay(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawJointOverlay"); DrawJointOverlay(State, Canvas, Frame); }
@@ -8751,7 +9011,9 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                             : State.Bevel.Verb == SolidArcSessionVerb::Inset ? (State.Bevel.DepthEnabled ? "Inset · H depth · d" : "Inset · D distance · d")
                             : State.Bevel.Verb == SolidArcSessionVerb::Corner ? (State.Bevel.Shape == BlendProfile::Fillet ? "Sketch fillet r" : "Sketch chamfer d")
                             : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
-        const std::string Sizes = State.Bevel.VariableEnabled && State.Bevel.Verb == SolidArcSessionVerb::Blend
+        const int         Corners = CountBevelCorners(State.Bevel);
+        const std::string Sizes = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? FormatLength(State.Bevel.Size) + " · " + std::to_string(Corners) + " corner size(s)"
+                                : State.Bevel.VariableEnabled && State.Bevel.Verb == SolidArcSessionVerb::Blend
                                 ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
                                 : State.Bevel.Verb == SolidArcSessionVerb::Inset ? FormatLength(State.Bevel.Size) + " m · depth " + FormatLength(State.Bevel.Depth)
                                 : FormatLength(State.Bevel.Size);
@@ -8759,7 +9021,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                                   : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
         DrawStatusPill(Canvas, Below, Compose("%s %s m%s%s", Caption, Sizes.c_str(), Boolean.c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
-        if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal, RefusalColour);
+        if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal + (State.Bevel.GoodCondition ? " · showing " + FormatLength(State.Bevel.GoodSize) + " m" : std::string{}), RefusalColour);
     }
     if (State.Gizmo.DragCondition)
     {
@@ -9014,6 +9276,41 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
             ImGui::TextWrapped("%s m at each edge's %s corner → %s m at the other", FormatLength(Bevel.Size).c_str(), Bevel.ReversedCondition ? "end" : "start",
                                FormatLength(Bevel.EndSize).c_str());
             ImGui::PopStyleColor();
+        }
+    }
+    if (!Extrude && !Corner && Bevel.Handles.size() > 1)
+    {
+        // Handles: the ring sets the size, each diamond its corner's own size (variable); the last dragged corner can be typed.
+        const int Corners = CountBevelCorners(Bevel);
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        if (Corners == 0) ImGui::TextWrapped("Handles: drag the ring for the size, a diamond for that corner's own size (variable fillet / chamfer)");
+        else ImGui::TextWrapped("Variable: %d of %d corner(s) sized · the others follow %s m", Corners, int(Bevel.Handles.size()) - 1, FormatLength(Bevel.Size).c_str());
+        ImGui::PopStyleColor();
+        if (Bevel.FocusCorner > 0 && Bevel.FocusCorner < int(Bevel.CornerSizes.size()))
+        {
+            ImGui::SetNextItemWidth(110);
+            if (ImGui::InputText(Compose("Corner %d###BevelCornerSize", Bevel.FocusCorner).c_str(), Bevel.CornerText.data(), Bevel.CornerText.size(), ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                double Parsed = 0.0;
+                if (ParseSolidArcLength(Bevel.CornerText.data(), Parsed) && Parsed > 0.0)
+                {
+                    Bevel.CornerSizes[size_t(Bevel.FocusCorner)] = Parsed;
+                    Bevel.PinnedCondition = true;
+                    Announce(State, Compose("Corner %d: %s m", Bevel.FocusCorner, FormatLength(Parsed).c_str()));
+                }
+                else Announce(State, std::string("Unreadable corner size: ") + Bevel.CornerText.data());
+            }
+            RegisterWidget(State, "BevelCornerSize");
+        }
+        if (Corners > 0)
+        {
+            if (Bevel.FocusCorner > 0) ImGui::SameLine();
+            if (PressButton(State, "Even out###BevelCornersReset", ImVec2(0, 0)))
+            {
+                std::fill(Bevel.CornerSizes.begin(), Bevel.CornerSizes.end(), 0.0);
+                Bevel.FocusCorner = -1;
+                Announce(State, "Corner sizes cleared: one size again");
+            }
         }
     }
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
@@ -11046,6 +11343,7 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
 const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
+    if (State.Bevel.ActiveCondition && State.Bevel.GoodCondition && State.Bevel.Verb == SolidArcSessionVerb::Blend) return State.Bevel.GoodScene;   // Refused: the last size that worked
     if (State.Transform.ActiveCondition && (State.Transform.Preview || State.Transform.RigidCondition) && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
     if (State.Knife.ActiveCondition && State.Knife.Preview && State.Knife.Refusal.empty()) return State.Knife.PreviewScene;

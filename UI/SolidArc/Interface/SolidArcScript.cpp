@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <numbers>
@@ -691,6 +692,21 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-flipped") return Numeric(State.Bevel.ReversedCondition ? 1 : 0);
     if (Field == "bevel-preview-volume") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Volume : 0.0);
     if (Field == "bevel-refusal") { Text = State.Bevel.Refusal; Number = double(Text.size()); return true; }
+    if (Field == "bevel-handles") return Numeric(double(State.Bevel.Handles.size()));
+    if (Field == "bevel-corners")
+    {
+        int Count = 0;
+        for (size_t Index = 1; Index < State.Bevel.CornerSizes.size(); ++Index) Count += State.Bevel.CornerSizes[Index] > 0.0 ? 1 : 0;
+        return Numeric(Count);
+    }
+    if (Field.rfind("bevel-corner-", 0) == 0)
+    {
+        const size_t Index = size_t(std::atoi(Field.c_str() + 13));
+        return Numeric(Index < State.Bevel.CornerSizes.size() && State.Bevel.CornerSizes[Index] > 0.0 ? State.Bevel.CornerSizes[Index] : State.Bevel.Size);
+    }
+    if (Field == "bevel-span") return Numeric(State.Bevel.Fit.Span);
+    if (Field == "bevel-fitted") return Numeric(State.Bevel.Fit.Fitted);
+    if (Field == "bevel-showing") return Numeric(State.Bevel.GoodCondition ? State.Bevel.GoodSize : 0.0);
     if (Field == "preview-faces") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0);
     if (Field == "camera-yaw") return Numeric(State.Camera.Azimuth);
     if (Field == "camera-pitch") return Numeric(State.Camera.Elevation);

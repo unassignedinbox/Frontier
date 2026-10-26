@@ -132,6 +132,24 @@ struct SolidArcBevelSession
     uint64_t                          PendingFrame    = 0;                                   // [-]   - Frame number when PendingSize last changed
     bool                              DepthEnabled    = false;                               // [-]   - Inset: the pointer drives the depth (H) instead of the distance (D)
     SolidArcCornerRequest             Corner          = {};                                  // [-]   - Corner: the sketches / corner points (size and shape from the session)
+    // 📝 Handles (Plasticity's fillet gizmo): [0] the uniform handle drives Size; one per corner of the picked edges
+    //    gives that corner its own size (a variable blend). A handle drag pins the size (the free pointer stops).
+    std::vector<SolidArcBlendHandle>  Handles         = {};                                  // [-]   - Blend: [0] uniform, then corners
+    std::vector<double>               CornerSizes     = {};                                  // [len] - Per handle (0: follows Size; [0] unused)
+    std::vector<std::string>          HandleEdges     = {};                                  // [-]   - Edge picks the handles were measured for
+    std::vector<double>               StagedCorners   = {};                                  // [len] - CornerSizes the preview was built at
+    int                               HoverHandle     = -1;                                  // [idx] - Handle under the pointer
+    int                               DragHandle      = -1;                                  // [idx] - Handle being dragged
+    double                            DragOrigin      = 0.0;                                 // [len] - Axis parameter at the press
+    double                            DragSize        = 0.0;                                 // [len] - Handle size at the press
+    float                             DragLast        = 0.0f;                                // [px]  - Pointer x of the last empty-space drag frame
+    bool                              PointerDragCondition = false;                          // [-]   - A left drag on empty space drives the size
+    SolidArcBlendFit                  Fit             = {};                                  // [len] - What the picked edges allow (start size)
+    SolidArcScene                     GoodScene       = {};                                  // [-]   - Last accepted preview (shown under a refusal)
+    double                            GoodSize        = 0.0;                                 // [len] - Its size
+    bool                              GoodCondition   = false;                               // [-]   - GoodScene holds a preview
+    int                               FocusCorner     = -1;                                  // [idx] - Corner handle last dragged (its card field)
+    std::array<char, 32>              CornerText      = {};                                  // [-]   - That corner's field text
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):
@@ -431,6 +449,9 @@ struct SolidArcKnifeSession
     int                                    Commits              = 0;                         // [-]   - Applied (script evidence)
     SolidArcInsertLibrary                  Library              = {};                        // [-]   - Built-ins + library folder (lazy)
     bool                                   LibraryCondition     = false;                     // [-]   - Library assembled
+    // 📝 Toolbar tool menu: the cutter Shift+K and the knife icon open with (kept across sessions).
+    SolidArcKnifeMode                      PreferredMode        = SolidArcKnifeMode::Sketch; // [-]   - Sketch shape or library insert
+    SolidArcDrawingKind                    PreferredShape       = SolidArcDrawingKind::Circle; // [-] - Sketch: the shape drawn first
 };
 
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).
