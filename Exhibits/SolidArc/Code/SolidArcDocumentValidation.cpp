@@ -4728,8 +4728,8 @@ int main()
             Tally(HandleGate, std::abs(Loaded.Summary.Volume - Edited), Opened && Loaded.Summary.Volume == Edited && EncodeSolidArcDocument(Loaded) == Written &&
                   Written.find("AnchorSizes") != std::string::npos, Format("codec %d bytes byte-equal with AnchorSizes, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
             std::string Damaged = Written;
-            const size_t At = Damaged.find("AnchorSizes = [");
-            if (At != std::string::npos) Damaged.insert(At + 15, " 0.5,");
+            const size_t At = Damaged.find("[[Steps.AnchorSizes]]");                         // toml++ writes the sizes as an array of tables
+            if (At != std::string::npos) Damaged.insert(At, "[[Steps.AnchorSizes]]\nLiteral = 0.5\n");
             Tally(HandleGate, 0.0, At != std::string::npos && !DecodeSolidArcDocument(Damaged).Refusal.empty(), "a file with more corner sizes than corners is refused");
         }
 
@@ -4739,6 +4739,7 @@ int main()
             SelectSolidArcName(Refused, SolidArcSelectionKind::Edge, FrontEdge, false);
             const std::vector<SolidArcBlendHandle> Own = MeasureSolidArcBlendHandles(Refused, Refused.Selection.Edges);
             const double Before = Refused.Summary.Volume;
+            const size_t Steps  = Refused.Tree.Steps.size();
             std::string Foreign;
             for (const auto& [Slot, Name] : Refused.Regeneration.Naming.Vertices)
                 if (std::none_of(Own.begin(), Own.end(), [&](const SolidArcBlendHandle& Handle) { return Handle.Vertex == Name; })) { Foreign = Name; break; }
@@ -4750,7 +4751,7 @@ int main()
             const SolidArcCommandOutcome Twice = BlendSolidArcSelection(Refused, Request);
             Request.VertexSizes = { { Own.size() > 1 ? Own[1].Vertex : std::string(), 0.0 } };
             const SolidArcCommandOutcome Zero = BlendSolidArcSelection(Refused, Request);
-            Tally(HandleGate, 0.0, !Off.AcceptedCondition && !Twice.AcceptedCondition && !Zero.AcceptedCondition && Refused.Summary.Volume == Before && Refused.Tree.Steps.size() == 1,
+            Tally(HandleGate, 0.0, !Off.AcceptedCondition && !Twice.AcceptedCondition && !Zero.AcceptedCondition && Refused.Summary.Volume == Before && Refused.Tree.Steps.size() == Steps,
                   "refused untouched: " + Off.Refusal + " · " + Twice.Refusal + " · " + Zero.Refusal);
         }
 

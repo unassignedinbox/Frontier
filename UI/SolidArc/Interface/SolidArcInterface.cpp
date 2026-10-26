@@ -5087,6 +5087,19 @@ void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Orb
 // 📝 Bevel handles under the pointer: a press on one starts its drag — the size follows the pointer along the handle's
 //    bisector (the closest point of the pointer ray to that line), snapped to 1 mm (Ctrl free, Shift fine). The
 //    uniform handle sets the size; a corner handle gives its corner its own size. True while a handle owns the pointer.
+// Screen base and tip of a handle. A bisector that points (nearly) at the camera would project to a dot, so its tip
+// stands straight up from the base on screen instead (ScreenCondition: the drag then sizes by pointer x).
+[[nodiscard]] bool ProjectBevelHandle(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, int Index, double Lead, ImVec2& Base, ImVec2& Tip,
+                                      bool& ScreenCondition)
+{
+    const SolidArcBevelSession& Bevel = State.Bevel;
+    if (!ProjectWorldPoint(State, Frame, Bevel.Handles[size_t(Index)].Position, Base) || !ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) return false;
+    const float Reach = float((BevelHandleSize(Bevel, Index) + Lead) / Frame.WorldPerPixel);   // [px] - Unforeshortened handle length
+    ScreenCondition   = std::hypot(Tip.x - Base.x, Tip.y - Base.y) < 0.35f * Reach;
+    if (ScreenCondition) Tip = ImVec2(Base.x, Base.y - std::max(Reach, BevelHandleLead + 8.0f));
+    return true;
+}
+
 bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
@@ -5098,7 +5111,9 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
     if (Bevel.DragHandle >= 0 && Bevel.DragHandle < int(Bevel.Handles.size()))
     {
         const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Bevel.DragHandle)];
-        if (const std::optional<double> Parameter = MeasureAxisParameter(Ray, Handle.Position, Handle.Direction))
+        const std::optional<double> Parameter = Bevel.DragScreenCondition ? std::optional<double>((Io.MousePos.x - Bevel.DragLast) * Frame.WorldPerPixel)
+                                                                          : MeasureAxisParameter(Ray, Handle.Position, Handle.Direction);
+        if (Parameter)
         {
             double Size = Bevel.DragSize + (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);
             Size = std::max(1.0e-3, Io.KeyCtrl ? std::round(Size * 1.0e6) * 1.0e-6 : std::round(Size * 1.0e3) * 1.0e-3);
@@ -5120,18 +5135,22 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
     if (!PointerCondition) return false;
     const ImVec2 Pointer(State.ViewportRect[0] + Local.x, State.ViewportRect[1] + Local.y);
     float Nearest = BevelHandleReach;
+    bool Facing = false;                                                                     // [-] - Hovered handle's axis faces the camera
     for (int Index = int(Bevel.Handles.size()) - 1; Index >= 0; --Index)                     // Corners first, the uniform handle wins a tie
     {
-        ImVec2 Tip;
-        if (!ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) continue;
+        ImVec2 Base, Tip;
+        bool   Screen = false;
+        if (!ProjectBevelHandle(State, Frame, Index, Lead, Base, Tip, Screen)) continue;
         const float Distance = std::hypot(Tip.x - Pointer.x, Tip.y - Pointer.y);
-        if (Distance <= Nearest) { Nearest = Distance; Bevel.HoverHandle = Index; }
+        if (Distance <= Nearest) { Nearest = Distance; Bevel.HoverHandle = Index; Facing = Screen; }
     }
     if (Bevel.HoverHandle >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Bevel.HoverHandle)];
-        Bevel.DragHandle      = Bevel.HoverHandle;
-        Bevel.DragOrigin      = MeasureAxisParameter(Ray, Handle.Position, Handle.Direction).value_or(0.0);
+        Bevel.DragHandle          = Bevel.HoverHandle;
+        Bevel.DragScreenCondition = Facing;
+        Bevel.DragLast            = Io.MousePos.x;
+        Bevel.DragOrigin          = Facing ? 0.0 : MeasureAxisParameter(Ray, Handle.Position, Handle.Direction).value_or(0.0);
         Bevel.DragSize        = BevelHandleSize(Bevel, Bevel.HoverHandle);
         Bevel.PinnedCondition = true;                                                        // The handles drive the size from now on
         if (Bevel.DragHandle > 0)
@@ -5154,7 +5173,8 @@ void DrawBevelHandles(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
     for (int Index = int(Bevel.Handles.size()) - 1; Index >= 0; --Index)
     {
         ImVec2 Base, Tip;
-        if (!ProjectWorldPoint(State, Frame, Bevel.Handles[size_t(Index)].Position, Base) || !ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) continue;
+        bool   Screen = false;
+        if (!ProjectBevelHandle(State, Frame, Index, Lead, Base, Tip, Screen)) continue;
         const bool  Lit    = Index == Bevel.HoverHandle || Index == Bevel.DragHandle;
         const bool  Sized  = Index > 0 && Bevel.CornerSizes[size_t(Index)] > 0.0;
         const ImU32 Colour = Lit ? IM_COL32(0xff, 0xff, 0xff, 0xff) : Index == 0 ? IM_COL32(0x4d, 0xd2, 0xff, 0xff) : Sized ? IM_COL32(0xff, 0xc8, 0x3d, 0xff) : IM_COL32(0xc8, 0xc8, 0xc8, 0xe0);
@@ -9015,14 +9035,15 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                             : State.Bevel.Verb == SolidArcSessionVerb::Corner ? (State.Bevel.Shape == BlendProfile::Fillet ? "Sketch fillet r" : "Sketch chamfer d")
                             : State.Bevel.Shape == BlendProfile::Fillet ? "Fillet r" : "Chamfer d";
         const int         Corners = CountBevelCorners(State.Bevel);
-        const std::string Sizes = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? FormatLength(State.Bevel.Size) + " · " + std::to_string(Corners) + " corner size(s)"
+        const std::string Sizes = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? FormatLength(State.Bevel.Size) + " m · " + std::to_string(Corners) + (Corners == 1 ? " corner" : " corners") + " sized"
                                 : State.Bevel.VariableEnabled && State.Bevel.Verb == SolidArcSessionVerb::Blend
                                 ? FormatLength(State.Bevel.Size) + " → " + FormatLength(State.Bevel.EndSize) + (State.Bevel.ReversedCondition ? " (flipped)" : "")
                                 : State.Bevel.Verb == SolidArcSessionVerb::Inset ? FormatLength(State.Bevel.Size) + " m · depth " + FormatLength(State.Bevel.Depth)
                                 : FormatLength(State.Bevel.Size);
         const std::string Boolean = State.Bevel.Verb != SolidArcSessionVerb::Profile ? std::string{}
                                   : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
-        DrawStatusPill(Canvas, Below, Compose("%s %s m%s%s", Caption, Sizes.c_str(), Boolean.c_str(),
+        const char* Unit = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? "" : " m";
+        DrawStatusPill(Canvas, Below, Compose("%s %s%s%s%s", Caption, Sizes.c_str(), Unit, Boolean.c_str(),
                                               State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal + (State.Bevel.GoodCondition ? " · showing " + FormatLength(State.Bevel.GoodSize) + " m" : std::string{}), RefusalColour);
     }

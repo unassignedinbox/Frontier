@@ -144,6 +144,7 @@ struct SolidArcBevelSession
     double                            DragSize        = 0.0;                                 // [len] - Handle size at the press
     float                             DragLast        = 0.0f;                                // [px]  - Pointer x of the last empty-space drag frame
     bool                              PointerDragCondition = false;                          // [-]   - A left drag on empty space drives the size
+    bool                              DragScreenCondition  = false;                          // [-]   - Handle axis faces the camera: drag sizes by pointer x
     SolidArcBlendFit                  Fit             = {};                                  // [len] - What the picked edges allow (start size)
     SolidArcScene                     GoodScene       = {};                                  // [-]   - Last accepted preview (shown under a refusal)
     double                            GoodSize        = 0.0;                                 // [len] - Its size

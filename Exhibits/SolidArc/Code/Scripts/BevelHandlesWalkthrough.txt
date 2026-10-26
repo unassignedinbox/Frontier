@@ -136,3 +136,31 @@ expect bevel-handles == 3
 capture 279BevelFitted
 key Escape
 frames 2
+
+# ⑦ the top loop (Shift-click adds edges): one handle per corner; a corner pulled out gives a variable fillet whose ends
+#    meet the neighbours' in a cone ∩ cone mitre — applied, sound. The front corner's bisector points at the isometric
+#    camera, so its handle stands up on screen and drags by pointer x
+click world 0.0 -0.1 0.2
+frames 2
+click world 0.1 0.0 0.2 Left Shift
+frames 2
+click world 0.0 0.1 0.2 Left Shift
+frames 2
+click world -0.1 0.0 0.2 Left Shift
+frames 2
+expect selected-edges == 4
+key B
+frames 8
+expect bevel-handles == 5
+expect bevel-refusal == 0
+drag left @BevelHandle2 by 40 0 6
+frames 8
+expect bevel-corners == 1
+expect bevel-corner-2 > 0.021
+expect bevel-refusal == 0
+capture 280BevelLoopCorner
+key Enter
+frames 3
+expect bevel-active == 0
+expect refused == 0
+expect sound == 1
