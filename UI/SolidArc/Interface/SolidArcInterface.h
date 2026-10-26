@@ -176,6 +176,7 @@ struct SolidArcDrawingSession
     int                            Sides            = 6;                                     // [-]   - Polygon / prism sides (+ / − keys, wheel)
     bool                           PressCondition   = false;                                 // [-]   - Left button went down on the plane (click-drag)
     bool                           PressPlacedCondition = false;                             // [-]   - That press placed the first point (its release is no click)
+    std::string                    StartFace        = {};                                    // [-]   - Solid: face under its first click (empty: ground / snap)
     bool                           SolidCondition   = false;                                 // [-]   - Construct solid: plane clicks, then a height
     SolidArcConstructKind          Solid            = SolidArcConstructKind::Block;          // [-]   - Which solid
     double                         Elevation        = 0.0;                                   // [len] - Plane height (solids: z of the first click)

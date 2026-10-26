@@ -1676,6 +1676,7 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
     State.Picker.Current       = {};
     Drawing.FacePlaneCondition = false;
+    Drawing.StartFace.clear();
     if (PointSnapCondition(Object.Kind))
     {
         State.Picker.Current     = Object;
@@ -1690,6 +1691,7 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     if (!Floor && !State.Picker.FaceOrientEnabled) return false;
     Vector2 Flat;
     if (!IntersectSketchPlane(Frame, Local, Plane, Flat)) return false;
+    Drawing.StartFace = Name;
     if (!Floor)
     {
         // 📝 Any other face (upright, tilted, curved: its tangent plane) carries the solid: its clicks are face coordinates,
@@ -4824,8 +4826,9 @@ void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Tar
 }
 
 // 📝 Knife with a 3D cutter (a Construct primitive drawn as the Construct menu draws it: base on the face, then the height
-//    with live dimension lines). On a face a cut / intersect goes into the body and an add stands out of it (the lift is
-//    held on that side), and the end on the face is carried past it by the knife lift so no cutter face is flush.
+//    with live dimension lines). Started on a body face (an upward one lifts the floor, any other carries its frame),
+//    a cut / intersect goes into the body and an add stands out of it (the lift is held on that side), and the end on
+//    the face is carried past it by the knife lift so no cutter face is flush.
 [[nodiscard]] bool KnifeSolidCondition(const SolidArcWorkspaceState& State)
 {
     return State.Knife.ActiveCondition && State.Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.SolidCondition;
@@ -4835,9 +4838,9 @@ void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Tar
 [[nodiscard]] std::string KnifeSolidTarget(const SolidArcWorkspaceState& State)
 {
     const SolidArcDrawingSession& Drawing = State.Drawing;
-    if (Drawing.FacePlaneCondition && !Drawing.FaceName.empty())
+    if (!Drawing.StartFace.empty())
     {
-        const std::string Owner = SolidArcBodyOfName(State.Document, SolidArcSelectionKind::Face, Drawing.FaceName);
+        const std::string Owner = SolidArcBodyOfName(State.Document, SolidArcSelectionKind::Face, Drawing.StartFace);
         if (!Owner.empty()) return Owner;
     }
     if (!BooleanTarget(State).empty()) return BooleanTarget(State);
@@ -4848,7 +4851,7 @@ void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Tar
 void BoundKnifeSolidLift(SolidArcWorkspaceState& State)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
-    if (!KnifeSolidCondition(State) || !Drawing.FacePlaneCondition || !SolidLiftedCondition(Drawing.Solid)) return;
+    if (!KnifeSolidCondition(State) || Drawing.StartFace.empty() || !SolidLiftedCondition(Drawing.Solid)) return;
     const FeatureCombination Combination = State.Knife.Combination;
     if (Combination == FeatureCombination::Separate) return;
     const double Least = ImGui::GetIO().KeyCtrl ? 1.0e-3 : DrawingSnap;                       // [len] - Shallowest cutter
@@ -4862,7 +4865,7 @@ void BoundKnifeSolidLift(SolidArcWorkspaceState& State)
     const SolidArcDrawingSession& Drawing = State.Drawing;
     if (const std::string Refusal = ComposeSolidRequest(Drawing, PointerCondition, Request); !Refusal.empty()) return Refusal;
     Target = KnifeSolidTarget(State);
-    if (!Drawing.FacePlaneCondition || State.Knife.Combination == FeatureCombination::Separate) return {};
+    if (Drawing.StartFace.empty() || State.Knife.Combination == FeatureCombination::Separate) return {};
     const double Margin = KnifeLift(State.Scene, Target);                                     // [len] - Past the face
     const double Lift   = Drawing.Lift;
     switch (Request.Kind)
@@ -5166,9 +5169,13 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     const bool            Assembled = Knife.LibraryCondition;
     const SolidArcKnifeMode   PreferredMode  = Knife.PreferredMode;
     const SolidArcDrawingKind PreferredShape = Knife.PreferredShape;
+    const bool                  PreferredSolidCondition = Knife.PreferredSolidCondition;
+    const SolidArcConstructKind PreferredSolid          = Knife.PreferredSolid;
     Knife                  = {};
     Knife.PreferredMode    = PreferredMode;
     Knife.PreferredShape   = PreferredShape;
+    Knife.PreferredSolidCondition = PreferredSolidCondition;
+    Knife.PreferredSolid          = PreferredSolid;
     Knife.Commits          = Commits;
     Knife.Insert           = Insert;
     Knife.ThroughCondition = Through;
@@ -9142,6 +9149,9 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         {
             const SolidArcKnifeSession& Knife = State.Knife;
             const SolidArcKnifeMode     Mode  = Knife.ActiveCondition ? Knife.Mode : Knife.PreferredMode;
+            // Three columns (the list would outgrow the space above the toolbar): 2D shapes and objects · 3D primitives · library.
+            const bool Columns = ImGui::BeginTable("KnifeToolColumns", 3, ImGuiTableFlags_SizingFixedFit);
+            if (Columns) ImGui::TableNextColumn();
             ImGui::TextDisabled("Sketch cutter");
             static const SolidArcDrawingKind Shapes[] = { SolidArcDrawingKind::Circle, SolidArcDrawingKind::Rectangle, SolidArcDrawingKind::Polygon, SolidArcDrawingKind::Slot,
                                                           SolidArcDrawingKind::Line };
@@ -9150,6 +9160,9 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
                 const std::string Label = std::string(SolidArcDrawingLabel(Shape)) + "###KnifeTool" + SolidArcDrawingLabel(Shape);
                 if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == Shape)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Shape, -1);
             }
+            ImGui::TextDisabled("Objects");
+            if (SelectListEntry(State, "Picked bodies###KnifeToolObject", Mode == SolidArcKnifeMode::Object)) ChooseKnifeTool(State, SolidArcKnifeMode::Object, Knife.PreferredShape, -1);
+            if (Columns) ImGui::TableNextColumn();
             ImGui::TextDisabled("3D cutter");
             static const SolidArcConstructKind Solids[] = { SolidArcConstructKind::Block, SolidArcConstructKind::Cylinder, SolidArcConstructKind::Cone,
                                                             SolidArcConstructKind::Prism, SolidArcConstructKind::Sphere, SolidArcConstructKind::Torus,
@@ -9159,6 +9172,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
                 const std::string Label = std::string(SolidArcConstructLabel(Solid)) + "###KnifeTool" + SolidArcConstructLabel(Solid);
                 if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Sketch && Knife.PreferredSolidCondition && Knife.PreferredSolid == Solid)) ChooseKnifeSolid(State, Solid);
             }
+            if (Columns) ImGui::TableNextColumn();
             ImGui::TextDisabled("Boolean library");
             for (size_t Index = 0; Index < Knife.Library.Inserts.size(); ++Index)
             {
@@ -9166,8 +9180,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
                 if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Insert && Knife.Insert == int(Index)))
                     ChooseKnifeTool(State, SolidArcKnifeMode::Insert, Knife.PreferredShape, int(Index));
             }
-            ImGui::TextDisabled("Objects");
-            if (SelectListEntry(State, "Picked bodies###KnifeToolObject", Mode == SolidArcKnifeMode::Object)) ChooseKnifeTool(State, SolidArcKnifeMode::Object, Knife.PreferredShape, -1);
+            if (Columns) ImGui::EndTable();
             EndSelectList();
         }
     }
@@ -9856,7 +9869,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : State.Sweep.Verb == SolidArcSweepVerb::Evolution ? "Evolution: click another sketch's curve for the path (or select a curve first) · Q union · W difference · E intersect · R new body · click elsewhere / Enter commit · Esc cancel"
                               : "Pipe: move sideways for the radius (Shift fine, Ctrl free) · type a radius · Q union · W difference · E intersect · R new body · click / Enter commit · Esc cancel")
                        : State.Drawing.ActiveCondition
-                           ? (State.Drawing.SolidCondition ? "Draw on the ground or any body face (oriented to it; snaps, Ctrl free) · move out for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
+                           ? (KnifeSolidCondition(State) ? "Knife cutter: draw its base on the body face (snaps, Ctrl free) · then pull into the body for the depth (Q add: out of it) · the cut shows live · W cut · E intersect · R separate · K keep · click / right-click / Enter cuts · Esc cancels"
+                           : State.Drawing.SolidCondition ? "Draw on the ground or any body face (oriented to it; snaps, Ctrl free) · move out for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? (State.Drawing.Points.size() >= 2 ? "Polygon drawn: wheel (or + / −) changes the sides · click / right-click / Enter confirms · Ctrl+Z drop · Esc abort" : "Click (or press-drag) the centre, then a vertex (snaps, Ctrl free) · wheel or + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort")
                               : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
