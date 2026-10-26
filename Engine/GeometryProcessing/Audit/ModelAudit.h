@@ -50,6 +50,8 @@ struct AuditReport
     std::vector<AuditTally>   Tallies  = {};                                                 // [-] - One per check, in order
     std::vector<AuditFinding> Findings = {};                                                 // [-] - Every failure
     int                       Genus    = -1;                                                 // [-] - From Euler–Poincaré (−1: not integral)
+    double                    Volume   = 0.0;                                                // [len³] - Σ solid shell volumes (G6; = IntegrateBodyVolume)
+    bool                      VolumeCondition = false;                                       // [-] - G6 ran, so Volume holds
 
     [[nodiscard]] bool SoundCondition() const noexcept { return Findings.empty(); }
 };

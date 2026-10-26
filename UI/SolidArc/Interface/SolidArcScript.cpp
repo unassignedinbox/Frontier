@@ -9,6 +9,7 @@
 
 #include "UI/SolidArc/Interface/SolidArcScript.h"
 #include "Engine/GeometryProcessing/Measurement/MassProperties.h"
+#include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
@@ -386,6 +387,14 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "knife-placed") return Numeric(State.Knife.PlacedCondition ? 1 : 0);
     if (Field == "knife-hover") return Numeric(State.Knife.HoverCondition ? 1 : 0);
     if (Field == "knife-pending") return Numeric(State.Knife.DrawPendingCondition ? 1 : 0);
+    if (Field == "knife-slice")
+    {
+        // An open chain slices (as the interface's KnifeSliceCondition).
+        const auto Solved = State.Document.Regeneration.Sketches.find(State.Knife.Sketch);
+        const bool Slice  = State.Knife.Mode == SolidArcKnifeMode::Sketch && Solved != State.Document.Regeneration.Sketches.end() &&
+                            ExtractSketchProfile(Solved->second).Refusal.rfind("open profile", 0) == 0;
+        return Numeric(Slice ? 1 : 0);
+    }
     if (Field == "knife-inserts") return Numeric(double(State.Knife.Library.Inserts.size()));
     if (Field == "knife-mode")
     {

@@ -288,3 +288,51 @@ key Escape
 frames 3
 expect knife == 0
 expect volume ~ 7.525828330588459
+
+# ⑩ a knife line slices: Line from the cutter menu, two clicks across the top face (x −0.9, edge to edge) finish it; an
+#    open chain has no inside, so the knife splits the cube along the sheet the line sweeps through it (one more body,
+#    the volume unchanged); depth / T / the Boolean do not apply, so moving the pointer never restages; Enter adopts
+#    the staged preview; afterwards faces and bodies select and edit as before (a face pick, an Esc, a fillet)
+click @SketchKnifeTool
+frames 3
+click @KnifeToolLine
+frames 3
+expect knife == 1
+expect knife-pending == 1
+expect drawing == Line
+move world -0.9 -0.98 2.0
+frames 2
+click world -0.9 -0.98 2.0
+frames 2
+move world -0.9 0.98 2.0
+frames 2
+click world -0.9 0.98 2.0
+frames 3
+expect knife-pending == 0
+expect knife-slice == 1
+expect knife-refusal == 0
+move world -0.5 0.5 1.4
+frames 6
+expect knife-refusal == 0
+capture 283KnifeLineSlice
+key Enter
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 8
+expect bodies == 3
+expect volume ~ 7.525828330588459
+key 3
+frames 1
+click world -0.95 0.0 2.0
+frames 2
+expect selected-faces > 0
+key Escape
+frames 2
+key 4
+frames 1
+click world -0.95 0.0 2.0
+frames 2
+expect selected-bodies > 0
+key Escape
+frames 2

@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -107,6 +108,8 @@ struct SolidArcBevelSession
     std::array<char, 32>              SizeText        = {};                                  // [-]   - Field text ("250mm", "0.25")
     bool                              SizeTypedCondition = false;                            // [-]   - SizeText typed but not yet entered
     std::unique_ptr<SolidArcDocument> Preview         = {};                                  // [-]   - Staged document
+    SolidArcCommandOutcome            PreviewOutcome  = {};                                  // [-]   - The staged command (adopted on apply)
+    uint64_t                          PreviewRevision = 0;                                   // [-]   - Document revision it was staged from
     SolidArcScene                     PreviewScene    = {};                                  // [-]   - Its display arrays
     std::string                       Refusal         = {};                                  // [-]   - Why Apply is disabled
     double                            StagedSize      = -1.0;                                // [len] - Size the preview was built at
@@ -442,6 +445,7 @@ struct SolidArcKnifeSession
     bool                                   KeepCondition        = false;                     // [-]   - Object: K, cutters survive
     std::string                            Target               = {};                        // [-]   - Body the staged knife cuts
     std::string                            StagedKey            = {};                        // [-]   - Parameters the preview shows
+    SolidArcCommandOutcome                 PreviewOutcome       = {};                        // [-]   - The staged command (adopted on apply)
     double                                 StageMilliseconds    = 0.0;                       // [ms]  - Last stage time
     double                                 QuietSince           = 0.0;                       // [s]   - Last pointer motion (steady clock)
     std::unique_ptr<SolidArcDocument>      Preview              = {};                        // [-]   - Staged document
@@ -623,6 +627,8 @@ struct SolidArcGizmoSession
     double                            Factor        = 1.0;                                   // [-]   - Current scale
     std::string                       StagedKey     = {};                                    // [-]   - Value the preview shows
     std::unique_ptr<SolidArcDocument> Preview       = {};                                    // [-]   - Staged document
+    SolidArcCommandOutcome            PreviewOutcome  = {};                                  // [-]   - The staged command (adopted on release)
+    uint64_t                          PreviewRevision = 0;                                   // [-]   - Document revision it was staged from
     SolidArcScene                     PreviewScene  = {};                                    // [-]   - Its display arrays
     bool                              RigidCondition = false;                                // [-]   - PreviewScene is the shown scene mapped (no regeneration)
     std::string                       Readout       = {};                                    // [-]   - "X  move 0.250"
@@ -674,6 +680,7 @@ struct SolidArcWorkspaceState
     SolidArcOptions                       Options        = {};                               // [-]   - Loaded options
     SolidArcDocument                      Document       = {};                               // [-]   - Authored document
     SolidArcScene                         Scene          = {};                               // [-]   - Display arrays of the document
+    std::optional<SolidArcScene>          ReadyScene     = {};                               // [-]   - Arrays of an adopted preview (next refresh takes them)
     OrbitCamera                        Camera         = {};                               // [-]   - Viewport camera
     SolidArcViewportStyle                 Style          = {};                               // [-]   - Viewport appearance
     SolidArcPickMode                      PickMode       = SolidArcPickMode::Any;            // [-]   - 2 / 3 / 4 / 5 (Plasticity)

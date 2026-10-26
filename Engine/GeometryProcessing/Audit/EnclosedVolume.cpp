@@ -275,9 +275,21 @@ namespace
             std::sort(Stops.begin() + 1, Stops.end(), [&](double First, double Second) { return Start <= End ? First < Second : First > Second; });
         }
         Stops.push_back(End);
+        // 📝 Closed-form rows on simple SP-curves make the outer integrand itself simple: a constant row along a chart line
+        //    is a polynomial of degree ≤ 2 in τ (one 8-point Gauss panel is exact to degree 15), along a chart circle a
+        //    trigonometric polynomial of degree ≤ 2 in τ; a revolved row along a line of constant 𝑢 is constant. The
+        //    adaptive refinement (≥ 24 evaluations per initial panel) then only re-confirms an exact value.
+        //    ⚠️ Only cylinders and cones: their density is a polynomial (degree ≤ 2) in 𝑣; a sphere's or a torus's is
+        //    trigonometric in 𝑣, so their meridians keep the adaptive rule.
+        const ParameterLine* Line         = std::get_if<ParameterLine>(&Curve);
+        const bool           Ruled        = Chart != nullptr && (std::holds_alternative<CylinderSurface>(*Chart) || std::holds_alternative<ConeSurface>(*Chart));
+        const bool           Polynomial   = !MagnitudeMode && Line != nullptr && (Form == RowForm::Constant || (Form == RowForm::Trigonometric && Ruled && Line->Direction.X == 0.0));
+        const bool           Trigonometric = !MagnitudeMode && Form == RowForm::Constant && std::holds_alternative<ParameterEllipse>(Curve);
         double Total = 0.0;
         for (size_t Index = 0; Index + 1 < Stops.size(); ++Index)
         {
+            if (Polynomial) { Total += IntegratePanel(Stops[Index], Stops[Index + 1], Integrand).Value; continue; }
+            if (Trigonometric) { Total += IntegrateTrigonometricRow(Stops[Index], Stops[Index + 1], Integrand); continue; }
             Total += MagnitudeMode ? EstimateMagnitude(Stops[Index], Stops[Index + 1], PanelSpan, Integrand) : IntegrateRefined(Stops[Index], Stops[Index + 1], PanelSpan, Integrand, Floor);
         }
         return Total;

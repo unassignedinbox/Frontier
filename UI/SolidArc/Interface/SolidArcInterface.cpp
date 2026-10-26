@@ -15,6 +15,7 @@
 
 #include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "Engine/GeometryProcessing/Exchange/ExchangePath.h"
+#include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/Interface/ContentDirectory.h"
 #include "Engine/Interface/ControlKit.h"
 #include "Engine/Interface/IconPresentation.h"
@@ -742,13 +743,19 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
     return Bevel.Combination == FeatureCombination::Union && Bevel.Size > 0.0 ? -Bevel.ProfileSink : 0.0;
 }
 
+// The staged preview shows the session as it stands (every parameter the command reads).
+[[nodiscard]] bool BevelStagedCurrent(const SolidArcBevelSession& Bevel)
+{
+    return Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
+           Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
+           Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth && Bevel.StagedCorners == Bevel.CornerSizes;
+}
+
 void StageBevelPreview(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
-    if (Bevel.StagedSize == Bevel.Size && Bevel.StagedShape == Bevel.Shape && Bevel.PreviewVerb == Bevel.Verb &&
-        Bevel.StagedVariable == Bevel.VariableEnabled && Bevel.StagedEndSize == Bevel.EndSize && Bevel.StagedReversed == Bevel.ReversedCondition &&
-        Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth && Bevel.StagedCorners == Bevel.CornerSizes) return;
+    if (BevelStagedCurrent(Bevel)) return;
     // 💡 A slow preview (a blend along a cylinder–cylinder junction takes seconds) is rebuilt once the pointer rests
     //    (one size held for 0.15 s and 6 frames: a slow frame alone is no rest), not on every pixel of mouse adjust: the
     //    last preview stays up meanwhile. A typed (pinned) size, a new shape, verb or Boolean, and every fast preview
@@ -781,6 +788,8 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
                                          : Bevel.Verb == SolidArcSessionVerb::Inset   ? InsetSolidArcSelection(*Bevel.Preview, Bevel.Size, Bevel.Depth)
                                          : Bevel.Verb == SolidArcSessionVerb::Corner  ? CutSolidArcSketchCorners(*Bevel.Preview, ComposeCornerRequest(Bevel))
                                                                                       : BlendSolidArcSelection(*Bevel.Preview, ComposeBlendRequest(Bevel));
+    Bevel.PreviewOutcome  = Outcome;
+    Bevel.PreviewRevision = State.Document.Revision;
     if (Outcome.AcceptedCondition)
     {
         Bevel.PreviewScene = BuildSolidArcScene(*Bevel.Preview);
@@ -823,19 +832,28 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
     const BlendProfile         Shape   = State.Bevel.Shape;
     const double               Size    = State.Bevel.Size;
     const SolidArcBlendRequest Request = ComposeBlendRequest(State.Bevel);
+    // 💡 The preview on screen is the result: when it was staged from this document with every parameter as it stands,
+    //    it is adopted (one undo entry, its display arrays reused) instead of running the command a second time.
+    std::unique_ptr<SolidArcDocument> Staged     = std::move(State.Bevel.Preview);
+    const bool                        Adoptable  = Staged && State.Bevel.PreviewOutcome.AcceptedCondition && State.Bevel.PreviewRevision == State.Document.Revision &&
+                                                   BevelStagedCurrent(State.Bevel) && State.Bevel.Refusal.empty();
+    if (Adoptable) State.ReadyScene = std::move(State.Bevel.PreviewScene);
+    const auto Run = [&](auto&& Direct) -> SolidArcCommandOutcome
+    {
+        return Adoptable ? AdoptSolidArcPreview(State.Document, std::move(*Staged), State.Bevel.PreviewOutcome) : Direct();
+    };
     State.Bevel.ActiveCondition = false;
-    State.Bevel.Preview.reset();
     if (State.Bevel.Verb == SolidArcSessionVerb::Corner)
     {
-        const SolidArcCommandOutcome Outcome = CutSolidArcSketchCorners(State.Document, ComposeCornerRequest(State.Bevel));
+        const SolidArcCommandOutcome Outcome = Run([&] { return CutSolidArcSketchCorners(State.Document, ComposeCornerRequest(State.Bevel)); });
         if (Outcome.AcceptedCondition) State.SketchPoints.Points.clear();
         Conclude(State, Outcome);
         return;
     }
     if (State.Bevel.Verb == SolidArcSessionVerb::Profile)
     {
-        const SolidArcCommandOutcome Outcome = ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State),
-                                                                     State.Bevel.Combination == FeatureCombination::Union && Size > 0.0 ? -State.Bevel.ProfileSink : 0.0);
+        const SolidArcCommandOutcome Outcome = Run([&] { return ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State),
+                                                                     State.Bevel.Combination == FeatureCombination::Union && Size > 0.0 ? -State.Bevel.ProfileSink : 0.0); });
         if (Outcome.AcceptedCondition) State.FocusedStep = {};
         Conclude(State, Outcome);
         return;
@@ -843,19 +861,19 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
     if (State.Bevel.Verb == SolidArcSessionVerb::Inset)
     {
         const double                 Depth   = State.Bevel.Depth;
-        const SolidArcCommandOutcome Outcome = InsetSolidArcSelection(State.Document, Size, Depth);
+        const SolidArcCommandOutcome Outcome = Run([&] { return InsetSolidArcSelection(State.Document, Size, Depth); });
         if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, Shape, 0.0, FaceOperationKind::Inset, Size, {}, {}, Depth };
         Conclude(State, Outcome);
         return;
     }
     if (State.Bevel.Verb == SolidArcSessionVerb::Extrude)
     {
-        const SolidArcCommandOutcome Outcome = ChangeSolidArcSelection(State.Document, FaceOperationKind::Extrude, Size);
+        const SolidArcCommandOutcome Outcome = Run([&] { return ChangeSolidArcSelection(State.Document, FaceOperationKind::Extrude, Size); });
         if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, Shape, 0.0, FaceOperationKind::Extrude, Size, {} };
         Conclude(State, Outcome);
         return;
     }
-    const SolidArcCommandOutcome Outcome = BlendSolidArcSelection(State.Document, Request);
+    const SolidArcCommandOutcome Outcome = Run([&] { return BlendSolidArcSelection(State.Document, Request); });
     if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Blend, Shape, Size, FaceOperationKind::Extrude, 0.0, {}, Request };
     Conclude(State, Outcome);
 }
@@ -3962,12 +3980,23 @@ void CancelGizmoDrag(SolidArcWorkspaceState& State, const std::string& Message)
     if (!Message.empty()) Announce(State, Message);
 }
 
+// The value a staged gizmo preview shows (one regeneration per distinct key).
+[[nodiscard]] std::string GizmoStageKey(const SolidArcGizmoSession& Gizmo)
+{
+    return Compose("%d %.12g %.12g %.12g %.12g %.12g", int(Gizmo.Grab), Gizmo.Shift.X, Gizmo.Shift.Y, Gizmo.Shift.Z, Gizmo.Angle, Gizmo.Factor);
+}
+
 void CommitGizmoDrag(SolidArcWorkspaceState& State)
 {
     SolidArcGizmoSession& Gizmo = State.Gizmo;
     if (GizmoIdentityCondition(Gizmo)) { CancelGizmoDrag(State, "Gizmo: nothing changed"); return; }
-    const std::string            Readout = Gizmo.Readout;
-    const SolidArcCommandOutcome Outcome = ApplyGizmoCommand(State.Document, Gizmo);
+    const std::string Readout   = Gizmo.Readout;
+    // The staged preview is the release value's result: adopted rather than regenerated again.
+    const bool        Adoptable = Gizmo.Preview && Gizmo.PreviewOutcome.AcceptedCondition && Gizmo.StagedKey == GizmoStageKey(Gizmo) &&
+                                  Gizmo.PreviewRevision == State.Document.Revision;
+    if (Adoptable) State.ReadyScene = std::move(Gizmo.PreviewScene);
+    const SolidArcCommandOutcome Outcome = Adoptable ? AdoptSolidArcPreview(State.Document, std::move(*Gizmo.Preview), Gizmo.PreviewOutcome)
+                                                     : ApplyGizmoCommand(State.Document, Gizmo);
     CancelGizmoDrag(State, {});
     Conclude(State, Outcome);
     if (Outcome.AcceptedCondition)
@@ -4050,7 +4079,7 @@ void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
                        : Gizmo.Grab == SolidArcGizmoHandle::TranslateZ ? " · push / pull" : " · face tweak";
     if (Gizmo.Target == SolidArcGizmoTarget::Points) Gizmo.Readout += Compose(" · %d sketch point%s", int(Gizmo.Points.size()), Gizmo.Points.size() == 1 ? "" : "s");
     // Staged preview: one regeneration per distinct value.
-    const std::string Key = Compose("%d %.12g %.12g %.12g %.12g %.12g", int(Gizmo.Grab), Gizmo.Shift.X, Gizmo.Shift.Y, Gizmo.Shift.Z, Gizmo.Angle, Gizmo.Factor);
+    const std::string Key = GizmoStageKey(Gizmo);
     if (Key == Gizmo.StagedKey) return;
     Gizmo.StagedKey = Key;
     Gizmo.Refusal.clear();
@@ -4069,6 +4098,8 @@ void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     SolidArcPhaseClock StageClock(State.Profile, "gizmo preview · stage");
     Gizmo.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = ApplyGizmoCommand(*Gizmo.Preview, Gizmo);
+    Gizmo.PreviewOutcome  = Outcome;
+    Gizmo.PreviewRevision = State.Document.Revision;
     if (!Outcome.AcceptedCondition) { Gizmo.Refusal = Legible(Outcome.Refusal); Gizmo.Preview.reset(); return; }
     Gizmo.PreviewScene = BuildSolidArcScene(*Gizmo.Preview);
 }
@@ -4710,16 +4741,30 @@ bool MeasureSceneBody(const SolidArcScene& Scene, const std::string& Key, Vector
     return State.Scene.Bodies.size() == 1 ? State.Scene.Bodies.front().Key : std::string{};
 }
 
+// 💡 A knife line (an open chain: a segment or polyline drawn across a face, edge to edge) has no inside to pocket: it
+//    slices. The body splits along the sheet the chain sweeps through it (Plasticity C, CutSolidArcBody): two bodies,
+//    through, whatever the depth or the Boolean says. Only a branching chain still refuses.
+[[nodiscard]] bool KnifeSliceCondition(const SolidArcWorkspaceState& State)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    if (Knife.Mode != SolidArcKnifeMode::Sketch || Knife.Sketch.empty()) return false;
+    const auto Solved = State.Document.Regeneration.Sketches.find(Knife.Sketch);
+    if (Solved == State.Document.Regeneration.Sketches.end()) return false;
+    return ExtractSketchProfile(Solved->second).Refusal.rfind("open profile", 0) == 0;
+}
+
 // Sketch cutter span along the plane normal: Cut / Intersect / Separate from a lift above the plane down to the depth
-// (through: past both sides of the target); Add rises from just inside the face up to the depth (a boss).
+// (through: past both sides of the target); Add rises from just inside the face up to the depth (a boss). A slice
+// spans the body (through).
 void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Target, double& Top, double& Bottom)
 {
     const SolidArcKnifeSession& Knife = State.Knife;
-    const double Lift = KnifeLift(State.Scene, Target);
+    const double Lift  = KnifeLift(State.Scene, Target);
+    const bool   Slice = KnifeSliceCondition(State);
     Top    = Lift;
     Bottom = -Knife.Depth;
-    if (Knife.Combination == FeatureCombination::Union) { Top = Knife.Depth; Bottom = -Lift; return; }
-    if (!Knife.ThroughCondition) return;
+    if (Knife.Combination == FeatureCombination::Union && !Slice) { Top = Knife.Depth; Bottom = -Lift; return; }
+    if (!Knife.ThroughCondition && !Slice) return;
     const auto Step = std::find_if(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Each) { return Each.Label == Knife.Sketch; });
     const auto Body = std::find_if(State.Scene.Bodies.begin(), State.Scene.Bodies.end(), [&](const SolidArcSceneBody& Each) { return Each.Key == Target; });
     if (Step == State.Document.Tree.Steps.end() || Body == State.Scene.Bodies.end()) return;
@@ -4755,6 +4800,13 @@ void KnifeSketchSpan(const SolidArcWorkspaceState& State, const std::string& Tar
     {
         if (Knife.Sketch.empty()) return RefusedKnife("draw a closed shape for the knife (Circle / Rectangle / Polygon / Slot / Line) or focus a closed sketch");
         const std::string Target = KnifeSketchTarget(State, Knife.Sketch);
+        if (KnifeSliceCondition(State))
+        {
+            SolidArcCutRequest Request;
+            Request.Target = Target;
+            Request.Cutter = Knife.Sketch;
+            return CutSolidArcBody(Document, Request);
+        }
         double Top = 0.0, Bottom = 0.0;
         KnifeSketchSpan(State, Target, Top, Bottom);
         return KnifeSolidArcSketch(Document, Knife.Sketch, Top, Bottom, Knife.Combination, Target);
@@ -4792,6 +4844,20 @@ void EnsureKnifeLibrary(SolidArcWorkspaceState& State)
     Knife.LibraryCondition = true;
     Knife.Insert           = std::clamp(Knife.Insert, 0, std::max(0, int(Knife.Library.Inserts.size()) - 1));
     for (const std::string& Note : Knife.Library.Notes) FRONTIER_TRACE("Knife", "insert skipped: " + Note);
+}
+
+// Everything the knife preview depends on (a slice ignores the depth, through and the Boolean: moving the pointer for
+// a depth then never restages it).
+[[nodiscard]] std::string KnifeStageKey(const SolidArcWorkspaceState& State)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    std::string Picked;
+    for (const std::string& Key : State.Document.Selection.Bodies) Picked += Key + ",";
+    const bool Slice = KnifeSliceCondition(State);
+    return Compose("%d|%d|%s|%.17g|%d|%d|%d|%d|%.17g,%.17g,%.17g|%.17g,%.17g,%.17g|%.17g|%.17g|%d|%s|%s|%llu|%d", int(Knife.Mode), Slice ? 0 : int(Knife.Combination),
+                   Knife.Sketch.c_str(), Slice ? 0.0 : Knife.Depth, Knife.ThroughCondition && !Slice ? 1 : 0, Knife.Insert, Knife.HoverCondition ? 1 : 0, Knife.PlacedCondition ? 1 : 0,
+                   Knife.Spot.Origin.X, Knife.Spot.Origin.Y, Knife.Spot.Origin.Z, Knife.Spot.ZAxis.X, Knife.Spot.ZAxis.Y, Knife.Spot.ZAxis.Z, Knife.Size, Knife.Turn,
+                   Knife.KeepCondition ? 1 : 0, Knife.SpotBody.c_str(), Picked.c_str(), static_cast<unsigned long long>(State.Document.Revision), Slice ? 1 : 0);
 }
 
 void DropKnifePreview(SolidArcKnifeSession& Knife)
@@ -4846,6 +4912,8 @@ void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
     Knife.Face.clear();
     DropKnifePreview(Knife);
     OpenDrawingSession(State, Kind);
+    // A knife line is one cut across the face: it finishes on its second click (edge to edge), no Enter needed.
+    if (Kind == SolidArcDrawingKind::Line) State.Drawing.SegmentCondition = true;
     Knife.DrawPendingCondition = State.Drawing.ActiveCondition;
 }
 
@@ -4945,15 +5013,22 @@ void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, 
     Knife.Face   = Face;
     Knife.Drift  = Knife.Depth;
     DropKnifePreview(Knife);
-    Announce(State, "Knife · " + CaptionOf(State.Document, Sketch) + " into " + SolidArcBodyCaption(State.Document, KnifeSketchTarget(State, Sketch)) +
-                        " · pull along the face normal for the depth (Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies");
+    if (KnifeSliceCondition(State))
+        Announce(State, "Knife · " + CaptionOf(State.Document, Sketch) + " slices " + SolidArcBodyCaption(State.Document, KnifeSketchTarget(State, Sketch)) +
+                            " through (two bodies) · click / right-click / Enter splits it · Esc cancels");
+    else
+        Announce(State, "Knife · " + CaptionOf(State.Document, Sketch) + " into " + SolidArcBodyCaption(State.Document, KnifeSketchTarget(State, Sketch)) +
+                            " · pull along the face normal for the depth (Ctrl free) or type it · T through · Q add · W cut · E intersect · R separate · click / right-click / Enter applies");
 }
 
 void ApplyKnifeSession(SolidArcWorkspaceState& State)
 {
     SolidArcKnifeSession& Knife = State.Knife;
     if (Knife.DrawPendingCondition) { Announce(State, "Knife: finish the shape first"); return; }
-    const SolidArcCommandOutcome Outcome = RunKnife(State, State.Document);
+    // The preview on screen is the cut: adopted (no second run) when it was staged from exactly this knife.
+    const bool Adoptable = Knife.Preview && Knife.PreviewOutcome.AcceptedCondition && Knife.StagedKey == KnifeStageKey(State);
+    if (Adoptable) State.ReadyScene = std::move(Knife.PreviewScene);
+    const SolidArcCommandOutcome Outcome = Adoptable ? AdoptSolidArcPreview(State.Document, std::move(*Knife.Preview), Knife.PreviewOutcome) : RunKnife(State, State.Document);
     if (Outcome.AcceptedCondition)
     {
         ++Knife.Commits;
@@ -5087,12 +5162,7 @@ void DriveKnifeSession(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
         }
     }
     const SolidArcSelection& Selection = State.Document.Selection;
-    std::string Picked;
-    for (const std::string& Key : Selection.Bodies) Picked += Key + ",";
-    const std::string Key = Compose("%d|%d|%s|%.17g|%d|%d|%d|%d|%.17g,%.17g,%.17g|%.17g,%.17g,%.17g|%.17g|%.17g|%d|%s|%s|%llu", int(Knife.Mode), int(Knife.Combination), Knife.Sketch.c_str(),
-                                    Knife.Depth, Knife.ThroughCondition ? 1 : 0, Knife.Insert, Knife.HoverCondition ? 1 : 0, Knife.PlacedCondition ? 1 : 0, Knife.Spot.Origin.X, Knife.Spot.Origin.Y,
-                                    Knife.Spot.Origin.Z, Knife.Spot.ZAxis.X, Knife.Spot.ZAxis.Y, Knife.Spot.ZAxis.Z, Knife.Size, Knife.Turn, Knife.KeepCondition ? 1 : 0, Knife.SpotBody.c_str(),
-                                    Picked.c_str(), static_cast<unsigned long long>(State.Document.Revision));
+    const std::string        Key       = KnifeStageKey(State);
     if (Key == Knife.StagedKey || Knife.DrawPendingCondition) return;
     const double Quiet = KnifeClock() - Knife.QuietSince;
     if (Knife.Mode == SolidArcKnifeMode::Insert && !Knife.PlacedCondition && Quiet < 0.3) return;   // Hover: stage at rest only
@@ -5106,6 +5176,7 @@ void DriveKnifeSession(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
                   : Knife.Mode == SolidArcKnifeMode::Insert ? Knife.SpotBody : (Selection.Bodies.empty() ? std::string{} : Selection.Bodies.front());
     Knife.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
     const SolidArcCommandOutcome Outcome = RunKnife(State, *Knife.Preview);
+    Knife.PreviewOutcome = Outcome;
     if (!Outcome.AcceptedCondition) { Knife.Refusal = Legible(Outcome.Refusal); Knife.Preview.reset(); }
     else Knife.PreviewScene = BuildSolidArcScene(*Knife.Preview);
     Knife.StageMilliseconds = (KnifeClock() - Start) * 1.0e3;
@@ -5137,8 +5208,9 @@ void DrawKnifeCutter(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
     if (!Knife.ActiveCondition || Knife.Mode != SolidArcKnifeMode::Sketch || Knife.DrawPendingCondition) return;
     KnifeCutterOutline Outline;
     if (!MeasureKnifeCutter(State, Outline)) return;
-    const bool   Boss    = Knife.Combination == FeatureCombination::Union;
-    const bool   Through = Knife.ThroughCondition && !Boss;
+    const bool   Slice   = KnifeSliceCondition(State);
+    const bool   Boss    = Knife.Combination == FeatureCombination::Union && !Slice;
+    const bool   Through = (Knife.ThroughCondition && !Boss) || Slice;
     double Top = 0.0, Bottom = 0.0;
     if (Through) KnifeSketchSpan(State, KnifeSketchTarget(State, Knife.Sketch), Top, Bottom);
     const double Far    = Boss ? Knife.Depth : Through ? Bottom : -Knife.Depth;                // [len] - Far outline along the plane normal
@@ -5173,7 +5245,19 @@ void DrawKnifeCutter(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
     // Dimension lines.
     const Vector2 Low = Outline.Low, High = Outline.High;
     const double  Gap = 0.08 * std::max(High.X - Low.X, High.Y - Low.Y) + 0.02;              // [len] - Off the outline
-    if (Outline.Diameter > 0.0)
+    if (Slice && !Outline.Chains.empty() && Outline.Chains.front().size() >= 2)
+    {
+        // A slice line: its length, beside it.
+        const Vector2 Start = Outline.Chains.front().front(), End = Outline.Chains.back().back();
+        const Vector2 Along = End - Start;
+        const double  Span  = Length(Along);
+        if (Span > 0.0)
+        {
+            const Vector2 Side = Vector2{ -Along.Y, Along.X } * (Gap / Span);
+            DrawDimensionLine(State, Frame, Canvas, World(Start + Side, 0.0), World(End + Side, 0.0), DimensionText("L", Span));
+        }
+    }
+    else if (Outline.Diameter > 0.0)
     {
         const double Half = 0.5 * Outline.Diameter;
         DrawDimensionLine(State, Frame, Canvas, World({ Outline.Centre.X - Half, Low.Y - Gap }, 0.0), World({ Outline.Centre.X + Half, Low.Y - Gap }, 0.0),
@@ -5185,7 +5269,7 @@ void DrawKnifeCutter(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
         DrawDimensionLine(State, Frame, Canvas, World({ High.X + Gap, Low.Y }, 0.0), World({ High.X + Gap, High.Y }, 0.0), DimensionText("H", High.Y - Low.Y));
     }
     const Vector2     Foot = { Low.X - Gap, Low.Y - Gap };
-    const std::string Text = Through ? std::string("through") : DimensionText(Boss ? "height" : "depth", Knife.Depth);
+    const std::string Text = Slice ? std::string("slice · splits the body") : Through ? std::string("through") : DimensionText(Boss ? "height" : "depth", Knife.Depth);
     DrawConstructionLine(State, Frame, Canvas, World({ Low.X, Low.Y }, 0.0), World(Foot, 0.0));
     DrawDimensionLine(State, Frame, Canvas, World(Foot, 0.0), World(Foot, Far), Text, ImVec2(-18.0f, 0.0f));
 }
@@ -5333,7 +5417,10 @@ void DrawBevelHandles(SolidArcWorkspaceState& State, ImDrawList* Canvas, const O
     if (Knife.Mode == SolidArcKnifeMode::Sketch)
     {
         if (Knife.Sketch.empty()) return "Knife · draw a closed shape";
-        return Compose("Knife %s → %s · %s · %s%s", CaptionOf(State.Document, Knife.Sketch).c_str(), Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str(),
+        if (KnifeSliceCondition(State))
+            return Compose("Knife %s slices %s · through (two bodies)", CaptionOf(State.Document, Knife.Sketch).c_str(),
+                           Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str());
+        return Compose("Knife %s into %s · %s · %s%s", CaptionOf(State.Document, Knife.Sketch).c_str(), Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str(),
                        KnifeCombinationLabel(Knife.Combination), Knife.ThroughCondition && Knife.Combination != FeatureCombination::Union ? "through" : ("depth " + FormatLength(Knife.Depth) + " m").c_str(),
                        Typed.c_str());
     }
@@ -5386,8 +5473,11 @@ void DrawKnifeCard(SolidArcWorkspaceState& State)
         {
             ImGui::Text("Cutter  %s", CaptionOf(State.Document, Knife.Sketch).c_str());
             ImGui::Text("Target  %s", Knife.Target.empty() ? "?" : SolidArcBodyCaption(State.Document, Knife.Target).c_str());
-            ImGui::Text("Depth   %s m%s", FormatLength(Knife.Depth).c_str(), Knife.Typed.empty() ? "" : (" (typed " + Knife.Typed + ")").c_str());
+            if (KnifeSliceCondition(State)) ImGui::Text("Slice   through (splits the body)");
+            else ImGui::Text("Depth   %s m%s", FormatLength(Knife.Depth).c_str(), Knife.Typed.empty() ? "" : (" (typed " + Knife.Typed + ")").c_str());
+            if (KnifeSliceCondition(State)) ImGui::BeginDisabled();
             if (ToggleButton(State, "Through###KnifeThrough", Knife.ThroughCondition, RowSpan(2))) { Knife.ThroughCondition = !Knife.ThroughCondition; Announce(State, Knife.ThroughCondition ? "Knife: through" : "Knife: to depth"); }
+            if (KnifeSliceCondition(State)) ImGui::EndDisabled();
             ImGui::SameLine();
             if (PressButton(State, "New shape###KnifeNewShape", RowSpan(2))) DrawKnifeShape(State, SolidArcDrawingKind::Circle);
         }
@@ -9278,6 +9368,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Knife.ActiveCondition && !State.Knife.DrawPendingCondition
                            ? (State.Knife.Mode == SolidArcKnifeMode::Insert ? "Knife insert: point at a face · click places · move sideways to size (Shift fine, Ctrl free) · [ / ] turn 15° · type a width · Q add · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel"
                               : State.Knife.Mode == SolidArcKnifeMode::Object ? "Knife object: the first picked body is cut by the others (Shift-click adds cutters) · K keep cutters · Q add · W cut · E intersect · right-click / Enter apply · Tab mode · Esc cancel"
+                              : KnifeSliceCondition(State) ? "Knife line: slices the body through along the line (two bodies) · click / right-click / Enter apply · Tab mode · Esc cancel"
                               : "Knife sketch: pull along the face normal for the depth (Ctrl free) · type a depth · T through · Q add (boss) · W cut · E intersect · R separate · click / right-click / Enter apply · Tab mode · Esc cancel")
                        : State.Sweep.ActiveCondition
                            ? (State.Sweep.Verb == SolidArcSweepVerb::Offset ? "Offset: move sideways (Shift fine, Ctrl free; negative = inward / right) · type a distance · click / right-click / Enter commit · Esc cancel"
@@ -11542,7 +11633,10 @@ SolidArcSceneStates DisplayedSolidArcStates(const SolidArcWorkspaceState& State)
 void RefreshSolidArcScene(SolidArcWorkspaceState& State, bool DirtyCondition)
 {
     SolidArcPhaseClock Clock(State.Profile, "scene rebuild");
-    State.Scene = BuildSolidArcScene(State.Document, 1.5e-3, State.ZebraEnabled);
+    // An adopted preview brings its display arrays (same document revision, same density): no second tessellation.
+    if (State.ReadyScene && State.ReadyScene->Revision == State.Document.Revision && !State.ZebraEnabled) State.Scene = std::move(*State.ReadyScene);
+    else State.Scene = BuildSolidArcScene(State.Document, 1.5e-3, State.ZebraEnabled);
+    State.ReadyScene.reset();
     State.Camera.SceneRadius = std::max(1.0, 0.5 * std::hypot(State.Scene.BoundsHigh[0] - State.Scene.BoundsLow[0], State.Scene.BoundsHigh[1] - State.Scene.BoundsLow[1],
                                                               State.Scene.BoundsHigh[2] - State.Scene.BoundsLow[2]));
     State.HoverIdentity = 0;

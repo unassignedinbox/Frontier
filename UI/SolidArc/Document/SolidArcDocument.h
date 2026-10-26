@@ -694,6 +694,14 @@ bool RedoSolidArcCommand(SolidArcDocument& Document);
 
 // Replays the tree into a fresh partition, refreshes the summary and drops selected names that no longer resolve.
 void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureCondition = false);
+// The two halves of RegenerateSolidArcDocument: the replay (bodies, names, selection pruned) and the figures (audit,
+// volume) of Summary. Commands measure only once they stand (a refused command rolls back to figures it already had).
+void RegenerateSolidArcDocumentDeferred(SolidArcDocument& Document, bool CaptureCondition = false);
+void SummarizeSolidArcDocument(SolidArcDocument& Document);
+// 💡 Apply = adopt the staged preview: a preview session (bevel, knife, gizmo) already ran the very command on a clone
+//    of Document; when nothing changed since (the caller checks its staging key and Document.Revision), the clone's
+//    tree, bodies, figures and selection become Document's in one undo entry instead of running the command again.
+[[nodiscard]] SolidArcCommandOutcome AdoptSolidArcPreview(SolidArcDocument& Document, SolidArcDocument&& Preview, const SolidArcCommandOutcome& Staged);
 
 // Selection by persistent name; Additive toggles membership, otherwise the selection becomes exactly this name.
 void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition);

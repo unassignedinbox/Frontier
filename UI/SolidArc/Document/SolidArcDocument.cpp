@@ -534,8 +534,11 @@ SolidArcCommandOutcome RunCommand(SolidArcDocument& Document, const std::string&
     Outcome.Refusal = Apply();
     if (Outcome.Refusal.empty())
     {
-        RegenerateSolidArcDocument(Document, CaptureCondition);
+        // 📝 The figures (audit, volume) are measured only once the command stands: a refused command rolls back to
+        //    the snapshot, whose figures are reused, so measuring the refused body was wasted work.
+        RegenerateSolidArcDocumentDeferred(Document, CaptureCondition);
         Outcome.Refusal = RefusalFrom(Document, FirstNew, RefusedBefore);
+        if (Outcome.Refusal.empty()) SummarizeSolidArcDocument(Document);
     }
     if (!Outcome.Refusal.empty())
     {
@@ -607,13 +610,28 @@ SolidArcDocument CreateSolidArcDocument(const std::string& Title)
 
 void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureCondition)
 {
+    RegenerateSolidArcDocumentDeferred(Document, CaptureCondition);
+    SummarizeSolidArcDocument(Document);
+}
+
+void RegenerateSolidArcDocumentDeferred(SolidArcDocument& Document, bool CaptureCondition)
+{
     FRONTIER_TRACE_SCOPE("Document", std::string("RegenerateSolidArcDocument") + (CaptureCondition ? " · capture" : ""));
     Document.Partition    = std::make_unique<ModelPartition>();
     Document.Regeneration = RegenerateFeatureTree(*Document.Partition, Document.Tree, CaptureCondition, &Document.Replay);
     // 📝 One counter for every document in the process, so a staged preview never shares a scene key with its source.
     static std::atomic<uint64_t> RevisionCounter{ 0 };
     Document.Revision     = ++RevisionCounter;
+    KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
+    KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
+    std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
+    // Picked curves are SpaceCurves or sketches (loft sections, gizmo); either kind survives while its label still solves.
+    std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label) && !Document.Regeneration.Sketches.contains(Label); });
+}
 
+void SummarizeSolidArcDocument(SolidArcDocument& Document)
+{
+    FRONTIER_TRACE_SCOPE("Document", "SummarizeSolidArcDocument");
     // Every step restored from the checkpoint the summary was measured on: the bodies are those bodies (same records),
     // so the audit / volume figures still hold; only the captions are refreshed (renames do not touch the tree).
     const std::shared_ptr<const ReplayCheckpoint> Final = Document.Replay.Checkpoints.empty() ? nullptr : Document.Replay.Checkpoints.back();
@@ -647,8 +665,10 @@ void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureConditio
             Figures.Vertices       = static_cast<int>(Inventory.Vertices.size());
             Figures.Genus          = Audit.Genus;
             // A moved body's volume was integrated by the move's own assembly (same shells, same integral): reused.
+            // The audit integrated every solid shell already (G6, same shells, same order): its total is the volume.
             const auto Known       = std::find_if(Document.Regeneration.Volumes.begin(), Document.Regeneration.Volumes.end(), [&](const auto& Entry) { return Entry.first == Body; });
-            Figures.Volume         = Figures.SheetCondition ? 0.0 : Known != Document.Regeneration.Volumes.end() ? Known->second : IntegrateBodyVolume(*Document.Partition, Body);
+            Figures.Volume         = Figures.SheetCondition ? 0.0 : Known != Document.Regeneration.Volumes.end() ? Known->second
+                                   : Audit.VolumeCondition ? Audit.Volume : IntegrateBodyVolume(*Document.Partition, Body);
             Summary.PresentCondition = true;
             Summary.SoundCondition   = Summary.SoundCondition && Figures.SoundCondition;
             Summary.SheetCondition   = Summary.SheetCondition || Figures.SheetCondition;
@@ -661,11 +681,29 @@ void RegenerateSolidArcDocument(SolidArcDocument& Document, bool CaptureConditio
         }
         if (!Summary.PresentCondition) Summary.SoundCondition = false;
     }
-    KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
-    KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
-    std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
-    // Picked curves are SpaceCurves or sketches (loft sections, gizmo); either kind survives while its label still solves.
-    std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label) && !Document.Regeneration.Sketches.contains(Label); });
+}
+
+SolidArcCommandOutcome AdoptSolidArcPreview(SolidArcDocument& Document, SolidArcDocument&& Preview, const SolidArcCommandOutcome& Staged)
+{
+    FRONTIER_TRACE_SCOPE("Command", Staged.Label + " · adopted from the preview");
+    const auto           Start  = std::chrono::steady_clock::now();
+    SolidArcHistoryEntry Before = Snapshot(Document, Staged.Label);
+    Document.Tree              = std::move(Preview.Tree);
+    Document.Captions          = std::move(Preview.Captions);
+    Document.Partition         = std::move(Preview.Partition);
+    Document.Regeneration      = std::move(Preview.Regeneration);
+    Document.Summary           = std::move(Preview.Summary);
+    Document.Selection         = std::move(Preview.Selection);
+    Document.Revision          = Preview.Revision;
+    Document.Appearance        = std::move(Preview.Appearance);
+    Document.Replay            = std::move(Preview.Replay);
+    Document.SummaryCheckpoint = std::move(Preview.SummaryCheckpoint);
+    Document.UndoEntries.push_back(std::move(Before));
+    Document.RedoEntries.clear();
+    TrimHistoryReplay(Document);
+    SolidArcCommandOutcome Outcome = Staged;
+    Outcome.Milliseconds          += ElapsedMs(Start);
+    return Outcome;
 }
 
 SolidArcDocument CloneSolidArcDocument(const SolidArcDocument& Source)

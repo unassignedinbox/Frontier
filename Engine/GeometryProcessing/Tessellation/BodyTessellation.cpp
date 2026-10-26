@@ -152,8 +152,8 @@ namespace
     {
     public:
         FaceTessellator(const ModelPartition& Partition, FaceToken Face, PolygonComplex& Complex, const std::unordered_map<uint32_t, int>& EdgeIndex,
-                        std::unordered_set<uint64_t>& ClaimedSides, double Sag, double EdgeLimit, double Bound)
-            : Partition(Partition), Face(Face), Complex(Complex), EdgeIndex(EdgeIndex), ClaimedSides(ClaimedSides), Sag(Sag), EdgeLimit(EdgeLimit),
+                        std::unordered_set<uint64_t>& ClaimedSides, const std::unordered_set<uint64_t>& FixedSides, double Sag, double EdgeLimit, double Bound)
+            : Partition(Partition), Face(Face), Complex(Complex), EdgeIndex(EdgeIndex), ClaimedSides(ClaimedSides), FixedSides(FixedSides), Sag(Sag), EdgeLimit(EdgeLimit),
               Bound(Bound), Surface(Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface)) {}
 
         // Returns an empty string on success, else the refusal reason.
@@ -558,15 +558,6 @@ namespace
         void FlipFolded(std::vector<Facet>& Facets)
         {
             const auto Key = [](int From, int To) { return (static_cast<uint64_t>(static_cast<uint32_t>(From)) << 32) | static_cast<uint32_t>(To); };
-            std::unordered_set<uint64_t> Fixed;                                              // [-] - Edge-sample sides (both senses)
-            for (const PolygonComplexEdge& Edge : Complex.Edges)
-            {
-                for (size_t Index = 1; Index < Edge.Vertices.size(); ++Index)
-                {
-                    Fixed.insert(Key(Edge.Vertices[Index - 1], Edge.Vertices[Index]));
-                    Fixed.insert(Key(Edge.Vertices[Index], Edge.Vertices[Index - 1]));
-                }
-            }
             std::unordered_map<uint64_t, size_t> Sides;                                      // [-] - Directed side → facet
             const auto Register = [&](size_t Index)
             {
@@ -584,7 +575,7 @@ namespace
                     {
                         const Facet Folded = Facets[Index];
                         const int   A = Folded.Vertices[Corner], B = Folded.Vertices[(Corner + 1) % 3], C = Folded.Vertices[(Corner + 2) % 3];
-                        if (Fixed.count(Key(A, B))) continue;
+                        if (FixedSides.count(UndirectedSide(A, B))) continue;
                         const auto Across = Sides.find(Key(B, A));
                         if (Across == Sides.end() || Across->second == Index) continue;
                         const Facet Opposite = Facets[Across->second];
@@ -623,11 +614,7 @@ namespace
         //    (a, b, c) + (b, a, d) into four triangles around a vertex this face owns. Afterwards the face claims its sides.
         void SplitClaimedSides(std::vector<Facet>& Facets)
         {
-            std::unordered_set<uint64_t> Fixed;                                              // [-] - Edge-sample sides
-            for (const PolygonComplexEdge& Edge : Complex.Edges)
-            {
-                for (size_t Index = 1; Index < Edge.Vertices.size(); ++Index) Fixed.insert(UndirectedSide(Edge.Vertices[Index - 1], Edge.Vertices[Index]));
-            }
+            const std::unordered_set<uint64_t>& Fixed = FixedSides;                          // [-] - Edge-sample sides
             for (bool Changed = true; Changed;)
             {
                 Changed = false;
@@ -787,6 +774,12 @@ namespace
                 const std::array<int, 3>& Corners = Owner.Corners;
                 double Deviation = 0.0;                                                      // [len] - Worst measured sag
                 double Longest   = 0.0;                                                      // [len] - Longest unconstrained side
+                // 📝 Curvature first: on a flat carrier (κ = 0) the sag floor is infinite and the deviation never counts, so
+                //    its surface projections (a Newton solve per probe) are skipped.
+                const double κ        = MeasurePeakCurvature(Surface, (PointChart[Corners[0]] + PointChart[Corners[1]] + PointChart[Corners[2]]) * (1.0 / 3.0));
+                const double SagFloor = κ > 0.0 ? 0.25 * std::sqrt(8.0 * Sag / κ) : INFINITY;    // [len]
+                const bool   Measured = SagFloor < INFINITY;
+                if (Measured)
                 {
                     const Vector2 Chart = (PointChart[Corners[0]] + PointChart[Corners[1]] + PointChart[Corners[2]]) * (1.0 / 3.0);
                     const Vector3 Flat  = (PointPosition[Corners[0]] + PointPosition[Corners[1]] + PointPosition[Corners[2]]) * (1.0 / 3.0);
@@ -798,15 +791,13 @@ namespace
                     const int A = Corners[(Side + 1) % 3], B = Corners[(Side + 2) % 3];
                     const Vector2 Chart = (PointChart[A] + PointChart[B]) * 0.5;
                     const Vector3 Flat  = (PointPosition[A] + PointPosition[B]) * 0.5;
-                    Deviation = std::max(Deviation, Distance(EvaluateSurface(Surface, ProjectOntoSurface(Surface, Flat, Chart)).Position, Flat));
+                    if (Measured) Deviation = std::max(Deviation, Distance(EvaluateSurface(Surface, ProjectOntoSurface(Surface, Flat, Chart)).Position, Flat));
                     Longest   = std::max(Longest, Distance(PointPosition[A], PointPosition[B]));
                 }
                 // ⚠️ Termination guard: sag counts only when the triangle is large enough for curvature to produce it,
                 //    ¼·√(8ε/κ) (below it the true sag is ≤ ε/16), so no residual mismatch can spiral into a segment.
                 double Size = 0.0;                                                           // [len] - Longest side, constrained included
                 for (int Side = 0; Side < 3; ++Side) Size = std::max(Size, Distance(PointPosition[Corners[Side]], PointPosition[Corners[(Side + 1) % 3]]));
-                const double κ         = MeasurePeakCurvature(Surface, (PointChart[Corners[0]] + PointChart[Corners[1]] + PointChart[Corners[2]]) * (1.0 / 3.0));
-                const double SagFloor  = κ > 0.0 ? 0.25 * std::sqrt(8.0 * Sag / κ) : INFINITY;   // [len]
                 const bool   Geometric = (Deviation > Sag && Size > SagFloor) || Longest > EdgeLimit;
 
                 // Quality in the scaled chart (only above the boundary feature size, which bounds the point density).
@@ -904,6 +895,7 @@ namespace
         PolygonComplex&                         Complex;
         const std::unordered_map<uint32_t, int>& EdgeIndex;
         std::unordered_set<uint64_t>&           ClaimedSides;
+        const std::unordered_set<uint64_t>&     FixedSides;                                  // [-] - Edge-sample sides of the body (undirected)
         double                                  Sag;
         double                                  EdgeLimit;
         double                                  Bound;
@@ -1025,11 +1017,17 @@ static TessellationOutcome TessellateBodyUntraced(const ModelPartition& Partitio
     }
 
     // ④ Faces. Interior sides are claimed body-wide: a face that reproduces another face's interior side splits it.
+    //    The edge-sample sides are fixed for every face: gathered once here, not once per face.
+    std::unordered_set<uint64_t> FixedSides;
+    for (const PolygonComplexEdge& Edge : Complex.Edges)
+    {
+        for (size_t Index = 1; Index < Edge.Vertices.size(); ++Index) FixedSides.insert(UndirectedSide(Edge.Vertices[Index - 1], Edge.Vertices[Index]));
+    }
     std::unordered_set<uint64_t> ClaimedSides;
     int Budget = Settings.TriangleLimit / 2;                                                 // [-] - Insertions left (≈ 2 triangles each)
     for (FaceToken Face : Inventory.Faces)
     {
-        FaceTessellator Tessellator(Partition, Face, Complex, EdgeIndex, ClaimedSides, Outcome.Sag, Outcome.EdgeLimit, Settings.RadiusEdgeBound);
+        FaceTessellator Tessellator(Partition, Face, Complex, EdgeIndex, ClaimedSides, FixedSides, Outcome.Sag, Outcome.EdgeLimit, Settings.RadiusEdgeBound);
         const std::string Refusal = Tessellator.Run(Budget, Outcome.Triangulation);
         if (!Refusal.empty())
         {

@@ -350,12 +350,14 @@ AuditReport AuditBody(const ModelPartition& Partition, BodyToken Body, AuditScop
             // 📝 Relative to Σ|face flux|: a flat shell cancels to round-off at any size or distance from the origin.
             const ShellVolumeMeasure Measure = MeasureShellVolume(Partition, SolidShell);
             const double ShellVolume = Measure.Volume;                                        // [len³] - Signed shell volume
+            Report.Volume += ShellVolume;                                                    // Same shells, same order as IntegrateBodyVolume
             if (!(std::fabs(ShellVolume) > 1.0e-10 * Measure.FluxMagnitude)) Ledger.Fail(VolumeCheck, LabelToken("S", SolidShell), "shell encloses no volume", ShellVolume, 0.0);
             RegionVolume += ShellVolume;
         }
         Ledger.Examine(VolumeCheck);
         if (!(RegionVolume > 0.0)) Ledger.Fail(VolumeCheck, LabelToken("R", Region), "solid region volume is not positive", RegionVolume, 0.0);
     }
+    Report.VolumeCondition = true;
     return Report;
 }
 
