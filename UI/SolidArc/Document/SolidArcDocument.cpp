@@ -2009,6 +2009,151 @@ SolidArcCommandOutcome DuplicateSolidArcBodies(SolidArcDocument& Document, const
     });
 }
 
+// 📝 A sketch cutter's extrude: the kernel moves the profile plane to Top along the normal and sweeps Bottom − Top, so a
+//    Start above the plane is fine there (only the authored E refuses one: its start sinks into a tangent body).
+SolidArcCommandOutcome KnifeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Top, double Bottom, FeatureCombination Combination,
+                                           const std::string& Target)
+{
+    const std::string Caption = NextCaption(Document, "Knife");
+    const auto        Source  = Document.Captions.find(SketchLabel);
+    const std::string Label   = Caption + " · " + (Source != Document.Captions.end() ? Source->second : SketchLabel) + " · " + FeatureCombinationLabel(Combination) +
+                                " · depth " + FormatAmount(-Bottom);
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == SketchLabel; });
+        if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + SketchLabel;
+        if (!(Top >= 0.0) || !(Bottom < -1.0e-9) || !(Top - Bottom > 1.0e-9)) return "the knife depth must be positive";
+        if (Combination == FeatureCombination::New) return "choose Difference, Union, Intersection or Separate";
+        if (Combination != FeatureCombination::Separate)
+        {
+            if (!Document.Summary.PresentCondition) return "nothing to cut yet (no body)";
+            if (Target.empty() || !FindRegeneratedBody(Document, Target)) return Target.empty() ? std::string("no body under the knife") : "no body named " + Target;
+        }
+        Found->FillCondition = true;                                                         // A cutter is solid
+        FeatureStep Step;
+        Step.Kind        = FeatureStepKind::Extrude;
+        Step.Label       = "Extrude#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Profile     = SketchLabel;
+        if (Top > 0.0) Step.Start = FeatureValue{ Top };
+        Step.Extent      = FeatureValue{ Bottom };
+        Step.Combination = Combination;
+        Step.Target      = Combination == FeatureCombination::Separate ? std::string{} : Target;
+        Document.Captions[Step.Label] = Caption;
+        const std::string Made = Step.Label;
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Selection = {};
+        if (Combination == FeatureCombination::Separate)
+        {
+            Document.Selection.Bodies   = { Made };
+            Document.Selection.LastKind = SolidArcSelectionKind::Body;
+        }
+        return {};
+    });
+}
+
+SolidArcCommandOutcome KnifeSolidArcInsert(SolidArcDocument& Document, const SolidArcInsertPlacement& Placement)
+{
+    const std::string Caption = NextCaption(Document, "Knife");
+    const std::string Label   = Caption + " · " + Placement.Name + " · " + FeatureCombinationLabel(Placement.Combination);
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Placement.Exchange.empty()) return "the insert " + Placement.Name + " holds no solid";
+        const AffineMap& Map = Placement.Map;
+        const double Volume = Dot(Map.ColumnX, Cross(Map.ColumnY, Map.ColumnZ));
+        if (!(Volume > 1.0e-15)) return "the insert placement is degenerate (zero size or mirrored)";
+        if (Placement.Combination != FeatureCombination::Separate)
+        {
+            if (Placement.Combination != FeatureCombination::Union && Placement.Combination != FeatureCombination::Difference &&
+                Placement.Combination != FeatureCombination::Intersection)
+                return "choose Difference, Union, Intersection or Separate";
+            if (Placement.Target.empty() || !FindRegeneratedBody(Document, Placement.Target))
+                return Placement.Target.empty() ? std::string("place the insert on a body's face") : "no body named " + Placement.Target;
+        }
+        FeatureStep Import;
+        Import.Kind         = FeatureStepKind::Import;
+        Import.Label        = "Import#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Import.Exchange     = Placement.Exchange;
+        Import.ExchangeUnit = SolidArcModelUnitMillimetres;
+        const std::string Insert = Import.Label;
+        Document.Captions[Insert] = NextCaption(Document, Placement.Name.empty() ? std::string("Insert") : Placement.Name);
+        Document.Tree.Steps.push_back(std::move(Import));
+        FeatureStep Place;
+        Place.Kind      = FeatureStepKind::Transform;
+        Place.Label     = "Transform#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Place.Target    = Insert;
+        Place.Placement = Map;
+        Document.Captions[Place.Label] = NextCaption(Document, "Place");
+        Document.Tree.Steps.push_back(std::move(Place));
+        Document.Selection = {};
+        if (Placement.Combination == FeatureCombination::Separate)
+        {
+            Document.Selection.Bodies   = { Insert };
+            Document.Selection.LastKind = SolidArcSelectionKind::Body;
+            return {};
+        }
+        FeatureStep Combine;
+        Combine.Kind        = FeatureStepKind::Combine;
+        Combine.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Combine.Combination = Placement.Combination;
+        Combine.Target      = Placement.Target;
+        Combine.Tool        = Insert;
+        Document.Captions[Combine.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Combine));
+        return {};
+    });
+}
+
+SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools, FeatureCombination Combination,
+                                           bool KeepCondition)
+{
+    const std::string Caption = NextCaption(Document, "Knife");
+    std::string Operands = SolidArcBodyCaption(Document, Target);
+    const char* Sign = Combination == FeatureCombination::Difference ? " − " : Combination == FeatureCombination::Intersection ? " ∩ " : " ∪ ";
+    for (const std::string& Tool : Tools) Operands += Sign + SolidArcBodyCaption(Document, Tool);
+    const std::string Label = Caption + " · " + FeatureCombinationLabel(Combination) + " (" + Operands + ")" + (KeepCondition ? " · cutters kept" : "");
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (Combination != FeatureCombination::Union && Combination != FeatureCombination::Difference && Combination != FeatureCombination::Intersection)
+            return "choose Difference, Union or Intersection";
+        if (Tools.empty()) return "select the target body, then the cutter bodies";
+        if (!FindRegeneratedBody(Document, Target)) return "no body named " + Target;
+        std::set<std::string> Seen{ Target };
+        for (const std::string& Tool : Tools)
+        {
+            if (!FindRegeneratedBody(Document, Tool)) return "no body named " + Tool;
+            if (!Seen.insert(Tool).second) return SolidArcBodyCaption(Document, Tool) + " is picked twice (the target cannot be a cutter)";
+        }
+        const AffineMap Identity;                                                            // In place
+        for (const std::string& Tool : Tools)
+        {
+            std::string Cutter = Tool;
+            if (KeepCondition)
+            {
+                FeatureStep Copy;
+                Copy.Kind      = FeatureStepKind::Duplicate;
+                Copy.Label     = "Duplicate#" + std::to_string(NextStepOrdinal(Document.Tree));
+                Copy.Target    = Tool;
+                Copy.Placement = Identity;
+                Document.Captions[Copy.Label] = NextCaption(Document, SolidArcBodyCaption(Document, Tool) + "Cutter");
+                Cutter = Copy.Label;
+                Document.Tree.Steps.push_back(std::move(Copy));
+            }
+            FeatureStep Step;
+            Step.Kind        = FeatureStepKind::Combine;
+            Step.Label       = "Combine#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Combination = Combination;
+            Step.Target      = Target;
+            Step.Tool        = Cutter;
+            Document.Captions[Step.Label] = Caption;
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        Document.Selection          = {};
+        Document.Selection.Bodies   = { Target };
+        Document.Selection.LastKind = SolidArcSelectionKind::Body;
+        return {};
+    });
+}
+
 SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, SolidArcVisibilityVerb Verb)
 {
     // The picked bodies: body picks plus the owners of picked faces and edges.

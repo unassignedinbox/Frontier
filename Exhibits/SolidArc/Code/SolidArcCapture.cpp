@@ -50,6 +50,7 @@ struct CaptureSettings
     std::string OpenPath     = {};                                                           // [-]  - Document opened at start
     std::string DocumentPath = {};                                                           // [-]  - Override of the default Save path
     std::string CurvesPath   = {};                                                           // [-]  - Override of the Import curves path
+    std::string InsertFolder = {};                                                           // [-]  - Override of the knife insert library folder
     bool        Specimen     = false;                                                        // [-]  - Start with the Bracket specimen
     bool        ResetFiles   = false;                                                        // [-]  - Delete document / recovery files first
     int         Width        = 0;                                                            // [px] - Override of the frame width
@@ -93,6 +94,7 @@ CaptureSettings ReadArguments(int Count, char** Arguments)
         else if (Flag == "--open") Settings.OpenPath = Value();
         else if (Flag == "--document") Settings.DocumentPath = Value();
         else if (Flag == "--curves") Settings.CurvesPath = Value();
+        else if (Flag == "--inserts") Settings.InsertFolder = Value();
         else if (Flag == "--specimen") Settings.Specimen = true;
         else if (Flag == "--reset-files") Settings.ResetFiles = true;
         else if (Flag == "--width") Settings.Width = std::atoi(Value().c_str());
@@ -119,6 +121,7 @@ int main(int Count, char** Arguments)
     if (!Settings.DriverPath.empty()) Options.DriverPath = Settings.DriverPath;
     if (!Settings.DocumentPath.empty()) Options.DocumentPath = Settings.DocumentPath;
     if (!Settings.CurvesPath.empty()) Options.CurvesPath = Settings.CurvesPath;
+    if (!Settings.InsertFolder.empty()) Options.InsertFolder = Settings.InsertFolder;
     if (!Settings.TracePath.empty()) Frontier::GeometryProcessing::OpenOperationTrace(Settings.TracePath);
 
     if (Settings.ResetFiles)

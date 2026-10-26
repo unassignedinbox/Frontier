@@ -20,6 +20,7 @@ RecoveryPath = "Autosave/SolidArcWorkspace.solidarc"
 AutosaveDelay = 0.6              # s of quiet time before an autosave
 DocumentPath = "Documents/Bracket.solidarc"
 CurvesPath = "Samples/SyntheticBonnet.toml"
+InsertFolder = "Inserts"         # Knife (Shift+K) insert library: every *.step here joins the built-in cutters
 
 [Vulkan]
 DriverPath = ""                  # empty: the system Vulkan loader (vulkan-1.dll, installed with the GPU driver)

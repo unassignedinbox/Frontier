@@ -46,6 +46,7 @@ SolidArcOptions LoadSolidArcOptions(const std::string& Path)
     Options.RecoveryPath        = Root["Files"]["RecoveryPath"].value_or(Options.RecoveryPath);
     Options.AutosaveDelay       = Root["Files"]["AutosaveDelay"].value_or(Options.AutosaveDelay);
     Options.DocumentPath        = Root["Files"]["DocumentPath"].value_or(Options.DocumentPath);
+    Options.InsertFolder        = Root["Files"]["InsertFolder"].value_or(Options.InsertFolder);
     Options.CurvesPath          = Root["Files"]["CurvesPath"].value_or(Options.CurvesPath);
     Options.DriverPath          = Root["Vulkan"]["DriverPath"].value_or(Options.DriverPath);
     Options.ValidationEnabled   = Root["Vulkan"]["Validation"].value_or(Options.ValidationEnabled);
@@ -59,7 +60,7 @@ std::string EncodeSolidArcOptions(const SolidArcOptions& Options)
         { "Viewport", toml::table{ { "EdgeStroke", double(Options.EdgeStroke) }, { "Grid", Options.GridEnabled },
                                    { "Orthographic", Options.OrthographicEnabled }, { "FieldOfView", Options.FieldOfView } } },
         { "Interface", toml::table{ { "FontPath", Options.FontPath }, { "FontSize", double(Options.FontSize) } } },
-        { "Files", toml::table{ { "RecoveryPath", Options.RecoveryPath }, { "AutosaveDelay", Options.AutosaveDelay }, { "DocumentPath", Options.DocumentPath }, { "CurvesPath", Options.CurvesPath } } },
+        { "Files", toml::table{ { "RecoveryPath", Options.RecoveryPath }, { "AutosaveDelay", Options.AutosaveDelay }, { "DocumentPath", Options.DocumentPath }, { "CurvesPath", Options.CurvesPath }, { "InsertFolder", Options.InsertFolder } } },
         { "Vulkan", toml::table{ { "DriverPath", Options.DriverPath }, { "Validation", Options.ValidationEnabled } } },
     };
     std::ostringstream Stream;

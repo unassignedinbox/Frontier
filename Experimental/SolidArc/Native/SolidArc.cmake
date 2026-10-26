@@ -113,6 +113,7 @@ add_library(FrontierSolidArcDocument STATIC
     ${SOLIDARC_UI}/Document/SolidArcMeasurement.cpp
     ${SOLIDARC_UI}/Document/SolidArcDrawingSheet.cpp
     ${SOLIDARC_UI}/Document/SolidArcExchange.cpp
+    ${SOLIDARC_UI}/Document/SolidArcKnife.cpp
     ${SOLIDARC_UI}/Document/SolidArcScene.cpp
     ${SOLIDARC_UI}/Document/SolidArcSpecimen.cpp
 )

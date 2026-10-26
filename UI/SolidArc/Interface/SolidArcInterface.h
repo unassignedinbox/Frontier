@@ -12,6 +12,7 @@
 #include "UI/SolidArc/Document/SolidArcDocument.h"
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcExchange.h"
+#include "UI/SolidArc/Document/SolidArcKnife.h"
 #include "UI/SolidArc/Document/SolidArcMeasurement.h"
 #include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Interface/SolidArcOptions.h"
@@ -386,6 +387,52 @@ struct SolidArcSweepSession
     int                                         Commits           = 0;                       // [-]   - Committed (script evidence)
 };
 
+enum class SolidArcKnifeMode : uint8_t
+{
+    Sketch = 0,                                                                              // A closed sketch cut to a depth / through
+    Insert = 1,                                                                              // A library cutter placed on a face
+    Object = 2,                                                                              // Picked bodies: the first is cut by the rest
+};
+
+// 📝 Shift+K Knife (Blender KitOps style). Sketch: the focused closed sketch (or a shape drawn for it on a face) is filled
+//    and extruded into the body under it — horizontal pointer motion sets the depth (Shift fine, snapped 0.01 unless
+//    Ctrl), digits type it, T cuts straight through. Insert: the library cutter ghost follows the faces under the pointer,
+//    a click places it, motion then sizes it, [ / ] turn it 15°. Object: the first picked body is cut by the others, K
+//    keeps the cutters. Q union · W difference (default) · E intersect · R separate; a click / right-click / Enter applies,
+//    Esc cancels. The result stages as a document (gated like the bevel when a stage is slow).
+struct SolidArcKnifeSession
+{
+    bool                                   ActiveCondition      = false;                     // [-]   - Session open
+    SolidArcKnifeMode                      Mode                 = SolidArcKnifeMode::Sketch; // [-]   - Cutter source
+    GeometryProcessing::FeatureCombination Combination          = GeometryProcessing::FeatureCombination::Difference; // [-] - Q / W / E / R
+    std::string                            Sketch               = {};                        // [-]   - Sketch: profile step label
+    std::string                            Face                 = {};                        // [-]   - Sketch: face it was drawn on (target hint)
+    bool                                   DrawPendingCondition = false;                     // [-]   - Sketch: a shape is being drawn for the knife
+    bool                                   ThroughCondition     = false;                     // [-]   - Sketch: T, straight through the body
+    double                                 Depth                = 0.1;                       // [len] - Sketch: cut depth below the plane
+    double                                 Drift                = 0.1;                       // [len] - Unsnapped pointer amount (depth / size)
+    std::string                            Typed                = {};                        // [-]   - Typed depth / size
+    int                                    Insert               = 0;                         // [idx] - Insert: library index
+    bool                                   HoverCondition       = false;                     // [-]   - Insert: a face is under the pointer
+    bool                                   PlacedCondition      = false;                     // [-]   - Insert: clicked down (motion sizes it)
+    bool                                   SizedCondition       = false;                     // [-]   - Insert: size chosen by hand (no auto size)
+    GeometryProcessing::OrthonormalFrame   Spot                 = {};                        // [len] - Insert: surface point + face frame
+    std::string                            SpotBody             = {};                        // [-]   - Insert: body under the spot
+    double                                 Size                 = 0.25;                      // [len] - Insert: width
+    double                                 Turn                 = 0.0;                       // [rad] - Insert: about the face normal
+    bool                                   KeepCondition        = false;                     // [-]   - Object: K, cutters survive
+    std::string                            Target               = {};                        // [-]   - Body the staged knife cuts
+    std::string                            StagedKey            = {};                        // [-]   - Parameters the preview shows
+    double                                 StageMilliseconds    = 0.0;                       // [ms]  - Last stage time
+    double                                 QuietSince           = 0.0;                       // [s]   - Last pointer motion (steady clock)
+    std::unique_ptr<SolidArcDocument>      Preview              = {};                        // [-]   - Staged document
+    SolidArcScene                          PreviewScene         = {};                        // [-]   - Its display arrays
+    std::string                            Refusal              = {};                        // [-]   - Why apply is refused
+    int                                    Commits              = 0;                         // [-]   - Applied (script evidence)
+    SolidArcInsertLibrary                  Library              = {};                        // [-]   - Built-ins + library folder (lazy)
+    bool                                   LibraryCondition     = false;                     // [-]   - Library assembled
+};
+
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).
 struct SolidArcClipboard
 {
@@ -622,6 +669,7 @@ struct SolidArcWorkspaceState
     SolidArcTransformSession              Transform      = {};                               // [-]   - G / R / S / Shift+D session
     SolidArcGizmoSession                  Gizmo          = {};                               // [-]   - Viewport move / rotate / scale gizmo
     SolidArcSweepSession                  Sweep          = {};                               // [-]   - O / P session
+    SolidArcKnifeSession                  Knife          = {};                               // [-]   - Shift+K knife (KitOps-style cutters)
     SolidArcClipboard                     Clipboard      = {};                               // [-]   - Ctrl+C / Ctrl+V
     SolidArcMeasureSession                Measure        = {};                               // [-]   - I: Measure card + overlay
     SolidArcSectionSession                Section        = {};                               // [-]   - Alt+S: section plane, caps, exact figures

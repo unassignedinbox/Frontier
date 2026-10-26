@@ -33,6 +33,7 @@ struct SolidArcOptions
     double      AutosaveDelay       = 0.6;                                                   // [s]   - Quiet time before an autosave
     std::string DocumentPath        = "Bracket.solidarc";                               // [-]   - Default Save / Open path
     std::string CurvesPath          = "Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml"; // [-] - Default Import curves path
+    std::string InsertFolder        = "Inserts";                                             // [-]   - Knife insert library (*.step)
     std::string DriverPath          = {};                                                    // [-]   - Vulkan ICD loaded directly (empty: loader)
     bool        ValidationEnabled   = false;                                                 // [-]   - Khronos validation layer when present
     std::string Refusal             = {};                                                    // [-]   - Parse failure of the file (defaults kept)

@@ -396,6 +396,30 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome DuplicateSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys,
                                                              const GeometryProcessing::AffineMap& Map, const std::string& Source = {});
 
+// 💡 Knife (KitOps-style cutters, Shift+K): a closed sketch is filled and extruded from Top (≥ 0, a lift above its plane
+//    so the cutter clears a flush face) down to Bottom (< Top, below the plane) and combined into Target (Difference cuts,
+//    Union adds, Intersection keeps the overlap, Separate leaves the cutter as a body of its own). One undo entry with the
+//    fill; refused (document untouched) when the profile is open or the Boolean refuses.
+[[nodiscard]] SolidArcCommandOutcome KnifeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Top, double Bottom,
+                                                         GeometryProcessing::FeatureCombination Combination, const std::string& Target);
+
+// 📝 An insert (boolean library cutter): its canonical STEP text is imported as a body, placed by Map and combined into
+//    Target (Separate: it stays a body of its own). Import + Transform + Combine in one undo entry.
+struct SolidArcInsertPlacement
+{
+    std::string                            Name        = {};                                 // [-] - Library caption ("Round hole")
+    std::string                            Exchange    = {};                                 // [-] - STEP text (insert frame)
+    GeometryProcessing::AffineMap          Map         = {};                                 // [-] - Insert frame → world
+    GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Difference; // [-] - Into Target
+    std::string                            Target      = {};                                 // [-] - Body cut / joined
+};
+[[nodiscard]] SolidArcCommandOutcome KnifeSolidArcInsert(SolidArcDocument& Document, const SolidArcInsertPlacement& Placement);
+
+// Knife with existing bodies: each tool is combined into Target; KeepCondition first duplicates the tools in place so
+// the cutters survive (KitOps keeps its cutter objects). One undo entry.
+[[nodiscard]] SolidArcCommandOutcome KnifeSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools,
+                                                         GeometryProcessing::FeatureCombination Combination, bool KeepCondition);
+
 // 📝 Alt+J (Fusion Joint; Plasticity has none): place the body owning MovingName onto the body owning FixedName by a
 //    joint between the two joint origins (an edge or a face each; Assembly/JointSolver.h reads the origin off it).
 //    Angles in degrees; each value becomes a step parameter (caption.Angle, .Offset, .Slide, .SecondSlide, .Pitch, .Roll)
