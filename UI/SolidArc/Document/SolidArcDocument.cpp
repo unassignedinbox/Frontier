@@ -17,12 +17,14 @@
 #include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
 #include "Engine/GeometryProcessing/Audit/ModelAudit.h"
 #include "Engine/GeometryProcessing/Blend/RollingBallGeometry.h"
+#include "Engine/GeometryProcessing/Local/FaceChange.h"
 #include "Engine/GeometryProcessing/Sketch/SketchCatalogue.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSolver.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 #include "Engine/GeometryProcessing/Surfacing/CurveNetwork.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <atomic>
 #include <chrono>
@@ -737,14 +739,17 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, BlendP
 
 SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request)
 {
-    const bool        VariableCondition = Request.EndSize.has_value();
+    const bool        VariableCondition = Request.EndSize.has_value() && Request.VertexSizes.empty();
+    const bool        HandleCondition   = !Request.VertexSizes.empty();
     const std::string Stem  = Request.Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer";
-    const std::string Sizes = FormatAmount(Request.Size) + (VariableCondition ? " → " + FormatAmount(*Request.EndSize) : std::string());
+    const std::string Sizes = FormatAmount(Request.Size) + (VariableCondition ? " → " + FormatAmount(*Request.EndSize) : std::string())
+                            + (HandleCondition ? " · " + std::to_string(Request.VertexSizes.size()) + " corner size(s)" : std::string());
     const std::string Label = Stem + " " + Sizes + " on " + std::to_string(Document.Selection.Edges.size()) + " edge(s)";
     return RunCommand(Document, Label, true, [&]() -> std::string
     {
         if (Document.Selection.Edges.empty()) return "select one or more edges first";
         if (Request.Size <= 0.0 || (VariableCondition && *Request.EndSize <= 0.0)) return "the blend size must be positive";
+        for (const auto& [Vertex, Size] : Request.VertexSizes) if (!(Size > 0.0)) return "the corner size at " + Vertex + " must be positive";
         std::string Owner;
         if (const std::string Problem = CommonBody(Document, SolidArcSelectionKind::Edge, Document.Selection.Edges, Owner); !Problem.empty()) return Problem;
         const RegeneratedBody* Target = FindRegeneratedBody(Document, Owner);
@@ -768,10 +773,34 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const 
             }
         }
 
+        // ①′ Handles: every listed vertex must be an end of a picked edge on the current body.
+        std::vector<TopologyReference> Corners;
+        if (HandleCondition)
+        {
+            if (!Document.Partition || !Target) return "there is no body to blend";
+            std::set<std::string> Ends;
+            for (const std::string& EdgeName : Document.Selection.Edges)
+            {
+                const auto Edge = std::find_if(Target->Naming.Edges.begin(), Target->Naming.Edges.end(), [&](const auto& Entry) { return Entry.second == EdgeName; });
+                if (Edge == Target->Naming.Edges.end()) return "edge " + EdgeName + " is not on the current body";
+                const EdgeProfile& Profile = Document.Partition->Edges.Resolve(Document.Partition->Edges.TokenAt(Edge->first));
+                for (VertexToken End : { Profile.Start, Profile.End })
+                    if (const auto Name = Target->Naming.Vertices.find(End.Slot); Name != Target->Naming.Vertices.end()) Ends.insert(Name->second);
+            }
+            std::set<std::string> Seen;
+            for (const auto& [Vertex, Size] : Request.VertexSizes)
+            {
+                if (!Ends.contains(Vertex)) return "corner " + Vertex + " is not an end of a picked edge";
+                if (!Seen.insert(Vertex).second) return "corner " + Vertex + " has two sizes";
+                Corners.push_back({ ReferenceKind::Vertex, Vertex, {} });
+            }
+        }
+
         // ② Parameters and the step.
         const std::string Caption   = NextCaption(Document, Stem);
         const std::string StepLabel = "Blend#" + std::to_string(NextStepOrdinal(Document.Tree));
-        const double      Larger    = std::max(Request.Size, Request.EndSize.value_or(Request.Size));
+        double            Larger    = std::max(Request.Size, VariableCondition ? *Request.EndSize : Request.Size);
+        for (const auto& Entry : Request.VertexSizes) Larger = std::max(Larger, Entry.second);
         const char*       Meaning   = Request.Shape == BlendProfile::Fillet ? "fillet radius" : "chamfer setback";
         Document.Tree.Parameters.push_back({ Caption + ".Size", Request.Size, 0.0, std::max(1.0, 4.0 * Larger),
                                              VariableCondition ? std::string(Meaning) + " at the anchor corners" : std::string(Meaning) });
@@ -788,10 +817,142 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const 
             Step.EndSize     = ParameterValue(Caption + ".EndSize");
             Step.SizeAnchors = std::move(Anchors);
         }
+        for (size_t Index = 0; Index < Request.VertexSizes.size(); ++Index)
+        {
+            const std::string Name = Caption + ".Corner" + std::to_string(Index + 1);
+            Document.Tree.Parameters.push_back({ Name, Request.VertexSizes[Index].second, 0.0, std::max(1.0, 4.0 * Larger), std::string(Meaning) + " at " + Request.VertexSizes[Index].first });
+            Step.AnchorSizes.push_back(ParameterValue(Name));
+        }
+        if (HandleCondition) Step.SizeAnchors = std::move(Corners);
         Document.Tree.Steps.push_back(std::move(Step));
         Document.Captions[StepLabel] = Caption;
         return {};
     });
+}
+
+// Edge tokens of the picked edge names on the one body carrying them (empty when they span bodies or none resolves).
+[[nodiscard]] std::vector<EdgeToken> ResolvePickedEdges(const SolidArcDocument& Document, const std::vector<std::string>& Edges, const RegeneratedBody*& Owner)
+{
+    Owner = nullptr;
+    std::string Key;
+    if (!Document.Partition || Edges.empty() || !CommonBody(Document, SolidArcSelectionKind::Edge, Edges, Key).empty()) return {};
+    Owner = FindRegeneratedBody(Document, Key);
+    if (!Owner) return {};
+    std::vector<EdgeToken> Tokens;
+    for (const std::string& Name : Edges)
+    {
+        const auto Entry = std::find_if(Owner->Naming.Edges.begin(), Owner->Naming.Edges.end(), [&](const auto& Pair) { return Pair.second == Name; });
+        if (Entry == Owner->Naming.Edges.end()) return {};
+        Tokens.push_back(Document.Partition->Edges.TokenAt(Entry->first));
+    }
+    return Tokens;
+}
+
+// The two faces of a manifold edge (the second equals the first on a lamina edge).
+[[nodiscard]] std::array<FaceToken, 2> EdgeFaces(const ModelPartition& Partition, EdgeToken Edge)
+{
+    const FinToken Entry = Partition.Edges.Resolve(Edge).RadialFin;
+    const FinToken Mate  = Partition.RadialMate(Entry);
+    return { Partition.Loops.Resolve(Partition.Fins.Resolve(Entry).Loop).Face, Partition.Loops.Resolve(Partition.Fins.Resolve(Mate).Loop).Face };
+}
+
+std::vector<SolidArcBlendHandle> MeasureSolidArcBlendHandles(const SolidArcDocument& Document, const std::vector<std::string>& Edges)
+{
+    const RegeneratedBody*       Owner  = nullptr;
+    const std::vector<EdgeToken> Tokens = ResolvePickedEdges(Document, Edges, Owner);
+    if (Tokens.empty()) return {};
+    const ModelPartition& Partition = *Document.Partition;
+    const auto Bisector = [&](const std::vector<std::pair<FaceToken, Vector3>>& Feet)
+    {
+        Vector3 Sum{};
+        std::set<uint32_t> Faces;
+        for (const auto& [Face, Position] : Feet) if (Faces.insert(Face.Slot).second) Sum = Sum + EvaluateOutwardNormal(Partition, Face, Position);
+        return Length(Sum) > 1.0e-9 ? Normalize(Sum) : Vector3{};
+    };
+
+    // ① The uniform handle at the middle of the first edge.
+    std::vector<SolidArcBlendHandle> Handles;
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Tokens.front());
+        const Vector3      Middle  = EvaluateCurve(Partition.Curves.Resolve(Profile.Curve), 0.5 * (Profile.IntervalLow + Profile.IntervalHigh)).Position;
+        const auto         Faces   = EdgeFaces(Partition, Tokens.front());
+        Handles.push_back({ {}, Middle, Bisector({ { Faces[0], Middle }, { Faces[1], Middle } }), int(Tokens.size()) });
+    }
+
+    // ② One per distinct end vertex of the open picked edges (a closed edge's only vertex cannot take its own size).
+    std::map<uint32_t, std::vector<std::pair<FaceToken, Vector3>>> Feet;
+    std::map<uint32_t, int>  Counts;
+    std::set<uint32_t>       Closed;
+    std::vector<uint32_t>    Order;
+    for (EdgeToken Edge : Tokens)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        const auto         Faces   = EdgeFaces(Partition, Edge);
+        if (Profile.Start == Profile.End) { Closed.insert(Profile.Start.Slot); continue; }
+        for (VertexToken End : { Profile.Start, Profile.End })
+        {
+            const Vector3 Position = Partition.Vertices.Resolve(End).Position;
+            if (!Counts.contains(End.Slot)) Order.push_back(End.Slot);
+            Counts[End.Slot] += 1;
+            Feet[End.Slot].push_back({ Faces[0], Position });
+            Feet[End.Slot].push_back({ Faces[1], Position });
+        }
+    }
+    for (uint32_t Slot : Order)
+    {
+        const auto Name = Owner->Naming.Vertices.find(Slot);
+        if (Closed.contains(Slot) || Name == Owner->Naming.Vertices.end()) continue;
+        const Vector3 Direction = Bisector(Feet[Slot]);
+        if (Length(Direction) < 0.5) continue;
+        Handles.push_back({ Name->second, Partition.Vertices.Resolve(Partition.Vertices.TokenAt(Slot)).Position, Direction, Counts[Slot] });
+    }
+    return Handles;
+}
+
+SolidArcBlendFit MeasureSolidArcBlendFit(const SolidArcDocument& Document, const std::vector<std::string>& Edges)
+{
+    SolidArcBlendFit             Fit;
+    const RegeneratedBody*       Owner  = nullptr;
+    const std::vector<EdgeToken> Tokens = ResolvePickedEdges(Document, Edges, Owner);
+    if (Tokens.empty()) { Fit.Refusal = "no picked edges on one body"; return Fit; }
+    const ModelPartition& Partition = *Document.Partition;
+    double Span = std::numeric_limits<double>::infinity();
+    for (EdgeToken Edge : Tokens)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        const double       Along   = MeasureEdgeLength(Partition, Edge);
+        Span = std::min(Span, Profile.Start == Profile.End ? Along / (2.0 * std::numbers::pi) : Along);   // Closed: its radius when it is a circle
+        // The other edges of both faces that touch this edge's ends bound how far the blend can roll onto the faces.
+        for (FaceToken Face : EdgeFaces(Partition, Edge))
+        {
+            for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+            {
+                const FinToken First = Partition.Loops.Resolve(Loop).FirstFin;
+                if (!First.PresentCondition()) continue;
+                FinToken Fin = First;
+                for (int Guard = 0; Guard < 100000; ++Guard)
+                {
+                    const EdgeToken Other = Partition.Fins.Resolve(Fin).Edge;
+                    if (Other != Edge)
+                    {
+                        const EdgeProfile& Neighbour = Partition.Edges.Resolve(Other);
+                        const bool Touching = Neighbour.Start == Profile.Start || Neighbour.Start == Profile.End || Neighbour.End == Profile.Start || Neighbour.End == Profile.End;
+                        if (Touching && Neighbour.Start != Neighbour.End) Span = std::min(Span, MeasureEdgeLength(Partition, Other));
+                    }
+                    Fin = Partition.Fins.Resolve(Fin).Successor;
+                    if (Fin == First) break;
+                }
+            }
+        }
+    }
+    if (!std::isfinite(Span) || !(Span > 0.0)) { Fit.Refusal = "the picked edges have no length"; return Fit; }
+    Fit.Span = Span;
+    const double Wanted = 0.15 * Span;                                                      // [len] - About 15 % of the bound
+    const double Decade = std::pow(10.0, std::floor(std::log10(Wanted)));
+    const double Steps[] = { 5.0, 2.0, 1.0 };
+    Fit.Fitted = Decade;
+    for (double Step : Steps) if (Step * Decade <= Wanted * (1.0 + 1.0e-9)) { Fit.Fitted = Step * Decade; break; }
+    return Fit;
 }
 
 SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceOperationKind Operation, double Amount, std::optional<Vector3> Direction)

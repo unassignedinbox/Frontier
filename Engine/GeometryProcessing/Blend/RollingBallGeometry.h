@@ -34,7 +34,9 @@ enum class BlendProfile : uint8_t
 // 📝 Size is the ball radius for a fillet and the equal setback along each face for a chamfer. EndSize makes the blend
 //    variable: the size runs linearly from Size at each edge's start vertex to EndSize at its end vertex. SizeAnchors
 //    pins that direction to vertices instead of edge senses (which a regeneration may reverse): each edge takes Size at
-//    the end listed there, and an edge with neither or both ends listed is refused.
+//    the end listed there, and an edge with neither or both ends listed is refused. AnchorSizes (one per SizeAnchors
+//    entry) instead gives every listed vertex its own size: each edge runs linearly from its start vertex's size to its
+//    end vertex's, an unlisted vertex takes Size, and blends meeting at a vertex agree there (handles on a loop).
 struct BlendSettings
 {
     BlendProfile             Profile             = BlendProfile::Fillet;                     // [-]   - Cross-section
@@ -42,6 +44,7 @@ struct BlendSettings
     bool                     TangentChainEnabled = false;                                    // [-]   - Grow the edge set along G1 chains first
     std::optional<double>    EndSize             = {};                                       // [len] - Size at the end vertex (empty = constant)
     std::vector<VertexToken> SizeAnchors         = {};                                       // [-]   - Variable: vertices that take Size (empty = start vertices)
+    std::vector<double>      AnchorSizes         = {};                                       // [len] - Per vertex: size at SizeAnchors[i] (empty = Size / EndSize)
 };
 
 // 💡 Everything about one blended edge that does not depend on its neighbours. Spine and both contact curves share

@@ -140,6 +140,7 @@ struct FeatureStep
     FeatureValue                   Size           = {};                                      // [len] - Blend radius / setback (at the anchors)
     std::optional<FeatureValue>    EndSize        = {};                                      // [len] - Blend: size at the far ends (empty = constant)
     std::vector<TopologyReference> SizeAnchors    = {};                                      // [-]   - Blend (variable): vertices that take Size, one per edge
+    std::vector<FeatureValue>      AnchorSizes    = {};                                      // [len] - Blend (per vertex): size at SizeAnchors[i] (empty: Size / EndSize)
     FaceOperationKind              Operation      = FaceOperationKind::Push;                 // [-]   - Face-operation verb
     FeatureValue                   Amount         = {};                                      // [len|rad|-] - Distance / angle / factor (by verb)
     std::vector<TopologyReference> References     = {};                                      // [-]   - Blend: edges · face operation: faces

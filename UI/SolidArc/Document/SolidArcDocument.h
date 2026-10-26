@@ -184,6 +184,28 @@ struct SolidArcBlendRequest
     double                 Size              = 0.25;                                         // [len] - Radius / setback (at the anchors)
     std::optional<double>  EndSize           = {};                                           // [len] - Size at the far ends (empty = constant)
     bool                   ReversedCondition = false;                                        // [-]   - Anchor at each edge's end vertex
+    std::vector<std::pair<std::string, double>> VertexSizes = {};                            // [len] - Handles: size per persistent vertex name (unlisted: Size)
+};
+
+// 📝 Bevel handles (Plasticity's fillet gizmo): one per distinct vertex of the picked edges — dragged, it gives that
+//    corner its own size (variable blend) — plus the uniform handle at the middle of the first edge (Vertex empty).
+//    Direction is the outward bisector of the two faces' normals there; Edges counts the picked edges at the vertex.
+struct SolidArcBlendHandle
+{
+    std::string                  Vertex    = {};                                             // [-]   - Persistent vertex name (empty: uniform handle)
+    GeometryProcessing::Vector3  Position  = {};                                             // [len] - Vertex / mid-edge point
+    GeometryProcessing::Vector3  Direction = {};                                             // [-]   - Unit outward bisector
+    int                          Edges     = 0;                                              // [-]   - Picked edges meeting there
+};
+
+// 📝 What the picked edges allow: Span is the shortest length that bounds a blend on them (each open edge's length,
+//    a closed edge's radius of curvature at its middle, and the other edges of both faces at its ends); Fitted is a
+//    round size (1 · 2 · 5 steps) of about 15 % of it, which a bevel can start at and show at once.
+struct SolidArcBlendFit
+{
+    double      Span    = 0.0;                                                               // [len] - Bounding length (0: nothing to measure)
+    double      Fitted  = 0.0;                                                               // [len] - Suggested start size
+    std::string Refusal = {};                                                                // [-]   - Why nothing was measured
 };
 
 struct SolidArcCommandOutcome
@@ -326,6 +348,8 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome ConstructSolidArcPrimitive(SolidArcDocument& Document, const SolidArcConstructRequest& Request);
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::BlendProfile Shape, double Size);
 [[nodiscard]] SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request);
+[[nodiscard]] std::vector<SolidArcBlendHandle> MeasureSolidArcBlendHandles(const SolidArcDocument& Document, const std::vector<std::string>& Edges);
+[[nodiscard]] SolidArcBlendFit MeasureSolidArcBlendFit(const SolidArcDocument& Document, const std::vector<std::string>& Edges);
 // Direction (gizmo): Tweak moves along it by Amount, Rotate turns about it (through each face centre) by Amount [rad].
 [[nodiscard]] SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount,
                                                              std::optional<GeometryProcessing::Vector3> Direction = std::nullopt);

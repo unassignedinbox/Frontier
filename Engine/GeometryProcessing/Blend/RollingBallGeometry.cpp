@@ -176,7 +176,24 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
 
     // ⓪ Size anchors: an edge anchored at its end vertex swaps Size and EndSize, so below Size is always at the start.
     BlendSettings Settings = Requested;
-    if (Settings.EndSize && !Settings.SizeAnchors.empty())
+    if (!Settings.AnchorSizes.empty())
+    {
+        // ⓪′ Per-vertex sizes: the edge takes its two vertices' sizes (unlisted: Size), start → end.
+        if (Settings.AnchorSizes.size() != Settings.SizeAnchors.size()) return Refuse("per-vertex sizes do not match their vertices");
+        const auto SizeAt = [&](VertexToken Vertex)
+        {
+            const auto Found = std::find(Settings.SizeAnchors.begin(), Settings.SizeAnchors.end(), Vertex);
+            return Found == Settings.SizeAnchors.end() ? Requested.Size : Settings.AnchorSizes[size_t(Found - Settings.SizeAnchors.begin())];
+        };
+        const double StartSize = SizeAt(Profile.Start), EndSize = SizeAt(Profile.End);
+        if (!(StartSize > 0.0) || !(EndSize > 0.0)) return Refuse("blend size must be positive at every vertex");
+        if (Profile.Start == Profile.End && StartSize != Requested.Size) return Refuse("a per-vertex size on a closed edge (the size would jump at its only vertex)");
+        Settings.Size    = StartSize;
+        Settings.EndSize = EndSize;
+        Settings.SizeAnchors.clear();
+        Settings.AnchorSizes.clear();
+    }
+    else if (Settings.EndSize && !Settings.SizeAnchors.empty())
     {
         const auto Anchored = [&](VertexToken Vertex) { return std::find(Settings.SizeAnchors.begin(), Settings.SizeAnchors.end(), Vertex) != Settings.SizeAnchors.end(); };
         const bool StartAnchored = Anchored(Profile.Start), EndAnchored = Anchored(Profile.End);

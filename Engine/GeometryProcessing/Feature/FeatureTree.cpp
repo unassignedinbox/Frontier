@@ -407,7 +407,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             const ModelPartition& Before = Index == 0 ? Empty : Cache->Checkpoints[Index - 1]->Partition;
             const std::vector<ResolvedReference>& Resolutions = Cache->Checkpoints[Index]->Outcome.Steps[Index].Resolutions;
             const size_t Edges   = Step.References.size();
-            const size_t Anchors = Step.Kind == FeatureStepKind::Blend && Step.EndSize ? Step.SizeAnchors.size() : 0;
+            const size_t Anchors = Step.Kind == FeatureStepKind::Blend && (Step.EndSize || !Step.AnchorSizes.empty()) ? Step.SizeAnchors.size() : 0;
             if (Resolutions.size() == Edges + Anchors)                                       // Fewer: refused before resolving, nothing captured
             {
                 for (size_t Reference = 0; Reference < Edges + Anchors; ++Reference)
@@ -641,7 +641,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             // ③′ A variable blend's anchors (the vertices taking Size) resolve like the edges, so a regeneration that
             //    reverses an edge keeps each size at its vertex.
             std::vector<VertexToken> Anchors;
-            if (Step.Kind == FeatureStepKind::Blend && Step.EndSize)
+            if (Step.Kind == FeatureStepKind::Blend && (Step.EndSize || !Step.AnchorSizes.empty()))
             {
                 for (TopologyReference& Reference : Step.SizeAnchors)
                 {
@@ -674,7 +674,13 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 BlendSettings Settings;
                 Settings.Profile = Step.Shape;
                 Settings.Size    = Amount;
-                if (Step.EndSize)
+                if (!Step.AnchorSizes.empty())
+                {
+                    if (Step.AnchorSizes.size() != Anchors.size()) { Refuse("Blend: per-vertex sizes do not match their vertices"); break; }
+                    Settings.SizeAnchors = Anchors;
+                    for (const FeatureValue& Size : Step.AnchorSizes) Settings.AnchorSizes.push_back(EvaluateFeatureValue(Tree, Size));
+                }
+                else if (Step.EndSize)
                 {
                     Settings.EndSize     = EvaluateFeatureValue(Tree, *Step.EndSize);
                     Settings.SizeAnchors = Anchors;

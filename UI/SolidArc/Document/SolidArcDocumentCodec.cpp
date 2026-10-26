@@ -165,6 +165,13 @@ constexpr int64_t FormatVersion = 1;                                            
             Table.insert("EndSize", EncodeValue(*Step.EndSize));
             Table.insert("SizeAnchors", EncodeReferences(Step.SizeAnchors));
         }
+        else if (!Step.AnchorSizes.empty())
+        {
+            toml::array Sizes;                                                               // Per-vertex sizes (blend handles), one per anchor
+            for (const FeatureValue& Size : Step.AnchorSizes) Sizes.push_back(EncodeValue(Size));
+            Table.insert("SizeAnchors", EncodeReferences(Step.SizeAnchors));
+            Table.insert("AnchorSizes", std::move(Sizes));
+        }
         break;
     case FeatureStepKind::FaceOperation:
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
@@ -704,6 +711,12 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             {
                 Step.EndSize     = DecodeValue(View["EndSize"]);
                 Step.SizeAnchors = DecodeReferences(View["SizeAnchors"]);
+            }
+            else if (const toml::array* Sizes = View["AnchorSizes"].as_array())
+            {
+                Step.SizeAnchors = DecodeReferences(View["SizeAnchors"]);
+                for (const toml::node& Size : *Sizes) Step.AnchorSizes.push_back(DecodeValue(toml::node_view<const toml::node>{ Size }));
+                if (Step.AnchorSizes.size() != Step.SizeAnchors.size()) { File.Refusal = Step.Label + " has " + std::to_string(Step.AnchorSizes.size()) + " vertex sizes for " + std::to_string(Step.SizeAnchors.size()) + " vertices"; return File; }
             }
             if (const toml::array* Points = View["Points"].as_array())
             {

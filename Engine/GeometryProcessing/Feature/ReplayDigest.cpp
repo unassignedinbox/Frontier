@@ -153,6 +153,8 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
     if (Step.EndSize) Writer.Value(*Step.EndSize);
     Writer.Word(Step.SizeAnchors.size());
     for (const TopologyReference& Anchor : Step.SizeAnchors) Writer.Reference(Anchor);
+    Writer.Word(Step.AnchorSizes.size());
+    for (const FeatureValue& Size : Step.AnchorSizes) Writer.Value(Size);
     Writer.Kind(Step.Operation);
     Writer.Value(Step.Amount);
     Writer.Word(Step.References.size());

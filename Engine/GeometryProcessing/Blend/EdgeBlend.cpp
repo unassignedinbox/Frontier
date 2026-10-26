@@ -103,6 +103,7 @@ namespace
                 Scale = std::max({ Scale, std::fabs(Position.X), std::fabs(Position.Y), std::fabs(Position.Z) });
             }
             Scale     = std::max(Scale, Settings.Size);
+            for (double Size : Settings.AnchorSizes) Scale = std::max(Scale, Size);
             Tolerance = 1.0e-9 * Scale;
             Agreement = 1.0e-8 * Scale;
         }
