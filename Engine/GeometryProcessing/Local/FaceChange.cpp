@@ -728,6 +728,12 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
             if (Sample > 0) Step = std::max(Step, Distance(Points[Sample], Points[Sample - 1]));
         }
         const double Widen = 1.5 * Step + 1.0e3 * Precision;                                 // [len] - Sample → edge margin
+        Vector3      EdgeLow = Points.front(), EdgeHigh = Points.front();                    // [len] - Sample box (widened below)
+        for (const Vector3& Point : Points)
+        {
+            EdgeLow  = { std::min(EdgeLow.X, Point.X), std::min(EdgeLow.Y, Point.Y), std::min(EdgeLow.Z, Point.Z) };
+            EdgeHigh = { std::max(EdgeHigh.X, Point.X), std::max(EdgeHigh.Y, Point.Y), std::max(EdgeHigh.Z, Point.Z) };
+        }
         double       Chord = 0.0;                                                            // [len] - Polyline length of the edge
         for (int Sample = 1; Sample <= EdgeSamples; ++Sample) Chord += Distance(Points[Sample], Points[Sample - 1]);
         std::vector<uint32_t> Users;
@@ -741,6 +747,15 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
         for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index)
         {
             if (std::find(Users.begin(), Users.end(), Inventory.Faces[Index].Slot) != Users.end()) continue;
+            // 📝 Box rejection: a crossing lies on the face (inside its conservative window box) and on the edge (within
+            //    Widen of the sample box), so disjoint boxes cannot clash. Skips the curve–surface scan for most of the
+            //    E × F pairs (a pocketed cylinder: ~1800 scans of traced curves against procedural blends, ~1 s).
+            {
+                const FaceDomain& Box    = Domains[Index];
+                const double      Margin = Widen + 1.0e3 * Precision;                        // [len] - Both boxes' slack
+                if (EdgeLow.X > Box.BoundsHigh.X + Margin || EdgeHigh.X < Box.BoundsLow.X - Margin || EdgeLow.Y > Box.BoundsHigh.Y + Margin ||
+                    EdgeHigh.Y < Box.BoundsLow.Y - Margin || EdgeLow.Z > Box.BoundsHigh.Z + Margin || EdgeHigh.Z < Box.BoundsLow.Z - Margin) continue;
+            }
             // Freeform face: only the stretch of the edge whose samples come within Widen of the pole box can meet it.
             double ClipLow = Profile.IntervalLow, ClipHigh = Profile.IntervalHigh;
             if (FaceBounds[Index].Present)

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -67,6 +68,19 @@ namespace
             Box.High.Y = std::min(Box.High.Y, 0.5 * std::numbers::pi);
         }
         return Box;
+    }
+
+    // 📝 Residual refusal in the user's terms: a ball that no longer sits on both faces to tolerance almost always means
+    //    the size outgrew the edge (a contact off its face, a support curvature radius approached). Wider names the face
+    //    the mid-section contact has already left (empty when none did).
+    [[nodiscard]] std::string DescribeResidualRefusal(const char* Kind, double Residual, double Allowance, double Size, const std::string& Wider)
+    {
+        char Numbers[160];
+        std::snprintf(Numbers, sizeof Numbers, "size %.4g", Size);
+        if (!Wider.empty()) return std::string(Numbers) + " is too large: the blend is wider than face " + Wider + " (its contact runs off that face) — try a smaller size";
+        char Detail[160];
+        std::snprintf(Detail, sizeof Detail, " (%s residual %.2g > allowance %.2g)", Kind, Residual, Allowance);
+        return std::string(Numbers) + " is too large for this edge: the rolling ball no longer sits on both faces to tolerance" + Detail + " — try a smaller size";
     }
 
     // Foot of a spine point on a support as a contact curve sharing the spine parameter.
@@ -337,7 +351,7 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
                 if (Settings.Profile == BlendProfile::Fillet) Sheet.MaxResidual = std::max(Sheet.MaxResidual, std::fabs(MeasureEnvelopeResidual(Sheet, Foot)));
             }
         }
-        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse("variable rolling-ball residual " + std::to_string(Sheet.MaxResidual) + " exceeds the allowance");
+        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse(DescribeResidualRefusal("variable rolling-ball", Sheet.MaxResidual, ResidualAllowance * Scale, Settings.Size, {}));
         // ⑧″ Orientation as in ⑧, probed at the mid-section.
         const Vector3 Probe   = Settings.Profile == BlendProfile::Fillet ? ProjectPointOntoSurface(Sheet.Surface, Middle + Towards * MeasureSheetRadius(Sheet, 0.5 * Span))
                                                                          : (MiddleA + MiddleB) * 0.5;
@@ -496,7 +510,7 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
                                                Distance(EvaluateSurface(Sheet.Surface, ProjectOntoSurface(Sheet.Surface, Foot, ResolveSheetChart(Sheet, τ))).Position, Foot) });
             }
         }
-        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse("ball-law residual " + std::to_string(Sheet.MaxResidual) + " exceeds the allowance");
+        if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse(DescribeResidualRefusal("ball-law", Sheet.MaxResidual, ResidualAllowance * Scale, Settings.Size, {}));
         // ⑧‴ Orientation as in ⑧, probed at the mid-edge ruling (chamfer) or bisector point (fillet).
         const Vector3 Probe   = Settings.Profile == BlendProfile::Chamfer ? FeetMiddle * 0.5 : BallMiddle + Normalize(FeetMiddle - BallMiddle * 2.0) * Sheet.Radius;
         const Vector3 Natural = EvaluateSurfaceNormal(Sheet.Surface, ProjectOntoSurface(Sheet.Surface, Probe, ResolveSheetChart(Sheet, Middle)));
@@ -648,7 +662,18 @@ EdgeBlendSheetOutcome ResolveEdgeBlendSheet(const ModelPartition& Partition, Edg
                                            Distance(ProjectPointOntoSurface(Sheet.Surface, Foot), Foot) });
         }
     }
-    if (Sheet.MaxResidual > ResidualAllowance * Scale) return Refuse("rolling-ball residual " + std::to_string(Sheet.MaxResidual) + " exceeds the allowance");
+    if (Sheet.MaxResidual > ResidualAllowance * Scale)
+    {
+        // 📝 Name the face the blend outgrows when its mid-section contact already lies off that face (a fillet deeper
+        //    than the pocket wall it rolls on); otherwise the generic size hint.
+        std::string Wider;
+        for (int Side = 0; Side < 2 && Wider.empty(); ++Side)
+        {
+            const Vector3 Foot = EvaluateCurve(Sheet.Contacts[Side], SpineMiddle).Position;
+            if (ClassifyFacePosition(DescribeFaceDomain(Partition, Sheet.Faces[Side]), Foot, 1.0e-6 * Scale).Membership == PointMembership::Outside) Wider = LabelToken("F", Sheet.Faces[Side]);
+        }
+        return Refuse(DescribeResidualRefusal("rolling-ball", Sheet.MaxResidual, ResidualAllowance * Scale, Settings.Size, Wider));
+    }
 
     // ⑧ Orientation: outward points towards the old edge for a convex blend (material removed), away for a concave one.
     const Vector3 BallMiddle = EvaluateCurve(Sheet.Spine, SpineMiddle).Position;             // [len] - Mid-section ball centre

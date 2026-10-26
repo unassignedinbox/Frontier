@@ -116,6 +116,7 @@ namespace
     GateTally KnifeGate       = { "W52", "Knife (Shift+K, Blender KitOps style): an unfilled circle on a 2 m cube's top face is filled and cut 0.5 deep from a lift above the face (8 − 0.045π); a rectangle on the −y face cuts straight through (− 0.32); open profiles, zero depth and a missing target refuse untouched; the built-in boolean library (7 cutters drawn and swept by the document's own commands) is normalized to unit width, top at +0.05; the square pocket placed at width 0.4 turned 15° cuts 0.0192, raised on the +x face adds 0.0192, left separate is a 0.0224 body; Object mode cuts the cube with the kept cutter; each knife is one undo entry; a saved insert joins the library; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally HandleGate      = { "W53", "Bevel handles (Plasticity pull / push): the front-top edge of a 4 × 2 × 1 block shows a uniform handle at mid-edge plus one per corner, each along the outward bisector; corner sizes 0.1 / 0.3 equal the V taper (closed form, rails at each corner); the top loop takes 4 corner sizes between the uniform 0.1 and 0.2 bodies; Corner parameters regenerate; refusals (foreign vertex, two sizes, non-positive); the start-size fit (≈ 15 % of the bounding span, round 1 · 2 · 5 step); undo / redo; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally SolidKnifeGate  = { "W54", "Knife with 3D cutters (Construct primitives drawn on a face, then pulled into it): on a 2 m cube a box 0.4 × 0.4 sunk 0.3 (top 0.02 above the face) cuts 0.048; a cylinder r 0.2 on the +x face frame sunk 0.5 with the cutter kept cuts 0.02π and leaves a 0.0208π body (Duplicate + Combine); a sphere r 0.3 centred on the top face cuts a half ball 0.018π; a box boss (Union, foot 0.02 inside) adds 0.004; Separate leaves a tube body, selected; refusals (missing target, torus tube ≥ major, New) leave the document untouched; one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally PocketBevelGate = { "W55", "Bevels on knife pockets in a curved face (cylinder r 2.126 × 1.8, pockets cut from the tangent plane): the slot opening loop takes fillets 0.02 · 0.0519 · 0.1 across its smooth joints (pinned volumes, decreasing); sizes 0.3 and 0.8553 refuse as too large, naming the outgrown face, document untouched; a hex pocket insert's rim loop takes 0.05 through its unequal mitres, its wall–wall edges 0.05 together; on a box the rim loss stays within 10 % of the straight-edge model (1 − π/4) r² L; one undo entry each; codec byte-equal", "≤ 10⁻⁹ pinned · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -4904,6 +4905,155 @@ int main()
               Format("codec %d bytes byte-equal, V %.12f after reload", int(Written.size()), Loaded.Summary.Volume));
     }
 
+    // ---- W55 Bevels on knife pockets in a curved face: smooth joints, unequal mitres, too-large refusals
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[720]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        constexpr double Radius = 2.126;                                                     // [len] - Reported cylinder
+        constexpr double Lift   = 0.04252;                                                   // [len] - Knife top above the plane
+        const auto Tangent = [&](double Angle, double Height)
+        {
+            OrthonormalFrame Frame;
+            Frame.Origin = { Radius * std::cos(Angle), Radius * std::sin(Angle), Height };
+            Frame.ZAxis  = { std::cos(Angle), std::sin(Angle), 0.0 };
+            Frame.XAxis  = { -std::sin(Angle), std::cos(Angle), 0.0 };
+            Frame.YAxis  = { 0.0, 0.0, 1.0 };
+            return Frame;
+        };
+        const auto Cylinder = [&](const char* Title)
+        {
+            SolidArcDocument Document = CreateSolidArcDocument(Title);
+            SolidArcConstructRequest Request;
+            Request.Kind        = SolidArcConstructKind::Cylinder;
+            Request.Combination = FeatureCombination::New;
+            Request.Radius      = Radius;
+            Request.Height      = 1.8;
+            Expect(ConstructSolidArcPrimitive(Document, Request));
+            return Document;
+        };
+        const auto SideOf = [](const SolidArcDocument& Document)
+        {
+            for (const auto& [Slot, Name] : Document.Regeneration.Naming.Faces) if (Name.find("Side") != std::string::npos) return Name;
+            return std::string{};
+        };
+        const auto Select = [](SolidArcDocument& Document, const std::vector<std::string>& Names)
+        {
+            Document.Selection = {};
+            for (const std::string& Name : Names) SelectSolidArcName(Document, SolidArcSelectionKind::Edge, Name, true);
+        };
+        const SolidArcInsertLibrary Library = AssembleSolidArcInserts("");
+        const SolidArcInsert*       Hex     = nullptr;
+        for (const SolidArcInsert& Insert : Library.Inserts) if (Insert.Name == "Hex pocket") Hex = &Insert;
+        Tally(PocketBevelGate, 0.0, Hex != nullptr, "the knife library holds the Hex pocket insert");
+        if (Hex == nullptr) Hex = &Library.Inserts.front();
+
+        // ① the slot pocket (the reported image 1): its opening loop, two straight edges and two arcs meeting tangentially
+        SolidArcDocument Slotted = Cylinder("PocketBevel");
+        const std::string Body = Slotted.Regeneration.Bodies.front().Key;
+        const std::string Side = SideOf(Slotted);
+        SolidArcDrawingRequest Slot;
+        Slot.Kind           = SolidArcDrawingKind::Slot;
+        Slot.FillCondition  = true;
+        Slot.PlaneCondition = true;
+        Slot.Plane          = Tangent(0.3, 0.9);
+        Slot.Points         = { { -0.3, -0.25 }, { 0.3, 0.25 }, { 0.3 + 0.12 * 0.64, 0.25 - 0.12 * 0.77 } };
+        Expect(DrawSolidArcSketch(Slotted, Slot));
+        const SolidArcCommandOutcome Knifed = KnifeSolidArcSketch(Slotted, Slotted.Tree.Steps.back().Label, Lift, -0.2, FeatureCombination::Difference, Body);
+        const std::string Knife = Slotted.Tree.Steps.back().Label;
+        std::vector<std::string> Opening;
+        for (const auto& [Slot, Name] : Slotted.Regeneration.Naming.Edges) if (Name.find(Side) != std::string::npos && Name.find(Knife) != std::string::npos) Opening.push_back(Name);
+        TallyVolume(PocketBevelGate, Slotted, 25.515364237, Format("slot pocket 0.2 deep (%s), %d opening edges", Knifed.AcceptedCondition ? Knifed.Label.c_str() : Knifed.Refusal.c_str(), int(Opening.size())));
+        const std::string Pocketed = EncodeSolidArcDocument(Slotted);
+        struct PinnedFillet { double Size, Volume; };
+        double Previous = Slotted.Summary.Volume;
+        for (const PinnedFillet Pinned : { PinnedFillet{ 0.02, 25.515133306 }, PinnedFillet{ 0.0519, 25.513751905 }, PinnedFillet{ 0.1, 25.509039927 } })
+        {
+            Select(Slotted, Opening);
+            const size_t Before = Slotted.UndoEntries.size();
+            const SolidArcCommandOutcome Filleted = BlendSolidArcSelection(Slotted, BlendProfile::Fillet, Pinned.Size);
+            TallyVolume(PocketBevelGate, Slotted, Pinned.Volume, Format("slot opening fillet %.4g (%s, %d undo entry, %.0f ms)", Pinned.Size,
+                                                                         Filleted.AcceptedCondition ? Filleted.Label.c_str() : Filleted.Refusal.c_str(), int(Slotted.UndoEntries.size() - Before), Filleted.Milliseconds));
+            Tally(PocketBevelGate, 0.0, Slotted.UndoEntries.size() - Before == 1 && Slotted.Summary.Volume < Previous, Format("fillet %.4g: one undo entry, volume below the pocket", Pinned.Size));
+            UndoSolidArcCommand(Slotted);
+        }
+        Tally(PocketBevelGate, 0.0, EncodeSolidArcDocument(Slotted) == Pocketed, "undo after each fillet: the file returns byte-equal");
+
+        // ② too large: the blend outgrows a face — refused with the size and the face, the document untouched
+        for (const double Size : { 0.3, 0.8553 })
+        {
+            Select(Slotted, Opening);
+            const SolidArcCommandOutcome Large = BlendSolidArcSelection(Slotted, BlendProfile::Fillet, Size);
+            const bool Named = Large.Refusal.find("too large") != std::string::npos && Large.Refusal.find("smaller size") != std::string::npos;
+            Tally(PocketBevelGate, 0.0, !Large.AcceptedCondition && Named && EncodeSolidArcDocument(Slotted) == Pocketed, Format("fillet %.4g refused untouched: %s", Size, Large.Refusal.c_str()));
+        }
+        const std::string    Written = EncodeSolidArcDocument(Slotted);
+        SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+        SolidArcDocument     Loaded  = CreateSolidArcDocument(Read.Title);
+        const bool Opened = Read.Refusal.empty() && ReplaceSolidArcTree(Loaded, Read.Tree, Read.Captions, "Open").AcceptedCondition;
+        Tally(PocketBevelGate, std::abs(Loaded.Summary.Volume - Slotted.Summary.Volume), Opened && EncodeSolidArcDocument(Loaded) == Written, Format("codec %d bytes byte-equal", int(Written.size())));
+
+        // ③ the hex pocket insert (images 3 / 4): the rim loop (unequal mitres at the corners) and the wall–wall edges
+        const auto HexPocket = [&](double Width)
+        {
+            SolidArcDocument Document = Cylinder("HexBevel");
+            SolidArcInsertPlacement Placement;
+            Placement.Name     = Hex->Name;
+            Placement.Exchange = Hex->Exchange;
+            Placement.Target   = Document.Regeneration.Bodies.front().Key;
+            Placement.Map      = PlaceSolidArcInsert(Tangent(0.3, 0.9), Width, 0.0, false);
+            Expect(KnifeSolidArcInsert(Document, Placement));
+            return Document;
+        };
+        const auto ImportOf = [](const SolidArcDocument& Document)
+        {
+            for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges) if (Name.find("Import#") != std::string::npos) return Name.substr(Name.find("Import#"), 8);
+            return std::string{};
+        };
+        SolidArcDocument Rimmed = HexPocket(0.9);
+        const std::string RimImport = ImportOf(Rimmed);
+        std::vector<std::string> Rim;
+        for (const auto& [Slot, Name] : Rimmed.Regeneration.Naming.Edges) if (Name.find(Side) != std::string::npos && Name.find(RimImport) != std::string::npos) Rim.push_back(Name);
+        Select(Rimmed, Rim);
+        const SolidArcCommandOutcome RimFillet = BlendSolidArcSelection(Rimmed, BlendProfile::Fillet, 0.05);
+        TallyVolume(PocketBevelGate, Rimmed, 25.420575079, Format("hex rim loop, %d edges, fillet 0.05 (%s, %.0f ms)", int(Rim.size()), RimFillet.AcceptedCondition ? RimFillet.Label.c_str() : RimFillet.Refusal.c_str(), RimFillet.Milliseconds));
+
+        SolidArcDocument Walled = HexPocket(0.8);
+        const std::string WallImport = ImportOf(Walled);
+        std::vector<std::string> Walls;
+        for (const auto& [Slot, Name] : Walled.Regeneration.Naming.Edges)
+        {
+            const size_t First = Name.find(WallImport);
+            if (First != std::string::npos && Name.find(WallImport, First + 1) != std::string::npos && Name.find("Face(7)") == std::string::npos) Walls.push_back(Name);
+        }
+        Select(Walled, Walls);
+        const SolidArcCommandOutcome WallFillet = BlendSolidArcSelection(Walled, BlendProfile::Fillet, 0.05);
+        TallyVolume(PocketBevelGate, Walled, 25.462980216, Format("hex wall–wall edges together, %d edges, fillet 0.05 (%s)", int(Walls.size()), WallFillet.AcceptedCondition ? WallFillet.Label.c_str() : WallFillet.Refusal.c_str()));
+
+        // ④ calibration on a box: the hex rim loop loses (1 − π/4) r² per unit length on its 2.7 straight run, plus the corners
+        SolidArcDocument Boxed = CreateSolidArcDocument("BoxHex");
+        SolidArcConstructRequest Block;
+        Block.Kind        = SolidArcConstructKind::Block;
+        Block.Combination = FeatureCombination::New;
+        Block.Position    = { -2.0, -2.0, 0.0 };
+        Block.Width       = 4.0;
+        Block.Depth       = 4.0;
+        Block.Height      = 2.0;
+        Expect(ConstructSolidArcPrimitive(Boxed, Block));
+        SolidArcInsertPlacement Top;
+        Top.Name     = Hex->Name;
+        Top.Exchange = Hex->Exchange;
+        Top.Target   = Boxed.Regeneration.Bodies.front().Key;
+        Top.Map      = PlaceSolidArcInsert(OrthonormalFrame{ { 0.0, 0.0, 2.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, 0.9, 0.0, false);
+        Expect(KnifeSolidArcInsert(Boxed, Top));
+        const double Held = Boxed.Summary.Volume;
+        std::vector<std::string> BoxRim;
+        for (const auto& [Slot, Name] : Boxed.Regeneration.Naming.Edges) if (Name.find("Import#") != std::string::npos && Name.find("Cap(End)") != std::string::npos) BoxRim.push_back(Name);
+        Select(Boxed, BoxRim);
+        const SolidArcCommandOutcome BoxFillet = BlendSolidArcSelection(Boxed, BlendProfile::Fillet, 0.05);
+        const double Ratio = (Held - Boxed.Summary.Volume) / ((1.0 - std::numbers::pi / 4.0) * 0.05 * 0.05 * 2.7);
+        Tally(PocketBevelGate, std::abs(Ratio - 1.05), BoxFillet.AcceptedCondition && Boxed.Summary.SoundCondition && Ratio >= 1.0 && Ratio <= 1.1,
+              Format("box hex rim fillet 0.05 (%s): loss / straight-edge model = %.4f", BoxFillet.AcceptedCondition ? BoxFillet.Label.c_str() : BoxFillet.Refusal.c_str(), Ratio));
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -5102,7 +5252,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -1293,7 +1293,12 @@ namespace
             const std::optional<Vector3> PointA = CrossCurveSurface(SheetA.Contacts[OuterA], Position, SurfaceOf(FaceB));
             const std::optional<Vector3> PointB = CrossCurveSurface(SheetB.Contacts[OuterB], Position, SurfaceOf(FaceA));
             if (!PointA || !PointB) return "mitre: outer contacts miss the far faces";
-            if (!Agree(Distance(*PointA, *PointB))) return "unequal mitre: outer contacts meet the sharp edge apart (setback, 🚧)";
+            if (!Agree(Distance(*PointA, *PointB)))
+            {
+                if (Settings.Profile != BlendProfile::Fillet || Variable || SheetA.LawCondition() || SheetB.LawCondition() || !SheetA.ConvexCondition || !SheetB.ConvexCondition)
+                    return "unequal mitre: outer contacts meet the sharp edge apart (setback, 🚧)";
+                return ResolveUnequalMitre(Vertex, EndA, EndB, Sharp, SharedA, SharedB, *PointA, *PointB);
+            }
             const int Outer = IssueVertex((*PointA + *PointB) * 0.5);
             int Inner = -1, Mitre = -1;
             if (Settings.Profile == BlendProfile::Fillet && Variable)
@@ -1367,6 +1372,65 @@ namespace
             return {};
         }
 
+        // 📝 Unequal mitre (a pocket rim knifed into a curved face: the walls meet the shared face at different angles at a
+        //    pocket corner, so the outer contacts cross the sharp corner edge at different depths P_A ≠ P_B). Each blend is
+        //    the solid side of its own wedge, so the result is the union of the two rounded wedges: the corner edge stays up
+        //    to the deeper crossing P_D; the shallow wall S runs on past the corner line up to the deep blend D, bounded by
+        //    the section S-wall ∩ D from P_D to Q (the shallow outer contact meeting D); the mitre D ∩ S runs from Q to M.
+        //    Blend D ends M → Q → P_D, blend S ends M → Q. Convex fillets only (the concave case would add material).
+        [[nodiscard]] std::string ResolveUnequalMitre(VertexToken Vertex, std::pair<EdgeToken, int> EndA, std::pair<EdgeToken, int> EndB, EdgeToken Sharp, int SharedA, int SharedB,
+                                                      Vector3 PointA, Vector3 PointB)
+        {
+            const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            const bool    DeepA    = Distance(PointA, Position) > Distance(PointB, Position);
+            const std::pair<EdgeToken, int> EndD = DeepA ? EndA : EndB, EndS = DeepA ? EndB : EndA;
+            const int     SharedD  = DeepA ? SharedA : SharedB, SharedS = DeepA ? SharedB : SharedA;
+            const EdgeBlendSheet& SheetD = *SheetOf(EndD.first);
+            const EdgeBlendSheet& SheetS = *SheetOf(EndS.first);
+            const int       OuterD = 1 - SharedD, OuterS = 1 - SharedS;
+            const FaceToken FaceS  = SheetS.Faces[OuterS];
+            // Corner ball: the spines (offset shared face ∩ offset walls) still meet, so M is exact as in the equal mitre.
+            const std::optional<Vector3> Ball = CrossCurveSurface(SheetD.Spine, Position, SheetS.Offsets[OuterS]);
+            if (!Ball || !Agree(DistanceToCurve(SheetS.Spine, *Ball))) return "unequal mitre: spines do not meet at a corner ball";
+            const Vector3 FootD = EvaluateCurve(SheetD.Contacts[SharedD], ProjectOntoCurve(SheetD.Spine, *Ball, 0.0)).Position;
+            const Vector3 FootS = EvaluateCurve(SheetS.Contacts[SharedS], ProjectOntoCurve(SheetS.Spine, *Ball, 0.0)).Position;
+            if (!Agree(Distance(FootD, FootS))) return "unequal mitre: blends touch the shared face apart";
+            const std::optional<Vector3> Meet = CrossCurveSurface(SheetS.Contacts[OuterS], DeepA ? PointB : PointA, SheetD.Surface);
+            if (!Meet) return "unequal mitre: the shallow outer contact misses the deep blend";
+            const int Inner = IssueVertex((FootD + FootS) * 0.5);
+            const int Deep  = IssueVertex(DeepA ? PointA : PointB);
+            const int Knee  = IssueVertex(*Meet);
+            // Mitre D ∩ S from M (tangent there, both blends touch the shared face) to Q: the plane through O, M, Q first
+            // (accepted only if it stays on S), then the general section.
+            int Mitre = -1;
+            const Vector3 Normal = Cross(PositionOf(Inner) - *Ball, PositionOf(Knee) - *Ball);
+            if (Length(Normal) > Tolerance * Tolerance)
+            {
+                const PlaneSurface Through{ ConstructFrame(*Ball, Normal, PositionOf(Inner) - *Ball) };
+                Mitre = IssueSection(SheetD.Surface, Through, Inner, Knee);
+                if (Mitre >= 0 && MeasureEdgeDeparture(Mitre, SheetS.Surface, 5) > Agreement) Mitre = -1;
+            }
+            if (Mitre < 0) Mitre = IssueSection(SheetD.Surface, SheetS.Surface, Inner, Knee);
+            if (Mitre < 0) Mitre = IssueSection(SheetS.Surface, SheetD.Surface, Knee, Inner);
+            if (Mitre < 0) return std::string("unequal mitre: no exact section of the ") + SurfaceCategoryLabel(SheetD.Surface) + " and " + SurfaceCategoryLabel(SheetS.Surface)
+                                + " fillets from the shared face to the shallow wall (🚧)";
+            const int Ledge = IssueSection(SurfaceOf(FaceS), SheetD.Surface, Deep, Knee);
+            if (Ledge < 0) return std::string("unequal mitre: no exact section of the ") + SurfaceCategoryLabel(SurfaceOf(FaceS)) + " wall and the " + SurfaceCategoryLabel(SheetD.Surface) + " fillet";
+            if (!Agree(MeasureEdgeDeparture(Mitre, SheetD.Surface, 5)) || !Agree(MeasureEdgeDeparture(Mitre, SheetS.Surface, 5))) return "unequal mitre: mitre curve leaves a blend";
+            if (!Agree(MeasureEdgeDeparture(Ledge, SurfaceOf(FaceS), 5)) || !Agree(MeasureEdgeDeparture(Ledge, SheetD.Surface, 5))) return "unequal mitre: wall section leaves the wall or the blend";
+            TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Deep;
+            CapEdges[{ FaceS.Slot, Vertex.Slot }]               = Ledge;
+            ContactVertices[{ EndD.first.Slot, SharedD, EndD.second }] = Inner;
+            ContactVertices[{ EndD.first.Slot, OuterD, EndD.second }]  = Deep;
+            ContactVertices[{ EndS.first.Slot, SharedS, EndS.second }] = Inner;
+            ContactVertices[{ EndS.first.Slot, OuterS, EndS.second }]  = Knee;
+            if (SharedD == 0) Terminations[{ EndD.first.Slot, EndD.second }] = { { Mitre, Inner, Knee }, { Ledge, Knee, Deep } };
+            else              Terminations[{ EndD.first.Slot, EndD.second }] = { { Ledge, Deep, Knee }, { Mitre, Knee, Inner } };
+            Terminations[{ EndS.first.Slot, EndS.second }] = { { Mitre, SharedS == 0 ? Inner : Knee, SharedS == 0 ? Knee : Inner } };
+            ++Outcome.Statistics.Vertices[static_cast<int>(VertexBlendCategory::Mitre)];
+            return {};
+        }
+
         // 📝 Tangent-continuous chain (line ↔ arc across a smooth sharp edge, e.g. a slot rim or a rounded-rectangle loop):
         //    the two blends share their cross-section at the vertex, so the joint is that section — circle (fillet) or chord
         //    (chamfer). Every point comes from a transversal operation: the ball is spine A ∩ the edge's normal plane at
@@ -1383,7 +1447,34 @@ namespace
             const Vector3 Tangent = Normalize(EvaluateCurve(Carrier, ProjectOntoCurve(Carrier, Position, Profile.IntervalLow)).Derivative);
             const Vector3 Pick    = std::fabs(Tangent.X) < 0.6 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 1.0, 0.0 };
             const PlaneSurface Section{ ConstructFrame(Position, Tangent, Normalize(Cross(Tangent, Pick))) };
-            const std::optional<Vector3> Ball = CrossCurveSurface(SheetA.Spine, Position, Section);
+            std::optional<Vector3> Ball = CrossCurveSurface(SheetA.Spine, Position, Section);
+            // 📝 The edge's normal plane holds the shared ball only when the smooth edge runs along the shared face's normal
+            //    (a slot on a plane). On a curved shared face (a slot knifed into a cylinder along the tangent-plane normal)
+            //    the joint ball sits a few mm off that plane, where the two spines are tangent, so the section ball misses
+            //    spine B by ~ρκs². The exact joint is the section whose outer foot lies on the smooth edge: the outer contact
+            //    crosses the smooth edge transversally inside the outer face, so cut it with the plane through the smooth
+            //    edge's tangent and the face normal (exact for a straight edge on a plane, converging otherwise).
+            if (Ball)
+            {
+                const EdgeProfile&     SharpProfile = Partition.Edges.Resolve(Sharp);
+                const CurveGeometry&   SharpCurve   = Partition.Curves.Resolve(SharpProfile.Curve);
+                const SurfaceGeometry& OuterFace    = SurfaceOf(SheetA.Faces[OuterA]);
+                Vector3 Foot = EvaluateCurve(SheetA.Contacts[OuterA], ProjectOntoCurve(SheetA.Spine, *Ball, 0.0)).Position;
+                for (int Step = 0; Step < 6; ++Step)
+                {
+                    const CurveSample      Edge   = EvaluateCurve(SharpCurve, ProjectOntoCurve(SharpCurve, Foot, SharpProfile.IntervalLow));
+                    const Vector3          Normal = EvaluateSurfaceNormal(OuterFace, ProjectOntoSurface(OuterFace, Edge.Position, {}));
+                    const Vector3          Across = Cross(Edge.Derivative, Normal);
+                    if (Length(Across) <= Tolerance) break;
+                    const PlaneSurface     Cut{ ConstructFrame(Edge.Position, Normalize(Across), Normalize(Edge.Derivative)) };
+                    const std::optional<Vector3> Crossing = CrossCurveSurface(SheetA.Contacts[OuterA], Foot, Cut);
+                    if (!Crossing) break;
+                    const double Moved = Distance(*Crossing, Foot);
+                    Foot = *Crossing;
+                    Ball = EvaluateCurve(SheetA.Spine, ProjectOntoCurve(SheetA.Contacts[OuterA], Foot, 0.0)).Position;
+                    if (Moved <= Tolerance) break;
+                }
+            }
             if (!Ball || !Agree(DistanceToCurve(SheetB.Spine, *Ball))) return "smooth joint: spines do not share the section ball";
             const double  SpineA = ProjectOntoCurve(SheetA.Spine, *Ball, 0.0);               // [-] - Section τ on A
             const double  SpineB = ProjectOntoCurve(SheetB.Spine, *Ball, 0.0);               // [-] - Section τ on B

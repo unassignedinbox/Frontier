@@ -9,6 +9,7 @@
 
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/RollingBallCarrier.h"
+#include "Engine/GeometryProcessing/Intersection/IntersectionCurve.h"
 
 #include <array>
 #include <algorithm>
@@ -141,6 +142,28 @@ namespace
         return Total;
     }
 
+    // 📝 Derivative noise of a face's integrand: its carrier's, and that of every boundary curve traced on a procedural
+    //    carrier (a mitre between two rolling-ball blends, a wall section of one). Such a curve evaluates to ~10⁻⁹ only,
+    //    so its SP-curve carries that noise into the outer integral even on an analytic face (a torus blend next to a
+    //    traced one): a floor from the carrier alone (0) left those panels refining to the split cap (~0.8 s a face).
+    [[nodiscard]] double MeasureFaceNoise(const ModelPartition& Partition, FaceToken Face)
+    {
+        const FaceProfile& Profile = Partition.Faces.Resolve(Face);
+        double Noise = Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0;
+        for (LoopToken Loop : Profile.Loops)
+        {
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+            {
+                const EdgeProfile& Edge = Partition.Edges.Resolve(Partition.Fins.Resolve(Fin).Edge);
+                if (!Edge.Curve.PresentCondition()) return;
+                const auto* Traced = std::get_if<IntersectionCurve>(&Partition.Curves.Resolve(Edge.Curve));
+                if (Traced == nullptr || !Traced->Trace) return;
+                Noise = std::max({ Noise, MeasureDerivativeNoise(Traced->Trace->First), MeasureDerivativeNoise(Traced->Trace->Second) });
+            });
+        }
+        return Noise;
+    }
+
     // ⅓ P·(∂P/∂𝑢 × ∂P/∂𝑣) — the flux density of the position field over the surface chart.
     [[nodiscard]] double FluxDensity(const SurfaceGeometry& Surface, Vector2 Parameter)
     {
@@ -164,6 +187,7 @@ namespace
         General       = 0,                                                                   // Composite Gauss–Legendre
         Constant      = 1,                                                                   // density(𝑢, 𝑣) = c(𝑣)
         Trigonometric = 2,                                                                   // degree ≤ 3 in 𝑢
+        Across        = 3,                                                                   // degree ≤ 3 in 𝑣: rows run along 𝑣
     };
 
     // ∫_{Low}^{High} Row(𝑢) d𝑢 of a trigonometric polynomial of degree ≤ 3 from its values at 2πk/7.
@@ -226,6 +250,13 @@ namespace
         const auto Integrand = [&](double τ)
         {
             const ParameterSample Sample = EvaluateParameterCurve(Curve, τ);
+            if (Form == RowForm::Across)
+            {
+                // ∬ f d𝑢 d𝑣 = ∮ −Q d𝑢 with Q(𝑢, 𝑣) = ∫₀^𝑣 f(𝑢, t) dt (Green, the 𝑣-primitive instead of the 𝑢-primitive).
+                if (Sample.Derivative.X == 0.0) return 0.0;
+                const auto Column = [&](double t) { return Function(Vector2{ Sample.Position.X, t }); };
+                return -IntegrateTrigonometricRow(0.0, Sample.Position.Y, Column) * Sample.Derivative.X;
+            }
             if (Sample.Derivative.Y == 0.0) return 0.0;
             const auto   Row   = [&](double s) { return Function(Vector2{ s, Sample.Position.Y }); };
             const double Reach = Sample.Position.X;                                          // [-] - Inner upper limit
@@ -248,6 +279,33 @@ namespace
             std::vector<double> Breakpoints = CollectCurveBreakpoints(Partition.Curves.Resolve(Edge.Curve), Start, End);
             if (Start > End) std::reverse(Breakpoints.begin(), Breakpoints.end());
             Stops.insert(Stops.end(), Breakpoints.begin(), Breakpoints.end());
+        }
+        if (Chart != nullptr && Form == RowForm::Across)
+        {
+            // ⚠️ A traced spine is only C¹ at its knots, so the column integral jumps in slope where the SP-curve's 𝑢
+            //    crosses one: stop there (64 samples once, bisection on the bracketing intervals only).
+            constexpr int Samples = 64;
+            const auto Width = [&](double τ) { return EvaluateParameterCurve(Curve, τ).Position.X; };
+            std::array<double, Samples + 1> Values{};
+            double LowU = INFINITY, HighU = -INFINITY;
+            for (int Index = 0; Index <= Samples; ++Index) { Values[Index] = Width(Start + (End - Start) * Index / Samples); LowU = std::min(LowU, Values[Index]); HighU = std::max(HighU, Values[Index]); }
+            for (double Knot : CollectSurfaceBreakpoints(*Chart, LowU, HighU))
+            {
+                for (int Index = 0; Index < Samples; ++Index)
+                {
+                    double LeftGap = Values[Index] - Knot;
+                    const double RightGap = Values[Index + 1] - Knot;
+                    if (LeftGap == 0.0 || LeftGap * RightGap >= 0.0) continue;
+                    double Left = Start + (End - Start) * Index / Samples, Right = Start + (End - Start) * (Index + 1) / Samples;
+                    for (int Halving = 0; Halving < 60; ++Halving)
+                    {
+                        const double Middle = 0.5 * (Left + Right), MiddleGap = Width(Middle) - Knot;
+                        if (MiddleGap * LeftGap > 0.0) { Left = Middle; LeftGap = MiddleGap; } else Right = Middle;
+                    }
+                    Stops.push_back(0.5 * (Left + Right));
+                }
+            }
+            std::sort(Stops.begin() + 1, Stops.end(), [&](double First, double Second) { return Start <= End ? First < Second : First > Second; });
         }
         if (Chart != nullptr && ResolveNurbsChart(*Chart) != nullptr)
         {
@@ -314,6 +372,10 @@ namespace
         if (std::holds_alternative<PlaneSurface>(Surface)) return RowForm::Constant;
         if (std::holds_alternative<CylinderSurface>(Surface) || std::holds_alternative<ConeSurface>(Surface) || std::holds_alternative<SphereSurface>(Surface) ||
             std::holds_alternative<TorusSurface>(Surface)) return RowForm::Trigonometric;
+        // 📝 A circular rolling-ball carrier is C(𝑢) + r(𝑢)(E₁ cos 𝑣 + E₂ sin 𝑣): P, P𝑢 and P𝑣 are trigonometric of degree 1
+        //    in 𝑣, so a column of fixed 𝑢 is closed form (7 samples) where a row along a traced spine crossed every knot
+        //    piece (~90 × 8 Gauss nodes per outer node).
+        if (const auto* Ball = std::get_if<RollingBallSurface>(&Surface); Ball && Ball->Definition->Section == RollingBallSection::Circle) return RowForm::Across;
         return RowForm::General;
     }
 
@@ -346,7 +408,7 @@ ShellVolumeMeasure MeasureShellVolume(const ModelPartition& Partition, SolidShel
     {
         const FaceToken Face  = Faces[Index];
         const FaceProfile& Profile = Partition.Faces.Resolve(Face);
-        const double Noise = Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0;
+        const double Noise = MeasureFaceNoise(Partition, Face);
         const double Flux  = IntegrateFaceFlux(Partition, Face, std::max(1.0e-15 * Magnitude, Noise * FaceMagnitudes[Index]), false);  // [len³] - Face flux
         Measure.Volume        += Flux;
         Measure.FluxMagnitude += std::fabs(Flux);
@@ -418,7 +480,7 @@ double IntegrateShellFlux(const ModelPartition& Partition, SolidShellToken Solid
     for (size_t Index = 0; Index < Faces.size(); ++Index)
     {
         const SurfaceGeometry& Surface = Partition.Surfaces.Resolve(Partition.Faces.Resolve(Faces[Index]).Surface);
-        const double Floor = std::max(1.0e-15 * Magnitude, MeasureDerivativeNoise(Surface) * FaceMagnitudes[Index]);
+        const double Floor = std::max(1.0e-15 * Magnitude, MeasureFaceNoise(Partition, Faces[Index]) * FaceMagnitudes[Index]);
         Total += IntegrateFaceLoops(Partition, Faces[Index], Density(Surface), Floor, false, &Surface);
     }
     return Total;
@@ -444,7 +506,7 @@ double IntegrateFaceSurface(const ModelPartition& Partition, FaceToken Face, con
     };
     const double Sense     = IntegrateParametricArea(Partition, Face) < 0.0 ? -1.0 : 1.0;    // [-] - Loop sense in (𝑢, 𝑣)
     const double Magnitude = IntegrateFaceLoops(Partition, Face, Absolute, 0.0, true, &Surface);
-    const double Floor     = std::max(1.0e-15, MeasureDerivativeNoise(Surface)) * Magnitude;
+    const double Floor     = std::max(1.0e-15, MeasureFaceNoise(Partition, Face)) * Magnitude;
     return Sense * IntegrateFaceLoops(Partition, Face, Density, Floor, false, &Surface);
 }
 
@@ -471,7 +533,7 @@ double IntegrateParametricArea(const ModelPartition& Partition, FaceToken Face)
     // Density 1 never cancels, so the face's own magnitude (× its carrier's derivative noise) is a valid floor here.
     const auto Unit = [](Vector2) { return 1.0; };
     const FaceProfile& Profile = Partition.Faces.Resolve(Face);
-    const double Noise = std::max(1.0e-15, Profile.Surface.PresentCondition() ? MeasureDerivativeNoise(Partition.Surfaces.Resolve(Profile.Surface)) : 0.0);
+    const double Noise = std::max(1.0e-15, MeasureFaceNoise(Partition, Face));
     const double Magnitude = IntegrateFaceLoops(Partition, Face, Unit, 0.0, true, nullptr, RowForm::Constant);
     return IntegrateFaceLoops(Partition, Face, Unit, Noise * Magnitude, false, nullptr, RowForm::Constant);  // Σ ∮ 𝑢 d𝑣
 }
