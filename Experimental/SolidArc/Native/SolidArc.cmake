@@ -177,6 +177,11 @@ if(SOLIDARC_WINDOWED_HOST AND TARGET glfw)
     if(WIN32)
         set_target_properties(SolidArc PROPERTIES WIN32_EXECUTABLE ON)
         target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/ENTRY:mainCRTStartup>)
+        # 📝 Icon, version details and manifest (Package/SolidArcWorkspace.rc). MSVC would add a second, generated
+        #    manifest beside resource 1, so its linker is told not to.
+        enable_language(RC)
+        target_sources(SolidArc PRIVATE "${SOLIDARC_NATIVE}/Package/SolidArcWorkspace.rc")
+        target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/MANIFEST:NO>)
         # 📝 MinGW-style toolchains (the Zig cross-build) keep a console window unless the subsystem is named explicitly.
         if(NOT MSVC)
             target_link_options(SolidArc PRIVATE "-Wl,--subsystem,windows")

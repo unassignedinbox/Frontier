@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--=================================================================================================================================
+                                                  SOLIDARCWORKSPACE.MANIFEST
+==================================================================================================================================-->
+<!-- 🧩 Application manifest of SolidArcWorkspace.exe, linked as resource 1 (RT_MANIFEST) by SolidArcWorkspace.rc -->
+<!-- 📝 asInvoker (never asks for elevation), Windows 10 / 11 compatibility, per-monitor DPI awareness (GLFW asks
+        for the same at start-up) and long paths: the declarations an ordinary desktop application carries. -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+    <assemblyIdentity type="win32" name="SolidArc.SolidArcWorkspace" version="0.6.0.0" processorArchitecture="amd64"/>
+    <description>SolidArc Workspace - parametric CAD modelling</description>
+    <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+        <security>
+            <requestedPrivileges>
+                <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+            </requestedPrivileges>
+        </security>
+    </trustInfo>
+    <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+        <application>
+            <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+        </application>
+    </compatibility>
+    <application xmlns="urn:schemas-microsoft-com:asm.v3">
+        <windowsSettings>
+            <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+            <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+            <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+        </windowsSettings>
+    </application>
+</assembly>

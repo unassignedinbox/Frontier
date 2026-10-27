@@ -1,0 +1,56 @@
+/*====================================================================================================================================
+                                                       SOLIDARCWORKSPACE.RC
+====================================================================================================================================*/
+// 🧩 Windows resources of SolidArcWorkspace.exe: application icon, version details and the application manifest
+
+// 📝 A program without an icon, a version block or a manifest is what packed and dropped executables look like, and the
+//    machine-learning scanners (Defender's "!ml" detections) weigh that. Shipping all three keeps the unsigned preview
+//    build looking like the ordinary desktop application it is. The same script builds with rc.exe (MSVC, which then
+//    links with /MANIFEST:NO so this manifest is the only one) and with zig rc (the Linux cross-build).
+#pragma code_page(65001)
+
+#include <winver.h>
+
+#define SOLIDARC_VERSION_NUMBERS 0, 6, 0, 0
+#define SOLIDARC_VERSION_TEXT    "0.6.0.0"
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    ICON AND MANIFEST
+//------------------------------------------------------------------------------------------------------------------------
+
+1 ICON     "SolidArcWorkspace.ico"
+1 24       "SolidArcWorkspace.manifest"
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    VERSION
+//------------------------------------------------------------------------------------------------------------------------
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     SOLIDARC_VERSION_NUMBERS
+PRODUCTVERSION  SOLIDARC_VERSION_NUMBERS
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       VS_FF_PRERELEASE
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "SolidArc"
+            VALUE "FileDescription",  "SolidArc Workspace - parametric CAD modelling"
+            VALUE "FileVersion",      SOLIDARC_VERSION_TEXT
+            VALUE "InternalName",     "SolidArcWorkspace"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 SolidArc contributors"
+            VALUE "OriginalFilename", "SolidArcWorkspace.exe"
+            VALUE "ProductName",      "SolidArc"
+            VALUE "ProductVersion",   SOLIDARC_VERSION_TEXT
+            VALUE "Comments",         "Preview build of the Frontier SolidArc port"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

@@ -41,3 +41,4 @@
 - Not yet started on a Windows machine by the build: please report the first launch (window, viewport, opening a document).
 - If the window does not open, a message box names the cause (no Vulkan 1.3 driver, missing `EngineContent/`, unreadable options file).
 - Unsigned preview: Windows SmartScreen may ask for confirmation on the first start (More info → Run anyway).
+- Antivirus: an unsigned cross-built executable can trip Microsoft Defender's machine-learning heuristics (detections ending in `!ml`), and the browser then deletes the zip as "Virus detected". The executable carries an icon, version details (Properties → Details) and an application manifest to look like the ordinary program it is; if a build is still flagged, compare its sha256 with the published one (`Get-FileHash SolidArc-Windows-x64.zip`) and allow it under Windows Security → Protection history, or build it with MSVC.
