@@ -19,6 +19,10 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 1 ICON     "SolidArcWorkspace.ico"
+// ⚠️ The manifest is read by the Windows side-by-side loader before the program starts, and that parser is far stricter
+//    than XML: the first package (a ruler comment with emoji in it) stopped SolidArcWorkspace.exe from starting at all
+//    ("side-by-side configuration is incorrect"). Keep it ASCII, comment-free and to Microsoft's documented elements;
+//    SolidArc.cmake refuses to configure otherwise.
 1 24       "SolidArcWorkspace.manifest"
 
 //------------------------------------------------------------------------------------------------------------------------

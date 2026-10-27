@@ -179,6 +179,16 @@ if(SOLIDARC_WINDOWED_HOST AND TARGET glfw)
         target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/ENTRY:mainCRTStartup>)
         # 📝 Icon, version details and manifest (Package/SolidArcWorkspace.rc). MSVC would add a second, generated
         #    manifest beside resource 1, so its linker is told not to.
+        # ⚠️ The side-by-side loader refuses a manifest it cannot parse and the program never starts: keep the file ASCII
+        #    and comment-free (the first package carried a ruler comment with emoji and failed on every machine).
+        set(SolidArcManifest "${SOLIDARC_NATIVE}/Package/SolidArcWorkspace.manifest")
+        file(READ "${SolidArcManifest}" SolidArcManifestText)
+        file(READ "${SolidArcManifest}" SolidArcManifestBytes HEX)
+        string(FIND "${SolidArcManifestText}" "<!--" SolidArcManifestComment)
+        string(REGEX MATCH "^(..)*[89a-f][0-9a-f]" SolidArcManifestWide "${SolidArcManifestBytes}")
+        if(NOT SolidArcManifestComment EQUAL -1 OR SolidArcManifestWide)
+            message(FATAL_ERROR "${SolidArcManifest}: the Windows manifest must be ASCII without comments (side-by-side loader)")
+        endif()
         enable_language(RC)
         target_sources(SolidArc PRIVATE "${SOLIDARC_NATIVE}/Package/SolidArcWorkspace.rc")
         target_link_options(SolidArc PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/MANIFEST:NO>)
