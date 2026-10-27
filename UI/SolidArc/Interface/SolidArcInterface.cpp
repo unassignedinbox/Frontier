@@ -788,9 +788,16 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
 }
 
 // 💡 A requested value at or past a known refusal is held at the largest accepted one (the pointer / handle stops there).
+//    Before any refusal is known, a blend never exceeds the span of the faces beside its edges (the fit measure): a radius
+//    past it has nothing left to roll on, and must not reach the modeller at all.
 [[nodiscard]] double BoundBevelValue(SolidArcWorkspaceState& State, int Parameter, double Value)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
+    if (Bevel.Verb == SolidArcSessionVerb::Blend && Bevel.Fit.Span > 0.0 && Value > 0.999 * Bevel.Fit.Span)
+    {
+        ++Bevel.LimitStops;
+        Value = 0.999 * Bevel.Fit.Span;
+    }
     if (!BevelBoundedCondition(Bevel) || Bevel.LimitParameter != Parameter || !(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0)) return Value;
     if (Value < Bevel.LimitCeiling || Bevel.LimitKey != ComposeBevelLimitKey(State, Parameter)) return Value;
     if (Value != Bevel.LimitGood) ++Bevel.LimitStops;
@@ -10818,7 +10825,7 @@ void DrawImagePlaneCard(SolidArcWorkspaceState& State)
     bool   EditedCondition = false;
     size_t Removal         = Planes.size();
     const bool FocusFound = std::any_of(Planes.begin(), Planes.end(), [&](const SolidArcImagePlane& Plane) { return Plane.Name == State.FocusedImage; });
-    if (!FocusFound) State.FocusedImage = Planes.size() == 1 ? Planes.front().Name : std::string{};
+    if (!FocusFound) State.FocusedImage.clear();                                             // Removed / renamed: nothing open
     for (size_t Index = 0; Index < Planes.size(); ++Index)
     {
         SolidArcImagePlane& Plane = Planes[Index];

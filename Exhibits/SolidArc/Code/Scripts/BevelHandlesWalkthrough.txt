@@ -168,11 +168,17 @@ expect bevel-active == 0
 expect refused == 0
 expect sound == 1
 
-# ⑧ Bounds: one top edge of the 0.2 m cube; a typed 0.5 does not fit, so the size stops at the largest fillet that
-#    builds (found by halving, never an error); Mouse adjust then drags far right and the size stays at that bound
+# ⑧ Bounds: Ctrl+Z takes the loop fillet back; one top edge of the plain 0.2 m cube; a typed 0.5 does not fit, so the
+#    size stops at the largest fillet that builds (found by halving, never an error); Mouse adjust then drags far right
+#    and the size stays at that bound
 key Escape
 frames 2
+key Z Ctrl
+frames 4
+expect volume ~ 0.008
 key A Alt
+frames 2
+move world 0.0 -0.1 0.2
 frames 2
 click world 0.0 -0.1 0.2
 frames 2
@@ -188,7 +194,7 @@ frames 12
 expect bevel-refusal == 0
 expect bevel-size < 0.5
 expect bevel-size > 0.01
-expect bevel-ceiling > 0
+expect bevel-limit-stops > 0
 capture 297BevelBound
 click @BevelMouse
 frames 1

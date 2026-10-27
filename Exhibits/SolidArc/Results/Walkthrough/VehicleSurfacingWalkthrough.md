@@ -1,75 +1,75 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 265 frames · 26.2602 s · slowest frame 519.594 ms
+- Frame: 1600 x 900 · 266 frames · 25.9238 s · slowest frame 528.818 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VehicleSurfacingWalkthrough.txt
 - Expectations: 53 / 53 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
-| 13 | `steps == 0` | 0 | 🟢 |
-| 18 | `steps == 11` | 11 | 🟢 |
-| 19 | `refused == 0` | 0 | 🟢 |
-| 20 | `undo == 1` | 1 | 🟢 |
-| 21 | `curves == 11` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
-| 22 | `curves contains Section3` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
-| 23 | `curves contains Between5` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
-| 24 | `curve-fit-worst < 0.0002` | 5.582644671e-05 | 🟢 |
-| 25 | `sheet == 0` | 0 | 🟢 |
-| 26 | `status contains Imported 11 curve(s)` | Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml ·... | 🟢 |
-| 38 | `pick-mode == 1` | 1 | 🟢 |
-| 42 | `selected-curves == Section1` | Section1 | 🟢 |
-| 43 | `focused-caption == Section1` | Section1 | 🟢 |
-| 46 | `status contains at least 2` | Refused: loft needs at least 2 curves (select them in section order) | 🟢 |
-| 47 | `steps == 11` | 11 | 🟢 |
-| 56 | `selected-curves == Section1,Section2,Section3,Section4,Section5,Section6` | Section1,Section2,Section3,Section4,Section5,Section6 | 🟢 |
-| 59 | `selected-curves == Section1,Section2,Section4,Section5,Section6` | Section1,Section2,Section4,Section5,Section6 | 🟢 |
-| 62 | `selected-curves == Section1,Section2,Section4,Section5,Section6,Section3` | Section1,Section2,Section4,Section5,Section6,Section3 | 🟢 |
-| 72 | `selected-curves == Section1,Section2,Section3,Section4,Section5,Section6` | Section1,Section2,Section3,Section4,Section5,Section6 | 🟢 |
-| 78 | `steps == 12` | 12 | 🟢 |
-| 79 | `refused == 0` | 0 | 🟢 |
-| 80 | `sheet == 1` | 1 | 🟢 |
-| 81 | `faces == 1` | 1 | 🟢 |
-| 82 | `edges == 4` | 4 | 🟢 |
-| 83 | `sound == 1` | 1 | 🟢 |
-| 84 | `volume == 0` | 0 | 🟢 |
-| 85 | `undo == 2` | 2 | 🟢 |
-| 86 | `selected-curves == 0` |  | 🟢 |
-| 87 | `status contains Lofted 6 curve(s)` | Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms | 🟢 |
-| 96 | `pole-drag-active == 1` | 1 | 🟢 |
-| 101 | `pole-drag-active == 0` | 0 | 🟢 |
-| 102 | `pole-drags == 0` | 0 | 🟢 |
-| 103 | `pole-edits == 0` | 0 | 🟢 |
-| 104 | `undo == 2` | 2 | 🟢 |
-| 117 | `pole-drag-active == 1` | 1 | 🟢 |
-| 118 | `undo == 2` | 2 | 🟢 |
-| 122 | `pole-drag-active == 0` | 0 | 🟢 |
-| 123 | `pole-drags == 1` | 1 | 🟢 |
-| 124 | `pole-edits == 1` | 1 | 🟢 |
-| 125 | `undo == 3` | 3 | 🟢 |
-| 126 | `refused == 0` | 0 | 🟢 |
-| 127 | `sheet == 1` | 1 | 🟢 |
-| 128 | `sound == 1` | 1 | 🟢 |
-| 129 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 3 ms | 🟢 |
-| 132 | `selected-curves == Section3` | Section3 | 🟢 |
-| 136 | `pole-edits == 0` | 0 | 🟢 |
-| 137 | `sheet == 1` | 1 | 🟢 |
-| 138 | `redo == 1` | 1 | 🟢 |
-| 141 | `pole-edits == 1` | 1 | 🟢 |
-| 142 | `redo == 0` | 0 | 🟢 |
-| 149 | `selected-faces contains Loft#12.Side` | Loft#12.Side(Surface) | 🟢 |
-| 165 | `file:_ClaudeScratch/SolidArcWorkspace/Vehicle.solidarc == 1` | 1 | 🟢 |
-| 166 | `dirty == 0` | 0 | 🟢 |
+| 16 | `steps == 0` | 0 | 🟢 |
+| 21 | `steps == 11` | 11 | 🟢 |
+| 22 | `refused == 0` | 0 | 🟢 |
+| 23 | `undo == 1` | 1 | 🟢 |
+| 24 | `curves == 11` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
+| 25 | `curves contains Section3` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
+| 26 | `curves contains Between5` | Section1,Between4,Between5,Section2,Section3,Section4,Section5,Section6,Between1,Betwee... | 🟢 |
+| 27 | `curve-fit-worst < 0.0002` | 5.582644671e-05 | 🟢 |
+| 28 | `sheet == 0` | 0 | 🟢 |
+| 29 | `status contains Imported 11 curve(s)` | Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml ·... | 🟢 |
+| 41 | `pick-mode == 1` | 1 | 🟢 |
+| 45 | `selected-curves == Section1` | Section1 | 🟢 |
+| 46 | `focused-caption == Section1` | Section1 | 🟢 |
+| 49 | `status contains at least 2` | Refused: loft needs at least 2 curves (select them in section order) | 🟢 |
+| 50 | `steps == 11` | 11 | 🟢 |
+| 59 | `selected-curves == Section1,Section2,Section3,Section4,Section5,Section6` | Section1,Section2,Section3,Section4,Section5,Section6 | 🟢 |
+| 62 | `selected-curves == Section1,Section2,Section4,Section5,Section6` | Section1,Section2,Section4,Section5,Section6 | 🟢 |
+| 65 | `selected-curves == Section1,Section2,Section4,Section5,Section6,Section3` | Section1,Section2,Section4,Section5,Section6,Section3 | 🟢 |
+| 75 | `selected-curves == Section1,Section2,Section3,Section4,Section5,Section6` | Section1,Section2,Section3,Section4,Section5,Section6 | 🟢 |
+| 81 | `steps == 12` | 12 | 🟢 |
+| 82 | `refused == 0` | 0 | 🟢 |
+| 83 | `sheet == 1` | 1 | 🟢 |
+| 84 | `faces == 1` | 1 | 🟢 |
+| 85 | `edges == 4` | 4 | 🟢 |
+| 86 | `sound == 1` | 1 | 🟢 |
+| 87 | `volume == 0` | 0 | 🟢 |
+| 88 | `undo == 2` | 2 | 🟢 |
+| 89 | `selected-curves == 0` |  | 🟢 |
+| 90 | `status contains Lofted 6 curve(s)` | Lofted 6 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms | 🟢 |
+| 99 | `pole-drag-active == 1` | 1 | 🟢 |
+| 104 | `pole-drag-active == 0` | 0 | 🟢 |
+| 105 | `pole-drags == 0` | 0 | 🟢 |
+| 106 | `pole-edits == 0` | 0 | 🟢 |
+| 107 | `undo == 2` | 2 | 🟢 |
+| 120 | `pole-drag-active == 1` | 1 | 🟢 |
+| 121 | `undo == 2` | 2 | 🟢 |
+| 125 | `pole-drag-active == 0` | 0 | 🟢 |
+| 126 | `pole-drags == 1` | 1 | 🟢 |
+| 127 | `pole-edits == 1` | 1 | 🟢 |
+| 128 | `undo == 3` | 3 | 🟢 |
+| 129 | `refused == 0` | 0 | 🟢 |
+| 130 | `sheet == 1` | 1 | 🟢 |
+| 131 | `sound == 1` | 1 | 🟢 |
+| 132 | `status contains Moved pole 2 of Section3` | Moved pole 2 of Section3 by 40.32 mm · 3 ms | 🟢 |
+| 135 | `selected-curves == Section3` | Section3 | 🟢 |
+| 139 | `pole-edits == 0` | 0 | 🟢 |
+| 140 | `sheet == 1` | 1 | 🟢 |
+| 141 | `redo == 1` | 1 | 🟢 |
+| 144 | `pole-edits == 1` | 1 | 🟢 |
+| 145 | `redo == 0` | 0 | 🟢 |
+| 152 | `selected-faces contains Loft#12.Side` | Loft#12.Side(Surface) | 🟢 |
+| 168 | `file:_ClaudeScratch/SolidArcWorkspace/Vehicle.solidarc == 1` | 1 | 🟢 |
+| 169 | `dirty == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 50CurvesImported | 43 | `04ae5119fe7a7015` |
-| 51ControlPoints | 50 | `6ef966455ebd4fcf` |
-| 52SectionsSelected | 147 | `0833ace4a2458b0c` |
-| 53BonnetLoft | 155 | `cd451fdc6a3a8251` |
-| 54PoleDragLive | 192 | `dd99b1e6eaa19661` |
-| 55PoleMoved | 206 | `da0759466e3f64af` |
-| 56SheetUnderside | 241 | `c0f676677f74d759` |
+| 50CurvesImported | 44 | `9f80b2ecb9022566` |
+| 51ControlPoints | 51 | `f6ae7a6e2e8d4d10` |
+| 52SectionsSelected | 148 | `5146d567cefcf3dc` |
+| 53BonnetLoft | 156 | `dbc1874b17c81c52` |
+| 54PoleDragLive | 193 | `e395080d36e49fb6` |
+| 55PoleMoved | 207 | `07ef78fd02635302` |
+| 56SheetUnderside | 242 | `955babc80bb8847b` |
 
 ## Journal
 

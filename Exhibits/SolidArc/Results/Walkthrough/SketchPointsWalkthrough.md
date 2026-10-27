@@ -1,59 +1,59 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 324 frames · 29.2222 s · slowest frame 576.212 ms
+- Frame: 1600 x 900 · 325 frames · 29.1667 s · slowest frame 508.364 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
-| 22 | `drawing == 1` | Line | 🟢 |
-| 23 | `drawing-segment == 1` | 1 | 🟢 |
-| 28 | `drawing == 0` |  | 🟢 |
-| 29 | `sketches == 1` | Line1 | 🟢 |
-| 36 | `drawing-form == 2` | Bezier | 🟢 |
-| 47 | `drawing == 0` |  | 🟢 |
-| 48 | `sketches == 2` | Line1,Curve1 | 🟢 |
-| 55 | `drawing-form == 3` | NURBS | 🟢 |
-| 66 | `sketches == 3` | Line1,Curve1,Curve2 | 🟢 |
-| 71 | `drawing-form == 4` | Cubic spline | 🟢 |
-| 74 | `drawing == 0` |  | 🟢 |
-| 94 | `volume ~ 2` | 2 | 🟢 |
-| 95 | `bodies == 1` | 1 | 🟢 |
-| 100 | `pick-mode == 1` | 1 | 🟢 |
-| 112 | `live-staged == 1` | 1 | 🟢 |
-| 113 | `live-volume ~ 3` | 3 | 🟢 |
-| 114 | `volume ~ 2` | 2 | 🟢 |
-| 118 | `point-commits == 1` | 1 | 🟢 |
-| 119 | `volume ~ 3` | 3 | 🟢 |
-| 120 | `refused == 0` | 0 | 🟢 |
-| 121 | `picked-points == 1` | 1 | 🟢 |
-| 122 | `picked-point-x ~ 3` | 3 | 🟢 |
-| 123 | `picked-point-y ~ 1` | 1 | 🟢 |
-| 126 | `gizmo-target == 4` | points | 🟢 |
-| 135 | `live-staged == 1` | 1 | 🟢 |
-| 136 | `live-volume > 3.05` | 6.6 | 🟢 |
-| 140 | `gizmo-commits == 1` | 1 | 🟢 |
-| 141 | `volume > 3.05` | 6.6 | 🟢 |
-| 142 | `refused == 0` | 0 | 🟢 |
-| 147 | `picked-points == 2` | 2 | 🟢 |
-| 154 | `gizmo-modes == 7` | 7 | 🟢 |
-| 162 | `gizmo-target == 2` | bodies | 🟢 |
-| 172 | `live-staged == 1` | 1 | 🟢 |
-| 173 | `live-volume > 7.0` | 10.56 | 🟢 |
-| 174 | `volume < 7.0` | 6.6 | 🟢 |
-| 180 | `gizmo-commits == 1` | 1 | 🟢 |
-| 181 | `volume < 7.0` | 6.6 | 🟢 |
-| 182 | `volume > 3.05` | 6.6 | 🟢 |
+| 25 | `drawing == 1` | Line | 🟢 |
+| 26 | `drawing-segment == 1` | 1 | 🟢 |
+| 31 | `drawing == 0` |  | 🟢 |
+| 32 | `sketches == 1` | Line1 | 🟢 |
+| 39 | `drawing-form == 2` | Bezier | 🟢 |
+| 50 | `drawing == 0` |  | 🟢 |
+| 51 | `sketches == 2` | Line1,Curve1 | 🟢 |
+| 58 | `drawing-form == 3` | NURBS | 🟢 |
+| 69 | `sketches == 3` | Line1,Curve1,Curve2 | 🟢 |
+| 74 | `drawing-form == 4` | Cubic spline | 🟢 |
+| 77 | `drawing == 0` |  | 🟢 |
+| 97 | `volume ~ 2` | 2 | 🟢 |
+| 98 | `bodies == 1` | 1 | 🟢 |
+| 103 | `pick-mode == 1` | 1 | 🟢 |
+| 115 | `live-staged == 1` | 1 | 🟢 |
+| 116 | `live-volume ~ 3` | 3 | 🟢 |
+| 117 | `volume ~ 2` | 2 | 🟢 |
+| 121 | `point-commits == 1` | 1 | 🟢 |
+| 122 | `volume ~ 3` | 3 | 🟢 |
+| 123 | `refused == 0` | 0 | 🟢 |
+| 124 | `picked-points == 1` | 1 | 🟢 |
+| 125 | `picked-point-x ~ 3` | 3 | 🟢 |
+| 126 | `picked-point-y ~ 1` | 1 | 🟢 |
+| 129 | `gizmo-target == 4` | points | 🟢 |
+| 138 | `live-staged == 1` | 1 | 🟢 |
+| 139 | `live-volume > 3.05` | 6.6 | 🟢 |
+| 143 | `gizmo-commits == 1` | 1 | 🟢 |
+| 144 | `volume > 3.05` | 6.6 | 🟢 |
+| 145 | `refused == 0` | 0 | 🟢 |
+| 150 | `picked-points == 2` | 2 | 🟢 |
+| 157 | `gizmo-modes == 7` | 7 | 🟢 |
+| 165 | `gizmo-target == 2` | bodies | 🟢 |
+| 175 | `live-staged == 1` | 1 | 🟢 |
+| 176 | `live-volume > 7.0` | 10.56 | 🟢 |
+| 177 | `volume < 7.0` | 6.6 | 🟢 |
+| 183 | `gizmo-commits == 1` | 1 | 🟢 |
+| 184 | `volume < 7.0` | 6.6 | 🟢 |
+| 185 | `volume > 3.05` | 6.6 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 23 | `32267bb218a6438f` |
-| 226SketchPoints | 209 | `b1244076504593db` |
-| 227PointDragLive | 227 | `94325437c0f1a165` |
-| 228PointGizmoLive | 250 | `d586c4407c47a4bc` |
-| 229PointsGizmoAll | 283 | `b497cb9c40e9ffde` |
-| 230BodyScaleLive | 313 | `2c4cc423252f3a17` |
+| 225SketchTools | 24 | `1d7a57290c1d37ee` |
+| 226SketchPoints | 210 | `407504c7939946d6` |
+| 227PointDragLive | 228 | `4fad0d6b2fa5982f` |
+| 228PointGizmoLive | 251 | `485ce23b28edfa55` |
+| 229PointsGizmoAll | 284 | `7dea3cd5d6506517` |
+| 230BodyScaleLive | 314 | `0802160913d2134c` |
 
 ## Journal
 
@@ -78,11 +78,11 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 7 ms
-- Drag Line2.End of Rectangle1 · 10 ms
-- Drag Line2.End of Rectangle1 · 10 ms
-- Drag Line2.End of Rectangle1 · 15 ms
-- Gizmo Y move 1.2 · 1 sketch point · Drag Line2.End of Rectangle1 · 15 ms
+- Extrude1 · Rectangle1 · New · 0 ms
+- Drag Line2.End of Rectangle1 · 0 ms
+- Drag Line2.End of Rectangle1 · 0 ms
+- Drag Line2.End of Rectangle1 · 0 ms
+- Gizmo Y move 1.2 · 1 sketch point · Drag Line2.End of Rectangle1 · 0 ms
 - Rectangle1 · point 3 · 2 picked · the gizmo moves them in the sketch plane (drag a point to move it directly)
 - Gizmo: rotate
 - Gizmo: scale

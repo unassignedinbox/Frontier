@@ -1,80 +1,80 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 387 frames · 39.188 s · slowest frame 736.322 ms
+- Frame: 1600 x 900 · 388 frames · 38.6665 s · slowest frame 854.597 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/PanelAssemblyWalkthrough.txt
 - Expectations: 57 / 57 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
-| 18 | `steps == 11` | 11 | 🟢 |
-| 19 | `refused == 0` | 0 | 🟢 |
-| 32 | `selected-curves == Section1,Section2,Section3` | Section1,Section2,Section3 | 🟢 |
-| 33 | `loft-continuity == 0` | 0 | 🟢 |
-| 36 | `steps == 12` | 12 | 🟢 |
-| 37 | `refused == 0` | 0 | 🟢 |
-| 38 | `panels == 1` | 1 | 🟢 |
-| 39 | `sheet == 1` | 1 | 🟢 |
-| 40 | `faces == 1` | 1 | 🟢 |
-| 41 | `sound == 1` | 1 | 🟢 |
-| 42 | `status contains Lofted 3 curve(s)` | Lofted 3 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms | 🟢 |
-| 50 | `selected-curves == Section3,Section4,Section5,Section6` | Section3,Section4,Section5,Section6 | 🟢 |
-| 53 | `loft-continuity == 2` | 2 | 🟢 |
-| 57 | `steps == 13` | 13 | 🟢 |
-| 58 | `refused == 0` | 0 | 🟢 |
-| 59 | `panels == 2` | 2 | 🟢 |
-| 60 | `sheet == 1` | 1 | 🟢 |
-| 61 | `faces == 2` | 2 | 🟢 |
-| 62 | `sound == 1` | 1 | 🟢 |
-| 63 | `status contains · G2` | Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a shee... | 🟢 |
-| 69 | `steps == 14` | 14 | 🟢 |
-| 70 | `refused == 0` | 0 | 🟢 |
-| 71 | `panels == 4` | 4 | 🟢 |
-| 72 | `sheet == 1` | 1 | 🟢 |
-| 73 | `faces == 4` | 4 | 🟢 |
-| 74 | `sound == 1` | 1 | 🟢 |
-| 75 | `panel-names contains Mirror#14.Image(Loft#12.Side(Surface))` | Loft#12.Side(Surface),Loft#13.Side(Surface),Mirror#14.Image(Loft#12.Side(Surface)),Mirr... | 🟢 |
-| 76 | `status contains Mirrored through x = 0` | Mirrored through x = 0 → 4 panel(s), sound · 9 ms | 🟢 |
-| 84 | `steps == 14` | 14 | 🟢 |
-| 85 | `panels == 4` | 4 | 🟢 |
-| 86 | `status contains not planar` | Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps ) | 🟢 |
-| 99 | `steps == 5` | 5 | 🟢 |
-| 100 | `refused == 0` | 0 | 🟢 |
-| 115 | `selected-curves == Hoop1,Hoop2,Hoop3,Hoop4,Hoop5` | Hoop1,Hoop2,Hoop3,Hoop4,Hoop5 | 🟢 |
-| 118 | `loft-continuity == 0` | 0 | 🟢 |
-| 121 | `panels == 1` | 1 | 🟢 |
-| 122 | `sheet == 1` | 1 | 🟢 |
-| 125 | `panels == 2` | 2 | 🟢 |
-| 126 | `sheet == 1` | 1 | 🟢 |
-| 127 | `faces == 2` | 2 | 🟢 |
-| 131 | `steps == 8` | 8 | 🟢 |
-| 132 | `refused == 0` | 0 | 🟢 |
-| 133 | `sheet == 0` | 0 | 🟢 |
-| 134 | `faces == 4` | 4 | 🟢 |
-| 135 | `sound == 1` | 1 | 🟢 |
-| 136 | `volume > 0.791` | 0.7928018098 | 🟢 |
-| 137 | `volume < 0.794` | 0.7928018098 | 🟢 |
-| 138 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 34 ms | 🟢 |
-| 153 | `steps == 10` | 10 | 🟢 |
-| 173 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
-| 179 | `steps == 11` | 11 | 🟢 |
-| 180 | `refused == 0` | 0 | 🟢 |
-| 181 | `panels == 1` | 1 | 🟢 |
-| 182 | `sheet == 1` | 1 | 🟢 |
-| 183 | `sound == 1` | 1 | 🟢 |
-| 184 | `status contains Network of 10 curve(s)` | Network of 10 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet... | 🟢 |
-| 190 | `dirty == 0` | 0 | 🟢 |
+| 21 | `steps == 11` | 11 | 🟢 |
+| 22 | `refused == 0` | 0 | 🟢 |
+| 35 | `selected-curves == Section1,Section2,Section3` | Section1,Section2,Section3 | 🟢 |
+| 36 | `loft-continuity == 0` | 0 | 🟢 |
+| 39 | `steps == 12` | 12 | 🟢 |
+| 40 | `refused == 0` | 0 | 🟢 |
+| 41 | `panels == 1` | 1 | 🟢 |
+| 42 | `sheet == 1` | 1 | 🟢 |
+| 43 | `faces == 1` | 1 | 🟢 |
+| 44 | `sound == 1` | 1 | 🟢 |
+| 45 | `status contains Lofted 3 curve(s)` | Lofted 3 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms | 🟢 |
+| 53 | `selected-curves == Section3,Section4,Section5,Section6` | Section3,Section4,Section5,Section6 | 🟢 |
+| 56 | `loft-continuity == 2` | 2 | 🟢 |
+| 60 | `steps == 13` | 13 | 🟢 |
+| 61 | `refused == 0` | 0 | 🟢 |
+| 62 | `panels == 2` | 2 | 🟢 |
+| 63 | `sheet == 1` | 1 | 🟢 |
+| 64 | `faces == 2` | 2 | 🟢 |
+| 65 | `sound == 1` | 1 | 🟢 |
+| 66 | `status contains · G2` | Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a shee... | 🟢 |
+| 72 | `steps == 14` | 14 | 🟢 |
+| 73 | `refused == 0` | 0 | 🟢 |
+| 74 | `panels == 4` | 4 | 🟢 |
+| 75 | `sheet == 1` | 1 | 🟢 |
+| 76 | `faces == 4` | 4 | 🟢 |
+| 77 | `sound == 1` | 1 | 🟢 |
+| 78 | `panel-names contains Mirror#14.Image(Loft#12.Side(Surface))` | Loft#12.Side(Surface),Loft#13.Side(Surface),Mirror#14.Image(Loft#12.Side(Surface)),Mirr... | 🟢 |
+| 79 | `status contains Mirrored through x = 0` | Mirrored through x = 0 → 4 panel(s), sound · 6 ms | 🟢 |
+| 87 | `steps == 14` | 14 | 🟢 |
+| 88 | `panels == 4` | 4 | 🟢 |
+| 89 | `status contains not planar` | Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps ) | 🟢 |
+| 102 | `steps == 5` | 5 | 🟢 |
+| 103 | `refused == 0` | 0 | 🟢 |
+| 118 | `selected-curves == Hoop1,Hoop2,Hoop3,Hoop4,Hoop5` | Hoop1,Hoop2,Hoop3,Hoop4,Hoop5 | 🟢 |
+| 121 | `loft-continuity == 0` | 0 | 🟢 |
+| 124 | `panels == 1` | 1 | 🟢 |
+| 125 | `sheet == 1` | 1 | 🟢 |
+| 128 | `panels == 2` | 2 | 🟢 |
+| 129 | `sheet == 1` | 1 | 🟢 |
+| 130 | `faces == 2` | 2 | 🟢 |
+| 134 | `steps == 8` | 8 | 🟢 |
+| 135 | `refused == 0` | 0 | 🟢 |
+| 136 | `sheet == 0` | 0 | 🟢 |
+| 137 | `faces == 4` | 4 | 🟢 |
+| 138 | `sound == 1` | 1 | 🟢 |
+| 139 | `volume > 0.791` | 0.7928018098 | 🟢 |
+| 140 | `volume < 0.794` | 0.7928018098 | 🟢 |
+| 141 | `status contains Closed → solid` | Closed → solid · volume 0.79280 m³ · sound · 24 ms | 🟢 |
+| 156 | `steps == 10` | 10 | 🟢 |
+| 176 | `selected-curves == Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5` | Spine2,Section1,Section4,Spine1,Section2,Spine3,Section6,Section3,Spine4,Section5 | 🟢 |
+| 182 | `steps == 11` | 11 | 🟢 |
+| 183 | `refused == 0` | 0 | 🟢 |
+| 184 | `panels == 1` | 1 | 🟢 |
+| 185 | `sheet == 1` | 1 | 🟢 |
+| 186 | `sound == 1` | 1 | 🟢 |
+| 187 | `status contains Network of 10 curve(s)` | Network of 10 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet... | 🟢 |
+| 193 | `dirty == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 60RearSectionsG2 | 100 | `2e319bdabbbdd076` |
-| 61FrontRearG2 | 108 | `d603160b09f553f3` |
-| 62BonnetMirrored | 122 | `5dba68827b6ba173` |
-| 63CloseRefused | 136 | `c722a6baab24fe1d` |
-| 64PodHalves | 238 | `4ec387fcf4b190aa` |
-| 65PodSolid | 258 | `430b9bfb1e36e6dd` |
-| 66NetworkCurves | 373 | `717fee6e8e73d299` |
-| 67NetworkPanel | 381 | `78d11b96821ea18f` |
+| 60RearSectionsG2 | 101 | `f4b8f1570a854113` |
+| 61FrontRearG2 | 109 | `29c83426b516611a` |
+| 62BonnetMirrored | 123 | `b3748e60b5c61267` |
+| 63CloseRefused | 137 | `fe9677cba8b52045` |
+| 64PodHalves | 239 | `bb48b81a1b05653c` |
+| 65PodSolid | 259 | `fe5158704f4c90f9` |
+| 66NetworkCurves | 374 | `665d56b3487508f9` |
+| 67NetworkPanel | 382 | `82bcde946b02992d` |
 
 ## Journal
 
@@ -94,10 +94,10 @@
 - Selected curve Section4 · 4 poles · fit 0.049 mm · 2 selected
 - Selected curve Section5 · 4 poles · fit 0.045 mm · 3 selected
 - Selected curve Section6 · 4 poles · fit 0.046 mm · 4 selected
-- Loft2 · 4 sections · G2 · 2 ms
-- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 2 ms
-- Mirror1 · plane x = 0 · 9 ms
-- Mirrored through x = 0 → 4 panel(s), sound · 9 ms
+- Loft2 · 4 sections · G2 · 1 ms
+- Lofted 4 curve(s) into a panel · G2 (sound) · 2 panel(s) · open sections stay a sheet · 1 ms
+- Mirror1 · plane x = 0 · 6 ms
+- Mirrored through x = 0 → 4 panel(s), sound · 6 ms
 - Framed the document (Space)
 - Refused: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps )
 - New document (previous recovery copy kept)
@@ -117,8 +117,8 @@
 - Lofted 5 curve(s) into a panel (sound) · 1 panel(s) · open sections stay a sheet · 1 ms
 - Mirror1 · plane x = 0 · 8 ms
 - Mirrored through x = 0 → 2 panel(s), sound · 8 ms
-- Close1 · plane caps · 34 ms
-- Closed → solid · volume 0.79280 m³ · sound · 34 ms
+- Close1 · plane caps · 24 ms
+- Closed → solid · volume 0.79280 m³ · sound · 24 ms
 - Framed the document (Space)
 - New document (previous recovery copy kept)
 - Import 10 curve(s) · 3 ms

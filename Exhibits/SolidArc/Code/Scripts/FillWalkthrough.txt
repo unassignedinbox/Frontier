@@ -180,3 +180,56 @@ frames 2
 key Space
 frames 3
 capture 252ImagePlane
+
+# ⑧ Image planes in the Outliner (Images chip): a row pick opens the plane's properties in the Inspector — photo,
+#    mirror, a left crop (the picture keeps its scale: the plane narrows), opacity; the row's lock freezes them, its eye
+#    hides the picture. Everything goes back afterwards
+click @FilterImages
+frames 2
+click @Figure:EmptyWorkspace
+frames 4
+expect image-focused == EmptyWorkspace
+move @ImagePhoto
+frames 2
+click @ImagePhoto
+frames 2
+expect image-photo == 1
+click @ImageFlipAcross
+frames 2
+expect image-mirrored == 1
+click @ImageCropLeft
+frames 3
+expect image-crop-left > 0
+move @ImageOpacity offset -15 0
+frames 2
+click @ImageOpacity offset -15 0
+frames 2
+expect image-opacity > 0.25
+expect image-opacity < 0.55
+capture 298ImageProperties
+click @Lock:EmptyWorkspace
+frames 2
+expect image-locked == 1
+click @Visibility:EmptyWorkspace
+frames 2
+expect image-planes-drawn == 0
+click @Visibility:EmptyWorkspace
+frames 2
+expect image-planes-drawn == 1
+click @Lock:EmptyWorkspace
+frames 2
+expect image-locked == 0
+click @ImageUncrop
+frames 2
+expect image-crop-left == 0
+click @ImageFlipAcross
+frames 2
+click @ImageInk
+frames 2
+expect image-photo == 0
+expect image-mirrored == 0
+click @Figure:EmptyWorkspace
+frames 2
+expect image-focused != EmptyWorkspace
+click @FilterAll
+frames 2

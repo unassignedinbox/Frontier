@@ -23,8 +23,8 @@ click world 1.0 0.0 0.0
 frames 3
 expect sketches == 1
 
-# ② Shift+A line from (3, 0): beside the circle the plain pointer keeps the grid, Ctrl finds no important point there,
-#    Alt slides onto the circle (the foot of the pointer); the Alt click places the end on it
+# ② Shift+A line from (3, 0): beside the circle the plain pointer keeps the grid, Ctrl finds no important point there
+#    and lands on the circle itself (On curve), Alt slides onto the circle (the foot of the pointer); the Alt click places the end on it
 key A Shift
 frames 2
 click world 3.0 0.0 0.0
@@ -36,7 +36,7 @@ expect drawing-pointer-x ~ 0.6
 expect drawing-pointer-y ~ 0.8
 move world 0.62 0.80 0.0 Ctrl
 frames 2
-expect snap contains none
+expect snap contains On curve
 move world 0.62 0.80 0.0 Alt
 frames 2
 expect snap contains curve

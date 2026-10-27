@@ -1,55 +1,55 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 122 frames · 22.4531 s · slowest frame 1256.18 ms
+- Frame: 1600 x 900 · 123 frames · 18.2886 s · slowest frame 547.689 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/DrawingSheetWalkthrough.txt
 - Expectations: 35 / 35 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
-| 13 | `drawing-sheet == 0` | off | 🟢 |
-| 16 | `drawing-sheet == 1` | A3 1:50 First | 🟢 |
-| 17 | `drawing-sheet contains A3` | A3 1:50 First | 🟢 |
-| 18 | `drawing-sheet contains First` | A3 1:50 First | 🟢 |
-| 19 | `drawing-sheet-views == 4` | Front Top Right Isometric | 🟢 |
-| 20 | `drawing-sheet-views == Front Top Right Isometric` | Front Top Right Isometric | 🟢 |
-| 21 | `drawing-sheet-dimensions contains 4000` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
-| 22 | `drawing-sheet-dimensions contains 2500` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
-| 23 | `drawing-sheet-dimensions contains 1750` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
-| 24 | `drawing-sheet-dimensions contains ⌀1000` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
-| 25 | `drawing-sheet-dimensions contains ⌀600` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
-| 26 | `drawing-sheet-texts contains Bracket` | TITLE / Bracket / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / FIRST AN... | 🟢 |
-| 27 | `drawing-sheet-refreshes == 1` | 1 | 🟢 |
-| 28 | `drawing-sheet-saved == 0` | 0 | 🟢 |
-| 34 | `drawing-sheet contains Third` | A3 1:50 Third | 🟢 |
-| 35 | `drawing-sheet-refreshes == 2` | 2 | 🟢 |
-| 36 | `drawing-sheet-saved == 1` | 1 | 🟢 |
-| 43 | `drawing-sheet-views == Front Top Right Section A-A` | Front Top Right Section A-A | 🟢 |
-| 44 | `drawing-sheet-section-area ~ 4.116587` | 4.116587385 | 🟢 |
-| 58 | `drawing-sheet-texts contains Bracket B-1` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
-| 59 | `drawing-sheet-texts contains AlSi10Mg` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
-| 64 | `drawing-sheet-scale < 0.02` | 1:100 | 🟢 |
-| 67 | `drawing-sheet-scale == 0.02` | 1:50 | 🟢 |
-| 68 | `drawing-sheet contains 1:50` | A3 1:50 Third | 🟢 |
-| 73 | `drawing-sheet-zoom ~ 1.728` | 1.728000164 | 🟢 |
-| 77 | `drawing-sheet-zoom == 1` | 1 | 🟢 |
-| 82 | `drawing-sheet-export contains Sheet.svg` | _ClaudeScratch/SolidArcWorkspace/Sheet.svg | 🟢 |
-| 83 | `drawing-sheet-export > 20000` | _ClaudeScratch/SolidArcWorkspace/Sheet.svg | 🟢 |
-| 86 | `drawing-sheet-export contains Sheet.dxf` | _ClaudeScratch/SolidArcWorkspace/Sheet.dxf | 🟢 |
-| 87 | `drawing-sheet-export > 20000` | _ClaudeScratch/SolidArcWorkspace/Sheet.dxf | 🟢 |
-| 93 | `drawing-sheet == 0` | off | 🟢 |
-| 96 | `drawing-sheet contains Third` | A3 1:50 Third | 🟢 |
-| 97 | `drawing-sheet-views contains Section A-A` | Front Top Right Section A-A | 🟢 |
-| 98 | `drawing-sheet-texts contains AlSi10Mg` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
-| 101 | `drawing-sheet == 0` | off | 🟢 |
+| 16 | `drawing-sheet == 0` | off | 🟢 |
+| 19 | `drawing-sheet == 1` | A3 1:50 First | 🟢 |
+| 20 | `drawing-sheet contains A3` | A3 1:50 First | 🟢 |
+| 21 | `drawing-sheet contains First` | A3 1:50 First | 🟢 |
+| 22 | `drawing-sheet-views == 4` | Front Top Right Isometric | 🟢 |
+| 23 | `drawing-sheet-views == Front Top Right Isometric` | Front Top Right Isometric | 🟢 |
+| 24 | `drawing-sheet-dimensions contains 4000` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
+| 25 | `drawing-sheet-dimensions contains 2500` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
+| 26 | `drawing-sheet-dimensions contains 1750` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
+| 27 | `drawing-sheet-dimensions contains ⌀1000` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
+| 28 | `drawing-sheet-dimensions contains ⌀600` | 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 | 🟢 |
+| 29 | `drawing-sheet-texts contains Bracket` | TITLE / Bracket / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / FIRST AN... | 🟢 |
+| 30 | `drawing-sheet-refreshes == 1` | 1 | 🟢 |
+| 31 | `drawing-sheet-saved == 0` | 0 | 🟢 |
+| 37 | `drawing-sheet contains Third` | A3 1:50 Third | 🟢 |
+| 38 | `drawing-sheet-refreshes == 2` | 2 | 🟢 |
+| 39 | `drawing-sheet-saved == 1` | 1 | 🟢 |
+| 46 | `drawing-sheet-views == Front Top Right Section A-A` | Front Top Right Section A-A | 🟢 |
+| 47 | `drawing-sheet-section-area ~ 4.116587` | 4.116587385 | 🟢 |
+| 61 | `drawing-sheet-texts contains Bracket B-1` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
+| 62 | `drawing-sheet-texts contains AlSi10Mg` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
+| 67 | `drawing-sheet-scale < 0.02` | 1:100 | 🟢 |
+| 70 | `drawing-sheet-scale == 0.02` | 1:50 | 🟢 |
+| 71 | `drawing-sheet contains 1:50` | A3 1:50 Third | 🟢 |
+| 76 | `drawing-sheet-zoom ~ 1.728` | 1.728000164 | 🟢 |
+| 80 | `drawing-sheet-zoom == 1` | 1 | 🟢 |
+| 85 | `drawing-sheet-export contains Sheet.svg` | _ClaudeScratch/SolidArcWorkspace/Sheet.svg | 🟢 |
+| 86 | `drawing-sheet-export > 20000` | _ClaudeScratch/SolidArcWorkspace/Sheet.svg | 🟢 |
+| 89 | `drawing-sheet-export contains Sheet.dxf` | _ClaudeScratch/SolidArcWorkspace/Sheet.dxf | 🟢 |
+| 90 | `drawing-sheet-export > 20000` | _ClaudeScratch/SolidArcWorkspace/Sheet.dxf | 🟢 |
+| 96 | `drawing-sheet == 0` | off | 🟢 |
+| 99 | `drawing-sheet contains Third` | A3 1:50 Third | 🟢 |
+| 100 | `drawing-sheet-views contains Section A-A` | Front Top Right Section A-A | 🟢 |
+| 101 | `drawing-sheet-texts contains AlSi10Mg` | TITLE / Bracket B-1 / DRAWING NO. / DWG-0001 / REV / A / DRAWN / DATE / MATERIAL / AlSi... | 🟢 |
+| 104 | `drawing-sheet == 0` | off | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 190DrawingSheetFirstAngle | 10 | `a997f4df40b84ab6` |
-| 191DrawingSheetThirdAngle | 22 | `02f37799342b80fa` |
-| 192DrawingSheetSection | 31 | `0c9b2ddb43e70f89` |
-| 193DrawingSheetZoom | 83 | `3ab80f38f677d0c9` |
-| 194DrawingSheetExport | 106 | `abf3248a696a107f` |
+| 190DrawingSheetFirstAngle | 11 | `3fecf9bda500c9a8` |
+| 191DrawingSheetThirdAngle | 23 | `6105b11d6af723ed` |
+| 192DrawingSheetSection | 32 | `32d9321816886bf4` |
+| 193DrawingSheetZoom | 84 | `dc8207a01335e23f` |
+| 194DrawingSheetExport | 107 | `acd560ae5bf8ad17` |
 
 ## Journal
 

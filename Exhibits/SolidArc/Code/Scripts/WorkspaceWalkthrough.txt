@@ -46,11 +46,14 @@ expect bevel-chamfer == 0
 frames 2
 expect preview-faces == 12
 expect faces == 11
+expect bevel-pinned == 1
+click @BevelMouse
+frames 1
 move viewport 0.40 0.70
 frames 1
 move viewport 0.40 0.70 offset 30 0
 frames 2
-expect bevel-size > 0.25
+expect bevel-size > 0.05
 click @BevelSize
 key A Ctrl
 type 300mm
@@ -75,7 +78,8 @@ expect sound == 1
 capture 05FilletApplied
 
 # ⑤ B then C (Plasticity chamfer) on an edge that meets the earlier fillet: the start size fits the short neighbour
-#    (span 0.28 → 0.02, shown at once); a typed 0.3 is refused (the last good 0.02 stays on screen), Apply disabled, Esc cancels
+#    (span 0.28 → 0.02, shown at once); a typed 0.3 does not fit, so the size stops at the largest chamfer that builds
+#    (found by halving over a few frames, never an error), Esc cancels
 move world 2.0 0.0 1.0
 frames 2
 click world 2.0 0.0 1.0
@@ -93,8 +97,11 @@ key A Ctrl
 type 0.3
 key Enter
 frames 2
-expect bevel-refusal contains consumed by the blend
-expect bevel-showing ~ 0.02
+frames 24
+expect bevel-refusal == 0
+expect bevel-size < 0.3
+expect bevel-size > 0.02
+expect bevel-limit-stops > 0
 capture 06BevelRefusal
 key Escape
 frames 1

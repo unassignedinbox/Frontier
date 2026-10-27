@@ -1,103 +1,103 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 500 frames · 46.7542 s · slowest frame 552.553 ms
+- Frame: 1600 x 900 · 501 frames · 46.1615 s · slowest frame 558.537 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EditingWalkthrough.txt
 - Expectations: 77 / 77 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
-| 13 | `steps == 0` | 0 | 🟢 |
-| 33 | `steps == 2` | 2 | 🟢 |
-| 34 | `volume ~ 2` | 2 | 🟢 |
-| 35 | `bodies == 1` | 1 | 🟢 |
-| 42 | `transform == 0` | 0 | 🟢 |
-| 43 | `status contains needs picked bodies` | Move needs picked bodies (mode 4, or a face / edge of the body) | 🟢 |
-| 50 | `selected-bodies contains Extrude#` | Extrude#2 | 🟢 |
-| 55 | `transform == 1` | 1 | 🟢 |
-| 60 | `transform-readout contains Move x (1, 0, 0)` | Move x (1, 0, 0) | 🟢 |
-| 61 | `transform-preview-volume ~ 2` | 2 | 🟢 |
-| 62 | `steps == 2` | 2 | 🟢 |
-| 66 | `transform == 0` | 0 | 🟢 |
-| 67 | `transform-commits == 1` | 1 | 🟢 |
-| 68 | `steps == 3` | 3 | 🟢 |
-| 69 | `volume ~ 2` | 2 | 🟢 |
-| 70 | `sound == 1` | 1 | 🟢 |
-| 71 | `status contains Move` | Move (Extrude1) · 5 ms | 🟢 |
-| 80 | `transform-readout contains Rotate z 45` | Rotate z 45° · typed 45 | 🟢 |
-| 83 | `transform-commits == 2` | 2 | 🟢 |
-| 84 | `steps == 4` | 4 | 🟢 |
-| 85 | `volume ~ 2` | 2 | 🟢 |
-| 101 | `transform-readout contains Scale z ×2` | Scale z ×2 · typed 2 | 🟢 |
-| 104 | `transform-commits == 3` | 3 | 🟢 |
-| 105 | `volume ~ 4` | 4 | 🟢 |
-| 106 | `sound == 1` | 1 | 🟢 |
-| 113 | `transform == 0` | 0 | 🟢 |
-| 114 | `steps == 5` | 5 | 🟢 |
-| 115 | `volume ~ 4` | 4 | 🟢 |
-| 121 | `transform == 1` | 1 | 🟢 |
-| 126 | `transform-readout contains Move y (0, 3, 0)` | Move y (0, 3, 0) · typed 3 | 🟢 |
-| 129 | `bodies == 2` | 2 | 🟢 |
-| 130 | `steps == 6` | 6 | 🟢 |
-| 131 | `volume ~ 8` | 8 | 🟢 |
-| 132 | `active-body contains Duplicate#` | Duplicate#6 | 🟢 |
-| 133 | `selected-bodies contains Duplicate#` | Duplicate#6 | 🟢 |
-| 134 | `body-captions contains Copy1` | Extrude1,Extrude1Copy1 | 🟢 |
-| 142 | `clipboard == 1` | 1 | 🟢 |
-| 143 | `status contains Copied` | Copied Extrude1Copy1 | 🟢 |
-| 146 | `bodies == 1` | 1 | 🟢 |
-| 149 | `bodies == 2` | 2 | 🟢 |
-| 150 | `volume ~ 8` | 8 | 🟢 |
-| 151 | `status contains Paste` | Paste (Extrude1Copy1) · 18 ms | 🟢 |
-| 152 | `selected-bodies contains Duplicate#` | Duplicate#8 | 🟢 |
-| 158 | `hidden == 1` | 1 | 🟢 |
-| 159 | `scene-bodies == 1` | 1 | 🟢 |
-| 160 | `bodies == 2` | 2 | 🟢 |
-| 164 | `hidden == 0` | 0 | 🟢 |
-| 165 | `scene-bodies == 2` | 2 | 🟢 |
-| 172 | `selected-bodies contains Duplicate#` | Duplicate#8 | 🟢 |
-| 175 | `hidden == 1` | 1 | 🟢 |
-| 176 | `scene-bodies == 1` | 1 | 🟢 |
-| 179 | `hidden == 1` | 1 | 🟢 |
-| 180 | `scene-bodies == 1` | 1 | 🟢 |
-| 181 | `volume ~ 8` | 8 | 🟢 |
-| 185 | `scene-bodies == 1` | 1 | 🟢 |
-| 188 | `hidden == 0` | 0 | 🟢 |
-| 189 | `scene-bodies == 2` | 2 | 🟢 |
-| 216 | `sketches == 2` | Line1,Line2 | 🟢 |
-| 219 | `sketches == 1` | Line2 | 🟢 |
-| 220 | `sketch-curves == 4` | 4 | 🟢 |
-| 221 | `status contains Join` | Join (Line2, Line1) · 0 ms | 🟢 |
-| 225 | `sketch-filled == 1` | 1 | 🟢 |
-| 235 | `volume ~ 1` | 1 | 🟢 |
-| 236 | `bodies == 1` | 1 | 🟢 |
-| 243 | `sweep == 1` | 1 | 🟢 |
-| 246 | `sweep-amount ~ 0.25` | 0.25 | 🟢 |
-| 247 | `sweep-outline == 4` | 4 | 🟢 |
-| 251 | `sweep == 0` | 0 | 🟢 |
-| 252 | `sweep-commits == 1` | 1 | 🟢 |
-| 253 | `sketches == 2` | Line2,Offset1 | 🟢 |
-| 254 | `focused-caption == Offset1` | Offset1 | 🟢 |
-| 267 | `sweep == 1` | 1 | 🟢 |
-| 272 | `sweep-amount ~ 0.2` | 0.2 | 🟢 |
-| 280 | `sweep-commits == 2` | 2 | 🟢 |
-| 281 | `bodies == 2` | 2 | 🟢 |
-| 282 | `body-volumes contains Pipe1 0.251327` | Extrude1 1.000000 · Pipe1 0.251327 | 🟢 |
-| 283 | `sound == 1` | 1 | 🟢 |
+| 16 | `steps == 0` | 0 | 🟢 |
+| 36 | `steps == 2` | 2 | 🟢 |
+| 37 | `volume ~ 2` | 2 | 🟢 |
+| 38 | `bodies == 1` | 1 | 🟢 |
+| 45 | `transform == 0` | 0 | 🟢 |
+| 46 | `status contains needs picked bodies` | Move needs picked bodies (mode 4, or a face / edge of the body) | 🟢 |
+| 53 | `selected-bodies contains Extrude#` | Extrude#2 | 🟢 |
+| 58 | `transform == 1` | 1 | 🟢 |
+| 63 | `transform-readout contains Move x (1, 0, 0)` | Move x (1, 0, 0) | 🟢 |
+| 64 | `transform-preview-volume ~ 2` | 2 | 🟢 |
+| 65 | `steps == 2` | 2 | 🟢 |
+| 69 | `transform == 0` | 0 | 🟢 |
+| 70 | `transform-commits == 1` | 1 | 🟢 |
+| 71 | `steps == 3` | 3 | 🟢 |
+| 72 | `volume ~ 2` | 2 | 🟢 |
+| 73 | `sound == 1` | 1 | 🟢 |
+| 74 | `status contains Move` | Move (Extrude1) · 0 ms | 🟢 |
+| 83 | `transform-readout contains Rotate z 45` | Rotate z 45° · typed 45 | 🟢 |
+| 86 | `transform-commits == 2` | 2 | 🟢 |
+| 87 | `steps == 4` | 4 | 🟢 |
+| 88 | `volume ~ 2` | 2 | 🟢 |
+| 104 | `transform-readout contains Scale z ×2` | Scale z ×2 · typed 2 | 🟢 |
+| 107 | `transform-commits == 3` | 3 | 🟢 |
+| 108 | `volume ~ 4` | 4 | 🟢 |
+| 109 | `sound == 1` | 1 | 🟢 |
+| 116 | `transform == 0` | 0 | 🟢 |
+| 117 | `steps == 5` | 5 | 🟢 |
+| 118 | `volume ~ 4` | 4 | 🟢 |
+| 124 | `transform == 1` | 1 | 🟢 |
+| 129 | `transform-readout contains Move y (0, 3, 0)` | Move y (0, 3, 0) · typed 3 | 🟢 |
+| 132 | `bodies == 2` | 2 | 🟢 |
+| 133 | `steps == 6` | 6 | 🟢 |
+| 134 | `volume ~ 8` | 8 | 🟢 |
+| 135 | `active-body contains Duplicate#` | Duplicate#6 | 🟢 |
+| 136 | `selected-bodies contains Duplicate#` | Duplicate#6 | 🟢 |
+| 137 | `body-captions contains Copy1` | Extrude1,Extrude1Copy1 | 🟢 |
+| 145 | `clipboard == 1` | 1 | 🟢 |
+| 146 | `status contains Copied` | Copied Extrude1Copy1 | 🟢 |
+| 149 | `bodies == 1` | 1 | 🟢 |
+| 152 | `bodies == 2` | 2 | 🟢 |
+| 153 | `volume ~ 8` | 8 | 🟢 |
+| 154 | `status contains Paste` | Paste (Extrude1Copy1) · 1 ms | 🟢 |
+| 155 | `selected-bodies contains Duplicate#` | Duplicate#8 | 🟢 |
+| 161 | `hidden == 1` | 1 | 🟢 |
+| 162 | `scene-bodies == 1` | 1 | 🟢 |
+| 163 | `bodies == 2` | 2 | 🟢 |
+| 167 | `hidden == 0` | 0 | 🟢 |
+| 168 | `scene-bodies == 2` | 2 | 🟢 |
+| 175 | `selected-bodies contains Duplicate#` | Duplicate#8 | 🟢 |
+| 178 | `hidden == 1` | 1 | 🟢 |
+| 179 | `scene-bodies == 1` | 1 | 🟢 |
+| 182 | `hidden == 1` | 1 | 🟢 |
+| 183 | `scene-bodies == 1` | 1 | 🟢 |
+| 184 | `volume ~ 8` | 8 | 🟢 |
+| 188 | `scene-bodies == 1` | 1 | 🟢 |
+| 191 | `hidden == 0` | 0 | 🟢 |
+| 192 | `scene-bodies == 2` | 2 | 🟢 |
+| 219 | `sketches == 2` | Line1,Line2 | 🟢 |
+| 222 | `sketches == 1` | Line2 | 🟢 |
+| 223 | `sketch-curves == 4` | 4 | 🟢 |
+| 224 | `status contains Join` | Join (Line2, Line1) · 0 ms | 🟢 |
+| 228 | `sketch-filled == 1` | 1 | 🟢 |
+| 238 | `volume ~ 1` | 1 | 🟢 |
+| 239 | `bodies == 1` | 1 | 🟢 |
+| 246 | `sweep == 1` | 1 | 🟢 |
+| 249 | `sweep-amount ~ 0.25` | 0.25 | 🟢 |
+| 250 | `sweep-outline == 4` | 4 | 🟢 |
+| 254 | `sweep == 0` | 0 | 🟢 |
+| 255 | `sweep-commits == 1` | 1 | 🟢 |
+| 256 | `sketches == 2` | Line2,Offset1 | 🟢 |
+| 257 | `focused-caption == Offset1` | Offset1 | 🟢 |
+| 270 | `sweep == 1` | 1 | 🟢 |
+| 275 | `sweep-amount ~ 0.2` | 0.2 | 🟢 |
+| 283 | `sweep-commits == 2` | 2 | 🟢 |
+| 284 | `bodies == 2` | 2 | 🟢 |
+| 285 | `body-volumes contains Pipe1 0.251327` | Extrude1 1.000000 · Pipe1 0.251327 | 🟢 |
+| 286 | `sound == 1` | 1 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 103 | `7cd794b3c29c7289` |
-| 112Rotate | 154 | `d62b4e0cad126560` |
-| 113Scale | 192 | `8f064b56b2fe3645` |
-| 114Duplicate | 221 | `fb0c0dba9c1b5625` |
-| 115Paste | 240 | `55ed668fc4357bc2` |
-| 116Hide | 248 | `33dd8ddc667f989d` |
-| 117InvertHidden | 285 | `6f89a618f656f1dd` |
-| 118Join | 377 | `809576f8daff2fa3` |
-| 119OffsetPreview | 424 | `e9703915a88a3a65` |
-| 120PipePreview | 486 | `c47736fcad7bd3e8` |
-| 121Pipe | 500 | `76f819aad8df3109` |
+| 111MovePreview | 104 | `b25231dfc2f3b636` |
+| 112Rotate | 155 | `cee5de29d08b9d80` |
+| 113Scale | 193 | `fc073c227313bcf0` |
+| 114Duplicate | 222 | `128fc30dc784fc95` |
+| 115Paste | 241 | `347b78409c09826f` |
+| 116Hide | 249 | `f6bef5434db82895` |
+| 117InvertHidden | 286 | `84354e4b902a8d15` |
+| 118Join | 378 | `96d59c0c7c4a42c4` |
+| 119OffsetPreview | 425 | `6d4819bc910845ff` |
+| 120PipePreview | 487 | `ce4957a90635a18d` |
+| 121Pipe | 501 | `457e7c40e60c6b2f` |
 
 ## Journal
 
@@ -107,29 +107,29 @@
 - Fill Rectangle1 · 0 ms
 - Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 7 ms
+- Extrude1 · Rectangle1 · New · 0 ms
 - Selection cleared
 - Move needs picked bodies (mode 4, or a face / edge of the body)
 - Selected Extrude1 (6 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Move (Extrude1) · 5 ms
+- Move (Extrude1) · 0 ms
 - Rotate 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
-- Rotate (Extrude1) · 3 ms
+- Rotate (Extrude1) · 0 ms
 - View Isometric
 - Framed the document (Space)
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Scale (Extrude1) · 4 ms
+- Scale (Extrude1) · 0 ms
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Scale cancelled
 - Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Duplicate (Extrude1) · 14 ms
+- Duplicate (Extrude1) · 0 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
-- Remove (Extrude1Copy1) · 4 ms
-- Paste (Extrude1Copy1) · 18 ms
+- Remove (Extrude1Copy1) · 0 ms
+- Paste (Extrude1Copy1) · 1 ms
 - Hide selected · 1 hidden
 - Unhide all · 0 hidden
 - Selected Extrude1Copy2 (6 faces)
@@ -147,13 +147,13 @@
 - Fill Line2 · 0 ms
 - Extrude Line2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Line2 · New · 5 ms
+- Extrude1 · Line2 · New · 0 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels
-- Offset Line2 by 0.25 · 3 ms
+- Offset Line2 by 0.25 · 0 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
-- Line1 · 3 ms
+- Line1 · 0 ms
 - Pipe Line1 · move sideways (Shift fine, Ctrl free) or type a value · Q union · W difference · E intersect · R new body · click / Enter commits · Esc cancels
 - Pipe: New body
 - View Isometric
-- Pipe r 0.2 along Line1 · 13 ms
+- Pipe r 0.2 along Line1 · 0 ms
 - Framed the document (Space)
