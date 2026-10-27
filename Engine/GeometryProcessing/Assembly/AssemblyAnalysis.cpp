@@ -37,7 +37,7 @@ namespace
         else if (!Inventory.Faces.empty()) Probe = MeasureFaceArea(Partition, Inventory.Faces.front()).Centroid;    // A sphere has no vertex
         else return false;
         const BodyContainment Containment = PrepareBodyContainment(Partition, Outer);
-        return ClassifySolidPoint(Containment, Probe).Membership == PointMembership::Inside;
+        return ClassifySolidPointScreened(Containment, Probe).Membership == PointMembership::Inside;
     }
 }
 

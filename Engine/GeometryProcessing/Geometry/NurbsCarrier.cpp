@@ -783,14 +783,23 @@ std::optional<Vector2> PolishNurbsFootLocally(const NurbsSurface& Surface, Vecto
     // Chart jump: the foot must stay in the basin of the start (periodic coordinates compared on the circle).
     const auto Jump = [](double From, double To, double Period) { const double Step = To - From; return Period > 0.0 ? std::fabs(Step - Period * std::round(Step / Period)) : std::fabs(Step); };
     if (Jump(Origin.X, Foot.X, Definition.PeriodU) > 0.1 * (U.High - U.Low) || Jump(Origin.Y, Foot.Y, Definition.PeriodV) > 0.1 * (V.High - V.Low)) return std::nullopt;
-    // Interior: a foot held on a domain edge is a constrained minimum that the global search must arbitrate.
-    const double EdgeU = 1.0e-12 * (U.High - U.Low), EdgeV = 1.0e-12 * (V.High - V.Low);
-    if ((Definition.PeriodU <= 0.0 && (Foot.X <= U.Low + EdgeU || Foot.X >= U.High - EdgeU)) || (Definition.PeriodV <= 0.0 && (Foot.Y <= V.Low + EdgeV || Foot.Y >= V.High - EdgeV))) return std::nullopt;
-    // Stationary and a strict minimum of |X − S|².
     const NurbsSurfaceDerivatives S = EvaluateNurbsSurfaceDerivatives(Definition, Foot);
     const Vector3 Residual = S.Position - Position;                                           // [len] - S − X
+    // 💡 A residual at the rounding level of the coordinates means the point lies ON the surface: no foot is nearer, and
+    //    the residual's direction is noise, so neither the domain-edge rule nor the stationarity test below applies.
+    //    SP-curves on fair / loft patches are such points (rims on the domain edges, interior spokes): 57 % of their
+    //    evaluations failed the stationarity test on noise and 100 % of rim points the edge rule, each going global (5
+    //    polished starts, ~136 evaluations) — 78 % of an all-edge fillet of a pocketed block (12.6 s). Collapsed rows
+    //    (S𝑢 = 0) still go global through the Hessian test.
+    const double Rounding  = 64.0 * std::numeric_limits<double>::epsilon() * (Length(Position) + Definition.Extent);   // [len] - Coordinate rounding
+    const bool   OnSurface = Length(Residual) <= Rounding;
+    // Interior: a foot held on a domain edge is a constrained minimum that the global search must arbitrate.
+    const double EdgeU = 1.0e-12 * (U.High - U.Low), EdgeV = 1.0e-12 * (V.High - V.Low);
+    const bool   EdgeFoot = (Definition.PeriodU <= 0.0 && (Foot.X <= U.Low + EdgeU || Foot.X >= U.High - EdgeU)) || (Definition.PeriodV <= 0.0 && (Foot.Y <= V.Low + EdgeV || Foot.Y >= V.High - EdgeV));
+    if (EdgeFoot && !OnSurface) return std::nullopt;
+    // Stationary and a strict minimum of |X − S|².
     const double  Slack    = 1.0e-10 * (Length(Residual) + 1.0e-6 * Definition.Extent);       // [len] - Rounding allowance
-    if (std::fabs(Dot(S.U, Residual)) > Slack * Length(S.U) || std::fabs(Dot(S.V, Residual)) > Slack * Length(S.V)) return std::nullopt;
+    if (!OnSurface && (std::fabs(Dot(S.U, Residual)) > Slack * Length(S.U) || std::fabs(Dot(S.V, Residual)) > Slack * Length(S.V))) return std::nullopt;
     const double A = Dot(S.U, S.U) + Dot(S.UU, Residual), B = Dot(S.U, S.V) + Dot(S.UV, Residual), D = Dot(S.V, S.V) + Dot(S.VV, Residual);
     if (!(A > 0.0) || !(D > 0.0) || !(A * D - B * B > 0.0)) return std::nullopt;
     return Foot;

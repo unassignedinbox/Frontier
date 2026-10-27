@@ -71,6 +71,7 @@ struct GeneralFuseStatistics
     int    ImprintedEdges     = 0;                                                           // [-]  - Argument edges lying in the other's faces
     int    Fragments[2]       = { 0, 0 };                                                    // [-]  - Split faces per argument
     int    States[4]          = { 0, 0, 0, 0 };                                              // [-]  - Fragments per FragmentState
+    int    PropagatedStates   = 0;                                                           // [-]  - Fragments that took a neighbour's state
     int    DroppedCycles      = 0;                                                           // [-]  - Degenerate face-finding cycles
     double IntersectMilliseconds = 0.0;                                                      // [ms] - Interference phase
     double SplitMilliseconds     = 0.0;                                                      // [ms] - Face splitting

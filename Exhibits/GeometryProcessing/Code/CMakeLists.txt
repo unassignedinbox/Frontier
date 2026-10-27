@@ -46,6 +46,9 @@ target_link_libraries(ContainmentValidation PRIVATE FrontierGeometryProcessing)
 add_executable(BooleanValidation BooleanValidation.cpp)
 target_link_libraries(BooleanValidation PRIVATE FrontierGeometryProcessing)
 
+add_executable(AlgorithmStressValidation AlgorithmStressValidation.cpp)
+target_link_libraries(AlgorithmStressValidation PRIVATE FrontierGeometryProcessing)
+
 add_executable(TessellationValidation TessellationValidation.cpp)
 target_link_libraries(TessellationValidation PRIVATE FrontierGeometryProcessing)
 
@@ -110,6 +113,7 @@ add_test(NAME PredicateValidation COMMAND PredicateValidation)
 add_test(NAME IntersectionValidation COMMAND IntersectionValidation)
 add_test(NAME ContainmentValidation COMMAND ContainmentValidation)
 add_test(NAME BooleanValidation COMMAND BooleanValidation)
+add_test(NAME AlgorithmStressValidation COMMAND AlgorithmStressValidation)
 add_test(NAME TessellationValidation COMMAND TessellationValidation)
 add_test(NAME BlendValidation COMMAND BlendValidation)
 add_test(NAME FaceOperationValidation COMMAND FaceOperationValidation)

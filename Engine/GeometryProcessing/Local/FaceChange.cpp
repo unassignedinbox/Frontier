@@ -692,24 +692,36 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
     // 📝 Freeform carriers lie inside the box of their poles (convex hull property), so only the stretch of an edge that
     //    comes near that box can meet the face: the costly freeform curve–surface scan is clipped to it, or skipped.
     //    Analytic carriers are unbounded and keep the full test.
-    struct Bounds { Vector3 Low, High; bool Present = false; };
-    std::vector<Bounds> FaceBounds(Inventory.Faces.size());
+    //    💡 Local convex hull: span (k, l) of a NURBS surface (positive weights) lies in the hull of its own poles
+    //    P[k−p..k][l−q..l], so one box per non-empty span replaces the box of all poles; a setback corner's 2n quads
+    //    share one pole box that held every edge near the corner (line × quad scans: 41 ms each, 80 % of a chamfer).
+    struct Bounds { Vector3 Low, High; };
+    std::vector<std::vector<Bounds>> FaceBounds(Inventory.Faces.size());                       // [-] - Empty: analytic carrier
     for (size_t Index = 0; Index < Inventory.Faces.size(); ++Index)
     {
         const NurbsSurface* Freeform = ResolveNurbsChart(Domains[Index].Surface);
         if (Freeform == nullptr) continue;
-        Bounds& Box = FaceBounds[Index];
-        Box = { Freeform->Definition->Poles.front(), Freeform->Definition->Poles.front(), true };
-        for (const Vector3& Pole : Freeform->Definition->Poles)
+        const NurbsSurfaceDefinition& Net = *Freeform->Definition;
+        double Reach = 0.0;                                                                  // [len] - The offset stays within |d| of the hull
+        if (const auto* Offset = std::get_if<ParallelSurface>(&Domains[Index].Surface)) Reach = std::fabs(Offset->Definition->Distance);
+        for (int SpanU = Net.DegreeU; SpanU < Net.CountU; ++SpanU)
         {
-            Box.Low  = { std::min(Box.Low.X, Pole.X), std::min(Box.Low.Y, Pole.Y), std::min(Box.Low.Z, Pole.Z) };
-            Box.High = { std::max(Box.High.X, Pole.X), std::max(Box.High.Y, Pole.Y), std::max(Box.High.Z, Pole.Z) };
-        }
-        if (const auto* Offset = std::get_if<ParallelSurface>(&Domains[Index].Surface))       // The offset stays within |d| of the hull
-        {
-            const double Reach = std::fabs(Offset->Definition->Distance);                     // [len] - |d|
-            Box.Low  = Box.Low - Vector3{ Reach, Reach, Reach };
-            Box.High = Box.High + Vector3{ Reach, Reach, Reach };
+            if (!(Net.KnotsU[SpanU + 1] > Net.KnotsU[SpanU])) continue;                       // Repeated knot: empty span
+            for (int SpanV = Net.DegreeV; SpanV < Net.CountV; ++SpanV)
+            {
+                if (!(Net.KnotsV[SpanV + 1] > Net.KnotsV[SpanV])) continue;
+                Bounds Box = { Net.Poles[SpanU * Net.CountV + SpanV], Net.Poles[SpanU * Net.CountV + SpanV] };
+                for (int RowU = SpanU - Net.DegreeU; RowU <= SpanU; ++RowU)
+                {
+                    for (int RowV = SpanV - Net.DegreeV; RowV <= SpanV; ++RowV)
+                    {
+                        const Vector3& Pole = Net.Poles[RowU * Net.CountV + RowV];
+                        Box.Low  = { std::min(Box.Low.X, Pole.X), std::min(Box.Low.Y, Pole.Y), std::min(Box.Low.Z, Pole.Z) };
+                        Box.High = { std::max(Box.High.X, Pole.X), std::max(Box.High.Y, Pole.Y), std::max(Box.High.Z, Pole.Z) };
+                    }
+                }
+                FaceBounds[Index].push_back({ Box.Low - Vector3{ Reach, Reach, Reach }, Box.High + Vector3{ Reach, Reach, Reach } });
+            }
         }
     }
     for (EdgeToken Edge : Inventory.Edges)
@@ -758,15 +770,17 @@ std::string DetectSelfClash(const ModelPartition& Partition, BodyToken Body)
             }
             // Freeform face: only the stretch of the edge whose samples come within Widen of the pole box can meet it.
             double ClipLow = Profile.IntervalLow, ClipHigh = Profile.IntervalHigh;
-            if (FaceBounds[Index].Present)
+            if (!FaceBounds[Index].empty())
             {
-                const Bounds& Box = FaceBounds[Index];
                 int First = -1, Last = -1;
                 for (int Sample = 0; Sample <= EdgeSamples; ++Sample)
                 {
                     const Vector3& Point = Points[Sample];
-                    const bool Near = Point.X >= Box.Low.X - Widen && Point.X <= Box.High.X + Widen && Point.Y >= Box.Low.Y - Widen && Point.Y <= Box.High.Y + Widen &&
-                                      Point.Z >= Box.Low.Z - Widen && Point.Z <= Box.High.Z + Widen;
+                    const bool Near = std::any_of(FaceBounds[Index].begin(), FaceBounds[Index].end(), [&](const Bounds& Box)
+                    {
+                        return Point.X >= Box.Low.X - Widen && Point.X <= Box.High.X + Widen && Point.Y >= Box.Low.Y - Widen && Point.Y <= Box.High.Y + Widen &&
+                               Point.Z >= Box.Low.Z - Widen && Point.Z <= Box.High.Z + Widen;
+                    });
                     if (!Near) continue;
                     if (First < 0) First = Sample;
                     Last = Sample;
@@ -827,7 +841,7 @@ FaceChangeOutcome ChangeFaces(ModelPartition& Partition, BodyToken Body, const s
         return Finish("result fails audit " + std::string(First.Code) + " on " + First.Subject + " (" + First.Detail + ")");
     }
     if (std::string Clash = DetectSelfClash(Partition, Assembly.Body); !Clash.empty()) return Finish(Clash);
-    const int Genus = AuditBody(Partition, Body).Genus;
+    const int Genus = AuditBody(Partition, Body, AuditScope::Topology).Genus;
     if (Outcome.Audit.Genus != Genus) return Finish("genus changed from " + std::to_string(Genus) + " to " + std::to_string(Outcome.Audit.Genus));
     for (size_t Index = 0; Index < Assembly.Faces.size(); ++Index)
     {

@@ -188,7 +188,8 @@ AssemblyOutcome AssembleBody(ModelPartition& Partition, const BodyBlueprint& Blu
         for (size_t Index = 0; Index < OuterShells.size(); ++Index)
         {
             const BodyContainment Containment = PrepareFaceContainment(Partition, Partition.Shells.Resolve(OuterShells[Index]).Faces);
-            if (ClassifySolidPoint(Containment, Witness).Membership == PointMembership::Inside && OuterVolumes[Index] < OwnerVolume)
+            // 💡 Screened winding: a cavity's owner test ran the strict quadrature (51–176 ms per Boolean once a body has a void).
+            if (ClassifySolidPointScreened(Containment, Witness).Membership == PointMembership::Inside && OuterVolumes[Index] < OwnerVolume)
             {
                 Owner       = static_cast<int>(Index);
                 OwnerVolume = OuterVolumes[Index];

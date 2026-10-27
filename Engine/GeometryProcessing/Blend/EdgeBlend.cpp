@@ -776,13 +776,15 @@ namespace
         //    of its rails with the neighbouring rails, plus one radius, at an exact cross-section (a circle of the ball); on
         //    each face the two rail ends are joined by a conic tangent to both rails (middle pole at their crossing); the
         //    2n-sided hole is filled by 2n fair bicubic quads about a centre (rim halves + cubic spokes, FairPatch). Rims
-        //    are exact (G0); G1 is solved for and its worst break reported. v1: fillets, every edge at the vertex blended,
-        //    planar faces around the vertex — anything else is refused.
+        //    are exact (G0); G1 is solved for and its worst break reported. Every edge at the vertex blended, planar faces
+        //    around the vertex — anything else is refused. A chamfer sheet is ball-based too (r = d·tan(θ/2), contacts =
+        //    feet of the ball), so ring, cuts, conics and quads are shared; only its section is the straight chord of the
+        //    two feet across the chamfer plane (split at its midpoint) instead of the ball's arc.
         [[nodiscard]] std::string ResolveSetback(VertexToken Vertex, const std::vector<std::pair<EdgeToken, int>>& Ends)
         {
             constexpr double SetbackRatio = 1.0;                                             // [-] - Margin past the crossings, in radii
             constexpr int    QuadSpans    = 6;                                               // [-] - Fair quad spans per direction
-            if (Settings.Profile != BlendProfile::Fillet) return "setback vertex blend of chamfers (🚧)";
+            const bool ChamferCondition = Settings.Profile == BlendProfile::Chamfer;         // [-] - Straight sections
             const size_t Count = Ends.size();
             for (size_t First = 0; First < Count; ++First)
             {
@@ -866,7 +868,15 @@ namespace
             for (RingBlend& Blend : Ring)
             {
                 const EdgeBlendSheet& Sheet = *SheetOf(Blend.End.first);
-                Blend.Cut        = Blend.Section + Blend.Away * (Blend.Reach + SetbackRatio * Sheet.Radius) / Blend.Speed;
+                // 💡 Short edges: the margin past the crossings shrinks to fit 45 % of the spine span (floor ¼ radius), so
+                //    setbacks at both ends of one edge never overlap (pocket rim 1.0 long, size 0.3: 2 × (0.3 + 0.3) > 1.0
+                //    refused "contact rail runs backwards"). Edges with room keep the full radius: unchanged geometry.
+                const EdgeProfile& Profile = Partition.Edges.Resolve(Blend.End.first);
+                const Vector3      Far     = Partition.Vertices.Resolve(Blend.End.second == 0 ? Profile.End : Profile.Start).Position;
+                const double       Span    = Along(Blend, ProjectOntoCurve(Sheet.Spine, Far, Blend.Section));   // [len] - Spine length to the far end
+                double             Margin  = SetbackRatio * Sheet.Radius;                                       // [len] - Past the crossings
+                if (Span > 0.0 && Blend.Reach + Margin > 0.45 * Span) Margin = std::max(0.25 * Sheet.Radius, 0.45 * Span - Blend.Reach);
+                Blend.Cut        = Blend.Section + Blend.Away * (Blend.Reach + Margin) / Blend.Speed;
                 Blend.FootBefore = IssueVertex(EvaluateCurve(Rail(Blend, true), Blend.Cut).Position);
                 Blend.FootAfter  = IssueVertex(EvaluateCurve(Rail(Blend, false), Blend.Cut).Position);
                 ContactVertices[{ Blend.End.first.Slot, Blend.SideBefore, Blend.End.second }]     = Blend.FootBefore;
@@ -897,14 +907,26 @@ namespace
                 const Vector3 Bisector = (Before - Ball) + (After - Ball);
                 if (Length(Bisector) <= 1.0e-6 * Sheet.Radius) return "setback: half-turn section (🚧)";
                 SetbackRim Section;
-                Section.Start     = Blend.FootBefore;
-                Section.End       = Blend.FootAfter;
-                Section.Middle    = IssueVertex(Ball + Normalize(Bisector) * Sheet.Radius);
-                Section.Halves[0] = ConstructArcBezier(Ball, Before, PositionOf(Section.Middle));
-                Section.Halves[1] = ConstructArcBezier(Ball, PositionOf(Section.Middle), After);
-                const CircularArc Circle{ ConstructFrame(Ball, Cross(Before - Ball, After - Ball), Before - Ball), Sheet.Radius };
-                Section.Edges[0]  = IssueConicArc(Circle, Section.Start, Section.Middle);
-                Section.Edges[1]  = IssueConicArc(Circle, Section.Middle, Section.End);
+                Section.Start = Blend.FootBefore;
+                Section.End   = Blend.FootAfter;
+                if (ChamferCondition)
+                {
+                    const Vector3 Middle = (Before + After) * 0.5;                          // [len] - Chord midpoint
+                    Section.Middle    = IssueVertex(Middle);
+                    Section.Halves[0] = ConstructConicBezier(Before, (Before + Middle) * 0.5, Middle, 1.0);
+                    Section.Halves[1] = ConstructConicBezier(Middle, (Middle + After) * 0.5, After, 1.0);
+                    Section.Edges[0]  = IssueSegment(Section.Start, Section.Middle);
+                    Section.Edges[1]  = IssueSegment(Section.Middle, Section.End);
+                }
+                else
+                {
+                    Section.Middle    = IssueVertex(Ball + Normalize(Bisector) * Sheet.Radius);
+                    Section.Halves[0] = ConstructArcBezier(Ball, Before, PositionOf(Section.Middle));
+                    Section.Halves[1] = ConstructArcBezier(Ball, PositionOf(Section.Middle), After);
+                    const CircularArc Circle{ ConstructFrame(Ball, Cross(Before - Ball, After - Ball), Before - Ball), Sheet.Radius };
+                    Section.Edges[0]  = IssueConicArc(Circle, Section.Start, Section.Middle);
+                    Section.Edges[1]  = IssueConicArc(Circle, Section.Middle, Section.End);
+                }
                 if (Section.Edges[0] < 0 || Section.Edges[1] < 0) return "setback: degenerate section";
                 Section.Support   = &Sheet.Surface;
                 Section.Sense     = Sheet.Sense;
@@ -1923,7 +1945,8 @@ static BlendOutcome BlendEdgesUntraced(ModelPartition& Partition, BodyToken Body
         const AuditFinding& First = Outcome.Audit.Findings.front();
         return Finish("result fails audit " + std::string(First.Code) + " on " + First.Subject + " (" + First.Detail + ")");
     }
-    const int Genus = AuditBody(Partition, Body).Genus;
+    // 💡 Genus is Euler–Poincaré on topology (set before the T-scope return): the G-checks of the input body were wasted.
+    const int Genus = AuditBody(Partition, Body, AuditScope::Topology).Genus;
     if (Outcome.Audit.Genus != Genus) return Finish("genus changed from " + std::to_string(Genus) + " to " + std::to_string(Outcome.Audit.Genus));
     // ⑥ Blends that reach each other (footprints overlapping on a shared face, tubes cutting through a neighbour) pass
     //    the local audit but leave the body passing through itself: refuse instead of returning it.

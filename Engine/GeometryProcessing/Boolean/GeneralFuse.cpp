@@ -8,6 +8,7 @@
 #include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 
 #include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
+#include "Engine/GeometryProcessing/Audit/ModelAudit.h"
 #include "Engine/GeometryProcessing/Construction/BodyAssembly.h"
 #include "Engine/GeometryProcessing/Intersection/CurveSurfaceIntersection.h"
 #include "Engine/GeometryProcessing/Intersection/IntersectionCurve.h"
@@ -30,9 +31,6 @@ namespace Frontier::GeometryProcessing
 namespace
 {
     constexpr double IntegralTolerance = 1.0e-3;                                     // [-]   - Max |w − round(w)| for a fragment probe
-    constexpr double ScreenResidual    = 1.0e-4;                                     // [-]   - Coarse winding accepted within this of an integer
-    constexpr double ScreenOuter       = 1.0e-5;                                     // [sr]  - Coarse Kronrod tolerance along loops
-    constexpr double ScreenInner       = 1.0e-6;                                     // [-]   - Coarse Kronrod tolerance along 𝑢
     constexpr double FullTurn          = 2.0 * std::numbers::pi;                     // [rad] - 2π
     constexpr double JunctionGap       = 1.0e-7;                                     // [-]   - Chart distance of one junction
 
@@ -667,6 +665,13 @@ namespace
                         else Chain.push_back(Split);
                     }
                     if (std::fabs(Candidate.High - Chain.back().first) > Slack) Chain.push_back({ Candidate.High, -1 });
+                    // 💡 A marched branch ends where its march stopped, ~10⁻⁸ off the exact vertex of the boundary crossing it
+                    //    found (block edge piercing a cylinder: 2·10⁻⁸). The open end belongs to that vertex: a piece from an
+                    //    unregistered end shorter than the degenerate-piece bound (10·precision, as below) is dropped instead
+                    //    of becoming a 2·10⁻⁸ edge, which later joins collapsed to a zero-length closed edge (seq 6 · 5).
+                    const auto Stub = [&](size_t Open, size_t Split) { return Chain[Open].second < 0 && Chain[Split].second >= 0 && std::fabs(Chain[Split].first - Chain[Open].first) * Scale <= 10.0 * Settings.Precision; };
+                    if (Chain.size() >= 3 && Stub(0, 1)) Chain.erase(Chain.begin());
+                    if (Chain.size() >= 3 && Stub(Chain.size() - 1, Chain.size() - 2)) Chain.pop_back();
                     for (size_t Index = 0; Index + 1 < Chain.size(); ++Index)
                     {
                         Ranges.push_back({ Chain[Index].first, Chain[Index + 1].first });
@@ -1015,10 +1020,43 @@ namespace
         bool ClassifyFragments()
         {
             const BodyContainment Containment[2] = { PrepareBodyContainment(Partition, Arguments[0]), PrepareBodyContainment(Partition, Arguments[1]) };
-            for (FuseFragment& Fragment : Outcome.Fragments)
+            // 💡 State propagation (OCCT builder): two fragments of one argument that share a clean pave block — an argument
+            //    edge piece no fragment of the OTHER argument uses (not a section, not a common block, not imprinted) — lie
+            //    on the same side of the other solid, since its boundary neither crosses (that splits the edge at a pave)
+            //    nor contains (that imprints it) the block. One winding per connected group replaces one per fragment
+            //    (55 % of a Boolean's time). Only Inside / Outside propagate: a representative found ON (coincident faces)
+            //    sends every member of its group through its own classification, as before.
+            const size_t Count = Outcome.Fragments.size();
+            std::vector<std::vector<int>> Users(Outcome.Edges.size());
+            for (size_t Index = 0; Index < Count; ++Index)
+                for (const auto& Loop : Outcome.Fragments[Index].Loops)
+                    for (const FuseUse& Use : Loop)
+                        if (Use.Edge >= 0 && (Users[Use.Edge].empty() || Users[Use.Edge].back() != static_cast<int>(Index))) Users[Use.Edge].push_back(static_cast<int>(Index));
+            std::vector<int> Group(Count);
+            std::iota(Group.begin(), Group.end(), 0);
+            const std::function<int(int)> Root = [&](int Index) { return Group[Index] == Index ? Index : Group[Index] = Root(Group[Index]); };
+            for (size_t Edge = 0; Edge < Outcome.Edges.size(); ++Edge)
             {
+                const FuseEdge& Block = Outcome.Edges[Edge];
+                if (Block.Section || Block.Argument < 0 || Users[Edge].size() < 2) continue;
+                const bool Clean = std::all_of(Users[Edge].begin(), Users[Edge].end(), [&](int User) { return Outcome.Fragments[User].Argument == Block.Argument; });
+                if (!Clean) continue;
+                for (size_t User = 1; User < Users[Edge].size(); ++User) Group[Root(Users[Edge][User])] = Root(Users[Edge][0]);
+            }
+            std::vector<int> Decided(Count, -1);                                             // [-] - Root → FragmentState; −1 open, −2 never
+            for (size_t Index = 0; Index < Count; ++Index)
+            {
+                FuseFragment& Fragment = Outcome.Fragments[Index];
                 // 💡 Sheet cuts keep only A fragments: B's are never classified against the open A (no integral winding).
                 if (Fragment.Argument == 1 && !Settings.SecondClassificationEnabled) continue;
+                const int Owner = Root(static_cast<int>(Index));
+                if (Decided[Owner] >= 0)
+                {
+                    Fragment.State = static_cast<FragmentState>(Decided[Owner]);
+                    ++Outcome.Statistics.States[Decided[Owner]];
+                    ++Outcome.Statistics.PropagatedStates;
+                    continue;
+                }
                 FaceDomain Domain;
                 Domain.Surface = Fragment.Surface;
                 Domain.Sense   = Fragment.Sense;
@@ -1042,16 +1080,7 @@ namespace
                 //    the ½ decision margin) is kept, anything else is recomputed at the strict settings, so an open argument
                 //    still shows its true residual and is refused. Freeform faces near the probe made the strict pass cost
                 //    ~6·10⁶ evaluations per fragment (BMW wheel arch: 76 s).
-                WindingSettings Screen = Settings.Containment;
-                Screen.OuterTolerance  = std::max(Screen.OuterTolerance, ScreenOuter);
-                Screen.InnerTolerance  = std::max(Screen.InnerTolerance, ScreenInner);
-                SolidPointClass Class  = ClassifySolidPoint(Other, Fragment.Probe, Screen);
-                if (Class.Method == ContainmentMethod::Winding && Class.IntegerResidual > ScreenResidual)
-                {
-                    const int64_t Screened = Class.Evaluations;
-                    Class = ClassifySolidPoint(Other, Fragment.Probe, Settings.Containment);
-                    Class.Evaluations += Screened;
-                }
+                const SolidPointClass Class = ClassifySolidPointScreened(Other, Fragment.Probe, Settings.Containment);
                 // ⚠️ A closed argument gives an integral winding off its boundary; anything else (open argument, probe on an
                 //    unmerged boundary) is refused rather than rounded.
                 if (Class.Method == ContainmentMethod::Winding && Class.IntegerResidual > IntegralTolerance)
@@ -1070,6 +1099,8 @@ namespace
                     Fragment.State = Dot(OwnNormal, OtherNormal) > 0.0 ? FragmentState::OnSame : FragmentState::OnOpposite;
                 }
                 ++Outcome.Statistics.States[static_cast<int>(Fragment.State)];
+                // A group with an ON member breaks the clean-block premise somewhere: every later member classifies itself.
+                if (Decided[Owner] == -1) Decided[Owner] = Fragment.State == FragmentState::Inside || Fragment.State == FragmentState::Outside ? static_cast<int>(Fragment.State) : -2;
             }
             return true;
         }
@@ -1146,6 +1177,19 @@ BooleanOutcome AssembleBoolean(ModelPartition& Partition, const GeneralFuseOutco
     // ② Assembly, then OCCT-style history: every result face is Modified from one argument face.
     const AssemblyOutcome Assembly = AssembleBody(Partition, Blueprint, "Boolean");
     if (!Assembly.Refusal.empty()) { Outcome.Refusal = Assembly.Refusal; return Outcome; }
+    // ⚠️ Topology gate (T1–T5, no geometry: ~1 % of the assembly): every edge used twice is not enough — two argument
+    //    faces tangent at a point (crossing cylinders with r₁ + offset = r₂) leave the result pinched at one vertex,
+    //    V − E + 2F − L odd. A non-manifold solid is refused here rather than returned unsound.
+    if (Blueprint.Category != BodyCategory::Sheet)
+    {
+        const AuditReport Topology = AuditBody(Partition, Assembly.Body, AuditScope::Topology);
+        if (!Topology.SoundCondition())
+        {
+            const AuditFinding& First = Topology.Findings.front();
+            Outcome.Refusal = "Boolean: non-manifold result (" + std::string(First.Code) + " on " + First.Subject + ": " + First.Detail + "; tangent contact?)";
+            return Outcome;
+        }
+    }
     for (size_t Slot = 0; Slot < Kept.size(); ++Slot)
     {
         const FuseFragment& Fragment = Fuse.Fragments[Kept[Slot].first];

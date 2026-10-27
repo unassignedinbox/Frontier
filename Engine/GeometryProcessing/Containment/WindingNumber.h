@@ -81,6 +81,12 @@ struct BodyContainment
 //    ③ Otherwise Inside iff the generalized winding number rounds to a non-zero integer.
 [[nodiscard]] SolidPointClass ClassifySolidPoint(const BodyContainment& Containment, Vector3 Position, const WindingSettings& Settings = {});
 
+// 💡 Two-tier winding: membership needs only the nearest integer, so a coarse quadrature (10⁻⁵ sr / 10⁻⁶ per panel)
+//    screens first; a winding within 10⁻⁴ of an integer (5000× inside the ½ decision margin) is kept, anything else is
+//    recomputed at Settings, so an open face set still shows its true residual. Same membership as ClassifySolidPoint at
+//    a fraction of the cost: a strict winding near freeform or traced faces runs to ~10⁶ evaluations per point.
+[[nodiscard]] SolidPointClass ClassifySolidPointScreened(const BodyContainment& Containment, Vector3 Position, const WindingSettings& Settings = {});
+
 [[nodiscard]] const char* PointMembershipLabel(PointMembership Membership) noexcept;
 [[nodiscard]] const char* ContainmentMethodLabel(ContainmentMethod Method) noexcept;
 

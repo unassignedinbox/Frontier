@@ -266,6 +266,24 @@ SolidPointClass ClassifySolidPoint(const BodyContainment& Containment, Vector3 P
     return Outcome;
 }
 
+SolidPointClass ClassifySolidPointScreened(const BodyContainment& Containment, Vector3 Position, const WindingSettings& Settings)
+{
+    constexpr double ScreenResidual = 1.0e-4;                                                // [-]  - Coarse winding accepted within this of an integer
+    constexpr double ScreenOuter    = 1.0e-5;                                                // [sr] - Coarse Kronrod tolerance along loops
+    constexpr double ScreenInner    = 1.0e-6;                                                // [-]  - Coarse Kronrod tolerance along 𝑢
+    WindingSettings Screen = Settings;
+    Screen.OuterTolerance  = std::max(Screen.OuterTolerance, ScreenOuter);
+    Screen.InnerTolerance  = std::max(Screen.InnerTolerance, ScreenInner);
+    SolidPointClass Class  = ClassifySolidPoint(Containment, Position, Screen);
+    if (Class.Method == ContainmentMethod::Winding && Class.IntegerResidual > ScreenResidual)
+    {
+        const int64_t Screened = Class.Evaluations;
+        Class = ClassifySolidPoint(Containment, Position, Settings);
+        Class.Evaluations += Screened;
+    }
+    return Class;
+}
+
 const char* ContainmentMethodLabel(ContainmentMethod Method) noexcept
 {
     constexpr const char* Labels[] = { "Winding", "NearestNormal", "Proximity" };

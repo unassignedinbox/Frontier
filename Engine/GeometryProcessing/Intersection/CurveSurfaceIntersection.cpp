@@ -48,7 +48,11 @@ namespace
             if (std::fabs(Probe.Slope) <= 1.0e-14 * Probe.Speed) break;
             const double Step = Probe.Distance / Probe.Slope;                                // [-] - Newton correction
             if (!std::isfinite(Step)) break;                                                 // Probe left the carrier's range
+            const double Previous = τ;                                                       // [-] - τ before the move
             τ = std::clamp(τ - Step, Low, High);
+            // 💡 Pinned at a bound: every later iteration repeats this one exactly (deterministic probes), so stopping
+            //    changes no bit — it saves the remaining NewtonLimit probes (a clipped edge ending on the face).
+            if (τ == Previous) break;
             if (std::fabs(Step) <= 1.0e-16 * (1.0 + std::fabs(τ))) break;
         }
         return τ;
@@ -65,7 +69,9 @@ namespace
             if (std::fabs(Curvature) <= 1.0e-300) break;
             const double Step = Slope / Curvature;                                           // [-] - Newton correction
             if (!std::isfinite(Step)) break;                                                 // A difference probe left the range
+            const double Previous = τ;                                                       // [-] - τ before the move
             τ = std::clamp(τ - Step, Low, High);
+            if (τ == Previous) break;                                                        // Pinned: see PolishTransversal
             if (std::fabs(Step) <= 1.0e-15 * (1.0 + std::fabs(τ))) break;
         }
         return τ;
