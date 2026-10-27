@@ -118,6 +118,7 @@ namespace
     GateTally SolidKnifeGate  = { "W54", "Knife with 3D cutters (Construct primitives drawn on a face, then pulled into it): on a 2 m cube a box 0.4 × 0.4 sunk 0.3 (top 0.02 above the face) cuts 0.048; a cylinder r 0.2 on the +x face frame sunk 0.5 with the cutter kept cuts 0.02π and leaves a 0.0208π body (Duplicate + Combine); a sphere r 0.3 centred on the top face cuts a half ball 0.018π; a box boss (Union, foot 0.02 inside) adds 0.004; Separate leaves a tube body, selected; refusals (missing target, torus tube ≥ major, New) leave the document untouched; one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PocketBevelGate = { "W55", "Bevels on knife pockets in a curved face (cylinder r 2.126 × 1.8, pockets cut from the tangent plane): the slot opening loop takes fillets 0.02 · 0.0519 · 0.1 across its smooth joints (pinned volumes, decreasing); sizes 0.3 and 0.8553 refuse as too large, naming the outgrown face, document untouched; a hex pocket insert's rim loop takes 0.05 through its unequal mitres, its wall–wall edges 0.05 together; on a box the rim loss stays within 10 % of the straight-edge model (1 − π/4) r² L; one undo entry each; codec byte-equal", "≤ 10⁻⁹ pinned · exact" };
     GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -5358,7 +5359,99 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate })
+    // ---- W57 Sketch Cut (split at a point), edge rings, image-plane properties
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[720]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+
+        // ① a rectangle's bottom line cut at x = 0.5: two lines sharing one new point, the extrude keeps V = 2
+        SolidArcDocument Plate = CreateSolidArcDocument("CutLine");
+        Expect(DrawFilledSketch(Plate, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Outline = Plate.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Plate, Outline, 1.0, FeatureCombination::New));
+        int Bottom = -1;
+        {
+            const SketchModel& Solved = Plate.Regeneration.Sketches[Outline];
+            for (int Curve = 0; Curve < int(Solved.Curves.size()); ++Curve)
+            {
+                const SketchCurve& Each = Solved.Curves[Curve];
+                if (Each.Kind == SketchCurveKind::Line && std::abs(Solved.Points[Each.Start].Position.Y) < 1.0e-12 && std::abs(Solved.Points[Each.End].Position.Y) < 1.0e-12) Bottom = Curve;
+            }
+        }
+        const size_t Depth = Plate.UndoEntries.size();
+        const SolidArcCommandOutcome Cut = TrimSolidArcSketch(Plate, { Outline, Bottom, { 0.5, 0.0 }, true });
+        const SketchModel& After = Plate.Regeneration.Sketches[Outline];
+        bool Shared = false;
+        for (const SketchCurve& Each : After.Curves)
+            for (const SketchCurve& Other : After.Curves)
+                if (&Each != &Other && Each.Kind == SketchCurveKind::Line && Other.Kind == SketchCurveKind::Line && Each.End == Other.Start && Each.End >= 0
+                    && Distance(After.Points[Each.End].Position, Vector2{ 0.5, 0.0 }) <= 1.0e-12) Shared = true;
+        Tally(SplitGate, std::abs(Plate.Summary.Volume - 2.0), Cut.AcceptedCondition && After.Curves.size() == 5 && Shared && std::abs(Plate.Summary.Volume - 2.0) <= 1.0e-9
+              && Plate.UndoEntries.size() == Depth + 1,
+              Format("%s: %d curves, the two halves share (0.5, 0), V %.12f vs 2, one undo entry", Cut.Label.c_str(), int(After.Curves.size()), Plate.Summary.Volume));
+        const std::string Before = EncodeSolidArcDocument(Plate);
+        const SolidArcCommandOutcome AtEnd = TrimSolidArcSketch(Plate, { Outline, Bottom, { 0.0, 0.0 }, true });
+        Tally(SplitGate, 0.0, !AtEnd.AcceptedCondition && EncodeSolidArcDocument(Plate) == Before,
+              Format("a cut on the end of the line refuses untouched: %s", AtEnd.Refusal.c_str()));
+
+        // ② a circle r 0.5 cut: two half arcs with the circle's centre, ends opposite; the extrude keeps V = π/4
+        SolidArcDocument Disc = CreateSolidArcDocument("CutCircle");
+        Expect(DrawFilledSketch(Disc, DrawingOf(SolidArcDrawingKind::Circle, 0, { { 0.0, 0.0 }, { 0.5, 0.0 } }, false, true)));
+        const std::string Round = Disc.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Disc, Round, 1.0, FeatureCombination::New));
+        const SolidArcCommandOutcome Halved = TrimSolidArcSketch(Disc, { Round, 0, { 0.0, 0.5 }, true });
+        const SketchModel& Arcs = Disc.Regeneration.Sketches[Round];
+        bool Opposite = Arcs.Curves.size() == 2;
+        for (const SketchCurve& Each : Arcs.Curves)
+        {
+            Opposite = Opposite && Each.Kind == SketchCurveKind::Arc && Each.Centre >= 0 && Length(Arcs.Points[Each.Centre].Position) <= 1.0e-12
+                    && Distance(Arcs.Points[Each.Start].Position, Arcs.Points[Each.End].Position * -1.0) <= 1.0e-9;
+        }
+        const double Expected = 0.25 * π;
+        const double Relative = std::abs(Disc.Summary.Volume - Expected) / Expected;
+        Tally(SplitGate, Relative, Halved.AcceptedCondition && Opposite && Relative <= 1.0e-9,
+              Format("%s: two half arcs about (0, 0) with opposite ends, V %.12f vs π/4 %.12f", Halved.Label.c_str(), Disc.Summary.Volume, Expected));
+
+        // ③ a spline refuses
+        SolidArcDocument Wave = CreateSolidArcDocument("CutSpline");
+        Expect(DrawSolidArcSketch(Wave, DrawingOf(SolidArcDrawingKind::Curve, 0, { { 0.0, 0.0 }, { 1.0, 0.6 }, { 2.0, 0.0 } })));
+        const std::string Curve = Wave.Tree.Steps.back().Label;
+        const std::string Held  = EncodeSolidArcDocument(Wave);
+        const SolidArcCommandOutcome Spline = TrimSolidArcSketch(Wave, { Curve, 0, { 1.0, 0.6 }, true });
+        Tally(SplitGate, 0.0, !Spline.AcceptedCondition && EncodeSolidArcDocument(Wave) == Held, Format("a spline cut refuses untouched: %s", Spline.Refusal.c_str()));
+
+        // ④ edge ring on the block's front-top edge: the four edges along x
+        SolidArcDocument Box = CreateSolidArcDocument("Ring");
+        Expect(ConstructSolidArcPrimitive(Box, Block));
+        const std::string Front = PickAndSelect(Box, RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), false);
+        const std::vector<std::string> Ring = SolidArcEdgeRing(Box, Front);
+        bool AlongX = Ring.size() == 4 && !Ring.empty() && Ring.front() == Front;
+        for (const std::string& Name : Ring)
+        {
+            const Vector3 Start = EdgeEndPosition(Box, Name, false), End = EdgeEndPosition(Box, Name, true);
+            AlongX = AlongX && std::abs(std::abs(End.X - Start.X) - 4.0) <= 1.0e-12 && std::abs(End.Y - Start.Y) <= 1.0e-12 && std::abs(End.Z - Start.Z) <= 1.0e-12;
+        }
+        Tally(SplitGate, 0.0, AlongX, Format("ring of %s: %d edges, all 4 long along x", Front.c_str(), int(Ring.size())));
+
+        // ⑤ image-plane properties round-trip the codec
+        SolidArcImagePlane Picture;
+        Picture.Name = "Side"; Picture.Path = "Side.png"; Picture.Crop = { 10, 20, 300, 200 };
+        Picture.Corner = { 0.0, 0.0, 1.0 }; Picture.Right = { 2.0, 0.0, 0.0 }; Picture.Down = { 0.0, 0.0, -1.0 };
+        Picture.Opacity = 0.35; Picture.PhotoCondition = true; Picture.FlipAcrossCondition = true; Picture.LockCondition = true; Picture.Turn = 0.25;
+        Plate.ImagePlanes = { Picture };
+        const std::string          Written = EncodeSolidArcDocument(Plate);
+        const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+        const bool Kept = Read.Refusal.empty() && Read.ImagePlanes.size() == 1 && Read.ImagePlanes[0].PhotoCondition && Read.ImagePlanes[0].FlipAcrossCondition
+                       && !Read.ImagePlanes[0].FlipDownCondition && Read.ImagePlanes[0].LockCondition && Read.ImagePlanes[0].Turn == 0.25 && Read.ImagePlanes[0].Opacity == 0.35
+                       && Read.ImagePlanes[0].Crop == Picture.Crop;
+        SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+        Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance; Loaded.ImagePlanes = Read.ImagePlanes;
+        RegenerateSolidArcDocument(Loaded, true);
+        Tally(SplitGate, 0.0, Kept && EncodeSolidArcDocument(Loaded) == Written,
+              Format("image plane photo / mirror / lock / turn 0.25 / opacity 0.35 / crop kept: %d bytes byte-equal", int(Written.size())));
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

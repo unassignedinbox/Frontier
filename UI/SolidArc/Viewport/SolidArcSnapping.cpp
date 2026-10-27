@@ -254,7 +254,7 @@ void CatalogueCurvePoints(SolidArcSnapCatalogue& Catalogue, const SolidArcSnapCu
     case SolidArcSnapKind::Intersection:  return 1;
     case SolidArcSnapKind::Centre:        return 2;
     case SolidArcSnapKind::Midpoint:      return 3;
-    case SolidArcSnapKind::Quarter:       return 3;
+    case SolidArcSnapKind::Quarter:       return 6;                                // Generic: a reference-driven point there wins
     case SolidArcSnapKind::Tangent:       return 4;
     case SolidArcSnapKind::Perpendicular: return 5;
     default:                              return 9;

@@ -232,3 +232,54 @@ expect pole-edits == 1
 expect snapped-points == 6
 key Z Ctrl
 frames 3
+
+# ⑭ Free placement is the default (Snaps › Grid 0.1 off): a reference line 0 → 2 on the grid, then with the grid off the
+#    pointer lands where it is (no 0.1 rounding)
+key N Ctrl
+frames 2
+key Keypad7
+frames 2
+key A Shift
+frames 2
+click world 0.0 0.0 0.0
+frames 2
+click world 2.0 0.0 0.0
+frames 2
+key Enter
+frames 2
+key Escape
+frames 2
+snap grid off
+expect snap-grid == 0
+key A Shift
+frames 2
+move world 0.537 0.712 0.0
+frames 2
+expect snap == none
+expect drawing-pointer-x > 0.52
+expect drawing-pointer-x < 0.55
+expect drawing-pointer-y > 0.70
+expect drawing-pointer-y < 0.725
+
+# ⑮ Ctrl snaps to object points: the line's midpoint (1, 0), its quarter point (0.5, 0) and, away from any point, onto
+#    the line itself (On curve: y = 0 exactly, x where the pointer is)
+move world 1.012 0.009 0.0 Ctrl
+frames 2
+expect snap contains Midpoint
+expect snap-x ~ 1
+expect snap-y ~ 0
+move world 0.509 -0.008 0.0 Ctrl
+frames 2
+expect snap contains Quarter
+expect snap-x ~ 0.5
+capture 295SnapQuarter
+move world 1.76 0.006 0.0 Ctrl
+frames 2
+expect snap contains On curve
+expect snap-y ~ 0
+expect snap-x > 1.7
+expect snap-x < 1.82
+capture 296SnapOnCurve
+key Escape
+frames 2
+snap grid on

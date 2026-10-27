@@ -29,7 +29,7 @@ expect pick-mode == 1
 key 5
 expect pick-mode == 5
 
-# ② B opens the fillet command; C / D switch chamfer / fillet; moving left shrinks the size to 1 mm and stops (no flip into a chamfer); Esc aborts
+# ② B opens the fillet command pinned (Plasticity: the card stays usable); C / D switch chamfer / fillet; Mouse follows the pointer, moving left shrinks the size to 1 mm and stops (no flip into a chamfer); Esc aborts
 #    (selection changes are undoable, so the undo depth stays 5 across the aborted command)
 key 2
 move world 2.0 0.0 0.0
@@ -45,6 +45,9 @@ key C
 expect bevel-chamfer == 1
 key D
 expect bevel-chamfer == 0
+expect bevel-pinned == 1
+click @BevelMouse
+frames 1
 move viewport 0.40 0.70
 frames 1
 move viewport 0.40 0.70 offset -300 0

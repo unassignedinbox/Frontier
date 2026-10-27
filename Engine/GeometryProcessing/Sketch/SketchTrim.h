@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                            SKETCHTRIM.H
 ====================================================================================================================================*/
-// 🧩 Curve trim (Plasticity T): the piece of a sketch curve under the pointer, between its neighbouring crossings, is removed
+// 🧩 Curve trim (Plasticity T): the piece of a sketch curve under the pointer, between its neighbouring crossings, is removed;
+//    curve cut: the curve breaks in two at the pointer
 
 #pragma once
 
@@ -41,6 +42,7 @@ struct SketchTrimOutcome
     double               FromFraction  = 0.0;                                                // [-]   - Removed piece start (target fraction)
     double               ToFraction    = 1.0;                                                // [-]   - Removed piece end (circle: may exceed 1)
     std::vector<Vector2> Removed       = {};                                                 // [len] - Removed piece polyline
+    std::vector<Vector2> SplitPositions = {};                                                // [len] - Split: where the curve now breaks
     std::string          Refusal       = {};                                                 // [-]   - Why nothing changed (empty: trimmed)
 };
 
@@ -68,6 +70,14 @@ struct SketchTrimOutcome
 //    its new part, a split arc copies Radius and EqualRadius. A new end made by a line, circle or arc of the same sketch
 //    is pinned to it (PointOnLine / PointOnCircle) so later solves keep the trim.
 [[nodiscard]] SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, const std::vector<ProfileSegment>& Foreign = {});
+
+// 💡 Plasticity Cut on curve CurveIndex at the point nearest to Pick: nothing comes off, the curve breaks there.
+//      line / arc → two curves meeting at one shared new point (the second part gets the next identifier);
+//      circle     → two half arcs, from the pick to the opposite point and back (same centre and radius);
+//      spline, or a pick on an open curve's end → refused.
+//    A split line drops Length, EqualLength, Midpoint and Symmetric and copies Horizontal, Vertical, Parallel,
+//    Perpendicular and Angle to its second part; a split arc / circle copies Radius and EqualRadius.
+[[nodiscard]] SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick);
 
 // Curve CurveIndex erased: constraints on it dropped, later curve references shifted down. Points stay.
 void EraseSketchCurve(SketchModel& Sketch, int CurveIndex);

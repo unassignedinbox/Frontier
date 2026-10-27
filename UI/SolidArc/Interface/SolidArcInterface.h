@@ -278,6 +278,8 @@ struct SolidArcTrimSession
     std::vector<GeometryProcessing::Vector3> Preview         = {};                                     // [len] - Piece that would come off (world)
     std::string                    Refusal         = {};                                     // [-]   - Why the hovered piece cannot come off
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
+    bool                           SplitCondition  = false;                                  // [-]   - Cut tool: break the curve at the pointer
+    std::vector<GeometryProcessing::Vector3> Breaks  = {};                                   // [len] - Cut: where the curve would break (world)
 };
 
 // 📝 Fill tool (bottom toolbar, next to Trim): while open, the closed region under the pointer among the shown coplanar

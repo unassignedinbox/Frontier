@@ -462,6 +462,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         return Numeric(double(Loops));
     }
     if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
+    if (Field == "split") return Numeric(State.Trim.ActiveCondition && State.Trim.SplitCondition ? 1 : 0);
+    if (Field == "trim-breaks") return Numeric(double(State.Trim.Breaks.size()));
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
     if (Field == "trim-refusal")
     {

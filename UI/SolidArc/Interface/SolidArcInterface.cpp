@@ -2327,15 +2327,19 @@ void ApplyCut(SolidArcWorkspaceState& State)
 std::vector<std::string> TouchedBodies(const SolidArcDocument& Document);
 void CloseFillSession(SolidArcWorkspaceState& State);
 
-void OpenTrimSession(SolidArcWorkspaceState& State)
+// SplitCondition: the sketch Cut tool (the curve breaks at the click, nothing comes off) instead of Trim.
+void OpenTrimSession(SolidArcWorkspaceState& State, bool SplitCondition = false)
 {
+    const char* Tool = SplitCondition ? "Cut" : "Trim";
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
-    if (!SketchCondition) { Announce(State, "Trim needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
+    if (!SketchCondition) { Announce(State, std::string(Tool) + " needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
     State.Trim = { true, false, {}, -1, {}, {}, {}, State.Trim.Commits };
+    State.Trim.SplitCondition = SplitCondition;
     State.Fill.ActiveCondition = false;
     State.Drawing.ActiveCondition = false;
     State.Constrain.ActiveCondition = false;
-    Announce(State, "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
+    Announce(State, SplitCondition ? "Cut: click a line, arc or circle where it should break in two (a circle becomes two half arcs) · Esc ends"
+                                   : "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
 }
 
 void CloseTrimSession(SolidArcWorkspaceState& State)
@@ -2343,7 +2347,8 @@ void CloseTrimSession(SolidArcWorkspaceState& State)
     State.Trim.ActiveCondition = false;
     State.Trim.HoverCondition  = false;
     State.Trim.Preview.clear();
-    Announce(State, "Trim ended");
+    State.Trim.Breaks.clear();
+    Announce(State, State.Trim.SplitCondition ? "Cut ended" : "Trim ended");
 }
 
 // 📝 The sketch curve nearest the pointer in pixels (≤ 8 px; later steps win ties), the pointer on its plane, and the
@@ -2353,6 +2358,7 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     SolidArcTrimSession& Trim = State.Trim;
     Trim.HoverCondition = false;
     Trim.Preview.clear();
+    Trim.Breaks.clear();
     Trim.Refusal.clear();
     if (!PointerCondition) return;
     const ImVec2       Mouse   = ImGui::GetIO().MousePos;
@@ -2394,16 +2400,25 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Trim.Sketch         = Chosen->Label;
     Trim.Pick           = Pick;
     Trim.HoverCondition = true;
-    const SketchTrimOutcome Outcome = PreviewSolidArcTrim(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick });
+    const SketchTrimOutcome Outcome = PreviewSolidArcTrim(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
     Trim.Refusal = Outcome.Refusal;
-    if (Outcome.Refusal.empty()) for (const Vector2& Point : Outcome.Removed) Trim.Preview.push_back(PlacePlanePoint(Plane, Point));
+    if (!Outcome.Refusal.empty()) return;
+    if (Trim.SplitCondition)
+    {
+        // Cut: the whole hovered curve lights up, with a ring where it breaks (two for a circle).
+        const SketchModel& Solved = State.Document.Regeneration.Sketches.at(Trim.Sketch);
+        for (const Vector2& Sample : SampleSketchCurve(Solved, Solved.Curves[Trim.Curve])) Trim.Preview.push_back(PlacePlanePoint(Plane, Sample));
+        for (const Vector2& Point : Outcome.SplitPositions) Trim.Breaks.push_back(PlacePlanePoint(Plane, Point));
+        return;
+    }
+    for (const Vector2& Point : Outcome.Removed) Trim.Preview.push_back(PlacePlanePoint(Plane, Point));
 }
 
 void ApplyTrim(SolidArcWorkspaceState& State)
 {
     SolidArcTrimSession& Trim = State.Trim;
-    if (!Trim.HoverCondition) { Announce(State, "Trim: no curve under the pointer"); return; }
-    const SolidArcCommandOutcome Outcome = TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick });
+    if (!Trim.HoverCondition) { Announce(State, Trim.SplitCondition ? "Cut: no curve under the pointer" : "Trim: no curve under the pointer"); return; }
+    const SolidArcCommandOutcome Outcome = TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
     if (Outcome.AcceptedCondition)
     {
         // Detached trim (a later step reads the sketch): the original is hidden, the trimmed copy is the last step.
@@ -2412,6 +2427,7 @@ void ApplyTrim(SolidArcWorkspaceState& State)
         ++Trim.Commits;
         Trim.HoverCondition = false;
         Trim.Preview.clear();
+        Trim.Breaks.clear();
         const bool FocusedCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == State.FocusedStep; });
         if (!FocusedCondition) State.FocusedStep = {};
     }
@@ -2423,7 +2439,15 @@ void DrawTrimPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
     if (!State.Trim.ActiveCondition || State.Trim.Preview.size() < 2) return;
     std::vector<ImVec2> Pixels;
     for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
-    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0xff, 0x4d, 0x4d, 0xff), 4.0f);
+    const ImU32 Colour = State.Trim.SplitCondition ? IM_COL32(0xff, 0xc8, 0x4a, 0xff) : IM_COL32(0xff, 0x4d, 0x4d, 0xff);   // Cut amber, trim red
+    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, State.Trim.SplitCondition ? 3.0f : 4.0f);
+    for (const Vector3& Point : State.Trim.Breaks)
+    {
+        ImVec2 Pixel;
+        if (!ProjectWorldPoint(State, Frame, Point, Pixel)) continue;
+        Canvas->AddCircleFilled(Pixel, 6.0f, IM_COL32(0x16, 0x16, 0x16, 0xff));
+        Canvas->AddCircle(Pixel, 6.0f, IM_COL32(0xff, 0xff, 0xff, 0xff), 0, 2.0f);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -9370,11 +9394,13 @@ void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
 
 // 📝 HTML .sketch-toolbar (bottom 52, centred): #171717f5, #343434 hairline, radius 13, padding 5, gap 4; buttons
 //    padding 9 12, radius 8, gap 7, glyph 17, #aaa (active / hover #303030 / #fff), a 1 × 22 #3a3a3a divider after Select.
-//    Select ends Trim, Cut splits the body by the focused sketch / picked curve (C), Trim opens the trim session (T).
+//    Select ends Trim, Cut breaks sketch curves at the click (Plasticity curve cut; C still cuts a body by the focused
+//    sketch / picked curve), Trim opens the trim session (T).
 void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Extent)
 {
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
-    const bool CutCondition    = FocusedSketchCondition(State) || !State.Document.Selection.Curves.empty();
+    const bool SplitCondition  = State.Trim.ActiveCondition && State.Trim.SplitCondition;
+    const bool TrimCondition   = State.Trim.ActiveCondition && !State.Trim.SplitCondition;
     struct ToolButton
     {
         const char* Key;
@@ -9384,8 +9410,8 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         bool        Enabled;
     };
     const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition && !State.Fill.ActiveCondition, true },
-                                 { "SketchCut", IconSymbol::SolidArcCut, "Cut", false, CutCondition && !State.Bevel.ActiveCondition },
-                                 { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", State.Trim.ActiveCondition, SketchCondition },
+                                 { "SketchCut", IconSymbol::SolidArcCut, "Cut", SplitCondition, SketchCondition && !State.Bevel.ActiveCondition },
+                                 { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", TrimCondition, SketchCondition },
                                  { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition },
                                  { "SketchKnife", IconSymbol::SolidArcSubtract, "", State.Knife.ActiveCondition, State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition } };
     SolidArcSheet Probe;
@@ -9418,12 +9444,13 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
         if (*Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
         if (Index == 4 && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): sketch cutters, boolean-library inserts, object cutters");
+        if (Index == 1 && Press.HoveredCondition) ImGui::SetTooltip("Cut: click a line, arc or circle where it should break in two · C cuts a body by the focused sketch");
         if (Press.ClickedCondition)
         {
             if (Index == 0 && State.Trim.ActiveCondition) CloseTrimSession(State);
             if (Index == 0 && State.Fill.ActiveCondition) CloseFillSession(State);
-            if (Index == 1) ApplyCut(State);
-            if (Index == 2) State.Trim.ActiveCondition ? CloseTrimSession(State) : OpenTrimSession(State);
+            if (Index == 1) SplitCondition ? CloseTrimSession(State) : OpenTrimSession(State, true);
+            if (Index == 2) TrimCondition ? CloseTrimSession(State) : OpenTrimSession(State);
             if (Index == 3) State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State);
             if (Index == 4) State.Knife.ActiveCondition ? CloseKnifeSession(State, "Knife closed") : OpenKnifeSession(State);
         }
@@ -10114,6 +10141,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcTrimSession& Trim = State.Trim;
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
+        else if (Trim.SplitCondition) DrawStatusPill(Canvas, Below, Compose("Cut · %d cut / trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click breaks the curve at the ring" : ""), ActiveColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
     if (State.Fill.ActiveCondition)
@@ -10204,6 +10232,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : "Click both cap centres, then the rim (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
+                       : State.Trim.ActiveCondition && State.Trim.SplitCondition
+                           ? "Cut: hover a line, arc or circle (amber, a ring where it breaks) · click splits it in two there (a circle: two half arcs) · Esc / right-click end"
                        : State.Trim.ActiveCondition
                            ? "Trim: hover a curve (the red piece comes off between its crossings) · click removes it · Esc / T / right-click end"
                        : State.Fill.ActiveCondition
@@ -10216,7 +10246,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt+click (ring) edits edges · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
-                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt ring, Alt+Shift chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     {
         SolidArcSheet Instructions;
         Instructions.Begin();

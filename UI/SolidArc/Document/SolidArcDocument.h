@@ -147,6 +147,7 @@ struct SolidArcTrimRequest
     std::string       Sketch = {};                                                           // [-]   - Sketch step label
     int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
     GeometryProcessing::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
+    bool              SplitCondition = false;                                                // [-]   - Cut (break at Pick) instead of trim
 };
 
 // 📝 Fill tool: the closed region under Pick (coordinates of Sketch's plane) among Sketch and every shown sketch coplanar
@@ -392,6 +393,8 @@ struct VehicleCurveFile;
 //    the original sketch stays for its body, hidden, and the trimmed curves become a new sketch step at the end. Refused
 //    (document untouched) only when the trim itself refuses.
 [[nodiscard]] SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const SolidArcTrimRequest& Request);
+//    With SplitCondition the curve breaks at Pick instead (Plasticity sketch Cut, GeometryProcessing::SplitSketchCurve):
+//    nothing comes off, a line / arc becomes two curves, a circle two half arcs.
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
 [[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const SolidArcTrimRequest& Request);
 

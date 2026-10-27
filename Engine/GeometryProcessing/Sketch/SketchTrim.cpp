@@ -421,4 +421,67 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
     return Outcome;
 }
 
+SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick)
+{
+    constexpr double EndGuard = 1.0e-3;                                                      // [-] - No split this close to an open end
+    SketchTrimOutcome Outcome;
+    Outcome.Sketch = Sketch;
+    if (CurveIndex < 0 || CurveIndex >= static_cast<int>(Sketch.Curves.size())) { Outcome.Refusal = "the sketch has no curve " + std::to_string(CurveIndex); return Outcome; }
+    const double Join = 1.0e-9 * MeasureScale(Sketch, {});
+    std::string  Refusal;
+    const ProfileSegment Target = ResolveSketchCurveSegment(Sketch, CurveIndex, Join, Refusal);
+    if (!Refusal.empty()) { Outcome.Refusal = Refusal; return Outcome; }
+    const std::string Name = SketchCurveName(Sketch.Curves[CurveIndex]);
+    if (Target.Kind == ProfileSegmentKind::Spline)
+    {
+        Outcome.Refusal = "cutting a spline is not supported yet: Cut splits lines, arcs and circles (" + Name + ")";
+        return Outcome;
+    }
+    const double Picked = LocateProfileFraction(Target, Pick);
+    Outcome.FromFraction = Picked;
+    Outcome.ToFraction   = Picked;
+    SketchModel& Edited = Outcome.Sketch;
+    if (ClosedCondition(Target))
+    {
+        // ① a circle: two half arcs (counter-clockwise like the circle) meeting at the pick and its opposite point.
+        const Vector2 First  = EvaluateProfileSegment(Target, Wrap(Picked));
+        const Vector2 Second = EvaluateProfileSegment(Target, Wrap(Picked + 0.5));
+        const int     FirstPoint  = AppendSketchPoint(Edited, First);
+        const int     SecondPoint = AppendSketchPoint(Edited, Second);
+        SketchCurve& Curve = Edited.Curves[CurveIndex];
+        Curve.Kind  = SketchCurveKind::Arc;
+        Curve.Start = FirstPoint;
+        Curve.End   = SecondPoint;
+        SketchCurve Other = Curve;
+        Other.Identifier  = NextIdentifier(Edited, SketchCurveKind::Arc);
+        Other.Start       = SecondPoint;
+        Other.End         = FirstPoint;
+        Edited.Curves.push_back(Other);
+        CopyShapeConstraints(Edited, CurveIndex, static_cast<int>(Edited.Curves.size()) - 1, SketchCurveKind::Arc);
+        Outcome.SplitPositions = { First, Second };
+        Outcome.Pieces         = 2;
+        return Outcome;
+    }
+    if (Picked <= EndGuard || Picked >= 1.0 - EndGuard)
+    {
+        Outcome.Refusal = "the pointer is on an end of " + Name + ": Cut needs a point inside the curve";
+        return Outcome;
+    }
+
+    // ② a line or an arc: the curve keeps its start part, a new curve carries the rest; both share the new point.
+    const Vector2         Position = EvaluateProfileSegment(Target, Picked);
+    const SketchCurveKind Kind     = Edited.Curves[CurveIndex].Kind;
+    if (Kind == SketchCurveKind::Line) DropLengthConstraints(Edited, CurveIndex);
+    const int   Point  = AppendSketchPoint(Edited, Position);
+    SketchCurve Second = Edited.Curves[CurveIndex];
+    Second.Identifier  = NextIdentifier(Edited, Kind);
+    Second.Start       = Point;
+    Edited.Curves[CurveIndex].End = Point;
+    Edited.Curves.push_back(Second);
+    CopyShapeConstraints(Edited, CurveIndex, static_cast<int>(Edited.Curves.size()) - 1, Kind);
+    Outcome.SplitPositions = { Position };
+    Outcome.Pieces         = 2;
+    return Outcome;
+}
+
 } // namespace Frontier::GeometryProcessing

@@ -1877,6 +1877,7 @@ SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const So
         Outcome.Refusal = "no sketch step labelled " + Request.Sketch;
         return Outcome;
     }
+    if (Request.SplitCondition) return SplitSketchCurve(SolvedSketch(Document, *Found), Request.Curve, Request.Pick);
     const OrthonormalFrame      Plane = ElevatedPlane(Document.Tree, *Found);
     std::vector<ProfileSegment> Foreign;
     for (const FeatureStep& Step : Document.Tree.Steps)
@@ -1983,7 +1984,8 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
     const bool Referenced = SolidArcSketchReferencedCondition(Document, Request.Sketch);
 
     // ① in place: the sketch itself changes (later steps follow when they still regenerate).
-    SolidArcCommandOutcome InPlace = RunCommand(Document, "Trim " + CurveName + " of " + Owner, false, [&]() -> std::string
+    const std::string Verb = Request.SplitCondition ? "Cut " : "Trim ";
+    SolidArcCommandOutcome InPlace = RunCommand(Document, Verb + CurveName + " of " + Owner, false, [&]() -> std::string
     {
         const SketchTrimOutcome Trim = PreviewSolidArcTrim(Document, Request);
         if (!Trim.Refusal.empty()) return Trim.Refusal;
@@ -2005,7 +2007,7 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
     while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
     if (Stem.empty()) Stem = "Sketch";
     const std::string Copy = NextCaption(Document, Stem);
-    return RunCommand(Document, "Trim " + CurveName + " of " + Owner + " into " + Copy + " (" + Owner + " kept hidden for the steps that read it)", false,
+    return RunCommand(Document, Verb + CurveName + " of " + Owner + " into " + Copy + " (" + Owner + " kept hidden for the steps that read it)", false,
                       [&]() -> std::string
     {
         const SketchTrimOutcome Trim = PreviewSolidArcTrim(Document, Request);

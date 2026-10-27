@@ -45,6 +45,21 @@ frames 2
 expect status contains focus a sketch step or select a curve
 expect steps == 2
 
+# ②b Alt+click an edge picks its ring (Blender-like): the top front edge along x walks front → bottom → back → top
+#    faces, so the four edges along x come picked; Alt+A lets them go
+key 2
+frames 2
+move world 1.0 0.0 1.0
+frames 2
+click world 1.0 0.0 1.0 Left Alt
+frames 2
+expect selected-edges == 4
+expect ring-picks == 1
+capture 294EdgeRing
+key A Alt
+frames 2
+expect selected-edges == 0
+
 # ③ Shift+A line across the box at x = 0.6 (drawn upward), Enter finishes the open chain, C splits the box in two
 key A Shift
 frames 2
@@ -283,3 +298,56 @@ frames 2
 key Space
 frames 3
 capture 110StarExtruded
+
+# ⑫ Cut (bottom toolbar, Plasticity curve cut): a line 0 → 2 clicked at x = 0.5 breaks into two curves meeting there
+#    (nothing comes off); its end refuses; a circle becomes two half arcs (two break rings). Esc ends
+key N Ctrl
+frames 2
+key Keypad7
+frames 2
+key A Shift
+frames 2
+click world 0.0 0.0 0.0
+frames 2
+click world 2.0 0.0 0.0
+frames 2
+key Enter
+frames 2
+expect sketch-curves == 1
+click @SketchCut
+frames 2
+expect split == 1
+move world 0.5 0.0 0.0
+frames 2
+expect trim-breaks == 1
+capture 292CutLineHover
+click world 0.5 0.0 0.0
+frames 3
+expect refused == 0
+expect sketch-curves == 2
+expect status contains Cut Line
+move world 0.0 0.0 0.0
+frames 2
+expect trim-refusal contains on an end
+key Escape
+frames 2
+expect split == 0
+key W Shift
+frames 2
+click world 3.0 0.0 0.0
+frames 2
+click world 3.5 0.0 0.0
+frames 2
+expect sketch-curves == 1
+click @SketchCut
+frames 2
+move world 3.0 0.5 0.0
+frames 2
+expect trim-breaks == 2
+capture 293CutCircleHover
+click world 3.0 0.5 0.0
+frames 3
+expect sketch-curves == 2
+key Escape
+frames 2
+expect split == 0
