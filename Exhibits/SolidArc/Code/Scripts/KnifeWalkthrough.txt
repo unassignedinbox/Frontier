@@ -536,3 +536,73 @@ expect refused == 0
 expect knife-commits == 15
 expect bodies == 2
 expect volume < 7.95
+
+# ⑭ every library cutter is drawn as the Construct primitives are: the press puts the Triangle's centre on the top
+#    face, the drag carries its vertex (the grip, at 90°) to the pointer — width and turn at once, 0.01 / 15° steps —
+#    and the release hands the pointer to the depth along the normal (typed 0.2 here); right-click cuts
+#    √3/4 · 0.4² · 0.2 = 0.013856406460551. A Round hole typed 0.2 wide, clicked without a drag, T straight through
+#    the 2 m cube: 0.01π · 2 = 0.0628318530718.
+click @SketchKnifeTool
+frames 3
+click @KnifeToolInsert5
+frames 3
+expect knife-mode == Insert
+expect knife-insert == Triangle
+move world 0.5 -0.5 2.0
+frames 2
+move world 0.5 -0.5 2.0
+frames 4
+expect knife-hover == 1
+press
+frames 2
+expect knife-placed == 1
+expect knife-sizing == 1
+move world 0.5 -0.384530 2.0
+frames 2
+move world 0.5 -0.269060 2.0
+frames 4
+expect knife-size ~ 0.4
+expect knife-turn ~ 0
+capture 290KnifeInsertDrag
+release
+frames 2
+expect knife-sizing == 0
+expect knife-placed == 1
+move world 0.5 -0.5 1.75
+frames 6
+expect knife-insert-depth > 0.15
+capture 291KnifeInsertDepth
+type 0.2
+frames 6
+expect knife-insert-depth ~ 0.2
+click world 0.5 -0.5 1.75 Right
+frames 3
+expect refused == 0
+expect knife == 0
+expect knife-commits == 16
+expect knife-removed ~ 0.013856406460551
+click @SketchKnifeTool
+frames 3
+click @KnifeToolInsert1
+frames 3
+expect knife-insert == Round hole
+move world -0.5 0.5 2.0
+frames 2
+move world -0.5 0.5 2.0
+frames 4
+expect knife-hover == 1
+type 0.2
+frames 2
+expect knife-size ~ 0.2
+click world -0.5 0.5 2.0
+frames 2
+expect knife-placed == 1
+expect knife-sizing == 0
+key T
+frames 6
+expect knife-insert-through == 1
+key Enter
+frames 3
+expect refused == 0
+expect knife-commits == 17
+expect knife-removed ~ 0.0628318530718

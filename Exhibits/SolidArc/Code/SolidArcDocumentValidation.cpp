@@ -117,6 +117,7 @@ namespace
     GateTally HandleGate      = { "W53", "Bevel handles (Plasticity pull / push): the front-top edge of a 4 × 2 × 1 block shows a uniform handle at mid-edge plus one per corner, each along the outward bisector; corner sizes 0.1 / 0.3 equal the V taper (closed form, rails at each corner); the top loop takes 4 corner sizes between the uniform 0.1 and 0.2 bodies; Corner parameters regenerate; refusals (foreign vertex, two sizes, non-positive); the start-size fit (≈ 15 % of the bounding span, round 1 · 2 · 5 step); undo / redo; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally SolidKnifeGate  = { "W54", "Knife with 3D cutters (Construct primitives drawn on a face, then pulled into it): on a 2 m cube a box 0.4 × 0.4 sunk 0.3 (top 0.02 above the face) cuts 0.048; a cylinder r 0.2 on the +x face frame sunk 0.5 with the cutter kept cuts 0.02π and leaves a 0.0208π body (Duplicate + Combine); a sphere r 0.3 centred on the top face cuts a half ball 0.018π; a box boss (Union, foot 0.02 inside) adds 0.004; Separate leaves a tube body, selected; refusals (missing target, torus tube ≥ major, New) leave the document untouched; one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PocketBevelGate = { "W55", "Bevels on knife pockets in a curved face (cylinder r 2.126 × 1.8, pockets cut from the tangent plane): the slot opening loop takes fillets 0.02 · 0.0519 · 0.1 across its smooth joints (pinned volumes, decreasing); sizes 0.3 and 0.8553 refuse as too large, naming the outgrown face, document untouched; a hex pocket insert's rim loop takes 0.05 through its unequal mitres, its wall–wall edges 0.05 together; on a box the rim loss stays within 10 % of the straight-edge model (1 − π/4) r² L; one undo entry each; codec byte-equal", "≤ 10⁻⁹ pinned · exact" };
+    GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -5054,6 +5055,111 @@ int main()
               Format("box hex rim fillet 0.05 (%s): loss / straight-edge model = %.4f", BoxFillet.AcceptedCondition ? BoxFillet.Label.c_str() : BoxFillet.Refusal.c_str(), Ratio));
     }
 
+    // ---- W56 Knife insert gesture: grips, depths authored again, countersink floor, stretched library files
+    {
+        constexpr double π = std::numbers::pi;
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[720]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        SolidArcDocument Cube = CreateSolidArcDocument("InsertReach");
+        Expect(DrawFilledSketch(Cube, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { -1.0, -1.0 }, { 1.0, 1.0 } })));
+        Expect(ExtrudeSolidArcSketch(Cube, Cube.Tree.Steps.back().Label, 2.0, FeatureCombination::New));
+        const std::string Block = Cube.Regeneration.Bodies.front().Key;
+        const SolidArcInsertLibrary Library = AssembleSolidArcInserts("");
+        const auto Named = [&](const char* Name) -> const SolidArcInsert*
+        {
+            for (const SolidArcInsert& Insert : Library.Inserts) if (Insert.Name == Name) return &Insert;
+            return nullptr;
+        };
+        const SolidArcInsert* Triangle = Named("Triangle");
+        const SolidArcInsert* Hex      = Named("Hex pocket");
+        const SolidArcInsert* Square   = Named("Square pocket");
+        const SolidArcInsert* Round    = Named("Round hole");
+        const SolidArcInsert* Sink     = Named("Countersink");
+        if (!Triangle || !Hex || !Square || !Round || !Sink) { Tally(ReachGate, 1.0, false, "the built-in library lacks a cutter"); }
+        else
+        {
+            // ① grips: the drag carries this point to the pointer (angle, radius in insert widths)
+            const auto Bearing = [](const SolidArcInsert& Insert) { return std::atan2(Insert.Anchor.Y, Insert.Anchor.X) * 180.0 / π; };
+            const auto Radius  = [](const SolidArcInsert& Insert) { return std::hypot(Insert.Anchor.X, Insert.Anchor.Y); };
+            const double GripWorst = std::max({ std::abs(Bearing(*Triangle) - 90.0), std::abs(Bearing(*Hex)), std::abs(Bearing(*Square) - 45.0),
+                                                std::abs(Radius(*Triangle) - 1.0 / std::sqrt(3.0)) * 100.0, std::abs(Radius(*Hex) - 0.5) * 100.0, std::abs(Radius(*Square) - std::sqrt(0.5)) * 100.0 });
+            Tally(ReachGate, GripWorst, GripWorst <= 1.0e-4, Format("grips: triangle %.3f° r %.6f · hex %.3f° r %.6f · square %.3f° r %.6f · countersink floor %.6f widths",
+                                                                   Bearing(*Triangle), Radius(*Triangle), Bearing(*Hex), Radius(*Hex), Bearing(*Square), Radius(*Square), Sink->Shallow));
+
+            // ② a triangle 0.4 wide cut 0.2 deep (0.5 widths, its own shape is 0.3): authored again, analytic
+            const auto Place = [&](const SolidArcInsert& Insert, Vector3 Origin, double Size, double Depth, SolidArcInsertReach& Reach)
+            {
+                Reach = ReachSolidArcInsert(Insert, Depth / Size);
+                SolidArcInsertPlacement Placement;
+                Placement.Name = Insert.Name; Placement.Exchange = Reach.Exchange; Placement.Target = Block; Placement.Combination = FeatureCombination::Difference;
+                Placement.Map  = PlaceSolidArcInsert(OrthonormalFrame{ Origin, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } }, Size, 0.0, false, Reach.Stretch);
+                const size_t Before = Cube.UndoEntries.size();
+                SolidArcCommandOutcome Outcome = Reach.Refusal.empty() ? KnifeSolidArcInsert(Cube, Placement) : SolidArcCommandOutcome{};
+                if (!Reach.Refusal.empty()) Outcome.Refusal = Reach.Refusal;
+                Tally(ReachGate, 0.0, !Outcome.AcceptedCondition || Cube.UndoEntries.size() == Before + 1, Format("%s: %d undo entry", Insert.Name.c_str(), int(Cube.UndoEntries.size() - Before)));
+                return Outcome;
+            };
+            const auto Analytic = [](const SolidArcInsertReach& Reach) { return Reach.Exchange.find("B_SPLINE") == std::string::npos; };
+            SolidArcInsertReach Reach;
+            double Expected = 8.0;
+            const SolidArcCommandOutcome Cut = Place(*Triangle, { -0.5, 0.5, 2.0 }, 0.4, 0.2, Reach);
+            Expected -= std::sqrt(3.0) / 4.0 * 0.16 * 0.2;
+            TallyVolume(ReachGate, Cube, Expected, Format("triangle 0.4 at 0.2 deep (%s · stretch %.3f · %s)", Cut.AcceptedCondition ? Cut.Label.c_str() : Cut.Refusal.c_str(), Reach.Stretch,
+                                                          Analytic(Reach) && Reach.Exchange != Triangle->Exchange ? "authored again, analytic" : "NOT authored again"));
+            Tally(ReachGate, 0.0, Reach.Stretch == 1.0 && Analytic(Reach) && Reach.Exchange != Triangle->Exchange, "triangle: authored again at the depth, no stretch");
+
+            // ③ a round hole 0.4 cut 0.6 deep: its cylinder stays a CYLINDRICAL_SURFACE
+            const SolidArcCommandOutcome Hole = Place(*Round, { 0.5, 0.5, 2.0 }, 0.4, 0.6, Reach);
+            Expected -= 0.04 * π * 0.6;
+            TallyVolume(ReachGate, Cube, Expected, Format("round hole 0.4 at 0.6 deep (%s)", Hole.AcceptedCondition ? Hole.Label.c_str() : Hole.Refusal.c_str()));
+            Tally(ReachGate, 0.0, Analytic(Reach) && Reach.Exchange.find("CYLINDRICAL_SURFACE") != std::string::npos, "round hole: cylinder kept analytic at the new depth");
+
+            // ④ a countersink shallower than its cone refuses untouched; at 0.4 deep: 45° frustum (r 0.45 → 0.25/1.1 widths) + bore
+            const size_t Steps = Cube.Tree.Steps.size();
+            const double Held  = Cube.Summary.Volume;
+            const SolidArcCommandOutcome Shallow = Place(*Sink, { 0.5, -0.5, 2.0 }, 0.4, 0.04, Reach);
+            Tally(ReachGate, 0.0, !Shallow.AcceptedCondition && Cube.Tree.Steps.size() == Steps && Cube.Summary.Volume == Held, "countersink 0.1 widths deep refused untouched: " + Shallow.Refusal);
+            const SolidArcCommandOutcome Sunk = Place(*Sink, { 0.5, -0.5, 2.0 }, 0.4, 0.4, Reach);
+            const double Cone  = (0.30 / 1.1) - 0.05;                                            // [-] - Cone depth below the face (widths)
+            const double Upper = 0.45, Lower = 0.25 / 1.1;                                       // [-] - Radii at the face / cone tip
+            const double SinkVolume = (π * Cone / 3.0 * (Upper * Upper + Upper * Lower + Lower * Lower) + π * Lower * Lower * (1.0 - Cone)) * 0.4 * 0.4 * 0.4;
+            Expected -= SinkVolume;
+            TallyVolume(ReachGate, Cube, Expected, Format("countersink 0.4 at 0.4 deep: frustum + bore %.12f (%s)", SinkVolume, Sunk.AcceptedCondition ? Sunk.Label.c_str() : Sunk.Refusal.c_str()));
+
+            // ⑤ a library file has no author: it stretches along z (a cylinder r 0.25 × 0.5 saved, then cut 0.3 widths deep)
+            SolidArcDocument Source = CreateSolidArcDocument("InsertSource");
+            SolidArcConstructRequest Post;
+            Post.Kind = SolidArcConstructKind::Cylinder; Post.Combination = FeatureCombination::New; Post.Radius = 0.25; Post.Height = 0.5;
+            Expect(ConstructSolidArcPrimitive(Source, Post));
+            const std::filesystem::path Folder = std::filesystem::temp_directory_path() / "SolidArcReachInserts";
+            std::error_code Error;
+            std::filesystem::remove_all(Folder, Error);
+            std::string Saved;
+            const std::string SaveRefusal = SaveSolidArcInsert(Source, Source.Regeneration.Bodies.front().Key, Folder.string(), "Post", Saved);
+            const SolidArcInsertLibrary Grown = AssembleSolidArcInserts(Folder.string());
+            const SolidArcInsert* File = Grown.Inserts.empty() || Grown.Inserts.back().Author ? nullptr : &Grown.Inserts.back();
+            if (!File) Tally(ReachGate, 1.0, false, "the saved post did not load as a library file: " + SaveRefusal);
+            else
+            {
+                const SolidArcCommandOutcome Posted = Place(*File, { -0.5, -0.5, 2.0 }, 0.4, 0.12, Reach);
+                Expected -= 0.04 * π * 0.12;
+                const double Drift = std::abs(Cube.Summary.Volume - Expected) / Expected;
+                Tally(ReachGate, Drift, Posted.AcceptedCondition && std::abs(Reach.Stretch - 0.3 / File->Depth) <= 1.0e-12 && Reach.Exchange == File->Exchange && Drift <= 1.0e-6,
+                      Format("library file stretched ×%.6f (its depth %.6f widths): V %.12f vs %.12f (%.2g; curved faces carried as NURBS) (%s)", Reach.Stretch, File->Depth,
+                             Cube.Summary.Volume, Expected, Drift, Posted.AcceptedCondition ? Posted.Label.c_str() : Posted.Refusal.c_str()));
+            }
+            std::filesystem::remove_all(Folder, Error);
+
+            // ⑥ codec: the authored-again cutters reload byte-equal
+            const std::string          Written = EncodeSolidArcDocument(Cube);
+            const SolidArcDocumentFile Read    = DecodeSolidArcDocument(Written);
+            SolidArcDocument Loaded = CreateSolidArcDocument(Read.Title);
+            Loaded.Tree = Read.Tree; Loaded.Captions = Read.Captions; Loaded.Appearance = Read.Appearance;
+            RegenerateSolidArcDocument(Loaded, true);
+            Tally(ReachGate, std::abs(Loaded.Summary.Volume - Cube.Summary.Volume), Read.Refusal.empty() && EncodeSolidArcDocument(Loaded) == Written && Loaded.Summary.Volume == Cube.Summary.Volume,
+                  Format("codec %d bytes byte-equal, V %.12f", int(Written.size()), Loaded.Summary.Volume));
+        }
+    }
+
     // ---- W49 Fillet drags keep every fillet under a half turn
     {
         const auto Format = [](const char* Pattern, auto... Values) { char Text[640]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -5252,7 +5358,7 @@ int main()
         }
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

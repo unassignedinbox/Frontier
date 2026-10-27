@@ -421,8 +421,10 @@ enum class SolidArcKnifeMode : uint8_t
 
 // 📝 Shift+K Knife (Blender KitOps style). Sketch: the focused closed sketch (or a shape drawn for it on a face) is filled
 //    and extruded into the body under it — horizontal pointer motion sets the depth (Shift fine, snapped 0.01 unless
-//    Ctrl), digits type it, T cuts straight through. Insert: the library cutter ghost follows the faces under the pointer,
-//    a click places it, motion then sizes it, [ / ] turn it 15°. Object: the first picked body is cut by the others, K
+//    Ctrl), digits type it, T cuts straight through. Insert: the library cutter ghost follows the faces under the pointer;
+//    the press puts its centre down, the drag carries its grip (a vertex / corner) to the pointer — width and turn at
+//    once — and the release hands the pointer to its depth along the normal (as a Construct box's height), [ / ] turn it
+//    15°, T through. Object: the first picked body is cut by the others, K
 //    keeps the cutters. Q union · W difference (default) · E intersect · R separate; a click / right-click / Enter applies,
 //    Esc cancels. The result stages as a document (gated like the bevel when a stage is slow).
 struct SolidArcKnifeSession
@@ -439,8 +441,12 @@ struct SolidArcKnifeSession
     std::string                            Typed                = {};                        // [-]   - Typed depth / size
     int                                    Insert               = 0;                         // [idx] - Insert: library index
     bool                                   HoverCondition       = false;                     // [-]   - Insert: a face is under the pointer
-    bool                                   PlacedCondition      = false;                     // [-]   - Insert: clicked down (motion sizes it)
+    bool                                   PlacedCondition      = false;                     // [-]   - Insert: centre put down (drag, then depth)
+    bool                                   SizingCondition      = false;                     // [-]   - Insert: press held, the drag sizes and turns it
     bool                                   SizedCondition       = false;                     // [-]   - Insert: size chosen by hand (no auto size)
+    bool                                   DepthChosenCondition = false;                     // [-]   - Insert: depth set by hand (else it keeps the shape)
+    double                                 InsertDepth          = 0.075;                     // [len] - Insert: below the face (above it for Q)
+    bool                                   InsertThroughCondition = false;                   // [-]   - Insert: T, straight through (this session only)
     GeometryProcessing::OrthonormalFrame   Spot                 = {};                        // [len] - Insert: surface point + face frame
     std::string                            SpotBody             = {};                        // [-]   - Insert: body under the spot
     double                                 Size                 = 0.25;                      // [len] - Insert: width
@@ -461,6 +467,7 @@ struct SolidArcKnifeSession
     SolidArcScene                          PreviewScene         = {};                        // [-]   - Its display arrays
     std::string                            Refusal              = {};                        // [-]   - Why apply is refused
     int                                    Commits              = 0;                         // [-]   - Applied (script evidence)
+    double                                 Removed              = 0.0;                       // [len³] - Volume the last apply took away (script evidence)
     SolidArcInsertLibrary                  Library              = {};                        // [-]   - Built-ins + library folder (lazy)
     bool                                   LibraryCondition     = false;                     // [-]   - Library assembled
     // 📝 Toolbar tool menu: the cutter Shift+K and the knife icon open with (kept across sessions).

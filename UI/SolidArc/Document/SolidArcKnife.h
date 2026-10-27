@@ -15,6 +15,10 @@
 #include "Engine/GeometryProcessing/Construction/BodyTransform.h"
 
 #include <array>
+#include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -33,6 +37,16 @@ inline constexpr double SolidArcInsertLift = 0.05;                              
 
 // 📝 Insert frame: unit width across x / y, centred on the z axis, top at z = +SolidArcInsertLift, the cutter reaching
 //    down −z. The surface it is placed on is z = 0 with outward normal +z, so a Difference cuts a pocket of Depth.
+//    A built-in keeps its Author: another depth is authored again (analytic faces stay analytic) rather than stretched.
+using SolidArcInsertAuthor = std::function<std::string(SolidArcDocument& Scratch, std::string& Key, double Bottom)>;
+
+// Remade built-ins by depth (shared by every copy of the insert; the knife restages often at one depth).
+struct SolidArcInsertRemakes
+{
+    std::mutex                       Guard = {};                                             // [-] - One remake at a time
+    std::map<long long, std::string> Texts = {};                                             // [-] - Depth (1e-9 widths) → STEP text
+};
+
 struct SolidArcInsert
 {
     std::string                                             Name     = {};                    // [-] - Caption ("Round hole")
@@ -40,6 +54,22 @@ struct SolidArcInsert
     std::string                                             Exchange = {};                    // [-] - Canonical STEP text, insert frame
     double                                                  Depth    = 0.0;                   // [-] - Reach below the surface (insert widths)
     std::vector<std::array<GeometryProcessing::Vector3, 2>> Segments = {};                    // [-] - Edge polylines, insert frame (ghost)
+    GeometryProcessing::Vector2                             Anchor   = { 0.5, 0.0 };          // [-] - Outline point farthest from the axis (drag grip)
+    SolidArcInsertAuthor                                    Author   = {};                    // [-] - Built-in: authors it at a template bottom
+    double                                                  Width    = 1.0;                   // [len] - Authored width (before normalizing)
+    double                                                  Top      = 0.0;                   // [len] - Authored top z (before normalizing)
+    double                                                  Shallow  = 0.0;                   // [-] - Least depth a built-in takes (insert widths)
+    std::shared_ptr<SolidArcInsertRemakes>                  Remakes  = std::make_shared<SolidArcInsertRemakes>();   // [-] - Other depths
+};
+
+// The insert reaching Depth widths below its surface: the STEP text to import and the z stretch of its placement
+// (1 for a built-in authored again at that depth; Depth / Insert.Depth for a library file, whose curved faces the
+// transform then carries as NURBS).
+struct SolidArcInsertReach
+{
+    std::string Exchange = {};                                                               // [-] - STEP text, insert frame
+    double      Stretch  = 1.0;                                                              // [-] - Insert-frame z scale
+    std::string Refusal  = {};                                                               // [-] - Why not (empty: made)
 };
 
 struct SolidArcInsertLibrary
@@ -61,7 +91,17 @@ struct SolidArcInsertLibrary
 
 // Insert frame → world: Spot's origin on the surface, its x̂ turned by Turn [rad] about n̂, everything scaled by Size
 // [len]. RaisedCondition flips the insert about x̂ so it stands out of the surface (Union: a boss instead of a pocket).
-[[nodiscard]] GeometryProcessing::AffineMap PlaceSolidArcInsert(const GeometryProcessing::OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition);
+// Stretch scales the insert-frame z (SolidArcInsertReach::Stretch).
+[[nodiscard]] GeometryProcessing::AffineMap PlaceSolidArcInsert(const GeometryProcessing::OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition,
+                                                              double Stretch = 1.0);
+
+// 💡 The insert at Depth (insert widths below its surface): a built-in is authored again with its bottom there (cached
+//    per depth), a library file is stretched along z. Refused below a built-in's Shallow (a countersink's cone).
+[[nodiscard]] SolidArcInsertReach ReachSolidArcInsert(const SolidArcInsert& Insert, double Depth);
+
+// An insert-frame ghost point as ReachSolidArcInsert shapes the cutter at Depth: a built-in keeps its lift and moves its
+// floor (z < 0 scaled), a library file stretches whole.
+[[nodiscard]] GeometryProcessing::Vector3 ReachSolidArcInsertPoint(const SolidArcInsert& Insert, GeometryProcessing::Vector3 Point, double Depth);
 
 // Writes body Key as Folder/Name.step (the next free Name2, Name3 … when taken); the library normalizes it on load.
 // Returns a refusal (empty on success); Path receives the file written.

@@ -56,7 +56,9 @@ namespace
 
 // 📝 ① box of the body's facets (kernel tessellation, doubles) ② Transform step: unit width, centred, top at +Lift
 //    ③ canonical STEP text of the result ④ its edge polylines. Refusal (empty on success) when the body is missing, flat or the writer refuses it.
-[[nodiscard]] std::string NormalizeSolidArcInsert(SolidArcDocument& Scratch, const std::string& Key, SolidArcInsert& Insert)
+//    OriginCondition keeps the authored origin as the centre (a built-in's own pivot: a triangle turns about its
+//    circumcentre, not the middle of its box); a library file is centred on its box.
+[[nodiscard]] std::string NormalizeSolidArcInsert(SolidArcDocument& Scratch, const std::string& Key, SolidArcInsert& Insert, bool OriginCondition = false)
 {
     const RegeneratedBody* Source = FindBody(Scratch, Key);
     if (!Source || !Source->Body.PresentCondition() || !Scratch.Partition) return "the cutter body was not made";
@@ -80,7 +82,8 @@ namespace
     Map.ColumnX = { Factor, 0.0, 0.0 };
     Map.ColumnY = { 0.0, Factor, 0.0 };
     Map.ColumnZ = { 0.0, 0.0, Factor };
-    Map.Shift   = { -0.5 * (Low[0] + High[0]) * Factor, -0.5 * (Low[1] + High[1]) * Factor, SolidArcInsertLift - High[2] * Factor };
+    Map.Shift   = OriginCondition ? Vector3{ 0.0, 0.0, SolidArcInsertLift - High[2] * Factor }
+                                  : Vector3{ -0.5 * (Low[0] + High[0]) * Factor, -0.5 * (Low[1] + High[1]) * Factor, SolidArcInsertLift - High[2] * Factor };
     const SolidArcCommandOutcome Placed = TransformSolidArcBodies(Scratch, { Key }, Map, "Normalize");
     if (!Placed.AcceptedCondition) return Placed.Refusal;
     const RegeneratedBody* Body = FindBody(Scratch, Key);
@@ -93,6 +96,8 @@ namespace
     if (!Export.Refusal.empty()) return Export.Refusal;
     Insert.Exchange = Export.Bytes;
     Insert.Depth    = (High[2] - Low[2]) * Factor - SolidArcInsertLift;
+    Insert.Width    = Width;
+    Insert.Top      = High[2];
     const SolidArcScene      After = BuildSolidArcScene(Scratch);
     const SolidArcSceneBody* Shown = FindSceneBody(After, Body->Key);
     if (!Shown) return {};
@@ -105,6 +110,17 @@ namespace
             Insert.Segments.push_back({ Vector3{ Piece.Start[0], Piece.Start[1], Piece.Start[2] }, Vector3{ Piece.End[0], Piece.End[1], Piece.End[2] } });
         }
     }
+    // 📝 Drag grip: the outline point farthest from the axis; ties (a square's corners, a circle) go to the least angle
+    //    in [0, 2π), so a triangle grips its vertex at 90°, a hex its vertex at 0° and a square its corner at 45°.
+    double Reach = 0.0, Bearing = 0.0;
+    for (const std::array<Vector3, 2>& Segment : Insert.Segments)
+        for (const Vector3& Point : Segment)
+        {
+            const double Radius = std::hypot(Point.X, Point.Y);
+            double       Angle  = std::atan2(Point.Y, Point.X);
+            if (Angle < -1.0e-9) Angle += 2.0 * std::numbers::pi;
+            if (Radius > Reach + 1.0e-6 || (Radius > Reach - 1.0e-6 && Angle < Bearing - 1.0e-9)) { Reach = std::max(Reach, Radius); Bearing = Angle; Insert.Anchor = { Point.X, Point.Y }; }
+        }
     return {};
 }
 
@@ -125,14 +141,17 @@ namespace
 }
 
 // 📝 Countersunk hole: the half profile on the upright plane (sketch x → x, sketch y → z) turned a full turn about z.
-[[nodiscard]] std::string TurnCountersink(SolidArcDocument& Scratch, std::string& Key)
+//    Its cone ends at z = −0.25 (CountersinkCone); the bore goes on down to Bottom.
+constexpr double CountersinkCone = -0.25;                                                    // [len] - Cone tip, template
+
+[[nodiscard]] std::string TurnCountersink(SolidArcDocument& Scratch, std::string& Key, double Bottom)
 {
     SolidArcDrawingRequest Request;
     Request.Kind            = SolidArcDrawingKind::Line;
     Request.GridPlane       = 1;
     Request.ClosedCondition = true;
     Request.FillCondition   = true;
-    Request.Points          = { { 0.0, 0.05 }, { 0.55, 0.05 }, { 0.25, -0.25 }, { 0.25, -0.8 }, { 0.0, -0.8 } };
+    Request.Points          = { { 0.0, 0.05 }, { 0.55, 0.05 }, { 0.25, CountersinkCone }, { 0.25, Bottom }, { 0.0, Bottom } };
     const SolidArcCommandOutcome Drawn = DrawSolidArcSketch(Scratch, Request);
     if (!Drawn.AcceptedCondition) return Drawn.Refusal;
     const std::string Sketch = Scratch.Tree.Steps.back().Label;
@@ -145,17 +164,19 @@ namespace
     return {};
 }
 
-// One built-in: authored by Author in a scratch document, then normalized.
-template <typename Author>
-void AddBuiltIn(SolidArcInsertLibrary& Library, const std::string& Name, Author&& Make)
+// One built-in: authored by Author in a scratch document at Bottom, then normalized. Floor is the highest bottom the
+// shape takes (a countersink's cone tip): Shallow is that floor in insert widths.
+void AddBuiltIn(SolidArcInsertLibrary& Library, const std::string& Name, SolidArcInsertAuthor Author, double Bottom, double Floor)
 {
     SolidArcDocument Scratch = CreateSolidArcDocument("Insert " + Name);
     SolidArcInsert   Insert;
     Insert.Name = Name;
     std::string Key;
-    std::string Refusal = Make(Scratch, Key);
-    if (Refusal.empty()) Refusal = NormalizeSolidArcInsert(Scratch, Key, Insert);
+    std::string Refusal = Author(Scratch, Key, Bottom);
+    if (Refusal.empty()) Refusal = NormalizeSolidArcInsert(Scratch, Key, Insert, true);
     if (!Refusal.empty()) { Library.Notes.push_back(Name + ": " + Refusal); return; }
+    Insert.Author  = std::move(Author);
+    Insert.Shallow = std::max(0.0, (Insert.Top - Floor) / Insert.Width - SolidArcInsertLift + 0.02);   // 0.02 widths of bore at least
     Library.Inserts.push_back(std::move(Insert));
 }
 
@@ -181,19 +202,19 @@ SolidArcInsertLibrary AssembleSolidArcInserts(const std::string& Folder)
     const auto Start = std::chrono::steady_clock::now();
     SolidArcInsertLibrary Library;
     Library.Folder = Folder;
-    const auto Flat = [](SolidArcDrawingRequest Request, double Bottom)
+    const auto Flat = [](SolidArcDrawingRequest Request) -> SolidArcInsertAuthor
     {
-        return [Request, Bottom](SolidArcDocument& Scratch, std::string& Key) { return SweepFlatCutter(Scratch, Request, 0.05, Bottom, Key); };
+        return [Request](SolidArcDocument& Scratch, std::string& Key, double Bottom) { return SweepFlatCutter(Scratch, Request, 0.05, Bottom, Key); };
     };
-    AddBuiltIn(Library, "Square pocket", Flat(Shape(SolidArcDrawingKind::Rectangle, { { 0.0, 0.0 }, { 0.5, 0.5 } }, true), -0.3));
-    AddBuiltIn(Library, "Round hole", Flat(Shape(SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true), -0.5));
-    AddBuiltIn(Library, "Countersink", TurnCountersink);
-    AddBuiltIn(Library, "Slot", Flat(Shape(SolidArcDrawingKind::Slot, { { -0.35, 0.0 }, { 0.35, 0.0 }, { 0.35, 0.15 } }), -0.3));
-    AddBuiltIn(Library, "Hex pocket", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true, 6), -0.3));
-    AddBuiltIn(Library, "Triangle", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.0, 0.5 } }, true, 3), -0.3));
+    AddBuiltIn(Library, "Square pocket", Flat(Shape(SolidArcDrawingKind::Rectangle, { { 0.0, 0.0 }, { 0.5, 0.5 } }, true)), -0.3, 0.05);
+    AddBuiltIn(Library, "Round hole", Flat(Shape(SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true)), -0.5, 0.05);
+    AddBuiltIn(Library, "Countersink", TurnCountersink, -0.8, CountersinkCone);
+    AddBuiltIn(Library, "Slot", Flat(Shape(SolidArcDrawingKind::Slot, { { -0.35, 0.0 }, { 0.35, 0.0 }, { 0.35, 0.15 } })), -0.3, 0.05);
+    AddBuiltIn(Library, "Hex pocket", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.5, 0.0 } }, true, 6)), -0.3, 0.05);
+    AddBuiltIn(Library, "Triangle", Flat(Shape(SolidArcDrawingKind::Polygon, { { 0.0, 0.0 }, { 0.0, 0.5 } }, true, 3)), -0.3, 0.05);
     AddBuiltIn(Library, "Cross", Flat(Shape(SolidArcDrawingKind::Line, { { -0.15, -0.5 }, { 0.15, -0.5 }, { 0.15, -0.15 }, { 0.5, -0.15 }, { 0.5, 0.15 }, { 0.15, 0.15 },
                                                                            { 0.15, 0.5 }, { -0.15, 0.5 }, { -0.15, 0.15 }, { -0.5, 0.15 }, { -0.5, -0.15 }, { -0.15, -0.15 } },
-                                                  false, 6, true), -0.3));
+                                                  false, 6, true)), -0.3, 0.05);
     std::error_code Error;
     std::vector<std::filesystem::path> Files;
     if (!Folder.empty() && std::filesystem::is_directory(Folder, Error))
@@ -224,7 +245,7 @@ SolidArcInsertLibrary AssembleSolidArcInserts(const std::string& Folder)
     return Library;
 }
 
-AffineMap PlaceSolidArcInsert(const OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition)
+AffineMap PlaceSolidArcInsert(const OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition, double Stretch)
 {
     const Vector3 Across = Spot.XAxis * std::cos(Turn) + Spot.YAxis * std::sin(Turn);
     const Vector3 Along  = Spot.YAxis * std::cos(Turn) - Spot.XAxis * std::sin(Turn);
@@ -232,9 +253,50 @@ AffineMap PlaceSolidArcInsert(const OrthonormalFrame& Spot, double Size, double 
     AffineMap Map;
     Map.ColumnX = Across * Size;
     Map.ColumnY = Along * (Size * Flip);
-    Map.ColumnZ = Spot.ZAxis * (Size * Flip);
+    Map.ColumnZ = Spot.ZAxis * (Size * Flip * Stretch);
     Map.Shift   = Spot.Origin;
     return Map;
+}
+
+SolidArcInsertReach ReachSolidArcInsert(const SolidArcInsert& Insert, double Depth)
+{
+    SolidArcInsertReach Reach;
+    if (!(Depth > 1.0e-9) || !std::isfinite(Depth)) { Reach.Refusal = "Knife: the insert needs a depth"; return Reach; }
+    if (std::abs(Depth - Insert.Depth) <= 1.0e-9 * std::max(1.0, Insert.Depth)) { Reach.Exchange = Insert.Exchange; return Reach; }
+    if (!Insert.Author)
+    {
+        // A library file: the placement stretches it along z (its lift with it).
+        Reach.Exchange = Insert.Exchange;
+        Reach.Stretch  = Depth / std::max(1.0e-12, Insert.Depth);
+        return Reach;
+    }
+    if (Depth <= Insert.Shallow + 1.0e-6)
+    {
+        Reach.Refusal = "Knife: " + Insert.Name + " is too shallow there (it needs more than " + std::to_string(Insert.Shallow) + " widths)";
+        return Reach;
+    }
+    // 📝 Normalized z = (z − Top)·(1 / Width) + Lift, so the floor at −Depth is the template bottom Top − (Depth + Lift)·Width.
+    const long long Token = std::llround(Depth * 1.0e9);
+    std::lock_guard<std::mutex> Lock(Insert.Remakes->Guard);
+    if (const auto Found = Insert.Remakes->Texts.find(Token); Found != Insert.Remakes->Texts.end()) { Reach.Exchange = Found->second; return Reach; }
+    SolidArcDocument Scratch = CreateSolidArcDocument("Insert " + Insert.Name);
+    SolidArcInsert   Remade;
+    Remade.Name = Insert.Name;
+    std::string Key;
+    Reach.Refusal = Insert.Author(Scratch, Key, Insert.Top - (Depth + SolidArcInsertLift) * Insert.Width);
+    if (Reach.Refusal.empty()) Reach.Refusal = NormalizeSolidArcInsert(Scratch, Key, Remade, true);
+    if (!Reach.Refusal.empty()) return Reach;
+    if (Insert.Remakes->Texts.size() > 64) Insert.Remakes->Texts.clear();                  // A long depth drag: keep it bounded
+    Insert.Remakes->Texts.emplace(Token, Remade.Exchange);
+    Reach.Exchange = std::move(Remade.Exchange);
+    return Reach;
+}
+
+Vector3 ReachSolidArcInsertPoint(const SolidArcInsert& Insert, Vector3 Point, double Depth)
+{
+    const double Scale = Depth / std::max(1.0e-12, Insert.Depth);                            // [-]
+    if (!Insert.Author) return { Point.X, Point.Y, Point.Z * Scale };
+    return { Point.X, Point.Y, Point.Z < 0.0 ? Point.Z * Scale : Point.Z };
 }
 
 std::string SaveSolidArcInsert(const SolidArcDocument& Document, const std::string& Key, const std::string& Folder, const std::string& Name, std::string& Path)

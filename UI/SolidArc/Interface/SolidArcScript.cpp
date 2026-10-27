@@ -385,6 +385,10 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "knife-turn") return Numeric(State.Knife.Turn * 180.0 / std::numbers::pi);
     if (Field == "knife-through") return Numeric(State.Knife.ThroughCondition ? 1 : 0);
     if (Field == "knife-placed") return Numeric(State.Knife.PlacedCondition ? 1 : 0);
+    if (Field == "knife-removed") return Numeric(State.Knife.Removed);
+    if (Field == "knife-sizing") return Numeric(State.Knife.SizingCondition ? 1 : 0);
+    if (Field == "knife-insert-depth") return Numeric(State.Knife.InsertDepth);
+    if (Field == "knife-insert-through") return Numeric(State.Knife.InsertThroughCondition ? 1 : 0);
     if (Field == "knife-hover") return Numeric(State.Knife.HoverCondition ? 1 : 0);
     if (Field == "knife-pending") return Numeric(State.Knife.DrawPendingCondition ? 1 : 0);
     if (Field == "knife-sink") return Numeric(State.Knife.Sink);
