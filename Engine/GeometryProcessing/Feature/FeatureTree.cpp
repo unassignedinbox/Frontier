@@ -13,6 +13,7 @@
 #include "Engine/GeometryProcessing/Exchange/StepExchange.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Local/FaceOperations.h"
+#include "Engine/GeometryProcessing/Local/TopologyRebuild.h"
 #include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSection.h"
@@ -689,6 +690,62 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 if (!Blend.Refusal.empty()) { Refuse(Blend.Refusal); break; }
                 Naming  = NameBlendedBody(Partition, Blend.Body, Blend, Naming, Step.Label);
                 Current = Blend.Body;
+                Store();
+                break;
+            }
+            // ③″ Extrude manifold (Blender's push-in): a negative face extrusion goes into the body. A face whose
+            //    neighbours can follow it is pushed; an imprinted region (every neighbour coplanar) — or a face the push
+            //    refuses — becomes a prism of its own outline, started a hair outside the face, cut out of the body.
+            if (Step.Operation == FaceOperationKind::Extrude && Amount < 0.0)
+            {
+                std::vector<FaceToken>        Faces;
+                std::vector<SketchProfile>    Outlines;
+                std::vector<OrthonormalFrame> Planes;
+                std::string                   Problem;
+                bool                          IslandCondition = true;
+                for (uint32_t Slot : Slots)
+                {
+                    Faces.push_back(Partition.Faces.TokenAt(Slot));
+                    SketchProfile    Outline;
+                    OrthonormalFrame Plane;
+                    bool             Island = false;
+                    Problem = DescribePlanarFaceProfile(Partition, Current, Faces.back(), Outline, Plane, Island);
+                    if (!Problem.empty()) break;
+                    IslandCondition = IslandCondition && Island;
+                    Outlines.push_back(std::move(Outline));
+                    Planes.push_back(Plane);
+                }
+                if (!IslandCondition || !Problem.empty())
+                {
+                    FaceOperationSettings Push;
+                    Push.Kind     = FaceOperationKind::Push;
+                    Push.Faces    = Faces;
+                    Push.Distance = Amount;
+                    const FaceOperationOutcome Change = ApplyFaceOperation(Partition, Current, Push);
+                    if (Change.Refusal.empty())
+                    {
+                        Naming  = NameChangedBody(Partition, Change.Body, Change, Naming, Step.Label);
+                        Current = Change.Body;
+                        Store();
+                        break;
+                    }
+                }
+                if (!Problem.empty()) { Refuse("Extrude: " + Problem); break; }
+                std::string Refusal;
+                for (size_t Index = 0; Index < Outlines.size() && Refusal.empty(); ++Index)
+                {
+                    const double     Lead  = 1.0e-3 * Outlines[Index].Scale;                 // [len] - Cutter start outside the face
+                    OrthonormalFrame Plane = Planes[Index];
+                    Plane.Origin           = Plane.Origin + Plane.ZAxis * Lead;
+                    const SweepOutcome Sweep = ExtrudeProfile(Partition, Outlines[Index], Plane, Amount - Lead, true);
+                    if (!Sweep.Refusal.empty()) { Refusal = Sweep.Refusal; break; }
+                    const BodyNaming     ToolNaming = NameSweptBody(Partition, Sweep, Step.Label);
+                    const BooleanOutcome Boolean    = ComputeBoolean(Partition, Current, Sweep.Body, BooleanOperation::Difference);
+                    if (!Boolean.Refusal.empty()) { Refusal = Boolean.Refusal; break; }
+                    Naming  = NameBooleanBody(Partition, Boolean.Body, Boolean, Naming, ToolNaming);
+                    Current = Boolean.Body;
+                }
+                if (!Refusal.empty()) { Refuse("Extrude (push in): " + Refusal); break; }
                 Store();
                 break;
             }

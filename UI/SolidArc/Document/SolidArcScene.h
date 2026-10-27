@@ -174,6 +174,12 @@ struct SolidArcDeviationMap
 //    or lands farther than its own size.
 [[nodiscard]] double MeasureSolidArcProfileSink(const SolidArcDocument& Document, const SolidArcScene& Scene, const std::string& SketchLabel);
 
+// 💡 Blender's extrude manifold reads where the material is: probes just inside the profile region, a hair above and below
+//    the sketch plane, are classified against the target body (empty: the active one). +1 the material lies along +𝑧 (an
+//    extrusion that way cuts into it), −1 along −𝑧 (a sketch drawn on a face: pushing in cuts), 0 when no side is clear
+//    (most probes on it and none on the other).
+[[nodiscard]] int MeasureSolidArcProfileMaterial(const SolidArcDocument& Document, const std::string& SketchLabel, const std::string& Target);
+
 // Section clip of a scene: the plane and the faces of the document's sheet bodies.
 [[nodiscard]] SolidArcSectionClip ComposeSolidArcSectionClip(const SolidArcScene& Scene, const SolidArcDocument& Document, std::array<double, 4> Plane);
 

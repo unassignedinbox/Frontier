@@ -120,6 +120,7 @@ namespace
     GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
+    GateTally ManifoldGate    = { "W60", "Extrude manifold (Blender's push-in, the Windows report \"i want to extrude the shape i cant\"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -329,6 +330,151 @@ void ValidatePieceBevels()
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    EXTRUDE MANIFOLD
+//------------------------------------------------------------------------------------------------------------------------
+
+// The planar face of the active body whose outward normal is Normal and which has Loops loops (an imprinted region has
+// one, the face it sits in two).
+[[nodiscard]] std::string PlanarFaceWhere(const SolidArcDocument& Part, Vector3 Normal, size_t Loops)
+{
+    for (const auto& [Slot, Name] : Part.Regeneration.Naming.Faces)
+    {
+        const FaceProfile&     Face    = Part.Partition->Faces.Resolve(Part.Partition->Faces.TokenAt(Slot));
+        const SurfaceGeometry& Surface = Part.Partition->Surfaces.Resolve(Face.Surface);
+        const auto*            Plane   = std::get_if<PlaneSurface>(&Surface);
+        if (!Plane || Face.Loops.size() != Loops) continue;
+        if (Dot(Plane->Frame.ZAxis * (Face.Sense == Orientation::Forward ? 1.0 : -1.0), Normal) > 1.0 - 1.0e-9) return Name;
+    }
+    return {};
+}
+
+// W60: sketch push-in by direction, and face push-in of an imprinted region (the reported flush polygon).
+void ValidateExtrudeManifold()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto Shoelace = [](const std::vector<Vector2>& Points)
+    {
+        double Twice = 0.0;
+        for (size_t Index = 0; Index < Points.size(); ++Index) Twice += Cross(Points[Index], Points[(Index + 1) % Points.size()]);
+        return 0.5 * std::abs(Twice);
+    };
+    const auto NewBlock = []()
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Manifold");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+    const auto OnFace = [](SolidArcDrawingKind Kind, std::vector<Vector2> Points, OrthonormalFrame Plane, bool Closed)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = Kind; Request.Points = std::move(Points); Request.ClosedCondition = Closed;
+        Request.PlaneCondition = true; Request.Plane = Plane; Request.FillCondition = true;
+        Request.CentreCondition = Kind == SolidArcDrawingKind::Circle;                       // Circles: centre, then rim
+        return Request;
+    };
+    const OrthonormalFrame Top{ { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const OrthonormalFrame Front{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };   // y = 0 face, outward −y
+    const std::vector<Vector2> Notched = { { 1.0, 0.5 }, { 2.5, 0.5 }, { 2.5, 1.0 }, { 1.8, 1.0 }, { 1.8, 1.5 }, { 1.0, 1.5 } };
+    const std::vector<Vector2> Pentagon = { { 1.0, 0.2 }, { 2.0, 0.2 }, { 2.3, 0.6 }, { 1.5, 0.85 }, { 0.7, 0.6 } };
+    const double NotchedArea = Shoelace(Notched), PentagonArea = Shoelace(Pentagon);
+
+    // ① Sketch on the top face: the material is below (−𝑧), so E in (−) is a Difference pocket, out (+) a Union.
+    {
+        SolidArcDocument Part = NewBlock();
+        Expect(DrawSolidArcSketch(Part, OnFace(SolidArcDrawingKind::Line, Notched, Top, true)));
+        const std::string Sketch   = Part.Tree.Steps.back().Label;
+        const int         Material = MeasureSolidArcProfileMaterial(Part, Sketch, {});
+        Tally(ManifoldGate, 0.0, Material == -1, Format("notched hexagon on the top face: material side %d (expect −1, below the sketch)", Material));
+        SolidArcDocument Pocket = CloneSolidArcDocument(Part);
+        const SolidArcCommandOutcome Cut = ExtrudeSolidArcSketch(Pocket, Sketch, -0.3, FeatureCombination::Difference, {}, 1.0e-3);
+        TallyVolume(ManifoldGate, Pocket, 8.0 - 0.3 * NotchedArea, Format("E in 0.3 → auto Difference started 1 mm outside: a pocket %s, %d faces (expect 13)%s", Cut.AcceptedCondition ? "cut" : "refused",
+                                                                            Pocket.Summary.Faces, Cut.Refusal.empty() ? "" : (" · " + Cut.Refusal).c_str()));
+        Tally(ManifoldGate, 0.0, Pocket.Summary.Faces == 13 && Pocket.Summary.Bodies.size() == 1, Format("pocket topology: %d faces, %d body", Pocket.Summary.Faces, int(Pocket.Summary.Bodies.size())));
+        SolidArcDocument Boss = CloneSolidArcDocument(Part);
+        Expect(ExtrudeSolidArcSketch(Boss, Sketch, 0.3, FeatureCombination::Union));
+        TallyVolume(ManifoldGate, Boss, 8.0 + 0.3 * NotchedArea, "E out 0.3 → auto Union: a boss");
+        SolidArcDocument Through = CloneSolidArcDocument(Part);
+        Expect(ExtrudeSolidArcSketch(Through, Sketch, -1.5, FeatureCombination::Difference, {}, 1.0e-3));
+        TallyVolume(ManifoldGate, Through, 8.0 - 1.0 * NotchedArea, "E in 1.5 (past the floor) → a through hole");
+    }
+
+    // ② The report: a pentagon on the front face pushed in with Union (the old default) leaves the block whole with a flush
+    //    imprinted face; that face now extrudes out, pushes in (a prism of its outline cut out) and E on the sketch cuts.
+    {
+        SolidArcDocument Part = NewBlock();
+        Expect(DrawSolidArcSketch(Part, OnFace(SolidArcDrawingKind::Line, Pentagon, Front, true)));
+        const std::string Sketch = Part.Tree.Steps.back().Label;
+        Tally(ManifoldGate, 0.0, MeasureSolidArcProfileMaterial(Part, Sketch, {}) == -1, "pentagon on the front face (outward −y): material behind it");
+        SolidArcDocument Direct = CloneSolidArcDocument(Part);
+        Expect(ExtrudeSolidArcSketch(Direct, Sketch, -0.4, FeatureCombination::Difference, {}, 1.0e-3));
+        TallyVolume(ManifoldGate, Direct, 8.0 - 0.4 * PentagonArea, "sketch E in 0.4 → pocket");
+        {
+            // Freshly drawn shapes are unfilled (walls): the push-in fills the region it cuts, one undo entry.
+            SolidArcDocument Fresh = NewBlock();
+            SolidArcDrawingRequest Unfilled = OnFace(SolidArcDrawingKind::Line, Pentagon, Front, true);
+            Unfilled.FillCondition = false;
+            Expect(DrawSolidArcSketch(Fresh, Unfilled));
+            const size_t Undo = Fresh.UndoEntries.size();
+            const SolidArcCommandOutcome Refused = ExtrudeSolidArcSketch(Fresh, Fresh.Tree.Steps.back().Label, -0.4, FeatureCombination::Difference, {}, 1.0e-3);
+            const SolidArcCommandOutcome Filled  = ExtrudeSolidArcSketch(Fresh, Fresh.Tree.Steps.back().Label, -0.4, FeatureCombination::Difference, {}, 1.0e-3, true);
+            TallyVolume(ManifoldGate, Fresh, 8.0 - 0.4 * PentagonArea, Format("unfilled pentagon: a plain Difference still refuses (%s), the push-in fills and cuts in %d undo entry",
+                                                                             Refused.AcceptedCondition ? "accepted!" : "refused", int(Fresh.UndoEntries.size() - Undo)));
+            Tally(ManifoldGate, 0.0, !Refused.AcceptedCondition && Filled.AcceptedCondition && Fresh.UndoEntries.size() == Undo + 1, "unfilled push-in: one undo entry");
+        }
+        // An inward Union merges flush (maximal faces), so the block stays whole with no seam left to pick.
+        SolidArcDocument Merged = CloneSolidArcDocument(Part);
+        Expect(ExtrudeSolidArcSketch(Merged, Sketch, -0.4, FeatureCombination::Union));
+        Tally(ManifoldGate, 0.0, std::abs(Merged.Summary.Volume - 8.0) <= 1.0e-9 && Merged.Summary.Faces == 6,
+              Format("inward Union (the old default): volume %.9f unchanged, %d faces — why the drag direction now picks the Boolean", Merged.Summary.Volume, Merged.Summary.Faces));
+        // A pentagon boss 0.25 out; its cap pushed back in: −0.1 pushes (the boss shortens), −0.6 runs past the boss base so
+        // the push refuses and the cap's outline prism is cut instead (the boss gone, a 0.35 pocket behind it); +0.2 grows it.
+        Expect(ExtrudeSolidArcSketch(Part, Sketch, 0.25, FeatureCombination::Union));
+        const std::string Cap = PlanarFaceWhere(Part, { 0.0, -1.0, 0.0 }, 1);
+        for (const double Amount : { -0.1, -0.6, -2.5, 0.2 })
+        {
+            SolidArcDocument Trial = CloneSolidArcDocument(Part);
+            Trial.Selection = {};
+            Trial.Selection.Faces = { Cap };
+            const SolidArcCommandOutcome Pushed = ChangeSolidArcSelection(Trial, FaceOperationKind::Extrude, Amount);
+            const double Expected = 8.0 + std::max(0.25 + Amount, -2.0) * PentagonArea;
+            TallyVolume(ManifoldGate, Trial, Expected, Format("boss cap %s face E %+.2f → %s%s", Cap.c_str(), Amount, Amount > 0.0 ? "a longer boss" : Amount > -0.25 ? "a shorter boss (pushed)"
+                                                            : Amount < -2.0 ? "a through hole (cut)" : "a pocket (cut)", Pushed.Refusal.empty() ? "" : (" · " + Pushed.Refusal).c_str()));
+        }
+    }
+
+    // ③ A circle boss's cap (one closed arc edge) pushed past its base cuts a round pocket; a pocket floor pushes deeper;
+    //    a whole face (the top) pushes as before.
+    {
+        SolidArcDocument Part = NewBlock();
+        Expect(DrawSolidArcSketch(Part, OnFace(SolidArcDrawingKind::Circle, { { 2.0, 1.0 }, { 2.5, 1.0 } }, Top, false)));
+        Expect(ExtrudeSolidArcSketch(Part, Part.Tree.Steps.back().Label, 0.2, FeatureCombination::Union));
+        const std::string Disc = PlanarFaceWhere(Part, { 0.0, 0.0, 1.0 }, 1);
+        SolidArcDocument Trial = CloneSolidArcDocument(Part);
+        Trial.Selection = {};
+        Trial.Selection.Faces = { Disc };
+        const SolidArcCommandOutcome Pushed = ChangeSolidArcSelection(Trial, FaceOperationKind::Extrude, -0.5);
+        TallyVolume(ManifoldGate, Trial, 8.0 - 0.3 * std::numbers::pi * 0.25, Format("disc cap %s E −0.5 → a round pocket 0.3 deep%s", Disc.c_str(), Pushed.Refusal.empty() ? "" : (" · " + Pushed.Refusal).c_str()));
+
+        SolidArcDocument Floor = NewBlock();
+        Expect(DrawSolidArcSketch(Floor, OnFace(SolidArcDrawingKind::Line, Notched, Top, true)));
+        Expect(ExtrudeSolidArcSketch(Floor, Floor.Tree.Steps.back().Label, -0.3, FeatureCombination::Difference, {}, 1.0e-3));
+        Floor.Selection = {};
+        Floor.Selection.Faces = { PlanarFaceWhere(Floor, { 0.0, 0.0, 1.0 }, 1) };
+        const SolidArcCommandOutcome Deeper = ChangeSolidArcSelection(Floor, FaceOperationKind::Extrude, -0.2);
+        TallyVolume(ManifoldGate, Floor, 8.0 - 0.5 * NotchedArea, Format("pocket floor %s E −0.2 → the pocket 0.5 deep%s", Floor.Selection.Faces.empty() ? "" : Floor.Selection.Faces.front().c_str(),
+                                                                         Deeper.Refusal.empty() ? "" : (" · " + Deeper.Refusal).c_str()));
+
+        SolidArcDocument Whole = NewBlock();
+        Whole.Selection = {};
+        Whole.Selection.Faces = { PlanarFaceWhere(Whole, { 0.0, 0.0, 1.0 }, 1) };
+        Expect(ChangeSolidArcSelection(Whole, FaceOperationKind::Extrude, -0.25));
+        TallyVolume(ManifoldGate, Whole, 6.0, "whole top face E −0.25 → pushed (the block lowers), no cut");
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -336,6 +482,12 @@ int main()
 {
     const auto Start = std::chrono::steady_clock::now();
     if (std::getenv("SOLIDARC_DOCVAL_PIECES")) { ValidatePieceBevels(); return 0; }   // Quick rerun of W59 alone
+    if (std::getenv("SOLIDARC_DOCVAL_MANIFOLD"))                                         // Quick rerun of W60 alone
+    {
+        ValidateExtrudeManifold();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return ManifoldGate.Failures ? 1 : 0;
+    }
 
     // ---- W1 single tiles against closed forms
     {
@@ -5674,7 +5826,10 @@ int main()
     // ---- W59 Bevels on polyline-knife pieces (every edge, alone and together)
     ValidatePieceBevels();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate })
+    // ---- W60 Extrude manifold (push-in by direction, imprinted regions)
+    ValidateExtrudeManifold();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -12,6 +12,7 @@
 #include "Engine/GeometryProcessing/Construction/BodyAssembly.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/ProjectedCurve.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
 #include <cmath>
@@ -967,6 +968,101 @@ std::string ThickenSheet(ModelPartition& Partition, BodyToken Body, double Thick
     if (RimFaces == 0) return "sheet has no boundary (closed sheet 🚧)";
     Method = "outer skin + inner skin (" + std::to_string(Inner.Faces.size()) + " offsets) + " + std::to_string(RimFaces) + " rim face(s)";
     return Conclude(Partition, Blueprint, "Thicken", Planned, Result, Histories, Audit);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    MANIFOLD OUTLINE
+//------------------------------------------------------------------------------------------------------------------------
+
+std::string DescribePlanarFaceProfile(const ModelPartition& Partition, BodyToken Body, FaceToken Face, SketchProfile& Profile, OrthonormalFrame& Plane,
+                                      bool& IslandCondition)
+{
+    Profile         = {};
+    IslandCondition = false;
+    BodyDescription Description;
+    if (std::string Refusal = DescribeBody(Partition, Body, Description); !Refusal.empty()) return Refusal;
+    const BodyBlueprint& Blueprint = Description.Blueprint;
+    const auto           Found     = Description.FaceIndex.find(Face.Slot);
+    if (Found == Description.FaceIndex.end()) return LabelToken("F", Face) + " is not on the body";
+    const int            Index     = Found->second;
+    const std::string    Name      = LabelToken("F", Face);
+    const BlueprintFace& Top       = Blueprint.Faces[Index];
+    const auto*          Surface   = std::get_if<PlaneSurface>(&Top.Surface);
+    if (!Surface) return Name + " is not planar";
+    const Vector3 Normal    = Surface->Frame.ZAxis * SignOfSense(Top.Sense);
+    const double  Tolerance = 1.0e-9 * Description.Scale;                                     // [len] - Coplanar distance
+    Plane = ConstructFrame(Surface->Frame.Origin, Normal, Surface->Frame.XAxis);
+    const auto Flatten = [&](Vector3 Point) { const Vector3 Offset = Point - Plane.Origin; return Vector2{ Dot(Offset, Plane.XAxis), Dot(Offset, Plane.YAxis) }; };
+
+    std::map<int, std::vector<int>> EdgeFaces;                                               // Edge → faces using it
+    for (size_t Other = 0; Other < Blueprint.Faces.size(); ++Other)
+        for (const auto& Loop : Blueprint.Faces[Other].Loops) for (const BlueprintUse& Use : Loop) EdgeFaces[Use.Edge].push_back(static_cast<int>(Other));
+    bool Island = true;
+    Profile.Scale = Description.Scale;
+    for (const auto& Loop : Top.Loops)
+    {
+        ProfileLoop Planned;
+        for (const BlueprintUse& Use : Loop)
+        {
+            const BlueprintEdge& Edge = Blueprint.Edges[Use.Edge];
+            for (int Other : EdgeFaces[Use.Edge])
+            {
+                if (Other == Index) continue;
+                const auto* Neighbour = std::get_if<PlaneSurface>(&Blueprint.Faces[Other].Surface);
+                if (!Neighbour || Dot(Neighbour->Frame.ZAxis * SignOfSense(Blueprint.Faces[Other].Sense), Normal) < 1.0 - 1.0e-12 ||
+                    std::fabs(Dot(Neighbour->Frame.Origin - Plane.Origin, Normal)) > Tolerance)
+                    Island = false;
+            }
+            const bool     Forward = Use.Sense == Orientation::Forward;
+            ProfileSegment Segment;
+            Segment.Name  = LabelToken("E", Description.Inventory.Edges[Use.Edge]);
+            Segment.Start = Flatten(Blueprint.Vertices[Forward ? Edge.Start : Edge.End].Position);
+            Segment.End   = Flatten(Blueprint.Vertices[Forward ? Edge.End : Edge.Start].Position);
+            if (std::holds_alternative<StraightLine>(Edge.Curve)) Segment.Kind = ProfileSegmentKind::Line;
+            else if (const auto* Arc = std::get_if<CircularArc>(&Edge.Curve))
+            {
+                // Plane angle θ = Phase + Turn·τ (Turn −1 when the arc's axis opposes the normal).
+                const double Turn  = Dot(Arc->Frame.ZAxis, Normal) > 0.0 ? 1.0 : -1.0;
+                const double Phase = std::atan2(Dot(Arc->Frame.XAxis, Plane.YAxis), Dot(Arc->Frame.XAxis, Plane.XAxis));
+                const double Span  = Edge.High - Edge.Low;                                   // [rad]
+                Segment.Centre = Flatten(Arc->Frame.Origin);
+                Segment.Radius = Arc->Radius;
+                if (Loop.size() == 1 && Span >= 2.0 * std::numbers::pi - 1.0e-9)
+                {
+                    Segment.Kind       = ProfileSegmentKind::Circle;
+                    Segment.StartAngle = 0.0;
+                    Segment.Sweep      = 2.0 * std::numbers::pi;
+                    Segment.Start      = Segment.End = Segment.Centre + Vector2{ Arc->Radius, 0.0 };
+                }
+                else
+                {
+                    Segment.Kind       = ProfileSegmentKind::Arc;
+                    Segment.StartAngle = Phase + Turn * (Forward ? Edge.Low : Edge.High);
+                    Segment.Sweep      = Turn * (Forward ? Span : -Span);
+                }
+            }
+            else if (const auto* Curve = std::get_if<NurbsCurve>(&Edge.Curve); Curve && Curve->Definition)
+            {
+                const NurbsCurveDefinition& Definition = *Curve->Definition;
+                const bool Rational = std::any_of(Definition.Weights.begin(), Definition.Weights.end(), [](double Weight) { return std::fabs(Weight - 1.0) > 1.0e-12; });
+                if (Rational || Definition.Period > 0.0 || Definition.Knots.empty() || std::fabs(Edge.Low - Definition.Knots.front()) > 1.0e-12 ||
+                    std::fabs(Edge.High - Definition.Knots.back()) > 1.0e-12)
+                    return Name + " is bounded by a rational, periodic or trimmed spline " + Segment.Name + " (🚧 manifold extrusion over it)";
+                Segment.Kind          = ProfileSegmentKind::Spline;
+                Segment.Spline.Degree = Definition.Degree;
+                Segment.Spline.Knots  = Definition.Knots;
+                for (const Vector3& Pole : Definition.Poles) Segment.Spline.Poles.push_back(Flatten(Pole));
+                if (!Forward) ReverseSketchSpline(Segment.Spline);
+            }
+            else return Name + " is bounded by " + Segment.Name + ", an ellipse or traced curve (🚧 manifold extrusion over it)";
+            Planned.Segments.push_back(std::move(Segment));
+        }
+        Profile.Loops.push_back(std::move(Planned));
+    }
+    if (Profile.Loops.empty()) return Name + " has no boundary";
+    ArrangeProfileLoops(Profile);
+    IslandCondition = Island;
+    return Profile.Refusal.empty() ? std::string{} : Name + ": " + Profile.Refusal;
 }
 
 } // namespace Frontier::GeometryProcessing

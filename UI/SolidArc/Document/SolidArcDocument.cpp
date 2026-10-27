@@ -1354,7 +1354,7 @@ SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std:
 }
 
 SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination,
-                                             const std::string& Target, double Start)
+                                             const std::string& Target, double Start, bool FillCondition)
 {
     const bool        FirstBodyCondition = !Document.Summary.PresentCondition && Combination != FeatureCombination::Separate;
     const std::string Caption = NextCaption(Document, "Extrude");
@@ -1370,10 +1370,12 @@ SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const s
             return std::string("nothing to ") + (Combination == FeatureCombination::Difference ? "subtract from" : "intersect with") + " yet (no body)";
         if (!FirstBodyCondition && Combination == FeatureCombination::New) return "a second body needs Union, Difference, Intersection or New body";
         if (!Target.empty() && !FindRegeneratedBody(Document, Target)) return "no body named " + Target;
-        if (Start > 0.0) return "an extrude start lies on or below the sketch plane (start ≤ 0)";
+        if (Start * Distance > 0.0) return "an extrude start lies on or behind the sketch plane (opposite the distance)";
+        // A cut of zero-thickness walls means nothing: the region it cuts is filled first (as the knife does).
+        if (FillCondition && !FirstBodyCondition && (Combination == FeatureCombination::Difference || Combination == FeatureCombination::Intersection)) Found->FillCondition = true;
         FeatureStep Step;
         Step.Kind        = FeatureStepKind::Extrude;
-        if (Start < 0.0) Step.Start = FeatureValue{ Start };
+        if (Start != 0.0) Step.Start = FeatureValue{ Start };
         Step.Label       = "Extrude#" + std::to_string(NextStepOrdinal(Document.Tree));
         Step.Profile     = SketchLabel;
         Step.Extent      = FeatureValue{ Distance };

@@ -334,6 +334,13 @@ add_test(NAME SolidArcOrientWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/OrientWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcExtrudeManifoldWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/ManifoldRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Manifold.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/ExtrudeManifoldWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcKnifeWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/KnifeRecovery.solidarc

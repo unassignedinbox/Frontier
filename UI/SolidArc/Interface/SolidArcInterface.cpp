@@ -719,7 +719,7 @@ void OpenExtrudeSession(SolidArcWorkspaceState& State)
     State.Bevel.Verb            = SolidArcSessionVerb::Extrude;
     State.Bevel.Size            = Remembered;
     WriteBevelText(State.Bevel);
-    Announce(State, "Extrude (E): move horizontally · click edits the faces · Enter / right-click applies · Esc aborts");
+    Announce(State, "Extrude (E): move horizontally · out adds, in pushes / cuts a pocket (extrude manifold) · click edits the faces · Enter / right-click applies · Esc aborts");
 }
 
 // Plasticity O on faces (offset-curve of the face boundary) · Blender I: inset the selected planar faces. The pointer sets
@@ -742,9 +742,21 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
 }
 
 // Profile extrude start: a Union pointing out of the curved face the sketch is tangent to starts sunk into it.
+// A cut into the material its sketch lies on starts a hair outside it, so the tool's cap never sits on the face it cuts
+// (coincident Boolean faces).
 [[nodiscard]] double ProfileStart(const SolidArcBevelSession& Bevel)
 {
+    constexpr double CutLead = 1.0e-3;                                                       // [len] - Cutter start outside the face
+    if (Bevel.Combination == FeatureCombination::Difference && Bevel.ProfileMaterial != 0 && Bevel.Size * Bevel.ProfileMaterial > 0.0)
+        return Bevel.Size > 0.0 ? -CutLead : CutLead;
     return Bevel.Combination == FeatureCombination::Union && Bevel.Size > 0.0 ? -Bevel.ProfileSink : 0.0;
+}
+
+// Extrude manifold: an automatic Boolean cuts when the drag runs into the material, adds otherwise.
+void ResolveProfileCombination(SolidArcBevelSession& Bevel)
+{
+    if (Bevel.Verb != SolidArcSessionVerb::Profile || !Bevel.AutoCombinationCondition || Bevel.ProfileMaterial == 0) return;
+    Bevel.Combination = Bevel.Size * Bevel.ProfileMaterial > 0.0 ? FeatureCombination::Difference : FeatureCombination::Union;
 }
 
 // The staged preview shows the session as it stands (every parameter the command reads).
@@ -866,6 +878,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
     if (!Bevel.ActiveCondition) return;
+    ResolveProfileCombination(Bevel);
     if (BevelStagedCurrent(Bevel)) return;
     // 💡 A slow preview (a blend along a cylinder–cylinder junction takes seconds) is rebuilt once the pointer rests
     //    (one size held for 0.15 s and 6 frames: a slow frame alone is no rest), not on every pixel of mouse adjust: the
@@ -895,7 +908,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     FRONTIER_TRACE_SCOPE("Preview", std::string("StageBevelPreview · ") + Verbs[std::clamp(int(Bevel.Verb), 0, 4)] + " · size " + TraceNumber(Bevel.Size));
     SolidArcPhaseClock StageClock(State.Profile, "bevel preview · stage");
     Bevel.Preview     = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
-    const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State), ProfileStart(Bevel))
+    const SolidArcCommandOutcome Outcome = Bevel.Verb == SolidArcSessionVerb::Profile ? ExtrudeSolidArcSketch(*Bevel.Preview, Bevel.ProfileLabel, Bevel.Size, Bevel.Combination, BooleanTarget(State), ProfileStart(Bevel), true)
                                          : Bevel.Verb == SolidArcSessionVerb::Extrude ? ChangeSolidArcSelection(*Bevel.Preview, FaceOperationKind::Extrude, Bevel.Size)
                                          : Bevel.Verb == SolidArcSessionVerb::Inset   ? InsetSolidArcSelection(*Bevel.Preview, Bevel.Size, Bevel.Depth)
                                          : Bevel.Verb == SolidArcSessionVerb::Corner  ? CutSolidArcSketchCorners(*Bevel.Preview, ComposeCornerRequest(Bevel))
@@ -944,6 +957,7 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
         Typed.LimitProbeCondition = false;
     }
     if (TypedSize != 0.0) Typed.Size = BoundBevelValue(State, 0, Typed.Size);
+    ResolveProfileCombination(Typed);
     if (!State.Bevel.Refusal.empty() && State.Bevel.StagedSize == State.Bevel.Size)
     {
         Announce(State, "Not applied: " + State.Bevel.Refusal + " · change the size, or Esc");
@@ -973,7 +987,7 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
     if (State.Bevel.Verb == SolidArcSessionVerb::Profile)
     {
         const SolidArcCommandOutcome Outcome = Run([&] { return ExtrudeSolidArcSketch(State.Document, State.Bevel.ProfileLabel, Size, State.Bevel.Combination, BooleanTarget(State),
-                                                                     State.Bevel.Combination == FeatureCombination::Union && Size > 0.0 ? -State.Bevel.ProfileSink : 0.0); });
+                                                                     ProfileStart(State.Bevel), true); });
         if (Outcome.AcceptedCondition) State.FocusedStep = {};
         Conclude(State, Outcome);
         return;
@@ -2208,11 +2222,15 @@ void OpenSketchExtrudeSession(SolidArcWorkspaceState& State)
     State.Bevel.ProfileLabel    = Label;
     State.Bevel.ProfileSink     = MeasureSolidArcProfileSink(State.Document, State.Scene, Label);
     State.Bevel.Combination     = State.Document.Summary.PresentCondition ? FeatureCombination::Union : FeatureCombination::New;
+    State.Bevel.ProfileMaterial = State.Document.Summary.PresentCondition ? MeasureSolidArcProfileMaterial(State.Document, Label, BooleanTarget(State)) : 0;
+    State.Bevel.AutoCombinationCondition = State.Bevel.ProfileMaterial != 0;
     State.Bevel.Size            = Remembered;
+    ResolveProfileCombination(State.Bevel);
     WriteBevelText(State.Bevel);
     const auto Caption = State.Document.Captions.find(Label);
     Announce(State, "Extrude " + (Caption != State.Document.Captions.end() ? Caption->second : Label) +
-                    " (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts");
+                    (State.Bevel.AutoCombinationCondition ? std::string(" (E, extrude manifold): drag into the body cuts a pocket, out of it adds") : std::string(" (E): move horizontally")) +
+                    " · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts");
 }
 
 [[nodiscard]] bool FocusedSketchCondition(const SolidArcWorkspaceState& State)
@@ -6492,8 +6510,21 @@ void DrawBooleanCard(SolidArcWorkspaceState& State)
     EndCard();
 }
 
+void ChooseProfileAutomatic(SolidArcWorkspaceState& State)
+{
+    if (State.Bevel.ProfileMaterial == 0)
+    {
+        Announce(State, "Extrude Boolean: auto needs the sketch on a body face (the material on one side of it)");
+        return;
+    }
+    State.Bevel.AutoCombinationCondition = true;
+    ResolveProfileCombination(State.Bevel);
+    Announce(State, "Extrude Boolean: auto — drag into the body cuts, out of it adds");
+}
+
 void ChooseProfileCombination(SolidArcWorkspaceState& State, FeatureCombination Combination)
 {
+    State.Bevel.AutoCombinationCondition = false;
     State.Bevel.Combination = Combination;
     Announce(State, std::string("Extrude Boolean: ") + (Combination == FeatureCombination::New ? "New body" : FeatureCombinationLabel(Combination)));
 }
@@ -10395,7 +10426,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                                 : State.Bevel.Verb == SolidArcSessionVerb::Inset ? FormatLength(State.Bevel.Size) + " m · depth " + FormatLength(State.Bevel.Depth)
                                 : FormatLength(State.Bevel.Size);
         const std::string Boolean = State.Bevel.Verb != SolidArcSessionVerb::Profile ? std::string{}
-                                  : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
+                                  : std::string(" · ") + (State.Bevel.AutoCombinationCondition ? (State.Bevel.Combination == FeatureCombination::Difference ? "auto cut" : "auto add")
+                                                          : State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
         const char* Unit = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? "" : " m";
         const double      Bound = BevelLimitOf(State, State.Bevel.LimitParameter);
         const std::string Limit = State.Bevel.LimitProbeCondition ? std::string(" · finding the max")
@@ -10586,7 +10618,14 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         for (int Index = 0; Index < 4; ++Index)
         {
             if (Index % 2 == 1) ImGui::SameLine();
-            if (ToggleButton(State, Choices[Index].Label, Bevel.Combination == Choices[Index].Combination, RowSpan())) ChooseProfileCombination(State, Choices[Index].Combination);
+            if (ToggleButton(State, Choices[Index].Label, !Bevel.AutoCombinationCondition && Bevel.Combination == Choices[Index].Combination, RowSpan()))
+                ChooseProfileCombination(State, Choices[Index].Combination);
+        }
+        if (Bevel.ProfileMaterial != 0)
+        {
+            // Blender's extrude manifold: the drag direction picks the Boolean (in = cut, out = add).
+            if (ToggleButton(State, "Auto: in cuts, out adds (A)###ProfileAuto", Bevel.AutoCombinationCondition, ImVec2(-1, 0))) ChooseProfileAutomatic(State);
+            RegisterWidget(State, "ProfileAuto");
         }
     }
     if (!Extrude)
@@ -12358,6 +12397,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
             if (Pressed(ImGuiKey_W)) ChooseProfileCombination(State, FeatureCombination::Difference);   // keyboard:extrude:difference
             if (Pressed(ImGuiKey_E)) ChooseProfileCombination(State, FeatureCombination::Intersection); // keyboard:extrude:intersect
             if (Pressed(ImGuiKey_R)) ChooseProfileCombination(State, FeatureCombination::Separate);     // keyboard:extrude:new-body
+            if (Pressed(ImGuiKey_A)) ChooseProfileAutomatic(State);                                     // extrude manifold: direction decides
         }
         return;
     }

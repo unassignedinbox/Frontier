@@ -370,11 +370,13 @@ struct VehicleCurveFile;
 
 // Extrude a sketch step's profile by Distance along its plane normal; the first body is always New, a later one must
 // combine (Union, Difference, Intersection). Refused (document untouched) when the profile or the Boolean refuses.
-// Start (≤ 0) sinks the start of the sweep below the sketch plane: a profile on the tangent plane of a curved face
-// (MeasureSolidArcProfileSink) then reaches into the body, so a Union closes instead of touching along a line.
+// Start (opposite the distance's sign) moves the start of the sweep behind the sketch plane: a profile on the tangent plane
+// of a curved face (MeasureSolidArcProfileSink) then reaches into the body, so a Union closes instead of touching along a
+// line; a cut pushed into the face the sketch lies on starts a hair outside it (no coincident caps). FillCondition: a
+// Difference / Intersection fills an unfilled sketch first (same undo entry) instead of refusing its walls.
 [[nodiscard]] SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Distance,
                                                            GeometryProcessing::FeatureCombination Combination, const std::string& Target = {},
-                                                           double Start = 0.0);
+                                                           double Start = 0.0, bool FillCondition = false);
 
 // Plasticity Q (command:boolean): Combine steps merging each tool body into Target (Union / Difference / Intersection);
 // the tools are consumed. One undo entry; refused (document untouched) unless every Boolean succeeds.

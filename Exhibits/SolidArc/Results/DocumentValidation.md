@@ -1,6 +1,6 @@
 # SolidArcDocumentValidation
 
-Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
+Document layer of SolidArc over the GeometryProcessing feature tree (22.56 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -34,7 +34,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
 | W29 | Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line | ≤ 10⁻⁹ · exact | 3.77e-16 | 5 | 🟢 |
 | W30 | Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path | ≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin | 5.28e-09 | 5 | 🟢 |
-| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 145 | 10 | 🟢 |
+| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 206 | 10 | 🟢 |
 | W32 | X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none | all equal | 0 | 5 | 🟢 |
 | W33 | Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals | ≤ 1e-9 relative | 3.8e-12 | 15 | 🟢 |
 | W34 | Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeSolidArcSectionClip marks sheet bodies | exact | 0 | 9 | 🟢 |
@@ -63,6 +63,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W57 | Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal | ≤ 10⁻⁹ · exact | 4.24e-16 | 6 | 🟢 |
 | W58 | Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles | exact | 8.88e-16 | 9 | 🟢 |
 | W59 | Bevels on polyline-knife pieces (the Windows report "spans Cut1 and Block1" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped | exact | 14 | 9 | 🟢 |
+| W60 | Extrude manifold (Blender's push-in, the Windows report "i want to extrude the shape i cant"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push | 1e-9 rel | 2.71e-16 | 17 | 🟢 |
 
 ## Walkthrough
 
@@ -257,15 +258,15 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W30 | refused: the path must be another sketch than the profile · choose the path: click a one-curve sketch or select a curve · Evolution#5: Evolution: path sketch Sketch#1 has 4 curves (🚧 one line, arc or spline; J joins a chain into a spline first) · Evolution#5: Evolution: the path starts along the profile plane (it must leave the plane) · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
 | W30 | save → load → save byte-equal with the Evolution (16) steps and Path = 'Sketch#2' | 0 | 🟢 |
 | W31 | 14 commands → 27 steps: 14 identical to a full replay, 14 resumed at the new step | 0 | 🟢 |
-| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 5.1 ms vs full 88.3 ms · 17.4× · identical | 17.4 | 🟢 |
-| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 70.4 ms vs full 88.3 ms · 1.3× · identical | 1.26 | 🟢 |
-| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 0.7 ms vs full 88.3 ms · 132.0× · identical | 132 | 🟢 |
-| W31 | redo: resumed at 27/27 · 1.0 ms vs full 88.3 ms · 89.5× · identical | 89.5 | 🟢 |
-| W31 | undo again: resumed at 27/27 · 1.0 ms vs full 88.3 ms · 89.5× · identical | 89.5 | 🟢 |
-| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.6 ms · 145.1× | 145 | 🟢 |
-| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 6.3 ms · source untouched | 0 | 🟢 |
+| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 7.1 ms vs full 132.8 ms · 18.8× · identical | 18.8 | 🟢 |
+| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 102.3 ms vs full 132.8 ms · 1.3× · identical | 1.3 | 🟢 |
+| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 1.0 ms vs full 132.8 ms · 132.0× · identical | 132 | 🟢 |
+| W31 | redo: resumed at 27/27 · 1.0 ms vs full 132.8 ms · 138.3× · identical | 138 | 🟢 |
+| W31 | undo again: resumed at 27/27 · 0.9 ms vs full 132.8 ms · 141.5× · identical | 142 | 🟢 |
+| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.6 ms · 205.9× | 206 | 🟢 |
+| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 8.2 ms · source untouched | 0 | 🟢 |
 | W31 | 25 undo entries, 8 with checkpoints; 10 undos identical, 8 restored every step (older ones resume at the edited step) | 0 | 🟢 |
-| W31 | bonnet (12 steps, full 2.3 ms): pole move resumed at 5 · 1.6 ms; undo restored all · 0.2 ms · identical | 12.3 | 🟢 |
+| W31 | bonnet (12 steps, full 3.2 ms): pole move resumed at 5 · 2.1 ms; undo restored all · 0.2 ms · identical | 14.2 | 🟢 |
 | W32 | ray at the hidden back-bottom edge: opaque → Extrude#2.Cap(End) · x-ray → Edge(Extrude#2.Cap(Start)\|Extrude#2.Side(Line3)) (1.600781 farther) | 0 | 🟢 |
 | W32 | ray at the visible front-top edge: opaque = x-ray → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line1)) | 0 | 🟢 |
 | W32 | full box without x-ray → 9 edges, none at the far corner (closed form 9 of 12) | 0 | 🟢 |
@@ -332,12 +333,12 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W36 | refused: "both joint origins are on Cylinder3 (pick one on each body)" · "Joint#16: Joint: Extrude#10 is already jointed to Extrude#2 (🚧 one joint per placed body)"; no undo entry | 0 | 🟢 |
 | W36 | save → load: 2 joints with equal kind / flip / values / bodies, pin and lever centroids within 0.000000; the second round trip is byte-equal (JointFlipped = true for the pin) | 0 | 🟢 |
 | W36 | 2 × undo → pin centroid (3, 1.25, 0.5) again | 7.11e-16 | 🟢 |
-| W37 | default: A3 first angle, Front Top Right Isometric, scale 1:50, 122 lines, 9 dimensions, 60 ms | 0 | 🟢 |
+| W37 | default: A3 first angle, Front Top Right Isometric, scale 1:50, 122 lines, 9 dimensions, 81 ms | 0 | 🟢 |
 | W37 | automatic 1:50 is standard and the next larger scale is refused | 0 | 🟢 |
 | W37 | dimensions in mm: 4000 1750 R250 1000 3000 1250 2500 ⌀600 ⌀1000 — span vs value × scale 1.4e-14 mm | 1.42e-14 | 🟢 |
 | W37 | metres × 1000 at 1:50 = millimetres at 20:1: 101 of 122 strokes (all but dimensions) coincide per view, worst 2.8e-14 mm (views moved ≤ 3.15 mm by the longer texts) | 2.84e-14 | 🟢 |
 | W37 | A4 third angle at 1:50: Top above / Right right of Front (first angle: below / left) | 0 | 🟢 |
-| W37 | Front Top Right Section A-A: cap 4.116587385 m² = section 4.116587385 m², 92 ms | 0 | 🟢 |
+| W37 | Front Top Right Section A-A: cap 4.116587385 m² = section 4.116587385 m², 123 ms | 0 | 🟢 |
 | W37 | Bracket.svg 113781 B + Bracket.dxf 346500 B byte-equal to the writers | 0 | 🟢 |
 | W37 | codec: no table at the defaults, A2 / third / 1:50 / section x flipped / title fields round trip (fixed point), DrawingSheet: unknown paper A5 (A4 … A0) · DrawingSheet: unknown projection angle Fifth (First / Third) | 0 | 🟢 |
 | W37 | refusals: Drawing sheet: no shown solid body · Drawing sheet: section A-A — Section: select a planar face first | 0 | 🟢 |
@@ -345,7 +346,7 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W38 | read back in mm: 2 solids, volumes = metres³ × 10⁹ (worst 3.7e-15) | 3.73e-15 | 🟢 |
 | W38 | Export… Bracket.stl: 7078 facets, watertight, 2 components, \|ΔV\| 4007959.498 mm³ ≤ sag 5.03 mm × A 39173973 mm² | 0.000373 | 🟢 |
 | W38 | selected sphere → 1 body; bracket hidden → 1 body; Sphere.stp names its PRODUCT 'Sphere' | 0 | 🟢 |
-| W38 | Import Bracket · 2 solid(s): Bracket.1 (Import#1, 11 faces) · Bracket.2 (Import#2, 1 faces) · volumes, faces, edges, vertices, genus equal (worst 1.1e-15) · 2 ms | 1.06e-15 | 🟢 |
+| W38 | Import Bracket · 2 solid(s): Bracket.1 (Import#1, 11 faces) · Bracket.2 (Import#2, 1 faces) · volumes, faces, edges, vertices, genus equal (worst 1.1e-15) · 5 ms | 1.06e-15 | 🟢 |
 | W38 | every imported face is named <Import#k>.Face(n), e.g. Import#1.Face(1) | 0 | 🟢 |
 | W38 | export → import → export: same entities, 3 of 374 numbers differ in the last digit (worst 2.8e-16, mm ↔ m scaling); the embedded text is the canonical writing | 2.76e-16 | 🟢 |
 | W38 | codec: 14953 B of TOML carry both files; save → load → save byte-equal, volumes and names equal, digests equal (and change with the text) | 0 | 🟢 |
@@ -356,14 +357,14 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W38 | refused, document unchanged: Import Absent.step: cannot open /tmp/SolidArcExchangeValidation/Absent.step · Import Damaged.step: an entity reference attribute is missing · Export: /tmp/SolidArcExchangeValidation/Bracket.obj is neither .step / .stp nor .stl · Export: no shown body to write | 0 | 🟢 |
 | W38 | codec: an Import step without its STEP text refused: Import#1 has no embedded STEP text | 0 | 🟢 |
 | W38 | undo removes the import (both bodies), redo restores it | 0 | 🟢 |
-| W39 | upright fillet r 0.01 beside the 0.4 bottom fillet: V 2.931313719315 vs 2.931313719316, 0.02 s | 3.04e-13 | 🟢 |
+| W39 | upright fillet r 0.01 beside the 0.4 bottom fillet: V 2.931313719315 vs 2.931313719316, 0.03 s | 3.04e-13 | 🟢 |
 | W39 | upright fillet r 0.02 beside the 0.4 bottom fillet: V 2.931271295989 vs 2.931271295995, 0.02 s | 2.13e-12 | 🟢 |
-| W39 | upright fillet r 0.03 beside the 0.4 bottom fillet: V 2.931198843434 vs 2.931198843437, 0.02 s | 1.01e-12 | 🟢 |
-| W39 | upright fillet r 0.05 beside the 0.4 bottom fillet: V 2.930960203404 vs 2.930960203408, 0.01 s | 1.33e-12 | 🟢 |
-| W39 | upright fillet r 0.1 beside the 0.4 bottom fillet: V 2.929786073918 vs 2.929786073916, 0.01 s | 8.53e-13 | 🟢 |
-| W39 | upright fillet r 0.1137 beside the 0.4 bottom fillet: V 2.929314047075 vs 2.929314047076, 0.01 s | 6.39e-13 | 🟢 |
-| W39 | upright fillet r 0.12 beside the 0.4 bottom fillet: V 2.929074646230 vs 2.929074646231, 0.01 s | 5.57e-13 | 🟢 |
-| W39 | upright fillet r 0.3 beside the 0.4 bottom fillet: V 2.915949804218 vs 2.915949804214, 0.01 s | 1.1e-12 | 🟢 |
+| W39 | upright fillet r 0.03 beside the 0.4 bottom fillet: V 2.931198843434 vs 2.931198843437, 0.03 s | 1.01e-12 | 🟢 |
+| W39 | upright fillet r 0.05 beside the 0.4 bottom fillet: V 2.930960203404 vs 2.930960203408, 0.03 s | 1.33e-12 | 🟢 |
+| W39 | upright fillet r 0.1 beside the 0.4 bottom fillet: V 2.929786073918 vs 2.929786073916, 0.02 s | 8.53e-13 | 🟢 |
+| W39 | upright fillet r 0.1137 beside the 0.4 bottom fillet: V 2.929314047075 vs 2.929314047076, 0.02 s | 6.39e-13 | 🟢 |
+| W39 | upright fillet r 0.12 beside the 0.4 bottom fillet: V 2.929074646230 vs 2.929074646231, 0.02 s | 5.57e-13 | 🟢 |
+| W39 | upright fillet r 0.3 beside the 0.4 bottom fillet: V 2.915949804218 vs 2.915949804214, 0.02 s | 1.1e-12 | 🟢 |
 | W39 | fillet 1.5 = the bottom cap's depth: refused, document unchanged: Blend#3: Blend: blend consumes the face next to the corner on F3 (size reaches the face width) | 0 | 🟢 |
 | W39 | chamfer 1.5 = the bottom cap's depth: refused, document unchanged: Blend#3: Blend: blend consumes the face next to the corner on F3 (size reaches the face width) | 0 | 🟢 |
 | W40 | cone r 0.5 h 1.2: V 0.314159265359 vs 0.314159265359 | 1.77e-16 | 🟢 |
@@ -459,15 +460,15 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W51 | foot of (0, 1.697, 0.3) on Extrude#2.Side(Circle1): (0.000000000000, 1.700000000000, 0.300000000000), n̂ (0.000, 1.000, 0.000) | 1.65e-16 | 🟢 |
 | W51 | profile sink 0.020799 ≥ rim depth 0.011806 (over-reach 0.009 ≤ 2 · sag 0.0073 + 1 mm) | 0.00899 | 🟢 |
 | W51 | tangent Union: line contact, V 5.485220773168 (π R² H + π r² L 5.485220773168: the cap gap stays open); sunk Union V 5.485591014531 vs + cap 5.485591014531, 5 faces, start cap gone 1 | 0 | 🟢 |
-| W51 | junction chamfer 0.02 on 1 edge: accepted, V 5.485591015 → 5.485847508 (339 ms) | 0 | 🟢 |
+| W51 | junction chamfer 0.02 on 1 edge: accepted, V 5.485591015 → 5.485847508 (557 ms) | 0 | 🟢 |
 | W51 | codec 3882 bytes byte-equal with the extrude Start, V 5.485847507916 after reload | 0 | 🟢 |
-| W51 | 4 moves (99 ms each): summary V 5.485847507916 · independent integral 5.485847507915 · before the moves 5.485847507916 | 1.27e-13 | 🟢 |
+| W51 | 4 moves (159 ms each): summary V 5.485847507916 · independent integral 5.485847507915 · before the moves 5.485847507916 | 1.27e-13 | 🟢 |
 | W51 | Construct cylinder on the −y tangent plane, start -0.020799: V 5.485591014531 (united) | 0 | 🟢 |
 | W52 | circle r 0.3 knifed 0.5 deep (Knife1 · Circle1 · Difference · depth 0.5, filled 1, 1 undo entry) (V = 7.858628) | 1.13e-16 | 🟢 |
 | W52 | the knife filled the unfilled circle in the same undo entry, one body | 0 | 🟢 |
 | W52 | rectangle 0.4 × 0.4 knifed through the 2 m cube (Knife2 · Rectangle2 · Difference · depth 2.05) (V = 7.538628) | 0 | 🟢 |
 | W52 | refused untouched: open (Extrude#8: Extrude: open profile: Line1 ends at a point joined to 0 other curves) · zero depth (the knife depth must be positive) · target (no body named Nowhere#9) · mirror (the insert placement is degenerate (zero size or mirrored)) | 0 | 🟢 |
-| W52 | library 7 built-ins in 46 ms (edge boxes: width 1, top +0.05, worst 2.6e-08): Square pocket 0.3000 · Round hole 0.5000 · Countersink 0.7227 · Slot 0.3000 · Hex pocket 0.3000 · Triangle 0.3541 · Cross 0.3000 | 2.6e-08 | 🟢 |
+| W52 | library 7 built-ins in 65 ms (edge boxes: width 1, top +0.05, worst 2.6e-08): Square pocket 0.3000 · Round hole 0.5000 · Countersink 0.7227 · Slot 0.3000 · Hex pocket 0.3000 · Triangle 0.3541 · Cross 0.3000 | 2.6e-08 | 🟢 |
 | W52 | square pocket insert, width 0.4 turned 15° (Knife3 · Square pocket · Difference) (V = 7.519428) | 1.18e-16 | 🟢 |
 | W52 | insert knife: 1 undo entry, 1 body | 0 | 🟢 |
 | W52 | the same insert raised out of the +x face (Knife4 · Square pocket · Union) (V = 7.538628) | 0 | 🟢 |
@@ -502,17 +503,17 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W54 | codec 18763 bytes byte-equal, V 7.980504422698 after reload | 0 | 🟢 |
 | W55 | the knife library holds the Hex pocket insert | 0 | 🟢 |
 | W55 | slot pocket 0.2 deep (Knife1 · Slot1 · Difference · depth 0.2), 4 opening edges (V = 25.515364) | 7.15e-12 | 🟢 |
-| W55 | slot opening fillet 0.02 (Fillet 0.02 on 4 edge(s), 1 undo entry, 425 ms) (V = 25.515133) | 1.87e-11 | 🟢 |
+| W55 | slot opening fillet 0.02 (Fillet 0.02 on 4 edge(s), 1 undo entry, 683 ms) (V = 25.515133) | 1.87e-11 | 🟢 |
 | W55 | fillet 0.02: one undo entry, volume below the pocket | 0 | 🟢 |
-| W55 | slot opening fillet 0.0519 (Fillet 0.0519 on 4 edge(s), 1 undo entry, 485 ms) (V = 25.513752) | 1.13e-11 | 🟢 |
+| W55 | slot opening fillet 0.0519 (Fillet 0.0519 on 4 edge(s), 1 undo entry, 739 ms) (V = 25.513752) | 1.13e-11 | 🟢 |
 | W55 | fillet 0.0519: one undo entry, volume below the pocket | 0 | 🟢 |
-| W55 | slot opening fillet 0.1 (Fillet 0.1 on 4 edge(s), 1 undo entry, 580 ms) (V = 25.509040) | 1.92e-11 | 🟢 |
+| W55 | slot opening fillet 0.1 (Fillet 0.1 on 4 edge(s), 1 undo entry, 881 ms) (V = 25.509040) | 1.92e-11 | 🟢 |
 | W55 | fillet 0.1: one undo entry, volume below the pocket | 0 | 🟢 |
 | W55 | undo after each fillet: the file returns byte-equal | 0 | 🟢 |
 | W55 | fillet 0.3 refused untouched: Blend#5: Blend: E19: size 0.3 is too large: the blend is wider than face F15 (its contact runs off that face) — try a smaller size | 0 | 🟢 |
 | W55 | fillet 0.8553 refused untouched: Blend#5: Blend: E19: size 0.8553 is too large: the blend is wider than face F9 (its contact runs off that face) — try a smaller size | 0 | 🟢 |
 | W55 | codec 4819 bytes byte-equal | 0 | 🟢 |
-| W55 | hex rim loop, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s), 638 ms) (V = 25.420575) | 1.41e-11 | 🟢 |
+| W55 | hex rim loop, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s), 952 ms) (V = 25.420575) | 1.41e-11 | 🟢 |
 | W55 | hex wall–wall edges together, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s)) (V = 25.462980) | 1.15e-12 | 🟢 |
 | W55 | box hex rim fillet 0.05 (Fillet 0.05 on 6 edge(s)): loss / straight-edge model = 1.0287 | 0.0213 | 🟢 |
 | W56 | grips: triangle 90.000° r 0.577350 · hex 0.000° r 0.500000 · square 45.000° r 0.707107 · countersink floor 0.242727 widths | 1.04e-06 | 🟢 |
@@ -564,6 +565,23 @@ Document layer of SolidArc over the GeometryProcessing feature tree (16.94 s).
 | W59 | polyline on a plain block: Cut (Block1 by Line1), sound | 0 | 🟢 |
 | W59 | polyline on a plain block: the 14 edge names both pieces carry, picked on either piece, blend that piece (the "spans Cut1 and Block1" report) | 14 | 🟢 |
 | W59 | polyline on a plain block: every crease edge of both pieces takes a 0.04 fillet and chamfer alone (tangent chains propagate), the uprights together: 74 tried, 0 refused, 0 smooth edges skipped | 0 | 🟢 |
+| W60 | notched hexagon on the top face: material side -1 (expect −1, below the sketch) | 0 | 🟢 |
+| W60 | E in 0.3 → auto Difference started 1 mm outside: a pocket cut, 13 faces (expect 13) (V = 7.655000) | 0 | 🟢 |
+| W60 | pocket topology: 13 faces, 1 body | 0 | 🟢 |
+| W60 | E out 0.3 → auto Union: a boss (V = 8.345000) | 0 | 🟢 |
+| W60 | E in 1.5 (past the floor) → a through hole (V = 6.850000) | 0 | 🟢 |
+| W60 | pentagon on the front face (outward −y): material behind it | 0 | 🟢 |
+| W60 | sketch E in 0.4 → pocket (V = 7.712000) | 2.3e-16 | 🟢 |
+| W60 | unfilled pentagon: a plain Difference still refuses (refused), the push-in fills and cuts in 1 undo entry (V = 7.712000) | 2.3e-16 | 🟢 |
+| W60 | unfilled push-in: one undo entry | 0 | 🟢 |
+| W60 | inward Union (the old default): volume 8.000000000 unchanged, 6 faces — why the drag direction now picks the Boolean | 0 | 🟢 |
+| W60 | boss cap Extrude#4.Cap(End) face E -0.10 → a shorter boss (pushed) (V = 8.108000) | 0 | 🟢 |
+| W60 | boss cap Extrude#4.Cap(End) face E -0.60 → a pocket (cut) (V = 7.748000) | 0 | 🟢 |
+| W60 | boss cap Extrude#4.Cap(End) face E -2.50 → a through hole (cut) (V = 6.560000) | 2.71e-16 | 🟢 |
+| W60 | boss cap Extrude#4.Cap(End) face E +0.20 → a longer boss (V = 8.324000) | 0 | 🟢 |
+| W60 | disc cap Extrude#4.Cap(End) E −0.5 → a round pocket 0.3 deep (V = 7.764381) | 1.14e-16 | 🟢 |
+| W60 | pocket floor Extrude#4.Cap(End) E −0.2 → the pocket 0.5 deep (V = 7.425000) | 1.2e-16 | 🟢 |
+| W60 | whole top face E −0.25 → pushed (the block lowers), no cut (V = 6.000000) | 0 | 🟢 |
 
 ## Saved document (TOML, first 40 lines)
 

@@ -9,11 +9,13 @@
 
 #include "UI/SolidArc/Document/SolidArcScene.h"
 
+#include "Engine/GeometryProcessing/Containment/WindingNumber.h"
 #include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 
 #include "Engine/GeometryProcessing/Geometry/CurveGeometry.h"
 #include "Engine/GeometryProcessing/Geometry/NurbsCarrier.h"
 #include "Engine/GeometryProcessing/Geometry/SurfaceGeometry.h"
+#include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 #include "Engine/GeometryProcessing/Tessellation/BodyTessellation.h"
 
@@ -472,6 +474,45 @@ double MeasureSolidArcProfileSink(const SolidArcDocument& Document, const SolidA
         Depth = std::max(Depth, Landing);
     }
     return Depth > 1.0e-7 ? Depth + std::max(Scene.Sag, 1.0e-4) : 0.0;
+}
+
+int MeasureSolidArcProfileMaterial(const SolidArcDocument& Document, const std::string& SketchLabel, const std::string& Target)
+{
+    const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(),
+                                    [&](const FeatureStep& Step) { return Step.Label == SketchLabel && Step.Kind == FeatureStepKind::Sketch; });
+    if (Found == Document.Tree.Steps.end() || !Document.Partition) return 0;
+    const std::string Key = Target.empty() ? Document.Regeneration.Active : Target;
+    const auto Body = std::find_if(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(), [&](const RegeneratedBody& Entry) { return Entry.Key == Key; });
+    if (Body == Document.Regeneration.Bodies.end() || Document.Partition->Bodies.Resolve(Body->Body).Category != BodyCategory::Solid) return 0;
+    OrthonormalFrame Plane = Found->Plane;
+    Plane.Origin           = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(Document.Tree, Found->Elevation);
+    const auto         Solved  = Document.Regeneration.Sketches.find(SketchLabel);
+    const SketchModel& Sketch  = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Found->Sketch;
+    const SketchProfile Profile = ExtractSketchProfile(Sketch);
+    if (!Profile.Refusal.empty()) return 0;
+    const BodyContainment Containment = PrepareBodyContainment(*Document.Partition, Body->Body);
+    const double Inward = 1.0e-3 * std::max(Profile.Scale, 1.0e-6);                          // [len] - Probe step into the region
+    const double Lift   = 5.0e-5;                                                            // [len] - Probe height off the plane (nearest-normal reach)
+    int Above = 0, Below = 0, Count = 0;
+    for (const ProfileLoop& Loop : Profile.Loops)
+    {
+        if (!(Loop.SignedArea > 0.0)) continue;                                              // Outer loops run counter-clockwise: the region is on the left
+        const size_t Probes = std::min<size_t>(Loop.Segments.size(), 8);
+        for (size_t Index = 0; Index < Probes; ++Index)
+        {
+            const ProfileSegment& Segment = Loop.Segments[Index * Loop.Segments.size() / Probes];
+            const Vector2 Tangent = Normalize(EvaluateProfileSegment(Segment, 0.5 + 1.0e-4) - EvaluateProfileSegment(Segment, 0.5 - 1.0e-4));
+            const Vector2 Point   = EvaluateProfileSegment(Segment, 0.5) + Vector2{ -Tangent.Y, Tangent.X } * Inward;
+            const Vector3 Spot    = Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
+            ++Count;
+            Above += ClassifySolidPoint(Containment, Spot + Plane.ZAxis * Lift).Membership == PointMembership::Inside ? 1 : 0;
+            Below += ClassifySolidPoint(Containment, Spot - Plane.ZAxis * Lift).Membership == PointMembership::Inside ? 1 : 0;
+        }
+    }
+    // A clear side only: most probes find material there and none on the other (a profile half under a body decides nothing).
+    if (Below * 2 > Count && Above == 0) return -1;
+    if (Above * 2 > Count && Below == 0) return 1;
+    return 0;
 }
 
 } // namespace Frontier::SolidArc
