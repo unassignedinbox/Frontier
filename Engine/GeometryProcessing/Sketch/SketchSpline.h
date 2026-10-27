@@ -67,7 +67,9 @@ struct SketchSplineOutcome
 //    Bezier      — one Bézier of degree n on the n + 1 control points (≤ 16 points);
 //    Nurbs       — clamped uniform B-spline of degree min(3, n) on the control points.
 //    Refused: fewer than 2 points, coincident consecutive points, a closed curve with fewer than 3 distinct points.
-[[nodiscard]] SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector<Vector2>& Points, double Scale);
+//    Knots (SketchCurve::Knots): through-point forms take one τ per point (spans [τᵢ, τᵢ₊₁], the same C¹ / C² conditions
+//    on uneven spans); NURBS takes its whole clamped knot vector (any degree ≤ 15); Bezier takes none.
+[[nodiscard]] SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector<Vector2>& Points, double Scale, const std::vector<double>& Knots = {});
 
 // The same for a Spline curve of a solved sketch (its Points, at their current positions).
 [[nodiscard]] SketchSplineOutcome ResolveSketchCurveSpline(const SketchModel& Sketch, const SketchCurve& Curve);
@@ -76,7 +78,7 @@ struct SketchSplineOutcome
 
 // Weights of a Count-slot spline of Form at τ (clamped into the domain: ±∞ gives the ends). Built by resolving the curve
 // for each unit input, so they are exactly what ResolveSketchSpline does with real points.
-[[nodiscard]] SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau);
+[[nodiscard]] SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau, const std::vector<double>& Knots = {});
 // Same point set traversed backwards: poles reversed, knots mirrored (τ′ = a + b − τ).
 void ReverseSketchSpline(SketchSplineCurve& Curve) noexcept;
 

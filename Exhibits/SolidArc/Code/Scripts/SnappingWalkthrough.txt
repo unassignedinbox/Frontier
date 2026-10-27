@@ -261,8 +261,8 @@ expect drawing-pointer-x < 0.55
 expect drawing-pointer-y > 0.70
 expect drawing-pointer-y < 0.725
 
-# ⑮ Ctrl snaps to object points: the line's midpoint (1, 0), its quarter point (0.5, 0) and, away from any point, onto
-#    the line itself (On curve: y = 0 exactly, x where the pointer is)
+# ⑮ Ctrl snaps to object points only: the line's midpoint (1, 0), its quarter point (0.5, 0); away from any point Ctrl
+#    finds nothing (never a bare spot on the line) and Alt slides onto the line itself (On curve: y = 0, x where the pointer is)
 move world 1.012 0.009 0.0 Ctrl
 frames 2
 expect snap contains Midpoint
@@ -274,6 +274,9 @@ expect snap contains Quarter
 expect snap-x ~ 0.5
 capture 295SnapQuarter
 move world 1.76 0.006 0.0 Ctrl
+frames 2
+expect snap lacks curve
+move world 1.76 0.006 0.0 Alt
 frames 2
 expect snap contains On curve
 expect snap-y ~ 0

@@ -45,6 +45,7 @@ struct SketchTrimOutcome
     std::vector<Vector2> Removed       = {};                                                 // [len] - Removed piece polyline
     std::vector<Vector2> SplitPositions = {};                                                // [len] - Split: where the curve now breaks
     std::string          Refusal       = {};                                                 // [-]   - Why nothing changed (empty: trimmed)
+    int                  InsertedPoint = -1;                                                 // [-]   - Insert point: the new defining point
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -80,6 +81,17 @@ struct SketchTrimOutcome
 //    A split line drops Length, EqualLength, Midpoint and Symmetric and copies Horizontal, Vertical, Parallel,
 //    Perpendicular and Angle to its second part; a split arc / circle copies Radius and EqualRadius.
 [[nodiscard]] SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, std::optional<Vector2> Partner = std::nullopt);
+
+// 💡 Insert point: a new defining point on curve CurveIndex nearest to Pick, the shape unchanged (to be dragged next).
+//      line / arc / circle → split there as Cut does (a circle also at the opposite point); a split line drops its
+//                            direction constraints (H, V, parallel, perpendicular, angle) so the new point moves freely;
+//      cubic spline        → a through-point at its parameter τ*: the curve keeps one τ per point (SketchCurve::Knots), and
+//                            the natural C² interpolant on the refined parameters is the same cubic pieces (exact);
+//      Hermite / Bezier / NURBS → the curve becomes a NURBS on its own knot vector with τ* inserted once (Boehm): one more
+//                            control point, the neighbours moved so the curve stays the same (exact; Hermite through-points
+//                            stay as control points on the curve, their handles become control points too).
+//    Refused: the pick on an open end, on an existing point, or where a NURBS already has a corner knot.
+[[nodiscard]] SketchTrimOutcome InsertSketchCurvePoint(const SketchModel& Sketch, int CurveIndex, Vector2 Pick);
 
 // Curve CurveIndex erased: constraints on it dropped, later curve references shifted down. Points stay.
 void EraseSketchCurve(SketchModel& Sketch, int CurveIndex);

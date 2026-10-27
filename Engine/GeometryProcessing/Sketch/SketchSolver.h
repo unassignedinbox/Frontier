@@ -111,6 +111,9 @@ struct SketchCurve
     SketchSplineForm Form        = SketchSplineForm::CubicSpline;                            // [-]   - Spline form
     std::vector<int> Points      = {};                                                       // [-]   - Spline defining point indices (closed: first = last)
     SketchLink       Link        = {};                                                       // [-]   - Circle projected from another sketch: radius held fixed
+    // 📝 Spline parameters (empty: uniform). Through-point forms (Hermite, cubic spline): one τ per defining point,
+    //    strictly increasing; NURBS: the whole clamped knot vector (degree = knots − points − 1, ≤ 15). Set by Insert point.
+    std::vector<double> Knots    = {};                                                       // [-]   - Spline parameters
 };
 
 struct SketchConstraint

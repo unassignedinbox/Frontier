@@ -103,6 +103,11 @@ namespace
                 Word(Curve.Points.size());
                 for (int Index : Curve.Points) Integer(Index);
                 Link(Curve.Link);
+                if (!Curve.Knots.empty())                                                    // Older digests stay as they were
+                {
+                    Word(Curve.Knots.size());
+                    for (double Knot : Curve.Knots) Number(Knot);
+                }
             }
             Word(Model.Constraints.size());
             for (const SketchConstraint& Constraint : Model.Constraints)

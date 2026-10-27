@@ -118,6 +118,146 @@ namespace
         return Tangents;
     }
 
+    // Hermite data on explicit parameters τᵢ (span i on [τᵢ, τᵢ₊₁], width hᵢ): Bézier handles Qᵢ ± hᵢ·Tᵢ/3.
+    [[nodiscard]] SketchSplineCurve ChainHermiteSpans(const std::vector<Vector2>& Points, const std::vector<Vector2>& Tangents, const std::vector<double>& Parameters)
+    {
+        SketchSplineCurve Curve;
+        Curve.Degree = 3;
+        const int Spans = static_cast<int>(Points.size()) - 1;
+        for (int Span = 0; Span < Spans; ++Span)
+        {
+            const double Width = Parameters[Span + 1] - Parameters[Span];                  // [-] - hᵢ
+            if (Span == 0) Curve.Poles.push_back(Points[0]);
+            Curve.Poles.push_back(Points[Span] + Tangents[Span] * (Width / 3.0));
+            Curve.Poles.push_back(Points[Span + 1] - Tangents[Span + 1] * (Width / 3.0));
+            Curve.Poles.push_back(Points[Span + 1]);
+        }
+        for (int Repeat = 0; Repeat < 4; ++Repeat) Curve.Knots.push_back(Parameters.front());
+        for (int Span = 1; Span < Spans; ++Span) for (int Repeat = 0; Repeat < 3; ++Repeat) Curve.Knots.push_back(Parameters[Span]);
+        for (int Repeat = 0; Repeat < 4; ++Repeat) Curve.Knots.push_back(Parameters.back());
+        return Curve;
+    }
+
+    // Catmull–Rom tangents on uneven spans: Tᵢ = (Qᵢ₊₁ − Qᵢ₋₁)/(τᵢ₊₁ − τᵢ₋₁), ends one-sided (closed: wrapped).
+    [[nodiscard]] std::vector<Vector2> HermiteSpanTangents(const std::vector<Vector2>& Points, const std::vector<double>& Parameters, bool Closed)
+    {
+        const int Last = static_cast<int>(Points.size()) - 1;
+        std::vector<Vector2> Tangents(Points.size());
+        for (int Index = 1; Index < Last; ++Index) Tangents[Index] = (Points[Index + 1] - Points[Index - 1]) * (1.0 / (Parameters[Index + 1] - Parameters[Index - 1]));
+        if (Closed)
+        {
+            const double Across = (Parameters[1] - Parameters[0]) + (Parameters[Last] - Parameters[Last - 1]);
+            Tangents[0] = Tangents[Last] = (Points[1] - Points[Last - 1]) * (1.0 / Across);
+        }
+        else
+        {
+            Tangents[0]    = (Points[1] - Points[0]) * (1.0 / (Parameters[1] - Parameters[0]));
+            Tangents[Last] = (Points[Last] - Points[Last - 1]) * (1.0 / (Parameters[Last] - Parameters[Last - 1]));
+        }
+        return Tangents;
+    }
+
+    // Tridiagonal solve (Thomas): Lower[i]·xᵢ₋₁ + Diagonal[i]·xᵢ + Upper[i]·xᵢ₊₁ = Right[i].
+    template <typename Value>
+    [[nodiscard]] std::vector<Value> SolveTridiagonal(const std::vector<double>& Lower, std::vector<double> Diagonal, const std::vector<double>& Upper, std::vector<Value> Right)
+    {
+        const int Size = static_cast<int>(Diagonal.size());
+        for (int Index = 1; Index < Size; ++Index)
+        {
+            const double Factor = Lower[Index] / Diagonal[Index - 1];
+            Diagonal[Index] -= Factor * Upper[Index - 1];
+            Right[Index]     = Right[Index] - Right[Index - 1] * Factor;
+        }
+        std::vector<Value> Solution(Size);
+        Solution[Size - 1] = Right[Size - 1] * (1.0 / Diagonal[Size - 1]);
+        for (int Index = Size - 2; Index >= 0; --Index) Solution[Index] = (Right[Index] - Solution[Index + 1] * Upper[Index]) * (1.0 / Diagonal[Index]);
+        return Solution;
+    }
+
+    // C² cubic interpolation tangents on uneven spans hᵢ = τᵢ₊₁ − τᵢ (C″ continuous at every interior point):
+    //    hᵢ·Tᵢ₋₁ + 2(hᵢ₋₁ + hᵢ)·Tᵢ + hᵢ₋₁·Tᵢ₊₁ = 3[hᵢ·(Qᵢ − Qᵢ₋₁)/hᵢ₋₁ + hᵢ₋₁·(Qᵢ₊₁ − Qᵢ)/hᵢ],
+    //    natural ends 2T₀ + T₁ = 3(Q₁ − Q₀)/h₀ (and mirrored), or cyclic when closed (Sherman–Morrison).
+    [[nodiscard]] std::vector<Vector2> SplineSpanTangents(const std::vector<Vector2>& Points, const std::vector<double>& Parameters, bool Closed)
+    {
+        const int Last = static_cast<int>(Points.size()) - 1;
+        if (!Closed)
+        {
+            const int Size = Last + 1;
+            std::vector<double>  Lower(Size, 0.0), Diagonal(Size, 0.0), Upper(Size, 0.0);
+            std::vector<Vector2> Right(Size);
+            const double First = Parameters[1] - Parameters[0], Final = Parameters[Last] - Parameters[Last - 1];
+            Diagonal[0] = 2.0; Upper[0] = 1.0; Right[0] = (Points[1] - Points[0]) * (3.0 / First);
+            Lower[Last] = 1.0; Diagonal[Last] = 2.0; Right[Last] = (Points[Last] - Points[Last - 1]) * (3.0 / Final);
+            for (int Index = 1; Index < Last; ++Index)
+            {
+                const double Before = Parameters[Index] - Parameters[Index - 1], After = Parameters[Index + 1] - Parameters[Index];
+                Lower[Index]    = After;
+                Diagonal[Index] = 2.0 * (Before + After);
+                Upper[Index]    = Before;
+                Right[Index]    = (Points[Index] - Points[Index - 1]) * (3.0 * After / Before) + (Points[Index + 1] - Points[Index]) * (3.0 * Before / After);
+            }
+            return SolveTridiagonal(Lower, Diagonal, Upper, Right);
+        }
+        // Closed: unknowns T₀ … T_{m−1} (m = Last distinct points; span m−1 runs from point m−1 back to point 0).
+        const int Count = Last;
+        std::vector<double> Width(Count);
+        for (int Index = 0; Index < Count; ++Index) Width[Index] = Parameters[Index + 1] - Parameters[Index];
+        auto Wrap = [&](int Index) { return ((Index % Count) + Count) % Count; };
+        std::vector<double>  Lower(Count), Diagonal(Count), Upper(Count);
+        std::vector<Vector2> Right(Count);
+        for (int Index = 0; Index < Count; ++Index)
+        {
+            const double Before = Width[Wrap(Index - 1)], After = Width[Index];
+            Lower[Index]    = After;
+            Diagonal[Index] = 2.0 * (Before + After);
+            Upper[Index]    = Before;
+            Right[Index]    = (Points[Index] - Points[Wrap(Index - 1)]) * (3.0 * After / Before) + (Points[Wrap(Index + 1)] - Points[Index]) * (3.0 * Before / After);
+        }
+        // Corners: row 0 reaches T_{m−1} (Lower[0]), row m−1 reaches T₀ (Upper[m−1]). A = B + u·vᵀ, u = (γ, 0 … 0, α),
+        // v = (1, 0 … 0, β/γ) with β = Lower[0], α = Upper[m−1], γ = −Diagonal[0].
+        const double Beta = Lower[0], Alpha = Upper[Count - 1], Gamma = -Diagonal[0];
+        std::vector<double> Band = Diagonal, Below = Lower, Above = Upper;
+        Band[0]         -= Gamma;
+        Band[Count - 1] -= Alpha * Beta / Gamma;
+        Below[0] = 0.0; Above[Count - 1] = 0.0;
+        const std::vector<Vector2> Base = SolveTridiagonal(Below, Band, Above, Right);
+        std::vector<double> Unit(Count, 0.0);
+        Unit[0] = Gamma; Unit[Count - 1] = Alpha;
+        const std::vector<double> Fix = SolveTridiagonal(Below, Band, Above, Unit);
+        const double  Denominator = 1.0 + Fix[0] + Beta * Fix[Count - 1] / Gamma;
+        const Vector2 Numerator   = Base[0] + Base[Count - 1] * (Beta / Gamma);
+        std::vector<Vector2> Tangents(Count + 1);
+        for (int Index = 0; Index < Count; ++Index) Tangents[Index] = Base[Index] - Numerator * (Fix[Index] / Denominator);
+        Tangents[Count] = Tangents[0];
+        return Tangents;
+    }
+
+    // Explicit knots of Form for Count defining points: "" when usable, else why not.
+    [[nodiscard]] std::string ScreenKnots(SketchSplineForm Form, int Count, const std::vector<double>& Knots)
+    {
+        if (Knots.empty()) return {};
+        for (double Knot : Knots) if (!std::isfinite(Knot)) return "a knot is not finite";
+        if (Form == SketchSplineForm::Hermite || Form == SketchSplineForm::CubicSpline)
+        {
+            if (static_cast<int>(Knots.size()) != Count) return std::to_string(Knots.size()) + " parameters for " + std::to_string(Count) + " points";
+            for (size_t Index = 0; Index + 1 < Knots.size(); ++Index) if (!(Knots[Index + 1] > Knots[Index])) return "parameters must increase";
+            return {};
+        }
+        if (Form != SketchSplineForm::Nurbs) return "a Bezier takes no knots";
+        const int Degree = static_cast<int>(Knots.size()) - Count - 1;
+        if (Degree < 1 || Degree > 15 || Degree > Count - 1) return std::to_string(Knots.size()) + " knots do not fit " + std::to_string(Count) + " control points";
+        for (size_t Index = 0; Index + 1 < Knots.size(); ++Index) if (Knots[Index + 1] < Knots[Index]) return "knots must not decrease";
+        for (int Index = 1; Index <= Degree; ++Index)
+            if (Knots[Index] != Knots[0] || Knots[Knots.size() - 1 - Index] != Knots.back()) return "knots must be clamped";
+        if (!(Knots.back() > Knots.front())) return "the knot span is empty";
+        for (int Index = Degree + 1, Run = 1; Index < Count; ++Index)
+        {
+            Run = Knots[Index] == Knots[Index - 1] ? Run + 1 : 1;
+            if (Run > Degree) return "an interior knot repeats more than the degree";
+        }
+        return {};
+    }
+
     // Cox–de Boor basis values and derivatives up to order 2 at Tau in span Span (Piegl & Tiller A2.3).
     void EvaluateBasis(const SketchSplineCurve& Curve, int Span, double Tau, double (&Values)[3][16])
     {
@@ -178,7 +318,7 @@ namespace
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector<Vector2>& Points, double Scale)
+SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector<Vector2>& Points, double Scale, const std::vector<double>& Knots)
 {
     SketchSplineOutcome Outcome;
     const char*  Label = SketchSplineFormLabel(Form);
@@ -198,6 +338,25 @@ SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector
         Defining.back() = Defining.front();                                                  // Exactly closed
     }
     const int Last = static_cast<int>(Defining.size()) - 1;
+    if (const std::string Screened = ScreenKnots(Form, Last + 1, Knots); !Screened.empty())
+    {
+        Outcome.Refusal = std::string(Label) + ": " + Screened;
+        return Outcome;
+    }
+    if (!Knots.empty())
+    {
+        // Explicit parameters (Insert point): uneven spans, or a NURBS on its own knot vector.
+        if (Form == SketchSplineForm::Hermite) Outcome.Curve = ChainHermiteSpans(Defining, HermiteSpanTangents(Defining, Knots, Outcome.Closed), Knots);
+        else if (Form == SketchSplineForm::CubicSpline)
+            Outcome.Curve = ChainHermiteSpans(Defining, Last == 1 ? HermiteSpanTangents(Defining, Knots, false) : SplineSpanTangents(Defining, Knots, Outcome.Closed), Knots);
+        else
+        {
+            Outcome.Curve.Degree = static_cast<int>(Knots.size()) - Last - 2;
+            Outcome.Curve.Poles  = Defining;
+            Outcome.Curve.Knots  = Knots;
+        }
+        return Outcome;
+    }
     switch (Form)
     {
     case SketchSplineForm::Hermite:     Outcome.Curve = ChainHermite(Defining, HermiteTangents(Defining, Outcome.Closed)); break;
@@ -231,7 +390,7 @@ SketchSplineOutcome ResolveSketchSpline(SketchSplineForm Form, const std::vector
     return Outcome;
 }
 
-SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau)
+SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Closed, double Tau, const std::vector<double>& Knots)
 {
     SketchSplineWeights Weights;
     if (Count < 2 || (Closed && Count < 4)) { Weights.Refusal = "too few spline points"; return Weights; }
@@ -249,7 +408,7 @@ SketchSplineWeights WeighSketchSpline(SketchSplineForm Form, int Count, bool Clo
             const bool Unit = Index == Slot || (Closed && Slot == 0 && Index == Last);
             Points[Index] = { Unit ? 1.0 : 0.0, Closed && Index == Last ? 0.0 : static_cast<double>(Index) };
         }
-        const SketchSplineOutcome Resolved = ResolveSketchSpline(Form, Points, static_cast<double>(Count));
+        const SketchSplineOutcome Resolved = ResolveSketchSpline(Form, Points, static_cast<double>(Count), Knots);
         if (!Resolved.Refusal.empty()) { Weights.Refusal = Resolved.Refusal; return Weights; }
         Weights.Low  = Resolved.Curve.Knots.front();
         Weights.High = Resolved.Curve.Knots.back();
@@ -278,7 +437,7 @@ SketchSplineOutcome ResolveSketchCurveSpline(const SketchModel& Sketch, const Sk
         Low  = { std::min(Low.X, Position.X), std::min(Low.Y, Position.Y) };
         High = { std::max(High.X, Position.X), std::max(High.Y, Position.Y) };
     }
-    SketchSplineOutcome Outcome = ResolveSketchSpline(Curve.Form, Points, Points.empty() ? 1.0 : std::max(Distance(Low, High), 1.0e-300));
+    SketchSplineOutcome Outcome = ResolveSketchSpline(Curve.Form, Points, Points.empty() ? 1.0 : std::max(Distance(Low, High), 1.0e-300), Curve.Knots);
     if (!Outcome.Refusal.empty()) Outcome.Refusal = SketchCurveName(Curve) + ": " + Outcome.Refusal;
     if (Outcome.Refusal.empty() && Curve.Points.size() > 2 && Curve.Points.front() == Curve.Points.back()) Outcome.Closed = true;
     return Outcome;

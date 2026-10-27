@@ -126,6 +126,9 @@ expect picked-point-x ~ 3
 expect picked-point-y ~ 1
 
 # ⑧ the picked point carries the gizmo (sketch plane x / y cones, xy square): drag the y cone, live, then release
+# (zoomed out a step first: in the full-height viewport the point at (3, 1) sits at the edge, its cones clipped)
+wheel world 1.5 0.5 0.0 -1
+frames 3
 expect gizmo-target == 4
 move @GizmoTranslateY
 frames 1

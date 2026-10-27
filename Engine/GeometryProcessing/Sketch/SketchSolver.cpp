@@ -344,7 +344,7 @@ namespace
     {
         WideEnd End;
         const double Infinity = std::numeric_limits<double>::infinity();
-        const SketchSplineWeights Weights = WeighSketchSpline(Spline.Form, static_cast<int>(Spline.Points.size()), ClosedSpline(Spline), StartCondition ? -Infinity : Infinity);
+        const SketchSplineWeights Weights = WeighSketchSpline(Spline.Form, static_cast<int>(Spline.Points.size()), ClosedSpline(Spline), StartCondition ? -Infinity : Infinity, Spline.Knots);
         if (!Weights.Refusal.empty()) return End;
         End.Tangent        = Context.Combination(Spline, Weights.First);
         End.Bending        = Context.Combination(Spline, Weights.Second);
@@ -414,7 +414,7 @@ namespace
                 Low  = { std::min(Low.X, Position.X), std::min(Low.Y, Position.Y) };
                 High = { std::max(High.X, Position.X), std::max(High.Y, Position.Y) };
             }
-            const SketchSplineOutcome Resolved = ResolveSketchSpline(Spline.Form, Points, std::max(Distance(Low, High), 1.0e-300));
+            const SketchSplineOutcome Resolved = ResolveSketchSpline(Spline.Form, Points, std::max(Distance(Low, High), 1.0e-300), Spline.Knots);
             if (!Resolved.Refusal.empty()) return {};
             const Vector2 Target = Context.Position(Constraint.First);
             const std::vector<double> Breaks = CollectSketchSplineBreaks(Resolved.Curve);
@@ -439,7 +439,7 @@ namespace
                 Best = Next;
                 if (Done) break;
             }
-            const SketchSplineWeights Weights = WeighSketchSpline(Spline.Form, static_cast<int>(Spline.Points.size()), Resolved.Closed || ClosedSpline(Spline), Best);
+            const SketchSplineWeights Weights = WeighSketchSpline(Spline.Form, static_cast<int>(Spline.Points.size()), Resolved.Closed || ClosedSpline(Spline), Best, Spline.Knots);
             if (!Weights.Refusal.empty()) return {};
             const Vector2 Velocity = EvaluateSketchSpline(Resolved.Curve, Best).First;
             const double  Speed    = std::sqrt(Dot(Velocity, Velocity));

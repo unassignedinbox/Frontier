@@ -63,8 +63,6 @@ constexpr float DocumentHeight  = 34.0f;                                        
 constexpr float StatusHeight    = 31.0f;                                                     // [px] - HTML .status-bar
 constexpr float FrameMargin     = 12.0f;                                                     // [px] - HTML .workspace padding 0 12
 constexpr float ColumnGap       = 10.0f;                                                     // [px] - HTML .workspace gap
-constexpr float ActionBarHeight = 47.0f;                                                     // [px] - HTML .action-bar
-constexpr float HistoryHeight   = 85.0f;                                                     // [px] - HTML .history-strip
 constexpr float OutlinerWidth   = 300.0f;                                                    // [px] - Left column
 constexpr float InspectorWidth  = 330.0f;                                                    // [px] - Right column
 constexpr float ViewportBar     = 44.0f;                                                     // [px] - Viewport toolbar
@@ -1349,8 +1347,8 @@ SolidArcSnapCatalogue& SnapCatalogue(SolidArcWorkspaceState& State, const std::v
     return *Picker.Catalogue;
 }
 
-// 📝 The snap under the pointer. Ctrl snaps to the important points (ends, midpoints, quarter points, centres, crossings,
-//    tangent / square feet), else onto the nearest line / curve / edge; Alt slides along the nearest line / curve / arc /
+// 📝 The snap under the pointer. Ctrl snaps to the important points only (ends, midpoints, quarter points, centres,
+//    crossings, tangent / square feet; never a bare spot on a curve); Alt slides along the nearest line / curve / arc /
 //    edge (the point stays on it); Ctrl+Alt offers both, the important points winning. Without either the pointer is free
 //    (Snaps › Grid: 0.1 steps). AnchorCondition (the grab point of a move)
 //    snaps without a key, faces and edges included.
@@ -1373,7 +1371,7 @@ SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFra
     Query.Filter      = State.Picker.Filter;
     if (!AnchorCondition)
     {
-        Query.Filter.CurveEnabled = AlongCondition || Query.Filter.CurveEnabled;             // Alt slides along curves; Ctrl lands on an edge where no point is
+        Query.Filter.CurveEnabled = AlongCondition && Query.Filter.CurveEnabled;             // Alt slides along curves / edges; Ctrl lands on points only
         Query.Filter.FaceEnabled  = false;
         if (!PointCondition)                                                                 // Alt alone: the curve only
         {
@@ -2354,16 +2352,24 @@ std::vector<std::string> TouchedBodies(const SolidArcDocument& Document);
 void CloseFillSession(SolidArcWorkspaceState& State);
 
 // SplitCondition: the sketch Cut tool (the curve breaks at the click, nothing comes off) instead of Trim.
-void OpenTrimSession(SolidArcWorkspaceState& State, bool SplitCondition = false)
+// InsertCondition: the Point tool (a point is added on the curve at the click, the shape stays; mode 1 so it can move).
+void OpenTrimSession(SolidArcWorkspaceState& State, bool SplitCondition = false, bool InsertCondition = false)
 {
-    const char* Tool = SplitCondition ? "Cut" : "Trim";
+    const char* Tool = InsertCondition ? "Point" : SplitCondition ? "Cut" : "Trim";
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
     if (!SketchCondition) { Announce(State, std::string(Tool) + " needs sketch curves: draw some first (Shift+A line, Shift+S curve, Shift+W circle …)"); return; }
     State.Trim = { true, false, {}, -1, {}, {}, {}, State.Trim.Commits };
-    State.Trim.SplitCondition = SplitCondition;
+    State.Trim.SplitCondition  = SplitCondition && !InsertCondition;
+    State.Trim.InsertCondition = InsertCondition;
+    if (InsertCondition) State.PickMode = SolidArcPickMode::ControlPoint;
     State.Fill.ActiveCondition = false;
     State.Drawing.ActiveCondition = false;
     State.Constrain.ActiveCondition = false;
+    if (InsertCondition)
+    {
+        Announce(State, "Point: click a curve to add a point there (the shape stays) · Ctrl snaps onto its midpoint / quarter points / crossings · drag a point to move it · Esc ends");
+        return;
+    }
     Announce(State, SplitCondition ? "Cut: click a line, arc or circle where it should break in two (a circle becomes two half arcs) · hold Ctrl to snap onto a crossing / end / midpoint: every curve through it breaks there (overlapping circles: both, at both crossings) · Esc ends"
                                    : "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
 }
@@ -2374,7 +2380,7 @@ void CloseTrimSession(SolidArcWorkspaceState& State)
     State.Trim.HoverCondition  = false;
     State.Trim.Preview.clear();
     State.Trim.Breaks.clear();
-    Announce(State, State.Trim.SplitCondition ? "Cut ended" : "Trim ended");
+    Announce(State, State.Trim.InsertCondition ? "Point ended" : State.Trim.SplitCondition ? "Cut ended" : "Trim ended");
 }
 
 // 📝 The sketch curve nearest the pointer in pixels (≤ 8 px; later steps win ties), the pointer on its plane, and the
@@ -2388,7 +2394,9 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Trim.Refusal.clear();
     Trim.PointCondition = false;
     Trim.PointCurves.clear();
+    Trim.InsertedPoint = -1;
     if (!PointerCondition) return;
+    if (Trim.InsertCondition && State.SketchPoints.HoverPoint >= 0) return;               // Point tool over a point: it drags instead
     if (Trim.SplitCondition && ImGui::GetIO().KeyCtrl)
     {
         // Cut with Ctrl: snap onto a crossing / end / midpoint / quarter point; every curve through it breaks there.
@@ -2449,18 +2457,29 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     const OrthonormalFrame Plane = ElevatedSketchPlane(State.Document, *Chosen);
     Vector2 Pick;
     if (!IntersectSketchPlane(Frame, Local, Plane, Pick)) return;
+    if (Trim.InsertCondition && ImGui::GetIO().KeyCtrl)
+    {
+        // Point tool with Ctrl: the pick lands on the snapped point (midpoint, quarter point, crossing …) of the curve.
+        const SolidArcSnap Snap = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
+        if (Snap.Kind != SolidArcSnapKind::None) Pick = { Dot(Snap.Position - Plane.Origin, Plane.XAxis), Dot(Snap.Position - Plane.Origin, Plane.YAxis) };
+    }
     Trim.Sketch         = Chosen->Label;
     Trim.Pick           = Pick;
     Trim.HoverCondition = true;
-    const SketchTrimOutcome Outcome = PreviewSolidArcTrim(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
+    const SketchTrimOutcome Outcome = PreviewSolidArcTrim(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition, Trim.InsertCondition });
     Trim.Refusal = Outcome.Refusal;
     if (!Outcome.Refusal.empty()) return;
-    if (Trim.SplitCondition)
+    if (Trim.SplitCondition || Trim.InsertCondition)
     {
-        // Cut: the whole hovered curve lights up, with a ring where it breaks (two for a circle).
+        // Cut / Point: the whole hovered curve lights up, with a ring where it breaks (two for a circle) or the new point.
         const SketchModel& Solved = State.Document.Regeneration.Sketches.at(Trim.Sketch);
         for (const Vector2& Sample : SampleSketchCurve(Solved, Solved.Curves[Trim.Curve])) Trim.Preview.push_back(PlacePlanePoint(Plane, Sample));
         for (const Vector2& Point : Outcome.SplitPositions) Trim.Breaks.push_back(PlacePlanePoint(Plane, Point));
+        if (Trim.InsertCondition && Outcome.InsertedPoint >= 0 && Outcome.InsertedPoint < int(Outcome.Sketch.Points.size()))
+        {
+            Trim.InsertedPoint = Outcome.InsertedPoint;
+            Trim.Breaks        = { PlacePlanePoint(Plane, Outcome.Sketch.Points[Outcome.InsertedPoint].Position) };
+        }
         return;
     }
     for (const Vector2& Point : Outcome.Removed) Trim.Preview.push_back(PlacePlanePoint(Plane, Point));
@@ -2469,9 +2488,10 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
 void ApplyTrim(SolidArcWorkspaceState& State)
 {
     SolidArcTrimSession& Trim = State.Trim;
-    if (!Trim.HoverCondition) { Announce(State, Trim.SplitCondition ? "Cut: no curve under the pointer" : "Trim: no curve under the pointer"); return; }
-    const SolidArcCommandOutcome Outcome = Trim.SplitCondition && Trim.PointCondition ? CutSolidArcSketchesAt(State.Document, Trim.Point)
-                                                                                      : TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
+    if (!Trim.HoverCondition) { Announce(State, Trim.InsertCondition ? "Point: no curve under the pointer" : Trim.SplitCondition ? "Cut: no curve under the pointer" : "Trim: no curve under the pointer"); return; }
+    const int                    Inserted = Trim.InsertedPoint;
+    const SolidArcCommandOutcome Outcome  = Trim.SplitCondition && Trim.PointCondition ? CutSolidArcSketchesAt(State.Document, Trim.Point)
+                                                                                       : TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition, Trim.InsertCondition });
     if (Outcome.AcceptedCondition)
     {
         // Detached trim (a later step reads the sketch): the original is hidden, the trimmed copy is the last step.
@@ -2485,6 +2505,13 @@ void ApplyTrim(SolidArcWorkspaceState& State)
         Trim.Breaks.clear();
         const bool FocusedCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == State.FocusedStep; });
         if (!FocusedCondition) State.FocusedStep = {};
+        if (Trim.InsertCondition && Inserted >= 0)
+        {
+            // The new point is picked: the gizmo or a drag moves it (a detached insert lives in the last step).
+            const bool Detached = SolidArcCurveHiddenCondition(State.Document, Trim.Sketch) && !State.Document.Tree.Steps.empty();
+            State.SketchPoints.Sketch = Detached ? State.Document.Tree.Steps.back().Label : Trim.Sketch;
+            State.SketchPoints.Points = { Inserted };
+        }
     }
     Conclude(State, Outcome);
 }
@@ -2515,8 +2542,9 @@ void DrawTrimPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
     if (!State.Trim.ActiveCondition || State.Trim.Preview.size() < 2) return;
     std::vector<ImVec2> Pixels;
     for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
-    const ImU32 Colour = State.Trim.SplitCondition ? IM_COL32(0xff, 0xc8, 0x4a, 0xff) : IM_COL32(0xff, 0x4d, 0x4d, 0xff);   // Cut amber, trim red
-    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, State.Trim.SplitCondition ? 3.0f : 4.0f);
+    const bool  Lit    = State.Trim.SplitCondition || State.Trim.InsertCondition;
+    const ImU32 Colour = State.Trim.InsertCondition ? IM_COL32(0x4a, 0xc8, 0xff, 0xff) : Lit ? IM_COL32(0xff, 0xc8, 0x4a, 0xff) : IM_COL32(0xff, 0x4d, 0x4d, 0xff);   // Point blue, cut amber, trim red
+    if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), Colour, Lit ? 3.0f : 4.0f);
     for (const Vector3& Point : State.Trim.Breaks)
     {
         ImVec2 Pixel;
@@ -4899,6 +4927,31 @@ void JoinSketches(SolidArcWorkspaceState& State)
     if (Group.size() < 2) { Announce(State, "Join (J): no other sketch touches " + CaptionOf(State.Document, Base) + " (draw from its ends, or across it)"); return; }
     const SolidArcCommandOutcome Outcome = JoinSolidArcSketches(State.Document, Group);
     if (Outcome.AcceptedCondition) State.FocusedStep = Base;
+    Conclude(State, Outcome);
+}
+
+// Rail and shapes of Flow from the picked sketches: the first pick is the rail (the curve to follow), the rest the 2D
+// shapes; FlowSwapCondition takes the last pick as the rail instead.
+[[nodiscard]] SolidArcFlowRequest FlowRequestOf(const SolidArcWorkspaceState& State)
+{
+    SolidArcFlowRequest            Request;
+    std::vector<std::string>       Picked = SelectedSketchLabels(State.Document);
+    Request.Settings = State.Flow;
+    if (Picked.size() < 2) return Request;
+    if (State.FlowSwapCondition) std::rotate(Picked.rbegin(), Picked.rbegin() + 1, Picked.rend());
+    Request.Rail   = Picked.front();
+    Request.Shapes = std::vector<std::string>(Picked.begin() + 1, Picked.end());
+    return Request;
+}
+
+// Inspector › Curves › Flow (Rhino Flow / Plasticity bend-along): the picked 2D shapes follow the rail curve, as a
+// new sketch; the originals stay (hide them with H).
+void FlowSelectedSketches(SolidArcWorkspaceState& State)
+{
+    const SolidArcFlowRequest Request = FlowRequestOf(State);
+    if (Request.Rail.empty()) { Announce(State, "Flow: pick the curve to follow first, then Shift-click the 2D shape(s) to bend along it, then press Flow"); return; }
+    const SolidArcCommandOutcome Outcome = FlowSolidArcSketches(State.Document, Request);
+    if (Outcome.AcceptedCondition && !State.Document.Tree.Steps.empty()) State.FocusedStep = State.Document.Tree.Steps.back().Label;
     Conclude(State, Outcome);
 }
 
@@ -9874,7 +9927,8 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
 {
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
     const bool SplitCondition  = State.Trim.ActiveCondition && State.Trim.SplitCondition;
-    const bool TrimCondition   = State.Trim.ActiveCondition && !State.Trim.SplitCondition;
+    const bool InsertCondition = State.Trim.ActiveCondition && State.Trim.InsertCondition;
+    const bool TrimCondition   = State.Trim.ActiveCondition && !State.Trim.SplitCondition && !State.Trim.InsertCondition;
     struct ToolButton
     {
         const char* Key;
@@ -9885,16 +9939,18 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     };
     const ToolButton Tools[] = { { "SketchSelect", IconSymbol::SolidArcSelect, "Select", !State.Trim.ActiveCondition && !State.Fill.ActiveCondition, true },
                                  { "SketchCut", IconSymbol::SolidArcCut, "Cut", SplitCondition, SketchCondition && !State.Bevel.ActiveCondition },
+                                 { "SketchInsert", IconSymbol::SolidArcPoints, "Point", InsertCondition, SketchCondition && !State.Bevel.ActiveCondition },
                                  { "SketchTrim", IconSymbol::SolidArcTrim, "Trim", TrimCondition, SketchCondition },
                                  { "SketchFill", IconSymbol::SolidArcFill, "Fill", State.Fill.ActiveCondition, SketchCondition },
                                  { "SketchKnife", IconSymbol::SolidArcSubtract, "", State.Knife.ActiveCondition, State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition } };
     SolidArcSheet Probe;
     Probe.Begin();
-    float Widths[5], Total = 2.0f + 10.0f + 4.0f * 4.0f + 1.0f + 6.0f + 4.0f;
-    for (int Index = 0; Index < 5; ++Index) Total += Widths[Index] = 24.0f + 17.0f + (*Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
+    constexpr int KnifeIndex = 5;                                                           // [-]  - The knife icon (last tool)
+    float Widths[KnifeIndex + 1], Total = 2.0f + 10.0f + 4.0f * KnifeIndex + 1.0f + 6.0f + 4.0f;
+    for (int Index = 0; Index <= KnifeIndex; ++Index) Total += Widths[Index] = 24.0f + 17.0f + (*Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
     const std::string ToolCaption = KnifeToolLabel(State);
     const float       ToolWidth   = 10.0f + std::max(Probe.Measure(ToolCaption.c_str(), 13.0f), 44.0f) + 22.0f;   // [px] - Knife tool menu (caption + chevron)
-    const float Labelled = Total - Widths[4] - 4.0f;                                       // [px] - Labelled tools stay centred; the knife icon extends right
+    const float Labelled = Total - Widths[KnifeIndex] - 4.0f;                                       // [px] - Labelled tools stay centred; the knife icon extends right
     Total += ToolWidth + 2.0f;
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
@@ -9906,7 +9962,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     const float       Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
     Sheet.Box(Bar, SolidArcInk(0x171717, 0xf5 / 255.0f), 13.0f, SolidArcInk(0x343434));
     float Cursor = Bar.MinimumX + 1.0f + 5.0f;
-    for (int Index = 0; Index < 5; ++Index)
+    for (int Index = 0; Index <= KnifeIndex; ++Index)
     {
         const ToolButton&   Tool    = Tools[Index];
         const PlaneExtent   Box     = Spanning(Cursor, Centre - 0.5f * ButtonHeight, Widths[Index], ButtonHeight);
@@ -9917,16 +9973,18 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
         Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
         if (*Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
-        if (Index == 4 && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): 2D cutters (imprint), sketch cutters, 3D cutters, boolean-library inserts, object cutters");
+        if (Index == 2 && Press.HoveredCondition) ImGui::SetTooltip("Point (V): click a curve to add a point without changing its shape, then drag it (or use the gizmo) to move it");
+        if (Index == KnifeIndex && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): 2D cutters (imprint), sketch cutters, 3D cutters, boolean-library inserts, object cutters");
         if (Index == 1 && Press.HoveredCondition) ImGui::SetTooltip("Cut: click a line, arc or circle where it should break in two · C cuts a body by the focused sketch");
         if (Press.ClickedCondition)
         {
             if (Index == 0 && State.Trim.ActiveCondition) CloseTrimSession(State);
             if (Index == 0 && State.Fill.ActiveCondition) CloseFillSession(State);
             if (Index == 1) SplitCondition ? CloseTrimSession(State) : OpenTrimSession(State, true);
-            if (Index == 2) TrimCondition ? CloseTrimSession(State) : OpenTrimSession(State);
-            if (Index == 3) State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State);
-            if (Index == 4) State.Knife.ActiveCondition ? CloseKnifeSession(State, "Knife closed") : OpenKnifeSession(State);
+            if (Index == 2) InsertCondition ? CloseTrimSession(State) : OpenTrimSession(State, false, true);
+            if (Index == 3) TrimCondition ? CloseTrimSession(State) : OpenTrimSession(State);
+            if (Index == 4) State.Fill.ActiveCondition ? CloseFillSession(State) : OpenFillSession(State);
+            if (Index == KnifeIndex) State.Knife.ActiveCondition ? CloseKnifeSession(State, "Knife closed") : OpenKnifeSession(State);
         }
         Cursor = Box.MaximumX + 4.0f;
         if (Index == 0)
@@ -9938,7 +9996,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
 
     // Knife tool menu: the cutter the knife draws or places (sketch shapes, the boolean library, picked objects).
     {
-        const bool          Enabled = Tools[4].Enabled;
+        const bool          Enabled = Tools[KnifeIndex].Enabled;
         const PlaneExtent   Box     = Spanning(Cursor - 2.0f, Centre - 0.5f * ButtonHeight, ToolWidth, ButtonHeight);
         const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, "SketchKnifeTool", Box, Enabled);
         if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
@@ -10045,110 +10103,6 @@ std::pair<IconSymbol, const char*> StepGlyph(const FeatureStep& Step)
     return { IconSymbol::SolidArcBody, "step" };
 }
 
-// 📝 HTML .action-bar (47 px: undo, redo, divider, Construction history, step count … Commands) above the .history-strip
-//    (85 px, #131313 → #171717): one 59 px tile per feature step, numbered, the newest amber, the focused one blue.
-void DrawConstructionHistory(SolidArcWorkspaceState& State, ImVec2 Position, float Width)
-{
-    SolidArcSheet Sheet;
-    Sheet.Begin();
-    const float Left = Position.x, Top = Position.y, Right = Left + Width;
-    const float Centre = Top + 0.5f * ActionBarHeight;
-    Sheet.Line(Left, Top + 0.5f, Right, Top + 0.5f, SolidArcWash(0x08));
-    const bool Editable = !State.Bevel.ActiveCondition;
-    float Cursor = Left + 13.0f;
-    if (SheetIconButton(State, Sheet, "HeaderUndo", Cursor + 12.0f, Centre, 24.0f, IconSymbol::SolidArcUndo, 15.0f, 0, Editable && !State.Document.UndoEntries.empty())) Undo(State);
-    Cursor += 24.0f + 5.0f;
-    if (SheetIconButton(State, Sheet, "HeaderRedo", Cursor + 12.0f, Centre, 24.0f, IconSymbol::SolidArcRedo, 15.0f, 0, Editable && !State.Document.RedoEntries.empty())) Redo(State);
-    Cursor += 24.0f + 5.0f + 9.0f;
-    Sheet.Surface().FillRectangle(Spanning(Cursor, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
-    Cursor += 1.0f + 9.0f + 5.0f;
-    float Caption = 0.0f;
-    const float CaptionWidth = 16.0f + Sheet.Measure("Construction history", 11.0f);
-    if (SheetTextButton(State, Sheet, "HistoryToggle", Cursor + CaptionWidth, Centre, "Construction history", IconSymbol::Count, &Caption))
-        State.HistoryFoldedEnabled = !State.HistoryFoldedEnabled;
-    Cursor += Caption + 5.0f;
-    const std::vector<FeatureStep>& Steps = State.Document.Tree.Steps;
-    Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), Compose("%d steps", int(Steps.size())).c_str());
-    {
-        const float       CommandsWidth = 16.0f + 13.0f + 8.0f + Sheet.Measure("Commands", 11.0f);
-        const float       Height        = 11.0f * SolidArcStyleTokens::FontScale + 12.0f;
-        const PlaneExtent Box           = Spanning(Right - 13.0f - CommandsWidth, Centre - 0.5f * Height, CommandsWidth, Height);
-        const SolidArcPress Press       = PressSolidArcRegion(State.Widgets, "CommandsToggle", Box);
-        const ColorQuad   Ink           = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0x969696);
-        if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x292929), 16.0f);
-        Sheet.Icon(IconSymbol::SolidArcTerminal, Box.MinimumX + 8.0f, Centre - 6.5f, 13.0f, Ink);
-        Sheet.Text(Box.MinimumX + 8.0f + 13.0f + 8.0f, Centre, 11.0f, Ink, "Commands");
-        if (Press.ClickedCondition) ImGui::OpenPopup("Commands");
-    }
-    if (ImGui::BeginPopup("Commands"))
-    {
-        ImGui::TextUnformatted("Command log");
-        ImGui::Separator();
-        const size_t First = State.Journal.size() > 40 ? State.Journal.size() - 40 : 0;
-        for (size_t Index = First; Index < State.Journal.size(); ++Index) ImGui::TextUnformatted(Legible(State.Journal[Index]).c_str());
-        if (State.Journal.empty()) ImGui::TextUnformatted("Nothing yet.");
-        ImGui::EndPopup();
-    }
-    if (State.HistoryFoldedEnabled) return;
-
-    const float StripTop = Top + ActionBarHeight;
-    ImGui::GetWindowDrawList()->AddRectFilledMultiColor(ImVec2(Left, StripTop), ImVec2(Right, StripTop + HistoryHeight), IM_COL32(0x13, 0x13, 0x13, 0xff),
-                                                        IM_COL32(0x13, 0x13, 0x13, 0xff), IM_COL32(0x17, 0x17, 0x17, 0xff), IM_COL32(0x17, 0x17, 0x17, 0xff));
-    Sheet.Line(Left, StripTop + 0.5f, Right, StripTop + 0.5f, SolidArcWash(0x09));
-    const ImVec2 Restore = ImGui::GetCursorScreenPos();
-    ImGui::SetCursorScreenPos(ImVec2(Left, StripTop + 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 6.0f);
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(1, 1, 1, 0.12f));
-    ImGui::BeginChild("HistoryStrip", ImVec2(Width, HistoryHeight - 1.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_HorizontalScrollbar);
-    SolidArcSheet Strip;
-    Strip.Begin();
-    const ImVec2 Origin = ImGui::GetCursorScreenPos();
-    float        TileLeft = Origin.x + 14.0f;
-    const float  TileTop  = Origin.y + 8.0f + 5.0f;
-    for (size_t Index = 0; Index < Steps.size(); ++Index)
-    {
-        const FeatureStep&       Step    = Steps[Index];
-        const auto [Glyph, Word]         = StepGlyph(Step);
-        const FeatureStepReport* Report  = FindReport(State.Document, Step.Label);
-        const bool               Refused = Report && Report->Status == FeatureStepStatus::Refused;
-        const bool               Newest  = Index + 1 == Steps.size();
-        const bool               Focused = State.FocusedStep == Step.Label;
-        const float              TileWidth = std::max(53.0f, Strip.Measure(Word, 8.0f) + 12.0f);
-        const PlaneExtent        Tile    = Spanning(TileLeft, TileTop, TileWidth, 59.0f);
-        const SolidArcPress      Press   = PressSolidArcRegion(State.Widgets, "Step:" + Step.Label, Tile);
-        const ColorQuad          Fill    = Newest ? SolidArcInk(0x28241e) : Press.HoveredCondition ? SolidArcInk(0x222222) : SolidArcInk(0x1a1a1a);
-        const ColorQuad          Border  = Focused ? SolidArcInk(0x4099ff) : Newest ? SolidArcInk(0xc2a16c, float(0x55) / 255.0f) : SolidArcWash(0x0a);
-        Strip.Box(Tile, Fill, 10.0f, Border);
-        Strip.Text(Tile.MinimumX + 1.0f + 5.0f, Tile.MinimumY + 1.0f + 2.0f + 0.5f * 7.0f * SolidArcStyleTokens::FontScale, 7.0f, SolidArcInk(0x666666),
-                   Compose("%02d", int(Index) + 1).c_str());
-        const float GlyphTop = Tile.MinimumY + 1.0f + 8.0f + 0.5f * (57.0f - 8.0f - (16.0f + 5.0f + 8.0f * SolidArcStyleTokens::FontScale));
-        Strip.Icon(Glyph, 0.5f * (Tile.MinimumX + Tile.MaximumX) - 8.0f, GlyphTop, 16.0f, Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0xb7a68c));
-        const float WordWidth = Strip.Measure(Word, 8.0f);
-        Strip.Text(0.5f * (Tile.MinimumX + Tile.MaximumX - WordWidth), GlyphTop + 16.0f + 5.0f + 0.5f * 8.0f * SolidArcStyleTokens::FontScale, 8.0f,
-                   Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0xa1a1a1), Word);
-        if (Press.HoveredCondition)
-        {
-            const std::string Tip = DescribeSolidArcStep(State.Document, Step) + (Refused ? "\nRefused: " + Legible(Report->Refusal) : std::string());
-            ImGui::SetTooltip("%s", Tip.c_str());
-        }
-        if (Press.ClickedCondition) State.FocusedStep = Focused ? std::string() : Step.Label;
-        TileLeft = Tile.MaximumX + 5.0f;
-    }
-    ImGui::SetCursorScreenPos(Origin);
-    ImGui::Dummy(ImVec2(TileLeft - Origin.x + 14.0f - 5.0f, 1.0f));
-    if (State.HistoryCount != Steps.size())
-    {
-        State.HistoryCount = Steps.size();
-        ImGui::SetScrollX(ImGui::GetScrollMaxX() + 1.0e6f);                                  // newest step in view
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
-    ImGui::SetCursorScreenPos(Restore);
-}
-
 void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, ImVec2 Position, ImVec2 Size)
 {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
@@ -10168,14 +10122,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     DrawConstructMenu(State, ImVec2(Position.x + 13.0f, Position.y + 48.0f));              // under the Construct chip
 
     const ImVec2 Image(Position.x, Position.y + ViewportBar);
-    const float  History = ActionBarHeight + (State.HistoryFoldedEnabled ? 0.0f : HistoryHeight);
-    const ImVec2 Extent(Size.x, std::max(8.0f, Size.y - ViewportBar - History));
+    const ImVec2 Extent(Size.x, std::max(8.0f, Size.y - ViewportBar));                     // Construction history lives in the Inspector (History tab)
     State.ViewportRect = { Image.x, Image.y, Extent.x, Extent.y };
-    {
-        const ImVec2 Cursor = ImGui::GetCursorScreenPos();
-        DrawConstructionHistory(State, ImVec2(Position.x, Image.y + Extent.y), Size.x);
-        ImGui::SetCursorScreenPos(Cursor);
-    }
     ImGui::SetCursorScreenPos(Image);
     ImGui::InvisibleButton("ViewportSurface", Extent, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
     RegisterWidget(State, "ViewportSurface");
@@ -10644,6 +10592,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
         else if (Trim.SplitCondition && Trim.PointCondition)
             DrawStatusPill(Canvas, Below, Compose("Cut · %s · click breaks %d curve(s) there", Trim.PointSource.c_str(), int(Trim.PointCurves.size())), ActiveColour);
+        else if (Trim.InsertCondition)
+            DrawStatusPill(Canvas, Below, Compose("Point · %d added%s", Trim.Commits, Trim.HoverCondition ? " · click adds a point at the ring" : " · drag a point to move it"), ActiveColour);
         else if (Trim.SplitCondition) DrawStatusPill(Canvas, Below, Compose("Cut · %d cut / trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click breaks the curve at the ring · Ctrl snaps to crossings" : " · Ctrl snaps to crossings"), ActiveColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
@@ -10735,6 +10685,8 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                               : "Click both cap centres, then the rim (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
+                       : State.Trim.ActiveCondition && State.Trim.InsertCondition
+                           ? "Point: hover a curve (blue, a ring where the point goes) · click adds the point, the shape stays · Ctrl snaps the ring onto a midpoint / quarter / crossing · drag a point (or the gizmo) to move it · Esc / V / right-click end"
                        : State.Trim.ActiveCondition && State.Trim.SplitCondition
                            ? "Cut: hover a line, arc or circle (amber, a ring where it breaks) · click splits it in two there (a circle: two half arcs) · Esc / right-click end"
                        : State.Trim.ActiveCondition
@@ -10990,6 +10942,31 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", Sketches >= 2 ? "Join the picked sketches into one (in pick order); a sketch a body still reads is kept hidden"
                                                   : "Shift-click two or more coplanar sketches to join them");
+        // Flow along curve: the first pick is the rail, the other picked sketches bend along it (a new sketch).
+        {
+            const SolidArcFlowRequest Request   = FlowRequestOf(State);
+            const bool                Possible  = !Request.Rail.empty() && !State.Bevel.ActiveCondition;
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+            if (Possible) ImGui::TextWrapped("Flow · rail %s · shape %s", Legible(CaptionOf(State.Document, Request.Rail)).c_str(),
+                                             Legible(CaptionOf(State.Document, Request.Shapes.front()) + (Request.Shapes.size() > 1 ? Compose(" +%d", int(Request.Shapes.size()) - 1) : std::string())).c_str());
+            else ImGui::TextWrapped("Flow: pick the curve to follow, then Shift-click the 2D shape(s) to bend along it");
+            ImGui::PopStyleColor();
+            if (PressButton(State, "Flow along curve###CurveFlow", RowSpan(), Possible)) FlowSelectedSketches(State);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("The shapes' long side is laid along the rail (stretched to its length, or true length), the cross direction becomes the rail's normal; a new sketch, the originals stay");
+            ImGui::SameLine();
+            if (PressButton(State, "Swap rail###FlowSwap", RowSpan(), SelectedSketchLabels(State.Document).size() >= 2)) State.FlowSwapCondition = !State.FlowSwapCondition;
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", State.FlowSwapCondition ? "The rail is the last pick: press to make it the first" : "The rail is the first pick: press to make it the last");
+            if (ToggleButton(State, "Stretch###FlowStretch", State.Flow.StretchEnabled, RowSpan(3))) State.Flow.StretchEnabled = !State.Flow.StretchEnabled;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("On: the shape's length fits the rail's · off: true length from the rail's start");
+            ImGui::SameLine();
+            if (ToggleButton(State, "Reverse###FlowReverse", State.Flow.ReverseCondition, RowSpan(3))) State.Flow.ReverseCondition = !State.Flow.ReverseCondition;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run from the rail's other end (the shape mirrors across the rail)");
+            ImGui::SameLine();
+            static const char* const AxisLabels[] = { "Axis auto###FlowAxis", "Axis x###FlowAxis", "Axis y###FlowAxis" };
+            if (ToggleButton(State, AxisLabels[std::clamp(State.Flow.AlongAxis + 1, 0, 2)], State.Flow.AlongAxis >= 0, RowSpan(3))) State.Flow.AlongAxis = State.Flow.AlongAxis >= 1 ? -1 : State.Flow.AlongAxis + 1;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("The shape direction laid along the rail: auto (the longer side) → x → y");
+        }
         // Plasticity fillet-curve: B rounds every corner of the picked sketches (or the picked mode-1 corner points).
         const bool CornerCondition = !CornerTargets(State).Sketches.empty() && !State.Bevel.ActiveCondition;
         if (PressButton(State, "Fillet  (B)###CurveFillet", RowSpan(), CornerCondition)) OpenBevelSession(State, BlendProfile::Fillet);
@@ -11454,6 +11431,79 @@ void DrawImagePlaneCard(SolidArcWorkspaceState& State)
     EndCard();
 }
 
+// 📝 Inspector › History: the construction history (one row per feature step, numbered, the newest amber, the focused
+//    one blue, refused red; a click focuses the step and its parameters show in the step card below), the step and undo
+//    counts and the command log. Moved from under the viewport so the viewport keeps its full height.
+void DrawConstructionHistory(SolidArcWorkspaceState& State)
+{
+    const std::vector<FeatureStep>& Steps = State.Document.Tree.Steps;
+    BeginCard("Construction history", Compose("%d steps", int(Steps.size())).c_str());
+    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+    ImGui::TextUnformatted(Compose("%d undo · %d redo", int(State.Document.UndoEntries.size()), int(State.Document.RedoEntries.size())).c_str());
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("Commands").x - 2.0f * ImGui::GetStyle().FramePadding.x));
+    if (PressButton(State, "Commands###CommandsToggle")) ImGui::OpenPopup("Commands");
+    if (ImGui::BeginPopup("Commands"))
+    {
+        ImGui::TextUnformatted("Command log");
+        ImGui::Separator();
+        const size_t First = State.Journal.size() > 40 ? State.Journal.size() - 40 : 0;
+        for (size_t Index = First; Index < State.Journal.size(); ++Index) ImGui::TextUnformatted(Legible(State.Journal[Index]).c_str());
+        if (State.Journal.empty()) ImGui::TextUnformatted("Nothing yet.");
+        ImGui::EndPopup();
+    }
+    if (Steps.empty())
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextWrapped("No steps yet: draw a sketch (Shift+A …) or construct a solid.");
+        ImGui::PopStyleColor();
+    }
+    SolidArcSheet Sheet;
+    const bool    SheetCondition = Sheet.Begin();
+    const float   RowHeight      = 14.0f * SolidArcStyleTokens::FontScale + 12.0f;          // [px] - One step row
+    for (size_t Index = 0; Index < Steps.size(); ++Index)
+    {
+        const FeatureStep&       Step    = Steps[Index];
+        const auto [Glyph, Word]         = StepGlyph(Step);
+        const FeatureStepReport* Report  = FindReport(State.Document, Step.Label);
+        const bool               Refused = Report && Report->Status == FeatureStepStatus::Refused;
+        const bool               Newest  = Index + 1 == Steps.size();
+        const bool               Focused = State.FocusedStep == Step.Label;
+        const std::string        Key     = "###Step:" + Step.Label;
+        ImGui::PushStyleColor(ImGuiCol_Header, Tint(IM_COL32(0x1d, 0x33, 0x52, 0xff)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Tint(Focused ? IM_COL32(0x24, 0x3d, 0x60, 0xff) : IM_COL32(0x26, 0x26, 0x26, 0xff)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, Tint(IM_COL32(0x2a, 0x46, 0x6e, 0xff)));
+        const bool Clicked = ImGui::Selectable(Key.c_str(), Focused, ImGuiSelectableFlags_None, ImVec2(0.0f, RowHeight));
+        ImGui::PopStyleColor(3);
+        RegisterWidget(State, Key.c_str());
+        const ImVec2 Low = ImGui::GetItemRectMin(), High = ImGui::GetItemRectMax();
+        const float  Centre = 0.5f * (Low.y + High.y);
+        if (SheetCondition)
+        {
+            if (Newest && !Focused) Sheet.Surface().FillRectangle(Spanning(Low.x, Low.y + 3.0f, 2.0f, High.y - Low.y - 6.0f), SolidArcInk(0xc2a16c));
+            Sheet.Text(Low.x + 8.0f, Centre, 9.0f, SolidArcInk(0x666666), Compose("%02d", int(Index) + 1).c_str());
+            Sheet.Icon(Glyph, Low.x + 30.0f, Centre - 7.0f, 14.0f, Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0xb7a68c));
+            const ColorQuad Ink = Refused ? SolidArcInk(0xff6b6b) : Focused ? SolidArcInk(0xffffff) : SolidArcInk(0xcfcfcf);
+            Sheet.Text(Low.x + 52.0f, Centre, 11.0f, Ink, Legible(CaptionOf(State.Document, Step.Label)).c_str());
+            const float WordWidth = Sheet.Measure(Word, 9.0f);
+            Sheet.Text(High.x - 8.0f - WordWidth, Centre, 9.0f, Refused ? SolidArcInk(0xff6b6b) : SolidArcInk(0x858585), Word);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            const std::string Tip = DescribeSolidArcStep(State.Document, Step) + (Refused ? "\nRefused: " + Legible(Report->Refusal) : std::string());
+            ImGui::SetTooltip("%s", Tip.c_str());
+        }
+        if (Clicked) State.FocusedStep = Focused ? std::string() : Step.Label;
+        if (Newest && State.HistoryCount != Steps.size())
+        {
+            State.HistoryCount = Steps.size();
+            ImGui::SetScrollHereY(1.0f);                                                     // newest step in view
+        }
+    }
+    EndCard();
+}
+
 void DrawHistoryCard(SolidArcWorkspaceState& State)
 {
     BeginCard("History");
@@ -11610,7 +11660,7 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     const Choice Choices[] = { { "Endpoint###SnapEndpoint", &Filter.EndpointEnabled }, { "Midpoint###SnapMidpoint", &Filter.MidpointEnabled },
                                { "Quarter###SnapQuarter", &Filter.QuarterEnabled }, { "Centre###SnapCentre", &Filter.CentreEnabled },
                                { "Intersection###SnapIntersection", &Filter.IntersectionEnabled }, { "Tangent###SnapTangent", &Filter.TangentEnabled },
-                               { "Perpendicular###SnapPerpendicular", &Filter.PerpendicularEnabled }, { "On curve / edge###SnapCurve", &Filter.CurveEnabled },
+                               { "Perpendicular###SnapPerpendicular", &Filter.PerpendicularEnabled }, { "Along curve / edge (Alt)###SnapCurve", &Filter.CurveEnabled },
                                { "On face (Move)###SnapFace", &Filter.FaceEnabled } };
     ImGui::BeginDisabled(!Picker.Enabled);
     for (int Index = 0; Index < 9; ++Index)
@@ -11748,6 +11798,7 @@ void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
     else if (Key == "Revolve") OpenSweepSession(State, SolidArcSweepVerb::Revolve);
     else if (Key == "Loft") LoftSelectedCurves(State);
     else if (Key == "Join") JoinSketches(State);
+    else if (Key == "Flow") FlowSelectedSketches(State);
     else if (Key == "FillSketch") ToggleSketchFill(State);
     else if (Key == "FlipNormals") FlipPickedNormals(State);
     else if (Key == "Move") OpenTransformSession(State, SolidArcTransformVerb::Move, false);
@@ -12005,19 +12056,23 @@ void DrawInspectorTabs(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
     Sheet.Box(Bar, SolidArcInk(0x070707), 30.0f, SolidArcWash(0x08));
     const struct { SolidArcInspectorTab Tab; const char* Label; const char* Key; } Tabs[] = {
         { SolidArcInspectorTab::Geometry, "Geometry", "InspectorGeometry" }, { SolidArcInspectorTab::Transform, "Transform", "InspectorTransform" },
-        { SolidArcInspectorTab::Topology, "Topology", "InspectorTopology" } };
-    float Widths[3], Total = 0.0f;
-    for (int Index = 0; Index < 3; ++Index) Total += Widths[Index] = 32.0f + Sheet.Measure(Tabs[Index].Label, 10.0f);
-    const float Gap    = (Bar.Width() - 2.0f - 6.0f - Total) / 2.0f;                         // justify-content: space-between
+        { SolidArcInspectorTab::Topology, "Topology", "InspectorTopology" }, { SolidArcInspectorTab::History, "History", "InspectorHistory" } };
+    constexpr int TabCount = 4;
+    float Words = 0.0f;
+    for (int Index = 0; Index < TabCount; ++Index) Words += Sheet.Measure(Tabs[Index].Label, 10.0f);
+    const float Padding = std::clamp((Bar.Width() - 2.0f - 6.0f - Words - 4.0f * float(TabCount - 1)) / float(TabCount), 12.0f, 32.0f);   // [px] - 32 when it fits
+    float Widths[TabCount], Total = 0.0f;
+    for (int Index = 0; Index < TabCount; ++Index) Total += Widths[Index] = Padding + Sheet.Measure(Tabs[Index].Label, 10.0f);
+    const float Gap    = (Bar.Width() - 2.0f - 6.0f - Total) / float(TabCount - 1);           // justify-content: space-between
     float       Cursor = Bar.MinimumX + 1.0f + 3.0f;
     const float Height = 10.0f * SolidArcStyleTokens::FontScale + 12.0f;
-    for (int Index = 0; Index < 3; ++Index)
+    for (int Index = 0; Index < TabCount; ++Index)
     {
         const PlaneExtent   Button = Spanning(Cursor, 0.5f * (Bar.MinimumY + Bar.MaximumY) - 0.5f * Height, Widths[Index], Height);
         const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, Tabs[Index].Key, Button);
         const bool          Active = State.InspectorTab == Tabs[Index].Tab;
         if (Active || Press.HoveredCondition) Sheet.Box(Button, SolidArcInk(0x292929), 30.0f);
-        Sheet.Text(Button.MinimumX + 16.0f, 0.5f * (Button.MinimumY + Button.MaximumY), 10.0f, SolidArcInk(Active ? 0xeeeeee : Press.HoveredCondition ? 0xffffff : 0x858585),
+        Sheet.Text(Button.MinimumX + 0.5f * Padding, 0.5f * (Button.MinimumY + Button.MaximumY), 10.0f, SolidArcInk(Active ? 0xeeeeee : Press.HoveredCondition ? 0xffffff : 0x858585),
                    Tabs[Index].Label);
         if (Press.ClickedCondition) State.InspectorTab = Tabs[Index].Tab;
         Cursor += Widths[Index] + Gap;
@@ -12120,6 +12175,7 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
     }
     if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
     if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Join", IconSymbol::SolidArcLink, "Join · J" });
+    if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Flow", IconSymbol::SolidArcCurve, "Flow along curve" });
     if (!Selection.Bodies.empty())
     {
         Operations.push_back({ "Move", IconSymbol::SolidArcMove, "Move · G" });
@@ -12257,6 +12313,12 @@ void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     Sheet.Text(Left + 19.0f, HeadingCentre, 18.0f, SolidArcInk(0xeeeeee), "Inspector", SolidArcWeight::Light, -0.6f);
     if (SheetIconButton(State, Sheet, "InspectorInspect", Right - 19.0f - 14.0f, HeadingCentre, 28.0f, IconSymbol::SolidArcInspect, 17.0f))
         State.InspectorTab = SolidArcInspectorTab::Topology;
+    {
+        // Undo / redo (moved here from the viewport's construction-history bar).
+        const bool Editable = !State.Bevel.ActiveCondition;
+        if (SheetIconButton(State, Sheet, "HeaderRedo", Right - 19.0f - 14.0f - 14.0f - 6.0f - 12.0f, HeadingCentre, 24.0f, IconSymbol::SolidArcRedo, 15.0f, 0, Editable && !State.Document.RedoEntries.empty())) Redo(State);
+        if (SheetIconButton(State, Sheet, "HeaderUndo", Right - 19.0f - 14.0f - 14.0f - 6.0f - 24.0f - 4.0f - 12.0f, HeadingCentre, 24.0f, IconSymbol::SolidArcUndo, 15.0f, 0, Editable && !State.Document.UndoEntries.empty())) Undo(State);
+    }
     // .panel-footer — 32 px, #ffffff0a top border, padding 8 13, 9 px #737373, link glyph 11, gap 6.
     const float FooterTop = Panel.MaximumY - 1.0f - 32.0f;
     Sheet.Line(Left, FooterTop + 0.5f, Right, FooterTop + 0.5f, SolidArcWash(0x0a));
@@ -12309,6 +12371,10 @@ void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
         DrawBodyCard(State);
         DrawPickedCard(State);
         DrawHistoryCard(State);
+        break;
+    case SolidArcInspectorTab::History:
+        DrawConstructionHistory(State);
+        DrawStepCard(State);
         break;
     }
     ImGui::PopFont();
@@ -12704,7 +12770,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     // body[command='trim'] — click pieces to remove · Enter / right-click / Esc / T ends (the view keys above stay live).
     if (State.Trim.ActiveCondition)
     {
-        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_T)) CloseTrimSession(State);
+        if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_T) || (State.Trim.InsertCondition && Pressed(ImGuiKey_V))) CloseTrimSession(State);
         return;
     }
 
@@ -12808,6 +12874,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     if (Pressed(ImGuiKey_H)) ChangeVisibility(State, SolidArcVisibilityVerb::HideSelected);         // hide-selected
     if (Pressed(ImGuiKey_C)) ApplyCut(State);                                              // command:cut
     if (Pressed(ImGuiKey_T)) OpenTrimSession(State);                                       // command:trim
+    if (Pressed(ImGuiKey_V)) OpenTrimSession(State, false, true);                          // point on curve (v is free in Plasticity's global map)
     if (Pressed(ImGuiKey_F)) ToggleSketchFill(State);                                      // fill on / off (f is free in Plasticity's map)
     if (Pressed(ImGuiKey_K)) OpenConstraintSession(State);                                 // constrain (K is free in Plasticity's map)
     // I: inset with faces selected (Blender habit), else measure (I is free in Plasticity's map).

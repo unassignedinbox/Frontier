@@ -93,6 +93,12 @@ constexpr int64_t FormatVersion = 1;                                            
             Entry.insert("Form", static_cast<int64_t>(Curve.Form));
             Entry.insert("FormLabel", SketchSplineFormLabel(Curve.Form));
             Entry.insert("Points", std::move(Indices));
+            if (!Curve.Knots.empty())
+            {
+                toml::array Knots;
+                for (double Knot : Curve.Knots) Knots.push_back(Knot);
+                Entry.insert("Knots", std::move(Knots));
+            }
         }
         if (!Curve.Link.Sketch.empty())
         {
@@ -366,6 +372,7 @@ constexpr int64_t FormatVersion = 1;                                            
             Decoded.Construction = Curve["Construction"].value_or(false);
             Decoded.Form         = static_cast<SketchSplineForm>(Curve["Form"].value_or(int64_t{ 4 }));
             if (const toml::array* Indices = Curve["Points"].as_array()) for (const toml::node& Index : *Indices) Decoded.Points.push_back(static_cast<int>(Index.value_or(int64_t{ -1 })));
+            if (const toml::array* Knots = Curve["Knots"].as_array()) for (const toml::node& Knot : *Knots) Decoded.Knots.push_back(Knot.value_or(0.0));
             Decoded.Link.Sketch  = Curve["LinkSketch"].value_or(std::string{});
             Decoded.Link.Index   = static_cast<int>(Curve["LinkIndex"].value_or(int64_t{ -1 }));
             Sketch.Curves.push_back(Decoded);

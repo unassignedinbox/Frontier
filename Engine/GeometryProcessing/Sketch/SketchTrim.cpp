@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
+#include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
 #include <array>
@@ -488,6 +489,146 @@ SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Ve
     CopyShapeConstraints(Edited, CurveIndex, static_cast<int>(Edited.Curves.size()) - 1, Kind);
     Outcome.SplitPositions = { Position };
     Outcome.Pieces         = 2;
+    return Outcome;
+}
+
+
+SketchTrimOutcome InsertSketchCurvePoint(const SketchModel& Sketch, int CurveIndex, Vector2 Pick)
+{
+    constexpr double PointGuard = 1.0e-3;                                                    // [-] - Of a span: no new point this close to one
+    SketchTrimOutcome Outcome;
+    Outcome.Sketch = Sketch;
+    if (CurveIndex < 0 || CurveIndex >= static_cast<int>(Sketch.Curves.size())) { Outcome.Refusal = "the sketch has no curve " + std::to_string(CurveIndex); return Outcome; }
+    const SketchCurve& Original = Sketch.Curves[CurveIndex];
+    const std::string  Name     = SketchCurveName(Original);
+
+    // ① lines, arcs, circles: Cut's split, the line's direction constraints let go.
+    if (Original.Kind != SketchCurveKind::Spline)
+    {
+        const size_t PointsBefore = Sketch.Points.size();
+        Outcome = SplitSketchCurve(Sketch, CurveIndex, Pick);
+        if (!Outcome.Refusal.empty())
+        {
+            if (Outcome.Refusal.find("on an end") != std::string::npos) Outcome.Refusal = "the pointer is on an end of " + Name + ": there is a point already";
+            return Outcome;
+        }
+        Outcome.InsertedPoint = static_cast<int>(PointsBefore);                              // The first point the split appended
+        if (Original.Kind == SketchCurveKind::Line)
+        {
+            const int Second = static_cast<int>(Outcome.Sketch.Curves.size()) - 1;
+            std::erase_if(Outcome.Sketch.Constraints, [&](const SketchConstraint& Constraint)
+            {
+                using Kind = SketchConstraintKind;
+                const bool Direction = Constraint.Kind == Kind::Horizontal || Constraint.Kind == Kind::Vertical || Constraint.Kind == Kind::Parallel
+                                    || Constraint.Kind == Kind::Perpendicular || Constraint.Kind == Kind::Angle;
+                const bool Touches   = Constraint.First == CurveIndex || Constraint.First == Second || Constraint.Second == CurveIndex || Constraint.Second == Second;
+                return Direction && Touches;
+            });
+        }
+        return Outcome;
+    }
+
+    // ② splines: τ* nearest to Pick on the exact B-spline (span samples, then Newton on (C − P)·C′ = 0).
+    const SketchSplineOutcome Resolved = ResolveSketchCurveSpline(Sketch, Original);
+    if (!Resolved.Refusal.empty()) { Outcome.Refusal = Resolved.Refusal; return Outcome; }
+    const SketchSplineCurve&  Carrier = Resolved.Curve;
+    const std::vector<double> Breaks  = CollectSketchSplineBreaks(Carrier);
+    double Best = Breaks.front(), BestGap = std::numeric_limits<double>::infinity();
+    for (size_t Piece = 0; Piece + 1 < Breaks.size(); ++Piece)
+        for (int Sample = 0; Sample <= 32; ++Sample)
+        {
+            const double Tau = Breaks[Piece] + (Breaks[Piece + 1] - Breaks[Piece]) * Sample / 32.0;
+            const double Gap = Distance(EvaluateSketchSpline(Carrier, Tau).Position, Pick);
+            if (Gap < BestGap) { BestGap = Gap; Best = Tau; }
+        }
+    for (int Step = 0; Step < 12; ++Step)
+    {
+        const SketchSplineDerivatives At = EvaluateSketchSpline(Carrier, Best);
+        const Vector2 Offset = At.Position - Pick;
+        const double  Slope  = Dot(At.First, At.First) + Dot(Offset, At.Second);
+        if (!(std::fabs(Slope) > 0.0)) break;
+        Best = std::clamp(Best - Dot(Offset, At.First) / Slope, Breaks.front(), Breaks.back());
+    }
+    const Vector2 Position = EvaluateSketchSpline(Carrier, Best).Position;
+    SketchModel&  Edited   = Outcome.Sketch;
+    SketchCurve&  Curve    = Edited.Curves[CurveIndex];
+    const int     Count    = static_cast<int>(Curve.Points.size());
+
+    if (Original.Form == SketchSplineForm::CubicSpline)
+    {
+        // ③ cubic spline: a through-point at τ*, its parameter kept beside the others.
+        std::vector<double> Parameters = Curve.Knots;
+        if (Parameters.empty()) for (int Index = 0; Index < Count; ++Index) Parameters.push_back(static_cast<double>(Index));
+        int Span = 0;
+        while (Span + 2 < Count && Parameters[Span + 1] <= Best) ++Span;
+        const double Width = Parameters[Span + 1] - Parameters[Span];
+        if (Best - Parameters[Span] <= PointGuard * Width || Parameters[Span + 1] - Best <= PointGuard * Width)
+        {
+            Outcome.Refusal = "there is a point of " + Name + " there already";
+            return Outcome;
+        }
+        const int Point = AppendSketchPoint(Edited, Position);
+        Edited.Curves[CurveIndex].Points.insert(Edited.Curves[CurveIndex].Points.begin() + Span + 1, Point);
+        Parameters.insert(Parameters.begin() + Span + 1, Best);
+        Edited.Curves[CurveIndex].Knots = std::move(Parameters);
+        Outcome.InsertedPoint  = Point;
+        Outcome.SplitPositions = { Position };
+        Outcome.Pieces         = 1;
+        return Outcome;
+    }
+
+    // ④ Hermite / Bezier / NURBS: control points + knots of the exact B-spline (Hermite: its handles become points),
+    //    then one Boehm insertion (Piegl & Tiller A5.1, r = 1) of τ*.
+    const int Degree = Carrier.Degree;
+    std::vector<int> Slots;                                                                  // Sketch point per carrier pole
+    if (Original.Form == SketchSplineForm::Hermite)
+    {
+        for (size_t Pole = 0; Pole < Carrier.Poles.size(); ++Pole)
+            Slots.push_back(Pole % 3 == 0 ? Curve.Points[Pole / 3] : AppendSketchPoint(Edited, Carrier.Poles[Pole]));
+    }
+    else Slots = Curve.Points;
+    const std::vector<double>& Knots = Carrier.Knots;
+    const int Last = static_cast<int>(Carrier.Poles.size()) - 1;                            // n
+    int Span = Degree;                                                                       // k: Knots[k] ≤ τ* < Knots[k + 1]
+    while (Span < Last && Knots[Span + 1] <= Best) ++Span;
+    int Multiplicity = 0;
+    for (double Knot : Knots) if (std::fabs(Knot - Best) <= 1.0e-12 * std::max(1.0, std::fabs(Knots.back() - Knots.front()))) ++Multiplicity;
+    if (Multiplicity > 0) Best = Knots[Span];
+    const double Range = Knots.back() - Knots.front();
+    if (Best - Knots.front() <= PointGuard * Range * 1.0e-2 || Knots.back() - Best <= PointGuard * Range * 1.0e-2)
+    {
+        Outcome.Refusal = "the pointer is on an end of " + Name + ": there is a point already";
+        return Outcome;
+    }
+    if (Multiplicity >= Degree)
+    {
+        Outcome.Refusal = Name + " already has a corner there (a knot repeated " + std::to_string(Multiplicity) + " times)";
+        return Outcome;
+    }
+    std::vector<Vector2> Poles(Last + 2);
+    for (int Index = 0; Index <= Span - Degree; ++Index) Poles[Index] = Carrier.Poles[Index];
+    for (int Index = Span - Multiplicity; Index <= Last; ++Index) Poles[Index + 1] = Carrier.Poles[Index];
+    for (int Index = Span - Degree + 1; Index <= Span - Multiplicity; ++Index)
+    {
+        const double Share = (Best - Knots[Index]) / (Knots[Index + Degree] - Knots[Index]);
+        Poles[Index] = Carrier.Poles[Index] * Share + Carrier.Poles[Index - 1] * (1.0 - Share);
+    }
+    std::vector<double> Refined = Knots;
+    Refined.insert(Refined.begin() + Span + 1, Best);
+    // Points: the untouched poles keep theirs, the moved ones Span − p + 1 … Span − s − 1 keep theirs at the new place,
+    // pole Span − s is the new point.
+    std::vector<int> Points(Last + 2, -1);
+    for (int Index = 0; Index <= Span - Degree; ++Index) Points[Index] = Slots[Index];
+    for (int Index = Span - Degree + 1; Index < Span - Multiplicity; ++Index) Points[Index] = Slots[Index];
+    for (int Index = Span - Multiplicity; Index <= Last; ++Index) Points[Index + 1] = Slots[Index];
+    Points[Span - Multiplicity] = AppendSketchPoint(Edited, Poles[Span - Multiplicity]);
+    for (int Index = Span - Degree + 1; Index < Span - Multiplicity; ++Index) Edited.Points[Points[Index]].Position = Poles[Index];
+    Edited.Curves[CurveIndex].Form   = SketchSplineForm::Nurbs;
+    Edited.Curves[CurveIndex].Points = Points;
+    Edited.Curves[CurveIndex].Knots  = std::move(Refined);
+    Outcome.InsertedPoint  = Points[Span - Multiplicity];
+    Outcome.SplitPositions = { Position };
+    Outcome.Pieces         = 1;
     return Outcome;
 }
 

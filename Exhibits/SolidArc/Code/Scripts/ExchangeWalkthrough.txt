@@ -109,7 +109,12 @@ expect volume ~ 10.2141897
 capture 198ExchangeFilletImported
 
 # ⑤ The Import step in the Inspector: the embedded file (name, size, unit) and its face names
+click @InspectorHistory
+frames 3
 click @Step:Import#1
+frames 2
+click @InspectorGeometry
+frames 3
 frames 2
 expect focused-step == Import#1
 capture 199ExchangeImportStep

@@ -111,7 +111,12 @@ capture 21TangentChain
 key Escape
 
 # ⑥ Delete removes the focused feature-tree step
+click @InspectorHistory
+frames 3
 click @Step:Blend#9
+frames 2
+click @InspectorGeometry
+frames 3
 expect focused-step == Blend#9
 key Delete
 frames 2

@@ -123,6 +123,7 @@ namespace
     GateTally ManifoldGate    = { "W60", "Extrude manifold (Blender's push-in, the Windows report \"i want to extrude the shape i cant\"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push", "1e-9 rel" };
     GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
+    GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -680,6 +681,218 @@ void ValidatePointCut()
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
+// W63: Point on curve (the shape kept: lines / arcs split, cubic splines take a knot, control-point curves a Boehm knot)
+//      and Flow along curve (a 2D shape bent along a rail: lines across the axis stay lines, the rest cubic splines).
+void ValidateCurveFlow()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    // Segments of the listed curves of a sketch (every curve when empty).
+    const auto Segments = [](const SketchModel& Sketch, std::vector<int> Curves)
+    {
+        if (Curves.empty()) for (int Curve = 0; Curve < int(Sketch.Curves.size()); ++Curve) Curves.push_back(Curve);
+        std::vector<ProfileSegment> Result;
+        for (const int Curve : Curves)
+        {
+            std::string Refusal;
+            Result.push_back(ResolveSketchCurveSegment(Sketch, Curve, 1.0e-9, Refusal));
+        }
+        return Result;
+    };
+    // Distance from Query to the nearest segment: 64 samples per polynomial piece, then Gauss–Newton on the fraction.
+    const auto Nearest = [](const std::vector<ProfileSegment>& Onto, Vector2 Query)
+    {
+        double Best = std::numeric_limits<double>::infinity();
+        for (const ProfileSegment& Segment : Onto)
+        {
+            const std::vector<double> Breaks = CollectProfileBreaks(Segment);
+            double Fraction = 0.0, Gap = std::numeric_limits<double>::infinity();
+            for (size_t Span = 0; Span + 1 < Breaks.size(); ++Span)
+                for (int Sample = 0; Sample <= 64; ++Sample)
+                {
+                    const double Here = Breaks[Span] + (Breaks[Span + 1] - Breaks[Span]) * Sample / 64.0;
+                    const double Away = Distance(EvaluateProfileSegment(Segment, Here), Query);
+                    if (Away < Gap) { Gap = Away; Fraction = Here; }
+                }
+            for (int Step = 0; Step < 30; ++Step)
+            {
+                const Vector2 Offset  = EvaluateProfileSegment(Segment, Fraction) - Query;
+                const Vector2 Tangent = EvaluateProfileTangent(Segment, Fraction);
+                const double  Square  = Dot(Tangent, Tangent);
+                if (Square <= 0.0) break;
+                Fraction = std::clamp(Fraction - Dot(Offset, Tangent) / Square, 0.0, 1.0);
+            }
+            Best = std::min({ Best, Gap, Distance(EvaluateProfileSegment(Segment, Fraction), Query) });
+        }
+        return Best;
+    };
+    // Symmetric Hausdorff distance by 400 samples per segment each way.
+    const auto Deviation = [&](const std::vector<ProfileSegment>& First, const std::vector<ProfileSegment>& Second)
+    {
+        double Worst = 0.0;
+        for (const auto& [From, Onto] : { std::pair{ &First, &Second }, std::pair{ &Second, &First } })
+            for (const ProfileSegment& Segment : *From)
+                for (int Sample = 0; Sample <= 400; ++Sample) Worst = std::max(Worst, Nearest(*Onto, EvaluateProfileSegment(Segment, Sample / 400.0)));
+        return Worst;
+    };
+    const char* const FormNames[] = { "", "Hermite", "Bezier", "NURBS", "cubic spline" };
+
+    // ① Every freeform form through (0, 0) (1, 2) (2.5, −0.5) (4, 1.5) (5, 0): a point near 37 % of the curve is inserted
+    //    and the curve is the same curve (Hausdorff ≤ 10⁻⁹); on the cubic spline the new point lies on it and a second
+    //    insert at the same spot refuses (a point is already there).
+    for (const SketchSplineForm Form : { SketchSplineForm::Hermite, SketchSplineForm::Bezier, SketchSplineForm::Nurbs, SketchSplineForm::CubicSpline })
+    {
+        SketchModel      Sketch;
+        std::vector<int> Points;
+        for (const Vector2 Position : { Vector2{ 0.0, 0.0 }, Vector2{ 1.0, 2.0 }, Vector2{ 2.5, -0.5 }, Vector2{ 4.0, 1.5 }, Vector2{ 5.0, 0.0 } }) Points.push_back(AppendSketchPoint(Sketch, Position));
+        (void)AppendSketchSpline(Sketch, Points, Form, 1);
+        const std::vector<ProfileSegment> Before = Segments(Sketch, { 0 });
+        const Vector2                     Pick   = EvaluateProfileSegment(Before.front(), 0.37) + Vector2{ 0.004, -0.003 };
+        const SketchTrimOutcome           Insert = InsertSketchCurvePoint(Sketch, 0, Pick);
+        const bool   Inserted = Insert.Refusal.empty() && Insert.InsertedPoint >= 0 && Insert.InsertedPoint < int(Insert.Sketch.Points.size());
+        const double Worst    = Inserted ? Deviation(Before, Segments(Insert.Sketch, { 0 })) : 1.0;
+        Tally(CurveFlowGate, Worst, Inserted && Worst <= 1.0e-9 && Insert.Sketch.Curves.size() == 1,
+              Format("%s: point %d inserted near (%.3f, %.3f), %d → %d points, Hausdorff to the original %.2e%s", FormNames[int(Form)], Insert.InsertedPoint, Pick.X, Pick.Y,
+                     int(Sketch.Points.size()), int(Insert.Sketch.Points.size()), Worst, Insert.Refusal.empty() ? "" : (" · " + Insert.Refusal).c_str()));
+        if (Form == SketchSplineForm::CubicSpline && Inserted)
+        {
+            const double OnCurve = Nearest(Before, Insert.Sketch.Points[Insert.InsertedPoint].Position);
+            Tally(CurveFlowGate, OnCurve, OnCurve <= 1.0e-9, Format("cubic spline: the new point lies on the curve (%.2e)", OnCurve));
+            const SketchTrimOutcome Again = InsertSketchCurvePoint(Insert.Sketch, 0, Insert.Sketch.Points[Insert.InsertedPoint].Position);
+            Tally(CurveFlowGate, 0.0, !Again.Refusal.empty(), Format("a second insert on that point refuses (%s)", Again.Refusal.c_str()));
+        }
+    }
+
+    // ② A horizontal line (0, 0) → (4, 0) takes a point at x = 1.5: two lines through (1.5, 0), the same segment, the
+    //    horizontal constraint dropped so the halves can bend; a circle r 1 takes a point (two arcs, the same circle); a
+    //    pick on a line end refuses (a point is there).
+    {
+        SketchModel Sketch;
+        const int   Start = AppendSketchPoint(Sketch, { 0.0, 0.0 });
+        const int   End   = AppendSketchPoint(Sketch, { 4.0, 0.0 });
+        const int   Line  = AppendSketchLine(Sketch, Start, End, 1);
+        (void)AppendSketchConstraint(Sketch, SketchConstraintKind::Horizontal, Line);
+        const SketchTrimOutcome Insert = InsertSketchCurvePoint(Sketch, Line, { 1.5, 0.02 });
+        const bool   Inserted = Insert.Refusal.empty() && Insert.InsertedPoint >= 0;
+        const double Worst    = Inserted ? Deviation(Segments(Sketch, {}), Segments(Insert.Sketch, {})) : 1.0;
+        const double Placed   = Inserted ? Distance(Insert.Sketch.Points[Insert.InsertedPoint].Position, { 1.5, 0.0 }) : 1.0;
+        const bool   Freed    = std::none_of(Insert.Sketch.Constraints.begin(), Insert.Sketch.Constraints.end(), [](const SketchConstraint& Row) { return Row.Kind == SketchConstraintKind::Horizontal; });
+        Tally(CurveFlowGate, std::max(Worst, Placed), Inserted && Insert.Sketch.Curves.size() == 2 && Worst <= 1.0e-12 && Placed <= 1.0e-12 && Freed,
+              Format("line: %d curves, point at (1.5, 0) within %.1e, Hausdorff %.1e, horizontal dropped: %s", int(Insert.Sketch.Curves.size()), Placed, Worst, Freed ? "yes" : "no"));
+        const SketchTrimOutcome OnEnd = InsertSketchCurvePoint(Sketch, Line, { 4.0, 0.0 });
+        Tally(CurveFlowGate, 0.0, !OnEnd.Refusal.empty(), Format("a pick on the line's end refuses (%s)", OnEnd.Refusal.c_str()));
+        SketchModel Round;
+        const int   Centre = AppendSketchPoint(Round, { 0.0, 0.0 });
+        (void)AppendSketchCircle(Round, Centre, 1.0, 1);
+        const SketchTrimOutcome Ring = InsertSketchCurvePoint(Round, 0, { 0.0, 1.01 });
+        const double RingWorst = Ring.Refusal.empty() ? Deviation(Segments(Round, {}), Segments(Ring.Sketch, {})) : 1.0;
+        Tally(CurveFlowGate, RingWorst, Ring.Refusal.empty() && Ring.Sketch.Curves.size() == 2 && RingWorst <= 1.0e-12,
+              Format("circle r 1: %d arcs, Hausdorff %.1e%s", int(Ring.Sketch.Curves.size()), RingWorst, Ring.Refusal.empty() ? "" : (" · " + Ring.Refusal).c_str()));
+    }
+
+    // ③ In a document: the Point tool on a drawn cubic spline is one undo entry ("Insert point on …"), the curve keeps its
+    //    shape, and its knots survive save → load byte-equal.
+    {
+        SolidArcDocument       Part = CreateSolidArcDocument("PointOnCurve");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Curve; Request.Form = SketchSplineForm::CubicSpline;
+        Request.Points = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, -1.0 }, { 3.0, 0.5 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string                 Label  = Part.Tree.Steps.back().Label;
+        const std::vector<ProfileSegment> Before = Segments(Part.Regeneration.Sketches.at(Label), {});
+        const size_t                      Undo   = Part.UndoEntries.size();
+        const SolidArcCommandOutcome      Insert = TrimSolidArcSketch(Part, { Label, 0, EvaluateProfileSegment(Before.front(), 0.61), false, true });
+        const SketchModel&                After  = Part.Regeneration.Sketches.at(Label);
+        const double                      Worst  = Insert.AcceptedCondition ? Deviation(Before, Segments(After, {})) : 1.0;
+        Tally(CurveFlowGate, Worst, Insert.AcceptedCondition && Part.UndoEntries.size() == Undo + 1 && After.Points.size() == 5 && !After.Curves.front().Knots.empty() && Worst <= 1.0e-9
+                                    && Insert.Label.find("Insert point on") != std::string::npos,
+              Format("%s: 5 points, %d knots, one undo entry, Hausdorff %.2e%s", Insert.Label.c_str(), int(After.Curves.front().Knots.size()), Worst, Insert.Refusal.empty() ? "" : (" · " + Insert.Refusal).c_str()));
+        const std::string            Text     = EncodeSolidArcDocument(Part);
+        const SolidArcDocumentFile   Loaded   = DecodeSolidArcDocument(Text);
+        SolidArcDocument             Reloaded = CreateSolidArcDocument(Loaded.Title);
+        const SolidArcCommandOutcome Opened   = ReplaceSolidArcTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+        const double ReloadWorst = Opened.AcceptedCondition ? Deviation(Before, Segments(Reloaded.Regeneration.Sketches.at(Label), {})) : 1.0;
+        Tally(CurveFlowGate, ReloadWorst, Loaded.Refusal.empty() && Opened.AcceptedCondition && EncodeSolidArcDocument(Reloaded) == Text && ReloadWorst <= 1.0e-9,
+              Format("save → load: knots kept, byte-equal, Hausdorff %.2e (%s)", ReloadWorst, Loaded.Refusal.empty() ? Opened.Refusal.c_str() : Loaded.Refusal.c_str()));
+        const bool Undone = UndoSolidArcCommand(Part);
+        Tally(CurveFlowGate, 0.0, Undone && Part.Regeneration.Sketches.at(Label).Points.size() == 4 && Part.Regeneration.Sketches.at(Label).Curves.front().Knots.empty(),
+              "undo: back to 4 points, no explicit knots");
+    }
+
+    // ④ Flow: a 2 × 0.4 rectangle (x 0 … 2, y ±0.2) along a quarter arc r 3 (0° → 90°, stretched): its long sides run at
+    //    r 2.8 and 3.2 (every sample within 10⁻⁶ of the circle; the cubic splines interpolate it), its short sides stay lines
+    //    on the radii at 0° and 90°; reversed it still lies on the same two circles.
+    {
+        SketchModel Rail;
+        const int   Centre = AppendSketchPoint(Rail, { 0.0, 0.0 });
+        const int   From   = AppendSketchPoint(Rail, { 3.0, 0.0 });
+        const int   To     = AppendSketchPoint(Rail, { 0.0, 3.0 });
+        (void)AppendSketchArc(Rail, Centre, From, To, 1);
+        SketchModel      Shape;
+        std::vector<int> Corners;
+        for (const Vector2 Corner : { Vector2{ 0.0, -0.2 }, Vector2{ 2.0, -0.2 }, Vector2{ 2.0, 0.2 }, Vector2{ 0.0, 0.2 } }) Corners.push_back(AppendSketchPoint(Shape, Corner));
+        for (int Side = 0; Side < 4; ++Side) (void)AppendSketchLine(Shape, Corners[size_t(Side)], Corners[size_t((Side + 1) % 4)], Side + 1);
+        for (const bool Reverse : { false, true })
+        {
+            const SketchFlowOutcome Flowed = FlowSketchModel(Shape, Rail, { -1, true, Reverse });
+            double Worst = Flowed.Refusal.empty() ? 0.0 : 1.0, Angles = 0.0;
+            if (Flowed.Refusal.empty())
+                for (const ProfileSegment& Segment : Segments(Flowed.Sketch, {}))
+                    for (int Sample = 0; Sample <= 400; ++Sample)
+                    {
+                        const Vector2 Point = EvaluateProfileSegment(Segment, Sample / 400.0);
+                        if (Segment.Kind == ProfileSegmentKind::Line) Angles = std::max(Angles, std::min(std::abs(Point.Y), std::abs(Point.X)));   // radial: on the x or y axis
+                        else Worst = std::max(Worst, std::min(std::abs(Length(Point) - 2.8), std::abs(Length(Point) - 3.2)));                  // bent: on r 2.8 or 3.2
+                    }
+            Tally(CurveFlowGate, std::max(Worst, Angles), Flowed.Refusal.empty() && Flowed.Lines == 2 && Flowed.Splines == 2 && Flowed.AlongAxis == 0 && Worst <= 1.0e-6 && Angles <= 1.0e-9
+                                                          && std::abs(Flowed.RailLength - 1.5 * std::numbers::pi) <= 1.0e-9,
+                  Format("rectangle along a quarter arc%s: %d lines + %d splines, rail %.9f (1.5π), radii 2.8 / 3.2 within %.1e, short sides on the axes within %.1e%s",
+                         Reverse ? " (reversed)" : "", Flowed.Lines, Flowed.Splines, Flowed.RailLength, Worst, Angles, Flowed.Refusal.empty() ? "" : (" · " + Flowed.Refusal).c_str()));
+        }
+    }
+
+    // ⑤ In a document, true length: the filled rectangle flowed onto a circle r 3 (a closed rail) spans 2 / 3 rad from 0°;
+    //    the new sketch "Flow1" is filled and extrudes 1 to the annular sector ½·(3.2² − 2.8²)·⅔ = 0.8; one undo entry; the
+    //    shape and rail stay. The rail as a shape, or a lone pick, refuse.
+    {
+        const OrthonormalFrame Ground{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+        const auto Draw = [&](SolidArcDocument& Part, SolidArcDrawingKind Kind, std::vector<Vector2> Points, bool CentreCondition)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = Kind; Request.Points = std::move(Points); Request.PlaneCondition = true; Request.Plane = Ground;
+            Request.CentreCondition = CentreCondition; Request.FillCondition = true;
+            Expect(DrawSolidArcSketch(Part, Request));
+            return Part.Tree.Steps.back().Label;
+        };
+        SolidArcDocument  Part  = CreateSolidArcDocument("Flow");
+        const std::string Rail  = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 3.0, 0.0 } }, true);
+        const std::string Shape = Draw(Part, SolidArcDrawingKind::Rectangle, { { 0.0, -0.2 }, { 2.0, 0.2 } }, false);
+        const size_t Steps = Part.Tree.Steps.size(), Undo = Part.UndoEntries.size();
+        SolidArcFlowRequest Request{ Rail, { Shape }, { -1, false, false } };
+        const SolidArcCommandOutcome Flowed = FlowSolidArcSketches(Part, Request);
+        const std::string            Label  = Part.Tree.Steps.back().Label;
+        const bool Made = Flowed.AcceptedCondition && Part.Tree.Steps.size() == Steps + 1 && Part.UndoEntries.size() == Undo + 1 && Part.Captions[Label] == "Flow1" && Part.Tree.Steps.back().FillCondition;
+        double Worst = Made ? 0.0 : 1.0;
+        if (Made)
+            for (const Vector2& Point : { Vector2{ 2.8, 0.0 }, Vector2{ 3.2, 0.0 }, Vector2{ 2.8 * std::cos(2.0 / 3.0), 2.8 * std::sin(2.0 / 3.0) }, Vector2{ 3.2 * std::cos(2.0 / 3.0), 3.2 * std::sin(2.0 / 3.0) } })
+            {
+                double Closest = std::numeric_limits<double>::infinity();
+                for (const SketchPoint& Candidate : Part.Regeneration.Sketches.at(Label).Points) Closest = std::min(Closest, Distance(Candidate.Position, Point));
+                Worst = std::max(Worst, Closest);
+            }
+        Tally(CurveFlowGate, Worst, Made && Worst <= 1.0e-9, Format("%s: %s filled, corners at r 2.8 / 3.2 and 0 / ⅔ rad within %.1e%s", Flowed.Label.c_str(), Part.Captions[Label].c_str(), Worst,
+                                                                    Flowed.Refusal.empty() ? "" : (" · " + Flowed.Refusal).c_str()));
+        SolidArcDocument             Solid    = CloneSolidArcDocument(Part);
+        const SolidArcCommandOutcome Extruded = ExtrudeSolidArcSketch(Solid, Label, 1.0, FeatureCombination::New);
+        const double Relative = std::abs(Solid.Summary.Volume - 0.8) / 0.8;
+        Tally(CurveFlowGate, Relative, Extruded.AcceptedCondition && Solid.Summary.SoundCondition && Relative <= 1.0e-6,
+              Format("Flow1 extrudes to the annular sector 0.8 (V = %.12f, rel %.1e; the long sides are interpolating cubics)%s", Solid.Summary.Volume, Relative, Extruded.Refusal.empty() ? "" : (" · " + Extruded.Refusal).c_str()));
+        const SolidArcCommandOutcome Itself = FlowSolidArcSketches(Part, { Rail, { Rail }, {} });
+        const SolidArcCommandOutcome Lone   = FlowSolidArcSketches(Part, { Rail, {}, {} });
+        Tally(CurveFlowGate, 0.0, !Itself.AcceptedCondition && !Lone.AcceptedCondition && Part.Tree.Steps.size() == Steps + 1,
+              Format("refused: the rail as its own shape (%s) · no shape (%s)", Itself.Refusal.c_str(), Lone.Refusal.c_str()));
+    }
+}
+
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
@@ -695,6 +908,12 @@ int main()
         ValidatePointCut();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return PointCutGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_FLOW"))                                             // Quick rerun of W63 alone
+    {
+        ValidateCurveFlow();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return CurveFlowGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_IMPRINT"))                                          // Quick rerun of W61 alone
     {
@@ -6049,7 +6268,10 @@ int main()
     // ---- W62 Cut at crossings, sketch duplicates
     ValidatePointCut();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate })
+    // ---- W63 Point on curve, Flow along curve
+    ValidateCurveFlow();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

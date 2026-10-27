@@ -2132,6 +2132,7 @@ SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const So
         Outcome.Refusal = "no sketch step labelled " + Request.Sketch;
         return Outcome;
     }
+    if (Request.InsertCondition) return InsertSketchCurvePoint(SolvedSketch(Document, *Found), Request.Curve, Request.Pick);
     if (Request.SplitCondition) return SplitSketchCurve(SolvedSketch(Document, *Found), Request.Curve, Request.Pick);
     const OrthonormalFrame      Plane = ElevatedPlane(Document.Tree, *Found);
     std::vector<ProfileSegment> Foreign;
@@ -2239,7 +2240,7 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
     const bool Referenced = SolidArcSketchReferencedCondition(Document, Request.Sketch);
 
     // ① in place: the sketch itself changes (later steps follow when they still regenerate).
-    const std::string Verb = Request.SplitCondition ? "Cut " : "Trim ";
+    const std::string Verb = Request.InsertCondition ? "Insert point on " : Request.SplitCondition ? "Cut " : "Trim ";
     SolidArcCommandOutcome InPlace = RunCommand(Document, Verb + CurveName + " of " + Owner, false, [&]() -> std::string
     {
         const SketchTrimOutcome Trim = PreviewSolidArcTrim(Document, Request);
@@ -3155,6 +3156,56 @@ SolidArcCommandOutcome JoinSolidArcSketches(SolidArcDocument& Document, const st
     }, 0);
 }
 
+SolidArcCommandOutcome FlowSolidArcSketches(SolidArcDocument& Document, const SolidArcFlowRequest& Request)
+{
+    const std::string Caption = NextCaption(Document, "Flow");
+    std::vector<std::string> Shapes;
+    for (const std::string& Label : Request.Shapes) Shapes.push_back(Label);
+    const char* Fit = Request.Settings.StretchEnabled ? "stretched" : "true length";
+    return RunCommand(Document, "Flow " + ListCaptions(Document, Shapes) + " along " + SolidArcBodyCaption(Document, Request.Rail) + " into " + Caption + " (" + Fit + ")", false,
+                      [&]() -> std::string
+    {
+        const FeatureStep* Rail = FindStep(Document, Request.Rail);
+        if (!Rail || Rail->Kind != FeatureStepKind::Sketch) return "Flow: pick the rail sketch first, then the shapes";
+        if (Request.Shapes.empty()) return "Flow: pick the rail curve, then one or more shapes to bend along it";
+        const FeatureStep* First = FindStep(Document, Request.Shapes.front());
+        if (!First || First->Kind != FeatureStepKind::Sketch) return "Flow: no sketch step labelled " + Request.Shapes.front();
+        // ① the shapes as one model in the first shape's plane (coplanar, as Join).
+        const OrthonormalFrame Base  = ElevatedPlane(Document.Tree, *First);
+        SketchModel            Shape = SolvedSketch(Document, *First);
+        for (const std::string& Label : Request.Shapes)
+        {
+            if (Label == Request.Rail) return "Flow: " + SolidArcBodyCaption(Document, Label) + " is the rail and a shape";
+            if (Label == Request.Shapes.front()) continue;
+            const FeatureStep* Other = FindStep(Document, Label);
+            if (!Other || Other->Kind != FeatureStepKind::Sketch) return "Flow: no sketch step labelled " + Label;
+            const OrthonormalFrame Plane = ElevatedPlane(Document.Tree, *Other);
+            const Vector3          Apart = Plane.Origin - Base.Origin;
+            if (std::fabs(Dot(Plane.ZAxis, Base.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Base.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart)))
+                return "Flow: " + SolidArcBodyCaption(Document, Label) + " is not in the plane of " + SolidArcBodyCaption(Document, First->Label);
+            SketchPlacement Placement;
+            Placement.Origin = { Dot(Apart, Base.XAxis), Dot(Apart, Base.YAxis) };
+            Placement.XAxis  = { Dot(Plane.XAxis, Base.XAxis), Dot(Plane.XAxis, Base.YAxis) };
+            Placement.YAxis  = { Dot(Plane.YAxis, Base.XAxis), Dot(Plane.YAxis, Base.YAxis) };
+            const double Join = 1.0e-9 * std::max({ 1.0, MeasureSketchScale(Shape), MeasureSketchScale(SolvedSketch(Document, *Other)) });
+            const SketchJoinOutcome Joined = JoinSketchModels(Shape, SolvedSketch(Document, *Other), Placement, Join);
+            if (!Joined.Refusal.empty()) return "Flow: " + Joined.Refusal;
+            Shape = Joined.Sketch;
+        }
+        // ② bend, then a new sketch step on the rail's plane.
+        const SketchFlowOutcome Flowed = FlowSketchModel(Shape, SolvedSketch(Document, *Rail), Request.Settings);
+        if (!Flowed.Refusal.empty()) return "Flow: " + Flowed.Refusal;
+        FeatureStep Step   = *Rail;
+        Step.Label         = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Sketch        = Flowed.Sketch;
+        Step.FillCondition = First->FillCondition && ExtractSketchProfile(Flowed.Sketch).Refusal.empty();
+        Document.Captions[Step.Label] = Caption;
+        Document.Selection.Curves     = { Step.Label };
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
 std::vector<std::string> SolidArcJoinCandidates(const SolidArcDocument& Document, const std::string& Sketch)
 {
     std::vector<std::string> Group;
@@ -3601,6 +3652,7 @@ namespace
                 std::vector<int> Points;
                 for (int Point : Curve.Points) Points.push_back(LinkPoint(Point));
                 Added = AppendSketchSpline(Model, Points, Curve.Form, Identifier, true);
+                Model.Curves[Added].Knots = Curve.Knots;
                 break;
             }
             }

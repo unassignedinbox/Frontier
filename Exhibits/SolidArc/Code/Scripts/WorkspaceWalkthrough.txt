@@ -192,7 +192,12 @@ expect sound == 1
 expect status contains Push
 
 # ⑩ feature tree: focus Block1, edit its Height parameter (history replay), Delete-key on a step
+click @InspectorHistory
+frames 3
 click @Step:Extrude#2
+frames 2
+click @InspectorGeometry
+frames 3
 expect focused-step == Extrude#2
 click @Parameter:Block1.Height
 key A Ctrl

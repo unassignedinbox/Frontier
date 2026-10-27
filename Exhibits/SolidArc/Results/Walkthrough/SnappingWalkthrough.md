@@ -1,9 +1,9 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 404 frames · 50.1146 s · slowest frame 615.4 ms
+- Frame: 1600 x 900 · 408 frames · 52.1086 s · slowest frame 525.085 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
-- Expectations: 77 / 77 passed
+- Expectations: 78 / 78 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
@@ -71,37 +71,38 @@
 | 232 | `snapped-points == 6` | 6 | 🟢 |
 | 253 | `snap-grid == 0` | 0 | 🟢 |
 | 258 | `snap == none` | none | 🟢 |
-| 259 | `drawing-pointer-x > 0.52` | 0.5336457183 | 🟢 |
-| 260 | `drawing-pointer-x < 0.55` | 0.5336457183 | 🟢 |
-| 261 | `drawing-pointer-y > 0.70` | 0.7164687885 | 🟢 |
-| 262 | `drawing-pointer-y < 0.725` | 0.7164687885 | 🟢 |
+| 259 | `drawing-pointer-x > 0.52` | 0.5331536522 | 🟢 |
+| 260 | `drawing-pointer-x < 0.55` | 0.5331536522 | 🟢 |
+| 261 | `drawing-pointer-y > 0.70` | 0.7149105791 | 🟢 |
+| 262 | `drawing-pointer-y < 0.725` | 0.7149105791 | 🟢 |
 | 268 | `snap contains Midpoint` | Midpoint · Line1 | 🟢 |
 | 269 | `snap-x ~ 1` | 1 | 🟢 |
 | 270 | `snap-y ~ 0` | 0 | 🟢 |
 | 273 | `snap contains Quarter` | Quarter · Line1 | 🟢 |
 | 274 | `snap-x ~ 0.5` | 0.5 | 🟢 |
-| 278 | `snap contains On curve` | On curve · Line1 | 🟢 |
-| 279 | `snap-y ~ 0` | 0 | 🟢 |
-| 280 | `snap-x > 1.7` | 1.759048366 | 🟢 |
-| 281 | `snap-x < 1.82` | 1.759048366 | 🟢 |
+| 278 | `snap lacks curve` | none | 🟢 |
+| 281 | `snap contains On curve` | On curve · Line1 | 🟢 |
+| 282 | `snap-y ~ 0` | 0 | 🟢 |
+| 283 | `snap-x > 1.7` | 1.752940562 | 🟢 |
+| 284 | `snap-x < 1.82` | 1.752940562 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 30 | `62e2af22b527b2de` |
-| 161SnapTangent | 43 | `6c0d939f0a8cee54` |
-| 162SnapLockTangent | 61 | `437ccb79d85bb36c` |
-| 163SnapLockNormal | 79 | `7fb1673487177b6b` |
-| 164SnapBinormalRefused | 93 | `cf6dc06bae1abcfa` |
-| 165SnapCentre | 99 | `2c435652f12db557` |
-| 166SnapMidpoint | 105 | `bb4c0d36a4096a02` |
-| 167SnapPerpendicular | 118 | `7ed352d288e72926` |
-| 168SnapSquare | 151 | `2cb070191162ecb2` |
-| 169SnapConstraintDrag | 181 | `61895b7961840449` |
-| 170SnapMove | 217 | `221e7c43df7209b9` |
-| 171SnapXRay | 250 | `4d08328e10d8c590` |
-| 172SnapPoleDrag | 322 | `da285de2e02dc98a` |
-| 295SnapQuarter | 392 | `f9443f24ce4fda69` |
-| 296SnapOnCurve | 398 | `deb150a119fffe0b` |
+| 160SnapEndpoint | 30 | `59190876cde1b3a9` |
+| 161SnapTangent | 43 | `0ac9d854f8a3d7fe` |
+| 162SnapLockTangent | 61 | `cb445d7267488b2d` |
+| 163SnapLockNormal | 79 | `a097d56e3d2689ba` |
+| 164SnapBinormalRefused | 93 | `e34174542429f6b9` |
+| 165SnapCentre | 99 | `a6392ced61db93de` |
+| 166SnapMidpoint | 105 | `53a15d55b98519d8` |
+| 167SnapPerpendicular | 118 | `bcf33ac103cfc7f1` |
+| 168SnapSquare | 151 | `45a79d2f1fff0e6e` |
+| 169SnapConstraintDrag | 181 | `c4b64239d179f6f5` |
+| 170SnapMove | 217 | `62987d7b72868f82` |
+| 171SnapXRay | 250 | `584f4c4a5f829bea` |
+| 172SnapPoleDrag | 322 | `f876da4d2118f6e9` |
+| 295SnapQuarter | 392 | `1cc1b4197ca20d5f` |
+| 296SnapOnCurve | 402 | `d8c3e5459397d85f` |
 
 ## Journal
 

@@ -17,6 +17,7 @@
 #include "Engine/GeometryProcessing/Sketch/SketchConstraining.h"
 #include "Engine/GeometryProcessing/Sketch/SketchCorner.h"
 #include "Engine/GeometryProcessing/Sketch/SketchEditing.h"
+#include "Engine/GeometryProcessing/Sketch/SketchFlow.h"
 #include "Engine/GeometryProcessing/Sketch/SketchRegion.h"
 #include "Engine/GeometryProcessing/Sketch/SketchTrim.h"
 #include "Engine/GeometryProcessing/Topology/ModelPartition.h"
@@ -149,6 +150,15 @@ struct SolidArcTrimRequest
     int               Curve  = -1;                                                           // [-]   - Curve index in that sketch
     GeometryProcessing::Vector2 Pick   = {};                                                           // [len] - Where the pointer met the sketch plane
     bool              SplitCondition = false;                                                // [-]   - Cut (break at Pick) instead of trim
+    bool              InsertCondition = false;                                               // [-]   - Insert point (shape kept) instead of cut / trim
+};
+
+// 📝 Flow along curve: Rail is the sketch the shapes follow (the first pick), Shapes the coplanar sketches bent along it.
+struct SolidArcFlowRequest
+{
+    std::string                            Rail     = {};                                    // [-] - Rail sketch step label
+    std::vector<std::string>               Shapes   = {};                                    // [-] - Shape sketch step labels
+    GeometryProcessing::SketchFlowSettings Settings = {};                                    // [-] - Axis, stretch, direction
 };
 
 // 📝 Fill tool: the closed region under Pick (coordinates of Sketch's plane) among Sketch and every shown sketch coplanar
@@ -398,8 +408,14 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const SolidArcTrimRequest& Request);
 //    With SplitCondition the curve breaks at Pick instead (Plasticity sketch Cut, GeometryProcessing::SplitSketchCurve):
 //    nothing comes off, a line / arc becomes two curves, a circle two half arcs.
+//    With InsertCondition a point is added at Pick and the shape stays (GeometryProcessing::InsertSketchCurvePoint).
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
 [[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const SolidArcTrimRequest& Request);
+
+// 💡 Flow along curve (Rhino Flow): the shapes (joined in the first shape's plane) bent along the rail by
+//    GeometryProcessing::FlowSketchModel, as a new sketch step "FlowN" in the rail's plane, picked; filled when the first
+//    shape is filled and the result is still a closed profile. The shapes and the rail stay. One undo entry.
+[[nodiscard]] SolidArcCommandOutcome FlowSolidArcSketches(SolidArcDocument& Document, const SolidArcFlowRequest& Request);
 
 // 📝 Cut at a point (the Cut tool with Ctrl: a snapped crossing, end, midpoint or quarter point): every shown sketch curve
 //    through Point breaks there — the two overlapping circles both. A circle breaks at Point and at its next crossing

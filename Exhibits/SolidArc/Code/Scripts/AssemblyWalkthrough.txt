@@ -206,7 +206,12 @@ key Escape
 
 # ⑩ the pin joint in the step card: Offset typed −0.1 stages a preview, Enter commits one undo entry; the replay resumes
 #    at the pin joint and the lever rides down with it
+click @InspectorHistory
+frames 3
 click @Step:Joint#13
+frames 2
+click @InspectorGeometry
+frames 3
 frames 2
 expect focused-step == Joint#13
 click @Parameter:Revolute1.Offset Left Ctrl

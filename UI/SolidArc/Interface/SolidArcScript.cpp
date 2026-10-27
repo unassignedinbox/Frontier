@@ -470,6 +470,16 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "trim") return Numeric(State.Trim.ActiveCondition ? 1 : 0);
     if (Field == "split") return Numeric(State.Trim.ActiveCondition && State.Trim.SplitCondition ? 1 : 0);
     if (Field == "trim-breaks") return Numeric(double(State.Trim.Breaks.size()));
+    if (Field == "insert") return Numeric(State.Trim.ActiveCondition && State.Trim.InsertCondition ? 1 : 0);   // Point tool (V) open
+    if (Field == "insert-point") return Numeric(double(State.Trim.InsertedPoint));                         // The point the hovered insert adds
+    if (Field == "point-total")
+    {
+        double Total = 0.0;
+        for (const auto& [Label, Sketch] : Document.Regeneration.Sketches) Total += double(Sketch.Points.size());
+        return Numeric(Total);
+    }
+    if (Field == "inspector-tab") return Numeric(int(State.InspectorTab));                               // 0 geometry · 1 transform · 2 topology · 3 history
+    if (Field == "flow-swap") return Numeric(State.FlowSwapCondition ? 1 : 0);
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
     if (Field == "trim-point")                                                               // Cut with Ctrl: the snapped point's source
     {

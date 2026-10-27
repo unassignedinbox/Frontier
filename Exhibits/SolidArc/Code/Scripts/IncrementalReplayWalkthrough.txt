@@ -17,7 +17,12 @@ expect refused == 0
 expect sound == 1
 
 # ② tail edit: Fillet1 size 0.25 → 0.3 replays Fillet1 and Chamfer1 (2/8); Block1 and both cylinders are restored
+click @InspectorHistory
+frames 3
 click @Step:Blend#7
+frames 2
+click @InspectorGeometry
+frames 3
 expect focused-step == Blend#7
 click @Parameter:Fillet1.Size
 key A Ctrl
@@ -31,7 +36,12 @@ expect replay-resumed == 6
 capture 140ReplayTailEdit
 
 # ③ middle edit: the hole radius 0.3 → 0.35 replays from its sketch (step 5: 4/8)
+click @InspectorHistory
+frames 3
 click @Step:Extrude#6
+frames 2
+click @InspectorGeometry
+frames 3
 click @Parameter:Cylinder2.Radius
 key A Ctrl
 type 0.35
@@ -57,7 +67,12 @@ capture 143ReplayRedo
 
 # ⑤ Block1's height is the extrude distance: the sketch is restored, 7/8 replay; its width is a sketch dimension, so
 #    everything replays (8/8)
+click @InspectorHistory
+frames 3
 click @Step:Extrude#2
+frames 2
+click @InspectorGeometry
+frames 3
 click @Parameter:Block1.Height
 key A Ctrl
 type 1.2

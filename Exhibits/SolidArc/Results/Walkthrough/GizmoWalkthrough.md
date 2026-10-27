@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 324 frames · 29.277 s · slowest frame 508.006 ms
+- Frame: 1600 x 900 · 324 frames · 32.7065 s · slowest frame 512.089 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/GizmoWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -24,7 +24,7 @@
 | 81 | `selected-faces == 1` | Extrude#2.Cap(End) | 🟢 |
 | 82 | `gizmo-target == 1` | faces | 🟢 |
 | 88 | `gizmo-commits == 4` | 4 | 🟢 |
-| 89 | `volume > 3` | 4.2 | 🟢 |
+| 89 | `volume > 3` | 3.9 | 🟢 |
 | 90 | `refused == 0` | 0 | 🟢 |
 | 96 | `gizmo-modes == 2` | 2 | 🟢 |
 | 97 | `selected-faces == 1` | Extrude#2.Cap(End) | 🟢 |
@@ -44,13 +44,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 218GizmoMove | 65 | `251364fa81fedfe5` |
-| 219GizmoCombined | 104 | `931026bb31113f74` |
-| 220GizmoScaled | 144 | `3b0f21b7b520e65b` |
-| 221GizmoFace | 170 | `541283a62cab65a4` |
-| 222GizmoFaceRotate | 216 | `d8c67c2a69bca605` |
-| 223GizmoSketch | 287 | `dcf6ef9dcfa2186a` |
-| 224GizmoLoft | 324 | `aff3e47b9683bd63` |
+| 218GizmoMove | 65 | `5879713db8e9b630` |
+| 219GizmoCombined | 104 | `1ff3a4f9c09931e0` |
+| 220GizmoScaled | 144 | `53dff528cd15e865` |
+| 221GizmoFace | 170 | `6b1f19e6670702e5` |
+| 222GizmoFaceRotate | 216 | `250ca5a50ff2cfa7` |
+| 223GizmoSketch | 287 | `cd60f3a4e5164cd2` |
+| 224GizmoLoft | 324 | `2928702004748f45` |
 
 ## Journal
 
@@ -61,7 +61,7 @@
 - Block1 · New body · 0 ms
 - Selected Block1 (6 faces)
 - Move (Block1) · 0 ms
-- Gizmo Z move 0.5 · Move (Block1) · 0 ms
+- Gizmo Z move 0.4 · Move (Block1) · 0 ms
 - Gizmo: rotate
 - Gizmo: scale
 - Gizmo: move + rotate
@@ -75,8 +75,8 @@
 - Undo
 - Undo
 - Selected Extrude#2.Cap(End)
-- Offset 0.4 on 1 face(s) · 1 ms
-- Gizmo Z move 0.4 · push / pull · Offset 0.4 on 1 face(s) · 1 ms
+- Offset 0.3 on 1 face(s) · 1 ms
+- Gizmo Z move 0.3 · push / pull · Offset 0.3 on 1 face(s) · 1 ms
 - Gizmo: rotate + scale
 - Gizmo: rotate
 - Rotate -0.08727 on 1 face(s) · 1 ms

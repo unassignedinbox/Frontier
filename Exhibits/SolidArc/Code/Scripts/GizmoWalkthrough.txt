@@ -127,7 +127,7 @@ frames 3
 expect gizmo-target == 3
 expect gizmo-targets == 1
 capture 223GizmoSketch
-drag left @GizmoTranslateZ by 0 -80 12
+drag left @GizmoTranslateZ by 0 -93 12
 frames 3
 expect gizmo-commits == 6
 click world 1.0 0.0 0.0 Left Shift

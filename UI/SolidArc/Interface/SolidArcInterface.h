@@ -292,6 +292,9 @@ struct SolidArcTrimSession
     GeometryProcessing::Vector3                       Point          = {};                   // [len] - The snapped point (world)
     std::string                                       PointSource    = {};                   // [-]   - "Intersection · Circle1 …"
     std::vector<std::vector<GeometryProcessing::Vector3>> PointCurves = {};                  // [len] - Curves that break there (world)
+    // 💡 Point tool (V): a click adds a point on the curve where it is, the shape unchanged; the point is then picked.
+    bool                                              InsertCondition = false;               // [-]   - Point tool instead of Cut / Trim
+    int                                               InsertedPoint   = -1;                  // [-]   - The point the hovered insert would add
 };
 
 // 📝 Fill tool (bottom toolbar, next to Trim): while open, the closed region under the pointer among the shown coplanar
@@ -399,6 +402,7 @@ enum class SolidArcInspectorTab : uint8_t
     Geometry  = 0,                                                                           // Dimensions, bounds, operations, tool cards
     Transform = 1,                                                                           // Bounds and move / rotate / scale
     Topology  = 2,                                                                           // Body audit, picked figures, history
+    History   = 3,                                                                           // Construction history (feature steps), the step card
 };
 
 enum class SolidArcSweepVerb : uint8_t
@@ -796,7 +800,6 @@ struct SolidArcWorkspaceState
     bool                                  TraceShown     = false;                            // [-]   - F12 operation trace panel (development builds)
     std::string                           TraceFilter    = {};                               // [-]   - Its substring filter
     SolidArcOutlinerState                 Outliner       = {};                               // [-]   - Scene search, filter chips, compact / folded
-    bool                                  HistoryFoldedEnabled = false;                      // [-]   - History strip hidden (Construction history)
     bool                                  ViewportMaximizedEnabled = false;                  // [-]   - Scene panel spans the row (maximize button)
     size_t                                HistoryCount   = 0;                                // [-]   - Steps when the strip last scrolled to the newest
     GeometryProcessing::FaceOperationKind           FaceVerb       = GeometryProcessing::FaceOperationKind::Push; // [-]  - Face-edit verb
@@ -820,6 +823,9 @@ struct SolidArcWorkspaceState
     double                                FrameMs        = 0.0;                              // [ms]  - Last frame's CPU + GPU time
     SolidArcFrameProfile                  Profile        = {};                               // [-]   - Phase timing of the current frame
     std::string                           DeviceLabel    = {};                               // [-]   - Vulkan device description
+    // 💡 Flow along curve (Inspector › Curves › Flow): the rail is the first picked sketch (FlowSwapCondition: the last).
+    GeometryProcessing::SketchFlowSettings Flow              = {};                           // [-]   - Axis, stretch, reverse
+    bool                                  FlowSwapCondition = false;                         // [-]   - Rail is the last pick instead of the first
 };
 
 //------------------------------------------------------------------------------------------------------------------------
