@@ -1,29 +1,17 @@
 /*====================================================================================================================================
                                                        SOLIDARCWORKSPACE.RC
 ====================================================================================================================================*/
-// 🧩 Windows resources of SolidArcWorkspace.exe: application icon, version details and the application manifest
+// 🧩 Windows resources of SolidArcWorkspace.exe: version details (Properties → Details)
 
-// 📝 A program without an icon, a version block or a manifest is what packed and dropped executables look like, and the
-//    machine-learning scanners (Defender's "!ml" detections) weigh that. Shipping all three keeps the unsigned preview
-//    build looking like the ordinary desktop application it is. The same script builds with rc.exe (MSVC, which then
-//    links with /MANIFEST:NO so this manifest is the only one) and with zig rc (the Linux cross-build).
+// 📝 Version details only. The icon and the application manifest of the a4c0e11 package were taken out again: the
+//    manifest stopped the program from starting ("side-by-side configuration is incorrect") and the builds that ran had
+//    neither. MSVC links its default manifest as before; the Zig cross-build links none.
 #pragma code_page(65001)
 
 #include <winver.h>
 
 #define SOLIDARC_VERSION_NUMBERS 0, 6, 0, 0
 #define SOLIDARC_VERSION_TEXT    "0.6.0.0"
-
-//------------------------------------------------------------------------------------------------------------------------
-//                                                    ICON AND MANIFEST
-//------------------------------------------------------------------------------------------------------------------------
-
-1 ICON     "SolidArcWorkspace.ico"
-// ⚠️ The manifest is read by the Windows side-by-side loader before the program starts, and that parser is far stricter
-//    than XML: the first package (a ruler comment with emoji in it) stopped SolidArcWorkspace.exe from starting at all
-//    ("side-by-side configuration is incorrect"). Keep it ASCII, comment-free and to Microsoft's documented elements;
-//    SolidArc.cmake refuses to configure otherwise.
-1 24       "SolidArcWorkspace.manifest"
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    VERSION
