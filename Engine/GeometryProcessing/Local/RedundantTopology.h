@@ -11,6 +11,7 @@
 
 #include "Engine/GeometryProcessing/Topology/ModelPartition.h"
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,6 +46,8 @@ struct RedundancyOutcome
 // Edges whose two faces lie on one oriented carrier (the condition ① removes); 0 means every face is maximal.
 [[nodiscard]] int CountRedundantEdges(const ModelPartition& Partition, BodyToken Body, double Precision = SessionPrecision);
 
-[[nodiscard]] RedundancyOutcome RemoveRedundantTopology(ModelPartition& Partition, BodyToken Body, double Precision = SessionPrecision);
+// MergeableEdge (optional) limits ① to the edges it accepts (Imprint: heal only the splits off the sketch plane).
+[[nodiscard]] RedundancyOutcome RemoveRedundantTopology(ModelPartition& Partition, BodyToken Body, double Precision = SessionPrecision,
+                                                        const std::function<bool(EdgeToken)>& MergeableEdge = {});
 
 } // namespace Frontier::GeometryProcessing

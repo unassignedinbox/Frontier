@@ -284,13 +284,17 @@ int CountRedundantEdges(const ModelPartition& Partition, BodyToken Body, double 
     return Count;
 }
 
-RedundancyOutcome RemoveRedundantTopology(ModelPartition& Partition, BodyToken Body, double Precision)
+RedundancyOutcome RemoveRedundantTopology(ModelPartition& Partition, BodyToken Body, double Precision, const std::function<bool(EdgeToken)>& MergeableEdge)
 {
     RedundancyOutcome Outcome;
     for (bool Progress = true; Progress;)
     {
         Progress = false;
-        for (EdgeToken Edge : Partition.CollectInventory(Body).Edges) Progress |= MergeAcrossEdge(Partition, Edge, Precision, Outcome);
+        for (EdgeToken Edge : Partition.CollectInventory(Body).Edges)
+        {
+            if (MergeableEdge && !MergeableEdge(Edge)) continue;
+            Progress |= MergeAcrossEdge(Partition, Edge, Precision, Outcome);
+        }
     }
     if (Outcome.FacesMerged > 0)
     {

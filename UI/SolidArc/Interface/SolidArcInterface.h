@@ -517,6 +517,9 @@ struct SolidArcKnifeSession
     int                                    BlendFocus           = -1;                        // [idx] - Treatment D / C / digits act on
     GeometryProcessing::BlendProfile       BlendShape           = GeometryProcessing::BlendProfile::Fillet;   // [-] - Next treatment's profile
     double                                 BlendSize            = 0.05;                      // [len] - Next treatment's size
+    // 💡 2D cutter (the menu's own section): the sketch shape drawn is imprinted into the face it lies on — the face
+    //    splits along the outline, nothing is cut, no depth stage — ready for face E to push it in or pull it out.
+    bool                                   PreferredImprintCondition = false;                // [-]   - Sketch shapes imprint (2D)
 };
 
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).

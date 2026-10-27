@@ -264,6 +264,11 @@ constexpr int64_t FormatVersion = 1;                                            
     case FeatureStepKind::Flip:
         // Only the body key (Target, below): the sheet is turned over as it stands.
         break;
+    case FeatureStepKind::Imprint:
+        // The outline sketch and the side the tool stands on (Extent's sign; the body key is Target, below).
+        Table.insert("Profile", Step.Profile);
+        Table.insert("Extent", EncodeValue(Step.Extent));
+        break;
     case FeatureStepKind::Import:
         // The kernel's canonical STEP text of the body (millimetres) and the model unit it is read at.
         Table.insert("Exchange", Step.Exchange);
@@ -634,7 +639,7 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             const toml::node_view<const toml::node> View{ Entry };
             FeatureStep Step;
             const int64_t Kind = View["Kind"].value_or(int64_t{ 0 });
-            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Flip)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer SolidArc?)"; return File; }
+            if (Kind < 0 || Kind > static_cast<int64_t>(FeatureStepKind::Imprint)) { File.Refusal = "a step has an unknown kind " + std::to_string(Kind) + " (newer SolidArc?)"; return File; }
             Step.Kind  = static_cast<FeatureStepKind>(Kind);
             Step.Label = View["Label"].value_or(std::string{});
             if (Step.Label.empty()) { File.Refusal = "a step has no label"; return File; }

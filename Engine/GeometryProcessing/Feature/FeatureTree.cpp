@@ -1032,6 +1032,31 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             Create();
             break;
         }
+        case FeatureStepKind::Imprint:
+        {
+            // ⑳ 2D cutter (Plasticity / Fusion split face): the sketch outline (closed loops, or an open chain closed past
+            //    the body) is swept a hair along ±𝑧 — the side away from the material, Extent's sign — into a tool that only
+            //    touches the body where the sketch lies; every body face keeps its fragments, split along that outline.
+            if (!Load(Step.Target)) { Refuse("Imprint: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
+            if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet) { Refuse("Imprint: the body is a sheet (🚧 imprints on sheets)"); break; }
+            const auto Found = Sketches.find(Step.Profile);
+            if (Found == Sketches.end() || !Found->second.UsableCondition) { Refuse("Imprint: sketch " + Step.Profile + " is unavailable"); break; }
+            const OrthonormalFrame& Plane   = Found->second.Plane;
+            const double            Reach   = MeasureCutReach(Partition, Current, Plane);
+            const SketchProfile     Profile = BuildSketchCutProfile(Found->second.Model, Reach);
+            if (!Profile.Refusal.empty()) { Refuse("Imprint: " + Profile.Refusal); break; }
+            const double Lift  = std::max(1.0e-2 * Reach, 1.0e-4) * (EvaluateFeatureValue(Tree, Step.Extent) < 0.0 ? -1.0 : 1.0);   // [len] - Tool height
+            const SweepOutcome Sweep = ExtrudeProfile(Partition, Profile, Plane, Lift, true);
+            if (!Sweep.Refusal.empty()) { Refuse("Imprint: " + Sweep.Refusal); break; }
+            int Before = 0;
+            const BooleanOutcome Imprint = ImprintBody(Partition, Current, Sweep.Body, Plane.Origin, Plane.ZAxis, Before);
+            if (!Imprint.Refusal.empty()) { Refuse("Imprint: " + Imprint.Refusal); break; }
+            if (Imprint.Faces <= Before) { Refuse("Imprint: " + Step.Profile + " lies on no face of the body (draw it on a face)"); break; }
+            Naming  = NameBooleanBody(Partition, Imprint.Body, Imprint, Naming, NameSweptBody(Partition, Sweep, Step.Label));
+            Current = Imprint.Body;
+            Store();
+            break;
+        }
         case FeatureStepKind::Remove:
         {
             // ⑫ Delete a body (Plasticity X); the last remaining body becomes active when the active one goes.
@@ -1348,6 +1373,7 @@ const char* FeatureStepKindLabel(FeatureStepKind Kind) noexcept
     case FeatureStepKind::Joint:         return "Joint";
     case FeatureStepKind::Import:        return "Import";
     case FeatureStepKind::Flip:          return "Flip";
+    case FeatureStepKind::Imprint:       return "Imprint";
     }
     return "?";
 }

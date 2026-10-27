@@ -121,6 +121,7 @@ namespace
     GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
     GateTally ManifoldGate    = { "W60", "Extrude manifold (Blender's push-in, the Windows report \"i want to extrude the shape i cant\"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push", "1e-9 rel" };
+    GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -474,6 +475,115 @@ void ValidateExtrudeManifold()
     }
 }
 
+// W61: the 2D cutter — imprint an outline into the faces it lies on, then push / pull the regions (face E).
+void ValidateImprint()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto NewBlock = []()
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Imprint");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+    const auto OnFace = [](SolidArcDrawingKind Kind, std::vector<Vector2> Points, OrthonormalFrame Plane, bool Closed)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = Kind; Request.Points = std::move(Points); Request.ClosedCondition = Closed;
+        Request.PlaneCondition = true; Request.Plane = Plane; Request.FillCondition = false;              // Fresh shapes are unfilled
+        Request.CentreCondition = Kind == SolidArcDrawingKind::Circle;
+        return Request;
+    };
+    // Draw on the face, imprint, and tally: accepted, volume 8 (sound), faces +1, one undo entry.
+    const auto Imprint = [&](SolidArcDocument& Part, const SolidArcDrawingRequest& Request, const char* Title, int Extra = 1)
+    {
+        Expect(DrawSolidArcSketch(Part, Request));
+        const int    Faces = Part.Summary.Faces;
+        const size_t Undo  = Part.UndoEntries.size();
+        const SolidArcCommandOutcome Made = ImprintSolidArcSketch(Part, Part.Tree.Steps.back().Label);
+        const double Before = Part.Summary.Volume;
+        Tally(ImprintGate, 0.0, Made.AcceptedCondition && Part.Summary.SoundCondition && Part.Summary.Faces == Faces + Extra && Part.UndoEntries.size() == Undo + 1,
+              Format("%s: %s, faces %d → %d (expect +%d), sound %d, volume %.9f%s", Title, Made.AcceptedCondition ? "imprinted" : "refused", Faces, Part.Summary.Faces, Extra,
+                     int(Part.Summary.SoundCondition), Before, Made.Refusal.empty() ? "" : (" · " + Made.Refusal).c_str()));
+        return Made.AcceptedCondition;
+    };
+    const auto PushAt = [&](const SolidArcDocument& Source, double X, double Y, double Amount, double Expected, const char* Title)
+    {
+        SolidArcDocument Part = CloneSolidArcDocument(Source);
+        const std::string Face = PickAndSelect(Part, RayBetween({ X, Y, 5.0 }, { X, Y, 0.0 }), false);
+        const SolidArcCommandOutcome Pushed = ChangeSolidArcSelection(Part, FaceOperationKind::Extrude, Amount);
+        TallyVolume(ImprintGate, Part, Expected, Format("%s: face %s at (%.2f, %.2f) E %+.2f%s", Title, Face.c_str(), X, Y, Amount, Pushed.Refusal.empty() ? "" : (" · " + Pushed.Refusal).c_str()));
+        return Part;
+    };
+    const OrthonormalFrame Top{ { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const OrthonormalFrame Front{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };   // y = 0 face, outward −y
+    const std::vector<Vector2> Notched = { { 1.0, 0.5 }, { 2.5, 0.5 }, { 2.5, 1.0 }, { 1.8, 1.0 }, { 1.8, 1.5 }, { 1.0, 1.5 } };
+    const double NotchedArea = 1.5 * 0.5 + 0.8 * 0.5;
+
+    // ① An island (the notched hexagon) on the top: 7 faces, then E in → pocket, E out → boss.
+    {
+        SolidArcDocument Part = NewBlock();
+        if (Imprint(Part, OnFace(SolidArcDrawingKind::Line, Notched, Top, true), "notched island on the top"))
+        {
+            TallyVolume(ImprintGate, Part, 8.0, "island imprint: the volume is unchanged");
+            const SolidArcDocument Saved = CloneSolidArcDocument(Part);
+            (void)PushAt(Part, 1.3, 1.0, -0.3, 8.0 - 0.3 * NotchedArea, "island pushed in → pocket");
+            (void)PushAt(Part, 1.3, 1.0, 0.3, 8.0 + 0.3 * NotchedArea, "island pulled out → boss");
+            // Save / load: the Imprint step replays to the same names and figures.
+            const std::string          Text     = EncodeSolidArcDocument(Saved);
+            const SolidArcDocumentFile Loaded   = DecodeSolidArcDocument(Text);
+            SolidArcDocument           Reloaded = CreateSolidArcDocument(Loaded.Title);
+            const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+            Tally(ImprintGate, 0.0, Loaded.Refusal.empty() && Opened.AcceptedCondition && Reloaded.Summary.Faces == Saved.Summary.Faces
+                                    && Reloaded.Regeneration.Naming.Faces == Saved.Regeneration.Naming.Faces && EncodeSolidArcDocument(Reloaded) == Text,
+                  Format("save → load: %d faces, names equal, byte-equal (%s)", Reloaded.Summary.Faces, Loaded.Refusal.empty() ? Opened.Refusal.c_str() : Loaded.Refusal.c_str()));
+        }
+    }
+
+    // ② The steps case: a rectangle overhanging the left half splits the top along x = 2; the left half pushed in is a
+    //    step (8 − 0.4·4), pulled out a raised step (8 + 0.5·4). A second imprint on the lower step, whose closing box
+    //    runs over the raised half, still adds exactly one face (the riser it grazes is healed).
+    {
+        SolidArcDocument Part = NewBlock();
+        if (Imprint(Part, OnFace(SolidArcDrawingKind::Rectangle, { { -0.5, -0.5 }, { 2.0, 2.5 } }, Top, true), "rectangle over the left half"))
+        {
+            SolidArcDocument Step = PushAt(Part, 1.0, 1.0, -0.4, 8.0 - 0.4 * 4.0, "left half pushed in → a step");
+            (void)PushAt(Part, 3.0, 1.0, 0.5, 8.0 + 0.5 * 4.0, "right half pulled out → a raised step");
+            OrthonormalFrame Lower = Top;
+            Lower.Origin = { 0.0, 0.0, 0.6 };
+            if (Step.Summary.Faces > 0 && Imprint(Step, OnFace(SolidArcDrawingKind::Line, { { 1.0, 1.7 }, { 1.0, 0.3 } }, Lower, false), "line on the lower step (closing box over the raised half)"))
+                (void)PushAt(Step, 0.5, 1.0, -0.3, 8.0 - 1.6 - 0.3 * 2.0, "left strip pushed in → a second step");
+        }
+    }
+
+    // ③ Open chains edge to edge: a line across (and one stopping short, extended), an L polyline cutting a corner.
+    {
+        SolidArcDocument Across = NewBlock();
+        if (Imprint(Across, OnFace(SolidArcDrawingKind::Line, { { 3.0, -0.3 }, { 3.0, 2.3 } }, Top, false), "line across the top"))
+            (void)PushAt(Across, 3.5, 1.0, -0.5, 8.0 - 0.5 * 2.0, "end strip (1 × 2) pushed in");
+        SolidArcDocument Short = NewBlock();
+        (void)Imprint(Short, OnFace(SolidArcDrawingKind::Line, { { 3.0, 0.6 }, { 3.0, 1.4 } }, Top, false), "line stopping short (extended edge to edge)");
+        SolidArcDocument Corner = NewBlock();
+        if (Imprint(Corner, OnFace(SolidArcDrawingKind::Line, { { 2.5, 2.4 }, { 2.5, 1.2 }, { 4.4, 1.2 } }, Top, false), "L polyline cutting a corner"))
+            (void)PushAt(Corner, 3.2, 1.6, 0.2, 8.0 + 0.2 * 1.5 * 0.8, "corner pulled out");
+    }
+
+    // ④ Another face orientation; ⑤ refusals: an outline off the body, and the document untouched.
+    {
+        SolidArcDocument Part = NewBlock();
+        (void)Imprint(Part, OnFace(SolidArcDrawingKind::Circle, { { 2.0, 0.5 }, { 2.3, 0.5 } }, Front, false), "circle on the front face");
+        SolidArcDocument Away = NewBlock();
+        OrthonormalFrame Above = Top;
+        Above.Origin = { 0.0, 0.0, 3.0 };
+        Expect(DrawSolidArcSketch(Away, OnFace(SolidArcDrawingKind::Line, Notched, Above, true)));
+        const size_t Steps = Away.Tree.Steps.size();
+        const SolidArcCommandOutcome Refused = ImprintSolidArcSketch(Away, Away.Tree.Steps.back().Label);
+        Tally(ImprintGate, 0.0, !Refused.AcceptedCondition && Away.Tree.Steps.size() == Steps && Away.Summary.Faces == 6,
+              Format("outline 2 above the block: %s (%s)", Refused.AcceptedCondition ? "accepted!" : "refused, rolled back", Refused.Refusal.c_str()));
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
@@ -487,6 +597,12 @@ int main()
         ValidateExtrudeManifold();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ManifoldGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_IMPRINT"))                                          // Quick rerun of W61 alone
+    {
+        ValidateImprint();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return ImprintGate.Failures ? 1 : 0;
     }
 
     // ---- W1 single tiles against closed forms
@@ -5829,7 +5945,10 @@ int main()
     // ---- W60 Extrude manifold (push-in by direction, imprinted regions)
     ValidateExtrudeManifold();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate })
+    // ---- W61 2D cutters (imprint, then push / pull the regions)
+    ValidateImprint();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

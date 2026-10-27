@@ -5361,6 +5361,10 @@ void ChooseKnifeCombination(SolidArcWorkspaceState& State, FeatureCombination Co
     return Kind == SolidArcDrawingKind::Line && PolylineCondition ? "Polyline" : SolidArcDrawingLabel(Kind);
 }
 
+void ImprintKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch);
+
+void AnnounceImprintShape(SolidArcWorkspaceState& State);
+
 void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind, bool PolylineCondition = false)
 {
     SolidArcKnifeSession& Knife = State.Knife;
@@ -5409,8 +5413,10 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     const bool                  PreferredSolidCondition = Knife.PreferredSolidCondition;
     const SolidArcConstructKind PreferredSolid          = Knife.PreferredSolid;
     const bool                  PreferredPolyline       = Knife.PreferredPolylineCondition;
+    const bool                  PreferredImprint        = Knife.PreferredImprintCondition;
     Knife                  = {};
     Knife.PreferredPolylineCondition = PreferredPolyline;
+    Knife.PreferredImprintCondition  = PreferredImprint;
     Knife.PreferredMode    = PreferredMode;
     Knife.PreferredShape   = PreferredShape;
     Knife.PreferredSolidCondition = PreferredSolidCondition;
@@ -5436,6 +5442,12 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     if (!Sketch.empty())
     {
         Knife.Sketch = Sketch;
+        if (Knife.PreferredImprintCondition && !Knife.PreferredSolidCondition && Knife.PreferredMode == SolidArcKnifeMode::Sketch)
+        {
+            Knife.Mode = SolidArcKnifeMode::Sketch;
+            ImprintKnifeSketch(State, Sketch);                                               // 2D cutter on the picked sketch
+            return;
+        }
         ChooseKnifeMode(State, SolidArcKnifeMode::Sketch);
         return;
     }
@@ -5445,15 +5457,17 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     if (Knife.PreferredMode == SolidArcKnifeMode::Object) { ChooseKnifeMode(State, SolidArcKnifeMode::Object); return; }
     if (Knife.PreferredSolidCondition) { DrawKnifeSolid(State, Knife.PreferredSolid); return; }
     DrawKnifeShape(State, Knife.PreferredShape, Knife.PreferredPolylineCondition);
+    if (Knife.PreferredImprintCondition) { AnnounceImprintShape(State); return; }
     Announce(State, std::string("Knife · draw a ") + KnifeShapeLabel(Knife.PreferredShape, Knife.PreferredPolylineCondition) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line / Polyline) · then pull along the normal for the depth · Tab: Insert library · Esc cancels");
 }
 
 // Toolbar tool menu: remembers the cutter and opens (or switches) the knife on it.
-void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, SolidArcDrawingKind Shape, int Insert, bool PolylineCondition = false)
+void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, SolidArcDrawingKind Shape, int Insert, bool PolylineCondition = false, bool ImprintCondition = false)
 {
     SolidArcKnifeSession& Knife = State.Knife;
     Knife.PreferredMode  = Mode;
     Knife.PreferredShape = Shape;
+    Knife.PreferredImprintCondition = Mode == SolidArcKnifeMode::Sketch && ImprintCondition;
     if (Mode == SolidArcKnifeMode::Sketch) Knife.PreferredPolylineCondition = PolylineCondition && Shape == SolidArcDrawingKind::Line;
     if (Mode == SolidArcKnifeMode::Sketch || Mode == SolidArcKnifeMode::Insert) Knife.PreferredSolidCondition = false;
     if (Insert >= 0) { Knife.Insert = Insert; Knife.Aspect = 1.0; }
@@ -5464,7 +5478,8 @@ void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, Soli
         const bool Same = Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.Kind == Shape && State.Drawing.Points.empty()
                        && (Shape != SolidArcDrawingKind::Line || State.Drawing.SegmentCondition != Knife.PreferredPolylineCondition);
         if (!Same) DrawKnifeShape(State, Shape, Knife.PreferredPolylineCondition);
-        if (Knife.PreferredPolylineCondition)
+        if (Knife.PreferredImprintCondition) AnnounceImprintShape(State);
+        else if (Knife.PreferredPolylineCondition)
             Announce(State, "Knife · Polyline · click points across the body (Ctrl snaps) · Enter / right-click ends the chain · it slices the body along every segment");
         else
             Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face (live W / H / R dimensions), then pull along the normal for the depth (T through)");
@@ -5480,6 +5495,7 @@ void ChooseKnifeSolid(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
     Knife.PreferredMode           = SolidArcKnifeMode::Sketch;
     Knife.PreferredSolidCondition = true;
     Knife.PreferredSolid          = Kind;
+    Knife.PreferredImprintCondition = false;
     if (!Knife.ActiveCondition) { OpenKnifeSession(State); return; }
     if (!(KnifeSolidCondition(State) && State.Drawing.Solid == Kind && State.Drawing.Points.empty())) DrawKnifeSolid(State, Kind);
 }
@@ -5496,7 +5512,8 @@ void ChooseKnifeSolid(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
     if (!Knife.ActiveCondition && Knife.PreferredSolidCondition) return SolidArcConstructLabel(Knife.PreferredSolid);
     const bool                Drawing = Knife.ActiveCondition && Knife.DrawPendingCondition && State.Drawing.ActiveCondition;
     const SolidArcDrawingKind Shape   = Drawing ? State.Drawing.Kind : Knife.PreferredShape;
-    return KnifeShapeLabel(Shape, Drawing ? !State.Drawing.SegmentCondition : Knife.PreferredPolylineCondition);
+    const std::string         Caption = KnifeShapeLabel(Shape, Drawing ? !State.Drawing.SegmentCondition : Knife.PreferredPolylineCondition);
+    return Knife.PreferredImprintCondition ? "2D " + Caption : Caption;
 }
 
 void CloseKnifeSession(SolidArcWorkspaceState& State, const std::string& Message)
@@ -5511,6 +5528,41 @@ void CloseKnifeSession(SolidArcWorkspaceState& State, const std::string& Message
     if (!Message.empty()) Announce(State, Message);
 }
 
+void AnnounceImprintShape(SolidArcWorkspaceState& State)
+{
+    const SolidArcKnifeSession& Knife = State.Knife;
+    Announce(State, std::string("2D cutter · ") + KnifeShapeLabel(Knife.PreferredShape, Knife.PreferredPolylineCondition)
+                        + (Knife.PreferredPolylineCondition ? " · click points across the face (Ctrl snaps), Enter / right-click ends · an open chain splits edge to edge"
+                                                            : " · draw it on a face (live dimensions)")
+                        + " · it imprints into the face (nothing is cut) · then pick the new face and E pushes it in / pulls it out · Esc cancels");
+}
+
+// 💡 2D cutter: the outline (drawn, or the picked sketch) is imprinted into the faces of the body it lies on — split,
+//    not cut; the volume stays. The knife closes into face picking so the new region can be clicked and E dragged.
+//    Refused (off the body, a branching chain): the drawn sketch stays and the shape is armed again.
+void ImprintKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch)
+{
+    SolidArcKnifeSession&        Knife   = State.Knife;
+    const std::string            Target  = KnifeSketchTarget(State, Sketch);
+    const SolidArcCommandOutcome Outcome = ImprintSolidArcSketch(State.Document, Sketch, Target);
+    Conclude(State, Outcome);
+    if (!Outcome.AcceptedCondition)
+    {
+        Knife.Refusal = Legible(Outcome.Refusal);
+        Knife.Sketch.clear();
+        if (State.Scene.Bodies.empty()) { CloseKnifeSession(State, "Refused: " + Outcome.Refusal); return; }
+        DrawKnifeShape(State, Knife.PreferredShape, Knife.PreferredPolylineCondition);
+        Announce(State, "2D cutter refused: " + Outcome.Refusal + " · draw the shape on a face of the body (Esc cancels)");
+        return;
+    }
+    ++Knife.Commits;
+    Knife.Removed = 0.0;
+    CloseKnifeSession(State, {});
+    State.FocusedStep = {};
+    State.PickMode    = SolidArcPickMode::Face;
+    Announce(State, Outcome.Label + " · " + std::to_string(State.Document.Summary.Faces) + " faces · click the new region and E: drag in to push it down, out to pull it up");
+}
+
 // FinishDrawingSession / CancelDrawingSession: the shape drawn for the knife (empty Sketch: refused or aborted).
 void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, const std::string& Face)
 {
@@ -5520,6 +5572,7 @@ void AdoptKnifeSketch(SolidArcWorkspaceState& State, const std::string& Sketch, 
     if (Sketch.empty()) { CloseKnifeSession(State, "Knife cancelled (document untouched)"); return; }
     Knife.Sketch = Sketch;
     Knife.Face   = Face;
+    if (Knife.PreferredImprintCondition) { ImprintKnifeSketch(State, Sketch); return; }   // 2D cutter: no depth stage
     Knife.Drift  = Knife.Depth;
     Knife.Blends.clear();
     Knife.BlendFocus = -1;
@@ -6377,6 +6430,18 @@ void DrawKnifeCard(SolidArcWorkspaceState& State)
                     DrawKnifeShape(State, Shapes[Index].Kind, Polyline);
                 }
             }
+            // 2D cutter: the shape imprints into the face (split, nothing cut) instead of taking a depth.
+            if (ToggleButton(State, "2D cutter · imprint only###KnifeImprint", Knife.PreferredImprintCondition && !KnifeSolidCondition(State), RowSpan()))
+            {
+                State.Knife.PreferredImprintCondition = !State.Knife.PreferredImprintCondition;
+                if (State.Knife.PreferredImprintCondition && KnifeSolidCondition(State))
+                {
+                    State.Knife.PreferredSolidCondition = false;
+                    DrawKnifeShape(State, State.Knife.PreferredShape, State.Knife.PreferredPolylineCondition);
+                }
+                if (State.Knife.PreferredImprintCondition) AnnounceImprintShape(State);
+                else Announce(State, "Knife: sketch shapes cut to a depth again (3D)");
+            }
             // 3D cutters, drawn as the Construct menu draws them (base, then the height into the body).
             static const struct { const char* Label; SolidArcConstructKind Kind; } Solids[] = {
                 { "Block###KnifeDrawBlock", SolidArcConstructKind::Block }, { "Cylinder###KnifeDrawCylinder", SolidArcConstructKind::Cylinder },
@@ -6388,8 +6453,9 @@ void DrawKnifeCard(SolidArcWorkspaceState& State)
                 if (Index % 4 != 0) ImGui::SameLine();
                 if (ToggleButton(State, Solids[Index].Label, KnifeSolidCondition(State) && State.Drawing.Solid == Solids[Index].Kind, RowSpan(4)))
                 {
-                    State.Knife.PreferredSolidCondition = true;
-                    State.Knife.PreferredSolid          = Solids[Index].Kind;
+                    State.Knife.PreferredSolidCondition   = true;
+                    State.Knife.PreferredSolid            = Solids[Index].Kind;
+                    State.Knife.PreferredImprintCondition = false;
                     DrawKnifeSolid(State, Solids[Index].Kind);
                 }
             }
@@ -9760,7 +9826,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
         Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
         if (*Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
-        if (Index == 4 && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): sketch cutters, boolean-library inserts, object cutters");
+        if (Index == 4 && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): 2D cutters (imprint), sketch cutters, 3D cutters, boolean-library inserts, object cutters");
         if (Index == 1 && Press.HoveredCondition) ImGui::SetTooltip("Cut: click a line, arc or circle where it should break in two · C cuts a body by the focused sketch");
         if (Press.ClickedCondition)
         {
@@ -9788,7 +9854,7 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Press.HoveredCondition || State.Knife.ActiveCondition ? 0xffffff : 0xaaaaaa), Enabled ? 1.0f : 0.32f);
         Sheet.Text(Box.MinimumX + 8.0f, Centre, 13.0f, Ink, ToolCaption.c_str());
         SelectChevron(Sheet, Box.MaximumX - 12.0f, Centre, Ink);
-        if (Press.HoveredCondition) ImGui::SetTooltip("Knife cutter: sketch shape, boolean-library insert or picked objects");
+        if (Press.HoveredCondition) ImGui::SetTooltip("Knife cutter: 2D cutter (imprint into the face), sketch shape with depth, 3D primitive, boolean-library insert or picked objects");
         if (Press.ClickedCondition)
         {
             EnsureKnifeLibrary(State);
@@ -9798,8 +9864,22 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         {
             const SolidArcKnifeSession& Knife = State.Knife;
             const SolidArcKnifeMode     Mode  = Knife.ActiveCondition ? Knife.Mode : Knife.PreferredMode;
-            // Three columns (the list would outgrow the space above the toolbar): 2D shapes and objects · 3D primitives · library.
-            const bool Columns = ImGui::BeginTable("KnifeToolColumns", 3, ImGuiTableFlags_SizingFixedFit);
+            // Four columns (the list would outgrow the space above the toolbar): 2D cutters (imprint only) · sketch cutters
+            // with depth and objects · 3D primitives · library.
+            const bool Columns = ImGui::BeginTable("KnifeToolColumns", 4, ImGuiTableFlags_SizingFixedFit);
+            if (Columns) ImGui::TableNextColumn();
+            ImGui::TextDisabled("2D cutter");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Imprints the shape into the face: splits it, cuts nothing · then E on the new face pushes / pulls it");
+            static const struct { const char* Label; SolidArcDrawingKind Kind; bool PolylineCondition; } Flats[] = {
+                { "Rectangle###KnifeFlatRectangle", SolidArcDrawingKind::Rectangle, false }, { "Circle###KnifeFlatCircle", SolidArcDrawingKind::Circle, false },
+                { "Polygon###KnifeFlatPolygon", SolidArcDrawingKind::Polygon, false }, { "Slot###KnifeFlatSlot", SolidArcDrawingKind::Slot, false },
+                { "Line###KnifeFlatLine", SolidArcDrawingKind::Line, false }, { "Polyline###KnifeFlatPolyline", SolidArcDrawingKind::Line, true } };
+            for (const auto& Flat : Flats)
+            {
+                const bool Chosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredImprintCondition && Knife.PreferredShape == Flat.Kind
+                                 && Knife.PreferredPolylineCondition == Flat.PolylineCondition;
+                if (SelectListEntry(State, Flat.Label, Chosen)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Flat.Kind, -1, Flat.PolylineCondition, true);
+            }
             if (Columns) ImGui::TableNextColumn();
             ImGui::TextDisabled("Sketch cutter");
             static const SolidArcDrawingKind Shapes[] = { SolidArcDrawingKind::Circle, SolidArcDrawingKind::Rectangle, SolidArcDrawingKind::Polygon, SolidArcDrawingKind::Slot,
@@ -9807,10 +9887,12 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
             for (SolidArcDrawingKind Shape : Shapes)
             {
                 const std::string Label = std::string(SolidArcDrawingLabel(Shape)) + "###KnifeTool" + SolidArcDrawingLabel(Shape);
-                const bool Chosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == Shape && !Knife.PreferredPolylineCondition;
+                const bool Chosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && !Knife.PreferredImprintCondition && Knife.PreferredShape == Shape
+                                 && !Knife.PreferredPolylineCondition;
                 if (SelectListEntry(State, Label, Chosen)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Shape, -1);
             }
-            const bool PolylineChosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == SolidArcDrawingKind::Line && Knife.PreferredPolylineCondition;
+            const bool PolylineChosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && !Knife.PreferredImprintCondition && Knife.PreferredShape == SolidArcDrawingKind::Line
+                                     && Knife.PreferredPolylineCondition;
             if (SelectListEntry(State, "Polyline###KnifeToolPolyline", PolylineChosen)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, SolidArcDrawingKind::Line, -1, true);
             ImGui::TextDisabled("Objects");
             if (SelectListEntry(State, "Picked bodies###KnifeToolObject", Mode == SolidArcKnifeMode::Object)) ChooseKnifeTool(State, SolidArcKnifeMode::Object, Knife.PreferredShape, -1);
@@ -9867,6 +9949,7 @@ std::pair<IconSymbol, const char*> StepGlyph(const FeatureStep& Step)
     case FeatureStepKind::Joint:         return { IconSymbol::SolidArcLink, "joint" };
     case FeatureStepKind::Import:        return { IconSymbol::SolidArcFile, "import" };
     case FeatureStepKind::Flip:          return { IconSymbol::SolidArcFlip, "flip" };
+    case FeatureStepKind::Imprint:       return { IconSymbol::SolidArcCut, "imprint" };
     }
     return { IconSymbol::SolidArcBody, "step" };
 }
@@ -10913,6 +10996,9 @@ void DrawStepCard(SolidArcWorkspaceState& State)
                            Step->Sections.empty() ? "" : Compose(" seen along (%.0f, %.0f, %.0f)", Step->Plane.ZAxis.X, Step->Plane.ZAxis.Y, Step->Plane.ZAxis.Z).c_str(),
                            SolidArcBodyCaption(State.Document, Step->Label).c_str());
     }
+    if (Step->Kind == FeatureStepKind::Imprint)
+        ImGui::TextWrapped("Imprints %s into the faces of %s (2D cutter: split, nothing cut) · face E pushes / pulls the regions", CaptionOf(State.Document, Step->Profile).c_str(),
+                           SolidArcBodyCaption(State.Document, Step->Target).c_str());
     if (Step->Kind == FeatureStepKind::Remove) ImGui::Text("Deletes %s", SolidArcBodyCaption(State.Document, Step->Target).c_str());
     if (Step->Kind == FeatureStepKind::Transform || Step->Kind == FeatureStepKind::Duplicate)
     {

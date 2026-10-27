@@ -443,6 +443,11 @@ struct SolidArcInsertPlacement
     GeometryProcessing::FeatureCombination Combination = GeometryProcessing::FeatureCombination::Difference; // [-] - Into Target
     std::string                            Target      = {};                                 // [-] - Body cut / joined
 };
+
+// 2D cutter (Plasticity / Fusion split face): the sketch's outline split into the faces of Target it lies on — no cut,
+// the volume unchanged; push / pull the new faces afterwards (face E). Open chains split edge to edge.
+[[nodiscard]] SolidArcCommandOutcome ImprintSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, const std::string& Target = {});
+
 [[nodiscard]] SolidArcCommandOutcome KnifeSolidArcInsert(SolidArcDocument& Document, const SolidArcInsertPlacement& Placement);
 
 // Knife with existing bodies: each tool is combined into Target; KeepCondition first duplicates the tools in place so

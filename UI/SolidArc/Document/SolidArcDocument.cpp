@@ -12,6 +12,7 @@
 #include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcExchange.h"
+#include "UI/SolidArc/Document/SolidArcScene.h"
 #include "UI/SolidArc/Document/VehicleCurveImport.h"
 
 #include "Engine/GeometryProcessing/Audit/EnclosedVolume.h"
@@ -2552,6 +2553,34 @@ SolidArcCommandOutcome KnifeSolidArcSketch(SolidArcDocument& Document, const std
             Document.Selection.Bodies   = { Made };
             Document.Selection.LastKind = SolidArcSelectionKind::Body;
         }
+        return {};
+    });
+}
+
+SolidArcCommandOutcome ImprintSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, const std::string& Target)
+{
+    const std::string Caption = NextCaption(Document, "Imprint");
+    const auto        Source  = Document.Captions.find(SketchLabel);
+    const std::string Key     = Target.empty() ? Document.Regeneration.Active : Target;
+    const std::string Label   = Caption + " · " + (Source != Document.Captions.end() ? Source->second : SketchLabel) + " on " + SolidArcBodyCaption(Document, Key);
+    // The tool stands on the side away from the material (a closed outline on a face); open chains and undecided outlines
+    // take the sketch normal (orient-to-face sketches: outward). Either side splits the same faces.
+    const int Material = MeasureSolidArcProfileMaterial(Document, SketchLabel, Key);
+    return RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == SketchLabel; });
+        if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + SketchLabel;
+        if (!Document.Summary.PresentCondition) return "nothing to imprint on yet (no body)";
+        if (Key.empty() || !FindRegeneratedBody(Document, Key)) return Key.empty() ? std::string("no body under the outline") : "no body named " + Key;
+        FeatureStep Step;
+        Step.Kind    = FeatureStepKind::Imprint;
+        Step.Label   = "Imprint#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Profile = SketchLabel;
+        Step.Extent  = FeatureValue{ Material > 0 ? -1.0 : 1.0 };
+        Step.Target  = Key;
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        Document.Selection = {};
         return {};
     });
 }

@@ -53,6 +53,7 @@ enum class FeatureStepKind : uint8_t
     Joint         = 17,                                                                      // Place a body by a joint to another body (Fusion joints, priority 11)
     Import        = 18,                                                                      // One solid read from embedded STEP text (priority 4 X4)
     Flip          = 19,                                                                      // A sheet turned over: every face normal reversed (loft inside out)
+    Imprint       = 20,                                                                      // Sketch outline split into the faces it lies on (2D cutter)
 };
 
 enum class FeatureCombination : uint8_t

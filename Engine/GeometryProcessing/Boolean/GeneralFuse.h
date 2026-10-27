@@ -32,6 +32,7 @@ enum class BooleanOperation : uint8_t
     ReversedDifference = 3,                                                                  // B − A
     FirstInside        = 4,                                                                  // Faces of A inside B (sheet cut piece, no B caps)
     FirstOutside       = 5,                                                                  // Faces of A outside B (sheet cut piece, no B caps)
+    Imprint            = 6,                                                                  // Every face of A, split where B meets it (B dropped)
 };
 
 // 📝 State of a split face relative to the OTHER argument (OCCT: IN / OUT / ON with same or opposite orientation).
@@ -179,6 +180,12 @@ struct BooleanOutcome
                                             BooleanOperation           Operation,
                                             const GeneralFuseSettings& Settings   = {},
                                             GeneralFuseStatistics*     Statistics = nullptr);
+
+// 💡 Imprint (Plasticity / Fusion "split face", the 2D cutter): A with its faces split along the curves where Tool's
+//    faces meet them — every fragment of A kept, Tool's dropped. Only splits whose edges lie in the plane (PlaneOrigin,
+//    PlaneNormal) stay; any other split (Tool grazing a raised neighbour) is healed by the maximal-face merge. The volume
+//    is unchanged. Faces receives A's face count before (Outcome.Faces is the count after).
+[[nodiscard]] BooleanOutcome ImprintBody(ModelPartition& Partition, BodyToken Body, BodyToken Tool, const Vector3& PlaneOrigin, const Vector3& PlaneNormal, int& Faces);
 
 [[nodiscard]] const char* BooleanOperationLabel(BooleanOperation Operation) noexcept;
 [[nodiscard]] const char* FragmentStateLabel(FragmentState State) noexcept;

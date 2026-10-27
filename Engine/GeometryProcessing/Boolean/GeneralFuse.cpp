@@ -1092,6 +1092,7 @@ namespace
             case BooleanOperation::ReversedDifference: return First ? std::pair{ State == Inside, true } : std::pair{ State == Outside || State == OnOpposite, false };
             case BooleanOperation::FirstInside:        return { First && State == Inside, false };
             case BooleanOperation::FirstOutside:       return { First && State == Outside, false };
+            case BooleanOperation::Imprint:            return { First, false };
         }
         return { false, false };
     }
@@ -1184,9 +1185,9 @@ static BooleanOutcome ComputeBooleanUntraced(ModelPartition& Partition, BodyToke
 
 BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyToken Second, BooleanOperation Operation, const GeneralFuseSettings& Settings, GeneralFuseStatistics* Statistics)
 {
-    static const char* Verbs[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside" };
+    static const char* Verbs[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside", "Imprint" };
     const size_t Verb = static_cast<size_t>(Operation);
-    FRONTIER_TRACE_SCOPE("Boolean", std::string(Verb < 6 ? Verbs[Verb] : "Boolean") + " · bodies " + std::to_string(First.Slot) + " and " + std::to_string(Second.Slot));
+    FRONTIER_TRACE_SCOPE("Boolean", std::string(Verb < 7 ? Verbs[Verb] : "Boolean") + " · bodies " + std::to_string(First.Slot) + " and " + std::to_string(Second.Slot));
     BooleanOutcome Outcome = ComputeBooleanUntraced(Partition, First, Second, Operation, Settings, Statistics);
     FRONTIER_TRACE("Boolean", Outcome.Refusal.empty() ? std::to_string(Outcome.Solids) + " solid(s) · " + std::to_string(Outcome.Faces) + " face(s)"
                                                       : "refused: " + Outcome.Refusal);
@@ -1196,8 +1197,53 @@ BooleanOutcome ComputeBoolean(ModelPartition& Partition, BodyToken First, BodyTo
 
 const char* BooleanOperationLabel(BooleanOperation Operation) noexcept
 {
-    constexpr const char* Labels[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside" };
+    constexpr const char* Labels[] = { "Union", "Intersection", "Difference", "ReversedDifference", "FirstInside", "FirstOutside", "Imprint" };
     return Labels[static_cast<int>(Operation)];
+}
+
+BooleanOutcome ImprintBody(ModelPartition& Partition, BodyToken Body, BodyToken Tool, const Vector3& PlaneOrigin, const Vector3& PlaneNormal, int& Faces)
+{
+    FRONTIER_TRACE_SCOPE("Boolean", "Imprint · body " + std::to_string(Body.Slot) + " by " + std::to_string(Tool.Slot));
+    Faces = static_cast<int>(Partition.CollectInventory(Body).Faces.size());
+    GeneralFuseSettings Settings;
+    Settings.MaximalFacesEnabled = false;
+    const GeneralFuseOutcome Fuse    = RunGeneralFuse(Partition, Body, Tool, Settings);
+    BooleanOutcome           Outcome = AssembleBoolean(Partition, Fuse, BooleanOperation::Imprint, false);
+    if (!Outcome.Refusal.empty()) { FRONTIER_TRACE("Boolean", "refused: " + Outcome.Refusal); return Outcome; }
+
+    // Heal every split not on the plane: an edge stays only when a face it bounds lies in the plane (the imprinted face);
+    // splits on faces across the plane (the tool grazing, or its start cap passing inside, a raised neighbour) merge back.
+    const double  Tolerance = 1.0e-6 * std::max(1.0, Length(PlaneOrigin));                   // [len] - In-plane tolerance (join)
+    const Vector3 Normal    = Normalize(PlaneNormal);
+    const auto Coplanar = [&](FaceToken Face)
+    {
+        const auto* Plane = std::get_if<PlaneSurface>(&Partition.Surfaces.Resolve(Partition.Faces.Resolve(Face).Surface));
+        return Plane != nullptr && std::fabs(Dot(Plane->Frame.ZAxis, Normal)) >= 1.0 - 1.0e-9 && std::fabs(Dot(Plane->Frame.Origin - PlaneOrigin, Normal)) <= Tolerance;
+    };
+    const RedundancyOutcome Redundancy = RemoveRedundantTopology(Partition, Outcome.Body, SessionPrecision, [&](EdgeToken Edge)
+    {
+        const FinToken First = Partition.Edges.Resolve(Edge).RadialFin;
+        FinToken       Fin   = First;
+        do
+        {
+            if (Coplanar(Partition.Loops.Resolve(Partition.Fins.Resolve(Fin).Loop).Face)) return false;
+            Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+        } while (!(Fin == First));
+        return true;
+    });
+    for (const auto& [Absorbed, Survivor] : Redundancy.FaceMerges)
+    {
+        for (FaceHistory& History : Outcome.FaceHistories) if (History.Result == Absorbed) History.Result = Survivor;
+    }
+    std::erase_if(Outcome.EdgeHistories, [&](const EdgeHistory& History)
+    {
+        return std::find(Redundancy.EdgesRemoved.begin(), Redundancy.EdgesRemoved.end(), History.Result) != Redundancy.EdgesRemoved.end();
+    });
+    Outcome.Faces      -= Redundancy.FacesMerged;
+    Outcome.FacesMerged = Redundancy.FacesMerged;
+    Outcome.EdgesJoined = Redundancy.EdgesJoined;
+    FRONTIER_TRACE("Boolean", std::to_string(Faces) + " → " + std::to_string(Outcome.Faces) + " face(s) · " + std::to_string(Redundancy.FacesMerged) + " off-plane split(s) healed");
+    return Outcome;
 }
 
 const char* FragmentStateLabel(FragmentState State) noexcept
