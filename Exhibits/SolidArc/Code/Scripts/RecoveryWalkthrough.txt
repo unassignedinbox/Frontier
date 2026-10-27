@@ -1,6 +1,9 @@
 # SolidArc recovery walkthrough — run after WorkspaceWalkthrough.txt left an autosave behind.
 # Run: SolidArcCapture --options Scripts/RecoveryOptions.toml --script Scripts/RecoveryWalkthrough.txt (no --specimen)
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty start + Welcome back (options: parallel projection, no grid)
 frames 2
 expect welcome == 1

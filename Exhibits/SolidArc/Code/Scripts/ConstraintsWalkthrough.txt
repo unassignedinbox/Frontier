@@ -7,6 +7,9 @@
 # Closed forms: the 2 × 1 rectangle extruded 1 → ] corner, D 3, D 2 → V 6 (DOF 4 → 2 → 1 → 0); D1 = 4 → V 8; D2 removed,
 # far corner dragged to (4, 3) → V 12. Line chain: ] start, H, D 1.5, angle 45°, equal → (0.5, 3.4) (2, 3.4) (3.06066, 4.46066).
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty document, Top view: a 2 × 1 rectangle extruded 1 (New)
 key N Ctrl
 frames 2

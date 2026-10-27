@@ -6,6 +6,9 @@
 # Bracket specimen: block 4 × 2.5 × 1, boss r 0.5 (z 1 … 1.75) at (1, 1.25), hole r 0.3 at (3, 1.25), Fillet1 r 0.25 on
 # the right top edge, Chamfer1 0.2 on the left top edge — volume 10.22278.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① I with nothing selected: the body's mass properties (unit density) and its centroid marker
 frames 3
 expect steps == 8

@@ -2,6 +2,9 @@
 # Run: SolidArcCapture --specimen --reset-files --recovery …/ShortcutRecovery.solidarc --script Scripts/ShortcutWalkthrough.txt
 # Own recovery / document files, so the main walkthrough → recovery fixture is untouched.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① selection modes 2 / 3 / 4 / 5 (Tab) and 1 (control points: curves and poles); mode 4 selects the body (by key, not its faces); Alt+A deselects
 frames 2
 expect faces == 11
@@ -82,7 +85,7 @@ key Z Ctrl Shift
 expect faces == 12
 expect redo == 0
 
-# ⑤ click replaces, Shift+click adds, Ctrl+click removes, Alt+click adds the tangent chain
+# ⑤ click replaces, Shift+click adds, Ctrl+click removes, Alt+Shift+click adds the tangent chain (Alt alone: the edge ring)
 #    (x = 4 side face: bottom line → Blend#9 arc → front vertical → Blend#7 arc → top line, all sharp and G1)
 key Escape
 key 2
@@ -99,7 +102,7 @@ expect selected-edges == 1
 key Escape
 move world 4.0 1.5 0.0
 frames 2
-click world 4.0 1.5 0.0 Left Alt
+click world 4.0 1.5 0.0 Left Alt Shift
 expect selected-edges == 5
 capture 21TangentChain
 key Escape

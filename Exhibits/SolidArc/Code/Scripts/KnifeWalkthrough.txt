@@ -7,6 +7,9 @@
 # square pocket insert of width 0.4 (depth 0.3 widths) = 0.4² × 0.12 = 0.0192 · the same insert raised (Q) adds 0.0192 ·
 # a separate insert body (0.35 widths tall) = 0.4² × 0.14 = 0.0224.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① a 2 m cube from the Construct menu
 key N Ctrl
 frames 3

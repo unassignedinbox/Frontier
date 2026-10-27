@@ -6,6 +6,9 @@
 # edge, Chamfer1 0.2 on the left top edge — 11 faces, 24 edges, volume 4·2.5·1 + π·0.5²·0.75 − π·0.3² − (1 − π/4)·0.25²·2.5
 # − ½·0.2²·2.5 = 10.22278. From the isometric view the back-bottom edge (y = 2.5, z = 0) lies behind the solid.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① the bracket, opaque, mode 2: the back-bottom edge's middle is covered by the top face
 frames 3
 expect steps == 8

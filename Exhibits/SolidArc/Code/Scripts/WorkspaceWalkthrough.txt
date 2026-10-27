@@ -2,6 +2,9 @@
 # Run: SolidArcCapture --specimen --script Scripts/WorkspaceWalkthrough.txt (see README for the full command)
 # Targets: @Widget (registered rectangle centre) · world X Y Z (projected into the viewport) · viewport U V · X Y pixels
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① layout + specimen
 frames 2
 capture 01Workspace

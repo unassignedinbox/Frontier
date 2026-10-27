@@ -7,6 +7,9 @@
 # (−0.485643, −0.874157). A world target lands on a whole pixel (≈ 0.01 here), so the checks bracket the foot by ±0.012
 # and the report's values lie on the circle (x² + y² = 1 to the printed digits).
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Top view: Shift+W circle r 1 about the origin
 key N Ctrl
 frames 3

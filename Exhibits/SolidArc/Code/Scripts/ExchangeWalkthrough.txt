@@ -8,6 +8,9 @@
 # Bracket specimen: block 4 × 2.5 × 1 m, boss r 0.5 (z 1 … 1.75), hole r 0.3, Fillet1 r 0.25, Chamfer1 0.2:
 # V = 10 + 0.75 π/4 − 0.09 π − 0.15625 (1 − π/4) − 0.05 = 10.2227737 m³.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Export…: the field offers Exchange.step beside the document; the bracket goes out as STEP (11 faces, exact)
 frames 3
 expect bodies == 1

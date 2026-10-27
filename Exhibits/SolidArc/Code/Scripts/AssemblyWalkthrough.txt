@@ -8,6 +8,9 @@
 #      --document …/Assembly.solidarc --script Exhibits/SolidArc/Code/Scripts/AssemblyWalkthrough.txt
 # Bracket specimen Block1 (hole r 0.3 at (3, 1.25) through z 0 … 1); circles are pointed at 135° off +x, away from seams.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① two more bodies: a pin Cylinder3 r 0.25 h 1.5 at (6, 1.25, 0) and a lever Block2 2 × 0.4 × 0.2 at (6, 4, 0)
 frames 3
 expect bodies == 1

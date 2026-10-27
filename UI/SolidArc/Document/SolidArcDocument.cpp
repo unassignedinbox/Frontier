@@ -1687,6 +1687,56 @@ std::vector<std::string> SolidArcTangentChain(const SolidArcDocument& Document, 
     return Names;
 }
 
+std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name)
+{
+    const RegeneratedBody* Owner = FindRegeneratedBody(Document, SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name));
+    if (!Document.Partition || !Owner) return { Name };
+    const ModelPartition&                    Partition = *Document.Partition;
+    const GeometryProcessing::BodyNaming&    Naming    = Owner->Naming;
+    const GeometryProcessing::BodyInventory  Inventory = Partition.CollectInventory(Owner->Body);
+    std::vector<EdgeToken> Ring;
+    std::set<uint32_t>     Chosen;
+    for (const EdgeToken Edge : Inventory.Edges)
+    {
+        const auto Found = Naming.Edges.find(Edge.Slot);
+        if (Found != Naming.Edges.end() && Found->second == Name && Chosen.insert(Edge.Slot).second) Ring.push_back(Edge);
+    }
+    if (Ring.empty()) return { Name };
+    constexpr int RadialLimit = 16;                                                          // [-] - Fins around one edge (non-manifold guard)
+    for (size_t Cursor = 0; Cursor < Ring.size(); ++Cursor)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Ring[Cursor]);
+        if (!Profile.RadialFin.PresentCondition()) continue;
+        FinToken Fin = Profile.RadialFin;
+        for (int Guard = 0; Guard < RadialLimit; ++Guard)
+        {
+            const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
+            const LoopProfile& Loop = Partition.Loops.Resolve(Use.Loop);
+            if (Partition.Faces.Resolve(Loop.Face).Loops.size() == 1)
+            {
+                // Four fins round the loop: the one two steps on uses the opposite edge.
+                int      Count  = 1;
+                FinToken Cycle  = Use.Successor;
+                while (Cycle.PresentCondition() && !(Cycle == Fin) && Count <= 4) { ++Count; Cycle = Partition.Fins.Resolve(Cycle).Successor; }
+                if (Count == 4)
+                {
+                    const EdgeToken Opposite = Partition.Fins.Resolve(Partition.Fins.Resolve(Use.Successor).Successor).Edge;
+                    if (Chosen.insert(Opposite.Slot).second) Ring.push_back(Opposite);
+                }
+            }
+            Fin = Use.RadialSuccessor;
+            if (!Fin.PresentCondition() || Fin == Profile.RadialFin) break;
+        }
+    }
+    std::vector<std::string> Names;
+    for (const EdgeToken Edge : Ring)
+    {
+        const auto Found = Naming.Edges.find(Edge.Slot);
+        if (Found != Naming.Edges.end() && std::find(Names.begin(), Names.end(), Found->second) == Names.end()) Names.push_back(Found->second);
+    }
+    return Names.empty() ? std::vector<std::string>{ Name } : Names;
+}
+
 SolidArcCommandOutcome CombineSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools, FeatureCombination Combination)
 {
     std::string Operands = SolidArcBodyCaption(Document, Target);

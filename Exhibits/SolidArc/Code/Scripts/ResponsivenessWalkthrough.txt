@@ -6,6 +6,9 @@
 #      --script Scripts/ResponsivenessWalkthrough.txt --trace …/ResponsivenessTrace.log
 # Closed form after the Union: π·1.7²·0.6 + π·0.2²·0.3 + cap (∫ (R − √(R² − y²))·2√(r² − y²) dy) = W51.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① cylinder r 1.7, h 0.6 (Shift+W circle, F fill, E 0.6)
 key N Ctrl
 frames 3

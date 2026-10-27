@@ -6,6 +6,9 @@
 # Closed forms: puck r 0.5 × 1 = π/4 = 0.785398; joined square 0.5 × 0.5 and disc r 0.3, extruded 1 as a new body:
 # 0.25 + 0.09π = 0.532743, total 1.318141.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Top view: rectangle 2 × 1, a circle r 0.5 on its corner (2, 1), the circle extruded 1 (New)
 key N Ctrl
 frames 3

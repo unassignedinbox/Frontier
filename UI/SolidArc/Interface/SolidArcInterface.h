@@ -55,7 +55,8 @@ enum class SolidArcPickIntent : uint8_t
     Replace = 0,                                                                             // The selection becomes the hit
     Add     = 1,                                                                             // The hit joins the selection
     Remove  = 2,                                                                             // The hit leaves the selection
-    Extend  = 3,                                                                             // Edges: the hit's tangent chain joins
+    Extend  = 3,                                                                             // Edges (Alt): the hit's edge ring joins (else its tangent chain)
+    Chain   = 4,                                                                             // Edges (Alt+Shift): the hit's tangent chain joins
 };
 
 // The command a session (B fillet, E extrude) stages and applies.
@@ -154,6 +155,15 @@ struct SolidArcBevelSession
     bool                              GoodCondition   = false;                               // [-]   - GoodScene holds a preview
     int                               FocusCorner     = -1;                                  // [idx] - Corner handle last dragged (its card field)
     std::array<char, 32>              CornerText      = {};                                  // [-]   - That corner's field text
+    // 📝 Feasible bounds: a refused size above an accepted one is a ceiling; the session bisects between them and settles
+    //    on the largest accepted size, which the pointer, the handles and typed values then stop at (never an error).
+    //    One parameter at a time: [0] the size, k > 0 corner handle k; reset when anything else changes (LimitKey).
+    int                               LimitParameter  = 0;                                   // [idx] - 0 size, k corner k
+    std::string                       LimitKey        = {};                                  // [-]   - Everything else the bound was found for
+    double                            LimitGood       = 0.0;                                 // [len] - Largest accepted value (0: none yet)
+    double                            LimitCeiling    = 0.0;                                 // [len] - Smallest refused value above it (0: none)
+    bool                              LimitProbeCondition = false;                           // [-]   - Bisecting toward the bound
+    int                               LimitStops      = 0;                                   // [-]   - Values held at the bound (script evidence)
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):
@@ -196,6 +206,7 @@ struct SolidArcDrawingSession
 struct SolidArcPointPicker
 {
     bool                                   Enabled         = true;                           // [-]   - Object snaps on (Inspector)
+    bool                                   GridEnabled     = false;                          // [-]   - 0.1 grid steps while drawing / dragging (Snaps card; off: free, Ctrl snaps)
     bool                                   FaceOrientEnabled = true;                         // [-]   - Drawing on a body face orients the sketch / solid to it (Inspector)
     SolidArcSnapFilter                     Filter          = {};                             // [-]   - Enabled kinds (Inspector)
     SolidArcSnap                           Current         = {};                             // [-]   - Snap under the pointer this frame
@@ -731,6 +742,8 @@ struct SolidArcWorkspaceState
     bool                                  DeviationEnabled = false;                          // [-]   - Needles from imported points to the panels (V8)
     SolidArcDeviationMap                  Deviation      = {};                               // [-]   - Cached per document revision
     bool                                  ImagePlanesEnabled = true;                         // [-]   - Blueprint image planes drawn (toolbar Images)
+    std::string                           FocusedImage       = {};                           // [-]   - Image plane picked in the Outliner (its Inspector rows open)
+    int                                   RingPicks          = 0;                            // [-]   - Alt / Alt+Shift edge picks (script evidence)
     SolidArcPictureShelf                  Pictures       = {};                               // [-]   - Decoded image-plane pictures (frame-owned)
     SolidArcMatcapShelf                   Matcaps        = {};                               // [-]   - Matcap library + thumbnails + M picker
     SolidArcRepeat                        LastCommand    = {};                               // [-]   - Shift+R

@@ -7,6 +7,9 @@
 # Bracket specimen steps: Block1 (Sketch#1, Extrude#2) · Cylinder1 boss (Sketch#3, Extrude#4) · Cylinder2 hole (Sketch#5,
 # Extrude#6) · Fillet1 (Blend#7) · Chamfer1 (Blend#8).
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① the bracket: 8 steps, sound
 frames 3
 expect steps == 8

@@ -33,6 +33,7 @@ enum class SolidArcStepKind : uint8_t
     Wheel   = 5,                                                                             // Vertical wheel steps
     Capture = 6,                                                                             // Write PNG + JSON after this frame
     Expect  = 7,                                                                             // Compare a state field
+    Setting = 8,                                                                             // Workspace setting (snap grid on / off)
 };
 
 //------------------------------------------------------------------------------------------------------------------------

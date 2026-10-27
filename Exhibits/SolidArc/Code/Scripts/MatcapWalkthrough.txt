@@ -6,6 +6,9 @@
 # Run: SolidArcCapture --specimen --reset-files --recovery …/MatcapRecovery.solidarc
 #      --document …/Matcap.solidarc --script Exhibits/SolidArc/Code/Scripts/MatcapWalkthrough.txt
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Studio: the default analytic shading; library Studio + 13 built-ins, every swatch has a thumbnail
 frames 3
 expect faces == 11

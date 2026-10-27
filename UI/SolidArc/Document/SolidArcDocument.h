@@ -724,6 +724,11 @@ void ClearSolidArcSelection(SolidArcDocument& Document);
 // Names of the edge's tangent chain on the current body (the edge itself first); just the name when it does not resolve.
 [[nodiscard]] std::vector<std::string> SolidArcTangentChain(const SolidArcDocument& Document, const std::string& Name);
 
+// 💡 Blender's edge ring (Alt+click): from the edge, across every adjacent four-sided face (one loop of four fins) to its
+//    opposite edge, and on from there in both directions — the uprights of a prism, the four parallel edges of a box
+//    side. The edge itself first; just the name when it does not resolve or no four-sided face touches it.
+[[nodiscard]] std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name);
+
 // Step caption for the outliner ("Block1 · Sketch", "Fillet3"), falling back to the label.
 [[nodiscard]] std::string DescribeSolidArcStep(const SolidArcDocument& Document, const GeometryProcessing::FeatureStep& Step);
 

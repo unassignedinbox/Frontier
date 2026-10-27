@@ -5,6 +5,9 @@
 # Run: SolidArcCapture --reset-files --recovery …/EdgeStrokeRecovery.solidarc --document …/EdgeStroke.solidarc
 #      --script Scripts/EdgeStrokeWalkthrough.txt
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① cylinder r 1.7, h 0.6 (Shift+W circle, F fill, E 0.6)
 key N Ctrl
 frames 3

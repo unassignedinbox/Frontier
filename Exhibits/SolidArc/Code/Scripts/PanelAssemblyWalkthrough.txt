@@ -8,6 +8,9 @@
 # Click points lie on the analytic curves: bonnet sections at ξ = 0.5 (x = 0.375), spines at y = 0.55, hoops at z = 0
 # (Hoop4 at θ = −π/3: at z = 0 the click lands on Hoop5's control polygon). The G0 / G1 / G2 choice persists across New.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① bonnet: import, mode 1, Section1–3 → L (front panel)
 key N Ctrl
 frames 2

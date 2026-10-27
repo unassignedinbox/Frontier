@@ -33,6 +33,7 @@ enum class SolidArcFigureCategory : uint8_t
     Curve   = 0,                                                                             // A sketch or a space curve
     Surface = 1,                                                                             // An open sheet body (a lofted panel)
     Body    = 2,                                                                             // A closed solid body
+    Image   = 3,                                                                             // A reference image plane (outside the history)
 };
 
 // Where a figure lives in the document.
@@ -41,6 +42,7 @@ enum class SolidArcFigureSource : uint8_t
     Body       = 0,                                                                          // Regenerated body (key = creating step label)
     Sketch     = 1,                                                                          // Sketch step no feature consumed
     SpaceCurve = 2,                                                                          // SpaceCurve step (imported, fitted)
+    Image      = 3,                                                                          // Document image plane (key = its name)
 };
 
 enum class SolidArcOutlinerVerb : uint8_t
@@ -91,7 +93,7 @@ struct SolidArcOutlinerIntent
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// Bodies (creation order), then sketches and space curves (tree order), with selection, visibility and lock.
+// Bodies (creation order), then sketches and space curves (tree order), then image planes, with selection, visibility and lock.
 [[nodiscard]] std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState& State);
 
 // Draws the panel into the current ImGui window over Panel (logical px) and returns the action of this frame.

@@ -10,6 +10,9 @@
 # at (3.5, 0) along the Bézier (3.5, 0) (3.5, 1) (4.2, 1.6) (5, 1.8) on XZ (length 2.539157971, r κmax 0.12):
 # π r² L = 0.319080001; along the line (3.5, 0) → (3.5, 1.5): π r² · 1.5 = 0.188495559.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty document, Top view: a vase profile drawn as two polylines and a Bézier, joined (J) into one closed sketch
 key N Ctrl
 frames 2

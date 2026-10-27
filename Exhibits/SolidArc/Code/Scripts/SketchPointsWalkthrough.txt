@@ -7,6 +7,9 @@
 #      --document …/SketchPoints.solidarc --script Scripts/SketchPointsWalkthrough.txt
 # Closed forms: rectangle 2 × 1 extruded 1 = 2; its corner (2, 1) dragged to (3, 1) keeps H / V → 3 × 1 × 1 = 3.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① the Sketch section of the Construct menu: 13 tools in a 4 × 4 grid
 key N Ctrl
 frames 3

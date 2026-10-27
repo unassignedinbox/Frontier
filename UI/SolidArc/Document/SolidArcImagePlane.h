@@ -35,8 +35,13 @@ struct SolidArcImagePlane
     GeometryProcessing::Vector3          Corner           = {};                                        // [len]  - World position of the crop's top-left corner
     GeometryProcessing::Vector3          Right            = {};                                        // [len]  - World span of the crop width
     GeometryProcessing::Vector3          Down             = {};                                        // [len]  - World span of the crop height
-    double                     Opacity          = 0.6;                                       // [0-1]  - Line-art ink opacity
+    double                     Opacity          = 0.6;                                       // [0-1]  - Ink / photograph opacity (1 − transparency)
     bool                       VisibleCondition = true;                                      // [-]    - Drawn in the viewport
+    bool                       PhotoCondition   = false;                                     // [-]    - Drawn in its own colours (else pale line-art ink)
+    bool                       FlipAcrossCondition = false;                                  // [-]    - Mirrored left ↔ right on the plane
+    bool                       FlipDownCondition   = false;                                  // [-]    - Mirrored top ↔ bottom on the plane
+    bool                       LockCondition    = false;                                     // [-]    - Placement and crop refuse edits (Outliner lock)
+    double                     Turn             = 0.0;                                       // [rad]  - Turn about the plane normal (shown; Right / Down carry it)
 };
 
 // Decoded picture: RGBA8 rows, top row first.

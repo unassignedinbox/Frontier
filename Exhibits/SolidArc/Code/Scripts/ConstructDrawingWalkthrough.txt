@@ -7,6 +7,9 @@
 # Closed forms: box 2 × 1.5 × 1 = 3 · cylinder r 0.5 h 1.2 = 0.3π · cone r 0.6 h 1 = 0.12π · 7-prism R 0.6 h 0.8 =
 # 3.5 · 0.36 · sin(2π/7) · 0.8 · torus R 1 r 0.3 = 2π² · 0.09 · box on the first box's top 1 × 0.5 × 0.5 = 0.25.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty document; the Construct menu opens on Solids, its Sketch section holds the 2-D tools
 key N Ctrl
 frames 3

@@ -184,7 +184,10 @@ void SolidArcWorkspaceFrame::PrepareViewport(SolidArcWorkspaceState& State)
             Draw.Right   = { Plane.Right.X, Plane.Right.Y, Plane.Right.Z };
             Draw.Down    = { Plane.Down.X, Plane.Down.Y, Plane.Down.Z };
             if (!WholeCondition) Draw.Crop = { Plane.Crop[0] / Width, Plane.Crop[1] / Height, Plane.Crop[2] / Width, Plane.Crop[3] / Height };
+            if (Plane.FlipAcrossCondition) std::swap(Draw.Crop[0], Draw.Crop[2]);             // The shader lerps u0 → u1: swapped, it mirrors
+            if (Plane.FlipDownCondition) std::swap(Draw.Crop[1], Draw.Crop[3]);
             Draw.Opacity = float(Plane.Opacity);
+            Draw.Mode    = Plane.PhotoCondition ? 1.0f : 0.0f;
             State.Style.ImagePlanes.push_back(Draw);
         }
     }

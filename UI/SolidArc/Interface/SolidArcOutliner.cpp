@@ -37,6 +37,7 @@ constexpr uint32_t MutedInk      = 0x858585;                                    
 constexpr uint32_t AmberInk      = 0xe5b369;                                                 // --amber (bodies)
 constexpr uint32_t CyanInk       = 0x84bdc2;                                                 // --cyan (curves)
 constexpr uint32_t BlueInk       = 0x7ba9d9;                                                 // --blue (surfaces)
+constexpr uint32_t VioletInk     = 0xb8a3e0;                                                 // Image planes (reference pictures)
 constexpr uint32_t ActiveInk     = 0x33ff73;                                                 // .scene-row.active-selection
 constexpr uint32_t SelectedInk   = 0x4099ff;                                                 // .scene-row.selected:not(.active-selection)
 constexpr uint32_t HoverFill     = 0x292929;                                                 // button:hover
@@ -58,13 +59,14 @@ ColorQuad CategoryInk(SolidArcFigureCategory Category)
     {
     case SolidArcFigureCategory::Curve:   return Ink(CyanInk);                               // .colour-0
     case SolidArcFigureCategory::Surface: return Ink(BlueInk);                               // .colour-1
+    case SolidArcFigureCategory::Image:   return Ink(VioletInk);
     default:                              return Ink(AmberInk);                              // .colour-2
     }
 }
 
 const char* CategoryTag(SolidArcFigureCategory Category)
 {
-    static const char* const Tags[] = { "CURVE", "SURFACE", "BODY" };
+    static const char* const Tags[] = { "CURVE", "SURFACE", "BODY", "IMAGE" };
     return Tags[static_cast<int>(Category)];
 }
 
@@ -204,6 +206,21 @@ std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState&
         }
         Figures.push_back(std::move(Figure));
     }
+    // Image planes: the eye shows / hides the picture, the lock freezes its placement, a pick opens its Inspector rows.
+    for (const SolidArcImagePlane& Plane : Document.ImagePlanes)
+    {
+        SolidArcFigure Figure;
+        Figure.Key               = Plane.Name;
+        Figure.Name              = Plane.Name;
+        Figure.Category          = SolidArcFigureCategory::Image;
+        Figure.Source            = SolidArcFigureSource::Image;
+        Figure.Icon              = IconSymbol::SolidArcImage;
+        Figure.HiddenCondition   = !Plane.VisibleCondition || !State.ImagePlanesEnabled;
+        Figure.LockedCondition   = Plane.LockCondition;
+        Figure.SelectedCondition = State.FocusedImage == Plane.Name;
+        Figure.Rank              = Figure.SelectedCondition ? 0 : -1;
+        Figures.push_back(std::move(Figure));
+    }
     return Figures;
 }
 
@@ -296,10 +313,11 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
     // .filter-chips — margin 10 12 11, gap 5; chip 10 px, padding 5 9, radius 14, #ffffff0d border; active #262626 / #ddd.
     Y += 10.0f;
     const float ChipHeight = 10.0f * SolidArcStyleTokens::FontScale + 10.0f + 2.0f;
-    const struct { const char* Label; int Filter; } Chips[] = { { "All", -1 }, { "Bodies", 2 }, { "Sketches", 0 }, { "Surfaces", 1 } };
+    const struct { const char* Label; int Filter; } Chips[] = { { "All", -1 }, { "Bodies", 2 }, { "Sketches", 0 }, { "Surfaces", 1 }, { "Images", 3 } };
     Cursor = Left + 12.0f;
     for (const auto& Chip : Chips)
     {
+        if (Chip.Filter == 3 && State.Document.ImagePlanes.empty()) continue;                // Only when the document has pictures
         const float       ChipWidth = Sheet.Measure(Chip.Label, 10.0f) + 18.0f + 2.0f;
         const PlaneExtent Extent    = Spanning(Cursor, Y, ChipWidth, ChipHeight);
         const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, std::string("Filter") + Chip.Label, Extent);

@@ -9,6 +9,9 @@
 #      --document …/Blueprint.solidarc --script Exhibits/SolidArc/Code/Scripts/BlueprintModellingWalkthrough.txt
 # Arches: wheel centres y 0.805 / 3.566 (axles), z 0.33; r 0.37; from x = ±0.62 (inside the tyre) 0.5 outward.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① import: 24 curves (worst fit ≤ 0.2 mm) + 3 image planes in one undo entry; parallel projection for blueprint work
 key N Ctrl
 frames 2

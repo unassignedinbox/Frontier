@@ -10,6 +10,9 @@
 # Click points lie on the analytic bonnet at ξ = 0.5 (x = 0.375); the dragged pole is pole 2 of Section3 at
 # (0.50298, 0.41799, 0.81056), as in VehicleSurfacingWalkthrough.txt.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① bonnet: lift pole 2 of Section3, front loft, rear loft G0
 key N Ctrl
 frames 2

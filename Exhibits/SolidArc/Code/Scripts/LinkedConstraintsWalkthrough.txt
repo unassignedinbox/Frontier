@@ -9,6 +9,9 @@
 # D2 = 2 → reads 2.5, V 3. A later line (2.5, 2.5) → (3.2, 3): O to the plate's far corner (1.5, 2), O onto its top line
 # → DOF 4 → 2 → 1; D1 = 2 → the line's start follows to (2, 2), V 4.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty document, Top view: a line and a NURBS curve drawn from its end, joined into one sketch (J)
 key N Ctrl
 frames 2

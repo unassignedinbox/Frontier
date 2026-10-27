@@ -7,6 +7,9 @@
 #      --document …/BevelHandles.solidarc --script Scripts/BevelHandlesWalkthrough.txt
 # Closed forms (2 m cube, z 0 … 2): fillet r on one edge removes (1 − π/4) · r² · 2 → r 0.25: 7.973174770424681.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① a 2 m cube from the Construct menu
 key N Ctrl
 frames 3

@@ -7,6 +7,9 @@
 # Closed forms: cube 2³ = 8 · circle r 0.4 on its +x face extruded 1 = 0.16π · cylinder r 0.4 h 0.5 on the −y face =
 # 0.08π · wedge 2 × 2 × 1 = 2 · cylinder r 0.3 h 0.5 on the wedge's slope (n̂ = (1, 0, 2)/√5) = 0.045π.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① a 2 m cube from the Construct menu; Orient to faces starts on
 key N Ctrl
 frames 3

@@ -45,6 +45,7 @@ enum class SolidArcSnapKind : uint8_t
     Curve         = 8,                                                                       // Nearest point on a curve / edge
     Face          = 9,                                                                       // Exact ray hit on a face
     Axis          = 10,                                                                      // On a direction lock line
+    Quarter       = 11,                                                                      // A quarter / three quarters of the arc length (circle quadrants)
 };
 
 // 📝 Plasticity point-picker choices (body[gizmo=point-picker]: x y z n b t) — the next point runs along that line
@@ -64,6 +65,7 @@ struct SolidArcSnapFilter
 {
     bool EndpointEnabled      = true;                                                        // [-] - Vertices, curve ends
     bool MidpointEnabled      = true;                                                        // [-] - Curve midpoints
+    bool QuarterEnabled       = true;                                                        // [-] - Curve quarter points, circle quadrants
     bool CentreEnabled        = true;                                                        // [-] - Circle / arc / face centres
     bool IntersectionEnabled  = true;                                                        // [-] - Curve crossings
     bool TangentEnabled       = true;                                                        // [-] - Tangent from the last point

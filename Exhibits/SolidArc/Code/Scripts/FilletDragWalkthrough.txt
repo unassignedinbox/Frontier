@@ -6,6 +6,9 @@
 #      --document …/FilletDrag.solidarc --script Exhibits/SolidArc/Code/Scripts/FilletDragWalkthrough.txt
 # Closed forms: rectangle 3 × 1.5 with four r 0.3 fillets: every arc sweeps 90°.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Top view: rectangle 3 × 1.5, every corner filleted r 0.3 from the Outliner pick
 key N Ctrl
 frames 3

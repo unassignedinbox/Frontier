@@ -24,7 +24,8 @@ namespace Frontier::SolidArc
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// { Name, Path, Crop = [l, t, r, b], Corner / Right / Down = [x, y, z], Opacity, Visible (only when false) }.
+// { Name, Path, Crop = [l, t, r, b], Corner / Right / Down = [x, y, z], Opacity, Visible (only when false), Photo / FlipAcross /
+//   FlipDown / Locked (only when true), Turn [rad] (only when not 0) }.
 [[nodiscard]] inline toml::array EncodeSolidArcImagePlanes(const std::vector<SolidArcImagePlane>& Planes)
 {
     toml::array Rows;
@@ -36,6 +37,11 @@ namespace Frontier::SolidArc
                          { "Right", toml::array{ Plane.Right.X, Plane.Right.Y, Plane.Right.Z } },
                          { "Down", toml::array{ Plane.Down.X, Plane.Down.Y, Plane.Down.Z } }, { "Opacity", Plane.Opacity } };
         if (!Plane.VisibleCondition) Row.insert("Visible", false);
+        if (Plane.PhotoCondition) Row.insert("Photo", true);
+        if (Plane.FlipAcrossCondition) Row.insert("FlipAcross", true);
+        if (Plane.FlipDownCondition) Row.insert("FlipDown", true);
+        if (Plane.LockCondition) Row.insert("Locked", true);
+        if (Plane.Turn != 0.0) Row.insert("Turn", Plane.Turn);
         Rows.push_back(std::move(Row));
     }
     return Rows;
@@ -54,6 +60,11 @@ namespace Frontier::SolidArc
         Plane.Path             = View["Path"].value_or(std::string{});
         Plane.Opacity          = View["Opacity"].value_or(0.6);
         Plane.VisibleCondition = View["Visible"].value_or(true);
+        Plane.PhotoCondition      = View["Photo"].value_or(false);
+        Plane.FlipAcrossCondition = View["FlipAcross"].value_or(false);
+        Plane.FlipDownCondition   = View["FlipDown"].value_or(false);
+        Plane.LockCondition       = View["Locked"].value_or(false);
+        Plane.Turn                = View["Turn"].value_or(0.0);
         if (const toml::array* Crop = View["Crop"].as_array(); Crop && Crop->size() == 4)
             for (int Side = 0; Side < 4; ++Side) Plane.Crop[Side] = static_cast<int>((*Crop)[Side].value_or(int64_t{ -1 }));
         else if (View["Crop"]) return "image plane " + std::to_string(Index + 1) + ": Crop must be [left, top, right, bottom]";

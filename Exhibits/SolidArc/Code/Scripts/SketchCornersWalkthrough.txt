@@ -5,6 +5,9 @@
 #      --document …/SketchCorners.solidarc --script Scripts/SketchCornersWalkthrough.txt
 # Closed forms: 2 × 1 × 1 with four r 0.25 fillets: 2 − (4 − π)/16 = 1.946350.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Top view: rectangle 2 × 1 extruded 1 (V 2)
 key N Ctrl
 frames 3

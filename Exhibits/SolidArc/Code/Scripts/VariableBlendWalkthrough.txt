@@ -6,6 +6,9 @@
 # Closed form: V = V(bracket) − ΔV(cone; L 4, r 0.3 → 0.1); swapping the ends mirrors the cut, so the volume is the same and
 # the captures show where each size went.
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① pick the edge, B, pin the start size 0.3
 frames 2
 expect faces == 11

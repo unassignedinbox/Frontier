@@ -723,6 +723,11 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-span") return Numeric(State.Bevel.Fit.Span);
     if (Field == "bevel-fitted") return Numeric(State.Bevel.Fit.Fitted);
     if (Field == "bevel-showing") return Numeric(State.Bevel.GoodCondition ? State.Bevel.GoodSize : 0.0);
+    if (Field == "bevel-limit") return Numeric(State.Bevel.LimitCeiling > 0.0 ? State.Bevel.LimitGood : 0.0);
+    if (Field == "bevel-ceiling") return Numeric(State.Bevel.LimitCeiling);
+    if (Field == "bevel-limit-parameter") return Numeric(State.Bevel.LimitParameter);
+    if (Field == "bevel-limit-stops") return Numeric(State.Bevel.LimitStops);
+    if (Field == "bevel-probe") return Numeric(State.Bevel.LimitProbeCondition ? 1 : 0);
     if (Field == "preview-faces") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0);
     if (Field == "camera-yaw") return Numeric(State.Camera.Azimuth);
     if (Field == "camera-pitch") return Numeric(State.Camera.Elevation);
@@ -779,6 +784,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "snap-z") return Numeric(State.Picker.Current.Position.Z);
     if (Field == "snap-lock") { Text = State.Picker.Lock == SolidArcSnapLockKind::None ? std::string("none") : std::string(SolidArcSnapLockLabel(State.Picker.Lock)); Number = double(int(State.Picker.Lock)); return true; }
     if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
+    if (Field == "snap-grid") return Numeric(State.Picker.GridEnabled ? 1 : 0);
+    if (Field == "ring-picks") return Numeric(State.RingPicks);
     if (Field == "plane-normal-x" || Field == "plane-normal-y" || Field == "plane-normal-z")
     {
         // Plane normal of the newest sketch step (a drawn sketch, or the section of a Construct solid); 0 without one.
@@ -830,6 +837,28 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "zebra") return Numeric(State.ZebraEnabled ? 1 : 0);
     if (Field == "image-planes") return Numeric(double(State.Document.ImagePlanes.size()));
     if (Field == "image-planes-drawn") return Numeric(double(State.Pictures.Drawn));
+    if (Field == "image-focused") { Text = State.FocusedImage; Number = double(Text.size()); return true; }
+    if (Field.rfind("image-", 0) == 0)
+    {
+        // The focused image plane's properties (the first plane when none is focused).
+        const SolidArcImagePlane* Plane = State.Document.ImagePlanes.empty() ? nullptr : &State.Document.ImagePlanes.front();
+        for (const SolidArcImagePlane& Each : State.Document.ImagePlanes) if (Each.Name == State.FocusedImage) Plane = &Each;
+        if (!Plane) return Numeric(0.0);
+        if (Field == "image-opacity") return Numeric(Plane->Opacity);
+        if (Field == "image-photo") return Numeric(Plane->PhotoCondition ? 1 : 0);
+        if (Field == "image-visible") return Numeric(Plane->VisibleCondition ? 1 : 0);
+        if (Field == "image-locked") return Numeric(Plane->LockCondition ? 1 : 0);
+        if (Field == "image-mirrored") return Numeric((Plane->FlipAcrossCondition ? 1 : 0) + (Plane->FlipDownCondition ? 2 : 0));
+        if (Field == "image-width") return Numeric(GeometryProcessing::Length(Plane->Right));
+        if (Field == "image-height") return Numeric(GeometryProcessing::Length(Plane->Down));
+        if (Field == "image-turn") return Numeric(Plane->Turn);
+        if (Field == "image-crop-left") return Numeric(Plane->Crop[0]);
+        if (Field == "image-crop-right") return Numeric(Plane->Crop[2]);
+        if (Field == "image-corner-x") return Numeric(Plane->Corner.X);
+        if (Field == "image-centre-x") return Numeric((Plane->Corner + Plane->Right * 0.5 + Plane->Down * 0.5).X);
+        if (Field == "image-centre-y") return Numeric((Plane->Corner + Plane->Right * 0.5 + Plane->Down * 0.5).Y);
+        if (Field == "image-centre-z") return Numeric((Plane->Corner + Plane->Right * 0.5 + Plane->Down * 0.5).Z);
+    }
     if (Field == "body-matcap") { Text = Document.Appearance.BodyMatcap; Number = double(Text.size()); return true; }
     if (Field == "face-matcaps") return Numeric(double(Document.Appearance.FaceMatcaps.size()));
     if (Field == "selection-matcap")
@@ -1118,6 +1147,14 @@ SolidArcScript ParseSolidArcScript(const std::string& Text)
             Capture.Text = Words[1];
             Push(Capture);
         }
+        else if (Verb == "snap")
+        {
+            // snap grid on | off: the 0.1 drawing grid (off by default: free placement, Ctrl snaps to objects).
+            if (Words.size() < 3 || Words[1] != "grid" || (Words[2] != "on" && Words[2] != "off")) { Refuse("snap grid on | off"); continue; }
+            SolidArcScriptStep Setting{ SolidArcStepKind::Setting };
+            Setting.Text = "grid " + Words[2];
+            Push(Setting);
+        }
         else if (Verb == "expect")
         {
             SolidArcScriptStep Expect{ SolidArcStepKind::Expect };
@@ -1218,6 +1255,10 @@ std::string AdvanceSolidArcScript(SolidArcScript& Script, SolidArcWorkspaceState
         break;
     case SolidArcStepKind::Capture:
         return Step.Text;
+    case SolidArcStepKind::Setting:
+        if (Step.Text == "grid on") State.Picker.GridEnabled = true;
+        if (Step.Text == "grid off") State.Picker.GridEnabled = false;
+        break;
     case SolidArcStepKind::Expect:
         break;
     }

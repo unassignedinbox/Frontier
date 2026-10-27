@@ -10,6 +10,9 @@
 # cos α = r / |P − C|: T = (-1.569338679, 1.617768868); the perpendicular foot from (2, 0) is C + r (M − C) / |M − C|
 # = (-1.425304229, 1.027591269).
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① Shift+W centre circle r 0.6 at (−2, 1.2) on the grid
 frames 3
 key W Shift

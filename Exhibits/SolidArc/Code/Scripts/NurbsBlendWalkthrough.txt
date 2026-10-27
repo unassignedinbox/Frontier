@@ -7,6 +7,9 @@
 # Volumes: the kernel's own closed-form gates live in FreeformBlendValidation C1 / C2; here the session values are pinned
 # against the same kernel run headless on the cut rim (chamfer 0.25 → 2.050097333727, 0.15 → 2.118687354516).
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① empty document, Top view: closed Hermite (seam at (0, 0.5), away from the blended rim), F fills it, extruded 1
 key N Ctrl
 frames 2

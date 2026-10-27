@@ -125,13 +125,13 @@ void DescribeCurvePoint(const SolidArcSnapCurve& Curve, double Parameter, Vector
     return 0.5 * (To - From) * Total;
 }
 
-// 📝 Arc-length midpoint: cumulative length over LengthPanels panels per analytic piece (8-point Gauss), then Newton on
-//    L(s) = L/2 inside the panel that holds it. Lines and circular arcs are parametrised by length already (closed form).
-[[nodiscard]] double LocateMidpoint(const SolidArcSnapCurve& Curve)
+// 📝 Arc-length fraction point (midpoint ½, quarter points ¼ ¾): cumulative length over LengthPanels panels per analytic
+//    piece (8-point Gauss), then Newton on L(s) = f·L inside the panel that holds it. Lines and circular arcs are parametrised by length already (closed form).
+[[nodiscard]] double LocateFraction(const SolidArcSnapCurve& Curve, double Fraction)
 {
     const bool Uniform = (Curve.Carrier && (std::holds_alternative<GeometryProcessing::StraightLine>(*Curve.Carrier) || std::holds_alternative<GeometryProcessing::CircularArc>(*Curve.Carrier)))
                       || (Curve.Segment && Curve.Segment->Kind != GeometryProcessing::ProfileSegmentKind::Spline);
-    if (Uniform) return 0.5 * (Curve.Low + Curve.High);
+    if (Uniform) return Curve.Low + Fraction * (Curve.High - Curve.Low);
     const std::vector<double> Stops = CollectCurveStops(Curve);
     std::vector<double> Edges, Lengths = { 0.0 };
     for (size_t Piece = 0; Piece + 1 < Stops.size(); ++Piece)
@@ -143,7 +143,7 @@ void DescribeCurvePoint(const SolidArcSnapCurve& Curve, double Parameter, Vector
             Lengths.push_back(Lengths.back() + IntegrateSpeed(Curve, From, To));
         }
     Edges.push_back(Curve.High);
-    const double Half  = 0.5 * Lengths.back();
+    const double Half  = Fraction * Lengths.back();                                          // [len] - Arc length to reach
     const size_t Panel = std::min<size_t>(Edges.size() - 2, size_t(std::upper_bound(Lengths.begin(), Lengths.end(), Half) - Lengths.begin()) - 1);
     double Low = Edges[Panel], High = Edges[Panel + 1], Parameter = 0.5 * (Low + High);
     for (int Iteration = 0; Iteration < 40; ++Iteration)
@@ -187,9 +187,17 @@ void CatalogueCurvePoints(SolidArcSnapCatalogue& Catalogue, const SolidArcSnapCu
             DescribeCurvePoint(Curve, Parameter, Tangent, Normal);
             AppendPoint(Catalogue.Points, { SolidArcSnapKind::Endpoint, EvaluateSnapCurve(Curve, Parameter).Position, Tangent, Normal, Curve.Source, Curve.Body }, Catalogue.Scale);
         }
-        const double Middle = LocateMidpoint(Curve);
+        const double Middle = LocateFraction(Curve, 0.5);
         DescribeCurvePoint(Curve, Middle, Tangent, Normal);
         AppendPoint(Catalogue.Points, { SolidArcSnapKind::Midpoint, EvaluateSnapCurve(Curve, Middle).Position, Tangent, Normal, Curve.Source, Curve.Body }, Catalogue.Scale);
+    }
+    // Quarter points: ¼ and ¾ of an open curve; a closed one (circle, closed spline) at 0, ¼, ½, ¾ — a circle's quadrants.
+    const std::vector<double> Fractions = OpenCondition ? std::vector<double>{ 0.25, 0.75 } : std::vector<double>{ 0.0, 0.25, 0.5, 0.75 };
+    for (const double Fraction : Fractions)
+    {
+        const double Parameter = LocateFraction(Curve, Fraction);
+        DescribeCurvePoint(Curve, Parameter, Tangent, Normal);
+        AppendPoint(Catalogue.Points, { SolidArcSnapKind::Quarter, EvaluateSnapCurve(Curve, Parameter).Position, Tangent, Normal, Curve.Source, Curve.Body }, Catalogue.Scale);
     }
     if (Curve.Centre) AppendPoint(Catalogue.Points, { SolidArcSnapKind::Centre, *Curve.Centre, {}, Curve.PlaneNormal, Curve.Source, Curve.Body }, Catalogue.Scale);
 }
@@ -246,6 +254,7 @@ void CatalogueCurvePoints(SolidArcSnapCatalogue& Catalogue, const SolidArcSnapCu
     case SolidArcSnapKind::Intersection:  return 1;
     case SolidArcSnapKind::Centre:        return 2;
     case SolidArcSnapKind::Midpoint:      return 3;
+    case SolidArcSnapKind::Quarter:       return 3;
     case SolidArcSnapKind::Tangent:       return 4;
     case SolidArcSnapKind::Perpendicular: return 5;
     default:                              return 9;
@@ -258,6 +267,7 @@ void CatalogueCurvePoints(SolidArcSnapCatalogue& Catalogue, const SolidArcSnapCu
     {
     case SolidArcSnapKind::Endpoint:      return Filter.EndpointEnabled;
     case SolidArcSnapKind::Midpoint:      return Filter.MidpointEnabled;
+    case SolidArcSnapKind::Quarter:       return Filter.QuarterEnabled;
     case SolidArcSnapKind::Centre:        return Filter.CentreEnabled;
     case SolidArcSnapKind::Intersection:  return Filter.IntersectionEnabled;
     case SolidArcSnapKind::Tangent:       return Filter.TangentEnabled;
@@ -720,6 +730,7 @@ const char* SolidArcSnapLabel(SolidArcSnapKind Kind) noexcept
     case SolidArcSnapKind::Grid:          return "Grid";
     case SolidArcSnapKind::Endpoint:      return "Endpoint";
     case SolidArcSnapKind::Midpoint:      return "Midpoint";
+    case SolidArcSnapKind::Quarter:       return "Quarter";
     case SolidArcSnapKind::Centre:        return "Centre";
     case SolidArcSnapKind::Intersection:  return "Intersection";
     case SolidArcSnapKind::Tangent:       return "Tangent";

@@ -5,6 +5,9 @@
 # Run: SolidArcCapture --specimen --reset-files --recovery …/MultiBodyRecovery.solidarc
 #      --document …/MultiBody.solidarc --script Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
 
+# Placement snapped to the 0.1 grid, as these checks were written for (free placement is the default since ⑮ of Snapping).
+snap grid on
+
 # ① the bracket specimen is one body; Construct · Block · New body adds Block2 (1.5 × 2 × 1) beside it
 frames 3
 expect bodies == 1

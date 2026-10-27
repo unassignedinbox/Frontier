@@ -680,8 +680,9 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
         State.Bevel.Shape           = Shape;
         State.Bevel.Size            = Previous > 0.0 ? Previous : 0.1;
         State.Bevel.Corner          = std::move(Corner);
+        State.Bevel.PinnedCondition = true;                                                  // Plasticity: drag anywhere / type; the card stays usable
         WriteBevelText(State.Bevel);
-        Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " sketch corners (B): move horizontally · D fillet · C chamfer · Enter / right-click applies · Esc aborts");
+        Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " sketch corners (B): drag anywhere to size (it stops at the largest that fits) · type a size · D fillet · C chamfer · Enter / right-click applies · Esc aborts");
         return;
     }
     const double Previous = State.Bevel.Verb == SolidArcSessionVerb::Blend ? State.Bevel.Size : 0.0;
@@ -695,9 +696,12 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
     State.Bevel.Fit = MeasureSolidArcBlendFit(State.Document, State.Document.Selection.Edges);
     const bool Refitted = State.Bevel.Fit.Span > 0.0 && State.Bevel.Size > 0.35 * State.Bevel.Fit.Span;
     if (Refitted) State.Bevel.Size = State.Bevel.Fit.Fitted;
+    // 💡 Plasticity: the size changes only by a drag (anywhere, or on a handle) or a typed value, so the pointer can reach the
+    //    corner handles and the Bevel card without the size chasing it (Mouse adjust in the card follows the pointer again).
+    State.Bevel.PinnedCondition = true;
     RefreshBevelHandles(State, true);
     WriteBevelText(State.Bevel);
-    Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts"
+    Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge adds its ring · Enter / right-click applies · Esc aborts"
                     + (Refitted ? " · starts at " + FormatLength(State.Bevel.Size) + " m to fit the edges" : std::string{}));
 }
 
@@ -751,6 +755,106 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
            Bevel.StagedCombination == Bevel.Combination && Bevel.StagedDepth == Bevel.Depth && Bevel.StagedCorners == Bevel.CornerSizes;
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    BEVEL BOUNDS
+//------------------------------------------------------------------------------------------------------------------------
+
+// Everything a bound depends on except the bounded parameter itself (shape, variable taper, flip, edges, other corners).
+[[nodiscard]] std::string ComposeBevelLimitKey(const SolidArcWorkspaceState& State, int Parameter)
+{
+    const SolidArcBevelSession& Bevel = State.Bevel;
+    std::string Key = Compose("%d|%d|%d|%.9g|%d|%llu|", int(Bevel.Verb), int(Bevel.Shape), Bevel.VariableEnabled ? 1 : 0, Bevel.EndSize, Bevel.ReversedCondition ? 1 : 0,
+                              static_cast<unsigned long long>(State.Document.Revision));
+    if (Parameter != 0) Key += Compose("s%.9g|", Bevel.Size);
+    for (size_t Index = 1; Index < Bevel.CornerSizes.size(); ++Index)
+        if (int(Index) != Parameter) Key += Compose("c%d=%.9g|", int(Index), Bevel.CornerSizes[Index]);
+    for (const std::string& Edge : State.Document.Selection.Edges) Key += Edge + ";";
+    for (const std::string& Sketch : Bevel.Corner.Sketches) Key += Sketch + ";";
+    for (const int Point : Bevel.Corner.Points) Key += Compose("p%d;", Point);
+    return Key;
+}
+
+[[nodiscard]] bool BevelBoundedCondition(const SolidArcBevelSession& Bevel)
+{
+    return Bevel.Verb == SolidArcSessionVerb::Blend || Bevel.Verb == SolidArcSessionVerb::Corner;
+}
+
+// The largest size known to work for Parameter (0: none known in the current state).
+[[nodiscard]] double BevelLimitOf(const SolidArcWorkspaceState& State, int Parameter)
+{
+    const SolidArcBevelSession& Bevel = State.Bevel;
+    if (!BevelBoundedCondition(Bevel) || Bevel.LimitParameter != Parameter || !(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0)) return 0.0;
+    return Bevel.LimitKey == ComposeBevelLimitKey(State, Parameter) ? Bevel.LimitGood : 0.0;
+}
+
+// 💡 A requested value at or past a known refusal is held at the largest accepted one (the pointer / handle stops there).
+[[nodiscard]] double BoundBevelValue(SolidArcWorkspaceState& State, int Parameter, double Value)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    if (!BevelBoundedCondition(Bevel) || Bevel.LimitParameter != Parameter || !(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0)) return Value;
+    if (Value < Bevel.LimitCeiling || Bevel.LimitKey != ComposeBevelLimitKey(State, Parameter)) return Value;
+    if (Value != Bevel.LimitGood) ++Bevel.LimitStops;
+    return Bevel.LimitGood;
+}
+
+// The parameter the user changed since the last preview: a corner handle whose size moved, else the size.
+[[nodiscard]] int ChangedBevelParameter(const SolidArcBevelSession& Bevel)
+{
+    if (Bevel.Verb != SolidArcSessionVerb::Blend || Bevel.StagedSize != Bevel.Size) return 0;
+    for (size_t Index = 1; Index < Bevel.CornerSizes.size(); ++Index)
+    {
+        const double Staged = Index < Bevel.StagedCorners.size() ? Bevel.StagedCorners[Index] : 0.0;
+        if (Bevel.CornerSizes[Index] > 0.0 && Bevel.CornerSizes[Index] != Staged) return int(Index);
+    }
+    return Bevel.LimitParameter > 0 && Bevel.LimitParameter < int(Bevel.CornerSizes.size()) && Bevel.CornerSizes[size_t(Bevel.LimitParameter)] > 0.0 ? Bevel.LimitParameter : 0;
+}
+
+// 📝 After each preview: an accepted value raises the floor, a refused one above it lowers the ceiling; while the gap is
+//    over 0.2 % (≥ 0.1 mm) the next preview tries the middle, then the value settles on the floor (the bound).
+void ConfineBevelLimit(SolidArcWorkspaceState& State, int Parameter, bool AcceptedCondition)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    if (!BevelBoundedCondition(Bevel)) return;
+    if (Parameter > 0 && Parameter >= int(Bevel.CornerSizes.size())) return;
+    double&           Value = Parameter == 0 ? Bevel.Size : Bevel.CornerSizes[size_t(Parameter)];
+    const std::string Key   = ComposeBevelLimitKey(State, Parameter);
+    if (Key != Bevel.LimitKey || Parameter != Bevel.LimitParameter)
+    {
+        Bevel.LimitKey            = Key;
+        Bevel.LimitParameter      = Parameter;
+        Bevel.LimitGood           = 0.0;
+        Bevel.LimitCeiling        = 0.0;
+        Bevel.LimitProbeCondition = false;
+    }
+    if (AcceptedCondition)
+    {
+        Bevel.LimitGood = std::max(Bevel.LimitGood, Value);
+        if (Bevel.LimitCeiling > 0.0 && Value >= Bevel.LimitCeiling) Bevel.LimitCeiling = 0.0;
+    }
+    else if (Bevel.LimitGood > 0.0 && Value > Bevel.LimitGood) Bevel.LimitCeiling = Bevel.LimitCeiling > 0.0 ? std::min(Bevel.LimitCeiling, Value) : Value;
+    if (!(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0) || (AcceptedCondition && !Bevel.LimitProbeCondition)) return;
+    const double Gap = Bevel.LimitCeiling - Bevel.LimitGood;                                 // [len] - Unknown band
+    if (Gap > std::max(1.0e-4, 2.0e-3 * Bevel.LimitGood))
+    {
+        Value                     = std::round(0.5 * (Bevel.LimitGood + Bevel.LimitCeiling) * 1.0e6) * 1.0e-6;
+        Bevel.LimitProbeCondition = true;
+    }
+    else
+    {
+        const bool Settling       = Bevel.LimitProbeCondition || Value != Bevel.LimitGood;
+        Value                     = Bevel.LimitGood;
+        Bevel.LimitProbeCondition = false;
+        if (Settling)
+        {
+            ++Bevel.LimitStops;
+            Announce(State, Parameter == 0 ? Compose("Bevel: %s m is the largest size these edges take · it stops there", FormatLength(Value).c_str())
+                                           : Compose("Corner %d: %s m is the largest it takes · it stops there", Parameter, FormatLength(Value).c_str()));
+        }
+    }
+    WriteBevelText(Bevel);
+    if (Parameter > 0 && Parameter == Bevel.FocusCorner) std::snprintf(Bevel.CornerText.data(), Bevel.CornerText.size(), "%.4g", Value);
+}
+
 void StageBevelPreview(SolidArcWorkspaceState& State)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
@@ -770,6 +874,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
         if (Bevel.PendingSize != Bevel.Size) { Bevel.PendingSize = Bevel.Size; Bevel.PendingSince = Now; Bevel.PendingFrame = State.FrameNumber; return; }
         if (State.FrameNumber < Bevel.PendingFrame + 6 || Now - Bevel.PendingSince < 0.15) return;
     }
+    const int Parameter = ChangedBevelParameter(Bevel);                                      // [idx] - What the bound applies to
     Bevel.StagedDepth       = Bevel.Depth;
     Bevel.StagedCombination = Bevel.Combination;
     Bevel.StagedSize     = Bevel.Size;
@@ -807,6 +912,7 @@ void StageBevelPreview(SolidArcWorkspaceState& State)
     }
     Bevel.StageMs = (std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - Now) * 1.0e3;
     ++Bevel.StageCount;
+    ConfineBevelLimit(State, Parameter, Outcome.AcceptedCondition && Bevel.Refusal.empty());
 }
 
 void ApplyBevelSession(SolidArcWorkspaceState& State)
@@ -824,6 +930,13 @@ void ApplyBevelSession(SolidArcWorkspaceState& State)
         Typed.PinnedCondition = true;
     }
     Typed.SizeTypedCondition = false;
+    if (Typed.LimitProbeCondition && Typed.LimitGood > 0.0)                                  // Applied mid-search: the largest accepted value
+    {
+        if (Typed.LimitParameter == 0) Typed.Size = Typed.LimitGood;
+        else if (Typed.LimitParameter < int(Typed.CornerSizes.size())) Typed.CornerSizes[size_t(Typed.LimitParameter)] = Typed.LimitGood;
+        Typed.LimitProbeCondition = false;
+    }
+    if (TypedSize != 0.0) Typed.Size = BoundBevelValue(State, 0, Typed.Size);
     if (!State.Bevel.Refusal.empty() && State.Bevel.StagedSize == State.Bevel.Size)
     {
         Announce(State, "Not applied: " + State.Bevel.Refusal + " · change the size, or Esc");
@@ -907,7 +1020,7 @@ void AdjustBevelSize(SolidArcWorkspaceState& State, double Delta)
     }
     // 📝 The pointer only sizes the blend; it stops at 1 mm instead of crossing 0 into the other shape (that flip turned
     //    fillets into chamfers whenever the pointer wandered left). D / C pick the shape.
-    Bevel.Size = std::round(std::max(1.0e-3, Bevel.Size + Delta) * 1.0e4) * 1.0e-4;
+    Bevel.Size = BoundBevelValue(State, 0, std::round(std::max(1.0e-3, Bevel.Size + Delta) * 1.0e4) * 1.0e-4);
     WriteBevelText(Bevel);
 }
 
@@ -916,6 +1029,13 @@ void AdjustBevelSize(SolidArcWorkspaceState& State, double Delta)
 //------------------------------------------------------------------------------------------------------------------------
 
 constexpr double DrawingSnap      = 0.1;                                                     // [len] - Construction grid step
+
+// 📝 Placement without a key is free (no grid): Ctrl snaps to object points, Alt slides along a curve. The 0.1 grid only
+//    applies with Snaps › Grid on (Ctrl then frees the pointer, as before).
+[[nodiscard]] bool GridSnapCondition(const SolidArcWorkspaceState& State)
+{
+    return State.Picker.GridEnabled && !ImGui::GetIO().KeyCtrl;
+}
 constexpr float  ClosingTolerance = 10.0f;                                                   // [px]  - Click on the first point closes
 
 OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State);
@@ -1137,7 +1257,7 @@ void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool Closi
     Drawing.Refusal.clear();
     SolidArcPointPicker& Picker = State.Picker;
     Picker.Placed = Picker.Current;                                                          // t / n / b use the snapped curve or face
-    if (Picker.Current.Kind >= SolidArcSnapKind::Endpoint && Picker.Current.Kind <= SolidArcSnapKind::Face) ++Picker.Snapped;
+    if ((Picker.Current.Kind >= SolidArcSnapKind::Endpoint && Picker.Current.Kind <= SolidArcSnapKind::Face) || Picker.Current.Kind == SolidArcSnapKind::Quarter) ++Picker.Snapped;
     Picker.Lock = SolidArcSnapLockKind::None;                                                // A lock serves one point (Plasticity)
     if (Drawing.Kind == SolidArcDrawingKind::Polygon && Drawing.Points.size() >= 2)
     {
@@ -1190,7 +1310,7 @@ const SolidArcSectionClip* ActiveSectionClip(const SolidArcWorkspaceState& State
 
 [[nodiscard]] bool PointSnapCondition(SolidArcSnapKind Kind)
 {
-    return Kind >= SolidArcSnapKind::Endpoint && Kind <= SolidArcSnapKind::Perpendicular;
+    return (Kind >= SolidArcSnapKind::Endpoint && Kind <= SolidArcSnapKind::Perpendicular) || Kind == SolidArcSnapKind::Quarter;
 }
 
 SolidArcSnapCatalogue& SnapCatalogue(SolidArcWorkspaceState& State, const std::vector<std::string>& Excluded)
@@ -1208,9 +1328,10 @@ SolidArcSnapCatalogue& SnapCatalogue(SolidArcWorkspaceState& State, const std::v
     return *Picker.Catalogue;
 }
 
-// 📝 The snap under the pointer. Ctrl snaps to the important points only (ends, midpoints, centres, crossings, tangent /
-//    square feet); Alt slides along the nearest line / curve / arc / edge (the point stays on it); Ctrl+Alt offers both,
-//    the important points winning. Without either the pointer keeps the grid. AnchorCondition (the grab point of a move)
+// 📝 The snap under the pointer. Ctrl snaps to the important points (ends, midpoints, quarter points, centres, crossings,
+//    tangent / square feet), else onto the nearest line / curve / edge; Alt slides along the nearest line / curve / arc /
+//    edge (the point stays on it); Ctrl+Alt offers both, the important points winning. Without either the pointer is free
+//    (Snaps › Grid: 0.1 steps). AnchorCondition (the grab point of a move)
 //    snaps without a key, faces and edges included.
 SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, std::optional<Vector3> Reference,
                              std::vector<SolidArcSnapPoint> Transient, const std::vector<std::string>& Excluded, bool AnchorCondition)
@@ -1231,12 +1352,13 @@ SolidArcSnap FindPointerSnap(SolidArcWorkspaceState& State, const OrbitCameraFra
     Query.Filter      = State.Picker.Filter;
     if (!AnchorCondition)
     {
-        Query.Filter.CurveEnabled = AlongCondition;                                          // Alt slides along curves
+        Query.Filter.CurveEnabled = AlongCondition || Query.Filter.CurveEnabled;             // Alt slides along curves; Ctrl lands on an edge where no point is
         Query.Filter.FaceEnabled  = false;
         if (!PointCondition)                                                                 // Alt alone: the curve only
         {
             Query.Filter.EndpointEnabled      = false;
             Query.Filter.MidpointEnabled      = false;
+            Query.Filter.QuarterEnabled       = false;
             Query.Filter.CentreEnabled        = false;
             Query.Filter.IntersectionEnabled  = false;
             Query.Filter.TangentEnabled       = false;
@@ -1327,15 +1449,13 @@ std::optional<Vector2> SnapOntoPlane(SolidArcWorkspaceState& State, const OrbitC
     return Vector2{ Dot(Object.Position - Plane.Origin, Plane.XAxis), Dot(Object.Position - Plane.Origin, Plane.YAxis) };
 }
 
-// The drawing pointer: on the lock line (aligned with a point snap, else 0.1 steps), else (Ctrl) on an important object
-// point projected into the drawing plane, else on the 0.1 grid (Ctrl with nothing in reach: free). Rectangle s squares
-// the second corner.
+// The drawing pointer: on the lock line (aligned with a point snap), else (Ctrl) on an important object point or edge
+// projected into the drawing plane, else free (Snaps › Grid: 0.1 steps). Rectangle s squares the second corner.
 void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, Vector2& Point)
 {
     SolidArcDrawingSession& Drawing = State.Drawing;
     SolidArcPointPicker&    Picker  = State.Picker;
     const OrthonormalFrame  Plane   = DrawingPlane(Drawing);
-    const bool              Free    = ImGui::GetIO().KeyCtrl;
     auto Flatten = [&](Vector3 World) { return Vector2{ Dot(World - Plane.Origin, Plane.XAxis), Dot(World - Plane.Origin, Plane.YAxis) }; };
     std::vector<SolidArcSnapPoint> Chain;
     for (size_t Index = 0; Index < Drawing.Points.size(); ++Index)
@@ -1356,7 +1476,7 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
                 Travel = Dot(Object.Position - Picker.LockOrigin, Picker.LockDirection);
                 Note   = std::string(" · level with ") + SolidArcSnapLabel(Object.Kind) + " " + Object.Source;
             }
-            else if (!Free) Travel = std::round(Travel / DrawingSnap) * DrawingSnap;
+            else if (GridSnapCondition(State)) Travel = std::round(Travel / DrawingSnap) * DrawingSnap;
             const Vector3 World = Picker.LockOrigin + Picker.LockDirection * Travel;
             Point          = Flatten(World);
             Picker.Current = { SolidArcSnapKind::Axis, World, Picker.LockDirection, {}, std::string("Lock ") + SolidArcSnapLockLabel(Picker.Lock) + Note, 0.0 };
@@ -1365,7 +1485,7 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
     else
     {
         if (const std::optional<Vector2> Snapped = SnapOntoPlane(State, Frame, Local, Plane, Reference, Chain, {})) Point = *Snapped;
-        else if (!Free) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
+        else if (GridSnapCondition(State)) Point = { std::round(Point.X / DrawingSnap) * DrawingSnap, std::round(Point.Y / DrawingSnap) * DrawingSnap };
     }
     if (Drawing.Kind == SolidArcDrawingKind::Rectangle && Drawing.SquareCondition && Drawing.Points.size() == 1 &&
         (!Drawing.SolidCondition || Drawing.Solid == SolidArcConstructKind::Block || Drawing.Solid == SolidArcConstructKind::Wedge))
@@ -1554,7 +1674,7 @@ void PlaceSolidLift(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
         Lift = Dot(Object.Position - Anchor, Plane.ZAxis);
         State.Picker.Current = { SolidArcSnapKind::Axis, Anchor + Plane.ZAxis * Lift, Plane.ZAxis, {}, std::string("level with ") + SolidArcSnapLabel(Object.Kind) + " " + Object.Source, 0.0 };
     }
-    else if (!ImGui::GetIO().KeyCtrl) Lift = std::round(Lift / DrawingSnap) * DrawingSnap;
+    else if (GridSnapCondition(State)) Lift = std::round(Lift / DrawingSnap) * DrawingSnap;
     Drawing.Lift = Lift;
 }
 
@@ -1696,7 +1816,7 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
     {
         // 📝 Any other face (upright, tilted, curved: its tangent plane) carries the solid: its clicks are face coordinates,
         //    the height runs along the outward normal and the tile is built in that frame (Orient to faces).
-        Point = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
+        Point = GridSnapCondition(State) ? Vector2{ std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap } : Flat;
         Drawing.FacePlaneCondition    = true;
         Drawing.FacePlane             = Plane;
         Drawing.FaceName              = Name;
@@ -1707,7 +1827,7 @@ bool PlaceSolidStart(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fram
         Drawing.PointerElevation      = 0.0;
         return true;
     }
-    Point = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
+    Point = GridSnapCondition(State) ? Vector2{ std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap } : Flat;
     State.Picker.Current.Kind     = SolidArcSnapKind::Face;
     State.Picker.Current.Position = { Point.X, Point.Y, Plane.Origin.Z };
     State.Picker.Current.Normal   = Plane.ZAxis;
@@ -3143,7 +3263,7 @@ void DriveConstraintSession(SolidArcWorkspaceState& State, const OrbitCameraFram
         {
             // Object snaps first (never onto the dragged sketch itself), else the grid; Ctrl free
             if (const std::optional<Vector2> Snapped = SnapOntoPlane(State, Frame, Local, View.Plane, std::nullopt, {}, { Session.Sketch })) Target = *Snapped;
-            else if (!Io.KeyCtrl) Target = { std::round(Target.X / ConstraintSnap) * ConstraintSnap, std::round(Target.Y / ConstraintSnap) * ConstraintSnap };
+            else if (GridSnapCondition(State)) Target = { std::round(Target.X / ConstraintSnap) * ConstraintSnap, std::round(Target.Y / ConstraintSnap) * ConstraintSnap };
             if (!Session.DragCondition || Target.X != Session.DragTarget.X || Target.Y != Session.DragTarget.Y)
             {
                 Session.DragCondition = true;
@@ -4854,7 +4974,7 @@ void BoundKnifeSolidLift(SolidArcWorkspaceState& State)
     if (!KnifeSolidCondition(State) || Drawing.StartFace.empty() || !SolidLiftedCondition(Drawing.Solid)) return;
     const FeatureCombination Combination = State.Knife.Combination;
     if (Combination == FeatureCombination::Separate) return;
-    const double Least = ImGui::GetIO().KeyCtrl ? 1.0e-3 : DrawingSnap;                       // [len] - Shallowest cutter
+    const double Least = GridSnapCondition(State) ? DrawingSnap : 1.0e-3;                     // [len] - Shallowest cutter
     Drawing.Lift = Combination == FeatureCombination::Union ? std::max(Drawing.Lift, Least) : std::min(Drawing.Lift, -Least);
 }
 
@@ -5866,6 +5986,7 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
         {
             double Size = Bevel.DragSize + (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);
             Size = std::max(1.0e-3, Io.KeyCtrl ? std::round(Size * 1.0e6) * 1.0e-6 : std::round(Size * 1.0e3) * 1.0e-3);
+            Size = BoundBevelValue(State, Bevel.DragHandle, Size);                           // Stops at the largest accepted size
             if (Bevel.DragHandle == 0) Bevel.Size = Size;
             else Bevel.CornerSizes[size_t(Bevel.DragHandle)] = Size;
             WriteBevelText(Bevel);
@@ -6334,7 +6455,7 @@ void DriveSketchPointDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame&
             Vector2 Flat{ Dot(*Hit - Plane.Origin, Plane.XAxis), Dot(*Hit - Plane.Origin, Plane.YAxis) };
             // Grid steps; Ctrl: the important points of other figures (free where none is in reach).
             if (const std::optional<Vector2> Snap = SnapOntoPlane(State, Frame, Local, Plane, std::nullopt, {}, { Points.DragSketch })) Flat = *Snap;
-            else if (!Io.KeyCtrl) Flat = { std::round(Flat.X / 0.1) * 0.1, std::round(Flat.Y / 0.1) * 0.1 };
+            else if (GridSnapCondition(State)) Flat = { std::round(Flat.X / DrawingSnap) * DrawingSnap, std::round(Flat.Y / DrawingSnap) * DrawingSnap };
             Points.Target = Flat;
         }
     }
@@ -6655,6 +6776,9 @@ void DrawSnapOverlay(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Or
         {
         case SolidArcSnapKind::Endpoint: Canvas->AddRect(ImVec2(At.x - R, At.y - R), ImVec2(At.x + R, At.y + R), Colour, 0.0f, Width); break;
         case SolidArcSnapKind::Midpoint: Canvas->AddTriangle(ImVec2(At.x, At.y - R - 1.0f), ImVec2(At.x - R, At.y + R - 1.0f), ImVec2(At.x + R, At.y + R - 1.0f), Colour, Width); break;
+        case SolidArcSnapKind::Quarter:                                                      // A diamond: ¼ / ¾ points, quadrants
+            Canvas->AddQuad(ImVec2(At.x, At.y - R), ImVec2(At.x + R, At.y), ImVec2(At.x, At.y + R), ImVec2(At.x - R, At.y), Colour, Width);
+            break;
         case SolidArcSnapKind::Centre:
             Canvas->AddCircle(At, R, Colour, 20, Width);
             Canvas->AddLine(ImVec2(At.x - R - 3.0f, At.y), ImVec2(At.x + R + 3.0f, At.y), Colour, Width * 0.5f);
@@ -7763,6 +7887,7 @@ void PickCurve(SolidArcWorkspaceState& State, const std::string& Label, SolidArc
         break;
     case SolidArcPickIntent::Add:
     case SolidArcPickIntent::Extend:
+    case SolidArcPickIntent::Chain:
         if (!Member) SelectSolidArcCurve(State.Document, Label, true);
         break;
     case SolidArcPickIntent::Remove:
@@ -7913,13 +8038,25 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
         Announce(State, "Removed " + Name);
         break;
     case SolidArcPickIntent::Extend:
+    case SolidArcPickIntent::Chain:
     {
-        const std::vector<std::string> Chain = Kind == SolidArcSelectionKind::Edge ? SolidArcTangentChain(State.Document, Name) : std::vector<std::string>{ Name };
+        // 💡 Alt+click: Blender's edge ring (an edge with no four-sided neighbour falls back to its tangent chain);
+        //    Alt+Shift+click: the tangent chain (Plasticity's chain of smoothly joined edges).
+        std::vector<std::string> Chain = { Name };
+        bool                     RingCondition = false;
+        if (Kind == SolidArcSelectionKind::Edge)
+        {
+            if (Intent == SolidArcPickIntent::Extend) Chain = SolidArcEdgeRing(State.Document, Name);
+            RingCondition = Chain.size() > 1;
+            if (!RingCondition) Chain = SolidArcTangentChain(State.Document, Name);
+        }
         for (const std::string& Link : Chain)
         {
             if (!Member(Link)) SelectSolidArcName(State.Document, Kind, Link, true);
         }
-        Announce(State, Compose("Extended along the tangent chain: %d %s", int(Chain.size()), Kind == SolidArcSelectionKind::Edge ? "edge(s)" : "face(s)"));
+        ++State.RingPicks;
+        Announce(State, Compose(RingCondition ? "Edge ring: %d %s (Alt+Shift+click: the tangent chain)" : "Extended along the tangent chain: %d %s", int(Chain.size()),
+                                Kind == SolidArcSelectionKind::Edge ? "edge(s)" : "face(s)"));
         break;
     }
     }
@@ -7972,7 +8109,7 @@ void SelectInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, I
 
 SolidArcPickIntent PickIntentOf(const ImGuiIO& Io)
 {
-    if (Io.KeyAlt) return SolidArcPickIntent::Extend;
+    if (Io.KeyAlt) return Io.KeyShift ? SolidArcPickIntent::Chain : SolidArcPickIntent::Extend;
     if (Io.KeyCtrl) return SolidArcPickIntent::Remove;
     if (Io.KeyShift) return SolidArcPickIntent::Add;
     return SolidArcPickIntent::Replace;
@@ -8652,6 +8789,25 @@ void ToggleFigureLock(SolidArcWorkspaceState& State, const SolidArcFigure& Figur
     Announce(State, Compose("%s %s", Figure.Name.c_str(), Locked ? "locked (shown, not pickable)" : "unlocked"));
 }
 
+// Outliner eye / lock on an image plane: shown ↔ hidden, or placement locked ↔ free (saved with the document).
+void ToggleImageFigure(SolidArcWorkspaceState& State, const std::string& Name, bool LockCondition)
+{
+    for (SolidArcImagePlane& Plane : State.Document.ImagePlanes)
+    {
+        if (Plane.Name != Name) continue;
+        if (LockCondition) Plane.LockCondition = !Plane.LockCondition;
+        else
+        {
+            Plane.VisibleCondition = !Plane.VisibleCondition || !State.ImagePlanesEnabled;
+            if (Plane.VisibleCondition) State.ImagePlanesEnabled = true;                      // Showing one turns the toolbar Images back on
+        }
+        State.DirtyCondition = true;
+        State.AutosaveTimer  = State.Options.AutosaveDelay;
+        Announce(State, LockCondition ? Name + (Plane.LockCondition ? " locked (placement and crop frozen)" : " unlocked") : Name + (Plane.VisibleCondition ? " shown" : " hidden"));
+        return;
+    }
+}
+
 // The Outliner panel (SolidArcOutliner) and what its rows ask for.
 void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
 {
@@ -8660,6 +8816,13 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     switch (Intent.Verb)
     {
     case SolidArcOutlinerVerb::Pick:
+        if (Intent.Figure.Source == SolidArcFigureSource::Image)
+        {
+            State.FocusedImage = State.FocusedImage == Intent.Figure.Key ? std::string{} : Intent.Figure.Key;
+            Announce(State, State.FocusedImage.empty() ? Intent.Figure.Name + " let go"
+                                                       : Intent.Figure.Name + " · Inspector › Image planes: opacity, line art / photo, mirror, crop, width, turn, centre");
+            break;
+        }
         if (Intent.Figure.LockedCondition)
         {
             Announce(State, Intent.Figure.Name + " is locked · its lock button frees it");
@@ -8692,13 +8855,17 @@ void DrawOutliner(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
         case SolidArcFigureSource::SpaceCurve:
             PickCurve(State, Intent.Figure.Key, Intent.AdditiveCondition ? SolidArcPickIntent::Add : SolidArcPickIntent::Replace);
             break;
+        case SolidArcFigureSource::Image:
+            break;                                                                           // Handled above
         }
         break;
     case SolidArcOutlinerVerb::ToggleVisibility:
-        ToggleFigureVisibility(State, Intent.Figure);
+        if (Intent.Figure.Source == SolidArcFigureSource::Image) ToggleImageFigure(State, Intent.Figure.Key, false);
+        else ToggleFigureVisibility(State, Intent.Figure);
         break;
     case SolidArcOutlinerVerb::ToggleLock:
-        ToggleFigureLock(State, Intent.Figure);
+        if (Intent.Figure.Source == SolidArcFigureSource::Image) ToggleImageFigure(State, Intent.Figure.Key, true);
+        else ToggleFigureLock(State, Intent.Figure);
         break;
     case SolidArcOutlinerVerb::Construct:
         State.ConstructMenuRequest = true;
@@ -9509,7 +9676,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
 
     // 📝 Gestures (Plasticity orbit-controls / viewport-selector): middle drag orbit (yaw about world z, elevation about
     //    camera right), right drag pan, wheel dolly; LMB click replaces the selection, Shift+click adds, Ctrl+click
-    //    removes, Alt+click adds the edge's tangent chain. In a command: click edits the selection, right-click finishes.
+    //    removes, Alt+click adds the edge ring (Alt+Shift: tangent chain). In a command: click edits the selection, right-click finishes.
     ImGuiIO&     Io        = ImGui::GetIO();
     const ImVec2 Local(Io.MousePos.x - Image.x, Io.MousePos.y - Image.y);
     const ImVec2 CubeCorner(Image.x + Extent.x - CubeExtent - 18, Image.y + Extent.y - CubeExtent - 45);     // HTML .orientation: right 18, bottom 45
@@ -9807,7 +9974,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                 Bevel.StagedSize = -1.0;                                                     // Selection changed: rebuild the preview
                 RefreshBevelHandles(State, false);
             }
-            else Announce(State, "Bevel: the edges stay picked (click an edge to add / remove it) · drag the handles or drag / move anywhere to size");
+            else
+            {
+                if (!Bevel.PinnedCondition) Announce(State, "Bevel size held at " + FormatLength(Bevel.Size) + " m · drag anywhere / the handles to change it, or type it");
+                else Announce(State, "Bevel: the edges stay picked (click an edge to add / remove it, Alt+click its ring) · drag anywhere or the handles to size");
+                Bevel.PinnedCondition = true;                                                // A click lets go of the pointer (Plasticity)
+            }
         }
         if (RightClick && !OverCube) ApplyBevelSession(State);
     }
@@ -9889,7 +10061,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     if (State.Bevel.ActiveCondition)
     {
         ImVec2 Below(Image.x + 72, Image.y + 64);
-        const bool Refused = !State.Bevel.Refusal.empty();
+        const bool Refused = !State.Bevel.Refusal.empty() && !State.Bevel.LimitProbeCondition;  // A bound search is not an error
         const char* Caption = State.Bevel.Verb == SolidArcSessionVerb::Profile ? "Extrude sketch d" : State.Bevel.Verb == SolidArcSessionVerb::Extrude ? "Extrude d"
                             : State.Bevel.Verb == SolidArcSessionVerb::Inset ? (State.Bevel.DepthEnabled ? "Inset · H depth · d" : "Inset · D distance · d")
                             : State.Bevel.Verb == SolidArcSessionVerb::Corner ? (State.Bevel.Shape == BlendProfile::Fillet ? "Sketch fillet r" : "Sketch chamfer d")
@@ -9903,8 +10075,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         const std::string Boolean = State.Bevel.Verb != SolidArcSessionVerb::Profile ? std::string{}
                                   : std::string(" · ") + (State.Bevel.Combination == FeatureCombination::New ? "New" : FeatureCombinationLabel(State.Bevel.Combination));
         const char* Unit = Corners > 0 && State.Bevel.Verb == SolidArcSessionVerb::Blend ? "" : " m";
-        DrawStatusPill(Canvas, Below, Compose("%s %s%s%s%s", Caption, Sizes.c_str(), Unit, Boolean.c_str(),
-                                              State.Bevel.PinnedCondition ? " · pinned" : ""), Refused ? RefusalColour : ActiveColour);
+        const double      Bound = BevelLimitOf(State, State.Bevel.LimitParameter);
+        const std::string Limit = State.Bevel.LimitProbeCondition ? std::string(" · finding the max")
+                                : Bound > 0.0 ? (State.Bevel.LimitParameter == 0 ? " · max " : Compose(" · corner %d max ", State.Bevel.LimitParameter)) + FormatLength(Bound) + " m"
+                                              : std::string{};
+        DrawStatusPill(Canvas, Below, Compose("%s %s%s%s%s%s", Caption, Sizes.c_str(), Unit, Boolean.c_str(), Limit.c_str(),
+                                              State.Bevel.PinnedCondition ? "" : " · follows the pointer"), Refused ? RefusalColour : ActiveColour);
         if (Refused) DrawStatusPill(Canvas, Below, State.Bevel.Refusal + (State.Bevel.GoodCondition ? " · showing " + FormatLength(State.Bevel.GoodSize) + " m" : std::string{}), RefusalColour);
     }
     if (State.Gizmo.DragCondition)
@@ -10020,12 +10196,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? (KnifeSolidCondition(State) ? "Knife cutter: draw its base on the body face (snaps, Ctrl free) · then pull into the body for the depth (Q add: out of it) · the cut shows live · W cut · E intersect · R separate · K keep · click / right-click / Enter cuts · Esc cancels"
                            : State.Drawing.SolidCondition ? "Draw on the ground or any body face (oriented to it; snaps, Ctrl free) · move out for the height (0.1 steps) · R new body · Q union · W difference · E intersect · Tab exact size · Ctrl+Z drop · Esc abort"
                               : State.Drawing.Kind == SolidArcDrawingKind::Polygon ? (State.Drawing.Points.size() >= 2 ? "Polygon drawn: wheel (or + / −) changes the sides · click / right-click / Enter confirms · Ctrl+Z drop · Esc abort" : "Click (or press-drag) the centre, then a vertex (snaps, Ctrl free) · wheel or + / − sides · x y z t n b lock · Ctrl+Z drop · Esc abort")
-                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
-                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort"
-                              : "Click both cap centres, then the rim (grid; Ctrl ends / midpoints / centres, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
+                              : State.Drawing.Kind == SolidArcDrawingKind::Curve ? "Click points (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Line ? "Click points (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · click first point closes · Enter / right-click finish · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Rectangle ? "Click two corners (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · s square · Alt centre / corner · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Circle ? "Click centre then rim (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · V two-point / centre · Ctrl+Z drop · Esc abort"
+                              : State.Drawing.Kind == SolidArcDrawingKind::Arc ? "Click start, end, then a point on the arc (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort"
+                              : "Click both cap centres, then the rim (free; Ctrl ends / midpoints / quarters / centres / edges, Alt slides along a curve; a body face under the first click carries the sketch) · x y z t n b lock · Ctrl+Z drop · Esc abort")
                        : State.Constrain.ActiveCondition
                            ? "Constrain: click points / curves · D dimension · N angle · H / V · O on · Q equal · M midpoint · Y symmetric · L parallel / tangent · [ perpendicular · ] lock · drag a point · click a glyph: Delete removes, digits + Enter edit · Esc / K end"
                        : State.Trim.ActiveCondition
@@ -10037,7 +10213,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Inset
                            ? "Move: inset distance or depth (Shift fine) · D distance · H depth (− pocket) · click edits the faces · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition
-                           ? "Move: size (Shift fine) · D fillet · C chamfer · V variable · F flip anchor · click edits selection · Enter / right-click finish · Esc abort"
+                           ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt+click (ring) edits edges · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
@@ -10102,9 +10278,11 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
         if (ParseSolidArcLength(Bevel.SizeText.data(), Parsed) && Parsed != 0.0)
         {
             if (Parsed < 0.0 && !Extrude) Bevel.Shape = BlendProfile::Chamfer;
-            Bevel.Size            = Extrude && !Inset ? Parsed : std::abs(Parsed);
+            const double Wanted   = Extrude && !Inset ? Parsed : std::max(1.0e-3, std::abs(Parsed));
+            Bevel.Size            = Extrude ? Wanted : BoundBevelValue(State, 0, Wanted);
             Bevel.PinnedCondition = true;
-            Announce(State, Compose(Inset ? "Inset distance %s m (pinned)" : "Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
+            if (Bevel.Size != Wanted) Announce(State, Compose("Bevel size %s m is past the largest these edges take: held at %s m", FormatLength(Wanted).c_str(), FormatLength(Bevel.Size).c_str()));
+            else Announce(State, Compose(Inset ? "Inset distance %s m (pinned)" : "Bevel size %s m (pinned)", FormatLength(Bevel.Size).c_str()));
         }
         else
         {
@@ -10184,6 +10362,7 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
                 double Parsed = 0.0;
                 if (ParseSolidArcLength(Bevel.CornerText.data(), Parsed) && Parsed > 0.0)
                 {
+                    Parsed = BoundBevelValue(State, Bevel.FocusCorner, std::max(1.0e-3, Parsed));
                     Bevel.CornerSizes[size_t(Bevel.FocusCorner)] = Parsed;
                     Bevel.PinnedCondition = true;
                     Announce(State, Compose("Corner %d: %s m", Bevel.FocusCorner, FormatLength(Parsed).c_str()));
@@ -10226,7 +10405,15 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
     else ImGui::TextWrapped("%d %s: %s", int(Operands.size()), Extrude ? "face(s)" : "edge(s)", Operands.empty() ? "-" : Operands.front().c_str());
     ImGui::TextUnformatted("Units: 250mm, -25cm, 0.25m, 1in, 1ft");
     ImGui::PopStyleColor();
-    if (!Bevel.Refusal.empty())
+    if (BevelBoundedCondition(Bevel) && (Bevel.LimitProbeCondition || BevelLimitOf(State, Bevel.LimitParameter) > 0.0))
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        const std::string Subject = Bevel.LimitParameter == 0 ? std::string("size") : Compose("corner %d", Bevel.LimitParameter);
+        if (Bevel.LimitProbeCondition) ImGui::TextWrapped("Finding the largest %s these edges take (%s … %s m)", Subject.c_str(), FormatLength(Bevel.LimitGood).c_str(), FormatLength(Bevel.LimitCeiling).c_str());
+        else ImGui::TextWrapped("Max %s %s m · dragging and typing stop there", Subject.c_str(), FormatLength(Bevel.LimitGood).c_str());
+        ImGui::PopStyleColor();
+    }
+    if (!Bevel.Refusal.empty() && !Bevel.LimitProbeCondition)
     {
         ImGui::PushStyleColor(ImGuiCol_Text, Tint(RefusalColour));
         ImGui::TextWrapped("Refused: %s", Bevel.Refusal.c_str());
@@ -10527,8 +10714,72 @@ void DrawBodyCard(SolidArcWorkspaceState& State)
     EndCard();
 }
 
-// 📝 Blueprint image planes (from a curves file's [[ImagePlanes]] or the document). Edits mark the document dirty; they are
-//    not undo entries (reference pictures, not geometry).
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    IMAGE PLANE PROPERTIES
+//------------------------------------------------------------------------------------------------------------------------
+
+// The crop rectangle in pixels (0 0 0 0 = the whole picture).
+[[nodiscard]] std::array<int, 4> EffectiveImageCrop(const SolidArcImagePlane& Plane, uint32_t Width, uint32_t Height)
+{
+    if (Plane.Crop[2] <= Plane.Crop[0] || Plane.Crop[3] <= Plane.Crop[1]) return { 0, 0, int(Width), int(Height) };
+    return Plane.Crop;
+}
+
+[[nodiscard]] Vector3 ImagePlaneCentre(const SolidArcImagePlane& Plane)
+{
+    return Plane.Corner + Plane.Right * 0.5 + Plane.Down * 0.5;
+}
+
+// 💡 A new crop keeps the picture where it is and at its scale: the world rectangle shrinks / grows with the crop (a
+//    mirrored side measures its margin from the other edge), instead of stretching the cropped part over the old one.
+void RecropImagePlane(SolidArcImagePlane& Plane, uint32_t Width, uint32_t Height, std::array<int, 4> Crop)
+{
+    const std::array<int, 4> Before = EffectiveImageCrop(Plane, Width, Height);
+    Crop[0] = std::clamp(Crop[0], 0, int(Width) - 1);
+    Crop[1] = std::clamp(Crop[1], 0, int(Height) - 1);
+    Crop[2] = std::clamp(Crop[2], Crop[0] + 1, int(Width));
+    Crop[3] = std::clamp(Crop[3], Crop[1] + 1, int(Height));
+    const Vector3 Across   = Plane.Right * (1.0 / double(Before[2] - Before[0]));               // [len] - World span of one pixel column
+    const Vector3 Downward = Plane.Down * (1.0 / double(Before[3] - Before[1]));                // [len] - World span of one pixel row
+    const double  ShiftAcross   = Plane.FlipAcrossCondition ? double(Before[2] - Crop[2]) : double(Crop[0] - Before[0]);
+    const double  ShiftDownward = Plane.FlipDownCondition ? double(Before[3] - Crop[3]) : double(Crop[1] - Before[1]);
+    Plane.Corner = Plane.Corner + Across * ShiftAcross + Downward * ShiftDownward;
+    Plane.Right  = Across * double(Crop[2] - Crop[0]);
+    Plane.Down   = Downward * double(Crop[3] - Crop[1]);
+    const bool WholeCondition = Crop[0] == 0 && Crop[1] == 0 && Crop[2] == int(Width) && Crop[3] == int(Height);
+    Plane.Crop = WholeCondition ? std::array<int, 4>{ 0, 0, 0, 0 } : Crop;
+}
+
+// Uniform scale about the centre so the width becomes Width.
+void ScaleImagePlane(SolidArcImagePlane& Plane, double Width)
+{
+    const double Before = GeometryProcessing::Length(Plane.Right);
+    if (!(Before > 0.0) || !(Width > 0.0)) return;
+    const Vector3 Centre = ImagePlaneCentre(Plane);
+    Plane.Right  = Plane.Right * (Width / Before);
+    Plane.Down   = Plane.Down * (Width / Before);
+    Plane.Corner = Centre - Plane.Right * 0.5 - Plane.Down * 0.5;
+}
+
+// Turn by Angle about the plane normal through the centre (Rodrigues).
+void TurnImagePlane(SolidArcImagePlane& Plane, double Angle)
+{
+    const Vector3 Normal = GeometryProcessing::Normalize(GeometryProcessing::Cross(Plane.Right, Plane.Down));
+    const Vector3 Centre = ImagePlaneCentre(Plane);
+    const auto Rotate = [&](Vector3 Vector)
+    {
+        return Vector * std::cos(Angle) + GeometryProcessing::Cross(Normal, Vector) * std::sin(Angle) + Normal * (GeometryProcessing::Dot(Normal, Vector) * (1.0 - std::cos(Angle)));
+    };
+    Plane.Right  = Rotate(Plane.Right);
+    Plane.Down   = Rotate(Plane.Down);
+    Plane.Corner = Centre - Plane.Right * 0.5 - Plane.Down * 0.5;
+    Plane.Turn   = std::remainder(Plane.Turn + Angle, 2.0 * std::numbers::pi);
+}
+
+// 📝 Blueprint image planes (from a curves file's [[ImagePlanes]], the document or Construct › Image plane), also listed in
+//    the Outliner (eye, lock, pick). Every plane has a row; the picked one (Outliner, or its name here) opens its
+//    properties: opacity (1 − transparency), line art / photograph, mirror, crop margins, width, turn and centre. Edits
+//    mark the document dirty; they are not undo entries (reference pictures, not geometry). A locked plane only shows.
 void DrawImagePlaneCard(SolidArcWorkspaceState& State)
 {
     std::vector<SolidArcImagePlane>& Planes = State.Document.ImagePlanes;
@@ -10536,33 +10787,114 @@ void DrawImagePlaneCard(SolidArcWorkspaceState& State)
     BeginCard("Image planes");
     bool   EditedCondition = false;
     size_t Removal         = Planes.size();
+    const bool FocusFound = std::any_of(Planes.begin(), Planes.end(), [&](const SolidArcImagePlane& Plane) { return Plane.Name == State.FocusedImage; });
+    if (!FocusFound) State.FocusedImage = Planes.size() == 1 ? Planes.front().Name : std::string{};
     for (size_t Index = 0; Index < Planes.size(); ++Index)
     {
         SolidArcImagePlane& Plane = Planes[Index];
         ImGui::PushID(int(Index));
-        const std::string VisibleLabel = Plane.Name + "###PlaneVisible" + std::to_string(Index);
+        const std::string VisibleLabel = "###PlaneVisible" + std::to_string(Index);
         if (ImGui::Checkbox(VisibleLabel.c_str(), &Plane.VisibleCondition)) EditedCondition = true;
         RegisterWidget(State, VisibleLabel.c_str());
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(110);
-        float Opacity = float(Plane.Opacity);
-        const std::string OpacityLabel = "###PlaneOpacity" + std::to_string(Index);
-        if (ImGui::SliderFloat(OpacityLabel.c_str(), &Opacity, 0.05f, 1.0f, "ink %.2f"))
-        {
-            Plane.Opacity   = double(Opacity);
-            EditedCondition = true;
-        }
-        RegisterWidget(State, OpacityLabel.c_str());
+        const bool        Focused   = Plane.Name == State.FocusedImage;
+        const std::string NameLabel = Plane.Name + (Plane.LockCondition ? "  (locked)" : "") + "###PlaneName" + std::to_string(Index);
+        if (ToggleButton(State, NameLabel.c_str(), Focused, ImVec2(ImGui::GetContentRegionAvail().x - 80.0f, 0.0f))) State.FocusedImage = Focused ? std::string{} : Plane.Name;
         ImGui::SameLine();
         const std::string RemoveLabel = "Remove###PlaneRemove" + std::to_string(Index);
-        if (PressButton(State, RemoveLabel.c_str())) Removal = Index;
-        const auto Found = std::find(State.Pictures.Paths.begin(), State.Pictures.Paths.end(), Plane.Path);
-        if (Found != State.Pictures.Paths.end())
+        if (PressButton(State, RemoveLabel.c_str(), ImVec2(0, 0), !Plane.LockCondition)) Removal = Index;
+        const auto     Found   = std::find(State.Pictures.Paths.begin(), State.Pictures.Paths.end(), Plane.Path);
+        const size_t   Picture = size_t(Found - State.Pictures.Paths.begin());
+        const bool     Decoded = Found != State.Pictures.Paths.end() && State.Pictures.Refusals[Picture].empty();
+        const uint32_t Width   = Decoded ? State.Pictures.Widths[Picture] : 0;
+        const uint32_t Height  = Decoded ? State.Pictures.Heights[Picture] : 0;
+        if (Found != State.Pictures.Paths.end() && !Decoded) ImGui::TextColored(Tint(RefusalColour), "%s", State.Pictures.Refusals[Picture].c_str());
+        if (Focused)
         {
-            const size_t Picture = size_t(Found - State.Pictures.Paths.begin());
-            if (!State.Pictures.Refusals[Picture].empty()) ImGui::TextColored(Tint(RefusalColour), "%s", State.Pictures.Refusals[Picture].c_str());
-            else ImGui::TextDisabled("%u × %u px · %.3f × %.3f m", State.Pictures.Widths[Picture], State.Pictures.Heights[Picture], GeometryProcessing::Length(Plane.Right), GeometryProcessing::Length(Plane.Down));
+            // Look: opacity, ink or photograph, mirror.
+            ImGui::SetNextItemWidth(RowSpan().x);
+            float Opacity = float(Plane.Opacity);
+            if (ImGui::SliderFloat("###ImageOpacity", &Opacity, 0.05f, 1.0f, "opacity %.2f"))
+            {
+                Plane.Opacity   = double(Opacity);
+                EditedCondition = true;
+            }
+            RegisterWidget(State, "###ImageOpacity");
+            ImGui::SameLine();
+            ImGui::TextDisabled("transparency %d %%", int(std::lround((1.0 - Plane.Opacity) * 100.0)));
+            if (ToggleButton(State, "Line art###ImageInk", !Plane.PhotoCondition, RowSpan(4))) { Plane.PhotoCondition = false; EditedCondition = true; }
+            ImGui::SameLine();
+            if (ToggleButton(State, "Photo###ImagePhoto", Plane.PhotoCondition, RowSpan(4))) { Plane.PhotoCondition = true; EditedCondition = true; }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(Plane.LockCondition);
+            if (ToggleButton(State, "Mirror H###ImageFlipAcross", Plane.FlipAcrossCondition, RowSpan(4))) { Plane.FlipAcrossCondition = !Plane.FlipAcrossCondition; EditedCondition = true; }
+            ImGui::SameLine();
+            if (ToggleButton(State, "Mirror V###ImageFlipDown", Plane.FlipDownCondition, RowSpan(4))) { Plane.FlipDownCondition = !Plane.FlipDownCondition; EditedCondition = true; }
+            ImGui::EndDisabled();
+            if (ToggleButton(State, Plane.LockCondition ? "Locked###ImageLock" : "Lock###ImageLock", Plane.LockCondition, RowSpan()))
+            {
+                Plane.LockCondition = !Plane.LockCondition;
+                EditedCondition     = true;
+            }
+            ImGui::BeginDisabled(Plane.LockCondition);
+            // Crop: margins in percent of the picture (left, top, right, bottom).
+            if (Decoded)
+            {
+                ImGui::SameLine();
+                if (PressButton(State, "Uncrop###ImageUncrop", RowSpan())) { RecropImagePlane(Plane, Width, Height, { 0, 0, int(Width), int(Height) }); EditedCondition = true; }
+                const std::array<int, 4> Crop = EffectiveImageCrop(Plane, Width, Height);
+                float Margins[4] = { 100.0f * float(Crop[0]) / float(Width), 100.0f * float(Crop[1]) / float(Height), 100.0f * float(int(Width) - Crop[2]) / float(Width),
+                                     100.0f * float(int(Height) - Crop[3]) / float(Height) };
+                static const char* const Sides[4] = { "###ImageCropLeft", "###ImageCropTop", "###ImageCropRight", "###ImageCropBottom" };
+                static const char* const Formats[4] = { "crop left %.1f %%", "crop top %.1f %%", "crop right %.1f %%", "crop bottom %.1f %%" };
+                for (int Side = 0; Side < 4; ++Side)
+                {
+                    if (Side % 2 == 1) ImGui::SameLine();
+                    ImGui::SetNextItemWidth(RowSpan().x);
+                    if (ImGui::SliderFloat(Sides[Side], &Margins[Side], 0.0f, 95.0f, Formats[Side]))
+                    {
+                        std::array<int, 4> Next = Crop;
+                        if (Side == 0) Next[0] = int(std::lround(Margins[0] * 0.01f * float(Width)));
+                        if (Side == 1) Next[1] = int(std::lround(Margins[1] * 0.01f * float(Height)));
+                        if (Side == 2) Next[2] = int(Width) - int(std::lround(Margins[2] * 0.01f * float(Width)));
+                        if (Side == 3) Next[3] = int(Height) - int(std::lround(Margins[3] * 0.01f * float(Height)));
+                        RecropImagePlane(Plane, Width, Height, Next);
+                        EditedCondition = true;
+                    }
+                    RegisterWidget(State, Sides[Side]);
+                }
+            }
+            // Placement: width (uniform scale about the centre), turn about the normal, centre.
+            double PlaneWidth = GeometryProcessing::Length(Plane.Right);
+            ImGui::SetNextItemWidth(RowSpan().x);
+            if (ImGui::InputDouble("width m###ImageWidth", &PlaneWidth, 0.0, 0.0, "%.4f", ImGuiInputTextFlags_EnterReturnsTrue) && PlaneWidth > 1.0e-6)
+            {
+                ScaleImagePlane(Plane, PlaneWidth);
+                EditedCondition = true;
+            }
+            RegisterWidget(State, "###ImageWidth");
+            ImGui::SameLine();
+            float Degrees = float(Plane.Turn * 180.0 / std::numbers::pi);
+            ImGui::SetNextItemWidth(RowSpan().x);
+            if (ImGui::DragFloat("###ImageTurn", &Degrees, 0.5f, -180.0f, 180.0f, "turn %.1f deg"))
+            {
+                TurnImagePlane(Plane, double(Degrees) * std::numbers::pi / 180.0 - Plane.Turn);
+                EditedCondition = true;
+            }
+            RegisterWidget(State, "###ImageTurn");
+            const Vector3 Centre = ImagePlaneCentre(Plane);
+            double        Position[3] = { Centre.X, Centre.Y, Centre.Z };
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            if (ImGui::InputScalarN("###ImageCentre", ImGuiDataType_Double, Position, 3, nullptr, nullptr, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue))
+            {
+                Plane.Corner    = Plane.Corner + (Vector3{ Position[0], Position[1], Position[2] } - Centre);
+                EditedCondition = true;
+            }
+            RegisterWidget(State, "###ImageCentre");
+            ImGui::EndDisabled();
         }
+        if (Decoded) ImGui::TextDisabled("%u × %u px · %.3f × %.3f m%s", Width, Height, GeometryProcessing::Length(Plane.Right), GeometryProcessing::Length(Plane.Down),
+                                         Focused ? " · centre x y z" : "");
         ImGui::PopID();
     }
     if (Removal < Planes.size())
@@ -10717,6 +11049,11 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     BeginCard("Snaps");
     if (ToggleButton(State, "Object snaps###SnapEnabled", Picker.Enabled, RowSpan())) Picker.Enabled = !Picker.Enabled;
     ImGui::SameLine();
+    if (ToggleButton(State, "Grid 0.1###SnapGrid", Picker.GridEnabled, RowSpan()))
+    {
+        Picker.GridEnabled = !Picker.GridEnabled;
+        Announce(State, Picker.GridEnabled ? "Grid snap on: points land on 0.1 steps (Ctrl: free)" : "Grid snap off: points are free (Ctrl snaps to objects)");
+    }
     ImGui::Text("Lock %s", Picker.Lock == SolidArcSnapLockKind::None ? "none" : SolidArcSnapLockLabel(Picker.Lock));
     if (State.Drawing.ActiveCondition)
     {
@@ -10728,20 +11065,21 @@ void DrawSnapCard(SolidArcWorkspaceState& State)
     struct Choice { const char* Label; bool* Enabled; };
     SolidArcSnapFilter& Filter = Picker.Filter;
     const Choice Choices[] = { { "Endpoint###SnapEndpoint", &Filter.EndpointEnabled }, { "Midpoint###SnapMidpoint", &Filter.MidpointEnabled },
-                               { "Centre###SnapCentre", &Filter.CentreEnabled }, { "Intersection###SnapIntersection", &Filter.IntersectionEnabled },
-                               { "Tangent###SnapTangent", &Filter.TangentEnabled }, { "Perpendicular###SnapPerpendicular", &Filter.PerpendicularEnabled },
-                               { "On curve###SnapCurve", &Filter.CurveEnabled }, { "On face (Move)###SnapFace", &Filter.FaceEnabled } };
+                               { "Quarter###SnapQuarter", &Filter.QuarterEnabled }, { "Centre###SnapCentre", &Filter.CentreEnabled },
+                               { "Intersection###SnapIntersection", &Filter.IntersectionEnabled }, { "Tangent###SnapTangent", &Filter.TangentEnabled },
+                               { "Perpendicular###SnapPerpendicular", &Filter.PerpendicularEnabled }, { "On curve / edge###SnapCurve", &Filter.CurveEnabled },
+                               { "On face (Move)###SnapFace", &Filter.FaceEnabled } };
     ImGui::BeginDisabled(!Picker.Enabled);
-    for (int Index = 0; Index < 8; ++Index)
+    for (int Index = 0; Index < 9; ++Index)
     {
         if (Index % 2 == 1) ImGui::SameLine();
         if (ToggleButton(State, Choices[Index].Label, *Choices[Index].Enabled, RowSpan())) *Choices[Index].Enabled = !*Choices[Index].Enabled;
     }
     ImGui::EndDisabled();
     ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-    ImGui::TextWrapped(State.Drawing.ActiveCondition ? "x y z t n b lock a direction through the last point (again releases) · s squares a rectangle · Ctrl held: ends / midpoints / centres (free where none) · Alt held: along a line / curve / arc"
+    ImGui::TextWrapped(State.Drawing.ActiveCondition ? "Free placement · Ctrl held: ends / midpoints / quarter points / centres / crossings / tangents, else onto an edge · Alt held: along a line / curve / arc · x y z t n b lock a direction through the last point (again releases) · s squares a rectangle"
                        : Moving ? "The grab point snaps, then lands on the snap under the pointer · X / Y / Z still constrain · Ctrl held: free"
-                       : State.Constrain.ActiveCondition ? "A dragged sketch point lands on points and in-plane curves of other geometry, else the grid · Ctrl held: important points (free where none) · Alt held: along a curve"
+                       : State.Constrain.ActiveCondition ? "A dragged sketch point moves freely · Ctrl held: important points of other geometry, else onto an edge · Alt held: along a curve"
                                                          : "A dragged pole lands on points, curves and edges of other geometry · Ctrl held: free");
     ImGui::PopStyleColor();
     EndCard();
