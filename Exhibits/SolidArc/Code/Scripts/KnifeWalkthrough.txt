@@ -609,3 +609,86 @@ frames 3
 expect refused == 0
 expect knife-commits == 17
 expect knife-removed ~ 0.0628318530718
+
+# ⑮ a knife polyline slices along every segment: a fresh 2 m cube, Polyline from the cutter menu, four clicks across the
+#    top face (−0.5, −1) → (−0.5, 0.3) → (0.5, 0.3) → (0.5, 1) stay a drawing until Enter ends the chain; the open chain
+#    slices the cube into two L-shaped bodies (volume unchanged); Enter applies
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -1.0 -1.0 0.0
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+expect bodies == 1
+expect volume ~ 8
+click @SketchKnifeTool
+frames 3
+click @KnifeToolPolyline
+frames 3
+expect knife == 1
+expect knife-pending == 1
+expect drawing == Line
+move world -0.5 -0.98 2.0
+frames 2
+click world -0.5 -0.98 2.0
+frames 2
+move world -0.5 0.3 2.0
+frames 2
+click world -0.5 0.3 2.0
+frames 2
+move world 0.5 0.3 2.0
+frames 2
+click world 0.5 0.3 2.0
+frames 2
+move world 0.5 0.98 2.0
+frames 2
+click world 0.5 0.98 2.0
+frames 2
+expect knife-pending == 1
+key Enter
+frames 3
+expect knife-pending == 0
+expect knife-slice == 1
+expect knife-refusal == 0
+capture 299KnifePolyline
+key Enter
+frames 3
+expect refused == 0
+expect knife == 0
+expect bodies == 2
+expect volume ~ 8
+
+# ⑯ Blender loops and rings on the L piece: Alt+click its top edge at x = −1 walks round the L-shaped top (6 edges: the
+#    rim of a face with more than four sides); Ctrl+Alt+click rings across the even L faces and the x = −1 side (4);
+#    Shift+Alt+click on that picked edge takes its loop away again (2 left), a second Shift+Alt+click adds it (8)
+key 2
+frames 2
+move world -1.0 0.0 2.0
+frames 2
+click world -1.0 0.0 2.0 Left Alt
+frames 2
+expect selected-edges == 6
+capture 300EdgeLoop
+click world -1.0 0.0 2.0 Left Ctrl Alt
+frames 2
+expect selected-edges == 4
+click world -1.0 0.0 2.0 Left Shift Alt
+frames 2
+expect selected-edges == 2
+click world -1.0 0.0 2.0 Left Shift Alt
+frames 2
+expect selected-edges == 8
+key Escape
+frames 2

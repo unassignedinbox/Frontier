@@ -701,7 +701,7 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
     State.Bevel.PinnedCondition = true;
     RefreshBevelHandles(State, true);
     WriteBevelText(State.Bevel);
-    Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge adds its ring · Enter / right-click applies · Esc aborts"
+    Announce(State, std::string(Shape == BlendProfile::Fillet ? "Fillet" : "Chamfer") + " (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts"
                     + (Refitted ? " · starts at " + FormatLength(State.Bevel.Size) + " m to fit the edges" : std::string{}));
 }
 
@@ -5315,7 +5315,13 @@ void ChooseKnifeCombination(SolidArcWorkspaceState& State, FeatureCombination Co
 }
 
 // Starts a drawing for the knife: the shape is filled, and once finished becomes the knife's cutter on that face.
-void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
+// Caption of a sketch cutter: a knife line drawn as a polyline reads "Polyline".
+[[nodiscard]] const char* KnifeShapeLabel(SolidArcDrawingKind Kind, bool PolylineCondition)
+{
+    return Kind == SolidArcDrawingKind::Line && PolylineCondition ? "Polyline" : SolidArcDrawingLabel(Kind);
+}
+
+void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind, bool PolylineCondition = false)
 {
     SolidArcKnifeSession& Knife = State.Knife;
     Knife.Mode = SolidArcKnifeMode::Sketch;
@@ -5324,8 +5330,10 @@ void DrawKnifeShape(SolidArcWorkspaceState& State, SolidArcDrawingKind Kind)
     Knife.Typed.clear();
     DropKnifePreview(Knife);
     OpenDrawingSession(State, Kind);
-    // A knife line is one cut across the face: it finishes on its second click (edge to edge), no Enter needed.
-    if (Kind == SolidArcDrawingKind::Line) State.Drawing.SegmentCondition = true;
+    // A knife line is one cut across the face: it finishes on its second click (edge to edge), no Enter needed. A knife
+    // polyline takes clicks until Enter / right-click (the open chain slices along every segment; clicking the first
+    // point closes it into a pocket outline instead).
+    if (Kind == SolidArcDrawingKind::Line) State.Drawing.SegmentCondition = !PolylineCondition;
     Knife.DrawPendingCondition = State.Drawing.ActiveCondition;
 }
 
@@ -5360,7 +5368,9 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     const SolidArcDrawingKind PreferredShape = Knife.PreferredShape;
     const bool                  PreferredSolidCondition = Knife.PreferredSolidCondition;
     const SolidArcConstructKind PreferredSolid          = Knife.PreferredSolid;
+    const bool                  PreferredPolyline       = Knife.PreferredPolylineCondition;
     Knife                  = {};
+    Knife.PreferredPolylineCondition = PreferredPolyline;
     Knife.PreferredMode    = PreferredMode;
     Knife.PreferredShape   = PreferredShape;
     Knife.PreferredSolidCondition = PreferredSolidCondition;
@@ -5394,24 +5404,30 @@ void OpenKnifeSession(SolidArcWorkspaceState& State)
     if (Knife.PreferredMode == SolidArcKnifeMode::Insert) { ChooseKnifeMode(State, SolidArcKnifeMode::Insert); return; }
     if (Knife.PreferredMode == SolidArcKnifeMode::Object) { ChooseKnifeMode(State, SolidArcKnifeMode::Object); return; }
     if (Knife.PreferredSolidCondition) { DrawKnifeSolid(State, Knife.PreferredSolid); return; }
-    DrawKnifeShape(State, Knife.PreferredShape);
-    Announce(State, std::string("Knife · draw a ") + SolidArcDrawingLabel(Knife.PreferredShape) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line) · then pull along the normal for the depth · Tab: Insert library · Esc cancels");
+    DrawKnifeShape(State, Knife.PreferredShape, Knife.PreferredPolylineCondition);
+    Announce(State, std::string("Knife · draw a ") + KnifeShapeLabel(Knife.PreferredShape, Knife.PreferredPolylineCondition) + " on a face (toolbar menu or card: Circle / Rectangle / Polygon / Slot / Line / Polyline) · then pull along the normal for the depth · Tab: Insert library · Esc cancels");
 }
 
 // Toolbar tool menu: remembers the cutter and opens (or switches) the knife on it.
-void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, SolidArcDrawingKind Shape, int Insert)
+void ChooseKnifeTool(SolidArcWorkspaceState& State, SolidArcKnifeMode Mode, SolidArcDrawingKind Shape, int Insert, bool PolylineCondition = false)
 {
     SolidArcKnifeSession& Knife = State.Knife;
     Knife.PreferredMode  = Mode;
     Knife.PreferredShape = Shape;
+    if (Mode == SolidArcKnifeMode::Sketch) Knife.PreferredPolylineCondition = PolylineCondition && Shape == SolidArcDrawingKind::Line;
     if (Mode == SolidArcKnifeMode::Sketch || Mode == SolidArcKnifeMode::Insert) Knife.PreferredSolidCondition = false;
     if (Insert >= 0) Knife.Insert = Insert;
     if (!Knife.ActiveCondition) OpenKnifeSession(State);
     if (!Knife.ActiveCondition) return;
     if (Mode == SolidArcKnifeMode::Sketch)
     {
-        if (!(Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.Kind == Shape && State.Drawing.Points.empty())) DrawKnifeShape(State, Shape);
-        Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face (live W / H / R dimensions), then pull along the normal for the depth (T through)");
+        const bool Same = Knife.DrawPendingCondition && State.Drawing.ActiveCondition && State.Drawing.Kind == Shape && State.Drawing.Points.empty()
+                       && (Shape != SolidArcDrawingKind::Line || State.Drawing.SegmentCondition != Knife.PreferredPolylineCondition);
+        if (!Same) DrawKnifeShape(State, Shape, Knife.PreferredPolylineCondition);
+        if (Knife.PreferredPolylineCondition)
+            Announce(State, "Knife · Polyline · click points across the body (Ctrl snaps) · Enter / right-click ends the chain · it slices the body along every segment");
+        else
+            Announce(State, std::string("Knife · ") + SolidArcDrawingLabel(Shape) + " · draw it on a face (live W / H / R dimensions), then pull along the normal for the depth (T through)");
         return;
     }
     if (Knife.Mode != Mode || Mode == SolidArcKnifeMode::Insert) ChooseKnifeMode(State, Mode);
@@ -5438,8 +5454,9 @@ void ChooseKnifeSolid(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
         return Knife.Insert >= 0 && Knife.Insert < int(Knife.Library.Inserts.size()) ? Knife.Library.Inserts[size_t(Knife.Insert)].Name : std::string("Insert");
     if (KnifeSolidCondition(State)) return SolidArcConstructLabel(State.Drawing.Solid);
     if (!Knife.ActiveCondition && Knife.PreferredSolidCondition) return SolidArcConstructLabel(Knife.PreferredSolid);
-    const SolidArcDrawingKind Shape = Knife.ActiveCondition && Knife.DrawPendingCondition && State.Drawing.ActiveCondition ? State.Drawing.Kind : Knife.PreferredShape;
-    return SolidArcDrawingLabel(Shape);
+    const bool                Drawing = Knife.ActiveCondition && Knife.DrawPendingCondition && State.Drawing.ActiveCondition;
+    const SolidArcDrawingKind Shape   = Drawing ? State.Drawing.Kind : Knife.PreferredShape;
+    return KnifeShapeLabel(Shape, Drawing ? !State.Drawing.SegmentCondition : Knife.PreferredPolylineCondition);
 }
 
 void CloseKnifeSession(SolidArcWorkspaceState& State, const std::string& Message)
@@ -6155,12 +6172,19 @@ void DrawKnifeCard(SolidArcWorkspaceState& State)
             ImGui::TextDisabled("%s", Knife.DrawPendingCondition ? (std::string("Drawing a ") + Drawn + " for the knife").c_str() : "Draw a shape for the knife");
             static const struct { const char* Label; SolidArcDrawingKind Kind; } Shapes[] = {
                 { "Circle###KnifeDrawCircle", SolidArcDrawingKind::Circle }, { "Rectangle###KnifeDrawRectangle", SolidArcDrawingKind::Rectangle },
-                { "Polygon###KnifeDrawPolygon", SolidArcDrawingKind::Polygon }, { "Slot###KnifeDrawSlot", SolidArcDrawingKind::Slot }, { "Line###KnifeDrawLine", SolidArcDrawingKind::Line } };
-            for (int Index = 0; Index < 5; ++Index)
+                { "Polygon###KnifeDrawPolygon", SolidArcDrawingKind::Polygon }, { "Slot###KnifeDrawSlot", SolidArcDrawingKind::Slot }, { "Line###KnifeDrawLine", SolidArcDrawingKind::Line },
+                { "Polyline###KnifeDrawPolyline", SolidArcDrawingKind::Line } };
+            for (int Index = 0; Index < 6; ++Index)
             {
                 if (Index > 0 && Index != 3) ImGui::SameLine();
-                if (ToggleButton(State, Shapes[Index].Label, Knife.DrawPendingCondition && !State.Drawing.SolidCondition && State.Drawing.Kind == Shapes[Index].Kind, RowSpan(3)))
-                    DrawKnifeShape(State, Shapes[Index].Kind);
+                const bool Polyline = Index == 5;
+                const bool Drawing  = Knife.DrawPendingCondition && !State.Drawing.SolidCondition && State.Drawing.Kind == Shapes[Index].Kind
+                                   && (Shapes[Index].Kind != SolidArcDrawingKind::Line || State.Drawing.SegmentCondition != Polyline);
+                if (ToggleButton(State, Shapes[Index].Label, Drawing, RowSpan(3)))
+                {
+                    State.Knife.PreferredPolylineCondition = Polyline;
+                    DrawKnifeShape(State, Shapes[Index].Kind, Polyline);
+                }
             }
             // 3D cutters, drawn as the Construct menu draws them (base, then the height into the body).
             static const struct { const char* Label; SolidArcConstructKind Kind; } Solids[] = {
@@ -7917,7 +7941,10 @@ void PickCurve(SolidArcWorkspaceState& State, const std::string& Label, SolidArc
         State.FocusedStep = Label;
         break;
     case SolidArcPickIntent::Add:
-    case SolidArcPickIntent::Extend:
+    case SolidArcPickIntent::Loop:
+    case SolidArcPickIntent::LoopToggle:
+    case SolidArcPickIntent::Ring:
+    case SolidArcPickIntent::RingToggle:
     case SolidArcPickIntent::Chain:
         if (!Member) SelectSolidArcCurve(State.Document, Label, true);
         break;
@@ -7963,6 +7990,72 @@ OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State)
 
 // 💡 The GPU identity under the pointer is primary (identity target readback); modes 2 / 3 retarget it with the
 //    exact CPU ray pick so an edge stroke never blocks a face click and a face never blocks a nearby edge.
+// 💡 Blender's loop / ring clicks (edit-mode select_loop): Alt loops, Ctrl+Alt rings — the selection becomes the walk;
+//    with Shift the walk joins, or leaves when the clicked edge is already picked (toggle). Face mode: the face loop
+//    across the quads of the edge's ring. Double-click: the tangent chain (smoothly joined edges) joins.
+void PickEdgeWalk(SolidArcWorkspaceState& State, SolidArcSelectionKind Kind, const std::string& Name, SolidArcPickIntent Intent, const std::string& Body)
+{
+    const bool RingCondition   = Intent == SolidArcPickIntent::Ring || Intent == SolidArcPickIntent::RingToggle;
+    const bool ToggleCondition = Intent == SolidArcPickIntent::LoopToggle || Intent == SolidArcPickIntent::RingToggle;
+    const SolidArcSelectionKind Picked = Kind == SolidArcSelectionKind::Face ? SolidArcSelectionKind::Face : SolidArcSelectionKind::Edge;
+    const auto Member = [&](const std::string& Candidate)
+    {
+        const std::vector<std::string>& Names = Picked == SolidArcSelectionKind::Edge ? State.Document.Selection.Edges : State.Document.Selection.Faces;
+        return std::find(Names.begin(), Names.end(), Candidate) != Names.end();
+    };
+    if (Kind == SolidArcSelectionKind::Face && Intent == SolidArcPickIntent::Chain)
+    {
+        SelectSolidArcName(State.Document, Kind, Name, false);                                // A double-click on a face picks it
+        Announce(State, "Selected " + Name);
+        return;
+    }
+    std::vector<std::string> Walk;
+    const char*              Caption = "Edge loop";
+    if (Kind == SolidArcSelectionKind::Face)
+    {
+        Walk    = { Name };                                                                  // A face hit without an edge: just the face
+        Caption = "Face";
+    }
+    else if (Intent == SolidArcPickIntent::Chain) { Walk = SolidArcTangentChain(State.Document, Name); Caption = "Tangent chain"; }
+    else if (RingCondition) { Walk = SolidArcEdgeRing(State.Document, Name, Body); Caption = "Edge ring"; }
+    else Walk = SolidArcEdgeLoop(State.Document, Name, Body);
+    const bool Leave = ToggleCondition && Member(Name);
+    if (!ToggleCondition && Intent != SolidArcPickIntent::Chain)
+    {
+        State.Document.Selection.Edges.clear();
+        State.Document.Selection.Faces.clear();
+    }
+    for (const std::string& Link : Walk)
+    {
+        if (Leave ? Member(Link) : !Member(Link)) SelectSolidArcName(State.Document, Picked, Link, true);
+    }
+    ++State.RingPicks;
+    Announce(State, Compose("%s: %d %s %s · Alt loop · Ctrl+Alt ring · Shift toggles · double-click tangent chain", Caption, int(Walk.size()),
+                            Picked == SolidArcSelectionKind::Edge ? "edge(s)" : "face(s)", Leave ? "removed" : ToggleCondition || Intent == SolidArcPickIntent::Chain ? "added" : "selected"));
+}
+
+// Face-mode Alt+click: Blender's face loop through the edge nearest the pointer.
+void PickFaceLoop(SolidArcWorkspaceState& State, const std::string& Edge, SolidArcPickIntent Intent, const std::string& Body)
+{
+    const std::vector<std::string> Faces = SolidArcFaceLoop(State.Document, Edge, Body);
+    if (Faces.empty()) { Announce(State, "Face loop: no four-sided face beside " + Edge); return; }
+    const bool ToggleCondition = Intent != SolidArcPickIntent::Loop && Intent != SolidArcPickIntent::Ring;
+    const std::vector<std::string>& Selected = State.Document.Selection.Faces;
+    const bool Leave = ToggleCondition && std::all_of(Faces.begin(), Faces.end(), [&](const std::string& Face) { return std::find(Selected.begin(), Selected.end(), Face) != Selected.end(); });
+    if (!ToggleCondition)
+    {
+        State.Document.Selection.Edges.clear();
+        State.Document.Selection.Faces.clear();
+    }
+    for (const std::string& Face : Faces)
+    {
+        const bool Member = std::find(State.Document.Selection.Faces.begin(), State.Document.Selection.Faces.end(), Face) != State.Document.Selection.Faces.end();
+        if (Leave ? Member : !Member) SelectSolidArcName(State.Document, SolidArcSelectionKind::Face, Face, true);
+    }
+    ++State.RingPicks;
+    Announce(State, Compose("Face loop: %d face(s) %s", int(Faces.size()), Leave ? "removed" : ToggleCondition ? "added" : "selected"));
+}
+
 void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickIntent Intent)
 {
     const OrbitCameraFrame Frame = ViewportFrame(State);
@@ -7991,6 +8084,23 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
     {
         const std::optional<SolidArcPick> Nearby = PickSolidArcScene(State.Scene, Ray, 8.0 * Frame.WorldPerPixel, State.Style.XRayEnabled, ActiveSectionClip(State));
         Identity = Nearby && (Nearby->Identity & IdentityEdgeBit) ? Nearby->Identity : 0;
+    }
+    // Blender's loop / ring clicks take the edge nearest the pointer even over a face (face mode: its face loop).
+    const bool WalkCondition = Intent == SolidArcPickIntent::Loop || Intent == SolidArcPickIntent::LoopToggle || Intent == SolidArcPickIntent::Ring || Intent == SolidArcPickIntent::RingToggle;
+    if (Intent == SolidArcPickIntent::Chain && State.PickMode != SolidArcPickMode::Edge && State.PickMode != SolidArcPickMode::Any) Intent = SolidArcPickIntent::Replace;
+    if (WalkCondition && State.PickMode != SolidArcPickMode::Solid)
+    {
+        uint32_t Edge = (Identity & IdentityEdgeBit) ? Identity : 0u;
+        if (Edge == 0)
+        {
+            const std::optional<SolidArcPick> Nearby = PickSolidArcScene(State.Scene, Ray, 12.0 * Frame.WorldPerPixel, State.Style.XRayEnabled, ActiveSectionClip(State));
+            if (Nearby && (Nearby->Identity & IdentityEdgeBit)) Edge = Nearby->Identity;
+        }
+        const uint32_t Index  = (Edge & ~IdentityEdgeBit) - 1u;
+        const uint32_t BodyAt = Edge != 0 && Index < State.Scene.Edges.size() ? State.Scene.Edges[Index].Body : ~0u;
+        const bool     Locked = BodyAt < State.Scene.Bodies.size() && SolidArcLockedCondition(State.Document, State.Scene.Bodies[BodyAt].Key);
+        if (Edge != 0 && !Locked && State.PickMode == SolidArcPickMode::Face) { PickFaceLoop(State, NameSolidArcIdentity(State.Scene, Edge), Intent, State.Scene.Bodies[BodyAt].Key); return; }
+        if (Edge != 0) Identity = Edge;
     }
     if (State.PickMode == SolidArcPickMode::Face && (Identity & IdentityEdgeBit))
     {
@@ -8068,26 +8178,16 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
         if (Member(Name)) SelectSolidArcName(State.Document, Kind, Name, true);
         Announce(State, "Removed " + Name);
         break;
-    case SolidArcPickIntent::Extend:
+    case SolidArcPickIntent::Loop:
+    case SolidArcPickIntent::LoopToggle:
+    case SolidArcPickIntent::Ring:
+    case SolidArcPickIntent::RingToggle:
     case SolidArcPickIntent::Chain:
     {
-        // 💡 Alt+click: Blender's edge ring (an edge with no four-sided neighbour falls back to its tangent chain);
-        //    Alt+Shift+click: the tangent chain (Plasticity's chain of smoothly joined edges).
-        std::vector<std::string> Chain = { Name };
-        bool                     RingCondition = false;
-        if (Kind == SolidArcSelectionKind::Edge)
-        {
-            if (Intent == SolidArcPickIntent::Extend) Chain = SolidArcEdgeRing(State.Document, Name);
-            RingCondition = Chain.size() > 1;
-            if (!RingCondition) Chain = SolidArcTangentChain(State.Document, Name);
-        }
-        for (const std::string& Link : Chain)
-        {
-            if (!Member(Link)) SelectSolidArcName(State.Document, Kind, Link, true);
-        }
-        ++State.RingPicks;
-        Announce(State, Compose(RingCondition ? "Edge ring: %d %s (Alt+Shift+click: the tangent chain)" : "Extended along the tangent chain: %d %s", int(Chain.size()),
-                                Kind == SolidArcSelectionKind::Edge ? "edge(s)" : "face(s)"));
+        const uint32_t Index  = (Identity & ~IdentityEdgeBit) - 1u;
+        const uint32_t BodyAt = (Identity & IdentityEdgeBit) ? (Index < State.Scene.Edges.size() ? State.Scene.Edges[Index].Body : ~0u)
+                                                             : (Index < State.Scene.Faces.size() ? State.Scene.Faces[Index].Body : ~0u);
+        PickEdgeWalk(State, Kind, Name, Intent, BodyAt < State.Scene.Bodies.size() ? State.Scene.Bodies[BodyAt].Key : std::string{});
         break;
     }
     }
@@ -8140,8 +8240,10 @@ void SelectInBox(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, I
 
 SolidArcPickIntent PickIntentOf(const ImGuiIO& Io)
 {
-    if (Io.KeyAlt) return Io.KeyShift ? SolidArcPickIntent::Chain : SolidArcPickIntent::Extend;
+    if (Io.KeyAlt && Io.KeyCtrl) return Io.KeyShift ? SolidArcPickIntent::RingToggle : SolidArcPickIntent::Ring;     // Blender: Ctrl+Alt ring
+    if (Io.KeyAlt) return Io.KeyShift ? SolidArcPickIntent::LoopToggle : SolidArcPickIntent::Loop;                   // Blender: Alt loop
     if (Io.KeyCtrl) return SolidArcPickIntent::Remove;
+    if (!Io.KeyShift && Io.MouseClickedLastCount[ImGuiMouseButton_Left] >= 2) return SolidArcPickIntent::Chain;     // Double-click: tangent chain
     if (Io.KeyShift) return SolidArcPickIntent::Add;
     return SolidArcPickIntent::Replace;
 }
@@ -9497,8 +9599,11 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
             for (SolidArcDrawingKind Shape : Shapes)
             {
                 const std::string Label = std::string(SolidArcDrawingLabel(Shape)) + "###KnifeTool" + SolidArcDrawingLabel(Shape);
-                if (SelectListEntry(State, Label, Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == Shape)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Shape, -1);
+                const bool Chosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == Shape && !Knife.PreferredPolylineCondition;
+                if (SelectListEntry(State, Label, Chosen)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, Shape, -1);
             }
+            const bool PolylineChosen = Mode == SolidArcKnifeMode::Sketch && !Knife.PreferredSolidCondition && Knife.PreferredShape == SolidArcDrawingKind::Line && Knife.PreferredPolylineCondition;
+            if (SelectListEntry(State, "Polyline###KnifeToolPolyline", PolylineChosen)) ChooseKnifeTool(State, SolidArcKnifeMode::Sketch, SolidArcDrawingKind::Line, -1, true);
             ImGui::TextDisabled("Objects");
             if (SelectListEntry(State, "Picked bodies###KnifeToolObject", Mode == SolidArcKnifeMode::Object)) ChooseKnifeTool(State, SolidArcKnifeMode::Object, Knife.PreferredShape, -1);
             if (Columns) ImGui::TableNextColumn();
@@ -9710,7 +9815,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
 
     // 📝 Gestures (Plasticity orbit-controls / viewport-selector): middle drag orbit (yaw about world z, elevation about
     //    camera right), right drag pan, wheel dolly; LMB click replaces the selection, Shift+click adds, Ctrl+click
-    //    removes, Alt+click adds the edge ring (Alt+Shift: tangent chain). In a command: click edits the selection, right-click finishes.
+    //    removes, Alt+click the edge loop, Ctrl+Alt+click the ring (Shift toggles, Blender), double-click the tangent chain. In a command: click edits the selection, right-click finishes.
     ImGuiIO&     Io        = ImGui::GetIO();
     const ImVec2 Local(Io.MousePos.x - Image.x, Io.MousePos.y - Image.y);
     const ImVec2 CubeCorner(Image.x + Extent.x - CubeExtent - 18, Image.y + Extent.y - CubeExtent - 45);     // HTML .orientation: right 18, bottom 45
@@ -10011,7 +10116,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
             else
             {
                 if (!Bevel.PinnedCondition) Announce(State, "Bevel size held at " + FormatLength(Bevel.Size) + " m · drag anywhere / the handles to change it, or type it");
-                else Announce(State, "Bevel: the edges stay picked (click an edge to add / remove it, Alt+click its ring) · drag anywhere or the handles to size");
+                else Announce(State, "Bevel: the edges stay picked (click an edge to add / remove it, Alt+click its loop, Ctrl+Alt+click its ring) · drag anywhere or the handles to size");
                 Bevel.PinnedCondition = true;                                                // A click lets go of the pointer (Plasticity)
             }
         }
@@ -10250,10 +10355,10 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Inset
                            ? "Move: inset distance or depth (Shift fine) · D distance · H depth (− pocket) · click edits the faces · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition
-                           ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt+click (ring) edits edges · Enter / right-click finish · Esc abort"
+                           ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt (loop) / Ctrl+Alt (ring) edits edges · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
-                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt ring, Alt+Shift chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt loop, Ctrl+Alt ring, double-click chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     {
         SolidArcSheet Instructions;
         Instructions.Begin();

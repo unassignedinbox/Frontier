@@ -727,10 +727,21 @@ void ClearSolidArcSelection(SolidArcDocument& Document);
 // Names of the edge's tangent chain on the current body (the edge itself first); just the name when it does not resolve.
 [[nodiscard]] std::vector<std::string> SolidArcTangentChain(const SolidArcDocument& Document, const std::string& Name);
 
-// 💡 Blender's edge ring (Alt+click): from the edge, across every adjacent four-sided face (one loop of four fins) to its
-//    opposite edge, and on from there in both directions — the uprights of a prism, the four parallel edges of a box
-//    side. The edge itself first; just the name when it does not resolve or no four-sided face touches it.
-[[nodiscard]] std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name);
+// 💡 Blender's edge ring (Ctrl+Alt+click, BMW_EDGERING): from the edge across every adjacent face with an even number of
+//    sides (one loop of 2k fins, k ≥ 2) to the edge k fins on, and on from there in both directions — the uprights of a
+//    prism, the parallel edges of a quad strip, the far rim across a cylinder side. Odd faces (triangles, pentagons) and
+//    non-manifold edges end the walk. The edge itself first; just the name when it does not resolve. Body: the key of
+//    the body the edge was picked on (empty: the first body holding that name — pieces of one cut share names).
+[[nodiscard]] std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name, const std::string& Body = {});
+
+// 💡 Blender's edge loop (Alt+click, BMW_EDGELOOP): from the edge through every vertex with four edges to the opposite
+//    one of its fan (two edges: straight on), both directions, stopping at poles (3, 5+ edges: a box corner). An edge at
+//    a three-edge vertex beside a face of more than four sides walks round that face instead (a hexagon rim); an open
+//    sheet's boundary edge walks the boundary. The edge itself first; just the name when it does not resolve.
+[[nodiscard]] std::vector<std::string> SolidArcEdgeLoop(const SolidArcDocument& Document, const std::string& Name, const std::string& Body = {});
+
+// Blender's face loop (Alt+click in face mode, BMW_FACELOOP): the four-sided faces the edge's ring crosses (quads only).
+[[nodiscard]] std::vector<std::string> SolidArcFaceLoop(const SolidArcDocument& Document, const std::string& Edge, const std::string& Body = {});
 
 // Step caption for the outliner ("Block1 · Sketch", "Fillet3"), falling back to the label.
 [[nodiscard]] std::string DescribeSolidArcStep(const SolidArcDocument& Document, const GeometryProcessing::FeatureStep& Step);

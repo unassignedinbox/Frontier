@@ -49,14 +49,17 @@ enum class SolidArcPickMode : uint8_t
     Any   = 5,                                                                               // Plasticity 5 / Tab: edges and faces
 };
 
-// What a viewport click does to the selection (Plasticity: click, Shift+click, Ctrl+click, Alt+click).
+// What a viewport click does to the selection (Plasticity: click, Shift+click, Ctrl+click; Blender: Alt loops, Ctrl+Alt rings).
 enum class SolidArcPickIntent : uint8_t
 {
-    Replace = 0,                                                                             // The selection becomes the hit
-    Add     = 1,                                                                             // The hit joins the selection
-    Remove  = 2,                                                                             // The hit leaves the selection
-    Extend  = 3,                                                                             // Edges (Alt): the hit's edge ring joins (else its tangent chain)
-    Chain   = 4,                                                                             // Edges (Alt+Shift): the hit's tangent chain joins
+    Replace    = 0,                                                                          // The selection becomes the hit
+    Add        = 1,                                                                          // The hit joins the selection
+    Remove     = 2,                                                                          // The hit leaves the selection
+    Loop       = 3,                                                                          // Edges (Alt): the selection becomes the hit's edge loop (Blender)
+    LoopToggle = 4,                                                                          // Edges (Shift+Alt): its loop joins (leaves when the hit is picked)
+    Ring       = 5,                                                                          // Edges (Ctrl+Alt): the selection becomes the hit's edge ring
+    RingToggle = 6,                                                                          // Edges (Shift+Ctrl+Alt): its ring joins (leaves when picked)
+    Chain      = 7,                                                                          // Edges (double-click): the hit's tangent chain joins
 };
 
 // The command a session (B fillet, E extrude) stages and applies.
@@ -488,6 +491,7 @@ struct SolidArcKnifeSession
     SolidArcDrawingKind                    PreferredShape       = SolidArcDrawingKind::Circle; // [-] - Sketch: the shape drawn first
     bool                                   PreferredSolidCondition = false;                  // [-]   - The cutter is a Construct primitive (3D)
     SolidArcConstructKind                  PreferredSolid       = SolidArcConstructKind::Block; // [-] - That primitive (box, cylinder, …)
+    bool                                   PreferredPolylineCondition = false;               // [-]   - Line cutter: a polyline (Enter / right-click ends)
 };
 
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).

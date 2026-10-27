@@ -45,17 +45,22 @@ frames 2
 expect status contains focus a sketch step or select a curve
 expect steps == 2
 
-# ②b Alt+click an edge picks its ring (Blender-like): the top front edge along x walks front → bottom → back → top
-#    faces, so the four edges along x come picked; Alt+A lets them go
+# ②b Ctrl+Alt+click an edge picks its ring (Blender): the top front edge along x walks front → bottom → back → top
+#    faces, so the four edges along x come picked. Alt+click is Blender's edge loop: a box corner has three edges (a
+#    pole), so the loop is that edge alone. Alt+A lets them go
 key 2
 frames 2
 move world 1.0 0.0 1.0
 frames 2
-click world 1.0 0.0 1.0 Left Alt
+click world 1.0 0.0 1.0 Left Ctrl Alt
 frames 2
 expect selected-edges == 4
 expect ring-picks == 1
 capture 294EdgeRing
+click world 1.0 0.0 1.0 Left Alt
+frames 2
+expect selected-edges == 1
+expect ring-picks == 2
 key A Alt
 frames 2
 expect selected-edges == 0

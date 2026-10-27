@@ -119,6 +119,7 @@ namespace
     GateTally PocketBevelGate = { "W55", "Bevels on knife pockets in a curved face (cylinder r 2.126 × 1.8, pockets cut from the tangent plane): the slot opening loop takes fillets 0.02 · 0.0519 · 0.1 across its smooth joints (pinned volumes, decreasing); sizes 0.3 and 0.8553 refuse as too large, naming the outgrown face, document untouched; a hex pocket insert's rim loop takes 0.05 through its unequal mitres, its wall–wall edges 0.05 together; on a box the rim loss stays within 10 % of the straight-edge model (1 − π/4) r² L; one undo entry each; codec byte-equal", "≤ 10⁻⁹ pinned · exact" };
     GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -5451,7 +5452,118 @@ int main()
               Format("image plane photo / mirror / lock / turn 0.25 / opacity 0.35 / crop kept: %d bytes byte-equal", int(Written.size())));
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate })
+    // ---- W58 Blender edge loops / rings, polyline knife
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[720]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        // First edge of the active body whose ends satisfy Test (either order).
+        const auto EdgeWhere = [](const SolidArcDocument& Document, const auto& Test)
+        {
+            for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges)
+            {
+                const Vector3 Start = EdgeEndPosition(Document, Name, false), End = EdgeEndPosition(Document, Name, true);
+                if (Test(Start, End) || Test(End, Start)) return Name;
+            }
+            return std::string{};
+        };
+        const auto Every = [&](const SolidArcDocument& Document, const std::vector<std::string>& Names, const auto& Test)
+        {
+            for (const std::string& Name : Names) if (!Test(EdgeEndPosition(Document, Name, false), EdgeEndPosition(Document, Name, true))) return false;
+            return true;
+        };
+        const auto Near = [](double Value, double Target) { return std::abs(Value - Target) <= 1.0e-9; };
+        const auto VolumeOf = [](const SolidArcDocument& Target, const std::string& Key)
+        {
+            for (const SolidArcBodyFigures& Body : Target.Summary.Bodies) if (Body.Key == Key) return Body.Volume;
+            return -1.0;
+        };
+
+        // ① block: the front-top edge loops to itself, rings to the four edges along x
+        SolidArcDocument Box = CreateSolidArcDocument("LoopBlock");
+        Expect(ConstructSolidArcPrimitive(Box, Block));
+        const std::string Front = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const std::vector<std::string> BoxLoop = SolidArcEdgeLoop(Box, Front), BoxRing = SolidArcEdgeRing(Box, Front);
+        Tally(LoopGate, 0.0, !Front.empty() && BoxLoop.size() == 1 && BoxRing.size() == 4 && Every(Box, BoxRing, [&](Vector3 A, Vector3 B) { return Near(std::abs(B.X - A.X), 4.0); }),
+              Format("block %s: loop %d (corner poles), ring %d along x", Front.c_str(), int(BoxLoop.size()), int(BoxRing.size())));
+
+        // ②–④ prisms: hub loops round even / odd n-gons, rings across even faces only
+        for (const int Sides : { 6, 5, 3 })
+        {
+            SolidArcDocument Prism = CreateSolidArcDocument("LoopPrism");
+            SolidArcConstructRequest Request;
+            Request.Kind = SolidArcConstructKind::Prism; Request.Radius = 1.0; Request.Height = 1.0; Request.Sides = Sides;
+            Expect(ConstructSolidArcPrimitive(Prism, Request));
+            const std::string Rim     = EdgeWhere(Prism, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+            const std::string Upright = EdgeWhere(Prism, [&](Vector3 A, Vector3 B) { return Near(A.Z, 0.0) && Near(B.Z, 1.0); });
+            const std::vector<std::string> RimLoop = SolidArcEdgeLoop(Prism, Rim), RimRing = SolidArcEdgeRing(Prism, Rim);
+            const std::vector<std::string> UpLoop = SolidArcEdgeLoop(Prism, Upright), UpRing = SolidArcEdgeRing(Prism, Upright);
+            const size_t LoopExpected = Sides > 4 ? size_t(Sides) : 1u;
+            const size_t RingExpected = Sides % 2 == 0 ? 4u : 2u;
+            const bool   RimFlat      = Every(Prism, RimLoop, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+            const bool   Uprights     = Every(Prism, UpRing, [&](Vector3 A, Vector3 B) { return Near(std::abs(B.Z - A.Z), 1.0); });
+            Tally(LoopGate, 0.0, !Rim.empty() && !Upright.empty() && RimLoop.size() == LoopExpected && RimFlat && RimRing.size() == RingExpected && UpLoop.size() == 1
+                                 && UpRing.size() == size_t(Sides) && Uprights,
+                  Format("%d-sided prism: rim loop %d (expect %d), rim ring %d (expect %d), upright loop %d, upright ring %d", Sides, int(RimLoop.size()), int(LoopExpected),
+                         int(RimRing.size()), int(RingExpected), int(UpLoop.size()), int(UpRing.size())));
+        }
+
+        // ⑤ polyline knife: an open three-segment chain slices the block 3 + 5, the L piece's top rim loops to 6
+        SolidArcDocument Part = CreateSolidArcDocument("PolylineKnife");
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        const std::string BlockKey = Part.Regeneration.Active;
+        Expect(DrawSolidArcSketch(Part, DrawingOf(SolidArcDrawingKind::Line, 0, { { 1.0, -1.0 }, { 1.0, 1.5 }, { 3.0, 1.5 }, { 3.0, 3.0 } })));
+        SolidArcCutRequest Cut;
+        Cut.Target = BlockKey; Cut.Cutter = Part.Tree.Steps.back().Label;
+        const SolidArcCommandOutcome Sliced = CutSolidArcBody(Part, Cut);
+        const std::string PieceKey = Sliced.AcceptedCondition ? Part.Tree.Steps.back().Label : std::string{};
+        const double      Inside   = PieceKey.empty() ? 0.0 : VolumeOf(Part, PieceKey), Outside = VolumeOf(Part, BlockKey);
+        const bool        Pair     = (Near(Inside, 3.0) && Near(Outside, 5.0)) || (Near(Inside, 5.0) && Near(Outside, 3.0));
+        Tally(LoopGate, std::min(std::abs(Inside - 3.0) + std::abs(Outside - 5.0), std::abs(Inside - 5.0) + std::abs(Outside - 3.0)),
+              Sliced.AcceptedCondition && Pair && Part.Summary.Bodies.size() == 2 && Part.Summary.SoundCondition,
+              Format("%s: polyline slice → %.12f + %.12f (3 + 5), sound", Sliced.Label.c_str(), Inside, Outside));
+        // The active body is the inside piece: its top face is an L hexagon.
+        const std::string LTop = EdgeWhere(Part, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0) && Near(A.Y, 2.0) && Near(B.Y, 2.0); });
+        const std::vector<std::string> LLoop = SolidArcEdgeLoop(Part, LTop, Part.Regeneration.Active);
+        Tally(LoopGate, 0.0, !LTop.empty() && LLoop.size() == 6 && Every(Part, LLoop, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); }),
+              Format("L piece top rim %s: loop %d (expect 6, round the L)", LTop.c_str(), int(LLoop.size())));
+
+        // ⑥ cylinder: the top circle (a closed edge) loops to itself and rings across the side face to the bottom circle
+        SolidArcDocument Round = CreateSolidArcDocument("LoopCylinder");
+        SolidArcConstructRequest Drum;
+        Drum.Kind = SolidArcConstructKind::Cylinder; Drum.Radius = 1.0; Drum.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Round, Drum));
+        const std::string Circle = EdgeWhere(Round, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const std::vector<std::string> CircleLoop = SolidArcEdgeLoop(Round, Circle), CircleRing = SolidArcEdgeRing(Round, Circle);
+        Tally(LoopGate, 0.0, !Circle.empty() && CircleLoop.size() == 1 && CircleRing.size() == 2
+                             && Every(Round, CircleRing, [&](Vector3 A, Vector3 B) { return Near(A.Z, B.Z) && Near(std::abs(A.X), 1.0); }),
+              Format("cylinder top circle: loop %d, ring %d (top + bottom circles)", int(CircleLoop.size()), int(CircleRing.size())));
+
+        // ⑦ open sheet (an unfilled rectangle extruded into walls): a top boundary edge loops round the open rim (4),
+        //    rings across its wall to the bottom rim edge (2)
+        SolidArcDocument Walls = CreateSolidArcDocument("LoopWalls");
+        Expect(DrawSolidArcSketch(Walls, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        Expect(ExtrudeSolidArcSketch(Walls, Walls.Tree.Steps.back().Label, 1.0, FeatureCombination::New));
+        const std::string Lip = EdgeWhere(Walls, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0) && Near(A.Y, 0.0) && Near(B.Y, 0.0); });
+        const std::vector<std::string> LipLoop = SolidArcEdgeLoop(Walls, Lip), LipRing = SolidArcEdgeRing(Walls, Lip);
+        Tally(LoopGate, 0.0, !Lip.empty() && LipLoop.size() == 4 && LipRing.size() == 2 && Every(Walls, LipLoop, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); }),
+              Format("open walls top lip %s: boundary loop %d (expect 4), ring %d (expect 2)", Lip.c_str(), int(LipLoop.size()), int(LipRing.size())));
+
+        // ⑧ four-edge vertices (a revolved diamond, no side ⟂ the axis: each corner holds two cone seams and one circle): a seam loops
+        //    through the opposite fan edge round the whole profile (4, Blender's meridian loop); a circle rings across
+        //    every revolved face to the other three circles and loops to itself
+        SolidArcDocument Turned = CreateSolidArcDocument("LoopRevolve");
+        Expect(DrawFilledSketch(Turned, DrawingOf(SolidArcDrawingKind::Line, 0, { { 1.0, 0.5 }, { 1.5, 0.0 }, { 2.0, 0.5 }, { 1.5, 1.0 } }, true)));
+        const std::string Square = Turned.Tree.Steps.back().Label;
+        Expect(RevolveSolidArcSketch(Turned, Square, ProposeSolidArcRevolveAxis(Turned, Square), 2.0 * std::numbers::pi, FeatureCombination::New));
+        const std::string Seam  = EdgeWhere(Turned, [&](Vector3 A, Vector3 B) { return Distance(A, B) > 0.5; });
+        const std::string Hoop  = EdgeWhere(Turned, [&](Vector3 A, Vector3 B) { return Distance(A, B) <= 1.0e-12; });
+        const std::vector<std::string> SeamLoop = SolidArcEdgeLoop(Turned, Seam), HoopRing = SolidArcEdgeRing(Turned, Hoop), HoopLoop = SolidArcEdgeLoop(Turned, Hoop);
+        Tally(LoopGate, 0.0, !Seam.empty() && !Hoop.empty() && SeamLoop.size() == 4 && HoopRing.size() == 4 && HoopLoop.size() == 1
+                             && Every(Turned, SeamLoop, [&](Vector3 A, Vector3 B) { return Distance(A, B) > 0.5; }),
+              Format("revolved diamond: seam %s loops %d (expect 4, through 4-edge corners), circle rings %d (expect 4), loops %d", Seam.c_str(), int(SeamLoop.size()),
+                     int(HoopRing.size()), int(HoopLoop.size())));
+    }
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <numbers>
 #include <limits>
+#include <map>
 #include <set>
 
 namespace Frontier::SolidArc
@@ -1687,54 +1688,266 @@ std::vector<std::string> SolidArcTangentChain(const SolidArcDocument& Document, 
     return Names;
 }
 
-std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name)
+namespace
 {
-    const RegeneratedBody* Owner = FindRegeneratedBody(Document, SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name));
-    if (!Document.Partition || !Owner) return { Name };
-    const ModelPartition&                    Partition = *Document.Partition;
-    const GeometryProcessing::BodyNaming&    Naming    = Owner->Naming;
-    const GeometryProcessing::BodyInventory  Inventory = Partition.CollectInventory(Owner->Body);
-    std::vector<EdgeToken> Ring;
-    std::set<uint32_t>     Chosen;
-    for (const EdgeToken Edge : Inventory.Edges)
+
+constexpr int RadialLimit = 16;                                                              // [-] - Fins around one edge (non-manifold guard)
+constexpr int CycleLimit  = 4096;                                                            // [-] - Fins round one loop (corrupt-cycle guard)
+
+// One body's topology as the Blender walkers see it: edge names, fins round each edge, edge ends at each vertex.
+struct SolidArcTopologyWalk
+{
+    const ModelPartition*                 Partition = nullptr;                               // [-] - Owning partition
+    const GeometryProcessing::BodyNaming* Naming    = nullptr;                               // [-] - Persistent names
+    std::vector<EdgeToken>                Edges     = {};                                    // [-] - Body edges
+    std::map<uint32_t, int>               Valence   = {};                                    // [-] - Vertex slot → edge ends
+    EdgeToken                             Start     = {};                                    // [-] - Edge the walk starts on
+    bool                                  StartCondition = false;                            // [-] - The name resolved
+};
+
+SolidArcTopologyWalk PrepareTopologyWalk(const SolidArcDocument& Document, const std::string& Name, const std::string& Body)
+{
+    SolidArcTopologyWalk Walk;
+    const RegeneratedBody* Owner = FindRegeneratedBody(Document, Body.empty() ? SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) : Body);
+    if (!Document.Partition || !Owner) return Walk;
+    Walk.Partition = Document.Partition.get();
+    Walk.Naming    = &Owner->Naming;
+    Walk.Edges     = Walk.Partition->CollectInventory(Owner->Body).Edges;
+    for (const EdgeToken Edge : Walk.Edges)
     {
-        const auto Found = Naming.Edges.find(Edge.Slot);
-        if (Found != Naming.Edges.end() && Found->second == Name && Chosen.insert(Edge.Slot).second) Ring.push_back(Edge);
+        const EdgeProfile& Profile = Walk.Partition->Edges.Resolve(Edge);
+        ++Walk.Valence[Profile.Start.Slot];
+        ++Walk.Valence[Profile.End.Slot];
+        const auto Found = Walk.Naming->Edges.find(Edge.Slot);
+        if (!Walk.StartCondition && Found != Walk.Naming->Edges.end() && Found->second == Name) { Walk.Start = Edge; Walk.StartCondition = true; }
     }
-    if (Ring.empty()) return { Name };
-    constexpr int RadialLimit = 16;                                                          // [-] - Fins around one edge (non-manifold guard)
+    return Walk;
+}
+
+[[nodiscard]] int RadialCount(const ModelPartition& Partition, EdgeToken Edge)
+{
+    const FinToken First = Partition.Edges.Resolve(Edge).RadialFin;
+    if (!First.PresentCondition()) return 0;
+    int      Count = 0;
+    FinToken Fin   = First;
+    do
+    {
+        if (++Count > RadialLimit) return Count;
+        Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+    } while (Fin.PresentCondition() && !(Fin == First));
+    return Count;
+}
+
+// The other fin of a manifold edge (absent at a boundary or non-manifold edge).
+[[nodiscard]] FinToken RadialMate(const ModelPartition& Partition, FinToken Fin)
+{
+    if (RadialCount(Partition, Partition.Fins.Resolve(Fin).Edge) != 2) return {};
+    return Partition.Fins.Resolve(Fin).RadialSuccessor;
+}
+
+// The neighbouring fin of the same loop that shares Vertex with Fin (BM_loop_other_edge_loop).
+[[nodiscard]] FinToken FanNeighbour(const ModelPartition& Partition, FinToken Fin, VertexToken Vertex)
+{
+    const FinProfile&  Use     = Partition.Fins.Resolve(Fin);
+    const EdgeProfile& Edge    = Partition.Edges.Resolve(Use.Edge);
+    const VertexToken  Arrival = Use.Sense == Orientation::Forward ? Edge.End : Edge.Start;
+    return Arrival == Vertex ? Use.Successor : Use.Predecessor;
+}
+
+[[nodiscard]] int LoopFinCount(const ModelPartition& Partition, FinToken Fin)
+{
+    int      Count = 1;
+    FinToken Cycle = Partition.Fins.Resolve(Fin).Successor;
+    while (Cycle.PresentCondition() && !(Cycle == Fin) && Count <= CycleLimit) { ++Count; Cycle = Partition.Fins.Resolve(Cycle).Successor; }
+    return Count;
+}
+
+[[nodiscard]] int FacesAtVertex(const ModelPartition& Partition, const std::vector<EdgeToken>& Edges, VertexToken Vertex)
+{
+    std::set<uint32_t> Faces;
+    for (const EdgeToken Edge : Edges)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        if (!(Profile.Start == Vertex) && !(Profile.End == Vertex)) continue;
+        FinToken Fin = Profile.RadialFin;
+        for (int Guard = 0; Fin.PresentCondition() && Guard < RadialLimit; ++Guard)
+        {
+            Faces.insert(Partition.Loops.Resolve(Partition.Fins.Resolve(Fin).Loop).Face.Slot);
+            Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+            if (Fin == Profile.RadialFin) break;
+        }
+    }
+    return int(Faces.size());
+}
+
+std::vector<std::string> NameWalkedEdges(const SolidArcTopologyWalk& Walk, const std::vector<EdgeToken>& Walked, const std::string& Name)
+{
+    std::vector<std::string> Names;
+    for (const EdgeToken Edge : Walked)
+    {
+        const auto Found = Walk.Naming->Edges.find(Edge.Slot);
+        if (Found != Walk.Naming->Edges.end() && std::find(Names.begin(), Names.end(), Found->second) == Names.end()) Names.push_back(Found->second);
+    }
+    return Names.empty() ? std::vector<std::string>{ Name } : Names;
+}
+
+// BMW_EDGERING: breadth-first across even faces (QuadOnly: four-sided only, the face-loop walker); Crossed collects the
+// face slots stepped over.
+std::vector<EdgeToken> WalkEdgeRing(const SolidArcTopologyWalk& Walk, bool QuadOnly, std::vector<FaceToken>* Crossed)
+{
+    const ModelPartition&  Partition = *Walk.Partition;
+    std::vector<EdgeToken> Ring{ Walk.Start };
+    std::set<uint32_t>     Chosen{ Walk.Start.Slot };
+    std::set<uint32_t>     Faces;
+    if (RadialCount(Partition, Walk.Start) > 2) return Ring;                                 // Non-manifold: that edge alone
     for (size_t Cursor = 0; Cursor < Ring.size(); ++Cursor)
     {
         const EdgeProfile& Profile = Partition.Edges.Resolve(Ring[Cursor]);
-        if (!Profile.RadialFin.PresentCondition()) continue;
+        if (!Profile.RadialFin.PresentCondition() || RadialCount(Partition, Ring[Cursor]) > 2) continue;
         FinToken Fin = Profile.RadialFin;
         for (int Guard = 0; Guard < RadialLimit; ++Guard)
         {
             const FinProfile&  Use  = Partition.Fins.Resolve(Fin);
             const LoopProfile& Loop = Partition.Loops.Resolve(Use.Loop);
-            if (Partition.Faces.Resolve(Loop.Face).Loops.size() == 1)
+            const int          Size = LoopFinCount(Partition, Fin);
+            if (Partition.Faces.Resolve(Loop.Face).Loops.size() == 1 && Size >= 4 && Size % 2 == 0 && (!QuadOnly || Size == 4))
             {
-                // Four fins round the loop: the one two steps on uses the opposite edge.
-                int      Count  = 1;
-                FinToken Cycle  = Use.Successor;
-                while (Cycle.PresentCondition() && !(Cycle == Fin) && Count <= 4) { ++Count; Cycle = Partition.Fins.Resolve(Cycle).Successor; }
-                if (Count == 4)
-                {
-                    const EdgeToken Opposite = Partition.Fins.Resolve(Partition.Fins.Resolve(Use.Successor).Successor).Edge;
-                    if (Chosen.insert(Opposite.Slot).second) Ring.push_back(Opposite);
-                }
+                FinToken Across = Fin;
+                for (int Step = 0; Step < Size / 2; ++Step) Across = Partition.Fins.Resolve(Across).Successor;
+                const EdgeToken Opposite = Partition.Fins.Resolve(Across).Edge;
+                if (Crossed && Faces.insert(Loop.Face.Slot).second) Crossed->push_back(Loop.Face);
+                if (RadialCount(Partition, Opposite) <= 2 && Chosen.insert(Opposite.Slot).second) Ring.push_back(Opposite);
             }
             Fin = Use.RadialSuccessor;
             if (!Fin.PresentCondition() || Fin == Profile.RadialFin) break;
         }
     }
+    return Ring;
+}
+
+} // namespace
+
+std::vector<std::string> SolidArcEdgeRing(const SolidArcDocument& Document, const std::string& Name, const std::string& Body)
+{
+    const SolidArcTopologyWalk Walk = PrepareTopologyWalk(Document, Name, Body);
+    if (!Walk.StartCondition) return { Name };
+    return NameWalkedEdges(Walk, WalkEdgeRing(Walk, false, nullptr), Name);
+}
+
+std::vector<std::string> SolidArcFaceLoop(const SolidArcDocument& Document, const std::string& Edge, const std::string& Body)
+{
+    const SolidArcTopologyWalk Walk = PrepareTopologyWalk(Document, Edge, Body);
+    if (!Walk.StartCondition) return {};
+    const RegeneratedBody* Owner = FindRegeneratedBody(Document, Body.empty() ? SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Edge) : Body);
+    std::vector<FaceToken> Crossed;
+    (void)WalkEdgeRing(Walk, true, &Crossed);
     std::vector<std::string> Names;
-    for (const EdgeToken Edge : Ring)
+    for (const FaceToken Face : Crossed)
     {
-        const auto Found = Naming.Edges.find(Edge.Slot);
-        if (Found != Naming.Edges.end() && std::find(Names.begin(), Names.end(), Found->second) == Names.end()) Names.push_back(Found->second);
+        const auto Found = Owner->Naming.Faces.find(Face.Slot);
+        if (Found != Owner->Naming.Faces.end() && std::find(Names.begin(), Names.end(), Found->second) == Names.end()) Names.push_back(Found->second);
     }
-    return Names.empty() ? std::vector<std::string>{ Name } : Names;
+    return Names;
+}
+
+std::vector<std::string> SolidArcEdgeLoop(const SolidArcDocument& Document, const std::string& Name, const std::string& Body)
+{
+    const SolidArcTopologyWalk Walk = PrepareTopologyWalk(Document, Name, Body);
+    if (!Walk.StartCondition) return { Name };
+    const ModelPartition& Partition = *Walk.Partition;
+    const auto ValenceOf = [&](VertexToken Vertex) { const auto Found = Walk.Valence.find(Vertex.Slot); return Found == Walk.Valence.end() ? 0 : Found->second; };
+    const EdgeProfile& First = Partition.Edges.Resolve(Walk.Start);
+    const int          Fins  = RadialCount(Partition, Walk.Start);
+    if (Fins == 0 || Fins > 2 || First.Start == First.End) return { Name };                  // Wire, non-manifold or closed: itself
+    const bool BoundaryCondition = Fins == 1;
+
+    // f_hub: a three-edge, three-face end beside a face of more than four sides walks round that face.
+    FaceToken Hub = {};
+    if (!BoundaryCondition)
+    {
+        bool Pole = false;
+        for (const VertexToken End : { First.Start, First.End })
+            if (ValenceOf(End) == 3 && FacesAtVertex(Partition, Walk.Edges, End) == 3) Pole = true;
+        if (Pole)
+        {
+            int      Largest = 0;
+            FinToken Fin     = First.RadialFin;
+            for (int Guard = 0; Guard < 2; ++Guard)
+            {
+                const int Size = LoopFinCount(Partition, Fin);
+                if (Size > Largest) { Largest = Size; Hub = Partition.Loops.Resolve(Partition.Fins.Resolve(Fin).Loop).Face; }
+                Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+            }
+            if (Largest <= 4) Hub = {};
+        }
+    }
+
+    // One step on from Edge through its end Vertex (absent when the walk stops there).
+    const auto Advance = [&](EdgeToken Edge, VertexToken Vertex) -> EdgeToken
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        if (Profile.Start == Profile.End) return {};
+        const int Valence = ValenceOf(Vertex);
+        if (Hub.PresentCondition())
+        {
+            if (Valence != 3) return {};
+            FinToken Fin = Profile.RadialFin;
+            for (int Guard = 0; Guard < RadialLimit && Fin.PresentCondition(); ++Guard)
+            {
+                if (Partition.Loops.Resolve(Partition.Fins.Resolve(Fin).Loop).Face == Hub)
+                {
+                    const EdgeToken Next = Partition.Fins.Resolve(FanNeighbour(Partition, Fin, Vertex)).Edge;
+                    return RadialCount(Partition, Next) == 2 ? Next : EdgeToken{};
+                }
+                Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+                if (Fin == Profile.RadialFin) break;
+            }
+            return {};
+        }
+        if (BoundaryCondition)
+        {
+            // Round the fan to the next boundary edge.
+            FinToken Fin = Profile.RadialFin;
+            for (int Guard = 0; Guard < 64; ++Guard)
+            {
+                Fin = FanNeighbour(Partition, Fin, Vertex);
+                const EdgeToken Next  = Partition.Fins.Resolve(Fin).Edge;
+                const int       Count = RadialCount(Partition, Next);
+                if (Count == 1) return Next == Edge ? EdgeToken{} : Next;
+                if (Count != 2) return {};
+                Fin = Partition.Fins.Resolve(Fin).RadialSuccessor;
+            }
+            return {};
+        }
+        if (Valence != 4 && Valence != 2) return {};                                         // A pole ends the loop
+        FinToken Fin = Profile.RadialFin;
+        for (int Step = 0; Step < Valence / 2; ++Step)
+        {
+            Fin = FanNeighbour(Partition, Fin, Vertex);
+            Fin = RadialMate(Partition, Fin);
+            if (!Fin.PresentCondition()) return {};
+        }
+        const EdgeToken Next = Partition.Fins.Resolve(Fin).Edge;
+        return Next == Edge ? EdgeToken{} : Next;
+    };
+
+    std::vector<EdgeToken> Loop{ Walk.Start };
+    std::set<uint32_t>     Chosen{ Walk.Start.Slot };
+    for (const VertexToken Toward : { First.End, First.Start })
+    {
+        EdgeToken   Edge   = Walk.Start;
+        VertexToken Vertex = Toward;
+        for (int Guard = 0; Guard < int(Walk.Edges.size()); ++Guard)
+        {
+            const EdgeToken Next = Advance(Edge, Vertex);
+            if (!Next.PresentCondition() || !Chosen.insert(Next.Slot).second) break;
+            Loop.push_back(Next);
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Next);
+            Vertex = Profile.Start == Vertex ? Profile.End : Profile.Start;
+            Edge   = Next;
+        }
+    }
+    return NameWalkedEdges(Walk, Loop, Name);
 }
 
 SolidArcCommandOutcome CombineSolidArcBodies(SolidArcDocument& Document, const std::string& Target, const std::vector<std::string>& Tools, FeatureCombination Combination)
