@@ -583,6 +583,19 @@ void KeepResolvedNames(std::vector<std::string>& Names, const std::vector<Regene
 [[nodiscard]] std::string CommonBody(const SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::vector<std::string>& Names, std::string& Key)
 {
     Key.clear();
+    // ① The bodies carrying every name (a cut's pieces share names): the picked body, the active one, else the first.
+    std::vector<std::string> Carriers;
+    for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+    {
+        const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+        std::set<std::string> Present;
+        for (const auto& Entry : Table) Present.insert(Entry.second);
+        if (!Names.empty() && std::all_of(Names.begin(), Names.end(), [&](const std::string& Name) { return Present.contains(Name); })) Carriers.push_back(Body.Key);
+    }
+    for (const std::string& Preferred : { Document.Selection.PickedBody, Document.Regeneration.Active })
+        if (!Preferred.empty() && std::find(Carriers.begin(), Carriers.end(), Preferred) != Carriers.end()) { Key = Preferred; return {}; }
+    if (!Carriers.empty()) { Key = Carriers.front(); return {}; }
+    // ② None carries them all: say why.
     for (const std::string& Name : Names)
     {
         const std::string Owner = SolidArcBodyOfName(Document, Kind, Name);
@@ -776,7 +789,8 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, BlendP
     return BlendSolidArcSelection(Document, Request);
 }
 
-SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request)
+// PropagateCondition: the step takes the picked edges' tangent chains too; Grown says whether that added any edge.
+static SolidArcCommandOutcome BlendSolidArcEdges(SolidArcDocument& Document, const SolidArcBlendRequest& Request, bool PropagateCondition, bool& Grown)
 {
     const bool        VariableCondition = Request.EndSize.has_value() && Request.VertexSizes.empty();
     const bool        HandleCondition   = !Request.VertexSizes.empty();
@@ -849,7 +863,20 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const 
         Step.Shape  = Request.Shape;
         Step.Size   = ParameterValue(Caption + ".Size");
         Step.Target = Owner;
-        for (const std::string& Name : Document.Selection.Edges) Step.References.push_back({ ReferenceKind::Edge, Name, {} });
+        // 💡 Tangent propagation (constant size, on refusal): an edge that runs on G1 into another sharp edge (the rim of a
+        //    rounded end) takes the whole chain, as CAD fillets do — a blend cannot end where its support turns tangent.
+        std::vector<std::string> Chain = Document.Selection.Edges;
+        if (PropagateCondition && !VariableCondition && !HandleCondition && Document.Partition && Target)
+        {
+            std::vector<EdgeToken> Seeds;
+            for (const EdgeToken Edge : Document.Partition->CollectInventory(Target->Body).Edges)
+                if (const auto Found = Target->Naming.Edges.find(Edge.Slot); Found != Target->Naming.Edges.end() && std::find(Chain.begin(), Chain.end(), Found->second) != Chain.end()) Seeds.push_back(Edge);
+            for (const EdgeToken Edge : GrowTangentChain(*Document.Partition, Target->Body, Seeds))
+                if (const auto Found = Target->Naming.Edges.find(Edge.Slot); Found != Target->Naming.Edges.end() && std::find(Chain.begin(), Chain.end(), Found->second) == Chain.end()) Chain.push_back(Found->second);
+        }
+        Grown = Chain.size() > Document.Selection.Edges.size();
+        if (PropagateCondition && !Grown) return "no tangent chain to propagate";
+        for (const std::string& Name : Chain) Step.References.push_back({ ReferenceKind::Edge, Name, {} });
         if (VariableCondition)
         {
             Document.Tree.Parameters.push_back({ Caption + ".EndSize", *Request.EndSize, 0.0, std::max(1.0, 4.0 * Larger), std::string(Meaning) + " at the far corners" });
@@ -867,6 +894,16 @@ SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const 
         Document.Captions[StepLabel] = Caption;
         return {};
     });
+}
+
+// The picked edges alone first; refused, their tangent chains (the blend could not end at a G1 joint) when they grow.
+SolidArcCommandOutcome BlendSolidArcSelection(SolidArcDocument& Document, const SolidArcBlendRequest& Request)
+{
+    bool Grown = false;
+    const SolidArcCommandOutcome Alone = BlendSolidArcEdges(Document, Request, false, Grown);
+    if (Alone.AcceptedCondition || Request.EndSize.has_value() || !Request.VertexSizes.empty()) return Alone;
+    const SolidArcCommandOutcome Chained = BlendSolidArcEdges(Document, Request, true, Grown);
+    return Chained.AcceptedCondition ? Chained : Alone;
 }
 
 // Edge tokens of the picked edge names on the one body carrying them (empty when they span bodies or none resolves).
@@ -1649,7 +1686,7 @@ SolidArcCommandOutcome AddSolidArcMatcapPicture(SolidArcDocument& Document, cons
     });
 }
 
-void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition)
+void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition, const std::string& Body)
 {
     std::vector<std::string>& Names = Kind == SolidArcSelectionKind::Face ? Document.Selection.Faces
                                     : Kind == SolidArcSelectionKind::Edge ? Document.Selection.Edges : Document.Selection.Bodies;
@@ -1658,9 +1695,11 @@ void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, 
         Document.Selection = {};
         Names.push_back(Name);
         Document.Selection.LastKind = Kind;
+        if (Kind != SolidArcSelectionKind::Body) Document.Selection.PickedBody = Body;
         return;
     }
     Document.Selection.LastKind = Kind;
+    if (Kind != SolidArcSelectionKind::Body && !Body.empty()) Document.Selection.PickedBody = Body;
     const auto Found = std::find(Names.begin(), Names.end(), Name);
     if (Found != Names.end()) Names.erase(Found);
     else Names.push_back(Name);
@@ -3152,6 +3191,20 @@ std::string ProposeSolidArcEvolutionPath(const SolidArcDocument& Document, const
 
 std::string SolidArcBodyOfName(const SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name)
 {
+    // 💡 The two pieces of a cut carry the same names: the body the user picked on wins, then the active body.
+    if (Kind != SolidArcSelectionKind::Body)
+    {
+        for (const std::string& Preferred : { Document.Selection.PickedBody, Document.Regeneration.Active })
+        {
+            if (Preferred.empty()) continue;
+            for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
+            {
+                if (Body.Key != Preferred) continue;
+                const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+                for (const auto& Entry : Table) if (Entry.second == Name) return Body.Key;
+            }
+        }
+    }
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
         if (Kind == SolidArcSelectionKind::Body) { if (Body.Key == Name) return Body.Key; continue; }

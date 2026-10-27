@@ -435,12 +435,22 @@ enum class SolidArcKnifeMode : uint8_t
     Object = 2,                                                                              // Picked bodies: the first is cut by the rest (one: placed by the pointer)
 };
 
+// 📝 A polyline knife's edge treatment: an edge of a piece the slice makes, filleted or chamfered on apply (each its own
+//    blend step after the cut, in the order picked; the preview shows them).
+struct SolidArcKnifeBlend
+{
+    std::string                      Edge  = {};                                             // [-]   - Edge name on the sliced piece
+    std::string                      Body  = {};                                             // [-]   - Piece it was picked on
+    GeometryProcessing::BlendProfile Shape = GeometryProcessing::BlendProfile::Fillet;      // [-]   - Fillet / chamfer
+    double                           Size  = 0.05;                                           // [len] - Radius / setback
+};
+
 // 📝 Shift+K Knife (Blender KitOps style). Sketch: the focused closed sketch (or a shape drawn for it on a face) is filled
 //    and extruded into the body under it — horizontal pointer motion sets the depth (Shift fine, snapped 0.01 unless
 //    Ctrl), digits type it, T cuts straight through. Insert: the library cutter ghost follows the faces under the pointer;
-//    the press puts its centre down, the drag carries its grip (a vertex / corner) to the pointer — width and turn at
-//    once — and the release hands the pointer to its depth along the normal (as a Construct box's height), [ / ] turn it
-//    15°, T through. Object: the first picked body is cut by the others, K
+//    the press puts one base corner down, the drag (or, after a click, the pointer) carries the opposite corner — the
+//    base stretches in x and y apart, Shift keeps it square — and the release (the next click) hands the pointer to its
+//    depth along the normal (as a Construct box's height), [ / ] turn it 15°, T through. Object: the first picked body is cut by the others, K
 //    keeps the cutters. Q union · W difference (default) · E intersect · R separate; a click / right-click / Enter applies,
 //    Esc cancels. The result stages as a document (gated like the bevel when a stage is slow).
 struct SolidArcKnifeSession
@@ -492,6 +502,17 @@ struct SolidArcKnifeSession
     bool                                   PreferredSolidCondition = false;                  // [-]   - The cutter is a Construct primitive (3D)
     SolidArcConstructKind                  PreferredSolid       = SolidArcConstructKind::Block; // [-] - That primitive (box, cylinder, …)
     bool                                   PreferredPolylineCondition = false;               // [-]   - Line cutter: a polyline (Enter / right-click ends)
+    // 📝 Insert base as a Construct box draws its base: corner to corner on the face (x and y apart, Shift square), by a
+    //    press-drag or by a click then pointer motion (the next click sets it); then the depth.
+    GeometryProcessing::Vector3            Corner               = {};                        // [len] - Insert: first base corner (world)
+    double                                 Aspect               = 1.0;                       // [-]   - Insert: base y / x scale ratio
+    bool                                   SizeByMoveCondition  = false;                     // [-]   - Insert: clicked, the pointer sizes until the next click
+    // 📝 Slice (polyline) knife: click edges on the staged pieces to fillet / chamfer each before the cut applies; D / C
+    //    turn the focused one, digits type its size.
+    std::vector<SolidArcKnifeBlend>        Blends               = {};                        // [-]   - Edge treatments, picked order
+    int                                    BlendFocus           = -1;                        // [idx] - Treatment D / C / digits act on
+    GeometryProcessing::BlendProfile       BlendShape           = GeometryProcessing::BlendProfile::Fillet;   // [-] - Next treatment's profile
+    double                                 BlendSize            = 0.05;                      // [len] - Next treatment's size
 };
 
 // 📝 Ctrl+C: the picked bodies and the step they were copied after; Ctrl+V pastes them as they stood then (in place).

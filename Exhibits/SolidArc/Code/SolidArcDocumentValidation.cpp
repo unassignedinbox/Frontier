@@ -120,6 +120,7 @@ namespace
     GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
+    GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
     std::vector<std::string> Journal;                                                        // [-] - Narrative rows for the exhibit
@@ -222,12 +223,119 @@ namespace
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    PIECE BEVELS
+//------------------------------------------------------------------------------------------------------------------------
+
+// W59: a block (rounded end or plain) sliced by a polyline knife; every edge of both pieces is filleted and chamfered alone.
+void ValidatePieceBevels()
+{
+    SolidArcConstructRequest Block;
+    Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+
+    {
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+        struct Scenario { const char* Title; std::vector<Vector2> Chain; double Rounding; };
+        const Scenario Scenarios[] = {
+            { "polyline beside a rounded end", { { 1.0, -1.0 }, { 1.4, 1.2 }, { 2.8, 1.2 }, { 3.3, 3.0 } }, 0.8 },
+            { "polyline through a rounded end", { { 2.0, -1.0 }, { 2.0, 1.0 }, { 3.9, 1.0 } }, 0.8 },
+            { "polyline on a plain block", { { -1.0, 0.5 }, { 1.5, 0.5 }, { 1.5, 1.5 }, { 5.0, 1.5 } }, 0.0 } };
+        for (const Scenario& Each : Scenarios)
+        {
+            SolidArcDocument Part = CreateSolidArcDocument("PieceBevel");
+            SolidArcConstructRequest Slab = Block;
+            Slab.Height = 1.5;
+            Expect(ConstructSolidArcPrimitive(Part, Slab));
+            if (Each.Rounding > 0.0)
+            {
+                Part.Selection = {};
+                for (const auto& [Slot, Name] : Part.Regeneration.Naming.Edges)
+                {
+                    const Vector3 A = EdgeEndPosition(Part, Name, false), B = EdgeEndPosition(Part, Name, true);
+                    if (std::abs(A.X - 4.0) < 1.0e-9 && std::abs(B.X - 4.0) < 1.0e-9 && std::abs(A.Y - B.Y) < 1.0e-9) Part.Selection.Edges.push_back(Name);
+                }
+                Expect(BlendSolidArcSelection(Part, BlendProfile::Fillet, Each.Rounding));
+            }
+            const std::string BlockKey = Part.Regeneration.Active;
+            Expect(DrawSolidArcSketch(Part, DrawingOf(SolidArcDrawingKind::Line, 0, Each.Chain)));
+            SolidArcCutRequest Cut;
+            Cut.Target = BlockKey; Cut.Cutter = Part.Tree.Steps.back().Label;
+            const SolidArcCommandOutcome Sliced = CutSolidArcBody(Part, Cut);
+            Tally(PieceGate, 0.0, Sliced.AcceptedCondition && Part.Summary.Bodies.size() == 2 && Part.Summary.SoundCondition, Format("%s: %s, sound", Each.Title, Sliced.Label.c_str()));
+            if (!Sliced.AcceptedCondition) continue;
+            // The Windows report: names both pieces carry, picked on one piece, blend that piece (never "spans Cut1 and Block1").
+            {
+                std::set<std::string> Shared;
+                const RegeneratedBody& First = Part.Regeneration.Bodies.front();
+                const RegeneratedBody& Last  = Part.Regeneration.Bodies.back();
+                for (const auto& Entry : Last.Naming.Edges)
+                    for (const auto& Other : First.Naming.Edges)
+                        if (Entry.second == Other.second && !SmoothEdgeCondition(*Part.Partition, Part.Partition->Edges.TokenAt(Entry.first))) Shared.insert(Entry.second);
+                bool Targeted = Shared.size() >= 2;
+                for (const RegeneratedBody* Piece : { &First, &Last })
+                {
+                    SolidArcDocument Trial = CloneSolidArcDocument(Part);
+                    bool Additive = false;
+                    for (const std::string& Name : Shared) { SelectSolidArcName(Trial, SolidArcSelectionKind::Edge, Name, Additive, Piece->Key); Additive = true; }
+                    const SolidArcCommandOutcome Bevel = BlendSolidArcSelection(Trial, BlendProfile::Fillet, 0.04);
+                    Targeted = Targeted && Bevel.AcceptedCondition && Trial.Summary.SoundCondition && Trial.Tree.Steps.back().Target == Piece->Key;
+                    if (!Bevel.AcceptedCondition) std::printf("DV W59 %s shared on %s: %s\n", Each.Title, Piece->Key.c_str(), Bevel.Refusal.c_str());
+                }
+                Tally(PieceGate, double(Shared.size()), Targeted, Format("%s: the %d edge names both pieces carry, picked on either piece, blend that piece (the \"spans Cut1 and Block1\" report)", Each.Title, int(Shared.size())));
+            }
+            int Tried = 0, Refused = 0, Smooth = 0;
+            std::string Refusals;
+            for (const RegeneratedBody& Piece : Part.Regeneration.Bodies)
+            {
+                std::vector<std::string> Uprights;
+                for (const auto& [Slot, Name] : Piece.Naming.Edges)
+                {
+                    const EdgeProfile& Profile = Part.Partition->Edges.Resolve(Part.Partition->Edges.TokenAt(Slot));
+                    const Vector3 A = Part.Partition->Vertices.Resolve(Profile.Start).Position, B = Part.Partition->Vertices.Resolve(Profile.End).Position;
+                    // A smooth edge (a flat face running tangent into the rounded end) has no crease: its refusal is right.
+                    if (SmoothEdgeCondition(*Part.Partition, Part.Partition->Edges.TokenAt(Slot))) { ++Smooth; continue; }
+                    if (std::abs(A.X - B.X) < 1.0e-9 && std::abs(A.Y - B.Y) < 1.0e-9) Uprights.push_back(Name);
+                    for (const BlendProfile Shape : { BlendProfile::Fillet, BlendProfile::Chamfer })
+                    {
+                        SolidArcDocument Trial = CloneSolidArcDocument(Part);
+                        Trial.Selection = {};
+                        Trial.Selection.Edges      = { Name };
+                        Trial.Selection.PickedBody = Piece.Key;
+                        const SolidArcCommandOutcome Bevel = BlendSolidArcSelection(Trial, Shape, 0.04);
+                        ++Tried;
+                        if (Bevel.AcceptedCondition && Trial.Summary.SoundCondition && std::abs(Trial.Summary.Volume - Part.Summary.Volume) > 1.0e-7) continue;
+                        ++Refused;
+                        std::printf("DV W59 %s · %s · %s %s (%.3f %.3f %.3f)-(%.3f %.3f %.3f): %s%s\n", Each.Title, SolidArcBodyCaption(Part, Piece.Key).c_str(), Shape == BlendProfile::Fillet ? "fillet" : "chamfer",
+                                    Name.c_str(), A.X, A.Y, A.Z, B.X, B.Y, B.Z, Bevel.Refusal.c_str(), Bevel.AcceptedCondition ? " (unsound)" : "");
+                        if (Refusals.size() < 300) Refusals += " · " + Name + ": " + Bevel.Refusal;
+                    }
+                }
+                SolidArcDocument Trial = CloneSolidArcDocument(Part);
+                Trial.Selection = {};
+                Trial.Selection.Edges      = Uprights;
+                Trial.Selection.PickedBody = Piece.Key;
+                const SolidArcCommandOutcome Together = BlendSolidArcSelection(Trial, BlendProfile::Fillet, 0.04);
+                ++Tried;
+                if (!Together.AcceptedCondition || !Trial.Summary.SoundCondition)
+                {
+                    ++Refused;
+                    std::printf("DV W59 %s · %s · uprights together (%d): %s\n", Each.Title, SolidArcBodyCaption(Part, Piece.Key).c_str(), int(Uprights.size()), Together.Refusal.c_str());
+                    Refusals += " · uprights: " + Together.Refusal;
+                }
+            }
+            std::printf("DV W59 %s: %d tried, %d refused, %d smooth skipped\n", Each.Title, Tried, Refused, Smooth);
+            Tally(PieceGate, double(Refused), Refused == 0, Format("%s: every crease edge of both pieces takes a 0.04 fillet and chamfer alone (tangent chains propagate), the uprights together: %d tried, %d refused, %d smooth edges skipped%s", Each.Title, Tried, Refused, Smooth, Refusals.c_str()));
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
+    if (std::getenv("SOLIDARC_DOCVAL_PIECES")) { ValidatePieceBevels(); return 0; }   // Quick rerun of W59 alone
 
     // ---- W1 single tiles against closed forms
     {
@@ -5563,7 +5671,10 @@ int main()
                      int(HoopRing.size()), int(HoopLoop.size())));
     }
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate })
+    // ---- W59 Bevels on polyline-knife pieces (every edge, alone and together)
+    ValidatePieceBevels();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

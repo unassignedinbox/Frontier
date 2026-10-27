@@ -346,12 +346,19 @@ SolidArcSceneStates ComposeSolidArcStates(const SolidArcScene& Scene, const Soli
     SolidArcSceneStates States;
     States.Faces.assign(Scene.Faces.size(), 0u);
     States.Edges.assign(Scene.Edges.size(), 0u);
-    const auto Mark = [](const auto& Table, std::vector<uint32_t>& Words, const std::vector<std::string>& Names, bool ActiveCondition)
+    // A name the picked body carries lights there only (a cut's other piece carries the same names).
+    uint32_t Picked = ~0u;
+    for (uint32_t Index = 0; Index < Scene.Bodies.size(); ++Index) if (!Selection.PickedBody.empty() && Scene.Bodies[Index].Key == Selection.PickedBody) Picked = Index;
+    const auto Mark = [&](const auto& Table, std::vector<uint32_t>& Words, const std::vector<std::string>& Names, bool ActiveCondition)
     {
+        std::set<std::string> Owned;
+        if (Picked != ~0u)
+            for (const auto& Entry : Table) if (Entry.Body == Picked) Owned.insert(Entry.Name);
         for (size_t Index = 0; Index < Table.size(); ++Index)
         {
             const auto Found = std::find(Names.begin(), Names.end(), Table[Index].Name);
             if (Found == Names.end()) continue;
+            if (Table[Index].Body != Picked && Owned.contains(Table[Index].Name)) continue;
             Words[Index] |= 1u;
             if (ActiveCondition && Found == Names.end() - 1) Words[Index] |= 2u;
         }

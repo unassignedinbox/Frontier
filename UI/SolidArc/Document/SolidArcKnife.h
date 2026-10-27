@@ -92,8 +92,9 @@ struct SolidArcInsertLibrary
 // Insert frame → world: Spot's origin on the surface, its x̂ turned by Turn [rad] about n̂, everything scaled by Size
 // [len]. RaisedCondition flips the insert about x̂ so it stands out of the surface (Union: a boss instead of a pocket).
 // Stretch scales the insert-frame z (SolidArcInsertReach::Stretch).
+// Aspect scales the insert-frame y on top of Size (a base dragged corner to corner: x and y apart).
 [[nodiscard]] GeometryProcessing::AffineMap PlaceSolidArcInsert(const GeometryProcessing::OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition,
-                                                              double Stretch = 1.0);
+                                                              double Stretch = 1.0, double Aspect = 1.0);
 
 // 💡 The insert at Depth (insert widths below its surface): a built-in is authored again with its bottom there (cached
 //    per depth), a library file is stretched along z. Refused below a built-in's Shallow (a countersink's cone).

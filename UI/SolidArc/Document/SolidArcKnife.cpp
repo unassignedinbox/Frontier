@@ -245,14 +245,14 @@ SolidArcInsertLibrary AssembleSolidArcInserts(const std::string& Folder)
     return Library;
 }
 
-AffineMap PlaceSolidArcInsert(const OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition, double Stretch)
+AffineMap PlaceSolidArcInsert(const OrthonormalFrame& Spot, double Size, double Turn, bool RaisedCondition, double Stretch, double Aspect)
 {
     const Vector3 Across = Spot.XAxis * std::cos(Turn) + Spot.YAxis * std::sin(Turn);
     const Vector3 Along  = Spot.YAxis * std::cos(Turn) - Spot.XAxis * std::sin(Turn);
     const double  Flip   = RaisedCondition ? -1.0 : 1.0;                                     // Half turn about x̂: det stays +1
     AffineMap Map;
     Map.ColumnX = Across * Size;
-    Map.ColumnY = Along * (Size * Flip);
+    Map.ColumnY = Along * (Size * Aspect * Flip);
     Map.ColumnZ = Spot.ZAxis * (Size * Flip * Stretch);
     Map.Shift   = Spot.Origin;
     return Map;

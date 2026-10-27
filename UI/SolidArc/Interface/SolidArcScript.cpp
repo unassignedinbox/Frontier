@@ -382,6 +382,12 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "knife-commits") return Numeric(double(State.Knife.Commits));
     if (Field == "knife-depth") return Numeric(State.Knife.Depth);
     if (Field == "knife-size") return Numeric(State.Knife.Size);
+    if (Field == "knife-aspect") return Numeric(State.Knife.Aspect);
+    if (Field == "knife-size-by-move") return Numeric(State.Knife.SizeByMoveCondition ? 1 : 0);
+    if (Field == "knife-blends") return Numeric(double(State.Knife.Blends.size()));
+    if (Field == "knife-blend-focus") return Numeric(double(State.Knife.BlendFocus + 1));
+    if (Field == "knife-blend-size") return Numeric(State.Knife.BlendFocus >= 0 && State.Knife.BlendFocus < int(State.Knife.Blends.size()) ? State.Knife.Blends[State.Knife.BlendFocus].Size : 0.0);
+    if (Field == "knife-blend-shape") return Numeric(State.Knife.BlendFocus >= 0 && State.Knife.BlendFocus < int(State.Knife.Blends.size()) ? double(int(State.Knife.Blends[State.Knife.BlendFocus].Shape)) : -1.0);
     if (Field == "knife-turn") return Numeric(State.Knife.Turn * 180.0 / std::numbers::pi);
     if (Field == "knife-through") return Numeric(State.Knife.ThroughCondition ? 1 : 0);
     if (Field == "knife-placed") return Numeric(State.Knife.PlacedCondition ? 1 : 0);

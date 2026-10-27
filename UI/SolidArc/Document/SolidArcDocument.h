@@ -122,6 +122,7 @@ struct SolidArcSelection
     std::vector<std::string> Curves = {};                                                    // [-] - Selected SpaceCurve labels, in pick order (loft order)
     std::vector<std::string> Bodies = {};                                                    // [-] - Selected body keys, in pick order (first = Boolean target)
     SolidArcSelectionKind    LastKind = SolidArcSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
+    std::string              PickedBody = {};                                                // [-] - Body the faces / edges were picked on (pieces of one cut share names)
 };
 
 struct SolidArcCutRequest
@@ -721,7 +722,9 @@ void SummarizeSolidArcDocument(SolidArcDocument& Document);
 [[nodiscard]] SolidArcCommandOutcome AdoptSolidArcPreview(SolidArcDocument& Document, SolidArcDocument&& Preview, const SolidArcCommandOutcome& Staged);
 
 // Selection by persistent name; Additive toggles membership, otherwise the selection becomes exactly this name.
-void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition);
+// Body: the key of the body a face / edge was picked on (kept as Selection.PickedBody; a cut's two pieces carry the same
+// names, so the body decides which piece the blend, inset or loop works on).
+void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition, const std::string& Body = {});
 void ClearSolidArcSelection(SolidArcDocument& Document);
 
 // Names of the edge's tangent chain on the current body (the edge itself first); just the name when it does not resolve.

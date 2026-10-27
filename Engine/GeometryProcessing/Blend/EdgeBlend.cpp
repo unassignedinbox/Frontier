@@ -1257,7 +1257,9 @@ namespace
                 if (Side < 0) return "cap: sharp edge not on a support";
                 if (Overflow[Side]) continue;                                                 // consumed with its support
                 TrimVertices[{ Sharp.Slot, EndAt(Sharp, Vertex) }] = Feet[Side];
-                if (!Sheet.ConvexCondition) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });   // added material may run past the edge's end
+                // Added material (concave) may run past the edge's end; so may a convex blend ending at a reflex corner (the
+                // inner corner of an L): the foot on the far support lies beyond the vertex and the third face grows a cap.
+                if (!Sheet.ConvexCondition || !ConvexEdge(First) || !ConvexEdge(Second)) Extensions.insert({ Sharp.Slot, EndAt(Sharp, Vertex) });
             }
             ContactVertices[{ End.first.Slot, 0, End.second }] = Feet[0];
             ContactVertices[{ End.first.Slot, 1, End.second }] = Feet[1];
