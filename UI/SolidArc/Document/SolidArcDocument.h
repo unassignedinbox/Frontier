@@ -401,6 +401,25 @@ struct VehicleCurveFile;
 // The same trim on the solved sketch without touching the document (hover preview); Removed is in plane coordinates.
 [[nodiscard]] GeometryProcessing::SketchTrimOutcome PreviewSolidArcTrim(const SolidArcDocument& Document, const SolidArcTrimRequest& Request);
 
+// 📝 Cut at a point (the Cut tool with Ctrl: a snapped crossing, end, midpoint or quarter point): every shown sketch curve
+//    through Point breaks there — the two overlapping circles both. A circle breaks at Point and at its next crossing
+//    (counter-clockwise) with another curve of its plane, so one click parts the lens from the rest; with no other
+//    crossing it halves (the opposite point). Splines and curves touching Point only at an end are left alone.
+struct SolidArcPointCut
+{
+    int                                                   Curves  = 0;                       // [-]   - Curves that break
+    std::vector<std::string>                              Sketches = {};                     // [-]   - Their sketch step labels
+    std::vector<std::vector<GeometryProcessing::Vector3>> Lit     = {};                      // [len] - Those curves (world samples)
+    std::vector<GeometryProcessing::Vector3>              Breaks  = {};                      // [len] - Every break point (world)
+};
+
+// Hover preview of the cut at Point (the document untouched).
+[[nodiscard]] SolidArcPointCut PreviewSolidArcPointCut(const SolidArcDocument& Document, const GeometryProcessing::Vector3& Point);
+
+// The cut at Point: every sketch changes in place, one undo entry; refused (untouched) when no curve passes through it,
+// or when a later step that reads a sketch refuses the cut curves.
+[[nodiscard]] SolidArcCommandOutcome CutSolidArcSketchesAt(SolidArcDocument& Document, const GeometryProcessing::Vector3& Point);
+
 // 💡 Fillet / chamfer of 2D sketch corners (GeometryProcessing::CutSketchCorners): two lines meeting at a corner get a
 //    tangent arc of radius Size, or a cut line Size back along both. The sketch changes in place, so an extrude or loft
 //    made from it follows (parametric); one undo entry for all the sketches. Refused (document untouched) when a corner
@@ -420,6 +439,11 @@ struct VehicleCurveFile;
 //    not sketches. Later steps (lofts through the sketch, extrudes of it) regenerate from the new plane.
 [[nodiscard]] SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels,
                                                            const GeometryProcessing::AffineMap& Map, const std::string& Verb);
+
+// Shift+D / Ctrl+D on 2D objects: each listed sketch is copied as a new sketch step (next caption of its kind, e.g.
+// Circle2) with its plane carried by the rigid Map; the copies are selected. Scale / mirror maps refuse (🚧).
+[[nodiscard]] SolidArcCommandOutcome DuplicateSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels,
+                                                               const GeometryProcessing::AffineMap& Map);
 
 // Shift+D / Ctrl+V: one Duplicate step per body, placed by Map; each copy is a new body (key = its step label), the last
 // one active, the copies selected. Source (paste) copies each body as it stood right after that step — the clipboard.

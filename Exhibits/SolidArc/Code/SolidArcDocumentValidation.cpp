@@ -122,6 +122,7 @@ namespace
     GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
     GateTally ManifoldGate    = { "W60", "Extrude manifold (Blender's push-in, the Windows report \"i want to extrude the shape i cant\"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push", "1e-9 rel" };
     GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
+    GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -584,6 +585,97 @@ void ValidateImprint()
     }
 }
 
+// W62: Cut at a snapped point (every curve through it breaks; circles at their next crossing) and sketch duplicates.
+void ValidatePointCut()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const OrthonormalFrame Ground{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const auto Draw = [&](SolidArcDocument& Part, SolidArcDrawingKind Kind, std::vector<Vector2> Points)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = Kind; Request.Points = std::move(Points); Request.PlaneCondition = true; Request.Plane = Ground;
+        Request.CentreCondition = Kind == SolidArcDrawingKind::Circle; Request.FillCondition = true;
+        Expect(DrawSolidArcSketch(Part, Request));
+        return Part.Tree.Steps.back().Label;
+    };
+    const auto Curves = [](const SolidArcDocument& Part, const std::string& Label) { return int(Part.Regeneration.Sketches.at(Label).Curves.size()); };
+    // Every curve end of the sketch lies on one of Points.
+    const auto EndsOn = [](const SolidArcDocument& Part, const std::string& Label, const std::vector<Vector2>& Points)
+    {
+        const SketchModel& Sketch = Part.Regeneration.Sketches.at(Label);
+        for (int Curve = 0; Curve < int(Sketch.Curves.size()); ++Curve)
+        {
+            std::string Refusal;
+            const ProfileSegment Segment = ResolveSketchCurveSegment(Sketch, Curve, 1.0e-9, Refusal);
+            if (!Refusal.empty() || Segment.Kind == ProfileSegmentKind::Circle) return false;
+            for (const Vector2 End : { Segment.Start, Segment.End })
+                if (std::none_of(Points.begin(), Points.end(), [&](Vector2 Point) { return Distance(End, Point) <= 1.0e-9; })) return false;
+        }
+        return true;
+    };
+
+    // ① Two overlapping circles (r 1, centres 1.2 apart) in two sketches: one cut at the crossing (0.6, 0.8) breaks both
+    //    at both crossings (0.6, ±0.8): 2 + 2 arcs; a second cut at (0.6, −0.8) finds only ends and refuses.
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("PointCut");
+        const std::string First  = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 1.0, 0.0 } });
+        const std::string Second = Draw(Part, SolidArcDrawingKind::Circle, { { 1.2, 0.0 }, { 2.2, 0.0 } });
+        const SolidArcPointCut Preview = PreviewSolidArcPointCut(Part, { 0.6, 0.8, 0.0 });
+        Tally(PointCutGate, 0.0, Preview.Curves == 2 && Preview.Breaks.size() == 4 && Preview.Sketches.size() == 2,
+              Format("preview at the crossing (0.6, 0.8): %d curves, %d breaks, %d sketches (expect 2, 4, 2)", Preview.Curves, int(Preview.Breaks.size()), int(Preview.Sketches.size())));
+        const size_t Undo = Part.UndoEntries.size();
+        const SolidArcCommandOutcome Cut = CutSolidArcSketchesAt(Part, { 0.6, 0.8, 0.0 });
+        const std::vector<Vector2> Crossings = { { 0.6, 0.8 }, { 0.6, -0.8 } };
+        Tally(PointCutGate, 0.0, Cut.AcceptedCondition && Curves(Part, First) == 2 && Curves(Part, Second) == 2 && EndsOn(Part, First, Crossings) && EndsOn(Part, Second, Crossings)
+                                 && Part.UndoEntries.size() == Undo + 1,
+              Format("%s: %d + %d arcs, every end on a crossing, %d undo entry%s", Cut.Label.c_str(), Curves(Part, First), Curves(Part, Second), int(Part.UndoEntries.size() - Undo),
+                     Cut.Refusal.empty() ? "" : (" · " + Cut.Refusal).c_str()));
+        const SolidArcCommandOutcome Again = CutSolidArcSketchesAt(Part, { 0.6, -0.8, 0.0 });
+        Tally(PointCutGate, 0.0, !Again.AcceptedCondition && Curves(Part, First) == 2, Format("second crossing (ends only): %s (%s)", Again.AcceptedCondition ? "accepted!" : "refused", Again.Refusal.c_str()));
+        SolidArcDocument Solid = CloneSolidArcDocument(Part);
+        const SolidArcCommandOutcome Extruded = ExtrudeSolidArcSketch(Solid, First, 1.0, FeatureCombination::New);
+        TallyVolume(PointCutGate, Solid, std::numbers::pi, Format("the cut circle (two arcs) still extrudes as a closed profile%s", Extruded.Refusal.empty() ? "" : (" · " + Extruded.Refusal).c_str()));
+    }
+
+    // ② A line through a circle (separate sketches), cut at (−1, 0): the line splits, the circle breaks at (−1, 0) and at its
+    //    next crossing with the line (1, 0). A lone circle cut at its top halves (the opposite point).
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("PointCutLine");
+        const std::string Circle = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 1.0, 0.0 } });
+        const std::string Line   = Draw(Part, SolidArcDrawingKind::Line, { { -2.0, 0.0 }, { 2.0, 0.0 } });
+        const SolidArcCommandOutcome Cut = CutSolidArcSketchesAt(Part, { -1.0, 0.0, 0.0 });
+        Tally(PointCutGate, 0.0, Cut.AcceptedCondition && Curves(Part, Line) == 2 && Curves(Part, Circle) == 2 && EndsOn(Part, Circle, { { -1.0, 0.0 }, { 1.0, 0.0 } }),
+              Format("line × circle at (−1, 0): line %d pieces, circle %d arcs ending at (±1, 0)%s", Curves(Part, Line), Curves(Part, Circle), Cut.Refusal.empty() ? "" : (" · " + Cut.Refusal).c_str()));
+        SolidArcDocument Lone = CreateSolidArcDocument("PointCutLone");
+        const std::string Single = Draw(Lone, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 1.0, 0.0 } });
+        const SolidArcCommandOutcome Halved = CutSolidArcSketchesAt(Lone, { 0.0, 1.0, 0.0 });
+        Tally(PointCutGate, 0.0, Halved.AcceptedCondition && Curves(Lone, Single) == 2 && EndsOn(Lone, Single, { { 0.0, 1.0 }, { 0.0, -1.0 } }), "lone circle cut at its top: two half arcs (0, ±1)");
+        const SolidArcCommandOutcome Nowhere = CutSolidArcSketchesAt(Lone, { 5.0, 5.0, 0.0 });
+        Tally(PointCutGate, 0.0, !Nowhere.AcceptedCondition, Format("a point on no curve: refused (%s)", Nowhere.Refusal.c_str()));
+    }
+
+    // ③ Duplicate 2D objects: a copy 3 along x (new caption, selected, extrudes to π); a scaling map refuses.
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("SketchCopy");
+        const std::string Circle = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 1.0, 0.0 } });
+        AffineMap Shift;
+        Shift.Shift = { 3.0, 0.0, 0.0 };
+        const size_t Steps = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Copied = DuplicateSolidArcSketches(Part, { Circle }, Shift);
+        const std::string Copy = Part.Tree.Steps.back().Label;
+        const bool Moved = Copied.AcceptedCondition && std::abs(Part.Tree.Steps.back().Plane.Origin.X - 3.0) <= 1.0e-12;
+        Tally(PointCutGate, 0.0, Moved && Part.Tree.Steps.size() == Steps + 1 && Part.Selection.Curves == std::vector<std::string>{ Copy } && Part.Captions[Copy] != Part.Captions[Circle],
+              Format("%s → %s (%s), selected", Copied.Label.c_str(), Part.Captions[Copy].c_str(), Copy.c_str()));
+        SolidArcDocument Solid = CloneSolidArcDocument(Part);
+        Expect(ExtrudeSolidArcSketch(Solid, Copy, 1.0, FeatureCombination::New));
+        TallyVolume(PointCutGate, Solid, std::numbers::pi, "the copy extrudes (r 1, h 1)");
+        AffineMap Grow;
+        Grow.ColumnX = { 2.0, 0.0, 0.0 };
+        const SolidArcCommandOutcome Scaled = DuplicateSolidArcSketches(Part, { Circle }, Grow);
+        Tally(PointCutGate, 0.0, !Scaled.AcceptedCondition, Format("scaling copy refused (%s)", Scaled.Refusal.c_str()));
+    }
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
@@ -597,6 +689,12 @@ int main()
         ValidateExtrudeManifold();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ManifoldGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_POINTCUT"))                                         // Quick rerun of W62 alone
+    {
+        ValidatePointCut();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return PointCutGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_IMPRINT"))                                          // Quick rerun of W61 alone
     {
@@ -5948,7 +6046,10 @@ int main()
     // ---- W61 2D cutters (imprint, then push / pull the regions)
     ValidateImprint();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate })
+    // ---- W62 Cut at crossings, sketch duplicates
+    ValidatePointCut();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

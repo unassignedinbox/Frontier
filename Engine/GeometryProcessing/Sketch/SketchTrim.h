@@ -13,6 +13,7 @@
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSolver.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -73,11 +74,12 @@ struct SketchTrimOutcome
 
 // 💡 Plasticity Cut on curve CurveIndex at the point nearest to Pick: nothing comes off, the curve breaks there.
 //      line / arc → two curves meeting at one shared new point (the second part gets the next identifier);
-//      circle     → two half arcs, from the pick to the opposite point and back (same centre and radius);
+//      circle     → two arcs, from the pick to Partner and back (same centre and radius); without Partner (or with one
+//                   at the pick) two half arcs, the second break at the opposite point;
 //      spline, or a pick on an open curve's end → refused.
 //    A split line drops Length, EqualLength, Midpoint and Symmetric and copies Horizontal, Vertical, Parallel,
 //    Perpendicular and Angle to its second part; a split arc / circle copies Radius and EqualRadius.
-[[nodiscard]] SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick);
+[[nodiscard]] SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, std::optional<Vector2> Partner = std::nullopt);
 
 // Curve CurveIndex erased: constraints on it dropped, later curve references shifted down. Points stay.
 void EraseSketchCurve(SketchModel& Sketch, int CurveIndex);

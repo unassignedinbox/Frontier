@@ -2281,6 +2281,132 @@ SolidArcCommandOutcome TrimSolidArcSketch(SolidArcDocument& Document, const Soli
     });
 }
 
+namespace
+{
+    // 📝 The cut at Point on every shown sketch: Edited holds each changed sketch (solved model with its curves split),
+    //    Outcome the counts and the preview geometry.
+    void CutSketchesAtPoint(const SolidArcDocument& Document, const Vector3& Point, std::map<std::string, SketchModel>& Edited, SolidArcPointCut& Outcome)
+    {
+        constexpr double EndGuard = 1.0e-3;                                                  // [-]   - As SplitSketchCurve: no break at an open end
+        const double     Tolerance = 1.0e-6 * std::max(1.0, Length(Point));                   // [len] - Point on a plane / curve
+        const auto Shown = [&](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch && !Document.Appearance.HiddenCurves.contains(Step.Label); };
+        for (const FeatureStep& Step : Document.Tree.Steps)
+        {
+            if (!Shown(Step)) continue;
+            const OrthonormalFrame Plane = ElevatedPlane(Document.Tree, Step);
+            if (std::fabs(Dot(Point - Plane.Origin, Plane.ZAxis)) > Tolerance) continue;
+            const Vector2 Pick{ Dot(Point - Plane.Origin, Plane.XAxis), Dot(Point - Plane.Origin, Plane.YAxis) };
+            // Curves of the other shown sketches in this plane (a circle's second break may come from them).
+            std::vector<ProfileSegment> Foreign;
+            for (const FeatureStep& Other : Document.Tree.Steps)
+            {
+                if (!Shown(Other) || Other.Label == Step.Label) continue;
+                const OrthonormalFrame Frame = ElevatedPlane(Document.Tree, Other);
+                const Vector3          Apart = Frame.Origin - Plane.Origin;
+                if (std::fabs(Dot(Frame.ZAxis, Plane.ZAxis)) < 1.0 - 1.0e-9 || std::fabs(Dot(Apart, Plane.ZAxis)) > 1.0e-9 * std::max(1.0, Length(Apart))) continue;
+                const SketchModel& Sketch = SolvedSketch(Document, Other);
+                for (int Curve = 0; Curve < static_cast<int>(Sketch.Curves.size()); ++Curve)
+                {
+                    std::string    Refusal;
+                    ProfileSegment Segment = ResolveSketchCurveSegment(Sketch, Curve, 1.0e-9, Refusal);
+                    if (Refusal.empty()) Foreign.push_back(MapSegment(std::move(Segment), Frame, Plane));
+                }
+            }
+            SketchModel Model   = SolvedSketch(Document, Step);
+            int         Changed = 0;
+            for (int Round = 0; Round < 64; ++Round)
+            {
+                bool Split = false;
+                for (int Curve = 0; Curve < static_cast<int>(Model.Curves.size()) && !Split; ++Curve)
+                {
+                    if (Model.Curves[Curve].Construction) continue;
+                    std::string          Refusal;
+                    const ProfileSegment Target = ResolveSketchCurveSegment(Model, Curve, 1.0e-9, Refusal);
+                    if (!Refusal.empty() || Target.Kind == ProfileSegmentKind::Spline) continue;
+                    const double Fraction = LocateProfileFraction(Target, Pick);
+                    if (Distance(EvaluateProfileSegment(Target, Fraction), Pick) > Tolerance) continue;
+                    const bool Closed = Target.Kind == ProfileSegmentKind::Circle;
+                    if (!Closed && (Fraction <= EndGuard || Fraction >= 1.0 - EndGuard)) continue;   // Touches Point at an end
+                    // A circle's partner: its next crossing counter-clockwise with another curve of the plane.
+                    std::optional<Vector2> Partner;
+                    if (Closed)
+                    {
+                        double Nearest = 2.0;                                                 // [-] - Fraction gap past the pick
+                        const auto Consider = [&](const ProfileSegment& Cutter)
+                        {
+                            for (const SegmentCrossing& Crossing : IntersectProfileSegments(Target, Cutter, 1.0e-9 * std::max(1.0, Target.Radius)))
+                            {
+                                const double Gap = Crossing.TargetFraction - Fraction - std::floor(Crossing.TargetFraction - Fraction);
+                                if (Gap > EndGuard && Gap < 1.0 - EndGuard && Gap < Nearest) { Nearest = Gap; Partner = Crossing.Position; }
+                            }
+                        };
+                        for (int Other = 0; Other < static_cast<int>(Model.Curves.size()); ++Other)
+                        {
+                            if (Other == Curve) continue;
+                            std::string          Ignored;
+                            const ProfileSegment Cutter = ResolveSketchCurveSegment(Model, Other, 1.0e-9, Ignored);
+                            if (Ignored.empty()) Consider(Cutter);
+                        }
+                        for (const ProfileSegment& Cutter : Foreign) Consider(Cutter);
+                    }
+                    const SketchTrimOutcome Cut = SplitSketchCurve(Model, Curve, Pick, Partner);
+                    if (!Cut.Refusal.empty()) continue;
+                    std::vector<Vector3> Samples;
+                    for (int Index = 0; Index <= 48; ++Index)
+                    {
+                        const Vector2 Sample = EvaluateProfileSegment(Target, Index / 48.0);
+                        Samples.push_back(Plane.Origin + Plane.XAxis * Sample.X + Plane.YAxis * Sample.Y);
+                    }
+                    Outcome.Lit.push_back(std::move(Samples));
+                    for (const Vector2& Break : Cut.SplitPositions) Outcome.Breaks.push_back(Plane.Origin + Plane.XAxis * Break.X + Plane.YAxis * Break.Y);
+                    Model = Cut.Sketch;
+                    ++Changed;
+                    Split = true;
+                }
+                if (!Split) break;
+            }
+            if (Changed == 0) continue;
+            Outcome.Curves += Changed;
+            Outcome.Sketches.push_back(Step.Label);
+            Edited[Step.Label] = std::move(Model);
+        }
+    }
+}
+
+SolidArcPointCut PreviewSolidArcPointCut(const SolidArcDocument& Document, const Vector3& Point)
+{
+    SolidArcPointCut                   Outcome;
+    std::map<std::string, SketchModel> Edited;
+    CutSketchesAtPoint(Document, Point, Edited, Outcome);
+    return Outcome;
+}
+
+SolidArcCommandOutcome CutSolidArcSketchesAt(SolidArcDocument& Document, const Vector3& Point)
+{
+    SolidArcPointCut                   Preview;
+    std::map<std::string, SketchModel> Edited;
+    CutSketchesAtPoint(Document, Point, Edited, Preview);
+    std::string Owners;
+    for (const std::string& Label : Preview.Sketches)
+    {
+        const auto Caption = Document.Captions.find(Label);
+        Owners += (Owners.empty() ? "" : ", ") + (Caption != Document.Captions.end() ? Caption->second : Label);
+    }
+    char Where[96];
+    std::snprintf(Where, sizeof Where, "(%.4g, %.4g, %.4g)", Point.X, Point.Y, Point.Z);
+    return RunCommand(Document, "Cut " + std::to_string(Preview.Curves) + " curve(s) at " + Where + (Owners.empty() ? std::string{} : " · " + Owners), false, [&]() -> std::string
+    {
+        if (Preview.Curves == 0) return "no curve passes through that point (hold Ctrl to snap onto a crossing, an end or a midpoint)";
+        for (auto& [Label, Model] : Edited)
+        {
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+            if (Found == Document.Tree.Steps.end()) return "no sketch step labelled " + Label;
+            Found->Sketch = Model;
+        }
+        return {};
+    }, 0);
+}
+
 SolidArcCommandOutcome CutSolidArcSketchCorners(SolidArcDocument& Document, const SolidArcCornerRequest& Request)
 {
     const bool        FilletCondition = Request.Shape == SketchCornerShape::Fillet;
@@ -2384,6 +2510,50 @@ SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const s
             Plane.YAxis  = Normalize(Turn(Plane.YAxis));
             Plane.ZAxis  = Normalize(Turn(Plane.ZAxis));
         }
+        return {};
+    });
+}
+
+SolidArcCommandOutcome DuplicateSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels, const AffineMap& Map)
+{
+    const std::vector<std::string> Unique = UniqueKeys(Labels);
+    std::string Operands;
+    for (const std::string& Label : Unique)
+    {
+        const auto Caption = Document.Captions.find(Label);
+        Operands += (Operands.empty() ? "" : ", ") + (Caption != Document.Captions.end() ? Caption->second : Label);
+    }
+    return RunCommand(Document, "Duplicate (" + Operands + ")", false, [&]() -> std::string
+    {
+        if (Unique.empty()) return "pick the sketches to duplicate";
+        const Vector3 Columns[3] = { Map.ColumnX, Map.ColumnY, Map.ColumnZ };
+        for (int First = 0; First < 3; ++First)
+            for (int Second = 0; Second < 3; ++Second)
+                if (std::abs(Dot(Columns[First], Columns[Second]) - (First == Second ? 1.0 : 0.0)) > 1.0e-9) return "a sketch copy moves and turns only (🚧 scaling a sketch)";
+        if (Dot(Cross(Map.ColumnX, Map.ColumnY), Map.ColumnZ) < 0.0) return "a sketch copy cannot be mirrored (🚧)";
+        const auto Turn = [&](Vector3 Vector) { return Map.ColumnX * Vector.X + Map.ColumnY * Vector.Y + Map.ColumnZ * Vector.Z; };
+        std::vector<std::string> Copies;
+        for (const std::string& Label : Unique)
+        {
+            const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
+            if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Label;
+            FeatureStep Copy = *Found;
+            Copy.Label   = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Copy.Sketch  = SolvedSketch(Document, *Found);                                   // As shown (solved positions)
+            Copy.Plane.Origin = Turn(Copy.Plane.Origin) + Map.Shift;
+            Copy.Plane.XAxis  = Normalize(Turn(Copy.Plane.XAxis));
+            Copy.Plane.YAxis  = Normalize(Turn(Copy.Plane.YAxis));
+            Copy.Plane.ZAxis  = Normalize(Turn(Copy.Plane.ZAxis));
+            const auto  Caption = Document.Captions.find(Label);
+            std::string Stem    = Caption != Document.Captions.end() ? Caption->second : std::string("Sketch");
+            while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
+            if (Stem.empty()) Stem = "Sketch";
+            Document.Captions[Copy.Label] = NextCaption(Document, Stem);
+            Copies.push_back(Copy.Label);
+            Document.Tree.Steps.push_back(std::move(Copy));
+        }
+        Document.Selection        = {};
+        Document.Selection.Curves = Copies;
         return {};
     });
 }

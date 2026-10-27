@@ -421,7 +421,7 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
     return Outcome;
 }
 
-SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick)
+SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, std::optional<Vector2> Partner)
 {
     constexpr double EndGuard = 1.0e-3;                                                      // [-] - No split this close to an open end
     SketchTrimOutcome Outcome;
@@ -443,9 +443,16 @@ SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Ve
     SketchModel& Edited = Outcome.Sketch;
     if (ClosedCondition(Target))
     {
-        // ① a circle: two half arcs (counter-clockwise like the circle) meeting at the pick and its opposite point.
+        // ① a circle: two arcs (counter-clockwise like the circle) meeting at the pick and the partner (a second
+        //    crossing), else half arcs meeting at the pick and its opposite point.
+        double Across = 0.5;                                                                 // [-] - Second break, fraction past the pick
+        if (Partner.has_value())
+        {
+            const double Gap = Wrap(LocateProfileFraction(Target, *Partner) - Picked);
+            if (Gap > EndGuard && Gap < 1.0 - EndGuard) Across = Gap;
+        }
         const Vector2 First  = EvaluateProfileSegment(Target, Wrap(Picked));
-        const Vector2 Second = EvaluateProfileSegment(Target, Wrap(Picked + 0.5));
+        const Vector2 Second = EvaluateProfileSegment(Target, Wrap(Picked + Across));
         const int     FirstPoint  = AppendSketchPoint(Edited, First);
         const int     SecondPoint = AppendSketchPoint(Edited, Second);
         SketchCurve& Curve = Edited.Curves[CurveIndex];

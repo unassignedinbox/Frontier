@@ -287,6 +287,11 @@ struct SolidArcTrimSession
     int                            Commits         = 0;                                      // [-]   - Trims applied (script evidence)
     bool                           SplitCondition  = false;                                  // [-]   - Cut tool: break the curve at the pointer
     std::vector<GeometryProcessing::Vector3> Breaks  = {};                                   // [len] - Cut: where the curve would break (world)
+    // 💡 Cut with Ctrl: the pointer snaps (crossing, end, midpoint, quarter) and every curve through that point breaks.
+    bool                                              PointCondition = false;                // [-]   - A snapped point cut is staged
+    GeometryProcessing::Vector3                       Point          = {};                   // [len] - The snapped point (world)
+    std::string                                       PointSource    = {};                   // [-]   - "Intersection · Circle1 …"
+    std::vector<std::vector<GeometryProcessing::Vector3>> PointCurves = {};                  // [len] - Curves that break there (world)
 };
 
 // 📝 Fill tool (bottom toolbar, next to Trim): while open, the closed region under the pointer among the shown coplanar
@@ -385,6 +390,7 @@ struct SolidArcTransformSession
     std::string                       Readout            = {};                               // [-]   - "Move x 0.3"
     std::string                       Refusal            = {};                               // [-]   - Why commit is refused
     int                               Commits            = 0;                                // [-]   - Committed (script evidence)
+    bool                              SketchCondition    = false;                            // [-]   - Keys are sketch steps (2D objects), no bodies picked
 };
 
 // 📝 HTML .inspector-tabs: Geometry (the native cards), Transform (G / R / S), Topology (body audit, picks, history).

@@ -471,6 +471,13 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "split") return Numeric(State.Trim.ActiveCondition && State.Trim.SplitCondition ? 1 : 0);
     if (Field == "trim-breaks") return Numeric(double(State.Trim.Breaks.size()));
     if (Field == "trim-commits") return Numeric(double(State.Trim.Commits));
+    if (Field == "trim-point")                                                               // Cut with Ctrl: the snapped point's source
+    {
+        Text   = State.Trim.PointCondition ? State.Trim.PointSource : std::string();
+        Number = double(Text.size());
+        return true;
+    }
+    if (Field == "trim-point-curves") return Numeric(State.Trim.PointCondition ? double(State.Trim.PointCurves.size()) : 0.0);
     if (Field == "trim-refusal")
     {
         Text   = State.Trim.Refusal;

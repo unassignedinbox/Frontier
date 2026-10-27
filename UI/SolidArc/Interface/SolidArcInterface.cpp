@@ -2346,6 +2346,7 @@ void ApplyCut(SolidArcWorkspaceState& State)
 {
     if (State.SketchPoints.DragCondition && State.SketchPoints.Preview && State.SketchPoints.Refusal.empty()) return *State.SketchPoints.Preview;
     if (State.Gizmo.DragCondition && State.Gizmo.Preview && State.Gizmo.Refusal.empty()) return *State.Gizmo.Preview;
+    if (State.Transform.ActiveCondition && State.Transform.SketchCondition && State.Transform.Preview && State.Transform.Refusal.empty()) return *State.Transform.Preview;
     return State.Document;
 }
 
@@ -2363,7 +2364,7 @@ void OpenTrimSession(SolidArcWorkspaceState& State, bool SplitCondition = false)
     State.Fill.ActiveCondition = false;
     State.Drawing.ActiveCondition = false;
     State.Constrain.ActiveCondition = false;
-    Announce(State, SplitCondition ? "Cut: click a line, arc or circle where it should break in two (a circle becomes two half arcs) · Esc ends"
+    Announce(State, SplitCondition ? "Cut: click a line, arc or circle where it should break in two (a circle becomes two half arcs) · hold Ctrl to snap onto a crossing / end / midpoint: every curve through it breaks there (overlapping circles: both, at both crossings) · Esc ends"
                                    : "Trim: click the piece of a curve to remove (between its crossings) · Esc ends");
 }
 
@@ -2385,7 +2386,33 @@ void HoverTrimPiece(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
     Trim.Preview.clear();
     Trim.Breaks.clear();
     Trim.Refusal.clear();
+    Trim.PointCondition = false;
+    Trim.PointCurves.clear();
     if (!PointerCondition) return;
+    if (Trim.SplitCondition && ImGui::GetIO().KeyCtrl)
+    {
+        // Cut with Ctrl: snap onto a crossing / end / midpoint / quarter point; every curve through it breaks there.
+        const SolidArcSnap Snap = FindPointerSnap(State, Frame, Local, std::nullopt, {}, {}, false);
+        if (Snap.Kind != SolidArcSnapKind::None)
+        {
+            SolidArcPointCut Cut = PreviewSolidArcPointCut(State.Document, Snap.Position);
+            if (Cut.Curves > 0)
+            {
+                Trim.PointCondition = true;
+                Trim.HoverCondition = true;
+                Trim.Point          = Snap.Position;
+                Trim.PointSource    = SolidArcSnapLabel(Snap.Kind);                          // "Intersection · Circle1 × Circle2" (the sketches it breaks)
+                for (size_t Index = 0; Index < Cut.Sketches.size(); ++Index)
+                {
+                    const auto Caption = State.Document.Captions.find(Cut.Sketches[Index]);
+                    Trim.PointSource += (Index == 0 ? " · " : " × ") + (Caption != State.Document.Captions.end() ? Caption->second : Cut.Sketches[Index]);
+                }
+                Trim.PointCurves    = std::move(Cut.Lit);
+                Trim.Breaks         = std::move(Cut.Breaks);
+                return;
+            }
+        }
+    }
     const ImVec2       Mouse   = ImGui::GetIO().MousePos;
     double             Nearest = 8.0;                                                        // [px] - Pick radius
     const FeatureStep* Chosen  = nullptr;
@@ -2443,7 +2470,8 @@ void ApplyTrim(SolidArcWorkspaceState& State)
 {
     SolidArcTrimSession& Trim = State.Trim;
     if (!Trim.HoverCondition) { Announce(State, Trim.SplitCondition ? "Cut: no curve under the pointer" : "Trim: no curve under the pointer"); return; }
-    const SolidArcCommandOutcome Outcome = TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
+    const SolidArcCommandOutcome Outcome = Trim.SplitCondition && Trim.PointCondition ? CutSolidArcSketchesAt(State.Document, Trim.Point)
+                                                                                      : TrimSolidArcSketch(State.Document, { Trim.Sketch, Trim.Curve, Trim.Pick, Trim.SplitCondition });
     if (Outcome.AcceptedCondition)
     {
         // Detached trim (a later step reads the sketch): the original is hidden, the trimmed copy is the last step.
@@ -2451,6 +2479,8 @@ void ApplyTrim(SolidArcWorkspaceState& State)
             State.FocusedStep = State.Document.Tree.Steps.back().Label;
         ++Trim.Commits;
         Trim.HoverCondition = false;
+        Trim.PointCondition = false;
+        Trim.PointCurves.clear();
         Trim.Preview.clear();
         Trim.Breaks.clear();
         const bool FocusedCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == State.FocusedStep; });
@@ -2461,6 +2491,27 @@ void ApplyTrim(SolidArcWorkspaceState& State)
 
 void DrawTrimPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
 {
+    if (State.Trim.ActiveCondition && State.Trim.PointCondition)
+    {
+        // Ctrl point cut: every curve through the snapped point lit amber, a ring at each break, a square on the snap.
+        for (const std::vector<Vector3>& Curve : State.Trim.PointCurves)
+        {
+            std::vector<ImVec2> Pixels;
+            for (const Vector3& Point : Curve) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
+            if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), IM_COL32(0xff, 0xc8, 0x4a, 0xff), 0, 3.0f);
+        }
+        for (const Vector3& Point : State.Trim.Breaks)
+        {
+            ImVec2 Pixel;
+            if (!ProjectWorldPoint(State, Frame, Point, Pixel)) continue;
+            Canvas->AddCircleFilled(Pixel, 6.0f, IM_COL32(0x16, 0x16, 0x16, 0xff));
+            Canvas->AddCircle(Pixel, 6.0f, IM_COL32(0xff, 0xff, 0xff, 0xff), 0, 2.0f);
+        }
+        ImVec2 Snap;
+        if (ProjectWorldPoint(State, Frame, State.Trim.Point, Snap))
+            Canvas->AddRect(ImVec2(Snap.x - 8.0f, Snap.y - 8.0f), ImVec2(Snap.x + 8.0f, Snap.y + 8.0f), IM_COL32(0xff, 0xc8, 0x4a, 0xff), 0.0f, 0, 2.0f);
+        return;
+    }
     if (!State.Trim.ActiveCondition || State.Trim.Preview.size() < 2) return;
     std::vector<ImVec2> Pixels;
     for (const Vector3& Point : State.Trim.Preview) { ImVec2 Pixel; if (ProjectWorldPoint(State, Frame, Point, Pixel)) Pixels.push_back(Pixel); }
@@ -3731,10 +3782,40 @@ bool CollectTypedAmount(std::string& Typed)
     return End && *End == '\0' && std::isfinite(Value);
 }
 
+// Centre of the bounds of the listed sketches' curves (solved, on their elevated planes): the pivot of G / R on 2D objects.
+[[nodiscard]] Vector3 MeasureSketchesCentre(const SolidArcDocument& Document, const std::vector<std::string>& Labels)
+{
+    Vector3 Low{ 1.0e300, 1.0e300, 1.0e300 }, High{ -1.0e300, -1.0e300, -1.0e300 };
+    for (const FeatureStep& Step : Document.Tree.Steps)
+    {
+        if (Step.Kind != FeatureStepKind::Sketch || std::find(Labels.begin(), Labels.end(), Step.Label) == Labels.end()) continue;
+        const auto Solved = Document.Regeneration.Sketches.find(Step.Label);
+        if (Solved == Document.Regeneration.Sketches.end()) continue;
+        const OrthonormalFrame Plane = ElevatedSketchPlane(Document, Step);
+        for (const SketchCurve& Curve : Solved->second.Curves)
+            for (const Vector2& Sample : SampleSketchCurve(Solved->second, Curve))
+            {
+                const Vector3 Point = PlacePlanePoint(Plane, Sample);
+                Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
+                High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
+            }
+    }
+    return Low.X <= High.X ? (Low + High) * 0.5 : Vector3{};
+}
+
 void OpenTransformSession(SolidArcWorkspaceState& State, SolidArcTransformVerb Verb, bool DuplicateCondition)
 {
-    const std::vector<std::string> Keys = PickedBodies(State.Document);
-    if (Keys.empty()) { Announce(State, std::string(DuplicateCondition ? "Duplicate" : TransformVerbLabel(Verb)) + " needs picked bodies (mode 4, or a face / edge of the body)"); return; }
+    std::vector<std::string> Keys = PickedBodies(State.Document);
+    // No body picked: the picked 2D objects (sketches), else the focused sketch, move / turn / duplicate instead.
+    bool SketchCondition = false;
+    if (Keys.empty())
+    {
+        Keys = SelectedSketchLabels(State.Document);
+        if (Keys.empty() && FocusedSketchCondition(State)) Keys = { State.FocusedStep };
+        SketchCondition = !Keys.empty();
+    }
+    if (Keys.empty()) { Announce(State, std::string(DuplicateCondition ? "Duplicate" : TransformVerbLabel(Verb)) + " needs picked bodies (mode 4, or a face / edge of the body) or picked sketches"); return; }
+    if (SketchCondition && Verb == SolidArcTransformVerb::Scale) { Announce(State, "Scale on sketches: 🚧 (sketches move and turn: G / R, Shift+D / Ctrl+D duplicates)"); return; }
     SolidArcTransformSession& Transform = State.Transform;
     const int Commits = Transform.Commits;
     Transform                    = {};
@@ -3743,13 +3824,15 @@ void OpenTransformSession(SolidArcWorkspaceState& State, SolidArcTransformVerb V
     Transform.Verb               = Verb;
     Transform.DuplicateCondition = DuplicateCondition;
     Transform.Keys               = Keys;
-    Transform.Pivot              = MeasureBodiesCentre(State.Scene, Keys);
+    Transform.SketchCondition    = SketchCondition;
+    Transform.Pivot              = SketchCondition ? MeasureSketchesCentre(State.Document, Keys) : MeasureBodiesCentre(State.Scene, Keys);
     State.Drawing.ActiveCondition = false;
     State.Trim.ActiveCondition    = false;
     State.Fill.ActiveCondition    = false;
     State.Constrain.ActiveCondition = false;
-    Announce(State, Compose("%s%s %d body(ies) · X / Y / Z axis%s · type a value · click / Enter commits · Esc cancels", DuplicateCondition ? "Duplicate + " : "",
-                            TransformVerbLabel(Verb), int(Keys.size()), Verb == SolidArcTransformVerb::Move ? " · Shift+X / Y / Z plane" : ""));
+    Announce(State, Compose("%s%s %d %s · X / Y / Z axis%s · type a value · click / Enter commits%s · Esc cancels", DuplicateCondition ? "Duplicate + " : "",
+                            TransformVerbLabel(Verb), int(Keys.size()), SketchCondition ? "sketch(es)" : "body(ies)", Verb == SolidArcTransformVerb::Move ? " · Shift+X / Y / Z plane" : "",
+                            DuplicateCondition ? " (at once: a copy in place)" : ""));
 }
 
 void CancelTransformSession(SolidArcWorkspaceState& State)
@@ -3765,20 +3848,27 @@ void CancelTransformSession(SolidArcWorkspaceState& State)
     return Length(Map.ColumnX - Vector3{ 1.0, 0.0, 0.0 }) + Length(Map.ColumnY - Vector3{ 0.0, 1.0, 0.0 }) + Length(Map.ColumnZ - Vector3{ 0.0, 0.0, 1.0 }) + Length(Map.Shift) < 1.0e-12;
 }
 
+// The session's command on Document: bodies (Duplicate / Transform steps) or sketches (copies / planes carried).
+[[nodiscard]] SolidArcCommandOutcome RunTransform(SolidArcDocument& Document, const SolidArcTransformSession& Transform, const AffineMap& Map)
+{
+    if (Transform.SketchCondition)
+        return Transform.DuplicateCondition ? DuplicateSolidArcSketches(Document, Transform.Keys, Map) : PlaceSolidArcSketches(Document, Transform.Keys, Map, TransformVerbLabel(Transform.Verb));
+    return Transform.DuplicateCondition ? DuplicateSolidArcBodies(Document, Transform.Keys, Map) : TransformSolidArcBodies(Document, Transform.Keys, Map, TransformVerbLabel(Transform.Verb));
+}
+
 void ApplyTransformSession(SolidArcWorkspaceState& State)
 {
     SolidArcTransformSession& Transform = State.Transform;
     if (!Transform.Refusal.empty()) { Announce(State, "Refused: " + Transform.Refusal); return; }
     if (!Transform.DuplicateCondition && IdentityMapCondition(Transform.Map)) { Transform.ActiveCondition = false; Transform.RigidCondition = false; Transform.Preview.reset(); Announce(State, std::string(TransformVerbLabel(Transform.Verb)) + ": nothing changed"); return; }
-    const SolidArcCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateSolidArcBodies(State.Document, Transform.Keys, Transform.Map)
-                                                                        : TransformSolidArcBodies(State.Document, Transform.Keys, Transform.Map, TransformVerbLabel(Transform.Verb));
+    const SolidArcCommandOutcome Outcome = RunTransform(State.Document, Transform, Transform.Map);
     if (Outcome.AcceptedCondition)
     {
         ++Transform.Commits;
         Transform.ActiveCondition = false;
         Transform.RigidCondition  = false;
         Transform.Preview.reset();
-        State.PickMode = SolidArcPickMode::Solid;
+        if (!Transform.SketchCondition) State.PickMode = SolidArcPickMode::Solid;
     }
     Conclude(State, Outcome);
 }
@@ -3911,7 +4001,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     Transform.Refusal.clear();
     Transform.RigidCondition  = false;
     if (!Transform.DuplicateCondition && IdentityMapCondition(Map)) { Transform.Preview.reset(); return; }
-    if (!Transform.DuplicateCondition)
+    if (!Transform.DuplicateCondition && !Transform.SketchCondition)
     {
         // A move / rotate / scale of whole bodies: carry the shown triangles (the kernel runs once, on commit).
         SolidArcPhaseClock RigidClock(State.Profile, "transform preview · rigid");
@@ -3923,9 +4013,10 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     FRONTIER_TRACE_SCOPE("Preview", "StageTransformPreview · " + Transform.Readout);
     SolidArcPhaseClock StageClock(State.Profile, "transform preview · stage");
     Transform.Preview = std::make_unique<SolidArcDocument>(CloneSolidArcDocument(State.Document));
-    const SolidArcCommandOutcome Outcome = Transform.DuplicateCondition ? DuplicateSolidArcBodies(*Transform.Preview, Transform.Keys, Map)
-                                                                        : TransformSolidArcBodies(*Transform.Preview, Transform.Keys, Map, TransformVerbLabel(Transform.Verb));
+    const SolidArcCommandOutcome Outcome = RunTransform(*Transform.Preview, Transform, Map);
     if (!Outcome.AcceptedCondition) { Transform.Refusal = Legible(Outcome.Refusal); Transform.Preview.reset(); return; }
+    // Sketch copies leave the bodies as they are (the overlay shows the preview's curves); a moved sketch may move a body.
+    if (Transform.SketchCondition && Transform.DuplicateCondition) return;
     Transform.PreviewScene = BuildSolidArcScene(*Transform.Preview);
 }
 
@@ -10551,7 +10642,9 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         ImVec2 Below(Image.x + 72, Image.y + 64);
         const SolidArcTrimSession& Trim = State.Trim;
         if (!Trim.Refusal.empty()) DrawStatusPill(Canvas, Below, Trim.Refusal, RefusalColour);
-        else if (Trim.SplitCondition) DrawStatusPill(Canvas, Below, Compose("Cut · %d cut / trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click breaks the curve at the ring" : ""), ActiveColour);
+        else if (Trim.SplitCondition && Trim.PointCondition)
+            DrawStatusPill(Canvas, Below, Compose("Cut · %s · click breaks %d curve(s) there", Trim.PointSource.c_str(), int(Trim.PointCurves.size())), ActiveColour);
+        else if (Trim.SplitCondition) DrawStatusPill(Canvas, Below, Compose("Cut · %d cut / trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click breaks the curve at the ring · Ctrl snaps to crossings" : " · Ctrl snaps to crossings"), ActiveColour);
         else DrawStatusPill(Canvas, Below, Compose("Trim · %d trimmed%s", Trim.Commits, Trim.HoverCondition ? " · click removes the red piece" : ""), ActiveColour);
     }
     if (State.Fill.ActiveCondition)
@@ -12636,7 +12729,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         if (Pressed(ImGuiKey_V)) PasteBodies(State);                                        // edit:paste
         if (Pressed(ImGuiKey_H)) ChangeVisibility(State, SolidArcVisibilityVerb::InvertHidden);   // invert-hidden
         if (Pressed(ImGuiKey_G)) Announce(State, "Group: not available");
-        if (Pressed(ImGuiKey_D)) Announce(State, "Place: not available");
+        if (Pressed(ImGuiKey_D)) OpenTransformSession(State, SolidArcTransformVerb::Move, true);        // duplicate (Plasticity's place is not here; Ctrl+D as in most apps)
         if (Pressed(ImGuiKey_1) || Pressed(ImGuiKey_2) || Pressed(ImGuiKey_3) || Pressed(ImGuiKey_4)) Announce(State, "Selection convert: not available yet");
         return;
     }
@@ -13061,7 +13154,8 @@ const SolidArcScene& DisplayedSolidArcScene(const SolidArcWorkspaceState& State)
 {
     if (State.Bevel.ActiveCondition && State.Bevel.Preview && State.Bevel.Refusal.empty()) return State.Bevel.PreviewScene;
     if (State.Bevel.ActiveCondition && State.Bevel.GoodCondition && State.Bevel.Verb == SolidArcSessionVerb::Blend) return State.Bevel.GoodScene;   // Refused: the last size that worked
-    if (State.Transform.ActiveCondition && (State.Transform.Preview || State.Transform.RigidCondition) && State.Transform.Refusal.empty()) return State.Transform.PreviewScene;
+    if (State.Transform.ActiveCondition && (State.Transform.Preview || State.Transform.RigidCondition) && State.Transform.Refusal.empty()
+        && !(State.Transform.SketchCondition && State.Transform.DuplicateCondition)) return State.Transform.PreviewScene;
     if (State.Sweep.ActiveCondition && State.Sweep.Preview && State.Sweep.Refusal.empty()) return State.Sweep.PreviewScene;
     if (State.Knife.ActiveCondition && ((State.Knife.Preview && (State.Knife.Refusal.empty() || !State.Knife.Blends.empty())) || State.Knife.RigidCondition)) return State.Knife.PreviewScene;
     if (State.Joint.ActiveCondition && State.Joint.Preview && State.Joint.Refusal.empty()) return State.Joint.PreviewScene;
