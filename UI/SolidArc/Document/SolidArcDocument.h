@@ -463,14 +463,15 @@ struct SolidArcPointCut
 [[nodiscard]] SolidArcCommandOutcome TransformSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys,
                                                              const GeometryProcessing::AffineMap& Map, const std::string& Verb);
 
-// 📝 Gizmo on sketches (loft sections): every listed Sketch step's plane is carried by the rigid Map (rotation +
-//    translation; the elevation rides along its normal). Scale and mirror maps are refused (🚧), as are labels that are
-//    not sketches. Later steps (lofts through the sketch, extrudes of it) regenerate from the new plane.
+// 📝 G / R / S and the gizmo on sketches: a rigid Map carries each listed Sketch step's plane (the elevation rides
+//    along its normal); a scale moves the solved points into the image plane, circle radii and dimensions scale with it
+//    (S then X / Y stretches lines and splines, refusing arcs and circles: they would be ellipses 🚧). A pure mirror is
+//    refused (🚧), as are labels that are not sketches. Later steps regenerate from the new sketch.
 [[nodiscard]] SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels,
                                                            const GeometryProcessing::AffineMap& Map, const std::string& Verb);
 
 // Shift+D / Ctrl+D on 2D objects: each listed sketch is copied as a new sketch step (next caption of its kind, e.g.
-// Circle2) with its plane carried by the rigid Map; the copies are selected. Scale / mirror maps refuse (🚧).
+// Circle2) carried by Map as PlaceSolidArcSketches does (scales too); the copies are selected.
 [[nodiscard]] SolidArcCommandOutcome DuplicateSolidArcSketches(SolidArcDocument& Document, const std::vector<std::string>& Labels,
                                                                const GeometryProcessing::AffineMap& Map);
 

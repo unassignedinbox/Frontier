@@ -32,6 +32,7 @@
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -125,6 +126,7 @@ namespace
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
     GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
+    GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3", "1e-9 · fit 10⁻⁴ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
@@ -1349,6 +1351,232 @@ void ValidateEdgePath()
     }
 }
 
+// W66: Wrap / project shapes round the surface of a curve (a label round a can), S on sketches, O on an open arc.
+void ValidateWrap()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const OrthonormalFrame Ground{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const OrthonormalFrame Front{ { 0.0, -3.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };   // Seen along +y
+    const auto Rectangle = [](double Left, double Right, double Bottom, double Top)
+    {
+        SketchModel      Shape;
+        std::vector<int> Corners;
+        for (const Vector2 Corner : { Vector2{ Left, Bottom }, Vector2{ Right, Bottom }, Vector2{ Right, Top }, Vector2{ Left, Top } }) Corners.push_back(AppendSketchPoint(Shape, Corner));
+        for (int Side = 0; Side < 4; ++Side) (void)AppendSketchLine(Shape, Corners[size_t(Side)], Corners[size_t((Side + 1) % 4)], Side + 1);
+        return Shape;
+    };
+    const auto Circle = [](double Radius)
+    {
+        SketchModel Rail;
+        (void)AppendSketchCircle(Rail, AppendSketchPoint(Rail, { 0.0, 0.0 }), Radius, 1);
+        return Rail;
+    };
+    // Distance from (u, v) to the outline of the rectangle [Left, Right] × [Bottom, Top].
+    const auto Outline = [](double U, double V, double Left, double Right, double Bottom, double Top)
+    {
+        const auto Segment = [&](double X0, double Y0, double X1, double Y1)
+        {
+            const double Along = std::clamp(((U - X0) * (X1 - X0) + (V - Y0) * (Y1 - Y0)) / ((X1 - X0) * (X1 - X0) + (Y1 - Y0) * (Y1 - Y0)), 0.0, 1.0);
+            return std::hypot(U - X0 - Along * (X1 - X0), V - Y0 - Along * (Y1 - Y0));
+        };
+        return std::min({ Segment(Left, Bottom, Right, Bottom), Segment(Right, Bottom, Right, Top), Segment(Right, Top, Left, Top), Segment(Left, Top, Left, Bottom) });
+    };
+    // Every sample on the cylinder r round z (front at −y), and unrolled (Wrap: r·θ, Project: x) on the rectangle.
+    struct Measured { double Radial = 0.0, Unrolled = 0.0, Low = 1.0e9, High = -1.0e9; int Points = 0; };
+    const auto Measure = [&](const SketchWrapOutcome& Wrapped, double Radius, bool WrapCondition, std::array<double, 4> Box)
+    {
+        Measured Result;
+        for (const std::vector<Vector3>& Curve : Wrapped.Curves)
+            for (const Vector3& Point : Curve)
+            {
+                const double Angle = std::atan2(Point.X, -Point.Y);
+                const double U     = WrapCondition ? Radius * Angle : Point.X;
+                Result.Radial   = std::max(Result.Radial, std::abs(std::hypot(Point.X, Point.Y) - Radius));
+                Result.Unrolled = std::max(Result.Unrolled, Outline(U, Point.Z, Box[0], Box[1], Box[2], Box[3]));
+                Result.Low  = std::min(Result.Low, Angle);
+                Result.High = std::max(Result.High, Angle);
+                ++Result.Points;
+            }
+        return Result;
+    };
+    const SketchWrapSettings AlongY{ SketchWrapKind::Wrap, { 0.0, 1.0, 0.0 }, {} };
+    const SketchWrapSettings ProjectY{ SketchWrapKind::Project, { 0.0, 1.0, 0.0 }, {} };
+
+    // ① wrap and ② project a 1 × 0.5 rectangle round the circle r 1 on the ground (the can stands along z).
+    for (const bool WrapCondition : { true, false })
+    {
+        const SketchWrapOutcome Wrapped = WrapSketchModels({ { Rectangle(-0.5, 0.5, 0.0, 0.5), Front } }, Circle(1.0), Ground, WrapCondition ? AlongY : ProjectY);
+        const Measured Result  = Measure(Wrapped, 1.0, WrapCondition, { -0.5, 0.5, 0.0, 0.5 });
+        const double   Reach   = WrapCondition ? 0.5 : std::asin(0.5);
+        const double   Ends    = std::max(std::abs(Result.High - Reach), std::abs(Result.Low + Reach));
+        const double   Worst   = std::max({ Result.Radial, Result.Unrolled, Ends });
+        Tally(WrapGate, Worst, Wrapped.Refusal.empty() && Wrapped.Curves.size() == 4 && std::abs(Wrapped.Radius - 1.0) <= 1.0e-12 && std::abs(Wrapped.Extent - 1.0) <= 1.0e-9 && Worst <= 1.0e-9,
+              Format("%s a 1 × 0.5 rectangle round a circle r 1 along +y: %d curves, %d samples, off r 1 by %.1e, unrolled off the rectangle by %.1e, ends ±%.6f rad (%s)%s",
+                     WrapCondition ? "wrap" : "project", int(Wrapped.Curves.size()), Result.Points, Result.Radial, Result.Unrolled, Result.High, WrapCondition ? "0.5: lengths kept" : "π/6: x kept",
+                     Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
+    }
+    // ③ a rectangle 3 wide projects past the can's silhouette: refused; wrapped it goes 3 rad round.
+    {
+        const SketchWrapOutcome Wide    = WrapSketchModels({ { Rectangle(-1.5, 1.5, 0.0, 0.5), Front } }, Circle(1.0), Ground, ProjectY);
+        const SketchWrapOutcome Wrapped = WrapSketchModels({ { Rectangle(-1.5, 1.5, 0.0, 0.5), Front } }, Circle(1.0), Ground, AlongY);
+        const Measured Result = Measure(Wrapped, 1.0, true, { -1.5, 1.5, 0.0, 0.5 });
+        const double   Worst  = std::max({ Result.Radial, Result.Unrolled, std::abs(Result.High - 1.5) });
+        Tally(WrapGate, Worst, !Wide.Refusal.empty() && Wrapped.Refusal.empty() && Worst <= 1.0e-9,
+              Format("3 wide: project refused (%s) · wrap reaches ±%.6f rad, off r 1 by %.1e, unrolled %.1e", Wide.Refusal.c_str(), Result.High, Result.Radial, Result.Unrolled));
+    }
+    // ④ the circle faces the view (drawn on the front plane): with the axis z it stands up as the same can.
+    {
+        const OrthonormalFrame Facing{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };
+        SketchWrapSettings     Settings = AlongY;
+        Settings.Axis = { 0.0, 0.0, 1.0 };
+        const SketchWrapOutcome Wrapped = WrapSketchModels({ { Rectangle(-0.5, 0.5, 0.0, 0.5), Front } }, Circle(1.0), Facing, Settings);
+        const SketchWrapOutcome Flat    = WrapSketchModels({ { Rectangle(-0.5, 0.5, 0.0, 0.5), Front } }, Circle(1.0), Facing, AlongY);
+        const Measured Result = Measure(Wrapped, 1.0, true, { -0.5, 0.5, 0.0, 0.5 });
+        const double   Worst  = std::max({ Result.Radial, Result.Unrolled, std::abs(Result.High - 0.5) });
+        Tally(WrapGate, Worst, Wrapped.Refusal.empty() && !Flat.Refusal.empty() && Worst <= 1.0e-9,
+              Format("circle facing the view, axis z: off r 1 by %.1e, unrolled %.1e, ends ±%.6f · without the axis refused (%s)", Result.Radial, Result.Unrolled, Result.High, Flat.Refusal.c_str()));
+    }
+    // ⑤ an open arc r 2 (−120° … −60°) as the rail; ⑥ two letters as separate shapes keep their places (one centre).
+    {
+        SketchModel Arc;
+        const int   Centre = AppendSketchPoint(Arc, { 0.0, 0.0 });
+        const int   From   = AppendSketchPoint(Arc, { 2.0 * std::cos(-2.0 * std::numbers::pi / 3.0), 2.0 * std::sin(-2.0 * std::numbers::pi / 3.0) });
+        const int   To     = AppendSketchPoint(Arc, { 2.0 * std::cos(-std::numbers::pi / 3.0), 2.0 * std::sin(-std::numbers::pi / 3.0) });
+        (void)AppendSketchArc(Arc, Centre, From, To, 1);
+        const SketchWrapOutcome OnArc  = WrapSketchModels({ { Rectangle(-0.5, 0.5, 0.0, 0.5), Front } }, Arc, Ground, AlongY);
+        const Measured          Result = Measure(OnArc, 2.0, true, { -0.5, 0.5, 0.0, 0.5 });
+        const double            Worst  = std::max({ Result.Radial, Result.Unrolled, std::abs(Result.High - 0.25) });
+        Tally(WrapGate, Worst, OnArc.Refusal.empty() && Worst <= 1.0e-9,
+              Format("open arc r 2 rail: off r 2 by %.1e, unrolled %.1e, ends ±%.6f rad (0.25)%s", Result.Radial, Result.Unrolled, Result.High, OnArc.Refusal.empty() ? "" : (" · " + OnArc.Refusal).c_str()));
+        const SketchWrapOutcome Letters = WrapSketchModels({ { Rectangle(-1.0, -0.6, 0.0, 0.5), Front }, { Rectangle(0.6, 1.0, 0.0, 0.5), Front } }, Circle(1.0), Ground, AlongY);
+        double Apart = 0.0;
+        for (size_t Index = 0; Index < Letters.Curves.size(); ++Index)
+            for (const Vector3& Point : Letters.Curves[Index])
+            {
+                const double Angle = std::atan2(Point.X, -Point.Y);
+                Apart = std::max(Apart, Letters.Owners[Index] == 0 ? std::max(0.0, Angle + 0.6) : std::max(0.0, 0.6 - Angle));   // Left letter left of −0.6
+                Apart = std::max(Apart, std::abs(std::hypot(Point.X, Point.Y) - 1.0));
+            }
+        Tally(WrapGate, Apart, Letters.Refusal.empty() && Letters.Curves.size() == 8 && std::abs(Letters.Extent - 2.0) <= 1.0e-9 && Apart <= 1.0e-9,
+              Format("two letters (x −1 … −0.6 and 0.6 … 1) as separate shapes: %d curves, width %.9f, each stays on its side (worst %.1e)", int(Letters.Curves.size()), Letters.Extent, Apart));
+    }
+    // ⑦ in a document: a circle r 1 on the ground, a rectangle and a small circle on the front plane → 5 3D curves.
+    {
+        const auto Draw = [&](SolidArcDocument& Part, SolidArcDrawingKind Kind, std::vector<Vector2> Points, const OrthonormalFrame& Plane, bool CentreCondition)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = Kind; Request.Points = std::move(Points); Request.PlaneCondition = true; Request.Plane = Plane; Request.CentreCondition = CentreCondition;
+            Expect(DrawSolidArcSketch(Part, Request));
+            return Part.Tree.Steps.back().Label;
+        };
+        SolidArcDocument  Part  = CreateSolidArcDocument("Wrap");
+        const std::string Can   = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.0 }, { 1.0, 0.0 } }, Ground, true);
+        const std::string Box   = Draw(Part, SolidArcDrawingKind::Rectangle, { { -0.5, 0.0 }, { 0.5, 0.5 } }, Front, false);
+        const std::string Dot   = Draw(Part, SolidArcDrawingKind::Circle, { { 0.0, 0.8 }, { 0.1, 0.8 } }, Front, true);
+        const size_t Steps = Part.Tree.Steps.size(), Undo = Part.UndoEntries.size();
+        const SolidArcCommandOutcome Wrapped = WrapSolidArcSketches(Part, { Can, { Box, Dot }, AlongY });
+        int    Made = 0, Closed = 0;
+        double Fit  = Wrapped.AcceptedCondition ? 0.0 : 1.0, Radial = 0.0;
+        for (size_t Index = Steps; Index < Part.Tree.Steps.size(); ++Index)
+        {
+            const FeatureStep& Step = Part.Tree.Steps[Index];
+            if (Step.Kind != FeatureStepKind::SpaceCurve) continue;
+            ++Made;
+            Closed += Step.ClosedCondition ? 1 : 0;
+            const auto Fitted = Part.Regeneration.Curves.find(Step.Label);
+            Fit = std::max(Fit, Fitted == Part.Regeneration.Curves.end() ? 1.0 : Fitted->second.WorstDeviation);
+            for (const Vector3& Point : Step.Points) Radial = std::max(Radial, std::abs(std::hypot(Point.X, Point.Y) - 1.0));
+        }
+        const bool Fine = Wrapped.AcceptedCondition && Made == 5 && Closed == 1 && Part.UndoEntries.size() == Undo + 1 && Part.Selection.Curves.size() == 5
+                          && Part.Captions[Part.Tree.Steps[Steps].Label] == "Wrap1" && Fit <= 1.0e-4 && Radial <= 1.0e-9;
+        Tally(WrapGate, Fit, Fine, Format("%s: %d 3D curves (%d closed), %d picked, captions Wrap1 …, samples off r 1 by %.1e, worst fit %.1e (≤ 10⁻⁴)%s", Wrapped.Label.c_str(), Made, Closed,
+                                          int(Part.Selection.Curves.size()), Radial, Fit, Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
+        const SolidArcCommandOutcome Itself = WrapSolidArcSketches(Part, { Can, { Can }, AlongY });
+        const SolidArcCommandOutcome Lone   = WrapSolidArcSketches(Part, { Can, {}, AlongY });
+        Tally(WrapGate, 0.0, !Itself.AcceptedCondition && !Lone.AcceptedCondition, Format("refused: the rail as a shape (%s) · no shape (%s)", Itself.Refusal.c_str(), Lone.Refusal.c_str()));
+    }
+    // ⑧ S on sketches: a circle r 0.5 at (1, 0) scaled ×2 about the origin; a 2 × 1 rectangle stretched ×2 along x; a
+    //    circle stretched refuses; Shift+D with a ½ scale copies (the original stays).
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Scale");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Circle; Request.Points = { { 1.0, 0.0 }, { 1.5, 0.0 } }; Request.CentreCondition = true;
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Round = Part.Tree.Steps.back().Label;
+        Request = {};
+        Request.Kind = SolidArcDrawingKind::Rectangle; Request.Points = { { 3.0, 0.0 }, { 5.0, 1.0 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Box = Part.Tree.Steps.back().Label;
+        const auto Shape = [&](const std::string& Label) { return Part.Regeneration.Sketches.at(Label); };
+        const auto Lift  = [&](const std::string& Label, Vector2 Point)
+        {
+            const OrthonormalFrame Plane = Part.Tree.Steps[size_t(std::find_if(Part.Tree.Steps.begin(), Part.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; }) - Part.Tree.Steps.begin())].Plane;
+            return Plane.Origin + Plane.XAxis * Point.X + Plane.YAxis * Point.Y;
+        };
+        const auto RoundOf = [&](const std::string& Label, double& Radius, Vector3& Centre)
+        {
+            const SketchModel Model = Shape(Label);
+            for (const SketchCurve& Curve : Model.Curves)
+                if (Curve.Kind == SketchCurveKind::Circle) { Radius = Curve.Radius; Centre = Lift(Label, Model.Points[size_t(Curve.Centre)].Position); }
+        };
+        const SolidArcCommandOutcome Grown = PlaceSolidArcSketches(Part, { Round }, ScalingMap({ 0.0, 0.0, 0.0 }, { 2.0, 2.0, 2.0 }), "Scale");
+        double  Radius = 0.0;
+        Vector3 Centre = {};
+        RoundOf(Round, Radius, Centre);
+        const double Off = std::max(std::abs(Radius - 1.0), Length(Centre - Vector3{ 2.0, 0.0, 0.0 }));
+        Tally(WrapGate, Off, Grown.AcceptedCondition && Off <= 1.0e-9, Format("S ×2 about the origin: circle r %.9f at (%.6f, %.6f) (r 1 at (2, 0))%s", Radius, Centre.X, Centre.Y,
+                                                                              Grown.Refusal.empty() ? "" : (" · " + Grown.Refusal).c_str()));
+        const SolidArcCommandOutcome Stretched = PlaceSolidArcSketches(Part, { Box }, ScalingMap({ 3.0, 0.0, 0.0 }, { 2.0, 1.0, 1.0 }), "Scale");
+        double Corners = Stretched.AcceptedCondition ? 0.0 : 1.0;
+        for (const Vector3 Expected : { Vector3{ 3.0, 0.0, 0.0 }, Vector3{ 7.0, 0.0, 0.0 }, Vector3{ 7.0, 1.0, 0.0 }, Vector3{ 3.0, 1.0, 0.0 } })
+        {
+            double Closest = 1.0e9;
+            for (const SketchPoint& Point : Shape(Box).Points) Closest = std::min(Closest, Length(Lift(Box, Point.Position) - Expected));
+            Corners = std::max(Corners, Closest);
+        }
+        const SolidArcCommandOutcome Oval = PlaceSolidArcSketches(Part, { Round }, ScalingMap({ 0.0, 0.0, 0.0 }, { 2.0, 1.0, 1.0 }), "Scale");
+        Tally(WrapGate, Corners, Stretched.AcceptedCondition && Corners <= 1.0e-9 && !Oval.AcceptedCondition,
+              Format("S then X ×2: rectangle corners within %.1e of (3 … 7) × (0 … 1) · a stretched circle refused (%s)", Corners, Oval.Refusal.c_str()));
+        const size_t Steps = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Copied = DuplicateSolidArcSketches(Part, { Round }, ScalingMap({ 0.0, 0.0, 0.0 }, { 0.5, 0.5, 0.5 }));
+        double  Small = 0.0, Kept = 0.0;
+        Vector3 SmallCentre = {}, KeptCentre = {};
+        if (Copied.AcceptedCondition && Part.Tree.Steps.size() == Steps + 1) RoundOf(Part.Tree.Steps.back().Label, Small, SmallCentre);
+        RoundOf(Round, Kept, KeptCentre);
+        const double Copy = std::max({ std::abs(Small - 0.5), Length(SmallCentre - Vector3{ 1.0, 0.0, 0.0 }), std::abs(Kept - 1.0) });
+        Tally(WrapGate, Copy, Copied.AcceptedCondition && Copy <= 1.0e-9, Format("Shift+D at ½: copy r %.9f at (%.6f, 0), original r %.9f kept%s", Small, SmallCentre.X, Kept,
+                                                                                 Copied.Refusal.empty() ? "" : (" · " + Copied.Refusal).c_str()));
+    }
+    // ⑨ O on an open arc (a wheel arch): r 2, 0° … 90° → concentric arcs r 2 ± 0.3 (both sides).
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Arch");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Arc; Request.Points = { { 2.0, 0.0 }, { 0.0, 2.0 }, { std::sqrt(2.0), std::sqrt(2.0) } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Arch = Part.Tree.Steps.back().Label;
+        std::vector<double> Radii;
+        double Worst = 0.0;
+        for (const double Distance : { 0.3, -0.3 })
+        {
+            const SolidArcCommandOutcome Offset = OffsetSolidArcSketch(Part, Arch, Distance);
+            if (!Offset.AcceptedCondition) { Worst = 1.0; continue; }
+            const SketchModel Model = Part.Regeneration.Sketches.at(Part.Tree.Steps.back().Label);
+            for (int Curve = 0; Curve < int(Model.Curves.size()); ++Curve)
+            {
+                std::string Refusal;
+                const ProfileSegment Segment = ResolveSketchCurveSegment(Model, Curve, 1.0e-9, Refusal);
+                const double Radius = Length(EvaluateProfileSegment(Segment, 0.0));
+                Radii.push_back(Radius);
+                for (int Sample = 0; Sample <= 64; ++Sample) Worst = std::max(Worst, std::abs(Length(EvaluateProfileSegment(Segment, Sample / 64.0)) - Radius));
+            }
+        }
+        std::sort(Radii.begin(), Radii.end());
+        const bool Fine = Radii.size() == 2 && std::abs(Radii[0] - 1.7) <= 1.0e-9 && std::abs(Radii[1] - 2.3) <= 1.0e-9 && Worst <= 1.0e-9;
+        Tally(WrapGate, Worst, Fine, Format("O ±0.3 on an open arc r 2: %d arcs, radii %s, concentric within %.1e", int(Radii.size()),
+                                            Radii.size() == 2 ? Format("%.9f / %.9f", Radii[0], Radii[1]).c_str() : "?", Worst));
+    }
+}
+
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
@@ -1382,6 +1610,12 @@ int main()
         ValidateCurveFlow();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return CurveFlowGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_WRAP"))                                             // Quick rerun of W66 alone
+    {
+        ValidateWrap();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return WrapGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_IMPRINT"))                                          // Quick rerun of W61 alone
     {
@@ -6744,7 +6978,10 @@ int main()
     // ---- W63 Point on curve, Flow along curve
     ValidateCurveFlow();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate })
+    // ---- W66 Wrap around curve, sketch scale, curve offset
+    ValidateWrap();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
