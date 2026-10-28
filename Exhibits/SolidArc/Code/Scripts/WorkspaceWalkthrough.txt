@@ -159,7 +159,7 @@ capture 09RightParallel
 click @ViewMenu
 frames 2
 click @ViewIsometric
-expect grid-plane == 2
+expect grid-plane == 0
 click @ViewMenu
 frames 2
 click @ViewTop

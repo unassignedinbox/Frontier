@@ -8715,20 +8715,24 @@ void PickCurve(SolidArcWorkspaceState& State, const std::string& Label, SolidArc
 //                                                    VIEWPORT PICKING
 //------------------------------------------------------------------------------------------------------------------------
 
-// Named views also choose the drawing plane (and its grid); Isometric / free orbit keep the active one.
+// 💡 The grid (and the drawing plane a new sketch takes) follows the camera: looking straight along a world axis
+//    (Front / Back → XZ, Right / Left → YZ, Top / Bottom → XY, perspective or parallel) shows the plane facing the view;
+//    every other view (perspective orbit, Isometric, any angle off the 90° steps) shows the ground grid XY only.
+int ViewGridPlane(const OrbitCamera& Camera) noexcept
+{
+    constexpr double Tolerance = 1.0e-2;                                                     // [rad] - As CurrentViewLabel
+    constexpr double HalfPi    = 0.5 * std::numbers::pi;
+    if (std::abs(Camera.Elevation) > Tolerance) return 0;                                    // Above / below: ground (Top / Bottom too)
+    const double Quarter = std::remainder(Camera.Azimuth, HalfPi);                           // Off a 90° step → ground
+    if (std::abs(Quarter) > Tolerance) return 0;
+    const double Turn = std::remainder(Camera.Azimuth, std::numbers::pi);                    // 0: ±x (Right / Left), ±½π: ±y
+    return std::abs(Turn) < Tolerance ? 2 : 1;
+}
+
 void PresentView(SolidArcWorkspaceState& State, OrbitViewPreset Preset)
 {
     PresentOrbitView(State.Camera, Preset);
-    switch (Preset)
-    {
-    case OrbitViewPreset::Top:
-    case OrbitViewPreset::Bottom: State.Style.GridPlane = 0; break;
-    case OrbitViewPreset::Front:
-    case OrbitViewPreset::Back:   State.Style.GridPlane = 1; break;
-    case OrbitViewPreset::Right:
-    case OrbitViewPreset::Left:   State.Style.GridPlane = 2; break;
-    case OrbitViewPreset::Isometric: break;
-    }
+    State.Style.GridPlane = ViewGridPlane(State.Camera);
 }
 
 OrbitCameraFrame ViewportFrame(const SolidArcWorkspaceState& State)
@@ -13810,6 +13814,7 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
     const double Entered = SteadySeconds();
     SolidArcFrameProfile& Profile = State.Profile;
     State.Widgets.Clear();
+    State.Style.GridPlane = ViewGridPlane(State.Camera);                                     // Orbiting off a 90° view: the ground again
     { SolidArcPhaseClock Clock(Profile, "matcaps"); RefreshSolidArcMatcaps(State); }
     const ImVec2 Frame = ImGui::GetIO().DisplaySize;
     { SolidArcPhaseClock Clock(Profile, "bevel preview"); StageBevelPreview(State); }
