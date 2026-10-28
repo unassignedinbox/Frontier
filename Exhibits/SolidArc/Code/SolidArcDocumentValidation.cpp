@@ -124,6 +124,7 @@ namespace
     GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
+    GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
@@ -1073,6 +1074,281 @@ void ValidateCurveFlow()
     }
 }
 
+// W65: path picks on fixtures with known answers, then the invariants on every ordered edge pair of six bodies.
+void ValidateEdgePath()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto Near   = [](double Value, double Target) { return std::abs(Value - Target) <= 1.0e-9; };
+    const auto Names  = [](const SolidArcDocument& Document)
+    {
+        std::vector<std::string> All;
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges) All.push_back(Name);
+        return All;
+    };
+    const auto EdgeWhere = [](const SolidArcDocument& Document, const auto& Test)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges)
+        {
+            const Vector3 Start = EdgeEndPosition(Document, Name, false), End = EdgeEndPosition(Document, Name, true);
+            if (Test(Start, End) || Test(End, Start)) return Name;
+        }
+        return std::string{};
+    };
+    const auto Every = [](const SolidArcDocument& Document, const std::vector<std::string>& Path, const auto& Test)
+    {
+        for (const std::string& Name : Path) if (!Test(EdgeEndPosition(Document, Name, false), EdgeEndPosition(Document, Name, true))) return false;
+        return true;
+    };
+    const auto Same = [](Vector3 A, Vector3 B) { return std::abs(A.X - B.X) <= 1.0e-9 && std::abs(A.Y - B.Y) <= 1.0e-9 && std::abs(A.Z - B.Z) <= 1.0e-9; };
+    // Consecutive edges meet at a vertex, From first, To last.
+    const auto Joined = [&](const SolidArcDocument& Document, const SolidArcEdgePath& Path, const std::string& From, const std::string& To)
+    {
+        if (!Path.Refusal.empty() || Path.Edges.empty() || Path.Edges.front() != From || Path.Edges.back() != To) return false;
+        for (size_t Index = 1; Index < Path.Edges.size(); ++Index)
+        {
+            const Vector3 A0 = EdgeEndPosition(Document, Path.Edges[Index - 1], false), A1 = EdgeEndPosition(Document, Path.Edges[Index - 1], true);
+            const Vector3 B0 = EdgeEndPosition(Document, Path.Edges[Index], false), B1 = EdgeEndPosition(Document, Path.Edges[Index], true);
+            if (!(Same(A0, B0) || Same(A0, B1) || Same(A1, B0) || Same(A1, B1))) return false;
+        }
+        return true;
+    };
+    // No vertex used by more than two edge ends: a simple chain or cycle.
+    const auto Simple = [&](const SolidArcDocument& Document, const std::vector<std::string>& Path)
+    {
+        std::vector<std::pair<Vector3, int>> Uses;
+        for (const std::string& Name : Path)
+            for (const bool Reversed : { false, true })
+            {
+                const Vector3 At = EdgeEndPosition(Document, Name, Reversed);
+                if (Reversed && Same(At, EdgeEndPosition(Document, Name, false))) continue;  // A closed edge passes its vertex once
+                auto Found = std::find_if(Uses.begin(), Uses.end(), [&](const auto& Use) { return Same(Use.first, At); });
+                if (Found == Uses.end()) Uses.push_back({ At, 1 });
+                else if (++Found->second > 2) return false;
+            }
+        return true;
+    };
+    const auto Subset = [](const std::vector<std::string>& Part, const std::vector<std::string>& Whole)
+    {
+        return std::all_of(Part.begin(), Part.end(), [&](const std::string& Name) { return std::find(Whole.begin(), Whole.end(), Name) != Whole.end(); });
+    };
+    const auto Path = [](const SolidArcDocument& Document, const std::string& From, const std::string& To, SolidArcEdgePathMode Mode, bool Other = false)
+    {
+        return SolidArcEdgePathBetween(Document, From, To, Mode, Other);
+    };
+    const auto NewBlock = [](double Width, double Depth, double Height)
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Path");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = Width; Block.Depth = Depth; Block.Height = Height;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+
+    // ① block 4 × 2 × 1, front-top → back-top: on the top rim (3 edges, 4 + 2 + 4), Other side the other short edge,
+    //    Whole loop the rim (12), Shortest the same length
+    {
+        SolidArcDocument Box = NewBlock(4.0, 2.0, 1.0);
+        const std::string Front = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const std::string Back  = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.Y, 2.0) && Near(B.Y, 2.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const SolidArcEdgePath Along = Path(Box, Front, Back, SolidArcEdgePathMode::AlongLoop), Other = Path(Box, Front, Back, SolidArcEdgePathMode::AlongLoop, true);
+        const SolidArcEdgePath Whole = Path(Box, Front, Back, SolidArcEdgePathMode::WholeLoop), Short = Path(Box, Front, Back, SolidArcEdgePathMode::Shortest);
+        const auto Top = [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); };
+        const bool Flipped = Along.Edges.size() == 3 && Other.Edges.size() == 3 && Along.Edges[1] != Other.Edges[1];
+        Tally(EdgePathGate, std::abs(Along.Length - 10.0) + std::abs(Whole.Length - 12.0) + std::abs(Short.Length - 10.0),
+              Joined(Box, Along, Front, Back) && Joined(Box, Other, Front, Back) && Joined(Box, Short, Front, Back) && Along.ClosedCondition && Flipped
+                  && Every(Box, Along.Edges, Top) && Every(Box, Other.Edges, Top) && Whole.Edges.size() == 4 && Every(Box, Whole.Edges, Top)
+                  && Near(Along.Length, 10.0) && Near(Other.Length, 10.0) && Near(Whole.Length, 12.0) && Near(Short.Length, 10.0),
+              Format("block front-top %s → back-top %s: along %d edges on the %s (%.12g), other side %d via %s, whole %d (%.12g), shortest %d (%.12g)", Front.c_str(), Back.c_str(),
+                     int(Along.Edges.size()), Along.Carrier.c_str(), Along.Length, int(Other.Edges.size()), Other.Edges.size() > 1 ? Other.Edges[1].c_str() : "-",
+                     int(Whole.Edges.size()), Whole.Length, int(Short.Edges.size()), Short.Length));
+
+        // ② no loop holds both — front-top → right-bottom, front-top → back-bottom: Along refuses (Blender's shortest
+        //    path would cut across the corner), Shortest goes down a vertical edge (4 + 1 + 2 = 7; 4 + 3 + 4 = 11)
+        const std::string RightLow = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.X, 4.0) && Near(B.X, 4.0) && Near(A.Z, 0.0) && Near(B.Z, 0.0); });
+        const std::string BackLow  = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.Y, 2.0) && Near(B.Y, 2.0) && Near(A.Z, 0.0) && Near(B.Z, 0.0); });
+        for (const auto& [Far, Expected, Count] : { std::tuple{ RightLow, 7.0, 3 }, std::tuple{ BackLow, 11.0, 4 } })
+        {
+            const SolidArcEdgePath Refused = Path(Box, Front, Far, SolidArcEdgePathMode::AlongLoop), WholeRefused = Path(Box, Front, Far, SolidArcEdgePathMode::WholeLoop);
+            const SolidArcEdgePath Across  = Path(Box, Front, Far, SolidArcEdgePathMode::Shortest);
+            Tally(EdgePathGate, std::abs(Across.Length - Expected), !Refused.Refusal.empty() && Refused.Edges.empty() && !WholeRefused.Refusal.empty()
+                                                                        && Joined(Box, Across, Front, Far) && int(Across.Edges.size()) == Count && Near(Across.Length, Expected),
+                  Format("block front-top → %s: along / whole refuse (\"%s\"), shortest %d edges %.12g (expect %d, %.12g)", Far.c_str(), Refused.Refusal.c_str(),
+                         int(Across.Edges.size()), Across.Length, Count, Expected));
+        }
+        // ③ adjacent edges: both modes the two edges; the same edge twice: itself
+        const std::string Left = EdgeWhere(Box, [&](Vector3 A, Vector3 B) { return Near(A.X, 0.0) && Near(B.X, 0.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const SolidArcEdgePath Pair = Path(Box, Front, Left, SolidArcEdgePathMode::AlongLoop), Itself = Path(Box, Front, Front, SolidArcEdgePathMode::Shortest);
+        const SolidArcEdgePath Round = Path(Box, Front, Left, SolidArcEdgePathMode::AlongLoop, true);
+        Tally(EdgePathGate, std::abs(Pair.Length - 6.0) + std::abs(Round.Length - 12.0), Joined(Box, Pair, Front, Left) && Pair.Edges.size() == 2 && Near(Pair.Length, 6.0)
+                                                                                         && Joined(Box, Round, Front, Left) && Round.Edges.size() == 4 && Near(Round.Length, 12.0)
+                                                                                         && Itself.Edges.size() == 1,
+              Format("adjacent front-top → left-top: along %d (%.12g), other side %d round the rim (%.12g); one edge to itself %d", int(Pair.Edges.size()), Pair.Length,
+                     int(Round.Edges.size()), Round.Length, int(Itself.Edges.size())));
+    }
+
+    // ④ hexagonal prism (r 1, side 1): opposite top rim edges — along the hub edge loop 4 edges (4), the far side the
+    //    other 4, whole loop 6 (6); an upright to the opposite upright on the side band refuses along a loop
+    {
+        SolidArcDocument Prism = CreateSolidArcDocument("PathPrism");
+        SolidArcConstructRequest Request;
+        Request.Kind = SolidArcConstructKind::Prism; Request.Radius = 1.0; Request.Height = 1.0; Request.Sides = 6;
+        Expect(ConstructSolidArcPrimitive(Prism, Request));
+        std::vector<std::string> Rims;
+        for (const std::string& Name : Names(Prism))
+        {
+            const Vector3 A = EdgeEndPosition(Prism, Name, false), B = EdgeEndPosition(Prism, Name, true);
+            if (Near(A.Z, 1.0) && Near(B.Z, 1.0)) Rims.push_back(Name);
+        }
+        const auto Middle = [&](const std::string& Name) { const Vector3 A = EdgeEndPosition(Prism, Name, false), B = EdgeEndPosition(Prism, Name, true); return Vector3{ 0.5 * (A.X + B.X), 0.5 * (A.Y + B.Y), 0.0 }; };
+        std::string First = Rims.empty() ? std::string{} : Rims.front(), Opposite;
+        for (const std::string& Name : Rims)
+        {
+            const Vector3 M = Middle(Name), F = Middle(First);
+            if (std::abs(M.X + F.X) <= 1.0e-9 && std::abs(M.Y + F.Y) <= 1.0e-9) Opposite = Name;
+        }
+        const SolidArcEdgePath Along = Path(Prism, First, Opposite, SolidArcEdgePathMode::AlongLoop), Other = Path(Prism, First, Opposite, SolidArcEdgePathMode::AlongLoop, true);
+        const SolidArcEdgePath Whole = Path(Prism, First, Opposite, SolidArcEdgePathMode::WholeLoop);
+        std::vector<std::string> Union = Along.Edges;
+        for (const std::string& Name : Other.Edges) if (std::find(Union.begin(), Union.end(), Name) == Union.end()) Union.push_back(Name);
+        Tally(EdgePathGate, std::abs(Along.Length - 4.0) + std::abs(Whole.Length - 6.0),
+              Rims.size() == 6 && !Opposite.empty() && Joined(Prism, Along, First, Opposite) && Joined(Prism, Other, First, Opposite) && Along.Edges.size() == 4 && Other.Edges.size() == 4
+                  && Near(Along.Length, 4.0) && Near(Other.Length, 4.0) && Whole.Edges.size() == 6 && Near(Whole.Length, 6.0) && Union.size() == 6,
+              Format("hexagonal prism rim %s → opposite %s: along %d on the %s (%.12g), far side %d (%.12g), together %d, whole %d (%.12g)", First.c_str(), Opposite.c_str(),
+                     int(Along.Edges.size()), Along.Carrier.c_str(), Along.Length, int(Other.Edges.size()), Other.Length, int(Union.size()), int(Whole.Edges.size()), Whole.Length));
+    }
+
+    // ⑤ cylinder r 1 h 1: top circle → bottom circle along the side face's rim (circle, seam, circle: 2π + 1 + 2π)
+    {
+        SolidArcDocument Round = CreateSolidArcDocument("PathCylinder");
+        SolidArcConstructRequest Drum;
+        Drum.Kind = SolidArcConstructKind::Cylinder; Drum.Radius = 1.0; Drum.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Round, Drum));
+        const std::string Upper = EdgeWhere(Round, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const std::string Lower = EdgeWhere(Round, [&](Vector3 A, Vector3 B) { return Near(A.Z, 0.0) && Near(B.Z, 0.0); });
+        const SolidArcEdgePath Along = Path(Round, Upper, Lower, SolidArcEdgePathMode::AlongLoop), Short = Path(Round, Upper, Lower, SolidArcEdgePathMode::Shortest);
+        const double Expected = 4.0 * std::numbers::pi + 1.0;
+        Tally(EdgePathGate, std::abs(Along.Length - Expected) / Expected, Joined(Round, Along, Upper, Lower) && Along.Edges.size() == 3 && std::abs(Along.Length - Expected) <= 1.0e-9 * Expected
+                                                                          && Short.Edges == Along.Edges,
+              Format("cylinder top circle → bottom circle: along %d on the %s, %.12f (expect 4π + 1 = %.12f), shortest the same", int(Along.Edges.size()), Along.Carrier.c_str(),
+                     Along.Length, Expected));
+    }
+
+    // ⑥ revolved diamond: a seam → the opposite seam on the meridian edge loop (3 of the 4 seams), whole loop 4
+    {
+        SolidArcDocument Turned = CreateSolidArcDocument("PathRevolve");
+        SolidArcDrawingRequest Diamond;
+        Diamond.Kind = SolidArcDrawingKind::Line; Diamond.Points = { { 1.0, 0.5 }, { 1.5, 0.0 }, { 2.0, 0.5 }, { 1.5, 1.0 } }; Diamond.ClosedCondition = true; Diamond.FillCondition = true;
+        Expect(DrawSolidArcSketch(Turned, Diamond));
+        const std::string Square = Turned.Tree.Steps.back().Label;
+        Expect(RevolveSolidArcSketch(Turned, Square, ProposeSolidArcRevolveAxis(Turned, Square), 2.0 * std::numbers::pi, FeatureCombination::New));
+        std::vector<std::string> Seams;
+        for (const std::string& Name : Names(Turned)) if (Distance(EdgeEndPosition(Turned, Name, false), EdgeEndPosition(Turned, Name, true)) > 0.5) Seams.push_back(Name);
+        std::string First = Seams.empty() ? std::string{} : Seams.front(), Opposite;
+        for (const std::string& Name : Seams)
+        {
+            const Vector3 A0 = EdgeEndPosition(Turned, First, false), A1 = EdgeEndPosition(Turned, First, true);
+            const Vector3 B0 = EdgeEndPosition(Turned, Name, false), B1 = EdgeEndPosition(Turned, Name, true);
+            if (Name != First && !Same(A0, B0) && !Same(A0, B1) && !Same(A1, B0) && !Same(A1, B1)) Opposite = Name;
+        }
+        const SolidArcEdgePath Along = Path(Turned, First, Opposite, SolidArcEdgePathMode::AlongLoop), Whole = Path(Turned, First, Opposite, SolidArcEdgePathMode::WholeLoop);
+        const double Seam = std::sqrt(0.5);
+        Tally(EdgePathGate, std::abs(Along.Length - 3.0 * Seam), Seams.size() == 4 && !Opposite.empty() && Joined(Turned, Along, First, Opposite) && Along.Edges.size() == 3
+                                                                     && Near(Along.Length, 3.0 * Seam) && Whole.Edges.size() == 4 && Subset(Whole.Edges, Seams),
+              Format("revolved diamond seam %s → opposite %s: along %d on the %s (%.12f = 3·√½), whole %d seams", First.c_str(), Opposite.c_str(), int(Along.Edges.size()),
+                     Along.Carrier.c_str(), Along.Length, int(Whole.Edges.size())));
+    }
+
+    // ⑦ through-hole block: a hole rim edge and the outer rim share the top face but no loop, nor any edge path
+    SolidArcDocument Holed = NewBlock(4.0, 2.0, 1.0);
+    {
+        SolidArcDrawingRequest Hole;
+        Hole.Kind = SolidArcDrawingKind::Rectangle; Hole.Points = { { 1.5, 0.5 }, { 2.5, 1.5 } }; Hole.ClosedCondition = true; Hole.FillCondition = true;
+        Expect(DrawSolidArcSketch(Holed, Hole));
+        Expect(ExtrudeSolidArcSketch(Holed, Holed.Tree.Steps.back().Label, 3.0, FeatureCombination::Difference, {}, -1.0));   // z −1 … 2: through
+        const std::string Outer = EdgeWhere(Holed, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const std::string Inner = EdgeWhere(Holed, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.5) && Near(B.Y, 0.5) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const SolidArcEdgePath Along = Path(Holed, Outer, Inner, SolidArcEdgePathMode::AlongLoop), Short = Path(Holed, Outer, Inner, SolidArcEdgePathMode::Shortest);
+        Tally(EdgePathGate, 0.0, !Outer.empty() && !Inner.empty() && !Along.Refusal.empty() && !Short.Refusal.empty() && Holed.Summary.Genus == 1,
+              Format("through-hole block (genus %d) outer %s → hole rim %s: along refuses, shortest refuses (\"%s\")", Holed.Summary.Genus, Outer.c_str(), Inner.c_str(), Short.Refusal.c_str()));
+    }
+
+    // ⑧ every ordered pair on six bodies (block, hexagonal / pentagonal prisms, cylinder, holed block, filleted block)
+    std::vector<std::pair<std::string, SolidArcDocument>> Bodies;
+    Bodies.emplace_back("block", NewBlock(4.0, 2.0, 1.0));
+    for (const int Sides : { 6, 5 })
+    {
+        SolidArcDocument Prism = CreateSolidArcDocument("PathStress");
+        SolidArcConstructRequest Request;
+        Request.Kind = SolidArcConstructKind::Prism; Request.Radius = 1.0; Request.Height = 0.7; Request.Sides = Sides;
+        Expect(ConstructSolidArcPrimitive(Prism, Request));
+        Bodies.emplace_back(Format("%d-prism", Sides), std::move(Prism));
+    }
+    {
+        SolidArcDocument Round = CreateSolidArcDocument("PathStress");
+        SolidArcConstructRequest Drum;
+        Drum.Kind = SolidArcConstructKind::Cylinder; Drum.Radius = 1.0; Drum.Height = 2.0;
+        Expect(ConstructSolidArcPrimitive(Round, Drum));
+        Bodies.emplace_back("cylinder", std::move(Round));
+    }
+    Bodies.emplace_back("holed block", std::move(Holed));
+    {
+        SolidArcDocument Rounded = NewBlock(4.0, 2.0, 1.0);
+        PickAndSelect(Rounded, RayBetween({ 2.0, -1.0, 2.0 }, { 2.0, 0.0, 1.0 }), false);
+        PickAndSelect(Rounded, RayBetween({ 5.0, 1.0, 2.0 }, { 4.0, 1.0, 1.0 }), true);
+        Expect(BlendSolidArcSelection(Rounded, BlendProfile::Fillet, 0.3));
+        Bodies.emplace_back("filleted block", std::move(Rounded));
+    }
+    for (const auto& [Caption, Part] : Bodies)
+    {
+        const std::vector<std::string> All = Names(Part);
+        int Pairs = 0, Failed = 0, Refused = 0, Closed = 0;
+        std::string FirstFailure;
+        double Worst = 0.0;
+        for (const std::string& From : All)
+            for (const std::string& To : All)
+            {
+                if (From == To) continue;
+                ++Pairs;
+                const SolidArcEdgePath Short = Path(Part, From, To, SolidArcEdgePathMode::Shortest);
+                const SolidArcEdgePath Along = Path(Part, From, To, SolidArcEdgePathMode::AlongLoop);
+                bool Fine = Short.Refusal.empty() ? Joined(Part, Short, From, To) : Caption == "holed block";
+                if (Along.Refusal.empty())
+                {
+                    const SolidArcEdgePath Whole = Path(Part, From, To, SolidArcEdgePathMode::WholeLoop);
+                    const SolidArcEdgePath Other = Path(Part, From, To, SolidArcEdgePathMode::AlongLoop, true);
+                    Fine = Fine && Joined(Part, Along, From, To) && Whole.Refusal.empty() && Subset(Along.Edges, Whole.Edges) && Simple(Part, Whole.Edges)
+                           && Short.Refusal.empty() && Along.Length >= Short.Length - 1.0e-9 && Joined(Part, Other, From, To);
+                    Worst = std::max(Worst, std::max(0.0, Short.Length - Along.Length));
+                    if (Along.ClosedCondition)
+                    {
+                        ++Closed;
+                        std::vector<std::string> Union = Along.Edges;
+                        for (const std::string& Name : Other.Edges) if (std::find(Union.begin(), Union.end(), Name) == Union.end()) Union.push_back(Name);
+                        Fine = Fine && Other.Length >= Along.Length - 1.0e-9 && Union.size() == Whole.Edges.size() && Subset(Union, Whole.Edges);
+                    }
+                }
+                else ++Refused;
+                if (!Fine && FirstFailure.empty())
+                {
+                    FirstFailure = " · first " + From + " → " + To;
+                    if (std::getenv("SOLIDARC_DOCVAL_PATH"))
+                    {
+                        const SolidArcEdgePath Whole = Path(Part, From, To, SolidArcEdgePathMode::WholeLoop);
+                        const SolidArcEdgePath Other = Path(Part, From, To, SolidArcEdgePathMode::AlongLoop, true);
+                        std::printf("FAIL %s: short %d %.6f [%s] joined %d · along %d %.6f %s joined %d closed %d · whole %d simple %d subset %d · other %d %.6f joined %d\n", Caption.c_str(),
+                                    int(Short.Edges.size()), Short.Length, Short.Refusal.c_str(), int(Joined(Part, Short, From, To)), int(Along.Edges.size()), Along.Length, Along.Carrier.c_str(),
+                                    int(Joined(Part, Along, From, To)), int(Along.ClosedCondition), int(Whole.Edges.size()), int(Simple(Part, Whole.Edges)), int(Subset(Along.Edges, Whole.Edges)),
+                                    int(Other.Edges.size()), Other.Length, int(Joined(Part, Other, From, To)));
+                    }
+                }
+                Failed += Fine ? 0 : 1;
+            }
+        Tally(EdgePathGate, Worst, Failed == 0 && Pairs > 0,
+              Format("stress %s: %d edges, %d ordered pairs, %d failed, %d on a closed loop, %d refused along a loop%s", Caption.c_str(), int(All.size()), Pairs, Failed, Closed, Refused,
+                     FirstFailure.c_str()));
+    }
+}
+
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
@@ -1088,6 +1364,12 @@ int main()
         ValidateEdgeNotch();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return EdgeNotchGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_PATH"))                                             // Quick rerun of W65 alone
+    {
+        ValidateEdgePath();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return EdgePathGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_POINTCUT"))                                         // Quick rerun of W62 alone
     {
@@ -6453,13 +6735,16 @@ int main()
     // ---- W64 Extrude manifold at a face edge (notches open through the neighbour)
     ValidateEdgeNotch();
 
+    // ---- W65 Edge path (Ctrl+click: along loop / whole loop / shortest)
+    ValidateEdgePath();
+
     // ---- W62 Cut at crossings, sketch duplicates
     ValidatePointCut();
 
     // ---- W63 Point on curve, Flow along curve
     ValidateCurveFlow();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -812,6 +812,11 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "snap-enabled") return Numeric(State.Picker.Enabled ? 1 : 0);
     if (Field == "snap-grid") return Numeric(State.Picker.GridEnabled ? 1 : 0);
     if (Field == "ring-picks") return Numeric(State.RingPicks);
+    if (Field == "path-picks") return Numeric(State.PathPicks);
+    if (Field == "path-edges") return Numeric(State.PathLast.Refusal.empty() ? int(State.PathLast.Edges.size()) : 0);
+    if (Field == "path-length") return Numeric(State.PathLast.Refusal.empty() ? State.PathLast.Length : 0.0);
+    if (Field == "path-mode") return Numeric(int(State.PathMode));
+    if (Field == "path-refused") return Numeric(State.PathLast.Refusal.empty() ? 0 : 1);
     if (Field == "plane-normal-x" || Field == "plane-normal-y" || Field == "plane-normal-z")
     {
         // Plane normal of the newest sketch step (a drawn sketch, or the section of a Construct solid); 0 without one.

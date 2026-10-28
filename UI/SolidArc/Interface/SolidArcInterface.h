@@ -835,6 +835,17 @@ struct SolidArcWorkspaceState
     // 💡 Flow along curve (Inspector › Curves › Flow): the rail is the first picked sketch (FlowSwapCondition: the last).
     GeometryProcessing::SketchFlowSettings Flow              = {};                           // [-]   - Axis, stretch, reverse
     bool                                  FlowSwapCondition = false;                         // [-]   - Rail is the last pick instead of the first
+    // 💡 Edge path (Ctrl+click an unpicked edge with edges picked): the mode and side, and the last pick so a change in
+    //    Inspector › Edge path redoes it while the selection is still that pick's.
+    SolidArcEdgePathMode                  PathMode          = SolidArcEdgePathMode::AlongLoop; // [-] - Along loop · Whole loop · Shortest
+    bool                                  PathOtherSideCondition = false;                    // [-]   - Along a closed loop: the far side
+    std::string                           PathFrom          = {};                            // [-]   - Last pick: the edge it started from
+    std::string                           PathTo            = {};                            // [-]   - Last pick: the Ctrl-clicked edge
+    std::string                           PathBody          = {};                            // [-]   - Last pick: the body
+    std::vector<std::string>              PathBase          = {};                            // [-]   - Edges picked before the path
+    std::vector<std::string>              PathSelection     = {};                            // [-]   - Edges picked after it (unchanged: redo allowed)
+    SolidArcEdgePath                      PathLast          = {};                            // [-]   - Last outcome (carrier, length, refusal)
+    int                                   PathPicks         = 0;                             // [-]   - Path picks made (script evidence)
 };
 
 //------------------------------------------------------------------------------------------------------------------------

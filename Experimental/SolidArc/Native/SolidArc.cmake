@@ -348,6 +348,13 @@ add_test(NAME SolidArcExtrudeAxisWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/ExtrudeAxisWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcEdgePathWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/EdgePathRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/EdgePath.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/EdgePathWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcImprintWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/ImprintRecovery.solidarc

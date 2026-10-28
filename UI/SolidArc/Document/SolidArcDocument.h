@@ -790,6 +790,30 @@ void ClearSolidArcSelection(SolidArcDocument& Document);
 //    sheet's boundary edge walks the boundary. The edge itself first; just the name when it does not resolve.
 [[nodiscard]] std::vector<std::string> SolidArcEdgeLoop(const SolidArcDocument& Document, const std::string& Name, const std::string& Body = {});
 
+// 📝 Edge path (Ctrl+click an unpicked edge with edges picked — Blender's pick shortest path). AlongLoop stays on a loop
+//    holding both edges — an edge loop (Alt walk) through either, a rim of a face beside From, or From's tangent chain —
+//    and takes its shorter side (OtherSide: the longer one of a closed loop), so it never cuts across the body the way a
+//    shortest path does; WholeLoop takes that whole loop; Shortest any edges, the least total length.
+enum class SolidArcEdgePathMode : uint8_t
+{
+    AlongLoop = 0,                                                                           // From … To on a loop holding both
+    WholeLoop = 1,                                                                           // The whole loop holding both
+    Shortest  = 2,                                                                           // Least total length over any edges
+};
+
+struct SolidArcEdgePath
+{
+    std::vector<std::string> Edges   = {};                                                   // [-]   - From first, To last (WholeLoop: then the rest)
+    std::string              Carrier = {};                                                   // [-]   - "edge loop", "rim of <face>", "tangent chain", "any edges"
+    double                   Length  = 0.0;                                                  // [len] - Total length of Edges
+    bool                     ClosedCondition = false;                                        // [-]   - The carrier loop closes (OtherSide applies)
+    std::string              Refusal = {};                                                   // [-]   - Why no path (empty: found)
+};
+
+[[nodiscard]] SolidArcEdgePath SolidArcEdgePathBetween(const SolidArcDocument& Document, const std::string& From, const std::string& To, SolidArcEdgePathMode Mode,
+                                                       bool OtherSideCondition = false, const std::string& Body = {});
+[[nodiscard]] const char* SolidArcEdgePathModeLabel(SolidArcEdgePathMode Mode) noexcept;
+
 // Blender's face loop (Alt+click in face mode, BMW_FACELOOP): the four-sided faces the edge's ring crosses (quads only).
 [[nodiscard]] std::vector<std::string> SolidArcFaceLoop(const SolidArcDocument& Document, const std::string& Edge, const std::string& Body = {});
 

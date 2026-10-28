@@ -8532,6 +8532,56 @@ void PickEdgeWalk(SolidArcWorkspaceState& State, SolidArcSelectionKind Kind, con
                             Picked == SolidArcSelectionKind::Edge ? "edge(s)" : "face(s)", Leave ? "removed" : ToggleCondition || Intent == SolidArcPickIntent::Chain ? "added" : "selected"));
 }
 
+// 📝 Edge path: the picked edges become PathBase + the path From … To (To last, so a further Ctrl+click goes on from it).
+//    A refused path leaves PathBase picked and says why (Along loop never leaves the loop: Shortest takes any edges).
+void ApplyEdgePath(SolidArcWorkspaceState& State)
+{
+    std::vector<std::string>& Edges = State.Document.Selection.Edges;
+    const auto Member = [&](const std::string& Candidate) { return std::find(Edges.begin(), Edges.end(), Candidate) != Edges.end(); };
+    const auto Based  = [&](const std::string& Candidate) { return std::find(State.PathBase.begin(), State.PathBase.end(), Candidate) != State.PathBase.end(); };
+    for (const std::string Picked : std::vector<std::string>(Edges)) if (!Based(Picked)) SelectSolidArcName(State.Document, SolidArcSelectionKind::Edge, Picked, true);
+    for (const std::string& Kept : State.PathBase) if (!Member(Kept)) SelectSolidArcName(State.Document, SolidArcSelectionKind::Edge, Kept, true, State.PathBody);
+    State.PathLast = SolidArcEdgePathBetween(State.Document, State.PathFrom, State.PathTo, State.PathMode, State.PathOtherSideCondition, State.PathBody);
+    if (!State.PathLast.Refusal.empty())
+    {
+        State.PathSelection = Edges;
+        Announce(State, "Edge path (" + std::string(SolidArcEdgePathModeLabel(State.PathMode)) + "): " + State.PathLast.Refusal);
+        return;
+    }
+    for (const std::string& Link : State.PathLast.Edges) if (!Member(Link)) SelectSolidArcName(State.Document, SolidArcSelectionKind::Edge, Link, true, State.PathBody);
+    if (Member(State.PathTo) && Edges.back() != State.PathTo)
+    {
+        Edges.erase(std::find(Edges.begin(), Edges.end(), State.PathTo));                    // To is the active (last) edge
+        Edges.push_back(State.PathTo);
+    }
+    if (!State.PathBody.empty()) State.Document.Selection.PickedBody = State.PathBody;
+    State.PathSelection = Edges;
+    Announce(State, Compose("Edge path %s: %d edge(s) along %s, %.4g long%s · Inspector › Edge path: Along loop · Whole loop · Shortest", SolidArcEdgePathModeLabel(State.PathMode),
+                            int(State.PathLast.Edges.size()), State.PathLast.Carrier.c_str(), State.PathLast.Length,
+                            State.PathLast.ClosedCondition && State.PathMode == SolidArcEdgePathMode::AlongLoop ? (State.PathOtherSideCondition ? " (far side)" : " (near side · Other side flips)") : ""));
+}
+
+// Ctrl+click on an unpicked edge with edges picked (Blender's pick shortest path): the path from the active edge to it.
+void PickEdgePath(SolidArcWorkspaceState& State, const std::string& Name, const std::string& Body)
+{
+    State.PathFrom               = State.Document.Selection.Edges.back();
+    State.PathTo                 = Name;
+    State.PathBody               = Body.empty() ? State.Document.Selection.PickedBody : Body;
+    State.PathBase               = State.Document.Selection.Edges;
+    State.PathOtherSideCondition = false;
+    ++State.PathPicks;
+    ApplyEdgePath(State);
+}
+
+// Inspector › Edge path: a new mode / side redoes the last pick while the selection is still the one it made.
+void ChangeEdgePath(SolidArcWorkspaceState& State, SolidArcEdgePathMode Mode, bool OtherSideCondition)
+{
+    State.PathMode               = Mode;
+    State.PathOtherSideCondition = OtherSideCondition;
+    if (!State.PathTo.empty() && State.Document.Selection.Edges == State.PathSelection) ApplyEdgePath(State);
+    else Announce(State, Compose("Edge path: %s (Ctrl+click an edge with an edge picked)", SolidArcEdgePathModeLabel(Mode)));
+}
+
 // Face-mode Alt+click: Blender's face loop through the edge nearest the pointer.
 void PickFaceLoop(SolidArcWorkspaceState& State, const std::string& Edge, SolidArcPickIntent Intent, const std::string& Body)
 {
@@ -8679,6 +8729,13 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
         Announce(State, "Added " + Name);
         break;
     case SolidArcPickIntent::Remove:
+        // Ctrl on an unpicked edge with edges picked (same body): Blender's path pick; on a picked one: Plasticity's remove.
+        if (Kind == SolidArcSelectionKind::Edge && !Member(Name) && !State.Document.Selection.Edges.empty()
+            && (State.Document.Selection.PickedBody.empty() || PickKey.empty() || State.Document.Selection.PickedBody == PickKey))
+        {
+            PickEdgePath(State, Name, PickKey);
+            break;
+        }
         if (Member(Name)) SelectSolidArcName(State.Document, Kind, Name, true);
         Announce(State, "Removed " + Name);
         break;
@@ -10794,7 +10851,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                            ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt (loop) / Ctrl+Alt (ring) edits edges · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
-                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove, Alt loop, Ctrl+Alt ring, double-click chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
+                           : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove · Ctrl on a new edge: path, Alt loop, Ctrl+Alt ring, double-click chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
     {
         SolidArcSheet Instructions;
         Instructions.Begin();
@@ -11021,6 +11078,38 @@ void DrawBevelCard(SolidArcWorkspaceState& State)
 void DrawSelectionToolCards(SolidArcWorkspaceState& State)
 {
     const SolidArcSelection& Selection = State.Document.Selection;
+
+    if (!Selection.Edges.empty())
+    {
+        // Edge path: Ctrl+click an unpicked edge selects the edges from the active (last) edge to it.
+        BeginCard("Edge path", "CTRL+CLICK");
+        ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+        ImGui::TextWrapped("Ctrl+click another edge: the edges between join. Along loop keeps to a loop holding both (edge loop, face rim or tangent chain) and never cuts across; Shortest takes any edges.");
+        ImGui::PopStyleColor();
+        static const char* const ModeLabels[] = { "Along loop###PathAlong", "Whole loop###PathWhole", "Shortest###PathShortest" };
+        static const char* const ModeTips[]   = { "From the first edge to the clicked one on a loop holding both: the shorter side, never off the loop",
+                                                  "The whole loop that holds both edges",
+                                                  "The least total length over any edges (Blender's shortest path; it may leave the loop)" };
+        for (int Mode = 0; Mode < 3; ++Mode)
+        {
+            if (Mode) ImGui::SameLine();
+            if (ToggleButton(State, ModeLabels[Mode], int(State.PathMode) == Mode, RowSpan(3))) ChangeEdgePath(State, SolidArcEdgePathMode(Mode), false);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", ModeTips[Mode]);
+        }
+        const bool Flippable = State.PathMode == SolidArcEdgePathMode::AlongLoop && State.PathLast.ClosedCondition && State.PathLast.Refusal.empty()
+                               && Selection.Edges == State.PathSelection;
+        if (PressButton(State, "Other side###PathOtherSide", RowSpan(), Flippable)) ChangeEdgePath(State, State.PathMode, !State.PathOtherSideCondition);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Round a closed loop: take the other way from the first edge to the clicked one");
+        if (!State.PathTo.empty())
+        {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+            if (State.PathLast.Refusal.empty()) ImGui::TextWrapped("%d edges · %s · %.4g", int(State.PathLast.Edges.size()), State.PathLast.Carrier.c_str(), State.PathLast.Length);
+            else ImGui::TextWrapped("no loop holds both");
+            ImGui::PopStyleColor();
+        }
+        EndCard();
+    }
 
     if (!Selection.Curves.empty())
     {
