@@ -4496,7 +4496,7 @@ namespace
             Captions += (Captions.empty() ? "" : ", ") + CaptionOrLabel(Document, Blend);
             Count    += Edges.size();
         }
-        return RunCommand(Document, "Delete " + Noun + ": un-blend " + std::to_string(Count) + " edge(s) of " + Captions, true, [&]() -> std::string
+        SolidArcCommandOutcome Outcome = RunCommand(Document, "Delete " + Noun + ": un-blend " + std::to_string(Count) + " edge(s) of " + Captions, true, [&]() -> std::string
         {
             for (const auto& [Blend, Edges] : Sources)
             {
@@ -4522,9 +4522,10 @@ namespace
                 if (Dropped == 0) return CaptionOrLabel(Document, Blend) + " no longer lists the edge under that face (delete the step from History instead)";
                 if (Step.References.empty()) EraseStepWithParameters(Document, Blend);
             }
-            Document.Selection = {};
             return {};
         }, First);
+        if (Outcome.AcceptedCondition) Document.Selection = {};                             // A refusal keeps the picks (Restore leaves them)
+        return Outcome;
     }
 
     // 📝 Dissolve by a restricted Heal step on Owner carrying the picked edges / vertices (the kernel refuses unless every
@@ -4537,7 +4538,7 @@ namespace
         if (Names.empty()) Problem = EdgeCondition ? "pick edges first (mode 2)" : "pick vertices first (mode 1)";
         else if (!Document.Summary.PresentCondition) Problem = "there is no body";
         else Problem = CommonBody(Document, Kind, Names, Owner);
-        return RunCommand(Document, "Delete " + std::to_string(Names.size()) + Noun + " · dissolve", true, [&]() -> std::string
+        SolidArcCommandOutcome Outcome = RunCommand(Document, "Delete " + std::to_string(Names.size()) + Noun + " · dissolve", true, [&]() -> std::string
         {
             if (!Problem.empty()) return Problem;
             FeatureStep Step;
@@ -4548,9 +4549,11 @@ namespace
             for (const std::string& Name : Names) Step.References.push_back({ EdgeCondition ? ReferenceKind::Edge : ReferenceKind::Vertex, Name, {} });
             Document.Captions[Step.Label] = NextCaption(Document, "Dissolve");
             Document.Tree.Steps.push_back(std::move(Step));
-            Document.Selection = {};
             return {};
         });
+        if (Outcome.AcceptedCondition) Document.Selection = {};                             // A refusal keeps the picks
+        else if (const size_t Reason = Outcome.Refusal.find("Heal: "); Reason != std::string::npos) Outcome.Refusal = Outcome.Refusal.substr(Reason + 6);
+        return Outcome;
     }
 
     // 📝 A curve leaves: deleted when nothing reads it, else hidden and off the Outliner (RemovedCurves) for its readers.
@@ -4622,8 +4625,14 @@ SolidArcCommandOutcome DeleteSolidArcVertices(SolidArcDocument& Document)
 SolidArcCommandOutcome DeleteSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels)
 {
     std::string Captions;
-    for (const std::string& Label : Labels) Captions += (Captions.empty() ? "" : ", ") + CaptionOrLabel(Document, Label);
-    return RunCommand(Document, "Delete " + Captions, false, [&]() -> std::string
+    bool Kept = false;
+    for (const std::string& Label : Labels)
+    {
+        const bool Read = SolidArcSketchReferencedCondition(Document, Label);
+        Captions += (Captions.empty() ? "" : ", ") + CaptionOrLabel(Document, Label) + (Read ? " sketch" : "");
+        Kept = Kept || Read;
+    }
+    return RunCommand(Document, "Delete " + Captions + (Kept ? " (kept for the steps that read it)" : ""), false, [&]() -> std::string
     {
         if (Labels.empty()) return "pick sketches or curves first";
         for (const std::string& Label : Labels)

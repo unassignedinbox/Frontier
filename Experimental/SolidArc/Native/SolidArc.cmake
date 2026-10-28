@@ -369,6 +369,13 @@ add_test(NAME SolidArcReshapeWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/ReshapeWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcDeleteWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/DeleteRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Delete.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/DeleteWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcImprintWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/ImprintRecovery.solidarc
@@ -610,6 +617,7 @@ set_tests_properties(SolidArcConstructDrawingWalkthrough PROPERTIES SKIP_RETURN_
 set_tests_properties(SolidArcInsetWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcGizmoWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcReshapeWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(SolidArcDeleteWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcSketchPointsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcShellsWalkthrough PROPERTIES SKIP_RETURN_CODE 77)
 set_tests_properties(SolidArcTrimJoinWalkthrough PROPERTIES SKIP_RETURN_CODE 77)

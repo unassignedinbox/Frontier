@@ -126,6 +126,7 @@ namespace
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
     GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
+    GateTally DeleteGate      = { "W68", "Delete everything picked (the request \"add delete for all entities face / edge / object / outliner and viewport … X key or delete\"): on the 4 × 2 × 1 block a fillet face or fillet edge un-blends (the Blend lets go of its edge: 8 again, or one fillet of two left); a seam edge of an imprinted rectangle or an edge-to-edge imprint line dissolves (6 faces, 12 edges, 8 vertices, 8); refusals untouched — a box edge, a corner vertex, fillet and plain edges together; an extruded sketch leaves the scene (RemovedCurves, the body stays, save / load keeps it, show refuses, undo restores) while a free sketch is deleted; sketch points take their curves (renumbered, re-solved), an emptied sketch goes, a point of an extruded rectangle detaches the rest (body kept); bodies removed; one undo entry each", "exact · 1e-9" };
     GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3", "1e-9 · fit 10⁻⁴ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
@@ -1772,6 +1773,222 @@ void ValidateReshape()
     }
 }
 
+// W68: X / Delete on every kind of pick. The block is x ∈ [0, 4], y ∈ [0, 2], z ∈ [0, 1] (V 8, 6 faces, 12 edges, 8 vertices);
+// a fillet r on one straight edge of length 4 takes (1 − π/4) r² · 4.
+void ValidateDelete()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto Near   = [](double A, double B) { return std::abs(A - B) <= 1.0e-9; };
+    const auto NewBlock = []()
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Delete");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+    const auto EdgeWhere = [](const SolidArcDocument& Document, const auto& Test)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges)
+        {
+            const Vector3 Start = EdgeEndPosition(Document, Name, false), End = EdgeEndPosition(Document, Name, true);
+            if (Test(Start, End) || Test(End, Start)) return Name;
+        }
+        return std::string{};
+    };
+    const auto Along = [&](double Y, double Z)                                               // The edge along x at (y, z)
+    {
+        return [=](Vector3 A, Vector3 B) { return Near(A.Y, Y) && Near(B.Y, Y) && Near(A.Z, Z) && Near(B.Z, Z) && !Near(A.X, B.X); };
+    };
+    const auto VertexAt = [&](const SolidArcDocument& Document, Vector3 Point)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Vertices)
+        {
+            const Vector3 Position = Document.Partition->Vertices.Resolve(Document.Partition->Vertices.TokenAt(Slot)).Position;
+            if (Near(Position.X, Point.X) && Near(Position.Y, Point.Y) && Near(Position.Z, Point.Z)) return Name;
+        }
+        return std::string{};
+    };
+    const auto Suffix   = [](const SolidArcCommandOutcome& Outcome) { return Outcome.Refusal.empty() ? std::string() : " · " + Outcome.Refusal; };
+    const auto Fillet   = [](double Radius, int Edges) { return 8.0 - (1.0 - std::numbers::pi / 4.0) * Radius * Radius * 4.0 * Edges; };
+    const auto Topology = [](const SolidArcDocument& Part, int Faces, int Edges, int Vertices)
+    {
+        return Part.Summary.Faces == Faces && Part.Summary.Edges == Edges && Part.Summary.Vertices == Vertices && Part.Summary.SoundCondition;
+    };
+    const auto Untouched = [&](SolidArcDocument& Part, const SolidArcCommandOutcome& Outcome, const std::string& Before, double Volume, size_t Undo, const std::string& Note)
+    {
+        Tally(DeleteGate, 0.0, !Outcome.AcceptedCondition && EncodeSolidArcDocument(Part) == Before && Part.Summary.Volume == Volume && Part.UndoEntries.size() == Undo,
+              Format("refused, untouched: %s (%s)", Note.c_str(), Outcome.Refusal.c_str()));
+    };
+    const OrthonormalFrame Top{ { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const auto OnTop = [&](SolidArcDrawingKind Kind, std::vector<Vector2> Points, bool Closed)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = Kind; Request.Points = std::move(Points); Request.ClosedCondition = Closed;
+        Request.PlaneCondition = true; Request.Plane = Top; Request.FillCondition = Closed;
+        return Request;
+    };
+
+    // ① Fillet faces / edges un-blend: the Blend lets go of the edge (an emptied Blend goes), the sharp edge returns exactly.
+    {
+        const double Radius = 0.2;
+        SolidArcDocument Part = NewBlock();
+        Part.Selection = {};
+        Part.Selection.Edges = { EdgeWhere(Part, Along(2.0, 0.0)) };
+        Expect(BlendSolidArcSelection(Part, BlendProfile::Fillet, Radius));
+        const std::string Blend = Part.Tree.Steps.back().Label;
+        const size_t      Steps = Part.Tree.Steps.size(), Undo = Part.UndoEntries.size();
+        std::string Strip;
+        for (const auto& [Slot, Name] : Part.Regeneration.Naming.Faces) if (Name.rfind(Blend + ".Strip(", 0) == 0) Strip = Name;
+        Part.Selection = {};
+        Part.Selection.Faces = { Strip };
+        const SolidArcCommandOutcome Gone = DeleteSolidArcFaces(Part);
+        TallyVolume(DeleteGate, Part, 8.0, Format("fillet face %s deleted → the block again: %zu → %zu steps (%s gone), %d faces%s", Strip.c_str(), Steps, Part.Tree.Steps.size(), Blend.c_str(),
+                                                  Part.Summary.Faces, Suffix(Gone).c_str()));
+        Tally(DeleteGate, 0.0, Gone.AcceptedCondition && Part.Tree.Steps.size() == Steps - 1 && Topology(Part, 6, 12, 8) && Part.UndoEntries.size() == Undo + 1,
+              "un-blend: the emptied Blend step goes, 6 faces · 12 edges · 8 vertices, one undo entry");
+        Expect({ UndoSolidArcCommand(Part), "Undo", {}, 0.0 });
+        TallyVolume(DeleteGate, Part, Fillet(Radius, 1), "undo brings the fillet back");
+
+        SolidArcDocument Pair = NewBlock();
+        Pair.Selection = {};
+        Pair.Selection.Edges = { EdgeWhere(Pair, Along(2.0, 0.0)), EdgeWhere(Pair, Along(0.0, 0.0)) };
+        Expect(BlendSolidArcSelection(Pair, BlendProfile::Fillet, Radius));
+        const std::string PairBlend = Pair.Tree.Steps.back().Label;
+        std::string Rail;
+        for (const auto& [Slot, Name] : Pair.Regeneration.Naming.Edges)
+            if (Name.find(PairBlend + ".Strip(") != std::string::npos && Name.find(PairBlend + ".Strip(", Name.find(PairBlend + ".Strip(") + 1) == std::string::npos) { Rail = Name; break; }
+        Pair.Selection = {};
+        Pair.Selection.Edges = { Rail };
+        const SolidArcCommandOutcome One = DeleteSolidArcEdges(Pair);
+        const FeatureStep* Kept = nullptr;
+        for (const FeatureStep& Step : Pair.Tree.Steps) if (Step.Label == PairBlend) Kept = &Step;
+        TallyVolume(DeleteGate, Pair, Fillet(Radius, 1), Format("two fillets, the rail edge %s of one deleted → one fillet left (%s keeps %zu edge)%s", Rail.c_str(), PairBlend.c_str(),
+                                                               Kept ? Kept->References.size() : size_t(0), Suffix(One).c_str()));
+        Tally(DeleteGate, 0.0, One.AcceptedCondition && Kept && Kept->References.size() == 1, "fillet edge: the Blend step stays with the other edge");
+
+        // Refusals: a plain box edge (two different planes), fillet and plain edges together, a corner vertex.
+        SolidArcDocument Box = NewBlock();
+        const std::string Before = EncodeSolidArcDocument(Box);
+        Box.Selection = {};
+        Box.Selection.Edges = { EdgeWhere(Box, Along(0.0, 1.0)) };
+        Untouched(Box, DeleteSolidArcEdges(Box), Before, 8.0, Box.UndoEntries.size(), "the block's top-front edge (two different planes: no closed solid without it)");
+        Box.Selection = {};
+        Box.Selection.Vertices = { VertexAt(Box, { 4.0, 2.0, 1.0 }) };
+        Untouched(Box, DeleteSolidArcVertices(Box), Before, 8.0, Box.UndoEntries.size(), "a corner vertex (three edges meet)");
+        const std::string PairText = EncodeSolidArcDocument(Pair);
+        Pair.Selection = {};
+        Pair.Selection.Edges = { EdgeWhere(Pair, Along(0.0, 1.0)), Rail.empty() ? std::string("?") : [&]() { std::string Other; for (const auto& [Slot, Name] : Pair.Regeneration.Naming.Edges) if (Name.find(".Strip(") != std::string::npos) Other = Name; return Other; }() };
+        Untouched(Pair, DeleteSolidArcEdges(Pair), PairText, Pair.Summary.Volume, Pair.UndoEntries.size(), "a fillet edge and a plain edge together");
+    }
+
+    // ② Seams dissolve: a rectangle imprinted on the top face (one of its edges picked: the island merges back), an imprint
+    //    line from the front edge to the back edge (the top halves merge, the split top edges join).
+    {
+        struct SeamCase { const char* Note; SolidArcDrawingKind Kind; std::vector<Vector2> Points; bool Closed; Vector3 Middle; };
+        const std::vector<SeamCase> Cases = {
+            { "imprinted rectangle (1, 0.5)–(2, 1.5), its x = 1 edge", SolidArcDrawingKind::Rectangle, { { 1.0, 0.5 }, { 2.0, 1.5 } }, true, { 1.0, 1.0, 1.0 } },
+            { "imprint line x = 1 from the front edge to the back edge", SolidArcDrawingKind::Line, { { 1.0, 0.0 }, { 1.0, 2.0 } }, false, { 1.0, 1.0, 1.0 } },
+        };
+        for (const SeamCase& Case : Cases)
+        {
+            SolidArcDocument Part = NewBlock();
+            Expect(DrawSolidArcSketch(Part, OnTop(Case.Kind, Case.Points, Case.Closed)));
+            const SolidArcCommandOutcome Made = ImprintSolidArcSketch(Part, Part.Tree.Steps.back().Label);
+            const int    FacesBefore = Part.Summary.Faces, EdgesBefore = Part.Summary.Edges;
+            const size_t Undo = Part.UndoEntries.size();
+            const std::string Seam = EdgeWhere(Part, [&](Vector3 A, Vector3 B) { return Near(A.X, 1.0) && Near(B.X, 1.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0) && !Near(A.Y, B.Y)
+                                                                                    && std::min(A.Y, B.Y) <= Case.Middle.Y && std::max(A.Y, B.Y) >= Case.Middle.Y; });
+            Part.Selection = {};
+            Part.Selection.Edges = { Seam };
+            const SolidArcCommandOutcome Gone = DeleteSolidArcEdges(Part);
+            TallyVolume(DeleteGate, Part, 8.0, Format("%s: imprint %d faces · %d edges, seam %s deleted → %d faces · %d edges · %d vertices%s", Case.Note, FacesBefore, EdgesBefore, Seam.c_str(),
+                                                      Part.Summary.Faces, Part.Summary.Edges, Part.Summary.Vertices, Suffix(Made.AcceptedCondition ? Gone : Made).c_str()));
+            Tally(DeleteGate, 0.0, Made.AcceptedCondition && Gone.AcceptedCondition && FacesBefore == 7 && Topology(Part, 6, 12, 8) && Part.UndoEntries.size() == Undo + 1,
+                  Format("%s: the top is one face again, its split edges joined, one undo entry", Case.Note));
+        }
+    }
+
+    // ③ Sketches: an extruded one leaves the scene (the body stays; RemovedCurves survives save / load; show refuses; undo
+    //    restores), a free one is deleted with its step.
+    {
+        SolidArcDocument Part = NewBlock();
+        std::string Sketch;
+        for (const FeatureStep& Step : Part.Tree.Steps) if (Step.Kind == FeatureStepKind::Sketch) Sketch = Step.Label;
+        const size_t Steps = Part.Tree.Steps.size(), Undo = Part.UndoEntries.size();
+        const SolidArcCommandOutcome Gone = DeleteSolidArcCurves(Part, { Sketch });
+        const std::string Text = EncodeSolidArcDocument(Part);
+        const SolidArcDocumentFile Loaded = DecodeSolidArcDocument(Text);
+        TallyVolume(DeleteGate, Part, 8.0, Format("the block's sketch %s deleted: the body stays, %zu steps kept, %zu removed curve(s)%s", Sketch.c_str(), Part.Tree.Steps.size(),
+                                                  Part.Appearance.RemovedCurves.size(), Suffix(Gone).c_str()));
+        Tally(DeleteGate, 0.0, Gone.AcceptedCondition && Part.Tree.Steps.size() == Steps && Part.Appearance.RemovedCurves.contains(Sketch) && Part.Appearance.HiddenCurves.contains(Sketch)
+                               && Part.UndoEntries.size() == Undo + 1, "extruded sketch: removed ⊂ hidden, one undo entry");
+        Tally(DeleteGate, 0.0, Loaded.Refusal.empty() && Loaded.Appearance.RemovedCurves.contains(Sketch) && Loaded.Appearance.HiddenCurves.contains(Sketch),
+              Format("save → load keeps it removed (%s)", Loaded.Refusal.c_str()));
+        const SolidArcCommandOutcome Shown = ToggleSolidArcCurveVisibility(Part, Sketch);
+        Tally(DeleteGate, 0.0, !Shown.AcceptedCondition && Part.Appearance.RemovedCurves.contains(Sketch), Format("showing a deleted sketch refuses (%s)", Shown.Refusal.c_str()));
+        Expect({ UndoSolidArcCommand(Part), "Undo", {}, 0.0 });
+        Tally(DeleteGate, 0.0, Part.Appearance.RemovedCurves.empty() && !Part.Appearance.HiddenCurves.contains(Sketch) && Part.Summary.Volume == 8.0, "undo puts the sketch back in the scene");
+
+        Expect(DrawSolidArcSketch(Part, OnTop(SolidArcDrawingKind::Rectangle, { { 0.5, 0.5 }, { 1.5, 1.0 } }, true)));
+        const std::string Free = Part.Tree.Steps.back().Label;
+        const size_t      With = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Erased = DeleteSolidArcCurves(Part, { Free });
+        Tally(DeleteGate, 0.0, Erased.AcceptedCondition && Part.Tree.Steps.size() == With - 1 && Part.Appearance.RemovedCurves.empty() && Part.Summary.Volume == 8.0,
+              Format("a free sketch %s is deleted with its step (%zu → %zu)%s", Free.c_str(), With, Part.Tree.Steps.size(), Suffix(Erased).c_str()));
+
+        const size_t Before = Part.Tree.Steps.size();
+        Part.Selection = {};
+        Part.Selection.Bodies = { Part.Regeneration.Bodies.empty() ? std::string() : Part.Regeneration.Bodies.front().Key };
+        const SolidArcCommandOutcome Removed = RemoveSolidArcBodies(Part, Part.Selection.Bodies);
+        Tally(DeleteGate, 0.0, Removed.AcceptedCondition && Part.Summary.Bodies.empty() && Part.Tree.Steps.size() == Before + 1, Format("the body is removed (one Remove step)%s", Suffix(Removed).c_str()));
+    }
+
+    // ④ Sketch points (mode 1): the curves through them go, unused points are dropped (constraints renumbered, the sketch
+    //    re-solves); all points: the sketch goes; a point of an extruded rectangle detaches the rest, the prism stays.
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Delete");
+        Expect(DrawFilledSketch(Part, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Sketch = Part.Tree.Steps.back().Label;
+        const auto Solved = [&](const SolidArcDocument& Document, const std::string& Label) -> const SketchModel*
+        {
+            const auto Found = Document.Regeneration.Sketches.find(Label);
+            return Found == Document.Regeneration.Sketches.end() ? nullptr : &Found->second;
+        };
+        const auto PointNear = [&](const SolidArcDocument& Document, const std::string& Label, Vector2 Where)
+        {
+            const SketchModel* Model = Solved(Document, Label);
+            if (!Model) return -1;
+            for (size_t Index = 0; Index < Model->Points.size(); ++Index)
+                if (Distance(Model->Points[Index].Position, Where) <= 1.0e-9) return int(Index);
+            return -1;
+        };
+        const SolidArcCommandOutcome Corner = DeleteSolidArcSketchPoints(Part, Sketch, { PointNear(Part, Sketch, { 0.0, 0.0 }) });
+        const SketchModel* After = Solved(Part, Sketch);
+        bool Clean = After != nullptr;
+        for (const FeatureStepReport& Report : Part.Regeneration.Steps) Clean = Clean && Report.Status != FeatureStepStatus::Refused;
+        Tally(DeleteGate, 0.0, Corner.AcceptedCondition && Clean && After->Curves.size() == 2 && After->Points.size() == 3,
+              Format("rectangle corner (0, 0) deleted: %zu curves, %zu points (expect 2, 3), %zu constraints, re-solved%s", After ? After->Curves.size() : size_t(0),
+                     After ? After->Points.size() : size_t(0), After ? After->Constraints.size() : size_t(0), Suffix(Corner).c_str()));
+        std::vector<int> Every;
+        for (size_t Index = 0; After && Index < After->Points.size(); ++Index) Every.push_back(int(Index));
+        const SolidArcCommandOutcome All = DeleteSolidArcSketchPoints(Part, Sketch, Every);
+        Tally(DeleteGate, 0.0, All.AcceptedCondition && Part.Tree.Steps.empty(), Format("every point deleted: the sketch goes (%zu steps)%s", Part.Tree.Steps.size(), Suffix(All).c_str()));
+
+        SolidArcDocument Prism = CreateSolidArcDocument("Delete");
+        Expect(DrawFilledSketch(Prism, DrawingOf(SolidArcDrawingKind::Rectangle, 0, { { 0.0, 0.0 }, { 2.0, 1.0 } })));
+        const std::string Profile = Prism.Tree.Steps.back().Label;
+        Expect(ExtrudeSolidArcSketch(Prism, Profile, 1.0, FeatureCombination::New));
+        const size_t Steps = Prism.Tree.Steps.size(), Undo = Prism.UndoEntries.size();
+        const SolidArcCommandOutcome Detached = DeleteSolidArcSketchPoints(Prism, Profile, { PointNear(Prism, Profile, { 2.0, 1.0 }) });
+        const SketchModel* Rest = Prism.Tree.Steps.empty() ? nullptr : Solved(Prism, Prism.Tree.Steps.back().Label);
+        TallyVolume(DeleteGate, Prism, 2.0, Format("extruded rectangle, corner (2, 1) deleted: %zu → %zu steps, %s removed, the free copy keeps %zu curves%s", Steps, Prism.Tree.Steps.size(),
+                                                   Profile.c_str(), Rest ? Rest->Curves.size() : size_t(0), Suffix(Detached).c_str()));
+        Tally(DeleteGate, 0.0, Detached.AcceptedCondition && Prism.Tree.Steps.size() == Steps + 1 && Prism.Appearance.RemovedCurves.contains(Profile) && Rest && Rest->Curves.size() == 2
+                               && Prism.UndoEntries.size() == Undo + 1, "detached: the prism keeps its profile, the open rest is a free sketch, one undo entry");
+    }
+}
+
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
@@ -1811,6 +2028,12 @@ int main()
         ValidateReshape();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ReshapeGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_DELETE"))                                           // Quick rerun of W68 alone
+    {
+        ValidateDelete();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return DeleteGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_WRAP"))                                             // Quick rerun of W66 alone
     {
@@ -7190,7 +7413,10 @@ int main()
     // ---- W67 Direct edits of solids (vertex / edge reshape, before trailing fillets)
     ValidateReshape();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate })
+    // ---- W68 Delete everything picked (X / Delete)
+    ValidateDelete();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate, &DeleteGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

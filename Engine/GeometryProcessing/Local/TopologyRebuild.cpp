@@ -720,6 +720,16 @@ std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Resul
             Internal.insert(Edge);
         }
     }
+    if (RestrictedCondition)                                                                 // Two faces made one: every edge between them goes
+    {
+        for (const auto& [Edge, Users] : EdgeFaces)
+        {
+            if (Users.size() != 2 || Users[0] == Users[1] || Internal.contains(Edge) || Find(Users[0]) != Find(Users[1])) continue;
+            Internal.insert(Edge);
+            Joinable.insert(Source.Edges[Edge].Start);
+            Joinable.insert(Source.Edges[Edge].End);
+        }
+    }
     for (auto Edge = Internal.begin(); Edge != Internal.end();)                              // Only edges inside one merged group vanish
     {
         const auto& Users = EdgeFaces[*Edge];
