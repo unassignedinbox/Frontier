@@ -3834,7 +3834,8 @@ std::string SolidArcBodyOfName(const SolidArcDocument& Document, SolidArcSelecti
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
         if (Kind == SolidArcSelectionKind::Body) { if (Body.Key == Name) return Body.Key; continue; }
-        const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+        const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges
+                                                     : Kind == SolidArcSelectionKind::Vertex ? Body.Naming.Vertices : Body.Naming.Faces;
         for (const auto& Entry : Table) if (Entry.second == Name) return Body.Key;
     }
     return {};
