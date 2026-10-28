@@ -5151,6 +5151,76 @@ void FlowSelectedSketches(SolidArcWorkspaceState& State)
     return Request;
 }
 
+// A direction for the note: "x" / "−y" for a world axis, else its components.
+[[nodiscard]] std::string WrapDirectionLabel(const Vector3& Direction)
+{
+    static const char* const Names[3] = { "x", "y", "z" };
+    const double Parts[3] = { Direction.X, Direction.Y, Direction.Z };
+    for (int Axis = 0; Axis < 3; ++Axis)
+        if (std::abs(Parts[Axis]) > 1.0 - 1.0e-9) return std::string(Parts[Axis] < 0.0 ? "−" : "") + Names[Axis];
+    return Compose("(%.3g, %.3g, %.3g)", Direction.X, Direction.Y, Direction.Z);
+}
+
+// 💡 Auto axes from the two sketches (the usual case: text drawn on one plane, the can's circle on another): the rail's
+//    plane normal n is the can axis, the shapes' common plane normal t made ⊥ n (t − (t·n) n) the projection direction d.
+//    d points from the shapes towards the rail's centre, so the label lands on the side the text is drawn on; a shape
+//    plane through the centre takes the side facing the eye. False (the view or the popup decides): no rail plane, shapes
+//    on different planes, or shapes on a plane parallel to the rail's (|t × n| < 0.2, about 11°).
+[[nodiscard]] bool WrapAutoDirection(const SolidArcWorkspaceState& State, const SolidArcWrapRequest& Request, const Vector3& Forward, Vector3& Direction, std::string& Note)
+{
+    const FeatureStep* Rail = FindSketchStepByLabel(State.Document, Request.Rail);
+    if (!Rail || Request.Shapes.empty()) return false;
+    const OrthonormalFrame RailPlane = ElevatedSketchPlane(State.Document, *Rail);
+    const Vector3          Axis      = Normalize(RailPlane.ZAxis);
+    const auto WorldPoints = [&](const std::string& Label, const OrthonormalFrame& Plane, bool CentreOnlyCondition)
+    {
+        std::vector<Vector3> Points;
+        const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+        if (Solved == State.Document.Regeneration.Sketches.end()) return Points;
+        for (const SketchCurve& Curve : Solved->second.Curves)
+        {
+            if (Curve.Construction) continue;
+            if (CentreOnlyCondition && Curve.Centre >= 0 && Curve.Centre < int(Solved->second.Points.size()))
+            {
+                const Vector2 Position = Solved->second.Points[size_t(Curve.Centre)].Position;
+                Points.push_back(Plane.Origin + Plane.XAxis * Position.X + Plane.YAxis * Position.Y);
+                continue;
+            }
+            for (const int Index : { Curve.Start, Curve.End, Curve.Centre })
+                if (Index >= 0 && Index < int(Solved->second.Points.size()))
+                    Points.push_back(Plane.Origin + Plane.XAxis * Solved->second.Points[size_t(Index)].Position.X + Plane.YAxis * Solved->second.Points[size_t(Index)].Position.Y);
+            for (const int Index : Curve.Points)
+                if (Index >= 0 && Index < int(Solved->second.Points.size()))
+                    Points.push_back(Plane.Origin + Plane.XAxis * Solved->second.Points[size_t(Index)].Position.X + Plane.YAxis * Solved->second.Points[size_t(Index)].Position.Y);
+        }
+        return Points;
+    };
+    Vector3 Facing{};
+    Vector3 ShapeSum{};
+    int     ShapeCount = 0;
+    for (const std::string& Label : Request.Shapes)
+    {
+        const FeatureStep* Shape = FindSketchStepByLabel(State.Document, Label);
+        if (!Shape) return false;
+        const OrthonormalFrame Plane  = ElevatedSketchPlane(State.Document, *Shape);
+        const Vector3          Normal = Normalize(Plane.ZAxis);
+        if (ShapeCount == 0 && Length(Facing) == 0.0) Facing = Normal;
+        else if (std::abs(Dot(Facing, Normal)) < 1.0 - 1.0e-6) return false;               // Shapes on different planes
+        for (const Vector3& Point : WorldPoints(Label, Plane, false)) { ShapeSum = ShapeSum + Point; ++ShapeCount; }
+    }
+    const Vector3 Across = Facing - Axis * Dot(Facing, Axis);
+    if (Length(Across) < 0.2 || ShapeCount == 0) return false;                              // Text on the circle's own plane
+    Direction = Normalize(Across);
+    const std::vector<Vector3> RailPoints = WorldPoints(Request.Rail, RailPlane, true);
+    Vector3 RailSum{};
+    for (const Vector3& Point : RailPoints) RailSum = RailSum + Point;
+    const double Side = RailPoints.empty() ? 0.0 : Dot(RailSum * (1.0 / double(RailPoints.size())) - ShapeSum * (1.0 / double(ShapeCount)), Direction);
+    if (std::abs(Side) > 1.0e-6) { if (Side < 0.0) Direction = Direction * -1.0; }        // Towards the can: the text's side
+    else if (Dot(Direction, Forward) < 0.0) Direction = Direction * -1.0;                  // Through the centre: the side facing the eye
+    Note = "auto: round " + WrapDirectionLabel(Axis) + " (the curve's plane), along " + WrapDirectionLabel(Direction) + " (the shapes' plane)";
+    return true;
+}
+
 // 💡 Wrap / Project (Inspector › Curves): the projection direction is the view in a parallel view (auto), a chosen
 //    world axis (pointing away from the eye), or — auto in perspective — the popup's answer (Choice: 0 / 1 / 2 axes,
 //    3 the view). A lone circle facing that direction stands up instead: the can's axis is the world axis nearest the
@@ -5162,11 +5232,28 @@ void WrapSelectedSketches(SolidArcWorkspaceState& State, int Choice)
     const OrbitCameraFrame Frame = ViewportFrame(State);
     const Vector3 Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
     const Vector3 Up{ Frame.Up[0], Frame.Up[1], Frame.Up[2] };
+    Vector3     AutoDirection{};
+    std::string AutoNote;
+    if (Choice < 0 && State.WrapAxis < 0 && WrapAutoDirection(State, Request, Forward, AutoDirection, AutoNote))
+    {
+        State.WrapAxisPending      = false;
+        Request.Settings.Direction = AutoDirection;
+        const SolidArcCommandOutcome Outcome = WrapSolidArcSketches(State.Document, Request);
+        if (Outcome.AcceptedCondition)
+        {
+            State.WrapCurves = int(State.Document.Selection.Curves.size());
+            State.WrapNote   = AutoNote;
+        }
+        Conclude(State, Outcome);
+        if (Outcome.AcceptedCondition) Announce(State, Compose("%s: %d 3D curve(s) round %s, %s · Ctrl+Z undoes", State.WrapMode == 1 ? "Project" : "Wrap", State.WrapCurves,
+                                                               CaptionOf(State.Document, Request.Rail).c_str(), AutoNote.c_str()));
+        return;
+    }
     if (Choice < 0) Choice = State.WrapAxis >= 0 ? State.WrapAxis : Frame.OrthographicEnabled ? 3 : -1;
     if (Choice < 0)
     {
         State.WrapAxisPending = true;
-        Announce(State, "Wrap: perspective view — pick the projection axis in the popup (a parallel view, numpad 5, projects along the view by itself)");
+        Announce(State, "Wrap: the shapes share the curve's plane, so the axis is not implied — pick the projection axis in the popup (a parallel view, numpad 5, projects along the view by itself)");
         return;
     }
     State.WrapAxisPending = false;
@@ -11437,6 +11524,16 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
                                              Legible(CaptionOf(State.Document, Shapes.front()) + (Shapes.size() > 1 ? Compose(" +%d", int(Shapes.size()) - 1) : std::string())).c_str());
             else ImGui::TextWrapped("%s", FlatCondition ? "Flow: pick the curve to follow, then Shift-click the 2D shape(s) to bend along it"
                                                         : "Wrap: pick the 2D shapes (text, outlines), then Shift-click the curve to wrap round (a circle: a can)");
+            State.WrapAutoNote.clear();
+            if (Possible && !FlatCondition && State.WrapAxis < 0)
+            {
+                const OrbitCameraFrame View = ViewportFrame(State);
+                Vector3 Direction{};
+                if (!WrapAutoDirection(State, Round, Vector3{ View.Forward[0], View.Forward[1], View.Forward[2] }, Direction, State.WrapAutoNote))
+                    State.WrapAutoNote.clear();
+                ImGui::TextWrapped("%s", State.WrapAutoNote.empty() ? "Auto: the shapes lie on the curve's plane — the view (parallel) or a popup gives the axis"
+                                                                    : State.WrapAutoNote.c_str());
+            }
             ImGui::PopStyleColor();
             const char* Action = FlatCondition ? "Flow along curve###CurveFlow" : State.WrapMode == 1 ? "Project onto curve###CurveFlow" : "Wrap around curve###CurveFlow";
             if (PressButton(State, Action, RowSpan(), Possible)) { if (FlatCondition) FlowSelectedSketches(State); else WrapSelectedSketches(State, -1); }
@@ -11463,7 +11560,7 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
                 {
                     if (Axis >= 0) ImGui::SameLine();
                     if (ToggleButton(State, AxisLabels[Axis + 1], State.WrapAxis == Axis, RowSpan(4))) State.WrapAxis = Axis;
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Axis < 0 ? "Projection axis: the view direction in a parallel view (numpad 5); in perspective a popup asks"
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Axis < 0 ? "Auto: the curve's plane gives the can axis, the shapes' plane the projection (text on the front plane, circle on the ground: round z along y). Shapes on the curve's own plane: the view (parallel) or a popup"
                                                                                : "Project along this world axis (towards the side facing you)");
                 }
                 if (!State.WrapNote.empty())

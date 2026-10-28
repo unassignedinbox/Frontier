@@ -832,6 +832,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         return Numeric(0);
     }
     if (Field == "wrap-pending") return Numeric(State.WrapAxisPending ? 1 : 0);
+    if (Field == "wrap-auto") { Text = State.WrapAutoNote; Number = State.WrapAutoNote.empty() ? 0.0 : 1.0; return true; }
+    if (Field == "wrap-note") { Text = State.WrapNote; Number = State.WrapNote.empty() ? 0.0 : 1.0; return true; }
     if (Field == "path-edges") return Numeric(State.PathLast.Refusal.empty() ? int(State.PathLast.Edges.size()) : 0);
     if (Field == "path-length") return Numeric(State.PathLast.Refusal.empty() ? State.PathLast.Length : 0.0);
     if (Field == "path-mode") return Numeric(int(State.PathMode));
