@@ -115,6 +115,7 @@ frames 3
 click world 0.5 2.25 0.0 Left Shift
 frames 3
 expect selected-curves == 3
+click @FlowFlat
 frames 4
 move @CurveFlow
 frames 2

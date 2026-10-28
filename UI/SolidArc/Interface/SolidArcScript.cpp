@@ -814,6 +814,19 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "ring-picks") return Numeric(State.RingPicks);
     if (Field == "path-picks") return Numeric(State.PathPicks);
     if (Field == "wrap-curves") return Numeric(State.WrapCurves);
+    if (Field == "curve-radius")                                                            // First circle / arc of the first picked sketch
+    {
+        if (Document.Selection.Curves.empty()) return Numeric(0);
+        const auto Solved = Document.Regeneration.Sketches.find(Document.Selection.Curves.front());
+        if (Solved == Document.Regeneration.Sketches.end()) return Numeric(0);
+        for (const GeometryProcessing::SketchCurve& Curve : Solved->second.Curves)
+        {
+            if (Curve.Kind == GeometryProcessing::SketchCurveKind::Circle) return Numeric(Curve.Radius);
+            if (Curve.Kind == GeometryProcessing::SketchCurveKind::Arc)
+                return Numeric(GeometryProcessing::Distance(Solved->second.Points[size_t(Curve.Centre)].Position, Solved->second.Points[size_t(Curve.Start)].Position));
+        }
+        return Numeric(0);
+    }
     if (Field == "wrap-pending") return Numeric(State.WrapAxisPending ? 1 : 0);
     if (Field == "path-edges") return Numeric(State.PathLast.Refusal.empty() ? int(State.PathLast.Edges.size()) : 0);
     if (Field == "path-length") return Numeric(State.PathLast.Refusal.empty() ? State.PathLast.Length : 0.0);

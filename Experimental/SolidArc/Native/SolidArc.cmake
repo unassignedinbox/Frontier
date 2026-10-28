@@ -355,6 +355,13 @@ add_test(NAME SolidArcEdgePathWalkthrough
                  --script "${SOLIDARC_EXHIBIT}/Scripts/EdgePathWalkthrough.txt"
                  --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
          WORKING_DIRECTORY "${FRONTIER_ROOT}")
+add_test(NAME SolidArcWrapWalkthrough
+         COMMAND SolidArcCapture --specimen --reset-files
+                 --recovery _ClaudeScratch/SolidArcWorkspace/WrapRecovery.solidarc
+                 --document _ClaudeScratch/SolidArcWorkspace/Wrap.solidarc
+                 --script "${SOLIDARC_EXHIBIT}/Scripts/WrapWalkthrough.txt"
+                 --exhibits "${SOLIDARC_WALKTHROUGH_CAPTURES}"
+         WORKING_DIRECTORY "${FRONTIER_ROOT}")
 add_test(NAME SolidArcImprintWalkthrough
          COMMAND SolidArcCapture --specimen --reset-files
                  --recovery _ClaudeScratch/SolidArcWorkspace/ImprintRecovery.solidarc
