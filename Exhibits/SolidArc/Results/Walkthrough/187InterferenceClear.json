@@ -1,5 +1,5 @@
 {
-  "Frame": 386,
+  "Frame": 387,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 1,
   "Welcome": false,
   "Status": "Measure · Block2 + Block1 · Volume 10.3828 m³",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

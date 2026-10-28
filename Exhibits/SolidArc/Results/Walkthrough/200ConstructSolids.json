@@ -1,5 +1,5 @@
 {
-  "Frame": 15,
+  "Frame": 16,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": false,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "New document (previous recovery copy kept)",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

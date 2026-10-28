@@ -1,5 +1,5 @@
 {
-  "Frame": 459,
+  "Frame": 460,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [3.641291671, 2.395586626, 1.466873747e-16], "Orthographic": true},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [2.976491532, 1.958218113, 1.199062772e-16], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.5, 3.4], [2.5, 3.6], [3.5, 4.4]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 15,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Constrain Line1: Equal length · Line1 · Line2 · 15 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Constrain Line1: Equal length · Line1 · Line2 · 0 ms",
+  "Viewport": [322, 56, 926, 723]
 }

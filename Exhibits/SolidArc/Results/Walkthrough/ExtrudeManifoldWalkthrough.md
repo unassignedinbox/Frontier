@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 248 frames · 24.7775 s · slowest frame 513.043 ms
+- Frame: 1600 x 810 · 248 frames · 16.6673 s · slowest frame 343.729 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ExtrudeManifoldWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -42,8 +42,8 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 303ExtrudeManifoldPocket | 130 | `c92d3b152d059be9` |
-| 304ExtrudeManifoldFacePush | 241 | `1d000b6f8c2a54a7` |
+| 303ExtrudeManifoldPocket | 130 | `e5b364da1190c89d` |
+| 304ExtrudeManifoldFacePush | 241 | `c9c8fed4bf420381` |
 
 ## Journal
 
@@ -51,20 +51,20 @@
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Block: click the opposite corner
 - Block: move up, click the height
-- Block1 · New body · 1 ms
+- Block1 · New body · 0 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/ManifoldRecovery.solidarc
 - Line1 · 0 ms
-- Extrude Line1 (E, extrude manifold): drag into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
+- Extrude Line1 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size -0.3 m (pinned)
-- Extrude1 · Line1 · Difference · 2 ms
+- Extrude1 · Line1 · Difference · 1 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line2 · 0 ms
-- Fill Line2 · 1 ms
-- Extrude Line2 (E, extrude manifold): drag into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
+- Fill Line2 · 0 ms
+- Extrude Line2 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 0.4 m (pinned)
-- Extrude2 · Line2 · Union · 2 ms
+- Extrude2 · Line2 · Union · 1 ms
 - Selected Extrude#6.Cap(End)
-- Extrude (E): move horizontally · out adds, in pushes / cuts a pocket (extrude manifold) · click edits the faces · Enter / right-click applies · Esc aborts
+- Extrude (E): the face follows the pointer along its normal (Blender) · out adds, in pushes / cuts a pocket (extrude manifold) · click edits the faces · Enter / right-click applies · Esc aborts
 - Bevel size -0.9 m (pinned)
-- ExtrudeFaces -0.9 on 1 face(s) · 3 ms
+- ExtrudeFaces -0.9 on 1 face(s) · 2 ms

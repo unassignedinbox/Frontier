@@ -1,5 +1,5 @@
 {
-  "Frame": 76,
+  "Frame": 77,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

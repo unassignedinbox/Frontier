@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 126 frames · 22.0561 s · slowest frame 733.521 ms
+- Frame: 1600 x 810 · 126 frames · 7.62964 s · slowest frame 336.212 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/AltSlideWalkthrough.txt
 - Expectations: 25 / 25 passed
 
@@ -35,9 +35,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 243AltSlideCircle | 58 | `2c0e784214217e13` |
-| 244RoundHandles | 103 | `bd9a080be27383fd` |
-| 245AltSlidePoint | 120 | `15c9f21cba293583` |
+| 243AltSlideCircle | 58 | `297a4aa7293fe80b` |
+| 244RoundHandles | 103 | `46e9bd835b01b739` |
+| 245AltSlidePoint | 120 | `b187e95d006f8f13` |
 
 ## Journal
 

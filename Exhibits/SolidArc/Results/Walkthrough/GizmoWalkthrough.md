@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 324 frames · 32.7065 s · slowest frame 512.089 ms
+- Frame: 1600 x 810 · 324 frames · 21.2077 s · slowest frame 358.919 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/GizmoWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,13 +44,13 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 218GizmoMove | 65 | `5879713db8e9b630` |
-| 219GizmoCombined | 104 | `1ff3a4f9c09931e0` |
-| 220GizmoScaled | 144 | `53dff528cd15e865` |
-| 221GizmoFace | 170 | `6b1f19e6670702e5` |
-| 222GizmoFaceRotate | 216 | `250ca5a50ff2cfa7` |
-| 223GizmoSketch | 287 | `cd60f3a4e5164cd2` |
-| 224GizmoLoft | 324 | `2928702004748f45` |
+| 218GizmoMove | 65 | `7579d5b8de7b0f09` |
+| 219GizmoCombined | 104 | `c71f026d26e0b085` |
+| 220GizmoScaled | 144 | `99bb64836cdaafdc` |
+| 221GizmoFace | 170 | `819e778085824425` |
+| 222GizmoFaceRotate | 216 | `51d80bc7732eb1d3` |
+| 223GizmoSketch | 287 | `7db2aaad7e2d658c` |
+| 224GizmoLoft | 324 | `bb65b7e7e132a127` |
 
 ## Journal
 
@@ -92,5 +92,5 @@
 - Move (Circle2) · 0 ms
 - Gizmo Z move 0.7 · Move (Circle2) · 0 ms
 - Selected sketch Circle1 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · solid · 6 ms
-- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 6 ms
+- Loft1 · 2 sections · solid · 4 ms
+- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 4 ms

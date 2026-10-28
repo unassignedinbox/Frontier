@@ -1,5 +1,5 @@
 {
-  "Frame": 85,
+  "Frame": 86,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Anchor flipped: the start size is at each edge's end corner",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

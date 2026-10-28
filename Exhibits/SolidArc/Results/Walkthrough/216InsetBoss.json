@@ -1,5 +1,5 @@
 {
-  "Frame": 165,
+  "Frame": 166,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 3,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Inset 0.1 depth 0.2 on 1 face(s) · 23 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Inset 0.1 depth 0.2 on 1 face(s) · 1 ms",
+  "Viewport": [322, 56, 926, 723]
 }

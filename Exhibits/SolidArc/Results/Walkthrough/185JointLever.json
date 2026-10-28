@@ -1,5 +1,5 @@
 {
-  "Frame": 333,
+  "Frame": 334,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 9,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Revolute joint (Block2 → Cylinder3) · 94 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Revolute joint (Block2 → Cylinder3) · 17 ms",
+  "Viewport": [322, 56, 926, 723]
 }

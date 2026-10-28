@@ -1,5 +1,5 @@
 {
-  "Frame": 249,
+  "Frame": 250,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 1,
   "Welcome": false,
   "Status": "X-ray on · faces 45 % · hidden edges pickable",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

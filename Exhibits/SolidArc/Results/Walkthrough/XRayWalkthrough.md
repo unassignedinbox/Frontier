@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 132 frames · 20.9531 s · slowest frame 534.915 ms
+- Frame: 1600 x 810 · 132 frames · 14.1436 s · slowest frame 348.416 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/XRayWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,12 +46,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 146XRayBoxOpaque | 32 | `fa1037a073f26d9c` |
-| 147XRayBoxThrough | 61 | `edcf75caa2b4aafc` |
-| 148XRayHover | 70 | `eadd4b9c2da920bb` |
-| 149XRayPicked | 79 | `d75bc6682a136064` |
-| 150XRayFillet | 86 | `7877ca5887f85a81` |
-| 151XRayFilleted | 93 | `f1c7098a33afc0d2` |
+| 146XRayBoxOpaque | 32 | `02b21801bf796df0` |
+| 147XRayBoxThrough | 61 | `5a012fe72b38cb24` |
+| 148XRayHover | 70 | `a7f610ec8b676e67` |
+| 149XRayPicked | 79 | `aaefb7819cfbc06c` |
+| 150XRayFillet | 86 | `a7e0797a57287396` |
+| 151XRayFilleted | 93 | `c6c0871c5e607744` |
 
 ## Journal
 
@@ -61,8 +61,8 @@
 - Box selected 0 curve(s) + 24 edge(s) (x-ray) · 24 edge(s) selected
 - Selection cleared
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line3))
-- Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge adds its ring · Enter / right-click applies · Esc aborts
-- Fillet 0.25 on 1 edge(s) · 3 ms
+- Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts
+- Fillet 0.25 on 1 edge(s) · 2 ms
 - Selection cleared
 - Selected Extrude#2.Cap(End)
 - Selection cleared

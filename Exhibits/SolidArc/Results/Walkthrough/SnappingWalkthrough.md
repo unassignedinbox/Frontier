@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 408 frames · 52.1086 s · slowest frame 525.085 ms
+- Frame: 1600 x 810 · 406 frames · 31.3481 s · slowest frame 336.341 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SnappingWalkthrough.txt
 - Expectations: 78 / 78 passed
 
@@ -88,21 +88,21 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 160SnapEndpoint | 30 | `59190876cde1b3a9` |
-| 161SnapTangent | 43 | `0ac9d854f8a3d7fe` |
-| 162SnapLockTangent | 61 | `cb445d7267488b2d` |
-| 163SnapLockNormal | 79 | `a097d56e3d2689ba` |
-| 164SnapBinormalRefused | 93 | `e34174542429f6b9` |
-| 165SnapCentre | 99 | `a6392ced61db93de` |
-| 166SnapMidpoint | 105 | `53a15d55b98519d8` |
-| 167SnapPerpendicular | 118 | `bcf33ac103cfc7f1` |
-| 168SnapSquare | 151 | `45a79d2f1fff0e6e` |
-| 169SnapConstraintDrag | 181 | `c4b64239d179f6f5` |
-| 170SnapMove | 217 | `62987d7b72868f82` |
-| 171SnapXRay | 250 | `584f4c4a5f829bea` |
-| 172SnapPoleDrag | 322 | `f876da4d2118f6e9` |
-| 295SnapQuarter | 392 | `1cc1b4197ca20d5f` |
-| 296SnapOnCurve | 402 | `d8c3e5459397d85f` |
+| 160SnapEndpoint | 30 | `b5635a5140cc1b6e` |
+| 161SnapTangent | 43 | `6197d23c764c86ca` |
+| 162SnapLockTangent | 61 | `a0ae9670efed9dbd` |
+| 163SnapLockNormal | 79 | `e0a4018afd4078ee` |
+| 164SnapBinormalRefused | 93 | `3b45bf40163843b2` |
+| 165SnapCentre | 99 | `3b7523576e8f3019` |
+| 166SnapMidpoint | 105 | `0e623dabe6603cee` |
+| 167SnapPerpendicular | 118 | `6dffb3635b5628ee` |
+| 168SnapSquare | 151 | `393b1d0a804f2cd7` |
+| 169SnapConstraintDrag | 181 | `276057fe6feca487` |
+| 170SnapMove | 217 | `b48db719d76c09cd` |
+| 171SnapXRay | 250 | `0a4ca64f879692c0` |
+| 172SnapPoleDrag | 320 | `a671c2a58c5f27cc` |
+| 295SnapQuarter | 390 | `2430d50b7b6357b3` |
+| 296SnapOnCurve | 400 | `225438f7a98160cc` |
 
 ## Journal
 
@@ -131,13 +131,13 @@
 - X-ray off
 - New document (previous recovery copy kept)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SnapRecovery.solidarc
-- Import 11 curve(s) · 2 ms
+- Import 11 curve(s) · 1 ms
 - Framed the document (Space)
 - Imported 11 curve(s) from Experimental/VehicleSurfacing/Samples/SyntheticBonnet.toml · 44 poles · worst fit 0.056 mm
 - View Isometric
 - Framed the document (Space)
-- Move pole 2 of Section3 · 2 ms
-- Moved pole 2 of Section3 by 350.00 mm · 2 ms
+- Move pole 2 of Section3 · 1 ms
+- Moved pole 2 of Section3 by 350.00 mm · 1 ms
 - Undo
 - New document (previous recovery copy kept)
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts

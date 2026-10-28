@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 202 frames · 19.9562 s · slowest frame 501.045 ms
+- Frame: 1600 x 810 · 202 frames · 13.7688 s · slowest frame 335.02 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ShellsWalkthrough.txt
 - Expectations: 34 / 34 passed
 
@@ -44,10 +44,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 231SketchFacePlane | 62 | `78ca815f3b6a42be` |
-| 232SketchMidpointOnFace | 87 | `6814d6d9df6c1b87` |
-| 233SolidLoftShell | 162 | `43e46207dcdaa086` |
-| 234HiddenLocked | 187 | `5c0e33b964cf53c7` |
+| 231SketchFacePlane | 62 | `991a967e0dff2885` |
+| 232SketchMidpointOnFace | 87 | `b485f4f938d44c61` |
+| 233SolidLoftShell | 162 | `6fc48c0beddab65a` |
+| 234HiddenLocked | 187 | `a3954474bb283119` |
 
 ## Journal
 
@@ -66,8 +66,8 @@
 - Circle2 · 0 ms
 - Selected sketch Circle1 · 1 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Circle2 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
-- Loft1 · 2 sections · solid · 6 ms
-- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 6 ms
+- Loft1 · 2 sections · solid · 4 ms
+- Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 4 ms
 - Rectangle1 hidden
 - Block1 locked (shown, not pickable)
 - Block1 is locked (Outliner lock to unlock)

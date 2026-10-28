@@ -1,5 +1,5 @@
 {
-  "Frame": 424,
+  "Frame": 425,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

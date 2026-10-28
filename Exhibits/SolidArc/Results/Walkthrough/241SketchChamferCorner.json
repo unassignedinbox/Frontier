@@ -1,5 +1,5 @@
 {
-  "Frame": 172,
+  "Frame": 180,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 1,
   "Hover": "",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 9.019974813, "Target": [0, 0, 0], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 4, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[3, 0], [4, 1]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Chamfer 0.3 · 1 corner of Rectangle2 · 21 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Chamfer 0.3 · 1 corner of Rectangle2 · 0 ms",
+  "Viewport": [322, 56, 926, 723]
 }

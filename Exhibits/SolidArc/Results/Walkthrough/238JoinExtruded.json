@@ -1,5 +1,5 @@
 {
-  "Frame": 211,
+  "Frame": 212,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 10,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Extrude2 · Rectangle2 · New body · 23 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Extrude2 · Rectangle2 · New body · 1 ms",
+  "Viewport": [322, 56, 926, 723]
 }

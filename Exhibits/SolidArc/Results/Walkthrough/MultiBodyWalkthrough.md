@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 330 frames · 47.2282 s · slowest frame 558.219 ms
+- Frame: 1600 x 810 · 330 frames · 30.6939 s · slowest frame 334.93 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/MultiBodyWalkthrough.txt
 - Expectations: 32 / 32 passed
 
@@ -42,12 +42,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 96MultiBodyNew | 111 | `734e3080506b5b90` |
-| 97MultiBodyThree | 200 | `5820fa85d1b5a61d` |
-| 98MultiBodyMatcaps | 273 | `cd10513afbee6954` |
-| 99MultiBodyBoolean | 303 | `d94c9b95b0df3f3c` |
-| 100MultiBodyDrilled | 316 | `0b7066321023c193` |
-| 101MultiBodyUndo | 330 | `d8706e0ef2a8b387` |
+| 96MultiBodyNew | 111 | `da8170777f13b498` |
+| 97MultiBodyThree | 200 | `8df304277f586c12` |
+| 98MultiBodyMatcaps | 273 | `122a734a5238f828` |
+| 99MultiBodyBoolean | 303 | `84a7be5624512881` |
+| 100MultiBodyDrilled | 316 | `8362d7df92ff697d` |
+| 101MultiBodyUndo | 330 | `4bc206e86c24fa2d` |
 
 ## Journal
 
@@ -69,7 +69,7 @@
 - Boolean: Block2 with 1 tool(s) · Q union · W difference · E intersect · Enter applies
 - Boolean: Difference
 - Autosaved _ClaudeScratch/SolidArcWorkspace/MultiBodyRecovery.solidarc
-- Combine · Difference (Block2 − Cylinder3) · 6 ms
+- Combine · Difference (Block2 − Cylinder3) · 2 ms
 - Selection cleared
 - Undo
 - Redo

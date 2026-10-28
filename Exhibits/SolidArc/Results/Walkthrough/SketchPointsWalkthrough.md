@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 332 frames · 33.0802 s · slowest frame 511.169 ms
+- Frame: 1600 x 810 · 332 frames · 21.0301 s · slowest frame 339.699 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchPointsWalkthrough.txt
 - Expectations: 38 / 38 passed
 
@@ -48,12 +48,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 225SketchTools | 24 | `13e6b8803b0af28d` |
-| 226SketchPoints | 210 | `97f5726f7c886ccc` |
-| 227PointDragLive | 228 | `a8d2e75b521c6b2a` |
-| 228PointGizmoLive | 258 | `acc9dbbbf61ee7d2` |
-| 229PointsGizmoAll | 291 | `ac0d352c42387700` |
-| 230BodyScaleLive | 321 | `59a4f7ed07125960` |
+| 225SketchTools | 24 | `0fa68304744ee4a4` |
+| 226SketchPoints | 210 | `fdd1dc682bfa7178` |
+| 227PointDragLive | 228 | `04f7b9d4899dc27d` |
+| 228PointGizmoLive | 258 | `b433b5e108e5dc46` |
+| 229PointsGizmoAll | 291 | `0cac84e954c3b777` |
+| 230BodyScaleLive | 321 | `b282afa301b6c591` |
 
 ## Journal
 
@@ -76,7 +76,7 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchPointsRecovery.solidarc
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Rectangle1 · New · 0 ms
 - Drag Line2.End of Rectangle1 · 0 ms

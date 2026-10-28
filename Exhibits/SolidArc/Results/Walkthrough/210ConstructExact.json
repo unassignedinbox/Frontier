@@ -1,5 +1,5 @@
 {
-  "Frame": 397,
+  "Frame": 398,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -13,10 +13,10 @@
   "Hover": "",
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
-  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[3, 2]], "Solid": true, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 5, "Combination": 4, "Refusal": ""},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": true, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 5, "Combination": 4, "Refusal": ""},
   "Undo": 7,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Block: click the opposite corner",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts",
+  "Viewport": [322, 56, 926, 723]
 }

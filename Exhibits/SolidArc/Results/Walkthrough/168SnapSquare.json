@@ -1,5 +1,5 @@
 {
-  "Frame": 150,
+  "Frame": 151,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Rectangle: square (s releases)",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

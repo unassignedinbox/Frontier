@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 172 frames · 10.8581 s · slowest frame 341.599 ms
+- Frame: 1600 x 810 · 172 frames · 10.8653 s · slowest frame 338.275 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EdgePathWalkthrough.txt
 - Expectations: 36 / 36 passed
 
@@ -46,10 +46,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 321EdgePathAlong | 89 | `908342ffde231d18` |
-| 322EdgePathWhole | 105 | `9f51c19591a8104b` |
-| 323EdgePathRefused | 148 | `2b42c2653d1715d2` |
-| 324EdgePathShortest | 157 | `3b8fff9f1793e35e` |
+| 321EdgePathAlong | 89 | `d9c5834fcd020aab` |
+| 322EdgePathWhole | 105 | `1ecbefbf95b038be` |
+| 323EdgePathRefused | 148 | `7f78a301169fa8f5` |
+| 324EdgePathShortest | 157 | `d5eee3b9483d9d09` |
 
 ## Journal
 

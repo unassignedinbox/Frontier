@@ -1,5 +1,5 @@
 {
-  "Frame": 199,
+  "Frame": 200,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 7,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Cylinder3 · New body · 107 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Cylinder3 · New body · 1 ms",
+  "Viewport": [322, 56, 926, 723]
 }

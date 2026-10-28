@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 313 frames · 33.9854 s · slowest frame 551.948 ms
+- Frame: 1600 x 810 · 313 frames · 24.2008 s · slowest frame 327.897 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/OrientWalkthrough.txt
 - Expectations: 43 / 43 passed
 
@@ -44,7 +44,7 @@
 | 140 | `plane-normal-z ~ 0.894427191` | 0.894427191 | 🟢 |
 | 147 | `face-plane == 1` | Extrude#6.Side(Circle1) | 🟢 |
 | 152 | `refused == 0` | 0 | 🟢 |
-| 153 | `plane-normal-x > 0.99` | 0.9997394337 | 🟢 |
+| 153 | `plane-normal-x > 0.99` | 0.9999356986 | 🟢 |
 | 160 | `face-orient == 0` | 0 | 🟢 |
 | 163 | `face-plane == 0` |  | 🟢 |
 | 164 | `drawing-normal-z ~ 1` | 1 | 🟢 |
@@ -53,11 +53,11 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 257CircleOnSideFace | 77 | `357232b39b95d925` |
-| 258CylinderOnFrontFace | 148 | `0412fbaf3babbaaf` |
-| 259CylinderOnSlope | 237 | `6b4bbc0f3fb5ae9f` |
-| 260OrientOff | 290 | `57654d59cbb0f1bc` |
-| 261OrientedBodies | 313 | `5c9150c92837a485` |
+| 257CircleOnSideFace | 77 | `39332c606e33b7fd` |
+| 258CylinderOnFrontFace | 148 | `cf8f262297bc9816` |
+| 259CylinderOnSlope | 237 | `4c6a8b98e5da9158` |
+| 260OrientOff | 290 | `4771ef87b5a8ef8b` |
+| 261OrientedBodies | 313 | `9cea7c6054e1b12d` |
 
 ## Journal
 
@@ -69,9 +69,9 @@
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 0 ms
 - Fill Circle1 · 0 ms
-- Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Circle1 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Circle1 · Union · 2 ms
+- Extrude1 · Circle1 · Union · 1 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Cylinder: click the radius
 - Cylinder: move up, click the height
@@ -86,7 +86,7 @@
 - Cylinder: click the radius
 - Cylinder: move up, click the height
 - Autosaved _ClaudeScratch/SolidArcWorkspace/OrientRecovery.solidarc
-- Cylinder2 · New body · 2 ms
+- Cylinder2 · New body · 1 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle2 · 1 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts

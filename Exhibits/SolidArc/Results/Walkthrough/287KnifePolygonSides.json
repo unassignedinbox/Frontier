@@ -1,5 +1,5 @@
 {
-  "Frame": 839,
+  "Frame": 812,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -13,10 +13,10 @@
   "Hover": "Extrude#2.Cap(End)",
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
-  "Drawing": {"Active": true, "Kind": "Polygon", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0, 0.7], [0.2, 0.9]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 5, "Combination": 4, "Refusal": ""},
+  "Drawing": {"Active": true, "Kind": "Polygon", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0, 0.7], [0.1, 0.9]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 5, "Combination": 4, "Refusal": ""},
   "Undo": 19,
   "Redo": 0,
   "Welcome": false,
   "Status": "5 sides",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

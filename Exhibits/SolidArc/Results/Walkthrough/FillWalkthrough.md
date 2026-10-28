@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 444 frames · 47.9555 s · slowest frame 559.752 ms
+- Frame: 1600 x 810 · 444 frames · 32.6621 s · slowest frame 340.579 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/FillWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,14 +74,14 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 246FillTint | 51 | `c71c0d809840526e` |
-| 247FillLens | 65 | `05878cddda737b28` |
-| 248FillCrescent | 80 | `d449fd36b9bc85fc` |
-| 249FillWalls | 225 | `1fb954d03f5bea6a` |
-| 250FlipNormals | 246 | `907fb034b9d0e341` |
-| 251ConstructReference | 268 | `65ff68a0ce816bf5` |
-| 252ImagePlane | 322 | `b62a06c0f20e552b` |
-| 298ImageProperties | 381 | `ed0875d04d2e5650` |
+| 246FillTint | 51 | `99a6c8fb7b0c823f` |
+| 247FillLens | 65 | `f1702bd4797e3a86` |
+| 248FillCrescent | 80 | `cb271e6b538f5bee` |
+| 249FillWalls | 225 | `ddf8aee7025a7970` |
+| 250FlipNormals | 246 | `60c66b943dae7b5b` |
+| 251ConstructReference | 268 | `e7407f0dfa544d20` |
+| 252ImagePlane | 322 | `b548e57c06acebf5` |
+| 298ImageProperties | 381 | `47308591bd5ad28f` |
 
 ## Journal
 
@@ -98,14 +98,14 @@
 - Fill ended
 - Fill: hover a closed region (overlaps split into their own regions) · click fills it · Esc ends
 - Fill ended
-- Extrude Fill2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Fill2 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Fill2 · New · 1 ms
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
 - Unfill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude2 · Rectangle1 · Union · 0 ms
 - View Isometric

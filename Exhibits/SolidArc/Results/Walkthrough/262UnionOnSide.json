@@ -1,5 +1,5 @@
 {
-  "Frame": 129,
+  "Frame": 130,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Extrude2 · Circle2 · Union · 134 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Extrude2 · Circle2 · Union · 10 ms",
+  "Viewport": [322, 56, 926, 723]
 }

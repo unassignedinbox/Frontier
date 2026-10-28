@@ -1,0 +1,22 @@
+{
+  "Frame": 1603,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Import#3", "Caption": "Square pocket1 · Import", "Refused": false}, {"Label": "Transform#4", "Caption": "Place1 · Transform", "Refused": false}, {"Label": "Combine#5", "Caption": "Knife1 · Combine", "Refused": false}, {"Label": "Sketch#6", "Caption": "Line1 · Sketch", "Refused": false}],
+  "Body": {"Faces": 11, "Edges": 24, "Vertices": 16, "Genus": 0, "Volume": 7.988, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 4,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[0.3, -1], [0.3, 0.2], [0.7, 0.2], [0.7, 1]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 5, "Combination": 4, "Refusal": ""},
+  "Undo": 3,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Knife · edge blend 2: chamfer 0.1 m",
+  "Viewport": [322, 56, 926, 723]
+}

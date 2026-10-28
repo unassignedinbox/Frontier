@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 501 frames · 46.1615 s · slowest frame 558.537 ms
+- Frame: 1600 x 810 · 501 frames · 33.3651 s · slowest frame 339.651 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/EditingWalkthrough.txt
 - Expectations: 77 / 77 passed
 
@@ -12,7 +12,7 @@
 | 37 | `volume ~ 2` | 2 | 🟢 |
 | 38 | `bodies == 1` | 1 | 🟢 |
 | 45 | `transform == 0` | 0 | 🟢 |
-| 46 | `status contains needs picked bodies` | Move needs picked bodies (mode 4, or a face / edge of the body) | 🟢 |
+| 46 | `status contains needs picked bodies` | Move needs picked bodies (mode 4, or a face / edge of the body) or picked sketches | 🟢 |
 | 53 | `selected-bodies contains Extrude#` | Extrude#2 | 🟢 |
 | 58 | `transform == 1` | 1 | 🟢 |
 | 63 | `transform-readout contains Move x (1, 0, 0)` | Move x (1, 0, 0) | 🟢 |
@@ -87,17 +87,17 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 111MovePreview | 104 | `b25231dfc2f3b636` |
-| 112Rotate | 155 | `cee5de29d08b9d80` |
-| 113Scale | 193 | `fc073c227313bcf0` |
-| 114Duplicate | 222 | `128fc30dc784fc95` |
-| 115Paste | 241 | `347b78409c09826f` |
-| 116Hide | 249 | `f6bef5434db82895` |
-| 117InvertHidden | 286 | `84354e4b902a8d15` |
-| 118Join | 378 | `96d59c0c7c4a42c4` |
-| 119OffsetPreview | 425 | `6d4819bc910845ff` |
-| 120PipePreview | 487 | `ce4957a90635a18d` |
-| 121Pipe | 501 | `457e7c40e60c6b2f` |
+| 111MovePreview | 104 | `d620e721f809d58f` |
+| 112Rotate | 155 | `9c6212eb31f6e45c` |
+| 113Scale | 193 | `45bee0674e98148a` |
+| 114Duplicate | 222 | `285862220a77f83a` |
+| 115Paste | 241 | `fd0bfcab5596c9c7` |
+| 116Hide | 249 | `1d78d9fb41e5d3c2` |
+| 117InvertHidden | 286 | `f2e67d3abbb7d99e` |
+| 118Join | 378 | `1615bf0a90b4ade6` |
+| 119OffsetPreview | 425 | `89573135af934cba` |
+| 120PipePreview | 487 | `38ff75198e93c70b` |
+| 121Pipe | 501 | `5791346277a39cfd` |
 
 ## Journal
 
@@ -105,11 +105,11 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Rectangle1 · New · 0 ms
 - Selection cleared
-- Move needs picked bodies (mode 4, or a face / edge of the body)
+- Move needs picked bodies (mode 4, or a face / edge of the body) or picked sketches
 - Selected Extrude1 (6 faces)
 - Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
@@ -123,9 +123,9 @@
 - Scale (Extrude1) · 0 ms
 - Scale 1 body(ies) · X / Y / Z axis · type a value · click / Enter commits · Esc cancels
 - Scale cancelled
-- Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits · Esc cancels
+- Duplicate + Move 1 body(ies) · X / Y / Z axis · Shift+X / Y / Z plane · type a value · click / Enter commits (at once: a copy in place) · Esc cancels
 - Autosaved _ClaudeScratch/SolidArcWorkspace/EditingRecovery.solidarc
-- Duplicate (Extrude1) · 0 ms
+- Duplicate (Extrude1) · 1 ms
 - Framed the document (Space)
 - Copied Extrude1Copy1
 - Remove (Extrude1Copy1) · 0 ms
@@ -145,7 +145,7 @@
 - Line2 · 0 ms
 - Join (Line2, Line1) · 0 ms
 - Fill Line2 · 0 ms
-- Extrude Line2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Line2 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Line2 · New · 0 ms
 - Offset Line2 · move sideways (Shift fine, Ctrl free) or type a value · click / Enter commits · Esc cancels

@@ -116,7 +116,10 @@ int main(int Count, char** Arguments)
     const CaptureSettings Settings = ReadArguments(Count, Arguments);
     SolidArcOptions       Options  = LoadSolidArcOptions(Settings.OptionsPath);
     if (Settings.Width > 0) Options.WindowWidth = Settings.Width;
+    // The app header (68 px) and document bar (34 px) left the layout (12 px margin instead): the walkthrough window
+    // gives up the same 90 px so the viewport keeps its size, scale and pixel drags (an explicit --height wins).
     if (Settings.Height > 0) Options.WindowHeight = Settings.Height;
+    else Options.WindowHeight -= 68 + 34 - 12;
     if (!Settings.RecoveryPath.empty()) Options.RecoveryPath = Settings.RecoveryPath;
     if (!Settings.DriverPath.empty()) Options.DriverPath = Settings.DriverPath;
     if (!Settings.DocumentPath.empty()) Options.DocumentPath = Settings.DocumentPath;

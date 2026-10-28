@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 558 frames · 82.7784 s · slowest frame 599.823 ms
+- Frame: 1600 x 810 · 574 frames · 51.104 s · slowest frame 336.517 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/WorkspaceWalkthrough.txt
 - Expectations: 84 / 84 passed
 
@@ -76,9 +76,9 @@
 | 187 | `selected-faces contains Extrude#4.Cap(End)` | Extrude#4.Cap(End) | 🟢 |
 | 190 | `steps == 10` | 10 | 🟢 |
 | 191 | `sound == 1` | 1 | 🟢 |
-| 192 | `status contains Push` | Push 0.25 on 1 face(s) · 3 ms | 🟢 |
+| 192 | `status contains Push` | Push 0.25 on 1 face(s) · 2 ms | 🟢 |
 | 201 | `focused-step == Extrude#2` | Extrude#2 | 🟢 |
-| 207 | `status contains Block1.Height` | Block1.Height = 1.25 · 16 ms | 🟢 |
+| 207 | `status contains Block1.Height` | Block1.Height = 1.25 · 8 ms | 🟢 |
 | 208 | `refused == 0` | 0 | 🟢 |
 | 209 | `sound == 1` | 1 | 🟢 |
 | 240 | `steps == 12` | 12 | 🟢 |
@@ -88,28 +88,28 @@
 | 248 | `dirty == 0` | 0 | 🟢 |
 | 249 | `file:_ClaudeScratch/SolidArcWorkspace/Bracket.solidarc == 1` | 1 | 🟢 |
 | 251 | `file:_ClaudeScratch/SolidArcWorkspace/Recovery.solidarc == 1` | 1 | 🟢 |
-| 253 | `steps == 0` | 0 | 🟢 |
-| 255 | `file:_ClaudeScratch/SolidArcWorkspace/Recovery.previous.solidarc == 1` | 1 | 🟢 |
-| 258 | `steps > 9` | 12 | 🟢 |
+| 256 | `steps == 0` | 0 | 🟢 |
+| 258 | `file:_ClaudeScratch/SolidArcWorkspace/Recovery.previous.solidarc == 1` | 1 | 🟢 |
+| 263 | `steps > 9` | 12 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 01Workspace | 5 | `60c46ffca2603b31` |
-| 02FacesSelected | 25 | `c711472e66136638` |
-| 03EdgeSelected | 47 | `d496806838a7f4d8` |
-| 04BevelPreview | 82 | `b57efd5ee1095595` |
-| 05FilletApplied | 93 | `37e4216486566daa` |
-| 06BevelRefusal | 153 | `93af0882b9461012` |
-| 07Navigated | 229 | `6610595ff5f3e7e1` |
-| 08ViewCubeTop | 236 | `f585e516f2e63105` |
-| 09FrontParallel | 255 | `6abbc51bd3b0a98a` |
-| 09RightParallel | 269 | `6cf55c284bbe7229` |
-| 10FaceEdit | 354 | `b9a056b599d7e505` |
-| 11ParameterEdit | 402 | `01615f81bb177796` |
-| 12Construct | 485 | `6f73e741cfe2dfba` |
-| 13Constructed | 494 | `b73055f1fa64d5e6` |
-| 14NewDocument | 549 | `4859007518eefb4c` |
-| 15Restored | 558 | `ef5e661f70bcc74d` |
+| 01Workspace | 5 | `a8d468344db17853` |
+| 02FacesSelected | 25 | `bb66072610f73b99` |
+| 03EdgeSelected | 47 | `2285084ad58c37e6` |
+| 04BevelPreview | 82 | `0d8847aeabf85bcc` |
+| 05FilletApplied | 93 | `9255a44ae9f9160d` |
+| 06BevelRefusal | 153 | `91158259e80a9d87` |
+| 07Navigated | 229 | `1bb5c30e5445d929` |
+| 08ViewCubeTop | 236 | `5f30b60cef820c4f` |
+| 09FrontParallel | 255 | `d3d2525abbe2ed71` |
+| 09RightParallel | 269 | `298f5e7bc9802cb7` |
+| 10FaceEdit | 353 | `cfe0cea6c6ffdc1a` |
+| 11ParameterEdit | 402 | `fa47c34184cadbbc` |
+| 12Construct | 485 | `7fb123952d86e567` |
+| 13Constructed | 494 | `04c1f70eb5f5b319` |
+| 14NewDocument | 558 | `0bb9c4903ca8c07f` |
+| 15Restored | 574 | `d41f232e5229eff2` |
 
 ## Journal
 
@@ -139,11 +139,11 @@
 - View Top
 - View Isometric
 - Selected Extrude#4.Cap(End)
-- Push 0.25 on 1 face(s) · 3 ms
-- Block1.Height = 1.25 · 16 ms
+- Push 0.25 on 1 face(s) · 2 ms
+- Block1.Height = 1.25 · 8 ms
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc
-- Cylinder3 · Difference · 12 ms
+- Cylinder3 · Difference · 5 ms
 - Saved _ClaudeScratch/SolidArcWorkspace/Bracket.solidarc
 - Autosaved _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc
 - New document (previous recovery copy kept)

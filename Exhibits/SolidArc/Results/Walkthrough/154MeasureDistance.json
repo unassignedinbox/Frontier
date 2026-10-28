@@ -1,5 +1,5 @@
 {
-  "Frame": 31,
+  "Frame": 32,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Added Extrude#2.Side(Line1)",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

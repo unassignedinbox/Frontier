@@ -1,10 +1,10 @@
 {
-  "Frame": 215,
+  "Frame": 216,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
   "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Change#3", "Caption": "Offset1 · FaceOperation", "Refused": false}, {"Label": "Change#4", "Caption": "Rotate1 · FaceOperation", "Refused": false}],
-  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 4.2, "Sound": true},
+  "Body": {"Faces": 6, "Edges": 12, "Vertices": 8, "Genus": 0, "Volume": 3.9, "Sound": true},
   "Selection": {"Faces": ["Extrude#2.Cap(End)"], "Edges": [], "Curves": []},
   "Curves": [],
   "Sheet": false,
@@ -17,6 +17,6 @@
   "Undo": 3,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Gizmo X rotate -5.0° · face rotate · Rotate -0.08727 on 1 face(s) · 18 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Gizmo X rotate -5.0° · face rotate · Rotate -0.08727 on 1 face(s) · 1 ms",
+  "Viewport": [322, 56, 926, 723]
 }

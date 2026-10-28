@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 370 frames · 38.4038 s · slowest frame 1009.9 ms
+- Frame: 1600 x 810 · 370 frames · 28.1526 s · slowest frame 1421.45 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/SketchDrawingWalkthrough.txt
 - Expectations: 64 / 64 passed
 
@@ -74,10 +74,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 30RectanglePreview | 33 | `1a824a177c8a470c` |
-| 31CurveForms | 259 | `71c659a21b53fcc2` |
-| 32HermiteClosing | 270 | `a33954bf4d136d33` |
-| 33DrawnSolid | 370 | `bf7d0ed3bb42c46f` |
+| 30RectanglePreview | 33 | `2867bd8cd0e3b456` |
+| 31CurveForms | 259 | `5f8a244bbd4091a9` |
+| 32HermiteClosing | 270 | `15dd9091c76fa9a6` |
+| 33DrawnSolid | 370 | `1bc8d4f968916e17` |
 
 ## Journal
 
@@ -85,24 +85,24 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1.5 m (pinned)
 - Extrude1 · Rectangle1 · New · 0 ms
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 0 ms
 - Fill Circle1 · 0 ms
-- Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Circle1 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size -1.5 m (pinned)
-- Extrude2 · Circle1 · Difference · 5 ms
+- Extrude2 · Circle1 · Difference · 2 ms
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Line1 · 0 ms
 - Fill Line1 · 0 ms
-- Extrude Line1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Line1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Intersection
 - Extrude Boolean: Union
 - Bevel size 1 m (pinned)
-- Extrude3 · Line1 · Union · 6 ms
+- Extrude3 · Line1 · Union · 2 ms
 - Curve on plane XY (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Point dropped · 2 left
 - Autosaved _ClaudeScratch/SolidArcWorkspace/SketchRecovery.solidarc
@@ -110,12 +110,12 @@
 - Curve form: NURBS
 - Curve form: Cubic spline
 - Curve form: Hermite
-- Curve1 · Hermite · 1 ms
-- Fill Curve1 · 1 ms
-- Extrude Curve1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Curve1 · Hermite · 0 ms
+- Fill Curve1 · 0 ms
+- Extrude Curve1 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Extrude Boolean: Difference
 - Bevel size -0.5 m (pinned)
-- Extrude4 · Curve1 · Difference · 794 ms
+- Extrude4 · Curve1 · Difference · 1025 ms
 - Arc on plane XY (or the body face under the first click): click start, end, then a point on the arc · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Arc points are collinear
 - Point dropped · 2 left

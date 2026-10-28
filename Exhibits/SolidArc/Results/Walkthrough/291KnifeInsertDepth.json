@@ -1,5 +1,5 @@
 {
-  "Frame": 1134,
+  "Frame": 1107,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 4,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Knife · Triangle width 0.4 m · 0° · move along the normal for the depth (Ctrl free), T through, or type it · click / right-click / Enter cuts · Esc lifts",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Knife · Triangle base 0.4 × 0.4619 m · 0° · move along the normal for the depth (Ctrl free), T through, or type it · click / right-click / Enter cuts · Esc lifts",
+  "Viewport": [322, 56, 926, 723]
 }

@@ -1,5 +1,5 @@
 {
-  "Frame": 267,
+  "Frame": 268,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 11,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Flip normals (Extrude2) · 9 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Flip normals (Extrude2) · 0 ms",
+  "Viewport": [322, 56, 926, 723]
 }

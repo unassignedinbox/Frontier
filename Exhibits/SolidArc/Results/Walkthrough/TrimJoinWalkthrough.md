@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 212 frames · 19.7595 s · slowest frame 506.84 ms
+- Frame: 1600 x 810 · 212 frames · 13.7826 s · slowest frame 334.341 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/TrimJoinWalkthrough.txt
 - Expectations: 17 / 17 passed
 
@@ -27,10 +27,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 235TrimHoverExtruded | 95 | `2997ac14c1fffde2` |
-| 236TrimDetached | 105 | `954ed4a261642dab` |
-| 237JoinPicked | 166 | `8c800082f5efdbc4` |
-| 238JoinExtruded | 212 | `20e13b69213990aa` |
+| 235TrimHoverExtruded | 95 | `cbef0ae09138b11c` |
+| 236TrimDetached | 105 | `7edf4395c8d78020` |
+| 237JoinPicked | 166 | `561c539ea10cdb0f` |
+| 238JoinExtruded | 212 | `b06b70f57a823914` |
 
 ## Journal
 
@@ -40,7 +40,7 @@
 - Circle on plane XY (or the body face under the first click): click centre and rim · V two-point mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Circle1 · 0 ms
 - Fill Circle1 · 0 ms
-- Extrude Circle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Circle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Circle1 · New · 0 ms
 - Trim: click the piece of a curve to remove (between its crossings) · Esc ends
@@ -54,7 +54,7 @@
 - Selected sketch Circle3 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
 - Join (Rectangle2, Circle3) · 0 ms
 - Fill Rectangle2 · 0 ms
-- Extrude Rectangle2 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle2 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Extrude Boolean: New body
 - Bevel size 1 m (pinned)
 - Extrude2 · Rectangle2 · New body · 1 ms

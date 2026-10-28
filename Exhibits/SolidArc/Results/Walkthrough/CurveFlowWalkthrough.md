@@ -1,8 +1,8 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 270 frames · 46.8392 s · slowest frame 778.545 ms
-- Script: Exhibits/SolidArc/Code/Scripts/CurveFlowWalkthrough.txt
+- Frame: 1600 x 810 · 275 frames · 16.1031 s · slowest frame 356.189 ms
+- Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/CurveFlowWalkthrough.txt
 - Expectations: 25 / 25 passed
 
 | Line | Expectation | Observed | Result |
@@ -26,21 +26,21 @@
 | 81 | `snap contains curve` | On curve · Spline1 · Curve1 | 🟢 |
 | 106 | `sketches == 3` | Curve1,Line1,Line2 | 🟢 |
 | 117 | `selected-curves == 3` | Curve1,Line1,Line2 | 🟢 |
-| 124 | `refused == 0` | 0 | 🟢 |
-| 125 | `sketches == 4` | Curve1,Line1,Line2,Flow1 | 🟢 |
-| 126 | `status contains Flow` | Flow Line1, Line2 along Curve1 into Flow1 (stretched) · 2 ms | 🟢 |
-| 127 | `focused-step contains Sketch` | Sketch#4 | 🟢 |
-| 133 | `inspector-tab == 3` | 3 | 🟢 |
-| 139 | `inspector-tab == 0` | 0 | 🟢 |
+| 125 | `refused == 0` | 0 | 🟢 |
+| 126 | `sketches == 4` | Curve1,Line1,Line2,Flow1 | 🟢 |
+| 127 | `status contains Flow` | Flow Line1, Line2 along Curve1 into Flow1 (stretched) · 1 ms | 🟢 |
+| 128 | `focused-step contains Sketch` | Sketch#4 | 🟢 |
+| 134 | `inspector-tab == 3` | 3 | 🟢 |
+| 140 | `inspector-tab == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 311PointOnCurveHover | 68 | `ab1292399b2dae0c` |
-| 312PointOnCurveAdded | 78 | `c5e27a1026cfaa82` |
-| 313PointOnCurveMoved | 97 | `d3eef8bc391bf68b` |
-| 314FlowPicked | 236 | `b27fa837ad6b534f` |
-| 315FlowAlongCurve | 247 | `7bca5c776b22f6d3` |
-| 316HistoryTab | 261 | `8b8ea76dc1b79884` |
+| 311PointOnCurveHover | 68 | `a02fc85e87acdf00` |
+| 312PointOnCurveAdded | 78 | `7937ac6e853bdca8` |
+| 313PointOnCurveMoved | 97 | `475d7df84eddc30e` |
+| 314FlowPicked | 241 | `21dbfbb5220e0982` |
+| 315FlowAlongCurve | 252 | `aab11f559b340fa7` |
+| 316HistoryTab | 266 | `0c06a832da3888a7` |
 
 ## Journal
 
@@ -66,4 +66,4 @@
 - Selected sketch Line1 · 2 selected · L lofts the picks in order · the gizmo moves / turns them
 - Selected sketch Line2 · 3 selected · L lofts the picks in order · the gizmo moves / turns them
 - Autosaved _ClaudeScratch/SolidArcWorkspace/CurveFlowRecovery.solidarc
-- Flow Line1, Line2 along Curve1 into Flow1 (stretched) · 2 ms
+- Flow Line1, Line2 along Curve1 into Flow1 (stretched) · 1 ms

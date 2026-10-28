@@ -1,5 +1,5 @@
 {
-  "Frame": 86,
+  "Frame": 93,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Fillet 0.3 on 1 edge(s) · 195 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Fillet 0.3 on 1 edge(s) · 3 ms",
+  "Viewport": [322, 56, 926, 723]
 }

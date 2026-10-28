@@ -1,5 +1,5 @@
 {
-  "Frame": 517,
+  "Frame": 518,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 5,
   "Hover": "Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line3))",
-  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [3.641291671, 3.641291671, 2.229648095e-16], "Orthographic": true},
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 1.570796327, "Distance": 12.92859522, "Target": [2.976491532, 2.976491532, 1.822575414e-16], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 1, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 2, "Profile": "Sketch#1", "Combination": 0, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "NURBS", "Centre": false, "Points": [[2.5, 2.5], [3.2, 3]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 9,
   "Redo": 0,
   "Welcome": false,
   "Status": "Picked Line1.Start, Line2.End of Rectangle1",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

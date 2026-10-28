@@ -1,5 +1,5 @@
 {
-  "Frame": 13,
+  "Frame": 14,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -10,7 +10,7 @@
   "Sheet": false,
   "PoleDrags": 0,
   "PickMode": 5,
-  "Hover": "Extrude#2.Side(Line1)",
+  "Hover": "Extrude#2.Cap(End)",
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8.068516761, "Target": [2, 1.25, 1], "Orthographic": true},
   "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Opened _ClaudeScratch/SolidArcWorkspace/Recovery.solidarc · 12 steps",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

@@ -1,5 +1,5 @@
 {
-  "Frame": 210,
+  "Frame": 211,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Joint: pick the joint origin on the moving body (an edge or a face)",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

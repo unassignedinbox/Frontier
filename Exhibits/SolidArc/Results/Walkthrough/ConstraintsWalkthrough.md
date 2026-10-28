@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 466 frames · 42.583 s · slowest frame 537.132 ms
+- Frame: 1600 x 810 · 466 frames · 29.3044 s · slowest frame 352.18 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ConstraintsWalkthrough.txt
 - Expectations: 75 / 75 passed
 
@@ -85,12 +85,12 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 122ConstrainOpen | 115 | `24a2aecb3ad284e2` |
-| 123ConstrainFull | 180 | `2a832dbc36af6eea` |
-| 124ConstrainConflict | 208 | `f66a4c5f50ffe897` |
-| 125ConstrainEdit | 246 | `a3a37014c2afb2d4` |
-| 126ConstrainDragging | 281 | `8fc2fd979d76c7bf` |
-| 127ConstrainAngle | 460 | `2c73c53b1fd2d6bd` |
+| 122ConstrainOpen | 115 | `d5788f2e2bf8f75e` |
+| 123ConstrainFull | 180 | `26bb99e2b349a75f` |
+| 124ConstrainConflict | 208 | `62352135ce5e5ce9` |
+| 125ConstrainEdit | 246 | `0a16c5edb613dd9e` |
+| 126ConstrainDragging | 281 | `37d72de2f4421498` |
+| 127ConstrainAngle | 460 | `bc02654770f3faf9` |
 
 ## Journal
 
@@ -98,9 +98,9 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
-- Extrude1 · Rectangle1 · New · 1 ms
+- Extrude1 · Rectangle1 · New · 0 ms
 - Selection cleared
 - Constrain Rectangle1 · 4 constraint(s) · DOF 4 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line1.Start
@@ -121,13 +121,13 @@
 - Constraint dropped
 - Picks cleared
 - D1 Length 3 · Line1 · type a value + Enter · E makes it a reference · Delete removes
-- D1 = 4 in Rectangle1 · 1 ms
+- D1 = 4 in Rectangle1 · 0 ms
 - Undo
 - Redo
 - Picks cleared
 - D2 Length 2 · Line2 · type a value + Enter · E makes it a reference · Delete removes
 - Remove D2 (Length 2 · Line2) from Rectangle1 · 0 ms
-- Drag Line2.End of Rectangle1 · 1 ms
+- Drag Line2.End of Rectangle1 · 0 ms
 - Refused: Line1.Start is fully constrained (it cannot move)
 - Constrain ended
 - Line on plane XY (or the body face under the first click): click points · click the first point closes · Enter / right-click finishes open · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts

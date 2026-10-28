@@ -1,5 +1,5 @@
 {
-  "Frame": 19,
+  "Frame": 27,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -17,6 +17,6 @@
   "Undo": 5,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 2 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Exported 1 body(ies) as STEP → _ClaudeScratch/SolidArcWorkspace/Exchange.step · 11 face(s) · 12219 bytes · 1 ms",
+  "Viewport": [322, 56, 926, 723]
 }

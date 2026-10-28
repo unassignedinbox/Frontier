@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 623 frames · 54.708 s · slowest frame 565.778 ms
+- Frame: 1600 x 810 · 664 frames · 38.8402 s · slowest frame 343.178 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/LinkedConstraintsWalkthrough.txt
 - Expectations: 55 / 55 passed
 
@@ -55,22 +55,22 @@
 | 248 | `sketch-links contains Line2` | Line2.Start,Line2.End,Line2 | 🟢 |
 | 249 | `sketch-points contains (3.2, 2)` | (1.5, 2) (3.2, 2) (1.5, 2) (0, 2) | 🟢 |
 | 254 | `constrain == 0` | 0 | 🟢 |
-| 261 | `picked-constraint contains D1` | D1 Length 1.5 · Line1 | 🟢 |
-| 265 | `volume ~ 4` | 4 | 🟢 |
-| 274 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
-| 275 | `sketch-dof == 1` | 1 | 🟢 |
-| 285 | `status contains Unlink` | Unlink Line2.Start of Line1 · 0 ms | 🟢 |
-| 286 | `sketch-dof == 3` | 3 | 🟢 |
-| 287 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
+| 266 | `picked-constraint contains D1` | D1 Length 1.5 · Line1 | 🟢 |
+| 270 | `volume ~ 4` | 4 | 🟢 |
+| 284 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
+| 285 | `sketch-dof == 1` | 1 | 🟢 |
+| 295 | `status contains Unlink` | Unlink Line2.Start of Line1 · 0 ms | 🟢 |
+| 296 | `sketch-dof == 3` | 3 | 🟢 |
+| 297 | `sketch-points contains (2, 2)` | (2, 2) (3.2, 2) (2, 2) (0, 2) | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 128ConstrainSplineG1 | 180 | `004d7d20272397a5` |
-| 129ConstrainSplineG2 | 222 | `b6921df52764abe3` |
-| 130ConstrainReference | 421 | `eb7c54eb32bbb860` |
-| 131ConstrainReferenceFollows | 459 | `8b4d009f59c4a4ce` |
-| 132ConstrainLinkPick | 518 | `90c362d42ca6d617` |
-| 133ConstrainLinked | 609 | `2fca24f0bea86961` |
+| 128ConstrainSplineG1 | 180 | `d93d199fa684bd23` |
+| 129ConstrainSplineG2 | 222 | `eb22df01bd0d2364` |
+| 130ConstrainReference | 421 | `0d90554d3fc6b22a` |
+| 131ConstrainReferenceFollows | 459 | `9da15c6797e95fbd` |
+| 132ConstrainLinkPick | 518 | `d1d720418e177a0e` |
+| 133ConstrainLinked | 650 | `fbaa79526d7e281b` |
 
 ## Journal
 
@@ -103,7 +103,7 @@
 - Rectangle on plane XY (or the body face under the first click): click two corners · Alt centre mode · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Rectangle1 · 0 ms
 - Fill Rectangle1 · 0 ms
-- Extrude Rectangle1 (E): move horizontally · Q union · W difference · E intersect · R new body · Enter / right-click applies · Esc aborts
+- Extrude Rectangle1 (E): the profile follows the pointer along its normal · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts
 - Bevel size 1 m (pinned)
 - Extrude1 · Rectangle1 · New · 0 ms
 - Selection cleared
@@ -122,7 +122,7 @@
 - Picked Line1.Start, Line2.End
 - Constrain Rectangle1: Distance 1.80278 (reference) · Line1.Start · Line2.End · 0 ms
 - Picks cleared
-- D2 = 2 in Rectangle1 · 1 ms
+- D2 = 2 in Rectangle1 · 0 ms
 - Refused: Distance 2.5 · Line1.Start · Line2.End is already implied by H1 (Horizontal · Line1), V1 (Vertical · Line2), D1 (Length 1.5 · Line1), D2 (Length 2 · Line2) (it stays a reference)
 - Picks cleared
 - Constrain ended
@@ -138,11 +138,12 @@
 - Picked Line1.End, Line3 of Rectangle1
 - Constrain Line1: Point on line · Line1.End · Line2 · 0 ms
 - Constrain ended
+- Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
 - Constrain Rectangle1 · 8 constraint(s) · DOF 0 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - D1 = 2 in Rectangle1 · 0 ms
 - Picks cleared
 - Constrain ended
+- Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
 - Constrain Line1 · 2 constraint(s) · DOF 1 · click points / curves (earlier sketches link), then D N H V O Q M Y L [ ] C · Shift+D reference · drag points · Esc ends
 - Picked Line2.Start
-- Autosaved _ClaudeScratch/SolidArcWorkspace/LinkedConstraintsRecovery.solidarc
 - Unlink Line2.Start of Line1 · 0 ms

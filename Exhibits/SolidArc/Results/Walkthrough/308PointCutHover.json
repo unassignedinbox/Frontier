@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Cut: click a line, arc or circle where it should break in two (a circle becomes two half arcs) · hold Ctrl to snap onto a crossing / end / midpoint: every curve through it breaks there (overlapping circles: both, at both crossings) · Esc ends",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

@@ -1,5 +1,5 @@
 {
-  "Frame": 94,
+  "Frame": 95,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Trim: click the piece of a curve to remove (between its crossings) · Esc ends",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

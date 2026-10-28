@@ -1,5 +1,5 @@
 {
-  "Frame": 238,
+  "Frame": 269,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -11,12 +11,12 @@
   "PoleDrags": 0,
   "PickMode": 2,
   "Hover": "",
-  "Camera": {"Azimuth": 0, "Elevation": 0, "Distance": 6.232551794, "Target": [1.436227956, 1.434448492, 1.257440933], "Orthographic": true},
-  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.3, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "Blend#10: Blend: edge E98: consumed by the blend (blend wider than the edge) (Circle, overshoot 1.13)", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Camera": {"Azimuth": 0, "Elevation": 0, "Distance": 6.232551794, "Target": [1.539157292, 1.400773249, 1.187617692], "Orthographic": true},
+  "Bevel": {"Active": false, "Shape": "Chamfer", "Size": 0.199998, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Line", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 6,
   "Redo": 0,
   "Welcome": false,
   "Status": "View Right",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

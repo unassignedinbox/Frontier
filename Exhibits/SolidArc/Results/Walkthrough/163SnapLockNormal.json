@@ -1,5 +1,5 @@
 {
-  "Frame": 78,
+  "Frame": 79,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": true,
@@ -18,5 +18,5 @@
   "Redo": 0,
   "Welcome": false,
   "Status": "Lock normal through the last point · the same key releases it · object snaps align along it",
-  "Viewport": [322, 146, 926, 591]
+  "Viewport": [322, 56, 926, 723]
 }

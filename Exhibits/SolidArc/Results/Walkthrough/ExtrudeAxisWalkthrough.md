@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 226 frames · 16.4487 s · slowest frame 347.791 ms
+- Frame: 1600 x 810 · 226 frames · 15.6375 s · slowest frame 337.585 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/ExtrudeAxisWalkthrough.txt
 - Expectations: 47 / 47 passed
 
@@ -57,10 +57,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 317ExtrudeAxisPushIn | 122 | `de48196d683d0ed6` |
-| 318ExtrudeAxisPullOut | 132 | `f34c71ce1b566c5c` |
-| 319ExtrudeEdgeNotch | 148 | `bcb665d3af0cbce6` |
-| 320ExtrudeAxisSketch | 219 | `58351ad082f30a9c` |
+| 317ExtrudeAxisPushIn | 122 | `d4f7abdffb6a8b3c` |
+| 318ExtrudeAxisPullOut | 132 | `6902f95444f87231` |
+| 319ExtrudeEdgeNotch | 148 | `8304833b80085652` |
+| 320ExtrudeAxisSketch | 219 | `4e0196e6c8fd4b13` |
 
 ## Journal
 

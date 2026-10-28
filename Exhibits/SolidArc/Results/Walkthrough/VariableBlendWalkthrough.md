@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 105 frames · 14.6564 s · slowest frame 581.644 ms
+- Frame: 1600 x 810 · 105 frames · 9.20369 s · slowest frame 340.411 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/VariableBlendWalkthrough.txt
 - Expectations: 31 / 31 passed
 
@@ -33,7 +33,7 @@
 | 79 | `refused == 0` | 0 | 🟢 |
 | 80 | `sound == 1` | 1 | 🟢 |
 | 81 | `volume ~ 10.185606734` | 10.18560673 | 🟢 |
-| 82 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 11 ms | 🟢 |
+| 82 | `status contains 0.3 → 0.1` | Fillet 0.3 → 0.1 on 1 edge(s) · 7 ms | 🟢 |
 | 87 | `faces == 11` | 11 | 🟢 |
 | 88 | `steps == 8` | 8 | 🟢 |
 | 90 | `faces == 12` | 12 | 🟢 |
@@ -41,20 +41,20 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 22VariableFillet | 72 | `26c1f7ce88c8b94b` |
-| 23VariableFlipped | 79 | `d40ea4a9da917d1e` |
-| 24VariableChamfer | 86 | `4e8f16f3852919d7` |
-| 25VariableApplied | 98 | `32e98de84bbc391d` |
+| 22VariableFillet | 72 | `7808d956dd19c7ef` |
+| 23VariableFlipped | 79 | `13bb84ed827368f1` |
+| 24VariableChamfer | 86 | `067822115eeb4e77` |
+| 25VariableApplied | 98 | `a089d475cf6d21c2` |
 
 ## Journal
 
 - Selected Edge(Extrude#2.Cap(Start)|Extrude#2.Side(Line1))
-- Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge adds its ring · Enter / right-click applies · Esc aborts
+- Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts
 - Bevel size 0.3 m (pinned)
 - Variable size: 0.3 m at the anchor corner → 0.15 m (F flips the anchor)
 - Bevel end size 0.1 m
 - View Front
 - Anchor flipped: the start size is at each edge's end corner
-- Fillet 0.3 → 0.1 on 1 edge(s) · 11 ms
+- Fillet 0.3 → 0.1 on 1 edge(s) · 7 ms
 - Undo
 - Redo

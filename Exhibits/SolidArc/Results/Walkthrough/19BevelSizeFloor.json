@@ -1,5 +1,5 @@
 {
-  "Frame": 64,
+  "Frame": 71,
   "Title": "Bracket",
   "DocumentPath": "",
   "Dirty": false,
@@ -17,6 +17,6 @@
   "Undo": 5,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts",
+  "Viewport": [322, 56, 926, 723]
 }

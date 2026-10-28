@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 443 frames · 67.2702 s · slowest frame 4062.88 ms
+- Frame: 1600 x 810 · 467 frames · 44.4279 s · slowest frame 2954.35 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/AssemblyWalkthrough.txt
 - Expectations: 56 / 56 passed
 
@@ -56,32 +56,32 @@
 | 199 | `measure contains Block2 + Block1` | Block2 + Block1 | 🟢 |
 | 200 | `measure-interference contains Clear` | Clear | 🟢 |
 | 201 | `measure-distance ~ 0.25` | 0.25 | 🟢 |
-| 211 | `focused-step == Joint#13` | Joint#13 | 🟢 |
-| 217 | `refused == 0` | 0 | 🟢 |
-| 218 | `parameter-drag > 0` | 7 | 🟢 |
-| 219 | `bounds:Block2 == (2.800000, 0.250000, 0.900000) … (3.200000, 2.250000, 1.100000)` | (2.800000, 0.250000, 0.900000) … (3.200000, 2.250000, 1.100000) | 🟢 |
-| 231 | `measure-interference contains Overlap` | Overlap | 🟢 |
-| 232 | `measure-overlap ~ 0.05792063` | 0.05792063028 | 🟢 |
-| 233 | `measure-overlap-edges > 3` | 24 | 🟢 |
+| 216 | `focused-step == Joint#13` | Joint#13 | 🟢 |
+| 222 | `refused == 0` | 0 | 🟢 |
+| 223 | `parameter-drag > 0` | 7 | 🟢 |
+| 224 | `bounds:Block2 == (2.800000, 0.250000, 0.900000) … (3.200000, 2.250000, 1.100000)` | (2.800000, 0.250000, 0.900000) … (3.200000, 2.250000, 1.100000) | 🟢 |
+| 236 | `measure-interference contains Overlap` | Overlap | 🟢 |
+| 237 | `measure-overlap ~ 0.05792063` | 0.05792063028 | 🟢 |
+| 238 | `measure-overlap-edges > 3` | 24 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 179AssemblyParts | 200 | `2552761646d3dc48` |
-| 180JointHover | 211 | `2aca931f088e0551` |
-| 181JointPreview | 232 | `d2e1e22c2e77d534` |
-| 182JointFlipped | 255 | `14cece9ecc5d0805` |
-| 183JointApplied | 263 | `35e60110fd843906` |
-| 184JointLeverPreview | 326 | `36a32716a4dd13b9` |
-| 185JointLever | 334 | `e2d55476ddab7b8b` |
-| 186JointStepDrag | 353 | `9f094aae841a9f69` |
-| 187InterferenceClear | 387 | `b5a4e0e4f403052d` |
-| 188JointStepOffset | 420 | `09c0cbbc42554202` |
-| 189InterferenceOverlap | 443 | `7a8e148e5869fd1c` |
+| 179AssemblyParts | 200 | `0b140a33a7ec8547` |
+| 180JointHover | 211 | `077af5cc5323912b` |
+| 181JointPreview | 232 | `d4c7f8b9438afaf6` |
+| 182JointFlipped | 255 | `89a0a10baa64f30e` |
+| 183JointApplied | 263 | `9dd5d1f1b84dca60` |
+| 184JointLeverPreview | 326 | `a43a03b1534698c4` |
+| 185JointLever | 334 | `07341bf09eab620d` |
+| 186JointStepDrag | 353 | `d8b5626466b761c6` |
+| 187InterferenceClear | 387 | `209ed56f32883c3d` |
+| 188JointStepOffset | 444 | `897064ead6a4abb3` |
+| 189InterferenceOverlap | 467 | `35150f2627f722ee` |
 
 ## Journal
 
 - Cylinder: click the base centre · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
-- Cylinder3 · New body · 2 ms
+- Cylinder3 · New body · 1 ms
 - Block: click the first corner · snaps (Ctrl free) · new body (R) · Q / W / E combine · Tab exact size · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Block2 · New body · 1 ms
@@ -100,8 +100,8 @@
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Added Extrude#10.Cap(End)
 - Joint: Block2 onto Cylinder3 · R V S C P L B kind · drag the values · F flip · Enter / right-click applies
-- Revolute joint (Block2 → Cylinder3) · 24 ms
-- Revolute2.Angle = 120 · 23 ms
+- Revolute joint (Block2 → Cylinder3) · 17 ms
+- Revolute2.Angle = 120 · 17 ms
 - Undo
 - Selection cleared
 - Selected Block2 (6 faces)
@@ -110,7 +110,7 @@
 - Measure off
 - Autosaved _ClaudeScratch/SolidArcWorkspace/AssemblyRecovery.solidarc
 - Selection cleared
-- Revolute1.Offset = -0.1 · 24 ms
+- Revolute1.Offset = -0.1 · 17 ms
 - Selected Block2 (6 faces)
 - Added Block1 · 2 bodies picked
 - Measure · Block2 + Block1 · Volume 10.3828 m³

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 129 frames · 10.049 s · slowest frame 426.095 ms
+- Frame: 1600 x 810 · 129 frames · 7.95482 s · slowest frame 346.258 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/PointCutWalkthrough.txt
 - Expectations: 20 / 20 passed
 
@@ -30,9 +30,9 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 308PointCutHover | 66 | `3482dbea3957da20` |
-| 309PointCutDone | 81 | `d5ae80feb85277a6` |
-| 310SketchDuplicate | 117 | `9cd16c59765ff64c` |
+| 308PointCutHover | 66 | `55a613d418d2d802` |
+| 309PointCutDone | 81 | `32c242f8c230b030` |
+| 310SketchDuplicate | 117 | `ef31807ea424304b` |
 
 ## Journal
 

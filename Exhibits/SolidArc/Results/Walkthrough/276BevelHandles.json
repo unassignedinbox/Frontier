@@ -1,5 +1,5 @@
 {
-  "Frame": 79,
+  "Frame": 80,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -12,11 +12,11 @@
   "PickMode": 2,
   "Hover": "Blend#3.Strip(Edge(Extrude#2.Cap(End)|Extrude#2.Side(Line1)))",
   "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
-  "Bevel": {"Active": true, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 7, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Bevel": {"Active": true, "Shape": "Fillet", "Size": 0.25, "Pinned": true, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 7, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
   "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-1, -1], [1, 1]], "Solid": true, "SolidKind": "Block", "Lift": 2, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
   "Undo": 1,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Fillet (B): drag the handles (corner handles make it variable) or drag / move anywhere · D fillet · C chamfer · V variable size · click an edge to add / remove it · Enter / right-click applies · Esc aborts",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts",
+  "Viewport": [322, 56, 926, 723]
 }

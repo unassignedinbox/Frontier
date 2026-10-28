@@ -1,5 +1,5 @@
 {
-  "Frame": 161,
+  "Frame": 162,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 5,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 18 ms",
-  "Viewport": [322, 146, 926, 591]
+  "Status": "Lofted 2 closed section(s) into a solid shell (2 plane caps) · sound · 4 ms",
+  "Viewport": [322, 56, 926, 723]
 }

@@ -1,7 +1,7 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 900 · 176 frames · 16.1359 s · slowest frame 529.085 ms
+- Frame: 1600 x 810 · 176 frames · 10.4494 s · slowest frame 335.224 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/FilletDragWalkthrough.txt
 - Expectations: 12 / 12 passed
 
@@ -22,10 +22,10 @@
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 253FilletCentreDragLive | 95 | `6c461ed944e2c794` |
-| 254FilletCentreDragged | 102 | `05883ce347eeb286` |
-| 255CubeParallel | 168 | `7b8257c7b9d9540b` |
-| 256CubePerspective | 176 | `0f15f331d707108b` |
+| 253FilletCentreDragLive | 95 | `2a022b5b9fd89eaf` |
+| 254FilletCentreDragged | 102 | `37e374cffe255dbb` |
+| 255CubeParallel | 168 | `23b798832e274eef` |
+| 256CubePerspective | 176 | `b0817fc756e2223b` |
 
 ## Journal
 
@@ -40,8 +40,8 @@
 - Drag Arc1.Centre of Rectangle1 · 1 ms
 - Drag Arc1.Centre of Rectangle1 · 1 ms
 - Undo
-- Drag Point0 of Rectangle1 · 2 ms
-- Drag Point0 of Rectangle1 · 2 ms
+- Drag Point0 of Rectangle1 · 1 ms
+- Drag Point0 of Rectangle1 · 1 ms
 - Undo
 - Selection cleared
 - View Isometric
