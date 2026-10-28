@@ -14,7 +14,7 @@ snap grid on
 key N Ctrl
 frames 2
 expect steps == 0
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3

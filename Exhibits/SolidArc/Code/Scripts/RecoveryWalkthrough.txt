@@ -23,7 +23,7 @@ expect sound == 1
 capture 17Recovered
 
 # ③ Open… dialog with a typed path (the Ctrl+S file of the first walkthrough)
-click @HeaderOpen
+key O Ctrl
 frames 2
 click @PathField
 key A Ctrl

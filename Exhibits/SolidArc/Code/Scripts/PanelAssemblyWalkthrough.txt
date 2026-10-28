@@ -14,7 +14,7 @@ snap grid on
 # ① bonnet: import, mode 1, Section1–3 → L (front panel)
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3
@@ -92,7 +92,7 @@ capture 63CloseRefused
 # ② pod: 5 planar half hoops → loft → Alt+X → Close → solid
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 2
 click @PathField
 key A Ctrl
@@ -146,7 +146,7 @@ capture 65PodSolid
 # ③ network: crossing curves → L builds a Gordon surface (order does not matter)
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 2
 click @PathField
 key A Ctrl

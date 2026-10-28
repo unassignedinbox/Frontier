@@ -141,7 +141,7 @@ capture 105CutHole
 # ⑥ vehicle panel: import the synthetic bonnet, pick the 6 sections in mode 1, L lofts the sheet
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3

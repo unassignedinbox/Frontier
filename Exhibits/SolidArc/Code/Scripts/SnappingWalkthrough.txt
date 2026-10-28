@@ -202,7 +202,7 @@ frames 2
 #    snaps (its own poles move). Ctrl+Z restores
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3

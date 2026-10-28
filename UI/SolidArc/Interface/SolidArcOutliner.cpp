@@ -248,8 +248,15 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
     char Count[64];
     std::snprintf(Count, sizeof(Count), "Scene · %d figures", int(Figures.size()));
     Sheet.Text(Cursor, HeadingCentre, 10.0f, Ink(MutedInk), Count);
-    if (IconButton(State, Sheet, "OutlinerCompact", Spanning(Right - 19.0f - 28.0f, HeadingCentre - 14.0f, 28.0f, 28.0f), IconSymbol::SolidArcRows, 17.0f))
-        Outliner.CompactEnabled = !Outliner.CompactEnabled;
+    // ☰ opens the file menu (new / open / save / import / export / examples, then compact rows): the app header is gone.
+    const PlaneExtent MenuButton = Spanning(Right - 19.0f - 28.0f, HeadingCentre - 14.0f, 28.0f, 28.0f);
+    if (IconButton(State, Sheet, "OutlinerMenu", MenuButton, IconSymbol::SolidArcRows, 17.0f))
+    {
+        State.FileMenuAnchor = { MenuButton.MinimumX, MenuButton.MaximumY + 6.0f };
+        State.PopupRequest   = "FileMenu";
+    }
+    if (ImGui::IsMouseHoveringRect(ImVec2(MenuButton.MinimumX, MenuButton.MinimumY), ImVec2(MenuButton.MaximumX, MenuButton.MaximumY)))
+        ImGui::SetTooltip("File: new, open, save, import, export, examples (Ctrl+N / O / S / I / E) · compact rows");
     float Y = Top + 64.0f;
 
     // .stat-tiles — 2 columns, gap 10, margin 0 12 12; tile 64 px, #1c1c1c, hairline, radius 18, padding 11 14.

@@ -15,7 +15,9 @@ snap grid on
 frames 3
 expect bodies == 1
 expect volume ~ 10.2227737
-click @HeaderExport
+click @OutlinerMenu
+frames 2
+click @MenuExport
 frames 2
 click @PathExport
 frames 2
@@ -121,7 +123,7 @@ capture 199ExchangeImportStep
 
 # ⑥ Import… (the field offers the last STEP export, else the VehicleCurves sample — here the sample, the last export was
 #    STL): .obj is neither STEP nor VehicleCurves, refused, nothing changes
-click @HeaderImport
+key I Ctrl
 frames 2
 click @PathField
 key End

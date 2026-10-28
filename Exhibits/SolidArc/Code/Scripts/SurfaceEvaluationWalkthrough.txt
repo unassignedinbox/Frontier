@@ -16,7 +16,7 @@ snap grid on
 # ① bonnet: lift pole 2 of Section3, front loft, rear loft G0
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3
@@ -129,7 +129,7 @@ frames 1
 # ④ fresh bonnet, one loft through all six sections, Alt+X, zebra: stripes continue across x = 0
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 3
 click @PathImport
 frames 3

@@ -249,11 +249,16 @@ expect dirty == 0
 expect file:_ClaudeScratch/SolidArcWorkspace/Bracket.solidarc == 1
 frames 45
 expect file:_ClaudeScratch/SolidArcWorkspace/Recovery.solidarc == 1
-click @HeaderNew
+click @OutlinerMenu
+frames 2
+click @MenuNew
+frames 2
 expect steps == 0
 capture 14NewDocument
 expect file:_ClaudeScratch/SolidArcWorkspace/Recovery.previous.solidarc == 1
-click @RestorePrevious
+click @OutlinerMenu
+frames 2
+click @MenuRestorePrevious
 frames 2
 expect steps > 9
 capture 15Restored

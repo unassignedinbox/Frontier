@@ -58,8 +58,6 @@ namespace
 // 📝 SolidArc WorkspacePanel.css: header + document bar, Outliner 300 px | viewport | Inspector 330 px, 10 px gaps.
 constexpr float  ZebraStripeCount = 64.0f;                                                  // [-]   - Zebra stripes over the reflection angle (V8)
 constexpr double DeviationLimit   = 2.0e-4;                                                 // [len] - Red end of the deviation scale (fit tolerance)
-constexpr float HeaderHeight    = 68.0f;                                                     // [px] - HTML .app-header
-constexpr float DocumentHeight  = 34.0f;                                                     // [px] - HTML .document-bar
 constexpr float StatusHeight    = 31.0f;                                                     // [px] - HTML .status-bar
 constexpr float FrameMargin     = 12.0f;                                                     // [px] - HTML .workspace padding 0 12
 constexpr float ColumnGap       = 10.0f;                                                     // [px] - HTML .workspace gap
@@ -9103,110 +9101,6 @@ void EndSheetWindow()
     ImGui::PopStyleVar(2);
 }
 
-// 📝 HTML .app-header (68 px, padding 0 24, gap 28): the document dock (tab + new), the Workspace / Examples nav, and the
-//    header end (Import, Export, Save as, kernel tag, help, Save). Opens the path popups on its own ID stack.
-void DrawHeader(SolidArcWorkspaceState& State, const ImVec2 Frame)
-{
-    BeginSheetWindow("Header", ImVec2(0, 0), ImVec2(Frame.x, HeaderHeight));
-    SolidArcSheet Sheet;
-    Sheet.Begin();
-    const float Centre = 0.5f * HeaderHeight;
-
-    // Header end, laid out from the right: Save .solidarc, help, kernel tag, Save as…, Export…, Import… (gap 15).
-    float Right = Frame.x - 24.0f;
-    const auto Measured = [&](const char* Label, bool GlyphCondition) { return 2.0f + 32.0f + Sheet.Measure(Label, 11.0f) + (GlyphCondition ? 25.0f : 0.0f); };
-    Right -= Measured("Save .solidarc", true);
-    if (SheetButton(State, Sheet, "HeaderSave", Right, Centre, "Save .solidarc", true, IconSymbol::SolidArcSave))
-    {
-        if (State.DocumentPath.empty()) State.PopupRequest = "Save document";
-        else SaveDocument(State, State.DocumentPath);
-    }
-    Right -= 15.0f + 28.0f;
-    SheetIconButton(State, Sheet, "HeaderHelp", Right + 14.0f, Centre, 28.0f, IconSymbol::SolidArcHelp, 17.0f);
-    const char* Kernel = "Native CAD · Vulkan viewport";
-    Right -= 15.0f + Sheet.Measure(Kernel, 10.0f) + 12.0f;
-    Sheet.Surface().FillRectangle(Spanning(Right, Centre - 2.5f, 5.0f, 5.0f), SolidArcInk(0x34c759), 2.5f);
-    Sheet.Text(Right + 12.0f, Centre, 10.0f, SolidArcInk(0x919191), Kernel);
-    const struct { const char* Key; const char* Label; const char* Popup; } Ends[] = {
-        { "HeaderSaveAs", "Save as…", "Save document" }, { "HeaderExport", "Export…", "Export" }, { "HeaderImport", "Import…", "Import" } };
-    for (const auto& End : Ends)
-    {
-        Right -= 15.0f + Measured(End.Label, false);
-        if (SheetButton(State, Sheet, End.Key, Right, Centre, End.Label)) State.PopupRequest = End.Popup;
-    }
-    const float EndLeft = Right;
-
-    // Document dock (flex 1, 150 … 660 px): one tab (186 px trapezoid, 24 px, top padding 4) and the 24 px + button.
-    const float NavWidth = 2.0f * 46.0f + SolidArcSheet().Measure("Workspace", 12.0f) + Sheet.Measure("Examples", 12.0f) + 8.0f + 2.0f;
-    const float Dock     = std::clamp(EndLeft - 28.0f - NavWidth - 28.0f - 24.0f, 150.0f, 660.0f);
-    {
-        const float  TabLeft = 24.0f, TabTop = Centre - 14.0f + 4.0f;
-        const PlanePoint Corners[4] = { { TabLeft + 14.0f, TabTop }, { TabLeft + 186.0f - 14.0f, TabTop }, { TabLeft + 186.0f, TabTop + 24.0f }, { TabLeft, TabTop + 24.0f } };
-        Sheet.Surface().FillPolygon(Corners, 4, SolidArcInk(0x1a1a1a));                     // .document-tab.active
-        const float TabCentre = TabTop + 12.0f;
-        Sheet.Icon(IconSymbol::SolidArcBody, TabLeft + 20.0f, TabCentre - 6.5f, 13.0f, SolidArcInk(0xeeeeee));
-        const std::string Caption = State.Document.Title + ".solidarc";
-        const float LabelRight = TabLeft + 186.0f - 20.0f - 15.0f - 7.0f - (State.DirtyCondition ? 4.0f + 7.0f : 0.0f);
-        Sheet.TextClipped(TabLeft + 20.0f + 13.0f + 7.0f, TabCentre, LabelRight - (TabLeft + 40.0f), 11.0f, SolidArcInk(0xeeeeee), Caption.c_str());
-        if (State.DirtyCondition) Sheet.Surface().FillRectangle(Spanning(LabelRight + 7.0f, TabCentre - 2.0f, 4.0f, 4.0f), SolidArcInk(0x999999), 2.0f);
-        const float NewCentre = std::min(TabLeft + 186.0f, 24.0f + Dock - 24.0f) + 8.0f + 12.0f;
-        if (SheetIconButton(State, Sheet, "HeaderNew", NewCentre, Centre, 24.0f, IconSymbol::SolidArcPlus, 13.0f, 0x12)) StartNewDocument(State);
-    }
-
-    // Nav: Workspace (active, #242424, #ffffff0c border) and Examples; 38 px pills, padding 0 23, 12 px.
-    float Cursor = 24.0f + Dock + 28.0f;
-    for (const char* Label : { "Workspace", "Examples" })
-    {
-        const bool        Active = std::strcmp(Label, "Workspace") == 0;
-        const PlaneExtent Pill   = Spanning(Cursor, Centre - 19.0f, 46.0f + Sheet.Measure(Label, 12.0f) + (Active ? 2.0f : 0.0f), 38.0f);
-        const SolidArcPress Press = PressSolidArcRegion(State.Widgets, std::string("Nav") + Label, Pill);
-        Sheet.Box(Pill, Active ? SolidArcInk(0x242424) : Press.HoveredCondition ? SolidArcInk(0x292929) : SolidArcInk(0, 0.0f), 30.0f,
-                  Active ? SolidArcWash(0x0c) : SolidArcInk(0, 0.0f));
-        Sheet.Text(Pill.MinimumX + 23.0f + (Active ? 1.0f : 0.0f), Centre, 12.0f, SolidArcInk(Active ? 0xeaeaea : Press.HoveredCondition ? 0xffffff : 0x939393), Label);
-        if (Press.ClickedCondition && !Active) State.PopupRequest = "Examples";
-        Cursor = Pill.MaximumX + 8.0f;
-    }
-
-    if (!State.PopupRequest.empty())
-    {
-        ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Buttons, Ctrl+O / Ctrl+Shift+S
-        State.PopupRequest.clear();
-    }
-    DrawPathPopups(State);
-    EndSheetWindow();
-}
-
-// 📝 HTML .document-bar (34 px, padding 0 25, gap 9, 11 px): file glyph, title, .solidarc, dirty dot, divider, location;
-//    on the right Restore previous (when an earlier session left one) and Open document.
-void DrawDocumentBar(SolidArcWorkspaceState& State, const ImVec2 Frame)
-{
-    BeginSheetWindow("Documents", ImVec2(0, HeaderHeight), ImVec2(Frame.x, DocumentHeight));
-    SolidArcSheet Sheet;
-    Sheet.Begin();
-    const float Centre = HeaderHeight + 0.5f * DocumentHeight;
-    float       Cursor = 25.0f;
-    Sheet.Icon(IconSymbol::SolidArcFile, Cursor, Centre - 7.0f, 14.0f, SolidArcInk(0x888888));
-    Cursor += 14.0f + 9.0f;
-    Cursor += Sheet.Text(Cursor, Centre, 11.0f, SolidArcInk(0xeeeeee), State.Document.Title.c_str()) + 9.0f;
-    Cursor += Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), ".solidarc") + 9.0f;
-    if (State.DirtyCondition)
-    {
-        Sheet.Surface().FillRectangle(Spanning(Cursor + 2.0f, Centre - 2.0f, 4.0f, 4.0f), SolidArcInk(0xaaaaaa), 2.0f);
-        Cursor += 2.0f + 4.0f + 9.0f;
-    }
-    Sheet.Surface().FillRectangle(Spanning(Cursor + 9.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
-    Cursor += 9.0f + 1.0f + 9.0f + 9.0f;
-    const std::string Location = State.DocumentPath.empty() ? std::string("SolidArc / Unsaved") : "SolidArc / " + State.DocumentPath;
-    Sheet.Text(Cursor, Centre, 10.0f, SolidArcInk(0x717171), Location.c_str());
-
-    float Right = Frame.x - 25.0f, Width = 0.0f;
-    if (SheetTextButton(State, Sheet, "HeaderOpen", Right, Centre, "Open document", IconSymbol::SolidArcFolder, &Width)) State.PopupRequest = "Open document";
-    Right -= Width + 9.0f;
-    if (std::filesystem::exists(PreviousRecoveryPath(State)) && SheetTextButton(State, Sheet, "RestorePrevious", Right, Centre, "Restore previous", IconSymbol::SolidArcUndo))
-        OpenDocument(State, PreviousRecoveryPath(State), false);
-    EndSheetWindow();
-}
-
 // 📝 HTML .status-bar (31 px, padding 0 21, gap 14, 9 px #8c8c8c): kernel state, figures, the last message; on the right the
 //    frame time and device, Metres · Z up, SOLIDARC NATIVE.
 void DrawStatusBar(SolidArcWorkspaceState& State, const ImVec2 Frame)
@@ -9855,6 +9749,99 @@ bool SelectListEntry(SolidArcWorkspaceState& State, const std::string& Label, bo
     return Pressed;
 }
 
+// 📝 File menu (the Outliner ☰ button): what the removed app header held — new, open, save, save as, import, export,
+//    examples, restore previous — with their shortcuts, then the Outliner's compact rows toggle.
+void DrawFileMenu(SolidArcWorkspaceState& State)
+{
+    if (!BeginSelectList("FileMenu", ImVec2(State.FileMenuAnchor[0], State.FileMenuAnchor[1]))) return;
+    const auto Entry = [&](const char* Label, const char* Shortcut, bool EnabledCondition = true)
+    {
+        ImGui::BeginDisabled(!EnabledCondition);
+        const bool Pressed = ImGui::Selectable(Label, false, ImGuiSelectableFlags_None, ImVec2(210.0f, 26.0f));
+        RegisterWidget(State, Label);
+        if (*Shortcut)
+        {
+            const ImVec2 Box = ImGui::GetItemRectMax();
+            const ImVec2 Text = ImGui::CalcTextSize(Shortcut);
+            ImGui::GetWindowDrawList()->AddText(ImVec2(Box.x - Text.x - 8.0f, Box.y - 13.0f - 0.5f * Text.y), Tint(IM_COL32(0x80, 0x84, 0x8a, 0xff)), Shortcut);
+        }
+        ImGui::EndDisabled();
+        return Pressed;
+    };
+    if (Entry("New document###MenuNew", "Ctrl+N")) StartNewDocument(State);
+    if (Entry("Open…###MenuOpen", "Ctrl+O")) State.PopupRequest = "Open document";
+    if (Entry("Save###MenuSave", "Ctrl+S"))
+    {
+        if (State.DocumentPath.empty()) State.PopupRequest = "Save document";
+        else SaveDocument(State, State.DocumentPath);
+    }
+    if (Entry("Save as…###MenuSaveAs", "Ctrl+Shift+S")) State.PopupRequest = "Save document";
+    ImGui::Separator();
+    if (Entry("Import…###MenuImport", "Ctrl+I")) State.PopupRequest = "Import";
+    if (Entry("Export…###MenuExport", "Ctrl+E")) State.PopupRequest = "Export";
+    if (Entry("Examples…###MenuExamples", "")) State.PopupRequest = "Examples";
+    if (Entry("Restore previous###MenuRestorePrevious", "", std::filesystem::exists(PreviousRecoveryPath(State)))) OpenDocument(State, PreviousRecoveryPath(State), false);
+    ImGui::Separator();
+    if (Entry(State.Outliner.CompactEnabled ? "Roomy rows###MenuCompact" : "Compact rows###MenuCompact", "")) State.Outliner.CompactEnabled = !State.Outliner.CompactEnabled;
+    EndSelectList();
+}
+
+// 📝 Popup host: the file menu and the path / examples / image popups open here (an input-transparent window of its
+//    own) whenever PopupRequest names one — from the menu, the shortcuts or a card.
+void DrawWorkspacePopups(SolidArcWorkspaceState& State)
+{
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(1.0f, 1.0f));
+    ImGui::Begin("##PopupHost", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
+                                         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
+    if (!State.PopupRequest.empty())
+    {
+        ImGui::OpenPopup(State.PopupRequest.c_str());                                        // Menu, Ctrl+O / Ctrl+Shift+S / Ctrl+I / Ctrl+E
+        State.PopupRequest.clear();
+    }
+    DrawFileMenu(State);
+    DrawPathPopups(State);
+    ImGui::End();
+}
+
+// 📝 Display select in the viewport bar (moved from the viewport corner, less clutter over the model): "Display" and a
+//    chevron like the view select; the list toggles the overlays (grid, combs, zebra, deviation, reference images) and
+//    the tooltip names the ones on. Returns its width.
+float DrawDisplaySelect(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, float Left, float Centre)
+{
+    struct DisplayToggle
+    {
+        const char* Label;
+        bool*       Enabled;
+    };
+    const DisplayToggle Toggles[] = { { "Grid###GridToggle", &State.Style.GridEnabled }, { "Combs###CombToggle", &State.CombsEnabled },
+                                      { "Zebra###ZebraToggle", &State.ZebraEnabled },    { "Deviation###DeviationToggle", &State.DeviationEnabled },
+                                      { "Images###ImagesToggle", &State.ImagePlanesEnabled } };
+    std::string Summary;
+    for (const DisplayToggle& Toggle : Toggles)
+        if (*Toggle.Enabled) Summary += (Summary.empty() ? "" : " · ") + std::string(Toggle.Label, std::strstr(Toggle.Label, "###"));
+    if (Summary.empty()) Summary = "nothing";
+    const PlaneExtent   Select = Spanning(Left, Centre - 13.0f, 10.0f + Sheet.Measure("Display", 11.0f) + 26.0f, 26.0f);
+    const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, "DisplayMenu", Select);
+    if (Press.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
+    const ColorQuad Ink = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xa0a0a0);
+    Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, Ink, "Display");
+    SelectChevron(Sheet, Select.MaximumX - 12.0f, Centre, Ink);
+    if (Press.HoveredCondition) ImGui::SetTooltip("Display overlays: %s", Summary.c_str());
+    if (Press.ClickedCondition) ImGui::OpenPopup("DisplayMenu");
+    if (BeginSelectList("DisplayMenu", ImVec2(Select.MinimumX, Select.MaximumY + 4.0f)))
+    {
+        for (const DisplayToggle& Toggle : Toggles)
+        {
+            if (!SelectListEntry(State, Toggle.Label, *Toggle.Enabled)) continue;
+            if (Toggle.Enabled == &State.ZebraEnabled) ToggleZebra(State);
+            else *Toggle.Enabled = !*Toggle.Enabled;
+        }
+        EndSelectList();
+    }
+    return Select.MaximumX - Select.MinimumX;
+}
+
 // 📝 HTML .viewport-bar (44 px, padding 0 12, gap 4): the Construct chip, a divider, the camera-view select … the
 //    Perspective text button and the edges / fit / maximize icon buttons.
 void DrawViewportBar(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const PlaneExtent& Bar)
@@ -9901,6 +9888,12 @@ void DrawViewportBar(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const 
         EndSelectList();
     }
 
+    // Display overlays select (after a divider).
+    Cursor = Select.MaximumX + 4.0f;
+    Sheet.Surface().FillRectangle(Spanning(Cursor + 5.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+    Cursor += 5.0f + 1.0f + 9.0f;
+    Cursor += DrawDisplaySelect(State, Sheet, Cursor, Centre);
+
     // Right end, right to left: maximize, fit, edges (28 px icon buttons, gap 4), then the projection text button.
     float Right = Bar.MaximumX - 12.0f;
     if (SheetIconButton(State, Sheet, "ViewportMaximize", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcMaximize, 18.0f, 0, true, State.ViewportMaximizedEnabled))
@@ -9932,7 +9925,7 @@ void DrawViewportLabel(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, ImVe
     const SolidArcSelection&       Selection = State.Document.Selection;
     const std::vector<std::string> Bodies    = TouchedBodies(State.Document);
     const int Picked = int(Bodies.size() + Selection.Curves.size());
-    std::string Caption = State.Document.Title;
+    std::string Caption = State.Document.Title + (State.DirtyCondition ? " · unsaved" : "");   // The removed document bar's dirty dot
     if (!Selection.Faces.empty() || !Selection.Edges.empty())
         Caption = Compose("%d face%s · %d edge%s · ", int(Selection.Faces.size()), Selection.Faces.size() == 1 ? "" : "s", int(Selection.Edges.size()),
                           Selection.Edges.size() == 1 ? "" : "s") + (Bodies.empty() ? Caption : SolidArcBodyCaption(State.Document, Bodies.front()));
@@ -9968,8 +9961,8 @@ void DrawViewportLabel(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, ImVe
 }
 
 // 📝 HTML .viewport-instructions (bottom 12, left 17, 9 px, gap 12, wrapping): the first group #8f9297, the rest #747b84.
-//    The native hint's " · " groups wrap upwards inside Width.
-void DrawViewportInstructions(SolidArcSheet& Sheet, float Left, float Bottom, float Width, const std::string& Hint)
+//    The native hint's " · " groups wrap upwards inside Width; returns the top of the lines (the toolbar sits above).
+float DrawViewportInstructions(SolidArcSheet& Sheet, float Left, float Bottom, float Width, const std::string& Hint)
 {
     std::vector<std::string> Groups;
     for (size_t Start = 0; Start <= Hint.size();)
@@ -10000,6 +9993,7 @@ void DrawViewportInstructions(SolidArcSheet& Sheet, float Left, float Bottom, fl
         for (const size_t Index : Lines[Row])
             Cursor += Sheet.Text(Cursor, Centre, 9.0f, SolidArcInk(Index == 0 ? 0x8f9297 : 0x747b84), Groups[Index].c_str()) + 12.0f;
     }
+    return Bottom - float(Lines.size()) * LineHeight;                                       // [px] - Top of the wrapped lines
 }
 
 // 📝 HTML .selection-tools (top 98, left 17): #15191edd column, #ffffff0a hairline, radius 22, padding 7 5, gap 5;
@@ -10046,94 +10040,45 @@ void DrawSelectionRail(SolidArcWorkspaceState& State, ImVec2 Image)
     EndSheetWindow();
 }
 
-// 📝 HTML .gizmo-toolbar slot (top 18, right 15): #191919e8 pill, #ffffff12 hairline, padding 4 5 4 12, gap 8; a 10 px
-//    #999 label and an 11 px select. Native: the display overlays (grid, combs, zebra, deviation, reference images).
-void DrawDisplayMenu(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
-{
-    struct DisplayToggle
-    {
-        const char* Label;
-        bool*       Enabled;
-    };
-    const DisplayToggle Toggles[] = { { "Grid###GridToggle", &State.Style.GridEnabled }, { "Combs###CombToggle", &State.CombsEnabled },
-                                      { "Zebra###ZebraToggle", &State.ZebraEnabled },    { "Deviation###DeviationToggle", &State.DeviationEnabled },
-                                      { "Images###ImagesToggle", &State.ImagePlanesEnabled } };
-    std::string Summary;
-    for (const DisplayToggle& Toggle : Toggles)
-        if (*Toggle.Enabled) Summary += (Summary.empty() ? "" : " · ") + std::string(Toggle.Label, std::strstr(Toggle.Label, "###"));
-    if (Summary.empty()) Summary = "Off";
-
-    SolidArcSheet Probe;
-    Probe.Begin();
-    const float  Height = 2.0f + 8.0f + 26.0f;
-    const float  Extent = 2.0f + 12.0f + Probe.Measure("Display", 10.0f) + 8.0f + 7.0f + Probe.Measure(Summary.c_str(), 11.0f) + 22.0f + 5.0f;
-    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f);
-    BeginSheetWindow("ViewportDisplay", Corner, ImVec2(Extent, Height), true);
-    SolidArcSheet Sheet;
-    Sheet.Begin();
-    const PlaneExtent Pill   = Spanning(Corner.x, Corner.y, Extent, Height);
-    const float       Centre = 0.5f * (Pill.MinimumY + Pill.MaximumY);
-    Sheet.Box(Pill, SolidArcInk(0x191919, 0xe8 / 255.0f), 18.0f, SolidArcWash(0x12));
-    const float Label = Sheet.Text(Pill.MinimumX + 1.0f + 12.0f, Centre, 10.0f, SolidArcInk(0x999999), "Display");
-    const PlaneExtent   Select = PlaneExtent{ Pill.MinimumX + 1.0f + 12.0f + Label + 8.0f, Centre - 13.0f, Pill.MaximumX - 1.0f - 5.0f, Centre + 13.0f };
-    const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, "DisplayMenu", Select);
-    if (Press.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
-    const ColorQuad Ink = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xdddddd);
-    Sheet.Text(Select.MinimumX + 7.0f, Centre, 11.0f, Ink, Summary.c_str());
-    SelectChevron(Sheet, Select.MaximumX - 11.0f, Centre, Ink);
-    if (Press.ClickedCondition) ImGui::OpenPopup("DisplayMenu");
-    if (BeginSelectList("DisplayMenu", ImVec2(Pill.MaximumX - 162.0f, Pill.MaximumY + 6.0f)))
-    {
-        for (const DisplayToggle& Toggle : Toggles)
-        {
-            if (!SelectListEntry(State, Toggle.Label, *Toggle.Enabled)) continue;
-            if (Toggle.Enabled == &State.ZebraEnabled) ToggleZebra(State);
-            else *Toggle.Enabled = !*Toggle.Enabled;
-        }
-        EndSelectList();
-    }
-    EndSheetWindow();
-}
-
-// 📝 Gizmo chips (under the Display pill, same #191919e8 pill): Move / Rotate / Scale toggle independently, so any mix
-//    (move + rotate, rotate + scale, all three) is one click away; y cycles the same set from the keyboard.
+// 📝 Gizmo modes (top right of the viewport, #191919e8 pill): Move / Rotate / Scale as icons that toggle independently,
+//    so any mix is one click away (the tooltip names it and its key); y cycles the same set from the keyboard.
 void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
 {
     struct GizmoChip
     {
         const char* Key;
-        const char* Label;
+        IconSymbol  Glyph;
+        const char* Tip;
         uint32_t    Mode;
     };
-    static const GizmoChip Chips[] = { { "GizmoMove", "Move", GizmoTranslate }, { "GizmoRotate", "Rotate", GizmoRotate }, { "GizmoScale", "Scale", GizmoScale } };
-    SolidArcSheet Probe;
-    Probe.Begin();
-    float Extent = 2.0f + 12.0f + Probe.Measure("Gizmo", 10.0f) + 8.0f + 5.0f;
-    for (const GizmoChip& Chip : Chips) Extent += Probe.Measure(Chip.Label, 11.0f) + 16.0f + 3.0f;
-    const float  Height = 2.0f + 8.0f + 26.0f;
-    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f + Height + 8.0f);
+    static const GizmoChip Chips[] = { { "GizmoMove", IconSymbol::SolidArcMove, "Gizmo: move arrows (G moves the picks)", GizmoTranslate },
+                                       { "GizmoRotate", IconSymbol::SolidArcRotate, "Gizmo: rotate rings (R rotates the picks)", GizmoRotate },
+                                       { "GizmoScale", IconSymbol::SolidArcScale, "Gizmo: scale handles (S scales the picks)", GizmoScale } };
+    constexpr float Button = 28.0f, Gap = 2.0f, Padding = 4.0f;                              // [px]
+    const float  Extent = 2.0f * Padding + 3.0f * Button + 2.0f * Gap;
+    const float  Height = 2.0f * Padding + Button;
+    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f);
     BeginSheetWindow("ViewportGizmo", Corner, ImVec2(Extent, Height), true);
     SolidArcSheet Sheet;
     Sheet.Begin();
     const PlaneExtent Pill   = Spanning(Corner.x, Corner.y, Extent, Height);
     const float       Centre = 0.5f * (Pill.MinimumY + Pill.MaximumY);
-    Sheet.Box(Pill, SolidArcInk(0x191919, 0xe8 / 255.0f), 18.0f, SolidArcWash(0x12));
-    float X = Pill.MinimumX + 1.0f + 12.0f;
-    X += Sheet.Text(X, Centre, 10.0f, SolidArcInk(0x999999), "Gizmo") + 8.0f;
+    Sheet.Box(Pill, SolidArcInk(0x191919, 0xe8 / 255.0f), 0.5f * Height, SolidArcWash(0x12));
+    float X = Pill.MinimumX + Padding;
     for (const GizmoChip& Chip : Chips)
     {
-        const float         Span   = Probe.Measure(Chip.Label, 11.0f) + 16.0f;
-        const PlaneExtent   Box    = PlaneExtent{ X, Centre - 13.0f, X + Span, Centre + 13.0f };
+        const PlaneExtent   Box    = Spanning(X, Centre - 0.5f * Button, Button, Button);
         const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, Chip.Key, Box);
         const bool          Active = (State.Gizmo.Modes & Chip.Mode) != 0;
-        if (Active || Press.HoveredCondition) Sheet.Box(Box, Active ? SolidArcWash(0x15) : SolidArcInk(0x292929), 13.0f);
-        Sheet.Text(X + 8.0f, Centre, 11.0f, SolidArcInk(Active ? 0xffffff : Press.HoveredCondition ? 0xdddddd : 0x8a8f96), Chip.Label);
+        if (Active || Press.HoveredCondition) Sheet.Box(Box, Active ? SolidArcWash(0x15) : SolidArcInk(0x292929), 0.5f * Button);
+        Sheet.Icon(Chip.Glyph, Box.MinimumX + 0.5f * (Button - 16.0f), Centre - 8.0f, 16.0f, SolidArcInk(Active ? 0xffffff : Press.HoveredCondition ? 0xdddddd : 0x8a8f96));
+        if (Press.HoveredCondition) ImGui::SetTooltip("%s · %s", Chip.Tip, Active ? "on" : "off");
         if (Press.ClickedCondition)
         {
             State.Gizmo.Modes ^= Chip.Mode;
             Announce(State, "Gizmo: " + GizmoModesLabel(State.Gizmo.Modes));
         }
-        X += Span + 3.0f;
+        X += Button + Gap;
     }
     EndSheetWindow();
 }
@@ -10141,8 +10086,10 @@ void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
 // 📝 HTML .sketch-toolbar (bottom 52, centred): #171717f5, #343434 hairline, radius 13, padding 5, gap 4; buttons
 //    padding 9 12, radius 8, gap 7, glyph 17, #aaa (active / hover #303030 / #fff), a 1 × 22 #3a3a3a divider after Select.
 //    Select ends Trim, Cut breaks sketch curves at the click (Plasticity curve cut; C still cuts a body by the focused
-//    sketch / picked curve), Trim opens the trim session (T).
-void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Extent)
+//    sketch / picked curve), Trim opens the trim session (T). It keeps clear of the orientation cube and the hint lines:
+//    centred when the labelled bar fits beside the cube, else shifted left, else icons only (names in the tooltips),
+//    else the knife caption folds to its chevron too.
+void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Extent, float HintTop)
 {
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
     const bool SplitCondition  = State.Trim.ActiveCondition && State.Trim.SplitCondition;
@@ -10165,15 +10112,29 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     SolidArcSheet Probe;
     Probe.Begin();
     constexpr int KnifeIndex = 5;                                                           // [-]  - The knife icon (last tool)
-    float Widths[KnifeIndex + 1], Total = 2.0f + 10.0f + 4.0f * KnifeIndex + 1.0f + 6.0f + 4.0f;
-    for (int Index = 0; Index <= KnifeIndex; ++Index) Total += Widths[Index] = 24.0f + 17.0f + (*Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
     const std::string ToolCaption = KnifeToolLabel(State);
-    const float       ToolWidth   = 10.0f + std::max(Probe.Measure(ToolCaption.c_str(), 13.0f), 44.0f) + 22.0f;   // [px] - Knife tool menu (caption + chevron)
-    const float Labelled = Total - Widths[KnifeIndex] - 4.0f;                                       // [px] - Labelled tools stay centred; the knife icon extends right
-    Total += ToolWidth + 2.0f;
+    // Room: the viewport's left edge to the orientation cube (the bar shares the cube's height band), 12 px clear.
+    const float RoomLeft  = Image.x + 12.0f;
+    const float RoomRight = Image.x + Extent.x - CubeExtent - 18.0f - 12.0f;
+    float Widths[KnifeIndex + 1] = {}, Total = 0.0f, Labelled = 0.0f, ToolWidth = 0.0f;   // [px]
+    bool  LabelsCondition = true, CaptionCondition = true;
+    for (int Fit = 0; Fit < 3; ++Fit)                                                       // Labels + caption → icons + caption → icons
+    {
+        LabelsCondition  = Fit == 0;
+        CaptionCondition = Fit < 2;
+        Total = 2.0f + 10.0f + 4.0f * KnifeIndex + 1.0f + 6.0f + 4.0f;
+        for (int Index = 0; Index <= KnifeIndex; ++Index)
+            Total += Widths[Index] = 24.0f + 17.0f + (LabelsCondition && *Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
+        ToolWidth = CaptionCondition ? 10.0f + std::max(Probe.Measure(ToolCaption.c_str(), 13.0f), 44.0f) + 22.0f : 30.0f;   // Knife tool menu
+        Labelled  = Total - Widths[KnifeIndex] - 4.0f;                                      // Labelled tools stay centred; the knife extends right
+        Total    += ToolWidth + 2.0f;
+        if (Total <= RoomRight - RoomLeft) break;
+    }
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
-    const ImVec2 Corner(std::floor(Image.x + 0.5f * (Extent.x - Labelled)), Image.y + Extent.y - 52.0f - Height);
+    const float  Bottom       = std::min(Image.y + Extent.y - 52.0f, HintTop - 8.0f);        // [px] - Above the hint lines however many wrap
+    const float  Centred      = std::floor(Image.x + 0.5f * (Extent.x - Labelled));
+    const ImVec2 Corner(std::max(RoomLeft, std::min(Centred, std::floor(RoomRight - Total))), Bottom - Height);
     BeginSheetWindow("ViewportTools", Corner, ImVec2(Total, Height), true);
     SolidArcSheet Sheet;
     Sheet.Begin();
@@ -10191,7 +10152,9 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         if (Lit) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
         Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
-        if (*Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        if (LabelsCondition && *Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        if (!LabelsCondition && Press.HoveredCondition && (Index == 0 || Index == 3 || Index == 4))
+            ImGui::SetTooltip("%s", Index == 0 ? "Select" : Index == 3 ? "Trim (T): click the piece of a curve to remove" : "Fill (F): click inside closed curves to fill a region");
         if (Index == 2 && Press.HoveredCondition) ImGui::SetTooltip("Point (V): click a curve to add a point without changing its shape, then drag it (or use the gizmo) to move it");
         if (Index == KnifeIndex && Press.HoveredCondition) ImGui::SetTooltip("Knife (Shift+K): 2D cutters (imprint), sketch cutters, 3D cutters, boolean-library inserts, object cutters");
         if (Index == 1 && Press.HoveredCondition) ImGui::SetTooltip("Cut: click a line, arc or circle where it should break in two · C cuts a body by the focused sketch");
@@ -10220,9 +10183,10 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         const SolidArcPress Press   = PressSolidArcRegion(State.Widgets, "SketchKnifeTool", Box, Enabled);
         if (Press.HoveredCondition) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Press.HoveredCondition || State.Knife.ActiveCondition ? 0xffffff : 0xaaaaaa), Enabled ? 1.0f : 0.32f);
-        Sheet.Text(Box.MinimumX + 8.0f, Centre, 13.0f, Ink, ToolCaption.c_str());
+        if (CaptionCondition) Sheet.Text(Box.MinimumX + 8.0f, Centre, 13.0f, Ink, ToolCaption.c_str());
         SelectChevron(Sheet, Box.MaximumX - 12.0f, Centre, Ink);
-        if (Press.HoveredCondition) ImGui::SetTooltip("Knife cutter: 2D cutter (imprint into the face), sketch shape with depth, 3D primitive, boolean-library insert or picked objects");
+        if (Press.HoveredCondition) ImGui::SetTooltip("Knife cutter (now %s): 2D cutter (imprint into the face), sketch shape with depth, 3D primitive, boolean-library insert or picked objects",
+                                                      ToolCaption.c_str());
         if (Press.ClickedCondition)
         {
             EnsureKnifeLibrary(State);
@@ -10933,17 +10897,17 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.PickMode == SolidArcPickMode::ControlPoint
                            ? "Mode 1: drag a sketch point or pole (live, release commits, Esc drops; Ctrl ends / midpoints, Alt along a curve) · click a point for the gizmo (Shift add, box picks) · click a curve · L loft · 2/3/4/5 modes"
                            : "Middle orbit · right pan · wheel zoom · click select (Shift add, Ctrl remove · Ctrl on a new edge: path, Alt loop, Ctrl+Alt ring, double-click chain) · 1-5 modes · B fillet · E extrude · L loft · Shift+A line · Shift+S curve";
+    float HintTop = 0.0f;                                                                   // [px] - The toolbar stays above the hint lines
     {
         SolidArcSheet Instructions;
         Instructions.Begin();
-        DrawViewportInstructions(Instructions, Image.x + 17.0f, Image.y + Extent.y - 12.0f, Extent.x - 34.0f - CubeExtent - 18.0f, Hint);
+        HintTop = DrawViewportInstructions(Instructions, Image.x + 17.0f, Image.y + Extent.y - 12.0f, Extent.x - 34.0f - CubeExtent - 18.0f, Hint);
     }
 
     // The overlay clusters are top-level windows of their own (begun here so they measure inside a window).
     DrawSelectionRail(State, Image);
-    DrawDisplayMenu(State, Image, Extent.x);
     DrawGizmoChips(State, Image, Extent.x);
-    DrawSketchToolbar(State, Image, Extent);
+    DrawSketchToolbar(State, Image, Extent, HintTop);
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -13123,6 +13087,8 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
             else SaveDocument(State, State.DocumentPath.empty() ? State.Options.DocumentPath : State.DocumentPath);
         }
         if (Pressed(ImGuiKey_O)) State.PopupRequest = "Open document";
+        if (Pressed(ImGuiKey_I)) State.PopupRequest = "Import";                             // file:import (the header button is gone)
+        if (Pressed(ImGuiKey_E)) State.PopupRequest = "Export";                             // file:export
         if (Pressed(ImGuiKey_N)) StartNewDocument(State);
         if (Pressed(ImGuiKey_C)) CopyBodies(State);                                         // edit:copy
         if (Pressed(ImGuiKey_V)) PasteBodies(State);                                        // edit:paste
@@ -13522,9 +13488,9 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
     { SolidArcPhaseClock Clock(Profile, "bevel preview"); StageBevelPreview(State); }
     { SolidArcPhaseClock Clock(Profile, "measure"); RefreshMeasure(State); }
     { SolidArcPhaseClock Clock(Profile, "section"); RefreshSection(State); }
-    // 📝 HTML grid at 1600 px: header 68, document bar 34, columns 300 | 1fr | 330 (gap 10, margin 12), status bar 31.
-    { SolidArcPhaseClock Clock(Profile, "header"); DrawHeader(State, Frame); DrawDocumentBar(State, Frame); }
-    const float Top    = HeaderHeight + DocumentHeight;
+    // 📝 HTML grid at 1600 px: columns 300 | 1fr | 330 (gap 10, margin 12), status bar 31. The HTML app header and
+    //    document bar are gone (less chrome): their file actions are the Outliner ☰ menu and Ctrl+N / O / S / Shift+S / I / E.
+    const float Top    = FrameMargin;
     const float Height = std::max(100.0f, Frame.y - Top - StatusHeight);
     const float Middle = std::max(100.0f, Frame.x - 2 * FrameMargin - 2 * ColumnGap - OutlinerWidth - InspectorWidth);
     if (State.ViewportMaximizedEnabled)
@@ -13540,6 +13506,7 @@ void DrawSolidArcInterface(SolidArcWorkspaceState& State, ImTextureID ViewportTe
         { SolidArcPhaseClock Clock(Profile, "inspector"); DrawInspector(State, ImVec2(FrameMargin + OutlinerWidth + ColumnGap + Middle + ColumnGap, Top), ImVec2(InspectorWidth, Height)); }
     }
     { SolidArcPhaseClock Clock(Profile, "status bar"); DrawStatusBar(State, Frame); }
+    DrawWorkspacePopups(State);
     DrawMatcapPicker(State);
     DrawWelcome(State);
     { SolidArcPhaseClock Clock(Profile, "trace panel"); DrawTracePanel(State); }

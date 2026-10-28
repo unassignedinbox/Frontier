@@ -15,7 +15,7 @@ snap grid on
 # ① import: 24 curves (worst fit ≤ 0.2 mm) + 3 image planes in one undo entry; parallel projection for blueprint work
 key N Ctrl
 frames 2
-click @HeaderImport
+key I Ctrl
 frames 2
 click @PathField
 key A Ctrl

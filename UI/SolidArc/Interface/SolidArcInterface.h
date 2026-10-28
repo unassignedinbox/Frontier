@@ -853,6 +853,7 @@ struct SolidArcWorkspaceState
     bool                                  WrapAxisPending   = false;                         // [-]   - The axis popup is open
     int                                   WrapCurves        = 0;                             // [-]   - 3D curves made by the last wrap (script evidence)
     std::string                           WrapNote          = {};                            // [-]   - The axes the last wrap used
+    std::array<float, 2>                  FileMenuAnchor    = { 0, 0 };                      // [px]  - Top-left of the file menu (under the Outliner ☰)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
