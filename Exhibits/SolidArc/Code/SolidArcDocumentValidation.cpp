@@ -104,7 +104,7 @@ namespace
     GateTally ExchangeGate    = { "W38", "STEP / STL exchange (Import… / Export…, Open / Save as by file type): bracket + sphere exported as STEP (the kernel writer's bytes, read back × 10⁹ mm³) and STL (watertight, \\|ΔV\\| ≤ sag · A); selection / hidden bodies choose what is written; Import makes one embedded Import step per solid (one undo entry) with equal volumes and faces; canonical fixed point; save → load → save byte-equal with equal digests; OCCT FilletedBoss (loop repaired) and InchBlock 1 × ½ × 2 in (inch → m) imported; a fillet on an imported edge = (1 − π/4) r² L; refusals atomic", "≤ 1e-9 (STL: \\|ΔV\\| ≤ sag · A)" };
     GateTally PrimitiveGate   = { "W40", "Construct catalogue primitives drawn as new bodies: cone (up and down), wedge, 3 / 6 / 8-sided prisms, tube and the drawn polygon against closed forms; eight tiles side by side as Separate bodies keep their own exact volumes (no Boolean); prism Radius and tube bore edits regenerate exactly; codec byte-equal; refusals atomic", "≤ 10⁻⁹ · exact" };
     GateTally InsetGate       = { "W41", "Inset (Plasticity O on faces · I): block / cylinder / triangle-prism tops split flat, pocketed and bossed against closed forms with exact face counts; a depth edit regenerates; the pocket floor takes a second inset; codec byte-equal; too-wide / zero / curved refusals atomic", "≤ 10⁻⁹ · exact" };
-    GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, rigid-only sketch refusals", "≤ 10⁻⁹" };
+    GateTally SectionLoftGate = { "W42", "Loft through drawn sketches (line / polyline / rectangle / circle / slot / spline) + gizmo verbs (sketch place, face offset / tweak / rotate / scale): |V − closed form| / V, codec byte-equal, mirrored sketches refused, scaled ones accepted", "≤ 10⁻⁹" };
     GateTally GizmoGate       = { "W43", "Transform gizmo (Slate GizmoPRO): every handle of each mode set T / R / S / T+R / R+S / T+R+S is picked at its projected centre, a far pixel misses; axis parameter and rotation angle recovered from pixel rays", "≤ 10⁻⁹ · exact" };
     GateTally ShellGate       = { "W45", "Solid shells, sketch on a face, hide / lock: closed sections loft a capped solid of its own (two in one file), open sections refuse the solid and loft a sheet; sketches drawn on a level and an upright body face extrude onto it; sketch / body hide and lock are undoable appearance entries that survive the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally CornerGate      = { "W47", "Sketch corner fillet / chamfer and fan lofts: every corner of an extruded rectangle rounded (the extrude follows, V = A − (4 − π) r²), one picked corner chamfered, the kept corner (virtual sharp) dragged with the fillets following, refusals leave the file untouched; two lofts out of one section sew into one sheet (one turned); codec byte-equal", "≤ 10⁻⁹ · exact" };
@@ -5062,7 +5062,8 @@ int main()
                          Skin.AcceptedCondition ? (Closed.AcceptedCondition ? "" : (" — close refused: " + Closed.Refusal).c_str()) : (" — refused: " + Skin.Refusal).c_str()));
         }
 
-        // ④ refusals leave the document untouched: open + closed mixed, a scaled or mirrored sketch, an unknown label
+        // ④ refusals leave the document untouched: open + closed mixed, a mirrored sketch, an unknown label; a scale is
+        //    accepted (S on sketches, W66): on a copy the circle doubles
         {
             SolidArcDocument Document = CreateSolidArcDocument("Loft");
             SolidArcDrawingRequest Line;
@@ -5071,11 +5072,15 @@ int main()
             const std::string Closed = Drawn(Document, Circle(1.0), 1.0);
             const std::string Before = EncodeSolidArcDocument(Document);
             const SolidArcCommandOutcome Mixed    = LoftSolidArcCurves(Document, { Open, Closed });
-            const SolidArcCommandOutcome Scaled   = PlaceSolidArcSketches(Document, { Closed }, ScalingMap({ 0.0, 0.0, 0.0 }, { 2.0, 2.0, 2.0 }), "Scale");
+            SolidArcDocument             Copy     = CloneSolidArcDocument(Document);
+            const SolidArcCommandOutcome Scaled   = PlaceSolidArcSketches(Copy, { Closed }, ScalingMap({ 0.0, 0.0, 0.0 }, { 2.0, 2.0, 2.0 }), "Scale");
+            const double                 Doubled  = Copy.Regeneration.Sketches.count(Closed) && !Copy.Regeneration.Sketches.at(Closed).Curves.empty() ? Copy.Regeneration.Sketches.at(Closed).Curves[0].Radius : 0.0;
             const SolidArcCommandOutcome Mirrored = PlaceSolidArcSketches(Document, { Closed }, ReflectionMap({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }), "Mirror");
             const SolidArcCommandOutcome Unknown  = PlaceSolidArcSketches(Document, { "Nothing#9" }, TranslationMap({ 0.0, 0.0, 1.0 }), "Move");
-            Tally(SectionLoftGate, 0.0, !Mixed.AcceptedCondition && !Scaled.AcceptedCondition && !Mirrored.AcceptedCondition && !Unknown.AcceptedCondition && EncodeSolidArcDocument(Document) == Before,
-                  "refused, document unchanged: " + Mixed.Refusal + " · " + Scaled.Refusal + " · " + Mirrored.Refusal + " · " + Unknown.Refusal);
+            Tally(SectionLoftGate, 0.0, !Mixed.AcceptedCondition && !Mirrored.AcceptedCondition && !Unknown.AcceptedCondition && EncodeSolidArcDocument(Document) == Before,
+                  "refused, document unchanged: " + Mixed.Refusal + " · " + Mirrored.Refusal + " · " + Unknown.Refusal);
+            Tally(SectionLoftGate, std::abs(Doubled - 2.0), Scaled.AcceptedCondition && std::abs(Doubled - 2.0) <= 1.0e-12,
+                  Format("S ×2 on a copy: the circle r 1 becomes r %.12f%s", Doubled, Scaled.Refusal.empty() ? "" : (" · " + Scaled.Refusal).c_str()));
             // a quarter turn about x through the origin carries the plane exactly: x̂ stays, ẑ → −ŷ
             const SolidArcCommandOutcome Turned = PlaceSolidArcSketches(Document, { Closed }, RotationMap({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, π / 2.0), "Rotate");
             const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Closed; });

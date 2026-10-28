@@ -1,0 +1,22 @@
+{
+  "Frame": 348,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Arc1 · Sketch", "Refused": false}, {"Label": "Sketch#2", "Caption": "Offset1 · Sketch", "Refused": false}, {"Label": "Sketch#3", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Sketch#4", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Sketch#5", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Sketch#6", "Caption": "Rectangle2 · Sketch", "Refused": false}, {"Label": "Curve#7", "Caption": "Wrap1 · SpaceCurve", "Refused": false}, {"Label": "Curve#8", "Caption": "Wrap2 · SpaceCurve", "Refused": false}, {"Label": "Curve#9", "Caption": "Wrap3 · SpaceCurve", "Refused": false}, {"Label": "Curve#10", "Caption": "Wrap4 · SpaceCurve", "Refused": false}, {"Label": "Curve#11", "Caption": "Wrap5 · SpaceCurve", "Refused": false}, {"Label": "Curve#12", "Caption": "Wrap6 · SpaceCurve", "Refused": false}, {"Label": "Curve#13", "Caption": "Wrap7 · SpaceCurve", "Refused": false}, {"Label": "Curve#14", "Caption": "Wrap8 · SpaceCurve", "Refused": false}, {"Label": "Curve#15", "Caption": "Wrap9 · SpaceCurve", "Refused": false}, {"Label": "Curve#16", "Caption": "Wrap10 · SpaceCurve", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": ["Wrap1", "Wrap2", "Wrap3", "Wrap4", "Wrap5", "Wrap6", "Wrap7", "Wrap8", "Wrap9", "Wrap10"]},
+  "Curves": [{"Caption": "Wrap1", "Points": 46, "Poles": 4, "WorstDeviation": 2.617011534e-05, "PoleEdits": 0}, {"Caption": "Wrap2", "Points": 46, "Poles": 4, "WorstDeviation": 3.376611507e-16, "PoleEdits": 0}, {"Caption": "Wrap3", "Points": 46, "Poles": 4, "WorstDeviation": 2.617011534e-05, "PoleEdits": 0}, {"Caption": "Wrap4", "Points": 46, "Poles": 4, "WorstDeviation": 3.682193206e-16, "PoleEdits": 0}, {"Caption": "Wrap5", "Points": 46, "Poles": 4, "WorstDeviation": 3.510833563e-16, "PoleEdits": 0}, {"Caption": "Wrap6", "Points": 46, "Poles": 4, "WorstDeviation": 2.617011534e-05, "PoleEdits": 0}, {"Caption": "Wrap7", "Points": 28, "Poles": 4, "WorstDeviation": 3.61031327e-06, "PoleEdits": 0}, {"Caption": "Wrap8", "Points": 19, "Poles": 4, "WorstDeviation": 3.510833469e-16, "PoleEdits": 0}, {"Caption": "Wrap9", "Points": 28, "Poles": 4, "WorstDeviation": 3.61031327e-06, "PoleEdits": 0}, {"Caption": "Wrap10", "Points": 19, "Poles": 4, "WorstDeviation": 4.577566799e-16, "PoleEdits": 0}],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Azimuth": -0.6907963268, "Elevation": 0.48, "Distance": 5.581410609, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 1, "Form": "Hermite", "Centre": false, "Points": [[0.7, 0.3], [1, 0.5]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 8,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Wrap: 10 3D curve(s) round Circle1, projected along y · Ctrl+Z undoes",
+  "Viewport": [322, 146, 926, 723]
+}

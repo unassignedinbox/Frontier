@@ -1,0 +1,22 @@
+{
+  "Frame": 308,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Arc1 · Sketch", "Refused": false}, {"Label": "Sketch#2", "Caption": "Offset1 · Sketch", "Refused": false}, {"Label": "Sketch#3", "Caption": "Circle1 · Sketch", "Refused": false}, {"Label": "Sketch#4", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Sketch#5", "Caption": "Line1 · Sketch", "Refused": false}, {"Label": "Sketch#6", "Caption": "Rectangle2 · Sketch", "Refused": false}],
+  "Body": {"Faces": 0, "Edges": 0, "Vertices": 0, "Genus": -1, "Volume": 0, "Sound": false},
+  "Selection": {"Faces": [], "Edges": [], "Curves": ["Rectangle1", "Line1", "Rectangle2", "Circle1"]},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 5,
+  "Hover": "",
+  "Camera": {"Azimuth": -1.570796327, "Elevation": 0, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": false, "Shape": "Fillet", "Size": 0.25, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 0, "Refusal": "", "Verb": 0, "Profile": "", "Combination": 1, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 1, "Form": "Hermite", "Centre": false, "Points": [[0.7, 0.3], [1, 0.5]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 7,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Wrap: perspective view — pick the projection axis in the popup (a parallel view, numpad 5, projects along the view by itself)",
+  "Viewport": [322, 146, 926, 723]
+}
