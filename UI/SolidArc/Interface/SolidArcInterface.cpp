@@ -13056,9 +13056,9 @@ void DeleteFigure(SolidArcWorkspaceState& State, const SolidArcFigure& Figure)
 void DeletePicked(SolidArcWorkspaceState& State)
 {
     SolidArcDocument& Document = State.Document;
-    if (State.Outliner.HoveredCondition)
+    if (State.Outliner.HoveredCondition && (State.Outliner.Hovered.Rank < 0 || State.Outliner.Hovered.LockedCondition))
     {
-        DeleteFigure(State, State.Outliner.Hovered);
+        DeleteFigure(State, State.Outliner.Hovered);                                           // An unpicked row goes alone; a picked one takes the picks with it
         return;
     }
     if (!State.SketchPoints.Points.empty() && !State.SketchPoints.Sketch.empty())

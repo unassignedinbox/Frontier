@@ -969,6 +969,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         for (const GeometryProcessing::FeatureStep& Step : Document.Tree.Steps)
         {
             if (Step.Kind != GeometryProcessing::FeatureStepKind::Sketch) continue;
+            if (Document.Appearance.RemovedCurves.contains(Step.Label)) continue;              // Deleted, kept for the steps that read it
             const auto Caption = Document.Captions.find(Step.Label);
             Captions.push_back(Caption != Document.Captions.end() ? Caption->second : Step.Label);
         }

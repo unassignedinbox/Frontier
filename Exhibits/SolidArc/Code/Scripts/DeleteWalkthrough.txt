@@ -114,3 +114,18 @@ frames 3
 expect bodies == 1
 expect volume ~ 3
 capture 343DeleteUndone
+
+# 8. the body row picked, the sketch row Shift-picked, X over the sketch row: both picks go, not just the hovered row
+click @Figure:Extrude#2
+frames 2
+click @Figure:Sketch#3 Left Shift
+frames 2
+move @Figure:Sketch#3
+frames 2
+expect outliner-hover == Sketch#3
+key X
+frames 3
+expect bodies == 0
+expect sketches lacks Rectangle1
+expect removed-curves == 1
+capture 344DeleteOutlinerPicks
