@@ -661,6 +661,7 @@ enum class SolidArcGizmoTarget : uint8_t
     Bodies   = 2,                                                                            // TransformSolidArcBodies
     Sketches = 3,                                                                            // PlaceSolidArcSketches (rigid only)
     Points   = 4,                                                                            // Mode-1 sketch points (DragSolidArcSketchPoints)
+    Shape    = 5,                                                                            // Mode-1 body vertices / mode-2 edges (ReshapeSolidArcSelection)
 };
 
 // 📝 Mode 1 sketch points: every sketch shows its defining points (line ends, arc and circle centres, spline points;
@@ -716,6 +717,7 @@ struct SolidArcGizmoSession
     std::string                       Readout       = {};                                    // [-]   - "X  move 0.250"
     std::string                       Refusal       = {};                                    // [-]   - Why the staged value refuses
     int                               Commits       = 0;                                     // [-]   - Committed drags (script evidence)
+    bool                              VertexCondition = false;                               // [-]   - Shape target: Names are vertices (mode 1), else edges (mode 2)
 };
 
 // 📝 Frame timing for the trace (SolidArcTrace.log / F12): each frame records named CPU phases; a frame slower than

@@ -637,13 +637,15 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             if (Bodies.empty()) { Refuse(std::string(Verb) + ": no body yet"); break; }
             if (!Load(Step.Target)) { Refuse(std::string(Verb) + ": no body named " + Step.Target); break; }
             if (Partition.Bodies.Resolve(Current).Category == BodyCategory::Sheet) { Refuse(std::string(Verb) + ": the body is a sheet (🚧 blends / face operations on sheets)"); break; }
-            std::vector<uint32_t> Slots;
+            std::vector<uint32_t>      Slots;
+            std::vector<ReferenceKind> Kinds;                                                // [-] - Per slot (Reshape takes vertices and edges)
             for (TopologyReference& Reference : Step.References)
             {
                 const ResolvedReference Resolved = ResolveReference(Partition, Current, Naming, Reference);
                 Report.Resolutions.push_back(Resolved);
                 if (Resolved.Method == ResolutionMethod::Refused) continue;
                 Slots.push_back(Resolved.Slot);
+                Kinds.push_back(Reference.Kind);
                 if (CaptureCondition) Reference.Signature = CaptureSignature(Partition, Reference.Kind, Resolved.Slot);
             }
             // ③′ A variable blend's anchors (the vertices taking Size) resolve like the edges, so a regeneration that
@@ -755,6 +757,33 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                     Current = Boolean.Body;
                 }
                 if (!Refusal.empty()) { Refuse("Extrude (push in): " + Refusal); break; }
+                Store();
+                break;
+            }
+            // ③‴ Reshape (direct vertex / edge editing): picked vertices, and both ends of picked edges, carried by Placement.
+            if (Step.Operation == FaceOperationKind::Reshape)
+            {
+                FaceOperationSettings Reshape;
+                Reshape.Kind      = FaceOperationKind::Reshape;
+                Reshape.Placement = Step.Placement;
+                const auto Carry  = [&](VertexToken Vertex)
+                {
+                    if (std::find(Reshape.Vertices.begin(), Reshape.Vertices.end(), Vertex) == Reshape.Vertices.end()) Reshape.Vertices.push_back(Vertex);
+                };
+                for (size_t Index = 0; Index < Slots.size(); ++Index)
+                {
+                    if (Kinds[Index] == ReferenceKind::Vertex) Carry(Partition.Vertices.TokenAt(Slots[Index]));
+                    else if (Kinds[Index] == ReferenceKind::Edge)
+                    {
+                        const EdgeProfile& Edge = Partition.Edges.Resolve(Partition.Edges.TokenAt(Slots[Index]));
+                        Carry(Edge.Start);
+                        Carry(Edge.End);
+                    }
+                }
+                const FaceOperationOutcome Change = ApplyFaceOperation(Partition, Current, Reshape);
+                if (!Change.Refusal.empty()) { Refuse(Change.Refusal); break; }
+                Naming  = NameChangedBody(Partition, Change.Body, Change, Naming, Step.Label);
+                Current = Change.Body;
                 Store();
                 break;
             }

@@ -183,6 +183,14 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Operation", static_cast<int64_t>(Step.Operation));
         Table.insert("Amount", EncodeValue(Step.Amount));
         if (Step.Operation == FaceOperationKind::Inset) Table.insert("Extent", EncodeValue(Step.Extent));
+        if (Step.Operation == FaceOperationKind::Reshape)
+        {
+            // Reshape: the map carrying the picked vertices / edge ends (x′ = X·x + Y·y + Z·z + Shift).
+            Table.insert("PlacementX", EncodeVector(Step.Placement.ColumnX));
+            Table.insert("PlacementY", EncodeVector(Step.Placement.ColumnY));
+            Table.insert("PlacementZ", EncodeVector(Step.Placement.ColumnZ));
+            Table.insert("PlacementShift", EncodeVector(Step.Placement.Shift));
+        }
         if (!Step.Points.empty())
         {
             toml::array Points;                                                              // Tweak direction / rotation axis (gizmo)

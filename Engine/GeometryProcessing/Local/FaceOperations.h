@@ -9,6 +9,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Construction/BodyTransform.h"
 #include "Engine/GeometryProcessing/Local/FaceChange.h"
 
 #include <cstdint>
@@ -40,6 +41,7 @@ enum class FaceOperationKind : uint8_t
     Heal       = 12,                                                                         // Faces on one carrier merged, edges on one carrier merged
     Thicken    = 13,                                                                         // Sheet body grown into a solid of thickness Distance
     Inset      = 14,                                                                         // Planar faces: border ring Distance wide + inner face raised by Depth
+    Reshape    = 15,                                                                         // Vertices carried by Placement, their faces re-fitted (direct edit)
 };
 
 struct FaceOperationSettings
@@ -53,6 +55,8 @@ struct FaceOperationSettings
     Vector3                Vector        = {};                                               // [len] - Tweak translation
     Vector3                Axis          = { 1.0, 0.0, 0.0 };                                // [-]   - Rotation axis direction
     Vector3                PullDirection = { 0.0, 0.0, 1.0 };                                // [-]   - Draft pull direction
+    std::vector<VertexToken> Vertices    = {};                                               // [-]   - Reshape: vertices carried (edges give both ends)
+    AffineMap              Placement     = {};                                               // [-]   - Reshape: x ↦ M·x + Shift for those vertices
 };
 
 struct FaceOperationOutcome

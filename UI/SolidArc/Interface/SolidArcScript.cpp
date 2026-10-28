@@ -238,6 +238,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "redo") return Numeric(double(Document.RedoEntries.size()));
     if (Field == "selected-faces") return Join(Document.Selection.Faces);
     if (Field == "selected-edges") return Join(Document.Selection.Edges);
+    if (Field == "selected-vertices") return Join(Document.Selection.Vertices);
     if (Field == "selected-bodies") return Join(Document.Selection.Bodies);
     if (Field == "bodies") return Numeric(double(Document.Summary.Bodies.size()));
     if (Field == "active-body") { Text = Document.Regeneration.Active; Number = double(Text.size()); return true; }
@@ -523,7 +524,8 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "gizmo-target")
     {
         Text   = State.Gizmo.Target == SolidArcGizmoTarget::Faces ? "faces" : State.Gizmo.Target == SolidArcGizmoTarget::Bodies ? "bodies"
-               : State.Gizmo.Target == SolidArcGizmoTarget::Sketches ? "sketches" : State.Gizmo.Target == SolidArcGizmoTarget::Points ? "points" : "";
+               : State.Gizmo.Target == SolidArcGizmoTarget::Sketches ? "sketches" : State.Gizmo.Target == SolidArcGizmoTarget::Points ? "points"
+               : State.Gizmo.Target == SolidArcGizmoTarget::Shape ? (State.Gizmo.VertexCondition ? "vertices" : "edges") : "";
         Number = double(int(State.Gizmo.Target));                                          // 0 none · 1 faces · 2 bodies · 3 sketches · 4 points
         return true;
     }

@@ -4146,6 +4146,7 @@ void DriveTransformSession(SolidArcWorkspaceState& State, const OrbitCameraFrame
     case SolidArcGizmoTarget::Bodies:   return "Bodies";
     case SolidArcGizmoTarget::Sketches: return "Sketches";
     case SolidArcGizmoTarget::Points:   return "Sketch points";
+    case SolidArcGizmoTarget::Shape:    return "Vertices / edges";
     case SolidArcGizmoTarget::None:     break;
     }
     return "Nothing";
@@ -4187,6 +4188,64 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
     Gizmo.Pose.Axes[2] = { 0.0, 0.0, 1.0 };
     constexpr uint32_t AxisScales = (1u << uint32_t(SolidArcGizmoHandle::ScaleX)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleY)) | (1u << uint32_t(SolidArcGizmoHandle::ScaleZ));
     constexpr uint32_t CentreBit  = 1u << uint32_t(SolidArcGizmoHandle::Centre);
+    // 📝 Direct reshape: mode-1 body vertices (no sketch points picked) or mode-2 edges move by the gizmo map; the frame is
+    //    the world (box edits stay axis-true), centred on the distinct ends. A single vertex only moves.
+    const auto ResolveShape = [&](const std::vector<std::string>& Names, bool VertexCondition)
+    {
+        Vector3 Sum;
+        int     Count = 0;
+        const std::string Owner = SolidArcBodyOfName(Document, VertexCondition ? SolidArcSelectionKind::Vertex : SolidArcSelectionKind::Edge, Names.front());
+        const auto OnOwner = [&](uint32_t Body) { return Body < State.Scene.Bodies.size() && State.Scene.Bodies[Body].Key == Owner; };
+        std::vector<std::array<double, 3>> Ends;
+        const auto Carry = [&](const std::array<double, 3>& Point)
+        {
+            for (const std::array<double, 3>& Seen : Ends) if (Seen == Point) return;
+            Ends.push_back(Point);
+            Sum = Sum + Vector3{ Point[0], Point[1], Point[2] };
+            ++Count;
+        };
+        if (VertexCondition)
+        {
+            for (const SolidArcSceneVertex& Vertex : State.Scene.Vertices)
+                if (OnOwner(Vertex.Body) && std::find(Names.begin(), Names.end(), Vertex.Name) != Names.end()) Carry(Vertex.Position);
+        }
+        else
+        {
+            for (const SolidArcSceneEdge& Edge : State.Scene.Edges)
+            {
+                if (!OnOwner(Edge.Body) || Edge.SegmentCount == 0 || std::find(Names.begin(), Names.end(), Edge.Name) == Names.end()) continue;
+                const SolidArcSceneSegment& First = State.Scene.Segments[Edge.FirstSegment];
+                const SolidArcSceneSegment& Last  = State.Scene.Segments[Edge.FirstSegment + Edge.SegmentCount - 1];
+                Carry({ First.Start[0], First.Start[1], First.Start[2] });
+                Carry({ Last.End[0], Last.End[1], Last.End[2] });
+            }
+        }
+        if (Count == 0) return false;
+        constexpr auto Bit = [](SolidArcGizmoHandle Handle) { return 1u << uint32_t(Handle); };
+        uint32_t Hidden = (Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit;
+        if (Count == 1)
+        {
+            // One point: no turn or scale about itself; the centre ring is a screen move only.
+            Hidden = Bit(SolidArcGizmoHandle::RotateX) | Bit(SolidArcGizmoHandle::RotateY) | Bit(SolidArcGizmoHandle::RotateZ) | AxisScales;
+            if (!(Gizmo.Modes & GizmoTranslate)) Hidden |= CentreBit;
+        }
+        Gizmo.Target          = SolidArcGizmoTarget::Shape;
+        Gizmo.Names           = Names;
+        Gizmo.VertexCondition = VertexCondition;
+        Gizmo.Pose.Origin     = Sum * (1.0 / double(Count));
+        Gizmo.Pose.Hidden     = Hidden;
+        return true;
+    };
+    if (State.PickMode == SolidArcPickMode::ControlPoint && State.SketchPoints.Points.empty() && !Document.Selection.Vertices.empty())
+    {
+        ResolveShape(Document.Selection.Vertices, true);
+        return;
+    }
+    if (State.PickMode == SolidArcPickMode::Edge && !Document.Selection.Edges.empty() && Document.Selection.Faces.empty() && Document.Selection.Bodies.empty())
+    {
+        ResolveShape(Document.Selection.Edges, false);
+        return;
+    }
     if (State.PickMode == SolidArcPickMode::ControlPoint)
     {
         // 📝 Mode 1: the picked sketch points, framed in their sketch plane: x / y cones, the xy square, the z arc (turn
@@ -4250,7 +4309,7 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
         Gizmo.Pose.Hidden  = AxisScales | ((Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit);
         return;
     }
-    // 📝 Edges alone raise no gizmo: they are picked for fillets, and a body gizmo would sit on the next Shift+click.
+    // 📝 Edges alone raise no gizmo outside mode 2 (5 picks them for fillets, and a body gizmo would sit on the next click).
     const std::vector<std::string> Keys = (Document.Selection.Bodies.empty() && Document.Selection.Faces.empty()) ? std::vector<std::string>{} : PickedBodies(Document);
     if (!Keys.empty())
     {
@@ -4371,6 +4430,17 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
         if (GizmoScaleHandle(Gizmo, Handle)) return ChangeSolidArcSelection(Document, FaceOperationKind::Scale, Gizmo.Factor);
         if (Handle == SolidArcGizmoHandle::TranslateZ) return ChangeSolidArcSelection(Document, FaceOperationKind::Offset, Dot(Gizmo.Shift, Gizmo.Pose.Axes[2]));
         return ChangeSolidArcSelection(Document, FaceOperationKind::Tweak, Length(Gizmo.Shift), Normalize(Gizmo.Shift));
+    case SolidArcGizmoTarget::Shape:
+    {
+        // Mode 1 carries the picked vertices, mode 2 the picked edges; the other list is left as it was.
+        const std::vector<std::string> Edges = Document.Selection.Edges, Vertices = Document.Selection.Vertices;
+        Document.Selection.Vertices = Gizmo.VertexCondition ? Gizmo.Names : std::vector<std::string>{};
+        Document.Selection.Edges    = Gizmo.VertexCondition ? std::vector<std::string>{} : Gizmo.Names;
+        const SolidArcCommandOutcome Outcome = ReshapeSolidArcSelection(Document, GizmoMap(Gizmo), Verb);
+        if (Gizmo.VertexCondition) { if (Document.Selection.Edges.empty()) Document.Selection.Edges = Edges; }
+        else if (Document.Selection.Vertices.empty()) Document.Selection.Vertices = Vertices;
+        return Outcome;
+    }
     case SolidArcGizmoTarget::None: break;
     }
     SolidArcCommandOutcome Refused;
@@ -4488,6 +4558,8 @@ void DriveGizmoDrag(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame
         Gizmo.Readout += GizmoRotateHandle(Gizmo.Grab) ? " · face rotate" : GizmoScaleHandle(Gizmo, Gizmo.Grab) ? " · face scale"
                        : Gizmo.Grab == SolidArcGizmoHandle::TranslateZ ? " · push / pull" : " · face tweak";
     if (Gizmo.Target == SolidArcGizmoTarget::Points) Gizmo.Readout += Compose(" · %d sketch point%s", int(Gizmo.Points.size()), Gizmo.Points.size() == 1 ? "" : "s");
+    if (Gizmo.Target == SolidArcGizmoTarget::Shape)
+        Gizmo.Readout += Compose(" · reshape %d %s", int(Gizmo.Names.size()), Gizmo.VertexCondition ? (Gizmo.Names.size() == 1 ? "vertex" : "vertices") : (Gizmo.Names.size() == 1 ? "edge" : "edges"));
     // Staged preview: one regeneration per distinct value.
     const std::string Key = GizmoStageKey(Gizmo);
     if (Key == Gizmo.StagedKey) return;
@@ -7003,6 +7075,94 @@ void RecordSketchPointWidgets(SolidArcWorkspaceState& State, const OrbitCameraFr
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    BODY VERTICES (MODE 1)
+//------------------------------------------------------------------------------------------------------------------------
+
+constexpr float  BodyVertexReach    = 10.0f;                                                 // [px] - Pick distance to a vertex dot
+constexpr size_t BodyVertexDotLimit = 192;                                                   // [-]  - More vertices: dots only for picked / hovered
+
+// A body vertex is shown and pickable when the first face along the view ray through it is not nearer (x-ray: always).
+[[nodiscard]] bool BodyVertexVisibleCondition(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, const SolidArcSceneVertex& Vertex, ImVec2 Pixel)
+{
+    if (State.Style.XRayEnabled) return true;
+    const Vector3  Point{ Vertex.Position[0], Vertex.Position[1], Vertex.Position[2] };
+    const OrbitRay Ray = CastOrbitRay(Frame, Pixel.x - State.ViewportRect[0], Pixel.y - State.ViewportRect[1]);
+    const std::optional<SolidArcPick> Hit = PickSolidArcScene(State.Scene, Ray, 0.0, false, ActiveSectionClip(State));
+    if (!Hit) return true;
+    const Vector3 Origin{ Ray.Origin[0], Ray.Origin[1], Ray.Origin[2] }, Direction{ Ray.Direction[0], Ray.Direction[1], Ray.Direction[2] };
+    const double  Slack = 3.0 * Frame.WorldPerPixel + 1.0e-6;                               // [len] - Facets round the corner
+    return Hit->Distance >= Dot(Point - Origin, Direction) - Slack;
+}
+
+[[nodiscard]] bool BodyVertexPickableCondition(const SolidArcWorkspaceState& State, const SolidArcSceneVertex& Vertex)
+{
+    return Vertex.Body < State.Scene.Bodies.size() && !SolidArcLockedCondition(State.Document, State.Scene.Bodies[Vertex.Body].Key);
+}
+
+// Nearest visible body vertex within BodyVertexReach of Pointer (screen pixels); −1 when none.
+[[nodiscard]] int FindBodyVertexNear(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Pointer)
+{
+    float Best  = BodyVertexReach;
+    int   Found = -1;
+    for (size_t Index = 0; Index < State.Scene.Vertices.size(); ++Index)
+    {
+        const SolidArcSceneVertex& Vertex = State.Scene.Vertices[Index];
+        ImVec2 Pixel;
+        if (!BodyVertexPickableCondition(State, Vertex) || !ProjectWorldPoint(State, Frame, { Vertex.Position[0], Vertex.Position[1], Vertex.Position[2] }, Pixel)) continue;
+        const float Reach = std::hypot(Pointer.x - Pixel.x, Pointer.y - Pixel.y);
+        if (Reach > Best || !BodyVertexVisibleCondition(State, Frame, Vertex, Pixel)) continue;
+        Best  = Reach;
+        Found = int(Index);
+    }
+    return Found;
+}
+
+[[nodiscard]] bool BodyVertexPickedCondition(const SolidArcWorkspaceState& State, const SolidArcSceneVertex& Vertex)
+{
+    const std::vector<std::string>& Picked = State.Document.Selection.Vertices;
+    return std::find(Picked.begin(), Picked.end(), Vertex.Name) != Picked.end();
+}
+
+// A click on a body vertex: replace / add / remove (one body at a time, like faces and edges); sketch points give way.
+void PickBodyVertex(SolidArcWorkspaceState& State, int Index, SolidArcPickIntent Intent)
+{
+    const SolidArcSceneVertex& Vertex = State.Scene.Vertices[size_t(Index)];
+    const std::string&         Key    = State.Scene.Bodies[Vertex.Body].Key;
+    const bool                 Member = BodyVertexPickedCondition(State, Vertex);
+    State.SketchPoints.Points.clear();
+    State.SketchPoints.Sketch.clear();
+    if (Intent == SolidArcPickIntent::Remove) { if (Member) SelectSolidArcName(State.Document, SolidArcSelectionKind::Vertex, Vertex.Name, true, Key); }
+    else if (Intent == SolidArcPickIntent::Add) { if (!Member) SelectSolidArcName(State.Document, SolidArcSelectionKind::Vertex, Vertex.Name, true, Key); }
+    else SelectSolidArcName(State.Document, SolidArcSelectionKind::Vertex, Vertex.Name, false, Key);
+    Announce(State, Compose("Vertex %s · %d picked (gizmo moves them; the faces at them follow)", Vertex.Name.c_str(), int(State.Document.Selection.Vertices.size())));
+}
+
+// Mode 1: a dot per visible body vertex (picked: amber, hovered: white ring); script widgets BodyVertex<index>.
+void DrawBodyVertices(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)
+{
+    if (State.PickMode != SolidArcPickMode::ControlPoint || State.Scene.Vertices.empty()) return;
+    const ImVec2 Pointer = ImGui::GetIO().MousePos;
+    const auto&  Rect    = State.ViewportRect;
+    const bool   Inside  = Pointer.x >= Rect[0] && Pointer.y >= Rect[1] && Pointer.x <= Rect[0] + Rect[2] && Pointer.y <= Rect[1] + Rect[3];
+    const int    Hover   = Inside && !State.Gizmo.DragCondition ? FindBodyVertexNear(State, Frame, Pointer) : -1;
+    const bool   AllCondition = State.Scene.Vertices.size() <= BodyVertexDotLimit;
+    for (size_t Index = 0; Index < State.Scene.Vertices.size(); ++Index)
+    {
+        const SolidArcSceneVertex& Vertex = State.Scene.Vertices[Index];
+        const bool Picked = BodyVertexPickedCondition(State, Vertex);
+        const bool Hot    = int(Index) == Hover;
+        if (!BodyVertexPickableCondition(State, Vertex) || (!AllCondition && !Picked && !Hot)) continue;
+        ImVec2 Pixel;
+        if (!ProjectWorldPoint(State, Frame, { Vertex.Position[0], Vertex.Position[1], Vertex.Position[2] }, Pixel)) continue;
+        if (!Hot && !BodyVertexVisibleCondition(State, Frame, Vertex, Pixel)) continue;
+        State.Widgets.Record("BodyVertex" + std::to_string(Index), ImVec2(Pixel.x - 2.0f, Pixel.y - 2.0f), ImVec2(Pixel.x + 2.0f, Pixel.y + 2.0f));
+        const float Radius = Hot ? 5.0f : 3.5f;                                               // [px] - Vertex dot
+        Canvas->AddCircleFilled(Pixel, Radius, Picked ? IM_COL32(0xff, 0xd2, 0x4d, 0xff) : IM_COL32(0x12, 0x16, 0x1c, 0xff), 16);
+        Canvas->AddCircle(Pixel, Radius, Hot ? IM_COL32(0xff, 0xff, 0xff, 0xff) : IM_COL32(0xc8, 0xd0, 0xd8, 0xe0), 16, 1.25f);
+    }
+}
+
 SolidArcPickIntent PickIntentOf(const ImGuiIO& Io);
 
 // A click on a sketch point: replace / add / remove in the picked set (one sketch at a time).
@@ -8700,7 +8860,10 @@ void PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickInte
         }
         if (State.PickMode == SolidArcPickMode::ControlPoint)
         {
-            if (Intent == SolidArcPickIntent::Replace && !State.Document.Selection.Curves.empty())
+            // Body vertices (direct reshape) under the curves.
+            const int Vertex = FindBodyVertexNear(State, Frame, ImVec2(State.ViewportRect[0] + Local.x, State.ViewportRect[1] + Local.y));
+            if (Vertex >= 0) { PickBodyVertex(State, Vertex, Intent); return; }
+            if (Intent == SolidArcPickIntent::Replace && (!State.Document.Selection.Curves.empty() || !State.Document.Selection.Vertices.empty()))
             {
                 ClearSolidArcSelection(State.Document);
                 Announce(State, "Selection cleared");
@@ -10763,6 +10926,7 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
     // Overlays: sketch curves, the drawing in progress, status pills (top-left), interaction hint (bottom-left).
     Canvas->PushClipRect(Image, ImVec2(Image.x + Extent.x, Image.y + Extent.y), true);
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawSketchOverlays"); DrawSketchOverlays(State, Canvas, Frame); }
+    { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawBodyVertices"); DrawBodyVertices(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawTrimPreview"); DrawTrimPreview(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawFillPreview"); DrawFillPreview(State, Canvas, Frame); }
     { SolidArcPhaseClock Clock(State.Profile, "overlay · DrawConstraintOverlay"); DrawConstraintOverlay(State, Canvas, Frame); }

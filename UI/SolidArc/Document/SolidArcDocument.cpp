@@ -589,7 +589,8 @@ void KeepResolvedNames(std::vector<std::string>& Names, const std::vector<Regene
     std::vector<std::string> Carriers;
     for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
     {
-        const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+        const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Kind == SolidArcSelectionKind::Vertex ? Body.Naming.Vertices
+                                                     : Body.Naming.Faces;
         std::set<std::string> Present;
         for (const auto& Entry : Table) Present.insert(Entry.second);
         if (!Names.empty() && std::all_of(Names.begin(), Names.end(), [&](const std::string& Name) { return Present.contains(Name); })) Carriers.push_back(Body.Key);
@@ -601,7 +602,7 @@ void KeepResolvedNames(std::vector<std::string>& Names, const std::vector<Regene
     for (const std::string& Name : Names)
     {
         const std::string Owner = SolidArcBodyOfName(Document, Kind, Name);
-        if (Owner.empty()) return (Kind == SolidArcSelectionKind::Edge ? "edge " : "face ") + Name + " is on no body";
+        if (Owner.empty()) return (Kind == SolidArcSelectionKind::Edge ? "edge " : Kind == SolidArcSelectionKind::Vertex ? "vertex " : "face ") + Name + " is on no body";
         if (!Key.empty() && Owner != Key)
             return "the selection spans " + SolidArcBodyCaption(Document, Key) + " and " + SolidArcBodyCaption(Document, Owner) + " (one body at a time)";
         Key = Owner;
@@ -640,6 +641,13 @@ void RegenerateSolidArcDocumentDeferred(SolidArcDocument& Document, bool Capture
     Document.Revision     = ++RevisionCounter;
     KeepResolvedNames(Document.Selection.Faces, Document.Regeneration.Bodies, false);
     KeepResolvedNames(Document.Selection.Edges, Document.Regeneration.Bodies, true);
+    std::erase_if(Document.Selection.Vertices, [&](const std::string& Name)
+    {
+        return std::none_of(Document.Regeneration.Bodies.begin(), Document.Regeneration.Bodies.end(), [&](const RegeneratedBody& Body)
+        {
+            return std::any_of(Body.Naming.Vertices.begin(), Body.Naming.Vertices.end(), [&](const auto& Entry) { return Entry.second == Name; });
+        });
+    });
     std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return !FindRegeneratedBody(Document, Key); });
     // Picked curves are SpaceCurves or sketches (loft sections, gizmo); either kind survives while its label still solves.
     std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return !Document.Regeneration.Curves.contains(Label) && !Document.Regeneration.Sketches.contains(Label); });
@@ -1033,25 +1041,76 @@ SolidArcBlendFit MeasureSolidArcBlendFit(const SolidArcDocument& Document, const
     return Fit;
 }
 
+// 💡 Where a direct edit (face change, reshape) of body Owner goes in the history: before the body's trailing fillets /
+//    chamfers, so they re-solve on the edited shape (Parasolid re-blends after a tweak; here the history replays them).
+//    Walking back from the end: sketches, curves and other bodies' steps are passed over; each Blend on Owner moves the
+//    insertion before it, unless a picked name was made by that blend (its faces / edges do not exist before it); any
+//    other step on Owner stops the walk. Returns Steps.size() when nothing moves it (append).
+[[nodiscard]] size_t DirectEditInsertion(const SolidArcDocument& Document, const std::string& Owner, const std::vector<std::string>& Names)
+{
+    const std::vector<FeatureStep>& Steps = Document.Tree.Steps;
+    size_t Insertion = Steps.size();
+    for (size_t Index = Steps.size(); Index-- > 0;)
+    {
+        const FeatureStep& Step = Steps[Index];
+        if (Step.Kind == FeatureStepKind::Sketch || Step.Kind == FeatureStepKind::SpaceCurve) continue;
+        const bool TouchesCondition = Step.Target.empty() || Step.Target == Owner || Step.Tool == Owner || Step.Label == Owner || Step.Source == Owner;
+        if (!TouchesCondition) continue;
+        if (Step.Kind != FeatureStepKind::Blend) break;
+        const std::string Made = Step.Label + ".";
+        if (std::any_of(Names.begin(), Names.end(), [&](const std::string& Name) { return Name.find(Made) != std::string::npos; })) break;
+        Insertion = Index;
+    }
+    return Insertion;
+}
+
+// One direct-edit step: tried before the trailing fillets first (they follow the edit), then appended when that refuses
+// (the fillets could not re-solve on the new shape, or a reference did not exist yet).
+template <typename Author>
+[[nodiscard]] SolidArcCommandOutcome RunDirectEdit(SolidArcDocument& Document, const std::string& Label, const std::string& Owner,
+                                                   const std::vector<std::string>& Names, Author&& Write)
+{
+    const size_t Before = Owner.empty() ? Document.Tree.Steps.size() : DirectEditInsertion(Document, Owner, Names);
+    const auto   Attempt = [&](size_t At)
+    {
+        return RunCommand(Document, Label, true, [&]() -> std::string
+        {
+            FeatureStep Step;
+            if (std::string Problem = Write(Step); !Problem.empty()) return Problem;
+            Document.Tree.Steps.insert(Document.Tree.Steps.begin() + static_cast<std::ptrdiff_t>(std::min(At, Document.Tree.Steps.size())), std::move(Step));
+            return {};
+        }, At);
+    };
+    SolidArcCommandOutcome Outcome = Attempt(Before);
+    if (Outcome.AcceptedCondition || Before >= Document.Tree.Steps.size()) return Outcome;
+    SolidArcCommandOutcome Appended = Attempt(Document.Tree.Steps.size());
+    if (!Appended.AcceptedCondition) Appended.Refusal += " (before the fillets: " + Outcome.Refusal + ")";
+    return Appended;
+}
+
 SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceOperationKind Operation, double Amount, std::optional<Vector3> Direction)
 {
     const std::string Stem  = SolidArcFaceOperationLabel(Operation);
     const std::string Label = Stem + " " + FormatAmount(Amount) + " on " + std::to_string(Document.Selection.Faces.size()) + " face(s)";
-    return RunCommand(Document, Label, true, [&]() -> std::string
+    const bool WholeBodyCondition = Operation == FaceOperationKind::OffsetBody || Operation == FaceOperationKind::Heal;
+    std::string Owner;
+    std::string OwnerProblem;
+    if (!Document.Selection.Faces.empty() && Document.Summary.PresentCondition)
+        OwnerProblem = CommonBody(Document, SolidArcSelectionKind::Face, Document.Selection.Faces, Owner);
+    if (Owner.empty() && !Document.Selection.Bodies.empty()) Owner = Document.Selection.Bodies.front();   // Whole-body verbs on a picked body
+    // Whole-body verbs (offset body, heal) stay at the end: they act on the body as it stands.
+    const std::string Placed = WholeBodyCondition || !OwnerProblem.empty() ? std::string() : Owner;
+    return RunDirectEdit(Document, Label, Placed, Document.Selection.Faces, [&](FeatureStep& Step) -> std::string
     {
-        const bool WholeBodyCondition = Operation == FaceOperationKind::OffsetBody || Operation == FaceOperationKind::Heal;
         if (Document.Selection.Faces.empty() && !WholeBodyCondition) return "select one or more faces first";
         if (!Document.Summary.PresentCondition) return "there is no body to change";
-        std::string Owner;
-        if (const std::string Problem = CommonBody(Document, SolidArcSelectionKind::Face, Document.Selection.Faces, Owner); !Problem.empty()) return Problem;
-        if (Owner.empty() && !Document.Selection.Bodies.empty()) Owner = Document.Selection.Bodies.front();   // Whole-body verbs on a picked body
+        if (!OwnerProblem.empty()) return OwnerProblem;
         const std::string Caption = NextCaption(Document, Stem);
         const std::string StepLabel = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
         const double      Span = std::max(1.0, 4.0 * std::abs(Amount));
         Document.Tree.Parameters.push_back({ Caption + ".Amount", Amount, std::min(-Span, Amount), std::max(Span, Amount),
                                              Operation == FaceOperationKind::Draft ? "draft angle [rad]" : Operation == FaceOperationKind::Rotate ? "angle [rad]"
                                              : Operation == FaceOperationKind::Scale ? "factor" : "distance" });
-        FeatureStep Step;
         Step.Kind      = FeatureStepKind::FaceOperation;
         Step.Label     = StepLabel;
         Step.Operation = Operation;
@@ -1063,8 +1122,42 @@ SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, FaceO
             Step.Points = { Normalize(*Direction) };
         }
         for (const std::string& Name : Document.Selection.Faces) Step.References.push_back({ ReferenceKind::Face, Name, {} });
-        Document.Tree.Steps.push_back(std::move(Step));
         Document.Captions[StepLabel] = Caption;
+        return {};
+    });
+}
+
+SolidArcCommandOutcome ReshapeSolidArcSelection(SolidArcDocument& Document, const AffineMap& Map, const std::string& Verb)
+{
+    const SolidArcSelection& Selection = Document.Selection;
+    const size_t Count = Selection.Vertices.size() + Selection.Edges.size();
+    const std::string Label = Verb + " " + std::to_string(Count) + (Selection.Vertices.empty() ? " edge(s)" : Selection.Edges.empty() ? " vertex(es)" : " vertex(es) / edge(s)");
+    // The owner carries every picked vertex and edge.
+    std::string Owner, Problem;
+    if (Count == 0) Problem = "pick vertices (1) or edges (2) first";
+    else if (!Document.Summary.PresentCondition) Problem = "there is no body to reshape";
+    else
+    {
+        std::string EdgeOwner, VertexOwner;
+        if (!Selection.Edges.empty()) Problem = CommonBody(Document, SolidArcSelectionKind::Edge, Selection.Edges, EdgeOwner);
+        if (Problem.empty() && !Selection.Vertices.empty()) Problem = CommonBody(Document, SolidArcSelectionKind::Vertex, Selection.Vertices, VertexOwner);
+        if (Problem.empty() && !EdgeOwner.empty() && !VertexOwner.empty() && EdgeOwner != VertexOwner) Problem = "the vertices and edges are on different bodies (one body at a time)";
+        Owner = EdgeOwner.empty() ? VertexOwner : EdgeOwner;
+    }
+    std::vector<std::string> Names = Selection.Vertices;
+    Names.insert(Names.end(), Selection.Edges.begin(), Selection.Edges.end());
+    return RunDirectEdit(Document, Label, Problem.empty() ? Owner : std::string(), Names, [&](FeatureStep& Step) -> std::string
+    {
+        if (!Problem.empty()) return Problem;
+        const std::string StepLabel = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Kind      = FeatureStepKind::FaceOperation;
+        Step.Label     = StepLabel;
+        Step.Operation = FaceOperationKind::Reshape;
+        Step.Placement = Map;
+        Step.Target    = Owner;
+        for (const std::string& Name : Document.Selection.Vertices) Step.References.push_back({ ReferenceKind::Vertex, Name, {} });
+        for (const std::string& Name : Document.Selection.Edges) Step.References.push_back({ ReferenceKind::Edge, Name, {} });
+        Document.Captions[StepLabel] = NextCaption(Document, "Reshape");
         return {};
     });
 }
@@ -1693,7 +1786,8 @@ SolidArcCommandOutcome AddSolidArcMatcapPicture(SolidArcDocument& Document, cons
 void SelectSolidArcName(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::string& Name, bool AdditiveCondition, const std::string& Body)
 {
     std::vector<std::string>& Names = Kind == SolidArcSelectionKind::Face ? Document.Selection.Faces
-                                    : Kind == SolidArcSelectionKind::Edge ? Document.Selection.Edges : Document.Selection.Bodies;
+                                    : Kind == SolidArcSelectionKind::Edge ? Document.Selection.Edges
+                                    : Kind == SolidArcSelectionKind::Vertex ? Document.Selection.Vertices : Document.Selection.Bodies;
     if (!AdditiveCondition)
     {
         Document.Selection = {};
@@ -3251,6 +3345,7 @@ SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, Soli
         std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return Hidden.contains(Key); });
         std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name)); });
         std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name)); });
+        std::erase_if(Document.Selection.Vertices, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Vertex, Name)); });
         return {};
     });
 }
@@ -3274,6 +3369,7 @@ SolidArcCommandOutcome ToggleSolidArcBodyVisibility(SolidArcDocument& Document, 
         std::erase(Document.Selection.Bodies, Key);
         std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name) == Key; });
         std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) == Key; });
+        std::erase_if(Document.Selection.Vertices, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Vertex, Name) == Key; });
         return {};
     });
 }
@@ -3329,6 +3425,7 @@ SolidArcCommandOutcome ToggleSolidArcLock(SolidArcDocument& Document, const std:
         std::erase(Document.Selection.Bodies, Key);
         std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name) == Key; });
         std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name) == Key; });
+        std::erase_if(Document.Selection.Vertices, [&](const std::string& Name) { return SolidArcBodyOfName(Document, SolidArcSelectionKind::Vertex, Name) == Key; });
         return {};
     });
 }
@@ -3728,7 +3825,8 @@ std::string SolidArcBodyOfName(const SolidArcDocument& Document, SolidArcSelecti
             for (const RegeneratedBody& Body : Document.Regeneration.Bodies)
             {
                 if (Body.Key != Preferred) continue;
-                const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges : Body.Naming.Faces;
+                const std::map<uint32_t, std::string>& Table = Kind == SolidArcSelectionKind::Edge ? Body.Naming.Edges
+                                                             : Kind == SolidArcSelectionKind::Vertex ? Body.Naming.Vertices : Body.Naming.Faces;
                 for (const auto& Entry : Table) if (Entry.second == Name) return Body.Key;
             }
         }
@@ -4305,6 +4403,7 @@ const char* SolidArcFaceOperationLabel(FaceOperationKind Operation) noexcept
     case FaceOperationKind::Heal:       return "Heal";
     case FaceOperationKind::Thicken:    return "Thicken";
     case FaceOperationKind::Inset:      return "Inset";
+    case FaceOperationKind::Reshape:    return "Reshape";
     }
     return "Change";
 }

@@ -16,9 +16,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <numbers>
+#include <optional>
 #include <set>
 #include <tuple>
 
@@ -1207,6 +1209,152 @@ int OpenSliverBridges(const ModelPartition& Partition, BodyToken Body, const Ort
     ArrangeProfileLoops(Profile);
     if (!Profile.Refusal.empty()) { Profile = Original; return 0; }
     return Opened;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    RESHAPE (VERTICES / EDGES)
+//------------------------------------------------------------------------------------------------------------------------
+
+std::string ReshapeBodyVertices(ModelPartition& Partition, BodyToken Body, const std::vector<VertexToken>& Vertices, const AffineMap& Map,
+                                BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method)
+{
+    BodyDescription Description;
+    if (std::string Refusal = DescribeBody(Partition, Body, Description); !Refusal.empty()) return "Reshape: " + Refusal;
+    BodyBlueprint& Blueprint = Description.Blueprint;
+    if (Blueprint.Category != BodyCategory::Solid) return "Reshape: the body is a sheet (🚧 reshaping sheets)";
+    if (Vertices.empty()) return "Reshape: pick vertices or edges first";
+    const double Tolerance = 1.0e-8 * std::max(1.0, Description.Scale);                     // [len] - Coplanarity / travel floor (Accept)
+    const auto   Carry     = [&](Vector3 Point) { return Map.ColumnX * Point.X + Map.ColumnY * Point.Y + Map.ColumnZ * Point.Z + Map.Shift; };
+
+    // ① New positions for the picked vertices.
+    const size_t      VertexCount = Blueprint.Vertices.size();
+    std::vector<char> Moved(VertexCount, 0);
+    for (VertexToken Vertex : Vertices)
+    {
+        const auto Found = Description.VertexIndex.find(Vertex.Slot);
+        if (Found == Description.VertexIndex.end()) return "Reshape: " + LabelToken("V", Vertex) + " is not a vertex of the body";
+        Moved[Found->second] = 1;
+    }
+    double Travel = 0.0;                                                                     // [len] - Longest vertex move
+    for (size_t Index = 0; Index < VertexCount; ++Index)
+    {
+        if (!Moved[Index]) continue;
+        const Vector3 Was = Blueprint.Vertices[Index].Position;
+        Blueprint.Vertices[Index].Position = Carry(Was);
+        Travel = std::max(Travel, Distance(Was, Blueprint.Vertices[Index].Position));
+    }
+    if (Travel <= Tolerance) return "Reshape: the move is zero";
+
+    // ② Straight edges at a moved vertex are re-drawn between their new ends (τ = arc length from Start).
+    std::vector<char> EdgeChanged(Blueprint.Edges.size(), 0);
+    int               ChangedEdges = 0;
+    for (size_t Index = 0; Index < Blueprint.Edges.size(); ++Index)
+    {
+        BlueprintEdge& Edge = Blueprint.Edges[Index];
+        if (!Moved[Edge.Start] && !Moved[Edge.End]) continue;
+        const std::string Name = LabelToken("E", Description.Inventory.Edges[Index]);
+        if (!std::holds_alternative<StraightLine>(Edge.Curve))
+            return "Reshape: edge " + Name + " is a " + CurveCategoryLabel(Edge.Curve) + " — only straight edges can follow a moved vertex (move the face instead)";
+        const Vector3 From   = Blueprint.Vertices[Edge.Start].Position;
+        const Vector3 Until  = Blueprint.Vertices[Edge.End].Position;
+        const double  Extent = Distance(From, Until);                                       // [len]
+        if (Extent <= 1.0e-6 * Description.Scale) return "Reshape: edge " + Name + " would shrink to a point";
+        Edge.Curve = StraightLine{ From, (Until - From) * (1.0 / Extent) };
+        Edge.Low   = 0.0;
+        Edge.High  = Extent;
+        EdgeChanged[Index] = 1;
+        ++ChangedEdges;
+    }
+
+    // ③ Faces at a moved vertex: plane re-fit, bilinear patch, or refusal.
+    std::vector<FaceChangeHistory> Planned(Blueprint.Faces.size());
+    int PlanarFaces = 0, BentFaces = 0;
+    double Bow = 0.0;                                                                        // [len] - Worst off-plane corner among bent faces
+    for (size_t Index = 0; Index < Blueprint.Faces.size(); ++Index)
+    {
+        BlueprintFace&    Face = Blueprint.Faces[Index];
+        const FaceToken   Token = Description.Inventory.Faces[Index];
+        Planned[Index] = { {}, FaceChangeOrigin::Unchanged, Token, {} };
+        bool Touched = false;
+        for (const std::vector<BlueprintUse>& Loop : Face.Loops)
+            for (const BlueprintUse& Use : Loop) Touched = Touched || EdgeChanged[Use.Edge];
+        if (!Touched) continue;
+        const std::string Name = LabelToken("F", Token);
+        const auto* Plane = std::get_if<PlaneSurface>(&Face.Surface);
+        if (!Plane) return "Reshape: face " + Name + " is a " + SurfaceCategoryLabel(Face.Surface) + " — a moved vertex can only reshape flat faces (move the face instead)";
+        const Vector3 Outward = Plane->Frame.ZAxis * SignOfSense(Face.Sense);
+        // Corners per loop in loop order (each use starts at its Start, or End when reversed); Newell's normal sums the
+        // loops (outer CCW about the outward normal, holes CW), so it points outward with twice the net area.
+        std::vector<std::vector<Vector3>> Corners;
+        Vector3 Newell{}, Sum{};
+        int     Count = 0;
+        for (const std::vector<BlueprintUse>& Loop : Face.Loops)
+        {
+            std::vector<Vector3> Ring;
+            for (const BlueprintUse& Use : Loop)
+            {
+                const BlueprintEdge& Edge = Blueprint.Edges[Use.Edge];
+                if (!std::holds_alternative<StraightLine>(Edge.Curve))
+                    return "Reshape: face " + Name + " is bounded by a " + CurveCategoryLabel(Edge.Curve) + " — only faces with straight sides can follow a moved vertex";
+                Ring.push_back(Blueprint.Vertices[Use.Sense == Orientation::Forward ? Edge.Start : Edge.End].Position);
+                Sum = Sum + Ring.back();
+                ++Count;
+            }
+            for (size_t Corner = 0; Corner < Ring.size(); ++Corner) Newell = Newell + Cross(Ring[Corner], Ring[(Corner + 1) % Ring.size()]);
+            Corners.push_back(std::move(Ring));
+        }
+        if (Length(Newell) <= 1.0e-12 * Description.Scale * Description.Scale) return "Reshape: face " + Name + " would collapse";
+        const Vector3 Normal = Newell * (1.0 / Length(Newell));
+        if (Dot(Normal, Outward) <= 0.0) return "Reshape: face " + Name + " would turn inside out";
+        const Vector3 Centre = Sum * (1.0 / Count);
+        double Residual = 0.0;                                                               // [len] - Worst corner off the fitted plane
+        for (const std::vector<Vector3>& Ring : Corners)
+            for (const Vector3& Corner : Ring) Residual = std::max(Residual, std::fabs(Dot(Corner - Centre, Normal)));
+        Planned[Index].Origin = FaceChangeOrigin::Replaced;
+        if (Residual <= Tolerance)
+        {
+            // Plane through the corners, outward normal as its 𝑧 (Forward); 𝑥 the old 𝑥 laid into the new plane.
+            Vector3 Along = Plane->Frame.XAxis - Normal * Dot(Plane->Frame.XAxis, Normal);
+            if (Length(Along) < 1.0e-6) Along = Plane->Frame.YAxis - Normal * Dot(Plane->Frame.YAxis, Normal);
+            Along = Along * (1.0 / Length(Along));
+            PlaneSurface Fitted;
+            Fitted.Frame = { Centre, Along, Cross(Normal, Along), Normal };
+            Face.Surface = Fitted;
+            Face.Sense   = Orientation::Forward;
+            ++PlanarFaces;
+        }
+        else
+        {
+            if (Face.Loops.size() != 1 || Corners.front().size() != 4)
+                return "Reshape: face " + Name + " (" + std::to_string(Corners.front().size()) + " sides" + (Face.Loops.size() > 1 ? ", with holes" : "") +
+                       ") would bend off its plane — only four-sided faces can bend (move along the face, or move a whole edge)";
+            // Bilinear patch S(𝑢, 𝑣) through the corners in loop order: S(0,0) = A, S(1,0) = B, S(1,1) = C, S(0,1) = D.
+            const std::vector<Vector3>& Ring = Corners.front();
+            const Vector3 A = Ring[0], B = Ring[1], C = Ring[2], D = Ring[3];
+            // Su × Sv at each corner must keep the outward side (a folded patch would cross itself).
+            const Vector3 Normals[] = { Cross(B - A, D - A), Cross(B - A, C - B), Cross(C - D, D - A), Cross(C - D, C - B) };
+            for (const Vector3& Corner : Normals)
+                if (Dot(Corner, Normal) <= 1.0e-12 * Description.Scale * Description.Scale) return "Reshape: face " + Name + " would fold over";
+            std::optional<NurbsSurface> Patch = ConstructNurbsSurface(1, 1, 2, 2, { 0.0, 0.0, 1.0, 1.0 }, { 0.0, 0.0, 1.0, 1.0 }, { A, D, B, C }, { 1.0, 1.0, 1.0, 1.0 });
+            if (!Patch) return "Reshape: face " + Name + " could not take a bilinear patch";
+            Face.Surface = *Patch;
+            Face.Sense   = Orientation::Forward;
+            Bow          = std::max(Bow, Residual);
+            ++BentFaces;
+        }
+        for (std::vector<BlueprintUse>& Loop : Face.Loops) FitLoopSurfaceCurves(Face.Surface, Blueprint, Loop);
+    }
+
+    // ④ Assemble, audit, clash check (Conclude), provenance per face.
+    if (std::string Refusal = Conclude(Partition, Blueprint, "Reshape", Planned, Result, Histories, Audit); !Refusal.empty())
+        return Refusal.rfind("Reshape", 0) == 0 ? Refusal : "Reshape: " + Refusal;
+    int MovedCount = 0;
+    for (char Each : Moved) MovedCount += Each;
+    char Text[256];
+    std::snprintf(Text, sizeof(Text), "reshape: %d vertex(es) moved %.4g, %d edge(s) re-drawn, %d flat face(s) re-fitted, %d face(s) bent into bilinear patches (bow %.3g)",
+                  MovedCount, Travel, ChangedEdges, PlanarFaces, BentFaces, Bow);
+    Method = Text;
+    return {};
 }
 
 } // namespace Frontier::GeometryProcessing

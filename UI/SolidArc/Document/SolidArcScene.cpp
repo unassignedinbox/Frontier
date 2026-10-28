@@ -260,6 +260,15 @@ SolidArcScene BuildSolidArcScene(const SolidArcDocument& Document, double SagRat
             Scene.Edges.push_back(std::move(Edge));
         }
 
+        // ②′ vertices: the named body vertices (mode 1 picks them for a direct reshape)
+        for (const VertexToken Vertex : Partition.CollectInventory(Regenerated.Body).Vertices)
+        {
+            const auto Named = Naming.Vertices.find(Vertex.Slot);
+            if (Named == Naming.Vertices.end()) continue;
+            const Vector3 Position = Partition.Vertices.Resolve(Vertex).Position;
+            Scene.Vertices.push_back({ Named->second, Vertex.Slot, BodyIndex, { Position.X, Position.Y, Position.Z } });
+        }
+
         // ③ bounds: the union over every body
         if (!Complex.Positions.empty())
         {

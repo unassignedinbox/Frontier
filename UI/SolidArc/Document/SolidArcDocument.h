@@ -67,6 +67,7 @@ enum class SolidArcSelectionKind : uint8_t
     Face = 0,                                                                                // A face (persistent name)
     Edge = 1,                                                                                // An edge (persistent name)
     Body = 2,                                                                                // A whole body (key = creating step label)
+    Vertex = 3,                                                                              // A body vertex (persistent name; mode 1)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -124,6 +125,7 @@ struct SolidArcSelection
     std::vector<std::string> Bodies = {};                                                    // [-] - Selected body keys, in pick order (first = Boolean target)
     SolidArcSelectionKind    LastKind = SolidArcSelectionKind::Face;                          // [-] - Kind of the most recent pick (active operand)
     std::string              PickedBody = {};                                                // [-] - Body the faces / edges were picked on (pieces of one cut share names)
+    std::vector<std::string> Vertices = {};                                                  // [-] - Selected body vertex names (mode 1, reshape)
 };
 
 struct SolidArcCutRequest
@@ -374,6 +376,10 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome ChangeSolidArcSelection(SolidArcDocument& Document, GeometryProcessing::FaceOperationKind Operation, double Amount,
                                                              std::optional<GeometryProcessing::Vector3> Direction = std::nullopt);
 // Inset (Plasticity O on faces · I): border ring Distance wide; the inner face moves Depth along the outward normal (− pocket).
+// 💡 Direct edit of the picked vertices / edges (mode 1 / 2 gizmo): a FaceOperation Reshape step carrying them by Map; the
+//    faces at them are re-fitted (planes, or bilinear patches for four-sided faces that cannot stay flat). Like face changes,
+//    it goes before the body's trailing fillets so they re-solve on the new shape (appended when that refuses).
+[[nodiscard]] SolidArcCommandOutcome ReshapeSolidArcSelection(SolidArcDocument& Document, const GeometryProcessing::AffineMap& Map, const std::string& Verb);
 [[nodiscard]] SolidArcCommandOutcome InsetSolidArcSelection(SolidArcDocument& Document, double Distance, double Depth);
 [[nodiscard]] SolidArcCommandOutcome AssignSolidArcParameter(SolidArcDocument& Document, const std::string& Name, double Value);
 [[nodiscard]] SolidArcCommandOutcome DeleteSolidArcStep(SolidArcDocument& Document, const std::string& Label);

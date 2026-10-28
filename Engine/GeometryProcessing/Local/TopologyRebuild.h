@@ -10,6 +10,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Construction/BodyTransform.h"
 #include "Engine/GeometryProcessing/Local/FaceChange.h"
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 
@@ -49,6 +50,16 @@ namespace Frontier::GeometryProcessing
 //    the profile is unchanged when none qualifies or the moved outline would cross itself.
 [[nodiscard]] int OpenSliverBridges(const ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane, double CutSign, const FaceToken* Region,
                                     SketchProfile& Profile);
+// 💡 Reshape (direct vertex / edge editing): the picked vertices are carried by Map and every straight edge at them is
+//    re-drawn between its new ends; each face touching a moved vertex is re-fitted — ① a plane when its new corners stay
+//    coplanar (within 1e-8 · scale; a box edge slid across its faces, a corner slid along a face), ② a bilinear patch
+//    (degree 1 × 1 NURBS through its four corners, its sides exactly the four straight edges) when a four-sided face can no
+//    longer be flat, ③ otherwise refused — a curved face or edge at a moved vertex (a fillet, a hole's circle), a face of
+//    more than four sides bent off its plane, a face turned inside out or folded, an edge collapsing to a point. Faces
+//    away from the moved vertices keep their carriers and SP-curves; the result is assembled, audited and clash-checked
+//    like every rebuild verb, so a reshape that would make the solid cross itself is refused.
+[[nodiscard]] std::string ReshapeBodyVertices(ModelPartition& Partition, BodyToken Body, const std::vector<VertexToken>& Vertices, const AffineMap& Map,
+                                              BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 [[nodiscard]] std::string ThickenSheet(ModelPartition& Partition, BodyToken Body, double Thickness, BodyToken& Result,
                                        std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 

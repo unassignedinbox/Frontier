@@ -126,6 +126,7 @@ namespace
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
     GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
+    GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3", "1e-9 · fit 10⁻⁴ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
@@ -1577,6 +1578,200 @@ void ValidateWrap()
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    RESHAPE
+//------------------------------------------------------------------------------------------------------------------------
+
+// W67: vertices and edges of a solid moved by the gizmo (mode 1 / 2). The block is x ∈ [0, 4], y ∈ [0, 2], z ∈ [0, 1];
+// faces that stay flat are re-planed, four-sided faces that cannot are bilinear patches (exact volumes: the patch is
+// linear along each side, so ∫ of its offset is a product of one-dimensional integrals).
+void ValidateReshape()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto Near   = [](double A, double B) { return std::abs(A - B) <= 1.0e-9; };
+    const auto NewBlock = []()
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Reshape");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+    const auto EdgeWhere = [](const SolidArcDocument& Document, const auto& Test)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Edges)
+        {
+            const Vector3 Start = EdgeEndPosition(Document, Name, false), End = EdgeEndPosition(Document, Name, true);
+            if (Test(Start, End) || Test(End, Start)) return Name;
+        }
+        return std::string{};
+    };
+    const auto VertexAt = [&](const SolidArcDocument& Document, Vector3 Point)
+    {
+        for (const auto& [Slot, Name] : Document.Regeneration.Naming.Vertices)
+        {
+            const Vector3 Position = Document.Partition->Vertices.Resolve(Document.Partition->Vertices.TokenAt(Slot)).Position;
+            if (Near(Position.X, Point.X) && Near(Position.Y, Point.Y) && Near(Position.Z, Point.Z)) return Name;
+        }
+        return std::string{};
+    };
+    // The top-front edge (y = 0, z = 1) runs along x.
+    const auto TopFront = [&](const SolidArcDocument& Document)
+    {
+        return EdgeWhere(Document, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+    };
+    const auto Reshape = [&](SolidArcDocument& Document, std::vector<std::string> Edges, std::vector<std::string> Vertices, const AffineMap& Map, const char* Verb)
+    {
+        Document.Selection = {};
+        Document.Selection.Edges    = std::move(Edges);
+        Document.Selection.Vertices = std::move(Vertices);
+        return ReshapeSolidArcSelection(Document, Map, Verb);
+    };
+    const auto Suffix = [](const SolidArcCommandOutcome& Outcome) { return Outcome.Refusal.empty() ? std::string() : " · " + Outcome.Refusal; };
+
+    // ① An edge moved: across (−y face leans, top narrows), up (top leans), along itself (both ends of the block shear:
+    //    the x = 0 / 4 faces are bilinear, offset 0.5 (1 − y / 2) z each, so the volume stays 8).
+    struct EdgeCase { const char* Note; AffineMap Map; double Volume; int Bilinear; };
+    const std::vector<EdgeCase> EdgeCases = {
+        { "top-front edge moved +0.5 y (front leans back)",       TranslationMap({ 0.0, 0.5, 0.0 }), 8.0 - 0.5 * 0.5 * 4.0, 0 },
+        { "top-front edge moved +0.5 z (top leans forward)",      TranslationMap({ 0.0, 0.0, 0.5 }), 8.0 + 0.5 * 2.0 * 0.5 * 4.0, 0 },
+        { "top-front edge moved +0.5 x (along itself)",           TranslationMap({ 0.5, 0.0, 0.0 }), 8.0, 2 },
+        { "top-front edge scaled ½ about its middle (2, 0, 1)",   ScalingMap({ 2.0, 0.0, 1.0 }, { 0.5, 0.5, 0.5 }), 8.0 - 2.0 * 1.0 * 0.5, 2 },
+    };
+    for (const EdgeCase& Case : EdgeCases)
+    {
+        SolidArcDocument Part = NewBlock();
+        const size_t Undo = Part.UndoEntries.size();
+        const std::string Edge = TopFront(Part);
+        const SolidArcCommandOutcome Moved = Reshape(Part, { Edge }, {}, Case.Map, "Move");
+        int Patches = 0;
+        for (const auto& [Slot, Name] : Part.Regeneration.Naming.Faces)
+            Patches += std::holds_alternative<NurbsSurface>(Part.Partition->Surfaces.Resolve(Part.Partition->Faces.Resolve(Part.Partition->Faces.TokenAt(Slot)).Surface)) ? 1 : 0;
+        TallyVolume(ReshapeGate, Part, Case.Volume, Format("%s %s: %d faces, %d bilinear (expect 6, %d), %d undo entry%s", Case.Note, Edge.c_str(), Part.Summary.Faces, Patches, Case.Bilinear,
+                                                          int(Part.UndoEntries.size() - Undo), Suffix(Moved).c_str()));
+        Tally(ReshapeGate, 0.0, Moved.AcceptedCondition && Part.Summary.Faces == 6 && Patches == Case.Bilinear && Part.UndoEntries.size() == Undo + 1, Format("%s: topology kept, one undo entry", Case.Note));
+    }
+    {
+        // Turned 30° about the bottom-front edge (the x axis): a prism of the turned section (0, 0) (2, 0) (2, 1) (y′, z′).
+        SolidArcDocument Part = NewBlock();
+        const double     Angle = std::numbers::pi / 6.0;
+        const AffineMap  Turn  = RotationMap({ 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, Angle);
+        const Vector3    Corner = Turn.ColumnZ + Turn.Shift;                                      // M·(0, 0, 1) + t
+        const double     Section = 0.5 * std::abs(2.0 * 1.0 + 2.0 * Corner.Z - Corner.Y * 1.0);
+        const SolidArcCommandOutcome Turned = Reshape(Part, { TopFront(Part) }, {}, Turn, "Rotate");
+        TallyVolume(ReshapeGate, Part, 4.0 * Section, Format("top-front edge turned 30° about the floor edge → (y, z) = (%.6f, %.6f), section %.6f%s", Corner.Y, Corner.Z, Section, Suffix(Turned).c_str()));
+    }
+
+    // ② A corner moved: up 0.5 (the top a bilinear patch z = 1 + ½ · (x / 4)(y / 2) → +1; the back / right stay flat), out
+    //    0.5 in x (the right face bilinear x = 4 + ½ · (y / 2) z → +0.25).
+    {
+        SolidArcDocument Raised = NewBlock();
+        const std::string Corner = VertexAt(Raised, { 4.0, 2.0, 1.0 });
+        const SolidArcCommandOutcome Up = Reshape(Raised, {}, { Corner }, TranslationMap({ 0.0, 0.0, 0.5 }), "Move");
+        TallyVolume(ReshapeGate, Raised, 9.0, Format("corner %s raised 0.5: top bilinear, back / right re-planed, %d faces%s", Corner.c_str(), Raised.Summary.Faces, Suffix(Up).c_str()));
+        SolidArcDocument Out = NewBlock();
+        const SolidArcCommandOutcome Pushed = Reshape(Out, {}, { VertexAt(Out, { 4.0, 2.0, 1.0 }) }, TranslationMap({ 0.5, 0.0, 0.0 }), "Move");
+        TallyVolume(ReshapeGate, Out, 8.25, Format("corner pushed out 0.5 x: right face bilinear%s", Suffix(Pushed).c_str()));
+    }
+
+    // ③ Refusals leave the document untouched (tree, volume, undo stack).
+    {
+        const auto Untouched = [&](SolidArcDocument& Part, const SolidArcCommandOutcome& Outcome, const std::string& Before, double Volume, const char* Note)
+        {
+            Tally(ReshapeGate, 0.0, !Outcome.AcceptedCondition && EncodeSolidArcDocument(Part) == Before && Part.Summary.Volume == Volume,
+                  Format("refused, untouched: %s (%s)", Note, Outcome.Refusal.c_str()));
+        };
+        {
+            SolidArcDocument Part = NewBlock();
+            const std::string Before = EncodeSolidArcDocument(Part);
+            const double Volume = Part.Summary.Volume;
+            Untouched(Part, Reshape(Part, {}, { VertexAt(Part, { 4.0, 2.0, 1.0 }) }, TranslationMap({ 0.0, -2.0, 0.0 }), "Move"), Before, Volume, "a corner moved onto its neighbour (edge collapses)");
+            Untouched(Part, Reshape(Part, { TopFront(Part) }, {}, TranslationMap({ 0.0, 0.0, -1.5 }), "Move"), Before, Volume, "the top-front edge pushed below the floor (front face inside out)");
+            Untouched(Part, Reshape(Part, { TopFront(Part) }, {}, TranslationMap({ 0.0, 3.0, 0.0 }), "Move"), Before, Volume, "the top-front edge pushed through the back (top face inside out)");
+            Untouched(Part, Reshape(Part, {}, {}, TranslationMap({ 0.0, 0.0, 0.5 }), "Move"), Before, Volume, "nothing picked");
+        }
+        {
+            SolidArcDocument Part = CreateSolidArcDocument("Reshape");
+            SolidArcConstructRequest Round;
+            Round.Kind = SolidArcConstructKind::Cylinder; Round.Radius = 0.5; Round.Height = 1.0;
+            Expect(ConstructSolidArcPrimitive(Part, Round));
+            const std::string Rim = EdgeWhere(Part, [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+            const std::string Before = EncodeSolidArcDocument(Part);
+            Untouched(Part, Reshape(Part, { Rim }, {}, TranslationMap({ 0.0, 0.0, 0.2 }), "Move"), Before, Part.Summary.Volume, "a cylinder's rim circle (curved edge)");
+        }
+        {
+            SolidArcDocument Part = CreateSolidArcDocument("Reshape");
+            SolidArcConstructRequest Hexagon;
+            Hexagon.Kind = SolidArcConstructKind::Prism; Hexagon.Sides = 6; Hexagon.Radius = 1.0; Hexagon.Height = 1.0;
+            Expect(ConstructSolidArcPrimitive(Part, Hexagon));
+            const std::string Rim = VertexAt(Part, { 1.0, 0.0, 1.0 });
+            const std::string Before = EncodeSolidArcDocument(Part);
+            Untouched(Part, Reshape(Part, {}, { Rim }, TranslationMap({ 0.0, 0.0, 0.3 }), "Move"), Before, Part.Summary.Volume,
+                      Format("a hexagonal prism's top vertex %s raised (the hexagon cannot stay flat)", Rim.c_str()).c_str());
+        }
+    }
+
+    // ④ With a fillet r 0.2 on the bottom-back edge the reshape goes in before the Blend, which re-solves on the new shape;
+    //    moving the fillet's own edge refuses (a curved neighbour). Save / load replays it byte-equal.
+    {
+        SolidArcDocument Part = NewBlock();
+        const double Radius = 0.2;
+        Part.Selection = {};
+        Part.Selection.Edges = { EdgeWhere(Part, [&](Vector3 A, Vector3 B) { return Near(A.Y, 2.0) && Near(B.Y, 2.0) && Near(A.Z, 0.0) && Near(B.Z, 0.0); }) };
+        Expect(BlendSolidArcSelection(Part, BlendProfile::Fillet, Radius));
+        const std::string Blend = Part.Tree.Steps.back().Label;
+        const size_t      Steps = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Moved = Reshape(Part, { TopFront(Part) }, {}, TranslationMap({ 0.0, 0.5, 0.0 }), "Move");
+        const bool Before = Part.Tree.Steps.size() == Steps + 1 && Part.Tree.Steps.back().Label == Blend && Part.Tree.Steps[Steps - 1].Operation == FaceOperationKind::Reshape;
+        TallyVolume(ReshapeGate, Part, 7.0 - (1.0 - std::numbers::pi / 4.0) * Radius * Radius * 4.0,
+                    Format("filleted block, top-front edge +0.5 y: step %s before %s (%s), the fillet re-solved%s", Steps - 1 < Part.Tree.Steps.size() ? Part.Tree.Steps[Steps - 1].Label.c_str() : "?", Blend.c_str(),
+                           Before ? "yes" : "no", Suffix(Moved).c_str()));
+        Tally(ReshapeGate, 0.0, Moved.AcceptedCondition && Before, "the reshape is inserted before the trailing Blend");
+
+        std::string Seam;
+        for (const auto& [Slot, Name] : Part.Regeneration.Naming.Edges) if (Name.find(Blend + ".") != std::string::npos) { Seam = Name; break; }
+        const std::string Text = EncodeSolidArcDocument(Part);
+        const SolidArcCommandOutcome Refused = Reshape(Part, { Seam }, {}, TranslationMap({ 0.0, 0.0, 0.1 }), "Move");
+        Tally(ReshapeGate, 0.0, !Refused.AcceptedCondition && EncodeSolidArcDocument(Part) == Text, Format("the fillet's own edge %s refuses, untouched (%s)", Seam.c_str(), Refused.Refusal.c_str()));
+
+        const SolidArcDocumentFile Loaded   = DecodeSolidArcDocument(Text);
+        SolidArcDocument           Reloaded = CreateSolidArcDocument(Loaded.Title);
+        const SolidArcCommandOutcome Opened = ReplaceSolidArcTree(Reloaded, Loaded.Tree, Loaded.Captions, "Open");
+        Tally(ReshapeGate, 0.0, Loaded.Refusal.empty() && Opened.AcceptedCondition && Reloaded.Summary.Volume == Part.Summary.Volume && EncodeSolidArcDocument(Reloaded) == Text,
+              Format("save → load: V %.12f = %.12f, byte-equal (%s)", Reloaded.Summary.Volume, Part.Summary.Volume, Loaded.Refusal.empty() ? Opened.Refusal.c_str() : Loaded.Refusal.c_str()));
+    }
+
+    // ⑤ Face gizmo verbs (mode 3): the top face scaled ½ about its centre is a frustum h/3 (A + a + √(A a)) = 14/3; turned
+    //    10° about the x axis through its centre it keeps 8 (the wedge gained = the wedge lost). With a bottom-front fillet the
+    //    face scale also goes in before the Blend.
+    {
+        const std::string TopName = PlanarFaceWhere(NewBlock(), { 0.0, 0.0, 1.0 }, 1);
+        SolidArcDocument Scaled = NewBlock();
+        Scaled.Selection = {};
+        Scaled.Selection.Faces = { TopName };
+        const SolidArcCommandOutcome Half = ChangeSolidArcSelection(Scaled, FaceOperationKind::Scale, 0.5);
+        TallyVolume(ReshapeGate, Scaled, 14.0 / 3.0, Format("top face scaled ½ (face gizmo) → frustum%s", Suffix(Half).c_str()));
+        SolidArcDocument Tilted = NewBlock();
+        Tilted.Selection = {};
+        Tilted.Selection.Faces = { TopName };
+        const SolidArcCommandOutcome Turn = ChangeSolidArcSelection(Tilted, FaceOperationKind::Rotate, 10.0 * std::numbers::pi / 180.0, Vector3{ 1.0, 0.0, 0.0 });
+        TallyVolume(ReshapeGate, Tilted, 8.0, Format("top face turned 10° about x through its centre (face gizmo)%s", Suffix(Turn).c_str()));
+
+        SolidArcDocument Part = NewBlock();
+        Part.Selection = {};
+        Part.Selection.Edges = { EdgeWhere(Part, [&](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, 0.0) && Near(B.Z, 0.0); }) };
+        Expect(BlendSolidArcSelection(Part, BlendProfile::Fillet, 0.1));
+        const std::string Blend = Part.Tree.Steps.back().Label;
+        Part.Selection = {};
+        Part.Selection.Faces = { TopName };
+        const SolidArcCommandOutcome Narrowed = ChangeSolidArcSelection(Part, FaceOperationKind::Scale, 0.8);
+        const bool Before = Part.Tree.Steps.back().Label == Blend && Part.Tree.Steps[Part.Tree.Steps.size() - 2].Operation == FaceOperationKind::Scale;
+        Tally(ReshapeGate, 0.0, Narrowed.AcceptedCondition && Before && Part.Summary.SoundCondition && Part.Summary.Volume < 8.0 && Part.Summary.Volume > 14.0 / 3.0,
+              Format("filleted block, top face scaled 0.8: scale before %s (%s), the fillet re-solved on the leaning front, sound, V %.6f%s", Blend.c_str(), Before ? "yes" : "no",
+                     Part.Summary.Volume, Suffix(Narrowed).c_str()));
+    }
+}
+
 int main()
 {
     const auto Start = std::chrono::steady_clock::now();
@@ -1610,6 +1805,12 @@ int main()
         ValidateCurveFlow();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return CurveFlowGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_RESHAPE"))                                          // Quick rerun of W67 alone
+    {
+        ValidateReshape();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return ReshapeGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_WRAP"))                                             // Quick rerun of W66 alone
     {
@@ -6986,7 +7187,10 @@ int main()
     // ---- W66 Wrap around curve, sketch scale, curve offset
     ValidateWrap();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate })
+    // ---- W67 Direct edits of solids (vertex / edge reshape, before trailing fillets)
+    ValidateReshape();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

@@ -73,6 +73,15 @@ struct SolidArcSceneEdge
     double      Length       = 0.0;                                                          // [len] - Polyline length
 };
 
+// 📝 A body vertex for mode-1 picking / direct reshape (drawn as a dot when its body is in vertex mode).
+struct SolidArcSceneVertex
+{
+    std::string           Name     = {};                                                     // [-]   - Persistent name ("Vertex(A|B|C)")
+    uint32_t              Slot     = 0;                                                      // [idx] - Partition vertex slot
+    uint32_t              Body     = 0;                                                      // [idx] - Scene body index
+    std::array<double, 3> Position = {};                                                     // [len] - Point
+};
+
 // 📝 One body's spans in the scene tables (faces and edges are grouped by body, in creation order).
 struct SolidArcSceneBody
 {
@@ -98,6 +107,7 @@ struct SolidArcScene
     double                            Sag         = 0.0;                                     // [len] - Tessellation ε
     double                            Milliseconds = 0.0;                                    // [ms]  - Tessellation + packing
     std::string                       Refusal     = {};                                      // [-]   - Tessellation refusal (empty: fine)
+    std::vector<SolidArcSceneVertex>  Vertices    = {};                                      // [-]   - Body vertices (named), grouped by body
 };
 
 // 📝 Per-face / per-edge state words for the viewport programs (bits: 1 selected, 2 active, 4 hovered).

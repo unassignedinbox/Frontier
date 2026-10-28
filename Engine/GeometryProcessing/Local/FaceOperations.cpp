@@ -502,6 +502,7 @@ static FaceOperationOutcome ApplyFaceOperationUntraced(ModelPartition& Partition
         case FaceOperationKind::Inset:   return Finish(InsetPlanarFaces(Partition, Body, Settings.Faces, Settings.Distance, Settings.Depth, Outcome.Body, Outcome.FaceHistories, Outcome.Audit, Outcome.Method));
         case FaceOperationKind::Delete:  return Finish(DeleteBodyFaces(Partition, Body, Settings.Faces, Outcome.Body, Outcome.Category, Outcome.FaceHistories, Outcome.Audit, Outcome.Method));
         case FaceOperationKind::Heal:    return Finish(HealBody(Partition, Body, Outcome.Body, Outcome.FaceHistories, Outcome.Audit, Outcome.Method));
+        case FaceOperationKind::Reshape: return Finish(ReshapeBodyVertices(Partition, Body, Settings.Vertices, Settings.Placement, Outcome.Body, Outcome.FaceHistories, Outcome.Audit, Outcome.Method));
         case FaceOperationKind::Thicken: return Finish(ThickenSheet(Partition, Body, Settings.Distance, Outcome.Body, Outcome.FaceHistories, Outcome.Audit, Outcome.Method));
         default: break;
     }
@@ -549,6 +550,7 @@ const char* FaceOperationLabel(FaceOperationKind Kind) noexcept
         case FaceOperationKind::Heal:       return "Heal";
         case FaceOperationKind::Thicken:    return "Thicken";
         case FaceOperationKind::Inset:      return "InsetFaces";
+        case FaceOperationKind::Reshape:    return "Reshape";
     }
     return "?";
 }
