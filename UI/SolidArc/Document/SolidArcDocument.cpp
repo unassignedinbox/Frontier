@@ -2640,6 +2640,85 @@ namespace
         for (const FeatureStep& Step : Document.Tree.Steps) if (Step.Label == Label) return &Step;
         return nullptr;
     }
+
+    // 📝 A sketch step through an affine map (G / R / S, Shift+D copies). Rigid: the plane is carried, the model kept.
+    //    Otherwise the solved points go through Map into the image plane (x along the image of the old x-axis), circle radii
+    //    scale, dimensions are re-measured (a bound parameter lets go of its value) and fixed points follow. A uniform scale
+    //    keeps every relation; a stretch (S then X / Y / Z) refuses arcs and circles (they would become ellipses) and drops
+    //    the relations it breaks (perpendicular, equal length, symmetric, G2, end directions; vertical when sheared).
+    [[nodiscard]] std::string CarrySketchStep(const SolidArcDocument& Document, FeatureStep& Step, const AffineMap& Map, int& Dropped)
+    {
+        const auto Turn = [&](Vector3 Vector) { return Map.ColumnX * Vector.X + Map.ColumnY * Vector.Y + Map.ColumnZ * Vector.Z; };
+        const Vector3 Columns[3] = { Map.ColumnX, Map.ColumnY, Map.ColumnZ };
+        bool RigidCondition = true;
+        for (int First = 0; First < 3; ++First)
+            for (int Second = 0; Second < 3; ++Second)
+                RigidCondition = RigidCondition && std::abs(Dot(Columns[First], Columns[Second]) - (First == Second ? 1.0 : 0.0)) <= 1.0e-9;
+        OrthonormalFrame& Plane = Step.Plane;
+        if (RigidCondition)
+        {
+            if (Dot(Cross(Map.ColumnX, Map.ColumnY), Map.ColumnZ) < 0.0) return "a sketch cannot be mirrored (🚧)";
+            Plane.Origin = Turn(Plane.Origin) + Map.Shift;
+            Plane.XAxis  = Normalize(Turn(Plane.XAxis));
+            Plane.YAxis  = Normalize(Turn(Plane.YAxis));
+            Plane.ZAxis  = Normalize(Turn(Plane.ZAxis));
+            return {};
+        }
+        // ① the image plane and the in-plane map A = [[A11, A12], [0, A22]] in its frame
+        const Vector3 ImageX = Turn(Plane.XAxis), ImageY = Turn(Plane.YAxis);
+        const double  A11    = Length(ImageX);
+        if (!(A11 > 1.0e-12)) return "a scale of 0 flattens the sketch";
+        const Vector3 NewX = ImageX * (1.0 / A11);
+        const double  A12  = Dot(ImageY, NewX);
+        const Vector3 Rest = ImageY - NewX * A12;
+        const double  A22  = Length(Rest);
+        if (!(A22 > 1.0e-12 * std::max(1.0, A11))) return "a scale of 0 flattens the sketch";
+        const Vector3 NewY = Rest * (1.0 / A22);
+        const bool    UniformCondition = std::abs(A12) <= 1.0e-9 * A11 && std::abs(A22 - A11) <= 1.0e-9 * A11;
+        SketchModel Model = SolvedSketch(Document, Step);                                    // As shown (solved positions)
+        if (!UniformCondition)
+            for (const SketchCurve& Curve : Model.Curves)
+                if (Curve.Kind == SketchCurveKind::Circle || Curve.Kind == SketchCurveKind::Arc)
+                    return "a stretch would turn " + SketchCurveName(Curve) + " into an ellipse (🚧): press S without an axis to scale evenly";
+        const auto Apply = [&](Vector2 Point) { return Vector2{ A11 * Point.X + A12 * Point.Y, A22 * Point.Y }; };
+        for (SketchPoint& Point : Model.Points) Point.Position = Apply(Point.Position);
+        for (SketchCurve& Curve : Model.Curves) if (Curve.Kind == SketchCurveKind::Circle) Curve.Radius *= A11;
+        std::vector<SketchConstraint> Kept;
+        for (SketchConstraint Constraint : Model.Constraints)
+        {
+            using Kind = SketchConstraintKind;
+            if (!UniformCondition && (Constraint.Kind == Kind::Perpendicular || Constraint.Kind == Kind::EqualLength || Constraint.Kind == Kind::Symmetric
+                                      || Constraint.Kind == Kind::SplineCurvature || Constraint.Kind == Kind::SplineDirection
+                                      || (Constraint.Kind == Kind::Vertical && std::abs(A12) > 1.0e-9 * A11)))
+            {
+                ++Dropped;
+                continue;
+            }
+            if (Constraint.Kind == Kind::Fixed)
+            {
+                const Vector2 Held = Apply({ Constraint.Value, Constraint.SecondValue });
+                Constraint.Value = Held.X; Constraint.SecondValue = Held.Y;
+                Constraint.Parameter.clear();
+            }
+            const double Measured = MeasureSketchDimension(Model, Constraint);
+            if (std::isfinite(Measured) && std::abs(Measured - Constraint.Value) > 1.0e-12 * std::max(1.0, std::abs(Measured)))
+            {
+                Constraint.Value = Measured;
+                Constraint.Parameter.clear();                                                // The scaled value, not the parameter
+            }
+            Kept.push_back(std::move(Constraint));
+        }
+        Model.Constraints = std::move(Kept);
+        // A literal elevation keeps its value: the origin moves so the lifted plane lands where Map takes it.
+        const double  Lift    = Step.Elevation.Parameter.empty() ? Step.Elevation.Literal : 0.0;   // [len]
+        const Vector3 NewZ    = Normalize(Cross(NewX, NewY));
+        Step.Sketch  = std::move(Model);
+        Plane.Origin = Turn(Plane.Origin + Plane.ZAxis * Lift) + Map.Shift - NewZ * Lift;
+        Plane.XAxis  = NewX;
+        Plane.YAxis  = NewY;
+        Plane.ZAxis  = NewZ;
+        return {};
+    }
 }
 
 SolidArcCommandOutcome TransformSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys, const AffineMap& Map, const std::string& Verb)
@@ -2670,23 +2749,12 @@ SolidArcCommandOutcome PlaceSolidArcSketches(SolidArcDocument& Document, const s
     return RunCommand(Document, Verb + " (" + ListCaptions(Document, Unique) + ")", false, [&]() -> std::string
     {
         if (Unique.empty()) return "pick the sketches to " + Verb;
-        // ① rigid only: orthonormal columns, right-handed
-        const Vector3 Columns[3] = { Map.ColumnX, Map.ColumnY, Map.ColumnZ };
-        for (int First = 0; First < 3; ++First)
-            for (int Second = 0; Second < 3; ++Second)
-                if (std::abs(Dot(Columns[First], Columns[Second]) - (First == Second ? 1.0 : 0.0)) > 1.0e-9) return "a sketch moves and turns only (🚧 scaling a sketch)";
-        if (Dot(Cross(Map.ColumnX, Map.ColumnY), Map.ColumnZ) < 0.0) return "a sketch cannot be mirrored (🚧)";
-        const auto Turn = [&](Vector3 Vector) { return Map.ColumnX * Vector.X + Map.ColumnY * Vector.Y + Map.ColumnZ * Vector.Z; };
-        // ② carry each plane
+        int Dropped = 0;
         for (const std::string& Label : Unique)
         {
             const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
             if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Label;
-            OrthonormalFrame& Plane = Found->Plane;
-            Plane.Origin = Turn(Plane.Origin) + Map.Shift;
-            Plane.XAxis  = Normalize(Turn(Plane.XAxis));
-            Plane.YAxis  = Normalize(Turn(Plane.YAxis));
-            Plane.ZAxis  = Normalize(Turn(Plane.ZAxis));
+            if (const std::string Refusal = CarrySketchStep(Document, *Found, Map, Dropped); !Refusal.empty()) return Refusal;
         }
         return {};
     });
@@ -2704,24 +2772,16 @@ SolidArcCommandOutcome DuplicateSolidArcSketches(SolidArcDocument& Document, con
     return RunCommand(Document, "Duplicate (" + Operands + ")", false, [&]() -> std::string
     {
         if (Unique.empty()) return "pick the sketches to duplicate";
-        const Vector3 Columns[3] = { Map.ColumnX, Map.ColumnY, Map.ColumnZ };
-        for (int First = 0; First < 3; ++First)
-            for (int Second = 0; Second < 3; ++Second)
-                if (std::abs(Dot(Columns[First], Columns[Second]) - (First == Second ? 1.0 : 0.0)) > 1.0e-9) return "a sketch copy moves and turns only (🚧 scaling a sketch)";
-        if (Dot(Cross(Map.ColumnX, Map.ColumnY), Map.ColumnZ) < 0.0) return "a sketch copy cannot be mirrored (🚧)";
-        const auto Turn = [&](Vector3 Vector) { return Map.ColumnX * Vector.X + Map.ColumnY * Vector.Y + Map.ColumnZ * Vector.Z; };
         std::vector<std::string> Copies;
+        int Dropped = 0;
         for (const std::string& Label : Unique)
         {
             const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Label; });
             if (Found == Document.Tree.Steps.end() || Found->Kind != FeatureStepKind::Sketch) return "no sketch step labelled " + Label;
             FeatureStep Copy = *Found;
             Copy.Label   = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
-            Copy.Sketch  = SolvedSketch(Document, *Found);                                   // As shown (solved positions)
-            Copy.Plane.Origin = Turn(Copy.Plane.Origin) + Map.Shift;
-            Copy.Plane.XAxis  = Normalize(Turn(Copy.Plane.XAxis));
-            Copy.Plane.YAxis  = Normalize(Turn(Copy.Plane.YAxis));
-            Copy.Plane.ZAxis  = Normalize(Turn(Copy.Plane.ZAxis));
+            Copy.Sketch  = SolvedSketch(Document, *Found);                                   // As shown (solved positions); the copy's label is new
+            if (const std::string Refusal = CarrySketchStep(Document, Copy, Map, Dropped); !Refusal.empty()) return Refusal;
             const auto  Caption = Document.Captions.find(Label);
             std::string Stem    = Caption != Document.Captions.end() ? Caption->second : std::string("Sketch");
             while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
@@ -3379,6 +3439,45 @@ SolidArcCommandOutcome FlowSolidArcSketches(SolidArcDocument& Document, const So
         Document.Captions[Step.Label] = Caption;
         Document.Selection.Curves     = { Step.Label };
         Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+}
+
+SolidArcCommandOutcome WrapSolidArcSketches(SolidArcDocument& Document, const SolidArcWrapRequest& Request)
+{
+    const char* Verb = Request.Settings.Kind == SketchWrapKind::Project ? "Project " : "Wrap ";
+    return RunCommand(Document, Verb + ListCaptions(Document, Request.Shapes) + " round " + SolidArcBodyCaption(Document, Request.Rail), false, [&]() -> std::string
+    {
+        const FeatureStep* Rail = FindStep(Document, Request.Rail);
+        if (!Rail || Rail->Kind != FeatureStepKind::Sketch) return "Wrap: pick the shapes and the curve to wrap round (a circle: a can)";
+        if (Request.Shapes.empty()) return "Wrap: pick the shapes (text, outlines) and the curve to wrap them round";
+        std::vector<SketchWrapShape> Shapes;
+        for (const std::string& Label : Request.Shapes)
+        {
+            if (Label == Request.Rail) return "Wrap: " + SolidArcBodyCaption(Document, Label) + " is the rail and a shape";
+            const FeatureStep* Shape = FindStep(Document, Label);
+            if (!Shape || Shape->Kind != FeatureStepKind::Sketch) return "Wrap: no sketch step labelled " + Label;
+            Shapes.push_back({ SolvedSketch(Document, *Shape), ElevatedPlane(Document.Tree, *Shape) });
+        }
+        const SketchWrapOutcome Wrapped = WrapSketchModels(Shapes, SolvedSketch(Document, *Rail), ElevatedPlane(Document.Tree, *Rail), Request.Settings);
+        if (!Wrapped.Refusal.empty()) return "Wrap: " + Wrapped.Refusal;
+        const double Tolerance = 1.0e-4 * std::max(Wrapped.Extent, 1.0e-3);                 // [len] - Fit: 10⁻⁴ of the shape's width
+        std::vector<std::string> Made;
+        for (size_t Index = 0; Index < Wrapped.Curves.size(); ++Index)
+        {
+            FeatureStep Step;
+            Step.Kind            = FeatureStepKind::SpaceCurve;
+            Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Points          = Wrapped.Curves[Index];
+            Step.ClosedCondition = Wrapped.Closed[Index];
+            Step.PlanarCondition = false;
+            Step.Tolerance       = FeatureValue{ Tolerance };
+            Document.Captions[Step.Label] = NextCaption(Document, "Wrap");
+            Made.push_back(Step.Label);
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        Document.Selection        = {};
+        Document.Selection.Curves = Made;
         return {};
     });
 }

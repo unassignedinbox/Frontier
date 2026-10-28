@@ -3924,7 +3924,6 @@ void OpenTransformSession(SolidArcWorkspaceState& State, SolidArcTransformVerb V
         SketchCondition = !Keys.empty();
     }
     if (Keys.empty()) { Announce(State, std::string(DuplicateCondition ? "Duplicate" : TransformVerbLabel(Verb)) + " needs picked bodies (mode 4, or a face / edge of the body) or picked sketches"); return; }
-    if (SketchCondition && Verb == SolidArcTransformVerb::Scale) { Announce(State, "Scale on sketches: 🚧 (sketches move and turn: G / R, Shift+D / Ctrl+D duplicates)"); return; }
     SolidArcTransformSession& Transform = State.Transform;
     const int Commits = Transform.Commits;
     Transform                    = {};
@@ -4283,10 +4282,12 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
             for (const Vector2& Sample : SampleSketchCurve(Sketch, Curve)) { Sum = Sum + PlacePlanePoint(Plane, Sample); ++Count; }
     }
     if (Count == 0) return;
+    // Sketches scale too: x / y cylinders along the plane axes (straight curves only), the centre ring evenly; z (the
+    // plane normal) would change nothing.
     Gizmo.Target      = SolidArcGizmoTarget::Sketches;
     Gizmo.Names       = Sketches;
     Gizmo.Pose.Origin = Sum * (1.0 / Count);
-    Gizmo.Pose.Hidden = AxisScales | ((Gizmo.Modes & GizmoTranslate) ? 0u : CentreBit);
+    Gizmo.Pose.Hidden = (1u << uint32_t(SolidArcGizmoHandle::ScaleZ)) | ((Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit);
 }
 
 // 📝 Centre ring: on faces it scales whenever scale is on (faces have no axis cylinders); otherwise it moves in the
@@ -4669,12 +4670,16 @@ void CycleGizmoModes(SolidArcWorkspaceState& State)
     return Drawn == 1 && Open;
 }
 
-// The path O / P act on: the focused sketch step, else (P) the first selected curve, else the newest sketch step.
+// The path O / P act on: (O) the first picked sketch, the focused sketch step, else (P) the first selected curve, else the
+// newest sketch step.
 // Revolve / Evolution take the profile: the focused sketch, else the newest sketch that is not a lone open curve (a
 // focused lone open curve is Evolution's path instead).
 [[nodiscard]] std::string SweepPath(const SolidArcWorkspaceState& State, SolidArcSweepVerb Verb)
 {
     const bool ProfileCondition = Verb == SolidArcSweepVerb::Revolve || Verb == SolidArcSweepVerb::Evolution;
+    // Offset: the picked sketch first (pick the arc, O: the parallel arc), then the focused one.
+    if (Verb == SolidArcSweepVerb::Offset)
+        if (const std::vector<std::string> Picked = SelectedSketchLabels(State.Document); !Picked.empty()) return Picked.front();
     if (FocusedSketchCondition(State) && !(ProfileCondition && SingleOpenCurveCondition(State, State.FocusedStep))) return State.FocusedStep;
     if (Verb == SolidArcSweepVerb::Pipe && !State.Document.Selection.Curves.empty()) return State.Document.Selection.Curves.front();
     for (auto Step = State.Document.Tree.Steps.rbegin(); Step != State.Document.Tree.Steps.rend(); ++Step)
@@ -5034,6 +5039,82 @@ void FlowSelectedSketches(SolidArcWorkspaceState& State)
     const SolidArcCommandOutcome Outcome = FlowSolidArcSketches(State.Document, Request);
     if (Outcome.AcceptedCondition && !State.Document.Tree.Steps.empty()) State.FocusedStep = State.Document.Tree.Steps.back().Label;
     Conclude(State, Outcome);
+}
+
+// Rail and shapes of Wrap: a picked sketch that is a lone circle or arc is the rail whatever the order (the can);
+// otherwise the last pick ("pick the text, then the circle"); FlowSwapCondition takes the other end of the picks.
+[[nodiscard]] SolidArcWrapRequest WrapRequestOf(const SolidArcWorkspaceState& State)
+{
+    SolidArcWrapRequest      Request;
+    std::vector<std::string> Picked = SelectedSketchLabels(State.Document);
+    Request.Settings.Kind = State.WrapMode == 1 ? SketchWrapKind::Project : SketchWrapKind::Wrap;
+    if (Picked.size() < 2) return Request;
+    const auto LoneRound = [&](const std::string& Label)
+    {
+        const auto Solved = State.Document.Regeneration.Sketches.find(Label);
+        if (Solved == State.Document.Regeneration.Sketches.end()) return false;
+        int Drawn = 0, Round = 0;
+        for (const SketchCurve& Curve : Solved->second.Curves)
+        {
+            if (Curve.Construction) continue;
+            ++Drawn;
+            Round += Curve.Kind == SketchCurveKind::Circle || Curve.Kind == SketchCurveKind::Arc ? 1 : 0;
+        }
+        return Drawn == 1 && Round == 1;
+    };
+    const int Rounds = int(std::count_if(Picked.begin(), Picked.end(), LoneRound));
+    Request.Rail = Rounds == 1 ? *std::find_if(Picked.begin(), Picked.end(), LoneRound) : Picked.back();
+    if (State.FlowSwapCondition) Request.Rail = Request.Rail == Picked.back() ? Picked.front() : Picked.back();
+    for (const std::string& Label : Picked) if (Label != Request.Rail) Request.Shapes.push_back(Label);
+    return Request;
+}
+
+// 💡 Wrap / Project (Inspector › Curves): the projection direction is the view in a parallel view (auto), a chosen
+//    world axis (pointing away from the eye), or — auto in perspective — the popup's answer (Choice: 0 / 1 / 2 axes,
+//    3 the view). A lone circle facing that direction stands up instead: the can's axis is the world axis nearest the
+//    screen's up that crosses the view, the circle giving centre and radius.
+void WrapSelectedSketches(SolidArcWorkspaceState& State, int Choice)
+{
+    SolidArcWrapRequest Request = WrapRequestOf(State);
+    if (Request.Rail.empty()) { Announce(State, "Wrap: pick the 2D shapes (text, outlines), then Shift-click the curve to wrap them round (a circle: a can)"); return; }
+    const OrbitCameraFrame Frame = ViewportFrame(State);
+    const Vector3 Forward{ Frame.Forward[0], Frame.Forward[1], Frame.Forward[2] };
+    const Vector3 Up{ Frame.Up[0], Frame.Up[1], Frame.Up[2] };
+    if (Choice < 0) Choice = State.WrapAxis >= 0 ? State.WrapAxis : Frame.OrthographicEnabled ? 3 : -1;
+    if (Choice < 0)
+    {
+        State.WrapAxisPending = true;
+        Announce(State, "Wrap: perspective view — pick the projection axis in the popup (a parallel view, numpad 5, projects along the view by itself)");
+        return;
+    }
+    State.WrapAxisPending = false;
+    const Vector3 World[3] = { { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    static const char* const Names[3] = { "x", "y", "z" };
+    const Vector3 Direction = Choice == 3 ? Forward : World[Choice] * (Dot(World[Choice], Forward) < 0.0 ? -1.0 : 1.0);
+    std::string Note = Choice == 3 ? "along the view" : std::string("along ") + Names[Choice];
+    // A rail facing the direction: a lone circle / arc turns onto the world axis nearest the screen's up.
+    const FeatureStep* Rail = FindSketchStepByLabel(State.Document, Request.Rail);
+    if (Rail && std::abs(Dot(Normalize(Direction), ElevatedSketchPlane(State.Document, *Rail).ZAxis)) > 0.98)
+    {
+        int Best = -1;
+        for (int Axis = 0; Axis < 3; ++Axis)
+            if (std::abs(Dot(World[Axis], Normalize(Direction))) < 0.5 && (Best < 0 || std::abs(Dot(World[Axis], Up)) > std::abs(Dot(World[Best], Up)))) Best = Axis;
+        if (Best >= 0)
+        {
+            Request.Settings.Axis = World[Best];
+            Note += std::string(" · the circle faces the view, so the can stands along ") + Names[Best] + " (screen up)";
+        }
+    }
+    Request.Settings.Direction = Direction;
+    const SolidArcCommandOutcome Outcome = WrapSolidArcSketches(State.Document, Request);
+    if (Outcome.AcceptedCondition)
+    {
+        State.WrapCurves = int(State.Document.Selection.Curves.size());
+        State.WrapNote   = Note;
+    }
+    Conclude(State, Outcome);
+    if (Outcome.AcceptedCondition) Announce(State, Compose("%s: %d 3D curve(s) round %s, projected %s · Ctrl+Z undoes", State.WrapMode == 1 ? "Project" : "Wrap", State.WrapCurves,
+                                                           CaptionOf(State.Document, Request.Rail).c_str(), Note.c_str()));
 }
 
 // H / Shift+H / Alt+H / Ctrl+H: visibility is appearance (no regeneration) but the scene drops hidden bodies.
@@ -11124,31 +11205,101 @@ void DrawSelectionToolCards(SolidArcWorkspaceState& State)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", Sketches >= 2 ? "Join the picked sketches into one (in pick order); a sketch a body still reads is kept hidden"
                                                   : "Shift-click two or more coplanar sketches to join them");
-        // Flow along curve: the first pick is the rail, the other picked sketches bend along it (a new sketch).
+        // Wrap / project round a curve (a label round a can: text + circle), or the flat Flow along it (a new sketch).
         {
-            const SolidArcFlowRequest Request   = FlowRequestOf(State);
-            const bool                Possible  = !Request.Rail.empty() && !State.Bevel.ActiveCondition;
+            static const char* const ModeLabels[] = { "Wrap###FlowWrap", "Project###FlowProject", "Flat###FlowFlat" };
+            static const char* const ModeTips[]   = { "Lay the shapes round the curve's surface keeping their lengths (a label round a can: text + circle) — 3D curves",
+                                                      "Project the shapes straight onto the curve's surface: unchanged seen along the axis — 3D curves",
+                                                      "Bend the shapes along the curve in its plane (Flow) — a new 2D sketch" };
+            for (int Mode = 0; Mode < 3; ++Mode)
+            {
+                if (Mode) ImGui::SameLine();
+                if (ToggleButton(State, ModeLabels[Mode], State.WrapMode == Mode, RowSpan(3))) { State.WrapMode = Mode; State.WrapAxisPending = false; }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", ModeTips[Mode]);
+            }
+            const bool FlatCondition = State.WrapMode == 2;
+            const SolidArcFlowRequest Flat     = FlowRequestOf(State);
+            const SolidArcWrapRequest Round    = WrapRequestOf(State);
+            const bool                Possible = (FlatCondition ? !Flat.Rail.empty() : !Round.Rail.empty()) && !State.Bevel.ActiveCondition;
+            const std::string Rail   = FlatCondition ? Flat.Rail : Round.Rail;
+            const std::vector<std::string>& Shapes = FlatCondition ? Flat.Shapes : Round.Shapes;
             ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
-            if (Possible) ImGui::TextWrapped("Flow · rail %s · shape %s", Legible(CaptionOf(State.Document, Request.Rail)).c_str(),
-                                             Legible(CaptionOf(State.Document, Request.Shapes.front()) + (Request.Shapes.size() > 1 ? Compose(" +%d", int(Request.Shapes.size()) - 1) : std::string())).c_str());
-            else ImGui::TextWrapped("Flow: pick the curve to follow, then Shift-click the 2D shape(s) to bend along it");
+            if (Possible) ImGui::TextWrapped("%s · round %s · shape %s", FlatCondition ? "Flow" : State.WrapMode == 1 ? "Project" : "Wrap", Legible(CaptionOf(State.Document, Rail)).c_str(),
+                                             Legible(CaptionOf(State.Document, Shapes.front()) + (Shapes.size() > 1 ? Compose(" +%d", int(Shapes.size()) - 1) : std::string())).c_str());
+            else ImGui::TextWrapped("%s", FlatCondition ? "Flow: pick the curve to follow, then Shift-click the 2D shape(s) to bend along it"
+                                                        : "Wrap: pick the 2D shapes (text, outlines), then Shift-click the curve to wrap round (a circle: a can)");
             ImGui::PopStyleColor();
-            if (PressButton(State, "Flow along curve###CurveFlow", RowSpan(), Possible)) FlowSelectedSketches(State);
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                ImGui::SetTooltip("The shapes' long side is laid along the rail (stretched to its length, or true length), the cross direction becomes the rail's normal; a new sketch, the originals stay");
+            const char* Action = FlatCondition ? "Flow along curve###CurveFlow" : State.WrapMode == 1 ? "Project onto curve###CurveFlow" : "Wrap around curve###CurveFlow";
+            if (PressButton(State, Action, RowSpan(), Possible)) { if (FlatCondition) FlowSelectedSketches(State); else WrapSelectedSketches(State, -1); }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", ModeTips[State.WrapMode]);
             ImGui::SameLine();
             if (PressButton(State, "Swap rail###FlowSwap", RowSpan(), SelectedSketchLabels(State.Document).size() >= 2)) State.FlowSwapCondition = !State.FlowSwapCondition;
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", State.FlowSwapCondition ? "The rail is the last pick: press to make it the first" : "The rail is the first pick: press to make it the last");
-            if (ToggleButton(State, "Stretch###FlowStretch", State.Flow.StretchEnabled, RowSpan(3))) State.Flow.StretchEnabled = !State.Flow.StretchEnabled;
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("On: the shape's length fits the rail's · off: true length from the rail's start");
-            ImGui::SameLine();
-            if (ToggleButton(State, "Reverse###FlowReverse", State.Flow.ReverseCondition, RowSpan(3))) State.Flow.ReverseCondition = !State.Flow.ReverseCondition;
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run from the rail's other end (the shape mirrors across the rail)");
-            ImGui::SameLine();
-            static const char* const AxisLabels[] = { "Axis auto###FlowAxis", "Axis x###FlowAxis", "Axis y###FlowAxis" };
-            if (ToggleButton(State, AxisLabels[std::clamp(State.Flow.AlongAxis + 1, 0, 2)], State.Flow.AlongAxis >= 0, RowSpan(3))) State.Flow.AlongAxis = State.Flow.AlongAxis >= 1 ? -1 : State.Flow.AlongAxis + 1;
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("The shape direction laid along the rail: auto (the longer side) → x → y");
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Take the other end of the picks as the curve to follow");
+            if (FlatCondition)
+            {
+                if (ToggleButton(State, "Stretch###FlowStretch", State.Flow.StretchEnabled, RowSpan(3))) State.Flow.StretchEnabled = !State.Flow.StretchEnabled;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("On: the shape's length fits the rail's · off: true length from the rail's start");
+                ImGui::SameLine();
+                if (ToggleButton(State, "Reverse###FlowReverse", State.Flow.ReverseCondition, RowSpan(3))) State.Flow.ReverseCondition = !State.Flow.ReverseCondition;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run from the rail's other end (the shape mirrors across the rail)");
+                ImGui::SameLine();
+                static const char* const AxisLabels[] = { "Axis auto###FlowAxis", "Axis x###FlowAxis", "Axis y###FlowAxis" };
+                if (ToggleButton(State, AxisLabels[std::clamp(State.Flow.AlongAxis + 1, 0, 2)], State.Flow.AlongAxis >= 0, RowSpan(3))) State.Flow.AlongAxis = State.Flow.AlongAxis >= 1 ? -1 : State.Flow.AlongAxis + 1;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("The shape direction laid along the rail: auto (the longer side) → x → y");
+            }
+            else
+            {
+                static const char* const AxisLabels[] = { "Auto###WrapAxisAuto", "X###WrapAxisX", "Y###WrapAxisY", "Z###WrapAxisZ" };
+                for (int Axis = -1; Axis < 3; ++Axis)
+                {
+                    if (Axis >= 0) ImGui::SameLine();
+                    if (ToggleButton(State, AxisLabels[Axis + 1], State.WrapAxis == Axis, RowSpan(4))) State.WrapAxis = Axis;
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", Axis < 0 ? "Projection axis: the view direction in a parallel view (numpad 5); in perspective a popup asks"
+                                                                               : "Project along this world axis (towards the side facing you)");
+                }
+                if (!State.WrapNote.empty())
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+                    ImGui::TextWrapped("Last: %d curves, %s", State.WrapCurves, State.WrapNote.c_str());
+                    ImGui::PopStyleColor();
+                }
+            }
+            // The axis popup (perspective, auto): a small window over the viewport.
+            if (State.WrapAxisPending && !FlatCondition && Possible)
+            {
+                ImGui::SetNextWindowPos(ImVec2(State.ViewportRect[0] + 0.5f * State.ViewportRect[2], State.ViewportRect[1] + 0.4f * State.ViewportRect[3]), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                if (ImGui::Begin("Wrap axis###WrapAxisPopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove))
+                {
+                    ImGui::TextUnformatted("Project the shapes along which axis?");
+                    ImGui::PushStyleColor(ImGuiCol_Text, Tint(MutedColour));
+                    ImGui::TextUnformatted("(a parallel view, numpad 5, uses the view by itself)");
+                    ImGui::PopStyleColor();
+                    int Picked = -1;
+                    if (PressButton(State, "X###WrapPickX", ImVec2(52, 0))) Picked = 0;
+                    ImGui::SameLine();
+                    if (PressButton(State, "Y###WrapPickY", ImVec2(52, 0))) Picked = 1;
+                    ImGui::SameLine();
+                    if (PressButton(State, "Z###WrapPickZ", ImVec2(52, 0))) Picked = 2;
+                    ImGui::SameLine();
+                    if (PressButton(State, "View###WrapPickView", ImVec2(64, 0))) Picked = 3;
+                    ImGui::SameLine();
+                    if (PressButton(State, "Cancel###WrapPickCancel", ImVec2(70, 0))) { State.WrapAxisPending = false; Announce(State, "Wrap cancelled"); }
+                    if (Picked >= 0) WrapSelectedSketches(State, Picked);
+                }
+                ImGui::End();
+            }
+            else if (FlatCondition || !Possible) State.WrapAxisPending = false;
         }
+        // Plasticity O (offset-curve): a parallel copy of the picked sketch — arcs keep their centre (r ± d), lines shift.
+        if (PressButton(State, "Offset  (O)###CurveOffset", RowSpan(), !SelectedSketchLabels(State.Document).empty() && !State.Bevel.ActiveCondition))
+            OpenSweepSession(State, SolidArcSweepVerb::Offset);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("A parallel copy of the picked sketch (the original stays): move the pointer sideways or type a distance, click / Enter commits; O again offsets the copy");
+        ImGui::SameLine();
+        if (PressButton(State, "Scale  (S)###CurveScale", RowSpan(), !SelectedSketchLabels(State.Document).empty() && !State.Bevel.ActiveCondition))
+            OpenTransformSession(State, SolidArcTransformVerb::Scale, false);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Scale the picked sketches about their centre: drag away / towards it or type a factor; X / Y / Z stretch along an axis (straight curves only)");
         // Plasticity fillet-curve: B rounds every corner of the picked sketches (or the picked mode-1 corner points).
         const bool CornerCondition = !CornerTargets(State).Sketches.empty() && !State.Bevel.ActiveCondition;
         if (PressButton(State, "Fillet  (B)###CurveFillet", RowSpan(), CornerCondition)) OpenBevelSession(State, BlendProfile::Fillet);

@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                             SKETCHFLOW.H
 ====================================================================================================================================*/
-// 🧩 Flow along curve (Rhino Flow, Blender curve deform): a 2D shape bent so its long axis runs along a rail curve
+// 🧩 Flow along curve (Rhino Flow, Blender curve deform): a 2D shape bent so its long axis runs along a rail curve; Wrap: a
+//    2D shape laid round the surface a rail sweeps along its normal (a label round a can when the rail is a circle)
 
 #pragma once
 
@@ -9,6 +10,7 @@
 //                                                    INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometryProcessing/Geometry/VectorAlgebra.h"
 #include "Engine/GeometryProcessing/Sketch/SketchProfile.h"
 #include "Engine/GeometryProcessing/Sketch/SketchSolver.h"
 
@@ -17,6 +19,16 @@
 
 namespace Frontier::GeometryProcessing
 {
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    ENUMS
+//------------------------------------------------------------------------------------------------------------------------
+
+enum class SketchWrapKind : uint8_t
+{
+    Wrap    = 0,                                                                             // Lengths kept: across = arc length round the rail (a label on a can)
+    Project = 1,                                                                             // Straight along the direction: unchanged seen from it
+};
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    STRUCTS
@@ -40,6 +52,33 @@ struct SketchFlowOutcome
     std::string Refusal     = {};                                                            // [-]   - Why nothing flowed (empty: flowed)
 };
 
+struct SketchWrapSettings
+{
+    SketchWrapKind Kind      = SketchWrapKind::Wrap;                                         // [-] - Wrap (lengths kept) or project
+    Vector3        Direction = { 0.0, 1.0, 0.0 };                                            // [-] - Projection direction, world (the view, or the chosen axis)
+    Vector3        Axis      = {};                                                           // [-] - Wrap axis (zero: the rail plane normal; else the rail's lone circle / arc turned onto it)
+};
+
+struct SketchWrapShape
+{
+    SketchModel      Sketch = {};                                                            // [-] - Solved shape
+    OrthonormalFrame Plane  = {};                                                            // [-] - Its (elevated) plane
+};
+
+struct SketchWrapOutcome
+{
+    std::vector<std::vector<Vector3>> Curves     = {};                                       // [len] - Wrapped samples per shape curve (world; a closed curve does not repeat its first)
+    std::vector<bool>                 Closed     = {};                                       // [-]   - The curve closes
+    std::vector<std::string>          Names      = {};                                       // [-]   - Source curve names
+    std::vector<int>                  Owners     = {};                                       // [-]   - Source shape index per curve
+    Vector3                           Axis       = {};                                       // [-]   - Wrap axis used
+    Vector3                           Direction  = {};                                       // [-]   - Projection direction used (⊥ Axis)
+    double                            RailLength = 0.0;                                      // [len] - Rail arc length
+    double                            Radius     = 0.0;                                      // [len] - A lone circle / arc rail: its radius (else 0)
+    double                            Extent     = 0.0;                                      // [len] - Shape width across the direction
+    std::string                       Refusal    = {};                                       // [-]   - Why nothing wrapped (empty: wrapped)
+};
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
@@ -52,5 +91,17 @@ struct SketchFlowOutcome
 //    it. Construction curves of the shape are left out. Refused: no shape curves, a shape with no extent along the axis,
 //    a rail that is not one chain or has no length.
 [[nodiscard]] SketchFlowOutcome FlowSketchModel(const SketchModel& Shape, const SketchModel& Rail, const SketchFlowSettings& Settings);
+
+// 💡 Wrap: the rail (one chain, in RailPlane) swept along the axis n (its plane normal; or, for a lone circle / arc rail, any
+//    Axis — the circle's centre and radius turned onto it) is the surface. Seen along the projection direction d (⊥ n),
+//    a shape point P has across x = (P − O)·(d × n) and height h = (P − O)·n. The front hit s₀ of the shape's centre line
+//    (the rail point the line along d meets first) anchors it. Wrap: P ↦ C(s₀ ± (x − x꜀)) + h·n — across lengths become arc
+//    lengths, so a label keeps its size (open rails continue straight past their ends, loops wrap round); Project:
+//    P ↦ C(s) + h·n with s the front hit of P's own line (unchanged seen along d). Hits are bracketed on a 2048-sample
+//    table and bisected to machine precision. All shapes share one centre (letters stay apart). Each non-construction
+//    shape curve gives dense world samples (fit them as 3D curves). Refused: no shape curves, a rail that is not one chain, d along n, the centre line missing the rail,
+//    (Project) a point outside the rail as seen along d, an Axis off the rail normal for a rail that is not a lone arc.
+[[nodiscard]] SketchWrapOutcome WrapSketchModels(const std::vector<SketchWrapShape>& Shapes, const SketchModel& Rail, const OrthonormalFrame& RailPlane,
+                                                 const SketchWrapSettings& Settings);
 
 } // namespace Frontier::GeometryProcessing

@@ -161,6 +161,14 @@ struct SolidArcFlowRequest
     GeometryProcessing::SketchFlowSettings Settings = {};                                    // [-] - Axis, stretch, direction
 };
 
+// 📝 Wrap around curve: the shapes (any planes) laid round the surface the rail sweeps along its normal (a circle: a can).
+struct SolidArcWrapRequest
+{
+    std::string                            Rail     = {};                                    // [-] - Rail sketch step label (a circle: the can)
+    std::vector<std::string>               Shapes   = {};                                    // [-] - Shape sketch step labels
+    GeometryProcessing::SketchWrapSettings Settings = {};                                    // [-] - Wrap / project, direction, axis
+};
+
 // 📝 Fill tool: the closed region under Pick (coordinates of Sketch's plane) among Sketch and every shown sketch coplanar
 //    with it.
 struct SolidArcRegionRequest
@@ -416,6 +424,11 @@ struct VehicleCurveFile;
 //    GeometryProcessing::FlowSketchModel, as a new sketch step "FlowN" in the rail's plane, picked; filled when the first
 //    shape is filled and the result is still a closed profile. The shapes and the rail stay. One undo entry.
 [[nodiscard]] SolidArcCommandOutcome FlowSolidArcSketches(SolidArcDocument& Document, const SolidArcFlowRequest& Request);
+
+// 💡 Wrap around curve: GeometryProcessing::WrapSketchModels lays every shape curve round the rail's surface (one shared
+//    centre, so letters stay apart); each wrapped curve becomes a 3D curve step ("WrapN", a SpaceCurve fitted to 10⁻⁴ of
+//    the shape's width), all picked. The shapes and the rail stay. One undo entry.
+[[nodiscard]] SolidArcCommandOutcome WrapSolidArcSketches(SolidArcDocument& Document, const SolidArcWrapRequest& Request);
 
 // 📝 Cut at a point (the Cut tool with Ctrl: a snapped crossing, end, midpoint or quarter point): every shown sketch curve
 //    through Point breaks there — the two overlapping circles both. A circle breaks at Point and at its next crossing

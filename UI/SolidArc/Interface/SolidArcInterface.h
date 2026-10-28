@@ -846,6 +846,13 @@ struct SolidArcWorkspaceState
     std::vector<std::string>              PathSelection     = {};                            // [-]   - Edges picked after it (unchanged: redo allowed)
     SolidArcEdgePath                      PathLast          = {};                            // [-]   - Last outcome (carrier, length, refusal)
     int                                   PathPicks         = 0;                             // [-]   - Path picks made (script evidence)
+    // 💡 Inspector › Curves › Wrap: 0 wrap round the rail's surface (lengths kept), 1 project onto it, 2 flat flow (2D);
+    //    the projection axis −1 auto (a parallel view: the view direction; perspective: the popup asks), 0 / 1 / 2 x / y / z.
+    int                                   WrapMode          = 0;                             // [-]   - 0 wrap · 1 project · 2 flat flow
+    int                                   WrapAxis          = -1;                            // [-]   - −1 auto · 0 x · 1 y · 2 z
+    bool                                  WrapAxisPending   = false;                         // [-]   - The axis popup is open
+    int                                   WrapCurves        = 0;                             // [-]   - 3D curves made by the last wrap (script evidence)
+    std::string                           WrapNote          = {};                            // [-]   - The axes the last wrap used
 };
 
 //------------------------------------------------------------------------------------------------------------------------

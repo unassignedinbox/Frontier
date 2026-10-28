@@ -1,7 +1,8 @@
 /*====================================================================================================================================
                                                            SKETCHFLOW.CPP
 ====================================================================================================================================*/
-// 🧩 Flow along curve: shape axis box, rail chain with an arc-length table, mapped samples refitted as cubic splines
+// 🧩 Flow along curve: shape axis box, rail chain with an arc-length table, mapped samples refitted as cubic splines;
+//    Wrap: the same rail table swept along its normal, front hits bracketed and bisected
 
 #include "Engine/GeometryProcessing/Sketch/SketchFlow.h"
 #include "Engine/GeometryProcessing/Sketch/SketchEditing.h"
@@ -12,6 +13,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+#include <optional>
 
 namespace Frontier::GeometryProcessing
 {
@@ -272,6 +274,172 @@ SketchFlowOutcome FlowSketchModel(const SketchModel& Shape, const SketchModel& R
         const int Added = AppendSketchSpline(Flowed, Points, SketchSplineForm::CubicSpline, ++SplineNumber);
         Flowed.Curves[Added].Knots = std::move(Parameters);
         ++Outcome.Splines;
+    }
+    return Outcome;
+}
+
+SketchWrapOutcome WrapSketchModels(const std::vector<SketchWrapShape>& Shapes, const SketchModel& Rail, const OrthonormalFrame& RailPlane,
+                                   const SketchWrapSettings& Settings)
+{
+    SketchWrapOutcome Outcome;
+    // ① the wrap axis and the rail frame (O, E₁, E₂, n) holding the rail as a 2D chain
+    const bool Turned = Length(Settings.Axis) > 0.0 && std::abs(Dot(Normalize(Settings.Axis), RailPlane.ZAxis)) < 1.0 - 1.0e-9;
+    const Vector3 Axis = Length(Settings.Axis) > 0.0 ? Normalize(Settings.Axis) : RailPlane.ZAxis;
+    OrthonormalFrame Frame = RailPlane;
+    SketchModel      Lone;
+    const SketchModel* Chain = &Rail;
+    {
+        int Drawn = 0, Round = -1;
+        for (int Curve = 0; Curve < static_cast<int>(Rail.Curves.size()); ++Curve)
+        {
+            if (Rail.Curves[Curve].Construction) continue;
+            ++Drawn;
+            if (Rail.Curves[Curve].Kind == SketchCurveKind::Circle || Rail.Curves[Curve].Kind == SketchCurveKind::Arc) Round = Curve;
+        }
+        if (Drawn == 1 && Round >= 0) Outcome.Radius = MeasureSketchRadius(Rail, Rail.Curves[Round]);
+        if (Turned)
+        {
+            if (Drawn != 1 || Round < 0) { Outcome.Refusal = "only a lone circle or arc can turn onto another wrap axis (this rail wraps about its own plane normal)"; return Outcome; }
+            const Vector2 Centre = Rail.Points[Rail.Curves[Round].Centre].Position;
+            const Vector3 Seed   = std::abs(Axis.X) < 0.9 ? Vector3{ 1.0, 0.0, 0.0 } : Vector3{ 0.0, 1.0, 0.0 };
+            Frame.Origin = RailPlane.Origin + RailPlane.XAxis * Centre.X + RailPlane.YAxis * Centre.Y;
+            Frame.XAxis  = Normalize(Seed - Axis * Dot(Seed, Axis));
+            Frame.YAxis  = Cross(Axis, Frame.XAxis);
+            Frame.ZAxis  = Axis;
+            AppendSketchCircle(Lone, AppendSketchPoint(Lone, { 0.0, 0.0 }), Outcome.Radius, 1);
+            Chain = &Lone;
+        }
+    }
+    Outcome.Axis = Axis;
+    Vector3 Direction = Settings.Direction - Axis * Dot(Settings.Direction, Axis);
+    if (!(Length(Direction) > 1.0e-6 * std::max(1.0, Length(Settings.Direction)))) { Outcome.Refusal = "the projection direction runs along the wrap axis: choose another axis"; return Outcome; }
+    Direction = Normalize(Direction);
+    Outcome.Direction = Direction;
+    const Vector3 Across = Cross(Direction, Axis);                                           // [-] - Right, seen along d with n up
+    const Vector2 Depth2{ Dot(Direction, Frame.XAxis), Dot(Direction, Frame.YAxis) };
+    const Vector2 Across2{ Dot(Across, Frame.XAxis), Dot(Across, Frame.YAxis) };
+    RailTable Table;
+    if (const std::string Refusal = BuildRail(*Chain, false, Table); !Refusal.empty()) { Outcome.Refusal = Refusal; return Outcome; }
+    Outcome.RailLength = Table.Total;
+
+    // ② the rail tabulated for bracketing: s, C(s)
+    constexpr int Ticks = 2048;
+    std::vector<double>  Stations(Ticks + 1);
+    std::vector<Vector2> Places(Ticks + 1);
+    for (int Tick = 0; Tick <= Ticks; ++Tick)
+    {
+        Vector2 Tangent;
+        Stations[Tick] = Table.Total * Tick / Ticks;
+        EvaluateRail(Table, Stations[Tick], Places[Tick], Tangent);
+    }
+    // The front hit of the line {x·Across + λ·d}: roots of f(s) = C(s)·Across − x, the one with the least λ = C(s)·d.
+    const auto FrontHit = [&](double Lateral) -> std::optional<double>
+    {
+        std::optional<double> Best;
+        double Nearest = std::numeric_limits<double>::infinity();
+        const auto Offside = [&](const Vector2& Place) { return Dot(Place, Across2) - Lateral; };
+        for (int Tick = 0; Tick < Ticks; ++Tick)
+        {
+            double Low = Stations[Tick], High = Stations[Tick + 1];
+            double FLow = Offside(Places[Tick]), FHigh = Offside(Places[Tick + 1]);
+            if (FLow == 0.0) High = Low;
+            else if (FHigh == 0.0 && Tick + 1 == Ticks) Low = High;
+            else if ((FLow < 0.0) == (FHigh < 0.0)) continue;
+            for (int Halving = 0; Halving < 80 && High - Low > 1.0e-15 * std::max(1.0, Table.Total); ++Halving)
+            {
+                const double Middle = 0.5 * (Low + High);
+                Vector2 Place, Tangent;
+                EvaluateRail(Table, Middle, Place, Tangent);
+                const double FMiddle = Offside(Place);
+                if (FMiddle == 0.0) { Low = High = Middle; break; }
+                if ((FMiddle < 0.0) == (FLow < 0.0)) { Low = Middle; FLow = FMiddle; } else High = Middle;
+            }
+            const double Root = 0.5 * (Low + High);
+            Vector2 Place, Tangent;
+            EvaluateRail(Table, Root, Place, Tangent);
+            const double Lambda = Dot(Place, Depth2);
+            if (Lambda < Nearest) { Nearest = Lambda; Best = Root; }
+        }
+        return Best;
+    };
+
+    // ③ shape curves (every shape): exact segments, their world points as (across, height)
+    struct Piece { int Shape = 0; int Curve = 0; ProfileSegment Segment; };
+    std::vector<Piece> Pieces;
+    for (int Owner = 0; Owner < static_cast<int>(Shapes.size()); ++Owner)
+    {
+        const SketchModel& Shape = Shapes[Owner].Sketch;
+        const double Join = 1.0e-9 * std::max(1.0, MeasureSketchScale(Shape));
+        for (int Curve = 0; Curve < static_cast<int>(Shape.Curves.size()); ++Curve)
+        {
+            if (Shape.Curves[Curve].Construction) continue;
+            std::string    Refusal;
+            ProfileSegment Segment = ResolveSketchCurveSegment(Shape, Curve, Join, Refusal);
+            if (!Refusal.empty()) { Outcome.Refusal = "shape: " + Refusal; return Outcome; }
+            Pieces.push_back({ Owner, Curve, std::move(Segment) });
+        }
+    }
+    if (Pieces.empty()) { Outcome.Refusal = "the shape has no curves (construction curves are left out)"; return Outcome; }
+    const auto Lift = [&](int Owner, Vector2 Point)
+    {
+        const OrthonormalFrame& ShapePlane = Shapes[Owner].Plane;
+        const Vector3 World = ShapePlane.Origin + ShapePlane.XAxis * Point.X + ShapePlane.YAxis * Point.Y - Frame.Origin;
+        return std::pair<double, double>{ Dot(World, Across), Dot(World, Axis) };
+    };
+    double Low = std::numeric_limits<double>::infinity(), High = -std::numeric_limits<double>::infinity();
+    for (const Piece& Each : Pieces)
+        for (int Sample = 0; Sample <= 256; ++Sample)
+        {
+            const double Lateral = Lift(Each.Shape, EvaluateProfileSegment(Each.Segment, Sample / 256.0)).first;
+            Low = std::min(Low, Lateral); High = std::max(High, Lateral);
+        }
+    const double Join = 1.0e-9 * std::max(1.0, High - Low);
+    Outcome.Extent = High - Low;
+    const double Centre = 0.5 * (Low + High);
+    const std::optional<double> Anchor = FrontHit(Centre);
+    if (!Anchor) { Outcome.Refusal = "the shape's centre, seen along the projection direction, misses the rail"; return Outcome; }
+    double Sense = 1.0;                                                                      // Across grows along the rail's front face
+    {
+        Vector2 Place, Tangent;
+        EvaluateRail(Table, *Anchor, Place, Tangent);
+        if (Dot(Tangent, Across2) < 0.0) Sense = -1.0;
+    }
+    std::string Outside;
+    const auto Place3 = [&](double Along, double Height)
+    {
+        Vector2 Place, Tangent;
+        EvaluateRail(Table, Along, Place, Tangent);
+        return Frame.Origin + Frame.XAxis * Place.X + Frame.YAxis * Place.Y + Axis * Height;
+    };
+    const auto Map = [&](int Owner, Vector2 Point) -> Vector3
+    {
+        const auto [Lateral, Height] = Lift(Owner, Point);
+        if (Settings.Kind == SketchWrapKind::Wrap) return Place3(*Anchor + Sense * (Lateral - Centre), Height);
+        const std::optional<double> Hit = FrontHit(Lateral);
+        if (!Hit) { Outside = "part of the shape lies outside the rail seen along the projection direction (Wrap keeps lengths and goes round)"; return {}; }
+        return Place3(*Hit, Height);
+    };
+
+    // ④ dense samples per curve (≥ 12 per polynomial piece, 160 across the shape's width)
+    for (const Piece& Each : Pieces)
+    {
+        const SketchCurve&    Curve   = Shapes[Each.Shape].Sketch.Curves[Each.Curve];
+        const ProfileSegment& Segment = Each.Segment;
+        const bool Closed  = Segment.Kind == ProfileSegmentKind::Circle || (Curve.Kind == SketchCurveKind::Spline && Curve.Points.size() > 2 && Curve.Points.front() == Curve.Points.back());
+        const double Reach = MeasurePiece(Segment, 0.0, 1.0);
+        const int Pieces   = static_cast<int>(CollectProfileBreaks(Segment).size()) - 1;
+        const int Samples  = std::clamp(std::max(12 * std::max(Pieces, 1), static_cast<int>(std::ceil(CurveSamples * Reach / std::max(Outcome.Extent, Join)))), 16, SampleLimit);
+        std::vector<Vector3> Line;
+        for (int Sample = 0; Sample <= Samples; ++Sample)
+        {
+            if (Closed && Sample == Samples) break;                                          // A loop does not repeat its first sample
+            Line.push_back(Map(Each.Shape, EvaluateProfileSegment(Segment, static_cast<double>(Sample) / Samples)));
+            if (!Outside.empty()) { Outcome.Refusal = Outside; Outcome.Curves.clear(); return Outcome; }
+        }
+        Outcome.Curves.push_back(std::move(Line));
+        Outcome.Closed.push_back(Closed);
+        Outcome.Names.push_back(SketchCurveName(Curve));
+        Outcome.Owners.push_back(Each.Shape);
     }
     return Outcome;
 }
