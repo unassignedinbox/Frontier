@@ -9763,7 +9763,7 @@ void DrawFileMenu(SolidArcWorkspaceState& State)
         {
             const ImVec2 Box = ImGui::GetItemRectMax();
             const ImVec2 Text = ImGui::CalcTextSize(Shortcut);
-            ImGui::GetWindowDrawList()->AddText(ImVec2(Box.x - Text.x - 8.0f, Box.y - 13.0f - 0.5f * Text.y), Tint(IM_COL32(0x80, 0x84, 0x8a, 0xff)), Shortcut);
+            ImGui::GetWindowDrawList()->AddText(ImVec2(Box.x - Text.x - 8.0f, Box.y - 13.0f - 0.5f * Text.y), ImGui::GetColorU32(Tint(IM_COL32(0x80, 0x84, 0x8a, 0xff))), Shortcut);
         }
         ImGui::EndDisabled();
         return Pressed;
@@ -9807,7 +9807,7 @@ void DrawWorkspacePopups(SolidArcWorkspaceState& State)
 // 📝 Display select in the viewport bar (moved from the viewport corner, less clutter over the model): "Display" and a
 //    chevron like the view select; the list toggles the overlays (grid, combs, zebra, deviation, reference images) and
 //    the tooltip names the ones on. Returns its width.
-float DrawDisplaySelect(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, float Left, float Centre)
+float DrawDisplaySelect(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, float Left, float Centre, bool CompactCondition = false)
 {
     struct DisplayToggle
     {
@@ -9821,16 +9821,20 @@ float DrawDisplaySelect(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, flo
     for (const DisplayToggle& Toggle : Toggles)
         if (*Toggle.Enabled) Summary += (Summary.empty() ? "" : " · ") + std::string(Toggle.Label, std::strstr(Toggle.Label, "###"));
     if (Summary.empty()) Summary = "nothing";
-    const PlaneExtent   Select = Spanning(Left, Centre - 13.0f, 10.0f + Sheet.Measure("Display", 11.0f) + 26.0f, 26.0f);
+    // Compact (a narrow viewport): the layers glyph stands in for the word.
+    const float         Label  = CompactCondition ? 15.0f : Sheet.Measure("Display", 11.0f);   // [px]
+    const PlaneExtent   Select = Spanning(Left, Centre - 13.0f, 10.0f + Label + 26.0f, 26.0f);
     const SolidArcPress Press  = PressSolidArcRegion(State.Widgets, "DisplayMenu", Select);
     if (Press.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
     const ColorQuad Ink = SolidArcInk(Press.HoveredCondition ? 0xffffff : 0xa0a0a0);
-    Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, Ink, "Display");
+    if (CompactCondition) Sheet.Icon(IconSymbol::SolidArcLayers, Select.MinimumX + 7.0f, Centre - 7.5f, 15.0f, Ink);
+    else Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, Ink, "Display");
     SelectChevron(Sheet, Select.MaximumX - 12.0f, Centre, Ink);
-    if (Press.HoveredCondition) ImGui::SetTooltip("Display overlays: %s", Summary.c_str());
     if (Press.ClickedCondition) ImGui::OpenPopup("DisplayMenu");
+    bool ListCondition = false;                                                             // The tooltip waits while the list is open
     if (BeginSelectList("DisplayMenu", ImVec2(Select.MinimumX, Select.MaximumY + 4.0f)))
     {
+        ListCondition = true;
         for (const DisplayToggle& Toggle : Toggles)
         {
             if (!SelectListEntry(State, Toggle.Label, *Toggle.Enabled)) continue;
@@ -9839,6 +9843,7 @@ float DrawDisplaySelect(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, flo
         }
         EndSelectList();
     }
+    if (Press.HoveredCondition && !ListCondition && !Press.ClickedCondition) ImGui::SetTooltip("Display overlays: %s", Summary.c_str());
     return Select.MaximumX - Select.MinimumX;
 }
 
@@ -9849,52 +9854,79 @@ void DrawViewportBar(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const 
     const float Centre = 0.5f * (Bar.MinimumY + Bar.MaximumY);
     float       Cursor = Bar.MinimumX + 12.0f;
 
+    // Fold stages when the viewport narrows (each keeps every control reachable): 1 Display glyph, 2 projection glyph,
+    // 3 Construct glyph, 4 a 70 px view select, 5 no view select (the orientation cube and Keypad 1 / 3 / 7 remain).
+    const char* Projection   = State.Camera.OrthographicEnabled ? "Parallel" : "Perspective";
+    const float ChipHeight   = 2.0f + 14.0f + 11.0f * SolidArcStyleTokens::FontScale;
+    const float ChipFull     = 2.0f + 26.0f + 15.0f + 9.0f + Sheet.Measure("Construct", 11.0f);   // [px]
+    const float DisplayFull  = 10.0f + Sheet.Measure("Display", 11.0f) + 26.0f;                    // [px]
+    const float ProjectFull  = 16.0f + Sheet.Measure(Projection, 11.0f);                           // [px]
+    int Stage = 0;
+    for (; Stage < 5; ++Stage)
+    {
+        const float Chip    = Stage >= 3 ? 28.0f : ChipFull;
+        const float View    = Stage >= 5 ? 0.0f : Stage >= 4 ? 70.0f + 4.0f + 23.0f : 98.0f + 4.0f + 23.0f;
+        const float Display = (Stage >= 1 ? 51.0f : DisplayFull) + 4.0f + 15.0f;
+        const float Right   = 3.0f * (28.0f + 4.0f) + (Stage >= 2 ? 28.0f : ProjectFull);
+        if (24.0f + Chip + View + Display + 8.0f + Right <= Bar.MaximumX - Bar.MinimumX) break;
+    }
+
     // .construct-chip — #202020, #ffffff12 hairline, radius 20, padding 7 13, gap 9; plus glyph 15, 11 px #e0e0e0.
-    const float         ChipHeight = 2.0f + 14.0f + 11.0f * SolidArcStyleTokens::FontScale;
-    const PlaneExtent   Chip       = Spanning(Cursor, Centre - 0.5f * ChipHeight, 2.0f + 26.0f + 15.0f + 9.0f + Sheet.Measure("Construct", 11.0f), ChipHeight);
-    const SolidArcPress Construct  = PressSolidArcRegion(State.Widgets, "ViewportConstruct", Chip);
-    const ColorQuad     ChipInk    = SolidArcInk(Construct.HoveredCondition ? 0xffffff : 0xe0e0e0);
+    const PlaneExtent   Chip      = Spanning(Cursor, Centre - 0.5f * ChipHeight, Stage >= 3 ? ChipHeight : ChipFull, ChipHeight);
+    const SolidArcPress Construct = PressSolidArcRegion(State.Widgets, "ViewportConstruct", Chip);
+    const ColorQuad     ChipInk   = SolidArcInk(Construct.HoveredCondition ? 0xffffff : 0xe0e0e0);
     Sheet.Box(Chip, SolidArcInk(Construct.HoveredCondition ? 0x292929 : 0x202020), 20.0f, SolidArcWash(0x12));
-    Sheet.Icon(IconSymbol::SolidArcPlus, Chip.MinimumX + 14.0f, Centre - 7.5f, 15.0f, ChipInk);
-    Sheet.Text(Chip.MinimumX + 14.0f + 15.0f + 9.0f, Centre, 11.0f, ChipInk, "Construct");
+    if (Stage >= 3)
+    {
+        Sheet.Icon(IconSymbol::SolidArcPlus, Chip.MinimumX + 0.5f * (ChipHeight - 15.0f), Centre - 7.5f, 15.0f, ChipInk);
+        if (Construct.HoveredCondition) ImGui::SetTooltip("Construct: solids and sketch tools");
+    }
+    else
+    {
+        Sheet.Icon(IconSymbol::SolidArcPlus, Chip.MinimumX + 14.0f, Centre - 7.5f, 15.0f, ChipInk);
+        Sheet.Text(Chip.MinimumX + 14.0f + 15.0f + 9.0f, Centre, 11.0f, ChipInk, "Construct");
+    }
     if (Construct.ClickedCondition) State.ConstructMenuRequest = true;
     Cursor = Chip.MaximumX + 4.0f;
 
     // .bar-divider — 1 × 15, #ffffff10, margin 0 9.
-    Sheet.Surface().FillRectangle(Spanning(Cursor + 9.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
-    Cursor += 9.0f + 1.0f + 9.0f + 4.0f;
-
-    // #camera-view — 98 px select, 11 px #a0a0a0, padding 5; lists the seven presets.
-    const PlaneExtent   Select = Spanning(Cursor, Centre - 13.0f, 98.0f, 26.0f);
-    const SolidArcPress View   = PressSolidArcRegion(State.Widgets, "ViewMenu", Select);
-    if (View.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
-    const ColorQuad ViewInk = SolidArcInk(View.HoveredCondition ? 0xffffff : 0xa0a0a0);
-    Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, ViewInk, CurrentViewLabel(State.Camera));
-    SelectChevron(Sheet, Select.MaximumX - 12.0f, Centre, ViewInk);
-    if (View.ClickedCondition) ImGui::OpenPopup("ViewMenu");
-    if (BeginSelectList("ViewMenu", ImVec2(Select.MinimumX, Select.MaximumY + 4.0f)))
+    if (Stage < 5)
     {
-        const char* Current = CurrentViewLabel(State.Camera);
-        for (OrbitViewPreset Preset : { OrbitViewPreset::Isometric, OrbitViewPreset::Front, OrbitViewPreset::Right, OrbitViewPreset::Top, OrbitViewPreset::Back,
-                                        OrbitViewPreset::Left, OrbitViewPreset::Bottom })
+        Sheet.Surface().FillRectangle(Spanning(Cursor + 9.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
+        Cursor += 9.0f + 1.0f + 9.0f + 4.0f;
+
+        // #camera-view — 98 px select (70 when folded), 11 px #a0a0a0, padding 5; lists the seven presets.
+        const PlaneExtent   Select = Spanning(Cursor, Centre - 13.0f, Stage >= 4 ? 70.0f : 98.0f, 26.0f);
+        const SolidArcPress View   = PressSolidArcRegion(State.Widgets, "ViewMenu", Select);
+        if (View.HoveredCondition) Sheet.Box(Select, SolidArcInk(0x292929), 13.0f);
+        const ColorQuad ViewInk = SolidArcInk(View.HoveredCondition ? 0xffffff : 0xa0a0a0);
+        Sheet.Text(Select.MinimumX + 5.0f, Centre, 11.0f, ViewInk, CurrentViewLabel(State.Camera));
+        SelectChevron(Sheet, Select.MaximumX - 12.0f, Centre, ViewInk);
+        if (View.ClickedCondition) ImGui::OpenPopup("ViewMenu");
+        if (BeginSelectList("ViewMenu", ImVec2(Select.MinimumX, Select.MaximumY + 4.0f)))
         {
-            const std::string Label = std::string(OrbitViewLabel(Preset)) + "###View" + OrbitViewLabel(Preset);
-            if (SelectListEntry(State, Label, std::strcmp(Current, OrbitViewLabel(Preset)) == 0))
+            const char* Current = CurrentViewLabel(State.Camera);
+            for (OrbitViewPreset Preset : { OrbitViewPreset::Isometric, OrbitViewPreset::Front, OrbitViewPreset::Right, OrbitViewPreset::Top, OrbitViewPreset::Back,
+                                            OrbitViewPreset::Left, OrbitViewPreset::Bottom })
             {
-                PresentView(State, Preset);
-                Announce(State, std::string("View ") + OrbitViewLabel(Preset));
+                const std::string Label = std::string(OrbitViewLabel(Preset)) + "###View" + OrbitViewLabel(Preset);
+                if (SelectListEntry(State, Label, std::strcmp(Current, OrbitViewLabel(Preset)) == 0))
+                {
+                    PresentView(State, Preset);
+                    Announce(State, std::string("View ") + OrbitViewLabel(Preset));
+                }
             }
+            EndSelectList();
         }
-        EndSelectList();
+        Cursor = Select.MaximumX + 4.0f;
     }
 
     // Display overlays select (after a divider).
-    Cursor = Select.MaximumX + 4.0f;
     Sheet.Surface().FillRectangle(Spanning(Cursor + 5.0f, Centre - 7.5f, 1.0f, 15.0f), SolidArcWash(0x10));
     Cursor += 5.0f + 1.0f + 9.0f;
-    Cursor += DrawDisplaySelect(State, Sheet, Cursor, Centre);
+    DrawDisplaySelect(State, Sheet, Cursor, Centre, Stage >= 1);
 
-    // Right end, right to left: maximize, fit, edges (28 px icon buttons, gap 4), then the projection text button.
+    // Right end, right to left: maximize, fit, edges (28 px icon buttons, gap 4), then the projection button.
     float Right = Bar.MaximumX - 12.0f;
     if (SheetIconButton(State, Sheet, "ViewportMaximize", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcMaximize, 18.0f, 0, true, State.ViewportMaximizedEnabled))
         State.ViewportMaximizedEnabled = !State.ViewportMaximizedEnabled;
@@ -9905,8 +9937,17 @@ void DrawViewportBar(SolidArcWorkspaceState& State, SolidArcSheet& Sheet, const 
     if (SheetIconButton(State, Sheet, "EdgeToggle", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcBody, 18.0f, 0, true, State.Style.EdgesEnabled))
         State.Style.EdgesEnabled = !State.Style.EdgesEnabled;
     Right -= 28.0f + 4.0f;
-    if (SheetTextButton(State, Sheet, "Projection", Right, Centre, State.Camera.OrthographicEnabled ? "Parallel" : "Perspective"))
-        State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
+    bool ProjectionCondition = false;
+    if (Stage >= 2)
+    {
+        ProjectionCondition = SheetIconButton(State, Sheet, "Projection", Right - 14.0f, Centre, 28.0f, IconSymbol::SolidArcViewport, 18.0f, 0, true,
+                                              State.Camera.OrthographicEnabled);
+        const ImVec2 Mouse = ImGui::GetIO().MousePos;
+        if (std::fabs(Mouse.x - (Right - 14.0f)) <= 14.0f && std::fabs(Mouse.y - Centre) <= 14.0f)
+            ImGui::SetTooltip("Projection: %s (Keypad 5 toggles)", Projection);
+    }
+    else ProjectionCondition = SheetTextButton(State, Sheet, "Projection", Right, Centre, Projection);
+    if (ProjectionCondition) State.Camera.OrthographicEnabled = !State.Camera.OrthographicEnabled;
 }
 
 // 📝 HTML .viewport-label (top 21, left 20, gap 9): the NURBS / B-REP pill (8 px, 1.2 spacing, #161a21ae, radius 10),
@@ -9971,6 +10012,22 @@ float DrawViewportInstructions(SolidArcSheet& Sheet, float Left, float Bottom, f
         Groups.push_back(Hint.substr(Start, Split == std::string::npos ? std::string::npos : Split - Start));
         if (Split == std::string::npos) break;
         Start = Split + std::strlen(" · ");
+    }
+    // A group wider than the room breaks after its commas (a narrow viewport must not run the hint under the cube).
+    for (size_t Index = 0; Index < Groups.size(); ++Index)
+    {
+        if (Sheet.Measure(Groups[Index].c_str(), 9.0f) <= Width) continue;
+        size_t Comma = Groups[Index].find(", ");
+        size_t Fit   = std::string::npos;
+        while (Comma != std::string::npos && Sheet.Measure(Groups[Index].substr(0, Comma + 1).c_str(), 9.0f) <= Width)
+        {
+            Fit   = Comma;
+            Comma = Groups[Index].find(", ", Comma + 2);
+        }
+        if (Fit == std::string::npos) Fit = Groups[Index].find(", ");
+        if (Fit == std::string::npos) continue;
+        Groups.insert(Groups.begin() + std::ptrdiff_t(Index) + 1, Groups[Index].substr(Fit + 2));
+        Groups[Index].resize(Fit + 1);
     }
     std::vector<std::vector<size_t>> Lines(1);
     float Run = 0.0f;
@@ -10057,7 +10114,8 @@ void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
     constexpr float Button = 28.0f, Gap = 2.0f, Padding = 4.0f;                              // [px]
     const float  Extent = 2.0f * Padding + 3.0f * Button + 2.0f * Gap;
     const float  Height = 2.0f * Padding + Button;
-    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + 18.0f);
+    const float  Top    = Width < 480.0f ? 74.0f : 18.0f;                                   // [px] - Below the caption lines when narrow
+    const ImVec2 Corner(Image.x + Width - 15.0f - Extent, Image.y + Top);
     BeginSheetWindow("ViewportGizmo", Corner, ImVec2(Extent, Height), true);
     SolidArcSheet Sheet;
     Sheet.Begin();
@@ -10088,7 +10146,7 @@ void DrawGizmoChips(SolidArcWorkspaceState& State, ImVec2 Image, float Width)
 //    Select ends Trim, Cut breaks sketch curves at the click (Plasticity curve cut; C still cuts a body by the focused
 //    sketch / picked curve), Trim opens the trim session (T). It keeps clear of the orientation cube and the hint lines:
 //    centred when the labelled bar fits beside the cube, else shifted left, else icons only (names in the tooltips),
-//    else the knife caption folds to its chevron too.
+//    else the knife caption folds to its chevron too, else the icons tighten, else the bar rises above the cube's band.
 void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Extent, float HintTop)
 {
     const bool SketchCondition = std::any_of(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(), [](const FeatureStep& Step) { return Step.Kind == FeatureStepKind::Sketch; });
@@ -10115,24 +10173,31 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
     const std::string ToolCaption = KnifeToolLabel(State);
     // Room: the viewport's left edge to the orientation cube (the bar shares the cube's height band), 12 px clear.
     const float RoomLeft  = Image.x + 12.0f;
-    const float RoomRight = Image.x + Extent.x - CubeExtent - 18.0f - 12.0f;
+    float       RoomRight = Image.x + Extent.x - CubeExtent - 18.0f - 12.0f;
     float Widths[KnifeIndex + 1] = {}, Total = 0.0f, Labelled = 0.0f, ToolWidth = 0.0f;   // [px]
-    bool  LabelsCondition = true, CaptionCondition = true;
-    for (int Fit = 0; Fit < 3; ++Fit)                                                       // Labels + caption → icons + caption → icons
+    float Padding = 12.0f;                                                                  // [px] - Button side padding
+    bool  LabelsCondition = true, CaptionCondition = true, FittedCondition = false;
+    for (int Fit = 0; Fit < 4 && !FittedCondition; ++Fit)                                   // Labels + caption → icons + caption → icons → tight icons
     {
         LabelsCondition  = Fit == 0;
         CaptionCondition = Fit < 2;
+        Padding          = Fit < 3 ? 12.0f : 8.0f;
         Total = 2.0f + 10.0f + 4.0f * KnifeIndex + 1.0f + 6.0f + 4.0f;
         for (int Index = 0; Index <= KnifeIndex; ++Index)
-            Total += Widths[Index] = 24.0f + 17.0f + (LabelsCondition && *Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
+            Total += Widths[Index] = 2.0f * Padding + 17.0f + (LabelsCondition && *Tools[Index].Label ? 7.0f + Probe.Measure(Tools[Index].Label, 13.0f) : 0.0f);
         ToolWidth = CaptionCondition ? 10.0f + std::max(Probe.Measure(ToolCaption.c_str(), 13.0f), 44.0f) + 22.0f : 30.0f;   // Knife tool menu
         Labelled  = Total - Widths[KnifeIndex] - 4.0f;                                      // Labelled tools stay centred; the knife extends right
         Total    += ToolWidth + 2.0f;
-        if (Total <= RoomRight - RoomLeft) break;
+        FittedCondition = Total <= RoomRight - RoomLeft;
     }
     const float  ButtonHeight = 18.0f + std::max(17.0f, 13.0f * SolidArcStyleTokens::FontScale);
     const float  Height       = 2.0f + 10.0f + ButtonHeight;
-    const float  Bottom       = std::min(Image.y + Extent.y - 52.0f, HintTop - 8.0f);        // [px] - Above the hint lines however many wrap
+    float        Bottom       = std::min(Image.y + Extent.y - 52.0f, HintTop - 8.0f);        // [px] - Above the hint lines however many wrap
+    if (!FittedCondition)                                                                   // Too narrow beside the cube: rise above its band
+    {
+        Bottom    = std::min(Bottom, Image.y + Extent.y - CubeExtent - 45.0f - 8.0f);
+        RoomRight = Image.x + Extent.x - 12.0f;
+    }
     const float  Centred      = std::floor(Image.x + 0.5f * (Extent.x - Labelled));
     const ImVec2 Corner(std::max(RoomLeft, std::min(Centred, std::floor(RoomRight - Total))), Bottom - Height);
     BeginSheetWindow("ViewportTools", Corner, ImVec2(Total, Height), true);
@@ -10151,8 +10216,8 @@ void DrawSketchToolbar(SolidArcWorkspaceState& State, ImVec2 Image, ImVec2 Exten
         const bool          Lit     = Tool.Active || Press.HoveredCondition;
         if (Lit) Sheet.Box(Box, SolidArcInk(0x303030), 8.0f);
         const ColorQuad Ink = ControlKit::Faded(SolidArcInk(Lit ? 0xffffff : 0xaaaaaa), Opacity);
-        Sheet.Icon(Tool.Glyph, Box.MinimumX + 12.0f, Centre - 8.5f, 17.0f, Ink);
-        if (LabelsCondition && *Tool.Label) Sheet.Text(Box.MinimumX + 12.0f + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
+        Sheet.Icon(Tool.Glyph, Box.MinimumX + Padding, Centre - 8.5f, 17.0f, Ink);
+        if (LabelsCondition && *Tool.Label) Sheet.Text(Box.MinimumX + Padding + 17.0f + 7.0f, Centre, 13.0f, Ink, Tool.Label);
         if (!LabelsCondition && Press.HoveredCondition && (Index == 0 || Index == 3 || Index == 4))
             ImGui::SetTooltip("%s", Index == 0 ? "Select" : Index == 3 ? "Trim (T): click the piece of a curve to remove" : "Fill (F): click inside closed curves to fill a region");
         if (Index == 2 && Press.HoveredCondition) ImGui::SetTooltip("Point (V): click a curve to add a point without changing its shape, then drag it (or use the gizmo) to move it");

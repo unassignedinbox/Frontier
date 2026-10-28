@@ -255,7 +255,8 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
         State.FileMenuAnchor = { MenuButton.MinimumX, MenuButton.MaximumY + 6.0f };
         State.PopupRequest   = "FileMenu";
     }
-    if (ImGui::IsMouseHoveringRect(ImVec2(MenuButton.MinimumX, MenuButton.MinimumY), ImVec2(MenuButton.MaximumX, MenuButton.MaximumY)))
+    if (ImGui::IsMouseHoveringRect(ImVec2(MenuButton.MinimumX, MenuButton.MinimumY), ImVec2(MenuButton.MaximumX, MenuButton.MaximumY))
+        && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
         ImGui::SetTooltip("File: new, open, save, import, export, examples (Ctrl+N / O / S / I / E) · compact rows");
     float Y = Top + 64.0f;
 
