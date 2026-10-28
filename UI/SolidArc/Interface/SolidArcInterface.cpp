@@ -4617,6 +4617,9 @@ void RecordGizmoWidgets(SolidArcWorkspaceState& State, const OrbitCameraFrame& F
 //    pick, press / drag / release; the triangles go to Style.Gizmo for the GPU and stay here for the pick. Returns true
 //    when the gizmo owns the left button this frame (a held handle, or the pointer over one), so the selection click and
 //    box selection stand aside.
+void               PickAtPointer(SolidArcWorkspaceState& State, ImVec2 Local, SolidArcPickIntent Intent);
+SolidArcPickIntent PickIntentOf(const ImGuiIO& Io);
+
 bool DriveGizmo(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local, bool PointerCondition)
 {
     SolidArcGizmoSession& Gizmo = State.Gizmo;
@@ -4674,7 +4677,16 @@ bool DriveGizmo(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, Im
         DriveGizmoDrag(State, Frame, Local);
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) || !ImGui::IsMouseDown(ImGuiMouseButton_Left))
         {
-            if (!Gizmo.Refusal.empty()) CancelGizmoDrag(State, "Refused: " + Gizmo.Refusal);
+            // 💡 A Shift / Ctrl / Alt click on a handle (no travel) edits the selection under it — the mode-2 edge gizmo sits on
+            //    the picked edge, where the next Shift+click (add), Ctrl+click (path) or Alt+click (loop) lands.
+            const ImGuiIO&           Io     = ImGui::GetIO();
+            const SolidArcPickIntent Intent = PickIntentOf(Io);
+            if (Intent != SolidArcPickIntent::Replace && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] <= ClickTolerance * ClickTolerance && GizmoIdentityCondition(Gizmo))
+            {
+                CancelGizmoDrag(State, {});
+                PickAtPointer(State, Local, Intent);
+            }
+            else if (!Gizmo.Refusal.empty()) CancelGizmoDrag(State, "Refused: " + Gizmo.Refusal);
             else CommitGizmoDrag(State);
         }
         else if (Length(Gizmo.Shift) > 0.0)
