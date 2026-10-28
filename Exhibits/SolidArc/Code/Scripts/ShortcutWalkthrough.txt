@@ -138,6 +138,26 @@ key Keypad1
 expect grid-plane == 1
 key Keypad3
 expect grid-plane == 2
+#    Grid follows the camera: a 90° view shows the plane facing it, any other angle (10 px orbit ≈ 0.08 rad) the ground only
+drag Middle viewport 0.5 0.5 by 10 0 2
+expect grid-plane == 0
+key Keypad1
+frames 2
+expect grid-plane == 1
+capture 345GridFrontWall
+drag Middle viewport 0.5 0.5 by 0 -10 2
+frames 2
+expect grid-plane == 0
+capture 346GridOrbitGround
+key Keypad5
+key Keypad1
+frames 2
+expect grid-plane == 1
+drag Middle viewport 0.5 0.5 by 10 0 2
+expect grid-plane == 0
+key Keypad5
+key Keypad3
+expect grid-plane == 2
 key Keypad5
 expect orthographic == 1
 key Keypad5
