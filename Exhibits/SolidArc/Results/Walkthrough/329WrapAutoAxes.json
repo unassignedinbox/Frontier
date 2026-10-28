@@ -1,5 +1,5 @@
 {
-  "Frame": 308,
+  "Frame": 300,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 7,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Wrap: perspective view — pick the projection axis in the popup (a parallel view, numpad 5, projects along the view by itself)",
+  "Status": "Selected sketch Circle1 · 4 selected · L lofts the picks in order · the gizmo moves / turns them",
   "Viewport": [322, 56, 926, 723]
 }

@@ -1,5 +1,5 @@
 {
-  "Frame": 471,
+  "Frame": 463,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 8,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Project: 10 3D curve(s) round Circle1, projected along the view · Ctrl+Z undoes",
+  "Status": "Project: 10 3D curve(s) round Circle1, auto: round z (the curve's plane), along y (the shapes' plane) · Ctrl+Z undoes",
   "Viewport": [322, 56, 926, 723]
 }
