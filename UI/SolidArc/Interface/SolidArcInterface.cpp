@@ -13009,6 +13009,110 @@ void OpenConstruct(SolidArcWorkspaceState& State, SolidArcConstructKind Kind)
 // 📝 Plasticity default keymap (nkallen/plasticity src/startup/default-keymap.ts). Commands this modeller does not have
 //    (control points, curves, hide, materials, groups, clipboard, booleans between bodies) announce that instead of
 //    silently doing something else; no non-Plasticity shortcut remains.
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DELETE (X / DELETE / BACKSPACE)
+//------------------------------------------------------------------------------------------------------------------------
+
+// Image planes live outside the feature tree (as the Inspector's remove button): erased directly, not an undo entry.
+void DeleteImageFigure(SolidArcWorkspaceState& State, const std::string& Name)
+{
+    std::vector<SolidArcImagePlane>& Planes = State.Document.ImagePlanes;
+    const auto Found = std::find_if(Planes.begin(), Planes.end(), [&](const SolidArcImagePlane& Plane) { return Plane.Name == Name; });
+    if (Found == Planes.end()) { Announce(State, "Delete: no image plane named " + Name); return; }
+    Planes.erase(Found);
+    if (State.FocusedImage == Name) State.FocusedImage.clear();
+    State.DirtyCondition = true;
+    State.AutosaveTimer  = State.Options.AutosaveDelay;
+    Announce(State, "Image plane deleted: " + Name + " (re-add it from Inspector › Image planes)");
+}
+
+// One Outliner row (the one under the pointer): bodies are removed, sketches / curves deleted (or taken off the scene
+// when a later step reads them), image planes erased. A locked row refuses.
+void DeleteFigure(SolidArcWorkspaceState& State, const SolidArcFigure& Figure)
+{
+    if (Figure.LockedCondition) { Announce(State, Figure.Name + " is locked · its lock button frees it before Delete"); return; }
+    switch (Figure.Source)
+    {
+    case SolidArcFigureSource::Body:
+        Conclude(State, RemoveSolidArcBodies(State.Document, { Figure.Key }));
+        break;
+    case SolidArcFigureSource::Sketch:
+    case SolidArcFigureSource::SpaceCurve:
+    {
+        const SolidArcCommandOutcome Outcome = DeleteSolidArcCurves(State.Document, { Figure.Key });
+        if (Outcome.AcceptedCondition && State.FocusedStep == Figure.Key) State.FocusedStep = {};
+        Conclude(State, Outcome);
+        break;
+    }
+    case SolidArcFigureSource::Image:
+        DeleteImageFigure(State, Figure.Key);
+        break;
+    }
+}
+
+// 💡 Plasticity X / Delete (Blender X): whatever is picked goes, always as a valid solid or not at all.
+//    ① an Outliner row under the pointer; ② mode 1 sketch points; ③ the image plane picked in the Outliner; ④ a History
+//    step; ⑤ bodies, else faces, else edges, else vertices; ⑥ the picked sketches / curves (with ⑤ when both are picked).
+void DeletePicked(SolidArcWorkspaceState& State)
+{
+    SolidArcDocument& Document = State.Document;
+    if (State.Outliner.HoveredCondition)
+    {
+        DeleteFigure(State, State.Outliner.Hovered);
+        return;
+    }
+    if (!State.SketchPoints.Points.empty() && !State.SketchPoints.Sketch.empty())
+    {
+        const SolidArcCommandOutcome Outcome = DeleteSolidArcSketchPoints(Document, State.SketchPoints.Sketch, State.SketchPoints.Points);
+        if (Outcome.AcceptedCondition)
+        {
+            State.SketchPoints.Points.clear();
+            State.SketchPoints.Sketch.clear();
+        }
+        Conclude(State, Outcome);
+        return;
+    }
+    if (!State.FocusedImage.empty())
+    {
+        DeleteImageFigure(State, State.FocusedImage);
+        return;
+    }
+    const auto Focused = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == State.FocusedStep; });
+    const bool CurveFocused = Focused != Document.Tree.Steps.end() && (Focused->Kind == FeatureStepKind::Sketch || Focused->Kind == FeatureStepKind::SpaceCurve);
+    if (Focused != Document.Tree.Steps.end() && !CurveFocused)
+    {
+        Conclude(State, DeleteSolidArcStep(Document, State.FocusedStep));                     // History row
+        State.FocusedStep = {};
+        return;
+    }
+    std::vector<std::string> Curves = Document.Selection.Curves;
+    if (CurveFocused && std::find(Curves.begin(), Curves.end(), State.FocusedStep) == Curves.end()) Curves.push_back(State.FocusedStep);
+    std::string Said;
+    if (!Document.Selection.Bodies.empty() || !Document.Selection.Faces.empty() || !Document.Selection.Edges.empty() || !Document.Selection.Vertices.empty())
+    {
+        SolidArcCommandOutcome Outcome;
+        if (!Document.Selection.Bodies.empty()) Outcome = RemoveSolidArcBodies(Document, Document.Selection.Bodies);
+        else if (!Document.Selection.Faces.empty())
+        {
+            Outcome = DeleteSolidArcFaces(Document);
+            if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, BlendProfile::Fillet, 0.0, FaceOperationKind::Delete, 0.0, {} };
+        }
+        else if (!Document.Selection.Edges.empty()) Outcome = DeleteSolidArcEdges(Document);
+        else Outcome = DeleteSolidArcVertices(Document);
+        Conclude(State, Outcome);
+        Said = State.Status;
+    }
+    if (!Curves.empty())
+    {
+        const SolidArcCommandOutcome Outcome = DeleteSolidArcCurves(Document, Curves);
+        if (Outcome.AcceptedCondition) State.FocusedStep = {};
+        Conclude(State, Outcome);
+        if (!Said.empty()) Announce(State, Said + " · " + State.Status);
+        return;
+    }
+    if (Said.empty()) Announce(State, "Delete (X): pick something first — bodies (4), faces (3), edges (2), vertices or sketch points (1), sketches, or hover an Outliner row");
+}
+
 void ApplyShortcuts(SolidArcWorkspaceState& State)
 {
     ImGuiIO& Io = ImGui::GetIO();
@@ -13430,25 +13534,7 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
         State.FocusedStep = {};
         Announce(State, "Selection cleared");
     }
-    if (Pressed(ImGuiKey_X) || Pressed(ImGuiKey_Delete) || Pressed(ImGuiKey_Backspace))
-    {
-        if (!State.FocusedStep.empty())
-        {
-            Conclude(State, DeleteSolidArcStep(State.Document, State.FocusedStep));
-            State.FocusedStep = {};
-        }
-        else if (!State.Document.Selection.Bodies.empty())
-        {
-            Conclude(State, RemoveSolidArcBodies(State.Document, State.Document.Selection.Bodies));          // delete picked bodies (mode 4)
-        }
-        else if (!State.Document.Selection.Faces.empty())
-        {
-            const SolidArcCommandOutcome Outcome = ChangeSolidArcSelection(State.Document, FaceOperationKind::Delete, 0.0);
-            if (Outcome.AcceptedCondition) State.LastCommand = { SolidArcRepeatKind::Face, BlendProfile::Fillet, 0.0, FaceOperationKind::Delete, 0.0, {} };
-            Conclude(State, Outcome);
-        }
-        else Announce(State, "Delete needs picked bodies (mode 4), selected faces or a focused feature step");
-    }
+    if (Pressed(ImGuiKey_X) || Pressed(ImGuiKey_Delete) || Pressed(ImGuiKey_Backspace)) DeletePicked(State);   // command:delete
 }
 
 void DrawWelcome(SolidArcWorkspaceState& State)

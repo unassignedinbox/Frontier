@@ -176,6 +176,7 @@ std::vector<SolidArcFigure> CollectSolidArcFigures(const SolidArcWorkspaceState&
     }
     for (const FeatureStep& Step : Document.Tree.Steps)
     {
+        if (Document.Appearance.RemovedCurves.contains(Step.Label)) continue;                // Deleted (X), kept for a later step
         SolidArcFigure Figure;
         Figure.Key      = Step.Label;
         Figure.Name     = CaptionOfStep(Document, Step.Label);
@@ -228,6 +229,7 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
 {
     SolidArcOutlinerIntent Intent;
     SolidArcSheet          Sheet;
+    State.Outliner.HoveredCondition = false;                                                 // Re-found below while drawn
     if (!Sheet.Begin()) return Intent;
     SolidArcOutlinerState&            Outliner = State.Outliner;
     const std::vector<SolidArcFigure> Figures  = CollectSolidArcFigures(State);
@@ -435,6 +437,11 @@ SolidArcOutlinerIntent ConstructSolidArcOutliner(SolidArcWorkspaceState& State, 
             if (Latch.HoveredCondition) Rows.Box(Lock, Ink(HoverFill), 11.5f);
             const ColorQuad LockInk = Latch.HoveredCondition ? Ink(0xffffff) : Figure.LockedCondition ? Ink(0xffd24d) : Ink(0x858585, 0.55f);
             LockGlyph(Rows, 0.5f * (Lock.MinimumX + Lock.MaximumX), 0.5f * (Lock.MinimumY + Lock.MaximumY), Figure.LockedCondition, ControlKit::Faded(LockInk, Opacity));
+            if (Press.HoveredCondition || Toggle.HoveredCondition || Latch.HoveredCondition)
+            {
+                Outliner.HoveredCondition = true;
+                Outliner.Hovered          = Figure;
+            }
             if (Toggle.ClickedCondition)
             {
                 Intent.Verb   = SolidArcOutlinerVerb::ToggleVisibility;

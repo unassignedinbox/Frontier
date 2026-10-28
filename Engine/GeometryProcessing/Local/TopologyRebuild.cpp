@@ -675,13 +675,34 @@ std::string DeleteBodyFaces(ModelPartition& Partition, BodyToken Body, const std
 //    edge, continue from its mate's successor), outer loop = largest |area| in the chart;
 //    an edge used twice by one planar face (a slit) vanishes the same way; ② at a vertex left with exactly two edges on
 //    one carrier (collinear lines, one circle) the edges join. A body with nothing to merge is returned as an equal copy.
-std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method)
+std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method,
+                     const std::vector<EdgeToken>& OnlyEdges, const std::vector<VertexToken>& OnlyVertices)
 {
     BodyDescription Description;
     if (std::string Refusal = DescribeBody(Partition, Body, Description); !Refusal.empty()) return Refusal;
     BodyBlueprint& Source    = Description.Blueprint;
     const double   Tolerance = 1.0e-9 * Description.Scale;
     const int      FaceCount = static_cast<int>(Source.Faces.size());
+
+    // ⓪ Restricted (Delete on edges / vertices): only the listed edges dissolve, joins only at the listed vertices and at
+    //    the ends of dissolved edges; every listed one must go, else the heal is refused (nothing else changes).
+    const bool    RestrictedCondition = !OnlyEdges.empty() || !OnlyVertices.empty();
+    std::set<int> Requested, Joinable, Corners;
+    for (EdgeToken Edge : OnlyEdges)
+    {
+        const auto Found = Description.EdgeIndex.find(Edge.Slot);
+        if (Found == Description.EdgeIndex.end()) return "Heal: the edge is not on this body";
+        Requested.insert(Found->second);
+        Joinable.insert(Source.Edges[Found->second].Start);
+        Joinable.insert(Source.Edges[Found->second].End);
+    }
+    for (VertexToken Vertex : OnlyVertices)
+    {
+        const auto Found = Description.VertexIndex.find(Vertex.Slot);
+        if (Found == Description.VertexIndex.end()) return "Heal: the vertex is not on this body";
+        Joinable.insert(Found->second);
+        Corners.insert(Found->second);
+    }
 
     // ① Union-find over faces through edges whose two uses lie on one outward plane.
     std::vector<int> Root(FaceCount);
@@ -692,6 +713,7 @@ std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Resul
     std::set<int> Internal;
     for (const auto& [Edge, Users] : EdgeFaces)
     {
+        if (RestrictedCondition && !Requested.contains(Edge)) continue;
         if (Users.size() == 2 && Users[0] != Users[1] && SameOutwardCarrier(Source.Faces[Users[0]], Source.Faces[Users[1]], Tolerance))
         {
             Root[Find(Users[0])] = Find(Users[1]);
@@ -706,12 +728,15 @@ std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Resul
     std::set<int> Slit;                                                                      // Faces with an edge used twice by themselves
     for (const auto& [Edge, Users] : EdgeFaces)
     {
+        if (RestrictedCondition && !Requested.contains(Edge)) continue;
         if (Users.size() == 2 && Users[0] == Users[1] && std::holds_alternative<PlaneSurface>(Source.Faces[Users[0]].Surface))
         {
             Internal.insert(Edge);                                                           // A slit on a plane is not a seam
             Slit.insert(Users[0]);
         }
     }
+    for (int Edge : Requested)
+        if (!Internal.contains(Edge)) return "the edge joins two different surfaces: removing it cannot leave a closed solid (only an edge between faces on one surface dissolves)";
 
     // ② Merged faces: surviving uses re-traced into loops by vertex chaining.
     BodyBlueprint                  Blueprint;
@@ -816,6 +841,7 @@ std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Resul
         for (const auto& [Vertex, Edges] : VertexEdges)
         {
             if (Edges.size() != 2 || Edges[0] == Edges[1]) continue;
+            if (RestrictedCondition && !Joinable.contains(Vertex)) continue;
             const BlueprintEdge& One = Blueprint.Edges[Edges[0]];
             const BlueprintEdge& Two = Blueprint.Edges[Edges[1]];
             if (!SameCarrierCurve(One.Curve, Two.Curve, Tolerance)) continue;
@@ -862,10 +888,12 @@ std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Resul
                 }
             }
             ++Joined;
+            Corners.erase(Vertex);
             Progress = true;
             break;
         }
     }
+    if (!Corners.empty()) return "the vertex is a corner: only a point that splits one straight or circular edge dissolves";
     if (Joined > 0) for (BlueprintFace& Target : Blueprint.Faces) for (auto& Loop : Target.Loops) FitLoopSurfaceCurves(Target.Surface, Blueprint, Loop);
     Method = Merged + Joined + Slits == 0 ? "nothing to merge: equal copy"
                                           : "merged " + std::to_string(Merged) + " face(s), removed " + std::to_string(Slits) + " slit(s), joined " + std::to_string(Joined) + " edge pair(s)";

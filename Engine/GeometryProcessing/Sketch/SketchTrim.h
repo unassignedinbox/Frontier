@@ -96,4 +96,9 @@ struct SketchTrimOutcome
 // Curve CurveIndex erased: constraints on it dropped, later curve references shifted down. Points stay.
 void EraseSketchCurve(SketchModel& Sketch, int CurveIndex);
 
+// 💡 Delete on sketch points (mode 1 X): every curve through one of Points goes (EraseSketchCurve), then every point no
+//    remaining curve uses is dropped with the constraints naming it (Coincident, Fixed, distances, point-on, midpoint,
+//    symmetric); later point references shift down. Returns the number of curves erased.
+int EraseSketchPoints(SketchModel& Sketch, const std::vector<int>& Points);
+
 } // namespace Frontier::GeometryProcessing

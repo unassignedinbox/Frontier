@@ -55,7 +55,8 @@ struct FaceOperationSettings
     Vector3                Vector        = {};                                               // [len] - Tweak translation
     Vector3                Axis          = { 1.0, 0.0, 0.0 };                                // [-]   - Rotation axis direction
     Vector3                PullDirection = { 0.0, 0.0, 1.0 };                                // [-]   - Draft pull direction
-    std::vector<VertexToken> Vertices    = {};                                               // [-]   - Reshape: vertices carried (edges give both ends)
+    std::vector<VertexToken> Vertices    = {};                                               // [-]   - Reshape: vertices carried (edges give both ends) · Heal: only these join
+    std::vector<EdgeToken>   Edges       = {};                                               // [-]   - Heal: only these dissolve (empty with no vertices: every seam)
     AffineMap              Placement     = {};                                               // [-]   - Reshape: x ↦ M·x + Shift for those vertices
 };
 

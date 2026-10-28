@@ -789,7 +789,13 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             }
             FaceOperationSettings Settings;
             Settings.Kind = Step.Operation;
-            for (uint32_t Slot : Slots) Settings.Faces.push_back(Partition.Faces.TokenAt(Slot));
+            for (size_t Index = 0; Index < Slots.size(); ++Index)
+            {
+                // ③⁗ Heal on picked edges / vertices (Delete on edges, vertices): only those dissolve.
+                if (Kinds[Index] == ReferenceKind::Edge && Step.Operation == FaceOperationKind::Heal) Settings.Edges.push_back(Partition.Edges.TokenAt(Slots[Index]));
+                else if (Kinds[Index] == ReferenceKind::Vertex && Step.Operation == FaceOperationKind::Heal) Settings.Vertices.push_back(Partition.Vertices.TokenAt(Slots[Index]));
+                else Settings.Faces.push_back(Partition.Faces.TokenAt(Slots[Index]));
+            }
             ApplySettingsAmount(Settings, Amount);
             // 📝 Gizmo tweaks carry their direction (Tweak: Vector = d̂·Amount) or axis (Rotate) in Points[0]; without it
             //    Tweak runs along +z and Rotate about +x as before.

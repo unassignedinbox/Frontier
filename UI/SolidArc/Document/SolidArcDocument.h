@@ -464,6 +464,32 @@ struct SolidArcPointCut
 // Plasticity X on bodies: one Remove step per key, one undo entry; refused (document untouched) for an unknown key.
 [[nodiscard]] SolidArcCommandOutcome RemoveSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys);
 
+// 💡 X / Delete on the picked faces. Fillet / chamfer faces (Blend#n.Strip(edge)) un-blend: their blend step lets go of the
+//    source edges (an emptied blend step goes), so the sharp edge comes back exactly. Any other face is deleted and its
+//    neighbours grow over the gap (FaceOperationKind::Delete, heal). One undo entry; refused (document untouched) when the
+//    solid cannot close or a later step refuses.
+[[nodiscard]] SolidArcCommandOutcome DeleteSolidArcFaces(SolidArcDocument& Document);
+
+// 💡 X / Delete on the picked edges. A fillet / chamfer edge (one of its faces a Blend strip) un-blends that strip's source
+//    edge; an edge between two faces on one carrier (an imprint line, a split seam) dissolves: a Heal step merges the
+//    faces, accepted only when every picked edge is gone afterwards. Any other edge — two different surfaces meeting — is
+//    refused: removing it cannot leave a closed solid (delete a face or the body instead).
+[[nodiscard]] SolidArcCommandOutcome DeleteSolidArcEdges(SolidArcDocument& Document);
+
+// 💡 X / Delete on the picked body vertices: a vertex that only splits one straight or circular edge dissolves (Heal merges
+//    the two edges), accepted only when every picked vertex is gone afterwards; a corner vertex is refused.
+[[nodiscard]] SolidArcCommandOutcome DeleteSolidArcVertices(SolidArcDocument& Document);
+
+// 💡 X / Delete on sketches and space curves (Outliner rows or viewport picks). A curve no later step reads is deleted with
+//    its parameters; one a later step reads (an extruded sketch, a loft section) leaves the scene — hidden, off the Outliner
+//    (Appearance.RemovedCurves) — while that step keeps it, so the body stays. One undo entry.
+[[nodiscard]] SolidArcCommandOutcome DeleteSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels);
+
+// 💡 X / Delete on mode 1 sketch points: the curves through them go (GeometryProcessing::EraseSketchPoints), in place so a
+//    step reading the sketch follows; when that step would refuse, the original stays for it (removed from the scene) and
+//    the remaining curves become a free sketch. A sketch left without curves is deleted (or removed when read).
+[[nodiscard]] SolidArcCommandOutcome DeleteSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const std::vector<int>& Points);
+
 // Plasticity G / R / S: one Transform step per body applying Map (x′ = X·x + Y·y + Z·z + Shift); Verb captions the steps
 // ("Move", "Rotate", "Scale"). Names, selection and every later step that references the bodies follow them.
 [[nodiscard]] SolidArcCommandOutcome TransformSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys,

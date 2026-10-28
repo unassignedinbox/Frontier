@@ -423,7 +423,8 @@ constexpr int64_t FormatVersion = 1;                                            
 [[nodiscard]] bool DefaultAppearanceCondition(const SolidArcAppearance& Appearance)
 {
     return Appearance.BodyMatcap == SolidArcStudioMatcap && Appearance.BodyMatcaps.empty() && Appearance.FaceMatcaps.empty() && Appearance.HiddenBodies.empty()
-        && Appearance.CustomMatcaps.empty() && Appearance.HiddenCurves.empty() && Appearance.LockedFigures.empty();
+        && Appearance.CustomMatcaps.empty() && Appearance.HiddenCurves.empty() && Appearance.LockedFigures.empty()
+        && Appearance.RemovedCurves.empty();
 }
 
 [[nodiscard]] toml::table EncodeAppearance(const SolidArcAppearance& Appearance)
@@ -449,6 +450,12 @@ constexpr int64_t FormatVersion = 1;                                            
         toml::array Hidden;
         for (const std::string& Label : Appearance.HiddenCurves) Hidden.push_back(Label);
         Table.insert("HiddenCurves", std::move(Hidden));
+    }
+    if (!Appearance.RemovedCurves.empty())
+    {
+        toml::array Removed;
+        for (const std::string& Label : Appearance.RemovedCurves) Removed.push_back(Label);
+        Table.insert("RemovedCurves", std::move(Removed));
     }
     if (!Appearance.LockedFigures.empty())
     {
@@ -517,6 +524,16 @@ constexpr int64_t FormatVersion = 1;                                            
             const std::string Label = Entry.value_or(std::string{});
             if (Label.empty()) return "Appearance: a hidden curve entry is not a step label";
             Appearance.HiddenCurves.insert(Label);
+        }
+    }
+    if (const toml::array* Removed = (*Table)["RemovedCurves"].as_array())
+    {
+        for (const toml::node& Entry : *Removed)
+        {
+            const std::string Label = Entry.value_or(std::string{});
+            if (Label.empty()) return "Appearance: a removed curve entry is not a step label";
+            Appearance.RemovedCurves.insert(Label);
+            Appearance.HiddenCurves.insert(Label);                                           // Removed ⊂ hidden
         }
     }
     if (const toml::array* Locked = (*Table)["Locked"].as_array())

@@ -53,6 +53,7 @@ struct SolidArcAppearance
     std::vector<SolidArcCustomMatcap>  CustomMatcaps = {};                                   // [-] - User pictures, in layer order
     std::set<std::string>              HiddenBodies  = {};                                   // [-] - Body keys out of view and picking (Plasticity H)
     std::set<std::string>              HiddenCurves  = {};                                   // [-] - Sketch / curve labels out of view, picking and snapping
+    std::set<std::string>              RemovedCurves = {};                                   // [-] - Deleted (X) yet read by a later step: hidden and off the Outliner
     std::set<std::string>              LockedFigures = {};                                   // [-] - Body keys and curve labels shown but not pickable
 };
 

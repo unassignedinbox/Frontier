@@ -32,8 +32,10 @@ namespace Frontier::GeometryProcessing
                                            BodyToken& Result, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 [[nodiscard]] std::string DeleteBodyFaces(ModelPartition& Partition, BodyToken Body, const std::vector<FaceToken>& Faces, BodyToken& Result,
                                           BodyCategory& Category, std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
+// OnlyEdges / OnlyVertices (Delete on edges / vertices): just those edges dissolve and those vertices join; refused unless all go.
 [[nodiscard]] std::string HealBody(ModelPartition& Partition, BodyToken Body, BodyToken& Result, std::vector<FaceChangeHistory>& Histories,
-                                   AuditReport& Audit, std::string& Method);
+                                   AuditReport& Audit, std::string& Method, const std::vector<EdgeToken>& OnlyEdges = {},
+                                   const std::vector<VertexToken>& OnlyVertices = {});
 // 💡 Extrude manifold outline (Blender's push-in): a planar face's loops as a sketch profile in a frame on its plane whose
 //    𝑧 is the outward normal (lines, circular arcs, circles and non-rational splines; segments named E<slot>), arranged
 //    outer CCW / holes CW. IslandCondition: every neighbour across its edges is a coplanar plane facing the same way —

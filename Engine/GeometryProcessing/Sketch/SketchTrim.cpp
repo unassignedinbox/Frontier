@@ -11,6 +11,7 @@
 #include "Engine/GeometryProcessing/Sketch/SketchSpline.h"
 
 #include <algorithm>
+#include <set>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -124,6 +125,25 @@ namespace
             case SketchConstraintKind::PointOnCircle:
             case SketchConstraintKind::Midpoint:      return { false, true, false };
             case SketchConstraintKind::Symmetric:     return { false, false, true };
+            default:                                  return { false, false, false };
+        }
+    }
+
+    // 📝 Which of First / Second / Third name a point (see SketchConstraintKind).
+    [[nodiscard]] std::array<bool, 3> PointSlots(SketchConstraintKind Kind) noexcept
+    {
+        switch (Kind)
+        {
+            case SketchConstraintKind::Coincident:
+            case SketchConstraintKind::Distance:
+            case SketchConstraintKind::HorizontalDistance:
+            case SketchConstraintKind::VerticalDistance:
+            case SketchConstraintKind::Symmetric:     return { true, true, false };
+            case SketchConstraintKind::Fixed:
+            case SketchConstraintKind::PointOnLine:
+            case SketchConstraintKind::PointOnCircle:
+            case SketchConstraintKind::PointOnSpline:
+            case SketchConstraintKind::Midpoint:      return { true, false, false };
             default:                                  return { false, false, false };
         }
     }
@@ -300,6 +320,58 @@ void EraseSketchCurve(SketchModel& Sketch, int CurveIndex)
         if (Slots[2] && Constraint.Third  > CurveIndex) --Constraint.Third;
     }
     Sketch.Curves.erase(Sketch.Curves.begin() + CurveIndex);
+}
+
+int EraseSketchPoints(SketchModel& Sketch, const std::vector<int>& Points)
+{
+    const std::set<int> Doomed(Points.begin(), Points.end());
+    auto Uses = [&](const SketchCurve& Curve, auto&& Test)
+    {
+        if (Test(Curve.Start) || Test(Curve.End) || Test(Curve.Centre)) return true;
+        return std::any_of(Curve.Points.begin(), Curve.Points.end(), [&](int Point) { return Test(Point); });
+    };
+    // ① The curves through a doomed point, last first (indices stay valid).
+    int Erased = 0;
+    for (int CurveIndex = static_cast<int>(Sketch.Curves.size()) - 1; CurveIndex >= 0; --CurveIndex)
+    {
+        if (!Uses(Sketch.Curves[CurveIndex], [&](int Point) { return Doomed.contains(Point); })) continue;
+        EraseSketchCurve(Sketch, CurveIndex);
+        ++Erased;
+    }
+    // ② Points no curve uses any more: dropped with their constraints, the rest renumbered.
+    std::vector<int> Renumber(Sketch.Points.size(), -1);
+    int              Kept = 0;
+    for (int Point = 0; Point < static_cast<int>(Sketch.Points.size()); ++Point)
+    {
+        const bool Used = std::any_of(Sketch.Curves.begin(), Sketch.Curves.end(), [&](const SketchCurve& Curve)
+                                      { return Uses(Curve, [&](int Other) { return Other == Point; }); });
+        if (Used) Renumber[Point] = Kept++;
+    }
+    auto Gone = [&](int Point) { return Point < 0 || Point >= static_cast<int>(Renumber.size()) || Renumber[Point] < 0; };
+    std::erase_if(Sketch.Constraints, [&](const SketchConstraint& Constraint)
+    {
+        const std::array<bool, 3> Slots = PointSlots(Constraint.Kind);
+        return (Slots[0] && Gone(Constraint.First)) || (Slots[1] && Gone(Constraint.Second)) || (Slots[2] && Gone(Constraint.Third));
+    });
+    for (SketchConstraint& Constraint : Sketch.Constraints)
+    {
+        const std::array<bool, 3> Slots = PointSlots(Constraint.Kind);
+        if (Slots[0]) Constraint.First  = Renumber[Constraint.First];
+        if (Slots[1]) Constraint.Second = Renumber[Constraint.Second];
+        if (Slots[2]) Constraint.Third  = Renumber[Constraint.Third];
+    }
+    auto Map = [&](int& Point) { if (Point >= 0) Point = Renumber[Point]; };
+    for (SketchCurve& Curve : Sketch.Curves)
+    {
+        Map(Curve.Start);
+        Map(Curve.End);
+        Map(Curve.Centre);
+        for (int& Point : Curve.Points) Map(Point);
+    }
+    std::vector<SketchPoint> Survivors;
+    for (int Point = 0; Point < static_cast<int>(Sketch.Points.size()); ++Point) if (Renumber[Point] >= 0) Survivors.push_back(Sketch.Points[Point]);
+    Sketch.Points = std::move(Survivors);
+    return Erased;
 }
 
 SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vector2 Pick, const std::vector<ProfileSegment>& Foreign)

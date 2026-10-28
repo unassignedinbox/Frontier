@@ -79,6 +79,8 @@ struct SolidArcOutlinerState
     bool                 CompactEnabled  = false;                                            // [-]  - #compact-button (32 px rows)
     bool                 FoldedEnabled   = false;                                            // [-]  - #fold-button (rows hidden)
     bool                 SearchFocusRequest = false;                                         // [-]  - Ctrl+F focuses the search
+    bool                 HoveredCondition   = false;                                         // [-]  - The pointer is over a row (X / Delete deletes it)
+    SolidArcFigure       Hovered            = {};                                            // [-]  - That row
 };
 
 // One user action the Outliner asks the workspace to carry out (the workspace owns the commands and the status line).

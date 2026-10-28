@@ -3392,6 +3392,7 @@ SolidArcCommandOutcome ToggleSolidArcCurveVisibility(SolidArcDocument& Document,
         const bool Present = std::any_of(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step)
                                          { return Step.Label == Label && (Step.Kind == FeatureStepKind::Sketch || Step.Kind == FeatureStepKind::SpaceCurve); });
         if (!Present) return "no sketch or curve " + Label;
+        if (Document.Appearance.RemovedCurves.contains(Label)) return Label + " is deleted (a later step still reads it): undo brings it back";
         std::set<std::string>& Hidden = Document.Appearance.HiddenCurves;
         if (HiddenCondition)
         {
@@ -4407,6 +4408,284 @@ const char* SolidArcFaceOperationLabel(FaceOperationKind Operation) noexcept
     case FaceOperationKind::Reshape:    return "Reshape";
     }
     return "Change";
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DELETE (X / DELETE)
+//------------------------------------------------------------------------------------------------------------------------
+
+namespace
+{
+    // 📝 The face names of an edge name Edge(A|B)[#k] (the sorted pair; one name for a seam, A|∅ for a laminar edge).
+    [[nodiscard]] std::vector<std::string> EdgeFaceNames(const std::string& Edge)
+    {
+        std::vector<std::string> Faces;
+        if (Edge.rfind("Edge(", 0) != 0) return Faces;
+        int         Depth = 1;
+        std::string Piece;
+        for (size_t Index = 5; Index < Edge.size(); ++Index)
+        {
+            const char Letter = Edge[Index];
+            if (Letter == '(') ++Depth;
+            if (Letter == ')' && --Depth == 0)
+            {
+                if (!Piece.empty()) Faces.push_back(Piece);
+                return Faces;
+            }
+            if (Letter == '|' && Depth == 1)
+            {
+                if (!Piece.empty()) Faces.push_back(Piece);
+                Piece.clear();
+                continue;
+            }
+            Piece += Letter;
+        }
+        return {};
+    }
+
+    // 📝 Blend#n.Strip(<edge>)[/k] → that blend step's label and the source edge name; false for any other face.
+    [[nodiscard]] bool BlendStripSource(const SolidArcDocument& Document, const std::string& Face, std::string& Blend, std::string& Source)
+    {
+        static constexpr std::string_view Marker = ".Strip(";
+        const size_t At = Face.find(Marker);
+        if (At == std::string::npos) return false;
+        const FeatureStep* Step = FindStep(Document, Face.substr(0, At));
+        if (!Step || Step->Kind != FeatureStepKind::Blend) return false;
+        const size_t Open  = At + Marker.size();
+        int          Depth = 1;
+        for (size_t Index = Open; Index < Face.size(); ++Index)
+        {
+            if (Face[Index] == '(') ++Depth;
+            else if (Face[Index] == ')' && --Depth == 0)
+            {
+                Blend  = Step->Label;
+                Source = Face.substr(Open, Index - Open);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] std::string CaptionOrLabel(const SolidArcDocument& Document, const std::string& Label)
+    {
+        const auto Found = Document.Captions.find(Label);
+        return Found != Document.Captions.end() ? Found->second : Label;
+    }
+
+    // 📝 A step erased with its caption and the parameters named after it (Caption.Size, Caption.Amount …).
+    void EraseStepWithParameters(SolidArcDocument& Document, const std::string& Label)
+    {
+        const std::string Caption = CaptionOrLabel(Document, Label);
+        std::erase_if(Document.Tree.Steps, [&](const FeatureStep& Step) { return Step.Label == Label; });
+        std::erase_if(Document.Tree.Parameters, [&](const FeatureParameter& Parameter) { return Parameter.Name.rfind(Caption + ".", 0) == 0; });
+        Document.Captions.erase(Label);
+    }
+
+    // 📝 Un-blend: every blend step lets go of its source edges (a variable blend's anchor paired with an edge goes with
+    //    it); an emptied blend step goes with its parameters. Watched from the first edited step, so a later step that
+    //    regenerated before and now refuses rolls the whole command back.
+    [[nodiscard]] SolidArcCommandOutcome UnblendSolidArcEdges(SolidArcDocument& Document, const std::map<std::string, std::set<std::string>>& Sources,
+                                                             const std::string& Noun)
+    {
+        size_t      First = Document.Tree.Steps.size();
+        size_t      Count = 0;
+        std::string Captions;
+        for (const auto& [Blend, Edges] : Sources)
+        {
+            for (size_t Index = 0; Index < Document.Tree.Steps.size(); ++Index) if (Document.Tree.Steps[Index].Label == Blend) First = std::min(First, Index);
+            Captions += (Captions.empty() ? "" : ", ") + CaptionOrLabel(Document, Blend);
+            Count    += Edges.size();
+        }
+        return RunCommand(Document, "Delete " + Noun + ": un-blend " + std::to_string(Count) + " edge(s) of " + Captions, true, [&]() -> std::string
+        {
+            for (const auto& [Blend, Edges] : Sources)
+            {
+                const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Blend; });
+                if (Found == Document.Tree.Steps.end()) return "no blend step labelled " + Blend;
+                FeatureStep& Step   = *Found;
+                const bool   Paired = Step.EndSize && Step.AnchorSizes.empty() && Step.SizeAnchors.size() == Step.References.size();
+                size_t       Dropped = 0;
+                // ① exact names, ② when none matched, names without their #k disambiguators (a re-numbered face pair).
+                for (int Round = 0; Round < 2 && Dropped == 0; ++Round)
+                {
+                    for (size_t Index = Step.References.size(); Index-- > 0;)
+                    {
+                        const std::string& Name  = Step.References[Index].Name;
+                        const bool         Match = Round == 0 ? Edges.contains(Name)
+                                                              : std::any_of(Edges.begin(), Edges.end(), [&](const std::string& Edge) { return StripDisambiguators(Edge) == StripDisambiguators(Name); });
+                        if (!Match) continue;
+                        Step.References.erase(Step.References.begin() + static_cast<std::ptrdiff_t>(Index));
+                        if (Paired) Step.SizeAnchors.erase(Step.SizeAnchors.begin() + static_cast<std::ptrdiff_t>(Index));
+                        ++Dropped;
+                    }
+                }
+                if (Dropped == 0) return CaptionOrLabel(Document, Blend) + " no longer lists the edge under that face (delete the step from History instead)";
+                if (Step.References.empty()) EraseStepWithParameters(Document, Blend);
+            }
+            Document.Selection = {};
+            return {};
+        }, First);
+    }
+
+    // 📝 Dissolve by a restricted Heal step on Owner carrying the picked edges / vertices (the kernel refuses unless every
+    //    one goes, and touches nothing else). Appended: a heal acts on the body as it stands.
+    [[nodiscard]] SolidArcCommandOutcome DissolveSolidArcNames(SolidArcDocument& Document, SolidArcSelectionKind Kind, const std::vector<std::string>& Names)
+    {
+        const bool        EdgeCondition = Kind == SolidArcSelectionKind::Edge;
+        const std::string Noun          = EdgeCondition ? " edge(s)" : " vertex(es)";
+        std::string       Owner, Problem;
+        if (Names.empty()) Problem = EdgeCondition ? "pick edges first (mode 2)" : "pick vertices first (mode 1)";
+        else if (!Document.Summary.PresentCondition) Problem = "there is no body";
+        else Problem = CommonBody(Document, Kind, Names, Owner);
+        return RunCommand(Document, "Delete " + std::to_string(Names.size()) + Noun + " · dissolve", true, [&]() -> std::string
+        {
+            if (!Problem.empty()) return Problem;
+            FeatureStep Step;
+            Step.Kind      = FeatureStepKind::FaceOperation;
+            Step.Label     = "Change#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Operation = FaceOperationKind::Heal;
+            Step.Target    = Owner;
+            for (const std::string& Name : Names) Step.References.push_back({ EdgeCondition ? ReferenceKind::Edge : ReferenceKind::Vertex, Name, {} });
+            Document.Captions[Step.Label] = NextCaption(Document, "Dissolve");
+            Document.Tree.Steps.push_back(std::move(Step));
+            Document.Selection = {};
+            return {};
+        });
+    }
+
+    // 📝 A curve leaves: deleted when nothing reads it, else hidden and off the Outliner (RemovedCurves) for its readers.
+    void RetireSolidArcCurve(SolidArcDocument& Document, const std::string& Label)
+    {
+        std::erase(Document.Selection.Curves, Label);
+        if (SolidArcSketchReferencedCondition(Document, Label))
+        {
+            Document.Appearance.HiddenCurves.insert(Label);
+            Document.Appearance.RemovedCurves.insert(Label);
+            Document.Appearance.LockedFigures.erase(Label);
+            return;
+        }
+        EraseStepWithParameters(Document, Label);
+        Document.Appearance.HiddenCurves.erase(Label);
+        Document.Appearance.LockedFigures.erase(Label);
+    }
+} // namespace
+
+SolidArcCommandOutcome DeleteSolidArcFaces(SolidArcDocument& Document)
+{
+    const std::vector<std::string> Faces = Document.Selection.Faces;
+    std::map<std::string, std::set<std::string>> Sources;
+    size_t Strips = 0;
+    for (const std::string& Face : Faces)
+    {
+        std::string Blend, Source;
+        if (!BlendStripSource(Document, Face, Blend, Source)) continue;
+        Sources[Blend].insert(Source);
+        ++Strips;
+    }
+    if (!Faces.empty() && Strips == Faces.size()) return UnblendSolidArcEdges(Document, Sources, std::to_string(Faces.size()) + " fillet face(s)");
+    return ChangeSolidArcSelection(Document, FaceOperationKind::Delete, 0.0);
+}
+
+SolidArcCommandOutcome DeleteSolidArcEdges(SolidArcDocument& Document)
+{
+    const std::vector<std::string> Edges = Document.Selection.Edges;
+    std::map<std::string, std::set<std::string>> Sources;
+    size_t Blended = 0;
+    for (const std::string& Edge : Edges)
+    {
+        bool Found = false;
+        for (const std::string& Face : EdgeFaceNames(Edge))
+        {
+            std::string Blend, Source;
+            if (!BlendStripSource(Document, Face, Blend, Source)) continue;
+            Sources[Blend].insert(Source);
+            Found = true;
+        }
+        Blended += Found ? 1 : 0;
+    }
+    if (!Edges.empty() && Blended == Edges.size()) return UnblendSolidArcEdges(Document, Sources, std::to_string(Edges.size()) + " fillet edge(s)");
+    if (Blended > 0)
+    {
+        SolidArcCommandOutcome Outcome;
+        Outcome.Label   = "Delete " + std::to_string(Edges.size()) + " edge(s)";
+        Outcome.Refusal = "fillet edges and plain edges are picked together: delete them separately";
+        return Outcome;
+    }
+    return DissolveSolidArcNames(Document, SolidArcSelectionKind::Edge, Edges);
+}
+
+SolidArcCommandOutcome DeleteSolidArcVertices(SolidArcDocument& Document)
+{
+    return DissolveSolidArcNames(Document, SolidArcSelectionKind::Vertex, Document.Selection.Vertices);
+}
+
+SolidArcCommandOutcome DeleteSolidArcCurves(SolidArcDocument& Document, const std::vector<std::string>& Labels)
+{
+    std::string Captions;
+    for (const std::string& Label : Labels) Captions += (Captions.empty() ? "" : ", ") + CaptionOrLabel(Document, Label);
+    return RunCommand(Document, "Delete " + Captions, false, [&]() -> std::string
+    {
+        if (Labels.empty()) return "pick sketches or curves first";
+        for (const std::string& Label : Labels)
+        {
+            const FeatureStep* Step = FindStep(Document, Label);
+            if (!Step || (Step->Kind != FeatureStepKind::Sketch && Step->Kind != FeatureStepKind::SpaceCurve)) return "no sketch or curve labelled " + Label;
+            if (Document.Appearance.RemovedCurves.contains(Label)) return CaptionOrLabel(Document, Label) + " is already deleted";
+        }
+        for (const std::string& Label : UniqueKeys(Labels)) RetireSolidArcCurve(Document, Label);
+        return {};
+    }, 0);
+}
+
+SolidArcCommandOutcome DeleteSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const std::vector<int>& Points)
+{
+    const std::string Owner = CaptionOrLabel(Document, Sketch);
+    const std::string Label = "Delete " + std::to_string(Points.size()) + " point(s) of " + Owner;
+    SketchModel       Edited;
+    std::string       Problem;
+    int               Erased = 0;
+    if (const FeatureStep* Step = FindStep(Document, Sketch); !Step || Step->Kind != FeatureStepKind::Sketch) Problem = "no sketch labelled " + Sketch;
+    else if (Points.empty()) Problem = "pick sketch points first (mode 1)";
+    else
+    {
+        Edited = SolvedSketch(Document, *Step);
+        for (int Point : Points) if (Point < 0 || Point >= static_cast<int>(Edited.Points.size())) Problem = "point " + std::to_string(Point) + " is not in " + Owner;
+        if (Problem.empty()) Erased = EraseSketchPoints(Edited, Points);
+        if (Problem.empty() && Erased == 0) Problem = "no curve runs through the picked point(s)";
+    }
+    const bool Referenced = SolidArcSketchReferencedCondition(Document, Sketch);
+    // ① In place: the sketch itself changes (a step reading it follows when it still regenerates).
+    SolidArcCommandOutcome InPlace = RunCommand(Document, Label, false, [&]() -> std::string
+    {
+        if (!Problem.empty()) return Problem;
+        if (Edited.Curves.empty())
+        {
+            RetireSolidArcCurve(Document, Sketch);
+            return {};
+        }
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketch; });
+        Found->Sketch = Edited;
+        return {};
+    }, 0);
+    if (InPlace.AcceptedCondition || !Referenced || !Problem.empty()) return InPlace;
+
+    // ② Detached: the original stays for the steps that read it (off the scene); the remaining curves become a free sketch.
+    std::string Stem = Owner;
+    while (!Stem.empty() && std::isdigit(static_cast<unsigned char>(Stem.back()))) Stem.pop_back();
+    if (Stem.empty()) Stem = "Sketch";
+    const std::string Copy = NextCaption(Document, Stem);
+    return RunCommand(Document, Label + " into " + Copy + " (" + Owner + " kept for the steps that read it)", false, [&]() -> std::string
+    {
+        const auto Found = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketch; });
+        if (Found == Document.Tree.Steps.end()) return "no sketch labelled " + Sketch;
+        FeatureStep Detached = *Found;
+        RetireSolidArcCurve(Document, Sketch);
+        Detached.Label  = "Sketch#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Detached.Sketch = Edited;
+        Document.Captions[Detached.Label] = Copy;
+        Document.Tree.Steps.push_back(std::move(Detached));
+        return {};
+    });
 }
 
 } // namespace Frontier::SolidArc
