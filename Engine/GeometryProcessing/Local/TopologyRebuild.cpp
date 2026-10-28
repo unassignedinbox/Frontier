@@ -1065,4 +1065,148 @@ std::string DescribePlanarFaceProfile(const ModelPartition& Partition, BodyToken
     return Profile.Refusal.empty() ? std::string{} : Name + ": " + Profile.Refusal;
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    SLIVER BRIDGES
+//------------------------------------------------------------------------------------------------------------------------
+
+int OpenSliverBridges(const ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane, double CutSign, const FaceToken* Region, SketchProfile& Profile)
+{
+    constexpr double BridgeFraction = 1.0e-2;                                                // [-]   - Thinnest strip kept, per outline span
+    constexpr double LeadFraction   = 1.0e-3;                                                // [-]   - Past the rim, per profile scale (cutter lead)
+    constexpr double TurnFloor      = 5.0e-2;                                                // [-]   - |sin| between a moved side and its neighbours
+    BodyDescription Description;
+    if (!DescribeBody(Partition, Body, Description).empty()) return 0;
+    const BodyBlueprint& Blueprint = Description.Blueprint;
+    const double  Tolerance = 1.0e-9 * Description.Scale;                                     // [len] - Coplanar / parallel distance
+    const Vector3 Normal    = Plane.ZAxis * (CutSign < 0.0 ? 1.0 : -1.0);                    // [-]   - Outward normal of the faces cut into
+    const auto    Flatten   = [&](Vector3 Point) { const Vector3 Offset = Point - Plane.Origin; return Vector2{ Dot(Offset, Plane.XAxis), Dot(Offset, Plane.YAxis) }; };
+    const auto    Facing    = [&](int Face) { const auto* Surface = std::get_if<PlaneSurface>(&Blueprint.Faces[Face].Surface);
+                                              return Surface ? std::optional<Vector3>(Surface->Frame.ZAxis * SignOfSense(Blueprint.Faces[Face].Sense)) : std::nullopt; };
+
+    // ① Rims: straight edges of the coplanar faces facing Normal (the region's own edges excluded) whose neighbour is a
+    //    plane at 90° or sharper — the in-plane outward t × n of the rim leaves the material.
+    int RegionIndex = -1;
+    if (Region)
+        if (const auto Found = Description.FaceIndex.find(Region->Slot); Found != Description.FaceIndex.end()) RegionIndex = Found->second;
+    std::set<int> RegionEdges;
+    if (RegionIndex >= 0) for (const auto& Loop : Blueprint.Faces[RegionIndex].Loops) for (const BlueprintUse& Use : Loop) RegionEdges.insert(Use.Edge);
+    std::map<int, std::vector<int>> EdgeFaces;                                               // Edge → faces using it
+    for (size_t Face = 0; Face < Blueprint.Faces.size(); ++Face)
+        for (const auto& Loop : Blueprint.Faces[Face].Loops) for (const BlueprintUse& Use : Loop) EdgeFaces[Use.Edge].push_back(static_cast<int>(Face));
+    struct Rim { Vector2 From, To, Outward; };
+    std::vector<Rim> Rims;
+    for (int Face = 0; Face < static_cast<int>(Blueprint.Faces.size()); ++Face)
+    {
+        const std::optional<Vector3> Own = Facing(Face);
+        if (Face == RegionIndex || !Own || Dot(*Own, Normal) < 1.0 - 1.0e-12) continue;
+        if (std::fabs(Dot(std::get<PlaneSurface>(Blueprint.Faces[Face].Surface).Frame.Origin - Plane.Origin, Normal)) > Tolerance) continue;
+        for (const auto& Loop : Blueprint.Faces[Face].Loops)
+        {
+            for (const BlueprintUse& Use : Loop)
+            {
+                const BlueprintEdge& Edge = Blueprint.Edges[Use.Edge];
+                if (RegionEdges.contains(Use.Edge) || !std::holds_alternative<StraightLine>(Edge.Curve)) continue;
+                const bool    Forward = Use.Sense == Orientation::Forward;
+                const Vector3 From    = Blueprint.Vertices[Forward ? Edge.Start : Edge.End].Position;
+                const Vector3 To      = Blueprint.Vertices[Forward ? Edge.End : Edge.Start].Position;
+                if (!(Length(To - From) > Tolerance)) continue;
+                const Vector3 Outward = Cross(Normalize(To - From), Normal);                 // [-] - Leaves the face across this rim
+                bool Convex = false;
+                for (const int Other : EdgeFaces[Use.Edge])
+                {
+                    const std::optional<Vector3> Beyond = Other == Face ? std::nullopt : Facing(Other);
+                    if (Beyond && Dot(*Beyond, Outward) > 1.0e-6 && Dot(*Beyond, Normal) <= 1.0e-9) Convex = true;
+                }
+                if (Convex) Rims.push_back({ Flatten(From), Flatten(To), Normalize(Vector2{ Dot(Outward, Plane.XAxis), Dot(Outward, Plane.YAxis) }) });
+            }
+        }
+    }
+    if (Rims.empty()) return 0;
+
+    // ② The outline's span sets the thinnest strip worth keeping.
+    Vector2 Low{ 1.0e300, 1.0e300 }, High{ -1.0e300, -1.0e300 };
+    const auto Include = [&](Vector2 Point) { Low = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y) }; High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y) }; };
+    for (const ProfileLoop& Loop : Profile.Loops)
+        for (const ProfileSegment& Segment : Loop.Segments)
+        {
+            Include(Segment.Start);
+            Include(Segment.End);
+            if (Segment.Kind == ProfileSegmentKind::Arc || Segment.Kind == ProfileSegmentKind::Circle)
+            {
+                Include(Segment.Centre - Vector2{ Segment.Radius, Segment.Radius });
+                Include(Segment.Centre + Vector2{ Segment.Radius, Segment.Radius });
+            }
+            for (const Vector2& Pole : Segment.Spline.Poles) Include(Pole);
+        }
+    const double Bridge = BridgeFraction * Length(High - Low);                               // [len] - Strips up to this thin open
+    const double Lead   = LeadFraction * Profile.Scale;                                      // [len] - Past the rim
+
+    // ③ Outer loops: a straight side between straight neighbours, parallel to a rim, facing out across it, within its
+    //    extent and at most Bridge inside it moves out to Lead past it; the corners are re-intersected.
+    const SketchProfile Original = Profile;
+    int Opened = 0;
+    for (size_t LoopIndex = 0; LoopIndex < Profile.Loops.size(); ++LoopIndex)
+    {
+        ProfileLoop&       Loop  = Profile.Loops[LoopIndex];
+        const ProfileLoop& Was   = Original.Loops[LoopIndex];
+        const size_t       Count = Loop.Segments.size();
+        if (!(Loop.SignedArea > 0.0) || Count < 3) continue;
+        std::vector<double>  Shift(Count, 0.0);
+        std::vector<Vector2> Along(Count), Origin(Count);
+        bool Moved = false;
+        for (size_t Index = 0; Index < Count; ++Index)
+        {
+            const ProfileSegment& Side = Loop.Segments[Index];
+            const double          Span = Distance(Side.Start, Side.End);
+            if (Side.Kind != ProfileSegmentKind::Line || !(Span > Tolerance)) continue;
+            Along[Index]  = (Side.End - Side.Start) * (1.0 / Span);
+            Origin[Index] = Side.Start;
+            const ProfileSegment& Before = Loop.Segments[(Index + Count - 1) % Count];
+            const ProfileSegment& After  = Loop.Segments[(Index + 1) % Count];
+            if (Before.Kind != ProfileSegmentKind::Line || After.Kind != ProfileSegmentKind::Line) continue;
+            const Vector2 Out = { Along[Index].Y, -Along[Index].X };                         // [-] - CCW outer loop: material of the cut on the left
+            for (const Rim& Edge : Rims)
+            {
+                if (Dot(Out, Edge.Outward) < 1.0 - 1.0e-12) continue;
+                const double Gap   = Dot(Edge.From - Side.Start, Out);                       // [len] - Strip left between the side and the rim
+                const double Skew  = Dot(Edge.From - Side.End, Out) - Gap;
+                if (std::fabs(Skew) > Tolerance || Gap < -Tolerance || Gap > Bridge) continue;
+                const double  Reach = Distance(Edge.From, Edge.To);
+                const Vector2 Rail  = (Edge.To - Edge.From) * (1.0 / Reach);
+                const double  First = Dot(Side.Start - Edge.From, Rail), Last = Dot(Side.End - Edge.From, Rail);
+                if (std::min(First, Last) < -Tolerance || std::max(First, Last) > Reach + Tolerance) continue;
+                Shift[Index] = Gap + Lead;
+                Moved        = true;
+                break;
+            }
+        }
+        if (!Moved) continue;
+        bool Usable = true;
+        for (size_t Index = 0; Index < Count && Usable; ++Index)
+        {
+            const size_t Previous = (Index + Count - 1) % Count;
+            if (Shift[Index] == 0.0 && Shift[Previous] == 0.0) continue;
+            const Vector2 OutPrevious = { Along[Previous].Y, -Along[Previous].X }, OutIndex = { Along[Index].Y, -Along[Index].X };
+            const Vector2 Base        = Origin[Previous] + OutPrevious * Shift[Previous];
+            const Vector2 Other       = Origin[Index] + OutIndex * Shift[Index];
+            const double  Turn        = Cross(Along[Previous], Along[Index]);
+            if (std::fabs(Turn) < TurnFloor) { Usable = false; break; }
+            const Vector2 Corner = Base + Along[Previous] * (Cross(Other - Base, Along[Index]) / Turn);
+            Loop.Segments[Previous].End = Corner;
+            Loop.Segments[Index].Start  = Corner;
+        }
+        for (size_t Index = 0; Index < Count && Usable; ++Index)                             // Every side keeps its direction
+        {
+            const ProfileSegment& Side = Loop.Segments[Index];
+            if (Side.Kind == ProfileSegmentKind::Line && Dot(Side.End - Side.Start, Was.Segments[Index].End - Was.Segments[Index].Start) <= 0.0) Usable = false;
+        }
+        if (!Usable) { Profile = Original; return 0; }
+        for (const double Each : Shift) Opened += Each != 0.0 ? 1 : 0;
+    }
+    if (Opened == 0) return 0;
+    ArrangeProfileLoops(Profile);
+    if (!Profile.Refusal.empty()) { Profile = Original; return 0; }
+    return Opened;
+}
+
 } // namespace Frontier::GeometryProcessing

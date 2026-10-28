@@ -39,6 +39,16 @@ namespace Frontier::GeometryProcessing
 //    an imprinted region, which no push can move (its neighbours would have to move with it).
 [[nodiscard]] std::string DescribePlanarFaceProfile(const ModelPartition& Partition, BodyToken Body, FaceToken Face, SketchProfile& Profile, OrthonormalFrame& Plane,
                                                     bool& IslandCondition);
+// 💡 Sliver bridges (the Windows report "extrude manifold suppose to remove or move the top part"): a cut outline on a
+//    planar face whose straight side runs parallel to a straight, convex rim edge of that face (its neighbour square or
+//    sharper, so the region beyond the rim is air), closer than 1 % of the outline's span, would leave a strip of the face
+//    thinner than that over the cut — a pocket drawn "to the edge" a pixel short. The side moves out past the rim by the
+//    cutter lead (1e-3·scale) and its neighbouring sides follow along their own lines, so the walls stay exact and the cut
+//    opens through the rim. Plane: the outline's frame; CutSign: the sign of the cut along Plane 𝑧 (the rim faces face
+//    against it); Region: the imprinted face being pushed (its own edges are not rims), or none. Returns the sides moved;
+//    the profile is unchanged when none qualifies or the moved outline would cross itself.
+[[nodiscard]] int OpenSliverBridges(const ModelPartition& Partition, BodyToken Body, const OrthonormalFrame& Plane, double CutSign, const FaceToken* Region,
+                                    SketchProfile& Profile);
 [[nodiscard]] std::string ThickenSheet(ModelPartition& Partition, BodyToken Body, double Thickness, BodyToken& Result,
                                        std::vector<FaceChangeHistory>& Histories, AuditReport& Audit, std::string& Method);
 

@@ -1,0 +1,22 @@
+{
+  "Frame": 219,
+  "Title": "Untitled",
+  "DocumentPath": "",
+  "Dirty": true,
+  "Steps": [{"Label": "Sketch#1", "Caption": "Block1 · Sketch", "Refused": false}, {"Label": "Extrude#2", "Caption": "Block1 · Extrude", "Refused": false}, {"Label": "Sketch#3", "Caption": "Rectangle1 · Sketch", "Refused": false}, {"Label": "Imprint#4", "Caption": "Imprint1 · Imprint", "Refused": false}, {"Label": "Change#5", "Caption": "ExtrudeFaces1 · FaceOperation", "Refused": false}, {"Label": "Sketch#6", "Caption": "Rectangle2 · Sketch", "Refused": false}],
+  "Body": {"Faces": 10, "Edges": 24, "Vertices": 16, "Genus": 0, "Volume": 7.761764472, "Sound": true},
+  "Selection": {"Faces": [], "Edges": [], "Curves": []},
+  "Curves": [],
+  "Sheet": false,
+  "PoleDrags": 0,
+  "PickMode": 1,
+  "Hover": "Edge(Extrude#2.Side(Line1)|Extrude#2.Side(Line2)/2)",
+  "Camera": {"Azimuth": -0.7853981634, "Elevation": 0.6154797087, "Distance": 8, "Target": [0, 0, 0], "Orthographic": false},
+  "Bevel": {"Active": true, "Shape": "Fillet", "Size": -0.296, "Pinned": false, "Variable": false, "EndSize": 0, "Flipped": false, "PreviewFaces": 15, "Refusal": "", "Verb": 2, "Profile": "Sketch#6", "Combination": 2, "Depth": 0, "DepthPointer": false},
+  "Drawing": {"Active": false, "Kind": "Rectangle", "Plane": 0, "Form": "Hermite", "Centre": false, "Points": [[-0.3, -0.3], [0.3, 0.3]], "Solid": false, "SolidKind": "Block", "Lift": 0, "Elevation": 0, "Sides": 6, "Combination": 4, "Refusal": ""},
+  "Undo": 6,
+  "Redo": 0,
+  "Welcome": false,
+  "Status": "Extrude Rectangle2 (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts",
+  "Viewport": [322, 146, 926, 723]
+}

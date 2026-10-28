@@ -171,6 +171,15 @@ struct SolidArcBevelSession
     //    material (ProfileMaterial: +1 along the sketch +𝑧, −1 along −𝑧) cuts, away from it adds.
     bool                              AutoCombinationCondition = false;                      // [-]   - Profile: Boolean follows the direction
     int                               ProfileMaterial = 0;                                   // [-]   - Profile: material side of the sketch plane
+    // 📝 Blender's extrude: the distance follows the pointer along the extrusion axis (outward face normal / sketch +𝑧
+    //    through the selection's centre), measured from where a drag began (anchor), so the face tracks the cursor.
+    bool                              AxisCondition   = false;                               // [-]   - An axis is known (else pointer x)
+    GeometryProcessing::Vector3       AxisOrigin      = {};                                  // [len] - Point on the axis (selection centre)
+    GeometryProcessing::Vector3       AxisDirection   = {};                                  // [-]   - Unit direction of + distance
+    bool                              AxisAnchorCondition = false;                           // [-]   - A pointer drive is under way
+    double                            AxisAnchorParameter = 0.0;                             // [len] - Axis parameter when it began
+    double                            AxisAnchorValue = 0.0;                                 // [len] - Distance / depth when it began
+    bool                              AxisAnchorFine  = false;                               // [-]   - Shift held when it began
 };
 
 // 📝 Drawing session (Shift+A line, Shift+Q rectangle, Shift+W circle, Shift+S curve; arc / slot from the Draw card):

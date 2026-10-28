@@ -703,6 +703,49 @@ void OpenBevelSession(SolidArcWorkspaceState& State, BlendProfile Shape)
                     + (Refitted ? " · starts at " + FormatLength(State.Bevel.Size) + " m to fit the edges" : std::string{}));
 }
 
+// 📝 Blender's extrude axis: the faces' outward normals averaged through the centre of their feet (face E, inset depth),
+//    or the sketch's +𝑧 through its profile centroid (sketch E). Opposed normals (no common direction) leave no axis, and
+//    the pointer's x drives the distance as before.
+void ResolveExtrudeAxis(SolidArcWorkspaceState& State)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    Bevel.AxisCondition       = false;
+    Bevel.AxisAnchorCondition = false;
+    Vector3 Centre = {}, Direction = {};
+    int     Count  = 0;
+    if (Bevel.Verb == SolidArcSessionVerb::Profile)
+    {
+        const auto Found = std::find_if(State.Document.Tree.Steps.begin(), State.Document.Tree.Steps.end(),
+                                        [&](const FeatureStep& Step) { return Step.Label == Bevel.ProfileLabel && Step.Kind == FeatureStepKind::Sketch; });
+        if (Found == State.Document.Tree.Steps.end()) return;
+        OrthonormalFrame Plane = Found->Plane;
+        Plane.Origin           = Plane.Origin + Plane.ZAxis * EvaluateFeatureValue(State.Document.Tree, Found->Elevation);
+        const auto          Solved  = State.Document.Regeneration.Sketches.find(Bevel.ProfileLabel);
+        const SketchProfile Profile = ExtractSketchProfile(Solved != State.Document.Regeneration.Sketches.end() ? Solved->second : Found->Sketch);
+        const Vector2       Middle  = Profile.Refusal.empty() ? Profile.Centroid : Vector2{};
+        Centre    = Plane.Origin + Plane.XAxis * Middle.X + Plane.YAxis * Middle.Y;
+        Direction = Plane.ZAxis;
+        Count     = 1;
+    }
+    else
+    {
+        for (const std::string& Name : State.Document.Selection.Faces)
+        {
+            const SolidArcJointOrigin Origin = ResolveSolidArcJointOrigin(State.Document, SolidArcSelectionKind::Face, Name);
+            if (!Origin.Refusal.empty()) continue;
+            const SolidArcFaceFoot Foot = ProjectOntoSolidArcFace(State.Document, Name, Origin.Frame.Origin);
+            if (!Foot.FoundCondition) continue;
+            Centre    = Centre + Foot.Position;
+            Direction = Direction + Foot.Normal;
+            ++Count;
+        }
+    }
+    if (Count == 0 || !(Length(Direction) > 0.5 * Count)) return;                            // Opposed faces: no common axis
+    Bevel.AxisCondition = true;
+    Bevel.AxisOrigin    = Centre * (1.0 / Count);
+    Bevel.AxisDirection = Normalize(Direction);
+}
+
 // Plasticity E: extrude the selected faces; the pointer sets the signed distance like the fillet size.
 void OpenExtrudeSession(SolidArcWorkspaceState& State)
 {
@@ -716,8 +759,10 @@ void OpenExtrudeSession(SolidArcWorkspaceState& State)
     State.Bevel.ActiveCondition = true;
     State.Bevel.Verb            = SolidArcSessionVerb::Extrude;
     State.Bevel.Size            = Remembered;
+    ResolveExtrudeAxis(State);
     WriteBevelText(State.Bevel);
-    Announce(State, "Extrude (E): move horizontally · out adds, in pushes / cuts a pocket (extrude manifold) · click edits the faces · Enter / right-click applies · Esc aborts");
+    Announce(State, std::string(State.Bevel.AxisCondition ? "Extrude (E): the face follows the pointer along its normal (Blender)" : "Extrude (E): move horizontally") +
+                    " · out adds, in pushes / cuts a pocket (extrude manifold) · click edits the faces · Enter / right-click applies · Esc aborts");
 }
 
 // Plasticity O on faces (offset-curve of the face boundary) · Blender I: inset the selected planar faces. The pointer sets
@@ -735,6 +780,7 @@ void OpenInsetSession(SolidArcWorkspaceState& State)
     State.Bevel.Verb            = SolidArcSessionVerb::Inset;
     State.Bevel.Size            = Remembered ? State.LastCommand.Amount : 0.1;
     State.Bevel.Depth           = Remembered ? State.LastCommand.Depth : 0.0;
+    ResolveExtrudeAxis(State);                                                               // H (depth) follows the pointer along the normal
     WriteBevelText(State.Bevel);
     Announce(State, "Inset (O / I): move horizontally · D distance · H depth (− pocket) · click edits the faces · Enter / right-click applies · Esc aborts");
 }
@@ -1121,6 +1167,40 @@ bool ProjectWorldPoint(const SolidArcWorkspaceState& State, const OrbitCameraFra
     if (Clip[3] <= 1.0e-12) return false;
     Pixel = ImVec2(Rect[0] + float((Clip[0] / Clip[3] * 0.5 + 0.5) * Rect[2]), Rect[1] + float((Clip[1] / Clip[3] * 0.5 + 0.5) * Rect[3]));
     return true;
+}
+
+// 💡 Blender's extrude drive: the closest point of the pointer ray to the extrusion axis, for the verbs that move along it
+//    (face E, sketch E, inset depth H). None when the axis points at the camera (its 80 px of travel projects under 24 px,
+//    where the closest point is ill-conditioned): the pointer's x drives instead.
+[[nodiscard]] std::optional<double> MeasureExtrudeAxis(const SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, ImVec2 Local)
+{
+    const SolidArcBevelSession& Bevel = State.Bevel;
+    const bool Along = Bevel.Verb == SolidArcSessionVerb::Extrude || Bevel.Verb == SolidArcSessionVerb::Profile || (Bevel.Verb == SolidArcSessionVerb::Inset && Bevel.DepthEnabled);
+    if (!Bevel.AxisCondition || !Along) return std::nullopt;
+    const double Travel = 80.0 * Frame.WorldPerPixel;                                       // [len] - Probe length along the axis
+    ImVec2 Base, Tip;
+    if (!ProjectWorldPoint(State, Frame, Bevel.AxisOrigin, Base) || !ProjectWorldPoint(State, Frame, Bevel.AxisOrigin + Bevel.AxisDirection * Travel, Tip)) return std::nullopt;
+    if (std::hypot(Tip.x - Base.x, Tip.y - Base.y) < 24.0f) return std::nullopt;
+    return MeasureAxisParameter(CastOrbitRay(Frame, Local.x, Local.y), Bevel.AxisOrigin, Bevel.AxisDirection);
+}
+
+// Drives the extrusion from the pointer's axis parameter: the distance (inset: depth) at the anchor plus the travel since
+// (Shift a tenth). A new anchor is taken when the drive starts or Shift changes, so the face never jumps.
+void DriveExtrudeAxis(SolidArcWorkspaceState& State, double Parameter)
+{
+    SolidArcBevelSession& Bevel = State.Bevel;
+    const bool Fine  = ImGui::GetIO().KeyShift;
+    double&    Value = Bevel.Verb == SolidArcSessionVerb::Inset ? Bevel.Depth : Bevel.Size;
+    if (!Bevel.AxisAnchorCondition || Bevel.AxisAnchorFine != Fine)
+    {
+        Bevel.AxisAnchorCondition = true;
+        Bevel.AxisAnchorParameter = Parameter;
+        Bevel.AxisAnchorValue     = Value;
+        Bevel.AxisAnchorFine      = Fine;
+        return;
+    }
+    const double Wanted = Bevel.AxisAnchorValue + (Parameter - Bevel.AxisAnchorParameter) * (Fine ? 0.1 : 1.0);
+    if (std::abs(Wanted - Value) >= 0.5e-4) AdjustBevelSize(State, Wanted - Value);
 }
 
 // Viewport pixel (local) → construction-plane coordinates; false when the ray runs parallel to the plane.
@@ -2224,10 +2304,11 @@ void OpenSketchExtrudeSession(SolidArcWorkspaceState& State)
     State.Bevel.AutoCombinationCondition = State.Bevel.ProfileMaterial != 0;
     State.Bevel.Size            = Remembered;
     ResolveProfileCombination(State.Bevel);
+    ResolveExtrudeAxis(State);
     WriteBevelText(State.Bevel);
     const auto Caption = State.Document.Captions.find(Label);
     Announce(State, "Extrude " + (Caption != State.Document.Captions.end() ? Caption->second : Label) +
-                    (State.Bevel.AutoCombinationCondition ? std::string(" (E, extrude manifold): drag into the body cuts a pocket, out of it adds") : std::string(" (E): move horizontally")) +
+                    (State.Bevel.AutoCombinationCondition ? std::string(" (E, extrude manifold): the profile follows the pointer — into the body cuts a pocket, out of it adds") : std::string(" (E): the profile follows the pointer along its normal")) +
                     " · Q union · W difference · E intersect · R new body · A auto · Enter / right-click applies · Esc aborts");
 }
 
@@ -10421,10 +10502,15 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
         //    with no button held, so a press-drag did nothing and its release could deselect the edge. Now a left drag
         //    on empty space sizes it too, and a click away from an edge keeps the picked edges.
         if (!HandleOwned && Hovered && !OverCube && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { Bevel.PointerDragCondition = false; Bevel.DragLast = Io.MousePos.x; }
+        // 💡 The Windows report "when i extrude it goes in opposite direction of the direction i drag": face E, sketch E and
+        //    inset depth follow the pointer along the extrusion axis (Blender), not the pointer's x.
+        const std::optional<double> AxisParameter = MeasureExtrudeAxis(State, Frame, Local);
+        bool AxisDriven = false;                                                             // [-] - The axis drove the value this frame
         if (!HandleOwned && ImGui::IsMouseDown(ImGuiMouseButton_Left) && Io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] > ClickTolerance * ClickTolerance && Hovered)
         {
             if (!Bevel.PointerDragCondition) { Bevel.PointerDragCondition = true; Bevel.PinnedCondition = false; }
-            if (Io.MousePos.x != Bevel.DragLast) AdjustBevelSize(State, (Io.MousePos.x - Bevel.DragLast) * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
+            if (AxisParameter) { DriveExtrudeAxis(State, *AxisParameter); AxisDriven = true; }
+            else if (Io.MousePos.x != Bevel.DragLast) AdjustBevelSize(State, (Io.MousePos.x - Bevel.DragLast) * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
             Bevel.DragLast = Io.MousePos.x;
         }
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) && Bevel.PointerDragCondition)
@@ -10432,8 +10518,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
             Bevel.PointerDragCondition = false;
             Bevel.PinnedCondition      = true;                                                   // The dragged size stays when the pointer moves on
         }
-        if (!HandleOwned && Hovered && Idle && (!Bevel.PinnedCondition || (Bevel.Verb == SolidArcSessionVerb::Inset && Bevel.DepthEnabled)) && Io.MouseDelta.x != 0.0f)
-            AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
+        if (!HandleOwned && Hovered && Idle && (!Bevel.PinnedCondition || (Bevel.Verb == SolidArcSessionVerb::Inset && Bevel.DepthEnabled)))
+        {
+            if (AxisParameter) { DriveExtrudeAxis(State, *AxisParameter); AxisDriven = true; }
+            else if (Io.MouseDelta.x != 0.0f) AdjustBevelSize(State, Io.MouseDelta.x * Frame.WorldPerPixel * (Io.KeyShift ? 0.1 : 1.0) * 0.5);
+        }
+        if (!AxisDriven) Bevel.AxisAnchorCondition = false;                                  // The next drive re-anchors (typed / pinned values kept)
         if (LeftClick && !OverCube && !HandleOwned)
         {
             bool EdgeCondition = Bevel.Verb != SolidArcSessionVerb::Blend || (State.HoverIdentity & IdentityEdgeBit) != 0;
@@ -10694,9 +10784,12 @@ void DrawViewport(SolidArcWorkspaceState& State, ImTextureID ViewportTexture, Im
                        : State.Fill.ActiveCondition
                            ? "Fill: hover inside closed curves (overlaps are their own regions) · click fills the highlighted region · E then extrudes a solid · Esc / F / right-click end"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Profile
-                           ? "Move: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
+                           ? "Move along the sketch normal: distance (Shift fine) · Q union · W difference · E intersect · R new body · Enter / right-click finish · Esc abort"
                        : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Inset
                            ? "Move: inset distance or depth (Shift fine) · D distance · H depth (− pocket) · click edits the faces · Enter / right-click finish · Esc abort"
+                       : State.Bevel.ActiveCondition && State.Bevel.Verb == SolidArcSessionVerb::Extrude
+                           ? (State.Bevel.AxisCondition ? "Extrude: the face follows the pointer along its normal (Blender; Shift fine) · out adds, in pushes / cuts · type a distance in the card · click edits the faces · Enter / right-click finish · Esc abort"
+                                                        : "Extrude: move horizontally (Shift fine) · out adds, in pushes / cuts · type a distance in the card · click edits the faces · Enter / right-click finish · Esc abort")
                        : State.Bevel.ActiveCondition
                            ? "Drag anywhere / a handle: size, stops at the max (Shift fine) · corner diamonds: variable · D fillet · C chamfer · V taper · F flip anchor · click / Alt (loop) / Ctrl+Alt (ring) edits edges · Enter / right-click finish · Esc abort"
                        : State.PickMode == SolidArcPickMode::ControlPoint

@@ -124,6 +124,7 @@ namespace
     GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
     GateTally PointCutGate    = { "W62", "Cut at crossings and duplicate 2D objects (the request \"cut at intersections of 2d objects … circle and another circle overlap … ctrl to snap to that point\", \"add duplicate hotkey\"): one cut at a crossing of two overlapping circles (separate sketches) breaks both at both crossings — lens arcs + outer arcs, each sketch still a closed profile (extrudes to πr²h), one undo entry; a line through a circle breaks with it; a lone circle halves; a point on no curve / on ends only refuses; sketch copies carried by a rigid map (scale refused)", "1e-9 rel" };
     GateTally CurveFlowGate   = { "W63", "Point on curve and Flow along curve (the request \"add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve\"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8", "1e-9 · 1e-6 bent" };
+    GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
 
@@ -474,6 +475,185 @@ void ValidateExtrudeManifold()
         Whole.Selection.Faces = { PlanarFaceWhere(Whole, { 0.0, 0.0, 1.0 }, 1) };
         Expect(ChangeSolidArcSelection(Whole, FaceOperationKind::Extrude, -0.25));
         TallyVolume(ManifoldGate, Whole, 6.0, "whole top face E −0.25 → pushed (the block lowers), no cut");
+    }
+}
+
+// W64: notches at a face edge. A region bounded partly by the face's own edge (the top edge of the front face) pushed in
+// must open through the neighbour: Blender's extrude manifold removes the neighbour's strip instead of leaving a lid of
+// zero thickness in its plane. The volume cannot tell a lid apart (it has none), so rays from outside measure the opening.
+void ValidateEdgeNotch()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto NewBlock = []()
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Notch");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 4.0; Block.Depth = 2.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        return Part;
+    };
+    const auto OnFace = [](std::vector<Vector2> Corners, OrthonormalFrame Plane, bool FillCondition)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Rectangle; Request.Points = std::move(Corners); Request.ClosedCondition = true;
+        Request.PlaneCondition = true; Request.Plane = Plane; Request.FillCondition = FillCondition;
+        return Request;
+    };
+    // Distance along the ray From → Towards to the first face it meets (−1: none).
+    const auto HitDistance = [](const SolidArcDocument& Part, std::array<double, 3> From, std::array<double, 3> Towards)
+    {
+        const SolidArcScene               Scene = BuildSolidArcScene(Part);
+        const std::optional<SolidArcPick> Hit   = PickSolidArcScene(Scene, RayBetween(From, Towards), 0.0);
+        return Hit && !(Hit->Identity & IdentityEdgeBit) ? Hit->Distance : -1.0;
+    };
+    const OrthonormalFrame Top{ { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const OrthonormalFrame Front{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };   // y = 0 face, outward −y
+    struct NotchCase
+    {
+        const char*           Title;
+        std::vector<Vector2>  Corners;                                                       // Rectangle on the face (plane coordinates)
+        bool                  TopFace;                                                       // Drawn on the top face (else the front)
+        double                Amount;                                                        // Signed E distance
+        double                Expected;                                                      // Volume
+        std::array<double, 3> From, Towards;                                                 // Opening probe
+        double                Reach;                                                         // Expected probe distance (to the notch floor)
+    };
+    const std::vector<NotchCase> Cases = {
+        { "front, touching the top edge, E −0.5",        { { 1.0, 0.5 }, { 2.0, 1.0 } },  false, -0.5, 8.0 - 0.5 * 0.5,       { 1.5, 0.25, 5.0 }, { 1.5, 0.25, 0.0 }, 4.5 },
+        { "front, overhanging the top edge, E −0.5",     { { 1.0, 0.5 }, { 2.0, 1.4 } },  false, -0.5, 8.0 - 0.5 * 0.5,       { 1.5, 0.25, 5.0 }, { 1.5, 0.25, 0.0 }, 4.5 },
+        { "front, touching the top-left corner, E −0.5", { { 0.0, 0.5 }, { 1.0, 1.0 } },  false, -0.5, 8.0 - 0.5 * 0.5,       { 0.5, 0.25, 5.0 }, { 0.5, 0.25, 0.0 }, 4.5 },
+        { "front, overhanging top and left, E −0.5",     { { -0.5, 0.5 }, { 1.0, 1.5 } }, false, -0.5, 8.0 - 0.5 * 0.5,       { 0.5, 0.25, 5.0 }, { 0.5, 0.25, 0.0 }, 4.5 },
+        { "front, touching the bottom edge, E −0.5",     { { 1.0, 0.0 }, { 2.0, 0.4 } },  false, -0.5, 8.0 - 0.5 * 0.4,       { 1.5, 0.25, -5.0 }, { 1.5, 0.25, 0.0 }, 5.4 },
+        { "front, touching the top edge, E −0.75 deep",  { { 2.5, 0.3 }, { 3.5, 1.0 } },  false, -0.75, 8.0 - 0.75 * 0.7,     { 3.0, 0.5, 5.0 }, { 3.0, 0.5, 0.0 }, 4.7 },
+        { "front, touching the top edge, through −2.5",  { { 1.0, 0.5 }, { 2.0, 1.0 } },  false, -2.5, 8.0 - 2.0 * 0.5,       { 1.5, 1.0, 5.0 }, { 1.5, 1.0, 0.0 }, 4.5 },
+        { "top, touching the front edge, E −0.4",        { { 1.0, 0.0 }, { 2.0, 0.8 } },  true,  -0.4, 8.0 - 0.4 * 0.8,       { 1.5, -5.0, 0.8 }, { 1.5, 0.0, 0.8 }, 5.8 },
+        // The report: the rectangle stops a hair (1e-7) or a few pixels (5 mm) short of the edge — the strip opens.
+        { "front, 1e-7 short of the top edge, E −0.5",   { { 1.0, 0.5 }, { 2.0, 1.0 - 1.0e-7 } }, false, -0.5, 8.0 - 0.5 * 0.5, { 1.5, 0.25, 5.0 }, { 1.5, 0.25, 0.0 }, 4.5 },
+        { "front, 5 mm short of the top edge, E −0.5",   { { 1.0, 0.5 }, { 2.0, 0.995 } }, false, -0.5, 8.0 - 0.5 * 0.5,      { 1.5, 0.25, 5.0 }, { 1.5, 0.25, 0.0 }, 4.5 },
+        { "front, 3 mm short of top and left, E −0.5",   { { 0.003, 0.5 }, { 1.0, 0.997 } }, false, -0.5, 8.0 - 0.5 * 0.5,    { 0.5, 0.25, 5.0 }, { 0.5, 0.25, 0.0 }, 4.5 },
+        { "front, 5 mm short, through −2.5",             { { 1.0, 0.5 }, { 2.0, 0.995 } }, false, -2.5, 8.0 - 2.0 * 0.5,      { 1.5, 1.0, 5.0 }, { 1.5, 1.0, 0.0 }, 4.5 },
+        { "top, 4 mm short of the front edge, E −0.4",   { { 1.0, 0.004 }, { 2.0, 0.8 } }, true,  -0.4, 8.0 - 0.4 * 0.8,      { 1.5, -5.0, 0.8 }, { 1.5, 0.0, 0.8 }, 5.8 },
+        // Control: 50 mm short is a wall of 4.6 % of the outline (over the 1 % bridge) — kept, the probe lands on the top.
+        { "front, 50 mm short (a real wall, kept), E −0.5", { { 1.0, 0.5 }, { 2.0, 0.95 } }, false, -0.5, 8.0 - 0.5 * 0.45,   { 1.5, 0.25, 5.0 }, { 1.5, 0.25, 0.0 }, 4.0 },
+    };
+    for (const NotchCase& Case : Cases)
+    {
+        const OrthonormalFrame& Plane = Case.TopFace ? Top : Front;
+        // ① 2D cutter path: imprint the region, pick it with a ray, face E.
+        {
+            SolidArcDocument Part = NewBlock();
+            Expect(DrawSolidArcSketch(Part, OnFace(Case.Corners, Plane, false)));
+            const SolidArcCommandOutcome Made = ImprintSolidArcSketch(Part, Part.Tree.Steps.back().Label);
+            const Vector2 Middle = (Case.Corners[0] + Case.Corners[1]) * 0.5;
+            const Vector2 Inside = { std::clamp(Middle.X, 0.05, Case.TopFace ? 3.95 : 3.95), std::clamp(Middle.Y, 0.05, Case.TopFace ? 1.95 : 0.95) };
+            const Vector3 Spot   = Plane.Origin + Plane.XAxis * Inside.X + Plane.YAxis * Inside.Y;
+            const Vector3 Out    = Spot + Plane.ZAxis * 5.0;
+            const std::string Face = PickAndSelect(Part, RayBetween({ Out.X, Out.Y, Out.Z }, { Spot.X, Spot.Y, Spot.Z }), false);
+            const SolidArcCommandOutcome Pushed = ChangeSolidArcSelection(Part, FaceOperationKind::Extrude, Case.Amount);
+            const double Reach = HitDistance(Part, Case.From, Case.Towards);
+            const double Relative = std::abs(Part.Summary.Volume - Case.Expected) / Case.Expected;
+            Tally(EdgeNotchGate, std::max(Relative, std::abs(Reach - Case.Reach)), Made.AcceptedCondition && Pushed.AcceptedCondition && Part.Summary.SoundCondition && Relative <= 1.0e-9 && std::abs(Reach - Case.Reach) <= 1.0e-6,
+                  Format("face E (imprinted %s) %s: V %.9f (expect %.9f), probe %.6f (expect %.6f, a lid reads less), %d faces%s", Face.c_str(), Case.Title, Part.Summary.Volume, Case.Expected, Reach, Case.Reach,
+                         Part.Summary.Faces, Pushed.Refusal.empty() ? (Made.Refusal.empty() ? "" : (" · " + Made.Refusal).c_str()) : (" · " + Pushed.Refusal).c_str()));
+        }
+        // ② Sketch E path: the filled rectangle extruded inward (auto Difference, started 1 mm outside).
+        {
+            SolidArcDocument Part = NewBlock();
+            Expect(DrawSolidArcSketch(Part, OnFace(Case.Corners, Plane, true)));
+            const SolidArcCommandOutcome Cut = ExtrudeSolidArcSketch(Part, Part.Tree.Steps.back().Label, Case.Amount, FeatureCombination::Difference, {}, 1.0e-3);
+            const double Reach = HitDistance(Part, Case.From, Case.Towards);
+            const double Relative = std::abs(Part.Summary.Volume - Case.Expected) / Case.Expected;
+            Tally(EdgeNotchGate, std::max(Relative, std::abs(Reach - Case.Reach)), Cut.AcceptedCondition && Part.Summary.SoundCondition && Relative <= 1.0e-9 && std::abs(Reach - Case.Reach) <= 1.0e-6,
+                  Format("sketch E %s: V %.9f (expect %.9f), probe %.6f (expect %.6f), %d faces%s", Case.Title, Part.Summary.Volume, Case.Expected, Reach, Case.Reach, Part.Summary.Faces,
+                         Cut.Refusal.empty() ? "" : (" · " + Cut.Refusal).c_str()));
+        }
+    }
+
+    // ④ Stress: 40 seeded rectangles on the front, top and right faces, approaching the high-v rim and / or the low-u rim
+    //    with gaps from 0 to 3 % of the outline span (0 … 0.8 % open, 1.5 % / 3 % are walls kept), depths 0.2 … through,
+    //    each by face E (imprinted) and sketch E: sound and the closed-form volume of the effective rectangle.
+    {
+        struct Host { const char* Name; OrthonormalFrame Plane; double Extent[2]; double Thickness; };
+        const Host Hosts[] = {
+            { "front", Front, { 4.0, 1.0 }, 2.0 },
+            { "top",   Top,   { 4.0, 2.0 }, 1.0 },
+            { "right", OrthonormalFrame{ { 4.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } }, { 2.0, 1.0 }, 4.0 },
+        };
+        const double Fractions[] = { 0.0, 1.0e-9, 1.0e-6, 1.0e-4, 3.0e-3, 8.0e-3, 1.5e-2, 3.0e-2 };   // [-] - Gap per outline span
+        uint64_t Seed = 0x9E3779B97F4A7C15ull;
+        const auto Next = [&]() { Seed ^= Seed << 13; Seed ^= Seed >> 7; Seed ^= Seed << 17; return double(Seed >> 11) * (1.0 / 9007199254740992.0); };
+        int Tried = 0, Failed = 0;
+        double Worst = 0.0;
+        std::string Notes;
+        for (int Case = 0; Case < 40; ++Case)
+        {
+            const Host&  Face   = Hosts[Case % 3];
+            const bool   High   = Case % 4 != 1, Low = Case % 4 != 0;                       // Which rims it approaches
+            const double Width  = 0.5 + 0.5 * Next(), Height = 0.3 + 0.25 * Face.Extent[1] * Next();
+            const double HighFraction = Fractions[size_t(Next() * 8.0) % 8], LowFraction = Fractions[size_t(Next() * 8.0) % 8];
+            const double Span   = std::hypot(Width, Height);
+            const double U0     = Low ? LowFraction * Span : 0.3 + 0.5 * Next();
+            const double V1     = High ? Face.Extent[1] - HighFraction * Span : Face.Extent[1] - 0.1 - 0.1 * Next();
+            const double U1 = U0 + Width, V0 = V1 - Height;
+            const double Depths[] = { 0.2, 0.45 * Face.Thickness, Face.Thickness + 0.5 };
+            const double Depth  = Depths[size_t(Next() * 3.0) % 3];
+            const double UEff   = Low && LowFraction <= 1.0e-2 ? 0.0 : U0;                     // Opened rims reach the edge
+            const double VEff   = High && HighFraction <= 1.0e-2 ? Face.Extent[1] : V1;
+            const double Expected = 8.0 - (U1 - UEff) * (VEff - V0) * std::min(Depth, Face.Thickness);
+            for (const bool Imprinted : { true, false })
+            {
+                SolidArcDocument Part = NewBlock();
+                Expect(DrawSolidArcSketch(Part, OnFace({ { U0, V0 }, { U1, V1 } }, Face.Plane, !Imprinted)));
+                SolidArcCommandOutcome Made;
+                if (Imprinted)
+                {
+                    const SolidArcCommandOutcome Split = ImprintSolidArcSketch(Part, Part.Tree.Steps.back().Label);
+                    const Vector3 Spot = Face.Plane.Origin + Face.Plane.XAxis * (0.5 * (U0 + U1)) + Face.Plane.YAxis * (0.5 * (V0 + V1));
+                    const Vector3 Out  = Spot + Face.Plane.ZAxis * 5.0;
+                    (void)PickAndSelect(Part, RayBetween({ Out.X, Out.Y, Out.Z }, { Spot.X, Spot.Y, Spot.Z }), false);
+                    Made = Split.AcceptedCondition ? ChangeSolidArcSelection(Part, FaceOperationKind::Extrude, -Depth) : Split;
+                }
+                else Made = ExtrudeSolidArcSketch(Part, Part.Tree.Steps.back().Label, -Depth, FeatureCombination::Difference, {}, 1.0e-3);
+                const double Relative = std::abs(Part.Summary.Volume - Expected) / Expected;
+                ++Tried;
+                Worst = std::max(Worst, Relative);
+                if (Made.AcceptedCondition && Part.Summary.SoundCondition && Relative <= 1.0e-9) continue;
+                ++Failed;
+                if (Notes.size() < 600) Notes += Format(" · #%d %s %s gaps %.0e/%.0e d %.2f: V %.9f vs %.9f %s", Case, Face.Name, Imprinted ? "face E" : "sketch E", High ? HighFraction : -1.0,
+                                                        Low ? LowFraction : -1.0, Depth, Part.Summary.Volume, Expected, Made.Refusal.c_str());
+            }
+        }
+        Tally(EdgeNotchGate, Worst, Failed == 0, Format("stress: %d seeded near-rim notches (front / top / right, gaps 0 … 3 %% of the span, depths 0.2 … through), %d failed, worst rel %.1e%s",
+                                                       Tried, Failed, Worst, Notes.c_str()));
+    }
+
+    // ③ Control at a concave rim: a step (the block plus a 1.5 × 2 × 0.5 riser at x 2.5 … 4); a pocket on the lower top
+    //    3 mm short of the riser wall keeps that strip — opening it would carve into the wall.
+    {
+        SolidArcDocument Part = NewBlock();
+        SolidArcConstructRequest Riser;
+        Riser.Kind = SolidArcConstructKind::Block; Riser.Position = { 2.5, 0.0, 1.0 }; Riser.Width = 1.5; Riser.Depth = 2.0; Riser.Height = 0.5;
+        Expect(ConstructSolidArcPrimitive(Part, Riser));
+        const double Base = Part.Summary.Volume;
+        for (const bool Imprinted : { true, false })
+        {
+            SolidArcDocument Trial = CloneSolidArcDocument(Part);
+            Expect(DrawSolidArcSketch(Trial, OnFace({ { 1.0, 0.5 }, { 2.497, 1.5 } }, Top, !Imprinted)));
+            SolidArcCommandOutcome Made;
+            if (Imprinted)
+            {
+                Expect(ImprintSolidArcSketch(Trial, Trial.Tree.Steps.back().Label));
+                (void)PickAndSelect(Trial, RayBetween({ 1.5, 1.0, 5.0 }, { 1.5, 1.0, 0.0 }), false);
+                Made = ChangeSolidArcSelection(Trial, FaceOperationKind::Extrude, -0.3);
+            }
+            else Made = ExtrudeSolidArcSketch(Trial, Trial.Tree.Steps.back().Label, -0.3, FeatureCombination::Difference, {}, 1.0e-3);
+            const double Expected = Base - 0.3 * 1.497;
+            const double Reach    = HitDistance(Trial, { 2.4985, 1.0, 5.0 }, { 2.4985, 1.0, 0.0 });   // On the kept strip: the top (4)
+            const double Relative = std::abs(Trial.Summary.Volume - Expected) / Expected;
+            Tally(EdgeNotchGate, Relative, Made.AcceptedCondition && Trial.Summary.SoundCondition && Relative <= 1.0e-9 && std::abs(Reach - 4.0) <= 1.0e-6,
+                  Format("%s beside a concave riser wall, 3 mm strip kept: V %.9f (expect %.9f), probe on the strip %.6f (expect 4)%s", Imprinted ? "face E" : "sketch E",
+                         Trial.Summary.Volume, Expected, Reach, Made.Refusal.empty() ? "" : (" · " + Made.Refusal).c_str()));
+        }
     }
 }
 
@@ -902,6 +1082,12 @@ int main()
         ValidateExtrudeManifold();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ManifoldGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_NOTCH"))                                            // Quick rerun of W64 alone
+    {
+        ValidateEdgeNotch();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return EdgeNotchGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_POINTCUT"))                                         // Quick rerun of W62 alone
     {
@@ -6264,6 +6450,8 @@ int main()
 
     // ---- W61 2D cutters (imprint, then push / pull the regions)
     ValidateImprint();
+    // ---- W64 Extrude manifold at a face edge (notches open through the neighbour)
+    ValidateEdgeNotch();
 
     // ---- W62 Cut at crossings, sketch duplicates
     ValidatePointCut();
@@ -6271,7 +6459,7 @@ int main()
     // ---- W63 Point on curve, Flow along curve
     ValidateCurveFlow();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

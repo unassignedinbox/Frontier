@@ -522,7 +522,14 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 OrthonormalFrame Plane  = Solved.Plane;
                 Plane.Origin            = Plane.Origin + Plane.ZAxis * Start;
                 if (Start != 0.0 && !((Extent - Start) * (Extent >= 0.0 ? 1.0 : -1.0) > 1.0e-9)) { Refuse("Extrude: the start " + std::to_string(Start) + " passes the end " + std::to_string(Extent)); break; }
-                Sweep = ExtrudeProfile(Partition, Profile, Plane, Extent - Start, !WallsCondition);
+                // A cut whose side stops a sliver short of a convex rim of the face it starts on opens through it.
+                SketchProfile Outline = Profile;
+                if (Step.Combination == FeatureCombination::Difference && !WallsCondition && !Bodies.empty())
+                {
+                    const int Host = Step.Target.empty() ? Active : FindBody(Step.Target);
+                    if (Host >= 0 && Extent != 0.0) (void)OpenSliverBridges(Partition, Bodies[Host].Body, Solved.Plane, Extent, nullptr, Outline);
+                }
+                Sweep = ExtrudeProfile(Partition, Outline, Plane, Extent - Start, !WallsCondition);
             }
             else if (Step.Kind == FeatureStepKind::Evolution)
             {
@@ -735,6 +742,8 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 for (size_t Index = 0; Index < Outlines.size() && Refusal.empty(); ++Index)
                 {
                     const double     Lead  = 1.0e-3 * Outlines[Index].Scale;                 // [len] - Cutter start outside the face
+                    // A side a sliver short of a convex rim of the face opens through it (no strip left over the cut).
+                    (void)OpenSliverBridges(Partition, Current, Planes[Index], -1.0, &Faces[Index], Outlines[Index]);
                     OrthonormalFrame Plane = Planes[Index];
                     Plane.Origin           = Plane.Origin + Plane.ZAxis * Lead;
                     const SweepOutcome Sweep = ExtrudeProfile(Partition, Outlines[Index], Plane, Amount - Lead, true);
