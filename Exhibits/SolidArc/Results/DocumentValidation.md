@@ -1,6 +1,6 @@
 # SolidArcDocumentValidation
 
-Document layer of SolidArc over the GeometryProcessing feature tree (15.35 s).
+Document layer of SolidArc over the GeometryProcessing feature tree (15.44 s).
 
 | Gate | Subject | Limit | Worst | Checks | Verdict |
 |------|---------|-------|-------|--------|---------|
@@ -37,7 +37,7 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W28 | Cross-sketch links: a later sketch's line linked to an earlier plate's corner and top line (one undo entry, construction curve on linked points) follows the plate's width edit; backward links, linked drags, bad indices refused; codec; unlink frees | ≤ 10⁻¹² · exact | 2.22e-16 | 5 | 🟢 |
 | W29 | Revolve (Alt+R): annulus 3π about the proposed y-axis (New); a plate about its own edge line united → 4.625π, undo / redo; x-axis fallback quarter turn 3π/2; refusals (angle, crossing axis, no sketch, nothing to subtract); codec writes the point axis only without a line | ≤ 10⁻⁹ · exact | 3.77e-16 | 5 | 🟢 |
 | W30 | Evolution (Shift+P / Alt+E): rectangle along a proposed line sketch = prism 1; circle along a quarter arc = Pappus π²/16; a square swept through a block as Difference = 1.875; refusals; codec Kind 16 + Path | ≤ 10⁻⁹ planar · ≤ 10⁻⁶ NURBS skin | 5.28e-09 | 5 | 🟢 |
-| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 104 | 10 | 🟢 |
+| W31 | Incremental replay: on a 27-step studded plate and the vehicle bonnet every command / undo / redo / preview clone equals a full replay with the cache off (volumes, names, tokens, step reports, saved file); appends resume at the new step, a parameter edit at its first binding step, undo / redo / clone restore every step; only the 8 newest history entries keep checkpoints | identical · undo / redo / clone ≥ 10× · tail edit ≥ 2× | 86.8 | 10 | 🟢 |
 | W32 | X-ray (Alt+Z) pick-through and box edges on a 4 × 2 × 1 block in the isometric view: the ray at the hidden back-bottom edge picks the top face opaque and that edge in x-ray, √(1.25² + 1) = 1.6008 farther along the ray; a visible edge still picks in x-ray; the full-viewport box takes the 9 edges off the far corner (0, 2, 0) opaque and all 12 in x-ray; an empty box takes none | all equal | 0 | 5 | 🟢 |
 | W33 | Measure (I) and Section (Alt+S) on a 4 × 2 × 1 block and a separate 2 × 2 × 1 body: body mass properties, face area / perimeter, edge length, minimum distances and angles between faces and edges, totals, X / Z / face-plane sections with second moments, two-body sections by the parallel-axis theorem, hidden bodies skipped, refusals | ≤ 1e-9 relative | 3.8e-12 | 15 | 🟢 |
 | W34 | Section clip (Alt+S) on a 4 × 2 × 1 block cut at x = 1 (kept x ≤ 1): rays wholly on the removed side miss; a ray through the opening meets the cap at the back face x = 0 (distance 5, not the plane's 4); a kept face in front of the plane crossing still wins; removed edges are skipped, kept edges pick; the cap has no name; sheet faces show their back instead of a cap; the box takes only edges reaching the kept side; ComposeSolidArcSectionClip marks sheet bodies | exact | 0 | 9 | 🟢 |
@@ -72,7 +72,7 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W63 | Point on curve and Flow along curve (the request "add point on the curve without changing the shape … project another 2d shape onto it; eg take a Y and project it on a nurbs curve"): a point inserted on a Hermite / Bezier / NURBS / cubic spline / line / circle leaves the same curve (Hausdorff), lines drop H, ends refuse; in a document one undo entry and the knots survive save / load; a 2 × 0.4 rectangle flowed along a quarter arc r 3 lies on r 2.8 / 3.2 with its short sides as radii; true length on a circle spans ⅔ rad and extrudes to the annular sector 0.8 | 1e-9 · 1e-6 bent | 4.71e-10 | 17 | 🟢 |
 | W64 | Extrude manifold at a face edge (the Windows report "extrude manifold suppose to remove or move the top part to match the extrude"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike | 1e-9 rel | 1.19e-08 | 31 | 🟢 |
 | W65 | Edge path (the request "select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop | 1e-9 | 1.07e-14 | 14 | 🟢 |
-| W66 | Wrap around curve, sketch scale and curve offset (the request "apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3 | 1e-9 · fit 10⁻⁴ width | 4.36e-05 | 12 | 🟢 |
+| W66 | Wrap around curve, sketch scale and curve offset (the request "apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3; precision round a free curve (samples on the rail to 10⁻⁹, the fitted curve within 10⁻⁶ of the width); a detailed wiggle steps down instead of refusing | 1e-9 · fit 10⁻⁶ width | 0.000343 | 14 | 🟢 |
 | W67 | Direct edits of solids (the request "tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal | ≤ 10⁻⁹ · exact | 2.22e-16 | 24 | 🟢 |
 | W68 | Delete everything picked (the request "add delete for all entities face / edge / object / outliner and viewport … X key or delete"): on the 4 × 2 × 1 block a fillet face or fillet edge un-blends (the Blend lets go of its edge: 8 again, or one fillet of two left); a seam edge of an imprinted rectangle or an edge-to-edge imprint line dissolves (6 faces, 12 edges, 8 vertices, 8); refusals untouched — a box edge, a corner vertex, fillet and plain edges together; an extruded sketch leaves the scene (RemovedCurves, the body stays, save / load keeps it, show refuses, undo restores) while a free sketch is deleted; sketch points take their curves (renumbered, re-solved), an emptied sketch goes, a point of an extruded rectangle detaches the rest (body kept); bodies removed; one undo entry each | exact · 1e-9 | 1.12e-16 | 23 | 🟢 |
 
@@ -162,7 +162,7 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W12 | bonnet reload: continuity + mirror steps survive, save → load → save byte-equal, names equal | 0 | 🟢 |
 | W12 | Close on the open bonnet rim refused, document kept: Close#15: Close: rim loop 0 is not planar (off by 51.7 mm; only plane caps 🚧) | 0 | 🟢 |
 | W12 | undo mirror → 2 panels | 0 | 🟢 |
-| W12 | pod: Planar = true round trip · loft → mirror → Close → solid V = 0.792802 vs 0.792411, rel. (value)  | 0.000494 | 🟢 |
+| W12 | pod: Planar = true round trip · loft → mirror → Close → solid V = 0.792799 vs 0.792411, rel. (value)  | 0.00049 | 🟢 |
 | W12 | second Close refused: Close#9: Close: the panels are already closed by Close#8 | 0 | 🟢 |
 | W12 | pod reload: planar flags + close step, byte-equal, same volume | 0 | 🟢 |
 | W12 | G1 on crossing curves refused: these curves cross (a network): G1 / G2 is available for section lofts only (🚧 networks) | 0 | 🟢 |
@@ -269,15 +269,15 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W30 | refused: the path must be another sketch than the profile · choose the path: click a one-curve sketch or select a curve · Evolution#5: Evolution: path sketch Sketch#1 has 4 curves (🚧 one line, arc or spline; J joins a chain into a spline first) · Evolution#5: Evolution: the path starts along the profile plane (it must leave the plane) · nothing to subtract from yet (no body); file untouched | 0 | 🟢 |
 | W30 | save → load → save byte-equal with the Evolution (16) steps and Path = 'Sketch#2' | 0 | 🟢 |
 | W31 | 14 commands → 27 steps: 14 identical to a full replay, 14 resumed at the new step | 0 | 🟢 |
-| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 6.0 ms vs full 68.4 ms · 11.5× · identical | 11.5 | 🟢 |
-| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 52.4 ms vs full 68.4 ms · 1.3× · identical | 1.3 | 🟢 |
-| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 0.9 ms vs full 68.4 ms · 76.2× · identical | 76.2 | 🟢 |
-| W31 | redo: resumed at 27/27 · 0.9 ms vs full 68.4 ms · 74.1× · identical | 74.1 | 🟢 |
-| W31 | undo again: resumed at 27/27 · 0.9 ms vs full 68.4 ms · 74.4× · identical | 74.4 | 🟢 |
-| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.7 ms · 104.2× | 104 | 🟢 |
-| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 6.5 ms · source untouched | 0 | 🟢 |
+| W31 | tail edit Fillet1.Size 0.15 → 0.12: resumed at 26/27 · 6.5 ms vs full 72.1 ms · 11.1× · identical | 11.1 | 🟢 |
+| W31 | middle edit Cylinder6.Radius 0.30 → 0.32: resumed at 12/27 · 55.8 ms vs full 72.1 ms · 1.3× · identical | 1.29 | 🟢 |
+| W31 | undo (Cylinder6.Radius back): resumed at 27/27 · 1.1 ms vs full 72.1 ms · 66.4× · identical | 66.4 | 🟢 |
+| W31 | redo: resumed at 27/27 · 1.1 ms vs full 72.1 ms · 66.7× · identical | 66.7 | 🟢 |
+| W31 | undo again: resumed at 27/27 · 1.2 ms vs full 72.1 ms · 60.6× · identical | 60.6 | 🟢 |
+| W31 | preview clone (bevel / move / sweep staging): resumed at 27/27 · 0.8 ms · 86.8× | 86.8 | 🟢 |
+| W31 | preview fillets the back edge Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line3)): resumed at 27 (Fillet1 re-captured in place) · 7.5 ms · source untouched | 0 | 🟢 |
 | W31 | 25 undo entries, 8 with checkpoints; 10 undos identical, 8 restored every step (older ones resume at the edited step) | 0 | 🟢 |
-| W31 | bonnet (12 steps, full 2.9 ms): pole move resumed at 5 · 2.0 ms; undo restored all · 0.2 ms · identical | 17.5 | 🟢 |
+| W31 | bonnet (12 steps, full 3.0 ms): pole move resumed at 5 · 2.1 ms; undo restored all · 0.2 ms · identical | 15.6 | 🟢 |
 | W32 | ray at the hidden back-bottom edge: opaque → Extrude#2.Cap(End) · x-ray → Edge(Extrude#2.Cap(Start)\|Extrude#2.Side(Line3)) (1.600781 farther) | 0 | 🟢 |
 | W32 | ray at the visible front-top edge: opaque = x-ray → Edge(Extrude#2.Cap(End)\|Extrude#2.Side(Line1)) | 0 | 🟢 |
 | W32 | full box without x-ray → 9 edges, none at the far corner (closed form 9 of 12) | 0 | 🟢 |
@@ -472,15 +472,15 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W51 | foot of (0, 1.697, 0.3) on Extrude#2.Side(Circle1): (0.000000000000, 1.700000000000, 0.300000000000), n̂ (0.000, 1.000, 0.000) | 1.65e-16 | 🟢 |
 | W51 | profile sink 0.020799 ≥ rim depth 0.011806 (over-reach 0.009 ≤ 2 · sag 0.0073 + 1 mm) | 0.00899 | 🟢 |
 | W51 | tangent Union: line contact, V 5.485220773168 (π R² H + π r² L 5.485220773168: the cap gap stays open); sunk Union V 5.485591014531 vs + cap 5.485591014531, 5 faces, start cap gone 1 | 0 | 🟢 |
-| W51 | junction chamfer 0.02 on 1 edge: accepted, V 5.485591015 → 5.485847508 (485 ms) | 0 | 🟢 |
+| W51 | junction chamfer 0.02 on 1 edge: accepted, V 5.485591015 → 5.485847508 (520 ms) | 0 | 🟢 |
 | W51 | codec 3882 bytes byte-equal with the extrude Start, V 5.485847507916 after reload | 0 | 🟢 |
-| W51 | 4 moves (148 ms each): summary V 5.485847507916 · independent integral 5.485847507915 · before the moves 5.485847507916 | 1.27e-13 | 🟢 |
+| W51 | 4 moves (159 ms each): summary V 5.485847507916 · independent integral 5.485847507915 · before the moves 5.485847507916 | 1.27e-13 | 🟢 |
 | W51 | Construct cylinder on the −y tangent plane, start -0.020799: V 5.485591014531 (united) | 0 | 🟢 |
 | W52 | circle r 0.3 knifed 0.5 deep (Knife1 · Circle1 · Difference · depth 0.5, filled 1, 1 undo entry) (V = 7.858628) | 1.13e-16 | 🟢 |
 | W52 | the knife filled the unfilled circle in the same undo entry, one body | 0 | 🟢 |
 | W52 | rectangle 0.4 × 0.4 knifed through the 2 m cube (Knife2 · Rectangle2 · Difference · depth 2.05) (V = 7.538628) | 0 | 🟢 |
 | W52 | refused untouched: open (Extrude#8: Extrude: open profile: Line1 ends at a point joined to 0 other curves) · zero depth (the knife depth must be positive) · target (no body named Nowhere#9) · mirror (the insert placement is degenerate (zero size or mirrored)) | 0 | 🟢 |
-| W52 | library 7 built-ins in 67 ms (edge boxes: width 1, top +0.05, worst 2.6e-08): Square pocket 0.3000 · Round hole 0.5000 · Countersink 0.7227 · Slot 0.3000 · Hex pocket 0.3000 · Triangle 0.3541 · Cross 0.3000 | 2.6e-08 | 🟢 |
+| W52 | library 7 built-ins in 66 ms (edge boxes: width 1, top +0.05, worst 2.6e-08): Square pocket 0.3000 · Round hole 0.5000 · Countersink 0.7227 · Slot 0.3000 · Hex pocket 0.3000 · Triangle 0.3541 · Cross 0.3000 | 2.6e-08 | 🟢 |
 | W52 | square pocket insert, width 0.4 turned 15° (Knife3 · Square pocket · Difference) (V = 7.519428) | 1.18e-16 | 🟢 |
 | W52 | insert knife: 1 undo entry, 1 body | 0 | 🟢 |
 | W52 | the same insert raised out of the +x face (Knife4 · Square pocket · Union) (V = 7.538628) | 0 | 🟢 |
@@ -515,17 +515,17 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W54 | codec 18763 bytes byte-equal, V 7.980504422698 after reload | 0 | 🟢 |
 | W55 | the knife library holds the Hex pocket insert | 0 | 🟢 |
 | W55 | slot pocket 0.2 deep (Knife1 · Slot1 · Difference · depth 0.2), 4 opening edges (V = 25.515364) | 7.15e-12 | 🟢 |
-| W55 | slot opening fillet 0.02 (Fillet 0.02 on 4 edge(s), 1 undo entry, 621 ms) (V = 25.515133) | 1.87e-11 | 🟢 |
+| W55 | slot opening fillet 0.02 (Fillet 0.02 on 4 edge(s), 1 undo entry, 649 ms) (V = 25.515133) | 1.87e-11 | 🟢 |
 | W55 | fillet 0.02: one undo entry, volume below the pocket | 0 | 🟢 |
-| W55 | slot opening fillet 0.0519 (Fillet 0.0519 on 4 edge(s), 1 undo entry, 703 ms) (V = 25.513752) | 1.13e-11 | 🟢 |
+| W55 | slot opening fillet 0.0519 (Fillet 0.0519 on 4 edge(s), 1 undo entry, 722 ms) (V = 25.513752) | 1.13e-11 | 🟢 |
 | W55 | fillet 0.0519: one undo entry, volume below the pocket | 0 | 🟢 |
-| W55 | slot opening fillet 0.1 (Fillet 0.1 on 4 edge(s), 1 undo entry, 855 ms) (V = 25.509040) | 1.92e-11 | 🟢 |
+| W55 | slot opening fillet 0.1 (Fillet 0.1 on 4 edge(s), 1 undo entry, 871 ms) (V = 25.509040) | 1.92e-11 | 🟢 |
 | W55 | fillet 0.1: one undo entry, volume below the pocket | 0 | 🟢 |
 | W55 | undo after each fillet: the file returns byte-equal | 0 | 🟢 |
 | W55 | fillet 0.3 refused untouched: Blend#5: Blend: E19: size 0.3 is too large: the blend is wider than face F15 (its contact runs off that face) — try a smaller size | 0 | 🟢 |
 | W55 | fillet 0.8553 refused untouched: Blend#5: Blend: E19: size 0.8553 is too large: the blend is wider than face F9 (its contact runs off that face) — try a smaller size | 0 | 🟢 |
 | W55 | codec 4819 bytes byte-equal | 0 | 🟢 |
-| W55 | hex rim loop, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s), 912 ms) (V = 25.420575) | 1.41e-11 | 🟢 |
+| W55 | hex rim loop, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s), 924 ms) (V = 25.420575) | 1.41e-11 | 🟢 |
 | W55 | hex wall–wall edges together, 6 edges, fillet 0.05 (Fillet 0.05 on 6 edge(s)) (V = 25.462980) | 1.15e-12 | 🟢 |
 | W55 | box hex rim fillet 0.05 (Fillet 0.05 on 6 edge(s)): loss / straight-edge model = 1.0287 | 0.0213 | 🟢 |
 | W56 | grips: triangle 90.000° r 0.577350 · hex 0.000° r 0.500000 · square 45.000° r 0.707107 · countersink floor 0.242727 widths | 1.04e-06 | 🟢 |
@@ -689,8 +689,10 @@ DV W59 polyline on a plain block: 74 tried, 0 refused, 0 smooth skipped
 | W66 | circle facing the view, axis z: off r 1 by 1.1e-16, unrolled 2.4e-15, ends ±0.500000 · without the axis refused (the projection direction runs along the wrap axis: choose another axis) | 2.44e-15 | 🟢 |
 | W66 | open arc r 2 rail: off r 2 by 4.4e-16, unrolled 1.1e-15, ends ±0.250000 rad (0.25) | 1.05e-15 | 🟢 |
 | W66 | two letters (x −1 … −0.6 and 0.6 … 1) as separate shapes: 8 curves, width 2.000000000, each stays on its side (worst 1.1e-16) | 1.11e-16 | 🟢 |
-| W66 | Wrap Rectangle1, Circle2 round Circle1: 5 3D curves (1 closed), 5 picked, captions Wrap1 …, samples off r 1 by 1.1e-16, worst fit 4.4e-05 (≤ 10⁻⁴) | 4.36e-05 | 🟢 |
+| W66 | Wrap Rectangle1, Circle2 round Circle1: 5 3D curves (1 closed), 5 picked, captions Wrap1 …, samples off r 1 by 1.1e-16, worst fit 8.3e-07 (≤ 10⁻⁶ of the 1 m width) | 8.25e-07 | 🟢 |
 | W66 | refused: the rail as a shape (Wrap: Circle1 is the rail and a shape) · no shape (Wrap: pick the shapes (text, outlines) and the curve to wrap them round) | 0 | 🟢 |
+| W66 | circle r 0.4 wrapped round a free curve on YZ: 1 curve, 63 poles, seen along x the samples are 1.1e-15 off the rail, the fitted curve 4.46e-07 (0.45 µm; fit tolerance 8.00e-07 = 10⁻⁶ of the 0.8 width, worst sample deviation 5.57e-07) | 4.46e-07 | 🟢 |
+| W66 | a 30-point wiggle 4 wide round the can: accepted, fit tolerance 4.0e-04 (1e-04 of the width), worst deviation 3.43e-04 | 0.000343 | 🟢 |
 | W66 | S ×2 about the origin: circle r 1.000000000 at (2.000000, 0.000000) (r 1 at (2, 0)) | 0 | 🟢 |
 | W66 | S then X ×2: rectangle corners within 0.0e+00 of (3 … 7) × (0 … 1) · a stretched circle refused (a stretch would turn Circle1 into an ellipse (🚧): press S without an axis to scale evenly) | 0 | 🟢 |
 | W66 | Shift+D at ½: copy r 0.500000000 at (1.000000, 0), original r 1.000000000 kept | 0 | 🟢 |
