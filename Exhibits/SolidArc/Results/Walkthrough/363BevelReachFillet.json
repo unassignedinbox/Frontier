@@ -1,5 +1,5 @@
 {
-  "Frame": 155,
+  "Frame": 101,
   "Title": "Untitled",
   "DocumentPath": "",
   "Dirty": true,
@@ -17,6 +17,6 @@
   "Undo": 1,
   "Redo": 0,
   "Welcome": false,
-  "Status": "Fillet (B): drag anywhere or the ring handle to size (it stops at the largest that fits) · drag a corner diamond for a variable size · type in the card · D fillet · C chamfer · V taper · Alt+click an edge loop, Ctrl+Alt+click a ring (Shift adds) · Enter / right-click applies · Esc aborts",
+  "Status": "Bevel size 2 m (pinned)",
   "Viewport": [322, 56, 926, 723]
 }

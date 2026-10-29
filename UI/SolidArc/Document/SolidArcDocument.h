@@ -222,11 +222,15 @@ struct SolidArcBlendHandle
 
 // 📝 What the picked edges allow: Span is the shortest length that bounds a blend on them (each open edge's length,
 //    a closed edge's radius of curvature at its middle, and the other edges of both faces at its ends); Fitted is a
-//    round size (1 · 2 · 5 steps) of about 15 % of it, which a bevel can start at and show at once.
+//    round size (1 · 2 · 5 steps) of about 15 % of it, which a bevel can start at and show at once. Span is not a limit:
+//    a blend past it runs on over the next face (overflow). The reaches are: a setback of the body's diagonal leaves
+//    nothing; a fillet of radius r sets back r · tan(φ / 2) at an edge turning φ (90°: r; 135° faces: 0.41 r).
 struct SolidArcBlendFit
 {
     double      Span    = 0.0;                                                               // [len] - Bounding length (0: nothing to measure)
     double      Fitted  = 0.0;                                                               // [len] - Suggested start size
+    double      FilletReach  = 0.0;                                                          // [len] - Radius past which a fillet eats the body
+    double      ChamferReach = 0.0;                                                          // [len] - Setback past which a chamfer eats the body
     std::string Refusal = {};                                                                // [-]   - Why nothing was measured
 };
 

@@ -130,7 +130,7 @@ namespace
     GateTally DeleteGate      = { "W68", "Delete everything picked (the request \"add delete for all entities face / edge / object / outliner and viewport … X key or delete\"): on the 4 × 2 × 1 block a fillet face or fillet edge un-blends (the Blend lets go of its edge: 8 again, or one fillet of two left); a seam edge of an imprinted rectangle or an edge-to-edge imprint line dissolves (6 faces, 12 edges, 8 vertices, 8); refusals untouched — a box edge, a corner vertex, fillet and plain edges together; an extruded sketch leaves the scene (RemovedCurves, the body stays, save / load keeps it, show refuses, undo restores) while a free sketch is deleted; sketch points take their curves (renumbered, re-solved), an emptied sketch goes, a point of an extruded rectangle detaches the rest (body kept); bodies removed; one undo entry each", "exact · 1e-9" };
     GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally CurveAskGate    = { "W69", "Curves and sheets (the request \"lofting the yellow line with yellow line it refused … a button to swap the normals … H to hide curves … snap a curve along a curve … 3D gizmo in 3D\"): L between picked sketches — two open curves side by side in one view, two concentric circles, an open curve to its wrapped copy, curves in two views — gives a solid or a sheet, never a refusal; flip of one picked face turns only its piece of a two-loft sheet (each face's sense reversed, the other piece kept), again removes the step, a solid's face refuses; H hides picked curves (HiddenCurves) and Alt+H brings them back; a 3D curve through off-plane points passes through each; sketch points lifted off their plane turn their curve into a 3D curve of the same form (on the plane: identical to the sketch curve)", "1e-9 · fit 10⁻⁶" };
-    GateTally FullReachGate   = { "W70", "Bevel reach (the report \"clamped whilst it can bevel more … the chamfer chamfers more distance for the same bevel … bevel 1 edge fully … till the next edge making it a triangle\"): one cube edge at the full span uses up the face beside it (a chamfer leaves a triangle section, a fillet a quarter round — exact volumes); on a block the span is the shorter face; fillet and chamfer take the same largest size on the same edges", "1e-9" };
+    GateTally FullReachGate   = { "W70", "Bevel reach (the report \"clamped whilst it can bevel more … the chamfer chamfers more distance for the same bevel … bevel 1 edge fully … till the next edge making it a triangle\"): one cube edge at the full span uses up the face beside it (a chamfer leaves a triangle section, a fillet a quarter round — exact volumes); on a block the span is the shorter face; fillet and chamfer take the same largest size on the same edges; past the face width the blend runs on over the next face (exact overflow volumes); a fillet on a 135° edge takes a radius over twice the face width", "1e-9 · overflow 1e-6" };
     GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3; precision round a free curve (samples on the rail to 10⁻⁹, the fitted curve within 10⁻⁶ of the width); a detailed wiggle steps down instead of refusing", "1e-9 · fit 10⁻⁶ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
@@ -2123,7 +2123,7 @@ void ValidateBevelReach()
     const auto TopFront = [&](double Top) { return [=](Vector3 A, Vector3 B) { return Near(A.Y, 0.0) && Near(B.Y, 0.0) && Near(A.Z, Top) && Near(B.Z, Top); }; };
     const char* Names[] = { "fillet", "chamfer" };
 
-    // ① one edge of a 1 m cube at the full span (the bevel stops there, no longer at 0.999 · span): the face beside it is
+    // ① one edge of a 1 m cube at the full span (no longer stopped at 0.999 · span): the face beside it is
     //    used up — 5 faces; a chamfer leaves a triangular section (V = ½), a fillet a quarter round (V = π/4)
     for (const BlendProfile Shape : { BlendProfile::Fillet, BlendProfile::Chamfer })
     {
@@ -2146,6 +2146,53 @@ void ValidateBevelReach()
         Tally(FullReachGate, Relative, Good && Near(Fit.Span, 0.5) && Part.Summary.Faces == 6 && Relative <= 1.0e-9,
               Format("2 × 1 × 0.5 block, top-front edge, %s at the span %.3g (the front height): %d faces, V %.12f", Names[int(Shape == BlendProfile::Chamfer)], Fit.Span,
                      int(Part.Summary.Faces), Part.Summary.Volume));
+    }
+    // ④ past the face width (the report "it suppose to go longer even if i put a value greater it refuses … this is a
+    //    cube"): the blend runs on over the next face — closed forms on the unit cube's top-front edge. A fillet r ≥ 1
+    //    removes, per unit length, u* + ∫ (r − √(r² − (r − u)²)) du over [u*, 1], u* = r − √(2r − 1); a chamfer d in
+    //    [1, 2] keeps ½ (2 − d)². The reaches (the largest size the bevel asks for) lie past both.
+    {
+        const double R  = 1.5;
+        const double Us = R - std::sqrt(2.0 * R - 1.0);
+        const auto   F  = [&](double T) { return 0.5 * (T * std::sqrt(R * R - T * T) + R * R * std::asin(T / R)); };
+        const double FilletKept = 1.0 - (Us + R * (1.0 - Us) - (F(R - Us) - F(R - 1.0)));
+        for (const BlendProfile Shape : { BlendProfile::Fillet, BlendProfile::Chamfer })
+        {
+            SolidArcBlendFit Fit;
+            auto [Good, Part] = Blended(1.0, 1.0, 1.0, TopFront(1.0), Shape, 1.5, &Fit);
+            const double Exact    = Shape == BlendProfile::Fillet ? FilletKept : 0.125;
+            const double Relative = std::abs(Part.Summary.Volume - Exact) / Exact;
+            const double Reach    = Shape == BlendProfile::Fillet ? Fit.FilletReach : Fit.ChamferReach;
+            Tally(FullReachGate, Relative, Good && Relative <= 1.0e-9 && Reach >= 1.5 && Near(Fit.Span, 1.0),
+                  Format("1 m cube, one edge, %s 1.5 (past the 1 m face, over the next): V %.9f (exact %.9f), reach %.4g", Names[int(Shape == BlendProfile::Chamfer)],
+                         Part.Summary.Volume, Exact, Reach));
+        }
+    }
+    // ⑤ the screenshot case: an edge between faces at 135° (a cube's top-front edge chamfered 0.5, then the top ∩ chamfer
+    //    edge filleted). The top is 0.5 wide, but r 1.2 sets back only 1.2 · tan 22.5° = 0.497: it builds, removing
+    //    r² (tan(π/8) − π/8) per length (the old cap stopped the radius at the 0.5 width)
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("Obtuse");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 1.0; Block.Depth = 1.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Part, Block));
+        const auto PickWhere = [&](const std::function<bool(Vector3, Vector3)>& Test)
+        {
+            Part.Selection = {};
+            bool Additive = false;
+            for (const auto& [Slot, Name] : Part.Regeneration.Naming.Edges)
+                if (Test(EdgeEndPosition(Part, Name, false), EdgeEndPosition(Part, Name, true))) { SelectSolidArcName(Part, SolidArcSelectionKind::Edge, Name, Additive); Additive = true; }
+        };
+        PickWhere(TopFront(1.0));
+        Expect(BlendSolidArcSelection(Part, BlendProfile::Chamfer, 0.5));
+        PickWhere([&](Vector3 A, Vector3 B) { return Near(A.Y, 0.5) && Near(B.Y, 0.5) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+        const SolidArcBlendFit Fit = MeasureSolidArcBlendFit(Part, Part.Selection.Edges);
+        const SolidArcCommandOutcome Rounded = BlendSolidArcSelection(Part, BlendProfile::Fillet, 1.2);
+        const double Exact    = 0.875 - 1.44 * (std::tan(Pi / 8.0) - Pi / 8.0);
+        const double Relative = std::abs(Part.Summary.Volume - Exact) / Exact;
+        Tally(FullReachGate, Relative, Rounded.AcceptedCondition && Part.Summary.SoundCondition && Relative <= 1.0e-9 && Near(Fit.Span, 0.5) && Fit.FilletReach >= 1.2,
+              Format("135° edge beside a 0.5 face: fillet r 1.2 builds (setback 0.497): V %.12f (exact %.12f), span %.3g, fillet reach %.4g", Part.Summary.Volume, Exact, Fit.Span,
+                     Fit.FilletReach));
     }
     // ③ fillet and chamfer reach equally far: the largest size each takes on the same edges is the same (the setback of a
     //    chamfer is the fillet's radius — both meet the faces on the same lines; the chamfer only cuts more away, ½ r²

@@ -842,17 +842,18 @@ void ResolveProfileCombination(SolidArcBevelSession& Bevel)
 }
 
 // 💡 A requested value at or past a known refusal is held at the largest accepted one (the pointer / handle stops there).
-//    Before any refusal is known, a blend never exceeds the span of the faces beside its edges (the fit measure): a radius
-//    past it has nothing left to roll on, and must not reach the modeller at all. The span itself is allowed: the report
-//    "if bevel 1 edge fully it would bevel till the next edge making it a triangle" — at the full span the face beside the
-//    edge is used up (a chamfer leaves a triangular section, a fillet a quarter round; 0.999 · span left 1 ‰ slivers).
+//    Before any refusal is known, a blend never exceeds its reach (the fit measure): a setback of the body's diagonal
+//    leaves nothing, so a size past it must not reach the modeller at all. The face width (Span) is no limit — the report
+//    "it suppose to go longer even if i put a value greater it refuses … this is a cube": past it the blend runs on over
+//    the next face (overflow), and at an obtuse edge a fillet's radius is far larger than its setback.
 [[nodiscard]] double BoundBevelValue(SolidArcWorkspaceState& State, int Parameter, double Value)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
-    if (Bevel.Verb == SolidArcSessionVerb::Blend && Bevel.Fit.Span > 0.0 && Value > Bevel.Fit.Span)
+    const double Reach = Bevel.Shape == BlendProfile::Chamfer ? Bevel.Fit.ChamferReach : Bevel.Fit.FilletReach;   // [len] - Body-eating size
+    if (Bevel.Verb == SolidArcSessionVerb::Blend && Reach > 0.0 && Value > Reach)
     {
         ++Bevel.LimitStops;
-        Value = Bevel.Fit.Span;
+        Value = Reach;
     }
     if (!BevelBoundedCondition(Bevel) || Bevel.LimitParameter != Parameter || !(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0)) return Value;
     if (Value < Bevel.LimitCeiling || Bevel.LimitKey != ComposeBevelLimitKey(State, Parameter)) return Value;

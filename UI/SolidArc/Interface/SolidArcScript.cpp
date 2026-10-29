@@ -758,6 +758,7 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
         return Numeric(Index < State.Bevel.CornerSizes.size() && State.Bevel.CornerSizes[Index] > 0.0 ? State.Bevel.CornerSizes[Index] : State.Bevel.Size);
     }
     if (Field == "bevel-span") return Numeric(State.Bevel.Fit.Span);
+    if (Field == "bevel-reach") return Numeric(State.Bevel.Shape == GeometryProcessing::BlendProfile::Chamfer ? State.Bevel.Fit.ChamferReach : State.Bevel.Fit.FilletReach);
     if (Field == "bevel-fitted") return Numeric(State.Bevel.Fit.Fitted);
     if (Field == "bevel-showing") return Numeric(State.Bevel.GoodCondition ? State.Bevel.GoodSize : 0.0);
     if (Field == "bevel-limit") return Numeric(State.Bevel.LimitCeiling > 0.0 ? State.Bevel.LimitGood : 0.0);

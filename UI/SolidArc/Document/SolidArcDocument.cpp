@@ -1034,6 +1034,33 @@ SolidArcBlendFit MeasureSolidArcBlendFit(const SolidArcDocument& Document, const
     }
     if (!std::isfinite(Span) || !(Span > 0.0)) { Fit.Refusal = "the picked edges have no length"; return Fit; }
     Fit.Span = Span;
+    // 📝 Reaches (the report "it suppose to go longer even if i put a value greater it refuses … this is a cube"): the
+    //    bevel stopped at Span, the width of the faces beside the edge — wrong twice: past it the blend runs on over the
+    //    next face (the modeller builds that overflow exactly), and a fillet's radius is not its setback (an edge between
+    //    faces at 135° turns 45°: r · tan 22.5° = 0.41 r). The largest size worth asking for is the one whose setback is
+    //    the body's diagonal; beyond, the modeller's refusals (the bound search) say where it really stops.
+    Vector3 Low{ std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity() };
+    Vector3 High{ -Low.X, -Low.Y, -Low.Z };
+    for (const auto& [Slot, Name] : Owner->Naming.Vertices)
+    {
+        const Vector3 Position = Partition.Vertices.Resolve(Partition.Vertices.TokenAt(Slot)).Position;
+        Low  = { std::min(Low.X, Position.X), std::min(Low.Y, Position.Y), std::min(Low.Z, Position.Z) };
+        High = { std::max(High.X, Position.X), std::max(High.Y, Position.Y), std::max(High.Z, Position.Z) };
+    }
+    const double Diagonal = std::isfinite(Low.X) ? std::max(Distance(Low, High), Span) : 4.0 * Span;   // [len] - Body extent
+    double Turning = 0.0;                                                                    // [rad] - Sharpest turn of the picked edges
+    for (EdgeToken Edge : Tokens)
+    {
+        const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+        const Vector3      Middle  = EvaluateCurve(Partition.Curves.Resolve(Profile.Curve), 0.5 * (Profile.IntervalLow + Profile.IntervalHigh)).Position;
+        const auto         Faces   = EdgeFaces(Partition, Edge);
+        if (Faces.size() < 2) continue;
+        const double Cosine = Dot(EvaluateOutwardNormal(Partition, Faces[0], Middle), EvaluateOutwardNormal(Partition, Faces[1], Middle));
+        Turning = std::max(Turning, std::acos(std::clamp(Cosine, -1.0, 1.0)));
+    }
+    Turning          = std::clamp(Turning, 10.0 * std::numbers::pi / 180.0, 170.0 * std::numbers::pi / 180.0);
+    Fit.ChamferReach = Diagonal;
+    Fit.FilletReach  = Diagonal / std::tan(0.5 * Turning);
     const double Wanted = 0.15 * Span;                                                      // [len] - About 15 % of the bound
     const double Decade = std::pow(10.0, std::floor(std::log10(Wanted)));
     const double Steps[] = { 5.0, 2.0, 1.0 };
