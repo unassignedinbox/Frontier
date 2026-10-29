@@ -2194,6 +2194,50 @@ void ValidateBevelReach()
               Format("135° edge beside a 0.5 face: fillet r 1.2 builds (setback 0.497): V %.12f (exact %.12f), span %.3g, fillet reach %.4g", Part.Summary.Volume, Exact, Fit.Span,
                      Fit.FilletReach));
     }
+    // ⑥ the handles follow the bevel (the report "the blue + white controls … should follow the edges / vertices"): the
+    //    viewport stands each handle on the bisector where the blend's mid-line crosses it — a fillet r at r (1 / Spread −
+    //    1) in from the sharp edge, a chamfer s at s √(1 − Spread²), Spread = cos ½φ from the handle measure. A ray down
+    //    the uniform handle's bisector onto the bevelled body (tessellated to 10⁻⁷ of its diagonal) hits that point.
+    {
+        struct HandleCase { const char* Note; BlendProfile Shape; double Size; bool Obtuse; };
+        for (const HandleCase& Case : { HandleCase{ "fillet 0.3", BlendProfile::Fillet, 0.3, false }, HandleCase{ "chamfer 0.3", BlendProfile::Chamfer, 0.3, false },
+                                        HandleCase{ "fillet 1 (full)", BlendProfile::Fillet, 1.0, false }, HandleCase{ "chamfer 1.5 (past the face)", BlendProfile::Chamfer, 1.5, false },
+                                        HandleCase{ "fillet 1.2 on the 135° edge", BlendProfile::Fillet, 1.2, true } })
+        {
+            SolidArcDocument Part = CreateSolidArcDocument("Handles");
+            SolidArcConstructRequest Block;
+            Block.Kind = SolidArcConstructKind::Block; Block.Width = 1.0; Block.Depth = 1.0; Block.Height = 1.0;
+            Expect(ConstructSolidArcPrimitive(Part, Block));
+            const auto PickWhere = [&](const std::function<bool(Vector3, Vector3)>& Test)
+            {
+                Part.Selection = {};
+                bool Additive = false;
+                for (const auto& [Slot, Name] : Part.Regeneration.Naming.Edges)
+                    if (Test(EdgeEndPosition(Part, Name, false), EdgeEndPosition(Part, Name, true))) { SelectSolidArcName(Part, SolidArcSelectionKind::Edge, Name, Additive); Additive = true; }
+            };
+            PickWhere(TopFront(1.0));
+            if (Case.Obtuse)
+            {
+                Expect(BlendSolidArcSelection(Part, BlendProfile::Chamfer, 0.5));
+                PickWhere([&](Vector3 A, Vector3 B) { return Near(A.Y, 0.5) && Near(B.Y, 0.5) && Near(A.Z, 1.0) && Near(B.Z, 1.0); });
+            }
+            const std::vector<SolidArcBlendHandle> Handles = MeasureSolidArcBlendHandles(Part, Part.Selection.Edges);
+            if (Handles.size() != 3) { Tally(FullReachGate, 0.0, false, Format("%s: %d handles (3 expected)", Case.Note, int(Handles.size()))); continue; }
+            const SolidArcBlendHandle& Uniform = Handles.front();
+            const double Rate  = Case.Shape == BlendProfile::Chamfer ? std::sqrt(1.0 - Uniform.Spread * Uniform.Spread) : 1.0 / Uniform.Spread - 1.0;
+            const Vector3 Base = Uniform.Position - Uniform.Direction * (Rate * Case.Size);
+            const bool CornersAgree = std::abs(Handles[1].Spread - Uniform.Spread) <= 1.0e-9 && std::abs(Handles[2].Spread - Uniform.Spread) <= 1.0e-9;
+            Expect(BlendSolidArcSelection(Part, Case.Shape, Case.Size));
+            const SolidArcScene Scene = BuildSolidArcScene(Part, 1.0e-7);
+            const Vector3 From = Base + Uniform.Direction * 3.0;
+            const std::optional<SolidArcPick> Hit = PickSolidArcScene(Scene, RayBetween({ From.X, From.Y, From.Z }, { Base.X, Base.Y, Base.Z }), 0.0);
+            const double Off = Hit ? std::abs(Hit->Distance - 3.0) : 1.0;
+            const double Turn = 2.0 * std::acos(std::clamp(Uniform.Spread, -1.0, 1.0)) * 180.0 / Pi;
+            Tally(FullReachGate, Off, Hit.has_value() && Off <= 1.0e-6 && CornersAgree,
+                  Format("handle on the bevel, %s (faces turn %.1f°): the grip's base %.4f in from the edge, a ray down its bisector meets the body %.2e from it", Case.Note, Turn,
+                         Rate * Case.Size, Off));
+        }
+    }
     // ③ fillet and chamfer reach equally far: the largest size each takes on the same edges is the same (the setback of a
     //    chamfer is the fillet's radius — both meet the faces on the same lines; the chamfer only cuts more away, ½ r²
     //    against (1 − π/4) r² ≈ 0.215 r² per length, which is why it looks bigger at the same size)

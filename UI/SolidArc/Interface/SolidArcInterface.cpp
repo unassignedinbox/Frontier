@@ -619,14 +619,34 @@ void RefreshBevelHandles(SolidArcWorkspaceState& State, bool ForceCondition)
     return Index > 0 && Index < int(Bevel.CornerSizes.size()) && Bevel.CornerSizes[Index] > 0.0 ? Bevel.CornerSizes[Index] : Bevel.Size;
 }
 
-constexpr float BevelHandleLead  = 26.0f;                                                    // [px] - Handle tip beyond the size along its bisector
+constexpr float BevelHandleLead  = 26.0f;                                                    // [px] - Handle stick standing off the bevel
 constexpr float BevelHandleReach = 11.0f;                                                    // [px] - Pointer distance that grabs a handle
 
-// Handle tip: the corner / mid-edge point moved out along the bisector by the size plus a lead that keeps it off the edge.
-[[nodiscard]] Vector3 BevelHandleTip(const SolidArcBevelSession& Bevel, int Index, double Lead)
+// 📝 Handles follow the bevel (the report "the blue + white controls for the bevel / chamfer … should follow the edges /
+//    vertices"): they stood at the old sharp edge and reached out by the size, so a large bevel left them floating far
+//    off in space. Each now stands on the bevel itself — on the bisector, where the blend's mid-line crosses it: a fillet
+//    of radius r lies r (1 / Spread − 1) in from the sharp edge (90°: 0.41 r), a chamfer of setback s at s √(1 − Spread²)
+//    (90°: 0.71 s) — the uniform ring at mid-edge, each diamond where the blend meets its vertex (at that corner's own
+//    size). A short stick (the lead) stands out from there to the grip.
+[[nodiscard]] double BevelHandleDepthRate(const SolidArcBevelSession& Bevel, int Index)
+{
+    const double Spread = Bevel.Handles[size_t(Index)].Spread;                               // [-]   - cos ½φ
+    if (!(Spread > 0.05) || !(Spread < 0.999)) return 1.0;                                   // Folded or flat: stands for the size itself
+    const double Rate = Bevel.Shape == BlendProfile::Chamfer ? std::sqrt(1.0 - Spread * Spread) : 1.0 / Spread - 1.0;
+    return std::max(Rate, 0.05);                                                             // [-]   - Depth per unit size
+}
+
+// Where the handle stands: on the bevel's mid-line, in from the sharp edge / vertex along the bisector.
+[[nodiscard]] Vector3 BevelHandleBase(const SolidArcBevelSession& Bevel, int Index)
 {
     const SolidArcBlendHandle& Handle = Bevel.Handles[size_t(Index)];
-    return Handle.Position + Handle.Direction * (BevelHandleSize(Bevel, Index) + Lead);
+    return Handle.Position - Handle.Direction * (BevelHandleDepthRate(Bevel, Index) * BevelHandleSize(Bevel, Index));
+}
+
+// Handle tip (the grip): the lead out from the bevel along the bisector.
+[[nodiscard]] Vector3 BevelHandleTip(const SolidArcBevelSession& Bevel, int Index, double Lead)
+{
+    return BevelHandleBase(Bevel, Index) + Bevel.Handles[size_t(Index)].Direction * Lead;
 }
 
 [[nodiscard]] int CountBevelCorners(const SolidArcBevelSession& Bevel)
@@ -6791,8 +6811,9 @@ void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Orb
         DrawDimensionPill(Canvas, ImVec2(Centre.x, Centre.y - 22.0f), Compose("%.1f°", Knife.Turn * 180.0 / std::numbers::pi), AngleInk);
 }
 
-// 📝 Bevel handles under the pointer: a press on one starts its drag — the size follows the pointer along the handle's
-//    bisector (the closest point of the pointer ray to that line), snapped to 1 mm (Ctrl free, Shift fine). The
+// 📝 Bevel handles under the pointer: a press on one starts its drag — the grip follows the pointer along the handle's
+//    bisector (the closest point of the pointer ray to that line) and the bevel follows the grip, snapped to 1 mm (Ctrl
+//    free, Shift fine). The
 //    uniform handle sets the size; a corner handle gives its corner its own size. True while a handle owns the pointer.
 // Screen base and tip of a handle. A bisector that points (nearly) at the camera would project to a dot, so its tip
 // stands straight up from the base on screen instead (ScreenCondition: the drag then sizes by pointer x).
@@ -6800,8 +6821,8 @@ void DrawKnifeGhost(SolidArcWorkspaceState& State, ImDrawList* Canvas, const Orb
                                       bool& ScreenCondition)
 {
     const SolidArcBevelSession& Bevel = State.Bevel;
-    if (!ProjectWorldPoint(State, Frame, Bevel.Handles[size_t(Index)].Position, Base) || !ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) return false;
-    const float Reach = float((BevelHandleSize(Bevel, Index) + Lead) / Frame.WorldPerPixel);   // [px] - Unforeshortened handle length
+    if (!ProjectWorldPoint(State, Frame, BevelHandleBase(Bevel, Index), Base) || !ProjectWorldPoint(State, Frame, BevelHandleTip(Bevel, Index, Lead), Tip)) return false;
+    const float Reach = float(Lead / Frame.WorldPerPixel);                                   // [px] - Unforeshortened stick length
     ScreenCondition   = std::hypot(Tip.x - Base.x, Tip.y - Base.y) < 0.35f * Reach;
     if (ScreenCondition) Tip = ImVec2(Base.x, Base.y - std::max(Reach, BevelHandleLead + 8.0f));
     return true;
@@ -6822,7 +6843,10 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
                                                                           : MeasureAxisParameter(Ray, Handle.Position, Handle.Direction);
         if (Parameter)
         {
-            double Size = Bevel.DragSize + (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);
+            // Along the bisector the grip stays under the pointer: the bevel's mid-line moves with it, so pushing the
+            // grip into the body deepens the bevel (depth / rate = size); a grip facing the camera sizes by pointer x.
+            const double Moved = (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);   // [len] - Grip travel
+            double Size = Bevel.DragScreenCondition ? Bevel.DragSize + Moved : Bevel.DragSize - Moved / BevelHandleDepthRate(Bevel, Bevel.DragHandle);
             Size = std::max(1.0e-3, Io.KeyCtrl ? std::round(Size * 1.0e6) * 1.0e-6 : std::round(Size * 1.0e3) * 1.0e-3);
             Size = BoundBevelValue(State, Bevel.DragHandle, Size);                           // Stops at the largest accepted size
             if (Bevel.DragHandle == 0) Bevel.Size = Size;
@@ -6870,7 +6894,7 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
     return Bevel.HoverHandle >= 0;
 }
 
-// Handles: a line from the corner / mid-edge point to the tip; the uniform tip a cyan ring, corner tips diamonds (amber
+// Handles: a stick from the bevel's mid-line to the grip; the uniform grip a cyan ring, corner grips diamonds (amber
 // once they carry their own size). The size shows beside a hovered, dragged or sized handle. Tips register as
 // widgets BevelHandle0 (uniform), BevelHandle1 … for scripts.
 void DrawBevelHandles(SolidArcWorkspaceState& State, ImDrawList* Canvas, const OrbitCameraFrame& Frame)

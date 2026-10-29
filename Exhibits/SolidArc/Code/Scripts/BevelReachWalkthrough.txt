@@ -133,3 +133,59 @@ expect refused == 0
 expect volume ~ 6.752153182631247
 expect sound == 1
 capture 368BevelReachApplied
+
+# ⑤ the handles follow the bevel (the report "the blue + white controls … should follow the edges / vertices"): they no
+#    longer reach out from the old sharp edge by the size (a big bevel left them floating in space) — the cyan ring
+#    stands on the bevel's mid-line at mid-edge, each diamond where the bevel meets its vertex; a grip pushed into the
+#    body (down on screen: the bisector points up and out) drags the bevel's mid-line with it, so the size grows
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -1.0 -1.0 0.0
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+key 2
+frames 2
+click world 0.0 -1.0 2.0
+frames 2
+key B
+frames 8
+key D
+frames 4
+click @BevelSize
+key A Ctrl
+type 0.5
+key Enter
+frames 8
+expect bevel-size ~ 0.5
+expect bevel-handles == 3
+capture 369BevelHandlesOnFillet
+drag left @BevelHandle0 by 0 40 10
+frames 10
+expect bevel-size > 0.55
+expect bevel-refusal == 0
+capture 370BevelHandleDragged
+key C
+frames 10
+capture 371BevelHandlesOnChamfer
+drag left @BevelHandle1 by 0 40 10
+frames 10
+expect bevel-corners == 1
+expect bevel-corner-1 > 1.1
+expect bevel-size < 1.0
+expect bevel-refusal == 0
+capture 372BevelCornerOnChamfer
+key Escape
+frames 4

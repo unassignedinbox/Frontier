@@ -218,6 +218,7 @@ struct SolidArcBlendHandle
     GeometryProcessing::Vector3  Position  = {};                                             // [len] - Vertex / mid-edge point
     GeometryProcessing::Vector3  Direction = {};                                             // [-]   - Unit outward bisector
     int                          Edges     = 0;                                              // [-]   - Picked edges meeting there
+    double                       Spread    = 0.0;                                            // [-]   - Mean Direction · face normal (cos of half the turn)
 };
 
 // 📝 What the picked edges allow: Span is the shortest length that bounds a blend on them (each open edge's length,

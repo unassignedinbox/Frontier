@@ -956,6 +956,18 @@ std::vector<SolidArcBlendHandle> MeasureSolidArcBlendHandles(const SolidArcDocum
         for (const auto& [Face, Position] : Feet) if (Faces.insert(Face.Slot).second) Sum = Sum + EvaluateOutwardNormal(Partition, Face, Position);
         return Length(Sum) > 1.0e-9 ? Normalize(Sum) : Vector3{};
     };
+    // How far the faces turn about the bisector: the mean cosine between it and each face's normal (cos ½φ for two faces
+    // turning φ). A handle sits on the bevel from it: a fillet's mid-line lies r (1 / Spread − 1) in from the sharp
+    // edge, a chamfer's s √(1 − Spread²).
+    const auto SpreadOf = [&](const std::vector<std::pair<FaceToken, Vector3>>& Feet, Vector3 Direction)
+    {
+        double Sum = 0.0;
+        int    Count = 0;
+        std::set<uint32_t> Faces;
+        for (const auto& [Face, Position] : Feet)
+            if (Faces.insert(Face.Slot).second) { Sum += Dot(Direction, EvaluateOutwardNormal(Partition, Face, Position)); ++Count; }
+        return Count > 0 ? Sum / Count : 0.0;
+    };
 
     // ① The uniform handle at the middle of the first edge.
     std::vector<SolidArcBlendHandle> Handles;
@@ -963,7 +975,9 @@ std::vector<SolidArcBlendHandle> MeasureSolidArcBlendHandles(const SolidArcDocum
         const EdgeProfile& Profile = Partition.Edges.Resolve(Tokens.front());
         const Vector3      Middle  = EvaluateCurve(Partition.Curves.Resolve(Profile.Curve), 0.5 * (Profile.IntervalLow + Profile.IntervalHigh)).Position;
         const auto         Faces   = EdgeFaces(Partition, Tokens.front());
-        Handles.push_back({ {}, Middle, Bisector({ { Faces[0], Middle }, { Faces[1], Middle } }), int(Tokens.size()) });
+        const std::vector<std::pair<FaceToken, Vector3>> Feet = { { Faces[0], Middle }, { Faces[1], Middle } };
+        const Vector3 Direction = Bisector(Feet);
+        Handles.push_back({ {}, Middle, Direction, int(Tokens.size()), SpreadOf(Feet, Direction) });
     }
 
     // ② One per distinct end vertex of the open picked edges (a closed edge's only vertex cannot take its own size).
@@ -991,7 +1005,7 @@ std::vector<SolidArcBlendHandle> MeasureSolidArcBlendHandles(const SolidArcDocum
         if (Closed.contains(Slot) || Name == Owner->Naming.Vertices.end()) continue;
         const Vector3 Direction = Bisector(Feet[Slot]);
         if (Length(Direction) < 0.5) continue;
-        Handles.push_back({ Name->second, Partition.Vertices.Resolve(Partition.Vertices.TokenAt(Slot)).Position, Direction, Counts[Slot] });
+        Handles.push_back({ Name->second, Partition.Vertices.Resolve(Partition.Vertices.TokenAt(Slot)).Position, Direction, Counts[Slot], SpreadOf(Feet[Slot], Direction) });
     }
     return Handles;
 }
