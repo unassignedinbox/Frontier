@@ -91,6 +91,11 @@ struct ApproximationOutcome
 //    vertices and edges unchanged. Refused for solids (their faces point out of the material by definition).
 [[nodiscard]] TransformOutcome ReverseBody(ModelPartition& Partition, BodyToken Source);
 
+// 💡 Flip some of a sheet: the pieces (faces joined through shared edges) holding a Seeds face turn over, the others
+//    stay — a piece turns as a whole, so neighbouring faces always agree across their edges. Pieces (optional) gets how
+//    many pieces turned. Refused for solids and for seeds off the body.
+[[nodiscard]] TransformOutcome ReverseBodyPieces(ModelPartition& Partition, BodyToken Source, const std::vector<FaceToken>& Seeds, int* Pieces = nullptr);
+
 // Mirror copy across the plane through PlanePoint with normal PlaneNormal.
 [[nodiscard]] TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal);
 

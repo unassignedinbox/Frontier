@@ -1294,6 +1294,23 @@ void CancelDrawingSession(SolidArcWorkspaceState& State)
     AdoptKnifeSketch(State, {}, {});                                                         // A knife shape aborted: the knife closes
 }
 
+// 3D places of a curve drawing's points when any is lifted off the plane (the others on the plane), plus the live pointer
+// when PointerCondition; empty when every point lies on the plane (a planar sketch).
+[[nodiscard]] std::vector<Vector3> LiftedDrawingPoints(const SolidArcDrawingSession& Drawing, bool PointerCondition)
+{
+    if (Drawing.Kind != SolidArcDrawingKind::Curve || Drawing.SolidCondition) return {};
+    const bool Pointer = PointerCondition && DrawingPointerLive(Drawing);
+    bool       Any     = Pointer && Drawing.PointerLifted.has_value();
+    for (size_t Index = 0; Index < Drawing.Lifted.size() && Index < Drawing.Points.size(); ++Index) Any = Any || Drawing.Lifted[Index].has_value();
+    if (!Any) return {};
+    const OrthonormalFrame Plane = DrawingPlane(Drawing);
+    std::vector<Vector3>   Points;
+    for (size_t Index = 0; Index < Drawing.Points.size(); ++Index)
+        Points.push_back(Index < Drawing.Lifted.size() && Drawing.Lifted[Index] ? *Drawing.Lifted[Index] : PlacePlanePoint(Plane, Drawing.Points[Index]));
+    if (Pointer) Points.push_back(Drawing.PointerLifted ? *Drawing.PointerLifted : PlacePlanePoint(Plane, Drawing.Pointer));
+    return Points;
+}
+
 // Commits the collected points as a sketch step; the new sketch becomes the focused step (E extrudes it).
 void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
 {
@@ -1301,6 +1318,14 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
     if (!Drawing.ActiveCondition) return;
     if (Drawing.SolidCondition) { FinishSolidSession(State); return; }
     const bool KnifeCondition = State.Knife.ActiveCondition && State.Knife.DrawPendingCondition;
+    if (const std::vector<Vector3> Lifted = LiftedDrawingPoints(Drawing, false); !Lifted.empty() && !KnifeCondition)
+    {
+        Drawing.ActiveCondition = false;
+        const SolidArcCommandOutcome Outcome = DrawSolidArcSpaceCurve(State.Document, Lifted, ClosedCondition);
+        if (Outcome.AcceptedCondition) State.FocusedStep = State.Document.Tree.Steps.back().Label;
+        Conclude(State, Outcome);
+        return;
+    }
     SolidArcDrawingRequest Request = ComposeDrawingRequest(Drawing, false, ClosedCondition);
     if (KnifeCondition) Request.FillCondition = true;                                        // A knife cutter is solid
     SketchModel Probe;
@@ -1350,6 +1375,8 @@ void AppendDrawingPoint(SolidArcWorkspaceState& State, Vector2 Point, bool Closi
         Announce(State, "Same point twice: ignored");
         return;
     }
+    Drawing.Lifted.resize(Drawing.Points.size());
+    Drawing.Lifted.push_back(Distance(Point, Drawing.Pointer) <= 1.0e-12 ? Drawing.PointerLifted : std::nullopt);
     Drawing.Points.push_back(Point);
     Drawing.Refusal.clear();
     SolidArcPointPicker& Picker = State.Picker;
@@ -1393,6 +1420,7 @@ void RetractDrawingPoint(SolidArcWorkspaceState& State)
     SolidArcDrawingSession& Drawing = State.Drawing;
     if (Drawing.Points.empty()) { Announce(State, "No point to drop"); return; }
     Drawing.Points.pop_back();
+    Drawing.Lifted.resize(Drawing.Points.size());
     Drawing.Lift = 0.0;
     if (Drawing.SolidCondition && Drawing.Points.empty()) Drawing.Elevation = 0.0;
     Drawing.Refusal.clear();
@@ -1560,6 +1588,21 @@ void PlaceDrawingPointer(SolidArcWorkspaceState& State, const OrbitCameraFrame& 
     std::optional<Vector3> Reference;
     if (!Drawing.Points.empty()) Reference = PlacePlanePoint(Plane, Drawing.Points.back());
     Picker.Current = {};
+    Drawing.PointerLifted.reset();
+    if (Drawing.Kind == SolidArcDrawingKind::Curve && !Drawing.SolidCondition && Picker.Lock == SolidArcSnapLockKind::None && ImGui::GetIO().KeyAlt)
+    {
+        // A curve point on a curve off the plane keeps its 3D place (the finished curve becomes a 3D curve).
+        const SolidArcSnap Object = FindPointerSnap(State, Frame, Local, Reference, Chain, {}, false);
+        const double       Height = Dot(Object.Position - Plane.Origin, Plane.ZAxis);
+        if (Object.Kind != SolidArcSnapKind::None && std::abs(Height) > 1.0e-9 * (1.0 + Length(Object.Position)))
+        {
+            Drawing.PointerLifted = Object.Position;
+            Point                 = Flatten(Object.Position);
+            Picker.Current        = Object;
+            Picker.Current.Source += " · 3D (the curve leaves the plane)";
+            return;
+        }
+    }
     if (Picker.Lock != SolidArcSnapLockKind::None)
     {
         const std::optional<double> Along = ApproachSolidArcLine(CastOrbitRay(Frame, Local.x, Local.y), Picker.LockOrigin, Picker.LockDirection);
@@ -2872,6 +2915,13 @@ void ToggleSketchFill(SolidArcWorkspaceState& State)
 // Alt+N: flip normals of the picked sheets (bodies in mode 4, or the owners of picked faces / edges).
 void FlipPickedNormals(SolidArcWorkspaceState& State)
 {
+    // Picked faces (mode 3): their pieces of the sheet; otherwise the whole picked sheets.
+    if (!State.Document.Selection.Faces.empty())
+    {
+        const std::vector<std::string> Faces = State.Document.Selection.Faces;
+        Conclude(State, FlipSolidArcFaces(State.Document, Faces));
+        return;
+    }
     const std::vector<std::string> Keys = TouchedBodies(State.Document);
     if (Keys.empty()) { Announce(State, "Flip normals: pick a sheet first (a loft or walls: a body in mode 4, or one of its faces)"); return; }
     Conclude(State, FlipSolidArcBodies(State.Document, Keys));
@@ -5293,7 +5343,9 @@ void ChangeVisibility(SolidArcWorkspaceState& State, SolidArcVisibilityVerb Verb
     if (Outcome.AcceptedCondition)
     {
         RefreshSolidArcScene(State, true);
-        Announce(State, Compose("%s · %d hidden", Outcome.Label.c_str(), int(State.Document.Appearance.HiddenBodies.size())));
+        if (SolidArcCurveHiddenCondition(State.Document, State.FocusedStep)) State.FocusedStep = {};     // A hidden sketch is no longer the focus
+        Announce(State, Compose("%s · %d body(ies), %d curve(s) hidden", Outcome.Label.c_str(), int(State.Document.Appearance.HiddenBodies.size()),
+                                int(State.Document.Appearance.HiddenCurves.size())));
     }
     else Announce(State, "Refused: " + Outcome.Refusal);
 }
@@ -7389,6 +7441,21 @@ void DrawDrawingPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
     if (Drawing.SolidCondition) { DrawSolidPreview(State, Canvas, Frame); return; }
     const OrthonormalFrame  Plane   = DrawingPlane(Drawing);
     auto Pixel = [&](Vector2 Point, ImVec2& Out) { return ProjectWorldPoint(State, Frame, PlacePlanePoint(Plane, Point), Out); };
+    if (const std::vector<Vector3> Lifted = LiftedDrawingPoints(Drawing, true); !Lifted.empty())
+    {
+        // A 3D curve in the making: the through-curve in space, its points as dots (the live one white).
+        std::vector<ImVec2> Pixels;
+        for (const Vector3& Sample : SampleThroughCurve(Lifted, false, 24)) { ImVec2 Out; if (ProjectWorldPoint(State, Frame, Sample, Out)) Pixels.push_back(Out); }
+        if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), ActiveColour, 2.0f);
+        for (size_t Index = 0; Index < Lifted.size(); ++Index)
+        {
+            ImVec2 Out;
+            if (!ProjectWorldPoint(State, Frame, Lifted[Index], Out)) continue;
+            const bool Live = Index == Drawing.Points.size();
+            Canvas->AddCircleFilled(Out, Live ? 4.5f : 3.5f, Live ? IM_COL32(0xff, 0xff, 0xff, 0xff) : ActiveColour);
+        }
+        return;
+    }
     SketchModel Sketch;
     const std::string Refusal = ComposeSolidArcSketch(ComposeDrawingRequest(Drawing, true, false), Sketch);
     if (Refusal.empty())
@@ -11733,7 +11800,13 @@ void DrawStepCard(SolidArcWorkspaceState& State)
                            SolidArcBodyCaption(State.Document, Step->Target).c_str(), SolidArcBodyCaption(State.Document, Step->Tool).c_str(), JointFreedom(Step->Joint.Kind),
                            Step->Joint.FlippedCondition ? " · flipped" : "");
     if (Step->Kind == FeatureStepKind::Flip)
-        ImGui::TextWrapped("Normals of %s turned over (every face's sense reversed) · Alt+N on it again removes this step", SolidArcBodyCaption(State.Document, Step->Target).c_str());
+    {
+        if (Step->References.empty())
+            ImGui::TextWrapped("Normals of %s turned over (every face's sense reversed) · Alt+N on it again removes this step", SolidArcBodyCaption(State.Document, Step->Target).c_str());
+        else
+            ImGui::TextWrapped("Normals of %d picked face(s) of %s turned over, with the rest of their piece of the sheet (neighbours must agree) · the same faces again remove this step",
+                               int(Step->References.size()), SolidArcBodyCaption(State.Document, Step->Target).c_str());
+    }
     if (Step->Kind == FeatureStepKind::Import)
     {
         // The embedded file's PRODUCT name and size; faces are named Face(k) in file order.
@@ -12810,7 +12883,8 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         bool SheetCondition = false;
         for (const std::string& Key : TouchedBodies(State.Document))
             if (const SolidArcBodyFigures* Figures = FiguresOf(State.Document, Key)) SheetCondition = SheetCondition || Figures->SheetCondition;
-        if (SheetCondition) Operations.push_back({ "FlipNormals", IconSymbol::SolidArcFlip, "Flip normals · Alt+N" });
+        // Picked faces turn their pieces of the sheet over; otherwise the whole sheet (the object).
+        if (SheetCondition) Operations.push_back({ "FlipNormals", IconSymbol::SolidArcFlip, Selection.Faces.empty() ? "Flip normals · Alt+N" : "Flip faces · Alt+N" });
     }
     if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
     if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Join", IconSymbol::SolidArcLink, "Join · J" });
@@ -12821,7 +12895,9 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         Operations.push_back({ "Rotate", IconSymbol::SolidArcRotate, "Rotate · R" });
         Operations.push_back({ "Scale", IconSymbol::SolidArcMaximize, "Scale · S" });
     }
-    if (Operations.empty() || Selection.Bodies.size() >= 2) return;
+    if (Selection.Bodies.size() >= 2)                                                        // Several bodies: only the flip applies to all of them
+        std::erase_if(Operations, [](const InspectorOperation& Operation) { return Operation.Key != "FlipNormals"; });
+    if (Operations.empty()) return;
     for (InspectorOperation& Operation : Operations) Operation.Enabled = !State.Bevel.ActiveCondition;
     const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
     const std::string Note  = Compose("%d face%s · %d edge%s selected", int(Selection.Faces.size()), Selection.Faces.size() == 1 ? "" : "s", int(Selection.Edges.size()), Selection.Edges.size() == 1 ? "" : "s");
@@ -13511,17 +13587,22 @@ void ApplyShortcuts(SolidArcWorkspaceState& State)
     }
 
     // body[command='trim'] — click pieces to remove · Enter / right-click / Esc / T ends (the view keys above stay live).
+    // 📝 L (loft) and H / Shift+H / Alt+H (visibility) end a passive pick tool and then act, so they work whatever tool was
+    //    left open (the request: "H … doesnt seem to work on curves … same for L loft hotkey doesnt seem to always work").
+    const bool PassingKey = !Control && (Pressed(ImGuiKey_L) || Pressed(ImGuiKey_H)) && !(Alternate && Pressed(ImGuiKey_L));
     if (State.Trim.ActiveCondition)
     {
         if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_T) || (State.Trim.InsertCondition && Pressed(ImGuiKey_V))) CloseTrimSession(State);
-        return;
+        if (!PassingKey) return;
+        if (State.Trim.ActiveCondition) CloseTrimSession(State);
     }
 
     // Fill tool — click regions to fill · Enter / right-click / Esc / F ends (the view keys above stay live).
     if (State.Fill.ActiveCondition)
     {
         if (Pressed(ImGuiKey_Escape) || Pressed(ImGuiKey_Enter) || Pressed(ImGuiKey_KeypadEnter) || Pressed(ImGuiKey_F)) CloseFillSession(State);
-        return;
+        if (!PassingKey) return;
+        if (State.Fill.ActiveCondition) CloseFillSession(State);
     }
 
     if (Control)

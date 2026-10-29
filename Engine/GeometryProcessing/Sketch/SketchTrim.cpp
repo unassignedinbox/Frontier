@@ -230,6 +230,100 @@ namespace
         return Span > 0.0 ? Span : 1.0;
     }
 
+    // 📝 Exact spline pieces (Trim / Cut without changing the shape): a knot τ inserted p times into the clamped carrier
+    //    (Boehm, Piegl & Tiller A5.1, r = 1 each) makes C(τ) a pole, and the carrier falls apart there into two clamped
+    //    B-splines that trace the same points (knot insertion never moves the curve).
+    [[nodiscard]] bool SameKnot(double Left, double Right, const std::vector<double>& Knots) noexcept
+    {
+        return std::fabs(Left - Right) <= 1.0e-12 * std::max(1.0, Knots.back() - Knots.front());
+    }
+
+    void InsertSplineKnot(SketchSplineCurve& Curve, double τ)
+    {
+        const int Degree = Curve.Degree;
+        const int Last   = static_cast<int>(Curve.Poles.size()) - 1;                         // n
+        int Span = Degree;                                                                   // k: U[k] ≤ τ < U[k + 1]
+        while (Span < Last && Curve.Knots[Span + 1] <= τ) ++Span;
+        int Multiplicity = 0;
+        for (double Knot : Curve.Knots) if (SameKnot(Knot, τ, Curve.Knots)) ++Multiplicity;
+        std::vector<Vector2> Poles(Last + 2);
+        for (int Index = 0; Index <= Span - Degree; ++Index) Poles[Index] = Curve.Poles[Index];
+        for (int Index = Span - Multiplicity; Index <= Last; ++Index) Poles[Index + 1] = Curve.Poles[Index];
+        for (int Index = Span - Degree + 1; Index <= Span - Multiplicity; ++Index)
+        {
+            const double Share = (τ - Curve.Knots[Index]) / (Curve.Knots[Index + Degree] - Curve.Knots[Index]);
+            Poles[Index] = Curve.Poles[Index] * Share + Curve.Poles[Index - 1] * (1.0 - Share);
+        }
+        Curve.Poles = std::move(Poles);
+        Curve.Knots.insert(Curve.Knots.begin() + Span + 1, τ);
+    }
+
+    // The carrier on [Low, τ] and [τ, High] (τ strictly inside the domain).
+    [[nodiscard]] std::pair<SketchSplineCurve, SketchSplineCurve> SplitSplineCarrier(SketchSplineCurve Curve, double τ)
+    {
+        const int Degree = Curve.Degree;
+        for (int Count = 0;; ++Count)
+        {
+            int Multiplicity = 0;
+            for (double Knot : Curve.Knots) if (SameKnot(Knot, τ, Curve.Knots)) ++Multiplicity;
+            if (Multiplicity >= Degree || Count > Degree) break;
+            InsertSplineKnot(Curve, τ);
+        }
+        int First = 1;                                                                       // m: first knot equal to τ
+        while (First < static_cast<int>(Curve.Knots.size()) && !SameKnot(Curve.Knots[First], τ, Curve.Knots)) ++First;
+        for (int Index = First; Index < First + Degree; ++Index) Curve.Knots[Index] = τ;      // Exactly τ (no 1e-12 drift)
+        SketchSplineCurve Left, Right;
+        Left.Degree = Right.Degree = Degree;
+        Left.Poles.assign(Curve.Poles.begin(), Curve.Poles.begin() + First);
+        Left.Knots.assign(Curve.Knots.begin(), Curve.Knots.begin() + First + Degree);
+        Left.Knots.push_back(τ);
+        Right.Poles.assign(Curve.Poles.begin() + (First - 1), Curve.Poles.end());
+        Right.Knots.push_back(τ);
+        Right.Knots.insert(Right.Knots.end(), Curve.Knots.begin() + First, Curve.Knots.end());
+        return { std::move(Left), std::move(Right) };
+    }
+
+    // The carrier on [From, To] (Low ≤ From < To ≤ High).
+    [[nodiscard]] SketchSplineCurve SplineCarrierPiece(const SketchSplineCurve& Curve, double From, double To)
+    {
+        SketchSplineCurve Piece = Curve;
+        if (!SameKnot(To, Curve.Knots.back(), Curve.Knots)) Piece = SplitSplineCarrier(Piece, To).first;
+        if (!SameKnot(From, Curve.Knots.front(), Curve.Knots)) Piece = SplitSplineCarrier(Piece, From).second;
+        return Piece;
+    }
+
+    // First then Second, Second's start on First's end: one clamped B-spline with a p-fold knot at the joint (C0 there,
+    // every point kept). Second's knots shift to follow First's.
+    [[nodiscard]] SketchSplineCurve JoinSplineCarriers(const SketchSplineCurve& First, const SketchSplineCurve& Second)
+    {
+        SketchSplineCurve Joined = First;
+        const int    Degree = First.Degree;
+        const double Shift  = First.Knots.back() - Second.Knots.front();
+        Joined.Knots.pop_back();                                                             // The joint keeps p copies
+        for (size_t Index = static_cast<size_t>(Degree) + 1; Index < Second.Knots.size(); ++Index) Joined.Knots.push_back(Second.Knots[Index] + Shift);
+        Joined.Poles.insert(Joined.Poles.end(), Second.Poles.begin() + 1, Second.Poles.end());
+        return Joined;
+    }
+
+    // Curve CurveIndex becomes Piece as a NURBS-form spline: a sketch point per pole; Keep[0] / Keep[1] (when ≥ 0) carry
+    // the first / last pole (an untouched end keeps its point and whatever is coincident with it).
+    void AssignSplinePiece(SketchModel& Sketch, int CurveIndex, const SketchSplineCurve& Piece, std::array<int, 2> Keep)
+    {
+        std::vector<int> Points;
+        for (size_t Pole = 0; Pole < Piece.Poles.size(); ++Pole)
+        {
+            const bool FirstPole = Pole == 0, LastPole = Pole + 1 == Piece.Poles.size();
+            if (FirstPole && Keep[0] >= 0) { Points.push_back(Keep[0]); continue; }
+            if (LastPole && Keep[1] >= 0) { Points.push_back(Keep[1]); continue; }
+            Points.push_back(AppendSketchPoint(Sketch, Piece.Poles[Pole]));
+        }
+        SketchCurve& Curve = Sketch.Curves[CurveIndex];
+        Curve.Kind   = SketchCurveKind::Spline;
+        Curve.Form   = SketchSplineForm::Nurbs;
+        Curve.Points = std::move(Points);
+        Curve.Knots  = Piece.Knots;
+    }
+
     [[nodiscard]] std::vector<Vector2> SamplePiece(const ProfileSegment& Segment, double From, double To)
     {
         std::vector<Vector2> Polyline;
@@ -383,6 +477,9 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
     std::string  Refusal;
     const ProfileSegment Target = ResolveSketchCurveSegment(Sketch, CurveIndex, Join, Refusal);
     if (!Refusal.empty()) { Outcome.Refusal = Refusal; return Outcome; }
+    // A circle, or a spline whose last point is its first (closed: first = last).
+    const bool Loop = ClosedCondition(Target) || (Target.Kind == ProfileSegmentKind::Spline && Sketch.Curves[CurveIndex].Points.size() >= 2
+                                                  && Sketch.Curves[CurveIndex].Points.front() == Sketch.Curves[CurveIndex].Points.back());
     const std::string Name = SketchCurveName(Sketch.Curves[CurveIndex]);
 
     // ① crossings with the sketch's other curves and the foreign ones, merged along the target.
@@ -390,7 +487,7 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
     auto Gather = [&](const ProfileSegment& Cutter, int SketchCurve)
     {
         for (const SegmentCrossing& Crossing : IntersectProfileSegments(Target, Cutter, Join))
-            Crossings.push_back({ ClosedCondition(Target) ? Wrap(Crossing.TargetFraction) : Crossing.TargetFraction, Crossing.Position, SketchCurve });
+            Crossings.push_back({ Loop ? Wrap(Crossing.TargetFraction) : Crossing.TargetFraction, Crossing.Position, SketchCurve });
     };
     for (int Other = 0; Other < static_cast<int>(Sketch.Curves.size()); ++Other)
     {
@@ -407,14 +504,14 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
         if (!Distinct.empty() && Crossing.Fraction - Distinct.back().Fraction <= MergeFraction) continue;
         Distinct.push_back(Crossing);
     }
-    if (ClosedCondition(Target) && Distinct.size() >= 2 && Distinct.front().Fraction + 1.0 - Distinct.back().Fraction <= MergeFraction) Distinct.pop_back();
-    if (!ClosedCondition(Target))
+    if (Loop && Distinct.size() >= 2 && Distinct.front().Fraction + 1.0 - Distinct.back().Fraction <= MergeFraction) Distinct.pop_back();
+    if (!Loop)
         std::erase_if(Distinct, [](const TrimCrossing& Crossing) { return Crossing.Fraction <= MergeFraction || Crossing.Fraction >= 1.0 - MergeFraction; });
     Outcome.Crossings = static_cast<int>(Distinct.size());
     const double Picked = LocateProfileFraction(Target, Pick);
 
     // ② nothing to stop at: the whole curve goes.
-    const size_t Needed = ClosedCondition(Target) ? 2 : 1;
+    const size_t Needed = Loop ? 2 : 1;
     if (Distinct.size() < Needed)
     {
         Outcome.FromFraction = 0.0;
@@ -426,13 +523,74 @@ SketchTrimOutcome TrimSketchCurve(const SketchModel& Sketch, int CurveIndex, Vec
     }
     if (Target.Kind == ProfileSegmentKind::Spline)
     {
-        Outcome.Refusal = "splitting a spline is not supported yet: T trims lines, arcs and circles (" + Name + " is crossed " + std::to_string(Distinct.size()) + " time(s))";
+        // ③′ a spline (Hermite, Bezier, NURBS, cubic): the kept pieces are exact pieces of its B-spline carrier (knot
+        //    insertion, the shape untouched), each a NURBS-form curve; constraints on the curve let go (their slots
+        //    change), an untouched end keeps its point.
+        SketchModel&             Edited  = Outcome.Sketch;
+        const SketchSplineCurve& Carrier = Target.Spline;
+        const double Low = Carrier.Knots.front(), High = Carrier.Knots.back();
+        const auto   At  = [&](double Fraction) { return Low + Fraction * (High - Low); };
+        const SketchCurve Original = Edited.Curves[CurveIndex];
+        const int StartSlot = Original.Points.empty() ? -1 : Original.Points.front();
+        const int EndSlot   = Original.Points.empty() ? -1 : Original.Points.back();
+        std::erase_if(Edited.Constraints, [&](const SketchConstraint& Constraint) { return NamesCurve(Constraint, CurveIndex); });
+        int Lower = -1, Upper = -1;
+        if (Loop)
+        {
+            Lower = static_cast<int>(Distinct.size()) - 1;
+            for (int Index = 0; Index < static_cast<int>(Distinct.size()); ++Index) if (Distinct[Index].Fraction <= Picked) Lower = Index;
+            Upper = (Lower + 1) % static_cast<int>(Distinct.size());
+            const bool WrapCondition = Upper == 0;                                           // The removed piece crosses the seam
+            Outcome.FromFraction = Distinct[Lower].Fraction;
+            Outcome.ToFraction   = Distinct[Upper].Fraction + (WrapCondition ? 1.0 : 0.0);
+            Outcome.Removed      = WrapCondition ? SamplePiece(Target, Outcome.FromFraction, 1.0) : SamplePiece(Target, Outcome.FromFraction, Outcome.ToFraction);
+            if (WrapCondition) { const std::vector<Vector2> Tail = SamplePiece(Target, 0.0, Distinct[Upper].Fraction); Outcome.Removed.insert(Outcome.Removed.end(), Tail.begin() + 1, Tail.end()); }
+            const SketchSplineCurve Kept = WrapCondition ? SplineCarrierPiece(Carrier, At(Distinct[Upper].Fraction), At(Distinct[Lower].Fraction))
+                                                         : JoinSplineCarriers(SplineCarrierPiece(Carrier, At(Distinct[Upper].Fraction), High),
+                                                                              SplineCarrierPiece(Carrier, Low, At(Distinct[Lower].Fraction)));
+            AssignSplinePiece(Edited, CurveIndex, Kept, { -1, -1 });
+            Outcome.Pieces = 1;
+        }
+        else
+        {
+            for (int Index = 0; Index < static_cast<int>(Distinct.size()); ++Index)
+            {
+                if (Distinct[Index].Fraction <= Picked) Lower = Index;
+                else { Upper = Index; break; }
+            }
+            Outcome.FromFraction = Lower < 0 ? 0.0 : Distinct[Lower].Fraction;
+            Outcome.ToFraction   = Upper < 0 ? 1.0 : Distinct[Upper].Fraction;
+            Outcome.Removed      = SamplePiece(Target, Outcome.FromFraction, Outcome.ToFraction);
+            if (Lower < 0) AssignSplinePiece(Edited, CurveIndex, SplineCarrierPiece(Carrier, At(Distinct[Upper].Fraction), High), { -1, EndSlot });
+            else if (Upper < 0) AssignSplinePiece(Edited, CurveIndex, SplineCarrierPiece(Carrier, Low, At(Distinct[Lower].Fraction)), { StartSlot, -1 });
+            else
+            {
+                AssignSplinePiece(Edited, CurveIndex, SplineCarrierPiece(Carrier, Low, At(Distinct[Lower].Fraction)), { StartSlot, -1 });
+                SketchCurve Second = Original;
+                Second.Identifier  = NextIdentifier(Edited, SketchCurveKind::Spline);
+                Edited.Curves.push_back(Second);
+                AssignSplinePiece(Edited, static_cast<int>(Edited.Curves.size()) - 1, SplineCarrierPiece(Carrier, At(Distinct[Upper].Fraction), High), { -1, EndSlot });
+            }
+            Outcome.Pieces = Lower >= 0 && Upper >= 0 ? 2 : 1;
+        }
+        // New ends made by a line / circle / arc of the same sketch stay on it; points no curve uses any more go.
+        const auto PinEnd = [&](int CurveSlot, bool LastCondition, int Crossing)
+        {
+            if (Crossing < 0) return;
+            const SketchCurve& Piece = Edited.Curves[CurveSlot];
+            PinToCutter(Edited, LastCondition ? Piece.Points.back() : Piece.Points.front(), Distinct[Crossing].SketchCurve);
+        };
+        if (Loop) { PinEnd(CurveIndex, false, Upper); PinEnd(CurveIndex, true, Lower); }
+        else if (Lower < 0) PinEnd(CurveIndex, false, Upper);
+        else if (Upper < 0) PinEnd(CurveIndex, true, Lower);
+        else { PinEnd(CurveIndex, true, Lower); PinEnd(static_cast<int>(Edited.Curves.size()) - 1, false, Upper); }
+        (void)EraseSketchPoints(Edited, {});
         return Outcome;
     }
 
     // ③ the piece holding the pick: [Lower, Upper] between neighbouring crossings (or the curve ends).
     SketchModel& Edited = Outcome.Sketch;
-    if (ClosedCondition(Target))
+    if (Loop)
     {
         size_t Lower = Distinct.size() - 1;
         for (size_t Index = 0; Index < Distinct.size(); ++Index) if (Distinct[Index].Fraction <= Picked) Lower = Index;
@@ -504,17 +662,64 @@ SketchTrimOutcome SplitSketchCurve(const SketchModel& Sketch, int CurveIndex, Ve
     std::string  Refusal;
     const ProfileSegment Target = ResolveSketchCurveSegment(Sketch, CurveIndex, Join, Refusal);
     if (!Refusal.empty()) { Outcome.Refusal = Refusal; return Outcome; }
+    // A circle, or a spline whose last point is its first (closed: first = last).
+    const bool Loop = ClosedCondition(Target) || (Target.Kind == ProfileSegmentKind::Spline && Sketch.Curves[CurveIndex].Points.size() >= 2
+                                                  && Sketch.Curves[CurveIndex].Points.front() == Sketch.Curves[CurveIndex].Points.back());
     const std::string Name = SketchCurveName(Sketch.Curves[CurveIndex]);
+    const double Picked = LocateProfileFraction(Target, Pick);
     if (Target.Kind == ProfileSegmentKind::Spline)
     {
-        Outcome.Refusal = "cutting a spline is not supported yet: Cut splits lines, arcs and circles (" + Name + ")";
+        // A spline: two exact pieces of its carrier meeting at the pick (closed: at the pick and the partner, else the
+        // pick and the point half the parameter range on); the shape is untouched.
+        if (!Loop && (Picked <= EndGuard || Picked >= 1.0 - EndGuard))
+        {
+            Outcome.Refusal = "the pointer is on an end of " + Name + ": Cut needs a point inside the curve";
+            return Outcome;
+        }
+        SketchModel&             Edited  = Outcome.Sketch;
+        const SketchSplineCurve& Carrier = Target.Spline;
+        const double Low = Carrier.Knots.front(), High = Carrier.Knots.back();
+        const auto   At  = [&](double Fraction) { return Low + Fraction * (High - Low); };
+        const SketchCurve Original = Edited.Curves[CurveIndex];
+        std::erase_if(Edited.Constraints, [&](const SketchConstraint& Constraint) { return NamesCurve(Constraint, CurveIndex); });
+        Outcome.FromFraction = Outcome.ToFraction = Picked;
+        SketchCurve Second = Original;
+        Second.Identifier  = NextIdentifier(Edited, SketchCurveKind::Spline);
+        Edited.Curves.push_back(Second);
+        const int SecondIndex = static_cast<int>(Edited.Curves.size()) - 1;
+        if (Loop)
+        {
+            double Across = 0.5;
+            if (Partner.has_value())
+            {
+                const double Gap = Wrap(LocateProfileFraction(Target, *Partner) - Picked);
+                if (Gap > EndGuard && Gap < 1.0 - EndGuard) Across = Gap;
+            }
+            const double First = Wrap(Picked), Other = Wrap(Picked + Across);
+            const double From = std::min(First, Other), To = std::max(First, Other);
+            const auto   Inner = [&](double Left, double Right) { return SplineCarrierPiece(Carrier, At(Left), At(Right)); };
+            const SketchSplineCurve Middle = From <= EndGuard ? Inner(0.0, To) : Inner(From, To);
+            const SketchSplineCurve Rest   = From <= EndGuard ? SplineCarrierPiece(Carrier, At(To), High)
+                                                              : JoinSplineCarriers(SplineCarrierPiece(Carrier, At(To), High), Inner(0.0, From));
+            AssignSplinePiece(Edited, CurveIndex, Middle, { -1, -1 });
+            AssignSplinePiece(Edited, SecondIndex, Rest, { Edited.Curves[CurveIndex].Points.back(), Edited.Curves[CurveIndex].Points.front() });
+            Outcome.SplitPositions = { EvaluateProfileSegment(Target, From), EvaluateProfileSegment(Target, To) };
+        }
+        else
+        {
+            const auto [Left, Right] = SplitSplineCarrier(Carrier, At(Picked));
+            AssignSplinePiece(Edited, CurveIndex, Left, { Original.Points.front(), -1 });
+            AssignSplinePiece(Edited, SecondIndex, Right, { Edited.Curves[CurveIndex].Points.back(), Original.Points.back() });
+            Outcome.SplitPositions = { EvaluateProfileSegment(Target, Picked) };
+        }
+        (void)EraseSketchPoints(Edited, {});
+        Outcome.Pieces = 2;
         return Outcome;
     }
-    const double Picked = LocateProfileFraction(Target, Pick);
     Outcome.FromFraction = Picked;
     Outcome.ToFraction   = Picked;
     SketchModel& Edited = Outcome.Sketch;
-    if (ClosedCondition(Target))
+    if (Loop)
     {
         // ① a circle: two arcs (counter-clockwise like the circle) meeting at the pick and the partner (a second
         //    crossing), else half arcs meeting at the pick and its opposite point.

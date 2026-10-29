@@ -624,6 +624,12 @@ struct SolidArcFaceFoot
 //    its own Flip removes that step instead (a toggle). Solids are refused (their faces point out by definition).
 [[nodiscard]] SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std::vector<std::string>& Keys);
 
+// 💡 Flip the picked faces' normals (Inspector Flip normals / Alt+N with faces picked): per sheet body a Flip step naming
+//    the faces; the pieces of the sheet holding them (faces joined through shared edges) turn over, the rest stays (a
+//    piece turns whole so neighbours agree). The same faces flipped again by the body's last step remove it (a toggle).
+//    Faces of solids refuse. One undo entry.
+[[nodiscard]] SolidArcCommandOutcome FlipSolidArcFaces(SolidArcDocument& Document, const std::vector<std::string>& Faces);
+
 // Outliner lock on a body, sketch or space curve: stays in view but cannot be picked, dragged or moved (appearance).
 [[nodiscard]] SolidArcCommandOutcome ToggleSolidArcLock(SolidArcDocument& Document, const std::string& Key);
 
@@ -786,6 +792,13 @@ struct SolidArcStepReading;
 
 // 💡 V7: Close step — plane caps on the planar rim loops of the sewn panels; the result is a solid (or a named refusal).
 [[nodiscard]] SolidArcCommandOutcome CloseSolidArcPanels(SolidArcDocument& Document);
+
+// 💡 A drawn 3D curve (Shift+S with Alt snaps onto curves off the drawing plane — the request "snap a curve along a
+//    curve"): a SpaceCurve step ("Curve#n", captioned CurveN) through Points (≥ 2, in order; ClosedCondition: back to the
+//    first) — chord-parameterised Hermite spans (Catmull–Rom tangents), 48 samples a span, fitted to 10⁻⁶ of its size, so
+//    it passes through every point. Picked; one undo entry.
+[[nodiscard]] std::vector<GeometryProcessing::Vector3> SampleThroughCurve(const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition, int PerSpan = 48);
+[[nodiscard]] SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition);
 
 // 💡 V3 (Plasticity mode 1): pole Pole of a SpaceCurve moves to Position; kept as a pole edit re-applied after every re-fit.
 [[nodiscard]] SolidArcCommandOutcome MoveSolidArcPole(SolidArcDocument& Document, const std::string& Label, int Pole, GeometryProcessing::Vector3 Position);

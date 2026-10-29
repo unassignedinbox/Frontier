@@ -1151,7 +1151,19 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
         {
             // ⑲ A sheet turned over (flip normals): same carriers, every face sense and loop reversed, every name kept.
             if (!Load(Step.Target)) { Refuse("Flip: no body named " + (Step.Target.empty() ? std::string("(active)") : Step.Target)); break; }
-            const TransformOutcome Turned = ReverseBody(Partition, Current);
+            // ⑲′ Face references: only the pieces (faces joined through shared edges) holding one turn over.
+            std::vector<FaceToken> Seeds;
+            bool                   Lost = false;
+            for (TopologyReference& Reference : Step.References)
+            {
+                const ResolvedReference Resolved = ResolveReference(Partition, Current, Naming, Reference);
+                Report.Resolutions.push_back(Resolved);
+                if (Resolved.Method == ResolutionMethod::Refused || Reference.Kind != ReferenceKind::Face) { Lost = true; continue; }
+                Seeds.push_back(Partition.Faces.TokenAt(Resolved.Slot));
+                if (CaptureCondition) Reference.Signature = CaptureSignature(Partition, Reference.Kind, Resolved.Slot);
+            }
+            if (Lost) { Refuse("Flip: a picked face is gone (" + std::to_string(Step.References.size() - Seeds.size()) + " not found)"); break; }
+            const TransformOutcome Turned = Step.References.empty() ? ReverseBody(Partition, Current) : ReverseBodyPieces(Partition, Current, Seeds);
             if (!Turned.Refusal.empty()) { Refuse(Turned.Refusal); break; }
             Naming  = CarryNaming(Partition, Turned, Naming, {});
             Current = Turned.Body;

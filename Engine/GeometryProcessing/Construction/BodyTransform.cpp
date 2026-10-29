@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <map>
+#include <set>
 #include <memory>
 
 namespace Frontier::GeometryProcessing
@@ -273,7 +274,7 @@ namespace
     //    edges — are replaced by certified cubic B-splines in their own parameterisation, tallied into Tally.
     [[nodiscard]] TransformOutcome TransformBodyWith(const ModelPartition& Partition, BodyToken Source, ModelPartition& Target, const AffineMap& Map, bool PromoteAll,
                                                      const ApproximationSettings* Approximation = nullptr, ApproximationOutcome* Tally = nullptr, bool ReverseCondition = false,
-                                                     double KnownVolume = std::numeric_limits<double>::quiet_NaN())
+                                                     double KnownVolume = std::numeric_limits<double>::quiet_NaN(), const std::set<uint32_t>* ReverseFaces = nullptr)
     {
         TransformOutcome Outcome;
         const MapAnalysis Analysis = AnalyseMap(Map);
@@ -349,9 +350,11 @@ namespace
                                           && !std::holds_alternative<NurbsSurface>(Partition.Surfaces.Resolve(Profile.Surface));
             const MappedSurface Mapped = MapSurface(Analysis, Surface);
             if (!Mapped.Refusal.empty()) { Outcome.Refusal = Mapped.Refusal; return Outcome; }
+            // ReverseFaces (flip some pieces): only the faces named turn over.
+            const bool    Turn = ReverseCondition && (ReverseFaces == nullptr || ReverseFaces->contains(Face.Slot));
             BlueprintFace Image;
             Image.Surface = Mapped.Surface;
-            Image.Sense   = Mapped.Flip != ReverseCondition ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
+            Image.Sense   = Mapped.Flip != Turn ? (Profile.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward) : Profile.Sense;
             for (LoopToken Loop : Profile.Loops)
             {
                 std::vector<BlueprintUse> Uses;
@@ -373,7 +376,7 @@ namespace
                     Uses.push_back(std::move(Placement));
                 });
                 if (!Valid) { Outcome.Refusal = "Transform: fin without an SP-curve"; return Outcome; }
-                if ((Analysis.Determinant < 0.0) != ReverseCondition)                        // Mirror or flip: loops run the other way
+                if ((Analysis.Determinant < 0.0) != Turn)                                    // Mirror or flip: loops run the other way
                 {
                     std::reverse(Uses.begin(), Uses.end());
                     for (BlueprintUse& Placement : Uses) Placement.Sense = Placement.Sense == Orientation::Forward ? Orientation::Reversed : Orientation::Forward;
@@ -487,6 +490,45 @@ TransformOutcome ReverseBody(ModelPartition& Partition, BodyToken Source)
         return Refused;
     }
     return TransformBodyWith(Partition, Source, Partition, TranslationMap({}), false, nullptr, nullptr, true);
+}
+
+TransformOutcome ReverseBodyPieces(ModelPartition& Partition, BodyToken Source, const std::vector<FaceToken>& Seeds, int* Pieces)
+{
+    TransformOutcome Refused;
+    if (Partition.Bodies.Resolve(Source).Category != BodyCategory::Sheet)
+    {
+        Refused.Refusal = "Flip: only a sheet (open surface) turns over; a solid's faces point out of its material by definition";
+        return Refused;
+    }
+    if (Seeds.empty()) { Refused.Refusal = "Flip: no face picked"; return Refused; }
+    // ① Pieces: faces joined through shared edges (union–find over the body's faces).
+    const BodyInventory Inventory = Partition.CollectInventory(Source);
+    std::map<uint32_t, uint32_t> Root;
+    for (FaceToken Face : Inventory.Faces) Root[Face.Slot] = Face.Slot;
+    const auto Find = [&](uint32_t Slot)
+    {
+        while (Root[Slot] != Slot) { Root[Slot] = Root[Root[Slot]]; Slot = Root[Slot]; }
+        return Slot;
+    };
+    std::map<uint32_t, uint32_t> EdgeFace;                                                    // [-] - Edge slot → first face using it
+    for (FaceToken Face : Inventory.Faces)
+        for (LoopToken Loop : Partition.Faces.Resolve(Face).Loops)
+            Partition.EnumerateLoopFins(Loop, [&](FinToken Fin)
+            {
+                const uint32_t Edge = Partition.Fins.Resolve(Fin).Edge.Slot;
+                const auto [Seen, Fresh] = EdgeFace.emplace(Edge, Face.Slot);
+                if (!Fresh) Root[Find(Face.Slot)] = Find(Seen->second);
+            });
+    // ② Every face whose piece holds a seed turns over; the other pieces stay.
+    std::set<uint32_t> Chosen, Turned;
+    for (FaceToken Seed : Seeds)
+    {
+        if (!Root.contains(Seed.Slot)) { Refused.Refusal = "Flip: a picked face is not on this sheet"; return Refused; }
+        Chosen.insert(Find(Seed.Slot));
+    }
+    for (FaceToken Face : Inventory.Faces) if (Chosen.contains(Find(Face.Slot))) Turned.insert(Face.Slot);
+    if (Pieces != nullptr) *Pieces = static_cast<int>(Chosen.size());
+    return TransformBodyWith(Partition, Source, Partition, TranslationMap({}), false, nullptr, nullptr, true, std::numeric_limits<double>::quiet_NaN(), &Turned);
 }
 
 TransformOutcome MirrorBody(ModelPartition& Partition, BodyToken Source, Vector3 PlanePoint, Vector3 PlaneNormal)

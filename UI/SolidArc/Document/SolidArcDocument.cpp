@@ -1449,6 +1449,56 @@ SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std:
     });
 }
 
+SolidArcCommandOutcome FlipSolidArcFaces(SolidArcDocument& Document, const std::vector<std::string>& Faces)
+{
+    // Faces grouped by their body, in pick order.
+    std::vector<std::pair<std::string, std::vector<std::string>>> Groups;
+    for (const std::string& Face : Faces)
+    {
+        const std::string Key = SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Face);
+        auto Group = std::find_if(Groups.begin(), Groups.end(), [&](const auto& Entry) { return Entry.first == Key; });
+        if (Group == Groups.end()) { Groups.push_back({ Key, {} }); Group = Groups.end() - 1; }
+        if (std::find(Group->second.begin(), Group->second.end(), Face) == Group->second.end()) Group->second.push_back(Face);
+    }
+    std::string Operands;
+    for (const auto& [Key, Named] : Groups) Operands += (Operands.empty() ? "" : ", ") + std::to_string(Named.size()) + " face(s) of " + (Key.empty() ? std::string("?") : SolidArcBodyCaption(Document, Key));
+    return RunCommand(Document, "Flip normals (" + Operands + ")", false, [&]() -> std::string
+    {
+        if (Groups.empty()) return "pick the faces to flip (mode 3)";
+        for (const auto& [Key, Named] : Groups)
+        {
+            const RegeneratedBody* Body = Key.empty() ? nullptr : FindRegeneratedBody(Document, Key);
+            if (!Body) return "face " + Named.front() + " is on no body";
+            if (Document.Partition && Document.Partition->Bodies.Resolve(Body->Body).Category != BodyCategory::Sheet)
+                return SolidArcBodyCaption(Document, Key) + " is a solid: only sheets (lofts, walls) turn over";
+        }
+        for (const auto& [Key, Named] : Groups)
+        {
+            // ① the body's last step flipping exactly these faces is undone instead of stacking a second one
+            auto Last = Document.Tree.Steps.end();
+            for (auto Step = Document.Tree.Steps.begin(); Step != Document.Tree.Steps.end(); ++Step)
+                if (Step->Target == Key || Step->Label == Key) Last = Step;
+            if (Last != Document.Tree.Steps.end() && Last->Kind == FeatureStepKind::Flip && Last->Target == Key && Last->References.size() == Named.size()
+                && std::all_of(Last->References.begin(), Last->References.end(), [&](const TopologyReference& Reference)
+                               { return std::find(Named.begin(), Named.end(), Reference.Name) != Named.end(); }))
+            {
+                Document.Captions.erase(Last->Label);
+                Document.Tree.Steps.erase(Last);
+                continue;
+            }
+            // ② else a new Flip step naming the faces
+            FeatureStep Step;
+            Step.Kind   = FeatureStepKind::Flip;
+            Step.Label  = "Flip#" + std::to_string(NextStepOrdinal(Document.Tree));
+            Step.Target = Key;
+            for (const std::string& Name : Named) Step.References.push_back({ ReferenceKind::Face, Name, {} });
+            Document.Captions[Step.Label] = NextCaption(Document, "Flip");
+            Document.Tree.Steps.push_back(std::move(Step));
+        }
+        return {};
+    });
+}
+
 SolidArcCommandOutcome ExtrudeSolidArcSketch(SolidArcDocument& Document, const std::string& SketchLabel, double Distance, FeatureCombination Combination,
                                              const std::string& Target, double Start, bool FillCondition)
 {
@@ -1606,6 +1656,69 @@ SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std:
         return {};
     });
     if (Outcome.AcceptedCondition) Document.Selection.Curves.clear();
+    return Outcome;
+}
+
+std::vector<Vector3> SampleThroughCurve(const std::vector<Vector3>& Points, bool ClosedCondition, int PerSpan)
+{
+    std::vector<Vector3> Through = Points;
+    if (ClosedCondition && Through.size() >= 2 && Distance(Through.front(), Through.back()) <= 1.0e-12) Through.pop_back();
+    const int Count = static_cast<int>(Through.size());
+    if (Count < 2) return Through;
+    const int Spans = ClosedCondition ? Count : Count - 1;
+    // Chord parameters τᵢ; tangents mᵢ = (Pᵢ₊₁ − Pᵢ₋₁) / (τᵢ₊₁ − τᵢ₋₁) (open ends: the end chord).
+    const auto At = [&](int Index) { return Through[static_cast<size_t>(((Index % Count) + Count) % Count)]; };
+    std::vector<double> Chords(static_cast<size_t>(Spans));
+    for (int Span = 0; Span < Spans; ++Span) Chords[static_cast<size_t>(Span)] = std::max(Distance(At(Span), At(Span + 1)), 1.0e-12);
+    const auto Chord = [&](int Span) { return Chords[static_cast<size_t>(((Span % Spans) + Spans) % Spans)]; };
+    std::vector<Vector3> Tangents(static_cast<size_t>(Count));
+    for (int Index = 0; Index < Count; ++Index)
+    {
+        if (!ClosedCondition && Index == 0) Tangents[0] = (At(1) - At(0)) * (1.0 / Chord(0));
+        else if (!ClosedCondition && Index == Count - 1) Tangents[static_cast<size_t>(Index)] = (At(Index) - At(Index - 1)) * (1.0 / Chord(Index - 1));
+        else Tangents[static_cast<size_t>(Index)] = (At(Index + 1) - At(Index - 1)) * (1.0 / (Chord(Index - 1) + Chord(Index)));
+    }
+    std::vector<Vector3> Samples;
+    for (int Span = 0; Span < Spans; ++Span)
+    {
+        const Vector3 From = At(Span), To = At(Span + 1);
+        const Vector3 Leave = Tangents[static_cast<size_t>(Span)] * Chord(Span), Arrive = Tangents[static_cast<size_t>((Span + 1) % Count)] * Chord(Span);
+        for (int Step = Span == 0 ? 0 : 1; Step <= PerSpan; ++Step)
+        {
+            const double s = double(Step) / PerSpan, s2 = s * s, s3 = s2 * s;
+            Samples.push_back(From * (2.0 * s3 - 3.0 * s2 + 1.0) + Leave * (s3 - 2.0 * s2 + s) + To * (-2.0 * s3 + 3.0 * s2) + Arrive * (s3 - s2));
+        }
+    }
+    if (ClosedCondition) Samples.back() = Samples.front();                                   // Exactly closed
+    return Samples;
+}
+
+SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<Vector3>& Points, bool ClosedCondition)
+{
+    const std::string Caption = NextCaption(Document, "Curve");
+    SolidArcCommandOutcome Outcome = RunCommand(Document, Caption + " · 3D curve through " + std::to_string(Points.size()) + " points", false, [&]() -> std::string
+    {
+        if (Points.size() < 2) return "a 3D curve needs at least 2 points";
+        for (size_t Index = 1; Index < Points.size(); ++Index)
+            if (Distance(Points[Index - 1], Points[Index]) <= 1.0e-12) return "the same point twice in a row";
+        Vector3 Low = Points.front(), High = Points.front();
+        for (const Vector3& Point : Points)
+        {
+            Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
+            High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
+        }
+        FeatureStep Step;
+        Step.Kind            = FeatureStepKind::SpaceCurve;
+        Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));
+        Step.Points          = SampleThroughCurve(Points, ClosedCondition && Points.size() >= 3);
+        Step.ClosedCondition = ClosedCondition && Points.size() >= 3;
+        Step.PlanarCondition = false;
+        Step.Tolerance       = FeatureValue{ 1.0e-6 * std::max(Distance(Low, High), 1.0e-3) };
+        Document.Captions[Step.Label] = Caption;
+        Document.Tree.Steps.push_back(std::move(Step));
+        return {};
+    });
+    if (Outcome.AcceptedCondition) Document.Selection.Curves = { Document.Tree.Steps.back().Label };
     return Outcome;
 }
 
@@ -3308,45 +3421,59 @@ SolidArcCommandOutcome KnifeSolidArcPrimitive(SolidArcDocument& Document, const 
 
 SolidArcCommandOutcome ChangeSolidArcVisibility(SolidArcDocument& Document, SolidArcVisibilityVerb Verb)
 {
-    // The picked bodies: body picks plus the owners of picked faces and edges.
+    // The picked bodies: body picks plus the owners of picked faces and edges; the picked curves: sketches and 3D curves
+    // (H hides them too — the Outliner eye's set).
     std::set<std::string> Picked(Document.Selection.Bodies.begin(), Document.Selection.Bodies.end());
     for (const std::string& Face : Document.Selection.Faces) if (const std::string Key = SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Face); !Key.empty()) Picked.insert(Key);
     for (const std::string& Edge : Document.Selection.Edges) if (const std::string Key = SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Edge); !Key.empty()) Picked.insert(Key);
+    const std::set<std::string> PickedCurves(Document.Selection.Curves.begin(), Document.Selection.Curves.end());
     static const char* const Labels[] = { "Hide selected", "Hide unselected", "Unhide all", "Invert hidden" };
     return RunAppearanceCommand(Document, Labels[static_cast<int>(Verb)], [&]() -> std::string
     {
         std::set<std::string>& Hidden = Document.Appearance.HiddenBodies;
-        std::set<std::string>  Present;
+        std::set<std::string>& Curves = Document.Appearance.HiddenCurves;
+        std::set<std::string>  Present, Drawn;
         for (const RegeneratedBody& Body : Document.Regeneration.Bodies) Present.insert(Body.Key);
+        // 📝 Curves H may show: sketches and 3D curves that are not deleted and not read by a later step (an extruded
+        //    sketch stays with its body; its eye in the Outliner still works).
+        for (const FeatureStep& Step : Document.Tree.Steps)
+            if ((Step.Kind == FeatureStepKind::Sketch || Step.Kind == FeatureStepKind::SpaceCurve) && !Document.Appearance.RemovedCurves.contains(Step.Label)
+                && (Step.Kind == FeatureStepKind::SpaceCurve || !SolidArcSketchConsumedCondition(Document, Step.Label) || Curves.contains(Step.Label) || PickedCurves.contains(Step.Label)))
+                Drawn.insert(Step.Label);
         std::erase_if(Hidden, [&](const std::string& Key) { return !Present.contains(Key); });       // Keys of removed bodies
-        const std::set<std::string> Before = Hidden;
+        const std::set<std::string> Before = Hidden, CurvesBefore = Curves;
         switch (Verb)
         {
         case SolidArcVisibilityVerb::HideSelected:
-            if (Picked.empty()) return "pick the bodies to hide";
+            if (Picked.empty() && PickedCurves.empty()) return "pick the bodies, sketches or curves to hide";
             Hidden.insert(Picked.begin(), Picked.end());
+            Curves.insert(PickedCurves.begin(), PickedCurves.end());
             break;
         case SolidArcVisibilityVerb::HideUnselected:
-            if (Picked.empty()) return "pick the bodies to keep in view";
+            if (Picked.empty() && PickedCurves.empty()) return "pick the bodies, sketches or curves to keep in view";
             for (const std::string& Key : Present) if (!Picked.contains(Key)) Hidden.insert(Key);
+            for (const std::string& Label : Drawn) if (!PickedCurves.contains(Label)) Curves.insert(Label);
             break;
         case SolidArcVisibilityVerb::UnhideAll:
             Hidden.clear();
+            std::erase_if(Curves, [&](const std::string& Label) { return Drawn.contains(Label); });
             break;
         case SolidArcVisibilityVerb::InvertHidden:
         {
             std::set<std::string> Swapped;
             for (const std::string& Key : Present) if (!Before.contains(Key)) Swapped.insert(Key);
             Hidden = std::move(Swapped);
+            for (const std::string& Label : Drawn) { if (CurvesBefore.contains(Label)) Curves.erase(Label); else Curves.insert(Label); }
             break;
         }
         }
-        if (Hidden == Before) return Verb == SolidArcVisibilityVerb::UnhideAll ? "nothing is hidden" : "nothing changes";
-        // Hidden bodies leave the selection.
+        if (Hidden == Before && Curves == CurvesBefore) return Verb == SolidArcVisibilityVerb::UnhideAll ? "nothing is hidden" : "nothing changes";
+        // Hidden bodies and curves leave the selection.
         std::erase_if(Document.Selection.Bodies, [&](const std::string& Key) { return Hidden.contains(Key); });
         std::erase_if(Document.Selection.Faces, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Face, Name)); });
         std::erase_if(Document.Selection.Edges, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Edge, Name)); });
         std::erase_if(Document.Selection.Vertices, [&](const std::string& Name) { return Hidden.contains(SolidArcBodyOfName(Document, SolidArcSelectionKind::Vertex, Name)); });
+        std::erase_if(Document.Selection.Curves, [&](const std::string& Label) { return Curves.contains(Label); });
         return {};
     });
 }

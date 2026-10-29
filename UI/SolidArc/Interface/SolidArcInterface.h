@@ -213,6 +213,10 @@ struct SolidArcDrawingSession
     GeometryProcessing::OrthonormalFrame     FacePlane        = {};                                    // [len] - That face plane (grid-aligned axes, outward n̂)
     std::string                    FaceName         = {};                                    // [-]   - Persistent name of the face (empty: grid plane)
     uint64_t                       FaceRevision     = 0;                                     // [-]   - Document revision FacePlane was resolved at
+    // 📝 Curve (Shift+S) with Alt on a curve off the drawing plane (a wrapped 3D curve, a loft rim): the point keeps its
+    //    3D place; any such point makes the finished curve a 3D curve through every point (DrawSolidArcSpaceCurve).
+    std::vector<std::optional<GeometryProcessing::Vector3>> Lifted = {};                     // [len] - Per committed point: its 3D place (off the plane)
+    std::optional<GeometryProcessing::Vector3>              PointerLifted = {};              // [len] - The pointer's 3D place this frame
 };
 
 // 📝 Point picker (Plasticity body[gizmo=point-picker]): object snaps under the pointer while drawing and moving, and

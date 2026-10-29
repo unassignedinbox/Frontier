@@ -1584,6 +1584,40 @@ void ValidateWrap()
               Format("a 30-point wiggle 4 wide round the can: accepted, fit tolerance %.1e (%.0e of the width), worst deviation %.2e%s", Tolerance, Tolerance / 4.0, Deviation,
                      Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
     }
+    // ⑪ loft between wrapped curves (the request: "i tried lofting the yellow line with yellow line it refused"): two
+    //    circles r 0.2 on the front plane (z 0.3 and z 0.9) wrapped round the can r 1 → two closed 3D curves; a sheet
+    //    loft and a solid loft through them; then the wrapped circle with its flat original (a label to its decal).
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("WrapLoft");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Circle; Request.PlaneCondition = true; Request.Plane = Ground; Request.CentreCondition = true;
+        Request.Points = { { 0.0, 0.0 }, { 1.0, 0.0 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Can = Part.Tree.Steps.back().Label;
+        Request.Plane = Front; Request.Points = { { 0.0, 0.3 }, { 0.2, 0.3 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Low = Part.Tree.Steps.back().Label;
+        Request.Points = { { 0.0, 0.9 }, { 0.2, 0.9 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string High = Part.Tree.Steps.back().Label;
+        const SolidArcCommandOutcome Wrapped = WrapSolidArcSketches(Part, { Can, { Low, High }, AlongY });
+        std::vector<std::string> Curves;
+        for (const FeatureStep& Step : Part.Tree.Steps) if (Step.Kind == FeatureStepKind::SpaceCurve) Curves.push_back(Step.Label);
+        const auto Loft = [&](std::vector<std::string> Labels, bool SolidCondition)
+        {
+            SolidArcDocument Trial = CloneSolidArcDocument(Part);
+            const SolidArcCommandOutcome Outcome = LoftSolidArcCurves(Trial, Labels, 0, SolidCondition);
+            return std::pair{ Outcome, Trial.Regeneration.Bodies.size() };
+        };
+        const auto [Sheet, SheetBodies] = Curves.size() == 2 ? Loft(Curves, false) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
+        const auto [Solid, SolidBodies] = Curves.size() == 2 ? Loft(Curves, true) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
+        const auto [Decal, DecalBodies] = Curves.size() == 2 ? Loft({ Curves[0], Low }, false) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
+        Tally(WrapGate, 0.0, Wrapped.AcceptedCondition && Curves.size() == 2 && Sheet.AcceptedCondition && Solid.AcceptedCondition && Decal.AcceptedCondition,
+              Format("loft between wrapped curves: %d wrapped circles; sheet loft %s (%d bodies)%s; solid loft %s (%d)%s; wrapped circle to its flat circle %s (%d)%s",
+                     int(Curves.size()), Sheet.AcceptedCondition ? "accepted" : "refused", int(SheetBodies), Sheet.Refusal.empty() ? "" : (" · " + Sheet.Refusal).c_str(),
+                     Solid.AcceptedCondition ? "accepted" : "refused", int(SolidBodies), Solid.Refusal.empty() ? "" : (" · " + Solid.Refusal).c_str(),
+                     Decal.AcceptedCondition ? "accepted" : "refused", int(DecalBodies), Decal.Refusal.empty() ? "" : (" · " + Decal.Refusal).c_str()));
+    }
     // ⑧ S on sketches: a circle r 0.5 at (1, 0) scaled ×2 about the origin; a 2 × 1 rectangle stretched ×2 along x; a
     //    circle stretched refuses; Shift+D with a ½ scale copies (the original stays).
     {
@@ -3419,6 +3453,84 @@ int main()
         }
         RoundTrips = RoundTrips && EncodeSolidArcDocument(Star).find("Kind = 14") != std::string::npos;
         Tally(TrimGate, 0.0, RoundTrips, "save → load → save byte-equal for the star (pins kept) and the plan; volumes bit-equal");
+    }
+
+    // ⑧ splines trim and cut without changing their shape (the request "need Trim on curves … without changing the shape
+    //    of the curves"): a Hermite curve crossed by two lines of other sketches loses its middle piece; another is cut at
+    //    a point. Every point of what stays (2000 per piece) lies on the original curve within 10⁻⁹, the new ends on the
+    //    lines, nothing of the removed piece is left.
+    {
+        const OrthonormalFrame Ground{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+        const auto Draw = [&](SolidArcDocument& Part, SolidArcDrawingKind Kind, std::vector<Vector2> Points)
+        {
+            SolidArcDrawingRequest Request;
+            Request.Kind = Kind; Request.Points = std::move(Points); Request.PlaneCondition = true; Request.Plane = Ground;
+            Expect(DrawSolidArcSketch(Part, Request));
+            return Part.Tree.Steps.back().Label;
+        };
+        const auto Segments = [](const SolidArcDocument& Part, const std::string& Label)
+        {
+            std::vector<ProfileSegment> Found;
+            const SketchModel& Model = Part.Regeneration.Sketches.at(Label);
+            for (int Curve = 0; Curve < int(Model.Curves.size()); ++Curve)
+            {
+                std::string Refusal;
+                const ProfileSegment Segment = ResolveSketchCurveSegment(Model, Curve, 1.0e-9, Refusal);
+                if (Refusal.empty()) Found.push_back(Segment);
+            }
+            return Found;
+        };
+        // Distance of a point to a segment: 20 000 samples, then golden-section refinement.
+        const auto Off = [](const ProfileSegment& Segment, Vector2 Point)
+        {
+            constexpr int Dense = 20000;
+            int Nearest = 0;
+            double Best = 1.0e300;
+            for (int Sample = 0; Sample <= Dense; ++Sample)
+                if (const double Gap = Distance(EvaluateProfileSegment(Segment, double(Sample) / Dense), Point); Gap < Best) { Best = Gap; Nearest = Sample; }
+            double Low = double(std::max(0, Nearest - 1)) / Dense, High = double(std::min(Dense, Nearest + 1)) / Dense;
+            for (int Round = 0; Round < 80; ++Round)
+            {
+                const double First = Low + (High - Low) * 0.381966011250105, Second = Low + (High - Low) * 0.618033988749895;
+                if (Distance(EvaluateProfileSegment(Segment, First), Point) < Distance(EvaluateProfileSegment(Segment, Second), Point)) High = Second; else Low = First;
+            }
+            return Distance(EvaluateProfileSegment(Segment, 0.5 * (Low + High)), Point);
+        };
+        const std::vector<Vector2> Through = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, -0.5 }, { 3.0, 0.8 }, { 4.0, 0.2 } };
+        SolidArcDocument  Part  = CreateSolidArcDocument("SplineTrim");
+        const std::string Curve = Draw(Part, SolidArcDrawingKind::Curve, Through);
+        (void)Draw(Part, SolidArcDrawingKind::Line, { { 1.2, -2.0 }, { 1.2, 2.0 } });
+        (void)Draw(Part, SolidArcDrawingKind::Line, { { 2.6, -2.0 }, { 2.6, 2.0 } });
+        const ProfileSegment Original = Segments(Part, Curve).front();
+        const double Middle = [&] { double Low = 0.0, High = 1.0; for (int Round = 0; Round < 60; ++Round) { const double Mid = 0.5 * (Low + High); (EvaluateProfileSegment(Original, Mid).X < 1.9 ? Low : High) = Mid; } return 0.5 * (Low + High); }();
+        const SolidArcCommandOutcome Trimmed = TrimSolidArcSketch(Part, { Curve, 0, EvaluateProfileSegment(Original, Middle) });
+        const std::vector<ProfileSegment> Kept = Segments(Part, Curve);
+        double Shape = Trimmed.AcceptedCondition ? 0.0 : 1.0, Ends = 0.0, Inside = 0.0;
+        for (const ProfileSegment& Piece : Kept)
+            for (int Sample = 0; Sample <= 2000; ++Sample)
+            {
+                const Vector2 Point = EvaluateProfileSegment(Piece, Sample / 2000.0);
+                Shape = std::max(Shape, Off(Original, Point));
+                if (Point.X > 1.2 + 1.0e-6 && Point.X < 2.6 - 1.0e-6) Inside = std::max(Inside, std::min(Point.X - 1.2, 2.6 - Point.X));
+            }
+        if (Kept.size() == 2) Ends = std::max(std::abs(EvaluateProfileSegment(Kept[0], 1.0).X - 1.2), std::abs(EvaluateProfileSegment(Kept[1], 0.0).X - 2.6));
+        Tally(TrimGate, Shape, Trimmed.AcceptedCondition && Kept.size() == 2 && Shape <= 1.0e-9 && Ends <= 1.0e-9 && Inside == 0.0,
+              Format("T on a Hermite curve's middle (between lines x 1.2 and 2.6): %d pieces left, every point on the original within %.1e, new ends off the lines by %.1e, removed piece gone%s",
+                     int(Kept.size()), Shape, Ends, Trimmed.Refusal.empty() ? "" : (" · " + Trimmed.Refusal).c_str()));
+        SolidArcDocument  Cutting = CreateSolidArcDocument("SplineCut");
+        const std::string Other   = Draw(Cutting, SolidArcDrawingKind::Curve, Through);
+        const ProfileSegment Whole = Segments(Cutting, Other).front();
+        const Vector2 Break = EvaluateProfileSegment(Whole, 0.37);
+        const SolidArcCommandOutcome Cut = TrimSolidArcSketch(Cutting, { Other, 0, Break, true });
+        const std::vector<ProfileSegment> Halves = Segments(Cutting, Other);
+        double CutShape = Cut.AcceptedCondition ? 0.0 : 1.0;
+        for (const ProfileSegment& Piece : Halves)
+            for (int Sample = 0; Sample <= 2000; ++Sample) CutShape = std::max(CutShape, Off(Whole, EvaluateProfileSegment(Piece, Sample / 2000.0)));
+        const double Joint = Halves.size() == 2 ? std::max(Distance(EvaluateProfileSegment(Halves[0], 1.0), Break), Distance(EvaluateProfileSegment(Halves[1], 0.0), Break)) : 1.0;
+        const double Reach = Halves.size() == 2 ? std::max(Distance(EvaluateProfileSegment(Halves[0], 0.0), Through.front()), Distance(EvaluateProfileSegment(Halves[1], 1.0), Through.back())) : 1.0;
+        Tally(TrimGate, CutShape, Cut.AcceptedCondition && Halves.size() == 2 && CutShape <= 1.0e-9 && Joint <= 1.0e-9 && Reach <= 1.0e-9,
+              Format("Cut on a Hermite curve at 37 %%: %d pieces, every point on the original within %.1e, meeting at the cut (%.1e), ends kept (%.1e)%s",
+                     int(Halves.size()), CutShape, Joint, Reach, Cut.Refusal.empty() ? "" : (" · " + Cut.Refusal).c_str()));
     }
 
     GateTally ConstrainGate   = { "W23", "Sketch constraints (K): a drawn rectangle goes DOF 4 → Lock 2 → D 1 → D 0, each dimension drives the extrude volume; literal and parameter-bound dimension edits regenerate downstream; undo / redo; remove frees a degree", "≤ 10⁻⁹ · exact" };
