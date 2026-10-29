@@ -852,7 +852,8 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                 const double Low = Step.CurveKnots.front(), Span = Step.CurveKnots.back() - Step.CurveKnots.front();
                 for (double Knot : Step.CurveKnots) Exact.Knots.push_back((Knot - Low) / Span);  // Domain [0, 1] as a fit's
                 Fit.Curve = NurbsCurve{ std::make_shared<NurbsCurveDefinition>(std::move(Exact)) };
-                Fit.Spans = static_cast<int>(Step.CurveKnots.size()) - 2 * (Degree + 1) + 1;
+                Fit.Spans = 0;                                                               // Distinct knot intervals
+                for (size_t Index = 1; Index < Step.CurveKnots.size(); ++Index) Fit.Spans += Step.CurveKnots[Index] > Step.CurveKnots[Index - 1] ? 1 : 0;
             }
             else Fit = FitSpaceCurve(Points, Settings);
             if (!Fit.Refusal.empty()) { Refuse("SpaceCurve: " + Fit.Refusal); break; }
