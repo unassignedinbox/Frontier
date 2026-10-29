@@ -119,7 +119,7 @@ namespace
     GateTally SolidKnifeGate  = { "W54", "Knife with 3D cutters (Construct primitives drawn on a face, then pulled into it): on a 2 m cube a box 0.4 × 0.4 sunk 0.3 (top 0.02 above the face) cuts 0.048; a cylinder r 0.2 on the +x face frame sunk 0.5 with the cutter kept cuts 0.02π and leaves a 0.0208π body (Duplicate + Combine); a sphere r 0.3 centred on the top face cuts a half ball 0.018π; a box boss (Union, foot 0.02 inside) adds 0.004; Separate leaves a tube body, selected; refusals (missing target, torus tube ≥ major, New) leave the document untouched; one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally PocketBevelGate = { "W55", "Bevels on knife pockets in a curved face (cylinder r 2.126 × 1.8, pockets cut from the tangent plane): the slot opening loop takes fillets 0.02 · 0.0519 · 0.1 across its smooth joints (pinned volumes, decreasing); sizes 0.3 and 0.8553 refuse as too large, naming the outgrown face, document untouched; a hex pocket insert's rim loop takes 0.05 through its unequal mitres, its wall–wall edges 0.05 together; on a box the rim loss stays within 10 % of the straight-edge model (1 − π/4) r² L; one undo entry each; codec byte-equal", "≤ 10⁻⁹ pinned · exact" };
     GateTally ReachGate       = { "W56", "Knife insert gesture (press = centre, drag = size + turn by the insert's grip, release = depth): grips sit on the farthest outline point (triangle vertex at 90°, hex vertex at 0°, square corner at 45°); a built-in at another depth is authored again (analytic STEP, no B-spline) — a triangle 0.4 at 0.2 deep cuts √3/4·0.4²·0.2, a round hole 0.4 at 0.6 deep cuts 0.04π·0.6, a countersink 0.4 at 0.4 deep cuts its 45° cone frustum plus bore; a countersink shallower than its cone refuses untouched; a library file stretches along z (Stretch = depth / its depth); one undo entry each; codec byte-equal", "≤ 10⁻⁹ · exact" };
-    GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end and on a spline refuse untouched; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally SplitGate       = { "W57", "Sketch Cut, edge rings and image-plane properties: a filled 2 × 1 rectangle's bottom line cut at x = 0.5 becomes two lines sharing the new point (5 curves) and its extrude keeps V = 2; a circle r 0.5 cut becomes two half arcs (same centre, ends opposite) and its extrude keeps V = π/4; a cut on a line's end refuses untouched, a spline cut splits it; the front-top edge of a 4 × 2 × 1 block rings to its four edges along x (all at |y| ∈ {0, 2}, z ∈ {0, 1}); an image plane's photo / mirror / lock / turn / crop round-trip the codec byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally LoopGate        = { "W58", "Blender edge loops / rings and the polyline knife: on a 4 × 2 × 1 block the front-top edge loops to itself (box corners are three-edge poles) and rings to its four edges along x; a hexagonal prism's top rim edge loops round the hexagon (6, the n-gon hub rule) and rings across the even hexagons (4 rim edges), an upright rings to all 6 uprights; a pentagonal prism's rim loops to 5 and rings to 2 (odd faces stop), its upright rings to 5; a triangular prism's rim loops to itself (no hub at 3 sides); a polyline (1, −1) → (1, 1.5) → (3, 1.5) → (3, 3) slices the block into 3 + 5 exact, and the L piece's top rim loops to its 6 edges; a cylinder's top circle loops to itself and rings to the bottom circle; open walls' top lip loops round the open boundary (4) and rings to the bottom lip; on a revolved diamond (corners with four edge ends) a seam loops round the profile (4) and a circle rings to all 4 circles", "exact" };
     GateTally ManifoldGate    = { "W60", "Extrude manifold (Blender's push-in, the Windows report \"i want to extrude the shape i cant\"): a closed polyline / circle drawn on a face of a 4 × 2 × 1 block reads the material below it, so E dragged in cuts a pocket (Difference started a hair outside) and out adds; an inward Union merges flush (why direction now decides); a boss cap pushed back past its base (push refused) is cut as a prism of its outline, a pocket floor and a whole face push", "1e-9 rel" };
     GateTally ImprintGate     = { "W61", "2D cutters (imprint, the request \"2d cutters ... dont cut into the body\"): an outline drawn on a face of a 4 × 2 × 1 block splits that face only — volume and soundness unchanged, the face count +1 — for an island, a rectangle overhanging half the top, open lines and an L polyline edge to edge, a circle on the front; the split regions then push / pull with face E (pocket, boss, step, raised step), a raised neighbour stays unsplit, off-body outlines refuse, and the step survives save / load", "1e-9 rel" };
@@ -128,6 +128,7 @@ namespace
     GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
     GateTally DeleteGate      = { "W68", "Delete everything picked (the request \"add delete for all entities face / edge / object / outliner and viewport … X key or delete\"): on the 4 × 2 × 1 block a fillet face or fillet edge un-blends (the Blend lets go of its edge: 8 again, or one fillet of two left); a seam edge of an imprinted rectangle or an edge-to-edge imprint line dissolves (6 faces, 12 edges, 8 vertices, 8); refusals untouched — a box edge, a corner vertex, fillet and plain edges together; an extruded sketch leaves the scene (RemovedCurves, the body stays, save / load keeps it, show refuses, undo restores) while a free sketch is deleted; sketch points take their curves (renumbered, re-solved), an emptied sketch goes, a point of an extruded rectangle detaches the rest (body kept); bodies removed; one undo entry each", "exact · 1e-9" };
     GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
+    GateTally CurveAskGate    = { "W69", "Curves and sheets (the request \"lofting the yellow line with yellow line it refused … a button to swap the normals … H to hide curves … snap a curve along a curve … 3D gizmo in 3D\"): L between picked sketches — two open curves side by side in one view, two concentric circles, an open curve to its wrapped copy, curves in two views — gives a solid or a sheet, never a refusal; flip of one picked face turns only its piece of a two-loft sheet (each face's sense reversed, the other piece kept), again removes the step, a solid's face refuses; H hides picked curves (HiddenCurves) and Alt+H brings them back; a 3D curve through off-plane points passes through each; sketch points lifted off their plane turn their curve into a 3D curve of the same form (on the plane: identical to the sketch curve)", "1e-9 · fit 10⁻⁶" };
     GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3; precision round a free curve (samples on the rail to 10⁻⁹, the fitted curve within 10⁻⁶ of the width); a detailed wiggle steps down instead of refusing", "1e-9 · fit 10⁻⁶ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
@@ -1612,8 +1613,11 @@ void ValidateWrap()
         const auto [Sheet, SheetBodies] = Curves.size() == 2 ? Loft(Curves, false) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
         const auto [Solid, SolidBodies] = Curves.size() == 2 ? Loft(Curves, true) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
         const auto [Decal, DecalBodies] = Curves.size() == 2 ? Loft({ Curves[0], Low }, false) : std::pair{ SolidArcCommandOutcome{}, size_t(0) };
-        Tally(WrapGate, 0.0, Wrapped.AcceptedCondition && Curves.size() == 2 && Sheet.AcceptedCondition && Solid.AcceptedCondition && Decal.AcceptedCondition,
-              Format("loft between wrapped curves: %d wrapped circles; sheet loft %s (%d bodies)%s; solid loft %s (%d)%s; wrapped circle to its flat circle %s (%d)%s",
+        // 📝 L tries the solid first and falls back to the sheet; a solid needs plane caps, and these rims curve round the
+        //    can (🚧 non-planar caps), so its refusal must name exactly that.
+        const bool SolidAnswered = Solid.AcceptedCondition || Solid.Refusal.find("not planar") != std::string::npos;
+        Tally(WrapGate, 0.0, Wrapped.AcceptedCondition && Curves.size() == 2 && Sheet.AcceptedCondition && SolidAnswered && Decal.AcceptedCondition,
+              Format("loft between wrapped curves (L: solid, else sheet): %d wrapped circles; sheet loft %s (%d bodies)%s; solid loft %s (%d)%s; wrapped circle to its flat circle %s (%d)%s",
                      int(Curves.size()), Sheet.AcceptedCondition ? "accepted" : "refused", int(SheetBodies), Sheet.Refusal.empty() ? "" : (" · " + Sheet.Refusal).c_str(),
                      Solid.AcceptedCondition ? "accepted" : "refused", int(SolidBodies), Solid.Refusal.empty() ? "" : (" · " + Solid.Refusal).c_str(),
                      Decal.AcceptedCondition ? "accepted" : "refused", int(DecalBodies), Decal.Refusal.empty() ? "" : (" · " + Decal.Refusal).c_str()));
@@ -1896,6 +1900,202 @@ void ValidateReshape()
 
 // W68: X / Delete on every kind of pick. The block is x ∈ [0, 4], y ∈ [0, 2], z ∈ [0, 1] (V 8, 6 faces, 12 edges, 8 vertices);
 // a fillet r on one straight edge of length 4 takes (1 − π/4) r² · 4.
+// W69: the curve-and-sheet request — loft between picked sketches (as L: solid, else sheet), flip of picked faces,
+// H on curves, 3D curves through off-plane points, sketch points lifted off their plane.
+void ValidateCurveAsk()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const OrthonormalFrame Ground{ { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 } };
+    const OrthonormalFrame Front{ { 0.0, -3.0, 0.0 }, { 1.0, 0.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 0.0, -1.0, 0.0 } };
+    const OrthonormalFrame Right{ { 0.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } };
+    const auto Draw = [](SolidArcDocument& Part, SolidArcDrawingKind Kind, const OrthonormalFrame& Plane, std::vector<Vector2> Points, bool CentreCondition = false)
+    {
+        SolidArcDrawingRequest Request;
+        Request.Kind = Kind; Request.PlaneCondition = true; Request.Plane = Plane; Request.Points = std::move(Points); Request.CentreCondition = CentreCondition;
+        Request.Form = SketchSplineForm::Hermite;
+        Expect(DrawSolidArcSketch(Part, Request));
+        return Part.Tree.Steps.back().Label;
+    };
+    // L as the viewport does it: a solid when the sections close, else a sheet.
+    const auto LoftAsL = [](SolidArcDocument& Part, const std::vector<std::string>& Labels, std::string& Made)
+    {
+        SolidArcCommandOutcome Outcome = LoftSolidArcCurves(Part, Labels, 0, true);
+        Made = Outcome.AcceptedCondition ? "solid" : "sheet";
+        if (!Outcome.AcceptedCondition) Outcome = LoftSolidArcCurves(Part, Labels, 0, false);
+        if (!Outcome.AcceptedCondition) Made = "refused";
+        return Outcome;
+    };
+    // Face name → sense over every regenerated body.
+    const auto Senses = [](const SolidArcDocument& Part)
+    {
+        std::map<std::string, int> Found;
+        if (!Part.Partition) return Found;
+        for (const RegeneratedBody& Body : Part.Regeneration.Bodies)
+            for (const auto& [Slot, Name] : Body.Naming.Faces)
+                Found[Name] = Part.Partition->Faces.Resolve(Part.Partition->Faces.TokenAt(Slot)).Sense == Orientation::Forward ? 1 : -1;
+        return Found;
+    };
+
+    // ① L between picked ("yellow") sketches, four layouts
+    struct LoftCase { const char* Note; int Layout; };
+    for (const LoftCase& Case : { LoftCase{ "two open curves side by side in the Right view", 0 }, LoftCase{ "two concentric circles on the ground", 1 },
+                                  LoftCase{ "an open curve to its wrapped copy", 2 }, LoftCase{ "an open curve in the Right view to one in the Front view", 3 } })
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("LoftAsk");
+        std::vector<std::string> Labels;
+        if (Case.Layout == 0)
+        {
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Curve, Right, { { 0.0, 0.0 }, { 0.4, 0.6 }, { 0.2, 1.2 } }));
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Curve, Right, { { 1.0, 0.0 }, { 1.3, 0.5 }, { 1.2, 1.2 } }));
+        }
+        else if (Case.Layout == 1)
+        {
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Circle, Ground, { { 0.0, 0.0 }, { 1.0, 0.0 } }, true));
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Circle, Ground, { { 0.0, 0.0 }, { 2.0, 0.0 } }, true));
+        }
+        else if (Case.Layout == 2)
+        {
+            const std::string Can   = Draw(Part, SolidArcDrawingKind::Circle, Ground, { { 0.0, 0.0 }, { 1.0, 0.0 } }, true);
+            const std::string Shape = Draw(Part, SolidArcDrawingKind::Curve, Front, { { -0.4, 0.2 }, { 0.0, 0.6 }, { 0.4, 0.3 } });
+            Expect(WrapSolidArcSketches(Part, { Can, { Shape }, SketchWrapSettings{ SketchWrapKind::Wrap, { 0.0, 1.0, 0.0 }, {} } }));
+            Labels.push_back(Shape);
+            for (const FeatureStep& Step : Part.Tree.Steps) if (Step.Kind == FeatureStepKind::SpaceCurve) Labels.push_back(Step.Label);
+        }
+        else
+        {
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Curve, Right, { { 0.5, 0.0 }, { 0.8, 0.6 }, { 0.6, 1.2 } }));
+            Labels.push_back(Draw(Part, SolidArcDrawingKind::Curve, Front, { { 0.5, 0.0 }, { 0.9, 0.5 }, { 0.7, 1.2 } }));
+        }
+        std::string Made;
+        const SolidArcCommandOutcome Lofted = LoftAsL(Part, Labels, Made);
+        Tally(CurveAskGate, 0.0, Lofted.AcceptedCondition && Part.Regeneration.Bodies.size() >= 1,
+              Format("L between %s (%d picked): %s · %d bodies · %s%s", Case.Note, int(Labels.size()), Made.c_str(), int(Part.Regeneration.Bodies.size()),
+                     Part.Summary.SoundCondition ? "sound" : "audit findings", Lofted.Refusal.empty() ? "" : (" · " + Lofted.Refusal).c_str()));
+    }
+
+    // ② Flip faces: two separate sheet lofts; one face picked → its piece turns, the other piece stays; again → step gone
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("FlipAsk");
+        const std::string A = Draw(Part, SolidArcDrawingKind::Curve, Right, { { 0.0, 0.0 }, { 0.4, 0.6 }, { 0.2, 1.2 } });
+        const std::string B = Draw(Part, SolidArcDrawingKind::Curve, Right, { { 1.0, 0.0 }, { 1.3, 0.5 }, { 1.2, 1.2 } });
+        const std::string C = Draw(Part, SolidArcDrawingKind::Curve, Right, { { 3.0, 0.0 }, { 3.4, 0.6 }, { 3.2, 1.2 } });
+        const std::string D = Draw(Part, SolidArcDrawingKind::Curve, Right, { { 4.0, 0.0 }, { 4.3, 0.5 }, { 4.2, 1.2 } });
+        Expect(LoftSolidArcCurves(Part, { A, B }));
+        Expect(LoftSolidArcCurves(Part, { C, D }));
+        const std::map<std::string, int> Before = Senses(Part);
+        std::string Picked;
+        for (const auto& [Name, Sense] : Before) { Picked = Name; break; }
+        const size_t Steps = Part.Tree.Steps.size(), Undo = Part.UndoEntries.size();
+        const SolidArcCommandOutcome Flipped = FlipSolidArcFaces(Part, { Picked });
+        const std::map<std::string, int> After = Senses(Part);
+        int Turned = 0, Kept = 0, Lost = 0;
+        for (const auto& [Name, Sense] : Before)
+        {
+            const auto Found = After.find(Name);
+            if (Found == After.end()) { ++Lost; continue; }
+            (Found->second == -Sense ? Turned : Kept) += 1;
+        }
+        const bool PickedTurned = After.contains(Picked) && After.at(Picked) == -Before.at(Picked);
+        Tally(CurveAskGate, 0.0, Flipped.AcceptedCondition && PickedTurned && Turned >= 1 && Kept >= 1 && Lost == 0 && Part.Tree.Steps.size() == Steps + 1 && Part.UndoEntries.size() == Undo + 1
+                                 && !Part.Tree.Steps.back().References.empty(),
+              Format("flip face %s of a two-loft sheet (%d faces, %d bodies): %d face(s) turned, %d kept, %d lost · %s%s", Picked.c_str(), int(Before.size()), int(Part.Regeneration.Bodies.size()),
+                     Turned, Kept, Lost, Part.Summary.SoundCondition ? "sound" : "audit findings", Flipped.Refusal.empty() ? "" : (" · " + Flipped.Refusal).c_str()));
+        const SolidArcCommandOutcome Again = FlipSolidArcFaces(Part, { Picked });
+        Tally(CurveAskGate, 0.0, Again.AcceptedCondition && Part.Tree.Steps.size() == Steps && Senses(Part) == Before,
+              Format("the same face flipped again: the Flip step goes, every sense as before%s", Again.Refusal.empty() ? "" : (" · " + Again.Refusal).c_str()));
+        const SolidArcCommandOutcome Whole = FlipSolidArcBodies(Part, { Part.Regeneration.Bodies.front().Key });
+        int WholeTurned = 0;
+        for (const auto& [Name, Sense] : Senses(Part)) WholeTurned += Before.contains(Name) && Before.at(Name) == -Sense ? 1 : 0;
+        Tally(CurveAskGate, 0.0, Whole.AcceptedCondition && WholeTurned == int(Before.size()),
+              Format("nothing but the sheet picked: the entire object turns (%d of %d faces)%s", WholeTurned, int(Before.size()), Whole.Refusal.empty() ? "" : (" · " + Whole.Refusal).c_str()));
+        SolidArcDocument Solid = CreateSolidArcDocument("FlipSolid");
+        SolidArcConstructRequest Block;
+        Block.Kind = SolidArcConstructKind::Block; Block.Width = 1.0; Block.Depth = 1.0; Block.Height = 1.0;
+        Expect(ConstructSolidArcPrimitive(Solid, Block));
+        const std::map<std::string, int> Faces = Senses(Solid);
+        const std::string Held = EncodeSolidArcDocument(Solid);
+        const SolidArcCommandOutcome Refused = Faces.empty() ? SolidArcCommandOutcome{} : FlipSolidArcFaces(Solid, { Faces.begin()->first });
+        Tally(CurveAskGate, 0.0, !Refused.AcceptedCondition && EncodeSolidArcDocument(Solid) == Held, Format("a solid's face refuses untouched: %s", Refused.Refusal.c_str()));
+    }
+
+    // ③ H on curves: a picked sketch and a picked 3D curve hide; Alt+H shows them again
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("HideAsk");
+        const std::string Sketch = Draw(Part, SolidArcDrawingKind::Curve, Ground, { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, 0.0 } });
+        Expect(DrawSolidArcSpaceCurve(Part, { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.5 }, { 2.0, 1.0, 0.0 } }, false));
+        const std::string Space = Part.Tree.Steps.back().Label;
+        Part.Selection.Curves = { Sketch, Space };
+        const SolidArcCommandOutcome Hidden = ChangeSolidArcVisibility(Part, SolidArcVisibilityVerb::HideSelected);
+        const bool Gone = Part.Appearance.HiddenCurves.contains(Sketch) && Part.Appearance.HiddenCurves.contains(Space);
+        const SolidArcCommandOutcome Shown = ChangeSolidArcVisibility(Part, SolidArcVisibilityVerb::UnhideAll);
+        Tally(CurveAskGate, 0.0, Hidden.AcceptedCondition && Gone && Shown.AcceptedCondition && Part.Appearance.HiddenCurves.empty(),
+              Format("H on a picked sketch curve and a 3D curve: both hidden (%s), Alt+H: none hidden (%d)%s", Gone ? "yes" : "no", int(Part.Appearance.HiddenCurves.size()),
+                     Hidden.Refusal.empty() ? "" : (" · " + Hidden.Refusal).c_str()));
+    }
+
+    // ④ a 3D curve through off-plane points (drawn with Alt on curves above the plane) passes through each
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("SpaceAsk");
+        const std::vector<Vector3> Through = { { 0.0, 0.0, 0.0 }, { 1.0, 0.0, 0.5 }, { 2.0, 1.0, 0.2 }, { 3.0, 0.5, 0.9 } };
+        const SolidArcCommandOutcome Drawn = DrawSolidArcSpaceCurve(Part, Through, false);
+        const auto Fit = Part.Regeneration.Curves.find(Part.Tree.Steps.back().Label);
+        double Worst = 1.0, Tolerance = 0.0;
+        if (Fit != Part.Regeneration.Curves.end() && Fit->second.Curve.Definition)
+        {
+            Worst = 0.0;
+            Tolerance = 1.0e-6 * Distance(Vector3{ 0.0, 0.0, 0.0 }, Vector3{ 3.0, 1.0, 0.9 });
+            for (size_t Index = 0; Index < Through.size(); ++Index)                          // Uniform knots: point i at τ = i / (n − 1)
+                Worst = std::max(Worst, Distance(EvaluateNurbsCurve(*Fit->second.Curve.Definition, double(Index) / double(Through.size() - 1)).Position, Through[Index]));
+        }
+        Tally(CurveAskGate, Worst, Drawn.AcceptedCondition && Worst <= 1.0e-9 && Part.Selection.Curves.size() == 1 && !Part.Tree.Steps.back().CurveKnots.empty(),
+              Format("3D curve through 4 points off the ground: exact (poles + knots, no fit; tolerance kept %.1e), through every point within %.1e%s", Tolerance, Worst,
+                     Drawn.Refusal.empty() ? "" : (" · " + Drawn.Refusal).c_str()));
+    }
+
+    // ⑤ sketch points lifted off the plane: the curve becomes a 3D curve of the same form; points left on the plane give
+    //    exactly the sketch curve
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("LiftAsk");
+        const std::vector<Vector2> Flat = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, -0.5 }, { 3.0, 0.8 } };
+        const std::string Sketch = Draw(Part, SolidArcDrawingKind::Curve, Ground, Flat);
+        const SketchModel Model = Part.Regeneration.Sketches.at(Sketch);
+        std::vector<Vector3> Placed;
+        for (const Vector2& Point : Flat) Placed.push_back({ Point.X, Point.Y, 0.0 });
+        // The same weights in 3D, sampled at uniform τ, against the sketch's own exact B-spline at the same τ.
+        const std::vector<Vector3>  Same    = SampleThroughCurve(Placed, false, SketchSplineForm::Hermite, 48);
+        const SketchSplineOutcome   Own     = ResolveSketchCurveSpline(Model, Model.Curves.front());
+        double Planar = Own.Refusal.empty() ? 0.0 : 1.0;
+        if (Own.Refusal.empty())
+            for (size_t Index = 0; Index < Same.size(); ++Index)
+            {
+                const double  τ     = Own.Curve.Knots.front() + (Own.Curve.Knots.back() - Own.Curve.Knots.front()) * double(Index) / double(Same.size() - 1);
+                const Vector2 Exact = EvaluateSketchSpline(Own.Curve, τ).Position;
+                Planar = std::max(Planar, Distance(Exact, Vector2{ Same[Index].X, Same[Index].Y }) + std::abs(Same[Index].Z));
+            }
+        const Vector3 Raised{ 1.0, 1.0, 0.6 };
+        const SolidArcCommandOutcome Lifted = LiftSolidArcSketchPoints(Part, Sketch, Ground, { 1 }, { Raised });
+        const bool SketchGone = std::none_of(Part.Tree.Steps.begin(), Part.Tree.Steps.end(), [&](const FeatureStep& Step) { return Step.Label == Sketch; });
+        const auto Fit = Part.Tree.Steps.empty() ? Part.Regeneration.Curves.end() : Part.Regeneration.Curves.find(Part.Tree.Steps.back().Label);
+        double Reach = 1.0;
+        if (Fit != Part.Regeneration.Curves.end() && Fit->second.Curve.Definition)
+        {
+            Reach = 0.0;
+            const Vector3 Expected[4] = { { 0.0, 0.0, 0.0 }, Raised, { 2.0, -0.5, 0.0 }, { 3.0, 0.8, 0.0 } };
+            for (int Index = 0; Index < 4; ++Index) Reach = std::max(Reach, Distance(EvaluateNurbsCurve(*Fit->second.Curve.Definition, Index / 3.0).Position, Expected[Index]));
+        }
+        Tally(CurveAskGate, std::max(Planar, Reach), Lifted.AcceptedCondition && SketchGone && Planar <= 1.0e-9 && Reach <= 1.0e-9 && Part.Selection.Curves.size() == 1,
+              Format("point 2 of a Hermite curve lifted 0.6 off the ground: the curve is a 3D curve (sketch gone: %s) through the raised point and the other three within %.1e (exact poles); with no point lifted the same weights give the sketch curve to %.1e%s",
+                     SketchGone ? "yes" : "no", Reach, Planar, Lifted.Refusal.empty() ? "" : (" · " + Lifted.Refusal).c_str()));
+        SolidArcDocument Boxed = CreateSolidArcDocument("LiftLine");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Rectangle; Request.Points = { { 0.0, 0.0 }, { 1.0, 1.0 } };
+        Expect(DrawSolidArcSketch(Boxed, Request));
+        const std::string Held = EncodeSolidArcDocument(Boxed);
+        const SolidArcCommandOutcome Line = LiftSolidArcSketchPoints(Boxed, Boxed.Tree.Steps.back().Label, Ground, { 0 }, { Vector3{ 0.0, 0.0, 0.5 } });
+        Tally(CurveAskGate, 0.0, !Line.AcceptedCondition && EncodeSolidArcDocument(Boxed) == Held, Format("a rectangle corner lifted refuses untouched: %s", Line.Refusal.c_str()));
+    }
+}
+
 void ValidateDelete()
 {
     const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -2149,6 +2349,12 @@ int main()
         ValidateReshape();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ReshapeGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_CURVES"))                                           // Quick rerun of W69 alone
+    {
+        ValidateCurveAsk();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return CurveAskGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_DELETE"))                                           // Quick rerun of W68 alone
     {
@@ -3496,6 +3702,7 @@ int main()
             }
             return Distance(EvaluateProfileSegment(Segment, 0.5 * (Low + High)), Point);
         };
+        const auto Format = [](const char* Pattern, auto... Values) { char Text[900]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
         const std::vector<Vector2> Through = { { 0.0, 0.0 }, { 1.0, 1.0 }, { 2.0, -0.5 }, { 3.0, 0.8 }, { 4.0, 0.2 } };
         SolidArcDocument  Part  = CreateSolidArcDocument("SplineTrim");
         const std::string Curve = Draw(Part, SolidArcDrawingKind::Curve, Through);
@@ -7436,13 +7643,13 @@ int main()
         Tally(SplitGate, Relative, Halved.AcceptedCondition && Opposite && Relative <= 1.0e-9,
               Format("%s: two half arcs about (0, 0) with opposite ends, V %.12f vs π/4 %.12f", Halved.Label.c_str(), Disc.Summary.Volume, Expected));
 
-        // ③ a spline refuses
+        // ③ a spline cuts too (since the curve-trim request; exactness in W18 ⑧): at its middle point, two curves
         SolidArcDocument Wave = CreateSolidArcDocument("CutSpline");
         Expect(DrawSolidArcSketch(Wave, DrawingOf(SolidArcDrawingKind::Curve, 0, { { 0.0, 0.0 }, { 1.0, 0.6 }, { 2.0, 0.0 } })));
         const std::string Curve = Wave.Tree.Steps.back().Label;
-        const std::string Held  = EncodeSolidArcDocument(Wave);
         const SolidArcCommandOutcome Spline = TrimSolidArcSketch(Wave, { Curve, 0, { 1.0, 0.6 }, true });
-        Tally(SplitGate, 0.0, !Spline.AcceptedCondition && EncodeSolidArcDocument(Wave) == Held, Format("a spline cut refuses untouched: %s", Spline.Refusal.c_str()));
+        const size_t Pieces = Wave.Regeneration.Sketches.contains(Curve) ? Wave.Regeneration.Sketches.at(Curve).Curves.size() : 0;
+        Tally(SplitGate, 0.0, Spline.AcceptedCondition && Pieces == 2, Format("a spline cut at its middle point: %d curves%s", int(Pieces), Spline.Refusal.empty() ? "" : (" · " + Spline.Refusal).c_str()));
 
         // ④ edge ring on the block's front-top edge: the four edges along x
         SolidArcDocument Box = CreateSolidArcDocument("Ring");
@@ -7615,7 +7822,10 @@ int main()
     // ---- W68 Delete everything picked (X / Delete)
     ValidateDelete();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate, &DeleteGate })
+    // ---- W69 Curves and sheets: loft between sketches, flip faces, hide curves, 3D curves
+    ValidateCurveAsk();
+
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate, &DeleteGate, &CurveAskGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;

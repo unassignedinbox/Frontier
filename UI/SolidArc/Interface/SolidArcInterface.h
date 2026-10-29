@@ -698,6 +698,7 @@ struct SolidArcGizmoSession
 {
     uint32_t                          Modes         = GizmoTranslate;                        // [-]   - GizmoTranslate | GizmoRotate | GizmoScale (0 off)
     SolidArcGizmoTarget               Target        = SolidArcGizmoTarget::None;             // [-]   - What the selection offers
+    bool                              FlatCondition = false;                                 // [-]   - A 90° view: only the screen-plane handles (FitGizmoToView)
     std::vector<std::string>          Names         = {};                                    // [-]   - Face names / body keys / sketch labels
     std::vector<int>                  Points        = {};                                    // [-]   - Sketch point indices (Points target)
     SolidArcGizmoPose                 Pose          = {};                                    // [-]   - Frame shown (start frame while dragging)

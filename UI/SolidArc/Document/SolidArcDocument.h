@@ -795,10 +795,20 @@ struct SolidArcStepReading;
 
 // 💡 A drawn 3D curve (Shift+S with Alt snaps onto curves off the drawing plane — the request "snap a curve along a
 //    curve"): a SpaceCurve step ("Curve#n", captioned CurveN) through Points (≥ 2, in order; ClosedCondition: back to the
-//    first) — chord-parameterised Hermite spans (Catmull–Rom tangents), 48 samples a span, fitted to 10⁻⁶ of its size, so
-//    it passes through every point. Picked; one undo entry.
-[[nodiscard]] std::vector<GeometryProcessing::Vector3> SampleThroughCurve(const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition, int PerSpan = 48);
-[[nodiscard]] SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition);
+//    first) in the drawing's Form — the sketch form's own weights (WeighSketchSpline), so on a plane it is exactly the
+//    sketch curve — 48 samples a span, fitted to 10⁻⁶ of its size. Picked; one undo entry.
+[[nodiscard]] std::vector<GeometryProcessing::Vector3> SampleThroughCurve(const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition,
+                                                                          GeometryProcessing::SketchSplineForm Form = GeometryProcessing::SketchSplineForm::Hermite, int PerSpan = 48,
+                                                                          const std::vector<double>& Knots = {});
+[[nodiscard]] SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<GeometryProcessing::Vector3>& Points, bool ClosedCondition,
+                                                            GeometryProcessing::SketchSplineForm Form = GeometryProcessing::SketchSplineForm::Hermite);
+
+// 💡 Sketch points moved off their plane (the 3D gizmo on mode-1 points in a 3D view): every curve through one becomes a
+//    3D curve of the same form through its points (Points of Sketch → Targets, in the world; Plane: the sketch's placed
+//    plane) and leaves the sketch (an emptied sketch goes). Refused when a line / arc / circle passes through a moved
+//    point, or when a later step uses the sketch. The new curves are picked; one undo entry.
+[[nodiscard]] SolidArcCommandOutcome LiftSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const GeometryProcessing::OrthonormalFrame& Plane,
+                                                              const std::vector<int>& Points, const std::vector<GeometryProcessing::Vector3>& Targets);
 
 // 💡 V3 (Plasticity mode 1): pole Pole of a SpaceCurve moves to Position; kept as a pole edit re-applied after every re-fit.
 [[nodiscard]] SolidArcCommandOutcome MoveSolidArcPole(SolidArcDocument& Document, const std::string& Label, int Pole, GeometryProcessing::Vector3 Position);

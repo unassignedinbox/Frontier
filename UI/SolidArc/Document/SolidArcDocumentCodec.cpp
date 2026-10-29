@@ -206,6 +206,12 @@ constexpr int64_t FormatVersion = 1;                                            
         Table.insert("Closed", Step.ClosedCondition);
         if (Step.PlanarCondition) Table.insert("Planar", true);
         Table.insert("Tolerance", EncodeValue(Step.Tolerance));
+        if (!Step.CurveKnots.empty())                                                        // Exact curve: Points are its poles
+        {
+            toml::array Knots;
+            for (double Knot : Step.CurveKnots) Knots.push_back(Knot);
+            Table.insert("CurveKnots", std::move(Knots));
+        }
         if (!Step.PoleEdits.empty())
         {
             toml::array Edits;
@@ -763,6 +769,8 @@ SolidArcDocumentFile DecodeSolidArcDocument(const std::string& Text)
             Step.PlanarCondition = View["Planar"].value_or(false);
             Step.Continuity      = static_cast<int>(View["Continuity"].value_or(int64_t{ 0 }));
             Step.Tolerance       = DecodeValue(View["Tolerance"], Step.Tolerance);
+            if (const toml::array* Knots = View["CurveKnots"].as_array())
+                for (const toml::node& Knot : *Knots) Step.CurveKnots.push_back(Knot.value_or(0.0));
             if (const toml::array* Edits = View["PoleEdits"].as_array())
             {
                 for (const toml::node& Edit : *Edits)

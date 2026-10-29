@@ -170,6 +170,12 @@ std::string DigestFeatureStep(const FeatureTree& Tree, const FeatureStep& Step)
     if (!Step.FillCondition) Writer.Phrase("Unfilled");                                     // Absent when filled: older digests hold
     Writer.Flag(Step.PlanarCondition);
     Writer.Value(Step.Tolerance);
+    if (!Step.CurveKnots.empty())                                                            // Absent for fitted curves: older digests hold
+    {
+        Writer.Phrase("Exact");
+        Writer.Word(Step.CurveKnots.size());
+        for (double Knot : Step.CurveKnots) Writer.Number(Knot);
+    }
     Writer.Word(Step.PoleEdits.size());
     for (const FeaturePoleEdit& Edit : Step.PoleEdits) { Writer.Integer(Edit.Index); Writer.Point(Edit.Position); }
     Writer.Word(Step.Sections.size());

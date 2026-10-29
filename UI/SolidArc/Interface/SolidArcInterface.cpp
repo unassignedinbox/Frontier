@@ -1321,7 +1321,7 @@ void FinishDrawingSession(SolidArcWorkspaceState& State, bool ClosedCondition)
     if (const std::vector<Vector3> Lifted = LiftedDrawingPoints(Drawing, false); !Lifted.empty() && !KnifeCondition)
     {
         Drawing.ActiveCondition = false;
-        const SolidArcCommandOutcome Outcome = DrawSolidArcSpaceCurve(State.Document, Lifted, ClosedCondition);
+        const SolidArcCommandOutcome Outcome = DrawSolidArcSpaceCurve(State.Document, Lifted, ClosedCondition, Drawing.Form);
         if (Outcome.AcceptedCondition) State.FocusedStep = State.Document.Tree.Steps.back().Label;
         Conclude(State, Outcome);
         return;
@@ -4397,6 +4397,63 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
     Gizmo.Pose.Hidden = (1u << uint32_t(SolidArcGizmoHandle::ScaleZ)) | ((Gizmo.Modes & (GizmoTranslate | GizmoScale)) ? 0u : CentreBit);
 }
 
+// 💡 The axis a 90° view looks straight along (Top / Bottom → z, Front / Back → y, Right / Left → x; perspective or
+//    parallel, as the grid rule), or −1 in any other (3D) view.
+[[nodiscard]] int ViewAxisCondition(const OrbitCamera& Camera) noexcept
+{
+    constexpr double Tolerance = 1.0e-2;                                                     // [rad] - As ViewGridPlane
+    constexpr double HalfPi    = 0.5 * std::numbers::pi;
+    if (std::abs(std::abs(Camera.Elevation) - HalfPi) <= Tolerance) return 2;
+    if (std::abs(Camera.Elevation) > Tolerance) return -1;
+    if (std::abs(std::remainder(Camera.Azimuth, HalfPi)) > Tolerance) return -1;
+    return std::abs(std::remainder(Camera.Azimuth, std::numbers::pi)) < Tolerance ? 0 : 1;
+}
+
+// 💡 Gizmo rule (the request "3D gizmo in 3D, 2D gizmo in 2D"), re-applied every frame so it follows the view:
+//    a 90° view shows only the handles in the screen plane — the arrow / scale bar along the view axis, the two plane
+//    quads containing it and the two rings about the screen axes go; a body or vertex / edge gizmo not facing the view
+//    turns to the world axes first. Any other view shows the full 3D gizmo: picked sketch points get the arrow along their
+//    plane normal, the two upright plane quads and (several points) the tilting rings — moving them off the plane turns
+//    their curves into 3D curves (LiftSolidArcSketchPoints).
+void FitGizmoToView(SolidArcWorkspaceState& State)
+{
+    SolidArcGizmoSession& Gizmo = State.Gizmo;
+    if (Gizmo.Target == SolidArcGizmoTarget::None) return;
+    constexpr auto Bit = [](SolidArcGizmoHandle Handle) { return 1u << uint32_t(Handle); };
+    const auto     Of  = [](SolidArcGizmoHandle First, int Axis) { return SolidArcGizmoHandle(uint8_t(First) + Axis); };
+    const int      View = ViewAxisCondition(State.Camera);
+    Gizmo.FlatCondition = View >= 0;
+    if (View < 0)
+    {
+        if (Gizmo.Target == SolidArcGizmoTarget::Points)
+        {
+            Gizmo.Pose.Hidden &= ~(Bit(SolidArcGizmoHandle::TranslateZ) | Bit(SolidArcGizmoHandle::PlaneYZ) | Bit(SolidArcGizmoHandle::PlaneXZ));
+            if (Gizmo.Points.size() >= 2) Gizmo.Pose.Hidden &= ~(Bit(SolidArcGizmoHandle::RotateX) | Bit(SolidArcGizmoHandle::RotateY));
+        }
+        return;
+    }
+    const Vector3 Unit{ View == 0 ? 1.0 : 0.0, View == 1 ? 1.0 : 0.0, View == 2 ? 1.0 : 0.0 };
+    int Facing = -1;
+    for (int Axis = 0; Axis < 3; ++Axis) if (std::abs(Dot(Gizmo.Pose.Axes[Axis], Unit)) > 1.0 - 1.0e-6) Facing = Axis;
+    if (Facing < 0 && (Gizmo.Target == SolidArcGizmoTarget::Bodies || Gizmo.Target == SolidArcGizmoTarget::Shape))
+    {
+        Gizmo.Pose.Axes[0] = { 1.0, 0.0, 0.0 };
+        Gizmo.Pose.Axes[1] = { 0.0, 1.0, 0.0 };
+        Gizmo.Pose.Axes[2] = { 0.0, 0.0, 1.0 };
+        Facing             = View;
+    }
+    if (Facing < 0) return;                                                                  // A tilted sketch / face keeps its own plane
+    for (int Axis = 0; Axis < 3; ++Axis)
+    {
+        if (Axis == Facing)
+        {
+            Gizmo.Pose.Hidden |= Bit(Of(SolidArcGizmoHandle::TranslateX, Axis)) | Bit(Of(SolidArcGizmoHandle::ScaleX, Axis));
+            continue;
+        }
+        Gizmo.Pose.Hidden |= Bit(Of(SolidArcGizmoHandle::PlaneYZ, Axis)) | Bit(Of(SolidArcGizmoHandle::RotateX, Axis));
+    }
+}
+
 // 📝 Centre ring: on faces it scales whenever scale is on (faces have no axis cylinders); otherwise it moves in the
 //    screen plane with move on, scales uniformly with scale alone.
 [[nodiscard]] bool GizmoCentreScaleCondition(const SolidArcGizmoSession& Gizmo)
@@ -4466,13 +4523,18 @@ void ResolveGizmoTarget(SolidArcWorkspaceState& State)
         const OrthonormalFrame Plane  = ElevatedSketchPlane(Document, *Step);
         const AffineMap        Map    = GizmoMap(Gizmo);
         std::vector<Vector2>   Targets;
+        std::vector<Vector3>   Lifted;
         for (int Point : Gizmo.Points)
         {
             if (Point < 0 || Point >= int(Sketch.Points.size())) break;
             const Vector3 Start = PlacePlanePoint(Plane, Sketch.Points[Point].Position);
             const Vector3 Moved = Map.ColumnX * Start.X + Map.ColumnY * Start.Y + Map.ColumnZ * Start.Z + Map.Shift;
             Targets.push_back({ Dot(Moved - Plane.Origin, Plane.XAxis), Dot(Moved - Plane.Origin, Plane.YAxis) });
+            Lifted.push_back(Moved);
         }
+        // Off the plane (the 3D gizmo in a 3D view): the curves through the points become 3D curves.
+        if (std::any_of(Lifted.begin(), Lifted.end(), [&](const Vector3& Moved) { return std::abs(Dot(Moved - Plane.Origin, Plane.ZAxis)) > 1.0e-9 * (1.0 + Length(Moved)); }))
+            return LiftSolidArcSketchPoints(Document, Gizmo.Names[0], Plane, Gizmo.Points, Lifted);
         return DragSolidArcSketchPoints(Document, Gizmo.Names[0], Gizmo.Points, Targets);
     }
     case SolidArcGizmoTarget::Faces:
@@ -4682,7 +4744,7 @@ bool DriveGizmo(SolidArcWorkspaceState& State, const OrbitCameraFrame& Frame, Im
         Gizmo.Target = SolidArcGizmoTarget::None;
         return false;
     }
-    if (!Gizmo.DragCondition) ResolveGizmoTarget(State);
+    if (!Gizmo.DragCondition) { ResolveGizmoTarget(State); FitGizmoToView(State); }
     if (Gizmo.Target == SolidArcGizmoTarget::None) { Gizmo.Hover = SolidArcGizmoHandle::None; return false; }
     Gizmo.Pose.Modes = Gizmo.Modes;
     Gizmo.Pose.Size  = MeasureGizmoSize(Frame, Gizmo.Pose.Origin, GizmoPixels);
@@ -7445,7 +7507,7 @@ void DrawDrawingPreview(SolidArcWorkspaceState& State, ImDrawList* Canvas, const
     {
         // A 3D curve in the making: the through-curve in space, its points as dots (the live one white).
         std::vector<ImVec2> Pixels;
-        for (const Vector3& Sample : SampleThroughCurve(Lifted, false, 24)) { ImVec2 Out; if (ProjectWorldPoint(State, Frame, Sample, Out)) Pixels.push_back(Out); }
+        for (const Vector3& Sample : SampleThroughCurve(Lifted, false, Drawing.Form, 24)) { ImVec2 Out; if (ProjectWorldPoint(State, Frame, Sample, Out)) Pixels.push_back(Out); }
         if (Pixels.size() >= 2) Canvas->AddPolyline(Pixels.data(), int(Pixels.size()), ActiveColour, 2.0f);
         for (size_t Index = 0; Index < Lifted.size(); ++Index)
         {

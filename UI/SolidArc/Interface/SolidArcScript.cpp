@@ -523,6 +523,13 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "gizmo-modes") return Numeric(double(State.Gizmo.Modes));                  // 1 move · 2 rotate · 4 scale (sums)
     if (Field == "gizmo-commits") return Numeric(double(State.Gizmo.Commits));
     if (Field == "gizmo-targets") return Numeric(double(State.Gizmo.Target == SolidArcGizmoTarget::None ? 0 : State.Gizmo.Names.size()));
+    if (Field == "gizmo-flat") return Numeric(State.Gizmo.FlatCondition ? 1 : 0);           // 1 in a 90° view (2D gizmo)
+    if (Field == "gizmo-arrows")                                                            // Move arrows shown: 2 flat · 3 in 3D
+    {
+        int Shown = 0;
+        for (int Axis = 0; Axis < 3; ++Axis) Shown += ((State.Gizmo.Pose.Hidden >> (uint32_t(SolidArcGizmoHandle::TranslateX) + uint32_t(Axis))) & 1u) ? 0 : 1;
+        return Numeric(State.Gizmo.Target == SolidArcGizmoTarget::None ? 0.0 : double(Shown));
+    }
     if (Field == "gizmo-target")
     {
         Text   = State.Gizmo.Target == SolidArcGizmoTarget::Faces ? "faces" : State.Gizmo.Target == SolidArcGizmoTarget::Bodies ? "bodies"

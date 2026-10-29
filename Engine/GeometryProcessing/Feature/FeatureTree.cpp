@@ -839,7 +839,22 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
                     }
                 }
             }
-            CurveFitOutcome Fit = FitSpaceCurve(Points, Settings);
+            CurveFitOutcome Fit;
+            if (!Step.CurveKnots.empty())
+            {
+                // ④′ An exact curve (a drawn 3D curve): Points are its poles on the clamped CurveKnots — nothing to fit.
+                const int Degree = static_cast<int>(Step.CurveKnots.size()) - static_cast<int>(Step.Points.size()) - 1;
+                if (Degree < 1 || Step.Points.size() < 2 || Step.CurveKnots.front() >= Step.CurveKnots.back()) { Refuse("SpaceCurve: knots do not fit the poles"); break; }
+                NurbsCurveDefinition Exact;
+                Exact.Degree  = Degree;
+                Exact.Poles   = Step.Points;
+                Exact.Weights.assign(Step.Points.size(), 1.0);
+                const double Low = Step.CurveKnots.front(), Span = Step.CurveKnots.back() - Step.CurveKnots.front();
+                for (double Knot : Step.CurveKnots) Exact.Knots.push_back((Knot - Low) / Span);  // Domain [0, 1] as a fit's
+                Fit.Curve = NurbsCurve{ std::make_shared<NurbsCurveDefinition>(std::move(Exact)) };
+                Fit.Spans = static_cast<int>(Step.CurveKnots.size()) - 2 * (Degree + 1) + 1;
+            }
+            else Fit = FitSpaceCurve(Points, Settings);
             if (!Fit.Refusal.empty()) { Refuse("SpaceCurve: " + Fit.Refusal); break; }
             if (!Step.PoleEdits.empty())
             {

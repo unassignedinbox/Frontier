@@ -150,6 +150,8 @@ struct FeatureStep
     bool                           ClosedCondition = false;                                  // [-]   - SpaceCurve: the loop closes (last joins first) · Loft: capped into a solid of its own
     bool                           PlanarCondition = false;                                  // [-]   - SpaceCurve: fit in the points' best plane (cap sections)
     FeatureValue                   Tolerance      = { 2.0e-4 };                              // [len] - SpaceCurve: fit tolerance (0.2 mm)
+    std::vector<double>            CurveKnots     = {};                                      // [-]   - SpaceCurve: exact clamped knots — Points are then the
+                                                                                             //         poles (degree = knots − poles − 1), no fit (drawn 3D curves)
     std::vector<FeaturePoleEdit>   PoleEdits      = {};                                      // [-]   - SpaceCurve: dragged poles, applied after the fit
     std::vector<std::string>       Sections       = {};                                      // [-]   - Loft: SpaceCurve labels in order · Network: its curves · Cut: the cutting curve
     int                            Continuity     = 0;                                       // [-]   - Loft: 0 G0 · 1 G1 · 2 G2 to panels sharing an end section

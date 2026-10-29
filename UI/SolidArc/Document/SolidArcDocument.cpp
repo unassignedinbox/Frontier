@@ -1659,50 +1659,77 @@ SolidArcCommandOutcome LoftSolidArcCurves(SolidArcDocument& Document, const std:
     return Outcome;
 }
 
-std::vector<Vector3> SampleThroughCurve(const std::vector<Vector3>& Points, bool ClosedCondition, int PerSpan)
+std::vector<Vector3> SampleThroughCurve(const std::vector<Vector3>& Points, bool ClosedCondition, SketchSplineForm Form, int PerSpan, const std::vector<double>& Knots)
 {
-    std::vector<Vector3> Through = Points;
-    if (ClosedCondition && Through.size() >= 2 && Distance(Through.front(), Through.back()) <= 1.0e-12) Through.pop_back();
-    const int Count = static_cast<int>(Through.size());
-    if (Count < 2) return Through;
-    const int Spans = ClosedCondition ? Count : Count - 1;
-    // Chord parameters τᵢ; tangents mᵢ = (Pᵢ₊₁ − Pᵢ₋₁) / (τᵢ₊₁ − τᵢ₋₁) (open ends: the end chord).
-    const auto At = [&](int Index) { return Through[static_cast<size_t>(((Index % Count) + Count) % Count)]; };
-    std::vector<double> Chords(static_cast<size_t>(Spans));
-    for (int Span = 0; Span < Spans; ++Span) Chords[static_cast<size_t>(Span)] = std::max(Distance(At(Span), At(Span + 1)), 1.0e-12);
-    const auto Chord = [&](int Span) { return Chords[static_cast<size_t>(((Span % Spans) + Spans) % Spans)]; };
-    std::vector<Vector3> Tangents(static_cast<size_t>(Count));
-    for (int Index = 0; Index < Count; ++Index)
-    {
-        if (!ClosedCondition && Index == 0) Tangents[0] = (At(1) - At(0)) * (1.0 / Chord(0));
-        else if (!ClosedCondition && Index == Count - 1) Tangents[static_cast<size_t>(Index)] = (At(Index) - At(Index - 1)) * (1.0 / Chord(Index - 1));
-        else Tangents[static_cast<size_t>(Index)] = (At(Index + 1) - At(Index - 1)) * (1.0 / (Chord(Index - 1) + Chord(Index)));
-    }
+    // 📝 Every sketch form is linear in its defining points, C(τ) = Σ wⱼ(τ)·Qⱼ (WeighSketchSpline), so the 3D curve with
+    //    the same weights is exactly the sketch curve where the points lie on a plane, and the same form off it.
+    std::vector<Vector3> Slots = Points;
+    if (ClosedCondition && Slots.size() >= 2 && Distance(Slots.front(), Slots.back()) > 1.0e-12) Slots.push_back(Slots.front());
+    const int Count = static_cast<int>(Slots.size());
+    if (Count < 2) return Slots;
+    const SketchSplineWeights Domain = WeighSketchSpline(Form, Count, ClosedCondition, 0.0, Knots);
+    if (!Domain.Refusal.empty()) return {};
+    const int Total = std::max(1, Count - 1) * std::max(2, PerSpan);
     std::vector<Vector3> Samples;
-    for (int Span = 0; Span < Spans; ++Span)
+    Samples.reserve(static_cast<size_t>(Total) + 1);
+    for (int Step = 0; Step <= Total; ++Step)
     {
-        const Vector3 From = At(Span), To = At(Span + 1);
-        const Vector3 Leave = Tangents[static_cast<size_t>(Span)] * Chord(Span), Arrive = Tangents[static_cast<size_t>((Span + 1) % Count)] * Chord(Span);
-        for (int Step = Span == 0 ? 0 : 1; Step <= PerSpan; ++Step)
-        {
-            const double s = double(Step) / PerSpan, s2 = s * s, s3 = s2 * s;
-            Samples.push_back(From * (2.0 * s3 - 3.0 * s2 + 1.0) + Leave * (s3 - 2.0 * s2 + s) + To * (-2.0 * s3 + 3.0 * s2) + Arrive * (s3 - s2));
-        }
+        const double              τ       = Domain.Low + (Domain.High - Domain.Low) * double(Step) / double(Total);
+        const SketchSplineWeights Weights = WeighSketchSpline(Form, Count, ClosedCondition, τ, Knots);
+        Vector3 Point;
+        for (int Slot = 0; Slot < Count && Slot < int(Weights.Position.size()); ++Slot) Point = Point + Slots[static_cast<size_t>(Slot)] * Weights.Position[static_cast<size_t>(Slot)];
+        Samples.push_back(Point);
     }
     if (ClosedCondition) Samples.back() = Samples.front();                                   // Exactly closed
     return Samples;
 }
 
-SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<Vector3>& Points, bool ClosedCondition)
+namespace
 {
-    const std::string Caption = NextCaption(Document, "Curve");
-    SolidArcCommandOutcome Outcome = RunCommand(Document, Caption + " · 3D curve through " + std::to_string(Points.size()) + " points", false, [&]() -> std::string
+    // 📝 The exact 3D curve of a sketch form through Points: the form's poles are linear in the points too, so two generic
+    //    2D shadows A = (x + 0.37 z, y + 0.61 z) and B = (x − 0.53 z, y + 0.29 z), each resolved as a sketch curve (same
+    //    knots), give every pole back: z = (A.x − B.x) / 0.9, x = A.x − 0.37 z, y = A.y − 0.61 z. Empty when refused.
+    struct ExactThrough { std::vector<Vector3> Poles; std::vector<double> Knots; };
+    std::optional<ExactThrough> ResolveExactThrough(const std::vector<Vector3>& Points, bool ClosedCondition, SketchSplineForm Form, const std::vector<double>& Knots)
     {
-        if (Points.size() < 2) return "a 3D curve needs at least 2 points";
-        for (size_t Index = 1; Index < Points.size(); ++Index)
-            if (Distance(Points[Index - 1], Points[Index]) <= 1.0e-12) return "the same point twice in a row";
-        Vector3 Low = Points.front(), High = Points.front();
-        for (const Vector3& Point : Points)
+        std::vector<Vector3> Slots = Points;
+        if (ClosedCondition && Slots.size() >= 2 && Distance(Slots.front(), Slots.back()) > 1.0e-12) Slots.push_back(Slots.front());
+        if (Slots.size() < 2) return std::nullopt;
+        double Size = 0.0;
+        for (const Vector3& Point : Slots) Size = std::max(Size, Distance(Point, Slots.front()));
+        std::vector<Vector2> First, Second;
+        for (const Vector3& Point : Slots)
+        {
+            First.push_back({ Point.X + 0.37 * Point.Z, Point.Y + 0.61 * Point.Z });
+            Second.push_back({ Point.X - 0.53 * Point.Z, Point.Y + 0.29 * Point.Z });
+        }
+        const SketchSplineOutcome A = ResolveSketchSpline(Form, First, std::max(Size, 1.0e-3), Knots);
+        const SketchSplineOutcome B = ResolveSketchSpline(Form, Second, std::max(Size, 1.0e-3), Knots);
+        if (!A.Refusal.empty() || !B.Refusal.empty() || A.Curve.Poles.size() != B.Curve.Poles.size() || A.Curve.Knots != B.Curve.Knots) return std::nullopt;
+        ExactThrough Exact;
+        Exact.Knots = A.Curve.Knots;
+        for (size_t Index = 0; Index < A.Curve.Poles.size(); ++Index)
+        {
+            const double Z = (A.Curve.Poles[Index].X - B.Curve.Poles[Index].X) / 0.9;
+            Exact.Poles.push_back({ A.Curve.Poles[Index].X - 0.37 * Z, A.Curve.Poles[Index].Y - 0.61 * Z, Z });
+        }
+        if (static_cast<int>(Exact.Knots.size()) - static_cast<int>(Exact.Poles.size()) - 1 < 1) return std::nullopt;
+        return Exact;
+    }
+
+    std::string CaptionOfStep(const SolidArcDocument& Document, const std::string& Label)
+    {
+        const auto Found = Document.Captions.find(Label);
+        return Found != Document.Captions.end() ? Found->second : Label;
+    }
+
+    // One SpaceCurve step through Samples (the caller's command), fitted to 10⁻⁶ of its size — or, with Exact, the exact
+    //    curve itself (its poles and knots, no fit); returns its label.
+    std::string AppendSpaceCurveStep(SolidArcDocument& Document, std::vector<Vector3> Samples, bool ClosedCondition, const std::string& Caption,
+                                     const std::optional<ExactThrough>& Exact = std::nullopt)
+    {
+        Vector3 Low = Samples.front(), High = Samples.front();
+        for (const Vector3& Point : Samples)
         {
             Low  = { std::min(Low.X, Point.X), std::min(Low.Y, Point.Y), std::min(Low.Z, Point.Z) };
             High = { std::max(High.X, Point.X), std::max(High.Y, Point.Y), std::max(High.Z, Point.Z) };
@@ -1710,15 +1737,94 @@ SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const 
         FeatureStep Step;
         Step.Kind            = FeatureStepKind::SpaceCurve;
         Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));
-        Step.Points          = SampleThroughCurve(Points, ClosedCondition && Points.size() >= 3);
-        Step.ClosedCondition = ClosedCondition && Points.size() >= 3;
+        Step.Points          = Exact ? Exact->Poles : std::move(Samples);
+        Step.CurveKnots      = Exact ? Exact->Knots : std::vector<double>{};
+        Step.ClosedCondition = ClosedCondition;
         Step.PlanarCondition = false;
         Step.Tolerance       = FeatureValue{ 1.0e-6 * std::max(Distance(Low, High), 1.0e-3) };
         Document.Captions[Step.Label] = Caption;
         Document.Tree.Steps.push_back(std::move(Step));
+        return Document.Tree.Steps.back().Label;
+    }
+}
+
+SolidArcCommandOutcome DrawSolidArcSpaceCurve(SolidArcDocument& Document, const std::vector<Vector3>& Points, bool ClosedCondition, SketchSplineForm Form)
+{
+    const std::string Caption = NextCaption(Document, "Curve");
+    std::string       Label;
+    SolidArcCommandOutcome Outcome = RunCommand(Document, Caption + " · 3D curve through " + std::to_string(Points.size()) + " points", false, [&]() -> std::string
+    {
+        if (Points.size() < 2) return "a 3D curve needs at least 2 points";
+        for (size_t Index = 1; Index < Points.size(); ++Index)
+            if (Distance(Points[Index - 1], Points[Index]) <= 1.0e-12) return "the same point twice in a row";
+        const bool           Closed  = ClosedCondition && Points.size() >= 3;
+        std::vector<Vector3> Samples = SampleThroughCurve(Points, Closed, Form);
+        if (Samples.size() < 2) return std::string("the ") + SketchSplineFormLabel(Form) + " form takes no curve through these points";
+        Label = AppendSpaceCurveStep(Document, std::move(Samples), Closed, Caption, ResolveExactThrough(Points, Closed, Form, {}));
         return {};
     });
-    if (Outcome.AcceptedCondition) Document.Selection.Curves = { Document.Tree.Steps.back().Label };
+    if (Outcome.AcceptedCondition) Document.Selection.Curves = { Label };
+    return Outcome;
+}
+
+SolidArcCommandOutcome LiftSolidArcSketchPoints(SolidArcDocument& Document, const std::string& Sketch, const OrthonormalFrame& Plane, const std::vector<int>& Points,
+                                                const std::vector<Vector3>& Targets)
+{
+    std::vector<std::string> Made;
+    SolidArcCommandOutcome Outcome = RunCommand(Document, "Lift " + CaptionOfStep(Document, Sketch) + " points off its plane", false, [&]() -> std::string
+    {
+        auto Step = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Each) { return Each.Label == Sketch && Each.Kind == FeatureStepKind::Sketch; });
+        if (Step == Document.Tree.Steps.end()) return "no sketch named " + Sketch;
+        if (Points.size() != Targets.size() || Points.empty()) return "no point moved";
+        const auto         Solved = Document.Regeneration.Sketches.find(Sketch);
+        const SketchModel  Model  = Solved != Document.Regeneration.Sketches.end() ? Solved->second : Step->Sketch;
+        std::map<int, Vector3> Moved;
+        for (size_t Index = 0; Index < Points.size(); ++Index)
+        {
+            if (Points[Index] < 0 || Points[Index] >= int(Model.Points.size())) return "a moved point is not in " + Sketch;
+            Moved[Points[Index]] = Targets[Index];
+        }
+        // ① the curves through a moved point: freeform curves only (a line or arc lives on its plane)
+        std::vector<int> Curves;
+        for (int Curve = 0; Curve < int(Model.Curves.size()); ++Curve)
+        {
+            const SketchCurve& Each  = Model.Curves[static_cast<size_t>(Curve)];
+            const bool         Touch = Each.Kind == SketchCurveKind::Spline ? std::any_of(Each.Points.begin(), Each.Points.end(), [&](int Point) { return Moved.contains(Point); })
+                                                                            : Moved.contains(Each.Start) || Moved.contains(Each.End) || Moved.contains(Each.Centre);
+            if (!Touch) continue;
+            if (Each.Kind != SketchCurveKind::Spline) return "only curves (Shift+S) leave the sketch plane; lines, arcs and circles stay on it";
+            Curves.push_back(Curve);
+        }
+        if (Curves.empty()) return "no curve passes through the moved points";
+        for (const FeatureStep& Other : Document.Tree.Steps)
+            if (Other.Label != Sketch && (Other.Profile == Sketch || Other.Path == Sketch || std::find(Other.Sections.begin(), Other.Sections.end(), Sketch) != Other.Sections.end()))
+                return CaptionOfStep(Document, Sketch) + " is used by " + CaptionOfStep(Document, Other.Label) + ": its curves stay on the plane";
+        // ② each becomes a 3D curve of the same form through its (moved) points
+        for (int Curve : Curves)
+        {
+            const SketchCurve&   Each = Model.Curves[static_cast<size_t>(Curve)];
+            const bool           Closed = Each.Points.size() >= 3 && Each.Points.front() == Each.Points.back();
+            std::vector<Vector3> Slots;
+            for (size_t Index = 0; Index + (Closed ? 1 : 0) < Each.Points.size(); ++Index)
+            {
+                const int Point = Each.Points[Index];
+                Slots.push_back(Moved.contains(Point) ? Moved.at(Point) : Plane.Origin + Plane.XAxis * Model.Points[static_cast<size_t>(Point)].Position.X + Plane.YAxis * Model.Points[static_cast<size_t>(Point)].Position.Y);
+            }
+            std::vector<Vector3> Samples = SampleThroughCurve(Slots, Closed, Each.Form, 48, Each.Knots);
+            if (Samples.size() < 2) return std::string("the ") + SketchSplineFormLabel(Each.Form) + " curve cannot leave its plane";
+            Made.push_back(AppendSpaceCurveStep(Document, std::move(Samples), Closed, NextCaption(Document, "Curve"), ResolveExactThrough(Slots, Closed, Each.Form, Each.Knots)));
+        }
+        // ③ they leave the sketch (an emptied sketch goes); the appends above may have moved the steps
+        Step = std::find_if(Document.Tree.Steps.begin(), Document.Tree.Steps.end(), [&](const FeatureStep& Each) { return Each.Label == Sketch && Each.Kind == FeatureStepKind::Sketch; });
+        for (auto Curve = Curves.rbegin(); Curve != Curves.rend(); ++Curve) EraseSketchCurve(Step->Sketch, *Curve);
+        if (Step->Sketch.Curves.empty())
+        {
+            Document.Captions.erase(Sketch);
+            Document.Tree.Steps.erase(Step);
+        }
+        return {};
+    });
+    if (Outcome.AcceptedCondition) Document.Selection.Curves = Made;
     return Outcome;
 }
 
