@@ -843,14 +843,16 @@ void ResolveProfileCombination(SolidArcBevelSession& Bevel)
 
 // 💡 A requested value at or past a known refusal is held at the largest accepted one (the pointer / handle stops there).
 //    Before any refusal is known, a blend never exceeds the span of the faces beside its edges (the fit measure): a radius
-//    past it has nothing left to roll on, and must not reach the modeller at all.
+//    past it has nothing left to roll on, and must not reach the modeller at all. The span itself is allowed: the report
+//    "if bevel 1 edge fully it would bevel till the next edge making it a triangle" — at the full span the face beside the
+//    edge is used up (a chamfer leaves a triangular section, a fillet a quarter round; 0.999 · span left 1 ‰ slivers).
 [[nodiscard]] double BoundBevelValue(SolidArcWorkspaceState& State, int Parameter, double Value)
 {
     SolidArcBevelSession& Bevel = State.Bevel;
-    if (Bevel.Verb == SolidArcSessionVerb::Blend && Bevel.Fit.Span > 0.0 && Value > 0.999 * Bevel.Fit.Span)
+    if (Bevel.Verb == SolidArcSessionVerb::Blend && Bevel.Fit.Span > 0.0 && Value > Bevel.Fit.Span)
     {
         ++Bevel.LimitStops;
-        Value = 0.999 * Bevel.Fit.Span;
+        Value = Bevel.Fit.Span;
     }
     if (!BevelBoundedCondition(Bevel) || Bevel.LimitParameter != Parameter || !(Bevel.LimitCeiling > 0.0) || !(Bevel.LimitGood > 0.0)) return Value;
     if (Value < Bevel.LimitCeiling || Bevel.LimitKey != ComposeBevelLimitKey(State, Parameter)) return Value;

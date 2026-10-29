@@ -1,0 +1,72 @@
+# SolidArc bevel reach walkthrough — the report "bevel … seems to be clamped whilst it can bevel more; the chamfer
+# chamfers more distance for the same bevel … the cube if bevel 1 edge fully it would bevel till the next edge making
+# it a triangle". The size stopped at 0.999 · span (1 ‰ sliver faces left); it now runs to the full span, where the face
+# beside the edge is used up: a chamfer leaves a triangular section, a fillet a quarter round. Fillet and chamfer reach
+# the same size (the setback of a chamfer is the fillet's radius: both meet the faces on the same lines).
+# Run: SolidArcCapture --specimen --reset-files --recovery …/BevelReachRecovery.solidarc
+#      --document …/BevelReach.solidarc --script Exhibits/SolidArc/Code/Scripts/BevelReachWalkthrough.txt
+# Closed forms (2 m cube): fillet r 2 on one edge leaves a quarter cylinder π · 2² / 4 · 2 = 2π; chamfer 2 leaves the
+# triangular prism ½ · 2 · 2 · 2 = 4.
+
+snap grid on
+
+# ① a 2 m cube from the Construct menu, its top front edge picked, B
+key N Ctrl
+frames 3
+click @ConstructLauncher
+frames 2
+click @ConstructBlock
+frames 2
+move world -1.0 -1.0 0.0
+frames 2
+click world -1.0 -1.0 0.0
+frames 2
+move world 1.0 1.0 0.0
+frames 2
+click world 1.0 1.0 0.0
+frames 2
+move world 1.0 1.0 2.0
+frames 2
+click world 1.0 1.0 2.0
+frames 3
+expect volume ~ 8
+key 2
+frames 2
+click world 0.0 -1.0 2.0
+frames 2
+key B
+frames 8
+expect bevel-active == 1
+expect bevel-span ~ 2
+
+# ② a long drag right: the fillet runs to the full 2 m (a quarter round down to the bottom edge, top face used up)
+drag left viewport 0.1 0.2 by 700 0 40
+frames 30
+expect bevel-size ~ 2
+expect bevel-refusal == 0
+expect bevel-preview-volume ~ 6.283185307179586
+capture 363BevelReachFillet
+
+# ③ C: the chamfer at the same size — the triangle the report expected
+key C
+frames 12
+expect bevel-chamfer == 1
+expect bevel-size ~ 2
+expect bevel-refusal == 0
+expect bevel-preview-volume ~ 4
+capture 364BevelReachChamfer
+
+# ④ the ring handle dragged far out stops at the same full size for both
+key D
+frames 10
+drag left @BevelHandle0 by 0 -500 40
+frames 30
+expect bevel-size ~ 2
+expect bevel-preview-volume ~ 6.283185307179586
+key Enter
+frames 6
+expect bevel-active == 0
+expect refused == 0
+expect volume ~ 6.283185307179586
+expect sound == 1
+capture 365BevelReachApplied
