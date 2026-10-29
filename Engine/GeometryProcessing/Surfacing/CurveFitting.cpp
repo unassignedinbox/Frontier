@@ -264,6 +264,9 @@ namespace
         {
             std::vector<double> Candidate = Parameters;
             CorrectParameters(MakeDefinition(Degree, Knots, *Poles), Points, Candidate);
+            // 📝 Foot points must keep the points' order: on a rough curve a point's nearest foot can sit on another hump
+            //    (a wiggle), and a scrambled order would fit the scrambled curve — such a round is dropped.
+            if (std::adjacent_find(Candidate.begin(), Candidate.end(), std::greater<double>()) != Candidate.end()) break;
             std::optional<std::vector<Vector3>> Corrected = SolveAnyPoles(Points, Candidate, Degree, Knots, Fairing, Tangents);
             if (!Corrected) break;
             Poles      = std::move(Corrected);
@@ -496,10 +499,12 @@ CurveFitOutcome FitSpaceCurve(const std::vector<Vector3>& Points, const CurveFit
             }
             return Accept(*Plain, 0.0);
         }
-        const FitAttempt& Guide = Plain ? *Plain : *Faired;
+        // 📝 The closer attempt guides the split and carries its foot points on: an unfaired solve can swing wild in spans
+        //    holding few points, and its corrupted parameters would derail every later round (dense wrapped wiggles).
+        const FitAttempt& Guide = Plain && Plain->Worst <= Faired->Worst ? *Plain : *Faired;
         const NurbsCurveDefinition Definition = MakeDefinition(Degree, Knots, Guide.Poles);
         MeasureDeviation(Definition, Kept, Guide.Parameters, Source, Outcome);
-        Parameters = Guide.Parameters;
+        if (std::adjacent_find(Guide.Parameters.begin(), Guide.Parameters.end(), std::greater<double>()) == Guide.Parameters.end()) Parameters = Guide.Parameters;
 
         // ③ Split every span holding a point beyond tolerance at its middle.
         std::set<int> Offending;

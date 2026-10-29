@@ -820,6 +820,7 @@ RegenerationOutcome RegenerateFeatureTree(ModelPartition& Partition, FeatureTree
             CurveFitSettings Settings;
             Settings.Tolerance = EvaluateFeatureValue(Tree, Step.Tolerance);
             Settings.PlanarCondition = Step.PlanarCondition;
+            Settings.SpanLimit = std::max(Settings.SpanLimit, static_cast<int>(Points.size()) / 4);   // Dense exact samples (Wrap): one span per 4 points may be needed
             // An end on a later Mirror plane (within the fit tolerance) snaps onto it and leaves it along its normal.
             if (!Step.ClosedCondition && Points.size() >= 3)
             {

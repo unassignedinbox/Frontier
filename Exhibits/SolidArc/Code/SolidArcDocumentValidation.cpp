@@ -128,7 +128,7 @@ namespace
     GateTally EdgePathGate    = { "W65", "Edge path (the request \"select a edge from point A to B ... close the path ... shortest path or just the loop ... not like blender's shortest path that cheats\"): Ctrl+click path pick between two edges; Along loop keeps to one loop holding both (edge loop, face rim, tangent chain) — the shorter side, Other side the far one, Whole loop all of it — and refuses rather than cut across; Shortest is the least total length over any edges. Fixtures on a 4 × 2 × 1 block, a hexagonal prism, a cylinder, a revolved diamond and a through-hole block, then every ordered edge pair of six bodies: paths run From … To edge to edge, Along ⊆ Whole, Whole a simple chain or cycle (no vertex used thrice), Along ≥ Shortest, Along ∪ Other side = Whole on a closed loop", "1e-9" };
     GateTally DeleteGate      = { "W68", "Delete everything picked (the request \"add delete for all entities face / edge / object / outliner and viewport … X key or delete\"): on the 4 × 2 × 1 block a fillet face or fillet edge un-blends (the Blend lets go of its edge: 8 again, or one fillet of two left); a seam edge of an imprinted rectangle or an edge-to-edge imprint line dissolves (6 faces, 12 edges, 8 vertices, 8); refusals untouched — a box edge, a corner vertex, fillet and plain edges together; an extruded sketch leaves the scene (RemovedCurves, the body stays, save / load keeps it, show refuses, undo restores) while a free sketch is deleted; sketch points take their curves (renumbered, re-solved), an emptied sketch goes, a point of an extruded rectangle detaches the rest (body kept); bodies removed; one undo entry each", "exact · 1e-9" };
     GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
-    GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3", "1e-9 · fit 10⁻⁴ width" };
+    GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3; precision round a free curve (samples on the rail to 10⁻⁹, the fitted curve within 10⁻⁶ of the width); a detailed wiggle steps down instead of refusing", "1e-9 · fit 10⁻⁶ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
     GateTally DrawingGate     = { "W10", "Drawn sketches (line, rectangle, circle, arc, slot, 4 curve forms) → extrude / Boolean: |V − closed form| / V; refusals; reload; delete", "≤ 10⁻⁹" };
@@ -1490,12 +1490,99 @@ void ValidateWrap()
             for (const Vector3& Point : Step.Points) Radial = std::max(Radial, std::abs(std::hypot(Point.X, Point.Y) - 1.0));
         }
         const bool Fine = Wrapped.AcceptedCondition && Made == 5 && Closed == 1 && Part.UndoEntries.size() == Undo + 1 && Part.Selection.Curves.size() == 5
-                          && Part.Captions[Part.Tree.Steps[Steps].Label] == "Wrap1" && Fit <= 1.0e-4 && Radial <= 1.0e-9;
-        Tally(WrapGate, Fit, Fine, Format("%s: %d 3D curves (%d closed), %d picked, captions Wrap1 …, samples off r 1 by %.1e, worst fit %.1e (≤ 10⁻⁴)%s", Wrapped.Label.c_str(), Made, Closed,
+                          && Part.Captions[Part.Tree.Steps[Steps].Label] == "Wrap1" && Fit <= 1.0e-6 + 1.0e-12 && Radial <= 1.0e-9;
+        Tally(WrapGate, Fit, Fine, Format("%s: %d 3D curves (%d closed), %d picked, captions Wrap1 …, samples off r 1 by %.1e, worst fit %.1e (≤ 10⁻⁶ of the 1 m width)%s", Wrapped.Label.c_str(), Made, Closed,
                                           int(Part.Selection.Curves.size()), Radial, Fit, Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
         const SolidArcCommandOutcome Itself = WrapSolidArcSketches(Part, { Can, { Can }, AlongY });
         const SolidArcCommandOutcome Lone   = WrapSolidArcSketches(Part, { Can, {}, AlongY });
         Tally(WrapGate, 0.0, !Itself.AcceptedCondition && !Lone.AcceptedCondition, Format("refused: the rail as a shape (%s) · no shape (%s)", Itself.Refusal.c_str(), Lone.Refusal.c_str()));
+    }
+    // ⑨ precision round a free curve (the request: "a circle around the curve … some distance error"): a Hermite curve on
+    //    the side plane YZ is the rail (its surface: the curve swept along x), a circle r 0.4 on the front plane wraps
+    //    round it along y. Seen along x every sample and the fitted 3D curve itself must lie on the rail curve: the
+    //    samples to 10⁻⁹, the fitted curve (4000 points along it) within its fit tolerance.
+    {
+        const OrthonormalFrame Side{ { 0.0, 0.0, 0.0 }, { 0.0, 1.0, 0.0 }, { 0.0, 0.0, 1.0 }, { 1.0, 0.0, 0.0 } };
+        SolidArcDocument Part = CreateSolidArcDocument("WrapPrecision");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Curve; Request.PlaneCondition = true; Request.Plane = Side;
+        Request.Points = { { -0.6, 2.0 }, { 0.0, 1.2 }, { 0.3, 0.6 }, { 0.35, 0.0 }, { 0.3, -0.6 }, { 0.2, -1.2 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Rail = Part.Tree.Steps.back().Label;
+        Request = {};
+        Request.Kind = SolidArcDrawingKind::Circle; Request.PlaneCondition = true; Request.Plane = Front; Request.CentreCondition = true;
+        Request.Points = { { 0.0, 0.3 }, { 0.4, 0.3 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Ring = Part.Tree.Steps.back().Label;
+        const size_t Steps = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Wrapped = WrapSolidArcSketches(Part, { Rail, { Ring }, AlongY });
+        // The rail curve densely (20 000 fractions), then golden-section refinement round the nearest sample.
+        std::string    Refusal;
+        const SketchModel    RailModel = Part.Regeneration.Sketches.at(Rail);
+        const ProfileSegment Segment   = ResolveSketchCurveSegment(RailModel, 0, 1.0e-9, Refusal);
+        constexpr int        Dense     = 20000;
+        std::vector<Vector2> Table;
+        for (int Sample = 0; Sample <= Dense; ++Sample) Table.push_back(EvaluateProfileSegment(Segment, double(Sample) / Dense));
+        const auto OffRail = [&](const Vector3& Point)
+        {
+            const Vector2 Seen{ Point.Y, Point.Z };                                          // Seen along x (the can axis)
+            int Nearest = 0;
+            for (int Sample = 1; Sample <= Dense; ++Sample) if (Distance(Table[size_t(Sample)], Seen) < Distance(Table[size_t(Nearest)], Seen)) Nearest = Sample;
+            double Low = double(std::max(0, Nearest - 1)) / Dense, High = double(std::min(Dense, Nearest + 1)) / Dense;
+            for (int Round = 0; Round < 80; ++Round)
+            {
+                const double First = Low + (High - Low) * 0.381966011250105, Second = Low + (High - Low) * 0.618033988749895;
+                if (Distance(EvaluateProfileSegment(Segment, First), Seen) < Distance(EvaluateProfileSegment(Segment, Second), Seen)) High = Second; else Low = First;
+            }
+            return Distance(EvaluateProfileSegment(Segment, 0.5 * (Low + High)), Seen);
+        };
+        double Samples = 0.0, Fitted = 0.0, Tolerance = 0.0, Deviation = 0.0;
+        int    Made = 0, Poles = 0;
+        for (size_t Index = Steps; Index < Part.Tree.Steps.size(); ++Index)
+        {
+            const FeatureStep& Step = Part.Tree.Steps[Index];
+            if (Step.Kind != FeatureStepKind::SpaceCurve) continue;
+            ++Made;
+            Tolerance = EvaluateFeatureValue(Part.Tree, Step.Tolerance);
+            for (const Vector3& Point : Step.Points) Samples = std::max(Samples, OffRail(Point));
+            const auto Fit = Part.Regeneration.Curves.find(Step.Label);
+            if (Fit == Part.Regeneration.Curves.end() || !Fit->second.Curve.Definition) { Fitted = 1.0; continue; }
+            Deviation = std::max(Deviation, Fit->second.WorstDeviation);
+            Poles     = int(Fit->second.Curve.Definition->Poles.size());
+            for (int Sample = 0; Sample <= 4000; ++Sample) Fitted = std::max(Fitted, OffRail(EvaluateNurbsCurve(*Fit->second.Curve.Definition, Sample / 4000.0).Position));
+        }
+        Tally(WrapGate, Fitted, Wrapped.AcceptedCondition && Refusal.empty() && Made == 1 && Samples <= 1.0e-9 && std::abs(Tolerance - 8.0e-7) <= 1.0e-15 && Fitted <= Tolerance + 1.0e-9,
+              Format("circle r 0.4 wrapped round a free curve on YZ: %d curve, %d poles, seen along x the samples are %.1e off the rail, the fitted curve %.2e (%.2f µm; fit tolerance %.2e = 10⁻⁶ of the 0.8 width, worst sample deviation %.2e)%s",
+                     Made, Poles, Samples, Fitted, Fitted * 1.0e6, Tolerance, Deviation, Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
+    }
+    // ⑩ a 30-point wiggle (4 wide) wrapped round the can r 1: too detailed for 10⁻⁶ within the fitter's 64 spans, so it
+    //    steps down to 10⁻⁵ or 10⁻⁴ of its width instead of refusing; the fit stays within the tolerance chosen.
+    {
+        SolidArcDocument Part = CreateSolidArcDocument("WrapWiggle");
+        SolidArcDrawingRequest Request;
+        Request.Kind = SolidArcDrawingKind::Circle; Request.PlaneCondition = true; Request.Plane = Ground; Request.CentreCondition = true;
+        Request.Points = { { 0.0, 0.0 }, { 1.0, 0.0 } };
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Can = Part.Tree.Steps.back().Label;
+        Request = {};
+        Request.Kind = SolidArcDrawingKind::Curve; Request.PlaneCondition = true; Request.Plane = Front;
+        for (int Point = 0; Point < 30; ++Point) Request.Points.push_back({ -2.0 + 4.0 * Point / 29.0, 0.5 + 0.3 * ((Point % 2) ? 1.0 : -1.0) });
+        Expect(DrawSolidArcSketch(Part, Request));
+        const std::string Wiggle = Part.Tree.Steps.back().Label;
+        const size_t Steps = Part.Tree.Steps.size();
+        const SolidArcCommandOutcome Wrapped = WrapSolidArcSketches(Part, { Can, { Wiggle }, AlongY });
+        double Tolerance = 0.0, Deviation = 1.0;
+        for (size_t Index = Steps; Index < Part.Tree.Steps.size(); ++Index)
+        {
+            const FeatureStep& Step = Part.Tree.Steps[Index];
+            if (Step.Kind != FeatureStepKind::SpaceCurve) continue;
+            Tolerance = EvaluateFeatureValue(Part.Tree, Step.Tolerance);
+            const auto Fit = Part.Regeneration.Curves.find(Step.Label);
+            Deviation = Fit == Part.Regeneration.Curves.end() || !Fit->second.Refusal.empty() ? 1.0 : Fit->second.WorstDeviation;
+        }
+        Tally(WrapGate, Deviation, Wrapped.AcceptedCondition && Tolerance > 0.0 && Deviation <= Tolerance,
+              Format("a 30-point wiggle 4 wide round the can: accepted, fit tolerance %.1e (%.0e of the width), worst deviation %.2e%s", Tolerance, Tolerance / 4.0, Deviation,
+                     Wrapped.Refusal.empty() ? "" : (" · " + Wrapped.Refusal).c_str()));
     }
     // ⑧ S on sketches: a circle r 0.5 at (1, 0) scaled ×2 about the origin; a 2 × 1 rectangle stretched ×2 along x; a
     //    circle stretched refuses; Shift+D with a ½ scale copies (the original stays).

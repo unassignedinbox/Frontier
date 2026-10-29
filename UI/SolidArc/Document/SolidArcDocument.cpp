@@ -9,6 +9,7 @@
 
 #include "UI/SolidArc/Document/SolidArcDocument.h"
 
+#include "Engine/GeometryProcessing/Surfacing/CurveFitting.h"
 #include "Engine/GeometryProcessing/Diagnostics/OperationTrace.h"
 #include "UI/SolidArc/Document/SolidArcDrawingSheet.h"
 #include "UI/SolidArc/Document/SolidArcExchange.h"
@@ -3559,10 +3560,22 @@ SolidArcCommandOutcome WrapSolidArcSketches(SolidArcDocument& Document, const So
         }
         const SketchWrapOutcome Wrapped = WrapSketchModels(Shapes, SolvedSketch(Document, *Rail), ElevatedPlane(Document.Tree, *Rail), Request.Settings);
         if (!Wrapped.Refusal.empty()) return "Wrap: " + Wrapped.Refusal;
-        const double Tolerance = 1.0e-4 * std::max(Wrapped.Extent, 1.0e-3);                 // [len] - Fit: 10⁻⁴ of the shape's width
+        // 💡 Fit each wrapped curve as tight as the fitter's span limit allows: 10⁻⁶ of the shape's width (on the rail to
+        //    ~1 µm a metre), else 10⁻⁵, else 10⁻⁴ — the samples themselves lie exactly on the rail's surface.
+        const double Width = std::max(Wrapped.Extent, 1.0e-3);                                 // [len] - Shape width
         std::vector<std::string> Made;
         for (size_t Index = 0; Index < Wrapped.Curves.size(); ++Index)
         {
+            std::vector<Vector3> Closing = Wrapped.Curves[Index];
+            if (Wrapped.Closed[Index] && Closing.size() > 2 && Length(Closing.back() - Closing.front()) > 0.0) Closing.push_back(Closing.front());
+            double Tolerance = 1.0e-4 * Width;                                                   // [len] - Fit tolerance chosen
+            for (const double Fraction : { 1.0e-6, 1.0e-5 })
+            {
+                CurveFitSettings Trial;
+                Trial.Tolerance = Fraction * Width;
+                Trial.SpanLimit = std::max(Trial.SpanLimit, static_cast<int>(Closing.size()) / 4);   // As the regeneration fits it
+                if (FitSpaceCurve(Closing, Trial).Refusal.empty()) { Tolerance = Trial.Tolerance; break; }
+            }
             FeatureStep Step;
             Step.Kind            = FeatureStepKind::SpaceCurve;
             Step.Label           = "Curve#" + std::to_string(NextStepOrdinal(Document.Tree));

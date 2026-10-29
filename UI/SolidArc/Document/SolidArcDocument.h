@@ -432,8 +432,8 @@ struct VehicleCurveFile;
 [[nodiscard]] SolidArcCommandOutcome FlowSolidArcSketches(SolidArcDocument& Document, const SolidArcFlowRequest& Request);
 
 // 💡 Wrap around curve: GeometryProcessing::WrapSketchModels lays every shape curve round the rail's surface (one shared
-//    centre, so letters stay apart); each wrapped curve becomes a 3D curve step ("WrapN", a SpaceCurve fitted to 10⁻⁴ of
-//    the shape's width), all picked. The shapes and the rail stay. One undo entry.
+//    centre, so letters stay apart); each wrapped curve becomes a 3D curve step ("WrapN", a SpaceCurve fitted to 10⁻⁶ of
+//    the shape's width — 10⁻⁵ / 10⁻⁴ when the fitter's span limit cannot hold it), all picked. The shapes and the rail stay. One undo entry.
 [[nodiscard]] SolidArcCommandOutcome WrapSolidArcSketches(SolidArcDocument& Document, const SolidArcWrapRequest& Request);
 
 // 📝 Cut at a point (the Cut tool with Ctrl: a snapped crossing, end, midpoint or quarter point): every shown sketch curve
