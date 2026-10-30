@@ -88,6 +88,21 @@ expect flips == 1
 expect sound == 1
 capture 354CurveFlipped
 
+#    the Normals card (the report "a button to swap the normals … selected faces / entire object"): in body mode the
+#    same sheet shows "Flip whole object" enabled and the face button greyed; it turns the whole loft over
+key 4
+frames 2
+click world 0.0 0.0 0.6
+frames 3
+expect selected-faces == 0
+capture 378NormalsCardObject
+click @Operation:FlipObject
+frames 4
+expect refused == 0
+expect flips == 2
+expect sound == 1
+capture 379NormalsObjectFlipped
+
 # ③ curve points: the gizmo in the Right view is 2D (two arrows in the screen plane) …
 key N Ctrl
 frames 2

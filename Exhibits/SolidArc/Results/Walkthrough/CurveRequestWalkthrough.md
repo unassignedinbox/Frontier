@@ -1,9 +1,9 @@
 # SolidArcCapture
 
 - Device: SwiftShader Device (Subzero) · Vulkan 1.3.0 · 4× MSAA
-- Frame: 1600 x 810 · 587 frames · 55.5217 s · slowest frame 507.389 ms
+- Frame: 1600 x 810 · 610 frames · 46.1001 s · slowest frame 428.541 ms
 - Script: /home/user/Frontier/_ClaudeScratch/Upstream/Exhibits/SolidArc/Code/Scripts/CurveRequestWalkthrough.txt
-- Expectations: 37 / 37 passed
+- Expectations: 41 / 41 passed
 
 | Line | Expectation | Observed | Result |
 |-----:|-------------|----------|--------|
@@ -21,44 +21,50 @@
 | 86 | `refused == 0` | 0 | 🟢 |
 | 87 | `flips == 1` | 1 | 🟢 |
 | 88 | `sound == 1` | 1 | 🟢 |
-| 116 | `gizmo-target == 4` | points | 🟢 |
-| 117 | `gizmo-flat == 1` | 1 | 🟢 |
-| 118 | `gizmo-arrows == 2` | 2 | 🟢 |
-| 124 | `gizmo-flat == 0` | 0 | 🟢 |
-| 125 | `gizmo-arrows == 3` | 3 | 🟢 |
-| 131 | `refused == 0` | 0 | 🟢 |
-| 132 | `last-step contains Curve#` | Curve#2 | 🟢 |
-| 133 | `sketches == 0` |  | 🟢 |
-| 160 | `grid-plane == 0` | 0 | 🟢 |
-| 167 | `snap contains curve` | On curve · Spline1 · Curve1 · 3D (the curve leaves the plane) | 🟢 |
-| 168 | `snap-z > 0.5` | 0.7981191452 | 🟢 |
-| 178 | `refused == 0` | 0 | 🟢 |
-| 179 | `last-step contains Curve#` | Curve#2 | 🟢 |
-| 180 | `selected-curves == 1` | Curve2 | 🟢 |
-| 186 | `hidden-curves == 1` | 1 | 🟢 |
-| 187 | `status contains hidden` | Hide selected · 0 body(ies), 1 curve(s) hidden | 🟢 |
-| 191 | `hidden-curves == 0` | 0 | 🟢 |
-| 234 | `sketch-curve-total == 3` | 3 | 🟢 |
-| 237 | `trim == 1` | 1 | 🟢 |
-| 240 | `trim-refusal == 0` |  | 🟢 |
-| 244 | `refused == 0` | 0 | 🟢 |
-| 245 | `sketch-curve-total == 4` | 4 | 🟢 |
-| 248 | `trim == 0` | 0 | 🟢 |
+| 97 | `selected-faces == 0` |  | 🟢 |
+| 101 | `refused == 0` | 0 | 🟢 |
+| 102 | `flips == 2` | 2 | 🟢 |
+| 103 | `sound == 1` | 1 | 🟢 |
+| 131 | `gizmo-target == 4` | points | 🟢 |
+| 132 | `gizmo-flat == 1` | 1 | 🟢 |
+| 133 | `gizmo-arrows == 2` | 2 | 🟢 |
+| 139 | `gizmo-flat == 0` | 0 | 🟢 |
+| 140 | `gizmo-arrows == 3` | 3 | 🟢 |
+| 146 | `refused == 0` | 0 | 🟢 |
+| 147 | `last-step contains Curve#` | Curve#2 | 🟢 |
+| 148 | `sketches == 0` |  | 🟢 |
+| 175 | `grid-plane == 0` | 0 | 🟢 |
+| 182 | `snap contains curve` | On curve · Spline1 · Curve1 · 3D (the curve leaves the plane) | 🟢 |
+| 183 | `snap-z > 0.5` | 0.7981191452 | 🟢 |
+| 193 | `refused == 0` | 0 | 🟢 |
+| 194 | `last-step contains Curve#` | Curve#2 | 🟢 |
+| 195 | `selected-curves == 1` | Curve2 | 🟢 |
+| 201 | `hidden-curves == 1` | 1 | 🟢 |
+| 202 | `status contains hidden` | Hide selected · 0 body(ies), 1 curve(s) hidden | 🟢 |
+| 206 | `hidden-curves == 0` | 0 | 🟢 |
+| 249 | `sketch-curve-total == 3` | 3 | 🟢 |
+| 252 | `trim == 1` | 1 | 🟢 |
+| 255 | `trim-refusal == 0` |  | 🟢 |
+| 259 | `refused == 0` | 0 | 🟢 |
+| 260 | `sketch-curve-total == 4` | 4 | 🟢 |
+| 263 | `trim == 0` | 0 | 🟢 |
 
 | Capture | Frame | Digest |
 |---------|------:|--------|
-| 351CurveLoftPicked | 110 | `af0233a1ee5ab2af` |
-| 352CurveLoftSheet | 146 | `3de4ca4e504419a7` |
-| 353CurveFlipFace | 165 | `c886fb7cb1b8d860` |
-| 354CurveFlipped | 179 | `522cbc1e4b2c7324` |
-| 355GizmoFlat | 252 | `748f1480cce2481d` |
-| 356GizmoSpace | 276 | `f1806de01abb7d6a` |
-| 357GizmoLifted | 297 | `0b8156d650e9ddb1` |
-| 358AltCurveSnap | 397 | `95d47e1f160b0771` |
-| 359AltCurveDrawn | 424 | `17649a8253a1f977` |
-| 360CurveHidden | 432 | `4e98d92eab1cac18` |
-| 361CurveTrimHover | 571 | `1f561fa93cfa4aec` |
-| 362CurveTrimmed | 587 | `b3c37420f83471b2` |
+| 351CurveLoftPicked | 110 | `764c6e46a99555d4` |
+| 352CurveLoftSheet | 146 | `fc00c7941643668d` |
+| 353CurveFlipFace | 165 | `6d1ec4440f561bb9` |
+| 354CurveFlipped | 176 | `05fad324f36507ca` |
+| 378NormalsCardObject | 191 | `1169bb916ff64bfd` |
+| 379NormalsObjectFlipped | 202 | `fca3da15190582b6` |
+| 355GizmoFlat | 275 | `22318751f418f496` |
+| 356GizmoSpace | 299 | `f02c26870bf83c2d` |
+| 357GizmoLifted | 320 | `a68c2812444cec76` |
+| 358AltCurveSnap | 420 | `653aa72cabad1e0b` |
+| 359AltCurveDrawn | 447 | `46e21f0669a6b2ba` |
+| 360CurveHidden | 455 | `7429e89742968fb5` |
+| 361CurveTrimHover | 594 | `9f035154264688c7` |
+| 362CurveTrimmed | 610 | `f0cb8525b7923222` |
 
 ## Journal
 
@@ -79,6 +85,8 @@
 - Selected Loft#3.Side(Surface)
 - Autosaved _ClaudeScratch/SolidArcWorkspace/CurveRequestRecovery.solidarc
 - Flip normals (1 face(s) of Loft1) · 3 ms
+- Selected Loft1 (1 faces)
+- Flip normals (Loft1) · 3 ms
 - New document (previous recovery copy kept)
 - Curve on plane YZ (or the body face under the first click): click points · 1 Hermite · 2 Bezier · 3 NURBS · 4 cubic spline · Enter / right-click finishes · Ctrl+Z drops a point · hold Ctrl to snap to ends / midpoints / centres, Alt to slide along a curve · Esc aborts
 - Autosaved _ClaudeScratch/SolidArcWorkspace/CurveRequestRecovery.solidarc

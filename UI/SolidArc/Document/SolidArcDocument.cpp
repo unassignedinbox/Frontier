@@ -1531,11 +1531,13 @@ SolidArcCommandOutcome FlipSolidArcBodies(SolidArcDocument& Document, const std:
         }
         for (const std::string& Key : Unique)
         {
-            // ① a Flip that is the body's last step is undone instead of stacking a second one
+            // ① a whole-body Flip that is the body's last step is undone instead of stacking a second one. A face Flip is
+            //    not: turning the whole object after some faces must keep those faces' turn (they come back to the
+            //    original side while the rest turns), and removing the step undid the face flip instead.
             auto Last = Document.Tree.Steps.end();
             for (auto Step = Document.Tree.Steps.begin(); Step != Document.Tree.Steps.end(); ++Step)
                 if (Step->Target == Key || Step->Label == Key) Last = Step;
-            if (Last != Document.Tree.Steps.end() && Last->Kind == FeatureStepKind::Flip && Last->Target == Key)
+            if (Last != Document.Tree.Steps.end() && Last->Kind == FeatureStepKind::Flip && Last->Target == Key && Last->References.empty())
             {
                 Document.Captions.erase(Last->Label);
                 Document.Tree.Steps.erase(Last);
