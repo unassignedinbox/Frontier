@@ -232,6 +232,8 @@ struct SolidArcBlendFit
     double      Fitted  = 0.0;                                                               // [len] - Suggested start size
     double      FilletReach  = 0.0;                                                          // [len] - Radius past which a fillet eats the body
     double      ChamferReach = 0.0;                                                          // [len] - Setback past which a chamfer eats the body
+    std::vector<double> FilletMerges  = {};                                                  // [len] - Radii where rails meet a neighbour (sorted)
+    std::vector<double> ChamferMerges = {};                                                  // [len] - Chamfer sizes where rails meet a neighbour (sorted)
     std::string Refusal = {};                                                                // [-]   - Why nothing was measured
 };
 

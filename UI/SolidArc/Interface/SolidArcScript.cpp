@@ -765,6 +765,13 @@ bool ObserveField(const SolidArcWorkspaceState& State, const std::string& Field,
     if (Field == "bevel-ceiling") return Numeric(State.Bevel.LimitCeiling);
     if (Field == "bevel-limit-parameter") return Numeric(State.Bevel.LimitParameter);
     if (Field == "bevel-limit-stops") return Numeric(State.Bevel.LimitStops);
+    if (Field == "bevel-merge-snaps") return Numeric(State.Bevel.MergeSnaps);
+    if (Field == "bevel-merges") return Numeric(double((State.Bevel.Shape == Frontier::GeometryProcessing::BlendProfile::Chamfer ? State.Bevel.Fit.ChamferMerges : State.Bevel.Fit.FilletMerges).size()));
+    if (Field == "bevel-merge-first")
+    {
+        const std::vector<double>& Merges = State.Bevel.Shape == Frontier::GeometryProcessing::BlendProfile::Chamfer ? State.Bevel.Fit.ChamferMerges : State.Bevel.Fit.FilletMerges;
+        return Numeric(Merges.empty() ? 0.0 : Merges.front());
+    }
     if (Field == "bevel-probe") return Numeric(State.Bevel.LimitProbeCondition ? 1 : 0);
     if (Field == "preview-faces") return Numeric(State.Bevel.Preview ? State.Bevel.Preview->Summary.Faces : 0);
     if (Field == "camera-yaw") return Numeric(State.Camera.Azimuth);

@@ -1075,6 +1075,69 @@ SolidArcBlendFit MeasureSolidArcBlendFit(const SolidArcDocument& Document, const
     Turning          = std::clamp(Turning, 10.0 * std::numbers::pi / 180.0, 170.0 * std::numbers::pi / 180.0);
     Fit.ChamferReach = Diagonal;
     Fit.FilletReach  = Diagonal / std::tan(0.5 * Turning);
+    // 📝 Merge sizes (the report "when we bevel and edges / vertices come close together they must merge or create new
+    //    vertex"): on a planar support face, a straight picked edge's rail runs parallel to it, setback s = r · tan ½θ
+    //    in (fillet, θ the turn between the faces) or s = d (chamfer). A parallel straight edge w away on the same face
+    //    is met when the setbacks add up to w — both rails when it is picked too (they fuse into one ridge, the face
+    //    between them vanishes), the rail alone when it is not (the face is used up). The viewport snaps a dragged size
+    //    onto these, so the blends meet exactly and the modeller merges them instead of leaving a sliver face.
+    {
+        const auto Rate = [&](EdgeToken Edge, bool Chamfer)                                // Setback per unit size
+        {
+            if (Chamfer) return 1.0;
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+            const Vector3      Middle  = EvaluateCurve(Partition.Curves.Resolve(Profile.Curve), 0.5 * (Profile.IntervalLow + Profile.IntervalHigh)).Position;
+            const auto         Faces   = EdgeFaces(Partition, Edge);
+            const double       Cosine  = Dot(EvaluateOutwardNormal(Partition, Faces[0], Middle), EvaluateOutwardNormal(Partition, Faces[1], Middle));
+            return std::tan(0.5 * std::acos(std::clamp(Cosine, -1.0, 1.0)));
+        };
+        std::set<uint32_t> Picked;
+        for (EdgeToken Edge : Tokens) Picked.insert(Edge.Slot);
+        for (EdgeToken Edge : Tokens)
+        {
+            const EdgeProfile& Profile = Partition.Edges.Resolve(Edge);
+            const auto*        Line    = std::get_if<StraightLine>(&Partition.Curves.Resolve(Profile.Curve));
+            if (!Line || Profile.Start == Profile.End) continue;
+            for (FaceToken Face : EdgeFaces(Partition, Edge))
+            {
+                const FaceProfile& Record = Partition.Faces.Resolve(Face);
+                if (!std::holds_alternative<PlaneSurface>(Partition.Surfaces.Resolve(Record.Surface))) continue;
+                for (LoopToken Loop : Record.Loops)
+                {
+                    const FinToken First = Partition.Loops.Resolve(Loop).FirstFin;
+                    if (!First.PresentCondition()) continue;
+                    FinToken Fin = First;
+                    for (int Guard = 0; Guard < 100000; ++Guard)
+                    {
+                        const EdgeToken    Other     = Partition.Fins.Resolve(Fin).Edge;
+                        const EdgeProfile& Neighbour = Partition.Edges.Resolve(Other);
+                        const auto*        Across    = std::get_if<StraightLine>(&Partition.Curves.Resolve(Neighbour.Curve));
+                        if (Other != Edge && Across && Neighbour.Start != Neighbour.End && std::abs(std::abs(Dot(Across->Direction, Line->Direction)) - 1.0) <= 1.0e-12)
+                        {
+                            const Vector3 Offset = Across->Origin - Line->Origin;
+                            const double  Width  = Length(Offset - Line->Direction * Dot(Offset, Line->Direction));   // [len] - Line-to-line distance
+                            if (Width > 1.0e-9 * Diagonal)
+                            {
+                                const bool Both = Picked.contains(Other.Slot);
+                                for (const bool Chamfer : { false, true })
+                                {
+                                    const double Sum = Rate(Edge, Chamfer) + (Both ? Rate(Other, Chamfer) : 0.0);
+                                    if (Sum > 1.0e-9) (Chamfer ? Fit.ChamferMerges : Fit.FilletMerges).push_back(Width / Sum);
+                                }
+                            }
+                        }
+                        Fin = Partition.Fins.Resolve(Fin).Successor;
+                        if (Fin == First) break;
+                    }
+                }
+            }
+        }
+        for (std::vector<double>* Merges : { &Fit.FilletMerges, &Fit.ChamferMerges })
+        {
+            std::sort(Merges->begin(), Merges->end());
+            Merges->erase(std::unique(Merges->begin(), Merges->end(), [&](double A, double B) { return std::abs(A - B) <= 1.0e-9 * Diagonal; }), Merges->end());
+        }
+    }
     const double Wanted = 0.15 * Span;                                                      // [len] - About 15 % of the bound
     const double Decade = std::pow(10.0, std::floor(std::log10(Wanted)));
     const double Steps[] = { 5.0, 2.0, 1.0 };

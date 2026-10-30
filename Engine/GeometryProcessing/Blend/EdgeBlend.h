@@ -72,6 +72,9 @@ struct BlendStatistics
     int    CliffOverflows    = 0;                                                            // [-]   - Blend sides trimmed by a cliff face
     int    NotchOverflows    = 0;                                                            // [-]   - Blend sides trimmed by a face across a concave edge
     int    SmoothOverflows   = 0;                                                            // [-]   - Blend sides rolled over a tangent edge onto the next face
+    int    MergedVertices    = 0;                                                            // [-]   - Vertices fused where blends meet
+    int    MergedEdges       = 0;                                                            // [-]   - Rails fused into one edge where blends meet
+    int    MergedFaces       = 0;                                                            // [-]   - Faces swept to zero area and dropped
     double Milliseconds      = 0.0;                                                          // [ms]  - Wall time
 };
 

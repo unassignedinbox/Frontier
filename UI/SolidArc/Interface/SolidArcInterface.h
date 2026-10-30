@@ -167,6 +167,7 @@ struct SolidArcBevelSession
     double                            LimitCeiling    = 0.0;                                 // [len] - Smallest refused value above it (0: none)
     bool                              LimitProbeCondition = false;                           // [-]   - Bisecting toward the bound
     int                               LimitStops      = 0;                                   // [-]   - Values held at the bound (script evidence)
+    int                               MergeSnaps      = 0;                                   // [-]   - Drags caught by a merge size (script evidence)
     // 📝 Blender's extrude manifold on a sketch: until Q / W / E / R picks one, the Boolean follows the drag — into the
     //    material (ProfileMaterial: +1 along the sketch +𝑧, −1 along −𝑧) cuts, away from it adds.
     bool                              AutoCombinationCondition = false;                      // [-]   - Profile: Boolean follows the direction

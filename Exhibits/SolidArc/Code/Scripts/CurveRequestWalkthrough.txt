@@ -72,7 +72,7 @@ frames 3
 expect orthographic == 0
 capture 352CurveLoftSheet
 
-# ② face mode, pick the sheet, Inspector Flip faces: the picked face's piece turns over (its back side was dark)
+# ② face mode, pick the sheet, Inspector Normals card · Flip selected faces: the picked face's piece turns over (its back side was dark)
 key 3
 frames 2
 move world 0.0 0.0 0.6
@@ -81,7 +81,7 @@ click world 0.0 0.0 0.6
 frames 3
 expect selected-faces == 1
 capture 353CurveFlipFace
-click @Operation:FlipNormals
+click @Operation:FlipFaces
 frames 4
 expect refused == 0
 expect flips == 1

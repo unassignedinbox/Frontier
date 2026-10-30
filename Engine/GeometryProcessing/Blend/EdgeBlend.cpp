@@ -138,6 +138,7 @@ namespace
             if (std::string Refusal = ResolvePieces(); !Refusal.empty()) return Refusal;
             for (const auto& [Key, Smooth] : Smooths) Replacements[Smooth.FarEdge.Slot] = ContactPieces[Key];   // the rail runs where the tangent edge ran
             if (std::string Refusal = ComposeFaces(); !Refusal.empty()) return Refusal;
+            if (std::string Refusal = MergeCoincidences(); !Refusal.empty()) return Refusal;
             return {};
         }
 
@@ -174,6 +175,7 @@ namespace
         std::map<uint32_t, int>                    Replacements;                             // far edge → cliff section (blueprint edge)
         std::set<std::pair<uint32_t, int>>         FlippedContacts;                          // cliff sections running against τ
         std::map<std::pair<uint32_t, int>, SmoothOverflow> Smooths;                          // (blended edge, side) → smooth overflow
+        std::set<int>                              Collapsed;                                // zero-length blueprint edges to fuse
 
         //----------------------------------------------------------------------------------------------------------------
         //                                            BLUEPRINT RECORDS
@@ -1685,7 +1687,15 @@ namespace
                         const bool   Along = Sheet->Alignment > 0.0;
                         const double Low   = ProjectOntoCurve(Contact, PositionOf(Along ? From : To), 0.0);
                         const double High  = ProjectOntoCurve(Contact, PositionOf(Along ? To : From), Low);
-                        if (!(High - Low > Tolerance)) return "edge " + LabelToken("E", Edge) + ": contact rail runs backwards (blend wider than its face)";
+                        if (!(High - Low > Tolerance))
+                        {
+                            // 📝 Rails that shrink to a point (two rails meeting at the middle of a face, a loop closing over
+                            //    its face) are collapsed, not refused: MergeCoincidences fuses the ends and drops the face.
+                            if (Distance(PositionOf(From), PositionOf(To)) > Agreement) return "edge " + LabelToken("E", Edge) + ": contact rail runs backwards (blend wider than its face)";
+                            ContactPieces[{ Edge.Slot, Side }] = IssueEdge(Contact, Low, Low, Along ? From : To, Along ? To : From);
+                            Collapsed.insert(ContactPieces[{ Edge.Slot, Side }]);
+                            continue;
+                        }
                         ContactPieces[{ Edge.Slot, Side }] = IssueEdge(Contact, Low, High, Along ? From : To, Along ? To : From);
                     }
                     continue;
@@ -1708,6 +1718,13 @@ namespace
                 const double High = EndFound != TrimVertices.end() ? ProjectOntoCurve(Curve, PositionOf(To), Low) : Profile.IntervalHigh;
                 const bool   LowExtended  = Extensions.count({ Edge.Slot, 0 }) != 0;
                 const bool   HighExtended = Extensions.count({ Edge.Slot, 1 }) != 0;
+                if (!(High - Low > Tolerance) && Distance(PositionOf(From), PositionOf(To)) <= Agreement)
+                {
+                    // Both trims land on the same point (two blends meeting on this edge): a zero-length piece to collapse.
+                    Pieces[Edge.Slot] = IssueEdge(Curve, Low, Low, From, To);
+                    Collapsed.insert(Pieces[Edge.Slot]);
+                    continue;
+                }
                 if (!(High - Low > Tolerance) || (High > Profile.IntervalHigh + Agreement && !HighExtended) || (Low < Profile.IntervalLow - Agreement && !LowExtended))
                 {
                     const double Overshoot = std::max({ Profile.IntervalLow - Low, High - Profile.IntervalHigh, Low - High }) * MeasureParameterScale(Curve);
@@ -1742,6 +1759,141 @@ namespace
             {
                 if (UseEnd(Loop[Index]) != UseStart(Loop[(Index + 1) % Loop.size()])) return Subject + ": loop does not close at use " + std::to_string(Index);
             }
+            return {};
+        }
+
+        //----------------------------------------------------------------------------------------------------------------
+        //                                            MERGE
+        //----------------------------------------------------------------------------------------------------------------
+
+        // 💡 Blends that meet (two rails reaching the middle of a face, a loop closing over its face, two trims landing on
+        //    one point of a sharp edge) leave zero-length edges. ① Each collapsed edge fuses its end vertices (union–find);
+        //    ② edges that now share both ends and run along the same carrier within Agreement become one edge, used by
+        //    both blend faces; ③ a loop whose uses cancel in pairs (the face swept to zero area between two merged rails)
+        //    is dropped, and a face without loops with it; ④ merged uses are refitted against the surviving carrier.
+        //    Nothing is loosened: only edges whose ends coincide within Agreement collapse, and only coincident carriers
+        //    merge, so blends that do not meet keep their blueprint untouched.
+        [[nodiscard]] std::string MergeCoincidences()
+        {
+            if (Collapsed.empty()) return {};
+            std::vector<int> Root(Blueprint.Vertices.size());
+            for (size_t Index = 0; Index < Root.size(); ++Index) Root[Index] = static_cast<int>(Index);
+            const auto Find = [&](int Vertex)
+            {
+                while (Root[Vertex] != Vertex) Vertex = Root[Vertex] = Root[Root[Vertex]];
+                return Vertex;
+            };
+            for (int Edge : Collapsed)
+            {
+                const int Start = Find(Blueprint.Edges[Edge].Start), End = Find(Blueprint.Edges[Edge].End);
+                if (Start != End) Root[std::max(Start, End)] = std::min(Start, End);
+            }
+            for (BlueprintEdge& Block : Blueprint.Edges)
+            {
+                if (Block.Start >= 0) Block.Start = Find(Block.Start);
+                if (Block.End >= 0)   Block.End   = Find(Block.End);
+            }
+
+            // ② Coincident carriers between the same fused ends: the lower index survives.
+            std::vector<int>  Survivor(Blueprint.Edges.size());
+            std::vector<bool> Turned(Blueprint.Edges.size(), false);
+            for (size_t Index = 0; Index < Survivor.size(); ++Index) Survivor[Index] = static_cast<int>(Index);
+            const auto Coincident = [&](const BlueprintEdge& First, const BlueprintEdge& Second)
+            {
+                for (int Sample = 1; Sample < 8; ++Sample)
+                {
+                    const double  τ     = First.Low + (First.High - First.Low) * Sample / 8.0;
+                    const Vector3 Point = EvaluateCurve(First.Curve, τ).Position;
+                    const double  Along = std::clamp(ProjectOntoCurve(Second.Curve, Point, 0.5 * (Second.Low + Second.High)), Second.Low, Second.High);
+                    if (Distance(EvaluateCurve(Second.Curve, Along).Position, Point) > Agreement) return false;
+                }
+                return true;
+            };
+            for (size_t Later = 0; Later < Blueprint.Edges.size(); ++Later)
+            {
+                const BlueprintEdge& Second = Blueprint.Edges[Later];
+                if (Collapsed.count(static_cast<int>(Later)) != 0 || Second.Start == Second.End) continue;
+                for (size_t Earlier = 0; Earlier < Later; ++Earlier)
+                {
+                    const BlueprintEdge& First = Blueprint.Edges[Earlier];
+                    if (Collapsed.count(static_cast<int>(Earlier)) != 0 || Survivor[Earlier] != static_cast<int>(Earlier)) continue;
+                    const bool Same    = First.Start == Second.Start && First.End == Second.End;
+                    const bool Opposed = First.Start == Second.End && First.End == Second.Start;
+                    if ((!Same && !Opposed) || !Coincident(First, Second) || !Coincident(Second, First)) continue;
+                    Survivor[Later] = static_cast<int>(Earlier);
+                    Turned[Later]   = Opposed;
+                    ++Outcome.Statistics.MergedEdges;
+                    break;
+                }
+            }
+
+            // ③ Rewrite the loops: collapsed uses vanish, merged uses move to the survivor, cancelling pairs drop out.
+            std::vector<BlueprintFace>    Faces;
+            std::vector<BlendFaceHistory> Histories;
+            for (size_t FaceIndex = 0; FaceIndex < Blueprint.Faces.size(); ++FaceIndex)
+            {
+                BlueprintFace& Face = Blueprint.Faces[FaceIndex];
+                std::vector<std::vector<BlueprintUse>> Loops;
+                for (std::vector<BlueprintUse>& Loop : Face.Loops)
+                {
+                    std::vector<BlueprintUse> Uses;
+                    std::vector<bool>         Moved;
+                    for (BlueprintUse& Use : Loop)
+                    {
+                        if (Collapsed.count(Use.Edge) != 0) continue;
+                        const int Edge = Use.Edge;
+                        if (Survivor[Edge] != Edge)
+                        {
+                            const BlueprintEdge& Old       = Blueprint.Edges[Edge];
+                            const Vector2        Reference = EvaluateParameterCurve(Use.SurfaceCurve, 0.5 * (Old.Low + Old.High)).Position;
+                            Use.Edge         = Survivor[Edge];
+                            Use.Sense        = Turned[Edge] ? InvertOrientation(Use.Sense) : Use.Sense;
+                            Use.SurfaceCurve = FitUse(Face.Surface, Use.Edge, Reference);
+                        }
+                        Uses.push_back(Use);
+                        Moved.push_back(Survivor[Edge] != Edge);
+                    }
+                    // A merged rail used both ways in one loop bounds nothing: the face between the rails has no width.
+                    // (Seam edges of periodic faces are used both ways too, but neither use was moved, so they stay.)
+                    for (bool Cancelled = true; Cancelled;)
+                    {
+                        Cancelled = false;
+                        for (size_t First = 0; First < Uses.size() && !Cancelled; ++First)
+                        {
+                            for (size_t Second = First + 1; Second < Uses.size() && !Cancelled; ++Second)
+                            {
+                                if (Uses[First].Edge != Uses[Second].Edge || Uses[First].Sense == Uses[Second].Sense || (!Moved[First] && !Moved[Second])) continue;
+                                Uses.erase(Uses.begin() + static_cast<std::ptrdiff_t>(Second));
+                                Uses.erase(Uses.begin() + static_cast<std::ptrdiff_t>(First));
+                                Moved.erase(Moved.begin() + static_cast<std::ptrdiff_t>(Second));
+                                Moved.erase(Moved.begin() + static_cast<std::ptrdiff_t>(First));
+                                Cancelled = true;
+                            }
+                        }
+                    }
+                    if (Uses.empty()) continue;
+                    // The loop may have been opened where a cancelled pair sat: rotate so it closes, else refuse.
+                    if (std::string Refusal = DiagnoseLoop(Uses, "merged loop"); !Refusal.empty())
+                    {
+                        bool Closed = false;
+                        for (size_t Turn = 1; Turn < Uses.size() && !Closed; ++Turn)
+                        {
+                            std::rotate(Uses.begin(), Uses.begin() + 1, Uses.end());
+                            Closed = DiagnoseLoop(Uses, {}).empty();
+                        }
+                        if (!Closed) return "blends meet but the merged boundary does not close (" + Refusal + ")";
+                    }
+                    Loops.push_back(std::move(Uses));
+                }
+                if (Loops.empty()) { ++Outcome.Statistics.MergedFaces; continue; }
+                Face.Loops = std::move(Loops);
+                Faces.push_back(std::move(Face));
+                Histories.push_back(Provenance[FaceIndex]);
+            }
+            Blueprint.Faces = std::move(Faces);
+            Provenance      = std::move(Histories);
+            Outcome.Statistics.MergedVertices = 0;
+            for (size_t Index = 0; Index < Root.size(); ++Index) Outcome.Statistics.MergedVertices += Find(static_cast<int>(Index)) != static_cast<int>(Index) ? 1 : 0;
             return {};
         }
 

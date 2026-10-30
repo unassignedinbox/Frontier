@@ -620,6 +620,7 @@ void RefreshBevelHandles(SolidArcWorkspaceState& State, bool ForceCondition)
 }
 
 constexpr float BevelHandleLead  = 26.0f;                                                    // [px] - Handle stick standing off the bevel
+constexpr float BevelMergeBand   = 9.0f;                                                     // [px] - Grip travel caught by a merge size
 constexpr float BevelHandleReach = 11.0f;                                                    // [px] - Pointer distance that grabs a handle
 
 // 📝 Handles follow the bevel (the report "the blue + white controls for the bevel / chamfer … should follow the edges /
@@ -6848,6 +6849,21 @@ bool DriveBevelHandles(SolidArcWorkspaceState& State, const OrbitCameraFrame& Fr
             const double Moved = (*Parameter - Bevel.DragOrigin) * (Io.KeyShift ? 0.1 : 1.0);   // [len] - Grip travel
             double Size = Bevel.DragScreenCondition ? Bevel.DragSize + Moved : Bevel.DragSize - Moved / BevelHandleDepthRate(Bevel, Bevel.DragHandle);
             Size = std::max(1.0e-3, Io.KeyCtrl ? std::round(Size * 1.0e6) * 1.0e-6 : std::round(Size * 1.0e3) * 1.0e-3);
+            // Detent (the report "when we bevel and edges / vertices come close together they must merge"): within a few
+            // pixels of a size where the rails meet a neighbour edge or each other, the size sits exactly on it, so the
+            // modeller fuses them (one ridge, one apex) instead of leaving a sliver face. Ctrl drags free.
+            if (Bevel.DragHandle == 0 && !Io.KeyCtrl && Bevel.Verb == SolidArcSessionVerb::Blend)
+            {
+                const double Rate = Bevel.DragScreenCondition ? 1.0 : std::max(0.2, BevelHandleDepthRate(Bevel, 0));
+                const double Band = BevelMergeBand * Frame.WorldPerPixel / Rate;            // [len] - Size caught
+                for (const double Merge : Bevel.Shape == BlendProfile::Chamfer ? Bevel.Fit.ChamferMerges : Bevel.Fit.FilletMerges)
+                {
+                    if (std::abs(Size - Merge) > Band) continue;
+                    if (Size != Merge) ++Bevel.MergeSnaps;
+                    Size = Merge;
+                    break;
+                }
+            }
             Size = BoundBevelValue(State, Bevel.DragHandle, Size);                           // Stops at the largest accepted size
             if (Bevel.DragHandle == 0) Bevel.Size = Size;
             else Bevel.CornerSizes[size_t(Bevel.DragHandle)] = Size;
@@ -12602,6 +12618,16 @@ void RunOperation(SolidArcWorkspaceState& State, const std::string& Key)
     else if (Key == "Flow") FlowSelectedSketches(State);
     else if (Key == "FillSketch") ToggleSketchFill(State);
     else if (Key == "FlipNormals") FlipPickedNormals(State);
+    else if (Key == "FlipFaces")
+    {
+        const std::vector<std::string> Faces = State.Document.Selection.Faces;
+        Conclude(State, FlipSolidArcFaces(State.Document, Faces));
+    }
+    else if (Key == "FlipObject")
+    {
+        const std::vector<std::string> Keys = TouchedBodies(State.Document);
+        Conclude(State, FlipSolidArcBodies(State.Document, Keys));
+    }
     else if (Key == "Move") OpenTransformSession(State, SolidArcTransformVerb::Move, false);
     else if (Key == "Rotate") OpenTransformSession(State, SolidArcTransformVerb::Rotate, false);
     else if (Key == "Scale") OpenTransformSession(State, SolidArcTransformVerb::Scale, false);
@@ -12968,13 +12994,6 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
             Operations.push_back({ "FillSketch", IconSymbol::SolidArcFill, Filled ? "Unfill · F" : "Fill · F" });
         }
     }
-    {
-        bool SheetCondition = false;
-        for (const std::string& Key : TouchedBodies(State.Document))
-            if (const SolidArcBodyFigures* Figures = FiguresOf(State.Document, Key)) SheetCondition = SheetCondition || Figures->SheetCondition;
-        // Picked faces turn their pieces of the sheet over; otherwise the whole sheet (the object).
-        if (SheetCondition) Operations.push_back({ "FlipNormals", IconSymbol::SolidArcFlip, Selection.Faces.empty() ? "Flip normals · Alt+N" : "Flip faces · Alt+N" });
-    }
     if (Selection.Curves.size() >= 2) Operations.push_back({ "Loft", IconSymbol::SolidArcSurface, "Loft · L" });
     if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Join", IconSymbol::SolidArcLink, "Join · J" });
     if (SelectedSketchLabels(State.Document).size() >= 2) Operations.push_back({ "Flow", IconSymbol::SolidArcCurve, "Flow along curve" });
@@ -12984,8 +13003,7 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
         Operations.push_back({ "Rotate", IconSymbol::SolidArcRotate, "Rotate · R" });
         Operations.push_back({ "Scale", IconSymbol::SolidArcMaximize, "Scale · S" });
     }
-    if (Selection.Bodies.size() >= 2)                                                        // Several bodies: only the flip applies to all of them
-        std::erase_if(Operations, [](const InspectorOperation& Operation) { return Operation.Key != "FlipNormals"; });
+    if (Selection.Bodies.size() >= 2) Operations.clear();                                   // Several bodies: only the Normals card applies to all
     if (Operations.empty()) return;
     for (InspectorOperation& Operation : Operations) Operation.Enabled = !State.Bevel.ActiveCondition;
     const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
@@ -12997,6 +13015,41 @@ void DrawOperationsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
     Y += CardHeadingHeight;
     const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, Width, Operations);
     Y += OperationGridHeight(Operations.size()) + 15.0f;
+    DrawParagraph(Sheet, Left, Y, Width, Note);
+    CloseSheetCard(Card);
+    if (!Pressed.empty()) RunOperation(State, Pressed);
+}
+
+// 📝 Normals card (the report "a button to swap the normals [for lofts / other surfaces] swaps selected faces / entire
+//    object (depends on what is selected)"): shown near the top whenever the selection touches an open sheet. Picked faces of a
+//    sheet turn over on their own; "Flip whole object" turns every touched sheet. Alt+N does the same as the left
+//    button when faces are picked, else the right one. A closed solid has one outside, so its normals stay outward.
+void DrawNormalsCard(SolidArcWorkspaceState& State, SolidArcSheet& Sheet)
+{
+    const SolidArcSelection&       Selection = State.Document.Selection;
+    const std::vector<std::string> Keys      = TouchedBodies(State.Document);
+    if (Keys.empty() || State.Drawing.ActiveCondition) return;
+    int Sheets = 0;                                                                          // [-] - Touched open sheets (lofts, walls)
+    for (const std::string& Key : Keys)
+        if (const SolidArcBodyFigures* Figures = FiguresOf(State.Document, Key)) Sheets += Figures->SheetCondition ? 1 : 0;
+    if (Sheets == 0) return;                                                                 // closed solids: one outside, nothing to turn
+    const int         Faces = int(Selection.Faces.size());
+    const bool        Free  = !State.Bevel.ActiveCondition;
+    const std::string Note  = Faces > 0 ? Compose("%d face%s picked: the left button flips just %s, the right one the whole object. Alt+N flips the picked faces.", Faces,
+                                                    Faces == 1 ? "" : "s", Faces == 1 ? "it" : "them")
+                                        : Compose("Whole object%s: Alt+N or the right button flips it. Pick faces (mode 3) to flip only those.", Sheets == 1 ? "" : "s");
+    const std::vector<InspectorOperation> Operations = {
+        { "FlipFaces", IconSymbol::SolidArcFlip, Faces > 0 ? Compose("Flip %d selected face%s", Faces, Faces == 1 ? "" : "s") : std::string("Flip selected faces"), Free && Sheets > 0 && Faces > 0 },
+        { "FlipObject", IconSymbol::SolidArcFlip, Sheets > 1 ? std::string("Flip whole objects") : std::string("Flip whole object"), Free && Sheets > 0 },
+    };
+    const float       Width = ImGui::GetContentRegionAvail().x - 2.0f * CardInset;
+    const PlaneExtent Card  = PlaceSheetCard(Sheet, 2.0f * CardInset + CardHeadingHeight + OperationGridHeight(Operations.size()) + 12.0f + MeasureParagraph(Sheet, Width, Note));
+    const float Left = Card.MinimumX + CardInset;
+    float       Y    = Card.MinimumY + CardInset;
+    DrawCardHeading(Sheet, Left, Y, Width, "Normals", "ALT+N");
+    Y += CardHeadingHeight;
+    const std::string Pressed = DrawOperationGrid(State, Sheet, Left, Y, Width, Operations);
+    Y += OperationGridHeight(Operations.size()) + 12.0f;
     DrawParagraph(Sheet, Left, Y, Width, Note);
     CloseSheetCard(Card);
     if (!Pressed.empty()) RunOperation(State, Pressed);
@@ -13146,6 +13199,7 @@ void DrawInspector(SolidArcWorkspaceState& State, ImVec2 Position, ImVec2 Size)
     {
         if (!Picked) DrawIntroCards(State, Body);
         else DrawSelectionSummary(State, Body);
+        if (Picked) DrawNormalsCard(State, Body);
         if (Selection.Bodies.size() >= 2) DrawOrderedSelection(State, Body);
     }
     if (State.Document.Summary.PresentCondition && !State.Bevel.ActiveCondition) DrawBevelHistory(State, Body);

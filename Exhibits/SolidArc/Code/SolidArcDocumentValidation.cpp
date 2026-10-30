@@ -131,6 +131,7 @@ namespace
     GateTally ReshapeGate     = { "W67", "Direct edits of solids (the request \"tweak certain edges … like a box … move the edges / vertices … without breaking the object … show the gizmo … if theres a bevel … other faces follow\"): on a 4 × 2 × 1 block an edge moved across (7), up (10), along itself (8, side faces bilinear), scaled ½ about its middle (7) and turned 30° about the floor edge (prism of the turned section); a corner raised 0.5 (9, the top a bilinear patch) and pushed out 0.5 (8.25); refusals untouched — a curved edge, a collapsed edge, an inside-out face, a warped hexagon; with a bottom-back fillet the step goes before the Blend, which re-solves (7 − (1 − π/4) r² · 4); a fillet's own edge refuses; one undo entry; save / load byte-equal", "≤ 10⁻⁹ · exact" };
     GateTally CurveAskGate    = { "W69", "Curves and sheets (the request \"lofting the yellow line with yellow line it refused … a button to swap the normals … H to hide curves … snap a curve along a curve … 3D gizmo in 3D\"): L between picked sketches — two open curves side by side in one view, two concentric circles, an open curve to its wrapped copy, curves in two views — gives a solid or a sheet, never a refusal; flip of one picked face turns only its piece of a two-loft sheet (each face's sense reversed, the other piece kept), again removes the step, a solid's face refuses; H hides picked curves (HiddenCurves) and Alt+H brings them back; a 3D curve through off-plane points passes through each; sketch points lifted off their plane turn their curve into a 3D curve of the same form (on the plane: identical to the sketch curve)", "1e-9 · fit 10⁻⁶" };
     GateTally FullReachGate   = { "W70", "Bevel reach (the report \"clamped whilst it can bevel more … the chamfer chamfers more distance for the same bevel … bevel 1 edge fully … till the next edge making it a triangle\"): one cube edge at the full span uses up the face beside it (a chamfer leaves a triangle section, a fillet a quarter round — exact volumes); on a block the span is the shorter face; fillet and chamfer take the same largest size on the same edges; past the face width the blend runs on over the next face (exact overflow volumes); a fillet on a 135° edge takes a radius over twice the face width", "1e-9 · overflow 1e-6" };
+    GateTally BevelMergeGate  = { "W71", "Bevel merge (the report \"when we bevel and edges / vertices come close together they must merge or create new vertex\"): blends that meet fuse instead of refusing — two parallel top fillets / chamfers at half the face width share one ridge edge (the top face is dropped), the top loop at half the width closes to one apex vertex, on a 2 × 1 block to a hip roof (ridge + two apexes); exact volumes, Euler counts, sound", "1e-9" };
     GateTally WrapGate        = { "W66", "Wrap around curve, sketch scale and curve offset (the request \"apple text and circle … wrap like it would around a can of coke … S doesnt seem to work … add a 2nd outer wheelarc … no inset\"): a 1 × 0.5 rectangle seen along +y wraps round the r 1 cylinder of a circle keeping its lengths (every sample on r 1 and, unrolled, on the rectangle; ends at ±0.5 rad) and projects straight onto it (x kept, ±π/6); too wide to project refuses; a circle facing the view stands on a chosen axis; an open arc rail r 2; letters as separate shapes share one centre; in a document 3D curve steps WrapN, picked, one undo entry; S scales a circle (radius and centre ×2), stretches a rectangle, refuses stretching a circle, Shift+D copies at half size; O offsets an open arc to concentric r 2 ± 0.3; precision round a free curve (samples on the rail to 10⁻⁹, the fitted curve within 10⁻⁶ of the width); a detailed wiggle steps down instead of refusing", "1e-9 · fit 10⁻⁶ width" };
     GateTally EdgeNotchGate   = { "W64", "Extrude manifold at a face edge (the Windows report \"extrude manifold suppose to remove or move the top part to match the extrude\"): a region of the 4 × 2 × 1 block's front face that touches, overhangs or corners the top / bottom / left edge, pushed in by face E (imprinted) or cut by sketch E, is a notch OPEN through the neighbouring face — no zero-thickness lid left over it (rays from above / below land on the notch floor) — with the exact volume; through slots, outward pulls and a top-face region at the front edge alike", "1e-9 rel" };
     GateTally PieceGate       = { "W59", "Bevels on polyline-knife pieces (the Windows report \"spans Cut1 and Block1\" and the edges that refused): a 4 × 2 × 1.5 block with its x = 4 uprights rounded r 0.8 (or plain) is sliced by a polyline beside / through the rounded end; names both pieces carry blend the piece they were picked on, and every crease edge of both pieces takes a 0.04 fillet and a 0.04 chamfer alone (a rim ending where its support turns tangent takes its tangent chain; a convex edge ending at a reflex corner grows the third face), the uprights together too; smooth edges (tangent faces) have no crease and are skipped", "exact" };
@@ -2258,6 +2259,72 @@ void ValidateBevelReach()
     }
 }
 
+// 📝 W71: blends that meet merge. The closed forms (unit cube, top at z = 1, d = distance to the nearest side):
+//    two parallel top edges at ½ remove 2 · ¼ (1 − π/4) (fillet) / 2 · ⅛ (chamfer); the top loop at ½ leaves the
+//    top at z = ½ + g(d) — chamfer g = d, so V = ½ + ∫∫ d = ½ + ⅙; fillet g = √(¼ − (½ − d)²), so V = ½ + 4 ∫₀^½
+//    2t √(¼ − t²) dt = ½ + ⅓; on a 2 × 1 block the level sets d ≥ t are (2 − 2t)(1 − 2t) rectangles, so the hip roof
+//    keeps 1 + ∫₀^½ (2 − 2t)(1 − 2t) dt = 1 + 5/12 (chamfer) and 1 + ∫ g′ · area = 1 + ⅓ + π/8 (fillet).
+void ValidateBevelMerge()
+{
+    const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
+    const auto Near   = [](double A, double B) { return std::abs(A - B) <= 1.0e-9; };
+    struct MergeCase
+    {
+        const char*                            Note;
+        std::function<bool(Vector3, Vector3)>  Test;
+        double                                 Size;
+        double                                 Exact[2];
+        int                                    Topology[3];                                 // Faces, edges, vertices
+        double                                 Width = 1.0;                                 // [len] - Block x extent
+    };
+    const std::vector<MergeCase> Cases = {
+        { "1 m cube, two parallel top edges at ½ (rails meet mid-top: one ridge)",
+          [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0) && Near(A.Y, B.Y); }, 0.5, { 1.0 - 0.5 * (1.0 - Pi / 4.0), 0.75 }, { 7, 15, 10 } },
+        { "1 m cube, the top loop at ½ (four rails close to one apex)",
+          [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); }, 0.5, { 5.0 / 6.0, 2.0 / 3.0 }, { 9, 16, 9 } },
+        { "2 × 1 × 1 block, the top loop at ½ (hip roof: the long rails fuse into a ridge, the short ones close to two apexes)",
+          [&](Vector3 A, Vector3 B) { return Near(A.Z, 1.0) && Near(B.Z, 1.0); }, 0.5, { 4.0 / 3.0 + Pi / 8.0, 17.0 / 12.0 }, { 9, 17, 10 }, 2.0 },
+    };
+    const char* Names[] = { "fillet", "chamfer" };
+    for (const MergeCase& Case : Cases)
+    {
+        for (const BlendProfile Shape : { BlendProfile::Fillet, BlendProfile::Chamfer })
+        {
+            SolidArcDocument Part = CreateSolidArcDocument("Merge");
+            SolidArcConstructRequest Block;
+            Block.Kind = SolidArcConstructKind::Block; Block.Width = Case.Width; Block.Depth = 1.0; Block.Height = 1.0;
+            Expect(ConstructSolidArcPrimitive(Part, Block));
+            bool Additive = false;
+            for (const auto& [Slot, Name] : Part.Regeneration.Naming.Edges)
+                if (Case.Test(EdgeEndPosition(Part, Name, false), EdgeEndPosition(Part, Name, true))) { SelectSolidArcName(Part, SolidArcSelectionKind::Edge, Name, Additive); Additive = true; }
+            const SolidArcCommandOutcome Outcome = BlendSolidArcSelection(Part, Shape, Case.Size);
+            const bool   Built    = Outcome.AcceptedCondition && Part.Summary.SoundCondition && BuildSolidArcScene(Part).Refusal.empty();
+            const double Exact    = Case.Exact[int(Shape == BlendProfile::Chamfer)];
+            const double Relative = Built ? std::abs(Part.Summary.Volume - Exact) / Exact : 1.0;
+            const bool   Counted  = (Part.Summary.Faces == Case.Topology[0] && Part.Summary.Edges == Case.Topology[1] && Part.Summary.Vertices == Case.Topology[2]);
+            const std::string Refusal = Outcome.Refusal.empty() ? std::string() : " · " + Outcome.Refusal;
+            // The viewport's detent: the first merge size the fit measure offers is the one that built here.
+            if (Shape == BlendProfile::Fillet && Case.Width == 1.0)
+            {
+                SolidArcDocument Fresh = CreateSolidArcDocument("Detent");
+                Expect(ConstructSolidArcPrimitive(Fresh, Block));
+                bool Again = false;
+                for (const auto& [Slot, Name] : Fresh.Regeneration.Naming.Edges)
+                    if (Case.Test(EdgeEndPosition(Fresh, Name, false), EdgeEndPosition(Fresh, Name, true))) { SelectSolidArcName(Fresh, SolidArcSelectionKind::Edge, Name, Again); Again = true; }
+                const SolidArcBlendFit Fit = MeasureSolidArcBlendFit(Fresh, Fresh.Selection.Edges);
+                const bool Offered = !Fit.FilletMerges.empty() && !Fit.ChamferMerges.empty() && Near(Fit.FilletMerges.front(), Case.Size) && Near(Fit.ChamferMerges.front(), Case.Size);
+                Tally(BevelMergeGate, Offered ? 0.0 : 1.0, Offered,
+                      Format("%s: the drag detent offers fillet %s / chamfer %s (snaps within 9 px)", Case.Note,
+                             [&] { std::string Text; for (double Merge : Fit.FilletMerges) Text += (Text.empty() ? "" : ", ") + Format("%.4g", Merge); return Text; }().c_str(),
+                             [&] { std::string Text; for (double Merge : Fit.ChamferMerges) Text += (Text.empty() ? "" : ", ") + Format("%.4g", Merge); return Text; }().c_str()));
+            }
+            Tally(BevelMergeGate, Relative, Built && Counted && Relative <= 1.0e-9,
+                  Format("%s, %s: %d F / %d E / %d V, V %.12f (exact %.12f)%s", Case.Note, Names[int(Shape == BlendProfile::Chamfer)], int(Part.Summary.Faces),
+                         int(Part.Summary.Edges), int(Part.Summary.Vertices), Part.Summary.Volume, Exact, Refusal.c_str()));
+        }
+    }
+}
+
 void ValidateDelete()
 {
     const auto Format = [](const char* Pattern, auto... Values) { char Text[1200]; std::snprintf(Text, sizeof(Text), Pattern, Values...); return std::string(Text); };
@@ -2511,6 +2578,12 @@ int main()
         ValidateReshape();
         for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
         return ReshapeGate.Failures ? 1 : 0;
+    }
+    if (std::getenv("SOLIDARC_DOCVAL_MERGE"))                                             // Quick rerun of W71 alone
+    {
+        ValidateBevelMerge();
+        for (const std::string& Row : Journal) std::printf("%s\n", Row.c_str());
+        return BevelMergeGate.Failures ? 1 : 0;
     }
     if (std::getenv("SOLIDARC_DOCVAL_REACH"))                                             // Quick rerun of W70 alone
     {
@@ -7993,8 +8066,9 @@ int main()
     // ---- W69 Curves and sheets: loft between sketches, flip faces, hide curves, 3D curves
     ValidateCurveAsk();
     ValidateBevelReach();
+    ValidateBevelMerge();
 
-    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate, &DeleteGate, &CurveAskGate, &FullReachGate })
+    for (const GateTally* Gate : { &ConstructGate, &PickGate, &BlendGate, &FaceGate, &ParameterGate, &AtomicGate, &HistoryGate, &FileGate, &VariableGate, &DrawingGate, &SurfacingGate, &PanelGate, &EvaluationGate, &BlueprintGate, &MatcapGate, &BodiesGate, &CutGate, &TrimGate, &MoveGate, &CopyGate, &HideGate, &CurveGate, &ConstrainGate, &ConflictGate, &DragGate, &ReferenceGate, &SplineGate, &LinkGate, &RevolveGate, &EvolutionGate, &ReplayGate, &XRayGate, &MeasureGate, &SectionGate, &SnapGate, &JointGate, &SheetGate, &ExchangeGate, &BoundGate, &PrimitiveGate, &InsetGate, &SectionLoftGate, &GizmoGate, &PointGate, &ShellGate, &DetachGate, &CornerGate, &FillGate, &FilletDragGate, &OrientGate, &TangentGate, &KnifeGate, &HandleGate, &SolidKnifeGate, &PocketBevelGate, &ReachGate, &SplitGate, &LoopGate, &PieceGate, &ManifoldGate, &ImprintGate, &PointCutGate, &CurveFlowGate, &EdgeNotchGate, &EdgePathGate, &WrapGate, &ReshapeGate, &DeleteGate, &CurveAskGate, &FullReachGate, &BevelMergeGate })
     {
         std::printf("| %s | %s | %s | %.3g | %ld | %s |\n", Gate->Code, Gate->Subject, Gate->Limit, Gate->Worst, Gate->Checks, Gate->Failures ? "🔴" : "🟢");
         Failures += Gate->Failures;
