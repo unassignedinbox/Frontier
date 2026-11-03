@@ -1,0 +1,34 @@
+{
+  "name": "frontier",
+  "version": "1.0.0",
+  "description": "Planet-scale SDF world blockout editor with adaptive 2.5D ocean simulation",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unassignedinbox/Frontier.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/unassignedinbox/Frontier/issues"
+  },
+  "homepage": "https://github.com/unassignedinbox/Frontier#readme",
+  "dependencies": {
+    "@types/three": "^0.180.0",
+    "three": "^0.180.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
+  "type": "module"
+}
