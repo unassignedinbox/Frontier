@@ -744,6 +744,8 @@ struct PhysicsConfiguration : RevisionCounter
     float             LinearDamping            = 0.04f;
     bool              DynamicBody              = true;
     bool              GravityCoupled           = true;
+    bool              Collision                = true;    // [-] authored: the physics builds this body's collision shape; off removes it
+    bool              ShowCollision            = false;   // [-] the viewport draws the collision shape's wireframe over the body
 
     [[nodiscard]] float ComputeLinearSpeedMps() const noexcept
     {

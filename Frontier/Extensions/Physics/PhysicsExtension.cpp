@@ -201,6 +201,14 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
             ++Tally.Skipped;
             continue;
         }
+        if (!Record->QueryPhysics().Collision)
+        {
+            // 📝 Collision off on the body's inspector tile: no shape is built, so the body never enters the space.
+            Entry.Physics = PhysicsParticipation::Skipped;
+            Entry.Remark  = "collision disabled on the body";
+            ++Tally.Skipped;
+            continue;
+        }
         const PhysicsConfiguration& Physics = Record->QueryPhysics();
         const double Volume = Physics.Mass.MassKilograms / std::max(1.0e-3f, Physics.Mass.DensityKgPerCubicMetre);
         PhysicsBodyDescriptor Body;

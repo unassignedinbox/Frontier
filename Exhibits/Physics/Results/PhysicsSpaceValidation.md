@@ -20,7 +20,10 @@ JoltPhysics 5.6.0 behind `Frontier/Extensions/Physics` (cross-platform determini
 | 🟢 | collision off: only the ground collider remains (fixed 1) |
 | 🟢 | the crate falls through the collision-less pedestal to the ground: origin at 0.500 m (0.5 expected) |
 | 🟢 | a Physics record with Collision off makes no moving body |
-| 🟢 | 1000 falling boxes: 1.20 ms per 1/60 s step on 1 workers (this sandbox, Debug build of the extension) |
+| 🟢 | a RigidBody with Collision on makes 1 moving body |
+| 🟢 | the ball rests on the ground: origin at 0.103 m |
+| 🟢 | a RigidBody with Collision off makes no moving body |
+| 🟢 | 1000 falling boxes: 1.17 ms per 1/60 s step on 1 workers (this sandbox, Debug build of the extension) |
 | 🟢 | capture written: PhysicsSpaceFalling.png |
 
-18 / 18 assertions.
+21 / 21 assertions.

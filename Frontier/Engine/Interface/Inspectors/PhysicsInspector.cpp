@@ -26,6 +26,8 @@ void PhysicsInspector::EnumerateSwitches(std::vector<InspectorSwitchEntry>& OutS
 {
     OutSwitches.push_back({"Dynamic Body", "Rigid solver", &Parameters.DynamicBody});
     OutSwitches.push_back({"Gravity", "-9.81 m/s2", &Parameters.GravityCoupled});
+    OutSwitches.push_back({"Collision", "Collision shape built", &Parameters.Collision});
+    OutSwitches.push_back({"Show Collision", "Wireframe in viewport", &Parameters.ShowCollision});
 }
 
 void PhysicsInspector::ConstructInspector()

@@ -212,6 +212,8 @@ void SerializePhysicsSubtable(toml::table& OutTable, const PhysicsConfiguration&
     OutTable.insert_or_assign("linear_damping", static_cast<double>(Physics.LinearDamping));
     OutTable.insert_or_assign("dynamic_body", Physics.DynamicBody);
     OutTable.insert_or_assign("gravity_coupled", Physics.GravityCoupled);
+    OutTable.insert_or_assign("collision", Physics.Collision);
+    OutTable.insert_or_assign("show_collision", Physics.ShowCollision);
 }
 
 void DeserializePhysicsSubtable(const toml::table& InTable, PhysicsConfiguration& Physics)
@@ -227,6 +229,8 @@ void DeserializePhysicsSubtable(const toml::table& InTable, PhysicsConfiguration
     Physics.LinearDamping   = ReadFloat(InTable, "linear_damping", Physics.LinearDamping);
     Physics.DynamicBody     = ReadBool(InTable, "dynamic_body", Physics.DynamicBody);
     Physics.GravityCoupled  = ReadBool(InTable, "gravity_coupled", Physics.GravityCoupled);
+    Physics.Collision       = ReadBool(InTable, "collision", Physics.Collision);
+    Physics.ShowCollision   = ReadBool(InTable, "show_collision", Physics.ShowCollision);
     Physics.AdvanceRevision();
 }
 

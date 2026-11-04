@@ -466,6 +466,31 @@ int main(int ArgumentCount, char** Arguments)
         else Expect(false, "Geometry records construct for the collision case");
     }
 
+    // ⑦c the Physics inspector's Collision tile on a physics body (RigidBody): on falls and rests on the ground;
+    //     off never enters the space
+    {
+        WorldSpace        World;
+        const RecordToken Ball = World.ConstructRecord("RigidBody", "Ball");
+        auto*             BallRecord = dynamic_cast<RigidBodyRecord*>(World.FindRecord(Ball));
+        if (BallRecord)
+        {
+            BallRecord->AccessSpatial().PositionMetres[2] = 5.0f;
+            BallRecord->AccessPhysics().ShowCollision     = true;
+            PhysicsExtension Bridge;
+            Expect(Bridge.Begin(World) == 1, "a RigidBody with Collision on makes 1 moving body");
+            for (int Step = 0; Step < 4 * 60; ++Step) (void)Bridge.Step(World, 1.0 / 60.0);
+            const float Rested = BallRecord->QuerySpatial().PositionMetres[2];
+            Expect(Rested > 0.0f && Rested < 1.0f, "the ball rests on the ground: origin at " + Figure("%.3f", Rested) + " m");
+            Bridge.End(World);
+
+            BallRecord->AccessPhysics().Collision = false;   // 📝 the tile, off: no shape is built
+            PhysicsExtension SecondBridge;
+            Expect(SecondBridge.Begin(World) == 0, "a RigidBody with Collision off makes no moving body");
+            SecondBridge.End(World);
+        }
+        else Expect(false, "RigidBody record constructs for the collision case");
+    }
+
     // ⑧ 1000 boxes falling onto the ground: the cost of a step
     double StepMilliseconds = 0.0;
     {

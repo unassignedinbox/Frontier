@@ -1322,6 +1322,36 @@ void EverestWorkspace::ConstructViewportSurface()
             for (const auto& Edge : Edges)
                 DrawList->AddLine(Corners[static_cast<size_t>(Edge[0])], Corners[static_cast<size_t>(Edge[1])], Ink, 1.5f * Scale);
         }
+        // 📝 Physics bodies (RigidBody records): the sphere of their volume the physics builds, as three great circles.
+        for (const Frontier::SceneRecordBase* Record : QueryWorldSpace().FindAllByType("RigidBody"))
+        {
+            const auto* Body = dynamic_cast<const Frontier::RigidBodyRecord*>(Record);
+            if (Body == nullptr || !Body->QueryPhysics().ShowCollision) continue;
+            const Frontier::PhysicsConfiguration& Physics = Body->QueryPhysics();
+            const double Volume = Physics.Mass.MassKilograms / std::max(1.0e-3f, Physics.Mass.DensityKgPerCubicMetre);
+            const double Radius = std::clamp(std::cbrt(3.0 * Volume / (4.0 * 3.14159265358979323846)), 0.05, 50.0);
+            const auto&  Centre = Body->QuerySpatial().PositionMetres;
+            const ImU32  Ink    = Physics.Collision ? IM_COL32(120, 230, 140, 220) : IM_COL32(230, 120, 110, 220);
+            constexpr int Segments = 32;
+            for (int Plane = 0; Plane < 3; ++Plane)
+            {
+                ImVec2 Previous{};
+                bool   Started = false;
+                for (int Step = 0; Step <= Segments; ++Step)
+                {
+                    const double Angle = 2.0 * 3.14159265358979323846 * Step / Segments;
+                    std::array<double, 3> Point = {Centre[0], Centre[1], Centre[2]};
+                    const int A = (Plane + 1) % 3, B = (Plane + 2) % 3;
+                    Point[static_cast<size_t>(A)] += Radius * std::cos(Angle);
+                    Point[static_cast<size_t>(B)] += Radius * std::sin(Angle);
+                    ImVec2 Screen{};
+                    if (!View.Project(Point, Screen)) { Started = false; continue; }
+                    if (Started) DrawList->AddLine(Previous, Screen, Ink, 1.5f * Scale);
+                    Previous = Screen;
+                    Started  = true;
+                }
+            }
+        }
     }
     if (Edited != nullptr && Image.Texture != 0)
     {
