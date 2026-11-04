@@ -90,7 +90,7 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
         if (Geometry.Fracture.Enabled)
         {
             // 📝 No fracture yet: a fracturable object is a fixed collider over its bounds, whatever its Physics switch says.
-            if (Geometry.Visible && Bounded)
+            if (Geometry.Visible && Geometry.Collision && Bounded)
             {
                 PhysicsBodyDescriptor Collider;
                 Collider.Record           = Record->QueryToken().Value;
@@ -107,6 +107,14 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
                 }
             }
             Entry.Physics = PhysicsParticipation::Skipped;
+            ++Tally.Skipped;
+            continue;
+        }
+        if (Geometry.Physics && !Geometry.Collision)
+        {
+            // 📝 Collision off on the object's inspector tile: no shape is built, so the body never enters the space.
+            Entry.Physics = PhysicsParticipation::Skipped;
+            Entry.Remark  = "collision disabled on the object";
             ++Tally.Skipped;
             continue;
         }
@@ -153,7 +161,7 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
             Entry.Body       = Index;
             ++Tally.Moving;
         }
-        else if (Geometry.Visible && Resolved.Shown == 1 && Bounded)
+        else if (Geometry.Visible && Geometry.Collision && Resolved.Shown == 1 && Bounded)
         {
             PhysicsBodyDescriptor Collider;
             Collider.Record           = Record->QueryToken().Value;
@@ -175,7 +183,9 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
         else
         {
             Entry.Physics = PhysicsParticipation::Skipped;
-            Entry.Remark  = Geometry.Visible ? "not resolved against the scene (no bounds)" : "hidden";
+            Entry.Remark  = !Geometry.Collision ? "collision disabled on the object"
+                            : Geometry.Visible  ? "not resolved against the scene (no bounds)"
+                                                : "hidden";
             ++Tally.Skipped;
         }
     }

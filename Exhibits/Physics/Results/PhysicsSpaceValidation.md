@@ -17,7 +17,10 @@ JoltPhysics 5.6.0 behind `Frontier/Extensions/Physics` (cross-platform determini
 | 🟢 | a record with six copies is held, not turned into one body for all of them |
 | 🟢 | the crate record lands on the pedestal record: origin at 2.500 m (2.5 expected) |
 | 🟢 | stopping puts the crate back at 5 m |
-| 🟢 | 1000 falling boxes: 23.10 ms per 1/60 s step on 1 workers (this sandbox, Debug build of the extension) |
+| 🟢 | collision off: only the ground collider remains (fixed 1) |
+| 🟢 | the crate falls through the collision-less pedestal to the ground: origin at 0.500 m (0.5 expected) |
+| 🟢 | a Physics record with Collision off makes no moving body |
+| 🟢 | 1000 falling boxes: 1.20 ms per 1/60 s step on 1 workers (this sandbox, Debug build of the extension) |
 | 🟢 | capture written: PhysicsSpaceFalling.png |
 
-15 / 15 assertions.
+18 / 18 assertions.

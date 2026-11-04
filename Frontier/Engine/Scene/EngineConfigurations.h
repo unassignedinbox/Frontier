@@ -890,6 +890,8 @@ struct GeometryConfiguration : RevisionCounter
     bool CastShadows        = true;    // [-] in the shadow runs, the shadow rays and the analytic solar depth
     bool GlobalIllumination = true;    // [-] in the distance union and the traced rays
     bool Physics            = false;   // [-] authored: a rigid body once the physics runs
+    bool Collision          = true;    // [-] authored: the physics builds this object's collision shape; off removes it
+    bool ShowCollision      = false;   // [-] the viewport draws the collision shape's wireframe over the object
     bool Locked             = false;   // [-] the transform and the modifier stack refuse edits
 
     SpatialConfiguration                    Spatial{};     // [-] the object's transform in the scene (z up)

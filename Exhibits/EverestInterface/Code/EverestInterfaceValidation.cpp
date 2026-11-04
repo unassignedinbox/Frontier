@@ -225,6 +225,16 @@ int main(int ArgumentCount, char** Arguments)
         RenderFrames(4);
         WritePngCapture(OutputDir / "07-EverestRenderPipelineInspector.png");
 
+        // Exhibit 09: a Geometry object's inspector — the Quick Controls card carries the Collision and Show collision tiles.
+        const RecordToken CollisionCrate = World.ConstructRecord("Geometry", "Collision Crate");
+        auto*             CrateObject    = dynamic_cast<GeometryRecord*>(World.FindRecord(CollisionCrate));
+        Require(CrateObject != nullptr, "Expected the Geometry record to construct for the collision tile capture.");
+        CrateObject->AccessConfiguration().ShowCollision = true;
+        Workspace.QueryOutliner().Select(CollisionCrate);
+        RenderFrames(4);
+        WritePngCapture(OutputDir / "09-EverestGeometryCollisionTiles.png");
+        (void)World.DestroyRecord(CollisionCrate);   // 📝 the fixture's record counts below stay as authored
+
         // Exhibit 08: the demo's environment Inspector pages, one capture per section tab (InspectorPages ported 1:1).
         int PageCaptures = 0;
         for (const char* Type : {"Solar", "Atmosphere", "Clouds", "Wind", "ForceField", "Fog", "AerialFog", "Lightning", "Stars", "Moons", "OpticalFlare"})
@@ -276,7 +286,7 @@ int main(int ArgumentCount, char** Arguments)
         ImGui::GetIO().BackendFlags = 0;
         ImGui::DestroyContext();
 
-        std::cout << "[EverestInterfaceValidation] Passed (ProjectGenerator C++ scaffolding, .levelspace, composable inspectors, 8 PNG exhibits and "
+        std::cout << "[EverestInterfaceValidation] Passed (ProjectGenerator C++ scaffolding, .levelspace, composable inspectors, 9 PNG exhibits and "
                   << PageCaptures << " environment page captures verified).\n";
         return 0;
     }

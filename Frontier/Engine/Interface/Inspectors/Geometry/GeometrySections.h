@@ -38,7 +38,7 @@ class GeometryTransformSection
 class GeometryQuickSection
 {
   public:
-    // 📝 Visible, Dynamic, Cast shadows, GI, Physics and Locked (QuickTiles), as the reference pairs Dynamic and Physics.
+    // 📝 Visible, Dynamic, Cast shadows, GI, Physics, Collision, Show collision and Locked (QuickTiles), as the reference pairs Dynamic and Physics.
     static bool Construct(ControlColumn& Page, GeometryConfiguration& Parameters);
 };
 

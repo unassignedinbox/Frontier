@@ -1329,6 +1329,8 @@ void GeometryRecord::SerializeConfiguration(toml::table& OutTable) const
     OutTable.insert_or_assign("cast_shadows", Parameters.CastShadows);
     OutTable.insert_or_assign("global_illumination", Parameters.GlobalIllumination);
     OutTable.insert_or_assign("physics", Parameters.Physics);
+    OutTable.insert_or_assign("collision", Parameters.Collision);
+    OutTable.insert_or_assign("show_collision", Parameters.ShowCollision);
     OutTable.insert_or_assign("locked", Parameters.Locked);
     WriteRoundedFloat3(OutTable, "position_m", Parameters.Spatial.PositionMetres);
     WriteRoundedFloat3(OutTable, "orientation_deg", Parameters.Spatial.OrientationDegrees);
@@ -1401,6 +1403,8 @@ void GeometryRecord::DeserializeConfiguration(const toml::table& InTable)
     Parameters.CastShadows        = ReadBool(InTable, "cast_shadows", Parameters.CastShadows);
     Parameters.GlobalIllumination = ReadBool(InTable, "global_illumination", Parameters.GlobalIllumination);
     Parameters.Physics            = ReadBool(InTable, "physics", Parameters.Physics);
+    Parameters.Collision          = ReadBool(InTable, "collision", Parameters.Collision);
+    Parameters.ShowCollision      = ReadBool(InTable, "show_collision", Parameters.ShowCollision);
     Parameters.Locked             = ReadBool(InTable, "locked", Parameters.Locked);
     DeserializeSpatialSubtable(InTable, Parameters.Spatial);
     Parameters.Fracture.Enabled            = ReadBool(InTable, "fracture", false);

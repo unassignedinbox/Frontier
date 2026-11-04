@@ -424,6 +424,48 @@ int main(int ArgumentCount, char** Arguments)
         else Expect(false, "Geometry records construct");
     }
 
+    // ⑦b the inspector's Collision tile: off removes the shape — the pedestal stops holding the crate, and a Physics
+    //     record with Collision off never becomes a moving body
+    {
+        WorldSpace        World;
+        const RecordToken Crate    = World.ConstructRecord("Geometry", "CrateNoCollision");
+        const RecordToken Pedestal = World.ConstructRecord("Geometry", "PedestalNoCollision");
+        auto*             CrateRecord    = dynamic_cast<GeometryRecord*>(World.FindRecord(Crate));
+        auto*             PedestalRecord = dynamic_cast<GeometryRecord*>(World.FindRecord(Pedestal));
+        if (CrateRecord && PedestalRecord)
+        {
+            GeometryConfiguration& Box = CrateRecord->AccessConfiguration();
+            Box.Physics                = true;
+            Box.ShowCollision          = true;
+            Box.Spatial.PositionMetres[0] = 0.2f, Box.Spatial.PositionMetres[1] = 0.0f, Box.Spatial.PositionMetres[2] = 5.0f;
+            Box.Resolved.Extent[0] = Box.Resolved.Extent[1] = Box.Resolved.Extent[2] = 1.0f;
+            Box.Resolved.Shown = 1;
+            for (int Axis = 0; Axis < 3; ++Axis)
+            {
+                Box.Resolved.BoundsMinimum[Axis] = Box.Spatial.PositionMetres[Axis] - 0.5f;
+                Box.Resolved.BoundsMaximum[Axis] = Box.Spatial.PositionMetres[Axis] + 0.5f;
+            }
+            GeometryConfiguration& Stand = PedestalRecord->AccessConfiguration();
+            Stand.Collision              = false;   // 📝 the tile, off: no collider is built for the pedestal
+            Stand.Resolved.Shown         = 1;
+            Stand.Resolved.BoundsMinimum[0] = -1.0f, Stand.Resolved.BoundsMinimum[1] = -1.0f, Stand.Resolved.BoundsMinimum[2] = 0.0f;
+            Stand.Resolved.BoundsMaximum[0] = 1.0f, Stand.Resolved.BoundsMaximum[1] = 1.0f, Stand.Resolved.BoundsMaximum[2] = 2.0f;
+            PhysicsExtension Bridge;
+            const size_t     MovingBodies = Bridge.Begin(World);
+            for (int Step = 0; Step < 4 * 60; ++Step) (void)Bridge.Step(World, 1.0 / 60.0);
+            const float Rested = Box.Spatial.PositionMetres[2];
+            Expect(MovingBodies == 1 && Bridge.QueryTally().Fixed == 1, "collision off: only the ground collider remains (fixed " + std::to_string(Bridge.QueryTally().Fixed) + ")");
+            Expect(std::abs(Rested - 0.5f) < 0.03f, "the crate falls through the collision-less pedestal to the ground: origin at " + Figure("%.3f", Rested) + " m (0.5 expected)");
+            Bridge.End(World);
+
+            Box.Collision = false;   // 📝 Physics on but Collision off: no moving body at all
+            PhysicsExtension SecondBridge;
+            Expect(SecondBridge.Begin(World) == 0, "a Physics record with Collision off makes no moving body");
+            SecondBridge.End(World);
+        }
+        else Expect(false, "Geometry records construct for the collision case");
+    }
+
     // ⑧ 1000 boxes falling onto the ground: the cost of a step
     double StepMilliseconds = 0.0;
     {

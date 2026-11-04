@@ -1296,6 +1296,33 @@ void EverestWorkspace::ConstructViewportSurface()
     {
         ConstructViewportSchematic(DrawList, StageMin, Max);
     }
+    // 📝 Show collision (the object's inspector tile): the collision shape's wireframe — the box over the world bounds the
+    //    physics builds — drawn over the presented image for every object that asks for it.
+    if (Image.Texture != 0)
+    {
+        for (const Frontier::SceneRecordBase* Record : QueryWorldSpace().FindAllByType("Geometry"))
+        {
+            const auto* Object = dynamic_cast<const Frontier::GeometryRecord*>(Record);
+            if (Object == nullptr) continue;
+            const Frontier::GeometryConfiguration& Configuration = Object->QueryConfiguration();
+            const auto&                            Resolved      = Configuration.Resolved;
+            if (!Configuration.ShowCollision || !Resolved.Bound || Resolved.Shown == 0) continue;
+            std::array<ImVec2, 8> Corners{};
+            bool                  Projected = true;
+            for (int Corner = 0; Corner < 8; ++Corner)
+            {
+                const std::array<double, 3> World = {(Corner & 1) ? static_cast<double>(Resolved.BoundsMaximum[0]) : static_cast<double>(Resolved.BoundsMinimum[0]),
+                                                     (Corner & 2) ? static_cast<double>(Resolved.BoundsMaximum[1]) : static_cast<double>(Resolved.BoundsMinimum[1]),
+                                                     (Corner & 4) ? static_cast<double>(Resolved.BoundsMaximum[2]) : static_cast<double>(Resolved.BoundsMinimum[2])};
+                Projected = Projected && View.Project(World, Corners[static_cast<size_t>(Corner)]);
+            }
+            if (!Projected) continue;
+            static constexpr int Edges[12][2] = {{0, 1}, {1, 3}, {3, 2}, {2, 0}, {4, 5}, {5, 7}, {7, 6}, {6, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+            const ImU32          Ink          = Configuration.Collision ? IM_COL32(120, 230, 140, 220) : IM_COL32(230, 120, 110, 220);
+            for (const auto& Edge : Edges)
+                DrawList->AddLine(Corners[static_cast<size_t>(Edge[0])], Corners[static_cast<size_t>(Edge[1])], Ink, 1.5f * Scale);
+        }
+    }
     if (Edited != nullptr && Image.Texture != 0)
     {
         const Frontier::PlacementGizmoOutcome Outcome = Gizmo.Construct(DrawList, View, GizmoMode, Edited->Spatial, IO.KeyCtrl, GizmoPress, Scale);
