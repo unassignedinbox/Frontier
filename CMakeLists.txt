@@ -287,6 +287,11 @@ add_library(FrontierNetworkingExtension STATIC
     Frontier/Extensions/Networking/NetworkingSpace.cpp
     Frontier/Extensions/Networking/NetworkingExtension.cpp)
 target_link_libraries(FrontierNetworkingExtension PUBLIC FrontierSceneEditorUI)
+# 📝 Portal math is standalone; renderer and physics integration are still pending.
+add_library(FrontierPortalExtension STATIC
+    Frontier/Extensions/Portal/PortalProjection.cpp
+    Frontier/Extensions/Portal/PortalClipping.cpp)
+target_include_directories(FrontierPortalExtension PUBLIC "${CMAKE_SOURCE_DIR}")
 # 📝 Physics: JoltPhysics (pinned, Automation/JoltPhysics.cmake) behind PhysicsSpace; only the extension sees Jolt's headers.
 include(Automation/JoltPhysics.cmake)
 frontier_add_jolt()
@@ -857,10 +862,13 @@ if(BUILD_TESTING)
     add_test(NAME CollisionOutlineWorkspaceValidation COMMAND CollisionOutlineWorkspaceValidation
         "${CMAKE_SOURCE_DIR}/EngineContent" "${CMAKE_SOURCE_DIR}/Projects/Everest" "${CMAKE_BINARY_DIR}/collision-outline-exhibits")
 
-    add_executable(PortalProjectionValidation
-        Frontier/Extensions/Portal/PortalProjection.cpp Exhibits/Portal/Code/PortalProjectionValidation.cpp)
-    target_include_directories(PortalProjectionValidation PRIVATE "${CMAKE_SOURCE_DIR}")
+    add_executable(PortalProjectionValidation Exhibits/Portal/Code/PortalProjectionValidation.cpp)
+    target_link_libraries(PortalProjectionValidation PRIVATE FrontierPortalExtension)
     add_test(NAME PortalProjectionValidation COMMAND PortalProjectionValidation)
+
+    add_executable(PortalClippingValidation Exhibits/Portal/Code/PortalClippingValidation.cpp)
+    target_link_libraries(PortalClippingValidation PRIVATE FrontierPortalExtension)
+    add_test(NAME PortalClippingValidation COMMAND PortalClippingValidation)
 
     add_executable(PhotonPacketInboxValidation
         Exhibits/Networking/Code/PhotonPacketInboxValidation.cpp

@@ -29,7 +29,7 @@ Frontier/
 │   │   ├── Particle/          # ParticleExtension
 │   │   ├── Physics/           # PhysicsExtension, JoltExtension, PhysicsSpace
 │   │   ├── Networking/        # NetworkingExtension, NetworkingSpace (EOSExtension / EpicAdapter later)
-│   │   └── Portal/            # PortalProjection math; no renderer or physics integration yet
+│   │   └── Portal/            # PortalProjection and triangle clipping math; no renderer or physics integration yet
 │   └── Engine/                # Multi-realm PlanetaryAtmosphere, GeometricRaster, DeviceExchange, Rendering & Shaders
 │       ├── DeviceExchange/    # VulkanComputeExchange (compute), DeviceExchange (raster + compute, WebGPU ordering), VulkanDeviceAccess
 │       ├── GeometricRaster/   # VisibilityProjection (cross-portal ray routing & reversed-Z visibility)

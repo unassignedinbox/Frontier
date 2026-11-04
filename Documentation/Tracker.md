@@ -29,7 +29,7 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 |---|---|---|
 | Networking | Source imported; [send retry](../Exhibits/Networking/Results/TransportRetryValidation.md) and [Photon inbox](../Exhibits/Networking/Results/PhotonPacketInboxValidation.md) checked | Connect an editor consumer and real transport; verify cross-machine replication before adding a session toggle. |
 | Collision | [Ramp vehicle and headless outline interaction checked](../Exhibits/Physics/Results/GeometryCollisionValidation.md) | Moving shapes and fractures use fallbacks; native Windows/GPU validation remains. |
-| Portals | Standalone [projection checks](../Exhibits/Portal/Results/PortalProjectionValidation.md) | Integrate linked views, clipping, split physics and vehicle traversal. |
+| Portals | Standalone [projection](../Exhibits/Portal/Results/PortalProjectionValidation.md) and [triangle clipping](../Exhibits/Portal/Results/PortalClippingValidation.md) checks | Integrate linked views, clipped meshes, split physics and vehicle traversal. |
 
 ## Verification
 
