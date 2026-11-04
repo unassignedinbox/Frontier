@@ -20,9 +20,15 @@ In the editor, Simulate turns the level into a PhysicsSpace:
 
 - A Geometry record with **Physics** on (Inspector › quick controls) becomes a moving box the size of its resolved
   extent.
-- Every other single shown object becomes a fixed collider over its world bounds, and RigidBody records become spheres.
+- Fixed nonfractured geometry uses captured placed facets as triangle colliders, including static groups. If capture is
+  unavailable or rejected, a single shown object falls back to bounds; groups can remain held. RigidBody records become spheres.
 - A 4 km ground slab tops out at z = 0.
 - Each step writes the moving bodies back into their records. Stopping, or saving the level, puts every object back.
+- The viewport box button or Alt+C toggles an X-ray overlay of accepted fixed triangle colliders during simulation.
+  Boxes, moving shapes, hulls and the ground are omitted; the overlay is capped at 60,000 segments.
+
+[Geometry collision and outline checks](Results/GeometryCollisionValidation.md) exercise the actual ramp and a headless
+ImGui interaction capture. The image has a synthetic viewport background; it is not a GPU-rendered scene.
 
 ## Test
 
@@ -51,5 +57,5 @@ Each body is drawn at 0, 0.5, 1, 1.5, 2 and 3 s (faint) and at 5 s (solid), with
 
 ## Later
 
-- Convex hulls and facet sets from the engine shapes, in place of boxes over the bounds.
-- Constraints (hinges, the vehicle's suspension), a character controller, and Jolt's debug renderer in the viewport.
+- Convex hulls for moving geometry and placed facets for fragmented shapes, in place of the current fallbacks.
+- Constraints (hinges, the vehicle's suspension), a character controller, and full Jolt debug rendering.

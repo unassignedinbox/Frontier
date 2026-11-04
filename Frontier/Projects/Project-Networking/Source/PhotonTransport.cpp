@@ -44,6 +44,7 @@ char Failure[256]{};
 int LastCause = 0;
 unsigned Sent = 0;
 unsigned Received = 0;
+PhotonPacketInbox Inbox;
 bool FirstSent = false;
 std::chrono::steady_clock::time_point ProgressAt;
 
@@ -196,6 +197,11 @@ public:
             return;
         }
         ++Received;
+        if (!Inbox.Push(PlayerNr, Bytes, static_cast<std::size_t>(Sizes[0])))
+        {
+            Emit("photon_packet_refused inbox_full_or_invalid_sender");
+            return;
+        }
         char Line[160]{};
         std::snprintf(Line, sizeof(Line), "photon_packet_received bytes=%d kind=%u slot=%d",
             Sizes[0], static_cast<unsigned>(Kind), PlayerNr);
@@ -223,6 +229,7 @@ public:
     }
     void disconnectReturn() override
     {
+        Inbox.Clear();
         if (Phase == PhotonState::Idle || Phase == PhotonState::Failed || Phase == PhotonState::Disconnected)
             return;
         Phase = PhotonState::Disconnected;
@@ -409,6 +416,7 @@ void StopPhotonTransport() noexcept
     LastCause = 0;
     Sent = 0;
     Received = 0;
+    Inbox.Clear();
     FirstSent = false;
     Reception = nullptr;
 }
@@ -424,6 +432,11 @@ bool SendPhotonPacket(const std::uint8_t* Bytes, std::size_t Length, bool Reliab
         return false;
     ++Sent;
     return true;
+}
+
+std::vector<PhotonPacket> TakePhotonPackets() noexcept
+{
+    return Inbox.Take();
 }
 
 PhotonStatus InspectPhotonStatus() noexcept

@@ -1305,7 +1305,7 @@ void EverestWorkspace::ConstructViewportSurface()
     }
     if (CollisionOutlines && Physics && Physics->QueryRunning() && Physics->QuerySpace())
     {
-        // 📝 Fixed triangle descriptors are immutable while the physics thread runs. This is an X-ray overlay,
+        // 📝 Accepted fixed triangle bodies and their retained source corners are immutable while the physics thread runs. This is an X-ray overlay,
         //    not a complete Jolt debug view: boxes, moving bodies, hulls and the ground are deliberately excluded.
         const auto* Space = Physics->QuerySpace();
         size_t Segments = 0;
@@ -1314,15 +1314,15 @@ void EverestWorkspace::ConstructViewportSurface()
         {
             const auto& Descriptor = Space->QueryDescriptor(static_cast<uint32_t>(Body));
             if (Descriptor.Shape != Frontier::PhysicsShape::Triangles || Descriptor.Motion != Frontier::PhysicsMotion::Fixed) continue;
-            for (size_t Index = 0; Index + 2 < Descriptor.Triangles.size(); Index += 3)
+            const auto* Surface = Physics->QueryCollisionSurface(Descriptor.Record);
+            if (!Surface) continue;
+            for (size_t Index = 0; Index + 2 < Surface->Corners.size(); Index += 3)
             {
                 for (size_t Edge = 0; Edge < 3; ++Edge)
                 {
                     if (Segments >= 60000) { Truncated = true; break; }
-                    const uint32_t A = Descriptor.Triangles[Index + Edge], B = Descriptor.Triangles[Index + (Edge + 1) % 3];
-                    if (A >= Descriptor.Points.size() || B >= Descriptor.Points.size()) continue;
-                    const auto& First = Descriptor.Points[A];
-                    const auto& Second = Descriptor.Points[B];
+                    const auto& First = Surface->Corners[Index + Edge];
+                    const auto& Second = Surface->Corners[Index + (Edge + 1) % 3];
                     ImVec2 ScreenA, ScreenB;
                     if (View.Project({First[0], First[1], First[2]}, ScreenA) && View.Project({Second[0], Second[1], Second[2]}, ScreenB))
                         DrawList->AddLine(ScreenA, ScreenB, IM_COL32(66, 224, 204, 210), 1.0f);

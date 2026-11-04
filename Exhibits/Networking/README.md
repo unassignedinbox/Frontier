@@ -13,6 +13,10 @@ Evidence for the networking scaffold: `Frontier/Extensions/Networking/` (`Networ
 
 A message travels as a 24-byte little-endian header (sender, receiver, topic, sequence, payload length) plus a TOML
 payload. A host record is matched to the client's record of the same type and name, or constructed on the client.
+Rejected sends are retried in order ([validation](Results/TransportRetryValidation.md)); transport acceptance is not
+remote delivery and the retry queue is not bounded. Photon callbacks now hand validated frames to a bounded
+[inbox](Results/PhotonPacketInboxValidation.md), but no editor consumer drains it into gameplay. No online gameplay
+replication has been established.
 
 ## Later
 

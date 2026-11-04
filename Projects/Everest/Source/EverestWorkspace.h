@@ -186,6 +186,7 @@ class EverestWorkspace
     Frontier::RecordToken DuplicateGeometryRecord(Frontier::RecordToken Token);
     void                  ToggleSimulation();
     [[nodiscard]] Frontier::PhysicsExtension* AccessPhysics() noexcept { return Physics.get(); }
+    [[nodiscard]] bool QueryCollisionOutlinesVisible() const noexcept { return CollisionOutlines; }
 #endif
 
     [[nodiscard]] EverestApplication&          AccessApplication() noexcept { return Application; }

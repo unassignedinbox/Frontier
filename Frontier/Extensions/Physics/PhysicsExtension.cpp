@@ -50,6 +50,7 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
 {
     if (Space) End(World);
     Space = std::make_unique<PhysicsSpace>(Settings.Space);
+    CollisionSurfaces = Settings.CollisionSurfaces;
     Links.clear();
     Vehicles.clear();
     Tally        = {};
@@ -600,6 +601,7 @@ void PhysicsExtension::End(WorldSpace& World)
     Links.clear();
     Vehicles.clear();
     Space.reset();
+    CollisionSurfaces.reset();
     Remainder = 0.0;
     Threaded  = false;
     Latest    = {};

@@ -8,6 +8,7 @@
 
 #pragma once
 #include "EpicExchange.h"
+#include "PhotonPacketInbox.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -51,4 +52,6 @@ void StopPhotonTransport() noexcept;
 // Sends one codec packet. Only valid while Joined; returns false otherwise.
 bool SendPhotonPacket(const std::uint8_t* Bytes, std::size_t Length, bool Reliable) noexcept;
 PhotonStatus InspectPhotonStatus() noexcept;
+// Drain on the same thread that calls TickPhotonTransport; sender is a Photon room slot, not an authenticated engine peer ID.
+std::vector<PhotonPacket> TakePhotonPackets() noexcept;
 }

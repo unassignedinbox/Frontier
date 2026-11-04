@@ -41,6 +41,17 @@ int main()
     Expect(ProjectPortalMotion(B, A, Result, Returned) && Near(Returned.Position[0], Input.Position[0]) &&
            Near(Returned.Position[2], Input.Position[2]) && Near(Returned.Scale, Input.Scale) &&
            Near(Returned.LinearVelocity[2], Input.LinearVelocity[2]), "reverse projection round-trips");
+    A.Orientation = {std::sin(0.35), 0, 0, std::cos(0.35)};
+    B.Orientation = {0, std::sin(0.6), 0, std::cos(0.6)};
+    Input.Orientation = {0, 0, std::sin(0.2), std::cos(0.2)};
+    Expect(ProjectPortalMotion(A, B, Input, Result) && ProjectPortalMotion(B, A, Result, Returned) &&
+           Near(Returned.Position[0], Input.Position[0]) && Near(Returned.Position[1], Input.Position[1]) &&
+           Near(Returned.Position[2], Input.Position[2]) && Near(Returned.AngularVelocity[0], Input.AngularVelocity[0]) &&
+           Near(Returned.AngularVelocity[1], Input.AngularVelocity[1]) && Near(Returned.AngularVelocity[2], Input.AngularVelocity[2]) &&
+           Near(std::abs(Returned.Orientation[0]*Input.Orientation[0] + Returned.Orientation[1]*Input.Orientation[1] +
+                         Returned.Orientation[2]*Input.Orientation[2] + Returned.Orientation[3]*Input.Orientation[3]), 1.0),
+           "rotated apertures round-trip position, orientation and angular velocity");
+    A.Orientation = {0,0,0,1}; B.Orientation = {0,0,0,1};
     const PortalMotion Saved = Result;
     B.HalfExtent[1] = 5;
     Expect(!ProjectPortalMotion(A, B, Input, Result) && Result.Position == Saved.Position, "mismatched aspect ratios rejected without output changes");

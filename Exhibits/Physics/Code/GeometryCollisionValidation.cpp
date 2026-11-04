@@ -9,6 +9,7 @@
 #include "Frontier/Engine/Scene/WorldSpace.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -109,6 +110,19 @@ int main(int Count, char** Arguments)
     const auto Facets = Drive(true);
     Expect(Bounds[0] < 22.0, "bounds-only baseline blocks the test vehicle");
     Expect(Facets[0] > 28.0 && Facets[1] > 1.1, "vehicle drives up and beyond the actual ramp");
+    const auto FirstBefore = Found->second.Corners.front();
+    Ramp->AccessConfiguration().Spatial.PositionMetres[0] += 5.0f;
+    Ramp->AccessConfiguration().AdvanceRevision();
+    (void)Occupancy.ResolvePlacements(World);
+    const auto Moved = Occupancy.CaptureCollisionSurfaces(World);
+    const auto MovedRamp = Moved->find(RampToken.Value);
+    Expect(MovedRamp != Moved->end() && std::abs(MovedRamp->second.Corners.front()[0] - FirstBefore[0] - 5.0f) < 0.001f,
+           "captured facets follow edited placement");
+    Ramp->AccessConfiguration().Physics = true;
+    Ramp->AccessConfiguration().AdvanceRevision();
+    (void)Occupancy.ResolvePlacements(World);
+    Expect(Occupancy.CaptureCollisionSurfaces(World)->count(RampToken.Value) == 0, "moving geometry is not captured as fixed triangles");
+    Ramp->AccessConfiguration().Physics = false;
     Ramp->AccessConfiguration().Visible = false;
     Ramp->AccessConfiguration().AdvanceRevision();
     (void)Occupancy.ResolvePlacements(World);

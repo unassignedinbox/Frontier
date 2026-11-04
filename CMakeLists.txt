@@ -844,6 +844,34 @@ if(BUILD_TESTING)
     add_test(NAME ShapeArchiveBakeValidation COMMAND ShapeArchiveBake "${CMAKE_SOURCE_DIR}/EngineContent/ShapeArchives" check)
 
     # 📝 The level's Geometry records against the scene archive, no device — Exhibits/SceneViewport/README.md.
+    add_executable(GeometryCollisionValidation
+        Exhibits/Physics/Code/GeometryCollisionValidation.cpp)
+    target_link_libraries(GeometryCollisionValidation PRIVATE EverestProjectEditor)
+    add_test(NAME GeometryCollisionValidation COMMAND GeometryCollisionValidation
+        "${CMAKE_SOURCE_DIR}/Projects/Everest" "${CMAKE_SOURCE_DIR}/EngineContent/EnvironmentArchives/ProvingGround")
+
+    add_executable(CollisionOutlineWorkspaceValidation
+        Exhibits/Physics/Code/CollisionOutlineWorkspaceValidation.cpp)
+    target_include_directories(CollisionOutlineWorkspaceValidation PRIVATE "${CMAKE_SOURCE_DIR}/ExternalPackages/stb")
+    target_link_libraries(CollisionOutlineWorkspaceValidation PRIVATE EverestProjectEditor)
+    add_test(NAME CollisionOutlineWorkspaceValidation COMMAND CollisionOutlineWorkspaceValidation
+        "${CMAKE_SOURCE_DIR}/EngineContent" "${CMAKE_SOURCE_DIR}/Projects/Everest" "${CMAKE_BINARY_DIR}/collision-outline-exhibits")
+
+    add_executable(PortalProjectionValidation
+        Frontier/Extensions/Portal/PortalProjection.cpp Exhibits/Portal/Code/PortalProjectionValidation.cpp)
+    target_include_directories(PortalProjectionValidation PRIVATE "${CMAKE_SOURCE_DIR}")
+    add_test(NAME PortalProjectionValidation COMMAND PortalProjectionValidation)
+
+    add_executable(PhotonPacketInboxValidation
+        Exhibits/Networking/Code/PhotonPacketInboxValidation.cpp
+        Frontier/Projects/Project-Networking/Source/PhotonLinkStub.cpp)
+    target_include_directories(PhotonPacketInboxValidation PRIVATE "${CMAKE_SOURCE_DIR}")
+    add_test(NAME PhotonPacketInboxValidation COMMAND PhotonPacketInboxValidation)
+
+    add_executable(TransportRetryValidation Exhibits/Networking/Code/TransportRetryValidation.cpp)
+    target_link_libraries(TransportRetryValidation PRIVATE FrontierNetworkingExtension)
+    add_test(NAME TransportRetryValidation COMMAND TransportRetryValidation)
+
     add_executable(SceneGeometryValidation
         Exhibits/SceneViewport/Code/SceneGeometryValidation.cpp)
     target_link_libraries(SceneGeometryValidation PRIVATE EverestProjectEditor)

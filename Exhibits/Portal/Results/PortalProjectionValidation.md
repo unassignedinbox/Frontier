@@ -6,8 +6,8 @@
 | Proportional aperture mapping and motion round trip | Pass |
 | Invalid quaternion, non-finite motion and aspect mismatch | Pass |
 
-14 / 14 checks passed on Linux x86-64, GCC 12.2, AddressSanitizer and UndefinedBehaviorSanitizer, with the
-uncommitted portal files atop `61c1064`.
+15 / 15 checks passed on Linux x86-64, GCC 12.2, AddressSanitizer and UndefinedBehaviorSanitizer, at `4e2ea03`
+with the additional uncommitted rotated-aperture test.
 
 ```bash
 g++ -std=c++20 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I. \

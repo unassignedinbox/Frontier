@@ -88,6 +88,12 @@ class PhysicsExtension
 
     [[nodiscard]] bool                         QueryRunning() const noexcept { return Space != nullptr; }
     [[nodiscard]] const PhysicsSpace*          QuerySpace() const noexcept { return Space.get(); }
+    [[nodiscard]] const GeometryCollisionSurface* QueryCollisionSurface(uint64_t Record) const noexcept
+    {
+        if (!CollisionSurfaces) return nullptr;
+        const auto Found = CollisionSurfaces->find(Record);
+        return Found == CollisionSurfaces->end() ? nullptr : &Found->second;
+    }
     [[nodiscard]] const PhysicsExtensionTally& QueryTally() const noexcept { return Tally; }
     [[nodiscard]] const WorldRegister&         QueryRegister() const noexcept { return Register; }
     [[nodiscard]] const PhysicsSnapshot&       QuerySnapshot() const noexcept { return Latest; }
@@ -130,6 +136,7 @@ class PhysicsExtension
     void AddVehicle(WorldSpace& World, RecordToken Record, WorldRegisterEntry* Entry);
 
     std::unique_ptr<PhysicsSpace>            Space;
+    std::shared_ptr<const GeometryCollisionSurfaces> CollisionSurfaces;
     std::vector<Link>                        Links;
     std::vector<VehicleLink>                 Vehicles;
     WorldRegister                            Register;

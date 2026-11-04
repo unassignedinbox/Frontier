@@ -27,8 +27,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 | Area | Status | Next action |
 |---|---|---|
-| Networking | Source branch imported; rejected sends retried ([checks](../Exhibits/Networking/Results/TransportRetryValidation.md)) | Connect a real transport and verify cross-machine replication before adding a session toggle. |
-| Collision | Static-facet capture and triangle-body path under reconstruction | Build and exercise the ramp and editor toggle; moving shapes and fractures still use fallbacks. |
+| Networking | Source imported; [send retry](../Exhibits/Networking/Results/TransportRetryValidation.md) and [Photon inbox](../Exhibits/Networking/Results/PhotonPacketInboxValidation.md) checked | Connect an editor consumer and real transport; verify cross-machine replication before adding a session toggle. |
+| Collision | [Ramp vehicle and headless outline interaction checked](../Exhibits/Physics/Results/GeometryCollisionValidation.md) | Moving shapes and fractures use fallbacks; native Windows/GPU validation remains. |
 | Portals | Standalone [projection checks](../Exhibits/Portal/Results/PortalProjectionValidation.md) | Integrate linked views, clipping, split physics and vehicle traversal. |
 
 ## Verification
