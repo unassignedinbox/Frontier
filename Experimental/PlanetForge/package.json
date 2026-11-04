@@ -1,0 +1,23 @@
+{
+  "name": "frontier-planet-forge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Planet-scale SDF terrain authoring + adaptive ocean for Frontier",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4"
+  }
+}
