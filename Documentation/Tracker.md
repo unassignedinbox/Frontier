@@ -23,6 +23,14 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 | 015 | Open fonts and catalogue              | Checked     | Four families, 30 faces, OFL retained. |
 | 016 | Appearance persistence                | Checked     | Reload and invalid-save checks passed.|
 
+## Networking, collisions and portals — current work
+
+| Area | Status | Next action |
+|---|---|---|
+| Networking | Source branch imported; rejected sends retried ([checks](../Exhibits/Networking/Results/TransportRetryValidation.md)) | Connect a real transport and verify cross-machine replication before adding a session toggle. |
+| Collision | Static-facet capture and triangle-body path under reconstruction | Build and exercise the ramp and editor toggle; moving shapes and fractures still use fallbacks. |
+| Portals | Standalone [projection checks](../Exhibits/Portal/Results/PortalProjectionValidation.md) | Integrate linked views, clipping, split physics and vehicle traversal. |
+
 ## Verification
 
 `Exhibits/ControlCentre/README.md` contains current commands, results, evidence, and limitations.

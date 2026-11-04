@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <set>
 #include <utility>
 
@@ -611,6 +613,55 @@ std::vector<Frontier::GlobalIllumination::OccupantPlacement> SceneGeometryOccupa
         ++Generation_;
     }
     return Placements;
+}
+
+std::shared_ptr<const GeometryCollisionSurfaces> SceneGeometryOccupancy::CaptureCollisionSurfaces(const WorldSpace& World) const
+{
+    auto Surfaces = std::make_shared<GeometryCollisionSurfaces>();
+    if (!Scene_) return Surfaces;
+    for (const SceneRecordBase* Candidate : World.FindAllByType("Geometry"))
+    {
+        const auto* Record = dynamic_cast<const GeometryRecord*>(Candidate);
+        if (!Record) continue;
+        const uint64_t Token = Record->QueryToken().Value;
+        const auto Found = Occupancies_.find(Token);
+        if (Found == Occupancies_.end()) continue;
+        const auto& Occupancy = Found->second;
+        const auto& Configuration = Record->QueryConfiguration();
+        if (!Configuration.Visible || Configuration.Physics || Configuration.Fracture.Enabled || Occupancy.Shown.empty()) continue;
+        GeometryCollisionSurface Surface;
+        bool Valid = true;
+        for (const ShownOccupant& Shown : Occupancy.Shown)
+        {
+            if (Shown.FacetSet >= Scene_->FacetSets.size() || Scene_->FacetSets[Shown.FacetSet].Fragmented) { Valid = false; break; }
+            const auto& M = Shown.Placement;
+            const double Det = M[0]*(M[5]*M[10]-M[9]*M[6]) - M[4]*(M[1]*M[10]-M[9]*M[2]) + M[8]*(M[1]*M[6]-M[5]*M[2]);
+            if (!std::isfinite(Det) || std::abs(Det) < 1.0e-12) { Valid = false; break; }
+            for (const auto& Facet : Scene_->FacetSets[Shown.FacetSet].Facets)
+            {
+                std::array<std::array<float, 3>, 3> Points{};
+                for (size_t Corner = 0; Corner < 3; ++Corner)
+                {
+                    const auto Point = GlobalIllumination::TransformPoint(M, Facet.Corners[Corner]);
+                    for (size_t Axis = 0; Axis < 3; ++Axis)
+                    {
+                        if (!std::isfinite(Point[Axis]) || std::abs(Point[Axis]) > std::numeric_limits<float>::max()) Valid = false;
+                        else Points[Corner][Axis] = static_cast<float>(Point[Axis]);
+                    }
+                }
+                if (!Valid) break;
+                const double A[3] = {Points[1][0]-Points[0][0], Points[1][1]-Points[0][1], Points[1][2]-Points[0][2]};
+                const double B[3] = {Points[2][0]-Points[0][0], Points[2][1]-Points[0][1], Points[2][2]-Points[0][2]};
+                const double X = A[1]*B[2]-A[2]*B[1], Y = A[2]*B[0]-A[0]*B[2], Z = A[0]*B[1]-A[1]*B[0];
+                if (X*X + Y*Y + Z*Z < 1.0e-16) continue;
+                if (Det < 0.0) std::swap(Points[1], Points[2]);
+                Surface.Corners.insert(Surface.Corners.end(), Points.begin(), Points.end());
+            }
+            if (!Valid) break;
+        }
+        if (Valid && !Surface.Corners.empty()) Surfaces->emplace(Token, std::move(Surface));
+    }
+    return Surfaces;
 }
 
 } // namespace Frontier

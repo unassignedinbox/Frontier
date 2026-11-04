@@ -18,6 +18,7 @@
 #include "Frontier/Extensions/Physics/PhysicsVehicle.h"
 
 #include "Frontier/Engine/Scene/EngineConfigurations.h"
+#include "Frontier/Engine/Scene/GeometryCollisionSurface.h"
 #include "Frontier/Engine/Scene/RecordToken.h"
 #include "Frontier/Engine/Scene/WorldRegister.h"
 
@@ -38,6 +39,7 @@ struct PhysicsExtensionSettings
     int                  CollisionSteps      = 1;       // [-] Jolt broadphase/narrowphase steps per fixed step
     int                  SolverSubsteps      = 1;       // [-] inner vehicle/drivetrain/tyre sub-steps per fixed step
     uint32_t             MaximumCatchUpSteps = 8;       // [-] physics-thread steps per wake before a backlog is dropped
+    std::shared_ptr<const GeometryCollisionSurfaces> CollisionSurfaces{}; // [-] placed fixed facets, if captured
     bool                 WriteRegister       = true;    // [-] <Level>.WorldRegister.md beside a loaded level
 };
 

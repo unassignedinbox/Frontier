@@ -12,6 +12,7 @@
 #include "Frontier/Engine/Scene/RecordToken.h"
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -76,6 +77,7 @@ class NetworkingExtension
   private:
     NetworkingSpace&                          Space;
     NetworkTransport&                         Transport;
+    std::deque<NetworkMessage>                Pending;   // ordered sends not yet accepted by the transport
     std::unordered_map<uint64_t, std::string> Sent;      // host record token → the payload last sent
     std::unordered_map<uint64_t, RecordToken> Matched;   // host record token → local record
 };

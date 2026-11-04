@@ -151,7 +151,12 @@ size_t NetworkingExtension::Replicate(const WorldSpace& World)
 
 void NetworkingExtension::Exchange()
 {
-    for (const NetworkMessage& Message : Space.TakeOutgoing()) (void)Transport.Send(Message);
+    for (NetworkMessage& Message : Space.TakeOutgoing()) Pending.push_back(std::move(Message));
+    while (!Pending.empty())
+    {
+        if (!Transport.Send(Pending.front())) break;
+        Pending.pop_front();
+    }
     for (NetworkMessage& Message : Transport.Receive()) Space.Deliver(std::move(Message));
 }
 

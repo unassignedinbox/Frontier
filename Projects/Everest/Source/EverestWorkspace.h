@@ -212,6 +212,7 @@ class EverestWorkspace
     [[nodiscard]] std::array<double, 3> ResolveGroundTarget() const;
     [[nodiscard]] Frontier::GeometryConfiguration* ResolveEditedGeometry();
     [[nodiscard]] Frontier::PlacementView ResolvePlacementView(const ImVec2& StageMin, const ImVec2& StageExtent) const;
+    void StartSimulation(const std::shared_ptr<const Frontier::GeometryCollisionSurfaces>& Surfaces);
     void ConstructViewportSurface();
     void ConstructViewportSchematic(ImDrawList* DrawList, const ImVec2& Min, const ImVec2& Max);
     void IntegrateViewportCamera(bool Hovered, bool Active, double DeltaSeconds, bool LeftClaimed = false);
@@ -256,6 +257,8 @@ class EverestWorkspace
     int                           ConstraintSettleTicks  = 0;         // [-] ticks whose motion is dropped after a lock
     SceneViewportOverlays         Overlays{};
     SceneViewportReadout          LastReadout{};
+    bool                          PendingSimulation = false;
+    bool                          CollisionOutlines = false;
     uint64_t                      PublishedGeometryGeneration = 0;   // [-] the geometry resolutions last copied into the records
     std::array<float, 240>        FrameDurations{};                   // [ms] the last 240 interface ticks (1 % low)
     size_t                        FrameDurationCursor    = 0;

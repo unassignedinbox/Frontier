@@ -8,6 +8,7 @@
 
 #include "Engine/Scene/EngineConfigurations.h"
 #include "Engine/Scene/EnvironmentDiagnostics.h"
+#include "Engine/Scene/GeometryCollisionSurface.h"
 
 #include <array>
 #include <cstdint>
@@ -33,6 +34,7 @@ struct SceneViewportRequest
     std::array<double,3> CameraUp = {0,0,1};
     // 📝 GPU picking: a click on the stage asks for the record drawn under it in the image the click was made on; the readout's
     //    Pick answers the serial one interface tick later.
+    bool                  CaptureCollisions   = false;                // [-] capture resolved fixed facets this tick
     uint64_t              PickSerial          = 0;                    // [-] advances with every click; 0 = nothing asked
     std::array<double, 2> PickPoint           = {0.0, 0.0};           // [-] fraction of the stage's width and height, from the top-left
 };
@@ -73,6 +75,7 @@ struct SceneViewportReadout
     //    counter that advances whenever any of them changed; the workspace copies them into the records for their inspector.
     std::shared_ptr<const std::unordered_map<uint64_t, GeometryConfiguration::Resolution>> Geometry{};
     uint64_t                GeometryGeneration  = 0;
+    std::shared_ptr<const GeometryCollisionSurfaces> CollisionSurfaces{};
     SceneViewportPick       Pick{};                          // [-] the answer to the last click on the stage
 };
 

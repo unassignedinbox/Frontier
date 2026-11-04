@@ -10,6 +10,7 @@
 #include "Frontier/Engine/Rendering/GlobalIllumination/PickProjection.h"
 #include "Frontier/Engine/Rendering/GlobalIllumination/SceneStructure.h"
 #include "Frontier/Engine/Scene/GeometryLayout.h"
+#include "Frontier/Engine/Scene/GeometryCollisionSurface.h"
 #include "Frontier/Engine/Scene/WorldSpace.h"
 
 #include <array>
@@ -69,6 +70,8 @@ class SceneGeometryOccupancy
     // 📝 What every record resolved to, replaced whenever any record changed (QueryGeneration advances with it).
     [[nodiscard]] std::shared_ptr<const GeometryResolutions> QueryResolutions() const noexcept { return Snapshot_; }
     [[nodiscard]] uint64_t                                   QueryGeneration() const noexcept { return Generation_; }
+    // 📝 Capture fixed, nonfractured geometry after ResolvePlacements; other shapes keep their existing fallback.
+    [[nodiscard]] std::shared_ptr<const GeometryCollisionSurfaces> CaptureCollisionSurfaces(const WorldSpace& World) const;
 
     // 📝 The archive transform of an occupant as the scene loaded it.
     [[nodiscard]] const Frontier::PlacementMatrix* QueryArchiveTransform(uint32_t Occupant) const noexcept;

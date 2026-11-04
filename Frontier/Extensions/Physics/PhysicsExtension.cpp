@@ -80,6 +80,28 @@ size_t PhysicsExtension::Begin(WorldSpace& World, const PhysicsExtensionSettings
         const std::array<double, 3> Minimum = ToDouble(Resolved.BoundsMinimum), Maximum = ToDouble(Resolved.BoundsMaximum);
         const std::array<double, 3> World3  = { Maximum[0] - Minimum[0], Maximum[1] - Minimum[1], Maximum[2] - Minimum[2] };
         const bool                  Bounded = World3[0] > 1.0e-3 && World3[1] > 1.0e-3 && World3[2] > 1.0e-3;
+        if (Geometry.Visible && !Geometry.Physics && !Geometry.Fracture.Enabled && Settings.CollisionSurfaces)
+        {
+            const auto Surface = Settings.CollisionSurfaces->find(Entry.Token.Value);
+            if (Surface != Settings.CollisionSurfaces->end() && !Surface->second.Corners.empty())
+            {
+                PhysicsBodyDescriptor Collider;
+                Collider.Record = Entry.Token.Value;
+                Collider.Shape = PhysicsShape::Triangles;
+                Collider.Motion = PhysicsMotion::Fixed;
+                Collider.Points = Surface->second.Corners;
+                Collider.Triangles.reserve(Collider.Points.size());
+                for (uint32_t Index = 0; Index < Collider.Points.size(); ++Index) Collider.Triangles.push_back(Index);
+                Entry.Body = Space->AddBody(Collider);
+                if (Entry.Body != PhysicsNoBody)
+                {
+                    Entry.Physics = PhysicsParticipation::Fixed;
+                    Entry.Remark = "placed scene facets";
+                    ++Tally.Fixed;
+                    continue;
+                }
+            }
+        }
         if (Resolved.Shown > 1)
         {
             Entry.Physics = PhysicsParticipation::Held;

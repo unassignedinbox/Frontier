@@ -1213,6 +1213,7 @@ void EverestWorkspace::ConstructViewportSurface()
     {
         if (ImGui::IsKeyPressed(ImGuiKey_H, false)) ToggleViewportOverlay(0);
         if (IO.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_S, false)) ToggleSimulation();
+        if (IO.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_C, false)) CollisionOutlines = !CollisionOutlines;
     }
     if ((StageHovered || ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) && !IO.WantTextInput && !IO.KeyCtrl &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ModalEditor && !QueryVehicleDrivingActive())
@@ -1244,6 +1245,7 @@ void EverestWorkspace::ConstructViewportSurface()
         Request.VerticalFieldOfView = Flight.ResolveFieldOfView();
         Request.DeltaSeconds        = ViewportDeltaSeconds;
         Request.CameraUp = Navigation.Up;
+        Request.CaptureCollisions   = PendingSimulation;
         Request.PickSerial          = PickSerial;
         Request.PickPoint           = PickPoint;
         Image       = PresentSceneViewport(Request);
@@ -1265,6 +1267,11 @@ void EverestWorkspace::ConstructViewportSurface()
             }
         }
         PublishGeometryResolutions(QueryWorldSpace(), LastReadout, PublishedGeometryGeneration);
+        if (PendingSimulation)
+        {
+            PendingSimulation = false;
+            StartSimulation(LastReadout.CollisionSurfaces);
+        }
         ApplyPendingSurfaces();
         PublishRenderReadouts(QueryWorldSpace(), LastReadout);
     }
@@ -1295,6 +1302,37 @@ void EverestWorkspace::ConstructViewportSurface()
     else
     {
         ConstructViewportSchematic(DrawList, StageMin, Max);
+    }
+    if (CollisionOutlines && Physics && Physics->QueryRunning() && Physics->QuerySpace())
+    {
+        // 📝 Fixed triangle descriptors are immutable while the physics thread runs. This is an X-ray overlay,
+        //    not a complete Jolt debug view: boxes, moving bodies, hulls and the ground are deliberately excluded.
+        const auto* Space = Physics->QuerySpace();
+        size_t Segments = 0;
+        bool Truncated = false;
+        for (size_t Body = 0; Body < Space->QueryBodyCount() && !Truncated; ++Body)
+        {
+            const auto& Descriptor = Space->QueryDescriptor(static_cast<uint32_t>(Body));
+            if (Descriptor.Shape != Frontier::PhysicsShape::Triangles || Descriptor.Motion != Frontier::PhysicsMotion::Fixed) continue;
+            for (size_t Index = 0; Index + 2 < Descriptor.Triangles.size(); Index += 3)
+            {
+                for (size_t Edge = 0; Edge < 3; ++Edge)
+                {
+                    if (Segments >= 60000) { Truncated = true; break; }
+                    const uint32_t A = Descriptor.Triangles[Index + Edge], B = Descriptor.Triangles[Index + (Edge + 1) % 3];
+                    if (A >= Descriptor.Points.size() || B >= Descriptor.Points.size()) continue;
+                    const auto& First = Descriptor.Points[A];
+                    const auto& Second = Descriptor.Points[B];
+                    ImVec2 ScreenA, ScreenB;
+                    if (View.Project({First[0], First[1], First[2]}, ScreenA) && View.Project({Second[0], Second[1], Second[2]}, ScreenB))
+                        DrawList->AddLine(ScreenA, ScreenB, IM_COL32(66, 224, 204, 210), 1.0f);
+                    ++Segments;
+                }
+                if (Truncated) break;
+            }
+        }
+        DrawList->AddText({StageMin.x + 12 * Scale, StageMin.y + 12 * Scale}, IM_COL32(130, 245, 224, 255),
+                          Truncated ? "Collision X-ray: fixed triangles only (truncated)" : "Collision X-ray: fixed triangles only");
     }
     if (Edited != nullptr && Image.Texture != 0)
     {
@@ -1382,12 +1420,15 @@ void EverestWorkspace::ConstructViewportBar(const ImVec2& Min,const ImVec2& Max,
         auto& Settings=Pipeline->AccessConfiguration();
         int View=Settings.AnalyticIllumination?RenderInspectionModes::AnalyticView:std::clamp(Settings.InspectionModeIndex,0,14);
         const float Wide=std::min(236*Scale,(Max.x-Min.x)*.30f);
-        if (X+Wide<Max.x-12*Scale-3*Button-4*Gap-132*Scale &&
-            ViewportChromeControls::ConstructSelectField("##DebugView",Faces,{X,Min.y+(Height-Button)*.5f},{Wide,Button},ViewNames.data(),int(ViewNames.size()),View,Scale))
+        if (X+Wide<Max.x-12*Scale-3*Button-4*Gap-132*Scale)
         {
-            Settings.AnalyticIllumination=View==RenderInspectionModes::AnalyticView;
-            if (!Settings.AnalyticIllumination) Settings.InspectionModeIndex=View;
-            Settings.AdvanceRevision();
+            if (ViewportChromeControls::ConstructSelectField("##DebugView",Faces,{X,Min.y+(Height-Button)*.5f},{Wide,Button},ViewNames.data(),int(ViewNames.size()),View,Scale))
+            {
+                Settings.AnalyticIllumination=View==RenderInspectionModes::AnalyticView;
+                if (!Settings.AnalyticIllumination) Settings.InspectionModeIndex=View;
+                Settings.AdvanceRevision();
+            }
+            X += Wide + Gap;
         }
     }
     const float Right=Max.x-12*Scale;
@@ -1400,6 +1441,9 @@ void EverestWorkspace::ConstructViewportBar(const ImVec2& Min,const ImVec2& Max,
     const bool Simulating=Physics && Physics->QueryRunning();
     if (ViewportChromeControls::ConstructIconButton("##Simulate",{Right-3*Button-3*Gap-132*Scale,Min.y+(Height-Button)*.5f},Button,Simulating?"Pause":"Play",Simulating,true,
         Simulating?"Stop simulating and restore the objects (Alt+S)":"Simulate: objects with Physics on fall and collide (Alt+S)")) ToggleSimulation();
+    const float CollisionX=Right-4*Button-4*Gap-132*Scale;
+    if (CollisionX >= X && ViewportChromeControls::ConstructIconButton("##CollisionOutline",{CollisionX,Min.y+(Height-Button)*.5f},Button,"Box",CollisionOutlines,true,
+        "Collision X-ray: fixed triangles only (Alt+C); simulation required")) CollisionOutlines = !CollisionOutlines;
     if (ViewportChromeControls::ConstructIconButton("##Readout",{Right-2*Button-Gap,Min.y+(Height-Button)*.5f},Button,"Activity",Overlays.ReadoutVisible,true,"Detailed readout (H)")) ToggleViewportOverlay(0);
     if (ViewportChromeControls::ConstructIconButton("##Fullscreen",{Right-Button,Min.y+(Height-Button)*.5f},Button,"ScanCorners",Overlays.Fullscreen,true,"Fullscreen viewport (V), Escape restores panels")) ToggleViewportOverlay(2);
     Ink->PopClipRect();
@@ -1470,6 +1514,11 @@ void EverestWorkspace::ConstructViewportOverlays(const ImVec2& StageMin, const I
 
 void EverestWorkspace::ToggleSimulation()
 {
+    if (PendingSimulation)
+    {
+        PendingSimulation = false;
+        return;
+    }
     if (!Physics) Physics = std::make_unique<Frontier::PhysicsExtension>();
     if (Physics->QueryRunning())
     {
@@ -1478,7 +1527,18 @@ void EverestWorkspace::ToggleSimulation()
         AnnounceViewportNotice("Simulation stopped \xC2\xB7 objects restored");
         return;
     }
+    if (PresentSceneViewport)
+    {
+        PendingSimulation = true;
+        AnnounceViewportNotice("Preparing collision geometry");
+    }
+    else StartSimulation(nullptr);
+}
+
+void EverestWorkspace::StartSimulation(const std::shared_ptr<const Frontier::GeometryCollisionSurfaces>& Surfaces)
+{
     Frontier::PhysicsExtensionSettings Settings{};
+    Settings.CollisionSurfaces = Surfaces;
     Settings.WriteRegister = true;
     const char* CarcassLabel = nullptr;
     for (const Frontier::SceneRecordBase* Candidate : QueryWorldSpace().FindAllByType("Vehicle"))
