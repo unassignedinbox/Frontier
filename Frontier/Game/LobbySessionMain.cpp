@@ -5,7 +5,7 @@
 //    policy, steps the session, exercises the debug level switch, and — with --render — draws the studio
 //    through the software presentation so the C++ Lobby can be seen without a GPU.
 //
-//      LobbySession [--archive DIR] [--render out.ppm] [--guests N] [--xray]
+//      LobbySession [--archive DIR] [--render out.ppm] [--guests N] [--xray] [--scan SECONDS]
 //
 //    The facet archives are the vehicle's own (Experimental/VehicleHmiPrototype/Archive by default).
 
@@ -24,6 +24,7 @@ int main(int ArgumentCount, char** Arguments)
     std::string RenderPath;
     int Guests = 0;
     bool XRay = false;
+    float ScanSeconds = 1.6f;
     for (int Index = 1; Index < ArgumentCount; ++Index)
     {
         if (std::strcmp(Arguments[Index], "--archive") == 0 && Index + 1 < ArgumentCount)
@@ -32,6 +33,8 @@ int main(int ArgumentCount, char** Arguments)
             RenderPath = Arguments[++Index];
         else if (std::strcmp(Arguments[Index], "--xray") == 0)
             XRay = true;
+        else if (std::strcmp(Arguments[Index], "--scan") == 0 && Index + 1 < ArgumentCount)
+        { XRay = true; ScanSeconds = std::atof(Arguments[++Index]); }
         else if (std::strcmp(Arguments[Index], "--guests") == 0 && Index + 1 < ArgumentCount)
             Guests = std::atoi(Arguments[++Index]);
     }
@@ -127,7 +130,7 @@ int main(int ArgumentCount, char** Arguments)
                 if (XRay && Index == 0)
                 {
                     Vehicle.Inspection.View = InspectionView::Scan;
-                    Vehicle.Inspection.ScanSeconds = 1.6f;   // band mid-car for the still
+                    Vehicle.Inspection.ScanSeconds = ScanSeconds;
                 }
                 Vehicles.push_back(Vehicle);
             }

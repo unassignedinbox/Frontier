@@ -68,7 +68,19 @@ struct Projector
     }
 };
 
-void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const std::array<float, 3>& Albedo, float Emission)
+struct ScanBand
+{
+    bool Active = false;
+    Vec3 Origin{};        // vehicle origin (world)
+    Vec3 Forward{};       // vehicle forward (world, unit)
+    float Minimum = 0.0f; // authored length range
+    float Length = 1.0f;
+    float Fraction = 0.0f; // band centre, 0 nose .. 1 tail
+    float HalfWidth = 0.07f;
+};
+
+void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const std::array<float, 3>& Albedo, float Emission,
+              const ScanBand& Scan = {})
 {
     float Sx[3], Sy[3], Sz[3];
     for (int Corner = 0; Corner < 3; ++Corner)
@@ -107,6 +119,23 @@ void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const
             const float Brightness = std::min(1.6f, Lit + Emission);
             Target.Colour[Index] = { std::min(1.0f, Albedo[0] * Brightness), std::min(1.0f, Albedo[1] * Brightness),
                                      std::min(1.0f, Albedo[2] * Brightness) };
+            if (Scan.Active)
+            {
+                // 📝 Per-pixel band: interpolate the point's place along the car's length and light the
+                //    sweep smoothly, with a soft edge — never a whole-facet step.
+                const Vec3 Point = { World[0].X * W0 + World[1].X * W1 + World[2].X * W2,
+                                     World[0].Y * W0 + World[1].Y * W1 + World[2].Y * W2,
+                                     World[0].Z * W0 + World[1].Z * W1 + World[2].Z * W2 };
+                const float Along = ((Point.X - Scan.Origin.X) * Scan.Forward.X + (Point.Y - Scan.Origin.Y) * Scan.Forward.Y
+                                     - Scan.Minimum) / Scan.Length;
+                const float Distance = std::fabs(Along - Scan.Fraction);
+                if (Distance < Scan.HalfWidth)
+                {
+                    const float Glow = 1.0f - Distance / Scan.HalfWidth;   // soft edge
+                    Target.Colour[Index] = { std::min(1.0f, 0.35f + 0.45f * Glow), std::min(1.0f, 0.85f * Glow + 0.25f),
+                                             std::min(1.0f, 0.95f * Glow + 0.25f) };
+                }
+            }
         }
 }
 
@@ -182,22 +211,26 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
     const float Cos = std::cos(Yaw), Sin = std::sin(Yaw);
     const float Opacity = Inspection.ResolveFaceOpacity();
     const float Length = std::max(Archive.BoundsMaximum[0] - Archive.BoundsMinimum[0], 1e-4f);
+    ScanBand Scan{};
+    if (Inspection.View == InspectionView::Scan)
+    {
+        Scan.Active = true;
+        Scan.Origin = Origin;
+        Scan.Forward = { Cos, Sin, 0.0f };
+        Scan.Minimum = Archive.BoundsMinimum[0];
+        Scan.Length = Length;
+        Scan.Fraction = Inspection.ResolveScanFraction();
+    }
     for (uint32_t Facet = 0; Facet < Archive.FacetCount; ++Facet)
     {
         Vec3 World[3];
-        float CentreX = 0.0f;
         for (int Corner = 0; Corner < 3; ++Corner)
         {
             const uint32_t Vertex = Archive.Facets[Facet * 3 + Corner];
             const Vec3 Local = { Archive.Positions[Vertex * 3], YSign * Archive.Positions[Vertex * 3 + 1],
                                  Archive.Positions[Vertex * 3 + 2] - ZRebase };
-            CentreX += Local.X;
             World[Corner] = Transform(Local, Origin, Cos, Sin);
         }
-        // 📝 The X-ray scan: a bright band travelling nose → tail (fraction of the authored length).
-        const float ScanFraction = (CentreX / 3.0f - Archive.BoundsMinimum[0]) / Length;
-        const bool InBand = Inspection.View == InspectionView::Scan
-            && std::fabs(ScanFraction - Inspection.ResolveScanFraction()) < 0.07f;
         if (Inspection.View == InspectionView::Wireframe)
         {
             Edge(Target, Camera, World[0], World[1], { 0.65f, 0.85f, 0.90f });
@@ -213,14 +246,7 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
             for (int Channel = 0; Channel < 3; ++Channel)
                 Albedo[Channel] = Albedo[Channel] * Opacity + Haze[Channel] * (1.0f - Opacity);
         }
-        if (InBand)
-        {
-            Albedo = { 0.35f, 0.85f, 0.95f };
-            Emission += 1.1f;
-        }
-        Triangle(Target, Camera, World, Albedo, Emission);
-        if (Inspection.ShowsHiddenEdges() && InBand)
-            Edge(Target, Camera, World[0], World[1], { 0.75f, 0.95f, 1.0f });
+        Triangle(Target, Camera, World, Albedo, Emission, Scan);
     }
 }
 
