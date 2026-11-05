@@ -80,7 +80,7 @@ struct ScanBand
 };
 
 void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const std::array<float, 3>& Albedo, float Emission,
-              const ScanBand& Scan = {}, float Opacity = 1.0f)
+              const ScanBand& Scan = {}, float Opacity = 1.0f, const PaintRipple* Ripple = nullptr)
 {
     float Sx[3], Sy[3], Sz[3];
     for (int Corner = 0; Corner < 3; ++Corner)
@@ -121,8 +121,20 @@ void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const
             if (Opacity >= 1.0f)
                 Target.Depth[Index] = Z;
             const float Brightness = std::min(1.6f, Lit + Emission);
-            const std::array<float, 3> Shaded = { std::min(1.0f, Albedo[0] * Brightness), std::min(1.0f, Albedo[1] * Brightness),
-                                                  std::min(1.0f, Albedo[2] * Brightness) };
+            std::array<float, 3> Effective = Albedo;
+            if (Ripple && Ripple->Active)
+            {
+                // 📝 The configurator's paint ripple, per pixel exactly as its shader: the next finish
+                //    takes every point the expanding sphere from the touch point has covered.
+                const Vec3 Point = { World[0].X * W0 + World[1].X * W1 + World[2].X * W2,
+                                     World[0].Y * W0 + World[1].Y * W1 + World[2].Y * W2,
+                                     World[0].Z * W0 + World[1].Z * W1 + World[2].Z * W2 };
+                const float Coverage = Ripple->ResolveCoverage({ Point.X, Point.Y, Point.Z });
+                for (int Channel = 0; Channel < 3; ++Channel)
+                    Effective[Channel] = Albedo[Channel] * (1.0f - Coverage) + Ripple->NextColour[Channel] * Coverage;
+            }
+            const std::array<float, 3> Shaded = { std::min(1.0f, Effective[0] * Brightness), std::min(1.0f, Effective[1] * Brightness),
+                                                  std::min(1.0f, Effective[2] * Brightness) };
             if (Opacity >= 1.0f)
                 Target.Colour[Index] = Shaded;
             else
@@ -214,7 +226,8 @@ Vec3 Transform(const Vec3& Local, const Vec3& Origin, float CosYaw, float SinYaw
 
 void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData& Archive,
                  const Vec3& Origin, float YawDegrees, float ZRebase, float YSign,
-                 const std::array<float, 3>& Paint, const VehicleInspection& Inspection = {})
+                 const std::array<float, 3>& Paint, const VehicleInspection& Inspection = {},
+                 const PaintRipple* Ripple = nullptr, bool RippleEveryFacet = false)
 {
     const float Yaw = YawDegrees * Pi / 180.0f;
     const float Cos = std::cos(Yaw), Sin = std::sin(Yaw);
@@ -249,7 +262,10 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
         }
         float Emission = 0.0f;
         const auto Albedo = FamilyAlbedo(Archive.Families[Facet], Paint, Emission);
-        Triangle(Target, Camera, World, Albedo, Emission, Scan, Opacity);
+        // 📝 In the reference only the paint material ripples (the cladding does not change colour), so
+        //    the body ripple touches BodyCoat facets; the rim ripple owns its whole archive.
+        const PaintRipple* FacetRipple = Ripple && (RippleEveryFacet || Archive.Families[Facet] == 6) ? Ripple : nullptr;
+        Triangle(Target, Camera, World, Albedo, Emission, Scan, Opacity, FacetRipple);
     }
 }
 
@@ -257,7 +273,7 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
 
 bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
                     float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
-                    int Width, int Height)
+                    int Width, int Height, float FovDegrees)
 {
     Frame Target;
     Target.Width = Width;
@@ -276,7 +292,7 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
     Camera.Forward = Normalize(Focus - Camera.Eye);
     Camera.Right = Normalize(Cross(Camera.Forward, Vec3{ 0.0f, 0.0f, 1.0f }));
     Camera.Up = Cross(Camera.Right, Camera.Forward);
-    Camera.TanHalfFov = std::tan(27.5f * Pi / 180.0f);
+    Camera.TanHalfFov = std::tan(0.5f * FovDegrees * Pi / 180.0f);
     Camera.Aspect = static_cast<float>(Width) / static_cast<float>(Height);
 
     // The studio: dark surround, white cove floor disc, the one softbox overhead.
@@ -303,7 +319,8 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
     {
         const Vec3 Origin = { Vehicle.PositionMetres[0], Vehicle.PositionMetres[1], Vehicle.PositionMetres[2] };
         if (Vehicle.Body && Vehicle.Body->IsValid())
-            DrawArchive(Target, Camera, *Vehicle.Body, Origin, Vehicle.YawDegrees, 0.11285f, 1.0f, Vehicle.Paint, Vehicle.Inspection);
+            DrawArchive(Target, Camera, *Vehicle.Body, Origin, Vehicle.YawDegrees, 0.11285f, 1.0f, Vehicle.Paint, Vehicle.Inspection,
+                        &Vehicle.BodyRipple, false);
         if (Vehicle.Tyre && Vehicle.Tyre->IsValid())
         {
             // Hubs at the axle mounts (body frame), mirrored on the right side.
@@ -317,7 +334,8 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
                     const Vec3 Hub = Transform(Local, Origin, std::cos(YawRad), std::sin(YawRad));
                     DrawArchive(Target, Camera, *Vehicle.Tyre, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint, Vehicle.Inspection);
                     if (Vehicle.Rim && Vehicle.Rim->IsValid())
-                        DrawArchive(Target, Camera, *Vehicle.Rim, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint, Vehicle.Inspection);
+                        DrawArchive(Target, Camera, *Vehicle.Rim, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint, Vehicle.Inspection,
+                                    &Vehicle.RimRipple, true);
                 }
         }
     }
@@ -333,6 +351,13 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
             Stream.put(static_cast<char>(std::lround(Srgb * 255.0f)));
         }
     return static_cast<bool>(Stream);
+}
+
+bool RenderGaragePpm(const std::string& Path, const PresentationVehicle& Vehicle, int Width, int Height)
+{
+    // 📝 Scene.tsx: camera (6.8, 2.9, 7.6) fov 34° about target (0, 0.55, 0), mapped x→x, y→z, z→y.
+    //    Resolved once to the orbit parameters this rasteriser takes; the values never change per frame.
+    return RenderLobbyPpm(Path, { Vehicle }, 48.24f, 12.98f, 10.47f, Width, Height, 34.0f);
 }
 
 } // namespace Frontier

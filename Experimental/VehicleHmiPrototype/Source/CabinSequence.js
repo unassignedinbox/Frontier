@@ -60,7 +60,8 @@ export class CabinSequence
         this.Clock    = 0.0;
         this.MirrorCursor = 0;
         this.MirrorsRendered = 0;
-        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: true, Dirty: true, Yaw: 0.6, Pitch: 0.2,
+        // 📝 Rotation disabled: the Garage stage holds a fixed camera, as in the reference configurator.
+        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: false, Dirty: true, Yaw: 0.6, Pitch: 0.2,
                           Orbit: (Yaw, Pitch) => { this.Preview.Yaw += Yaw; this.Preview.Pitch = Math.max(-0.1, Math.min(0.9, this.Preview.Pitch + Pitch)); } };
         this.Metrics  = { TabletUploads: 0, ClusterUploads: 0, MirrorPasses: 0, PreviewPasses: 0, Hmi: "starting" };
         this.LiveRevision = -1;

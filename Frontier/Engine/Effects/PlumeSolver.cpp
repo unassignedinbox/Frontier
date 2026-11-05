@@ -199,7 +199,9 @@ void PlumeSolver::Step(float StepSeconds, const PlumeSettings& Settings, const s
                 for (int X = 0; X < Extent[0]; ++X)
                 {
                     const size_t At = Index(X, Y, Z);
-                    NextPressure[At] = (Divergence[At] + Pressure[Index(X - 1, Y, Z)] + Pressure[Index(X + 1, Y, Z)]
+                    // 📝 Jacobi for ∇²p = ∇·v on a grid of spacing h: the divergence term carries h².
+                    //    Without it the gradient subtraction over-corrects by 1/h² and the field explodes.
+                    NextPressure[At] = (Divergence[At] * CellExtent * CellExtent + Pressure[Index(X - 1, Y, Z)] + Pressure[Index(X + 1, Y, Z)]
                                         + Pressure[Index(X, Y - 1, Z)] + Pressure[Index(X, Y + 1, Z)]
                                         + Pressure[Index(X, Y, Z - 1)] + Pressure[Index(X, Y, Z + 1)]) / 6.0f;
                 }
@@ -216,9 +218,24 @@ void PlumeSolver::Step(float StepSeconds, const PlumeSettings& Settings, const s
             }
 }
 
+float PlumeSolver::QueryMaximumSpeed() const noexcept
+{
+    float Maximum = 0.0f;
+    for (size_t At = 0; At < Density.size(); ++At)
+        Maximum = std::max(Maximum, VelocityX[At] * VelocityX[At] + VelocityY[At] * VelocityY[At] + VelocityZ[At] * VelocityZ[At]);
+    return std::sqrt(Maximum);
+}
+
 float PlumeSolver::QueryDensity(int X, int Y, int Z) const noexcept
 {
     return Density[Index(X, Y, Z)];
+}
+
+float PlumeSolver::QueryHeat(int X, int Y, int Z) const noexcept
+{
+    if (X < 0 || Y < 0 || Z < 0 || X >= Extent[0] || Y >= Extent[1] || Z >= Extent[2])
+        return 0.0f;
+    return Heat[Index(X, Y, Z)];
 }
 
 float PlumeSolver::QueryDensityAt(const std::array<float, 3>& WorldMetres) const noexcept

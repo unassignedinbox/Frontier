@@ -10,6 +10,7 @@
 #include "Frontier/Engine/Input/InputDriver.h"
 #include "Frontier/Engine/Input/SyntheticDriver.h"
 #include "Frontier/Engine/Effects/GasParameters.h"
+#include "Frontier/Engine/Effects/PaintRipple.h"
 #include "Frontier/Engine/Effects/ParticleSpace.h"
 #include "Frontier/Engine/Effects/PlumeSolver.h"
 #include "Frontier/Engine/Session/LevelTransition.h"
@@ -313,6 +314,8 @@ int main()
             Plume.Step(1.0f / 30.0f, Settings, {});
         Check(Plume.QueryTotalDensity() < Before, "without sources the plume dissipates");
         Check(Plume.QueryMeanDivergence() < 0.5f, "pressure projection keeps the flow near-incompressible");
+        Check(std::isfinite(Plume.QueryMaximumSpeed()) && Plume.QueryMaximumSpeed() < 50.0f,
+              "the projected field stays stable (no velocity explosion)");
     }
 
     // --- Particles (Particle Editor presets, CPU runtime) --------------------------------------------
@@ -327,6 +330,23 @@ int main()
         for (int Step = 0; Step < 600; ++Step)
             Particles.Step(1.0f / 60.0f);
         Check(Particles.QueryAliveCount() == 0, "particles die on their preset life");
+    }
+
+    // --- Paint ripple (the configurator's material application, Truck.tsx) ---------------------------
+    {
+        PaintRipple Ripple;
+        Ripple.Begin({ 2.75f, 0.0f, 1.25f }, { 1.0f, 0.0f, 0.0f }, 0.26f, 0.9f);
+        Check(Ripple.Active && Ripple.RadiusMetres == 0.0f, "a paint ripple starts as a point at the touch");
+        Check(!Ripple.Step(0.675f) && Ripple.Active, "mid-ripple the sphere is still expanding");
+        Check(std::fabs(Ripple.RadiusMetres - 5.6f) < 0.01f, "easeOutCubic(0.5) carries the radius to 5.6 of 6.4 m");
+        Check(Ripple.ResolveCoverage({ 2.75f, 0.0f, 1.25f }) == 1.0f, "the touch point itself is fully repainted");
+        Check(Ripple.ResolveCoverage({ 2.75f + 6.2f, 0.0f, 1.25f }) == 0.0f, "beyond the sphere the old finish remains");
+        const float Edge = Ripple.ResolveCoverage({ 2.75f + 5.325f, 0.0f, 1.25f });
+        Check(Edge > 0.4f && Edge < 0.6f, "the trailing 0.55 m edge is a smoothstep, not a step");
+        Check(Ripple.Step(0.7f) && !Ripple.Active, "at 1.35 s the ripple completes and commits");
+        PaintRipple RimRipple;
+        RimRipple.Begin({ 1.55f, 1.0f, 0.63f }, { 0.2f, 0.2f, 0.2f }, 0.45f, 0.7f, 1.5f, 4.6f);
+        Check(!RimRipple.Step(1.4f) && RimRipple.Step(0.2f), "the rim ripple runs its own 1.5 s / 4.6 m course");
     }
 
     std::printf("SessionValidation: %d checks, %d failures\n", Checks, Failures);

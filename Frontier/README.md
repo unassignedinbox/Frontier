@@ -104,3 +104,21 @@ The scan family is complete in the CPU mirror too: Ghost is now true 45 % transp
 (blended against what is behind, no depth taken — `LobbySession --ghost`,
 `VisualProof/GhostPreview.png`) and Wireframe removes the faces entirely, wheels included
 (`--wireframe`, `VisualProof/WireframePreview.png`).
+
+## Garage configurator (zip-exact) and plume proof
+
+The reference configurator's behaviours are ported 1:1, not approximated:
+
+- **Paint application** (`Engine/Effects/PaintRipple.h`): a finish is never swapped in at once. An
+  expanding sphere grows from the touch point — the raycast hit of a drag-and-drop, or the nose default
+  on a tap — with the reference shader's per-pixel coverage `1 - smoothstep(R-0.55, R, distance)`,
+  `easeOutCubic` timing (paint 1.35 s / 6.4 m, rims 1.5 s / 4.6 m), committing colour, roughness and
+  metalness when it completes.
+- **Garage stage** (`SoftwarePresentation::RenderGaragePpm`, `LobbySession --garage`): the Lobby studio
+  itself (cove floor, turntable, the one softbox) holding **one** vehicle, fixed camera, **no rotation**
+  of any kind. Colours are the zip's eight finishes, hex and metallic flags verbatim.
+- **Plume proof** (`LobbySession --plume [--plume-frames PREFIX]`): renders the ported solver's own
+  density/heat. Demanding this proof exposed a solver bug — the Jacobi pressure iteration was missing
+  its `h²` factor and the velocity field exploded; fixed and covered by a stability check.
+
+Evidence, reproduction commands and limitations: `Exhibits/GarageConfigurator/`.

@@ -59,11 +59,13 @@ class PlumeSolver
     void Step(float StepSeconds, const PlumeSettings& Settings, const std::vector<PlumeSource>& Sources);
 
     [[nodiscard]] float QueryDensity(int X, int Y, int Z) const noexcept;
+    [[nodiscard]] float QueryHeat(int X, int Y, int Z) const noexcept;
     [[nodiscard]] float QueryDensityAt(const std::array<float, 3>& WorldMetres) const noexcept;
     [[nodiscard]] float QueryTotalDensity() const noexcept;
     [[nodiscard]] float QueryMeanHeat() const noexcept;
     // 📝 Mean |divergence| after projection — the incompressibility check (near zero when projected).
     [[nodiscard]] float QueryMeanDivergence() const noexcept;
+    [[nodiscard]] float QueryMaximumSpeed() const noexcept;   // [m/s] fastest cell — the stability check
     // 📝 The grid is centred on the origin in X/Y and sits on z=0.
     [[nodiscard]] std::array<float, 3> QueryCellCentre(int X, int Y, int Z) const noexcept;
 
