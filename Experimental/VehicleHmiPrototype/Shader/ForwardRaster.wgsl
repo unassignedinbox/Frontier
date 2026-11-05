@@ -31,6 +31,9 @@ struct ForwardView
     Key            : vec4f,   // xyz studio key light direction (toward the light), w its intensity
     Fill           : vec4f,   // xyz studio fill direction, w intensity
     Rim            : vec4f,   // xyz studio rim direction, w intensity; scene: x hides the car (derezzed)
+    RippleCentre   : vec4f,   // xyz [m] paint ripple centre (body frame), w [m] current sphere radius
+    RippleNext     : vec4f,   // rgb next finish albedo, w ripple active
+    RippleFinish   : vec4f,   // x roughness, y metalness, z coat weight the sphere carries
 }
 
 struct CascadeReceiver
@@ -164,7 +167,18 @@ fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
             discard;
         }
     }
-    let Surface = ProjectSurfaceSample(Materials[Varying.Family]);
+    var Surface = ProjectSurfaceSample(Materials[Varying.Family]);
+    // 📝 Paint application, the reference configurator's ripple (Truck.tsx): the next finish takes
+    //    every body point the expanding sphere from the touch point has covered, trailing 0.55 m edge.
+    if (View.RippleNext.w > 0.5 && Varying.Family == PaintCoatFamily)
+    {
+        let Coverage = 1.0 - smoothstep(View.RippleCentre.w - 0.55, View.RippleCentre.w,
+                                        distance(Varying.BodyLocal, View.RippleCentre.xyz));
+        Surface.Albedo    = mix(Surface.Albedo, View.RippleNext.rgb, Coverage);
+        Surface.Roughness = mix(Surface.Roughness, View.RippleFinish.x, Coverage);
+        Surface.Metalness = mix(Surface.Metalness, View.RippleFinish.y, Coverage);
+        Surface.CoatWeight = mix(Surface.CoatWeight, View.RippleFinish.z, Coverage);
+    }
     let ViewDirection = normalize(View.Camera.xyz - Varying.WorldPosition);
     var Normal = normalize(Varying.Normal);
     if (dot(Normal, ViewDirection) < 0.0)

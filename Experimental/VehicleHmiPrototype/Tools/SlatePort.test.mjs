@@ -67,6 +67,18 @@ test('reference tyre source emits patch and arch smoke with rearward momentum, t
     const Mapped = MapPlumeSettings(ConstructGasParameters());
     assert.equal(Mapped.PlumeDensity, PlumeDefaults.PlumeDensity);
     assert.equal(Mapped.PlumeVorticity, PlumeDefaults.PlumeVorticity);
+    // 📝 The 1:1 contract with the C++ port (Frontier/Engine/Effects ResolvePlumeSettings, validated
+    //    there against the same numbers): the mapping, not just two fields of it.
+    assert.equal(Mapped.PlumeDensity, 1.2);                    // 1.2 * Density(1.0)
+    assert.equal(Mapped.PlumeEmissionRate, 1.0);
+    assert.equal(Mapped.PlumeBuoyancy, 2.4);
+    assert.equal(Mapped.PlumeFlameCore, 1800);                 // FlameCore * FlameTemperature(1.0)
+    assert.equal(Mapped.PlumeFlameTip, 1150);
+    assert.ok(Math.abs(Mapped.PlumeFlameDecay - -Math.log(0.04)) < 1e-9);   // -ln(max(0.005, 1-FlameLoss))
+    const Hot = ConstructGasParameters(); Hot.FlameTemperature = 1.18; Hot.FlameLoss = 0.5;
+    const HotMapped = MapPlumeSettings(Hot);
+    assert.ok(Math.abs(HotMapped.PlumeFlameCore - 2124) < 1e-6);            // the C++ validation's number
+    assert.ok(Math.abs(HotMapped.PlumeFlameDecay - -Math.log(0.5)) < 1e-9);
 });
 test('reference plume fades and retires with no source; disabled clears residency', () => {
     const Plume = Object.create(PlumeSpace.prototype);

@@ -25,8 +25,13 @@ test('Garage controls are paint only: swatches apply named finishes to the live 
     Screen.RasterApplicationContent('garage');
     const Click = Id => Screen.Regions.find(Region => Region.Identifier === Id).Action();
     Click('colour:2');
-    assert.equal(Screen.Appearance.Colour, '#8a1a1d');   // Command Red
+    // 📝 A tap does not swap the paint: it starts the ripple from the nose, and the finish commits
+    //    only when the sphere completes (1.35 s), exactly as the reference configurator.
     assert.equal(Screen.FinishColour, '#8a1a1d');
+    assert.ok(Screen.Appearance.Ripple.Active);
+    assert.equal(Screen.Appearance.Colour, null);
+    Screen.Appearance.AdvancePaintRipple(1.35);
+    assert.equal(Screen.Appearance.Colour, '#8a1a1d');   // Command Red, committed
     for (const Removed of ['finish', 'wheels', 'blue-rims', 'inspection', 'preview-spin'])
         assert.ok(!Screen.Regions.find(Region => Region.Identifier === Removed), Removed + ' is not a Garage control any more');
     assert.equal(Screen.Regions.filter(Region => Region.Identifier.startsWith('colour:')).length, 8);
@@ -42,11 +47,14 @@ test('paint drags only apply on the car body, and cancel safely', () => {
     Screen.ForwardPointer('down', 790, 500);
     Screen.ForwardPointer('move', 400, 450);
     Screen.ForwardPointer('up', 400, 450);
+    assert.ok(Screen.Appearance.Ripple.Active);          // the drop starts the ripple where it landed
+    Screen.Appearance.AdvancePaintRipple(1.35);
     assert.equal(Screen.Appearance.Colour, '#c2c8d0');   // Nebula Silver, dragged onto the body
     Screen.Preview.Pick = () => ({ Occupant: 1, Family: CourseMaterial.Hub });
     Screen.ForwardPointer('down', 790, 500);
     Screen.ForwardPointer('move', 400, 450);
     Screen.ForwardPointer('up', 400, 450);
+    assert.ok(!Screen.Appearance.Ripple.Active);         // paint on a wheel starts nothing
     assert.equal(Screen.Appearance.Colour, '#c2c8d0');   // paint on a wheel is not a paint surface
     Screen.ForwardPointer('down', 790, 500);
     Screen.ForwardPointer('move', 400, 450);
@@ -65,4 +73,22 @@ test('rim finish changes affect selected accent faces, never the black rim base 
         assert.deepEqual(Materials[CourseMaterial.Tyre],Tyre);
     }
     assert.ok(Materials[CourseMaterial.Hub].Emission[2] > 0);
+});
+
+test('the paint ripple spreads from its point with the reference coverage curve', async () => {
+    const { ResolveRippleCoverage } = await import('../Source/VehicleAppearance.js');
+    const Appearance = new VehicleAppearance(ConstructMaterialSpecification(), () => {});
+    Appearance.BeginPaintRipple('#8a1a1d', [2.75, 0, 1.25]);
+    assert.ok(Appearance.Ripple.Active);
+    assert.equal(Appearance.ResolvePaintCoverage([2.75, 0, 1.25]), 0);   // the sphere is still a point
+    Appearance.AdvancePaintRipple(0.675);
+    assert.ok(Math.abs(Appearance.Ripple.Radius - 5.6) < 0.01);          // easeOutCubic(0.5) of 6.4 m
+    assert.equal(Appearance.ResolvePaintCoverage([2.75, 0, 1.25]), 1);   // the touch point is covered
+    assert.equal(Appearance.ResolvePaintCoverage([2.75 + 6.2, 0, 1.25]), 0);   // beyond the sphere: old finish
+    const Edge = Appearance.ResolvePaintCoverage([2.75 + 5.325, 0, 1.25]);
+    assert.ok(Edge > 0.4 && Edge < 0.6);                                  // the 0.55 m edge is smooth
+    assert.equal(ResolveRippleCoverage(0, 5.6), 1);
+    Appearance.AdvancePaintRipple(0.7);
+    assert.ok(!Appearance.Ripple.Active);
+    assert.equal(Appearance.Colour, '#8a1a1d');                          // completion commits the finish
 });

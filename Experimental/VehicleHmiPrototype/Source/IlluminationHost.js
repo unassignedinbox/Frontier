@@ -324,6 +324,7 @@ class IlluminationHost
             DerezHotFamily:        { Type: "u32", Value: CourseMaterial.DerezHot },
             DerezGlitchFamily:     { Type: "u32", Value: CourseMaterial.DerezGlitch },
             VehicleGlassFamily:    { Type: "u32", Value: CourseMaterial.VehicleGlass },
+            PaintCoatFamily:       { Type: "u32", Value: CourseMaterial.BodyCoat },
             SteeringWheelFamily:   { Type: "u32", Value: CourseMaterial.SteeringWheel },
             TabletHousingFamily:  { Type: "u32", Value: CourseMaterial.TabletHousing },
             DisplayGlassFamily:   { Type: "u32", Value: CourseMaterial.DisplayGlass },

@@ -56,3 +56,21 @@ g++ -std=c++17 -I. Frontier/Game/LobbySessionMain.cpp Frontier/Engine/Input/*.cp
   behaviour (coverage, scene, camera), not for PBR clearcoat/metalness appearance.
 - The rim ripple mechanism is ported and validated; the Garage CLI drives the body ripple (the
   configurator's primary path). Rim wiring through the CLI is remaining work.
+
+## HTML demo phase (fixed first, for approval before any further C++)
+
+The VehicleHMI demo's Garage now behaves as the reference configurator:
+
+| Requirement | Where | Evidence |
+|---|---|---|
+| Preview renders the scene, not free space | `CabinSequence.RecordPreview` draws the Lobby studio occupants (cyclorama, ceiling, trusses, softbox, floor) around the hero | `GarageHmiRippleHtml.png`: the car sits in the lit studio well |
+| Only 1 vehicle | Guest fleet + guest plates excluded from the preview pass; hero body/wheels/plates only | Same capture: one car in the well |
+| Rotation disabled | `Preview.Spin = false`; the turntable no longer turns (manual drag-orbit remains, as the reference's OrbitControls) | `CabinSequence.js` |
+| Paint spreads from the touch point | `VehicleAppearance.BeginPaintRipple/AdvancePaintRipple` (1.35 s, 6.4 m, `1-smoothstep(R-0.55, R, d)`, easeOutCubic, commit on completion) + the same blend per-pixel in `ForwardRaster.wgsl` studio mode; tap = nose default, drop = the raycast `BodyPoint` | Capture: Command Red has covered the nose half, the tail is still graphite; unit tests pin radius 5.6 m at half-time and the smooth edge |
+| Plume 1:1 with the C++ port | `MapPlumeSettings` (HTML) and `ResolvePlumeSettings` (C++) locked to the same numbers by tests on both sides (density ×1.2, flame core/tip × temperature, `-ln(max(0.005, 1-loss))` decay, the 2124 K check) | `Tools/SlatePort.test.mjs`, `Validation/SessionValidation.cpp` |
+
+Capture method: `Tools/RunOnSoftwareGpu.mjs` + `HeadlessHarness.mjs` with
+`Exhibits/GarageConfigurator/GarageCaptureHooks.mjs` (the harness has no 2D canvas, so the hooks supply
+a stub canvas/Image and skip the panel-texture upload; the speckle around the tablet in the capture is
+that stub, not the app — in a browser the panel draws normally). 4 frames, 0 errors, SwiftShader.
+`npm test`: 103 pass, 0 fail.

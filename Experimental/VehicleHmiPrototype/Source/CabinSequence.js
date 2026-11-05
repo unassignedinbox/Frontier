@@ -77,7 +77,19 @@ export class CabinSequence
         const Exchange = this.Exchange;
         const Device = Exchange.Device;
         this.Scene = Scene;
-        this.Preview.Pick = (U, V) => PickVehicle(Scene, this.PreviewInverse, U, V);
+        this.Preview.Pick = (U, V) => {
+            const Hit = PickVehicle(Scene, this.PreviewInverse, U, V);
+            if (Hit) // 📝 The ripple works in the body frame, the same frame ForwardRaster's BodyLocal is in.
+                Hit.BodyPoint = TransformPoint(InvertTransform(Scene.Occupants[0].Transform), Hit.WorldPoint);
+            return Hit;
+        };
+        // 📝 Paint application as the reference configurator performs it: a tap ripples from the nose
+        //    default, a drop ripples from where it landed on the body.
+        this.Preview.BeginPaint = (Colour, BodyPoint, Metallic) => {
+            const Set = Scene.FacetSets[Scene.VehicleBodySet];
+            const Centre = BodyPoint ?? [Set.LocalMaximum[0], 0.0, 0.5 * (Set.LocalMinimum[2] + Set.LocalMaximum[2])];
+            this.Appearance?.BeginPaintRipple(Colour, Centre, { Metallic });
+        };
         this.Preview.Facets = Scene.FacetSets[Scene.VehicleBodySet].Facets.length
                             + 4 * Scene.FacetSets[Scene.Occupants[Scene.VehicleOccupants.Wheels[0]].FacetSet].Facets.length;
 
@@ -151,7 +163,7 @@ export class CabinSequence
         this.ForwardLayout = Exchange.ConstructDescriptorLayout(["Uniform", "UniformDynamic", "StorageRead", "StorageRead", "StorageRead", "Uniform",
                                                                  "TextureDepth2DLayered", "SamplerComparison", "Uniform", "Texture2D", "Sampler"], Stages, "Forward views");
         this.ForwardGroup = Exchange.ConstructDescriptorGroup(this.ForwardLayout,
-            [FrameRecords, { buffer: this.ViewRecords, offset: 0, size: 128 }, OccupantRecords, MaterialRecords, VehicleRecords, EffectRecords,
+            [FrameRecords, { buffer: this.ViewRecords, offset: 0, size: 176 }, OccupantRecords, MaterialRecords, VehicleRecords, EffectRecords,
              Shadow.LayeredView, Shadow.ComparisonSampler, Shadow.ReceiverRecords, Atmosphere.SkyView, Atmosphere.SkySampler]);
         const ForwardDescriptor = (Format) => ({
             VertexEntry: "ForwardVertex", FragmentEntry: "ForwardFragment",
@@ -217,6 +229,7 @@ export class CabinSequence
     Advance(Seconds, Live)
     {
         this.Clock += Seconds;
+        this.Appearance?.AdvancePaintRipple?.(Seconds);   // a finish spreads, then commits, ripple or not
         if (this.Preview.Spin)
             this.Preview.Yaw += 0.35 * Seconds;
         if (!this.Screen || !this.Settings.Screens)
@@ -304,9 +317,9 @@ export class CabinSequence
             this.RecordPreview(Encoder, Scene, VertexRecords, BodyTransform);
     }
 
-    WriteView(Slot, ViewProjection, Camera, Mode, Lights = null)
+    WriteView(Slot, ViewProjection, Camera, Mode, Lights = null, Ripple = null)
     {
-        const Scalars = new Float32Array(32);
+        const Scalars = new Float32Array(44);
         Scalars.set(ViewProjection, 0);
         Scalars.set([...Camera, Mode], 16);
         if (Lights)
@@ -315,6 +328,7 @@ export class CabinSequence
             Scalars.set(Lights[1], 24);
             Scalars.set(Lights[2], 28);
         }
+        if (Ripple) Scalars.set(Ripple, 32);   // centre xyz, radius, next rgb, active, rough/metal/coat
         this.Exchange.Device.queue.writeBuffer(this.ViewRecords, Slot * ViewStride, Scalars);
     }
 
@@ -393,7 +407,10 @@ export class CabinSequence
         const Fill = NormalizeVector(AddVector(AddVector(ScaleVector(Side, -0.8), [0.0, 0.0, 0.3]), ScaleVector(Back, 0.5)));
         const Rim = NormalizeVector(AddVector(ScaleVector(Back, -0.9), [0.0, 0.0, 0.55]));
         this.PreviewInverse = InvertTransform(MultiplyTransform(Projection, View));
-        this.WriteView(3, MultiplyTransform(Projection, View), Eye, 1.0 + (this.Appearance?.View || 0), [[...Key, 3.2], [...Fill, 1.0], [...Rim, 2.4]]);
+        const Ripple = this.Appearance?.Ripple;
+        this.WriteView(3, MultiplyTransform(Projection, View), Eye, 1.0 + (this.Appearance?.View || 0), [[...Key, 3.2], [...Fill, 1.0], [...Rim, 2.4]],
+            Ripple ? [...Ripple.Centre, Ripple.Radius, ...Ripple.NextColour, Ripple.Active ? 1 : 0,
+                      Ripple.Roughness, Ripple.Metalness, Ripple.CoatWeight, 0] : null);
         const Pass = Encoder.beginRenderPass({
             label: "Garage preview",
             colorAttachments: [{ view: this.PreviewTexture.createView(), clearValue: [0.012, 0.022, 0.025, 1], loadOp: "clear", storeOp: "store" }],
@@ -402,9 +419,15 @@ export class CabinSequence
         Pass.setPipeline(this.PreviewProgram);
         Pass.setBindGroup(0, this.ForwardGroup, [3 * ViewStride]);
         Pass.setVertexBuffer(0, VertexRecords);
+        // 📝 The Garage stage is the Lobby studio itself — cyclorama, ceiling, softbox, the floor —
+        //    holding ONE vehicle: the hero (body, wheels, its plates). The guest fleet stays out.
+        const StudioShapes = new Set(["Cyclorama", "Ceiling", "TrussBeam", "TrussCross", "Softbox", "Cable"]);
         for (const Run of Scene.DrawRuns)
         {
-            if (Run.First >= 5)
+            const Occupant = Scene.Occupants[Run.First];
+            const IsHero = Run.First < 5 || Run.First === Scene.PlateOccupants?.[0];
+            const IsStudio = Run.First === Scene.GroundOccupant || StudioShapes.has(Occupant?.Level);
+            if (!IsHero && !IsStudio)
                 continue;
             const Set = Scene.FacetSets[Run.FacetSet];
             Pass.draw(Set.VertexCount, Run.Count, Set.FirstVertex, Run.First);

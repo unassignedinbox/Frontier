@@ -22,7 +22,11 @@ export function PickVehicle(Scene, InverseView, U, V) {
         const Origin = TransformPoint(Inverse, From), Direction = TransformDirection(Inverse, Ray);
         for (const Facet of Scene.FacetSets[Occupant.FacetSet].Facets) {
             const Distance = IntersectVehicleFacet(Origin, Direction, Facet.Corners);
-            if (Number.isFinite(Distance) && (!Best || Distance < Best.Distance)) Best = { Occupant: Index, Family: Facet.Family, Distance };
+            if (Number.isFinite(Distance) && (!Best || Distance < Best.Distance)) {
+                const Local = [Origin[0] + Direction[0] * Distance, Origin[1] + Direction[1] * Distance, Origin[2] + Direction[2] * Distance];
+                Best = { Occupant: Index, Family: Facet.Family, Distance, Point: Local,
+                         WorldPoint: TransformPoint(Occupant.Transform, Local) };
+            }
         }
     }
     return Best;

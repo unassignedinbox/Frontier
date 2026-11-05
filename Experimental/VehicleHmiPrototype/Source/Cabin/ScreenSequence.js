@@ -483,6 +483,12 @@ export class ScreenSequence
         this.RasterFooter();
     }
 
+    // 📝 One paint path for taps and drops: ripple from the given body point (null = the nose default).
+    BeginPaint(Paint, BodyPoint) {
+        if (this.Preview?.BeginPaint) this.Preview.BeginPaint(Paint.Hex, BodyPoint, Paint.Metallic);
+        else this.Appearance?.BeginPaintRipple(Paint.Hex, BodyPoint, { Metallic: Paint.Metallic });
+    }
+
     RasterApplicationContent(Identifier)
     {
         if (Identifier === "vehicle")
@@ -658,8 +664,8 @@ export class ScreenSequence
             this.AdmitRegion("preview-orbit", 78, 248, 640, 400, null, { Orbit: true });
             this.RasterText("YOUR GARAGE", 762, 291, 12, "#98a98f");
             this.RasterText("ControlVehicle", 760, 349, 39, "#dce8cc", "left", 300);
-            this.RasterText("The car in the well is your car, rendered live — it only", 763, 392, 17, "#849c81");
-            this.RasterText("turns on its turntable. Drag to look around it.", 763, 418, 17, "#849c81");
+            this.RasterText("The car in the well is your car, in the studio, rendered", 763, 392, 17, "#849c81");
+            this.RasterText("live. The camera holds still — drag to look around it.", 763, 418, 17, "#849c81");
             // 📝 Paint is the only vehicle control for now: eight finishes, applied to the live vehicle
             //    material — the well, the mirrors and the car in the world all wear it at once.
             this.RasterText("PAINT", 763, 466, 12, "#98a98f");
@@ -667,7 +673,7 @@ export class ScreenSequence
             {
                 const Left = 762 + (Index % 2) * 128, Top = 488 + Math.floor(Index / 2) * 62;
                 this.RasterRectangle(Left, Top, 110, 44, 16, Paint.Hex, this.FinishColour === Paint.Hex ? "#e8e8d5" : null);
-                this.AdmitRegion("colour:" + Index, Left, Top, 110, 44, () => { this.FinishColour = Paint.Hex; this.Appearance?.Apply({ Colour: Paint.Hex }); this.Notice = Paint.Name + " applied to the live vehicle."; this.Dirty = true; }, { Material: { Kind: "paint", Colour: Paint.Hex } });
+                this.AdmitRegion("colour:" + Index, Left, Top, 110, 44, () => { this.FinishColour = Paint.Hex; this.BeginPaint(Paint, null); this.Notice = Paint.Name + " spreading from the nose…"; this.Dirty = true; }, { Material: { Kind: "paint", Colour: Paint.Hex } });
             }
             const Chosen = PaintOptions.find(Paint => Paint.Hex === this.FinishColour);
             this.RasterText(Chosen ? Chosen.Name : "Custom finish", 763, 488 + 4 * 62 + 16, 19, "#d7e7df");
@@ -812,9 +818,10 @@ export class ScreenSequence
                 const Valid = Material.Kind !== "wheel" ? Pick?.Family === CourseMaterial.BodyCoat
                     : Pick?.Occupant > 0 && [CourseMaterial.Hub, CourseMaterial.RimBase].includes(Pick?.Family);
                 if (Valid) {
-                    this.Appearance?.Apply(Material.Kind === "paint" ? { Colour: Material.Colour } : Material.Kind === "finish" ? { Matte: Material.Matte } : { DarkWheels: Material.DarkWheels, BlueRims: Material.BlueRims });
+                    if (Material.Kind === "paint") { const Paint = PaintOptions.find(Option => Option.Hex === Material.Colour); this.BeginPaint(Paint ?? { Hex: Material.Colour }, Pick?.BodyPoint ?? null); }
+                    else this.Appearance?.Apply(Material.Kind === "finish" ? { Matte: Material.Matte } : { DarkWheels: Material.DarkWheels, BlueRims: Material.BlueRims });
                     if (Material.Colour) this.FinishColour = Material.Colour;
-                    this.Notice = "Material applied to the preview and driven car.";
+                    this.Notice = "Finish spreading from where it landed — watch it cover the car.";
                 } else this.Notice = Inside ? "Drop paint on the body or rim material on a rim." : "Material drop cancelled.";
                 this.DragMaterial = null;
             }
