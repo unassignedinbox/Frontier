@@ -55,10 +55,39 @@ struct ForwardVarying
     @location(5) Barycentric                : vec3f,
 }
 
+const StudioOccupantSentinel : u32 = 0xFFFFFFFFu;
+const StudioSoftboxFamily    : u32 = 90u;
+const HeadlightLensFamily    : u32 = 13u;
+const StudioGroundOffsetZ    : f32 = 0.53;
+
 @vertex
 fn ForwardVertex(@location(0) Position: vec3f, @location(1) Family: u32, @location(2) Normal: vec3f,
                  @location(3) OccupantOffset: u32, @builtin(instance_index) OccupantIndex: u32, @builtin(vertex_index) VertexIndex: u32) -> ForwardVarying
 {
+    var Varying: ForwardVarying;
+    Varying.Barycentric = vec3f(select(0.0, 1.0, VertexIndex % 3u == 0u), select(0.0, 1.0, VertexIndex % 3u == 1u), select(0.0, 1.0, VertexIndex % 3u == 2u));
+
+    // 📝 The Garage's Lobby studio stage rides horizontally around Occupants[0] so both Lobby.html and index.html
+    //    show the exact same seamless cyclorama cove, overhead softbox, ceiling trusses and hero turntable.
+    if (OccupantOffset == StudioOccupantSentinel)
+    {
+        let Body = Occupants[0];
+        let RawForward = vec2f(Body.LocalToWorld[0].x, Body.LocalToWorld[0].y);
+        let ForwardLen = max(length(RawForward), 1.0e-5);
+        let ForwardXY  = RawForward / ForwardLen;
+        let LeftXY     = vec2f(-ForwardXY.y, ForwardXY.x);
+        let Origin     = Body.LocalToWorld[3].xyz;
+        let WorldXYZ   = Origin + vec3f(ForwardXY * Position.x + LeftXY * Position.y, Position.z);
+        let WorldNorm  = vec3f(ForwardXY * Normal.x + LeftXY * Normal.y, Normal.z);
+        Varying.Position      = View.ViewProjection * vec4f(WorldXYZ, 1.0);
+        Varying.Normal        = WorldNorm;
+        Varying.Family        = Family;
+        Varying.WorldPosition = WorldXYZ;
+        Varying.Vehicle       = 0u;
+        Varying.BodyLocal     = Position;
+        return Varying;
+    }
+
     let Index = OccupantIndex + OccupantOffset;
     let Occupant = Occupants[Index];
     var Moved: DeformedVertex;
@@ -73,13 +102,11 @@ fn ForwardVertex(@location(0) Position: vec3f, @location(1) Family: u32, @locati
         Moved = DeformBodyVertex(Family, Position, Normal);
     }
     let World = Occupant.LocalToWorld * vec4f(Moved.Position, 1.0);
-    var Varying: ForwardVarying;
     Varying.Position = View.ViewProjection * World;
     Varying.Normal = (Occupant.LocalToWorld * vec4f(Moved.Normal, 0.0)).xyz;
     Varying.Family = select(Family, Occupant.MaterialOverride, Occupant.MaterialOverride != NoMaterialOverride);
     Varying.WorldPosition = World.xyz;
-    Varying.Vehicle = select(0u, 1u, Index < 5u);
-    Varying.Barycentric = vec3f(select(0.0, 1.0, VertexIndex % 3u == 0u), select(0.0, 1.0, VertexIndex % 3u == 1u), select(0.0, 1.0, VertexIndex % 3u == 2u));
+    Varying.Vehicle = select(select(0u, 1u, Index < 5u), 1u, View.Camera.w > 0.5);
     Varying.BodyLocal = (Occupants[0].WorldToLocal * World).xyz;
     return Varying;
 }
@@ -174,17 +201,114 @@ fn SampleStudioEnvironment(Direction: vec3f, Roughness: f32) -> vec3f
     return SkyDome + vec3f(1.55, 1.62, 1.72) * Softbox + vec3f(0.32, 0.42, 0.58) * Horizon;
 }
 
+// 📝 Shade the Lobby studio architecture (cyclorama cove, turntable, polished floor, trusses & overhead softbox)
+//    matching LobbyPreview.png: crisp luminous overhead softbox band, moody mid-grey cyclorama cove wall, bright
+//    illuminated white/light-grey turntable & floor pool, crisp turntable seam, and deep under-vehicle shadow.
+fn ShadeLobbyStudioSurface(Family: u32, BodyLocal: vec3f, WorldPosition: vec3f, WorldNormal: vec3f, ViewDirection: vec3f, HoloAmt: f32) -> vec4f
+{
+    let Dim = mix(0.66, 0.44, HoloAmt);
+    if (Family == StudioSoftboxFamily)
+    {
+        return vec4f(vec3f(0.98, 0.99, 1.0) * mix(0.96, 0.78, HoloAmt), 1.0);
+    }
+
+    let Surface = ProjectSurfaceSample(Materials[Family]);
+    let Albedo  = ResolveDiffuseAlbedo(Surface);
+    let Body    = Occupants[0];
+    let RawFwd  = vec2f(Body.LocalToWorld[0].x, Body.LocalToWorld[0].y);
+    let FwdXY   = RawFwd / max(length(RawFwd), 1.0e-5);
+    let LeftXY  = vec2f(-FwdXY.y, FwdXY.x);
+
+    let StudioPos = BodyLocal + vec3f(0.0, 0.0, StudioGroundOffsetZ);
+    let LocalN    = normalize(vec3f(dot(WorldNormal.xy, FwdXY), dot(WorldNormal.xy, LeftXY), WorldNormal.z));
+    let LocalV    = normalize(vec3f(dot(ViewDirection.xy, FwdXY), dot(ViewDirection.xy, LeftXY), ViewDirection.z));
+
+    // Downward pool from the overhead softbox: bright studio floor & turntable, falling off toward the 20 m cove wall
+    var SoftboxPool = 0.0;
+    for (var Tap = -1; Tap <= 1; Tap++)
+    {
+        let Emitter = vec3f(f32(Tap) * 5.0, 0.0, 5.45);
+        let Delta   = Emitter - StudioPos;
+        let DistSq  = dot(Delta, Delta);
+        let InvDist = inverseSqrt(max(DistSq, 1.0e-4));
+        let L       = Delta * InvDist;
+        let CosDown = clamp(-L.z, 0.0, 1.0);
+        let CosSurf = clamp(dot(LocalN, L), 0.0, 1.0);
+        SoftboxPool += (32.0 * pow(CosDown, 2.15) * CosSurf) / (10.0 + DistSq);
+    }
+
+    // Moody studio cyclorama wall illumination (LobbyPreview.png: mid-grey #5c6066..#787c82 gradient rising toward softbox)
+    let FloorUp    = clamp(LocalN.z, 0.0, 1.0);
+    let WallWeight = 1.0 - FloorUp;
+    let WallGrad   = (0.095 + 0.095 * smoothstep(0.2, 5.3, StudioPos.z)) * WallWeight;
+    let FloorBase  = 0.14 * FloorUp;
+
+    // Deep under-vehicle chassis & four-tyre contact shadow on the turntable floor
+    var Occlusion = 1.0;
+    if (StudioPos.z < 0.06 && FloorUp > 0.5)
+    {
+        let Box      = abs(StudioPos.xy) - vec2f(2.55, 1.00);
+        let BoxDist  = length(max(Box, vec2f(0.0))) + min(max(Box.x, Box.y), 0.0);
+        let UnderCar = 0.78 * (1.0 - smoothstep(-0.20, 0.45, BoxDist)) + 0.18 * (1.0 - smoothstep(0.0, 1.55, BoxDist));
+        let WheelA   = min(length(StudioPos.xy - vec2f( 1.73,  1.05)), length(StudioPos.xy - vec2f( 1.73, -1.05)));
+        let WheelB   = min(length(StudioPos.xy - vec2f(-1.67,  1.05)), length(StudioPos.xy - vec2f(-1.67, -1.05)));
+        let TyrePad  = 0.65 * (1.0 - smoothstep(0.16, 0.48, min(WheelA, WheelB)));
+        let ShadowStrength = select(1.0, 0.38, View.Inspection.x > 0.5 && View.Inspection.x < 2.5);
+        Occlusion = 1.0 - clamp(max(UnderCar, TyrePad) * ShadowStrength, 0.0, 0.90);
+    }
+
+    // Accentuate the hairline turntable seam ring (Family == 2u Surround at r = 4.65 m) so it reads crisply at any resolution
+    let SeamBoost = select(1.0, 0.52, Family == 2u);
+    var Radiance  = Albedo * SeamBoost * ((SoftboxPool + FloorBase) * Occlusion + WallGrad) * vec3f(0.97, 0.985, 1.0);
+
+    // Polished StudioFloor & StudioTurntable reflection of the overhead softbox + subtle live body-coat bounce
+    if (StudioPos.z < 0.06 && FloorUp > 0.5 && Surface.Roughness < 0.25)
+    {
+        let Refl = reflect(-LocalV, LocalN);
+        if (Refl.z > 0.02)
+        {
+            let T      = (5.45 - StudioPos.z) / Refl.z;
+            let HitXY  = StudioPos.xy + Refl.xy * T;
+            let InSoft = smoothstep(12.0, 8.5, abs(HitXY.x)) * smoothstep(12.0, 8.5, abs(HitXY.y));
+            let Fres   = 0.06 + 0.48 * pow(1.0 - clamp(LocalV.z, 0.0, 1.0), 3.6);
+            Radiance  += vec3f(0.96, 0.98, 1.0) * InSoft * Fres * (1.0 - Surface.Roughness * 2.4) * Occlusion * 0.62;
+        }
+        let CoatSurface = ResolveForwardSurface(BodyCoatFamilyIndex, vec3f(clamp(StudioPos.x, -2.5, 2.5), clamp(StudioPos.y, -1.0, 1.0), 0.2));
+        let FlankBox    = abs(StudioPos.xy) - vec2f(2.65, 1.12);
+        let FlankDist   = length(max(FlankBox, vec2f(0.0)));
+        let PaintBounce = exp(-FlankDist * 1.35) * smoothstep(-0.3, 0.25, max(FlankBox.x, FlankBox.y));
+        Radiance       += CoatSurface.Albedo * PaintBounce * 0.12;
+    }
+
+    Radiance *= Dim;
+    let Mapped = Radiance * 1.55 / (vec3f(1.0) + Radiance * 1.55);
+    return vec4f(Mapped, 1.0);
+}
+
 @fragment
 fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
 {
+    let Studio = View.Camera.w > 0.5;
+    let HoloAmt = clamp(View.Inspection.z, 0.0, 1.0);
+    let ViewDirection = normalize(View.Camera.xyz - Varying.WorldPosition);
+    var Normal = normalize(Varying.Normal);
+    if (dot(Normal, ViewDirection) < 0.0)
+    {
+        Normal = -Normal;
+    }
+
+    if (Studio && Varying.Vehicle == 0u)
+    {
+        return ShadeLobbyStudioSurface(Varying.Family, Varying.BodyLocal, Varying.WorldPosition, Normal, ViewDirection, HoloAmt);
+    }
+
     if (Varying.Vehicle == 1u)
     {
         if (Varying.Family == MirrorGlassFamily)
         {
             discard;
         }
-        // In studio mode, render smoked glazing slightly translucent rather than invisible so the car silhouette reads whole.
-        if (View.Camera.w < 0.5 && Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5)
+        if (!Studio && Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5)
         {
             discard;
         }
@@ -194,13 +318,11 @@ fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
         }
     }
 
-    let Studio = View.Camera.w > 0.5;
     var SolidAlpha = 1.0;
     if (Studio)
     {
         let ViewMode = View.Inspection.x;
         let ScanX    = View.Inspection.y;
-        let HoloAmt  = clamp(View.Inspection.z, 0.0, 1.0);
         if (ViewMode > 0.5 && ViewMode < 2.5)
         {
             SolidAlpha = 1.0 - HoloAmt;
@@ -222,11 +344,13 @@ fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
     }
 
     var Surface = ResolveForwardSurface(Varying.Family, Varying.BodyLocal);
-    let ViewDirection = normalize(View.Camera.xyz - Varying.WorldPosition);
-    var Normal = normalize(Varying.Normal);
-    if (dot(Normal, ViewDirection) < 0.0)
+    if (Studio && Varying.Family == HeadlightLensFamily)
     {
-        Normal = -Normal;
+        // Match Lobby.html's smoked studio headlight lenses (IlluminationHost.js) so the nose doesn't blow out.
+        Surface.Albedo     = vec3f(0.05, 0.055, 0.06);
+        Surface.Emission   = vec3f(0.0);
+        Surface.Roughness  = 0.08;
+        Surface.CoatWeight = 1.0;
     }
 
     if (Studio)

@@ -229,8 +229,8 @@ fn OverlayFragment(Varying: OverlayVarying) -> @location(0) vec4f
             if (Well > 0.0)
             {
                 let Inside = (Varying.Coordinates - Overlay.Preview.xy) / max(Overlay.Preview.zw - Overlay.Preview.xy, vec2f(1.0e-5));
-                let Backdrop = ResolveStudioStageBackdrop(Inside);
                 let CarSample = textureSampleLevel(PreviewTexture, LinearSampler, Inside, 0.0);
+                let Backdrop = select(vec3f(0.0), ResolveStudioStageBackdrop(Inside), CarSample.a < 0.999);
                 let Composed = ApplyScanHudOverlay(CarSample.rgb + Backdrop * (1.0 - CarSample.a), Inside);
                 Picture = mix(Picture, Composed, Well);
             }

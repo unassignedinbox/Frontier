@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { VehicleAppearance, LinearColour, InspectionView } from '../Source/VehicleAppearance.js';
 import { ConstructMaterialSpecification, CourseMaterial } from '../Source/MaterialSpecification.js';
 import { ScreenSequence } from '../Source/Cabin/ScreenSequence.js';
+import { EmitLobbyGroundFacets, LobbyShapes } from '../Source/LobbyStructure.js';
 
 function ConstructHeadlessGarage(Pick = () => ({ Occupant: 0, Family: CourseMaterial.BodyCoat, BodyPoint: [1.35, -0.58, 0.44] })) {
     const Screen = Object.create(ScreenSequence.prototype);
@@ -133,3 +134,21 @@ test('rim finish changes affect selected accent faces, never the black rim base 
     Appearance.Apply({ DarkWheels: false, BlueRims: true });
     assert.ok(Materials[CourseMaterial.Hub].Emission[2] > 0);
 });
+
+test('Garage Lobby studio stage emits floor, hero turntable, seam ring, cove wall, and overhead softbox', () => {
+    const FullLobby = EmitLobbyGroundFacets();
+    const GarageStage = EmitLobbyGroundFacets({ Guests: false });
+    assert.ok(GarageStage.length > 0 && GarageStage.length < FullLobby.length);
+    const Families = new Set(GarageStage.map(Facet => Facet.Family));
+    assert.ok(Families.has(CourseMaterial.StudioSurround));
+    assert.ok(Families.has(CourseMaterial.StudioFloor));
+    assert.ok(Families.has(CourseMaterial.StudioTurntable));
+    assert.ok(Families.has(CourseMaterial.Surround));
+
+    const CoveFamilies = new Set(LobbyShapes.Cyclorama.Emit().map(Facet => Facet.Family));
+    const SoftboxFamilies = new Set(LobbyShapes.Softbox.Emit().map(Facet => Facet.Family));
+    assert.ok(CoveFamilies.has(CourseMaterial.StudioWall));
+    assert.ok(SoftboxFamilies.has(CourseMaterial.StudioSoftbox));
+    assert.ok(SoftboxFamilies.has(CourseMaterial.StudioFrame));
+});
+

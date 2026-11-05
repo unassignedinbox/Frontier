@@ -24,12 +24,15 @@ import { PickVehicle } from "./VehiclePicking.js";
 
 import { CabinLayout, ClusterHexagon, ExtractGlassFacets, ResolveCockpitFrame, PlaceSeatedEye, SeatHipPoints, ResolveTabletScale } from "./CabinStructure.js";
 import { CourseMaterial } from "./MaterialSpecification.js";
+import { LobbyShapes, ResolveLobbyPlacements, EmitLobbyGroundFacets } from "./LobbyStructure.js";
+import { VehicleGeometry } from "./VehicleSpecification.js";
 import { VertexStride } from "./FacetStructure.js";
 import { TransformPoint, TransformDirection, MultiplyTransform, ConstructViewTransform, SubtractVector, AddVector, ScaleVector,
          DotVector, CrossVector, NormalizeVector, LengthVector, InvertTransform } from "./TransformProjection.js";
 
 const OverlayFloats  = 10;                  // position xyz, kind (u32), normal xyz, layer, uv
 const ViewStride     = 256;                 // [B] dynamic-offset alignment
+const StudioOccupantSentinel = 0xFFFFFFFF;  // [-] marks Lobby studio vertices in RecordPreview
 const MirrorExtent   = [352, 192];          // [px]
 const PreviewExtent  = [1024, 640];         // [px] the 640 × 400 well at the panel's 1.6×
 const TabletPixels   = [1920, 1200];        // [px] 1200 × 750 at 1.6×
@@ -60,8 +63,8 @@ export class CabinSequence
         this.Clock    = 0.0;
         this.MirrorCursor = 0;
         this.MirrorsRendered = 0;
-        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: false, Dirty: true, Yaw: -2.48, Pitch: 0.20,
-                          Orbit: (Yaw, Pitch) => { this.Preview.Yaw += Yaw; this.Preview.Pitch = Math.max(-0.08, Math.min(0.9, this.Preview.Pitch + Pitch)); } };
+        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: false, Dirty: true, Yaw: -2.48, Pitch: 0.11,
+                          Orbit: (Yaw, Pitch) => { this.Preview.Yaw += Yaw; this.Preview.Pitch = Math.max(0.02, Math.min(0.75, this.Preview.Pitch + Pitch)); } };
         this.Metrics  = { TabletUploads: 0, ClusterUploads: 0, MirrorPasses: 0, PreviewPasses: 0, Hmi: "starting" };
         this.LiveRevision = -1;
         this.PumpedPressure = null;
@@ -113,6 +116,9 @@ export class CabinSequence
         this.OverlayVertexCount = Vertices.length / OverlayFloats;
         this.OverlayRecords = Exchange.ConstructRecordsFrom(Scalars, GPUBufferUsage.VERTEX, "Cabin overlay vertices");
         this.OverlayUniform = Exchange.ConstructRecords(80, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Cabin overlay record");
+
+        // ①b the Lobby studio stage for the Garage preview (cyclorama cove, ceiling trusses, overhead softbox, hero turntable)
+        this.ConstructStudioPreviewRecords();
 
         // ② textures: the two canvases, the preview, the mirrors
         const Texture = (Label, Size, Format, Usage, Layers = 1) => Exchange.ConstructTexture({ label: Label, size: [Size[0], Size[1], Layers], format: Format, usage: Usage });
@@ -182,6 +188,72 @@ export class CabinSequence
 
         // ⑤ the HMI itself, when this host can draw 2D canvases (the headless harness cannot)
         this.ConstructHmi().catch((Failure) => { this.Metrics.Hmi = `unavailable: ${Failure && Failure.message ? Failure.message : Failure}`; });
+    }
+
+    ConstructStudioPreviewRecords()
+    {
+        const GroundZ = -VehicleGeometry.CoMHeight;
+        const StudioFacets = [];
+        for (const Facet of EmitLobbyGroundFacets({ Guests: false }))
+        {
+            StudioFacets.push({
+                Family: Facet.Family,
+                Corners: Facet.Corners.map(([X, Y, Z]) => [X, Y, Z + GroundZ])
+            });
+        }
+        const ShapeBank = {};
+        for (const Placement of ResolveLobbyPlacements())
+        {
+            // Size the Garage preview's overhead softbox symmetrically (22 m × 22 m at z = 5.45 m) so every 360° orbit
+            // angle frames the same clean horizontal softbox band at the top of the studio cove as LobbyPreview.png.
+            if (Placement.Shape === "Softbox")
+            {
+                const SoftboxFacets = LobbyShapes.Softbox.Emit();
+                for (const Facet of SoftboxFacets)
+                {
+                    StudioFacets.push({
+                        Family: Facet.Family,
+                        Corners: Facet.Corners.map(([X, Y, Z]) => [X * (22.0 / 24.0), Y * (22.0 / 11.0), 5.45 + Z + GroundZ])
+                    });
+                }
+                continue;
+            }
+            if (!ShapeBank[Placement.Shape])
+                ShapeBank[Placement.Shape] = LobbyShapes[Placement.Shape].Emit();
+            const [PX, PY, PZ] = Placement.Position;
+            const Cos = Math.cos(Placement.Yaw || 0.0), Sin = Math.sin(Placement.Yaw || 0.0);
+            for (const Facet of ShapeBank[Placement.Shape])
+            {
+                StudioFacets.push({
+                    Family: Placement.Material >= 0 ? Placement.Material : Facet.Family,
+                    Corners: Facet.Corners.map(([X, Y, Z]) => [PX + X * Cos - Y * Sin, PY + X * Sin + Y * Cos, PZ + Z + GroundZ])
+                });
+            }
+        }
+        this.StudioVertexCount = StudioFacets.length * 3;
+        const Bytes = new ArrayBuffer(this.StudioVertexCount * VertexStride);
+        const Floats = new Float32Array(Bytes);
+        const Words = new Uint32Array(Bytes);
+        let Cursor = 0;
+        for (const Facet of StudioFacets)
+        {
+            const [A, B, C] = Facet.Corners;
+            const Normal = NormalizeVector(CrossVector(SubtractVector(B, A), SubtractVector(C, A)));
+            for (const Corner of Facet.Corners)
+            {
+                const Offset = Cursor * 8;
+                Floats[Offset + 0] = Corner[0];
+                Floats[Offset + 1] = Corner[1];
+                Floats[Offset + 2] = Corner[2];
+                Words[Offset + 3]  = Facet.Family;
+                Floats[Offset + 4] = Normal[0];
+                Floats[Offset + 5] = Normal[1];
+                Floats[Offset + 6] = Normal[2];
+                Words[Offset + 7]  = StudioOccupantSentinel;
+                ++Cursor;
+            }
+        }
+        this.StudioVertexRecords = this.Exchange.ConstructRecordsFrom(Floats, GPUBufferUsage.VERTEX, "Garage Lobby studio vertices");
     }
 
     ClearCanvasTextures()
@@ -422,16 +494,16 @@ export class CabinSequence
         this.Metrics.MirrorPasses++;
     }
 
-    // 📝 The Garage's studio: the car alone on its turntable, its own camera and three lights, plus X-ray pass when active.
+    // 📝 The Garage's studio: the Lobby studio itself (cyclorama cove, ceiling, softbox, single hero turntable) + X-ray pass when active.
     RecordPreview(Encoder, Scene, VertexRecords, BodyTransform)
     {
-        const Centre = TransformPoint(BodyTransform, [0.0, 0.0, 0.15]);
+        const Centre = TransformPoint(BodyTransform, [0.0, 0.0, 0.42]);
         const Heading = Math.atan2(BodyTransform[1], BodyTransform[0]);
-        const Yaw = Heading + Math.PI + this.Preview.Yaw, Pitch = this.Preview.Pitch, Distance = 8.0;
+        const Yaw = Heading + Math.PI + this.Preview.Yaw, Pitch = this.Preview.Pitch, Distance = 9.2;
         const Eye = [Centre[0] + Distance * Math.cos(Pitch) * Math.cos(Yaw), Centre[1] + Distance * Math.cos(Pitch) * Math.sin(Yaw),
                      Centre[2] + Distance * Math.sin(Pitch)];
         const View = ConstructViewTransform(Eye, Centre);
-        const Aspect = PreviewExtent[0] / PreviewExtent[1], Fov = 30.0 * Math.PI / 180.0, Near = 0.1, Far = 60.0;
+        const Aspect = PreviewExtent[0] / PreviewExtent[1], Fov = 38.0 * Math.PI / 180.0, Near = 0.1, Far = 80.0;
         const F = 1.0 / Math.tan(0.5 * Fov);
         const Projection = new Float32Array([F / Aspect, 0, 0, 0, 0, F, 0, 0, 0, 0, Far / (Near - Far), -1, 0, 0, Near * Far / (Near - Far), 0]);
         const Back = NormalizeVector(SubtractVector(Eye, Centre));
@@ -449,11 +521,16 @@ export class CabinSequence
         const PreviewDepthView = this.PreviewDepth.createView();
         const Pass = Encoder.beginRenderPass({
             label: "Garage preview",
-            colorAttachments: [{ view: PreviewView, clearValue: [0.0, 0.0, 0.0, 0.0], loadOp: "clear", storeOp: "store" }],
+            colorAttachments: [{ view: PreviewView, clearValue: [0.03, 0.032, 0.036, 1.0], loadOp: "clear", storeOp: "store" }],
             depthStencilAttachment: { view: PreviewDepthView, depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "store" }
         });
         Pass.setPipeline(this.PreviewProgram);
         Pass.setBindGroup(0, this.ForwardGroup, [3 * ViewStride]);
+        if (this.StudioVertexRecords && this.StudioVertexCount > 0)
+        {
+            Pass.setVertexBuffer(0, this.StudioVertexRecords);
+            Pass.draw(this.StudioVertexCount, 1, 0, 0);
+        }
         Pass.setVertexBuffer(0, VertexRecords);
         for (const Run of Scene.DrawRuns)
         {
