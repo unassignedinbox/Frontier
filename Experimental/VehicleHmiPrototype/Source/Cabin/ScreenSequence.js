@@ -1,5 +1,5 @@
 import { CourseMaterial } from "../MaterialSpecification.js";
-import { PaintOptions } from "../VehicleAppearance.js";
+import { PaintOptions, WheelOptions, InspectionView, InspectionLabels } from "../VehicleAppearance.js";
 //============================================================================================================================================
 //                                                            SCREENSEQUENCE.JS
 //============================================================================================================================================
@@ -43,7 +43,8 @@ export class ScreenSequence
         this.MessageDraft = "";
         this.Messages = [{ From: "Amelia", Text: "Same road. New adventure?" }, { From: "You", Text: "See you in the Drive Room." }];
         this.TextTarget = "";
-        this.FinishColour = "#a4d8be";
+        this.FinishColour = "#c2c8d0";
+        this.WheelId = "beadlock";
         this.Notice = "";
         this.Clock = "";
         this.ActiveTextInput = null;
@@ -477,9 +478,11 @@ export class ScreenSequence
         this.RasterText(Application.Name, 273, 136, 35, "#e3eddd", "left", 300);
         this.RasterText(Application.Caption, 274, 164, 15, "#879e89");
         this.RasterText("LOCAL DEMONSTRATION", 1140, 133, 10, "#8ea18c", "right");
-        this.RasterRectangle(48, 209, 1104, 430, 28, "#ffffff06", "#ffffff0b");
+        this.RasterRectangle(48, 209, 1104, 444, 28, "#ffffff06", "#ffffff0b");
         this.RasterApplicationContent(Application.Identifier);
-        this.RasterText(this.Notice || (Application.Identifier === "garage" ? "Live vehicle materials · drag a swatch onto the body, or rim material onto a rim" : "Design prototype · online services are not connected"), 64, 665, 12, "#708875");
+        this.RasterText(this.Notice || (Application.Identifier === "garage"
+            ? "Click a swatch to sweep paint across the car · drag & drop onto the vehicle to expand radially · try X-Ray Scan, Ghost & Wireframe"
+            : "Design prototype · online services are not connected"), 64, 668, 12, "#789598");
         this.RasterFooter();
     }
 
@@ -635,43 +638,171 @@ export class ScreenSequence
         else if (Identifier === "garage")
         {
             const Preview = this.Preview;
+            const Appearance = this.Appearance;
+            const ActiveColour = (Appearance?.Colour || this.FinishColour || "#c2c8d0").toLowerCase();
+            const ActiveMatte = Boolean(Appearance?.Matte);
+            const ActiveWheelId = Appearance?.WheelId || this.WheelId || "beadlock";
+            const ActiveView = Appearance?.View ?? InspectionView.Solid;
+
+            // Stage header strip above the 640 × 400 3D studio well
+            this.RasterText("STUDIO CONFIGURATOR  ·  360° INTERACTIVE STAGE", 82, 236, 10.5, "#8aa6b2", "left", 500);
+            if (ActiveView !== InspectionView.Solid)
+            {
+                const StatusText = ActiveView === InspectionView.Scan
+                    ? "● PERCEPTION SCAN ACTIVE"
+                    : ActiveView === InspectionView.Ghost ? "● GHOST HOLOGRAM" : "● STRUCTURAL WIREFRAME";
+                this.RasterRectangle(516, 219, 202, 23, 11.5, "#38bdf824", "#7dd3fc88");
+                this.RasterText(StatusText, 617, 234, 10, "#bdf0ff", "center", 500);
+            }
+            else
+            {
+                this.RasterText("DRAG TO ORBIT · DROP SWATCH ON CAR", 714, 236, 10, "#708c8d", "right");
+            }
+
             // 📝 The preview target is 640 × 400; draw it 1:1 so the car is never squashed into the page layout.
-            if (this.DragMaterial) this.RasterRectangle(74, 244, 648, 408, 24, "#a4d8be");
-            this.RasterRectangle(78, 248, 640, 400, 22, "#0d1416");
+            if (this.DragMaterial) this.RasterRectangle(75, 245, 646, 406, 24, "#38bdf826", "#7dd3fcad");
+            this.RasterRectangle(78, 248, 640, 400, 22, "#080d13", "#ffffff16");
             if (Preview?.External)
             {
-                // Cabin: the host renders the car into a texture the overlay composites here — leave the well dark.
-                this.RasterText(Preview.Facets.toLocaleString("en-GB") + " facets · ControlVehicle · rendered live by the exhibit", 96, 630, 13, "#8fa89c");
+                // Cabin: the host renders the car into PreviewTexture and CabinOverlay composites it into this well.
+                this.RasterText((Preview.Facets || 0).toLocaleString("en-GB") + " facets · ControlVehicle · live studio & world sync", 96, 634, 11.5, "#8ca7b2");
             }
-            else if (Preview?.Loaded)
+            else if (Preview?.Loaded && this.Context)
             {
                 const Context = this.Context;
                 Context.save();
                 Context.beginPath(); Context.roundRect(78, 248, 640, 400, 22); Context.clip();
-                // 📝 GL render targets are bottom-up; flip once while compositing so the car sits on its wheels.
                 Context.translate(78, 648); Context.scale(1, -1);
                 Context.drawImage(Preview.Readback, 0, 0, 640, 400);
                 Context.restore();
-                this.RasterText(Preview.Facets.toLocaleString("en-GB") + " facets · ControlVehicle · own camera & lighting", 96, 630, 13, "#8fa89c");
+                this.RasterText((Preview.Facets || 0).toLocaleString("en-GB") + " facets · ControlVehicle · own camera & lighting", 96, 634, 11.5, "#8ca7b2");
             }
-            else this.RasterText(Preview?.Failure ? "Preview unavailable: " + Preview.Failure : "Loading your car…", 428, 455, 20, "#7d968b", "center");
+            else this.RasterText(Preview?.Failure ? "Preview unavailable: " + Preview.Failure : "Loading your car…", 398, 452, 19, "#7d968b", "center");
             this.AdmitRegion("preview-orbit", 78, 248, 640, 400, null, { Orbit: true });
-            this.RasterText("YOUR GARAGE", 762, 291, 12, "#98a98f");
-            this.RasterText("ControlVehicle", 760, 349, 39, "#dce8cc", "left", 300);
-            this.RasterText("The car in the well is your car, rendered live — it only", 763, 392, 17, "#849c81");
-            this.RasterText("turns on its turntable. Drag to look around it.", 763, 418, 17, "#849c81");
-            // 📝 Paint is the only vehicle control for now: eight finishes, applied to the live vehicle
-            //    material — the well, the mirrors and the car in the world all wear it at once.
-            this.RasterText("PAINT", 763, 466, 12, "#98a98f");
+
+            // Right configurator card (x = 736..1136, y = 217..648)
+            this.RasterRectangle(736, 217, 400, 431, 22, "#070c12d8", "#ffffff16");
+
+            // ① Exterior Paint Header + 4×2 Swatch Grid
+            const ChosenPaint = PaintOptions.find(Paint => Paint.Hex.toLowerCase() === ActiveColour) || PaintOptions[0];
+            const CoatTag = ActiveMatte ? "SATIN MATTE" : (ChosenPaint.Metallic ? "METALLIC GLOSS" : "GLOSS COAT");
+            this.RasterText("EXTERIOR PAINT", 756, 240, 10, "#7fa0ad", "left", 500);
+            this.RasterText(CoatTag, 1116, 240, 10, "#7dd3fc", "right", 500);
+            this.RasterText(ChosenPaint.Name, 756, 267, 22, "#eef5f8", "left", 400);
+            this.RasterText("TAP SWEEP · DRAG RADIAL", 1116, 266, 9.5, "#6c8793", "right");
+
             for (const [Index, Paint] of PaintOptions.entries())
             {
-                const Left = 762 + (Index % 2) * 128, Top = 488 + Math.floor(Index / 2) * 62;
-                this.RasterRectangle(Left, Top, 110, 44, 16, Paint.Hex, this.FinishColour === Paint.Hex ? "#e8e8d5" : null);
-                this.AdmitRegion("colour:" + Index, Left, Top, 110, 44, () => { this.FinishColour = Paint.Hex; this.Appearance?.Apply({ Colour: Paint.Hex }); this.Notice = Paint.Name + " applied to the live vehicle."; this.Dirty = true; }, { Material: { Kind: "paint", Colour: Paint.Hex } });
+                const Column = Index % 4, Row = Math.floor(Index / 4);
+                const Left = 756 + Column * 92, Top = 280 + Row * 55;
+                const Selected = Paint.Hex.toLowerCase() === ActiveColour;
+                const Hovered = this.Hovered === "colour:" + Index;
+                this.RasterRectangle(Left, Top, 84, 49, 12,
+                    Selected ? "#38bdf822" : Hovered ? "#ffffff13" : "#ffffff07",
+                    Selected ? "#7dd3fc" : Hovered ? "#ffffff2e" : "#ffffff12");
+                this.RasterPaintOrb(Left + 20, Top + 24.5, 12.5, Paint.Hex, Paint.Metallic && !Paint.DefaultMatte, Selected);
+                const Parts = Paint.Name.split(" ");
+                this.RasterText(Parts[0] || Paint.Name, Left + 38, Top + 21, 10.5, Selected ? "#f0f9ff" : "#d5e2e8", "left", Selected ? 500 : 400);
+                if (Parts[1]) this.RasterText(Parts[1], Left + 38, Top + 34, 10, Selected ? "#bae6fd" : "#8ba2ad");
+                this.AdmitRegion("colour:" + Index, Left, Top, 84, 49, () =>
+                {
+                    this.FinishColour = Paint.Hex;
+                    if (Appearance?.BeginPaintRipple)
+                        Appearance.BeginPaintRipple(Paint.Hex, null, { Matte: Paint.DefaultMatte, Metallic: Paint.Metallic });
+                    else
+                        Appearance?.Apply({ Colour: Paint.Hex, Matte: Paint.DefaultMatte, Metallic: Paint.Metallic });
+                    this.Notice = `${Paint.Name} sweeping across the live vehicle.`;
+                    this.Dirty = true;
+                }, { Material: { Kind: "paint", Colour: Paint.Hex, Name: Paint.Name, Matte: Paint.DefaultMatte, Metallic: Paint.Metallic } });
             }
-            const Chosen = PaintOptions.find(Paint => Paint.Hex === this.FinishColour);
-            this.RasterText(Chosen ? Chosen.Name : "Custom finish", 763, 488 + 4 * 62 + 16, 19, "#d7e7df");
-            this.RasterText("Click a finish, or drag one onto the car.", 763, 488 + 4 * 62 + 44, 14, "#849c81");
+
+            // ② Coat Finish Segmented Control (Gloss Clearcoat / Satin Matte)
+            this.RasterText("COAT", 756, 416, 10, "#7fa0ad", "left", 500);
+            this.RasterRectangle(804, 396, 312, 32, 10, "#04070b", "#ffffff14");
+            for (const [Index, Option] of [{ Id: "finish:gloss", Label: "Gloss Clearcoat", Matte: false },
+                                           { Id: "finish:matte", Label: "Satin Matte", Matte: true }].entries())
+            {
+                const Left = 807 + Index * 154, Selected = ActiveMatte === Option.Matte;
+                this.RasterRectangle(Left, 399, 152, 26, 8, Selected ? "#ffffff1e" : "#00000000", Selected ? "#ffffff38" : null);
+                this.RasterText(Option.Label, Left + 76, 416, 11.5, Selected ? "#f2f8fb" : "#879ea9", "center", Selected ? 500 : 400);
+                this.AdmitRegion(Option.Id, Left, 399, 152, 26, () =>
+                {
+                    if (Appearance?.BeginPaintRipple)
+                        Appearance.BeginPaintRipple(Appearance.Colour || this.FinishColour, null, { Matte: Option.Matte });
+                    else
+                        Appearance?.Apply({ Matte: Option.Matte });
+                    this.Notice = `${Option.Label} finish sweeping across the body.`;
+                    this.Dirty = true;
+                }, { Material: { Kind: "finish", Matte: Option.Matte, Name: Option.Label, Colour: ActiveColour } });
+            }
+
+            // ③ Wheels & Rims (4 options, tap or drag onto a wheel)
+            const ChosenWheel = WheelOptions.find(Wheel => Wheel.Id === ActiveWheelId) || WheelOptions[0];
+            this.RasterText("WHEELS & RIMS", 756, 449, 10, "#7fa0ad", "left", 500);
+            this.RasterText(ChosenWheel.Name, 1116, 449, 10.5, "#cde0e8", "right", 500);
+            for (const [Index, Wheel] of WheelOptions.entries())
+            {
+                const Left = 756 + Index * 92, Top = 457;
+                const Selected = Wheel.Id === ActiveWheelId;
+                const Hovered = this.Hovered === "wheel:" + Index;
+                this.RasterRectangle(Left, Top, 84, 48, 12,
+                    Selected ? "#38bdf820" : Hovered ? "#ffffff12" : "#ffffff07",
+                    Selected ? "#7dd3fc" : Hovered ? "#ffffff2b" : "#ffffff12");
+                this.RasterWheelEmblem(Left + 20, Top + 24, 12, Wheel.RimHex, Selected);
+                const Parts = Wheel.Name.split(" ");
+                this.RasterText(Parts[0] || Wheel.Name, Left + 38, Top + 20.5, 10, Selected ? "#f0f9ff" : "#d4e1e7", "left", Selected ? 500 : 400);
+                if (Parts[1]) this.RasterText(Parts[1], Left + 38, Top + 33.5, 9.5, Selected ? "#bae6fd" : "#89a0ab");
+                this.AdmitRegion("wheel:" + Index, Left, Top, 84, 48, () =>
+                {
+                    this.WheelId = Wheel.Id;
+                    if (Appearance?.BeginWheelRipple)
+                        Appearance.BeginWheelRipple(Wheel.RimHex, null, { Machined: Wheel.Machined, WheelId: Wheel.Id });
+                    else
+                        Appearance?.Apply({ RimColour: Wheel.RimHex, MachinedWheels: Wheel.Machined, WheelId: Wheel.Id });
+                    this.Notice = `${Wheel.Name} applied to all four wheels.`;
+                    this.Dirty = true;
+                }, { Material: { Kind: "wheel", WheelId: Wheel.Id, Colour: Wheel.RimHex, RimHex: Wheel.RimHex, Machined: Wheel.Machined, Name: Wheel.Name } });
+            }
+
+            // ④ Inspection & X-Ray Modes (Solid · Ghost · Wireframe · X-Ray Scan)
+            this.RasterText("INSPECTION & X-RAY", 756, 526, 10, "#7fa0ad", "left", 500);
+            this.RasterText("PERCEPTION SUITE", 1116, 526, 9.5, "#67d4f8", "right", 500);
+            for (let Mode = 0; Mode < 4; ++Mode)
+            {
+                const Left = 756 + Mode * 92, Top = 534;
+                const Selected = ActiveView === Mode;
+                const Hovered = this.Hovered === "view:" + Mode;
+                const Label = InspectionLabels[Mode];
+                this.RasterRectangle(Left, Top, 84, 42, 11,
+                    Selected ? "#38bdf82e" : Hovered ? "#ffffff14" : "#ffffff07",
+                    Selected ? "#7dd3fc" : Hovered ? "#ffffff30" : "#ffffff14");
+                this.RasterText(Label, Left + 42, Top + 25, Mode === 3 ? 10.5 : 11.5, Selected ? "#e6f8ff" : "#cbdbe2", "center", Selected ? 500 : 400);
+                this.AdmitRegion("view:" + Mode, Left, Top, 84, 42, () =>
+                {
+                    if (Appearance?.SetInspectionView)
+                        Appearance.SetInspectionView(Mode);
+                    else if (Appearance)
+                        Appearance.View = Mode;
+                    this.Notice = Mode === InspectionView.Scan
+                        ? "X-Ray Perception Scan active · sweeping front-to-rear."
+                        : `${Label} view active in the Garage studio.`;
+                    this.Dirty = true;
+                });
+            }
+
+            // ⑤ Turntable Showcase Switch
+            const Spinning = Boolean(Preview?.Spin);
+            this.RasterRectangle(756, 588, 360, 38, 11, "#ffffff07", Spinning ? "#7dd3fc66" : "#ffffff12");
+            this.RasterText("Turntable Showcase", 772, 611, 12, "#d7e5eb", "left", 400);
+            this.RasterText(Spinning ? "AUTO-ROTATING" : "MANUAL ORBIT", 1048, 611, 9.5, Spinning ? "#7dd3fc" : "#7e96a1", "right", 500);
+            this.RasterRectangle(1058, 597, 42, 20, 10, Spinning ? "#38bdf855" : "#18222c", Spinning ? "#7dd3fc" : "#ffffff24");
+            this.RasterRectangle(Spinning ? 1081 : 1061, 600, 14, 14, 7, Spinning ? "#e0f7ff" : "#8ba0ab");
+            this.AdmitRegion("preview-spin", 756, 588, 360, 38, () =>
+            {
+                if (this.Preview) this.Preview.Spin = !this.Preview.Spin;
+                this.Notice = this.Preview?.Spin ? "Turntable Showcase rotation enabled." : "Turntable paused · drag the car to inspect any angle.";
+                this.Dirty = true;
+            });
         }
         else
         {
@@ -736,6 +867,83 @@ export class ScreenSequence
         this.Dirty = true;
     }
 
+    RasterPaintOrb(CentreX, CentreY, Radius, Hex, Glossy, Selected)
+    {
+        if (!this.Context)
+        {
+            this.RasterRectangle(CentreX - Radius, CentreY - Radius, Radius * 2, Radius * 2, Radius, Hex, Selected ? "#e0f7ff" : "#ffffff33");
+            return;
+        }
+        const Context = this.Context;
+        Context.save();
+        Context.beginPath();
+        Context.arc(CentreX, CentreY, Radius, 0, Math.PI * 2);
+        Context.fillStyle = Hex;
+        Context.fill();
+        const Sheen = Context.createRadialGradient(CentreX - Radius * 0.35, CentreY - Radius * 0.38, Radius * 0.08, CentreX, CentreY, Radius);
+        Sheen.addColorStop(0, Glossy ? "rgba(255, 255, 255, 0.58)" : "rgba(255, 255, 255, 0.22)");
+        Sheen.addColorStop(0.55, "rgba(255, 255, 255, 0.0)");
+        Sheen.addColorStop(1, "rgba(0, 0, 0, 0.42)");
+        Context.fillStyle = Sheen;
+        Context.fill();
+        Context.lineWidth = Selected ? 1.8 : 1.0;
+        Context.strokeStyle = Selected ? "#dff6ff" : "rgba(255, 255, 255, 0.28)";
+        Context.stroke();
+        Context.restore();
+    }
+
+    RasterWheelEmblem(CentreX, CentreY, Radius, RimHex, Selected)
+    {
+        if (!this.Context)
+        {
+            this.RasterRectangle(CentreX - Radius, CentreY - Radius, Radius * 2, Radius * 2, Radius, RimHex, Selected ? "#e0f7ff" : "#ffffff33");
+            return;
+        }
+        const Context = this.Context;
+        Context.save();
+        // Outer tyre ring
+        Context.beginPath();
+        Context.arc(CentreX, CentreY, Radius, 0, Math.PI * 2);
+        Context.fillStyle = "#12161c";
+        Context.fill();
+        Context.lineWidth = Selected ? 1.6 : 1.0;
+        Context.strokeStyle = Selected ? "#dff6ff" : "rgba(255, 255, 255, 0.22)";
+        Context.stroke();
+        // Alloy rim face
+        Context.beginPath();
+        Context.arc(CentreX, CentreY, Radius * 0.72, 0, Math.PI * 2);
+        Context.fillStyle = RimHex;
+        Context.fill();
+        // Spoke cutouts + hub cap
+        Context.strokeStyle = "rgba(8, 12, 18, 0.65)";
+        Context.lineWidth = 1.3;
+        for (let Spoke = 0; Spoke < 5; ++Spoke)
+        {
+            const Angle = Spoke * (Math.PI * 2 / 5) - Math.PI * 0.5;
+            Context.beginPath();
+            Context.moveTo(CentreX + Math.cos(Angle) * Radius * 0.22, CentreY + Math.sin(Angle) * Radius * 0.22);
+            Context.lineTo(CentreX + Math.cos(Angle) * Radius * 0.68, CentreY + Math.sin(Angle) * Radius * 0.68);
+            Context.stroke();
+        }
+        Context.beginPath();
+        Context.arc(CentreX, CentreY, Radius * 0.22, 0, Math.PI * 2);
+        Context.fillStyle = "#0b0f14";
+        Context.fill();
+        Context.restore();
+    }
+
+    RasterDragChip(Material, X, Y)
+    {
+        // Capsule pill (172 × 44, radius 22) matching CabinOverlay.wgsl's floating cutout over the 3D well.
+        this.RasterRectangle(X - 86, Y - 22, 172, 44, 22, "#070b11f2", "#bae6fdcc");
+        const SwatchColour = Material.Colour || "#38bdf8";
+        this.RasterPaintOrb(X - 62, Y, 11.5, SwatchColour, Material.Kind !== "finish" || !Material.Matte, true);
+        const Title = (Material.Name || (Material.Kind === "wheel" ? "Wheel Finish" : "Paint Finish")).slice(0, 16);
+        const Subtitle = Material.Kind === "wheel" ? "DROP ON WHEEL" : "DROP ON VEHICLE";
+        this.RasterText(Title, X - 43, Y - 2, 11.5, "#f0f9ff", "left", 500);
+        this.RasterText(Subtitle, X - 43, Y + 11, 8.5, "#7dd3fc", "left", 500);
+    }
+
     RasterScreen()
     {
         if (!this.Dirty) return false;
@@ -748,11 +956,8 @@ export class ScreenSequence
         else if (this.Design === "focus") this.RasterFocus();
         else if (this.Design === "console") this.RasterConsole();
         else this.RasterLaunchpad();
-        if (this.DragMaterial && this.Pointer) {
-            const M = this.DragMaterial, X = this.Pointer.PreviousAcross, Y = this.Pointer.PreviousDown;
-            this.RasterRectangle(X-66, Y-25, 132, 50, 12, M.Colour || "#31516a", "#dcf5ff");
-            this.RasterText(M.Kind === "paint" ? "Drop paint" : M.Kind === "finish" ? "Drop finish" : "Drop rim finish", X, Y+5, 14, "#ffffff", "center");
-        }
+        if (this.DragMaterial && this.Pointer)
+            this.RasterDragChip(this.DragMaterial, this.Pointer.PreviousAcross, this.Pointer.PreviousDown);
         if (!this.ExternalBrightness && this.Values.brightness < 100)
         {
             Context.fillStyle = `rgba(0, 0, 0, ${(100 - this.Values.brightness) / 100})`;
@@ -807,15 +1012,36 @@ export class ScreenSequence
             const Active = this.Pointer;
             if (Active.Contact?.Material && Active.Moved) {
                 const Inside = Across >= 78 && Across <= 718 && Down >= 248 && Down <= 648;
-                const Pick = Inside ? this.Preview?.Pick?.((Across-78)/640, (Down-248)/400) : null;
+                const Pick = Inside ? this.Preview?.Pick?.((Across - 78) / 640, (Down - 248) / 400) : null;
                 const Material = Active.Contact.Material;
-                const Valid = Material.Kind !== "wheel" ? Pick?.Family === CourseMaterial.BodyCoat
-                    : Pick?.Occupant > 0 && [CourseMaterial.Hub, CourseMaterial.RimBase].includes(Pick?.Family);
+                const Valid = Material.Kind !== "wheel"
+                    ? (Pick?.Occupant === 0 && [CourseMaterial.BodyCoat, CourseMaterial.VehicleTrim, CourseMaterial.VehiclePlastic, CourseMaterial.VehicleGlass].includes(Pick?.Family))
+                    : (Pick?.Occupant > 0 && [CourseMaterial.Hub, CourseMaterial.RimBase, CourseMaterial.Tyre, CourseMaterial.Brake].includes(Pick?.Family));
                 if (Valid) {
-                    this.Appearance?.Apply(Material.Kind === "paint" ? { Colour: Material.Colour } : Material.Kind === "finish" ? { Matte: Material.Matte } : { DarkWheels: Material.DarkWheels, BlueRims: Material.BlueRims });
-                    if (Material.Colour) this.FinishColour = Material.Colour;
-                    this.Notice = "Material applied to the preview and driven car.";
-                } else this.Notice = Inside ? "Drop paint on the body or rim material on a rim." : "Material drop cancelled.";
+                    const DropPoint = Pick?.BodyPoint || Pick?.Point || [0.0, 0.0, 0.35];
+                    const Appearance = this.Appearance;
+                    if (Material.Kind === "paint") {
+                        this.FinishColour = Material.Colour;
+                        if (Appearance?.BeginPaintRipple)
+                            Appearance.BeginPaintRipple(Material.Colour, DropPoint, { Matte: Material.Matte ?? Appearance.Matte, Metallic: Material.Metallic });
+                        else
+                            Appearance?.Apply({ Colour: Material.Colour, Matte: Material.Matte, Metallic: Material.Metallic });
+                        this.Notice = `${Material.Name || "Paint"} expanding radially from drop point across the vehicle.`;
+                    } else if (Material.Kind === "finish") {
+                        if (Appearance?.BeginPaintRipple)
+                            Appearance.BeginPaintRipple(Appearance.Colour || this.FinishColour, DropPoint, { Matte: Material.Matte });
+                        else
+                            Appearance?.Apply({ Matte: Material.Matte });
+                        this.Notice = `${Material.Name || "Coat"} expanding radially across the vehicle.`;
+                    } else {
+                        this.WheelId = Material.WheelId || this.WheelId;
+                        if (Appearance?.BeginWheelRipple)
+                            Appearance.BeginWheelRipple(Material.RimHex || Material.Colour, DropPoint, { Machined: Material.Machined, WheelId: Material.WheelId });
+                        else
+                            Appearance?.Apply({ RimColour: Material.RimHex || Material.Colour, MachinedWheels: Material.Machined, WheelId: Material.WheelId });
+                        this.Notice = `${Material.Name || "Wheel finish"} expanding across all four wheels.`;
+                    }
+                } else this.Notice = Inside ? "Drop paint onto the vehicle body, or a wheel finish onto a wheel." : "Material drop cancelled.";
                 this.DragMaterial = null;
             }
             else if (Active.Contact?.Swipe && Active.Moved && Math.abs(Across - Active.Across) > 45)

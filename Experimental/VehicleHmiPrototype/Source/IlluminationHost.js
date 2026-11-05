@@ -167,6 +167,7 @@ class IlluminationHost
         };
         if (Query.has("preset"))
             this.PendingPreset = Query.get("preset");
+        this.RequestedApplication = Query.get("app") || null;
         // 📝 Stress test: ?stresspool=K reserves K objects at bring-up (default 1536, clamped to the identity ceiling),
         //    ?stress=N enables N of them at start and ?stressmotion=0|1|2 sets none, one in ten or all of them moving —
         //    a URL that reproduces a benchmark exactly.
@@ -394,6 +395,7 @@ class IlluminationHost
         this.Sparks = new SparkSequence(this.Exchange, this.Shaders);
         await this.Sparks.ConstructPrograms(this.FrameRecords);
         this.Cabin = new CabinSequence(this.Exchange, this.Shaders);
+        this.Cabin.RequestedApplication = this.RequestedApplication;
         this.Cabin.Appearance = new VehicleAppearance(this.Materials, (Offset, Data) =>
             this.Exchange.Device.queue.writeBuffer(this.MaterialRecords, Offset, Data));
         this.Cabin.AssignPressure(this.Settings.TyrePressureFront);
@@ -1532,6 +1534,36 @@ class IlluminationHost
         this.Sparks.Advance(Step, this.Vehicle.Obstacles, this.Bodies.Bodies);
         Device.queue.writeBuffer(this.VehicleRecords, 0, this.VehicleVisual.EncodeRecord(this.QueryCabinHeader(), this.Vehicle.Wheels, this.Vehicle.Orientation));
         const Pumped = this.Cabin.Advance(Δτ, this.QueryTyreLive());
+        const ActiveRipple = this.Cabin.Appearance?.Ripple;
+        if (ActiveRipple?.Active)
+        {
+            const Target = this.Materials[CourseMaterial.BodyCoatWaveTarget];
+            const Control = this.Materials[CourseMaterial.BodyCoatWaveControl];
+            Target.Albedo = [...ActiveRipple.NextColour];
+            Target.Roughness = ActiveRipple.Roughness;
+            Target.Metalness = ActiveRipple.Metalness;
+            Target.CoatWeight = ActiveRipple.CoatWeight;
+            Target.CoatRoughness = 0.03;
+            Control.Albedo = [...ActiveRipple.Centre];
+            Control.Roughness = ActiveRipple.ModeCode === 1 ? ActiveRipple.SweepFront : ActiveRipple.Radius;
+            Control.Metalness = ActiveRipple.ModeCode;
+            Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.BodyCoatWaveTarget * MaterialRecordBytes,
+                EncodeMaterialRecords([Target, Control]));
+            this.PaintWaveStreaming = true;
+        }
+        else if (this.PaintWaveStreaming)
+        {
+            const Control = this.Materials[CourseMaterial.BodyCoatWaveControl];
+            Control.Metalness = 0.0;
+            Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.BodyCoatWaveControl * MaterialRecordBytes,
+                EncodeMaterialRecords([Control]));
+            this.PaintWaveStreaming = false;
+        }
+        if (this.Cabin.MaterialCommitted)
+        {
+            this.Cabin.MaterialCommitted = false;
+            this.Cards.CaptureCards(this.Scene, this.VertexRecords);
+        }
         if (this.Cabin.Screen?.RouteRequest)
         {
             // 📝 Navigation's Start route: travel, with the cinematic veil as the goodbye.

@@ -1,21 +1,8 @@
 //============================================================================================================================================
 //                                                            FORWARDRASTER.WGSL
 //============================================================================================================================================
-// 🧩 A small lit forward pass over the scene's facets: the mirrors' reflected views and the HMI Garage's studio portrait of the car.
-
-// 📝 The main view is deferred and globally illuminated — far too much for three side views and a 640 × 400 preview.
-//    This pass draws the same vertex records (the same instanced runs, the same rigid wheel damage state, steering wheel and
-//    derez mask) with direct light only:
-//
-//    | Mode   | Light                                                                                              |
-//    |--------|----------------------------------------------------------------------------------------------------|
-//    | scene  | the sun through the cascaded shadow depth, the sky view averaged over the normal's hemisphere, a    |
-//    |        | sun-lit ground bounce from below, authored emission — what a mirror shows of the grounds           |
-//    | studio | a key, a fill and a rim light fixed to the camera, a dim ambient, a soft floor glow — the car as a  |
-//    |        | configurator shows it, its own camera and lighting (Docs/CarHmiReport.md)                           |
-//
-//    A mirror's view is the driver's eye reflected in the mirror's plane, through an off-axis frustum fitted to the
-//    glass; its near plane is the mirror itself, so nothing behind the glass leaks into it.
+// 🧩 A small lit forward pass over the scene's facets: the mirrors' reflected views and the HMI Garage's studio portrait of the car,
+//    including live paint/rim waves and X-ray inspection (Ghost, Wireframe and sweeping Perception Scan).
 
 //! include "FrameDescriptor.wgsl"
 //! include "SurfaceReflectance.wgsl"
@@ -30,7 +17,13 @@ struct ForwardView
     Camera         : vec4f,   // xyz [m] eye, w mode: 0 scene, 1 studio
     Key            : vec4f,   // xyz studio key light direction (toward the light), w its intensity
     Fill           : vec4f,   // xyz studio fill direction, w intensity
-    Rim            : vec4f,   // xyz studio rim direction, w intensity; scene: x hides the car (derezzed)
+    Rim            : vec4f,   // xyz studio rim direction, w intensity
+    RippleCentre   : vec4f,   // xyz [m] body-local drop centre, w [m] SweepFront (mode 1) or Radius (mode 2)
+    RippleNext     : vec4f,   // rgb linear target paint albedo, w mode: 0 off, 1 side-to-side sweep, 2 radial sphere
+    RippleFinish   : vec4f,   // x roughness, y metalness, z coat weight, w wheel-rim ripple active
+    RimRipple      : vec4f,   // rgb linear target hub albedo, w wheel-rim ripple radius [m]
+    RimCentre      : vec4f,   // xyz [m] body-local wheel drop centre, w target hub roughness
+    Inspection     : vec4f,   // x view (0 Solid, 1 Ghost, 2 Wireframe, 3 Scan), y ScanX [m], z HoloAmount [0..1], w Clock [s]
 }
 
 struct CascadeReceiver
@@ -59,7 +52,7 @@ struct ForwardVarying
     @location(2) WorldPosition              : vec3f,
     @location(3) @interpolate(flat) Vehicle : u32,
     @location(4) BodyLocal                  : vec3f,
-    @location(5) Barycentric : vec3f,
+    @location(5) Barycentric                : vec3f,
 }
 
 @vertex
@@ -115,7 +108,6 @@ fn ResolveSunVisibility(Position: vec3f, Normal: vec3f) -> f32
     return textureSampleCompareLevel(ShadowDepth, ShadowSampler, Coordinates, Cascade, Ndc.z);
 }
 
-// 📝 The derez mask as the surface raster applies it: released cells are gone, hidden is all gone.
 fn ClassifyMasked(BodyLocal: vec3f) -> bool
 {
     if (Effect.MaskMode == 0u)
@@ -136,26 +128,63 @@ fn ClassifyMasked(BodyLocal: vec3f) -> bool
     return Elapsed < ResolveRezArrival(Unit, Seed, Effect.Style, 1.0);
 }
 
+fn ResolveForwardSurface(Family: u32, BodyLocal: vec3f) -> SurfaceSample
+{
+    var Surface = ProjectSurfaceSample(Materials[Family]);
+    if (Family == BodyCoatFamilyIndex && View.RippleNext.w > 0.5)
+    {
+        let Coverage = ResolvePaintWaveCoverage(BodyLocal, View.RippleCentre, View.RippleNext.w);
+        if (Coverage > 0.0)
+        {
+            var Target = Surface;
+            Target.Albedo        = View.RippleNext.rgb;
+            Target.Roughness     = clamp(View.RippleFinish.x, 0.03, 1.0);
+            Target.Metalness     = View.RippleFinish.y;
+            Target.CoatWeight    = View.RippleFinish.z;
+            Target.CoatRoughness = 0.03;
+            Surface = BlendSurfaceSample(Surface, Target, Coverage);
+        }
+    }
+    else if (Family == HubFamilyIndex && View.RippleFinish.w > 0.5)
+    {
+        let Radius = View.RimRipple.w;
+        if (Radius > 0.001)
+        {
+            let Coverage = 1.0 - smoothstep(Radius - 0.55, Radius, distance(BodyLocal, View.RimCentre.xyz));
+            Surface.Albedo    = mix(Surface.Albedo, View.RimRipple.rgb, Coverage);
+            Surface.Roughness = mix(Surface.Roughness, clamp(View.RimCentre.w, 0.03, 1.0), Coverage);
+            Surface.Metalness = mix(Surface.Metalness, 0.9, Coverage);
+            Surface.Emission  = Surface.Emission * (1.0 - Coverage);
+        }
+    }
+    return Surface;
+}
+
+// 📝 Procedural automotive photography softbox + studio horizon environment for glossy & metallic coats in the Garage stage.
+fn SampleStudioEnvironment(Direction: vec3f, Roughness: f32) -> vec3f
+{
+    let Up = clamp(Direction.z, -1.0, 1.0);
+    let Soft = mix(0.06, 0.42, Roughness);
+    let Projected = Direction.xy / max(abs(Direction.z) + 0.22, 0.22);
+    let Softbox = smoothstep(1.35 + Soft, 0.85 - Soft * 0.4, abs(Projected.x))
+                * smoothstep(0.95 + Soft, 0.48 - Soft * 0.3, abs(Projected.y))
+                * smoothstep(0.05, 0.45, Up);
+    let Horizon = exp(-pow((Up - 0.08) * 3.8, 2.0)) * 0.34;
+    let SkyDome = mix(vec3f(0.03, 0.035, 0.045), vec3f(0.22, 0.26, 0.33), clamp(Up * 0.5 + 0.5, 0.0, 1.0));
+    return SkyDome + vec3f(1.55, 1.62, 1.72) * Softbox + vec3f(0.32, 0.42, 0.58) * Horizon;
+}
+
 @fragment
 fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
 {
-    // Derivatives evaluated uniformly; triangle-list barycentrics give pixel-width edges.
-    let Width = max(fwidth(Varying.Barycentric), vec3f(0.00001));
-    let EdgeDistance = Varying.Barycentric / Width;
-    let Edge = 1.0 - smoothstep(0.6, 1.6, min(min(EdgeDistance.x, EdgeDistance.y), EdgeDistance.z));
-    let Scanning = View.Camera.w > 3.5;
-    let ScanPlane = mix(3.2, -3.2, fract(Frame.ElapsedSeconds * 0.2));
-    if (Scanning && abs(Varying.BodyLocal.x - ScanPlane) < 0.035) { return vec4f(0.5, 0.95, 1.0, 1.0); }
-    if (View.Camera.w > 1.5 && (!Scanning || Varying.BodyLocal.x > ScanPlane)) {
-        if (!Scanning && View.Camera.w > 2.5 && Edge < 0.15) { discard; }
-        // Screen-door transparency avoids sorting and leaves the world materials untouched.
-        if ((Scanning || View.Camera.w < 2.5) && Edge < 0.15 && (u32(Varying.Position.x) + u32(Varying.Position.y)) % 4u != 0u) { discard; }
-        return vec4f(mix(vec3f(0.035, 0.16, 0.2), vec3f(0.35, 0.85, 1.0), Edge), 1.0);
-    }
     if (Varying.Vehicle == 1u)
     {
-        // 📝 A mirror never sees mirror glass (each mirror's own lies on its near plane); see-through glazing is gone.
-        if ((Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5) || Varying.Family == MirrorGlassFamily)
+        if (Varying.Family == MirrorGlassFamily)
+        {
+            discard;
+        }
+        // In studio mode, render smoked glazing slightly translucent rather than invisible so the car silhouette reads whole.
+        if (View.Camera.w < 0.5 && Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5)
         {
             discard;
         }
@@ -164,28 +193,91 @@ fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
             discard;
         }
     }
-    let Surface = ProjectSurfaceSample(Materials[Varying.Family]);
+
+    let Studio = View.Camera.w > 0.5;
+    var SolidAlpha = 1.0;
+    if (Studio)
+    {
+        let ViewMode = View.Inspection.x;
+        let ScanX    = View.Inspection.y;
+        let HoloAmt  = clamp(View.Inspection.z, 0.0, 1.0);
+        if (ViewMode > 0.5 && ViewMode < 2.5)
+        {
+            SolidAlpha = 1.0 - HoloAmt;
+        }
+        else if (ViewMode > 2.5)
+        {
+            let ScanD      = Varying.BodyLocal.x - ScanX;
+            let ScanRegion = smoothstep(-0.9, -0.05, ScanD);
+            SolidAlpha     = 1.0 - ScanRegion * HoloAmt * 0.98;
+        }
+        else
+        {
+            SolidAlpha = 1.0 - HoloAmt * 0.85;
+        }
+        if (SolidAlpha < 0.06)
+        {
+            discard;
+        }
+    }
+
+    var Surface = ResolveForwardSurface(Varying.Family, Varying.BodyLocal);
     let ViewDirection = normalize(View.Camera.xyz - Varying.WorldPosition);
     var Normal = normalize(Varying.Normal);
     if (dot(Normal, ViewDirection) < 0.0)
     {
         Normal = -Normal;
     }
-    let Albedo = ResolveDiffuseAlbedo(Surface);
-    var Radiance = Surface.Emission * Frame.EmissionScale;
-    if (View.Camera.w > 0.5)
+
+    if (Studio)
     {
-        // 📝 Studio: three lights fixed to the camera, a dim cool ambient, a warm glow from the floor.
+        // Smoked studio canopy glass: subtle sky-softbox Fresnel reflection while letting the cabin interior show through.
+        if (Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5)
+        {
+            let NdotV = clamp(dot(Normal, ViewDirection), 0.0, 1.0);
+            let Fresnel = 0.08 + 0.72 * pow(1.0 - NdotV, 4.2);
+            let GlassEnv = SampleStudioEnvironment(reflect(-ViewDirection, Normal), 0.04);
+            let GlassCol = (vec3f(0.02, 0.03, 0.04) + GlassEnv * Fresnel) * 1.35;
+            let MappedGlass = GlassCol / (vec3f(1.0) + GlassCol);
+            let GlassAlpha = clamp(0.42 + Fresnel * 0.45, 0.0, 0.88) * SolidAlpha;
+            return vec4f(MappedGlass * GlassAlpha, GlassAlpha);
+        }
+
+        let Albedo = ResolveDiffuseAlbedo(Surface);
+        var Radiance = Surface.Emission * 0.38;
         Radiance += ResolveDirectReflectance(Surface, Normal, ViewDirection, normalize(View.Key.xyz)) * View.Key.w;
         Radiance += ResolveDirectReflectance(Surface, Normal, ViewDirection, normalize(View.Fill.xyz)) * View.Fill.w;
         Radiance += ResolveDirectReflectance(Surface, Normal, ViewDirection, normalize(View.Rim.xyz)) * View.Rim.w;
-        Radiance += Albedo * (vec3f(0.10, 0.12, 0.14) * (0.6 + 0.4 * Normal.z) + vec3f(0.05, 0.045, 0.04) * max(-Normal.z, 0.0));
+        Radiance += Albedo * (vec3f(0.18, 0.21, 0.25) * (0.62 + 0.38 * Normal.z) + vec3f(0.06, 0.055, 0.05) * max(-Normal.z, 0.0));
+
+        let NdotV = max(dot(Normal, ViewDirection), 1.0e-3);
         let Reflected = reflect(-ViewDirection, Normal);
-        Radiance += ResolveSpecularColour(Surface) * 0.08 * smoothstep(-0.2, 0.6, Reflected.z) * (1.0 - Surface.Roughness);
-        // 📝 The preview is a picture on a screen (display-referred, 8-bit): a soft shoulder keeps the coat's highlights.
-        return vec4f(Radiance * 1.5 / (vec3f(1.0) + Radiance * 1.5), 1.0);
+        let BaseEnv = SampleStudioEnvironment(Reflected, Surface.Roughness);
+        let BaseSplit = ResolveEnvironmentResponse(NdotV, Surface.Roughness);
+        var EnvSpec = BaseEnv * (ResolveSpecularColour(Surface) * BaseSplit.x + BaseSplit.y) * 0.55;
+        if (Surface.CoatWeight > 0.0)
+        {
+            let CoatEnv = SampleStudioEnvironment(Reflected, Surface.CoatRoughness);
+            let CoatSplit = ResolveEnvironmentResponse(NdotV, Surface.CoatRoughness);
+            let CoatRefl = (0.04 * CoatSplit.x + CoatSplit.y) * Surface.CoatWeight;
+            EnvSpec = EnvSpec * (1.0 - CoatRefl) + CoatEnv * CoatRefl * 0.65;
+        }
+        Radiance += EnvSpec;
+
+        // Subtle luminous sheen riding the active paint wavefront as it sweeps or expands radially across the body.
+        if (Varying.Family == BodyCoatFamilyIndex && View.RippleNext.w > 0.5)
+        {
+            let Band = ResolvePaintWaveBand(Varying.BodyLocal, View.RippleCentre, View.RippleNext.w);
+            Radiance += mix(View.RippleNext.rgb, vec3f(0.65, 0.88, 1.0), 0.55) * Band * 0.42;
+        }
+
+        let Mapped = Radiance * 1.55 / (vec3f(1.0) + Radiance * 1.55);
+        return vec4f(Mapped * SolidAlpha, SolidAlpha);
     }
-    // 📝 Scene: the sun with its cascaded shadow, the sky over the normal's hemisphere, the ground's bounce.
+
+    // 📝 Scene (mirrors): the sun with its cascaded shadow, the sky over the normal's hemisphere, the ground's bounce.
+    let Albedo = ResolveDiffuseAlbedo(Surface);
+    var Radiance = Surface.Emission * Frame.EmissionScale;
     let Visibility = ResolveSunVisibility(Varying.WorldPosition, Normal);
     Radiance += Frame.SunIlluminance * Visibility * ResolveDirectReflectance(Surface, Normal, ViewDirection, Frame.SunDirection);
     let SkyDirection = normalize(vec3f(Normal.xy, max(Normal.z, 0.0) + 0.35));
@@ -197,4 +289,80 @@ fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
     let Glossy = textureSampleLevel(SkyView, SkySampler, ProjectSkyCoordinates(normalize(vec3f(Reflected.xy, max(Reflected.z, 0.02)))), 0.0).rgb * Frame.SkyScale;
     Radiance += ResolveSpecularColour(Surface) * Glossy * (1.0 - Surface.Roughness) * 0.6;
     return vec4f(Radiance, 1.0);
+}
+
+// 📝 Second studio pass (depth read-only, premultiplied alpha): true translucent Hologram Ghost, crisp structural
+//    Wireframe, and the sweeping X-Ray Perception Scan (hologram + wireframe behind the travelling LiDAR front).
+@fragment
+fn ForwardXrayFragment(Varying: ForwardVarying) -> @location(0) vec4f
+{
+    // Evaluate screen-space derivatives in uniform control flow first.
+    let Width = max(fwidth(Varying.Barycentric), vec3f(1.0e-5));
+    let EdgeDistance = Varying.Barycentric / Width;
+    let RawEdge = 1.0 - smoothstep(0.35, 1.35, min(min(EdgeDistance.x, EdgeDistance.y), EdgeDistance.z));
+    // Attenuate sub-pixel dense mesh clusters (e.g. cylindrical tyre/rim tessellation) so multi-layer wheels stay crisp, never blown out.
+    let DensityScale = clamp(1.0 / (1.0 + (Width.x + Width.y + Width.z) * 1.35), 0.16, 1.0);
+    let Edge = RawEdge * DensityScale;
+
+    if (Varying.Family == MirrorGlassFamily || (Varying.Vehicle == 1u && ClassifyMasked(Varying.BodyLocal)))
+    {
+        discard;
+    }
+
+    let ViewMode = View.Inspection.x;
+    let ScanX    = View.Inspection.y;
+    let HoloAmt  = clamp(View.Inspection.z, 0.0, 1.0);
+    if (HoloAmt < 0.004)
+    {
+        discard;
+    }
+
+    let ViewDirection = normalize(View.Camera.xyz - Varying.WorldPosition);
+    var Normal = normalize(Varying.Normal);
+    if (dot(Normal, ViewDirection) < 0.0)
+    {
+        Normal = -Normal;
+    }
+    let Fresnel = pow(1.0 - clamp(abs(dot(Normal, ViewDirection)), 0.0, 1.0), 2.4);
+    let Lines   = smoothstep(0.72, 1.0, sin(Varying.BodyLocal.z * 85.0) * 0.5 + 0.5);
+    let Cyan    = vec3f(0.28, 0.76, 0.96);
+    let Ice     = vec3f(0.68, 0.93, 1.00);
+    let ShellScale = mix(0.38, 1.0, DensityScale);
+
+    // ① Wireframe view: crisp anti-aliased structural edges across body, cabin, steering wheel, tyres, rims & brakes.
+    if (ViewMode > 1.5 && ViewMode < 2.5)
+    {
+        let Alpha = clamp((Edge * 0.78 + Fresnel * 0.025 * ShellScale) * HoloAmt, 0.0, 0.90);
+        if (Alpha < 0.008)
+        {
+            discard;
+        }
+        let Colour = mix(Cyan, Ice, clamp(Edge * 0.65 + Fresnel * 0.35, 0.0, 1.0));
+        return vec4f(Colour * Alpha, Alpha);
+    }
+
+    // ② Ghost view: translucent holographic X-ray shell carrying a subtle hint of the live paint colour + internal anatomy.
+    if (ViewMode > 0.5 && ViewMode < 1.5)
+    {
+        let Surface = ResolveForwardSurface(Varying.Family, Varying.BodyLocal);
+        let PaintHint = mix(Surface.Albedo, Cyan, 0.58);
+        let Alpha = clamp((0.038 + Fresnel * 0.24 + Lines * 0.026 + Edge * 0.16) * ShellScale * HoloAmt, 0.0, 0.48);
+        let Colour = clamp(PaintHint * (0.48 + 0.52 * Fresnel) + Ice * (Fresnel * 0.42 + Edge * 0.28 + Lines * 0.05), vec3f(0.0), vec3f(1.0));
+        return vec4f(Colour * Alpha, Alpha);
+    }
+
+    // ③ X-Ray Scan (Truck.tsx): front-to-back LiDAR pulse sweep — solid PBR ahead, glowing wavefront curtain,
+    //    Hologram Ghost + Wireframe mesh behind the wavefront.
+    let ScanD    = Varying.BodyLocal.x - ScanX;
+    let Region   = smoothstep(-0.9, -0.05, ScanD);
+    let WaveEdge = exp(-pow((ScanD + 0.16) * 4.4, 2.0));
+    let Vis      = clamp(max(Region, WaveEdge * 0.9) * HoloAmt, 0.0, 1.0);
+    if (Vis < 0.004)
+    {
+        discard;
+    }
+    let Wire  = Edge * smoothstep(-0.20, 0.06, ScanD) * 0.62;
+    let Alpha = clamp(((0.026 + Fresnel * 0.26 + Lines * 0.028) * ShellScale + WaveEdge * 0.55 * ShellScale + Wire) * Vis, 0.0, 0.88);
+    let Colour = clamp(Cyan * (0.50 + 0.50 * Fresnel + Wire * 1.15) + Ice * (WaveEdge * 1.25 + Wire * 0.35), vec3f(0.0), vec3f(1.0));
+    return vec4f(Colour * Alpha, Alpha);
 }

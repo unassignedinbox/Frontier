@@ -118,14 +118,25 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
     }
     let Attributes = textureLoad(SurfaceAttributes, Pixel, 0);
     let Normal = DecodeOctahedral(Attributes.xy);
-    let Surface = ProjectSurfaceSample(Materials[u32(Attributes.z + 0.5)]);
+    let FamilyIndex = u32(Attributes.z + 0.5);
+    var Surface = ProjectSurfaceSample(Materials[FamilyIndex]);
     let Position = ReconstructWorldPosition(vec2f(Pixel) + 0.5, Depth);
+    let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz;
+    if (FamilyIndex == BodyCoatFamilyIndex && arrayLength(&Materials) > BodyCoatWaveControlIndex)
+    {
+        let Control = Materials[BodyCoatWaveControlIndex];
+        if (Control.Metalness > 0.5)
+        {
+            let Coverage = ResolvePaintWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness), Control.Metalness);
+            Surface = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[BodyCoatWaveTargetIndex]), Coverage);
+        }
+    }
     let View = normalize(Frame.CameraPosition - Position);
     let NdotV = max(dot(Normal, View), 1.0e-3);
 
     // 📝 Inside the car's cabin: SDF volumes need 0.05 to counter self-hit, whereas the BVH tracer traces through real window openings.
     let TargetCabinShare = select(CabinIndirectShare, 0.45, FeatureEnabled(Frame, FeatureRayTracing));
-    let Enclosure = mix(1.0, TargetCabinShare, ResolveCabinShare((Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz));
+    let Enclosure = mix(1.0, TargetCabinShare, ResolveCabinShare(BodyLocal));
     var Irradiance = vec3f(0.0);
     if (FeatureEnabled(Frame, FeatureIndirect))
     {

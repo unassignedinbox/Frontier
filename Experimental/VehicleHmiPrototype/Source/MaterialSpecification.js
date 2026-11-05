@@ -127,7 +127,10 @@ export const CourseMaterial = Object.freeze({
     RankBronze:      103,
     RankSilver:      104,
     RankGold:        105,
-    RankDiamond:     106
+    RankDiamond:     106,
+    // 📝 Live configurator paint-wave carrier records: target coat material + wave parameters (centre, metric, mode).
+    BodyCoatWaveTarget:  107,
+    BodyCoatWaveControl: 108
 });
 
 export const MarkedFamilyFirst = CourseMaterial.Asphalt;   // [-]
@@ -408,6 +411,8 @@ export function ConstructMaterialSpecification()
     const RimScrape = Dielectric(0.16, 0.17, 0.18, 0.46);
     RimScrape.Metalness = 0.25;
     Materials[CourseMaterial.RimScrape] = RimScrape;
+    Materials[CourseMaterial.BodyCoatWaveTarget]  = structuredClone(Materials[CourseMaterial.BodyCoat]);
+    Materials[CourseMaterial.BodyCoatWaveControl] = Dielectric(0.0, 0.0, 0.0, 0.0);
     return Materials;
 }
 

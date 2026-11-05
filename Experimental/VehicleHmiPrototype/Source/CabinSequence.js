@@ -60,11 +60,13 @@ export class CabinSequence
         this.Clock    = 0.0;
         this.MirrorCursor = 0;
         this.MirrorsRendered = 0;
-        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: true, Dirty: true, Yaw: 0.6, Pitch: 0.2,
-                          Orbit: (Yaw, Pitch) => { this.Preview.Yaw += Yaw; this.Preview.Pitch = Math.max(-0.1, Math.min(0.9, this.Preview.Pitch + Pitch)); } };
+        this.Preview  = { External: true, Loaded: true, Facets: 0, Spin: false, Dirty: true, Yaw: -2.48, Pitch: 0.20,
+                          Orbit: (Yaw, Pitch) => { this.Preview.Yaw += Yaw; this.Preview.Pitch = Math.max(-0.08, Math.min(0.9, this.Preview.Pitch + Pitch)); } };
         this.Metrics  = { TabletUploads: 0, ClusterUploads: 0, MirrorPasses: 0, PreviewPasses: 0, Hmi: "starting" };
         this.LiveRevision = -1;
         this.PumpedPressure = null;
+        this.MaterialCommitted = false;
+        this.RequestedApplication = null;
     }
 
     //--------------------------------------------------------------------------------------------------------------------
@@ -110,7 +112,7 @@ export class CabinSequence
         Vertices.forEach((Value, Index) => { if (Index % OverlayFloats === 3) Integers[Index] = Value; else Scalars[Index] = Value; });
         this.OverlayVertexCount = Vertices.length / OverlayFloats;
         this.OverlayRecords = Exchange.ConstructRecordsFrom(Scalars, GPUBufferUsage.VERTEX, "Cabin overlay vertices");
-        this.OverlayUniform = Exchange.ConstructRecords(64, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Cabin overlay record");
+        this.OverlayUniform = Exchange.ConstructRecords(80, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Cabin overlay record");
 
         // ② textures: the two canvases, the preview, the mirrors
         const Texture = (Label, Size, Format, Usage, Layers = 1) => Exchange.ConstructTexture({ label: Label, size: [Size[0], Size[1], Layers], format: Format, usage: Usage });
@@ -145,26 +147,38 @@ export class CabinSequence
                                                         alpha: { srcFactor: "zero", dstFactor: "one", operation: "add" } } }]
         }, [this.OverlayLayout]);
 
-        // ④ the forward views: mirrors (radiance) and the studio preview (display-referred)
+        // ④ the forward views: mirrors (radiance) and the studio preview (display-referred + X-ray inspection pass)
         this.ViewRecords = Exchange.ConstructRecords(ViewStride * 4, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Cabin views");
         this.ForwardLayout = Exchange.ConstructDescriptorLayout(["Uniform", "UniformDynamic", "StorageRead", "StorageRead", "StorageRead", "Uniform",
                                                                  "TextureDepth2DLayered", "SamplerComparison", "Uniform", "Texture2D", "Sampler"], Stages, "Forward views");
         this.ForwardGroup = Exchange.ConstructDescriptorGroup(this.ForwardLayout,
-            [FrameRecords, { buffer: this.ViewRecords, offset: 0, size: 128 }, OccupantRecords, MaterialRecords, VehicleRecords, EffectRecords,
+            [FrameRecords, { buffer: this.ViewRecords, offset: 0, size: 224 }, OccupantRecords, MaterialRecords, VehicleRecords, EffectRecords,
              Shadow.LayeredView, Shadow.ComparisonSampler, Shadow.ReceiverRecords, Atmosphere.SkyView, Atmosphere.SkySampler]);
-        const ForwardDescriptor = (Format) => ({
+        const PremultipliedBlend = {
+            color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+            alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" }
+        };
+        const ForwardVertexLayouts = [{ arrayStride: VertexStride, attributes: [
+            { shaderLocation: 0, offset: 0,  format: "float32x3" },
+            { shaderLocation: 1, offset: 12, format: "uint32" },
+            { shaderLocation: 2, offset: 16, format: "float32x3" },
+            { shaderLocation: 3, offset: 28, format: "uint32" }] }];
+        const ForwardDescriptor = (Format, Blend = undefined) => ({
             VertexEntry: "ForwardVertex", FragmentEntry: "ForwardFragment",
-            VertexLayouts: [{ arrayStride: VertexStride, attributes: [
-                { shaderLocation: 0, offset: 0,  format: "float32x3" },
-                { shaderLocation: 1, offset: 12, format: "uint32" },
-                { shaderLocation: 2, offset: 16, format: "float32x3" },
-                { shaderLocation: 3, offset: 28, format: "uint32" }] }],
+            VertexLayouts: ForwardVertexLayouts,
             Primitive: { topology: "triangle-list", cullMode: "none" },
             DepthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less" },
-            Targets: [{ format: Format }]
+            Targets: [Blend ? { format: Format, blend: Blend } : { format: Format }]
         });
         this.MirrorProgram  = await this.Shaders.ConstructRasterProgram("ForwardRaster.wgsl", ForwardDescriptor("rgba16float"), [this.ForwardLayout]);
-        this.PreviewProgram = await this.Shaders.ConstructRasterProgram("ForwardRaster.wgsl", ForwardDescriptor("rgba8unorm-srgb"), [this.ForwardLayout]);
+        this.PreviewProgram = await this.Shaders.ConstructRasterProgram("ForwardRaster.wgsl", ForwardDescriptor("rgba8unorm-srgb", PremultipliedBlend), [this.ForwardLayout]);
+        this.PreviewXrayProgram = await this.Shaders.ConstructRasterProgram("ForwardRaster.wgsl", {
+            VertexEntry: "ForwardVertex", FragmentEntry: "ForwardXrayFragment",
+            VertexLayouts: ForwardVertexLayouts,
+            Primitive: { topology: "triangle-list", cullMode: "none" },
+            DepthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare: "less-equal" },
+            Targets: [{ format: "rgba8unorm-srgb", blend: PremultipliedBlend }]
+        }, [this.ForwardLayout]);
 
         // ⑤ the HMI itself, when this host can draw 2D canvases (the headless harness cannot)
         this.ConstructHmi().catch((Failure) => { this.Metrics.Hmi = `unavailable: ${Failure && Failure.message ? Failure.message : Failure}`; });
@@ -174,7 +188,7 @@ export class CabinSequence
     {
         const Device = this.Exchange.Device;
         const Encoder = Device.createCommandEncoder({ label: "Cabin clear" });
-        for (const [Texture, Colour] of [[this.TabletTexture, [0.004, 0.006, 0.007, 1]], [this.ClusterTexture, [0, 0, 0, 0]], [this.PreviewTexture, [0.01, 0.02, 0.022, 1]]])
+        for (const [Texture, Colour] of [[this.TabletTexture, [0.004, 0.006, 0.007, 1]], [this.ClusterTexture, [0, 0, 0, 0]], [this.PreviewTexture, [0, 0, 0, 0]]])
         {
             const Pass = Encoder.beginRenderPass({ colorAttachments: [{ view: Texture.createView(), clearValue: Colour, loadOp: "clear", storeOp: "store" }] });
             Pass.end();
@@ -198,8 +212,12 @@ export class CabinSequence
         this.Screen = new ScreenSequence(TabletCanvas, Icons, () => { this.Screen.Dirty = true; });
         this.Screen.Preview = this.Preview;
         this.Screen.Appearance = this.Appearance;
+        if (this.Appearance?.Colour)
+            this.Screen.FinishColour = this.Appearance.Colour;
         this.Screen.ExternalBrightness = true;
         this.Screen.PresentAspect(this.Layout.Tablet.Width / this.Layout.Tablet.Height);
+        if (this.RequestedApplication)
+            this.Screen.PresentApplication(this.RequestedApplication);
         this.Cluster = new ClusterSequence(ClusterCanvas);
         this.Cluster.Demonstration = false;
         this.Metrics.Hmi = "live";
@@ -216,6 +234,12 @@ export class CabinSequence
     Advance(Seconds, Live)
     {
         this.Clock += Seconds;
+        if (this.Appearance?.Advance(Seconds))
+        {
+            this.MaterialCommitted = true;
+            if (this.Screen && this.Screen.Application === "garage")
+                this.Screen.Dirty = true;
+        }
         if (this.Preview.Spin)
             this.Preview.Yaw += 0.35 * Seconds;
         if (!this.Screen || !this.Settings.Screens)
@@ -305,7 +329,7 @@ export class CabinSequence
 
     WriteView(Slot, ViewProjection, Camera, Mode, Lights = null)
     {
-        const Scalars = new Float32Array(32);
+        const Scalars = new Float32Array(56);
         Scalars.set(ViewProjection, 0);
         Scalars.set([...Camera, Mode], 16);
         if (Lights)
@@ -313,6 +337,30 @@ export class CabinSequence
             Scalars.set(Lights[0], 20);
             Scalars.set(Lights[1], 24);
             Scalars.set(Lights[2], 28);
+        }
+        const Appearance = this.Appearance;
+        if (Appearance)
+        {
+            const Ripple = Appearance.Ripple;
+            if (Ripple?.Active)
+            {
+                const Metric = Ripple.ModeCode === 1 ? Ripple.SweepFront : Ripple.Radius;
+                Scalars.set([Ripple.Centre[0], Ripple.Centre[1], Ripple.Centre[2], Metric], 32);
+                Scalars.set([Ripple.NextColour[0], Ripple.NextColour[1], Ripple.NextColour[2], Ripple.ModeCode], 36);
+                Scalars.set([Ripple.Roughness, Ripple.Metalness, Ripple.CoatWeight, Appearance.WheelRipple?.Active ? 1.0 : 0.0], 40);
+            }
+            else if (Appearance.WheelRipple?.Active)
+            {
+                Scalars[43] = 1.0;
+            }
+            if (Appearance.WheelRipple?.Active)
+            {
+                const Wheel = Appearance.WheelRipple;
+                Scalars.set([Wheel.NextColour[0], Wheel.NextColour[1], Wheel.NextColour[2], Wheel.Radius], 44);
+                Scalars.set([Wheel.Centre[0], Wheel.Centre[1], Wheel.Centre[2], Wheel.Roughness], 48);
+            }
+            const Scan = Appearance.Scan;
+            Scalars.set([Appearance.View || 0, Scan ? Scan.ScanX : 3.25, Scan ? Scan.HoloAmount : 0.0, this.Clock], 52);
         }
         this.Exchange.Device.queue.writeBuffer(this.ViewRecords, Slot * ViewStride, Scalars);
     }
@@ -374,12 +422,12 @@ export class CabinSequence
         this.Metrics.MirrorPasses++;
     }
 
-    // 📝 The Garage's studio: the car alone on its turntable, its own camera and three lights.
+    // 📝 The Garage's studio: the car alone on its turntable, its own camera and three lights, plus X-ray pass when active.
     RecordPreview(Encoder, Scene, VertexRecords, BodyTransform)
     {
         const Centre = TransformPoint(BodyTransform, [0.0, 0.0, 0.15]);
         const Heading = Math.atan2(BodyTransform[1], BodyTransform[0]);
-        const Yaw = Heading + Math.PI + this.Preview.Yaw, Pitch = this.Preview.Pitch, Distance = 8.2;
+        const Yaw = Heading + Math.PI + this.Preview.Yaw, Pitch = this.Preview.Pitch, Distance = 8.0;
         const Eye = [Centre[0] + Distance * Math.cos(Pitch) * Math.cos(Yaw), Centre[1] + Distance * Math.cos(Pitch) * Math.sin(Yaw),
                      Centre[2] + Distance * Math.sin(Pitch)];
         const View = ConstructViewTransform(Eye, Centre);
@@ -392,23 +440,50 @@ export class CabinSequence
         const Fill = NormalizeVector(AddVector(AddVector(ScaleVector(Side, -0.8), [0.0, 0.0, 0.3]), ScaleVector(Back, 0.5)));
         const Rim = NormalizeVector(AddVector(ScaleVector(Back, -0.9), [0.0, 0.0, 0.55]));
         this.PreviewInverse = InvertTransform(MultiplyTransform(Projection, View));
-        this.WriteView(3, MultiplyTransform(Projection, View), Eye, 1.0 + (this.Appearance?.View || 0), [[...Key, 3.2], [...Fill, 1.0], [...Rim, 2.4]]);
+        this.WriteView(3, MultiplyTransform(Projection, View), Eye, 1.0, [[...Key, 3.2], [...Fill, 1.15], [...Rim, 2.4]]);
+
+        const HeroPlate = Scene.PlateOccupants?.[0];
+        const IsHeroVehicleRun = (Run) => Run.First < 5 || (HeroPlate !== undefined && Run.First === HeroPlate && Run.Count === 1);
+
+        const PreviewView = this.PreviewTexture.createView();
+        const PreviewDepthView = this.PreviewDepth.createView();
         const Pass = Encoder.beginRenderPass({
             label: "Garage preview",
-            colorAttachments: [{ view: this.PreviewTexture.createView(), clearValue: [0.012, 0.022, 0.025, 1], loadOp: "clear", storeOp: "store" }],
-            depthStencilAttachment: { view: this.PreviewDepth.createView(), depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "discard" }
+            colorAttachments: [{ view: PreviewView, clearValue: [0.0, 0.0, 0.0, 0.0], loadOp: "clear", storeOp: "store" }],
+            depthStencilAttachment: { view: PreviewDepthView, depthClearValue: 1.0, depthLoadOp: "clear", depthStoreOp: "store" }
         });
         Pass.setPipeline(this.PreviewProgram);
         Pass.setBindGroup(0, this.ForwardGroup, [3 * ViewStride]);
         Pass.setVertexBuffer(0, VertexRecords);
         for (const Run of Scene.DrawRuns)
         {
-            if (Run.First >= 5)
+            if (!IsHeroVehicleRun(Run))
                 continue;
             const Set = Scene.FacetSets[Run.FacetSet];
             Pass.draw(Set.VertexCount, Run.Count, Set.FirstVertex, Run.First);
         }
         Pass.end();
+
+        const HoloAmount = this.Appearance?.Scan?.HoloAmount ?? 0.0;
+        if (this.PreviewXrayProgram && (HoloAmount > 0.004 || (this.Appearance?.View || 0) > 0))
+        {
+            const XrayPass = Encoder.beginRenderPass({
+                label: "Garage preview X-ray",
+                colorAttachments: [{ view: PreviewView, loadOp: "load", storeOp: "store" }],
+                depthStencilAttachment: { view: PreviewDepthView, depthReadOnly: true }
+            });
+            XrayPass.setPipeline(this.PreviewXrayProgram);
+            XrayPass.setBindGroup(0, this.ForwardGroup, [3 * ViewStride]);
+            XrayPass.setVertexBuffer(0, VertexRecords);
+            for (const Run of Scene.DrawRuns)
+            {
+                if (!IsHeroVehicleRun(Run))
+                    continue;
+                const Set = Scene.FacetSets[Run.FacetSet];
+                XrayPass.draw(Set.VertexCount, Run.Count, Set.FirstVertex, Run.First);
+            }
+            XrayPass.end();
+        }
         this.Metrics.PreviewPasses++;
     }
 
@@ -427,11 +502,14 @@ export class CabinSequence
         const PointerU = Drag ? (Drag.PreviousAcross + OffsetAcross) / PanelWidth : 0;
         const PointerV = Drag ? (Drag.PreviousDown + OffsetDown) / PanelHeight : 0;
         const Brightness = ResolveScreenBrightness(this.Settings.Brightness, Screen?.Values.brightness ?? 100, Live);
+        const Appearance = this.Appearance;
+        const Scan = Appearance?.Scan;
         const Record = new Float32Array([
             this.Layout.Tablet.Luminance, Brightness, Garage ? 1.0 : 0.0, Drag ? 1 : 0,
             ...Well,
             22.0 / PanelWidth, 22.0 / PanelHeight, Live ? this.Layout.Cluster.Luminance : 0.0, PointerU,
-            this.Settings.GlassTransmission, 0.82, this.MirrorsRendered > 0 ? 1.0 : 0.0, PointerV]);
+            this.Settings.GlassTransmission, 0.82, this.MirrorsRendered > 0 ? 1.0 : 0.0, PointerV,
+            Appearance?.View || 0, Scan ? Scan.HoloAmount : 0.0, Scan ? Scan.ScanX : 3.25, this.Clock]);
         this.Exchange.Device.queue.writeBuffer(this.OverlayUniform, 0, Record);
         const Pass = Encoder.beginRenderPass({
             label: "Cabin overlay",

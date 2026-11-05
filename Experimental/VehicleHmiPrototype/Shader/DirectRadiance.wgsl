@@ -99,7 +99,18 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
     let Position     = ReconstructWorldPosition(Centre, Depth);
     let Attributes   = textureLoad(SurfaceAttributes, vec2i(Pixel), 0);
     let Normal       = DecodeOctahedral(Attributes.xy);
-    let Surface      = ProjectSurfaceSample(Materials[u32(Attributes.z + 0.5)]);
+    let FamilyIndex  = u32(Attributes.z + 0.5);
+    var Surface      = ProjectSurfaceSample(Materials[FamilyIndex]);
+    if (FamilyIndex == BodyCoatFamilyIndex && arrayLength(&Materials) > BodyCoatWaveControlIndex)
+    {
+        let Control = Materials[BodyCoatWaveControlIndex];
+        if (Control.Metalness > 0.5)
+        {
+            let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz;
+            let Coverage  = ResolvePaintWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness), Control.Metalness);
+            Surface       = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[BodyCoatWaveTargetIndex]), Coverage);
+        }
+    }
     let View         = normalize(Frame.CameraPosition - Position);
     let UseRtShadows = FeatureEnabled(Frame, FeatureRayTracing) && FeatureEnabled(Frame, FeatureRayTracedShadows);
     let RayOrigin    = Position + Normal * RayEpsilon;
