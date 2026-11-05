@@ -1770,3 +1770,12 @@ the 5ec53579 line already in the tree; the owner chose it over porting the demo'
 - **Limit found:** in the lobby, the skip fired 0 of 8 frames. `DiagnoseTlasMovers.mjs` shows the parked car body and all four wheels still move each frame (about 1 mm on wheels, about 6 mm on the body), so the vehicle solver never sleeps. Freezing a settled car is a behaviour change and is not done.
 - **Not measured:** GPU pass times. SwiftShader frames are CPU emulation, so FPS from this environment is not a valid performance number.
 - **Evidence:** `Exhibits/VehicleLobbyPrototype/tlas-skip-profile-lobby.json`, `tlas-skip-profile-level.json`, `tlas-movers-lobby.json`.
+
+## Continue from 4183309: Garage inspection views, opt-in TLAS skip (2026-11-05, branch `arena/42169529-frontier`)
+
+- **Base:** merged `4183309` (LobbySession rename, paint-only HMI demo, X-ray scan effect) into this branch. Later commits on `arena/bc01c1ed-frontier` (`078881e`, `0abef14`, `b5a7aba`) are not included.
+- **Built:** the Garage well gets a Solid / Ghost / Wireframe / Scan selector (`Experimental/VehicleHmiPrototype/Source/Cabin/ScreenSequence.js`). It sets `Cabin.Appearance.View` to 0 to 3, which `CabinSequence.js` maps to `Camera.w = 1 + View` for `ForwardRaster.wgsl`.
+- **Verified:** `Exhibits/VehicleHmiDemo/CaptureGarageViews.mjs` opens the Garage on SwiftShader, presses each button, and checks `AppearanceView` (0, 1, 2, 3) with no page errors. The tablet PNGs show the selector and its highlight.
+- **Not verified:** the car's Ghost, Wireframe and Scan rendering. The tablet canvas does not contain the car ("rendered live by the exhibit", composited separately), so the car effect needs a capture of the host's main canvas.
+- **Render optimisation:** patch 0003 is now opt-in (`TlasSkipEnabled === true`, default off). With it off, the renderer path is unchanged. Re-run profile (lobby 0.043 vs 0.048 ms per call; level 0.209 vs 0.988 ms; both byte-identical). The patch also applies to the `4183309` renderer copy (`RayTracingSpace.js` differs from upstream; `patch` applied with offsets).
+- **Not done:** the zip's tabs (wheels, lights, drive modes, scene environments), a free camera, extra vehicles in the scene, the C++ X-ray / ghost / wireframe / particle ports, and the fluid/gas editor 1:1 port.

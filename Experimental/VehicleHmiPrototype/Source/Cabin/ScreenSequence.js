@@ -656,11 +656,21 @@ export class ScreenSequence
             }
             else this.RasterText(Preview?.Failure ? "Preview unavailable: " + Preview.Failure : "Loading your car…", 428, 455, 20, "#7d968b", "center");
             this.AdmitRegion("preview-orbit", 78, 248, 640, 400, null, { Orbit: true });
+            // 📝 Inspection views on the live car, the same modes the reference X-ray scan offers. Camera.w = 1 + View in
+            //    CabinSequence.js: 0 solid, 1 ghost (screen-door transparency), 2 wireframe, 3 scan band. Appearance only, never physics.
+            const Views = [["Solid", 0], ["Ghost", 1], ["Wireframe", 2], ["Scan", 3]];
+            for (const [Index, [Label, Mode]] of Views.entries())
+            {
+                const Left = 96 + Index * 128, Top = 262, Chosen = (this.Appearance?.View || 0) === Mode;
+                this.RasterRectangle(Left, Top, 120, 34, 12, Chosen ? "#b2c899" : "#1f3328", Chosen ? "#dcebc8" : null);
+                this.RasterText(Label, Left + 60, Top + 22, 14, Chosen ? "#365035" : "#d4e3c8", "center");
+                this.AdmitRegion("view:" + Mode, Left, Top, 120, 34, () => { if (this.Appearance) this.Appearance.View = Mode; this.Dirty = true; });
+            }
             this.RasterText("YOUR GARAGE", 762, 291, 12, "#98a98f");
             this.RasterText("ControlVehicle", 760, 349, 39, "#dce8cc", "left", 300);
             this.RasterText("The car in the well is your car, rendered live — it only", 763, 392, 17, "#849c81");
             this.RasterText("turns on its turntable. Drag to look around it.", 763, 418, 17, "#849c81");
-            // 📝 Paint is the only vehicle control for now: eight finishes, applied to the live vehicle
+            // 📝 Paint and inspection views are the vehicle controls so far: eight finishes, applied to the live vehicle
             //    material — the well, the mirrors and the car in the world all wear it at once.
             this.RasterText("PAINT", 763, 466, 12, "#98a98f");
             for (const [Index, Paint] of PaintOptions.entries())

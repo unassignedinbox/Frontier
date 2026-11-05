@@ -54,6 +54,7 @@ const Result = await Page.evaluate(async ({ Loops, InFrame }) => {
     const Rt = Host.RayTracing;
     const Original = Rt.UpdateTlas;
     const Timed = (Forced, Count) => {
+        Rt.TlasSkipEnabled = true;   // 📝 the skip is opt-in (patch 0003); this profile measures it on
         Rt.TlasForceRebuild = Forced;
         const Skips = Rt.TlasSkipCount || 0, Rebuilds = Rt.TlasRebuildCount || 0;
         const Start = performance.now();

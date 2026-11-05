@@ -3,14 +3,14 @@
   "Cached": {
     "Forced": false,
     "Calls": 100,
-    "MeanMs": 0.5729999999981373,
+    "MeanMs": 0.20899999998509883,
     "Skipped": 100,
     "Rebuilt": 0
   },
   "Forced": {
     "Forced": true,
     "Calls": 100,
-    "MeanMs": 1.0020000000018627,
+    "MeanMs": 0.9880000000074506,
     "Skipped": 0,
     "Rebuilt": 100
   },
@@ -26,7 +26,7 @@
     "Skipped": 0,
     "Rebuilt": 0
   },
-  "MeanUpdateMsSaved": 0.4290000000037254,
+  "MeanUpdateMsSaved": 0.7790000000223518,
   "PageErrors": [],
   "PagePath": "/index.html?quality=low"
 }

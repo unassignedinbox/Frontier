@@ -4,10 +4,10 @@
              CentZ[K]      = 0.5 * (Bounds.Minimum[2] + Bounds.Maximum[2]);
          }
  
-+        // 📝 Static inputs skip the rebuild. When every leaf bound, occupant and BLAS root matches the last upload, the GPU
-+        //    already holds the same TLAS, so a parked car costs no CPU build and no buffer write. TlasForceRebuild turns this off.
++        // 📝 Opt-in static skip (off unless TlasSkipEnabled is true). When every leaf bound, occupant and BLAS root matches the last
++        //    upload, the GPU already holds the same TLAS, so no CPU build and no buffer write. TlasForceRebuild always rebuilds.
 +        const HasGroundInputs = GroundIdx >= 0 && !Occupants[GroundIdx].Inactive && this.OccupantBlasRoot[GroundIdx] >= 0;
-+        if (!this.TlasForceRebuild && this.TlasInputsMatch(Scene, ObjectCount, HasGroundInputs, GroundIdx))
++        if (this.TlasSkipEnabled === true && !this.TlasForceRebuild && this.TlasInputsMatch(Scene, ObjectCount, HasGroundInputs, GroundIdx))
 +        {
 +            this.TlasSkipCount = (this.TlasSkipCount || 0) + 1;
 +            return;

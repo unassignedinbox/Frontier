@@ -1,0 +1,30 @@
+{
+  "Origin": "http://127.0.0.1:8090",
+  "Views": [
+    {
+      "Mode": "Solid",
+      "RegionFound": true,
+      "AppearanceView": 0,
+      "Png": "garage-view-solid.png"
+    },
+    {
+      "Mode": "Ghost",
+      "RegionFound": true,
+      "AppearanceView": 1,
+      "Png": "garage-view-ghost.png"
+    },
+    {
+      "Mode": "Wireframe",
+      "RegionFound": true,
+      "AppearanceView": 2,
+      "Png": "garage-view-wireframe.png"
+    },
+    {
+      "Mode": "Scan",
+      "RegionFound": true,
+      "AppearanceView": 3,
+      "Png": "garage-view-scan.png"
+    }
+  ],
+  "PageErrors": []
+}

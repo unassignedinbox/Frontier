@@ -3,14 +3,14 @@
   "Cached": {
     "Forced": false,
     "Calls": 300,
-    "MeanMs": 0.02533333333209157,
+    "MeanMs": 0.04300000000124176,
     "Skipped": 300,
     "Rebuilt": 0
   },
   "Forced": {
     "Forced": true,
     "Calls": 300,
-    "MeanMs": 0.02966666666790843,
+    "MeanMs": 0.048000000001241765,
     "Skipped": 0,
     "Rebuilt": 300
   },
@@ -22,11 +22,11 @@
     "ActiveInstances": 7
   },
   "InFrame": {
-    "Frames": 8,
+    "Frames": 9,
     "Skipped": 0,
-    "Rebuilt": 8
+    "Rebuilt": 9
   },
-  "MeanUpdateMsSaved": 0.004333333335816862,
+  "MeanUpdateMsSaved": 0.0050000000000000044,
   "PageErrors": [],
   "PagePath": "/lobby/index.html?scene=studio&quality=low"
 }
