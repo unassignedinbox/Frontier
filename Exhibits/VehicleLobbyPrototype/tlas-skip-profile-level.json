@@ -1,0 +1,32 @@
+{
+  "Origin": "http://127.0.0.1:8080",
+  "Cached": {
+    "Forced": false,
+    "Calls": 100,
+    "MeanMs": 0.5729999999981373,
+    "Skipped": 100,
+    "Rebuilt": 0
+  },
+  "Forced": {
+    "Forced": true,
+    "Calls": 100,
+    "MeanMs": 1.0020000000018627,
+    "Skipped": 0,
+    "Rebuilt": 100
+  },
+  "ByteComparison": {
+    "Bytes": 32544,
+    "Identical": true,
+    "FirstDifferentByte": -1,
+    "UsedTlasNodes": 1017,
+    "ActiveInstances": 509
+  },
+  "InFrame": {
+    "Frames": 0,
+    "Skipped": 0,
+    "Rebuilt": 0
+  },
+  "MeanUpdateMsSaved": 0.4290000000037254,
+  "PageErrors": [],
+  "PagePath": "/index.html?quality=low"
+}

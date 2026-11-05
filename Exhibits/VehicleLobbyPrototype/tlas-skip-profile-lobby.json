@@ -1,0 +1,32 @@
+{
+  "Origin": "http://127.0.0.1:8080",
+  "Cached": {
+    "Forced": false,
+    "Calls": 300,
+    "MeanMs": 0.02533333333209157,
+    "Skipped": 300,
+    "Rebuilt": 0
+  },
+  "Forced": {
+    "Forced": true,
+    "Calls": 300,
+    "MeanMs": 0.02966666666790843,
+    "Skipped": 0,
+    "Rebuilt": 300
+  },
+  "ByteComparison": {
+    "Bytes": 416,
+    "Identical": true,
+    "FirstDifferentByte": -1,
+    "UsedTlasNodes": 13,
+    "ActiveInstances": 7
+  },
+  "InFrame": {
+    "Frames": 8,
+    "Skipped": 0,
+    "Rebuilt": 8
+  },
+  "MeanUpdateMsSaved": 0.004333333335816862,
+  "PageErrors": [],
+  "PagePath": "/lobby/index.html?scene=studio&quality=low"
+}

@@ -1757,3 +1757,16 @@ the 5ec53579 line already in the tree; the owner chose it over porting the demo'
 - **Open for user review:** the studio look (grey haze at the wall top, weak floor reflection, chase camera from behind),
   whether Ready should travel on all-ready or on a host start, and whether appearance should be shared across members.
 - **Commit:** the commit with this entry.
+
+## Renderer performance pass: TLAS skip and measurements (2026-11-05, branch `arena/42169529-frontier`)
+
+- **Audit (read-only):** the VehicleHMI renderer does not use hardware ray tracing. `Shader/*.wgsl` has no ray-query or acceleration-structure calls; BVH traversal is hand-written compute. So an RT-core card gains nothing from this path, and the GTX gap comes from the shared compute work.
+- **Per-frame CPU path:** `RayTracingSpace.UpdateTlas` rebuilds the TLAS from every drawable occupant on every frame and uploads it. The node buffer is one shared buffer written in full, with no ping-pong, so an unchanged TLAS can be skipped safely.
+- **Built:** `Renderer/Patches/0003-tlas-skip-static.patch` (pinned, applied after 0001 and 0002). When all leaf bounds, occupant indices and BLAS roots match the last upload, `UpdateTlas` returns without the build or the `writeBuffer`. `TlasForceRebuild` turns the skip off.
+- **Measured (CPU JavaScript, SwiftShader page, `Exhibits/VehicleLobbyPrototype/ProfileTlasSkip.mjs`):**
+  - Proving Grounds level (509 instances): 0.573 ms per call with the skip, 1.002 ms forced. Saves about 0.43 ms per frame, only while nothing moves.
+  - Lobby (7 instances): 0.025 ms with the skip, 0.030 ms forced. Saves about 0.004 ms, which is negligible.
+  - Byte comparison: skip output matches a forced rebuild exactly (level 32,544 bytes; lobby 416 bytes).
+- **Limit found:** in the lobby, the skip fired 0 of 8 frames. `DiagnoseTlasMovers.mjs` shows the parked car body and all four wheels still move each frame (about 1 mm on wheels, about 6 mm on the body), so the vehicle solver never sleeps. Freezing a settled car is a behaviour change and is not done.
+- **Not measured:** GPU pass times. SwiftShader frames are CPU emulation, so FPS from this environment is not a valid performance number.
+- **Evidence:** `Exhibits/VehicleLobbyPrototype/tlas-skip-profile-lobby.json`, `tlas-skip-profile-level.json`, `tlas-movers-lobby.json`.

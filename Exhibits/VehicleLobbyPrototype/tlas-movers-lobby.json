@@ -1,0 +1,37 @@
+{
+  "Count": 7,
+  "Movers": [
+    {
+      "Leaf": 0,
+      "Occupant": 0,
+      "MaxDelta": 0.0033471286296844482,
+      "Name": "ControlVehicle"
+    },
+    {
+      "Leaf": 1,
+      "Occupant": 1,
+      "MaxDelta": 0.0008081197738647461,
+      "Name": "Wheel FL"
+    },
+    {
+      "Leaf": 2,
+      "Occupant": 2,
+      "MaxDelta": 0.0008094310760498047,
+      "Name": "Wheel FR"
+    },
+    {
+      "Leaf": 3,
+      "Occupant": 3,
+      "MaxDelta": 0.0008409023284912109,
+      "Name": "Wheel RL"
+    },
+    {
+      "Leaf": 4,
+      "Occupant": 4,
+      "MaxDelta": 0.000838160514831543,
+      "Name": "Wheel RR"
+    }
+  ],
+  "MoverCount": 5,
+  "MoverTotalLeaves": 7
+}

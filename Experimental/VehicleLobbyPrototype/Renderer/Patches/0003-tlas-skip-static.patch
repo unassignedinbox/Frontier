@@ -1,0 +1,71 @@
+--- a/Source/RayTracingSpace.js
++++ b/Source/RayTracingSpace.js
+@@ -597,6 +597,16 @@
+             CentZ[K]      = 0.5 * (Bounds.Minimum[2] + Bounds.Maximum[2]);
+         }
+ 
++        // 📝 Static inputs skip the rebuild. When every leaf bound, occupant and BLAS root matches the last upload, the GPU
++        //    already holds the same TLAS, so a parked car costs no CPU build and no buffer write. TlasForceRebuild turns this off.
++        const HasGroundInputs = GroundIdx >= 0 && !Occupants[GroundIdx].Inactive && this.OccupantBlasRoot[GroundIdx] >= 0;
++        if (!this.TlasForceRebuild && this.TlasInputsMatch(Scene, ObjectCount, HasGroundInputs, GroundIdx))
++        {
++            this.TlasSkipCount = (this.TlasSkipCount || 0) + 1;
++            return;
++        }
++        this.TlasRebuildCount = (this.TlasRebuildCount || 0) + 1;
++
+         const NodeScalars  = this.AllNodeScalars;
+         const NodeIntegers = this.AllNodeIntegers;
+ 
+@@ -846,6 +856,51 @@
+         this.UploadTlas();
+     }
+ 
++    // 📝 Packs the leaf inputs (bounds, occupant index, BLAS root) and compares them with the last uploaded set.
++    //    Returns true when identical; always stores the new set so the next frame compares against this one.
++    TlasInputsMatch(Scene, ObjectCount, HasGround, GroundIdx)
++    {
++        const Count = ObjectCount + (HasGround ? 1 : 0);
++        const Capacity = this.ScratchOccIdx.length + 1;
++        if (!this.TlasKeyBounds || this.TlasKeyBounds.length < Capacity * 6)
++        {
++            this.TlasKeyBounds   = new Float64Array(Capacity * 6);
++            this.TlasKeyIdentity = new Int32Array(Capacity * 2);
++            this.TlasKeyCount    = -1;
++        }
++        const Bounds   = this.TlasKeyBounds;
++        const Identity = this.TlasKeyIdentity;
++        let Same = this.TlasKeyCount === Count;
++        for (let K = 0; K < Count; ++K)
++        {
++            let Min0, Min1, Min2, Max0, Max1, Max2, Occ;
++            if (K < ObjectCount)
++            {
++                Min0 = this.ScratchMinX[K]; Min1 = this.ScratchMinY[K]; Min2 = this.ScratchMinZ[K];
++                Max0 = this.ScratchMaxX[K]; Max1 = this.ScratchMaxY[K]; Max2 = this.ScratchMaxZ[K];
++                Occ  = this.ScratchOccIdx[K];
++            }
++            else
++            {
++                const Box = Scene.QueryWorldBounds(GroundIdx);
++                Min0 = Box.Minimum[0]; Min1 = Box.Minimum[1]; Min2 = Box.Minimum[2];
++                Max0 = Box.Maximum[0]; Max1 = Box.Maximum[1]; Max2 = Box.Maximum[2];
++                Occ  = GroundIdx;
++            }
++            const Root = this.OccupantBlasRoot[Occ] | 0;
++            const B = K * 6, I = K * 2;
++            if (Same && (Bounds[B] !== Min0 || Bounds[B + 1] !== Min1 || Bounds[B + 2] !== Min2 ||
++                         Bounds[B + 3] !== Max0 || Bounds[B + 4] !== Max1 || Bounds[B + 5] !== Max2 ||
++                         Identity[I] !== Occ || Identity[I + 1] !== Root))
++                Same = false;
++            Bounds[B] = Min0; Bounds[B + 1] = Min1; Bounds[B + 2] = Min2;
++            Bounds[B + 3] = Max0; Bounds[B + 4] = Max1; Bounds[B + 5] = Max2;
++            Identity[I] = Occ; Identity[I + 1] = Root;
++        }
++        this.TlasKeyCount = Count;
++        return Same;
++    }
++
+     UploadTlas()
+     {
+         if (this.Exchange && this.Exchange.Device && this.NodeBuffer && this.UsedTlasNodes > 0)
