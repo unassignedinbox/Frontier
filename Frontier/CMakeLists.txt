@@ -16,6 +16,9 @@ add_library(FrontierSession STATIC
     Engine/Input/SyntheticDriver.cpp
     Engine/Scene/DeployableUnit.cpp
     Engine/Scene/FacetArchive.cpp
+    Engine/Effects/GasParameters.cpp
+    Engine/Effects/PlumeSolver.cpp
+    Engine/Effects/ParticleSpace.cpp
     Engine/Session/SpawnPolicy.cpp
     Engine/Session/SessionConfiguration.cpp
     Engine/Session/SessionPolicy.cpp

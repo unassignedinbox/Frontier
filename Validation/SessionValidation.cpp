@@ -9,6 +9,9 @@
 
 #include "Frontier/Engine/Input/InputDriver.h"
 #include "Frontier/Engine/Input/SyntheticDriver.h"
+#include "Frontier/Engine/Effects/GasParameters.h"
+#include "Frontier/Engine/Effects/ParticleSpace.h"
+#include "Frontier/Engine/Effects/PlumeSolver.h"
 #include "Frontier/Engine/Session/LevelTransition.h"
 #include "Frontier/Engine/Session/SessionSpace.h"
 #include "Frontier/Engine/Session/LobbySession.h"
@@ -276,6 +279,54 @@ int main()
         Check(Inspection.ResolveScanFraction() < 0.51f, "the band wraps nose-to-tail");
         Inspection.Cycle();
         Check(Inspection.View == InspectionView::Solid, "cycling returns to solid");
+    }
+
+    // --- Fluid/gas editor (1:1 catalogue) + CPU plume solver ----------------------------------------
+    {
+        GasParameters Gas;
+        Check(Near(Gas.Query("Buoyancy"), 2.4f), "catalogue default: buoyancy 2.4");
+        Check(Gas.Assign("WindSpeed", 99.0f) && Near(Gas.WindSpeed, 12.0f), "sliders clamp to the catalogue maximum");
+        Check(Gas.Assign("PressureSweeps", 15.0f) && Near(Gas.PressureSweeps, 16.0f), "sliders snap to the catalogue step");
+        Check(!Gas.Assign("NoSuchKey", 1.0f), "unknown keys are refused");
+        Check(Gas.ApplyPreset("Inferno") && Near(Gas.Buoyancy, 3.4f) && Near(Gas.FlameIntensity, 2.4f), "Inferno preset overrides as in HTML");
+        Check(!Gas.ApplyPreset("No such preset"), "unknown presets are refused");
+        const PlumeSettings Mapped = ResolvePlumeSettings(Gas);
+        Check(Near(Mapped.FlameCore, 1800.0f * 1.18f, 1.0f), "MapPlumeSettings: flame core scales with temperature");
+        Check(Mapped.PressureSweeps == 16, "pressure sweeps carry through");
+
+        Gas = GasParameters{};
+        PlumeSolver Plume(PlumeGrade{ "Validation", { 24, 24, 10 }, 0.40f, 8, 32 });
+        const PlumeSettings Settings = ResolvePlumeSettings(Gas);
+        PlumeSource Source{};
+        Source.PositionMetres = { 0.0f, 0.0f, 0.5f };
+        Source.VelocityMps = { 0.0f, 0.0f, 0.5f };
+        float Peak = 0.0f;
+        for (int Step = 0; Step < 60; ++Step)
+        {
+            Plume.Step(1.0f / 30.0f, Settings, { Source });
+            Peak = std::max(Peak, Plume.QueryTotalDensity());
+        }
+        Check(Peak > 0.5f, "sources inject density");
+        Check(Plume.QueryDensityAt({ 0.0f, 0.0f, 1.5f }) > 0.0f || Plume.QueryTotalDensity() > 0.0f, "the plume occupies the grid");
+        const float Before = Plume.QueryTotalDensity();
+        for (int Step = 0; Step < 120; ++Step)
+            Plume.Step(1.0f / 30.0f, Settings, {});
+        Check(Plume.QueryTotalDensity() < Before, "without sources the plume dissipates");
+        Check(Plume.QueryMeanDivergence() < 0.5f, "pressure projection keeps the flow near-incompressible");
+    }
+
+    // --- Particles (Particle Editor presets, CPU runtime) --------------------------------------------
+    {
+        const ParticlePreset* Preset = FindParticlePreset("Glitch dissolve");
+        Check(Preset && Preset->Style == 1, "the editor's glitch preset is present verbatim");
+        ParticleSpace Particles(1024);
+        Particles.Emit(*Preset, { 0.0f, 0.0f, 1.0f }, { 2.0f, 0.0f, 0.0f }, 200, 7);
+        for (int Step = 0; Step < 10; ++Step)
+            Particles.Step(1.0f / 60.0f);
+        Check(Particles.QueryAliveCount() > 100, "emitted particles live and step");
+        for (int Step = 0; Step < 600; ++Step)
+            Particles.Step(1.0f / 60.0f);
+        Check(Particles.QueryAliveCount() == 0, "particles die on their preset life");
     }
 
     std::printf("SessionValidation: %d checks, %d failures\n", Checks, Failures);

@@ -5,7 +5,7 @@
 //    policy, steps the session, exercises the debug level switch, and — with --render — draws the studio
 //    through the software presentation so the C++ Lobby can be seen without a GPU.
 //
-//      LobbySession [--archive DIR] [--render out.ppm] [--guests N] [--xray] [--scan SECONDS]
+//      LobbySession [--archive DIR] [--render out.ppm] [--guests N] [--xray] [--scan SECONDS] [--ghost] [--wireframe]
 //
 //    The facet archives are the vehicle's own (Experimental/VehicleHmiPrototype/Archive by default).
 
@@ -25,6 +25,7 @@ int main(int ArgumentCount, char** Arguments)
     int Guests = 0;
     bool XRay = false;
     float ScanSeconds = 1.6f;
+    int InspectionMode = 0;   // 1 ghost, 2 wireframe (3 = scan, via --scan/--xray)
     for (int Index = 1; Index < ArgumentCount; ++Index)
     {
         if (std::strcmp(Arguments[Index], "--archive") == 0 && Index + 1 < ArgumentCount)
@@ -33,6 +34,10 @@ int main(int ArgumentCount, char** Arguments)
             RenderPath = Arguments[++Index];
         else if (std::strcmp(Arguments[Index], "--xray") == 0)
             XRay = true;
+        else if (std::strcmp(Arguments[Index], "--ghost") == 0)
+            InspectionMode = 1;
+        else if (std::strcmp(Arguments[Index], "--wireframe") == 0)
+            InspectionMode = 2;
         else if (std::strcmp(Arguments[Index], "--scan") == 0 && Index + 1 < ArgumentCount)
         { XRay = true; ScanSeconds = std::atof(Arguments[++Index]); }
         else if (std::strcmp(Arguments[Index], "--guests") == 0 && Index + 1 < ArgumentCount)
@@ -127,9 +132,10 @@ int main(int ArgumentCount, char** Arguments)
                 Vehicle.PositionMetres = Unit->QueryPositionMetres();
                 Vehicle.YawDegrees = Unit->QueryYawDegrees();
                 Vehicle.Paint = Paints[Index % 5];
-                if (XRay && Index == 0)
+                if (Index == 0 && (XRay || InspectionMode > 0))
                 {
-                    Vehicle.Inspection.View = InspectionView::Scan;
+                    Vehicle.Inspection.View = XRay ? InspectionView::Scan
+                                                   : static_cast<InspectionView>(InspectionMode);
                     Vehicle.Inspection.ScanSeconds = ScanSeconds;
                 }
                 Vehicles.push_back(Vehicle);

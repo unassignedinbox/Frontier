@@ -82,3 +82,25 @@ front-end. A GLFW window (with `FRONTIER_WITH_GLFW`) and the WebGPU presentation
   session that opens on the Lobby. (There is deliberately no `LobbyGame`.)
 - **Render proof** belongs in `VisualProof/` at the repository root, as in the editor exhibits —
   not beside the code that produced it.
+
+## Fluid/gas and particles (Effects)
+
+The HTML fluid editor is ported 1:1 as data and solver under `Engine/Effects/`:
+
+- `GasParameters` — the full GasParameterCatalogue (32 controls, same keys, ranges, steps,
+  defaults and units as `SmokeSequence.js`) and the six GasPresets from the inspector, with
+  slider clamp/snap semantics and the `MapPlumeSettings` mapping (`ResolvePlumeSettings`).
+- `PlumeSolver` — the CPU mirror of the GPU plume: source splats, buoyancy, vorticity
+  confinement (the same epsilon rule), semi-Lagrangian advection, dissipation/cooling decay,
+  and the incompressible pressure projection (divergence -> Jacobi sweeps -> gradient
+  subtraction) on the HTML PlumeGrades grids. Deterministic, and validated as such: density
+  injects, dissipates without sources, and mean divergence stays near zero after projection.
+- `ParticleSpace` — the particle runtime: pooled particles carrying the Particle Editor's
+  three presets verbatim ("Derez cube", "Reverse derez", "Glitch dissolve"). (Its editor UI
+  already exists in C++ in the reference tree at `Frontier/Engine/Interface/ParticleEditor`;
+  this is the runtime half it edits.)
+
+The scan family is complete in the CPU mirror too: Ghost is now true 45 % transparency
+(blended against what is behind, no depth taken — `LobbySession --ghost`,
+`VisualProof/GhostPreview.png`) and Wireframe removes the faces entirely, wheels included
+(`--wireframe`, `VisualProof/WireframePreview.png`).

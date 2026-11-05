@@ -80,7 +80,7 @@ struct ScanBand
 };
 
 void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const std::array<float, 3>& Albedo, float Emission,
-              const ScanBand& Scan = {})
+              const ScanBand& Scan = {}, float Opacity = 1.0f)
 {
     float Sx[3], Sy[3], Sz[3];
     for (int Corner = 0; Corner < 3; ++Corner)
@@ -115,10 +115,19 @@ void Triangle(Frame& Target, const Projector& Camera, const Vec3 World[3], const
             const int Index = Y * Target.Width + X;
             if (Z >= Target.Depth[Index])
                 continue;
-            Target.Depth[Index] = Z;
+            // 📝 Ghost transparency is real blending against what is already drawn (the floor, the cars
+            //    behind), and it does not take depth: the car can disappear into the room. Opaque draws
+            //    afterwards still depth-test against the opaque world only.
+            if (Opacity >= 1.0f)
+                Target.Depth[Index] = Z;
             const float Brightness = std::min(1.6f, Lit + Emission);
-            Target.Colour[Index] = { std::min(1.0f, Albedo[0] * Brightness), std::min(1.0f, Albedo[1] * Brightness),
-                                     std::min(1.0f, Albedo[2] * Brightness) };
+            const std::array<float, 3> Shaded = { std::min(1.0f, Albedo[0] * Brightness), std::min(1.0f, Albedo[1] * Brightness),
+                                                  std::min(1.0f, Albedo[2] * Brightness) };
+            if (Opacity >= 1.0f)
+                Target.Colour[Index] = Shaded;
+            else
+                for (int Channel = 0; Channel < 3; ++Channel)
+                    Target.Colour[Index][Channel] = Target.Colour[Index][Channel] * (1.0f - Opacity) + Shaded[Channel] * Opacity;
             if (Scan.Active)
             {
                 // 📝 Per-pixel band: interpolate the point's place along the car's length and light the
@@ -233,20 +242,14 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
         }
         if (Inspection.View == InspectionView::Wireframe)
         {
-            Edge(Target, Camera, World[0], World[1], { 0.65f, 0.85f, 0.90f });
-            Edge(Target, Camera, World[1], World[2], { 0.65f, 0.85f, 0.90f });
-            Edge(Target, Camera, World[2], World[0], { 0.65f, 0.85f, 0.90f });
+            Edge(Target, Camera, World[0], World[1], { 0.08f, 0.38f, 0.46f });
+            Edge(Target, Camera, World[1], World[2], { 0.08f, 0.38f, 0.46f });
+            Edge(Target, Camera, World[2], World[0], { 0.08f, 0.38f, 0.46f });
             continue;
         }
         float Emission = 0.0f;
-        auto Albedo = FamilyAlbedo(Archive.Families[Facet], Paint, Emission);
-        if (Opacity < 1.0f)   // ghost toward the studio haze
-        {
-            const std::array<float, 3> Haze = { 0.62f, 0.66f, 0.70f };
-            for (int Channel = 0; Channel < 3; ++Channel)
-                Albedo[Channel] = Albedo[Channel] * Opacity + Haze[Channel] * (1.0f - Opacity);
-        }
-        Triangle(Target, Camera, World, Albedo, Emission, Scan);
+        const auto Albedo = FamilyAlbedo(Archive.Families[Facet], Paint, Emission);
+        Triangle(Target, Camera, World, Albedo, Emission, Scan, Opacity);
     }
 }
 
@@ -312,9 +315,9 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
                     const Vec3 Local = { MountX[Axle], Sign * 1.0475f, -0.02145f };
                     const float YawRad = Vehicle.YawDegrees * Pi / 180.0f;
                     const Vec3 Hub = Transform(Local, Origin, std::cos(YawRad), std::sin(YawRad));
-                    DrawArchive(Target, Camera, *Vehicle.Tyre, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint);
+                    DrawArchive(Target, Camera, *Vehicle.Tyre, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint, Vehicle.Inspection);
                     if (Vehicle.Rim && Vehicle.Rim->IsValid())
-                        DrawArchive(Target, Camera, *Vehicle.Rim, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint);
+                        DrawArchive(Target, Camera, *Vehicle.Rim, Hub, Vehicle.YawDegrees, 0.0f, Sign, Vehicle.Paint, Vehicle.Inspection);
                 }
         }
     }
