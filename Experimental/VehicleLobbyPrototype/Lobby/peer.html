@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+==============================================================================================================================================
+                                                              PEER.HTML
+==============================================================================================================================================
+ 🧩 Lightweight peer for the roster test: joins the lobby channel without WebGPU, so a second member can appear and leave.
+ 📝 Open /lobby/peer.html?ready=1 to press Ready on join; leave by closing the tab (or the Leave button).
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lobby peer (test)</title>
+<style>body { font: 14px system-ui, sans-serif; background: #111; color: #ddd; padding: 24px; } button { font: inherit; padding: 8px 12px; }</style>
+</head>
+<body>
+    <h1>Lobby peer</h1>
+    <p id="peer-status">Joining…</p>
+    <button id="peer-ready" type="button">Ready</button>
+    <button id="peer-leave" type="button">Leave</button>
+    <script type="module">
+        import { LobbyChannelName, LobbyMessage, CreateRoster, SetReady } from "./Source/RosterRegistry.js";
+        const Id = "peer" + Math.random().toString(36).slice(2, 8);
+        const Name = "Peer " + Id.slice(-3).toUpperCase();
+        const Channel = new BroadcastChannel(LobbyChannelName);
+        const Query = new URLSearchParams(location.search);
+        let Ready = Query.get("ready") === "1";
+        let Joined = true;
+        const Status = document.getElementById("peer-status");
+        const Post = (Type, Extra = {}) => Channel.postMessage({ Type, Id, Name, At: Date.now(), Ready, ...Extra });
+        const Render = () => { Status.textContent = (Joined ? "Joined as " : "Left as ") + Name + (Ready ? ", ready" : ", not ready"); };
+        Channel.addEventListener("message", (Event) => {
+            if (Event.data?.Type === LobbyMessage.Hello && Event.data.Id !== Id)
+                Post(LobbyMessage.Heartbeat);
+            if (Event.data?.Type === LobbyMessage.Travel)
+                Status.textContent = "A member started the next level.";
+        });
+        // 📝 The lobby ends membership on Goodbye or on four seconds of silence; the peer keeps heartbeating while joined.
+        setInterval(() => { if (Joined) Post(LobbyMessage.Heartbeat); }, 1000);
+        document.getElementById("peer-ready").addEventListener("click", () => {
+            if (!Joined) return;
+            Ready = !Ready;
+            Post(LobbyMessage.Ready);
+            Render();
+        });
+        document.getElementById("peer-leave").addEventListener("click", () => {
+            if (!Joined) return;
+            Joined = false;
+            Post(LobbyMessage.Goodbye);
+            Render();
+        });
+        addEventListener("pagehide", () => { if (Joined) Post(LobbyMessage.Goodbye); });
+        Post(LobbyMessage.Hello);
+        Render();
+    </script>
+</body>
+</html>

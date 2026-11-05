@@ -1,0 +1,11 @@
+--- a/Shader/ClusteredLights.wgsl
++++ b/Shader/ClusteredLights.wgsl
+@@ -97,7 +97,7 @@
+     if (LightType == LightTypeLowBeam)
+     {
+         // ECE/SAE sharp horizontal glare cutoff at Z = -0.02
+-        let Cutoff  = smoothstep(0.06, -0.04, ToSurface.z);
++        let Cutoff  = 1.0 - smoothstep(-0.04, 0.06, ToSurface.z);
+         let HotSpot = 1.0 + 1.4 * pow(max(0.0, CosAngle), 12.0);
+         return SpotFactor * Cutoff * HotSpot;
+     }

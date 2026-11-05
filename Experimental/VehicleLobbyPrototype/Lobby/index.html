@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!--
+==============================================================================================================================================
+                                                              INDEX.HTML
+==============================================================================================================================================
+ 🧩 Car configurator lobby prototype: the VehicleHMI WebGPU studio with a roster and paint controls over the viewport.
+ 📝 Keeps the DOM ids that IlluminationHost requires. The editor columns stay in the DOM but are hidden for the lobby.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontier · Car configurator lobby (prototype)</title>
+<!-- 📝 The renderer resolves its shaders, archives and assets against the document base, so the base is the server root. -->
+<base href="/">
+<link rel="stylesheet" href="/lobby/Style/lobby.css">
+</head>
+<body class="lobby">
+    <div id="shell">
+        <aside id="outliner" class="column editor-column" hidden>
+            <div class="column-tabs"></div>
+            <div class="outliner-body" id="outliner-body"></div>
+        </aside>
+        <section id="viewport-column" class="column">
+            <div class="viewport-bar" id="viewport-bar"></div>
+            <div id="stage">
+                <canvas id="viewport"></canvas>
+                <canvas id="capture" class="capture"></canvas>
+                <div id="hud"><pre id="hud-text">Starting…</pre></div>
+                <div id="inset-frame" class="hidden"><div id="inset-legend"></div></div>
+                <div id="overlay-dock" class="hidden"></div>
+                <div id="overlay-notice" class="hidden"></div>
+                <div id="event-notice" class="hidden"></div>
+                <div id="bring-up">
+                    <h2>Frontier · Car configurator</h2>
+                    <div class="bring-up-caption">Starting the studio</div>
+                    <div class="bring-up-bar"><div></div></div>
+                </div>
+                <div id="failure" class="hidden"></div>
+
+                <section id="lobby-panel" aria-label="Lobby">
+                    <header>
+                        <h1>Car configurator</h1>
+                        <p class="lobby-count" id="lobby-count">1 player</p>
+                    </header>
+                    <h2>Lobby</h2>
+                    <ul id="lobby-roster" class="roster"></ul>
+                    <div class="lobby-actions">
+                        <button id="lobby-ready" type="button" class="primary">Ready</button>
+                        <button id="lobby-join" type="button">Leave lobby</button>
+                    </div>
+                    <p id="lobby-status" class="lobby-status" role="status"></p>
+
+                    <h2>Finish</h2>
+                    <div id="lobby-paint" class="swatches" role="radiogroup" aria-label="Paint"></div>
+                    <label class="toggle"><input id="lobby-matte" type="checkbox"> Matte finish</label>
+                    <label class="toggle"><input id="lobby-dark-wheels" type="checkbox"> Dark wheels</label>
+                    <label class="toggle"><input id="lobby-blue-rims" type="checkbox"> Blue rims</label>
+                    <p class="note">Each browser renders its own copy of the car, so the finish is local to this tab.</p>
+                </section>
+            </div>
+        </section>
+        <aside id="inspector" class="column editor-column" hidden>
+            <div class="inspector-top" id="inspector-top"></div>
+            <div class="inspector-content" id="inspector-content"></div>
+        </aside>
+        <footer id="status"></footer>
+    </div>
+    <script type="module" src="/lobby/Source/LobbyStartup.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+--- a/Source/FacetStructure.js
++++ b/Source/FacetStructure.js
+@@ -14,6 +14,7 @@
+ import { ConstructIdentityTransform, ConstructRigidTransform, TransformBounds, InvertTransform, RotateVector, ConjugateQuaternion,
+          SubtractVector, CrossVector, NormalizeVector } from "./TransformProjection.js";
+ import { StressShapes, ResolveStressPlacements } from "./StressLayout.js";
++import { StudioSceneEnabled, EmitStudioCycloramaFacets, EmitStudioSoftboxFacets } from "./StudioCyclorama.js";
+ 
+ // 📝 What an occupant takes part in. A ground tile only owns a surface card; the ground occupant is only rastered,
+ //    because the scene distance field carries the ground as its analytic plane rather than as a sampled volume.
+@@ -87,7 +88,8 @@
+         this.VehicleBodySet = BodySet;
+         const WheelLeftSet  = this.ConstructFacetSet("ControlVehicle wheel (left)", ProjectWheelFacets(Tyre, Rim, false), 0.025, 40.0);
+         const WheelRightSet = this.ConstructFacetSet("ControlVehicle wheel (right)", ProjectWheelFacets(Tyre, Rim, true), 0.025, 40.0);
+-        const GroundSet     = this.ConstructFacetSet("Proving ground", EmitLevelGroundFacets(), 0.0, 0.0);
++        const GroundSet     = this.ConstructFacetSet(StudioSceneEnabled ? "Studio cyclorama" : "Proving ground",
++                                                 StudioSceneEnabled ? EmitStudioCycloramaFacets() : EmitLevelGroundFacets(), 0.0, 0.0);
+         const ShapeSets = {};
+         for (const [Key, Shape] of Object.entries(LevelShapes))
+             ShapeSets[Key] = this.ConstructFacetSet(Key, Shape.Emit(), Shape.Voxel, Shape.Cards);
+@@ -107,7 +109,7 @@
+ 
+         // ③ the level's distance occupants; rastered-only shapes wait until after the ground ----------------------------
+         const RasterOnly = [];
+-        for (const Placement of ResolveLevelPlacements())
++        for (const Placement of (StudioSceneEnabled ? [] : ResolveLevelPlacements()))
+         {
+             if (LevelShapes[Placement.Shape].Distance === false)
+             {
+@@ -123,7 +125,7 @@
+         // ③ cones: rigid bodies at rest — in the field and carded like any static occupant (Dynamic only so a knocked
+         //    cone's motion invalidates the field; Moving lifts it onto the every-frame relighting list while it moves)
+         const ConeRoles = StaticRoles | OccupantRole.Dynamic;
+-        const ConePlacements = ResolveConePlacements();
++        const ConePlacements = StudioSceneEnabled ? [] : ResolveConePlacements();
+         this.ConeBlock = { First: this.Occupants.length, Count: ConePlacements.length, Placements: ConePlacements, FacetSet: ShapeSets.Cone };
+         ConePlacements.forEach((Placement, Cone) =>
+         {
+@@ -137,7 +139,7 @@
+ 
+         // ④ breakable props, whole: rastered, in the field, carded and a collider until they break ------------------------
+         const BreakableSets = new Map();
+-        this.Breakables = ResolveBreakables().map((Definition) =>
++        this.Breakables = (StudioSceneEnabled ? [] : ResolveBreakables()).map((Definition) =>
+         {
+             const Material = FractureMaterials[Definition.Material];
+             const Key = Definition.Material + JSON.stringify(Definition.Shape);
+@@ -192,7 +194,7 @@
+ 
+         // ⑥ the stress pool: shaped in runs, placed by slot, inactive until enabled -----------------------------------
+         this.BaseDistanceCount = this.Occupants.length;
+-        const GroundOccupants = 1 + GroundLayout.TileCount[0] * GroundLayout.TileCount[1] + 4;
++        const GroundOccupants = 1 + GroundLayout.TileCount[0] * GroundLayout.TileCount[1] + 4 + (StudioSceneEnabled ? 1 : 0);
+         const Capacity = Math.max(0, Math.min(Math.floor(StressCapacity), IdentityCeiling - this.BaseDistanceCount - GroundOccupants));
+         const StressSets = StressShapes.map((Shape) => this.ConstructFacetSet(Shape.Name, Shape.Emit(), Shape.DistanceVoxel, Shape.CardDensity));
+         this.StressPool = { First: this.Occupants.length, Capacity, Active: 0, Placements: ResolveStressPlacements(Capacity), FacetSets: StressSets };
+@@ -210,6 +212,12 @@
+ 
+         // ⑦ the ground: rastered once, carded as tiles ----------------------------------------------------------------
+         this.GroundOccupant = this.ConstructOccupant("Proving ground", GroundSet, ConstructIdentityTransform(), OccupantRole.Raster);
++        if (StudioSceneEnabled)
++        {
++            // 📝 The softbox is the studio's only light: a raster-only emitter, placed in world space like the ground.
++            const SoftboxSet = this.ConstructFacetSet("Studio softbox", EmitStudioSoftboxFacets(), 0.0, 0.0);
++            this.StudioSoftboxOccupant = this.ConstructOccupant("Studio softbox", SoftboxSet, ConstructIdentityTransform(), OccupantRole.Raster);
++        }
+         this.GroundTiles.First = this.Occupants.length;
+         for (let Row = 0; Row < GroundLayout.TileCount[0]; ++Row)
+         {
+--- a/Source/IlluminationHost.js
++++ b/Source/IlluminationHost.js
+@@ -25,6 +25,7 @@
+ import { OccupantDistanceSpace } from "./OccupantDistanceSpace.js";
+ import { SceneDistanceSpace, ResolveMovedBounds } from "./SceneDistanceSpace.js";
+ import { ResolveLevelPlacements } from "./LevelStructure.js";
++import { StudioSceneEnabled } from "./StudioCyclorama.js";
+ import { SurfaceCardDepot } from "./SurfaceCardDepot.js";
+ import { RayTracingSpace } from "./RayTracingSpace.js";
+ import { AtmosphereIntegrator } from "./AtmosphereIntegrator.js";
+@@ -249,7 +250,7 @@
+         this.RayTracing = new RayTracingSpace(this.Exchange);
+         this.RayTracing.ConstructResources(this.Scene, this.MaterialRecords, this.LightRecords);
+ 
+-        const LevelPlacements = ResolveLevelPlacements();
++        const LevelPlacements = StudioSceneEnabled ? [] : ResolveLevelPlacements();
+         this.StreetLampPoles = LevelPlacements
+             .filter((P) => P.Shape === "PoleHead")
+             .map((P) => ({ X: P.Position[0], Y: P.Position[1], Z: P.Position[2] }));

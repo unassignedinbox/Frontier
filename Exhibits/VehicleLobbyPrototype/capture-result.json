@@ -1,0 +1,46 @@
+{
+  "Origin": "http://127.0.0.1:8080",
+  "StartedAt": "2026-11-05T12:40:48.734Z",
+  "DurationSeconds": 916,
+  "Results": [
+    {
+      "Name": "studio renders frames",
+      "Expected": true,
+      "Observed": true,
+      "Pass": true
+    },
+    {
+      "Name": "roster starts with one member",
+      "Expected": "1 player",
+      "Observed": "1 player",
+      "Pass": true
+    },
+    {
+      "Name": "peer join adds a member",
+      "Expected": "2 players",
+      "Observed": "2 players",
+      "Pass": true
+    },
+    {
+      "Name": "peer leave removes the member",
+      "Expected": "1 player",
+      "Observed": "1 player",
+      "Pass": true
+    },
+    {
+      "Name": "ready waits for the other member",
+      "Expected": "Ready. Waiting for 1 more to press Ready.",
+      "Observed": "Ready. Waiting for 1 more to press Ready.",
+      "Pass": true
+    },
+    {
+      "Name": "all ready moves the room to the next level",
+      "Expected": true,
+      "Observed": true,
+      "Pass": true
+    }
+  ],
+  "MemberErrors": [],
+  "Passed": 6,
+  "Failed": 0
+}

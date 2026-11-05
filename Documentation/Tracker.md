@@ -1737,3 +1737,23 @@ the 5ec53579 line already in the tree; the owner chose it over porting the demo'
 - **Deviation:** the post-commit sync rule (`SultanAladin/Frontier arena/11f31835-frontier`) conflicts with
   Arena session-branch discipline; all work stays on `arena/c8d71a98-frontier` until the final PR.
 - **Evidence:** `Exhibits/Networking/` (this entry's validation ledger).
+
+## Car configurator lobby HTML prototype on the VehicleHMI renderer (2026-11-05, branch `arena/42169529-frontier`)
+
+- **Scope:** HTML prototype only, for user review before any C++, GLFW, vehicle input or native lobby-level work.
+- **Imported:** `streamlinkinbox/Frontier` PR #10 (`f25b30b7`) selectively, commit `62692d4`: 1,448 files, 28.9 MB. Excluded: `Binaries/`,
+  `.github/`, `EngineContent/`, `Exhibits/`, `Experimental/`, and two files over 1 MB. The VehicleHMI renderer is not in PR #10, so it
+  is restored from upstream `SultanAladin/Frontier` `6afb6f0` (`Automation/VehicleHmiRendererPin.json`) into the git-ignored
+  `ExternalPackages/VehicleHmiRenderer`.
+- **Built:**
+  - `Renderer/StudioCyclorama.js`: round cyclorama with cove and wall, plus one overhead softbox.
+  - Two patches: a Chromium smoothstep fix in `ClusteredLights.wgsl`, and the studio scene hooks in `FacetStructure.js` and `IlluminationHost.js`.
+  - Lobby page with a roster over `BroadcastChannel`, Ready-to-travel, and a configurator wired to `VehicleAppearance.Apply`.
+  - `Tools/Serve.py` on 0.0.0.0:8080; pure roster and appearance modules with `node --test` tests.
+- **Found and fixed while testing:** the restore wrote overlays into the wrong folder; the renderer needs `npm ci` for `jolt-physics`;
+  the renderer's relative asset URLs need `<base href="/">`; a tab did not refresh its own roster entry and dropped itself after 4 s.
+- **Evidence:** `Exhibits/VehicleLobbyPrototype/` (`capture-result.json`: 6 of 6 checks, 0 page errors, 916 s, SwiftShader).
+  Reproduction and limits are in `Experimental/VehicleLobbyPrototype/README.md`.
+- **Open for user review:** the studio look (grey haze at the wall top, weak floor reflection, chase camera from behind),
+  whether Ready should travel on all-ready or on a host start, and whether appearance should be shared across members.
+- **Commit:** the commit with this entry.

@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/SultanAladin/Frontier.git",
+  "commit": "6afb6f00b5f25c45f7cda92c7da65b64845768f3",
+  "source_branch": "arena/e9bd7db5-frontier",
+  "paths": ["Experimental/VehicleHmiPrototype", "ReferenceApps"],
+  "exclude": ["Experimental/VehicleHmiPrototype/node_modules", "Experimental/VehicleHmiPrototype/Evidence"],
+  "restore_root": "ExternalPackages/VehicleHmiRenderer",
+  "renderer_directory": "ExternalPackages/VehicleHmiRenderer/Experimental/VehicleHmiPrototype",
+  "overlays": [
+    ["Experimental/VehicleLobbyPrototype/Renderer/StudioCyclorama.js", "Source/StudioCyclorama.js"]
+  ],
+  "patches": [
+    "Experimental/VehicleLobbyPrototype/Renderer/Patches/0001-chrome-smoothstep-edge.patch",
+    "Experimental/VehicleLobbyPrototype/Renderer/Patches/0002-studio-scene.patch"
+  ]
+}
