@@ -75,6 +75,7 @@ class LuminaireRegister
     bool                          RoofLightEnabled   = false;
     bool                          CullEnabled        = true;
     std::vector<LuminaireProfile> Luminaires{};
+    std::vector<LuminaireProfile> StudioLights{};
     uint32_t                      ActiveClusterCells = 0;
 };
 

@@ -10,7 +10,7 @@ int main(int argc,char** argv)
     const char* Content = argc>2 ? argv[2] : "EngineContent";
     Frontier::RestirPresentation Renderer;
     std::string Diagnostic;
-    if (!Renderer.Initialize(Content, 288, 162, Diagnostic)) { std::cerr<<Diagnostic<<'\n'; return 1; }
+    if (!Renderer.Initialize(Content, 288, 162, Diagnostic, argc>3 && std::string(argv[3])=="--lobby")) { std::cerr<<Diagnostic<<'\n'; return 1; }
     auto Position=Renderer.VehiclePosition();
     std::cout << "Vehicle archive position: " << Position[0] << ' ' << Position[1] << ' ' << Position[2] << '\n';
     Frontier::PresentationCamera Camera; Camera.FocusMetres=Position; Camera.FocusMetres[2]+=0.6f;

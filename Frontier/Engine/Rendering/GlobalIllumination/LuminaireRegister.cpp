@@ -73,6 +73,8 @@ std::vector<uint8_t> LuminaireRegister::Update(const std::optional<Transform>& V
                                             const std::vector<LampPlacement>& PointLamps, const std::optional<LuminaireProfile>& TransientLight)
 {
     Luminaires.clear();
+    for (const auto& Light : StudioLights)
+        if (Luminaires.size() < MaximumLuminaires) Luminaires.push_back(Light);
 
     // ① roadway street lamp poles; the emitter sits 25 cm below the head so shadow rays never self-occlude
     for (const LampPlacement& Pole : Poles)

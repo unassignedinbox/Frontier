@@ -23,6 +23,7 @@
 #include <array>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -37,14 +38,14 @@ void DrawRect(float X, float Y, float Width, float Height, float R, float G, flo
     glEnd();
 }
 
-void Present(GLFWwindow* Window, GLuint Texture, const Frontier::PresentationFrame& Frame,
+bool Present(GLFWwindow* Window, GLuint Texture, const Frontier::PresentationFrame& Frame,
              bool MenuVisible, size_t SelectedDestination, const Everest::NavigationApp& Navigation,
-             const Frontier::LobbySession& Game)
+             const Frontier::LobbySession& Game, const std::string& CapturePath)
 {
     int Width = 0, Height = 0;
     glfwGetFramebufferSize(Window, &Width, &Height);
     if (Width <= 0 || Height <= 0)
-        return;
+        return CapturePath.empty();
     glViewport(0, 0, Width, Height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -90,7 +91,21 @@ void Present(GLFWwindow* Window, GLuint Texture, const Frontier::PresentationFra
         }
         glDisable(GL_BLEND);
     }
+    bool Captured = true;
+    if (!CapturePath.empty())
+    {
+        // Read the actual composed window back buffer, after the menu and before swap.
+        std::vector<unsigned char> Pixels(static_cast<size_t>(Width) * Height * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, Width, Height, GL_RGB, GL_UNSIGNED_BYTE, Pixels.data());
+        std::ofstream File(CapturePath, std::ios::binary);
+        File << "P6\n" << Width << ' ' << Height << "\n255\n";
+        for (int Y = Height - 1; Y >= 0; --Y)
+            File.write(reinterpret_cast<const char*>(Pixels.data() + static_cast<size_t>(Y) * Width * 3), Width * 3);
+        Captured = static_cast<bool>(File) && glGetError() == GL_NO_ERROR;
+    }
     glfwSwapBuffers(Window);
+    return Captured;
 }
 
 std::string ResolveControlsTitle(const std::string& Level, const Frontier::InputRoutingPolicy& Policy,
@@ -116,6 +131,7 @@ int main(int ArgumentCount, char** Arguments)
     using namespace Frontier;
     SessionConfiguration Configuration{};
     std::string ArchiveDirectory = "Experimental/VehicleHmiPrototype/Archive";
+    std::string CapturePath;
 #ifdef FRONTIER_WITH_RESTIR
     std::string ContentDirectory = "EngineContent";
 #endif
@@ -126,6 +142,8 @@ int main(int ArgumentCount, char** Arguments)
         else if (std::strcmp(Arguments[Index], "--content") == 0 && Index + 1 < ArgumentCount)
             ContentDirectory = Arguments[++Index];
 #endif
+        else if (std::strcmp(Arguments[Index], "--capture") == 0 && Index + 1 < ArgumentCount)
+            CapturePath = Arguments[++Index];
 
     const FacetArchiveData Body = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleBody.facet");
     const FacetArchiveData Tyre = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleTyre.facet");
@@ -169,8 +187,10 @@ int main(int ArgumentCount, char** Arguments)
 #ifdef FRONTIER_WITH_RESTIR
     std::unique_ptr<RestirPresentation> Restir;
     std::array<float,3> RestirOrigin{};
-    int Result = 0;
+    std::string RestirLevel;
 #endif
+    int Result = 0;
+    int PresentedFrames = 0;
     std::vector<PresentationVehicle> Vehicles(1);
     Vehicles[0].Body = &Body;
     Vehicles[0].Tyre = &Tyre;
@@ -236,32 +256,34 @@ int main(int ArgumentCount, char** Arguments)
         PresentationCamera View = Camera.Resolve(UpdatedRouting, Unit);
         PresentationFrame Image;
 #ifdef FRONTIER_WITH_RESTIR
+        if (!Restir || RestirLevel != Level)
+        {
+            Restir.reset();
+            glfwSetWindowTitle(Window, "Project Everest | Starting Vulkan ReSTIR...");
+            Restir = std::make_unique<RestirPresentation>();
+            std::string Diagnostic;
+            const bool Lobby = !UpdatedRouting.AllowDriving;
+            if (!Restir->Initialize(ContentDirectory, 480, 312, Diagnostic, Lobby))
+            {
+                std::fprintf(stderr, "EverestWindow: ReSTIR initialization failed: %s\n", Diagnostic.c_str());
+                Result = 1; break;
+            }
+            RestirLevel = Level;
+            RestirOrigin = Restir->VehiclePosition();
+        }
         if (UpdatedRouting.AllowDriving)
         {
-            if (!Restir)
-            {
-                glfwSetWindowTitle(Window, "Project Everest | Starting Vulkan ReSTIR...");
-                Restir = std::make_unique<RestirPresentation>();
-                std::string Diagnostic;
-                if (!Restir->Initialize(ContentDirectory, 480, 312, Diagnostic))
-                {
-                    std::fprintf(stderr, "EverestWindow: ReSTIR initialization failed: %s\n", Diagnostic.c_str());
-                    Result = 1; break;
-                }
-                RestirOrigin = Restir->VehiclePosition();
-            }
             Restir->SetVehiclePose(Vehicles[0].PositionMetres, Vehicles[0].YawDegrees);
             View.FocusMetres[0] += RestirOrigin[0]; View.FocusMetres[1] += RestirOrigin[1];
             View.FocusMetres[2] += RestirOrigin[2] - 0.53f;
-            std::string Diagnostic;
-            if (!Restir->Render(View, Step, Image, Diagnostic))
-            {
-                std::fprintf(stderr, "EverestWindow: ReSTIR refresh failed: %s\n", Diagnostic.c_str());
-                Result = 1; break;
-            }
         }
-        else Image = RenderLobbyFrame(Vehicles, View, 960, 624);
-        const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds / Vulkan ReSTIR" : "Lobby / software";
+        std::string Diagnostic;
+        if (!Restir->Render(View, Step, Image, Diagnostic))
+        {
+            std::fprintf(stderr, "EverestWindow: ReSTIR refresh failed: %s\n", Diagnostic.c_str());
+            Result = 1; break;
+        }
+        const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds / Vulkan ReSTIR" : "Lobby / Vulkan ReSTIR";
 #else
         Image = UpdatedRouting.AllowDriving ? RenderProvingGroundsFrame(Vehicles, View, 960, 624)
                                             : RenderLobbyFrame(Vehicles, View, 960, 624);
@@ -269,15 +291,18 @@ int main(int ArgumentCount, char** Arguments)
 #endif
         glfwSetWindowTitle(Window, ResolveControlsTitle(LevelLabel, UpdatedRouting, MenuVisible,
                                                         Navigation.QueryDestinations(), SelectedDestination).c_str());
-        Present(Window, Texture, Image, MenuVisible, SelectedDestination, Navigation, Game);
+        const bool CaptureNow = !CapturePath.empty() && ++PresentedFrames == 12;
+        if (!Present(Window, Texture, Image, MenuVisible, SelectedDestination, Navigation, Game,
+                     CaptureNow ? CapturePath : std::string{}))
+        {
+            std::fprintf(stderr, "EverestWindow: could not capture window framebuffer\n");
+            Result = 1; break;
+        }
+        if (CaptureNow) break;
     }
 
     glDeleteTextures(1, &Texture);
     glfwDestroyWindow(Window);
     glfwTerminate();
-#ifdef FRONTIER_WITH_RESTIR
     return Result;
-#else
-    return 0;
-#endif
 }

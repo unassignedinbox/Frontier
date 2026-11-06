@@ -13,7 +13,7 @@ class RestirPresentation
     ~RestirPresentation();
     RestirPresentation(const RestirPresentation&) = delete;
     RestirPresentation& operator=(const RestirPresentation&) = delete;
-    bool Initialize(const std::string& ContentRoot, int Width, int Height, std::string& Diagnostic);
+    bool Initialize(const std::string& ContentRoot, int Width, int Height, std::string& Diagnostic, bool Lobby = false);
     bool Render(const PresentationCamera& Camera, double DeltaSeconds, PresentationFrame& Out, std::string& Diagnostic);
     std::array<float, 3> VehiclePosition() const;
     // The session spawn at (0,0,0.53) maps to the vehicle's archived proving-ground spawn.

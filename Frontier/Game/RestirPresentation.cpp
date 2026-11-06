@@ -16,6 +16,7 @@ struct RestirPresentation::Impl
     std::unique_ptr<IlluminationHost> Host;
     EnvironmentSettings Environment;
     int Width=0, Height=0;
+    bool Lobby = false;
     double Elapsed=0;
     std::array<int32_t, 5> VehicleIndices{-1,-1,-1,-1,-1};
     std::array<Transform, 5> VehicleInitial{};
@@ -30,14 +31,15 @@ static bool ReadArchive(const std::filesystem::path& Path, std::vector<uint8_t>&
     Bytes.assign(std::istreambuf_iterator<char>(Input), std::istreambuf_iterator<char>());
     return true;
 }
-bool RestirPresentation::Initialize(const std::string& ContentRoot, int Width, int Height, std::string& Diagnostic)
+bool RestirPresentation::Initialize(const std::string& ContentRoot, int Width, int Height, std::string& Diagnostic, bool Lobby)
 {
     if (Width < 64 || Height < 64) { Diagnostic = "ReSTIR dimensions must be at least 64 pixels"; return false; }
     auto Root = std::filesystem::path(ContentRoot);
-    auto Scene = Root / "EnvironmentArchives/ProvingGround";
+    auto Scene = Root / "EnvironmentArchives" / (Lobby ? "Lobby" : "ProvingGround");
+    State->Lobby = Lobby;
     if (!State->Exchange.Initialize("", &Diagnostic)) return false;
     IlluminationAssets Assets;
-    Assets.FacetSpace = Scene / "ProvingGround.facetspace";
+    Assets.FacetSpace = Scene / (Lobby ? "Lobby.facetspace" : "ProvingGround.facetspace");
     Assets.OmitVehicle = false;
     if (!ReadArchive(Scene / "Materials.bin", Assets.MaterialProfiles, Diagnostic)) return false;
     IlluminationSettings Settings;
@@ -63,12 +65,30 @@ bool RestirPresentation::Initialize(const std::string& ContentRoot, int Width, i
     {
         const int32_t Id=State->VehicleIndices[I];
         if (Id<0 || static_cast<size_t>(Id)>=World.Occupants.size())
-        { Diagnostic="Proving-ground archive does not contain a complete vehicle"; return false; }
+        { Diagnostic="Scene archive does not contain a complete vehicle"; return false; }
         State->VehicleInitial[I]=World.Occupants[static_cast<size_t>(Id)].Current;
     }
     State->Origin={State->VehicleInitial[0][12],State->VehicleInitial[0][13],State->VehicleInitial[0][14]};
     State->Environment.SunAutoPosition = false;
     State->Environment.DayAnimate = false;
+    if (Lobby)
+    {
+        State->Environment.SunElevation = 72.0;
+        State->Environment.SunAzimuth = 145.0;
+        State->Environment.SolarIlluminance = 0.7;
+        State->Environment.FlareEnabled = false;
+        auto& Lights = State->Host->Luminaires;
+        Lights.VehicleBeam = AutomotiveBeam::Off;
+        Lights.StudioLights.push_back({LuminaireCategory::Floodlight, {0,0,5.85}, {0,0,-1}, {0.96,0.98,1}, 950, 38,
+                                       {std::cos(18.0*3.141592653589793/180),std::cos(72.0*3.141592653589793/180),0,1}});
+        for (const auto& XY : {std::array<double,2>{12,0}, {-12,0}, {0,12}, {0,-12}})
+        {
+            const double Length=std::hypot(12.0,2.2);
+            Lights.StudioLights.push_back({LuminaireCategory::Floodlight, {XY[0]*0.5,XY[1]*0.5,5.2},
+                                          {XY[0]/Length,XY[1]/Length,-2.2/Length}, {0.94,0.96,1}, 430, 44,
+                                          {std::cos(22.0*3.141592653589793/180),std::cos(72.0*3.141592653589793/180),0,1}});
+        }
+    }
     return true;
 }
 std::array<float, 3> RestirPresentation::VehiclePosition() const
@@ -108,6 +128,7 @@ bool RestirPresentation::Render(const PresentationCamera& Camera, double DeltaSe
     Inputs.Camera.Forward=NormalizeVector(SubtractVector(Target,Position));
     Inputs.Camera.Up={0,0,1}; Inputs.Camera.VerticalFieldOfView=55.0*Pi/180.0;
     Inputs.Camera.Aspect=static_cast<double>(State->Width)/State->Height; Inputs.Camera.Near=0.05;
+    if (State->Lobby) { Inputs.Toggles.SkyScale=0.30; Inputs.Toggles.IncandescenceScale=1.6; }
     Inputs.Focus=MultiplyAddVector(Position,Inputs.Camera.Forward,0.45*Host.Grade.ClipResolution*Host.Grade.FinestVoxel);
     State->Elapsed += std::max(0.0,DeltaSeconds);
     Inputs.External.ElapsedSeconds=State->Elapsed;
