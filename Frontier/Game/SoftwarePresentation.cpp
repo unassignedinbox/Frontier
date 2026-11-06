@@ -226,9 +226,9 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
 
 } // namespace
 
-bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
-                    float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
-                    int Width, int Height)
+static bool RenderLevelPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
+                           float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
+                           int Width, int Height, bool ProvingGrounds)
 {
     Frame Target;
     Target.Width = Width;
@@ -250,24 +250,51 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
     Camera.TanHalfFov = std::tan(27.5f * Pi / 180.0f);
     Camera.Aspect = static_cast<float>(Width) / static_cast<float>(Height);
 
-    // The studio: dark surround, white cove floor disc, the one softbox overhead.
-    const Vec3 Surround[4] = { { -40.0f, -40.0f, -0.02f }, { 40.0f, -40.0f, -0.02f }, { 40.0f, 40.0f, -0.02f }, { -40.0f, 40.0f, -0.02f } };
-    Quad(Target, Camera, Surround, { 0.05f, 0.05f, 0.06f }, 0.0f);
-    constexpr int Segments = 64;
-    for (int Segment = 0; Segment < Segments; ++Segment)
+    if (ProvingGrounds)
     {
-        const float A0 = 2.0f * Pi * Segment / Segments, A1 = 2.0f * Pi * (Segment + 1) / Segments;
-        const Vec3 Fan[3] = { { 0.0f, 0.0f, 0.0f },
-                              { 17.6f * std::cos(A0), 17.6f * std::sin(A0), 0.0f },
-                              { 17.6f * std::cos(A1), 17.6f * std::sin(A1), 0.0f } };
-        Triangle(Target, Camera, Fan, { 0.82f, 0.83f, 0.84f }, 0.0f);
-        const Vec3 Turntable[3] = { { 0.0f, 0.0f, 0.005f },
-                                    { 4.65f * std::cos(A0), 4.65f * std::sin(A0), 0.005f },
-                                    { 4.65f * std::cos(A1), 4.65f * std::sin(A1), 0.005f } };
-        Triangle(Target, Camera, Turntable, { 0.72f, 0.73f, 0.74f }, 0.0f);
+        // 📝 Proving Grounds: open asphalt pad, a marked test lane and a distant horizon. The same vehicle
+        //    archives and spawn transform are used as in the Lobby; only the level presentation changes.
+        const Vec3 Asphalt[4] = { { -120.0f, -90.0f, -0.03f }, { 120.0f, -90.0f, -0.03f },
+                                  { 120.0f, 90.0f, -0.03f }, { -120.0f, 90.0f, -0.03f } };
+        Quad(Target, Camera, Asphalt, { 0.23f, 0.24f, 0.25f }, 0.0f);
+        const Vec3 Track[4] = { { -100.0f, -8.0f, -0.02f }, { 100.0f, -8.0f, -0.02f },
+                                { 100.0f, 8.0f, -0.02f }, { -100.0f, 8.0f, -0.02f } };
+        Quad(Target, Camera, Track, { 0.31f, 0.32f, 0.33f }, 0.0f);
+        const Vec3 Edges[4] = { { -100.0f, -8.0f, -0.01f }, { 100.0f, -8.0f, -0.01f },
+                                { 100.0f, -7.5f, -0.01f }, { -100.0f, -7.5f, -0.01f } };
+        Quad(Target, Camera, Edges, { 0.88f, 0.25f, 0.19f }, 0.0f);
+        const Vec3 OppositeEdge[4] = { { -100.0f, 7.5f, -0.01f }, { 100.0f, 7.5f, -0.01f },
+                                       { 100.0f, 8.0f, -0.01f }, { -100.0f, 8.0f, -0.01f } };
+        Quad(Target, Camera, OppositeEdge, { 0.88f, 0.25f, 0.19f }, 0.0f);
+        for (int Dash = -18; Dash <= 18; ++Dash)
+        {
+            const float X = static_cast<float>(Dash) * 5.0f;
+            const Vec3 CentreMark[4] = { { X, -0.13f, -0.005f }, { X + 2.1f, -0.13f, -0.005f },
+                                         { X + 2.1f, 0.13f, -0.005f }, { X, 0.13f, -0.005f } };
+            Quad(Target, Camera, CentreMark, { 0.90f, 0.90f, 0.86f }, 0.0f);
+        }
     }
-    const Vec3 Softbox[4] = { { -12.0f, -5.5f, 5.85f }, { 12.0f, -5.5f, 5.85f }, { 12.0f, 5.5f, 5.85f }, { -12.0f, 5.5f, 5.85f } };
-    Quad(Target, Camera, Softbox, { 0.98f, 0.99f, 1.0f }, 0.9f);
+    else
+    {
+        // The studio: dark surround, white cove floor disc, the softbox overhead.
+        const Vec3 Surround[4] = { { -40.0f, -40.0f, -0.02f }, { 40.0f, -40.0f, -0.02f }, { 40.0f, 40.0f, -0.02f }, { -40.0f, 40.0f, -0.02f } };
+        Quad(Target, Camera, Surround, { 0.05f, 0.05f, 0.06f }, 0.0f);
+        constexpr int Segments = 64;
+        for (int Segment = 0; Segment < Segments; ++Segment)
+        {
+            const float A0 = 2.0f * Pi * Segment / Segments, A1 = 2.0f * Pi * (Segment + 1) / Segments;
+            const Vec3 Fan[3] = { { 0.0f, 0.0f, 0.0f },
+                                  { 17.6f * std::cos(A0), 17.6f * std::sin(A0), 0.0f },
+                                  { 17.6f * std::cos(A1), 17.6f * std::sin(A1), 0.0f } };
+            Triangle(Target, Camera, Fan, { 0.82f, 0.83f, 0.84f }, 0.0f);
+            const Vec3 Turntable[3] = { { 0.0f, 0.0f, 0.005f },
+                                        { 4.65f * std::cos(A0), 4.65f * std::sin(A0), 0.005f },
+                                        { 4.65f * std::cos(A1), 4.65f * std::sin(A1), 0.005f } };
+            Triangle(Target, Camera, Turntable, { 0.72f, 0.73f, 0.74f }, 0.0f);
+        }
+        const Vec3 Softbox[4] = { { -12.0f, -5.5f, 5.85f }, { 12.0f, -5.5f, 5.85f }, { 12.0f, 5.5f, 5.85f }, { -12.0f, 5.5f, 5.85f } };
+        Quad(Target, Camera, Softbox, { 0.98f, 0.99f, 1.0f }, 0.9f);
+    }
 
     // The vehicles, from the same archives as the HTML renderer (body rebased onto the centre of mass).
     for (const PresentationVehicle& Vehicle : Vehicles)
@@ -304,6 +331,22 @@ bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehic
             Stream.put(static_cast<char>(std::lround(Srgb * 255.0f)));
         }
     return static_cast<bool>(Stream);
+}
+
+bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
+                    float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
+                    int Width, int Height)
+{
+    return RenderLevelPpm(Path, Vehicles, CameraYawDegrees, CameraPitchDegrees, CameraDistanceMetres,
+                          Width, Height, false);
+}
+
+bool RenderProvingGroundsPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
+                             float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
+                             int Width, int Height)
+{
+    return RenderLevelPpm(Path, Vehicles, CameraYawDegrees, CameraPitchDegrees, CameraDistanceMetres,
+                          Width, Height, true);
 }
 
 } // namespace Frontier

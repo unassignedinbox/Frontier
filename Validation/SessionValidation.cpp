@@ -12,6 +12,7 @@
 #include "Frontier/Engine/Session/LevelTransition.h"
 #include "Frontier/Engine/Session/SessionSpace.h"
 #include "Frontier/Engine/Session/LobbySession.h"
+#include "Projects/Everest/Source/Navigation/NavigationApp.h"
 #include "Projects/Everest/Source/Session/SessionPolicy.h"
 
 #include <cmath>
@@ -231,6 +232,30 @@ int main()
         Check(Race && Race->QueryTargetLapCount() == 3, "Everest races run three laps");
         Check(Near(Race->QueryRespawnPolicy().RespawnDelaySeconds, 2.0f), "Everest respawn delay is two seconds");
         Check(Everest::ConstructEverestCircuitWaypoints().size() == 6, "Everest circuit has six waypoints");
+    }
+
+    // --- Project Everest navigation menu: Lobby ↔ Proving Grounds, vehicles survive both routes --------
+    {
+        SessionConfiguration Configuration{};
+        LobbySession Game(Configuration, Everest::ConstructEverestSessionPolicy);
+        Everest::NavigationApp Navigation(Configuration);
+        Check(Navigation.QueryDestinations().size() == 2, "Everest navigation menu has exactly the two playable levels");
+        Check(Navigation.IsCurrent(Game, Navigation.QueryDestinations()[0]), "the Lobby is the default menu destination");
+        Check(Game.QuerySession().QueryPolicy()->QueryPolicyName() == "EverestLobbyPolicy", "Everest starts under its project Lobby policy");
+        Check(Game.QueryLocalVehicle() != nullptr, "the default Lobby has its local vehicle");
+        Check(Navigation.Navigate(Game, "proving-grounds"), "the menu routes Lobby to Proving Grounds");
+        Check(Game.QueryCurrentLevelPath() == Configuration.MatchLevelPath, "forward navigation changes the active level path");
+        Check(Game.QuerySession().QueryPolicy()->QueryPolicyName() == "EverestProvingGroundsPolicy", "forward navigation applies Everest's proving-grounds policy");
+        Check(Game.QueryLocalVehicle() != nullptr, "Proving Grounds receives a newly deployed local vehicle");
+        Check(Navigation.Navigate(Game, "lobby"), "the menu routes Proving Grounds back to Lobby");
+        Check(Game.QueryCurrentLevelPath() == Configuration.LobbyLevelPath, "reverse navigation restores the Lobby level path");
+        Check(Game.QuerySession().QueryPolicy()->QueryPolicyName() == "EverestLobbyPolicy", "reverse navigation restores Everest's Lobby policy");
+        Check(Game.QueryLocalVehicle() != nullptr && Game.QueryLocalVehicle()->IsHandbrakeLatched(), "the Lobby redeploys a parked local vehicle");
+        Check(!Navigation.Navigate(Game, "missing-level"), "unknown navigation choices are rejected");
+        Check(!Game.NavigateToLevel("Content/Levels/nowhere.levelspace", "UnknownPolicy"), "unknown route policies are rejected before rebuilding the room");
+        Check(Game.QueryLocalVehicle() != nullptr && Game.QueryCurrentLevelPath() == Configuration.LobbyLevelPath,
+              "a rejected route leaves the Lobby and its vehicle intact");
+        Check(!Navigation.Navigate(Game, size_t{ 0 }), "navigation menu indices are one-based");
     }
 
     // --- The Lobby as the game opens it: policy-read limits, one vehicle, empty tablet ---------------

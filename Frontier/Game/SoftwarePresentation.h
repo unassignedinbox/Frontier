@@ -2,10 +2,10 @@
 /*==========================================================================================================================================
                                                          SOFTWAREPRESENTATION.H
 ==========================================================================================================================================*/
-// 🧩 A CPU rasteriser standing in for the GPU presentation: draws the Lobby (studio floor, softbox, the
-//    vehicle from its facet archives) with a z-buffer and one overhead light, and writes a PPM. It exists
-//    so the C++ Lobby can be *seen* and regression-checked anywhere; the GLFW/WebGPU front-end replaces
-//    this class, nothing else.
+// 🧩 A CPU rasteriser standing in for the GPU presentation: draws either the Lobby studio or the Proving
+//    Grounds lane with the vehicles from their facet archives, a z-buffer and simple lighting, then writes
+//    a PPM. It exists so both C++ levels can be seen and regression-checked anywhere; a GLFW/WebGPU
+//    front-end replaces this class, nothing else.
 
 #include "Frontier/Engine/Effects/VehicleInspection.h"
 #include "Frontier/Engine/Scene/FacetArchive.h"
@@ -28,11 +28,13 @@ struct PresentationVehicle
     VehicleInspection Inspection{};   // visual effect for this presentation of the vehicle
 };
 
-// 📝 Renders one frame of the studio: white cyclorama floor disc, the softbox overhead, and the vehicles.
-//    Camera orbits the centre car at (YawDegrees, Pitch, DistanceMetres). Returns false if the file
-//    cannot be written.
+// 📝 Renders one frame of either C++ level using the same vehicle facet archives. Camera orbits the
+//    centre car at (YawDegrees, Pitch, DistanceMetres). Returns false if the file cannot be written.
 bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
                     float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
                     int Width = 640, int Height = 400);
+bool RenderProvingGroundsPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
+                             float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
+                             int Width = 640, int Height = 400);
 
 } // namespace Frontier

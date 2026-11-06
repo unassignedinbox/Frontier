@@ -9,6 +9,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(FrontierSession CXX)
+include(CTest)
 
 add_library(FrontierSession STATIC
     Engine/Input/InputEncoder.cpp
@@ -27,11 +28,21 @@ add_library(FrontierSession STATIC
 target_include_directories(FrontierSession PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_features(FrontierSession PUBLIC cxx_std_17)
 
+add_library(EverestNavigation STATIC ../Projects/Everest/Source/Navigation/NavigationApp.cpp)
+target_link_libraries(EverestNavigation PUBLIC FrontierSession)
+
 add_executable(SessionValidation ../Validation/SessionValidation.cpp)
-target_link_libraries(SessionValidation PRIVATE FrontierSession)
+target_link_libraries(SessionValidation PRIVATE FrontierSession EverestNavigation)
 
 add_library(FrontierGame STATIC Game/SoftwarePresentation.cpp)
 target_link_libraries(FrontierGame PUBLIC FrontierSession)
 
 add_executable(LobbySession Game/LobbySessionMain.cpp)
 target_link_libraries(LobbySession PRIVATE FrontierGame FrontierSession)
+
+add_executable(Everest ../Projects/Everest/Source/Game/EverestMain.cpp)
+target_link_libraries(Everest PRIVATE FrontierGame FrontierSession EverestNavigation)
+
+if(BUILD_TESTING)
+    add_test(NAME SessionValidation COMMAND SessionValidation)
+endif()
