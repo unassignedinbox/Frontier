@@ -12,9 +12,7 @@
 #include "Frontier/Engine/Session/LevelTransition.h"
 #include "Frontier/Engine/Session/SessionSpace.h"
 #include "Frontier/Engine/Session/LobbySession.h"
-#include "Frontier/Engine/Effects/SmokeFluidSystem.h"
 #include "Frontier/Game/CameraController.h"
-#include "Frontier/Game/SoftwarePresentation.h"
 #include "Projects/Everest/Source/Navigation/NavigationApp.h"
 #include "Projects/Everest/Source/Session/SessionPolicy.h"
 
@@ -38,12 +36,6 @@ void Check(bool Condition, const char* What)
 }
 
 bool Near(float A, float B, float Tolerance = 0.05f) { return std::fabs(A - B) <= Tolerance; }
-
-float WallDistance(const Frontier::SmokeVector3& P, const void*)
-{
-    // Solid half-space at x >= 2.
-    return 2.0f - P.X;
-}
 
 // Flat world at z=0.
 bool FlatSampler(const std::array<float, 3>&, Frontier::SpawnSurfaceProbe& Out)
@@ -120,89 +112,6 @@ int main()
         Camera.Step(Cycle, TrackRules.QueryInputRoutingPolicy(), &Vehicle);
         Check(!Camera.IsChaseView() && Camera.Resolve(TrackRules.QueryInputRoutingPolicy(), &Vehicle).DistanceMetres == 16.5f,
               "policy-authorized camera cycle switches to orbit view");
-    }
-
-    // --- Native smoke/fluid editor parameters and SDF-coupled plume simulation -------------------------
-    {
-        SmokeFluidSettings Gas;
-        Check(QueryGasParameterCatalogue().size() == static_cast<size_t>(GasParameter::Count),
-              "native gas editor exposes the full parameter catalogue");
-        Check(Near(Gas.Get(GasParameter::Buoyancy), 2.4f) && Near(Gas.Get(GasParameter::FlameCore), 1800.0f),
-              "native smoke/fire defaults match the exhibit editor");
-        Gas.Set(GasParameter::Dissipation, 3.0f);
-        Check(Near(Gas.Get(GasParameter::Dissipation), 0.9f), "gas editor clamps values to the original slider range");
-        Gas.TestPlume = 2; Gas.QualityGrade = 1; Gas.IgnitionMode = 1;
-        Gas.ApplyPreset("Inferno");
-        Check(Near(Gas.Get(GasParameter::FlameIntensity), 2.4f) && Near(Gas.Get(GasParameter::FireLight), 2.2f),
-              "native Inferno preset matches the exhibit");
-        Check(Gas.TestPlume == 2 && Gas.QualityGrade == 1 && Gas.IgnitionMode == 1,
-              "gas presets do not change the emitter, quality, or ignition settings");
-
-        SmokeSdfWorld World{};
-        Check(World.Distance({ 0.0f, 0.0f, -0.1f }) < 0.0f && World.Distance({ 0.0f, 0.0f, 0.58f }) < 0.0f,
-              "smoke SDF world marks ground and vehicle chassis as solid");
-        World.VehicleEnabled = false;
-        Gas.QualityGrade = 0;
-        SmokeFluidSystem Smoke(Gas);
-        SmokeSource Fire{};
-        Fire.Position = { 3.0f, 0.0f, 1.0f };
-        Fire.RadiusMetres = 0.8f;
-        Fire.SmokeRate = 4.0f; Fire.HeatRate = 2.0f; Fire.FlameRate = 3.0f; Fire.SootRate = 1.0f;
-        Fire.RemainingSeconds = 0.5f;
-        Smoke.AddSource(Fire);
-        Smoke.Advance(1.0f / 60.0f, World);
-        const SmokeFieldSample FireSample = Smoke.Sample(Fire.Position);
-        Check(Smoke.QueryMetrics().Ticks == 1 && Smoke.QueryMetrics().Sources == 1,
-              "native plume advances at the fixed-step cadence and reports live sources");
-        Check(FireSample.Density > 0.0f && FireSample.Flame > 0.0f && Smoke.IsResident(),
-              "native fluid solver deposits smoke, heat and fire in its volume");
-        const PresentationFrame SmokeFrame = RenderProvingGroundsFrame({}, PresentationCamera{}, 24, 18, &Smoke);
-        Check(SmokeFrame.Rgb.size() == 24u * 18u * 3u && SmokeFrame.DepthMetres.size() == 24u * 18u,
-              "SDF world renderer composites a smoke frame with per-pixel scene depth");
-        const PresentationFrame ClearFrame = RenderProvingGroundsFrame({}, PresentationCamera{}, 24, 18);
-        Check(SmokeFrame.Rgb != ClearFrame.Rgb, "active smoke changes the rendered scene");
-        Check(Smoke.Sample({ 1000.0f, 0.0f, 1.0f }).Density == 0.0f,
-              "sampling outside the fluid domain returns empty space");
-        Smoke.Clear();
-        Check(!Smoke.IsResident() && Smoke.QueryMetrics().Sources == 0,
-              "clear smoke releases the active plume state");
-
-        SmokeSource Persistent = Fire;
-        Persistent.Persistent = true;
-        Persistent.RemainingSeconds = 0.0f;
-        Smoke.AddSource(Persistent);
-        Smoke.AddSource(Persistent);
-        Smoke.Advance(1.0f / 30.0f, World);
-        Check(Smoke.QueryMetrics().Sources == 1 && Smoke.QueryMetrics().Ticks == 3,
-              "persistent test emitter is replaced in place and fixed-step simulation catches up");
-        Smoke.ClearPersistentSources();
-        Smoke.Advance(1.0f / 60.0f, World);
-        Check(Smoke.QueryMetrics().Sources == 0 && Smoke.IsResident(),
-              "disabling the persistent emitter leaves the existing plume to dissipate");
-
-        SmokeSdfWorld WallWorld{};
-        WallWorld.VehicleEnabled = false;
-        WallWorld.SceneDistance = WallDistance;
-        Check(WallWorld.Distance({ 3.0f, 0.0f, 1.0f }) < 0.0f &&
-              WallWorld.Distance({ 0.0f, 0.0f, 1.0f }) > 0.0f,
-              "external scene SDF is unioned with the ground");
-        SmokeFluidSystem WallSmoke(Gas);
-        WallSmoke.AddSource(Fire);
-        WallSmoke.Advance(1.0f / 60.0f, WallWorld);
-        Check(WallSmoke.Sample(Fire.Position).Density < 1.0e-5f,
-              "scene SDF prevents smoke and fire injection in a wall");
-
-        SmokeSdfWorld BlockWorld{};
-        SmokeFluidSystem Blocked(Gas);
-        SmokeSource InsideChassis{};
-        InsideChassis.Position = { 0.0f, 0.0f, 0.58f };
-        InsideChassis.RadiusMetres = 0.3f;
-        InsideChassis.SmokeRate = 50.0f;
-        InsideChassis.RemainingSeconds = 0.5f;
-        Blocked.AddSource(InsideChassis);
-        Blocked.Advance(1.0f / 60.0f, BlockWorld);
-        Check(Blocked.Sample(InsideChassis.Position).Density < 1.0e-5f,
-              "SDF vehicle solid rejects plume injection inside its chassis");
     }
 
     // --- Deployment: the same stand regardless of slope --------------------------------------------

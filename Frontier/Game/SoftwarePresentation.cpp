@@ -224,92 +224,11 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
     }
 }
 
-void CompositeSmoke(Frame& Target, const Projector& Camera, const SmokeFluidSystem& Smoke)
-{
-    if (!Smoke.IsResident()) return;
-    const SmokeVector3 Low = Smoke.QueryWindowMinimum();
-    const std::array<int, 3>& Extent = Smoke.QueryExtent();
-    const float CellSize = 2.0f * QuerySmokeQualityGrades()[Smoke.QuerySettings().QualityGrade].CellSizeMetres;
-    const SmokeVector3 High{ Low.X + Extent[0] * CellSize, Low.Y + Extent[1] * CellSize, Low.Z + Extent[2] * CellSize };
-    const SmokeFluidSettings& Settings = Smoke.QuerySettings();
-    const int SampleCount = std::min(24, QuerySmokeQualityGrades()[Settings.QualityGrade].MarchSamples);
-    const float TanFov = Camera.TanHalfFov;
-
-    for (int Y = 0; Y < Target.Height; Y += 2)
-        for (int X = 0; X < Target.Width; X += 2)
-        {
-            const float NdcX = (2.0f * (X + 0.5f) / Target.Width - 1.0f) * TanFov * Camera.Aspect;
-            const float NdcY = (1.0f - 2.0f * (Y + 0.5f) / Target.Height) * TanFov;
-            const Vec3 Direction = Normalize(Camera.Forward + Camera.Right * NdcX + Camera.Up * NdcY);
-            const SmokeVector3 Ray{ Direction.X, Direction.Y, Direction.Z };
-            const SmokeVector3 Eye{ Camera.Eye.X, Camera.Eye.Y, Camera.Eye.Z };
-            float Begin = 0.0f, End = 60.0f;
-            const float ForwardDepth = Target.Depth[Y * Target.Width + X];
-            const float ForwardCosine = std::max(Dot(Direction, Camera.Forward), 0.05f);
-            if (ForwardDepth < 1.0e29f) End = std::min(End, ForwardDepth / ForwardCosine);
-            bool Hit = true;
-            for (int Axis = 0; Axis < 3; ++Axis)
-            {
-                const float Origin = Axis == 0 ? Eye.X : Axis == 1 ? Eye.Y : Eye.Z;
-                const float Delta = Axis == 0 ? Ray.X : Axis == 1 ? Ray.Y : Ray.Z;
-                const float Min = Axis == 0 ? Low.X : Axis == 1 ? Low.Y : Low.Z;
-                const float Max = Axis == 0 ? High.X : Axis == 1 ? High.Y : High.Z;
-                if (std::fabs(Delta) < 1.0e-6f)
-                {
-                    if (Origin < Min || Origin > Max) Hit = false;
-                    continue;
-                }
-                float A = (Min - Origin) / Delta, B = (Max - Origin) / Delta;
-                if (A > B) std::swap(A, B);
-                Begin = std::max(Begin, A); End = std::min(End, B);
-            }
-            if (!Hit || End <= Begin) continue;
-            const float Step = (End - Begin) / static_cast<float>(SampleCount);
-            float Transmittance = 1.0f;
-            std::array<float, 3> VolumeLight{ 0.0f, 0.0f, 0.0f };
-            const float DensityScale = Settings.Get(GasParameter::Density);
-            const float Extinction = 3.6f * DensityScale;
-            for (int SampleIndex = 0; SampleIndex < SampleCount && Transmittance > 0.015f; ++SampleIndex)
-            {
-                const float T = Begin + (SampleIndex + 0.5f) * Step;
-                const SmokeVector3 Position = Eye + Ray * T;
-                const SmokeFieldSample Sample = Smoke.Sample(Position);
-                const float Density = std::max(0.0f, Sample.Density) + 0.7f * std::max(0.0f, Sample.Soot);
-                const float OpticalDepth = Density * Extinction * Step;
-                if (OpticalDepth < 0.001f && Sample.Flame < 0.01f) continue;
-                const float Alpha = 1.0f - std::exp(-std::min(OpticalDepth, 20.0f));
-                const float SootMix = std::clamp(Sample.Soot / (Sample.Density + Sample.Soot + 1.0e-4f), 0.0f, 1.0f);
-                const float Lighting = std::clamp(Settings.Get(GasParameter::Ambient) * 0.42f + Settings.Get(GasParameter::MultiScatter) * 0.25f, 0.08f, 1.6f);
-                const std::array<float, 3> Cloud{
-                    (0.76f * (1.0f - SootMix) + 0.095f * SootMix) * Lighting,
-                    (0.79f * (1.0f - SootMix) + 0.072f * SootMix) * Lighting,
-                    (0.84f * (1.0f - SootMix) + 0.052f * SootMix) * Lighting };
-                for (int Channel = 0; Channel < 3; ++Channel)
-                    VolumeLight[Channel] += Transmittance * Cloud[Channel] * Alpha;
-                const float Flame = std::max(0.0f, Sample.Flame) * Settings.Get(GasParameter::FlameIntensity);
-                const float Flicker = 1.0f - Settings.Get(GasParameter::FlameFlicker) * (0.5f + 0.5f * std::sin(T * 19.0f + Position.Z * 7.0f));
-                const float FlameEnergy = Flame * Flicker * Settings.Get(GasParameter::FireLight) * Step * 1.8f;
-                VolumeLight[0] += Transmittance * FlameEnergy;
-                VolumeLight[1] += Transmittance * FlameEnergy * 0.39f;
-                VolumeLight[2] += Transmittance * FlameEnergy * 0.08f;
-                Transmittance *= 1.0f - Alpha;
-            }
-            const int XEnd = std::min(X + 2, Target.Width), YEnd = std::min(Y + 2, Target.Height);
-            for (int Py = Y; Py < YEnd; ++Py) for (int Px = X; Px < XEnd; ++Px)
-            {
-                const size_t I = static_cast<size_t>(Py) * Target.Width + Px;
-                for (int Channel = 0; Channel < 3; ++Channel)
-                    Target.Colour[I][Channel] = Target.Colour[I][Channel] * Transmittance + VolumeLight[Channel];
-            }
-        }
-}
-
 } // namespace
 
 static PresentationFrame RenderLevelFrame(const std::vector<PresentationVehicle>& Vehicles,
                                           const PresentationCamera& CameraView,
-                                          int Width, int Height, bool ProvingGrounds,
-                                          const SmokeFluidSystem* Smoke)
+                                          int Width, int Height, bool ProvingGrounds)
 {
     Frame Target;
     Target.Width = Width;
@@ -401,13 +320,9 @@ static PresentationFrame RenderLevelFrame(const std::vector<PresentationVehicle>
         }
     }
 
-    if (Smoke && Smoke->QuerySettings().Enabled)
-        CompositeSmoke(Target, Camera, *Smoke);
-
     PresentationFrame Out{};
     Out.Width = Width;
     Out.Height = Height;
-    Out.DepthMetres = Target.Depth;
     Out.Rgb.resize(static_cast<size_t>(Width) * Height * 3);
     for (size_t PixelIndex = 0; PixelIndex < Target.Colour.size(); ++PixelIndex)
         for (int Channel = 0; Channel < 3; ++Channel)
@@ -419,17 +334,15 @@ static PresentationFrame RenderLevelFrame(const std::vector<PresentationVehicle>
 }
 
 PresentationFrame RenderLobbyFrame(const std::vector<PresentationVehicle>& Vehicles,
-                                    const PresentationCamera& Camera, int Width, int Height,
-                                    const SmokeFluidSystem* Smoke)
+                                    const PresentationCamera& Camera, int Width, int Height)
 {
-    return RenderLevelFrame(Vehicles, Camera, Width, Height, false, Smoke);
+    return RenderLevelFrame(Vehicles, Camera, Width, Height, false);
 }
 
 PresentationFrame RenderProvingGroundsFrame(const std::vector<PresentationVehicle>& Vehicles,
-                                             const PresentationCamera& Camera, int Width, int Height,
-                                             const SmokeFluidSystem* Smoke)
+                                             const PresentationCamera& Camera, int Width, int Height)
 {
-    return RenderLevelFrame(Vehicles, Camera, Width, Height, true, Smoke);
+    return RenderLevelFrame(Vehicles, Camera, Width, Height, true);
 }
 
 namespace

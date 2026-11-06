@@ -91,7 +91,7 @@ const InputRoutingPolicy& LobbyPolicy::QueryInputRoutingPolicy() const noexcept
 {
     static const InputRoutingPolicy Navigation{
         InputControlMode::Navigation, false, true, false, true, true, false, false, false,
-        "Arrows/D-pad choose; Enter selects; Space readies; A selects/readies; Esc/B backs; right-drag mouse orbits the parked car"
+        "Arrows/D-pad choose; Enter selects; Space readies; A selects/readies; Esc/B backs; mouse orbits the parked car"
     };
     return Navigation;
 }
@@ -142,7 +142,7 @@ const InputRoutingPolicy& ProvingGroundsPolicy::QueryInputRoutingPolicy() const 
 {
     static const InputRoutingPolicy Driving{
         InputControlMode::Driving, true, true, true, true, false, true, true, true,
-        "WASD or left stick drive; triggers throttle/brake; Space/X handbrake; Shift/Y boost; right-drag camera; C/RB camera; R/Back reset; Esc/Start routes"
+        "WASD or left stick drive; triggers throttle/brake; Space/X handbrake; Shift/Y boost; mouse camera; C/RB camera; R/Back reset; Esc/Start routes"
     };
     return Driving;
 }
