@@ -922,6 +922,35 @@ fn EvaluateDirectNextEvent(
 //                                           MULTI-BOUNCE PATH TRACER
 //------------------------------------------------------------------------------------------------------------------------
 
+fn ResolveRayHitSurface(Hit: RayHit) -> SurfaceSample
+{
+    var Surface = ProjectSurfaceSample(RayMaterials[Hit.Family]);
+    if (Hit.Identity < 5u)
+    {
+        if (Hit.Family == BodyCoatFamilyIndex && arrayLength(&RayMaterials) > BodyCoatWaveControlIndex)
+        {
+            let Control = RayMaterials[BodyCoatWaveControlIndex];
+            if (Control.Metalness > 0.5)
+            {
+                let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Hit.Position, 1.0)).xyz;
+                let Coverage  = ResolvePaintWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness), Control.Metalness);
+                Surface       = BlendSurfaceSample(Surface, ProjectSurfaceSample(RayMaterials[BodyCoatWaveTargetIndex]), Coverage);
+            }
+        }
+        else if (Hit.Family == HubFamilyIndex && arrayLength(&RayMaterials) > WheelWaveControlIndex)
+        {
+            let Control = RayMaterials[WheelWaveControlIndex];
+            if (Control.Metalness > 0.5)
+            {
+                let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Hit.Position, 1.0)).xyz;
+                let Coverage  = ResolveWheelWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness));
+                Surface       = BlendSurfaceSample(Surface, ProjectSurfaceSample(RayMaterials[WheelWaveTargetIndex]), Coverage);
+            }
+        }
+    }
+    return Surface;
+}
+
 // 📐 Traces a full multi-bounce path starting along (Origin, FirstDirection), returning the first bounce surface vertex
 //    x_s and the complete multi-bounce incoming radiance L_s gathered along the path for ReSTIR GI resampling.
 fn TraceMultiBouncePath(Origin: vec3f, PrimaryNormal: vec3f, FirstDirection: vec3f, Seed: ptr<function, u32>) -> ReservoirSample
@@ -937,8 +966,7 @@ fn TraceMultiBouncePath(Origin: vec3f, PrimaryNormal: vec3f, FirstDirection: vec
         return SkySample;
     }
 
-    let Mat1  = RayMaterials[Hit1.Family];
-    let Surf1 = ProjectSurfaceSample(Mat1);
+    let Surf1 = ResolveRayHitSurface(Hit1);
 
     // Bounce 1 direct emission + Next-Event Estimation. The primary vertex x_v is where the cosine-sampled candidate starts: when the emitter structure covers it
     // (DirectRadiance adds the light technique there) the emission this candidate finds at its first hit takes the BSDF technique's share of the partition, w_b with the
@@ -996,8 +1024,7 @@ fn TraceMultiBouncePath(Origin: vec3f, PrimaryNormal: vec3f, FirstDirection: vec
             break;
         }
 
-        let MatB  = RayMaterials[HitB.Family];
-        let SurfB = ProjectSurfaceSample(MatB);
+        let SurfB = ResolveRayHitSurface(HitB);
 
         // MIS weight on secondary emissive hits. Legacy (emissive lights off): the renderer's heuristic, which had no light technique to balance and lost energy. Emissive lights on:
         // a table emitter seen from a vertex that sampled the emitters takes w_b (the light technique has 1 − w_b); everything else counts in full.
@@ -1097,7 +1124,7 @@ fn TraceMultiBounceReflection(
             break;
         }
 
-        let HitSurf     = ProjectSurfaceSample(RayMaterials[Hit.Family]);
+        let HitSurf     = ResolveRayHitSurface(Hit);
         let ViewDir     = -RayDir;
         var HitRadiance = HitSurf.Emission * Frame.EmissionScale;
 

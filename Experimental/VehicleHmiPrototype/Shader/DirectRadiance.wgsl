@@ -111,6 +111,16 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
             Surface       = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[BodyCoatWaveTargetIndex]), Coverage);
         }
     }
+    else if (FamilyIndex == HubFamilyIndex && arrayLength(&Materials) > WheelWaveControlIndex)
+    {
+        let Control = Materials[WheelWaveControlIndex];
+        if (Control.Metalness > 0.5)
+        {
+            let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz;
+            let Coverage  = ResolveWheelWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness));
+            Surface       = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[WheelWaveTargetIndex]), Coverage);
+        }
+    }
     let View         = normalize(Frame.CameraPosition - Position);
     let UseRtShadows = FeatureEnabled(Frame, FeatureRayTracing) && FeatureEnabled(Frame, FeatureRayTracedShadows);
     let RayOrigin    = Position + Normal * RayEpsilon;

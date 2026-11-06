@@ -208,8 +208,30 @@ fn OverlayFragment(Varying: OverlayVarying) -> @location(0) vec4f
         {
             discard;
         }
+        var GlassOpacity = 1.0;
+        if (StudioPreviewPass == 1u)
+        {
+            let HoloAmt = clamp(Overlay.Stage.y, 0.0, 1.0);
+            if (HoloAmt > 0.004)
+            {
+                let ViewMode = Overlay.Stage.x;
+                GlassOpacity = 1.0 - HoloAmt * 0.85;
+                if (ViewMode > 0.5 && ViewMode < 2.5)
+                {
+                    GlassOpacity = 1.0 - HoloAmt;
+                }
+                else if (ViewMode > 2.5)
+                {
+                    GlassOpacity = 1.0 - smoothstep(-0.9, -0.05, Varying.BodyLocal.x - Overlay.Stage.z) * HoloAmt;
+                }
+                if (GlassOpacity <= 0.03)
+                {
+                    discard;
+                }
+            }
+        }
         let Transmission = Overlay.Glass.x * (1.0 - Fresnel);
-        return vec4f(Reflection, 1.0 - Transmission);
+        return vec4f(Reflection * GlassOpacity, (1.0 - Transmission) * GlassOpacity);
     }
     if (Varying.Kind == KindTablet)
     {

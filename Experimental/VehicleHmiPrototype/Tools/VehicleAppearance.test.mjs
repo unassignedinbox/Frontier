@@ -4,6 +4,9 @@ import { VehicleAppearance, LinearColour, InspectionView } from '../Source/Vehic
 import { ConstructMaterialSpecification, CourseMaterial } from '../Source/MaterialSpecification.js';
 import { ScreenSequence } from '../Source/Cabin/ScreenSequence.js';
 import { EmitLobbyGroundFacets, LobbyShapes } from '../Source/LobbyStructure.js';
+import { StudioPreviewSequence, ResolveStudioExtent, ResolveStudioBudget, ConstructStudioLighting } from '../Source/StudioPreviewSequence.js';
+import { EmissiveLightSpace } from '../Source/EmissiveLightSpace.js';
+import { LightType, AutomotiveMode } from '../Source/LightingSystem.js';
 
 function ConstructHeadlessGarage(Pick = () => ({ Occupant: 0, Family: CourseMaterial.BodyCoat, BodyPoint: [1.35, -0.58, 0.44] })) {
     const Screen = Object.create(ScreenSequence.prototype);
@@ -133,6 +136,58 @@ test('rim finish changes affect selected accent faces, never the black rim base 
     }
     Appearance.Apply({ DarkWheels: false, BlueRims: true });
     assert.ok(Materials[CourseMaterial.Hub].Emission[2] > 0);
+});
+
+test('Garage studio grade selects progressive ReSTIR render extents', () => {
+    assert.deepEqual(ResolveStudioExtent('low'), [256, 160]);
+    assert.deepEqual(ResolveStudioExtent('medium'), [768, 480]);
+    assert.deepEqual(ResolveStudioExtent('high'), [960, 600]);
+    assert.deepEqual(ResolveStudioExtent('unknown'), [960, 600]);
+    assert.deepEqual(ResolveStudioBudget('low'), { MaxBounces: 1, InitialCandidates: 1, ReflectionBounces: 1 });
+    assert.deepEqual(ResolveStudioBudget('medium'), { MaxBounces: 2, InitialCandidates: 2, ReflectionBounces: 1 });
+    assert.deepEqual(ResolveStudioBudget('high'), { MaxBounces: 3, InitialCandidates: 2, ReflectionBounces: 2 });
+    assert.deepEqual(ResolveStudioBudget('unknown'), { MaxBounces: 3, InitialCandidates: 2, ReflectionBounces: 2 });
+});
+
+test('standalone Garage studio builds the Lobby set, emissive softbox clusters, and five architectural floods', () => {
+    const Triangle = { Family: CourseMaterial.Headlight, Corners: [[0, 0, 0], [1, 0, 0], [0, 1, 0]] };
+    const Source = {
+        FacetSets: [{ Facets: [Triangle] }, { Facets: [] }, { Facets: [] }],
+        VehicleBodySet: 0,
+        VehicleOccupants: { Wheels: [0, 1, 2, 3] },
+        Occupants: [{ FacetSet: 1 }, { FacetSet: 2 }, { FacetSet: 1 }, { FacetSet: 2 }]
+    };
+    const Preview = new StudioPreviewSequence({}, {});
+    const Scene = Preview.ConstructStandaloneStudioScene(Source);
+    assert.equal(Scene.FacetSets[Scene.VehicleBodySet].Facets[0].Family, CourseMaterial.StudioHeadlight);
+    assert.equal(Scene.DynamicCount, 5, 'hero body and four independently moving wheels');
+    assert.ok(Scene.Occupants.some(Occupant => Occupant.Name === 'Lobby studio ground'));
+    assert.ok(Scene.Occupants.some(Occupant => Occupant.Name === 'Hero plates'));
+    assert.ok(Scene.Occupants.some(Occupant => Occupant.Name.toLowerCase().includes('cyclorama')));
+    assert.ok(Scene.DrawRuns.length > 0);
+
+    const Materials = ConstructMaterialSpecification();
+    const Emissive = new EmissiveLightSpace();
+    Emissive.Construct(Scene, Materials);
+    assert.ok(Emissive.TriangleCount > 0, 'studio softbox facets are sampled as emissive BVH lights');
+    assert.ok(Emissive.Update(Scene, Materials, 1.6));
+    assert.ok(Emissive.Count > 0);
+
+    const Lights = ConstructStudioLighting();
+    Lights.Update(new Float32Array(16), []);
+    assert.equal(Lights.VehicleLightMode, AutomotiveMode.Off);
+    assert.equal(Lights.Lights.length, 5);
+    assert.ok(Lights.Lights.every(Light => Light.Type === LightType.Floodlight && Light.Intensity > 0));
+    assert.equal(Lights.Lights[0].Intensity, 950);
+    assert.ok(Lights.Lights.slice(1).every(Light => Light.Intensity === 430));
+});
+
+test('Garage studio material slots reserve headlight shading and independent wheel-wave target/control', () => {
+    const Materials = ConstructMaterialSpecification();
+    assert.ok(Materials[CourseMaterial.StudioHeadlight].CoatWeight >= 0.99);
+    assert.ok(Materials[CourseMaterial.StudioHeadlight].CoatRoughness <= 0.03);
+    assert.notEqual(Materials[CourseMaterial.WheelWaveTarget], Materials[CourseMaterial.Hub]);
+    assert.notEqual(Materials[CourseMaterial.WheelWaveControl], Materials[CourseMaterial.Hub]);
 });
 
 test('Garage Lobby studio stage emits floor, hero turntable, seam ring, cove wall, and overhead softbox', () => {

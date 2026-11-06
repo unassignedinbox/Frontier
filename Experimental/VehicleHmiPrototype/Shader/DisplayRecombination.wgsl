@@ -122,13 +122,27 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
     var Surface = ProjectSurfaceSample(Materials[FamilyIndex]);
     let Position = ReconstructWorldPosition(vec2f(Pixel) + 0.5, Depth);
     let BodyLocal = (Occupants[0].WorldToLocal * vec4f(Position, 1.0)).xyz;
+    var WaveSheen = vec3f(0.0);
     if (FamilyIndex == BodyCoatFamilyIndex && arrayLength(&Materials) > BodyCoatWaveControlIndex)
     {
         let Control = Materials[BodyCoatWaveControlIndex];
         if (Control.Metalness > 0.5)
         {
-            let Coverage = ResolvePaintWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness), Control.Metalness);
-            Surface = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[BodyCoatWaveTargetIndex]), Coverage);
+            let CentreAndMetric = vec4f(Control.Albedo, Control.Roughness);
+            let Coverage = ResolvePaintWaveCoverage(BodyLocal, CentreAndMetric, Control.Metalness);
+            let TargetSurface = ProjectSurfaceSample(Materials[BodyCoatWaveTargetIndex]);
+            Surface = BlendSurfaceSample(Surface, TargetSurface, Coverage);
+            let Band = ResolvePaintWaveBand(BodyLocal, CentreAndMetric, Control.Metalness);
+            WaveSheen = mix(TargetSurface.Albedo, vec3f(0.65, 0.88, 1.0), 0.55) * Band * 0.42;
+        }
+    }
+    else if (FamilyIndex == HubFamilyIndex && arrayLength(&Materials) > WheelWaveControlIndex)
+    {
+        let Control = Materials[WheelWaveControlIndex];
+        if (Control.Metalness > 0.5)
+        {
+            let Coverage = ResolveWheelWaveCoverage(BodyLocal, vec4f(Control.Albedo, Control.Roughness));
+            Surface = BlendSurfaceSample(Surface, ProjectSurfaceSample(Materials[WheelWaveTargetIndex]), Coverage);
         }
     }
     let View = normalize(Frame.CameraPosition - Position);
@@ -167,7 +181,7 @@ fn ResolveRecombination(@builtin(global_invocation_id) Invocation: vec3u)
         Specular = Specular * (1.0 - CoatReflectance) + Glossy * CoatReflectance;
     }
     // 📝 Attributes.w carries 1 + glow: a derezzing car's cells and cubes glow in their own facet's colour.
-    let Emission = (Surface.Emission + Surface.Albedo * max(Attributes.w - 1.0, 0.0)) * Frame.EmissionScale;
+    let Emission = (Surface.Emission + Surface.Albedo * max(Attributes.w - 1.0, 0.0)) * Frame.EmissionScale + WaveSheen;
 
     var Colour = Direct.rgb + Indirect + Emission;
     switch (Frame.InspectionMode)

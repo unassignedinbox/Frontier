@@ -174,6 +174,33 @@ fn SurfaceFragment(Varying: SurfaceVarying) -> SurfaceTargets
     {
         discard;
     }
+    if (StudioPreviewPass == 1u)
+    {
+        let HoloAmt = clamp(Frame.FireLightPosition.z, 0.0, 1.0);
+        let IsHeroCenter = Varying.Vehicle == 1u || (Varying.WorldPosition.z > 0.05 && dot(Varying.WorldPosition.xy, Varying.WorldPosition.xy) < 20.25);
+        if (HoloAmt > 0.004 && IsHeroCenter)
+        {
+            let ViewMode = Frame.FireLightPosition.x;
+            let ScanX    = Frame.FireLightPosition.y;
+            var SolidAlpha = 1.0 - HoloAmt * 0.85;
+            if (ViewMode > 0.5 && ViewMode < 2.5)
+            {
+                SolidAlpha = 1.0 - HoloAmt;
+            }
+            else if (ViewMode > 2.5)
+            {
+                let ScanD      = Varying.BodyLocal.x - ScanX;
+                let ScanRegion = smoothstep(-0.9, -0.05, ScanD);
+                SolidAlpha     = 1.0 - ScanRegion * HoloAmt;
+            }
+            let NoisePixel = Varying.Position.xy + vec2f(5.588238 * f32(Frame.FrameIndex % 32u));
+            let NoiseThreshold = fract(52.9829189 * fract(dot(NoisePixel, vec2f(0.06711056, 0.00583715))));
+            if (SolidAlpha <= 0.03 || SolidAlpha <= NoiseThreshold)
+            {
+                discard;
+            }
+        }
+    }
     let Marked = (Family >= MarkedFamilyFirst && Family <= MarkedFamilyLast) || (Family >= MarkedFamilyExtraFirst && Family <= MarkedFamilyExtraLast);
     if (Marked)
     {

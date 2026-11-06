@@ -113,6 +113,18 @@ const BodyCoatFamilyIndex      : u32 = 6u;
 const HubFamilyIndex           : u32 = 10u;
 const BodyCoatWaveTargetIndex  : u32 = 107u;
 const BodyCoatWaveControlIndex : u32 = 108u;
+const WheelWaveTargetIndex     : u32 = 109u;
+const WheelWaveControlIndex    : u32 = 110u;
+
+fn ResolveWheelWaveCoverage(BodyLocal: vec3f, CentreAndRadius: vec4f) -> f32
+{
+    if (CentreAndRadius.w <= 0.001)
+    {
+        return 0.0;
+    }
+    let Distance = distance(BodyLocal, CentreAndRadius.xyz);
+    return 1.0 - smoothstep(CentreAndRadius.w - 0.45, CentreAndRadius.w, Distance);
+}
 
 // 📐 Paint application wave coverage:
 //    Mode 1 = side-to-side sweep across the vehicle (SweepFront travels +3.30 m → −3.85 m);

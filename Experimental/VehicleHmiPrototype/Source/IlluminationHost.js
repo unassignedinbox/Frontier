@@ -335,7 +335,8 @@ class IlluminationHost
             MirrorGlassFamily:     { Type: "u32", Value: CourseMaterial.MirrorGlass },
             ConeOrangeFamily:      { Type: "u32", Value: CourseMaterial.ConeOrange },
             ConeBandFamily:        { Type: "u32", Value: CourseMaterial.ConeBand },
-            ConeBaseFamily:        { Type: "u32", Value: CourseMaterial.ConeBase }
+            ConeBaseFamily:        { Type: "u32", Value: CourseMaterial.ConeBase },
+            StudioPreviewPass:     { Type: "u32", Value: 0 }
         };
         const InheritedConstruct = this.Shaders.ConstructModule.bind(this.Shaders);
         this.Shaders.ConstructModule = (FileName, Constants = {}, Label = FileName) => InheritedConstruct(FileName, { ...this.Constants, ...Constants }, Label);
@@ -399,9 +400,14 @@ class IlluminationHost
         this.Cabin.Appearance = new VehicleAppearance(this.Materials, (Offset, Data) =>
             this.Exchange.Device.queue.writeBuffer(this.MaterialRecords, Offset, Data));
         this.Cabin.AssignPressure(this.Settings.TyrePressureFront);
-        await this.Cabin.ConstructResources({ FrameRecords: this.FrameRecords, OccupantRecords: this.OccupantRecords, MaterialRecords: this.MaterialRecords,
-                                              EffectRecords: this.Effects.Records, VehicleRecords: this.VehicleRecords, Shadow: this.Shadow,
-                                              Atmosphere: this.Atmosphere, Scene: this.Scene, AdaptationRecords: this.Display.AdaptationRecords });
+        await this.Cabin.ConstructResources({
+            FrameRecords: this.FrameRecords, OccupantRecords: this.OccupantRecords, MaterialRecords: this.MaterialRecords,
+            Materials: this.Materials, EffectRecords: this.Effects.Records, VehicleRecords: this.VehicleRecords,
+            Shadow: this.Shadow, Atmosphere: this.Atmosphere, Scene: this.Scene, VertexRecords: this.VertexRecords,
+            AdaptationRecords: this.Display.AdaptationRecords, Lobby: this.Lobby, GradeName: this.GradeName,
+            Distance: this.Distance, Cards: this.Cards, RayTracing: this.RayTracing, SamplingGroup: this.SamplingGroup,
+            TyreMarks: this.Marks, Vehicle: this.Vehicle, PhotometryAtlas: this.PhotometryAtlas
+        });
         this.ReportProgress("Compiling drift smoke programs", 0.91);
         this.Thermal = new TyreThermalSolver(4);
         this.BurstPuffs = [];
@@ -520,7 +526,11 @@ class IlluminationHost
     // 📝 The IES atlas: seven LM-63 files packed into the light record. A missing or malformed file leaves every light on its analytic beam shape.
     async AssignPhotometry()
     {
-        try { this.LightClusters.AssignPhotometry(this.Exchange.Device, await RetrievePhotometricAtlas()); }
+        try
+        {
+            this.PhotometryAtlas = await RetrievePhotometricAtlas();
+            this.LightClusters.AssignPhotometry(this.Exchange.Device, this.PhotometryAtlas);
+        }
         catch (Failure) { console.warn("[lights] IES profiles unavailable, the analytic beam shapes stay:", Failure.message || Failure); }
     }
 
@@ -1558,6 +1568,30 @@ class IlluminationHost
             Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.BodyCoatWaveControl * MaterialRecordBytes,
                 EncodeMaterialRecords([Control]));
             this.PaintWaveStreaming = false;
+        }
+        const ActiveWheelRipple = this.Cabin.Appearance?.WheelRipple;
+        if (ActiveWheelRipple?.Active)
+        {
+            const Target = this.Materials[CourseMaterial.WheelWaveTarget];
+            const Control = this.Materials[CourseMaterial.WheelWaveControl];
+            Target.Albedo = [...ActiveWheelRipple.NextColour];
+            Target.Roughness = ActiveWheelRipple.Roughness;
+            Target.Metalness = 0.9;
+            Target.Emission = [0.0, 0.0, 0.0];
+            Control.Albedo = [...ActiveWheelRipple.Centre];
+            Control.Roughness = ActiveWheelRipple.Radius;
+            Control.Metalness = 1.0;
+            Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.WheelWaveTarget * MaterialRecordBytes,
+                EncodeMaterialRecords([Target, Control]));
+            this.WheelWaveStreaming = true;
+        }
+        else if (this.WheelWaveStreaming)
+        {
+            const Control = this.Materials[CourseMaterial.WheelWaveControl];
+            Control.Metalness = 0.0;
+            Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.WheelWaveControl * MaterialRecordBytes,
+                EncodeMaterialRecords([Control]));
+            this.WheelWaveStreaming = false;
         }
         if (this.Cabin.MaterialCommitted)
         {
