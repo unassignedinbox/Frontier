@@ -32,16 +32,6 @@ target_compile_features(FrontierSession PUBLIC cxx_std_17)
 add_library(EverestNavigation STATIC ../Projects/Everest/Source/Navigation/NavigationApp.cpp)
 target_link_libraries(EverestNavigation PUBLIC FrontierSession)
 
-add_library(FrontierGasEditor STATIC Engine/Effects/GasEditorModel.cpp Engine/Effects/PlumeSchedule.cpp)
-target_link_libraries(FrontierGasEditor PUBLIC FrontierSession)
-if(MSVC)
-    target_compile_options(FrontierGasEditor PRIVATE /utf-8)
-endif()
-add_executable(GasEditorParity ../Validation/GasEditorParity.cpp)
-target_link_libraries(GasEditorParity PRIVATE FrontierGasEditor)
-add_executable(PlumeScheduleParity ../Validation/PlumeScheduleParity.cpp)
-target_link_libraries(PlumeScheduleParity PRIVATE FrontierGasEditor)
-
 add_executable(SessionValidation ../Validation/SessionValidation.cpp)
 target_link_libraries(SessionValidation PRIVATE FrontierSession EverestNavigation)
 
@@ -76,11 +66,4 @@ endif()
 
 if(BUILD_TESTING)
     add_test(NAME SessionValidation COMMAND SessionValidation)
-    find_program(NODE_EXECUTABLE node)
-    if(NODE_EXECUTABLE)
-        add_test(NAME GasEditorParity COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/../Validation/Tools/GasEditorParity.mjs $<TARGET_FILE:GasEditorParity>)
-        add_test(NAME PlumeScheduleParity COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_CURRENT_SOURCE_DIR}/../Validation/Tools/PlumeScheduleParity.mjs $<TARGET_FILE:PlumeScheduleParity>)
-    endif()
 endif()
