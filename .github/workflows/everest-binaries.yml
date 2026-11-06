@@ -44,13 +44,18 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             cp build/Release/Everest.exe dist/Everest/Everest.exe
             cp build/Release/EverestWindow.exe dist/Everest/EverestWindow.exe
+            cp build/Release/EverestRestir.exe dist/Everest/EverestRestir.exe
           else
             cp build/Everest dist/Everest/Everest
             cp build/EverestWindow dist/Everest/EverestWindow
+            cp build/EverestRestir dist/Everest/EverestRestir
           fi
           cp Experimental/VehicleHmiPrototype/Archive/ControlVehicleBody.facet dist/Everest/Archive/
           cp Experimental/VehicleHmiPrototype/Archive/ControlVehicleTyre.facet dist/Everest/Archive/
           cp Experimental/VehicleHmiPrototype/Archive/ControlVehicleRim.facet dist/Everest/Archive/
+          mkdir -p dist/Everest/EngineContent/ShaderArchives dist/Everest/EngineContent/EnvironmentArchives
+          cp -R EngineContent/ShaderArchives/GlobalIllumination dist/Everest/EngineContent/ShaderArchives/
+          cp -R EngineContent/EnvironmentArchives/ProvingGround dist/Everest/EngineContent/EnvironmentArchives/
           cat > dist/Everest/README.txt <<'EOF'
           Project Everest — C++ test build
 
@@ -61,6 +66,12 @@ jobs:
 
           Add --guests 4 for a five-car session, --xray for the local vehicle scan, or --menu to list routes.
           PPM images open in common image viewers; the Archive folder contains the required ControlVehicle facets.
+
+          Native Vulkan ReSTIR still image (12 frames):
+            EverestRestir proving-ground.ppm EngineContent
+          The interactive Proving Grounds uses native ReSTIR; the Lobby remains a software preview.
+          ReSTIR requires a Vulkan 1.3 driver. On macOS a compatible Vulkan/MoltenVK loader must be supplied;
+          FRONTIER_VULKAN_DRIVER can point to a loader library. Rendering can be slow on software Vulkan.
 
           Interactive GLFW/OpenGL window:
             EverestWindow --archive Archive

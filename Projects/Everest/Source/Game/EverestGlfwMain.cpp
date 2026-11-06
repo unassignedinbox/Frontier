@@ -10,6 +10,10 @@
 #include "Frontier/Engine/Session/LobbySession.h"
 #include "Frontier/Game/CameraController.h"
 #include "Frontier/Game/SoftwarePresentation.h"
+#ifdef FRONTIER_WITH_RESTIR
+#include "Frontier/Game/RestirPresentation.h"
+#include <memory>
+#endif
 #include "Projects/Everest/Source/Navigation/NavigationApp.h"
 #include "Projects/Everest/Source/Session/SessionPolicy.h"
 
@@ -112,9 +116,16 @@ int main(int ArgumentCount, char** Arguments)
     using namespace Frontier;
     SessionConfiguration Configuration{};
     std::string ArchiveDirectory = "Experimental/VehicleHmiPrototype/Archive";
+#ifdef FRONTIER_WITH_RESTIR
+    std::string ContentDirectory = "EngineContent";
+#endif
     for (int Index = 1; Index < ArgumentCount; ++Index)
         if (std::strcmp(Arguments[Index], "--archive") == 0 && Index + 1 < ArgumentCount)
             ArchiveDirectory = Arguments[++Index];
+#ifdef FRONTIER_WITH_RESTIR
+        else if (std::strcmp(Arguments[Index], "--content") == 0 && Index + 1 < ArgumentCount)
+            ContentDirectory = Arguments[++Index];
+#endif
 
     const FacetArchiveData Body = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleBody.facet");
     const FacetArchiveData Tyre = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleTyre.facet");
@@ -155,6 +166,11 @@ int main(int ArgumentCount, char** Arguments)
     std::string LastLevel = Game.QueryCurrentLevelPath();
     double PreviousTime = glfwGetTime();
     static const InputRoutingPolicy FallbackRouting{};
+#ifdef FRONTIER_WITH_RESTIR
+    std::unique_ptr<RestirPresentation> Restir;
+    std::array<float,3> RestirOrigin{};
+    int Result = 0;
+#endif
     std::vector<PresentationVehicle> Vehicles(1);
     Vehicles[0].Body = &Body;
     Vehicles[0].Tyre = &Tyre;
@@ -217,12 +233,40 @@ int main(int ArgumentCount, char** Arguments)
         Camera.Step(CameraPacket, UpdatedRouting, Unit);
         Vehicles[0].PositionMetres = Unit ? Unit->QueryPositionMetres() : std::array<float, 3>{ 0.0f, 0.0f, 0.53f };
         Vehicles[0].YawDegrees = Unit ? Unit->QueryYawDegrees() : 0.0f;
-        const PresentationCamera View = Camera.Resolve(UpdatedRouting, Unit);
-        const PresentationFrame Image = UpdatedRouting.AllowDriving
-            ? RenderProvingGroundsFrame(Vehicles, View, 960, 624)
-            : RenderLobbyFrame(Vehicles, View, 960, 624);
-
-        const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds" : "Lobby";
+        PresentationCamera View = Camera.Resolve(UpdatedRouting, Unit);
+        PresentationFrame Image;
+#ifdef FRONTIER_WITH_RESTIR
+        if (UpdatedRouting.AllowDriving)
+        {
+            if (!Restir)
+            {
+                glfwSetWindowTitle(Window, "Project Everest | Starting Vulkan ReSTIR...");
+                Restir = std::make_unique<RestirPresentation>();
+                std::string Diagnostic;
+                if (!Restir->Initialize(ContentDirectory, 480, 312, Diagnostic))
+                {
+                    std::fprintf(stderr, "EverestWindow: ReSTIR initialization failed: %s\n", Diagnostic.c_str());
+                    Result = 1; break;
+                }
+                RestirOrigin = Restir->VehiclePosition();
+            }
+            Restir->SetVehiclePose(Vehicles[0].PositionMetres, Vehicles[0].YawDegrees);
+            View.FocusMetres[0] += RestirOrigin[0]; View.FocusMetres[1] += RestirOrigin[1];
+            View.FocusMetres[2] += RestirOrigin[2] - 0.53f;
+            std::string Diagnostic;
+            if (!Restir->Render(View, Step, Image, Diagnostic))
+            {
+                std::fprintf(stderr, "EverestWindow: ReSTIR refresh failed: %s\n", Diagnostic.c_str());
+                Result = 1; break;
+            }
+        }
+        else Image = RenderLobbyFrame(Vehicles, View, 960, 624);
+        const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds / Vulkan ReSTIR" : "Lobby / software";
+#else
+        Image = UpdatedRouting.AllowDriving ? RenderProvingGroundsFrame(Vehicles, View, 960, 624)
+                                            : RenderLobbyFrame(Vehicles, View, 960, 624);
+        const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds / software" : "Lobby / software";
+#endif
         glfwSetWindowTitle(Window, ResolveControlsTitle(LevelLabel, UpdatedRouting, MenuVisible,
                                                         Navigation.QueryDestinations(), SelectedDestination).c_str());
         Present(Window, Texture, Image, MenuVisible, SelectedDestination, Navigation, Game);
@@ -231,5 +275,9 @@ int main(int ArgumentCount, char** Arguments)
     glDeleteTextures(1, &Texture);
     glfwDestroyWindow(Window);
     glfwTerminate();
+#ifdef FRONTIER_WITH_RESTIR
+    return Result;
+#else
     return 0;
+#endif
 }
