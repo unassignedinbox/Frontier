@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -55,22 +55,6 @@ jobs:
           path: lobby-startup.png
           if-no-files-found: error
           retention-days: 30
-
-      # Opt-in only: publish the actual framebuffer capture to the session branch.
-      # GITHUB_TOKEN pushes do not trigger another workflow run.
-      - name: Publish requested startup capture
-        if: runner.os == 'Linux' && github.ref == 'refs/heads/arena/0b4c5376-frontier' && contains(github.event.head_commit.message, '[publish-startup-capture]')
-        shell: bash
-        run: |
-          mkdir -p VisualProof
-          cp lobby-startup.png VisualProof/EverestLobbyStartup.png
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add VisualProof/EverestLobbyStartup.png
-          if ! git diff --cached --quiet; then
-            git commit -m 'Record actual Everest Lobby startup window'
-            git push origin HEAD:arena/0b4c5376-frontier
-          fi
 
       - name: Stage standalone test package
         shell: bash
