@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -130,10 +131,18 @@ int main(int ArgumentCount, char** Arguments)
 {
     using namespace Frontier;
     SessionConfiguration Configuration{};
-    std::string ArchiveDirectory = "Experimental/VehicleHmiPrototype/Archive";
+    // Installed packages keep their assets next to the executable, even when
+    // launched from another working directory. Preserve repository defaults for development.
+    const std::filesystem::path ExecutableDirectory = std::filesystem::absolute(Arguments[0]).parent_path();
+    const auto InstalledArchive = ExecutableDirectory / "Archive";
+    std::string ArchiveDirectory = std::filesystem::is_directory(InstalledArchive)
+                                   ? InstalledArchive.string() : "Experimental/VehicleHmiPrototype/Archive";
     std::string CapturePath;
+    bool CheckContent = false;
 #ifdef FRONTIER_WITH_RESTIR
-    std::string ContentDirectory = "EngineContent";
+    const auto InstalledContent = ExecutableDirectory / "EngineContent";
+    std::string ContentDirectory = std::filesystem::is_directory(InstalledContent)
+                                   ? InstalledContent.string() : "EngineContent";
 #endif
     for (int Index = 1; Index < ArgumentCount; ++Index)
         if (std::strcmp(Arguments[Index], "--archive") == 0 && Index + 1 < ArgumentCount)
@@ -144,6 +153,8 @@ int main(int ArgumentCount, char** Arguments)
 #endif
         else if (std::strcmp(Arguments[Index], "--capture") == 0 && Index + 1 < ArgumentCount)
             CapturePath = Arguments[++Index];
+        else if (std::strcmp(Arguments[Index], "--check-content") == 0)
+            CheckContent = true;
 
     const FacetArchiveData Body = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleBody.facet");
     const FacetArchiveData Tyre = LoadFacetArchive(ArchiveDirectory + "/ControlVehicleTyre.facet");
@@ -152,6 +163,24 @@ int main(int ArgumentCount, char** Arguments)
     {
         std::fprintf(stderr, "EverestWindow: vehicle facet archives not found or invalid under %s\n", ArchiveDirectory.c_str());
         return 1;
+    }
+
+    if (CheckContent)
+    {
+#ifdef FRONTIER_WITH_RESTIR
+        const auto Content = std::filesystem::path(ContentDirectory);
+        if (!std::filesystem::is_regular_file(Content / "EnvironmentArchives/Lobby/Lobby.facetspace") ||
+            !std::filesystem::is_regular_file(Content / "EnvironmentArchives/Lobby/Materials.bin") ||
+            !std::filesystem::is_directory(Content / "ShaderArchives/GlobalIllumination"))
+        {
+            std::fprintf(stderr, "EverestWindow: Lobby ReSTIR assets not found under %s\n", ContentDirectory.c_str());
+            return 1;
+        }
+        std::printf("Vehicle archives and Lobby ReSTIR assets found.\n");
+#else
+        std::printf("Vehicle archives found (software-only build).\n");
+#endif
+        return 0;
     }
 
     if (!glfwInit())

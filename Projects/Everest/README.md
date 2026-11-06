@@ -25,7 +25,7 @@ On Windows, use `build/Release/Everest.exe`. Use `--guests N` (0–4) to spawn m
 
 ## Download test binaries
 
-Pushing to the session branch runs **Everest C++ binaries** in GitHub Actions for Linux, Windows, and macOS. Each workflow run uploads an `Everest-<OS>` artifact containing the executable, the three ControlVehicle facet archives, and a short run guide. Download the artifact from the Actions run's **Artifacts** section and follow its `README.txt`.
+Pushing to the session branch runs **Everest C++ binaries** in GitHub Actions for Linux, Windows, and macOS. Each workflow run uploads an `Everest-<OS>` artifact containing one interactive executable, its content archives, and a short run guide. On Windows, extract the ZIP and use `Launch Project Everest.bat`; if startup fails it displays the error and saves `Everest-log.txt`. Download the artifact from the Actions run's **Artifacts** section and follow its `README.txt`.
 
 ## Native ReSTIR Lobby and Proving Grounds
 
