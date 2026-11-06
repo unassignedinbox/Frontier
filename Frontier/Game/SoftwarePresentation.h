@@ -7,6 +7,7 @@
 //    a PPM. It exists so both C++ levels can be seen and regression-checked anywhere; a GLFW/WebGPU
 //    front-end replaces this class, nothing else.
 
+#include "Frontier/Engine/Effects/SmokeFluidSystem.h"
 #include "Frontier/Engine/Effects/VehicleInspection.h"
 #include "Frontier/Engine/Scene/FacetArchive.h"
 
@@ -42,14 +43,17 @@ struct PresentationFrame
     int Width = 0;
     int Height = 0;
     std::vector<uint8_t> Rgb;   // row-major, top-to-bottom, 8-bit sRGB
+    std::vector<float> DepthMetres;  // camera-forward depth, used to composite smoke in front of the SDF world
 };
 
 [[nodiscard]] PresentationFrame RenderLobbyFrame(const std::vector<PresentationVehicle>& Vehicles,
                                                   const PresentationCamera& Camera,
-                                                  int Width = 960, int Height = 600);
+                                                  int Width = 960, int Height = 600,
+                                                  const SmokeFluidSystem* Smoke = nullptr);
 [[nodiscard]] PresentationFrame RenderProvingGroundsFrame(const std::vector<PresentationVehicle>& Vehicles,
                                                            const PresentationCamera& Camera,
-                                                           int Width = 960, int Height = 600);
+                                                           int Width = 960, int Height = 600,
+                                                           const SmokeFluidSystem* Smoke = nullptr);
 
 // 📝 Renders one frame of either C++ level using the same vehicle facet archives. Camera orbits the
 //    selected focus at (YawDegrees, PitchDegrees, DistanceMetres). Returns false if the file cannot be written.

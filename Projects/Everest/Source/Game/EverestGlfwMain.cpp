@@ -10,13 +10,18 @@
 #include "Frontier/Engine/Session/LobbySession.h"
 #include "Frontier/Game/CameraController.h"
 #include "Frontier/Game/SoftwarePresentation.h"
+#include "Projects/Everest/Source/Game/SmokeFireEditor.h"
 #include "Projects/Everest/Source/Navigation/NavigationApp.h"
 #include "Projects/Everest/Source/Session/SessionPolicy.h"
 
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl2.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -86,7 +91,6 @@ void Present(GLFWwindow* Window, GLuint Texture, const Frontier::PresentationFra
         }
         glDisable(GL_BLEND);
     }
-    glfwSwapBuffers(Window);
 }
 
 std::string ResolveControlsTitle(const std::string& Level, const Frontier::InputRoutingPolicy& Policy,
@@ -142,12 +146,32 @@ int main(int ArgumentCount, char** Arguments)
     }
     glfwMakeContextCurrent(Window);
     glfwSwapInterval(1);
-    glfwSetInputMode(Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetInputMode(Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    ImGuiStyle& Style = ImGui::GetStyle();
+    Style.WindowRounding = 0.0f;
+    Style.FrameRounding = 4.0f;
+    Style.ScrollbarRounding = 4.0f;
+    Style.WindowPadding = ImVec2(14.0f, 12.0f);
+    Style.FramePadding = ImVec2(8.0f, 5.0f);
+    Style.ItemSpacing = ImVec2(8.0f, 6.0f);
+    Style.Colors[ImGuiCol_WindowBg] = ImVec4(0.086f, 0.086f, 0.086f, 0.97f);
+    Style.Colors[ImGuiCol_FrameBg] = ImVec4(0.15f, 0.15f, 0.15f, 1.0f);
+    Style.Colors[ImGuiCol_Header] = ImVec4(0.22f, 0.18f, 0.15f, 1.0f);
+    Style.Colors[ImGuiCol_SliderGrab] = ImVec4(0.78f, 0.78f, 0.78f, 1.0f);
+    Style.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.91f, 0.52f, 0.24f, 1.0f);
+    ImGui_ImplGlfw_InitForOpenGL(Window, true);
+    ImGui_ImplOpenGL2_Init();
 
     LobbySession Game(Configuration, Everest::ConstructEverestSessionPolicy);
     Everest::NavigationApp Navigation(Configuration);
     InputEncoder Encoder;
     CameraController Camera;
+    SmokeFluidSettings SmokeSettings{};
+    SmokeFluidSystem Smoke(SmokeSettings);
+    Everest::SmokeFireEditor SmokeEditor;
     GLuint Texture = 0;
     glGenTextures(1, &Texture);
     bool MenuVisible = true;
@@ -163,6 +187,12 @@ int main(int ArgumentCount, char** Arguments)
     while (!glfwWindowShouldClose(Window))
     {
         glfwPollEvents();
+        ImGui_ImplOpenGL2_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        SmokeEditor.Draw(SmokeSettings, Smoke.QueryMetrics(), Smoke.QueryExtent(), Smoke.IsResident());
+        Smoke.Configure(SmokeSettings);
+        if (SmokeEditor.ConsumeClearRequest()) Smoke.Clear();
         const double Now = glfwGetTime();
         const float Step = std::clamp(static_cast<float>(Now - PreviousTime), 1.0f / 240.0f, 1.0f / 20.0f);
         PreviousTime = Now;
@@ -173,16 +203,28 @@ int main(int ArgumentCount, char** Arguments)
                                     ? InputControlMode::Driving : InputControlMode::Navigation;
         InputPacket Packet = Encoder.SampleGlfwWindow(Window, Step, Mode);
         Packet = Routing.Route(Packet);
+        const ImGuiIO& Ui = ImGui::GetIO();
+        if (Ui.WantCaptureKeyboard)
+        {
+            const uint64_t Sequence = Packet.SequenceIndex;
+            Packet = {};
+            Packet.SequenceIndex = Sequence;
+        }
+        const float LeftPanelEdge = std::clamp(Ui.DisplaySize.x * 0.23f, 220.0f, 288.0f);
+        const float RightPanelEdge = Ui.DisplaySize.x - std::clamp(Ui.DisplaySize.x * 0.30f, 330.0f, 390.0f);
+        const bool Looking = Ui.MouseDown[1] && Ui.MousePos.x > LeftPanelEdge && Ui.MousePos.x < RightPanelEdge
+                           && Ui.MousePos.y < Ui.DisplaySize.y - 26.0f;
+        if (!Looking) Packet.LookYawDelta = Packet.LookPitchDelta = 0.0f;
         if (!Encoder.WasActionPressed(InputActionResetUnit))
             Packet.ActionBits &= ~static_cast<uint32_t>(InputActionResetUnit);
 
-        if (Routing.AllowLevelNavigation && Mode == InputControlMode::Driving
+        if (!Ui.WantCaptureKeyboard && Routing.AllowLevelNavigation && Mode == InputControlMode::Driving
             && Encoder.WasActionPressed(InputActionMenu))
         {
             MenuVisible = true;
             SelectedDestination = Game.QueryCurrentLevelPath() == Configuration.LobbyLevelPath ? 1 : 0;
         }
-        if (MenuVisible)
+        if (MenuVisible && !Ui.WantCaptureKeyboard)
         {
             if (Encoder.WasActionPressed(InputActionNavigatePrev))
                 SelectedDestination = (SelectedDestination + Navigation.QueryDestinations().size() - 1)
@@ -212,23 +254,51 @@ int main(int ArgumentCount, char** Arguments)
 
         const DeployableUnit* Unit = Game.QueryLocalVehicle();
         InputPacket CameraPacket = Packet;
-        if (!Encoder.WasActionPressed(InputActionCycleCamera))
+        if (Ui.WantCaptureKeyboard || !Encoder.WasActionPressed(InputActionCycleCamera))
             CameraPacket.ActionBits &= ~static_cast<uint32_t>(InputActionCycleCamera);
         Camera.Step(CameraPacket, UpdatedRouting, Unit);
         Vehicles[0].PositionMetres = Unit ? Unit->QueryPositionMetres() : std::array<float, 3>{ 0.0f, 0.0f, 0.53f };
         Vehicles[0].YawDegrees = Unit ? Unit->QueryYawDegrees() : 0.0f;
+        SmokeSdfWorld FluidWorld{};
+        FluidWorld.VehiclePosition = { Vehicles[0].PositionMetres[0], Vehicles[0].PositionMetres[1], Vehicles[0].PositionMetres[2] };
+        FluidWorld.VehicleYawDegrees = Vehicles[0].YawDegrees;
+        FluidWorld.VehicleEnabled = Unit != nullptr;
+        if (SmokeSettings.TestPlume != 0 && SmokeSettings.Enabled)
+        {
+            const float Yaw = Vehicles[0].YawDegrees * 0.01745329252f;
+            SmokeSource TestSource{};
+            TestSource.Position = { Vehicles[0].PositionMetres[0] + 3.2f * std::cos(Yaw),
+                                    Vehicles[0].PositionMetres[1] + 3.2f * std::sin(Yaw),
+                                    Vehicles[0].PositionMetres[2] + 0.95f };
+            TestSource.RadiusMetres = SmokeSettings.TestPlume == 2 ? 0.45f : 0.75f;
+            TestSource.SmokeRate = SmokeSettings.TestPlume == 2 ? 2.5f : 12.0f;
+            TestSource.HeatRate = SmokeSettings.TestPlume == 2 ? 30.0f : 2.0f;
+            TestSource.FlameRate = SmokeSettings.TestPlume == 2 ? 5.0f : 0.0f;
+            TestSource.SootRate = SmokeSettings.TestPlume == 2 ? 2.0f : 0.15f;
+            TestSource.RemainingSeconds = 1.0f;
+            TestSource.Persistent = true;
+            Smoke.AddSource(TestSource);
+        }
+        else Smoke.ClearPersistentSources();
+        Smoke.Advance(Step, FluidWorld);
         const PresentationCamera View = Camera.Resolve(UpdatedRouting, Unit);
         const PresentationFrame Image = UpdatedRouting.AllowDriving
-            ? RenderProvingGroundsFrame(Vehicles, View, 960, 624)
-            : RenderLobbyFrame(Vehicles, View, 960, 624);
+            ? RenderProvingGroundsFrame(Vehicles, View, 960, 624, &Smoke)
+            : RenderLobbyFrame(Vehicles, View, 960, 624, &Smoke);
 
         const std::string LevelLabel = UpdatedRouting.AllowDriving ? "Proving Grounds" : "Lobby";
         glfwSetWindowTitle(Window, ResolveControlsTitle(LevelLabel, UpdatedRouting, MenuVisible,
                                                         Navigation.QueryDestinations(), SelectedDestination).c_str());
         Present(Window, Texture, Image, MenuVisible, SelectedDestination, Navigation, Game);
+        ImGui::Render();
+        ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+        glfwSwapBuffers(Window);
     }
 
     glDeleteTextures(1, &Texture);
+    ImGui_ImplOpenGL2_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
     glfwDestroyWindow(Window);
     glfwTerminate();
     return 0;

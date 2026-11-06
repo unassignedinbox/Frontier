@@ -32,15 +32,19 @@ target_compile_features(FrontierSession PUBLIC cxx_std_17)
 add_library(EverestNavigation STATIC ../Projects/Everest/Source/Navigation/NavigationApp.cpp)
 target_link_libraries(EverestNavigation PUBLIC FrontierSession)
 
+add_library(FrontierSmoke STATIC Engine/Effects/SmokeFluidSystem.cpp)
+target_link_libraries(FrontierSmoke PUBLIC FrontierSession)
+
 add_executable(SessionValidation ../Validation/SessionValidation.cpp)
-target_link_libraries(SessionValidation PRIVATE FrontierSession EverestNavigation)
+target_link_libraries(SessionValidation PRIVATE FrontierSession EverestNavigation FrontierSmoke)
 
 add_library(FrontierCamera STATIC Game/CameraController.cpp)
 target_link_libraries(FrontierCamera PUBLIC FrontierSession)
 target_link_libraries(SessionValidation PRIVATE FrontierCamera)
 
 add_library(FrontierGame STATIC Game/SoftwarePresentation.cpp)
-target_link_libraries(FrontierGame PUBLIC FrontierSession FrontierCamera)
+target_link_libraries(FrontierGame PUBLIC FrontierSession FrontierCamera FrontierSmoke)
+target_link_libraries(SessionValidation PRIVATE FrontierGame)
 
 add_executable(LobbySession Game/LobbySessionMain.cpp)
 target_link_libraries(LobbySession PRIVATE FrontierGame FrontierSession)
@@ -56,12 +60,26 @@ if(FRONTIER_ENABLE_GLFW)
     set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(glfw URL https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz)
     FetchContent_MakeAvailable(glfw)
+    FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.9b GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(imgui)
     find_package(OpenGL REQUIRED)
+
+    add_library(FrontierImGui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp)
+    target_include_directories(FrontierImGui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+    target_link_libraries(FrontierImGui PUBLIC glfw OpenGL::GL)
 
     target_compile_definitions(FrontierSession PUBLIC FRONTIER_WITH_GLFW)
     target_link_libraries(FrontierSession PUBLIC glfw)
-    add_executable(EverestWindow ../Projects/Everest/Source/Game/EverestGlfwMain.cpp)
-    target_link_libraries(EverestWindow PRIVATE FrontierGame FrontierSession EverestNavigation OpenGL::GL glfw)
+    add_executable(EverestWindow
+        ../Projects/Everest/Source/Game/EverestGlfwMain.cpp
+        ../Projects/Everest/Source/Game/SmokeFireEditor.cpp)
+    target_link_libraries(EverestWindow PRIVATE FrontierGame FrontierSession FrontierSmoke EverestNavigation FrontierImGui OpenGL::GL glfw)
 endif()
 
 if(BUILD_TESTING)
