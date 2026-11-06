@@ -11,6 +11,7 @@
 #include "Frontier/Engine/Scene/FacetArchive.h"
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -28,8 +29,30 @@ struct PresentationVehicle
     VehicleInspection Inspection{};   // visual effect for this presentation of the vehicle
 };
 
+struct PresentationCamera
+{
+    std::array<float, 3> FocusMetres = { 0.0f, 0.0f, 0.55f };
+    float YawDegrees = 38.0f;
+    float PitchDegrees = 14.0f;
+    float DistanceMetres = 15.5f;
+};
+
+struct PresentationFrame
+{
+    int Width = 0;
+    int Height = 0;
+    std::vector<uint8_t> Rgb;   // row-major, top-to-bottom, 8-bit sRGB
+};
+
+[[nodiscard]] PresentationFrame RenderLobbyFrame(const std::vector<PresentationVehicle>& Vehicles,
+                                                  const PresentationCamera& Camera,
+                                                  int Width = 960, int Height = 600);
+[[nodiscard]] PresentationFrame RenderProvingGroundsFrame(const std::vector<PresentationVehicle>& Vehicles,
+                                                           const PresentationCamera& Camera,
+                                                           int Width = 960, int Height = 600);
+
 // 📝 Renders one frame of either C++ level using the same vehicle facet archives. Camera orbits the
-//    centre car at (YawDegrees, Pitch, DistanceMetres). Returns false if the file cannot be written.
+//    selected focus at (YawDegrees, PitchDegrees, DistanceMetres). Returns false if the file cannot be written.
 bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
                     float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
                     int Width = 640, int Height = 400);

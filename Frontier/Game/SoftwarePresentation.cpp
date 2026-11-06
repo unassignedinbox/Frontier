@@ -226,9 +226,9 @@ void DrawArchive(Frame& Target, const Projector& Camera, const FacetArchiveData&
 
 } // namespace
 
-static bool RenderLevelPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
-                           float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
-                           int Width, int Height, bool ProvingGrounds)
+static PresentationFrame RenderLevelFrame(const std::vector<PresentationVehicle>& Vehicles,
+                                          const PresentationCamera& CameraView,
+                                          int Width, int Height, bool ProvingGrounds)
 {
     Frame Target;
     Target.Width = Width;
@@ -237,13 +237,13 @@ static bool RenderLevelPpm(const std::string& Path, const std::vector<Presentati
     Target.Depth.resize(static_cast<size_t>(Width) * Height);
     Target.Clear();
 
-    const float Yaw = CameraYawDegrees * Pi / 180.0f;
-    const float Pitch = CameraPitchDegrees * Pi / 180.0f;
+    const float Yaw = CameraView.YawDegrees * Pi / 180.0f;
+    const float Pitch = CameraView.PitchDegrees * Pi / 180.0f;
     Projector Camera;
-    const Vec3 Focus = { 0.0f, 0.0f, 0.55f };
-    Camera.Eye = { Focus.X + CameraDistanceMetres * std::cos(Pitch) * std::cos(Yaw),
-                   Focus.Y + CameraDistanceMetres * std::cos(Pitch) * std::sin(Yaw),
-                   Focus.Z + CameraDistanceMetres * std::sin(Pitch) };
+    const Vec3 Focus = { CameraView.FocusMetres[0], CameraView.FocusMetres[1], CameraView.FocusMetres[2] };
+    Camera.Eye = { Focus.X + CameraView.DistanceMetres * std::cos(Pitch) * std::cos(Yaw),
+                   Focus.Y + CameraView.DistanceMetres * std::cos(Pitch) * std::sin(Yaw),
+                   Focus.Z + CameraView.DistanceMetres * std::sin(Pitch) };
     Camera.Forward = Normalize(Focus - Camera.Eye);
     Camera.Right = Normalize(Cross(Camera.Forward, Vec3{ 0.0f, 0.0f, 1.0f }));
     Camera.Up = Cross(Camera.Right, Camera.Forward);
@@ -320,33 +320,68 @@ static bool RenderLevelPpm(const std::string& Path, const std::vector<Presentati
         }
     }
 
+    PresentationFrame Out{};
+    Out.Width = Width;
+    Out.Height = Height;
+    Out.Rgb.resize(static_cast<size_t>(Width) * Height * 3);
+    for (size_t PixelIndex = 0; PixelIndex < Target.Colour.size(); ++PixelIndex)
+        for (int Channel = 0; Channel < 3; ++Channel)
+        {
+            const float Srgb = std::pow(std::clamp(Target.Colour[PixelIndex][Channel], 0.0f, 1.0f), 1.0f / 2.2f);
+            Out.Rgb[PixelIndex * 3 + Channel] = static_cast<uint8_t>(std::lround(Srgb * 255.0f));
+        }
+    return Out;
+}
+
+PresentationFrame RenderLobbyFrame(const std::vector<PresentationVehicle>& Vehicles,
+                                    const PresentationCamera& Camera, int Width, int Height)
+{
+    return RenderLevelFrame(Vehicles, Camera, Width, Height, false);
+}
+
+PresentationFrame RenderProvingGroundsFrame(const std::vector<PresentationVehicle>& Vehicles,
+                                             const PresentationCamera& Camera, int Width, int Height)
+{
+    return RenderLevelFrame(Vehicles, Camera, Width, Height, true);
+}
+
+namespace
+{
+
+bool WritePpm(const std::string& Path, const PresentationFrame& Image)
+{
+    if (Image.Width <= 0 || Image.Height <= 0 || Image.Rgb.size() != static_cast<size_t>(Image.Width) * Image.Height * 3)
+        return false;
     std::ofstream Stream(Path, std::ios::binary);
     if (!Stream)
         return false;
-    Stream << "P6\n" << Width << " " << Height << "\n255\n";
-    for (const auto& Pixel : Target.Colour)
-        for (int Channel = 0; Channel < 3; ++Channel)
-        {
-            const float Srgb = std::pow(std::clamp(Pixel[Channel], 0.0f, 1.0f), 1.0f / 2.2f);
-            Stream.put(static_cast<char>(std::lround(Srgb * 255.0f)));
-        }
+    Stream << "P6\n" << Image.Width << " " << Image.Height << "\n255\n";
+    Stream.write(reinterpret_cast<const char*>(Image.Rgb.data()), static_cast<std::streamsize>(Image.Rgb.size()));
     return static_cast<bool>(Stream);
+}
+
 }
 
 bool RenderLobbyPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
                     float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
                     int Width, int Height)
 {
-    return RenderLevelPpm(Path, Vehicles, CameraYawDegrees, CameraPitchDegrees, CameraDistanceMetres,
-                          Width, Height, false);
+    PresentationCamera Camera{};
+    Camera.YawDegrees = CameraYawDegrees;
+    Camera.PitchDegrees = CameraPitchDegrees;
+    Camera.DistanceMetres = CameraDistanceMetres;
+    return WritePpm(Path, RenderLobbyFrame(Vehicles, Camera, Width, Height));
 }
 
 bool RenderProvingGroundsPpm(const std::string& Path, const std::vector<PresentationVehicle>& Vehicles,
                              float CameraYawDegrees, float CameraPitchDegrees, float CameraDistanceMetres,
                              int Width, int Height)
 {
-    return RenderLevelPpm(Path, Vehicles, CameraYawDegrees, CameraPitchDegrees, CameraDistanceMetres,
-                          Width, Height, true);
+    PresentationCamera Camera{};
+    Camera.YawDegrees = CameraYawDegrees;
+    Camera.PitchDegrees = CameraPitchDegrees;
+    Camera.DistanceMetres = CameraDistanceMetres;
+    return WritePpm(Path, RenderProvingGroundsFrame(Vehicles, Camera, Width, Height));
 }
 
 } // namespace Frontier
