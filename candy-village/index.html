@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Candy Village · Jellybean Guards</title>
+    <style>
+      :root {
+        --ink: #3b1f2b;
+        --panel: rgba(255, 246, 250, 0.92);
+        --pink: #ff4d8d;
+        --mint: #3dd6a4;
+        --gold: #ffb703;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #ffd6ea; font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      .panel { position: fixed; background: var(--panel); border-radius: 16px; box-shadow: 0 8px 28px rgba(92, 30, 60, 0.25); padding: 14px 16px; backdrop-filter: blur(6px); }
+      #title { top: 14px; left: 14px; max-width: 300px; }
+      #title h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: 0.3px; }
+      #title p { margin: 0; font-size: 13px; line-height: 1.35; }
+      #controls { top: 14px; right: 14px; width: 260px; }
+      #controls h2, #scoreboard h2, #log-panel h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #9b3c6c; }
+      button { font: inherit; font-weight: 700; border: 0; border-radius: 999px; padding: 9px 14px; margin: 3px 3px 3px 0; cursor: pointer; color: #fff; background: var(--pink); box-shadow: 0 3px 0 #c22d6a; transition: transform 0.05s; }
+      button:active { transform: translateY(2px); box-shadow: 0 1px 0 #c22d6a; }
+      button.alt { background: var(--mint); box-shadow: 0 3px 0 #1f9c75; }
+      button.quiet { background: #8c6bff; box-shadow: 0 3px 0 #5a40c4; }
+      button.ghost { background: #fff; color: var(--ink); box-shadow: 0 3px 0 #d8b7c7; }
+      label { display: block; font-size: 13px; margin-top: 10px; }
+      input[type="range"] { width: 100%; accent-color: var(--pink); }
+      #scoreboard { bottom: 14px; left: 14px; width: 260px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; }
+      .grid b { font-size: 18px; }
+      #log-panel { bottom: 14px; right: 14px; width: 340px; max-height: 36vh; display: flex; flex-direction: column; }
+      #log { list-style: none; margin: 0; padding: 0; overflow-y: auto; font-size: 13px; line-height: 1.35; }
+      #log li { padding: 3px 0; border-bottom: 1px dashed #ecc2d6; }
+      #hint { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); font-size: 13px; background: rgba(59, 31, 43, 0.75); color: #fff; padding: 6px 12px; border-radius: 999px; pointer-events: none; }
+      #popups { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+      .popup { position: absolute; transform: translate(-50%, -50%); font-weight: 900; font-size: 22px; text-shadow: 0 2px 0 rgba(0,0,0,0.25), 0 0 10px rgba(255,255,255,0.6); white-space: nowrap; }
+      .popup-gold { color: #ffb703; font-size: 28px; }
+      .popup-hit { color: #ff4d8d; }
+      .popup-miss { color: #5a3a4a; font-size: 18px; }
+      #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; background: #ffd6ea; transition: opacity 0.6s; }
+      #loading.hidden { opacity: 0; pointer-events: none; }
+      #status { font-size: 13px; margin-top: 8px; color: #6b3b55; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="title" class="panel">
+      <h1>Candy Village</h1>
+      <p>Village seed <b id="seed">—</b>. Click the ground to place a bullseye. Jellybean guards walk over and strike it with a lollipop mace.</p>
+    </div>
+
+    <div id="controls" class="panel">
+      <h2>Orders</h2>
+      <button id="btn-send">Send nearest</button>
+      <button id="btn-send-all" class="alt">Send all</button>
+      <button id="btn-clear" class="ghost">Clear targets</button>
+      <button id="btn-new" class="quiet">New village</button>
+      <label for="accuracy">Guard aim error (σ): <span id="accuracy-value">0.45</span> m</label>
+      <input id="accuracy" type="range" min="0" max="1.5" step="0.05" value="0.45" />
+      <div id="status"></div>
+    </div>
+
+    <div id="scoreboard" class="panel">
+      <h2>Scoreboard</h2>
+      <div class="grid">
+        <div>Score <br /><b id="stat-score">0</b></div>
+        <div>Accuracy <br /><b id="stat-accuracy">0%</b></div>
+        <div>Shots <br /><b id="stat-shots">0</b></div>
+        <div>Bullseyes <br /><b id="stat-bullseyes">0</b></div>
+        <div>Hits <br /><b id="stat-hits">0</b></div>
+        <div>Misses <br /><b id="stat-misses">0</b></div>
+      </div>
+    </div>
+
+    <div id="log-panel" class="panel">
+      <h2>Battle log</h2>
+      <ol id="log"></ol>
+    </div>
+
+    <div id="hint">Click to target · Shift+click adds a target · Space sends nearest guard · C clears · Drag to orbit</div>
+    <div id="popups"></div>
+    <div id="loading">Baking the candy village…</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
