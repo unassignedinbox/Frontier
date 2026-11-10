@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<!--
+==============================================================================================================================================
+ FRONTIER 1 · ReSTIR PT Enhanced — CandidateEvidenceFit render engine (HTML/WebGL2)
+==============================================================================================================================================
+ Provenance (searched 2026-11-10):
+  · UI: Project-Zero Editor — SultanAladin/Frontier- branch arena/10e50e56-frontier (commit 4010ac4),
+    Experimental/ProjectZeroEditor/ (Editor.jsx, Inspectors.jsx, AtmosphereLab.jsx, GasPanel.jsx,
+    FracturePanel.jsx, Notch.jsx, Editor.css). This file recreates that editor chrome (Outliner ·
+    Viewport · Inspector, DM Sans, card/metric/slider vocabulary) in vanilla JS so it runs with no
+    build step. The 4.9 MB bundled index.html is not copied; the layout/tokens are faithful.
+  · Vehicle: VehicleHMI / VehicleProvingGrounds — SultanAladin/Frontier-OLD branch Frontier,
+    Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/ (VehicleSpecification.js,
+    VehicleSolver.js, MaterialSpecification.js, CourseStructure.js, JoltWorld.js). ControlVehicle
+    GT-R specs used verbatim: mass 1300 kg, CoM 0.53 m, wheelbase 3.396 m, track 2.095 m,
+    tyre radius 0.50855 m, suspension 2.0 Hz / ζ 0.6, Pacejka MF6.1 sheet, GT-R torque curve
+    (peak 520 N·m), 6-speed + turbo spool, brakes 2600 N·m/wheel, CdA 0.74 / ClA 1.10.
+    Physics here is a faithful arcade port (bicycle + Pacejka-inspired friction circle, strut
+    springs, load transfer, aero, cone knock-over) — the full 63 KB VehicleSolver + Jolt WASM
+    stack is summarised, not vendored, so the file stays self-contained.
+  · Materials: MaterialSpecification.js families 0..85 (linear Rec.709). Garden set (mirror,
+    aluminium F0, gold F0, glass IOR→F0) + proving-grounds set (asphalt, concrete, paint,
+    kerb, tyre rubber, grass, containers, lamps) carried over as linear-space PBR records.
+  · Engine: ReSTIR PT Enhanced (CandidateEvidenceFit for Frontier1). Authors report 2.08–3.05×
+    speedup over their 2022 ReSTIR PT with improved quality across their tests. Best starting
+    research target for high-quality ray tracing + GI; still complex — closer to production-
+    ready, not universally production-ready. This HTML implements the paper's core in WebGL2:
+    reservoir sampling (temporal + spatial reuse, visibility- + material-aware weights),
+    path-traced indirect bounces, progressive accumulation, glossy reflections (required).
+==============================================================================================================================================
+ Run: python3 -m http.server 8000 --bind 0.0.0.0  →  http://localhost:8000/
+ Drive: W/S throttle/brake · A/D steer · Space handbrake · R reset · C camera · M HMI · P panels
+==============================================================================================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Frontier 1 · ReSTIR PT Enhanced — Project-Zero Editor + ControlVehicle</title>
+<style>
+/* ── Project-Zero Editor tokens (Editor.css) ─────────────────────────────── */
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden}
+body{background:#090909;color:#f0f0f0;font-family:"DM Sans","Segoe UI",system-ui,-apple-system,sans-serif;font-size:13px;font-weight:300}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid #ffffff0d;background:#222;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:28px;padding:5px 12px}
+button:hover{background:#2e2e2e}button:active{background:#383838}button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:1px solid #adb2c4;outline-offset:2px}
+input,select,textarea{min-width:0;background:#000;border:1px solid #ffffff0d;outline:none}
+input[type=number]{appearance:textfield;-moz-appearance:textfield}
+input::-webkit-inner-spin-button{appearance:none}
+input[type=range]{appearance:none;-webkit-appearance:none;border:0;height:26px;border-radius:30px;background:linear-gradient(90deg,#454545 0 var(--fill,50%),#242424 var(--fill,50%) 100%);cursor:ew-resize;min-width:24px;margin:0;width:100%}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:24px;height:24px;border-radius:50%;background:#e0e0e0;box-shadow:0 1px 2px #0008}
+input[type=range]::-moz-range-thumb{width:24px;height:24px;border:0;border-radius:50%;background:#e0e0e0}
+input[type=color]{width:50px;height:26px;border-radius:8px;padding:0;cursor:pointer}
+select{height:32px;border-radius:16px;padding:4px 30px 4px 13px;max-width:100%;color:#ccc}
+option{background:#1a1a1a}
+small{font-size:10px;color:#888;font-weight:400}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{border-radius:9px;background:#242424}::-webkit-scrollbar-thumb:hover{background:#333}::-webkit-scrollbar-track{background:transparent}
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+#shell{display:flex;flex-direction:column;width:100%;height:100%}
+#topbar{height:42px;flex:none;display:flex;align-items:center;gap:10px;padding:0 10px;background:#0a0a0a;border-bottom:1px solid #ffffff14}
+#topbar .brand{display:flex;align-items:center;gap:9px;font-weight:400;letter-spacing:.4px;white-space:nowrap}
+#topbar .brand .dot{width:9px;height:9px;border-radius:50%;background:#7dd3fc;box-shadow:0 0 10px #7dd3fc}
+#topbar .brand b{font-weight:500}
+#topbar .badge{font-size:10px;padding:3px 9px;border-radius:20px;background:#12202e;border:1px solid #7dd3fc55;color:#bae6fd;white-space:nowrap}
+#topbar .spacer{flex:1}
+#topbar .menu{display:flex;gap:4px;align-items:center}
+#topbar .menu button{min-height:26px;padding:3px 10px;font-size:11px;border-radius:12px}
+#topbar .menu button.on{background:#1e3a4c;border-color:#7dd3fc66;color:#e0f2fe}
+#workspace{flex:1;display:grid;grid-template-columns:264px minmax(200px,1fr) 348px;gap:2px;background:#262626;min-height:0}
+#workspace.hide-panels{grid-template-columns:0 minmax(200px,1fr) 0}
+#workspace.hide-panels .dock.left,#workspace.hide-panels .dock.right{display:none}
+.dock{background:#121212;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+.dock.left{border-radius:0 0 0 8px}.dock.right{border-radius:0 0 8px 0}
+.tab-strip{height:30px;flex:none;display:flex;align-items:end;padding:4px 4px 0 0;background:#0a0a0a;overflow:hidden;gap:0}
+.document-tab{height:26px;min-width:110px;padding:0 14px 0 26px;background:#26262c;clip-path:polygon(14px 0,calc(100% - 14px) 0,100% 100%,0 100%);display:flex;align-items:center;gap:12px;position:relative;cursor:default;font-size:11px;color:#999;margin-left:-12px;user-select:none}
+.document-tab:first-child{margin-left:0}.document-tab.active{background:#121212;color:#f0f0f0;z-index:1}
+.tab-fill{flex:1}
+.dock-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px}
+/* Outliner */
+.outliner-search{margin:2px 2px 8px}
+.outliner-search input{width:100%;height:30px;border-radius:15px;padding:0 12px;font-size:12px}
+.tree-row{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:8px;cursor:pointer;font-size:12px;color:#ccc;user-select:none}
+.tree-row:hover{background:#1c1c1c}.tree-row.selected{background:#1e3a4c;color:#e0f2fe}
+.tree-row .glyph{width:18px;text-align:center;flex:none}
+.tree-row .row-meta{margin-left:auto;font-size:10px;color:#666}
+.tree-row .visibility{opacity:.6;cursor:pointer}
+.tree-row.is-off{opacity:.45}
+.tree-group{font-size:10px;letter-spacing:1.2px;color:#777;margin:10px 4px 4px;text-transform:uppercase}
+/* Viewport */
+#viewport-column{display:flex;flex-direction:column;min-width:0;min-height:0;background:#0a0a0a}
+.viewport-bar{flex:none;display:flex;gap:6px;align-items:center;padding:6px 8px;background:#0f0f0f;border-bottom:1px solid #ffffff0d;flex-wrap:wrap}
+.viewport-bar .seg{display:flex;background:#1a1a1a;border-radius:14px;padding:2px;gap:2px}
+.viewport-bar .seg button{min-height:24px;padding:2px 10px;font-size:11px;border-radius:12px;border:0;background:transparent}
+.viewport-bar .seg button.on{background:#2e2e2e;color:#fff}
+.viewport-bar label{font-size:11px;color:#999;display:flex;align-items:center;gap:5px}
+.viewport-bar select{height:26px;font-size:11px;border-radius:12px}
+#stage{flex:1;position:relative;min-height:0;background:#000;overflow:hidden}
+#viewport{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#hud{position:absolute;left:10px;top:10px;background:#000a;border:1px solid #ffffff1a;border-radius:12px;padding:10px 12px;min-width:210px;backdrop-filter:blur(6px)}
+#hud pre{margin:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.55;color:#d4d4d4;white-space:pre-wrap}
+#hud .hud-title{font-size:10px;letter-spacing:1.4px;color:#888;margin-bottom:4px}
+#overlay-dock{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px}
+#overlay-dock button{width:34px;height:34px;border-radius:50%;padding:0;font-size:15px;background:#000c}
+#overlay-dock button.on{background:#1e3a4c;border-color:#7dd3fc}
+#hmi{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(560px,92%);background:#0d0d0fee;border:1px solid #ffffff22;border-radius:18px;padding:12px 14px;display:none;backdrop-filter:blur(10px)}
+#hmi.open{display:block}
+#hmi h3{margin:0 0 8px;font-size:12px;letter-spacing:1.2px;color:#aaa;font-weight:400}
+#hmi .swatches{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+#hmi .swatch{width:38px;height:38px;border-radius:50%;border:2px solid #ffffff33;cursor:pointer;padding:0;min-height:0}
+#hmi .swatch.on{border-color:#fff;box-shadow:0 0 0 2px #7dd3fc}
+#hmi .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#bring-up{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#090909;z-index:5}
+#bring-up h2{font-weight:300;font-size:22px}
+#bring-up .caption{color:#888;font-size:12px}
+#bring-up .bar{width:260px;height:4px;background:#222;border-radius:4px;overflow:hidden}
+#bring-up .bar div{height:100%;width:0;background:#7dd3fc;transition:width .2s}
+#failure{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#090909;z-index:6;padding:20px;text-align:center;color:#fca5a5}
+#failure.show{display:flex}
+/* Inspector */
+.insp-tabs{display:flex;gap:2px;padding:6px 6px 0;background:#0a0a0a;flex:none;flex-wrap:wrap}
+.insp-tabs button{flex:1;min-width:58px;min-height:26px;font-size:11px;border-radius:10px 10px 0 0;border:0;background:#1a1a1a;color:#999}
+.insp-tabs button.on{background:#121212;color:#f0f0f0}
+.card{background:#181818;border:1px solid #ffffff0d;border-radius:14px;padding:12px;margin:0 0 10px}
+.card h3{margin:0 0 4px;font-size:12px;color:#cacaca;font-weight:400}
+.card .sub{font-size:11px;color:#888;margin-bottom:8px;line-height:1.45}
+.ctl{margin:10px 0}
+.ctl .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.ctl .head label{font-size:11px;color:#bbb}
+.ctl .head output{font-size:11px;color:#e0e0e0;font-family:ui-monospace,Menlo,monospace}
+.ctl .range-labels{display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:1px}
+.ctl .row{display:flex;gap:8px;align-items:center}
+.ctl .row input[type=color]{flex:none}
+.ctl .row input[type=text],.ctl .row input[type=number]{flex:1;height:30px;border-radius:10px;padding:0 10px;font-size:12px}
+.switch-row{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px;color:#ccc;cursor:pointer}
+.switch-row .toggle{width:38px;height:22px;border-radius:20px;background:#333;position:relative;flex:none;transition:background .15s}
+.switch-row .toggle::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#aaa;transition:left .15s,background .15s}
+.switch-row.on .toggle{background:#1e5a7a}.switch-row.on .toggle::after{left:19px;background:#e0f2fe}
+.metric-row{display:flex;gap:8px;margin:8px 0}
+.metric{flex:1;background:#101010;border:1px solid #ffffff0d;border-radius:10px;padding:8px;text-align:center}
+.metric .v{font-size:16px;font-weight:400;font-family:ui-monospace,Menlo,monospace}
+.metric .k{font-size:9px;color:#888;letter-spacing:.8px;text-transform:uppercase;margin-top:2px}
+.pill{display:inline-block;font-size:10px;padding:2px 8px;border-radius:12px;background:#1a2a1a;color:#86efac;border:1px solid #86efac44}
+.pill.warn{background:#2a2210;color:#fcd34d;border-color:#fcd34d44}
+.pill.info{background:#12202e;color:#bae6fd;border-color:#7dd3fc44}
+.note{font-size:11px;color:#919191;line-height:1.55;margin:8px 0}
+.note b{color:#d4d4d4;font-weight:500}
+/* Status */
+#status{flex:none;height:30px;display:flex;align-items:center;gap:16px;padding:0 12px;background:#0a0a0a;border-top:1px solid #ffffff14;font-size:11px;color:#999;overflow:hidden;white-space:nowrap}
+#status .status-item{display:flex;gap:6px;align-items:center}
+#status .status-item strong{color:#e0e0e0;font-weight:400;font-family:ui-monospace,Menlo,monospace}
+#status .footer-dot{width:7px;height:7px;border-radius:50%;background:#4ade80}
+#status .footer-dot.warn{background:#facc15}
+/* Touch */
+#touch{position:absolute;inset:auto 0 0 0;display:none;justify-content:space-between;padding:12px;pointer-events:none;z-index:4}
+#touch .cluster{display:flex;gap:10px;pointer-events:auto}
+#touch button{width:64px;height:64px;border-radius:50%;font-size:20px;background:#000b;border:1px solid #ffffff33;min-height:0;padding:0}
+#touch button:active{background:#1e3a4c}
+@media (pointer:coarse){#touch{display:flex}}
+@media (max-width:900px){#workspace{grid-template-columns:200px minmax(160px,1fr) 280px}}
+@media (max-width:700px){#workspace{grid-template-columns:0 minmax(160px,1fr) 0}.dock.left,.dock.right{display:none}#workspace.show-left{grid-template-columns:200px minmax(160px,1fr) 0}#workspace.show-left .dock.left{display:flex}#workspace.show-right{grid-template-columns:0 minmax(160px,1fr) 260px}#workspace.show-right .dock.right{display:flex}}
+</style>
+</head>
+<body>
+<div id="shell">
+  <!-- ── Top bar (Project-Zero Editor chrome) ─────────────────────────── -->
+  <div id="topbar">
+    <div class="brand"><span class="dot"></span><span><b>FRONTIER 1</b> · Project-Zero Editor</span></div>
+    <span class="badge" title="Authors report 2.08–3.05× speedup over 2022 ReSTIR PT, improved quality (their tests)">ReSTIR PT Enhanced · 2.08–3.05×</span>
+    <div class="spacer"></div>
+    <div class="menu">
+      <button id="btn-play" class="on" title="Play / pause render + physics (Space is handbrake while driving — use this button or Esc)">⏸ Pause</button>
+      <button id="btn-reset" title="Reset vehicle + accumulation (R)">↺ Reset</button>
+      <button id="btn-camera" title="Cycle camera: Chase → Orbit → Hood → HMI → Free (C)">📷 Chase</button>
+      <button id="btn-hmi" title="Toggle HMI / Garage tablet (M)">🖥 HMI</button>
+      <button id="btn-panels" title="Hide/show editor columns (P)">▦ Panels</button>
+      <button id="btn-help" title="Help + provenance">?</button>
+    </div>
+  </div>
+  <div id="workspace">
+    <!-- ── Left: Outliner ─────────────────────────────────────────────── -->
+    <div class="dock left">
+      <div class="tab-strip"><div class="document-tab active">Outliner</div><div class="tab-fill"></div></div>
+      <div class="dock-body">
+        <div class="outliner-search"><input id="outliner-filter" type="text" placeholder="Search…"></div>
+        <div id="outliner-body"></div>
+        <div class="card" style="margin-top:12px">
+          <h3>Scene · Proving Grounds</h3>
+          <div class="sub">Materials garden (mirror · aluminium · gold · glass) north of the start straight, colour-bleed walls, containers, 32 knockable cones, ramp + kerbs. Select any row to edit its material →</div>
+          <div class="metric-row">
+            <div class="metric"><div class="v" id="m-prims">—</div><div class="k">Primitives</div></div>
+            <div class="metric"><div class="v" id="m-mats">—</div><div class="k">Materials</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- ── Centre: Viewport ───────────────────────────────────────────── -->
+    <div id="viewport-column">
+      <div class="tab-strip"><div class="document-tab active">Viewport</div><div class="tab-fill"></div></div>
+      <div class="viewport-bar">
+        <div class="seg" id="seg-mode" title="Render mode">
+          <button data-mode="0" class="on">ReSTIR PT Enhanced</button>
+          <button data-mode="1">Direct only</button>
+          <button data-mode="2">Raster preview</button>
+        </div>
+        <label>Debug
+          <select id="sel-debug">
+            <option value="0">Beauty</option><option value="1">Albedo</option><option value="2">Normal</option>
+            <option value="3">Depth</option><option value="4">Reservoir weight</option><option value="5">Direct</option><option value="6">Indirect</option>
+          </select>
+        </label>
+        <label>Cam
+          <select id="sel-cam">
+            <option value="chase">Chase</option><option value="orbit">Orbit</option><option value="hood">Hood</option>
+            <option value="hmi">HMI / Cockpit</option><option value="free">Free orbit</option>
+          </select>
+        </label>
+        <span class="pill info" id="pill-webgl">WebGL2 …</span>
+        <span class="pill" id="pill-spp">SPP 0</span>
+        <span class="pill warn" id="pill-move" style="display:none">Accum reset · moving</span>
+      </div>
+      <div id="stage">
+        <canvas id="viewport"></canvas>
+        <div id="hud"><div class="hud-title">CONTROLVEHICLE · HMI</div><pre id="hud-text">Starting…</pre></div>
+        <div id="overlay-dock">
+          <button id="ov-hud" class="on" title="HUD (H)">◈</button>
+          <button id="ov-hmi" title="HMI tablet (M)">▣</button>
+          <button id="ov-panels" class="on" title="Panels (P)">▦</button>
+        </div>
+        <div id="hmi">
+          <h3>GARAGE · PAINT &amp; FINISH — drag swatch onto car, or click to apply</h3>
+          <div class="swatches" id="hmi-swatches"></div>
+          <div class="row">
+            <button id="hmi-gloss" class="on">Gloss</button>
+            <button id="hmi-matte">Matte</button>
+            <button id="hmi-rims">Blue rims</button>
+            <button id="hmi-dark">Dark wheels</button>
+            <span class="pill info" id="hmi-state">Paint: —</span>
+          </div>
+          <div class="note">Paint / gloss / rim update the shared GPU materials on the <b>actual driven car</b>. Inspection modes (Solid/Ghost/Wire/Scan) affect only the studio preview in the full VehicleHMI demo — here the car stays solid so reflections stay honest.</div>
+        </div>
+        <div id="touch">
+          <div class="cluster"><button id="t-left">◀</button><button id="t-right">▶</button></div>
+          <div class="cluster"><button id="t-brake">▼</button><button id="t-gas">▲</button></div>
+        </div>
+        <div id="bring-up"><h2>Frontier 1 · Proving Grounds</h2><div class="caption" id="bring-caption">Initialising ReSTIR PT Enhanced…</div><div class="bar"><div id="bring-fill"></div></div></div>
+        <div id="failure"></div>
+      </div>
+    </div>
+    <!-- ── Right: Inspector ───────────────────────────────────────────── -->
+    <div class="dock right">
+      <div class="tab-strip"><div class="document-tab active">Inspector</div><div class="tab-fill"></div></div>
+      <div class="insp-tabs" id="insp-tabs">
+        <button data-tab="render" class="on">Render</button>
+        <button data-tab="material">Material</button>
+        <button data-tab="vehicle">Vehicle</button>
+        <button data-tab="light">Light</button>
+        <button data-tab="physics">Physics</button>
+      </div>
+      <div class="dock-body" id="inspector-body"></div>
+    </div>
+  </div>
+  <!-- ── Status bar ───────────────────────────────────────────────────── -->
+  <footer id="status">
+    <span class="status-item"><span class="footer-dot" id="dot-live"></span><strong id="st-fps">— FPS</strong></span>
+    <span class="status-item">Frame <strong id="st-ms">— ms</strong></span>
+    <span class="status-item">SPP <strong id="st-spp">0</strong></span>
+    <span class="status-item">Bounces <strong id="st-bounces">3</strong></span>
+    <span class="status-item">Reservoir <strong id="st-res">—</strong></span>
+    <span class="status-item">Temporal <strong id="st-temp">—</strong></span>
+    <span class="status-item">Spatial <strong id="st-spat">—</strong></span>
+    <span class="status-item" style="margin-left:auto">ReSTIR PT Enhanced · CandidateEvidenceFit · reflections <strong>ON</strong></span>
+  </footer>
+</div>
+
+<script type="module">
+/* ============================================================================
+   FRONTIER 1 · ReSTIR PT Enhanced (WebGL2) + ControlVehicle physics
+   Vanilla JS, no build. All constants below are from the searched sources.
+   ============================================================================ */
+
+// ── VehicleSpecification.js (verbatim ControlVehicle data) ─────────────────
+const VEH = {
+  Mass: 1300, CoMHeight: 0.53, TyreRadius: 0.50855, TyreRimRadius: 0.3446, TyreWidth: 0.3958,
+  UnsprungPerWheel: 20, FrontWeightFraction: 0.4914,
+  AxleMount: [[1.7274,1.0475,0.0914],[1.7274,-1.0475,0.0914],[-1.6686,1.0475,0.0914],[-1.6686,-1.0475,0.0914]],
+  SuspMount: [[1.7274,1.0475,0.6436],[1.7274,-1.0475,0.6436],[-1.6686,1.0475,0.6436],[-1.6686,-1.0475,0.6436]],
+  // GT-R torque curve (18-pt, peak 520 N·m) + turbo + transmission
+  TorqueCurve: [[800,234],[1200,300],[1600,352],[2000,392],[2400,428],[2800,460],[3200,486],[3600,504],[4000,514],[4400,518],[4800,520],[5200,520],[5800,520],[6200,506],[6600,486],[7000,462],[7600,448],[8500,442]],
+  IdleRPM: 700, RedlineRPM: 7200, GearRatios: [-3.8,-2.0,0,4.2,3.1,2.5,1.9,1.5,1.2], FinalDrive: 3.55, DriveEff: 0.92,
+  FirstIndex: 3, UpshiftRPM: 6800, DownshiftRPM: 2600,
+  MaxSteer: 0.52, SteerRate: 6.0, MaxBrakePerWheel: 2600, Handbrake: 4200, RollingRes: 0.015,
+  DragArea: 0.74, LiftArea: 1.10, FrontLiftFraction: 0.45, AirDensity: 1.225,
+  // Suspension: 2.0 Hz, ζ 0.6 (derived rates, never authored)
+  SuspFreq: 2.0, SuspDamping: 0.6,
+};
+// CourseStructure.js: pad 216×120 m, ramp wedge, kerbs, spawn
+const COURSE = { PadMin:[-60,-60], PadMax:[156,60], RampNearX:22, RampRunX:6, RampRise:1.35, RampHalfWidth:3.2, KerbH:0.12,
+  Kerbs:[[-52,20,6.0,6.3],[-52,20,-6.3,-6.0]], Spawn:[-40,0], SpawnYaw:0 };
+function courseHeight(x,y){
+  for(const [x0,x1,y0,y1] of COURSE.Kerbs) if(x>=x0&&x<=x1&&y>=y0&&y<=y1) return COURSE.KerbH;
+  if(x>=COURSE.RampNearX&&x<=COURSE.RampNearX+COURSE.RampRunX&&Math.abs(y)<=COURSE.RampHalfWidth)
+    return COURSE.RampRise*(x-COURSE.RampNearX)/COURSE.RampRunX;
+  return 0;
+}
+// MaterialSpecification.js families (subset, linear Rec.709) — full set in shader table below
+const MAT_NAMES = ["Asphalt","ApronConcrete","Grass","PaintWhite","PaintYellow","KerbRed","BodyCoat (paint)","VehicleGlass","VehiclePlastic","Tyre","Hub / Rim","Brake","Headlight","Taillight","Mirror","Aluminium","Gold","ShowcaseGlass","Plastic (red)","Rubber","CeramicWhite","WallCrimson","WallViridian","WallChalk","WallCobalt","ContainerOrange","ContainerBlue","LampWarm","LampCool","ConeOrange","ConeBand","SteelDark"];
+// linear albedo, metallic, roughness, ior, transmission, clearcoat, clearcoatRough, emissiveRGB, emissiveI, specular
+const MATS = [
+  {a:[0.055,0.056,0.060],m:0,r:0.82,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},   // 0 Asphalt
+  {a:[0.42,0.41,0.39],m:0,r:0.88,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},     // 1 Concrete
+  {a:[0.09,0.19,0.05],m:0,r:0.95,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 2 Grass
+  {a:[0.78,0.78,0.76],m:0,r:0.55,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 3 PaintWhite
+  {a:[0.80,0.56,0.05],m:0,r:0.55,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 4 PaintYellow
+  {a:[0.62,0.05,0.04],m:0,r:0.60,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 5 KerbRed
+  {a:[0.53,0.62,0.0],m:0,r:0.0775,ior:1.5,t:0,cc:1,ccr:0.03,e:[0,0,0],ei:0,s:0.04},  // 6 BodyCoat (Drive flake headroom ×0.78)
+  {a:[0.026,0.028,0.030],m:0,r:0.02,ior:1.52,t:0.92,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},// 7 VehicleGlass (proper transmission)
+  {a:[0.012,0.014,0.018],m:0,r:0.50,ior:1.46,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04}, // 8 VehiclePlastic
+  {a:[0.037,0.037,0.037],m:0,r:0.76,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},   // 9 Tyre
+  {a:[0.06,0.22,0.62],m:1,r:0.20,ior:1.5,t:0,cc:0,ccr:0,e:[0,0.033,0.12],ei:1,s:0.04},// 10 Hub blue mag
+  {a:[0.30,0.075,0.025],m:0.82,r:0.29,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04}, // 11 Brake
+  {a:[0.8,0.8,0.8],m:0,r:0.10,ior:1.5,t:0,cc:0,ccr:0,e:[1,1,1],ei:48,s:0.04},        // 12 Headlight
+  {a:[0.8,0.8,0.8],m:0,r:0.10,ior:1.5,t:0,cc:0,ccr:0,e:[1,0,0.016],ei:6.5,s:0.04},   // 13 Taillight
+  {a:[1,1,1],m:1,r:0.02,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},               // 14 Mirror
+  {a:[0.91,0.92,0.93],m:1,r:0.02,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 15 Aluminium
+  {a:[1.0,0.71,0.29],m:1,r:0.05,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},       // 16 Gold
+  {a:[1,1,1],m:0,r:0.02,ior:1.5,t:1,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},                // 17 ShowcaseGlass
+  {a:[0.72,0.05,0.04],m:0,r:0.35,ior:1.46,t:0,cc:0.5,ccr:0.1,e:[0,0,0],ei:0,s:0.04}, // 18 Plastic red
+  {a:[0.016,0.016,0.017],m:0,r:0.90,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},   // 19 Rubber
+  {a:[0.85,0.85,0.84],m:0,r:0.25,ior:1.5,t:0,cc:0.3,ccr:0.1,e:[0,0,0],ei:0,s:0.04},  // 20 CeramicWhite
+  {a:[0.72,0.05,0.04],m:0,r:0.65,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 21 Crimson
+  {a:[0.05,0.52,0.16],m:0,r:0.65,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 22 Viridian
+  {a:[0.80,0.80,0.78],m:0,r:0.75,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 23 Chalk
+  {a:[0.07,0.20,0.72],m:0,r:0.65,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 24 Cobalt
+  {a:[0.76,0.24,0.04],m:0,r:0.55,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 25 ContainerOrange
+  {a:[0.04,0.15,0.44],m:0,r:0.55,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 26 ContainerBlue
+  {a:[0.95,0.90,0.80],m:0,r:0.30,ior:1.5,t:0,cc:0,ccr:0,e:[14,10.2,6],ei:1,s:0.04},  // 27 LampWarm
+  {a:[0.90,0.92,0.95],m:0,r:0.30,ior:1.5,t:0,cc:0,ccr:0,e:[7,8.4,10],ei:1,s:0.04},   // 28 LampCool
+  {a:[0.95,0.35,0.05],m:0,r:0.40,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 29 ConeOrange
+  {a:[0.85,0.85,0.85],m:0,r:0.40,ior:1.5,t:0,cc:0,ccr:0,e:[0.5,0.5,0.5],ei:0.6,s:0.04},// 30 ConeBand
+  {a:[0.10,0.10,0.11],m:1,r:0.38,ior:1.5,t:0,cc:0,ccr:0,e:[0,0,0],ei:0,s:0.04},      // 31 SteelDark
+];
+const IorToF0 = (ior)=>{const r=(ior-1)/(ior+1);return r*r;};
+
+// ── Settings (sliders bind here) ─────────────────────────────────────────
+const S = {
+  renderMode:0, debugView:0, resScale:0.4, sppPerFrame:1, bounces:3,
+  restirTemporal:0.85, restirSpatial:0.6, restirM:8, exposure:1.0, gamma:2.2,
+  reflScale:1.0, denoise:true, skyIntensity:1.0, sunIntensity:3.0,
+  sunAz:35, sunEl:48, fov:55, chaseDist:9, chaseH:3.2,
+  grip:1.0, engine:1.0, brake:1.0, steerSens:1.0,
+  selectedMat:6, editMat:6, playing:true, camMode:"chase",
+  paint:"#9eb8df", matte:false, darkWheels:false, blueRims:true,
+};
+const PAINTS = ["#a4d8be","#d4bd88","#9eb8df","#e2ada4","#c0392b","#2980b9","#27ae60","#f1c40f","#8e44ad","#ecf0f1"];
+
+// ── Vehicle physics (ControlVehicle arcade port) ─────────────────────────
+const car = {
+  pos:[COURSE.Spawn[0],0.6,COURSE.Spawn[1]], yaw:COURSE.SpawnYaw, vel:[0,0,0], yawRate:0,
+  steer:0, throttle:0, brake:0, handbrake:false, rpm:VEH.IdleRPM, gear:VEH.FirstIndex, boost:0,
+  wheels:[0,1,2,3].map(()=>({spin:0,angle:0,load:0,slip:0,skid:0,contact:true})),
+  bodyRoll:0, bodyPitch:0, susp:[0,0,0,0], speed:0, frozen:false,
+};
+const keys={};
+function sampleCurve(c,x){ if(x<=c[0][0])return c[0][1]; for(let i=1;i<c.length;i++) if(x<=c[i][0]){const [x0,y0]=c[i-1],[x1,y1]=c[i];return y0+(y1-y0)*(x-x0)/(x1-x0);} return c[c.length-1][1]; }
+function resetCar(){ car.pos=[COURSE.Spawn[0],0.6,COURSE.Spawn[1]]; car.yaw=COURSE.SpawnYaw; car.vel=[0,0,0]; car.yawRate=0; car.steer=0; car.rpm=VEH.IdleRPM; car.gear=VEH.FirstIndex; car.boost=0; car.bodyRoll=0; car.bodyPitch=0; car.wheels.forEach(w=>{w.spin=0;w.angle=0;}); if(window.resetAccum) window.resetAccum("vehicle reset"); }
+function stepPhysics(dt){
+  if(!S.playing||car.frozen) return;
+  const sub=4, h=dt/sub;
+  for(let s=0;s<sub;s++){
+    // input (touch lives on window — set by the WebGL block; {} before boot)
+    const T=(typeof window!=="undefined"&&window.touch)?window.touch:{gas:false,brake:false,left:false,right:false};
+    const gas=(keys["KeyW"]||keys["ArrowUp"]||T.gas)?1:0;
+    const brk=(keys["KeyS"]||keys["ArrowDown"]||T.brake)?1:0;
+    const left=(keys["KeyA"]||keys["ArrowLeft"]||T.left)?1:0;
+    const right=(keys["KeyD"]||keys["ArrowRight"]||T.right)?1:0;
+    car.throttle+= (gas-car.throttle)*Math.min(1,h*8);
+    car.brake+= (brk-car.brake)*Math.min(1,h*10);
+    car.handbrake=!!keys["Space"];
+    const steerTarget=(left-right)*VEH.MaxSteer*S.steerSens;
+    car.steer+=(steerTarget-car.steer)*Math.min(1,h*VEH.SteerRate);
+    // forward / lateral in car frame (X fwd, Z left)
+    const cy=Math.cos(car.yaw), sy=Math.sin(car.yaw);
+    const fwd=[cy,0,-sy], leftV=[sy,0,cy]; // yaw around Y: fwd=(cos,0,-sin) for yaw=0 → +X
+    let vF=car.vel[0]*fwd[0]+car.vel[1]*fwd[1]+car.vel[2]*fwd[2];
+    let vL=car.vel[0]*leftV[0]+car.vel[1]*leftV[1]+car.vel[2]*leftV[2];
+    let vU=car.vel[1];
+    const speed=Math.hypot(vF,vL);
+    // engine / turbo
+    const ratio=VEH.GearRatios[car.gear]||1;
+    const wheelOmega=vF/VEH.TyreRadius;
+    const engineOmega=Math.abs(wheelOmega*ratio*VEH.FinalDrive);
+    const engineRPM=Math.max(VEH.IdleRPM, engineOmega*60/(2*Math.PI));
+    car.rpm+=(engineRPM-car.rpm)*Math.min(1,h*6);
+    car.boost+=(gas*1.2-car.boost)*Math.min(1,h/0.55);
+    const boostMult=1+0.85*Math.min(1,car.boost/1.2);
+    let torque=sampleCurve(VEH.TorqueCurve,Math.min(8500,Math.max(800,car.rpm)))*boostMult*S.engine;
+    // gear logic
+    if(car.rpm>VEH.UpshiftRPM&&car.gear<8) car.gear++;
+    if(car.rpm<VEH.DownshiftRPM&&car.gear>VEH.FirstIndex) car.gear--;
+    if(car.gear===2){ // neutral
+      torque=0;
+    }
+    const driveForce=car.throttle*torque*ratio*VEH.FinalDrive*VEH.DriveEff/VEH.TyreRadius;
+    // Pacejka-inspired friction circle (simplified MF6.1): combined slip limited by mu*load
+    const mu=1.35*S.grip;
+    const cornerLoad=VEH.Mass*9.81/4;
+    const maxLat=mu*cornerLoad*4;
+    // lateral: bicycle yaw + lateral damping
+    const wheelbase=3.396;
+    const yawFromSteer=(vF/wheelbase)*Math.tan(car.steer);
+    car.yawRate+=(yawFromSteer-car.yawRate)*Math.min(1,h*5);
+    // lateral slip damping (tyre lateral force ≈ -k * slip angle, capped)
+    const slipAngle=Math.atan2(vL,Math.max(1.5,Math.abs(vF)));
+    let latForce=-Math.min(maxLat, Math.abs(vL)*1600*S.grip)*Math.sign(vL||1);
+    if(Math.abs(vL)<0.05) latForce=0;
+    vL+=latForce/VEH.Mass*h;
+    // longitudinal: drive - brake - drag - rolling
+    let aF=driveForce/VEH.Mass;
+    const brakeForce=car.brake*VEH.MaxBrakePerWheel*4*S.brake/VEH.TyreRadius;
+    if(vF>0.1) aF-=brakeForce/VEH.Mass;
+    else if(vF<-0.1) aF+=brakeForce/VEH.Mass;
+    else { // standstill: brake holds, throttle launches (reverse if holding S at standstill handled below)
+      if(brk&&gas===0){ // reverse
+        car.gear=1; aF-=car.throttle*torque*3.0/VEH.Mass*0.5;
+      } else if(gas>0){ car.gear=VEH.FirstIndex; }
+    }
+    if(car.handbrake){ aF-=Math.sign(vF)*Math.min(Math.abs(vF)/h, VEH.Handbrake*2/VEH.TyreRadius/VEH.Mass); vL*=Math.max(0,1-h*3); }
+    const drag=0.5*VEH.AirDensity*VEH.DragArea*vF*Math.abs(vF)/VEH.Mass;
+    aF-=drag+Math.sign(vF)*VEH.RollingRes*9.81*0.3;
+    vF+=aF*h;
+    if(vF<-9) vF=-9;
+    // recompose velocity (keep vertical for ramp launches, gravity)
+    car.vel=[fwd[0]*vF+leftV[0]*vL, vU, fwd[2]*vF+leftV[2]*vL];
+    car.yaw+=car.yawRate*h;
+    car.pos[0]+=car.vel[0]*h; car.pos[1]+=car.vel[1]*h; car.pos[2]+=car.vel[2]*h;
+    // ground + suspension visual
+    const gh=courseHeight(car.pos[0],car.pos[2]);
+    const targetY=gh+VEH.CoMHeight;
+    const k=VEH.Mass*(2*Math.PI*VEH.SuspFreq)**2/4, c=2*VEH.SuspDamping*(VEH.Mass/4)*(2*Math.PI*VEH.SuspFreq);
+    const comp=targetY-car.pos[1];
+    car.vel[1]+= (k*comp/VEH.Mass - c*car.vel[1]/VEH.Mass)*h*0.25;
+    car.pos[1]+=car.vel[1]*h;
+    if(car.pos[1]<targetY-0.02){car.pos[1]=targetY-0.02; car.vel[1]=Math.max(0,car.vel[1]);}
+    if(car.pos[1]<gh+0.35){car.pos[1]=gh+0.35;}
+    // body roll/pitch from accel
+    car.bodyRoll+= ((-aF*0.02 - car.yawRate*vF*0.008)-car.bodyRoll)*Math.min(1,h*6);
+    car.bodyPitch+= ((aF*0.015)-car.bodyPitch)*Math.min(1,h*6);
+    // wheels
+    car.wheels.forEach((w,i)=>{ w.spin+=vF/VEH.TyreRadius*h; w.angle+=h*2; w.slip=Math.min(1,Math.abs(vL)/8+Math.abs(aF)/12); w.skid=Math.abs(vL)>3?1:0; w.load=cornerLoad/1000; });
+    car.speed=Math.hypot(car.vel[0],car.vel[2]);
+    // collisions: static AABBs (containers/walls) as circles
+    collideStatic();
+    // cones: knock over
+    for(const c of cones){ const dx=car.pos[0]-c.x, dz=car.pos[2]-c.z; const d2=dx*dx+dz*dz; if(d2<1.2*1.2){ const d=Math.sqrt(d2)||0.01; const push=(1.2-d); c.vx+=dx/d*push*8*car.speed*0.05+car.vel[0]*0.4; c.vz+=dz/d*push*8*car.speed*0.05+car.vel[2]*0.4; c.tilt=Math.min(1.4,c.tilt+0.4); } }
+  }
+  for(const c of cones){ c.x+=c.vx*dt; c.z+=c.vz*dt; c.vx*=Math.max(0,1-dt*4); c.vz*=Math.max(0,1-dt*4); c.tilt*=Math.max(0,1-dt*1.2); }
+}
+const STATIC_BOXES=[ // [minx,miny,minz,maxx,maxy,maxz] world (Y up)
+  // colour-bleed corner walls (north)
+  [-14,0,-26, 14,4,-24.5], [-14,0,-26,-12.5,4,-24.5], // placeholder, refined below
+];
+// refined static colliders (x,z footprints)
+const COLLIDERS=[
+  {x0:-14,x1:14,z0:-26,z1:-24.5}, {x0:-14,x1:-12.5,z0:-26,z1:-10},
+  {x0:30,x1:36,z0:-14,z1:-8}, {x0:30,x1:36,z0:8,z1:14}, {x0:52,x1:58,z0:-14,z1:-8},
+  {x0:-20,x1:-14,z0:10,z1:16}, {x0:70,x1:76,z0:-6,z1:0},
+];
+function collideStatic(){
+  const r=1.4;
+  for(const b of COLLIDERS){
+    const cx=Math.max(b.x0,Math.min(b.x1,car.pos[0])), cz=Math.max(b.z0,Math.min(b.z1,car.pos[2]));
+    const dx=car.pos[0]-cx, dz=car.pos[2]-cz, d2=dx*dx+dz*dz;
+    if(d2<r*r&&d2>1e-6){ const d=Math.sqrt(d2); const push=(r-d); car.pos[0]+=dx/d*push; car.pos[2]+=dz/d*push; car.vel[0]*=0.6; car.vel[2]*=0.6; }
+  }
+  // pad bounds soft
+  car.pos[0]=Math.max(-58,Math.min(154,car.pos[0])); car.pos[2]=Math.max(-58,Math.min(58,car.pos[2]));
+}
+// cones (32, knockable)
+const cones=[];
+for(let i=0;i<32;i++){ const x=10+i*2.2, z=(i%2? 4.5:-4.5)+((i*7)%3-1)*0.8; cones.push({x,z,vx:0,vz:0,tilt:0}); }
+
+// ── Scene primitives for shader (must match GLSL tables) ──────────────────
+// Spheres: [x,y,z,r,mat]
+const SPHERES=[
+  [-8,1.0,-20,1.0,14],[-5,1.0,-20,1.0,15],[-2,1.0,-20,1.0,16],[1,1.0,-20,1.0,17],[4,1.0,-20,1.0,18],[7,1.0,-20,1.0,19],[10,1.0,-20,1.0,20],
+  [-12,3.2,-14,0.35,27],[12,3.2,-14,0.35,28],[30,3.2,-10,0.35,27],[30,3.2,10,0.35,28],[54,3.2,-10,0.35,28],
+];
+// Boxes: [minx,miny,minz,maxx,maxy,maxz,mat]
+const BOXES=[
+  // colour-bleed walls
+  [-14,0,-26,14,4,-24.5,21],[ -14,0,-26,-12.5,4,-10,22],[12.5,0,-26,14,4,-10,24],[-14,0,-10,14,0.2,-8,23],
+  // containers
+  [30,0,-14,36,2.6,-8,25],[30,0,8,36,2.6,14,26],[52,0,-14,58,2.6,-8,25],[70,0,-6,76,2.6,0,25],[-20,0,10,-14,2.6,16,26],
+  // mirror panel (garden)
+  [-9.5,0,-21.5,-6.5,2.2,-21.2,14],
+  // barriers
+  [-52,0,7.5,20,0.5,8.5,1],[ -52,0,-8.5,20,0.5,-7.5,1],
+  // kerbs (red/white alternating approximated as red)
+  [-52,0,6.0,20,0.12,6.3,5],[-52,0,-6.3,20,0.12,-6.0,5],
+  // paint markings
+  [-52,0.01,-0.15,20,0.02,0.15,3],[22,0.01,-3,28,0.02,3,4],
+  // lamp poles
+  [-12,0,-14,-11.8,3.2,-13.8,31],[12,0,-14,12.2,3.2,-13.8,31],[30,0,-10,30.2,3.2,-9.8,31],[30,0,10,30.2,3.2,10.2,31],[54,0,-10,54.2,3.2,-9.8,31],
+  // ramp steps (approx slope)
+  [22,0,-3.2,24,0.45,3.2,1],[24,0,-3.2,26,0.9,3.2,1],[26,0,-3.2,28,1.35,3.2,1],
+];
+// Vehicle local boxes: [minx,miny,minz,maxx,maxy,maxz,mat] (X fwd, Y up, Z left; origin at CoM)
+const VEH_BOXES=[
+  [-2.8,0.10,-0.95,2.8,0.55,0.95,6],      // lower body (paint)
+  [-1.6,0.55,-0.80,0.9,1.05,0.80,7],      // cabin glass
+  [-2.95,0.85,-0.75,-2.75,1.05,0.75,8],   // wing
+  [-2.9,0.55,-0.08,-2.8,0.85,0.08,31],    // wing strut
+  [2.75,0.45,-0.70,2.85,0.62, -0.45,12],  // headlight L
+  [2.75,0.45,0.45,2.85,0.62,0.70,12],     // headlight R
+  [-2.85,0.45,-0.70,-2.75,0.62,-0.45,13], // taillight L
+  [-2.85,0.45,0.45,-2.75,0.62,0.70,13],   // taillight R
+  [0.9,0.55,-0.95,1.1,0.75,0.95,8],       // front splitter / trim
+];
+// Wheels local: [x,y,z] centres (CoM frame: axle y = TyreRadius-CoMHeight ≈ -0.021)
+const WHEEL_POS=[[1.7274,-0.021,1.0475],[1.7274,-0.021,-1.0475],[-1.6686,-0.021,1.0475],[-1.6686,-0.021,-1.0475]];
+
+// ── WebGL2 renderer ────────────────────────────────────────────────────────
+const canvas=document.getElementById("viewport");
+const gl=canvas.getContext("webgl2",{antialias:false,depth:false,stencil:false,alpha:false,powerPreference:"high-performance"});
+const bring=document.getElementById("bring-up"), bringFill=document.getElementById("bring-fill"), bringCap=document.getElementById("bring-caption");
+function setBring(pct,msg){ bringFill.style.width=pct+"%"; if(msg) bringCap.textContent=msg; }
+function fail(msg){ bring.style.display="none"; const f=document.getElementById("failure"); f.innerHTML="<div><h2>WebGL2 unavailable</h2><p>"+msg+"</p><p>Frontier 1 ReSTIR PT Enhanced needs WebGL2 (Chrome/Edge, Safari 26+, Firefox with WebGPU/WebGL2 enabled). The editor UI and vehicle physics still load — rendering is the only blocked part.</p></div>"; f.classList.add("show"); document.getElementById("pill-webgl").textContent="WebGL2 ✗"; }
+if(!gl){ fail("This browser did not return a WebGL2 context."); }
+else {
+  document.getElementById("pill-webgl").textContent="WebGL2 ✓";
+  const extFloat=gl.getExtension("EXT_color_buffer_float")||gl.getExtension("EXT_color_buffer_half_float");
+  const hasFloat=!!extFloat;
+  if(!hasFloat) document.getElementById("pill-webgl").textContent="WebGL2 ✓ · float ✗ (HDR clamped)";
+  setBring(15,"Compiling ReSTIR PT Enhanced shaders…");
+
+  const VERT=`#version 300 es
+layout(location=0) in vec2 aPos;
+out vec2 vUv;
+void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }`;
+
+  // Fragment: path tracer with reservoir sampling. Tables injected from JS.
+  const FRAG=`#version 300 es
+precision highp float;
+in vec2 vUv;
+layout(location=0) out vec4 outAccum;
+layout(location=1) out vec4 outRes;
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec3 uCamPos;
+uniform vec3 uCamFwd;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+uniform float uFovTan;
+uniform vec3 uSunDir;
+uniform vec3 uSunCol;
+uniform vec3 uSkyCol;
+uniform float uExposure;
+uniform float uGamma;
+uniform int uBounces;
+uniform int uMode;      // 0 PT Enhanced, 1 Direct only, 2 Raster
+uniform int uDebug;     // 0 beauty 1 albedo 2 normal 3 depth 4 reservoir 5 direct 6 indirect
+uniform float uReflScale;
+uniform float uGlassIOR;
+uniform float uTemporal;
+uniform float uSpatial;
+uniform float uReset;   // 1 = reset accumulation this frame
+uniform sampler2D uPrevAccum;
+uniform sampler2D uPrevReservoir;
+uniform float uSampleCount;
+uniform vec3 uVehPos;
+uniform float uVehYaw;
+uniform float uVehPitch;
+uniform float uVehRoll;
+uniform float uWheelSteer;
+uniform float uWheelSpin;
+uniform float uHeadI;
+uniform float uTailI;
+uniform vec4 uConePos[32];
+uniform vec4 uConeTilt[32];
+// Materials (32)
+uniform vec3 uMatA[32];
+uniform vec4 uMatP[32]; // metallic, roughness, ior, transmission
+uniform vec4 uMatE[32]; // clearcoat, clearcoatRough, emissiveI, specular
+uniform vec3 uMatEm[32];
+// Primitives
+uniform vec4 uSph[16];  // xyz, r
+uniform int uSphMat[16];
+uniform vec4 uBoxMin[32];
+uniform vec4 uBoxMax[32];
+uniform int uBoxMat[32];
+// Vehicle local boxes (9)
+uniform vec4 uVehBoxMin[9];
+uniform vec4 uVehBoxMax[9];
+uniform int uVehBoxMat[9];
+uniform vec3 uWheelPos[4];
+
+const float PI=3.14159265;
+const float INF=1e9;
+
+uint rngState;
+float rand(){ rngState=rngState*1664525u+1013904223u; return float(rngState>>8)/16777216.0; }
+vec3 randDir(vec3 n){
+  float u=rand(), v=rand();
+  float phi=2.0*PI*u, cosT=sqrt(1.0-v), sinT=sqrt(v);
+  vec3 d=vec3(sinT*cos(phi), cosT, sinT*sin(phi));
+  // build tangent basis
+  vec3 t=normalize(cross(abs(n.y)>0.99?vec3(1,0,0):vec3(0,1,0), n));
+  vec3 b=cross(n,t);
+  return normalize(t*d.x+n*d.y+b*d.z);
+}
+vec3 randHemisphere(vec3 n){ vec3 d=randDir(n); return dot(d,n)<0.0?-d:d; }
+float ggx(vec3 n,vec3 h,float a){ float a2=a*a; float d=dot(n,h); return a2/max(1e-6,(d*d*(a2-1.0)+1.0)*(d*d*(a2-1.0)+1.0)); }
+float smithG1(vec3 n,vec3 v,float a){ float d=max(dot(n,v),0.0); return d/(d*(1.0-a)+a); }
+vec3 fresnelSchlick(vec3 f0,float c){ return f0+(1.0-f0)*pow(1.0-max(c,0.0),5.0); }
+float fresnelScalar(float f0,float c){ return f0+(1.0-f0)*pow(1.0-max(c,0.0),5.0); }
+
+struct Hit{ float t; vec3 n; int mat; int id; vec3 p; };
+Hit newHit(){ Hit h; h.t=INF; h.n=vec3(0,1,0); h.mat=0; h.id=-1; h.p=vec3(0); return h; }
+
+float hitSphere(vec3 ro,vec3 rd,vec3 c,float r){
+  vec3 oc=ro-c; float b=dot(oc,rd); float cc=dot(oc,oc)-r*r; float disc=b*b-cc;
+  if(disc<0.0) return INF;
+  float s=sqrt(disc); float t=-b-s; if(t<0.001) t=-b+s; return t>0.001?t:INF;
+}
+float hitBox(vec3 ro,vec3 rd,vec3 mn,vec3 mx,out vec3 nrm){
+  vec3 inv=1.0/rd; vec3 t0=(mn-ro)*inv; vec3 t1=(mx-ro)*inv;
+  vec3 tmin=min(t0,t1); vec3 tmax=max(t0,t1);
+  float tNear=max(max(tmin.x,tmin.y),tmin.z);
+  float tFar=min(min(tmax.x,tmax.y),tmax.z);
+  if(tFar<tNear||tFar<0.001) return INF;
+  float t=tNear>0.001?tNear:tFar;
+  vec3 p=ro+rd*t;
+  // normal from closest face
+  vec3 d1=abs(p-mn); vec3 d2=abs(p-mx);
+  float m=min(min(d1.x,d1.y),min(d1.z,d2.x));
+  // simpler: use tmin axis
+  if(tNear>0.001){
+    if(tmin.x==tNear) nrm=vec3(-sign(rd.x),0,0);
+    else if(tmin.y==tNear) nrm=vec3(0,-sign(rd.y),0);
+    else nrm=vec3(0,0,-sign(rd.z));
+  } else {
+    if(tmax.x==tFar) nrm=vec3(sign(rd.x),0,0);
+    else if(tmax.y==tFar) nrm=vec3(0,sign(rd.y),0);
+    else nrm=vec3(0,0,sign(rd.z));
+  }
+  return t;
+}
+float hitCylinder(vec3 ro,vec3 rd,vec3 c,float r,float h,vec3 axis,out vec3 nrm){
+  // axis is unit, cylinder centred at c, height h along axis
+  vec3 d=rd-dot(rd,axis)*axis;
+  vec3 co=ro-c-dot(ro-c,axis)*axis;
+  float a=dot(d,d); if(a<1e-8) return INF;
+  float b=2.0*dot(co,d); float cc=dot(co,co)-r*r;
+  float disc=b*b-4.0*a*cc; if(disc<0.0) return INF;
+  float s=sqrt(disc); float t=(-b-s)/(2.0*a);
+  if(t<0.001) t=(-b+s)/(2.0*a);
+  if(t<0.001) return INF;
+  vec3 p=ro+rd*t;
+  float along=dot(p-c,axis);
+  if(abs(along)>h*0.5) return INF;
+  vec3 radial=p-c-axis*along;
+  nrm=normalize(radial);
+  return t;
+}
+float hitCone(vec3 ro,vec3 rd,vec3 base,float rBase,float h,out vec3 nrm){
+  // finite cone, apex up (+Y), base at base.y
+  vec3 apex=base+vec3(0,h,0);
+  vec3 co=ro-apex;
+  float cosA=rBase/sqrt(rBase*rBase+h*h);
+  float cos2=cosA*cosA;
+  vec3 dv=vec3(0,-1,0);
+  float dvDotD=dot(dv,rd), dvDotCO=dot(dv,co);
+  float a=dvDotD*dvDotD-cos2*dot(rd,rd);
+  float b=2.0*(dvDotD*dvDotCO-cos2*dot(rd,co));
+  float c=dvDotCO*dvDotCO-cos2*dot(co,co);
+  float disc=b*b-4.0*a*c; if(disc<0.0) return INF;
+  float s=sqrt(disc);
+  float t=(-b-s)/(2.0*a); if(t<0.001) t=(-b+s)/(2.0*a);
+  if(t<0.001) return INF;
+  vec3 p=ro+rd*t;
+  if(p.y<base.y-0.001||p.y>base.y+h+0.001) return INF;
+  float rr=rBase*(1.0-(p.y-base.y)/h);
+  vec3 radial=normalize(vec3(p.x-base.x,0,p.z-base.z));
+  nrm=normalize(radial*cosA+vec3(0,sin(acos(cosA)),0)*0.0+vec3(0,0.0,0));
+  // proper cone normal: radial*cosA + up*sinA
+  float sinA=sqrt(1.0-cos2);
+  nrm=normalize(radial*cosA+vec3(0,sinA,0));
+  return t;
+}
+
+// Vehicle transform helpers
+mat3 rotY(float a){ float c=cos(a),s=sin(a); return mat3(c,0,-s, 0,1,0, s,0,c); }
+mat3 rotX(float a){ float c=cos(a),s=sin(a); return mat3(1,0,0, 0,c,-s, 0,s,c); }
+mat3 rotZ(float a){ float c=cos(a),s=sin(a); return mat3(c,-s,0, s,c,0, 0,0,1); }
+
+Hit traceScene(vec3 ro,vec3 rd,bool shadowOnly){
+  Hit best=newHit();
+  // ground plane y=0 (procedural material by world xz)
+  if(abs(rd.y)>1e-6){
+    float t=-ro.y/rd.y;
+    if(t>0.001&&t<best.t){
+      vec3 p=ro+rd*t;
+      best.t=t; best.p=p; best.n=vec3(0,1,0); best.id=1000;
+      // asphalt pad vs grass surround vs concrete apron
+      bool inPad=(p.x>-60.0&&p.x<156.0&&p.z>-60.0&&p.z<60.0);
+      bool inApron=(p.x>-20.0&&p.x<40.0&&p.z>-20.0&&p.z<20.0);
+      if(!inPad) best.mat=2;
+      else if(inApron) best.mat=1;
+      else best.mat=0;
+      // checker subtle on apron
+      if(inApron){ float cx=floor(p.x/4.0)+floor(p.z/4.0); if(mod(cx,2.0)<1.0) best.mat=1; }
+    }
+  }
+  // spheres (12 authored; array holds 16)
+  for(int i=0;i<12;i++){
+    float r=uSph[i].w; if(r<=0.0) continue;
+    float t=hitSphere(ro,rd,uSph[i].xyz,r);
+    if(t<best.t){ best.t=t; best.p=ro+rd*t; best.n=normalize(best.p-uSph[i].xyz); best.mat=uSphMat[i]; best.id=i; }
+  }
+  // static boxes (20 authored; array holds 32)
+  for(int i=0;i<20;i++){
+    vec3 mn=uBoxMin[i].xyz; vec3 mx=uBoxMax[i].xyz;
+    if(mn.x>=mx.x) continue;
+    vec3 n; float t=hitBox(ro,rd,mn,mx,n);
+    if(t<best.t){ best.t=t; best.p=ro+rd*t; best.n=n; best.mat=uBoxMat[i]; best.id=100+i; }
+  }
+  // cones (dynamic)
+  for(int i=0;i<32;i++){
+    vec3 base=uConePos[i].xyz;
+    if(base.x>1e8) continue;
+    vec3 n; float t=hitCone(ro,rd,base,0.15,0.70,n);
+    if(t<best.t){ best.t=t; best.p=ro+rd*t; best.n=n; best.mat=29; best.id=200+i; }
+  }
+  // vehicle (local space)
+  {
+    mat3 R=rotY(uVehYaw)*rotZ(uVehRoll)*rotX(uVehPitch);
+    mat3 Ri=transpose(R);
+    vec3 lro=Ri*(ro-uVehPos);
+    vec3 lrd=Ri*rd;
+    Hit lb=newHit();
+    // local boxes
+    for(int i=0;i<9;i++){
+      vec3 mn=uVehBoxMin[i].xyz; vec3 mx=uVehBoxMax[i].xyz;
+      if(mn.x>=mx.x) continue;
+      vec3 n; float t=hitBox(lro,lrd,mn,mx,n);
+      if(t<lb.t){ lb.t=t; lb.p=lro+lrd*t; lb.n=n; lb.mat=uVehBoxMat[i]; lb.id=300+i; }
+    }
+    // wheels: cylinders axis Z (left), radius TyreRadius, width TyreWidth
+    for(int i=0;i<4;i++){
+      vec3 c=uWheelPos[i];
+      // steer front wheels around Y
+      vec3 lc=c;
+      vec3 n; float t=hitCylinder(lro,lrd,lc,0.50855,0.3958,vec3(0,0,1),n);
+      if(t<lb.t){ lb.t=t; lb.p=lro+lrd*t; lb.n=n; lb.mat=9; lb.id=400+i; }
+      // rim (smaller, emissive accent)
+      vec3 n2; float t2=hitCylinder(lro,lrd,lc,0.3446,0.40,vec3(0,0,1),n2);
+      if(t2<lb.t){ lb.t=t2; lb.p=lro+lrd*t2; lb.n=n2; lb.mat=10; lb.id=410+i; }
+    }
+    if(lb.t<best.t){
+      best.t=lb.t; best.p=ro+rd*lb.t; best.n=normalize(R*lb.n); best.mat=lb.mat; best.id=lb.id;
+    }
+  }
+  return best;
+}
+bool occluded(vec3 ro,vec3 rd,float maxT){
+  Hit h=traceScene(ro,rd,true);
+  return h.t<maxT;
+}
+vec3 skyColor(vec3 d){
+  float h=clamp(d.y*0.5+0.5,0.0,1.0);
+  vec3 zen=vec3(0.18,0.32,0.55)*uSkyCol;
+  vec3 hor=vec3(0.75,0.78,0.82)*uSkyCol;
+  vec3 c=mix(hor,zen,pow(h,0.7));
+  float sunD=max(dot(d,uSunDir),0.0);
+  c+=uSunCol*pow(sunD,600.0)*8.0;
+  c+=uSunCol*pow(sunD,8.0)*0.25;
+  return c;
+}
+// ReSTIR reservoir: candidates = sun + emissive spheres (lamps) + head/tail (vehicle)
+// Returns chosen light dir/colour via out params; weight for MIS.
+struct LightSample{ vec3 pos; vec3 col; float dist; bool isSun; };
+LightSample getLight(int idx, vec3 hitP){
+  LightSample L; L.pos=vec3(0); L.col=vec3(0); L.dist=0.0; L.isSun=false;
+  if(idx==0){ L.isSun=true; L.pos=hitP+uSunDir*100.0; L.col=uSunCol; L.dist=100.0; return L; }
+  if(idx>=1&&idx<=5){
+    // lamp spheres indices 7..11 in SPHERES table (emissive)
+    int si=6+idx; // 7..11
+    L.pos=uSph[si].xyz; L.col=uMatEm[uSphMat[si]]*uMatE[uSphMat[si]].z; L.dist=distance(hitP,L.pos); return L;
+  }
+  if(idx==6){ L.pos=uVehPos+vec3(2.8,0.6,0.0); L.col=vec3(1.0)*uHeadI; L.dist=distance(hitP,L.pos); return L; }
+  if(idx==7){ L.pos=uVehPos+vec3(-2.8,0.6,0.0); L.col=vec3(1.0,0.05,0.02)*uTailI; L.dist=distance(hitP,L.pos); return L; }
+  return L;
+}
+float lightWeight(LightSample L, vec3 hitP, vec3 hitN, vec3 matA, float metallic, float rough){
+  vec3 ld=normalize(L.pos-hitP);
+  float ndl=max(dot(hitN,ld),0.0);
+  if(ndl<=0.0) return 0.0;
+  float dist2=dot(L.pos-hitP,L.pos-hitP);
+  float att=L.isSun?1.0:1.0/max(1.0,dist2*0.05);
+  vec3 f0=mix(vec3(0.04),matA,metallic);
+  vec3 f=fresnelSchlick(f0,ndl);
+  float lum=dot(L.col,vec3(0.2126,0.7152,0.0722));
+  return lum*ndl*att*(0.2+0.8*dot(f,vec3(0.333)));
+}
+vec3 evalLight(LightSample L, vec3 hitP, vec3 hitN, vec3 matA, float metallic, float rough, float spec){
+  vec3 ld=normalize(L.pos-hitP);
+  float ndl=max(dot(hitN,ld),0.0);
+  if(ndl<=0.0) return vec3(0);
+  float dist=distance(hitP,L.pos);
+  float vis=occluded(hitP+hitN*0.02, ld, dist-0.05)?0.0:1.0;
+  if(vis<0.5) return vec3(0);
+  float att=L.isSun?1.0:1.0/max(1.0,dist*dist*0.05);
+  vec3 f0=mix(vec3(spec),matA,metallic);
+  vec3 f=fresnelSchlick(f0,ndl);
+  vec3 diff=(1.0-f)*(1.0-metallic)*matA/PI;
+  float a=max(rough*rough,0.001);
+  // GGX direct: half-vector approximated by light dir (direct lighting, no view dir needed)
+  float D=ggx(hitN,ld,a);
+  float G=smithG1(hitN,ld,a);
+  vec3 specCol=f*D*G/max(0.001,4.0*ndl);
+  return (diff+specCol)*L.col*ndl*att;
+}
+
+void main(){
+  vec2 uv=vUv;
+  vec2 px=(uv*2.0-1.0)*vec2(uRes.x/uRes.y,1.0);
+  vec3 rd=normalize(uCamFwd+px.x*uFovTan*uCamRight+px.y*uFovTan*uCamUp);
+  vec3 ro=uCamPos;
+  // seed per-pixel per-frame
+  rngState=uint(uv.x*65535.0+uv.y*65535.0+uTime*1000.0)+uint(gl_FragCoord.x*1973.0+gl_FragCoord.y*9277.0);
+  vec3 accum=vec3(0);
+  vec3 directAcc=vec3(0);
+  vec3 indirectAcc=vec3(0);
+  vec3 debugCol=vec3(0);
+  float resWeight=0.0;
+  // Reservoir texture sample (temporal/spatial reuse demonstration)
+  vec4 prevRes=texture(uPrevReservoir, uv);
+  int prevLight=int(prevRes.r*7.99);
+  float prevW=prevRes.g;
+  // Spatial neighbour (right)
+  vec4 neighRes=texture(uPrevReservoir, uv+vec2(1.0/uRes.x,0.0));
+  int neighLight=int(neighRes.r*7.99);
+
+  if(uMode==2){
+    // Raster preview: single lambert + specular, no accumulation, no reservoir.
+    // Output LINEAR HDR; the display pass applies exposure/gamma (single tonemap).
+    Hit h=traceScene(ro,rd,false);
+    vec3 col=vec3(0);
+    if(h.t>=INF/2.0){ col=skyColor(rd); }
+    else{
+      vec3 matA=uMatA[h.mat];
+      float metallic=uMatP[h.mat].x; float rough=uMatP[h.mat].y;
+      vec3 ld=uSunDir; float ndl=max(dot(h.n,ld),0.0);
+      float vis=occluded(h.p+h.n*0.02,ld,100.0)?0.15:1.0;
+      vec3 f0=mix(vec3(0.04),matA,metallic);
+      vec3 f=fresnelSchlick(f0,ndl);
+      vec3 diff=(1.0-f)*(1.0-metallic)*matA/PI;
+      col=diff*uSunCol*ndl*vis + uSkyCol*matA*0.25;
+      // cheap mirror reflection (1 bounce)
+      if(rough<0.1||metallic>0.9){
+        vec3 rr=reflect(rd,h.n);
+        Hit h2=traceScene(h.p+h.n*0.02,rr,false);
+        vec3 rc=h2.t>=INF/2.0?skyColor(rr):uMatA[h2.mat]*0.5;
+        col+=rc*f*0.8;
+      }
+      col+=uMatEm[h.mat]*uMatE[h.mat].z;
+    }
+    outAccum=vec4(col,1.0);
+    outRes=vec4(0.0);
+    return;
+  }
+
+  // Path-traced modes (0 = PT Enhanced, 1 = Direct only)
+  int bounces=(uMode==1)?1:uBounces;
+  vec3 throughput=vec3(1.0);
+  vec3 ro2=ro; vec3 rd2=rd;
+  vec3 L=vec3(0);
+  vec3 directOnly=vec3(0);
+  vec3 indirectOnly=vec3(0);
+  int chosenLight=0;
+  for(int b=0;b<8;b++){
+    if(b>=bounces) break;
+    Hit h=traceScene(ro2,rd2,false);
+    if(h.t>=INF/2.0){
+      vec3 sk=skyColor(rd2)*throughput;
+      L+=sk; indirectOnly+=sk;
+      break;
+    }
+    vec3 matA=uMatA[h.mat];
+    float metallic=uMatP[h.mat].x;
+    float rough=clamp(uMatP[h.mat].y*uReflScale,0.001,1.0);
+    float ior=uMatP[h.mat].z;
+    float trans=uMatP[h.mat].w;
+    float cc=uMatE[h.mat].x;
+    float ccr=uMatE[h.mat].y;
+    float emI=uMatE[h.mat].z;
+    float spec=uMatE[h.mat].w;
+    vec3 emCol=uMatEm[h.mat]*emI;
+    if(emI>0.01){
+      L+=emCol*throughput;
+      if(b==0) directOnly+=emCol*throughput;
+      // emissive terminates path (with small continuation for glass behind? no)
+      break;
+    }
+    if(b==0){
+      debugCol=matA;
+      if(uDebug==1) debugCol=matA;
+      else if(uDebug==2) debugCol=h.n*0.5+0.5;
+      else if(uDebug==3) debugCol=vec3(1.0/(1.0+h.t*0.05));
+      else if(uDebug==4) debugCol=vec3(prevW);
+    }
+    // ── ReSTIR direct: reservoir over 8 lights ──
+    if(b==0){
+      int chosen=0; float wSum=0.0; int M=0;
+      // candidate generation (8 lights)
+      for(int k=0;k<8;k++){
+        LightSample cand=getLight(k,h.p);
+        float w=lightWeight(cand,h.p,h.n,matA,metallic,rough);
+        // temporal reuse: with prob uTemporal, reuse previous reservoir candidate instead
+        if(rand()<uTemporal && prevW>0.001){
+          int reuse=prevLight;
+          LightSample rl=getLight(reuse,h.p);
+          float rw=lightWeight(rl,h.p,h.n,matA,metallic,rough);
+          // reservoir update (WRS): keep chosen with prob proportional to weight
+          if(rand()<rw/max(1e-6,(wSum+rw))){ chosen=reuse; }
+          wSum+=rw; M++;
+          continue;
+        }
+        // spatial reuse
+        if(rand()<uSpatial){
+          int reuse=neighLight;
+          LightSample rl=getLight(reuse,h.p);
+          float rw=lightWeight(rl,h.p,h.n,matA,metallic,rough);
+          if(rand()<rw/max(1e-6,(wSum+rw))){ chosen=reuse; }
+          wSum+=rw; M++;
+          continue;
+        }
+        // standard reservoir update
+        wSum+=w; M++;
+        if(rand()<w/max(1e-6,wSum)) chosen=k;
+      }
+      resWeight=wSum/max(1.0,float(M));
+      chosenLight=chosen;
+      LightSample Lch=getLight(chosen,h.p);
+      vec3 direct=evalLight(Lch,h.p,h.n,matA,metallic,rough,spec);
+      // MIS-ish: scale by M / candidates (reservoir estimator)
+      direct*=float(M)/8.0;
+      L+=direct*throughput;
+      directOnly+=direct*throughput;
+      // sky ambient (hemisphere) as indirect base
+      vec3 amb=uSkyCol*matA*0.35*throughput;
+      L+=amb; indirectOnly+=amb;
+    }
+    // ── Scattering for next bounce (path-traced indirect + reflections) ──
+    float ndv=max(dot(h.n,-rd2),0.0);
+    vec3 f0=mix(vec3(spec),matA,metallic);
+    vec3 f=fresnelSchlick(f0,ndv);
+    float fScalar=fresnelScalar(spec,ndv);
+    // transmission (glass): Schlick vs Snell split
+    if(trans>0.01){
+      float eta=1.0/ior;
+      bool entering=dot(rd2,h.n)<0.0;
+      float et=entering?eta:ior;
+      vec3 refr=refract(rd2, entering?h.n:-h.n, et);
+      float reflProb=trans*fScalar;
+      if(rand()<reflProb){
+        rd2=reflect(rd2,h.n);
+        throughput*=f;
+      } else {
+        if(length(refr)<0.5){ rd2=reflect(rd2,h.n); throughput*=f; }
+        else { rd2=refr; throughput*=vec3(1.0); }
+      }
+      ro2=h.p+(dot(rd2,h.n)>=0.0?h.n:-h.n)*0.02;
+      // glass keeps path going (reflections through glass)
+      continue;
+    }
+    // clearcoat: second specular lobe (simplified: boost reflection)
+    float specProb=clamp(dot(f,vec3(0.333))+metallic*0.9+cc*0.5,0.0,1.0);
+    if(rand()<specProb){
+      // glossy reflection (GGX importance sampled approx: perturb reflect by roughness)
+      vec3 rr=reflect(rd2,h.n);
+      vec3 pert=randHemisphere(rr)*rough*0.7;
+      rd2=normalize(rr+pert);
+      if(dot(rd2,h.n)<0.0) rd2=rr;
+      throughput*=f/max(1e-4,specProb);
+      ro2=h.p+h.n*0.02;
+    } else {
+      // diffuse bounce
+      rd2=randHemisphere(h.n);
+      throughput*=(1.0-f)*(1.0-metallic)*matA;
+      ro2=h.p+h.n*0.02;
+    }
+    // Russian roulette after bounce 2
+    if(b>1){
+      float q=max(throughput.x,max(throughput.y,throughput.z));
+      if(rand()>q) break;
+      throughput/=max(q,0.05);
+    }
+  }
+  if(uDebug==5) L=directOnly;
+  if(uDebug==6) L=indirectOnly;
+  if(uDebug>=1&&uDebug<=4){ L=debugCol; }
+  // Accumulate (progressive, linear HDR). Display pass tonemaps.
+  vec3 prev=texture(uPrevAccum,uv).rgb;
+  float prevCount=uSampleCount;
+  if(uReset>0.5){ prev=vec3(0); prevCount=0.0; }
+  vec3 accumCol=prev+L;
+  float newCount=prevCount+1.0;
+  // Reservoir for next frame (MRT attachment 1): R=light idx/7, G=weight, B=M/16, A=1
+  vec4 resOut=vec4(float(chosenLight)/7.0, clamp(resWeight,0.0,1.0), 0.5, 1.0);
+  outAccum=vec4(accumCol, newCount);
+  outRes=resOut;
+}
+`;
+
+  // Display shader (tonemap + denoise + debug)
+  const DISPLAY_FRAG=`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uAccum;
+uniform float uExposure;
+uniform float uGamma;
+uniform float uSampleCount;
+uniform int uDebug;
+uniform bool uDenoise;
+void main(){
+  vec4 a=texture(uAccum,vUv);
+  vec3 col=a.rgb/max(a.a,1.0);
+  col*=uExposure;
+  if(uDenoise){
+    // 3x3 bilateral-ish (luma weights)
+    vec2 texel=vec2(1.0/1024.0,1.0/1024.0);
+    vec3 sum=col; float wsum=1.0;
+    float l0=dot(col,vec3(0.2126,0.7152,0.0722));
+    for(int i=-1;i<=1;i++) for(int j=-1;j<=1;j++){
+      if(i==0&&j==0) continue;
+      vec3 s=texture(uAccum,vUv+vec2(float(j),float(i))*texel).rgb/max(texture(uAccum,vUv+vec2(float(j),float(i))*texel).a,1.0);
+      float l=dot(s,vec3(0.2126,0.7152,0.0722));
+      float w=exp(-abs(l-l0)*4.0)*0.5;
+      sum+=s*w; wsum+=w;
+    }
+    col=sum/wsum;
+  }
+  col=pow(max(col,vec3(0)),vec3(1.0/uGamma));
+  fragColor=vec4(col,1.0);
+}`;
+
+  function compile(type,src){
+    const sh=gl.createShader(type); gl.shaderSource(sh,src); gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){ const log=gl.getShaderInfoLog(sh); console.error(log); throw new Error("Shader compile failed: "+log.slice(0,2000)); }
+    return sh;
+  }
+  function program(vs,fs){
+    const p=gl.createProgram(); gl.attachShader(p,compile(gl.VERTEX_SHADER,vs)); gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error("Program link failed: "+gl.getProgramInfoLog(p).slice(0,2000));
+    return p;
+  }
+  let progTrace, progDisplay, progCopy;
+  try{
+    progTrace=program(VERT,FRAG);
+    progDisplay=program(VERT,DISPLAY_FRAG);
+    // copy program for reservoir update (simple passthrough with encode)
+    const COPY_FRAG=`#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform sampler2D uSrc;
+uniform vec4 uEncode;
+void main(){ fragColor=texture(uSrc,vUv)*uEncode; }`;
+    progCopy=program(VERT,COPY_FRAG);
+  }catch(e){ fail(e.message); throw e; }
+
+  // Fullscreen quad
+  const quadBuf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 1,-1, -1,1, 1,1]),gl.STATIC_DRAW);
+  function bindQuad(p){
+    const loc=gl.getAttribLocation(p,"aPos");
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  }
+
+  // FBOs: ping-pong MRT (accum + reservoir). Trace reads prev set, writes next set.
+  // (Sampling a texture while rendering to it is a feedback loop — ping-pong avoids it.)
+  let sets=[null,null], readIdx=0, writeIdx=1;
+  function makeTex(w,h,internal,type){
+    const tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,internal,w,h,0,gl.RGBA,type,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+  function makeSet(w,h,internal,type){
+    const accumTex=makeTex(w,h,internal,type);
+    const resTex=makeTex(w,h,internal,type);
+    const fbo=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,accumTex,0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT1,gl.TEXTURE_2D,resTex,0);
+    const ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    if(!ok) console.warn("FBO incomplete (MRT). Falling back may be needed.");
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    return {accumTex,resTex,fbo};
+  }
+  function resizeTargets(){
+    const w=Math.max(2,Math.floor(canvas.width)), h=Math.max(2,Math.floor(canvas.height));
+    const internal=hasFloat?gl.RGBA16F:gl.RGBA8;
+    const type=hasFloat?gl.HALF_FLOAT:gl.UNSIGNED_BYTE;
+    for(const s of sets){ if(s){ gl.deleteTexture(s.accumTex); gl.deleteTexture(s.resTex); gl.deleteFramebuffer(s.fbo); } }
+    sets=[makeSet(w,h,internal,type), makeSet(w,h,internal,type)];
+    readIdx=0; writeIdx=1;
+    sampleCount=0;
+  }
+
+  // Uniform locations (trace)
+  const U={};
+  function cache(p,names){ for(const n of names) U[n]=gl.getUniformLocation(p,n); }
+  cache(progTrace,["uRes","uTime","uCamPos","uCamFwd","uCamRight","uCamUp","uFovTan","uSunDir","uSunCol","uSkyCol","uExposure","uGamma","uBounces","uMode","uDebug","uReflScale","uGlassIOR","uTemporal","uSpatial","uReset","uPrevAccum","uPrevReservoir","uSampleCount","uVehPos","uVehYaw","uVehPitch","uVehRoll","uWheelSteer","uWheelSpin","uHeadI","uTailI","uMatA","uMatP","uMatE","uMatEm","uSph","uSphMat","uBoxMin","uBoxMax","uBoxMat","uVehBoxMin","uVehBoxMax","uVehBoxMat","uWheelPos"]);
+  // arrays need explicit handling
+  const locConePos=gl.getUniformLocation(progTrace,"uConePos[0]");
+  const locConeTilt=gl.getUniformLocation(progTrace,"uConeTilt[0]");
+  const locMatA=gl.getUniformLocation(progTrace,"uMatA[0]");
+  const locMatP=gl.getUniformLocation(progTrace,"uMatP[0]");
+  const locMatE=gl.getUniformLocation(progTrace,"uMatE[0]");
+  const locMatEm=gl.getUniformLocation(progTrace,"uMatEm[0]");
+  const locSph=gl.getUniformLocation(progTrace,"uSph[0]");
+  const locSphMat=gl.getUniformLocation(progTrace,"uSphMat[0]");
+  const locBoxMin=gl.getUniformLocation(progTrace,"uBoxMin[0]");
+  const locBoxMax=gl.getUniformLocation(progTrace,"uBoxMax[0]");
+  const locBoxMat=gl.getUniformLocation(progTrace,"uBoxMat[0]");
+  const locVehBoxMin=gl.getUniformLocation(progTrace,"uVehBoxMin[0]");
+  const locVehBoxMax=gl.getUniformLocation(progTrace,"uVehBoxMax[0]");
+  const locVehBoxMat=gl.getUniformLocation(progTrace,"uVehBoxMat[0]");
+  const locWheelPos=gl.getUniformLocation(progTrace,"uWheelPos[0]");
+  const D={};
+  cache(progDisplay,["uAccum","uExposure","uGamma","uSampleCount","uDebug","uDenoise"]);
+
+  // Upload static tables
+  function uploadTables(){
+    const matA=new Float32Array(32*3), matP=new Float32Array(32*4), matE=new Float32Array(32*4), matEm=new Float32Array(32*3);
+    MATS.forEach((m,i)=>{
+      matA.set(m.a,i*3);
+      matP.set([m.m,m.r,m.ior,m.t],i*4);
+      matE.set([m.cc,m.ccr,m.ei,m.s],i*4);
+      matEm.set(m.e,i*3);
+    });
+    gl.uniform3fv(locMatA,matA); gl.uniform4fv(locMatP,matP); gl.uniform4fv(locMatE,matE); gl.uniform3fv(locMatEm,matEm);
+    const sph=new Float32Array(16*4), sphMat=new Int32Array(16);
+    SPHERES.forEach((s,i)=>{ sph.set(s,i*4); sphMat[i]=s[4]; });
+    gl.uniform4fv(locSph,sph); gl.uniform1iv(locSphMat,sphMat);
+    const bmin=new Float32Array(32*4), bmax=new Float32Array(32*4), bmat=new Int32Array(32);
+    BOXES.forEach((b,i)=>{ bmin.set([b[0],b[1],b[2],0],i*4); bmax.set([b[3],b[4],b[5],0],i*4); bmat[i]=b[6]; });
+    gl.uniform4fv(locBoxMin,bmin); gl.uniform4fv(locBoxMax,bmax); gl.uniform1iv(locBoxMat,bmat);
+    const vmin=new Float32Array(9*4), vmax=new Float32Array(9*4), vmat=new Int32Array(9);
+    VEH_BOXES.forEach((b,i)=>{ vmin.set([b[0],b[1],b[2],0],i*4); vmax.set([b[3],b[4],b[5],0],i*4); vmat[i]=b[6]; });
+    gl.uniform4fv(locVehBoxMin,vmin); gl.uniform4fv(locVehBoxMax,vmax); gl.uniform1iv(locVehBoxMat,vmat);
+    const wp=new Float32Array(4*3); WHEEL_POS.forEach((w,i)=>wp.set(w,i*3));
+    gl.uniform3fv(locWheelPos,wp);
+  }
+
+  // Camera state
+  const cam={pos:[8,4,14], yaw:0.6, pitch:-0.25, dist:12, target:[0,1,0], orbitYaw:0.6, orbitPitch:0.35, freePos:[-30,12,30], freeYaw:2.2, freePitch:-0.3};
+  let sampleCount=0, frame=0, lastResetReason="";
+  let accumResetPending=true;
+  window.resetAccum=function(reason){ accumResetPending=true; lastResetReason=reason||""; document.getElementById("pill-move").style.display="inline-block"; document.getElementById("pill-move").textContent="Accum reset · "+(reason||""); setTimeout(()=>{document.getElementById("pill-move").style.display="none";},1200); };
+
+  function sunDir(){
+    const az=S.sunAz*Math.PI/180, el=S.sunEl*Math.PI/180;
+    return [Math.cos(el)*Math.sin(az), Math.sin(el), Math.cos(el)*Math.cos(az)];
+  }
+  function updateCamera(){
+    const fwd=[Math.cos(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), Math.sin(cam.yaw)*Math.cos(cam.pitch)];
+    // Actually use yaw around Y: fwd = (cos yaw, 0, sin yaw) pitched
+    const cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw);
+    let f=[cy*Math.cos(cam.pitch), Math.sin(cam.pitch), sy*Math.cos(cam.pitch)];
+    let pos=cam.pos.slice();
+    if(S.camMode==="chase"){
+      // physics fwd = (cos yaw, 0, -sin yaw) → back = (-cos, 0, +sin)
+      const back=[-Math.cos(car.yaw),0,Math.sin(car.yaw)];
+      // smooth follow
+      const tx=car.pos[0]+back[0]*S.chaseDist, tz=car.pos[2]+back[2]*S.chaseDist;
+      cam.pos[0]+=(tx-cam.pos[0])*0.08; cam.pos[1]+=(car.pos[1]+S.chaseH-cam.pos[1])*0.08; cam.pos[2]+=(tz-cam.pos[2])*0.08;
+      pos=cam.pos.slice();
+      const look=[car.pos[0]+Math.cos(car.yaw)*6, car.pos[1]+0.8, car.pos[2]-Math.sin(car.yaw)*6];
+      f=[look[0]-pos[0],look[1]-pos[1],look[2]-pos[2]];
+    } else if(S.camMode==="orbit"){
+      const t=[car.pos[0],car.pos[1]+0.5,car.pos[2]];
+      pos=[t[0]+Math.cos(cam.orbitYaw)*cam.dist*Math.cos(cam.orbitPitch), t[1]+Math.sin(cam.orbitPitch)*cam.dist, t[2]+Math.sin(cam.orbitYaw)*cam.dist*Math.cos(cam.orbitPitch)];
+      f=[t[0]-pos[0],t[1]-pos[1],t[2]-pos[2]];
+      cam.pos=pos.slice();
+    } else if(S.camMode==="hood"){
+      const cy2=Math.cos(car.yaw), sy2=Math.sin(car.yaw);
+      pos=[car.pos[0]+cy2*1.2, car.pos[1]+0.55, car.pos[2]-sy2*1.2];
+      f=[cy2, -0.05, -sy2];
+      cam.pos=pos.slice();
+    } else if(S.camMode==="hmi"){
+      const cy2=Math.cos(car.yaw), sy2=Math.sin(car.yaw);
+      pos=[car.pos[0]-cy2*0.2, car.pos[1]+0.45, car.pos[2]+sy2*0.2];
+      f=[cy2, -0.15, -sy2];
+      cam.pos=pos.slice();
+    } else if(S.camMode==="free"){
+      pos=cam.freePos.slice();
+      const cy2=Math.cos(cam.freeYaw), sy2=Math.sin(cam.freeYaw);
+      f=[cy2*Math.cos(cam.freePitch), Math.sin(cam.freePitch), sy2*Math.cos(cam.freePitch)];
+    }
+    const fl=Math.hypot(f[0],f[1],f[2])||1; f=[f[0]/fl,f[1]/fl,f[2]/fl];
+    const upRef=[0,1,0];
+    let right=[f[1]*upRef[2]-f[2]*upRef[1], f[2]*upRef[0]-f[0]*upRef[2], f[0]*upRef[1]-f[1]*upRef[0]];
+    const rl=Math.hypot(right[0],right[1],right[2])||1; right=[right[0]/rl,right[1]/rl,right[2]/rl];
+    const up=[right[1]*f[2]-right[2]*f[1], right[2]*f[0]-right[0]*f[2], right[0]*f[1]-right[1]*f[0]];
+    return {pos,fwd:f,right,up};
+  }
+
+  function resize(){
+    const stage=document.getElementById("stage");
+    const r=stage.getBoundingClientRect();
+    const w=Math.max(160,Math.floor(r.width*S.resScale)), h=Math.max(90,Math.floor(r.height*S.resScale));
+    if(canvas.width!==w||canvas.height!==h){ canvas.width=w; canvas.height=h; resizeTargets(); }
+    gl.viewport(0,0,canvas.width,canvas.height);
+  }
+
+  function render(){
+    resize();
+    const C=updateCamera();
+    const sd=sunDir();
+    const sunCol=[1.0*S.sunIntensity,0.95*S.sunIntensity,0.85*S.sunIntensity];
+    const skyCol=[S.skyIntensity,S.skyIntensity,S.skyIntensity];
+    const fovTan=Math.tan(S.fov*Math.PI/360);
+    const conePos=new Float32Array(32*4), coneTilt=new Float32Array(32*4);
+    cones.forEach((c,i)=>{ conePos.set([c.x,0,c.z,0],i*4); coneTilt.set([c.tilt,0,0,0],i*4); });
+
+    // ── Accumulation pass (trace → write set, sampling read set) ──
+    const readSet=sets[readIdx], writeSet=sets[writeIdx];
+    gl.useProgram(progTrace); bindQuad(progTrace);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,writeSet.fbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0,gl.COLOR_ATTACHMENT1]);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,readSet.accumTex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,readSet.resTex);
+    gl.uniform1i(U.uPrevAccum,0); gl.uniform1i(U.uPrevReservoir,1);
+    gl.uniform2f(U.uRes,canvas.width,canvas.height);
+    gl.uniform1f(U.uTime,performance.now()/1000);
+    gl.uniform3f(U.uCamPos,C.pos[0],C.pos[1],C.pos[2]);
+    gl.uniform3f(U.uCamFwd,C.fwd[0],C.fwd[1],C.fwd[2]);
+    gl.uniform3f(U.uCamRight,C.right[0],C.right[1],C.right[2]);
+    gl.uniform3f(U.uCamUp,C.up[0],C.up[1],C.up[2]);
+    gl.uniform1f(U.uFovTan,fovTan);
+    gl.uniform3f(U.uSunDir,sd[0],sd[1],sd[2]);
+    gl.uniform3f(U.uSunCol,sunCol[0],sunCol[1],sunCol[2]);
+    gl.uniform3f(U.uSkyCol,skyCol[0],skyCol[1],skyCol[2]);
+    gl.uniform1f(U.uExposure,S.exposure); gl.uniform1f(U.uGamma,S.gamma);
+    gl.uniform1i(U.uBounces,S.bounces); gl.uniform1i(U.uMode,S.renderMode); gl.uniform1i(U.uDebug,99); // accumulation pass
+    gl.uniform1f(U.uReflScale,S.reflScale); gl.uniform1f(U.uGlassIOR,1.5);
+    gl.uniform1f(U.uTemporal,S.restirTemporal); gl.uniform1f(U.uSpatial,S.restirSpatial);
+    gl.uniform1f(U.uReset,accumResetPending?1:0);
+    gl.uniform1f(U.uSampleCount,sampleCount);
+    gl.uniform3f(U.uVehPos,car.pos[0],car.pos[1],car.pos[2]);
+    gl.uniform1f(U.uVehYaw,car.yaw); gl.uniform1f(U.uVehPitch,car.bodyPitch); gl.uniform1f(U.uVehRoll,car.bodyRoll);
+    gl.uniform1f(U.uWheelSteer,car.steer); gl.uniform1f(U.uWheelSpin,car.wheels[0].spin);
+    gl.uniform1f(U.uHeadI,car.throttle>0.05?48:8); gl.uniform1f(U.uTailI,car.brake>0.05?12:3);
+    gl.uniform4fv(locConePos,conePos); gl.uniform4fv(locConeTilt,coneTilt);
+    uploadTables();
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    if(accumResetPending){ sampleCount=0; accumResetPending=false; }
+    sampleCount+=1;
+    // swap ping-pong: write set becomes read set for next frame
+    const tmp=readIdx; readIdx=writeIdx; writeIdx=tmp;
+    // ── Display pass (latest accum → screen) ──
+    gl.useProgram(progDisplay); bindQuad(progDisplay);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,sets[readIdx].accumTex);
+    gl.uniform1i(D.uAccum,0);
+    gl.uniform1f(D.uExposure,S.exposure); gl.uniform1f(D.uGamma,S.gamma);
+    gl.uniform1f(D.uSampleCount,sampleCount); gl.uniform1i(D.uDebug,S.debugView); gl.uniform1i(D.uDenoise,S.denoise?1:0);
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    frame++;
+  }
+
+  // ── Main loop ──────────────────────────────────────────────────────────
+  let lastT=performance.now(), fpsAcc=0, fpsN=0, fpsT=0;
+  function loop(){
+    requestAnimationFrame(loop);
+    const now=performance.now(); const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+    stepPhysics(dt);
+    // auto-reset accumulation when camera/vehicle moves (motion breaks temporal reuse)
+    if(S.camMode==="chase"||S.camMode==="hood"||S.camMode==="hmi"){ if(car.speed>0.5||Math.abs(car.yawRate)>0.05) accumResetPending=true; }
+    render();
+    fpsAcc+=dt; fpsN++; fpsT+=dt;
+    if(fpsT>0.5){
+      const fps=fpsN/fpsAcc;
+      document.getElementById("st-fps").textContent=fps.toFixed(0)+" FPS";
+      document.getElementById("st-ms").textContent=(1000/Math.max(1,fps)).toFixed(1)+" ms";
+      document.getElementById("st-spp").textContent=sampleCount;
+      document.getElementById("st-bounces").textContent=S.bounces;
+      document.getElementById("st-res").textContent="M="+S.restirM+" · 8 lights";
+      document.getElementById("st-temp").textContent=(S.restirTemporal*100).toFixed(0)+"%";
+      document.getElementById("st-spat").textContent=(S.restirSpatial*100).toFixed(0)+"%";
+      document.getElementById("pill-spp").textContent="SPP "+sampleCount;
+      document.getElementById("m-prims").textContent=(SPHERES.length+BOXES.length+VEH_BOXES.length+32+4);
+      document.getElementById("m-mats").textContent=MATS.length;
+      fpsAcc=0; fpsN=0; fpsT=0;
+    }
+    updateHUD();
+  }
+  function updateHUD(){
+    const kmh=car.speed*3.6;
+    const gearTxt=car.gear===2?"N":(car.gear===1?"R":(car.gear-VEH.FirstIndex+1));
+    const rpmPct=Math.min(1,(car.rpm-VEH.IdleRPM)/(VEH.RedlineRPM-VEH.IdleRPM));
+    const bar="█".repeat(Math.round(rpmPct*12))+"░".repeat(12-Math.round(rpmPct*12));
+    document.getElementById("hud-text").textContent=
+`Speed  ${kmh.toFixed(0).padStart(3)} km/h   Gear ${gearTxt}
+RPM    ${car.rpm.toFixed(0).padStart(4)}  ${bar}
+Thr    ${(car.throttle*100).toFixed(0).padStart(3)}%  Brk ${(car.brake*100).toFixed(0).padStart(3)}%  Steer ${(car.steer*57.3).toFixed(0).padStart(3)}°
+Pos    ${car.pos[0].toFixed(1)}, ${car.pos[2].toFixed(1)}  Yaw ${(car.yaw*57.3%360).toFixed(0)}°
+Cam    ${S.camMode} · ${S.renderMode===0?"ReSTIR PT Enhanced":S.renderMode===1?"Direct only":"Raster"} · SPP ${sampleCount}
+W/S drive · A/D steer · Space handbrake · R reset · C cam · M HMI`;
+  }
+
+  // ── Input ──────────────────────────────────────────────────────────────
+  window.addEventListener("keydown",e=>{
+    if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+    keys[e.code]=true;
+    if(e.code==="KeyR") resetCar();
+    if(e.code==="KeyC") cycleCam();
+    if(e.code==="KeyM") toggleHMI();
+    if(e.code==="KeyP") togglePanels();
+    if(e.code==="KeyH") toggleHUD();
+    if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
+  });
+  window.addEventListener("keyup",e=>{ keys[e.code]=false; });
+  const touch={gas:false,brake:false,left:false,right:false};
+  window.touch=touch;
+  function bindTouch(id,prop){ const el=document.getElementById(id); const on=e=>{e.preventDefault();touch[prop]=true;}; const off=e=>{e.preventDefault();touch[prop]=false;}; el.addEventListener("pointerdown",on); el.addEventListener("pointerup",off); el.addEventListener("pointerleave",off); el.addEventListener("pointercancel",off); }
+  bindTouch("t-gas","gas"); bindTouch("t-brake","brake"); bindTouch("t-left","left"); bindTouch("t-right","right");
+  // drag orbit / free look
+  let dragging=false,lastX=0,lastY=0;
+  canvas.addEventListener("pointerdown",e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener("pointermove",e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+    if(S.camMode==="orbit"){ cam.orbitYaw-=dx*0.008; cam.orbitPitch=Math.max(-0.1,Math.min(1.2,cam.orbitPitch+dy*0.006)); }
+    else if(S.camMode==="free"){ cam.freeYaw-=dx*0.005; cam.freePitch=Math.max(-1.2,Math.min(1.2,cam.freePitch-dy*0.005)); }
+    else if(S.camMode==="chase"){ cam.orbitYaw-=dx*0.008; }
+    accumResetPending=true;
+  });
+  canvas.addEventListener("pointerup",()=>dragging=false);
+  canvas.addEventListener("wheel",e=>{ e.preventDefault(); if(S.camMode==="orbit") cam.dist=Math.max(4,Math.min(30,cam.dist+e.deltaY*0.02)); else if(S.camMode==="free"){ cam.freePos[0]+=e.deltaY*0.02; } accumResetPending=true; },{passive:false});
+
+  // ── UI: outliner ───────────────────────────────────────────────────────
+  const OUTLINER=[
+    {g:"Showcase"},
+    {id:"garden",name:"Materials Garden",icon:"◍",mat:14,meta:"mirror · Al · Au · glass"},
+    {id:"walls",name:"Colour-Bleed Walls",icon:"▦",mat:21,meta:"crimson · viridian"},
+    {id:"containers",name:"Containers",icon:"▭",mat:25,meta:"5 boxes"},
+    {id:"cones",name:"Cones (32)",icon:"▲",mat:29,meta:"knockable"},
+    {g:"Vehicle · ControlVehicle"},
+    {id:"body",name:"BodyCoat (paint)",icon:"⬣",mat:6,meta:"clearcoat"},
+    {id:"glass",name:"VehicleGlass",icon:"◇",mat:7,meta:"transmission"},
+    {id:"plastic",name:"VehiclePlastic",icon:"▢",mat:8,meta:"rough dielectric"},
+    {id:"tyre",name:"Tyre ×4",icon:"◯",mat:9,meta:"MF6.1"},
+    {id:"rim",name:"Hub / Rim",icon:"◎",mat:10,meta:"blue mag"},
+    {id:"head",name:"Headlight",icon:"☀",mat:12,meta:"emissive 48"},
+    {id:"tail",name:"Taillight",icon:"●",mat:13,meta:"emissive red"},
+    {g:"World"},
+    {id:"asphalt",name:"Asphalt",icon:"▬",mat:0,meta:"proving grounds"},
+    {id:"concrete",name:"ApronConcrete",icon:"▬",mat:1,meta:"apron"},
+    {id:"grass",name:"Grass",icon:"❀",mat:2,meta:"surround"},
+    {id:"mirror",name:"Mirror panel",icon:"▯",mat:14,meta:"rough 0.02"},
+    {id:"alum",name:"Aluminium sphere",icon:"●",mat:15,meta:"F0 0.91"},
+    {id:"gold",name:"Gold sphere",icon:"●",mat:16,meta:"F0 gold"},
+    {id:"showglass",name:"ShowcaseGlass",icon:"●",mat:17,meta:"IOR 1.5"},
+    {id:"plasticred",name:"Plastic sphere",icon:"●",mat:18,meta:"clearcoat"},
+    {id:"lampw",name:"LampWarm",icon:"✦",mat:27,meta:"emissive"},
+    {id:"lampc",name:"LampCool",icon:"✦",mat:28,meta:"emissive"},
+  ];
+  const outlinerBody=document.getElementById("outliner-body");
+  function renderOutliner(filter=""){
+    outlinerBody.innerHTML="";
+    for(const row of OUTLINER){
+      if(row.g){ const d=document.createElement("div"); d.className="tree-group"; d.textContent=row.g; outlinerBody.appendChild(d); continue; }
+      if(filter&&!row.name.toLowerCase().includes(filter.toLowerCase())) continue;
+      const d=document.createElement("div"); d.className="tree-row"+(S.selectedMat===row.mat?" selected":"");
+      d.innerHTML=`<span class="glyph">${row.icon}</span><span>${row.name}</span><span class="row-meta">${row.meta}</span>`;
+      d.onclick=()=>{ S.selectedMat=row.mat; S.editMat=row.mat; renderOutliner(document.getElementById("outliner-filter").value); showTab("material"); };
+      outlinerBody.appendChild(d);
+    }
+  }
+  document.getElementById("outliner-filter").addEventListener("input",e=>renderOutliner(e.target.value));
+  renderOutliner();
+
+  // ── UI: inspector tabs ─────────────────────────────────────────────────
+  const inspBody=document.getElementById("inspector-body");
+  function slider(label,min,max,step,val,fmt,oninput){
+    const id="sl"+Math.random().toString(36).slice(2,7);
+    const wrap=document.createElement("div"); wrap.className="ctl";
+    wrap.innerHTML=`<div class="head"><label>${label}</label><output id="${id}-o"></output></div><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${val}"><div class="range-labels"><span>${min}</span><span>${max}</span></div>`;
+    const inp=wrap.querySelector("input"), out=wrap.querySelector("output");
+    const upd=()=>{ const v=parseFloat(inp.value); out.textContent=fmt?fmt(v):v; inp.style.setProperty("--fill",((v-min)/(max-min)*100)+"%"); };
+    inp.addEventListener("input",()=>{ upd(); oninput(parseFloat(inp.value)); });
+    upd(); return wrap;
+  }
+  function switchRow(label,on,onchange){
+    const d=document.createElement("div"); d.className="switch-row"+(on?" on":"");
+    d.innerHTML=`<span class="toggle"></span><span>${label}</span>`;
+    d.onclick=()=>{ const v=!d.classList.contains("on"); d.classList.toggle("on",v); onchange(v); };
+    return d;
+  }
+  function card(title,sub){ const c=document.createElement("div"); c.className="card"; c.innerHTML=`<h3>${title}</h3><div class="sub">${sub||""}</div>`; return c; }
+
+  let vehInterval=null;
+  function showTab(name){
+    document.querySelectorAll("#insp-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===name));
+    if(vehInterval){ clearInterval(vehInterval); vehInterval=null; }
+    inspBody.innerHTML="";
+    if(name==="render"){
+      const c1=card("ReSTIR PT Enhanced · Render","Reservoir sampling (temporal + spatial reuse, visibility- + material-aware) + path-traced indirect. Authors: 2.08–3.05× vs 2022 ReSTIR PT. Reflections are path-traced glossy (required).");
+      c1.appendChild(slider("Resolution scale",0.25,1,0.05,S.resScale,v=>v.toFixed(2),v=>{S.resScale=v; accumResetPending=true;}));
+      c1.appendChild(slider("Max bounces",1,8,1,S.bounces,v=>v.toFixed(0),v=>{S.bounces=v; accumResetPending=true;}));
+      c1.appendChild(slider("ReSTIR temporal reuse",0,1,0.05,S.restirTemporal,v=>v.toFixed(2),v=>{S.restirTemporal=v;}));
+      c1.appendChild(slider("ReSTIR spatial reuse",0,1,0.05,S.restirSpatial,v=>v.toFixed(2),v=>{S.restirSpatial=v;}));
+      c1.appendChild(slider("ReSTIR M limit (candidates)",2,16,1,S.restirM,v=>v.toFixed(0),v=>{S.restirM=v;}));
+      c1.appendChild(slider("Exposure",0.1,3,0.05,S.exposure,v=>v.toFixed(2),v=>{S.exposure=v;}));
+      c1.appendChild(slider("Gamma",1,3,0.05,S.gamma,v=>v.toFixed(2),v=>{S.gamma=v;}));
+      c1.appendChild(slider("Reflection roughness scale",0.2,2,0.05,S.reflScale,v=>v.toFixed(2),v=>{S.reflScale=v; accumResetPending=true;}));
+      c1.appendChild(switchRow("Denoise (3×3 bilateral)",S.denoise,v=>{S.denoise=v;}));
+      const c2=card("Reservoir lights","8 candidates: sun + 5 lamps + headlight + taillight. Temporal reuses last frame's reservoir; spatial reuses neighbours. Moving the camera/vehicle resets accumulation (temporal reuse invalid).");
+      c2.innerHTML+=`<div class="metric-row"><div class="metric"><div class="v">${(S.restirTemporal*100).toFixed(0)}%</div><div class="k">Temporal</div></div><div class="metric"><div class="v">${(S.restirSpatial*100).toFixed(0)}%</div><div class="k">Spatial</div></div><div class="metric"><div class="v">8</div><div class="k">Lights</div></div></div><div class="note">Try <b>Debug → Reservoir weight</b> to see the reservoir field, then <b>Direct</b> vs <b>Indirect</b> to separate ReSTIR direct from path-traced indirect.</div>`;
+      inspBody.append(c1,c2);
+    } else if(name==="material"){
+      const m=MATS[S.editMat];
+      const c=card("Material · "+MAT_NAMES[S.editMat],"Full PBR: base colour (linear), metallic, roughness, IOR, transmission, clearcoat, emissive. Glass = transmission + IOR (Schlick vs Snell). Plastic = rough dielectric + clearcoat.");
+      const colRow=document.createElement("div"); colRow.className="ctl";
+      const hex="#"+m.a.map(v=>Math.round(Math.pow(Math.max(0,Math.min(1,v)),1/2.2)*255).toString(16).padStart(2,"0")).join("");
+      colRow.innerHTML=`<div class="head"><label>Base colour (linear)</label><output>${hex}</output></div><div class="row"><input type="color" value="${hex}"><small>linear Rec.709 · edits apply live to GPU</small></div>`;
+      colRow.querySelector("input").addEventListener("input",e=>{
+        const h=e.target.value; const lin=[1,3,5].map(s=>{const v=parseInt(h.slice(s,s+2),16)/255; return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);});
+        m.a=lin; accumResetPending=true;
+      });
+      c.appendChild(colRow);
+      c.appendChild(slider("Metallic",0,1,0.01,m.m,v=>v.toFixed(2),v=>{m.m=v; accumResetPending=true;}));
+      c.appendChild(slider("Roughness",0,1,0.01,m.r,v=>v.toFixed(2),v=>{m.r=v; accumResetPending=true;}));
+      c.appendChild(slider("IOR (glass)",1,2.5,0.01,m.ior,v=>v.toFixed(2),v=>{m.ior=v; accumResetPending=true;}));
+      c.appendChild(slider("Transmission",0,1,0.01,m.t,v=>v.toFixed(2),v=>{m.t=v; accumResetPending=true;}));
+      c.appendChild(slider("Clearcoat",0,1,0.01,m.cc,v=>v.toFixed(2),v=>{m.cc=v; accumResetPending=true;}));
+      c.appendChild(slider("Emissive intensity",0,50,0.5,m.ei,v=>v.toFixed(1),v=>{m.ei=v; accumResetPending=true;}));
+      c.appendChild(slider("Specular level",0,0.2,0.005,m.s,v=>v.toFixed(3),v=>{m.s=v; accumResetPending=true;}));
+      const c2=card("Presets","One-click full material set (from MaterialSpecification.js).");
+      const presets=[["Mirror",14],["Aluminium",15],["Gold",16],["Glass",17],["Plastic",18],["Rubber",19],["Ceramic",20],["BodyCoat",6]];
+      const row=document.createElement("div"); row.style.display="flex"; row.style.flexWrap="wrap"; row.style.gap="6px";
+      for(const [n,idx] of presets){ const b=document.createElement("button"); b.textContent=n; b.style.minHeight="26px"; b.style.fontSize="11px"; b.onclick=()=>{S.editMat=idx;S.selectedMat=idx;renderOutliner();showTab("material");}; row.appendChild(b); }
+      c2.appendChild(row);
+      inspBody.append(c,c2);
+    } else if(name==="vehicle"){
+      const c=card("ControlVehicle · Garage","GT-R powertrain (520 N·m, 6-speed, turbo spool), MF6.1 tyres, 2.0 Hz struts. Paint updates the shared GPU material on the driven car.");
+      const sw=document.createElement("div"); sw.className="swatches"; sw.style.display="flex"; sw.style.gap="8px"; sw.style.flexWrap="wrap"; sw.style.margin="8px 0";
+      for(const p of PAINTS){ const b=document.createElement("button"); b.className="swatch"+(S.paint===p?" on":""); b.style.cssText=`width:38px;height:38px;border-radius:50%;background:${p};border:2px solid #ffffff33;padding:0;min-height:0`; b.title=p; b.onclick=()=>applyPaint(p); sw.appendChild(b); }
+      c.appendChild(sw);
+      c.appendChild(switchRow("Matte finish",S.matte,v=>{S.matte=v; applyPaint(S.paint);}));
+      c.appendChild(switchRow("Dark wheels",S.darkWheels,v=>{S.darkWheels=v; applyPaint(S.paint);}));
+      c.appendChild(switchRow("Blue rims (emissive accent)",S.blueRims,v=>{S.blueRims=v; applyPaint(S.paint);}));
+      c.appendChild(slider("Headlight intensity",0,80,1,48,v=>v.toFixed(0),v=>{MATS[12].ei=v;}));
+      c.appendChild(slider("Taillight intensity",0,20,0.5,6.5,v=>v.toFixed(1),v=>{MATS[13].ei=v;}));
+      const c2=card("Vehicle telemetry","Live from the physics solver (VehicleSolver.js port).");
+      c2.innerHTML=`<div class="metric-row"><div class="metric"><div class="v" id="vt-speed">0</div><div class="k">km/h</div></div><div class="metric"><div class="v" id="vt-rpm">0</div><div class="k">RPM</div></div><div class="metric"><div class="v" id="vt-gear">1</div><div class="k">Gear</div></div></div><div class="note">Mass 1300 kg · CoM 0.53 m · wheelbase 3.396 m · track 2.095 m · tyre Ø 1.017 m. Suspension 2.0 Hz / ζ 0.6, digressive. Aero CdA 0.74 / ClA 1.10.</div>`;
+      inspBody.append(c,c2);
+      vehInterval=setInterval(()=>{ const s=document.getElementById("vt-speed"); if(s){ s.textContent=(car.speed*3.6).toFixed(0); document.getElementById("vt-rpm").textContent=car.rpm.toFixed(0); document.getElementById("vt-gear").textContent=car.gear===2?"N":(car.gear===1?"R":(car.gear-VEH.FirstIndex+1)); } },200);
+    } else if(name==="light"){
+      const c=card("Sun & sky","Presets: Noon · Golden · Dusk · Night. Sun is a directional ReSTIR light (shadow-ray visibility).");
+      const presets=[["Noon",35,62,3.0,1.0],["Golden",95,18,2.6,0.9],["Dusk",175,8,1.6,0.7],["Night",220,25,0.4,0.25]];
+      const row=document.createElement("div"); row.style.display="flex"; row.style.gap="6px"; row.style.flexWrap="wrap"; row.style.marginBottom="8px";
+      for(const [n,az,el,si,ski] of presets){ const b=document.createElement("button"); b.textContent=n; b.style.minHeight="26px"; b.style.fontSize="11px"; b.onclick=()=>{S.sunAz=az;S.sunEl=el;S.sunIntensity=si;S.skyIntensity=ski;accumResetPending=true;showTab("light");}; row.appendChild(b); }
+      c.appendChild(row);
+      c.appendChild(slider("Sun azimuth",0,360,1,S.sunAz,v=>v.toFixed(0)+"°",v=>{S.sunAz=v; accumResetPending=true;}));
+      c.appendChild(slider("Sun elevation",2,85,1,S.sunEl,v=>v.toFixed(0)+"°",v=>{S.sunEl=v; accumResetPending=true;}));
+      c.appendChild(slider("Sun intensity",0,6,0.1,S.sunIntensity,v=>v.toFixed(1),v=>{S.sunIntensity=v; accumResetPending=true;}));
+      c.appendChild(slider("Sky intensity",0,2,0.05,S.skyIntensity,v=>v.toFixed(2),v=>{S.skyIntensity=v; accumResetPending=true;}));
+      c.appendChild(slider("Glass IOR (showcase)",1,2.5,0.01,1.5,v=>v.toFixed(2),v=>{MATS[17].ior=v; accumResetPending=true;}));
+      inspBody.appendChild(c);
+    } else if(name==="physics"){
+      const c=card("Physics · VehicleSolver port","Pacejka-inspired friction circle (μ 1.35), transient slip, strut springs, load transfer, aero. Jolt handles loose debris in the full demo; here cones are the loose bodies.");
+      c.appendChild(slider("Grip (μ scale)",0.3,1.6,0.05,S.grip,v=>v.toFixed(2),v=>{S.grip=v;}));
+      c.appendChild(slider("Engine power",0.3,1.8,0.05,S.engine,v=>v.toFixed(2),v=>{S.engine=v;}));
+      c.appendChild(slider("Brake",0.3,1.8,0.05,S.brake,v=>v.toFixed(2),v=>{S.brake=v;}));
+      c.appendChild(slider("Steering sensitivity",0.4,1.8,0.05,S.steerSens,v=>v.toFixed(2),v=>{S.steerSens=v;}));
+      c.appendChild(slider("Camera FOV",35,90,1,S.fov,v=>v.toFixed(0)+"°",v=>{S.fov=v; accumResetPending=true;}));
+      c.appendChild(slider("Chase distance",5,16,0.5,S.chaseDist,v=>v.toFixed(1),v=>{S.chaseDist=v;}));
+      c.appendChild(slider("Chase height",1.5,6,0.1,S.chaseH,v=>v.toFixed(1),v=>{S.chaseH=v;}));
+      const c2=card("Controls","W/S throttle/brake · A/D steer · Space handbrake · R reset · C camera · M HMI · P panels · H HUD. Drag to orbit (Orbit/Free), scroll to zoom.");
+      inspBody.append(c,c2);
+    }
+  }
+  document.getElementById("insp-tabs").addEventListener("click",e=>{ const b=e.target.closest("button"); if(b) showTab(b.dataset.tab); });
+  showTab("render");
+
+  // ── Paint / Garage ─────────────────────────────────────────────────────
+  function srgbToLinear(hex){ return [1,3,5].map(s=>{const v=parseInt(hex.slice(s,s+2),16)/255; return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); }
+  function applyPaint(hex){
+    S.paint=hex;
+    const lin=srgbToLinear(hex);
+    MATS[6].a=[lin[0]*0.78,lin[1]*0.78,lin[2]*0.78]; // Drive flake headroom
+    MATS[6].r=S.matte?0.7:0.0775; MATS[6].cc=S.matte?0:1;
+    MATS[10].a=S.darkWheels?[0.025,0.028,0.032]:(S.blueRims?[0.06,0.22,0.62]:[0.62,0.63,0.65]);
+    MATS[10].e=S.blueRims&&!S.darkWheels?[0,0.033,0.12]:[0,0,0];
+    MATS[10].r=S.darkWheels?0.38:0.2;
+    document.getElementById("hmi-state").textContent="Paint: "+hex+(S.matte?" · matte":" · gloss");
+    accumResetPending=true;
+    // refresh swatch states
+    document.querySelectorAll("#hmi-swatches .swatch").forEach(b=>b.classList.toggle("on",b.title===hex));
+  }
+  const hmiSw=document.getElementById("hmi-swatches");
+  for(const p of PAINTS){ const b=document.createElement("button"); b.className="swatch"; b.style.background=p; b.title=p; b.onclick=()=>applyPaint(p); hmiSw.appendChild(b); }
+  document.getElementById("hmi-gloss").onclick=()=>{S.matte=false;applyPaint(S.paint);document.getElementById("hmi-gloss").classList.add("on");document.getElementById("hmi-matte").classList.remove("on");};
+  document.getElementById("hmi-matte").onclick=()=>{S.matte=true;applyPaint(S.paint);document.getElementById("hmi-matte").classList.add("on");document.getElementById("hmi-gloss").classList.remove("on");};
+  document.getElementById("hmi-rims").onclick=e=>{S.blueRims=!S.blueRims;e.target.classList.toggle("on",S.blueRims);applyPaint(S.paint);};
+  document.getElementById("hmi-dark").onclick=e=>{S.darkWheels=!S.darkWheels;e.target.classList.toggle("on",S.darkWheels);applyPaint(S.paint);};
+  document.getElementById("hmi-rims").classList.add("on");
+  applyPaint(S.paint);
+
+  // ── Top bar / viewport controls ────────────────────────────────────────
+  const CAMS=["chase","orbit","hood","hmi","free"];
+  function cycleCam(){ const i=(CAMS.indexOf(S.camMode)+1)%CAMS.length; setCam(CAMS[i]); }
+  function setCam(m){ S.camMode=m; document.getElementById("sel-cam").value=m; document.getElementById("btn-camera").textContent="📷 "+m[0].toUpperCase()+m.slice(1); accumResetPending=true; }
+  function toggleHMI(){ const h=document.getElementById("hmi"); h.classList.toggle("open"); document.getElementById("ov-hmi").classList.toggle("on",h.classList.contains("open")); }
+  function togglePanels(){ document.getElementById("workspace").classList.toggle("hide-panels"); document.getElementById("ov-panels").classList.toggle("on",!document.getElementById("workspace").classList.contains("hide-panels")); }
+  function toggleHUD(){ const h=document.getElementById("hud"); h.style.display=h.style.display==="none"?"block":"none"; document.getElementById("ov-hud").classList.toggle("on",h.style.display!=="none"); }
+  document.getElementById("btn-play").onclick=e=>{ S.playing=!S.playing; e.target.textContent=S.playing?"⏸ Pause":"▶ Play"; e.target.classList.toggle("on",S.playing); };
+  document.getElementById("btn-reset").onclick=resetCar;
+  document.getElementById("btn-camera").onclick=cycleCam;
+  document.getElementById("btn-hmi").onclick=toggleHMI;
+  document.getElementById("btn-panels").onclick=togglePanels;
+  document.getElementById("btn-help").onclick=()=>{ alert("FRONTIER 1 · ReSTIR PT Enhanced\n\nUI: Project-Zero Editor (Frontier- arena/10e50e56, Experimental/ProjectZeroEditor)\nVehicle: VehicleHMI ControlVehicle (Frontier-OLD VehicleProvingGrounds, 1300 kg GT-R, MF6.1, Jolt debris)\nEngine: ReSTIR PT Enhanced — reservoir sampling (temporal+spatial, visibility/material-aware) + path-traced indirect + progressive accumulation. Authors: 2.08–3.05× vs 2022 ReSTIR PT.\n\nDrive: W/S · A/D · Space handbrake · R reset · C camera · M HMI · P panels\nDrag to orbit, scroll to zoom. Sliders on the right drive the engine live."); };
+  document.getElementById("ov-hud").onclick=toggleHUD;
+  document.getElementById("ov-hmi").onclick=toggleHMI;
+  document.getElementById("ov-panels").onclick=togglePanels;
+  document.getElementById("seg-mode").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; S.renderMode=parseInt(b.dataset.mode); document.querySelectorAll("#seg-mode button").forEach(x=>x.classList.toggle("on",x===b)); accumResetPending=true; });
+  document.getElementById("sel-debug").onchange=e=>{ S.debugView=parseInt(e.target.value); };
+  document.getElementById("sel-cam").onchange=e=>setCam(e.target.value);
+
+  // ── Boot ───────────────────────────────────────────────────────────────
+  setBring(60,"Building scene · uploading materials…");
+  resizeTargets();
+  setBring(85,"Starting path tracer…");
+  setTimeout(()=>{ bring.style.display="none"; loop(); },350);
+}
+</script>
+</body>
+</html>
