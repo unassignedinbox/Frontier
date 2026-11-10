@@ -294,7 +294,7 @@ export class EditorShell
         const Bar = document.getElementById("viewport-bar");
         ClearElement(Bar);
         const Heading = Construct("div", "scene-heading");
-        Heading.append(Construct("strong", "", "Scene"), Construct("span", "", "WebGPU · distance-field GI · ReSTIR"));
+        Heading.append(Construct("strong", "", "Scene"), Construct("span", "", "WebGPU · ReSTIR PT Enhanced · distance-field GI"));
         Bar.append(Heading, Construct("span", "live-pill", "LIVE"));
         const Host = this.Host;
         const Camera = Construct("div", "segmented");
