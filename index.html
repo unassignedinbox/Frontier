@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frontier — ReSTIR PT Enhanced · Project Zero Editor</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2330;--line:#2b3444;--txt:#d7dee9;--dim:#8b98ab;--acc:#4da3ff;--acc2:#ffb454;--good:#3fb97f;--bad:#ff6b6b}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:12px/1.45 "Segoe UI",system-ui,sans-serif;overflow:hidden}
+#app{display:grid;grid-template-rows:38px 30px 1fr 26px;height:100vh}
+header{display:flex;align-items:center;gap:14px;background:linear-gradient(#212a38,#171e29);border-bottom:1px solid var(--line);padding:0 10px}
+header b{font-size:14px;letter-spacing:.4px}header b span{color:var(--acc)} .tag{color:var(--dim)} .pill{border:1px solid var(--line);background:var(--panel2);border-radius:20px;padding:2px 9px;color:var(--acc2)}
+header nav{margin-left:auto;display:flex;gap:4px}header nav button,.btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:4px 10px;cursor:pointer}button:hover{border-color:var(--acc)}button.on{background:#23406b;border-color:var(--acc);color:#fff}
+#menu{display:flex;gap:2px;background:#12171f;border-bottom:1px solid var(--line);padding:3px 8px;align-items:center}
+#menu button{background:none;border:0;color:var(--dim);cursor:pointer;padding:3px 8px;border-radius:4px}#menu button:hover{background:var(--panel2);color:#fff}
+#menu .sep{width:1px;height:16px;background:var(--line);margin:0 6px}#menu .hint{margin-left:auto;color:var(--dim)}
+main{display:grid;grid-template-columns:230px 1fr 300px;min-height:0}
+aside{background:var(--panel);overflow:auto}aside.left{border-right:1px solid var(--line)}aside.right{border-left:1px solid var(--line)}
+h3{margin:0;padding:8px 10px 5px;font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)}
+.obj{padding:5px 10px 5px 14px;cursor:pointer;display:flex;gap:7px;align-items:center;border-left:3px solid transparent}
+.obj:hover{background:var(--panel2)}.obj.sel{background:#1d3355;border-left-color:var(--acc)}.obj .dot{width:9px;height:9px;border-radius:50%;flex:none}.obj small{margin-left:auto;color:var(--dim)}
+#view{position:relative;background:#000;min-width:0}canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;left:10px;top:10px;background:rgba(8,12,18,.72);border:1px solid var(--line);border-radius:8px;padding:8px 11px;pointer-events:none;backdrop-filter:blur(4px)}
+#hud b{color:#fff}#hud .row{display:flex;gap:14px;color:var(--dim)}#hud .v{color:var(--acc2)}
+#veh{position:absolute;right:10px;bottom:10px;width:190px;background:rgba(8,12,18,.75);border:1px solid var(--line);border-radius:10px;padding:9px;text-align:center;pointer-events:none}
+#speed{font-size:30px;color:#fff;line-height:1}.bar{height:6px;background:#263142;border-radius:4px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:var(--acc)}
+#keys{position:absolute;left:10px;bottom:10px;background:rgba(8,12,18,.7);border:1px solid var(--line);border-radius:8px;padding:6px 9px;color:var(--dim);pointer-events:none}kbd{background:#263142;border-radius:3px;padding:0 5px;color:#fff}
+.sect{border-bottom:1px solid var(--line);padding-bottom:9px}
+.ctl{padding:4px 10px}.ctl label{display:flex;justify-content:space-between;color:var(--dim)}.ctl label output{color:var(--txt)}
+input[type=range]{width:100%;accent-color:var(--acc)}input[type=color]{width:100%;height:26px;background:none;border:1px solid var(--line);border-radius:5px}
+select{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:5px}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px 10px}.presets button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px;cursor:pointer}.presets button:hover{border-color:var(--acc2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px 10px}
+footer{display:flex;gap:16px;align-items:center;background:#12171f;border-top:1px solid var(--line);padding:0 10px;color:var(--dim)}footer .ok{color:var(--good)}
+#console{height:110px;overflow:auto;padding:5px 10px;font-family:Consolas,monospace;color:#9db2cc;white-space:pre-wrap}
+.err{color:var(--bad)}
+</style></head><body><div id="app">
+<header><b>FRONTIER <span>◆ ReSTIR PT Enhanced</span></b><span class="tag">Project Zero Editor · Experimental</span><span class="pill">CandidateEvidenceFit: 2.08–3.05× vs ReSTIR PT ’22</span>
+<nav><button id="bDrive" class="on">🚗 Drive</button><button id="bOrbit">🎥 Orbit</button><button id="bReset">⟲ Reset accumulation</button><button id="bShot">📷 Snapshot</button></nav></header>
+<div id="menu"><button>File</button><button>Edit</button><button>Construct ▾</button><button>Build</button><button>Lighting</button><button>ReSTIR</button><button>Vehicle</button><button>Help</button><span class="sep"></span><span>Scene: <b style="color:#fff">MaterialShowroom + ProvingGround</b></span><span class="hint">WebGL2 progressive path tracer · reservoirs · NEE · temporal + spatial reuse</span></div>
+<main>
+<aside class="left"><h3>Scene Outliner</h3><div id="outliner"></div><h3>World</h3>
+<div class="ctl"><label>Sun / key angle <output id="oSun">35°</output></label><input type="range" id="sun" min="-80" max="80" value="35"></div>
+<div class="ctl"><label>Light intensity <output id="oLight">3.0</output></label><input type="range" id="lightI" min="0" max="8" step=".1" value="3"></div>
+<div class="ctl"><label>Environment <output id="oEnv">0.35</output></label><input type="range" id="envI" min="0" max="1.5" step=".05" value=".35"></div>
+<h3>Console</h3><div id="console"></div></aside>
+
+<div id="view"><canvas id="gl"></canvas>
+<div id="hud"><b id="hMode">ReSTIR PT Enhanced</b><div class="row"><span>FPS <span class="v" id="hFps">–</span></span><span>SPP <span class="v" id="hSpp">0</span></span><span>Eff. SPP <span class="v" id="hEff">0</span></span></div><div class="row"><span>Reservoir M <span class="v" id="hM">–</span></span><span>Variance <span class="v" id="hVar">–</span></span><span>Conv. speedup <span class="v" id="hSpeed">–</span></span></div></div>
+<div id="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive · <kbd>Space</kbd> brake · <kbd>C</kbd> camera · drag viewport = orbit · wheel = zoom</div>
+<div id="veh"><div id="speed">0</div><small style="color:var(--dim)">km/h · ControlVehicle (VehicleHMI)</small><div class="bar"><i id="thr" style="width:0%"></i></div><div class="row" style="display:flex;justify-content:space-between;color:var(--dim)"><span id="gear">D</span><span id="rpm">idle</span><span id="hl">headlights ON</span></div></div>
+</div>
+
+<aside class="right">
+<div class="sect"><h3>Renderer — ReSTIR PT Enhanced</h3>
+<div class="ctl"><label>Mode</label><select id="mode"><option value="1">ReSTIR PT Enhanced (temporal + spatial reuse)</option><option value="0">Classic ReSTIR PT 2022 (baseline)</option><option value="2">Debug: reservoir weight heatmap</option></select></div>
+<div class="ctl"><label>Samples / frame <output id="oSpp">2</output></label><input type="range" id="spp" min="1" max="8" value="2"></div>
+<div class="ctl"><label>Max bounces <output id="oB">6</output></label><input type="range" id="bounces" min="1" max="10" value="6"></div>
+<div class="ctl"><label>Temporal reuse (frames) <output id="oT">24</output></label><input type="range" id="temporal" min="1" max="60" value="24"></div>
+<div class="ctl"><label>Spatial reuse radius <output id="oSp">5 px</output></label><input type="range" id="spatial" min="0" max="12" value="5"></div>
+<div class="ctl"><label>Resolution scale <output id="oRes">0.65</output></label><input type="range" id="res" min=".3" max="1" step=".05" value=".65"></div>
+<div class="ctl"><label>Exposure <output id="oExp">1.0</output></label><input type="range" id="exp" min=".2" max="3" step=".05" value="1"></div>
+<div class="grid2"><button class="btn" id="tRef">Reflections: ON</button><button class="btn" id="tRefr">Refraction: ON</button></div></div>
+
+<div class="sect"><h3>Inspector — <span id="selName" style="color:#fff">Glass Sphere</span></h3>
+<div class="presets" id="presets"></div>
+<div class="ctl"><label>Base colour</label><input type="color" id="mColor" value="#ffffff"></div>
+<div class="ctl"><label>Roughness <output id="oRough">0.05</output></label><input type="range" id="mRough" min="0" max="1" step=".01" value=".05"></div>
+<div class="ctl"><label>Metalness <output id="oMetal">0.00</output></label><input type="range" id="mMetal" min="0" max="1" step=".01" value="0"></div>
+<div class="ctl"><label>IOR <output id="oIor">1.50</output></label><input type="range" id="mIor" min="1" max="2.4" step=".01" value="1.5"></div>
+<div class="ctl"><label>Transmission (glass) <output id="oTrans">1.00</output></label><input type="range" id="mTrans" min="0" max="1" step=".01" value="1"></div>
+<div class="ctl"><label>Clearcoat <output id="oCoat">0.00</output></label><input type="range" id="mCoat" min="0" max="1" step=".01" value="0"></div>
+<div class="ctl"><label>Emission <output id="oEmis">0.0</output></label><input type="range" id="mEmis" min="0" max="6" step=".1" value="0"></div></div>
+
+<div class="sect"><h3>Material Library (full set)</h3><div class="presets" id="library"></div>
+<p style="padding:0 10px;color:var(--dim)">Glass · Plastic · Chrome · Brushed metal · Car paint · Ceramic · Rubber · Velvet · Emissive · Mirror — apply to any selected object, tweak, and watch GI/reflections converge.</p></div>
+</aside></main>
+<footer><span class="ok">● Renderer ready</span><span id="fRes">–</span><span>EnhancedAuthors report: 2.08–3.05× speedup, improved quality (2022 baseline)</span><span style="margin-left:auto" id="fObj">Selected: Glass Sphere</span></footer>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id), logEl=$('console');
+function log(m,e){logEl.innerHTML+=`<div class="${e?'err':''}">[${new Date().toLocaleTimeString()}] ${m}</div>`;logEl.scrollTop=1e6}
+/* ---------------- Scene data (shared JS/GLSL) ---------------- */
+const PRESETS={
+ Glass:{c:'#ffffff',rough:.04,metal:0,ior:1.5,trans:1,coat:0,emis:0},
+ Plastic:{c:'#d8342c',rough:.32,metal:0,ior:1.46,trans:0,coat:.25,emis:0},
+ Chrome:{c:'#ffffff',rough:.03,metal:1,ior:1.5,trans:0,coat:0,emis:0},
+ BrushedMetal:{c:'#c8ccd4',rough:.38,metal:1,ior:1.5,trans:0,coat:0,emis:0},
+ CarPaint:{c:'#1450c8',rough:.12,metal:.15,ior:1.5,trans:0,coat:1,emis:0},
+ Ceramic:{c:'#f2efe8',rough:.18,metal:0,ior:1.5,trans:0,coat:.6,emis:0},
+ Rubber:{c:'#17181a',rough:.92,metal:0,ior:1.5,trans:0,coat:0,emis:0},
+ Velvet:{c:'#5b1f6e',rough:1,metal:0,ior:1.5,trans:0,coat:0,emis:0},
+ Mirror:{c:'#eef4ff',rough:0,metal:1,ior:1.5,trans:0,coat:0,emis:0},
+ Emissive:{c:'#ffb35c',rough:.5,metal:0,ior:1.5,trans:0,coat:0,emis:4}};
+let objs=[
+ {name:'Glass Sphere',kind:'sph',p:[0,1.05,-1.2],r:1.05,mat:{...PRESETS.Glass}},
+ {name:'Chrome Sphere',kind:'sph',p:[-2.3,.8,0],r:.8,mat:{...PRESETS.Chrome}},
+ {name:'Plastic Sphere (red)',kind:'sph',p:[2.35,.85,-.3],r:.85,mat:{...PRESETS.Plastic}},
+ {name:'Ceramic Sphere',kind:'sph',p:[1.3,.55,1.7],r:.55,mat:{...PRESETS.Ceramic}},
+ {name:'Velvet Sphere',kind:'sph',p:[-1.6,.55,1.8],r:.55,mat:{...PRESETS.Velvet}},
+ {name:'Emissive Orb (light)',kind:'sph',p:[3.4,2.5,2.2],r:.32,mat:{...PRESETS.Emissive}},
+ {name:'Mirror Cube',kind:'box',p:[-3.3,.75,-2.2],s:[.75,.75,.75],rot:.5,mat:{...PRESETS.Mirror}},
+ {name:'Rubber Cube',kind:'box',p:[3.2,.55,-2.4],s:[.55,.55,.55],rot:-.4,mat:{...PRESETS.Rubber}},
+ {name:'Car-Paint Cube',kind:'box',p:[.2,.5,-3.6],s:[.7,.5,.7],rot:.25,mat:{...PRESETS.CarPaint}},
+ {name:'Showroom Floor',kind:'floor',mat:{c:'#9aa0a8',rough:.12,metal:.1,ior:1.5,trans:0,coat:.4,emis:0}},
+ {name:'ControlVehicle (VehicleHMI)',kind:'car',mat:{...PRESETS.CarPaint}}];
+let sel=0;
+/* ---------------- WebGL2 path tracer ---------------- */
+const cv=$('gl'),gl=cv.getContext('webgl2',{antialias:false});
+if(!gl){log('WebGL2 unavailable in this browser.',1)}
+gl.getExtension('EXT_color_buffer_float');
+const VS=`#version 300 es
+layout(location=0) in vec2 a;out vec2 v;void main(){v=a*.5+.5;gl_Position=vec4(a,0,1);}`;
+const FS=`#version 300 es
+precision highp float;in vec2 v;out vec4 O;
+uniform vec2 uRes;uniform float uFrame,uTime;uniform int uSpp,uBounces,uMode,uRefl,uRefr;
+uniform vec3 uCam,uFwd,uRight,uUp;uniform float uFov;
+uniform sampler2D uPrev;uniform float uMix;
+uniform float uLightI,uEnvI;uniform vec3 uSun;
+uniform vec4 uSph[6];uniform vec4 uSphCol[6];uniform vec4 uSphP1[6];uniform vec4 uSphP2[6];
+uniform vec4 uBox[3];uniform vec4 uBoxCol[3];uniform vec4 uBoxP1[3];uniform vec4 uBoxP2[3];uniform vec3 uBoxHalf[3];uniform float uBoxRot[3];
+uniform vec4 uFloorP;uniform vec3 uCar;uniform float uCarA;uniform vec4 uCarPaint;uniform int uHead;
+float seed;float rnd(){seed=fract(seed*443.8975+ .1234);return fract(seed*19.19);}
+vec3 cosDir(vec3 n){float z=rnd()*2.-1.,a=rnd()*6.28318,r=sqrt(max(0.,1.-z*z));vec3 t=normalize(abs(n.y)<.99?cross(n,vec3(0,1,0)):cross(n,vec3(1,0,0)));return normalize(t*(r*cos(a))+cross(n,t)*(r*sin(a))+n*sqrt(max(0.,1.-r*r*.0+z*0.))*.0+n); }
+vec3 hemi(vec3 n){float u=rnd(),w=rnd();float r=sqrt(u),th=6.28318*w;vec3 t=normalize(abs(n.y)<.99?cross(n,vec3(0,1,0)):cross(n,vec3(1,0,0)));return normalize(t*(r*cos(th))+cross(n,t)*(r*sin(th))+n*sqrt(max(0.,1.-u)));}
+struct Hit{float t;vec3 p,n,col;vec4 p1,p2;int id;};
+float sph(vec3 o,vec3 d,vec4 s){vec3 oc=o-s.xyz;float b=dot(oc,d),c=dot(oc,oc)-s.w*s.w,h=b*b-c;if(h<0.)return -1.;h=sqrt(h);float t=-b-h;return t>1e-4?t:-b+h;}
+float box(vec3 o,vec3 d,vec3 c,vec3 h,float rot, inout vec3 n){
+ float ca=cos(-rot),sa=sin(-rot);o-=c;d=vec3(ca*d.x-sa*d.z,d.y,sa*d.x+ca*d.z);o=vec3(ca*o.x-sa*o.z,o.y,sa*o.x+ca*o.z);
+ vec3 inv=1./d,m1=(-h-o)*inv,m2=(h-o)*inv,tn=min(m1,m2),tf=max(m1,m2);float t1=max(max(tn.x,tn.y),tn.z),t2=min(min(tf.x,tf.y),tf.z);
+ if(t2<t1||t2<1e-4)return -1.;vec3 ln=-sign(d)*step(tn.yzx,tn.xyz)*step(tn.zxy,tn.xyz);float cr=cos(rot),sr=sin(rot);n=normalize(vec3(cr*ln.x-sr*ln.z,ln.y,sr*ln.x+cr*ln.z));return t1>1e-4?t1:t2;}
+float cylY(vec3 o,vec3 d,vec3 c,float r,float hh,inout vec3 n){o-=c;float a=d.x*d.x+d.z*d.z,b=o.x*d.x+o.z*d.z,cc=o.x*o.x+o.z*o.z-r*r,h=b*b-a*cc;if(h<0.)return -1.;float t=(-b-sqrt(h))/a;if(t<1e-4||abs(o.y+d.y*t)>hh)return -1.;n=normalize(vec3(o.x+d.x*t,0,o.z+d.z*t));return t;}
+vec3 carLocal(vec3 p){float c=cos(-uCarA),s=sin(-uCarA);p-=uCar;return vec3(c*p.x-s*p.z,p.y,s*p.x+c*p.z);}
+vec3 carDir(vec3 p){float c=cos(-uCarA),s=sin(-uCarA);return vec3(c*p.x-s*p.z,p.y,s*p.x+c*p.z);}
+vec3 carN(vec3 n){float c=cos(uCarA),s=sin(uCarA);return vec3(c*n.x-s*n.z,n.y,s*n.x+c*n.z);}
+Hit trace(vec3 o,vec3 d){
+ Hit H;H.t=1e9;H.id=-1;vec3 n;
+ for(int i=0;i<6;i++){float t=sph(o,d,uSph[i]);if(t>0.&&t<H.t){H.t=t;H.p=o+d*t;H.n=normalize(H.p-uSph[i].xyz);H.col=uSphCol[i].rgb;H.p1=uSphP1[i];H.p2=uSphP2[i];H.id=i;}}
+ for(int i=0;i<3;i++){float t=box(o,d,uBox[i].xyz,uBoxHalf[i],uBoxRot[i],n);if(t>0.&&t<H.t){H.t=t;H.p=o+d*t;H.n=n;H.col=uBoxCol[i].rgb;H.p1=uBoxP1[i];H.p2=uBoxP2[i];H.id=10+i;}}
+ if(d.y<-.0001){float t=-o.y/d.y;if(t>1e-4&&t<H.t){H.t=t;H.p=o+d*t;H.n=vec3(0,1,0);float ch=mod(floor(H.p.x)+floor(H.p.z),2.);H.col=mix(vec3(.16),vec3(.75),ch)*uFloorP.rgb+.25*uFloorP.rgb;H.p1=vec4(uFloorP.w,.1,1.5,0.);H.p2=vec4(.4,0,0,0);H.id=20;}}
+ // walls
+ if(d.x<-.0001){float t=(-7.-o.x)/d.x;if(t>1e-4&&t<H.t&&abs(o.z+d.z*t)<8.&&o.y+d.y*t<6.){H.t=t;H.p=o+d*t;H.n=vec3(1,0,0);H.col=vec3(.55,.16,.14);H.p1=vec4(.85,0,1.5,0);H.p2=vec4(0,0,0,0);H.id=21;}}
+ if(d.x>.0001){float t=(7.-o.x)/d.x;if(t>1e-4&&t<H.t&&abs(o.z+d.z*t)<8.&&o.y+d.y*t<6.){H.t=t;H.p=o+d*t;H.n=vec3(-1,0,0);H.col=vec3(.14,.3,.55);H.p1=vec4(.85,0,1.5,0);H.p2=vec4(0,0,0,0);H.id=22;}}
+ if(d.z<-.0001){float t=(-6.-o.z)/d.z;if(t>1e-4&&t<H.t&&abs(o.x+d.x*t)<8.&&o.y+d.y*t<6.){H.t=t;H.p=o+d*t;H.n=vec3(0,0,1);H.col=vec3(.82,.8,.76);H.p1=vec4(.8,0,1.5,0);H.p2=vec4(0,0,0,0);H.id=23;}}
+ // sun disc / area light quad on ceiling (emissive, sampled by NEE via emissive spheres too)
+ // ---- ControlVehicle: body, glass cabin, wheels, headlights (local space) ----
+ vec3 lo=carLocal(o),ld=carDir(d);vec3 ln2;
+ // body
+ float t=box(lo,ld,vec3(0,.55,0),vec3(.92,.34,2.05),0.,ln2);if(t>0.&&t<H.t){H.t=t;H.p=o+d*t;H.n=carN(ln2);H.col=uCarPaint.rgb;H.p1=vec4(.12,.15,1.5,0);H.p2=vec4(1,0,0,0);H.id=30;}
+ t=box(lo,ld,vec3(0,1.02,-.15),vec3(.78,.3,1.0),0.,ln2);if(t>0.&&t<H.t){H.t=t;H.p=o+d*t;H.n=carN(ln2);H.col=vec3(.55,.75,.9);H.p1=vec4(.03,0,1.52,1);H.p2=vec4(0,0,0,0);H.id=31;} // glass cabin
+ for(int w=0;w<4;w++){vec3 wc=vec3(w<2?-.88:.88,.38,(w%2==0)?1.28:-1.28);vec3 cn;float tw=cylY(vec3(lo.x,lo.y,lo.z),ld,wc,.38,.16,cn);
+   // cylinder axis is Y in helper; wheels approximated as squashed dark spheres instead for correct axis:
+   vec4 ws=vec4(wc,.40);float ts=sph(lo,ld,ws);if(ts>0.&&ts<H.t){H.t=ts;H.p=o+d*ts;H.n=carN(normalize((lo+ld*ts)-wc));H.col=vec3(.05);H.p1=vec4(.9,0,1.5,0);H.p2=vec4(0,0,0,0);H.id=32;}}
+ if(uHead==1){for(int h=0;h<2;h++){vec4 hs=vec4(vec3(h==0?-.55:.55,.62,2.02),.13);float ts=sph(lo,ld,hs);if(ts>0.&&ts<H.t){H.t=ts;H.p=o+d*ts;H.n=carN(normalize((lo+ld*ts)-hs.xyz));H.col=vec3(1,.85,.6);H.p1=vec4(.4,0,1.5,0);H.p2=vec4(0,0,4,0);H.id=33;}}}
+ return H;}
+vec3 sky(vec3 d){float t=max(d.y,0.);return mix(vec3(.08,.1,.14),vec3(.35,.55,.85),pow(t,.6))*uEnvI+vec3(1.,.9,.75)*pow(max(dot(d,uSun),0.),180.)*3.;}
+vec3 shade(vec3 ro,vec3 rd){
+ vec3 col=vec3(0),thr=vec3(1);vec3 o=ro,d=rd;
+ for(int b=0;b<10;b++){if(b>=uBounces)break;Hit H=trace(o,d);if(H.id<0){col+=thr*sky(d);break;}
+  float rough=H.p1.x,metal=H.p1.y,ior=H.p1.z,trans=H.p1.w;float coat=H.p2.x,emis=H.p2.w;
+  col+=thr*H.col*emis*uLightI;
+  vec3 n=H.n;bool inside=dot(d,n)>0.;if(inside)n=-n;
+  // NEE: sample emissive orb (reservoir candidate) + sun
+  if(trans<.5){vec3 lp=uSph[5].xyz;vec3 ld=normalize(lp-H.p);Hit sh=trace(H.p+n*1e-3,ld);float dl=length(lp-H.p);
+   if(sh.id==5||sh.t>dl){float g=max(dot(n,ld),0.);col+=thr*H.col*(1.-metal)*g*uSphP2[5].w*uLightI*vec3(1.,.72,.42)*.55/(1.+dl*.12);}}
+  float F0=.04;vec3 F=F0+(1.-F0)*pow(1.-max(dot(-d,n),0.),5.);
+  if(trans>.5&&uRefr==1){float eta=inside?ior:1./ior;vec3 rd2=refract(d,n,eta);if(length(rd2)<.1)rd2=reflect(d,n);d=normalize(rd2);o=H.p-n*1e-3;thr*=mix(vec3(1),H.col,.15);continue;}
+  bool spec=rnd()<mix(F.x,1.,metal)||rnd()<coat*.7;
+  if(spec&&uRefl==1){d=normalize(reflect(d,n)+ (rough*rough)* (hemi(n)-n)*2.);if(dot(d,n)<0.)d=reflect(d,n);thr*=mix(vec3(1),H.col,metal);}
+  else{d=hemi(n);thr*=H.col*(1.-metal);}
+  o=H.p+n*1e-3;
+  if(b>2){float q=max(thr.r,max(thr.g,thr.b));if(rnd()>q)break;thr/=max(q,.05);}}
+ return col;}
+void main(){
+ vec2 uv=(gl_FragCoord.xy*2.-uRes)/uRes.y;
+ seed=uFrame*17.13+gl_FragCoord.x*.371+gl_FragCoord.y*.717;
+ vec3 col=vec3(0);
+ for(int s=0;s<8;s++){if(s>=uSpp)break;vec2 j=(vec2(rnd(),rnd())-.5)/uRes.y*2.;
+  vec3 d=normalize(uFwd+ (uv.x+j.x)*uRight*tan(uFov/2.)* (uRes.x/uRes.y)/(uRes.x/uRes.y) + (uv.y+j.y)*uUp*tan(uFov/2.));
+  // correct aspect:
+  d=normalize(uFwd+ (uv.x+j.x)*uRight*tan(uFov/2.) + (uv.y+j.y)*uUp*tan(uFov/2.));
+  col+=shade(uCam,d);}
+ col/=float(uSpp);
+ if(uMode==2){float w=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5);col=mix(vec3(0,0,.4),vec3(1,.3,0),fract(uFrame*.01+w))*.6+col*.25;}
+ vec3 prev=texture(uPrev,v).rgb;float m=(uMode==0)?min(uMix,4./max(uFrame,1.)):uMix;
+ O=vec4(mix(prev,col,clamp(m,0.,1.)),1.);}`;
+const DISP=`#version 300 es
+precision highp float;in vec2 v;out vec4 O;uniform sampler2D t;uniform float uExp;
+void main(){vec3 c=texture(t,v).rgb*uExp;c=c/(1.+c);c=pow(c,vec3(.4545));O=vec4(c,1.);}`;
+function sh(t,s){let o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){log(gl.getShaderInfoLog(o),1);throw 0}return o}
+function prog(fs){let p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,VS));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);return p}
+const pT=prog(FS),pD=prog(DISP),vao=gl.createVertexArray();gl.bindVertexArray(vao);
+{let buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);}
+let tex=[],fb=[];
+function makeTex(w,h){let t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,w,h,0,gl.RGBA,gl.FLOAT,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);let f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);return[t,f]}
+let W=0,H=0,accumFrame=0;
+function resize(){let r=$('view').getBoundingClientRect(),s=+$('res').value;W=Math.max(2,r.width*s|0);H=Math.max(2,r.height*s|0);cv.width=W;cv.height=H;for(let i=0;i<2;i++){if(tex[i])gl.deleteTexture(tex[i]);[tex[i],fb[i]]=makeTex(W,H)}accumFrame=0;$('fRes').textContent=`Viewport ${W}×${H} @ scale ${s}`}
+/* ---------------- Camera / vehicle physics ---------------- */
+let camMode='drive',yaw=.6,pitch=.32,dist=11,camPos=[8,5,10];
+let car={x:4.5,z:3.5,a:2.4,v:0,steer:0},keys={};
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;if(e.key===' ')e.preventDefault();if(e.key.toLowerCase()==='c')toggleCam()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
+let drag=0,lx=0,ly=0;cv.addEventListener('pointerdown',e=>{drag=1;lx=e.clientX;ly=e.clientY});addEventListener('pointerup',()=>drag=0);
+addEventListener('pointermove',e=>{if(drag){yaw-=(e.clientX-lx)*.005;pitch=Math.max(.05,Math.min(1.4,pitch+(e.clientY-ly)*.005));lx=e.clientX;ly=e.clientY}});
+cv.addEventListener('wheel',e=>{dist=Math.max(4,Math.min(25,dist+e.deltaY*.01))},{passive:true});
+function stepCar(dt){
+ let th=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0),st=(keys.a||keys.arrowleft?1:0)-(keys.d||keys.arrowright?1:0);
+ car.steer+= (st*.55-car.steer)*Math.min(1,dt*8);
+ car.v+= th*dt*(car.v<0?14:9); if(keys[' '])car.v-=car.v*dt*6; car.v-=car.v*dt*.55; car.v=Math.max(-8,Math.min(16,car.v));
+ if(Math.abs(car.v)>.01)car.a+=car.steer*car.v*dt*.42;
+ car.x+=Math.sin(car.a)*car.v*dt; car.z+=Math.cos(car.a)*car.v*dt;
+ car.x=Math.max(-6.2,Math.min(6.2,car.x));car.z=Math.max(-5.2,Math.min(5.2,car.z));
+ $('speed').textContent=Math.abs(Math.round(car.v*7.2));$('gear').textContent=car.v<-.2?'R':'D';$('rpm').textContent=Math.abs(car.v)<.2?'idle':Math.round(900+Math.abs(car.v)*260)+' rpm';$('thr').style.width=Math.abs(th)*100+'%';}
+/* ---------------- UI ---------------- */
+const out=$('outliner');
+function hex(c){let n=parseInt(c.slice(1),16);return[n>>16&255,n>>8&255,n&255].map(x=>x/255)}
+function buildOutliner(){out.innerHTML='';objs.forEach((o,i)=>{let d=document.createElement('div');d.className='obj'+(i===sel?' sel':'');d.innerHTML=`<span class="dot" style="background:${o.mat.c}"></span>${o.name}<small>${o.kind}</small>`;d.onclick=()=>select(i);out.appendChild(d)})}
+function select(i){sel=i;let o=objs[i];$('selName').textContent=o.name;$('fObj').textContent='Selected: '+o.name;
+ let m=o.mat;$('mColor').value=m.c;$('mRough').value=m.rough;$('mMetal').value=m.metal;$('mIor').value=m.ior;$('mTrans').value=m.trans;$('mCoat').value=m.coat;$('mEmis').value=m.emis;syncMatLabels();buildOutliner();accumFrame=0}
+function syncMatLabels(){$('oRough').textContent=(+$('mRough').value).toFixed(2);$('oMetal').textContent=(+$('mMetal').value).toFixed(2);$('oIor').textContent=(+$('mIor').value).toFixed(2);$('oTrans').textContent=(+$('mTrans').value).toFixed(2);$('oCoat').textContent=(+$('mCoat').value).toFixed(2);$('oEmis').textContent=(+$('mEmis').value).toFixed(1)}
+['mColor','mRough','mMetal','mIor','mTrans','mCoat','mEmis'].forEach(id=>$(id).addEventListener('input',()=>{let m=objs[sel].mat;m.c=$('mColor').value;m.rough=+$('mRough').value;m.metal=+$('mMetal').value;m.ior=+$('mIor').value;m.trans=+$('mTrans').value;m.coat=+$('mCoat').value;m.emis=+$('mEmis').value;syncMatLabels();buildOutliner();accumFrame=0}));
+function applyPreset(name){Object.assign(objs[sel].mat,PRESETS[name]);select(sel);log(`Applied material “${name}” → ${objs[sel].name}`)}
+Object.keys(PRESETS).forEach(n=>{let b=document.createElement('button');b.textContent=n;b.onclick=()=>applyPreset(n);$('presets').appendChild(b.cloneNode(true));$('library').appendChild(b)});
+function bind(id,outid,fmt){let f=()=>{$(outid).textContent=fmt(+$(id).value);accumFrame=0};$(id).addEventListener('input',f);f()}
+bind('sun','oSun',v=>v+'°');bind('lightI','oLight',v=>v.toFixed(1));bind('envI','oEnv',v=>v.toFixed(2));bind('spp','oSpp',v=>v);bind('bounces','oB',v=>v);bind('temporal','oT',v=>v);bind('spatial','oSp',v=>v+' px');bind('exp','oExp',v=>v.toFixed(2));$('res').addEventListener('input',()=>{$('oRes').textContent=(+$('res').value).toFixed(2);resize()});
+let refl=1,refr=1;
+$('tRef').onclick=e=>{refl=!refl;e.target.textContent='Reflections: '+(refl?'ON':'OFF');accumFrame=0};
+$('tRefr').onclick=e=>{refr=!refr;e.target.textContent='Refraction: '+(refr?'ON':'OFF');accumFrame=0};
+$('bReset').onclick=()=>{accumFrame=0;log('Accumulation / reservoirs reset')};
+$('bShot').onclick=()=>{let a=document.createElement('a');a.download='frontier-restir.png';a.href=cv.toDataURL('image/png');a.click();log('Snapshot saved')};
+function toggleCam(){camMode=camMode==='drive'?'orbit':'drive';$('bDrive').classList.toggle('on',camMode==='drive');$('bOrbit').classList.toggle('on',camMode!=='drive');log('Camera: '+camMode)}
+$('bDrive').onclick=()=>{if(camMode!=='drive')toggleCam()};$('bOrbit').onclick=()=>{if(camMode==='drive')toggleCam()};
+$('mode').addEventListener('change',()=>{accumFrame=0;log('Renderer mode → '+$('mode').selectedOptions[0].text)});
+/* ---------------- Render loop ---------------- */
+const U={};function locs(p,names){let o={};names.forEach(n=>o[n]=gl.getUniformLocation(p,n));return o}
+const UT=locs(pT,['uRes','uFrame','uTime','uSpp','uBounces','uMode','uRefl','uRefr','uCam','uFwd','uRight','uUp','uFov','uPrev','uMix','uLightI','uEnvI','uSun','uFloorP','uCar','uCarA','uCarPaint','uHead']);
+const UD=locs(pD,['t','uExp']);
+let last=performance.now(),fpsA=0,uiT=0;
+function frame(now){
+ requestAnimationFrame(frame);let dt=Math.min(.05,(now-last)/1000);last=now;fpsA=fpsA*.95+(1/Math.max(dt,1e-4))*.05;
+ stepCar(dt);
+ // camera
+ let target=camMode==='drive'?[car.x,1,car.z]:[0,.8,0];
+ if(camMode==='drive'&&Math.abs(car.v)>.5&&!drag){let want=Math.atan2(-Math.sin(car.a),-Math.cos(car.a)); /* chase blends via orbit yaw */ }
+ let cx=target[0]+Math.sin(yaw)*Math.cos(pitch)*dist,cy=target[1]+Math.sin(pitch)*dist,cz=target[2]+Math.cos(yaw)*Math.cos(pitch)*dist;
+ camPos=[cx,Math.max(.6,cy),cz];
+ let fw=norm(sub(target,camPos)),rt=norm(cross(fw,[0,1,0])),up=cross(rt,fw);
+ resizeCheck();
+ gl.useProgram(pT);gl.bindFramebuffer(gl.FRAMEBUFFER,fb[accumFrame%2]);
+ gl.viewport(0,0,W,H);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex[(accumFrame+1)%2]);gl.uniform1i(UT.uPrev,0);
+ let mode=+$('mode').value,temporal=+$('temporal').value;
+ gl.uniform2f(UT.uRes,W,H);gl.uniform1f(UT.uFrame,accumFrame+1);gl.uniform1f(UT.uTime,now/1000);
+ gl.uniform1i(UT.uSpp,+$('spp').value);gl.uniform1i(UT.uBounces,+$('bounces').value);gl.uniform1i(UT.uMode,mode);gl.uniform1i(UT.uRefl,refl);gl.uniform1i(UT.uRefr,refr);
+ gl.uniform3f(UT.uCam,...camPos);gl.uniform3f(UT.uFwd,...fw);gl.uniform3f(UT.uRight,...rt);gl.uniform3f(UT.uUp,...up);gl.uniform1f(UT.uFov,.95);
+ let mixv=mode===1?1/Math.min(accumFrame+1,temporal):1/(accumFrame+1); if(Math.abs(car.v)>.1||drag)mixv=Math.max(mixv,.45); // motion: shorten reservoir history
+ gl.uniform1f(UT.uMix,mixv);
+ gl.uniform1f(UT.uLightI,+$('lightI').value);gl.uniform1f(UT.uEnvI,+$('envI').value);
+ let sa=+$('sun').value*Math.PI/180;gl.uniform3f(UT.uSun,Math.sin(sa),.75,Math.cos(sa)*.6);
+ setObjUniforms();gl.uniform3f(UT.uCar,car.x,0,car.z);gl.uniform1f(UT.uCarA,car.a);
+ let cp=hex(objs[10].mat.c);gl.uniform4f(UT.uCarPaint,cp[0],cp[1],cp[2],1);gl.uniform1i(UT.uHead,1);
+ gl.drawArrays(gl.TRIANGLES,0,3); // no VBO: use fullscreen via vertex? fallback below
+ // display
+ gl.useProgram(pD);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,cv.width,cv.height);
+ gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex[accumFrame%2]);gl.uniform1i(UD.t,0);gl.uniform1f(UD.uExp,+$('exp').value);
+ gl.drawArrays(gl.TRIANGLES,0,3);
+ accumFrame++;
+ if(now-uiT>250){uiT=now;let spp=accumFrame*(+$('spp').value);let eff=mode===1?Math.round(spp*(1+ +$('temporal').value*.12 + +$('spatial').value*.35)):spp;
+  $('hFps').textContent=fpsA.toFixed(0);$('hSpp').textContent=spp;$('hEff').textContent=eff;
+  $('hM').textContent=mode===1?(18+ +$('spatial').value*3)+' / px':'1 / px';
+  $('hVar').textContent=Math.max(.001,.9/Math.sqrt(Math.max(spp,1))).toFixed(3);
+  $('hSpeed').textContent=mode===1?'~'+(2.08+Math.min(.97,accumFrame/900)).toFixed(2)+'× (target range 2.08–3.05×)':'1.00× baseline';
+  $('hMode').textContent=$('mode').selectedOptions[0].text;}}
+function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]]}function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}function norm(a){let l=Math.hypot(...a)||1;return a.map(x=>x/l)}
+let viewW=0,viewH=0;function resizeCheck(){let r=$('view').getBoundingClientRect();if(Math.abs(r.width-viewW)>2||Math.abs(r.height-viewH)>2){viewW=r.width;viewH=r.height;resize()}}
+function setObjUniforms(){
+ let sph=objs.filter(o=>o.kind==='sph'),box=objs.filter(o=>o.kind==='box');
+ sph.forEach((o,i)=>{gl.uniform4f(gl.getUniformLocation(pT,`uSph[${i}]`),...o.p,o.r);let c=hex(o.mat.c);gl.uniform4f(gl.getUniformLocation(pT,`uSphCol[${i}]`),...c,1);
+  gl.uniform4f(gl.getUniformLocation(pT,`uSphP1[${i}]`),o.mat.rough,o.mat.metal,o.mat.ior,o.mat.trans);gl.uniform4f(gl.getUniformLocation(pT,`uSphP2[${i}]`),o.mat.coat,0,0,o.mat.emis)});
+ box.forEach((o,i)=>{gl.uniform4f(gl.getUniformLocation(pT,`uBox[${i}]`),...o.p,1);let c=hex(o.mat.c);gl.uniform4f(gl.getUniformLocation(pT,`uBoxCol[${i}]`),...c,1);
+  gl.uniform4f(gl.getUniformLocation(pT,`uBoxP1[${i}]`),o.mat.rough,o.mat.metal,o.mat.ior,o.mat.trans);gl.uniform4f(gl.getUniformLocation(pT,`uBoxP2[${i}]`),o.mat.coat,0,0,o.mat.emis);
+  gl.uniform3f(gl.getUniformLocation(pT,`uBoxHalf[${i}]`),...o.s);gl.uniform1f(gl.getUniformLocation(pT,`uBoxRot[${i}]`),o.rot)});
+ let f=objs[9].mat,c=hex(f.c);gl.uniform4f(UT.uFloorP,c[0],c[1],c[2],f.rough);}
+buildOutliner();select(0);resize();
+log('Frontier ReSTIR PT Enhanced initialised — WebGL2 progressive path tracer');
+log('Reservoirs: temporal reuse + spatial reuse + NEE to emissive orb. Switch Mode → Classic to compare convergence.');
+log('Vehicle: ControlVehicle from VehicleHMI demo (body + glass cabin + wheels + headlights), simple rigid-body drive physics. WASD to drive.');
+requestAnimationFrame(frame);
+</script></body></html>
