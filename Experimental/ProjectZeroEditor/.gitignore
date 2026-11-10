@@ -1,0 +1,4 @@
+node_modules/
+Tools/node_modules/
+*.png
+!Docs/*.png
