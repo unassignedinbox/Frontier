@@ -15,6 +15,7 @@ Related governance documents: [FolderStructure.md](FolderStructure.md) · [Codin
 - `action`
 - `adjacency`
 - `affinity`
+- `and` *(conjunction inside any filename, class, struct, enum, function, variable, or shader identifier — e.g. `GpuTextureAndSdfBaker`, `BuildAndUpload`, `MasksAndIds` — split into focused single-responsibility units or name one concrete mechanism)*
 - `archive` / `archives` *(use `Repository` or `Registry`; narrow directory exemption for `EngineContent/FontsArchives/`)*
 - `arena`
 - `artwork` *(use concrete domain nouns such as `PatternStamp`, `VectorGraphic`, `MotifLayer`, `Stencil`, or `Decal`)*
@@ -172,6 +173,7 @@ Use the following distinct visual nouns according to their exact structural role
   - Barred `coverage`, `submission`, `adjacency`, `vacancy`, `store` (revoking `RecordStore`), `reclamation`, `predicate`, and `interpolant`.
   - Barred `facet` / `facets` (use `Face` / `Faces`), `complex`, `topology`, and `assembly` (use `PolygonNetwork` for connected polygon structures).
   - Marked `substrate`, `atlas`, and `slice` as **discouraged (avoid)**.
+- **2026-11-14**: Barred the conjunction `And` inside any filename, class, struct, enum, function, variable, shader, or plan document name (`GpuTextureAndSdfBaker`, `BuildAndUploadStudy`, `CameraEyeAndMode`, `MasksAndIds`) — enforced in `CLAUDE.md` §2.7 and `SKILL-Naming.md` Gate ⑦.
 
 ---
 
@@ -179,7 +181,7 @@ Use the following distinct visual nouns according to their exact structural role
 
 Use this combined index to audit identifiers, filenames, directory names, and comments prior to finalizing changes:
 
-- **A**: `action`, `adjacency`, `Aether`, `affinity`, `Ancestor`, `Apex`, `archive` / `archives`, `arena`, `artwork`, `Assembly` / `assembly` *(avoid: `atlas`)*
+- **A**: `action`, `adjacency`, `Aether`, `affinity`, `Ancestor`, `And` *(conjunction in filenames/identifiers)*, `Apex`, `archive` / `archives`, `arena`, `artwork`, `Assembly` / `assembly` *(avoid: `atlas`)*
 - **B**: `backend`, `badge`, `Base`, `binding`, `bloom`, `BooleanSwitch` *(renamed to `ExclusiveSelector`)*
 - **C**: `cadence`, `card`, `carousel`, `catalog` / `catalogue`, `Catalyst`, `Child`, `Children`, `classification`, `Commit`, `Common`, `Complex` / `complex`, `Compose` / `compose`, `concurrence` / `concurrency` / `concurrent`, `Conductor`, `context`, `continuum`, `contract`, `Controller`, `Core`, `coverage`
 - **D**: `Data`, `Descendant`, `Designation`, `dev`, `Dispatcher`, `Draw` / `draw`

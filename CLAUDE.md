@@ -11,7 +11,7 @@ code, shaders, build scripts, or documentation.
 | ----- | -------- | ----- |
 | ① | `Documentation/AgenticInstructions/SKILL-CompactOutputProtocol.md` | Skimmer-first output, mandatory decision tables before choices |
 | ② | `Documentation/AgenticInstructions/SKILL-Emoji.md` | Sole authority on permitted emojis (`🌟`/`✨` forbidden) |
-| ③ | `Documentation/AgenticInstructions/SKILL-Naming.md` | Mechanism-first PascalCase construction & 6-gate test |
+| ③ | `Documentation/AgenticInstructions/SKILL-Naming.md` | Mechanism-first PascalCase construction & 7-gate test |
 | ④ | `Documentation/AgenticInstructions/SKILL-Formatting.md` | 140-col file banners, 120-col sections, Allman braces, unit tags |
 | ⑤ | `Documentation/BannedWordsVocabulary.md` | Canonical blacklisted terminology across code, files, folders, comments |
 | ⑥ | `Documentation/CodingStandards.md` | ISO C++20 baseline, explicit function prototypes, `concept` templates |
@@ -57,6 +57,11 @@ code, shaders, build scripts, or documentation.
 - **NEVER** dump architectural plans, decision tables, implementation reports, or multi-section explanations into chat messages.
 - Write all plans, architectural decisions, and turn reports into **`Documentation/Plans/*.md`** (and/or **`Documentation/Plans/SessionNotes.md`**), rebuild **`Documentation/Plans/MarkdownStudioViewer.html`** via `python3 Automation/BuildMarkdownViewer.py`, keep `Automation/ServeMarkdownStudio.py` live on `0.0.0.0:8080`, and open the primary deliverable `.md` or `.png` file in the viewer.
 - Keep chat replies strictly to **1–3 short lines** pointing to the updated Markdown Studio document path and verification status.
+
+### 🔴 2.7 Zero-`And` Conjunction Ban (Single-Responsibility Filenames & Identifiers)
+- **NEVER** use the conjunction **`And`** inside any filename, class, struct, enum, function, variable, shader, or documentation plan name (e.g. **`GpuTextureAndSdfBaker.h`**, **`BuildAndUploadStudy`**, **`CameraEyeAndMode`**, **`VolumeAndDistance`** are **STRICTLY FORBIDDEN**).
+- Conjunction names signal conflated responsibilities. Either split into focused single-responsibility units (e.g. `TextureBaker.{h,cpp}` + `SdfBaker.{h,cpp}`) or choose one precise domain noun covering the unified mechanism (`SurfaceUpload`, `CameraOpticsHeader`, `VolumetricDistance`).
+- Applies to all new and refactored `.h`, `.cpp`, `.slang`, `.js`, `.jsx`, and `.md` files across the entire repository; also enforced in `Documentation/AgenticInstructions/SKILL-Naming.md` and `Documentation/BannedWordsVocabulary.md`.
 
 ---
 
