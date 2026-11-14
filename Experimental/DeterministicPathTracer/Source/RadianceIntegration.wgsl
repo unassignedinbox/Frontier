@@ -20,14 +20,16 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 const π                       : f32 = 3.14159265358979;
-const InvalidMedium           : u32 = 0xFFFFFFFFu;
+const InvalidMedium           : u32 = 0xFFu;       // [-]  - Packed in bits 16..23 of TransportRay.PackedState (material count << 255)
 const TransportStackCapacity  : u32 = 16u;
-const SceneStackCapacity      : u32 = 56u;        // [-]  - Instance levels + return marker + vehicle levels (3 per level + 4)
-const ReturnMarker            : u32 = 0xFFFFFFFFu;  // [-]  - Stack entry that restores the world-space ray
+const SceneStackCapacity      : u32 = 40u;         // [-]  - Direct-descent pushes <= 3 per level (max tree depth <= 15)
+const ReturnMarker            : u32 = 0xFFFFFFFFu; // [-]  - Stack entry that restores the world-space ray
 const EmptyLink               : u32 = 0xFFFFFFFFu;
-const InstanceShift           : u32 = 20u;        // [-]  - SurfaceHit.PrimitiveIndex = instance << 20 | triangle
+const InstanceShift           : u32 = 20u;         // [-]  - SurfaceHit.PrimitiveIndex = instance << 20 | triangle
 const TriangleMask            : u32 = 0xFFFFFu;
-const InstanceStride          : u32 = 8u;         // [vec4u] per instance record
+const ThinDielectricBit       : u32 = 0x80000000u; // [-]  - Bit 31 of TrianglePositions[t*3].w flags thin glass for 1-cycle opaque shadow early-out
+const MaterialSlotMask        : u32 = 0x7FFFFFFFu;
+const InstanceStride          : u32 = 8u;          // [vec4u] per instance record
 const DeltaRoughnessAlpha     : f32 = 0.0025;     // [-]  - α below this traces the exact mirror / refraction direction
 const RayOffsetScale          : f32 = 2.0e-4;     // [m]  - Self-intersection offset along the geometric normal
 const UnboundedDistance       : f32 = 1.0e30;     // [m]
@@ -84,6 +86,7 @@ struct TracingUniforms
     Geometry          : vec4u,   // instance tree root node, first instance record [vec4u], instance count, trace scale [px]
     Shading           : vec4f,   // light cutoff (0 = off), analytic area lights (0/1), practical lamps: all (1) or tree (0), tree cut limit
     Practical         : vec4u,   // lamp count (0 = none), tree node base, lamp record base, profile base [vec4f in LightRecords]
+    SphereBounds      : vec4f,   // xyz [m] bounding sphere centre of showcase spheres, w [m] radius
 }
 
 // 📝 One 4-wide node = 4 vec4u (BoundingVolumeConstruction.js EncodeWideNode): origin + exponents, 8-bit child bounds,
@@ -140,14 +143,21 @@ struct SurfaceSample
 struct TransportRay
 {
     Origin            : vec3f,
-    Depth             : u32,
+    PackedState       : u32,     // bits 0..7 = Depth, bits 8..15 = NonDeltaDepth, bits 16..23 = Medium (0xFF = air)
     Direction         : vec3f,
-    NonDeltaDepth     : u32,
-    Throughput        : vec3f,
     LobePdf           : f32,     // solid-angle pdf of the generating lobe; 0 = camera or delta interaction
-    Medium            : u32,     // material slot of the enclosing solid dielectric, or InvalidMedium
+    Throughput        : vec3f,
     TravelSinceLobe   : f32,     // [m] distance carried through straight thin-sheet transmissions since the lobe vertex
 }
+
+fn PackRayState(Depth: u32, NonDeltaDepth: u32, Medium: u32) -> u32
+{
+    return (Depth & 0xFFu) | ((NonDeltaDepth & 0xFFu) << 8u) | ((Medium & 0xFFu) << 16u);
+}
+
+fn RayDepth(Ray: TransportRay) -> u32         { return Ray.PackedState & 0xFFu; }
+fn RayNonDeltaDepth(Ray: TransportRay) -> u32 { return (Ray.PackedState >> 8u) & 0xFFu; }
+fn RayMedium(Ray: TransportRay) -> u32        { return (Ray.PackedState >> 16u) & 0xFFu; }
 
 struct LobeEvaluation
 {
@@ -244,42 +254,58 @@ fn IntersectWideNode(NodeIndex: u32, Origin: vec3f, Reciprocal: vec3f, MaximumDi
     let BoundsZ    = BoundsEntries[Base + 2u];
     let Links      = BoundsEntries[Base + 3u];
     let NodeOrigin = bitcast<vec3f>(Header.xyz);
-    // 📝 Biased exponent byte E → 2^(E − 127) built directly from its float bits (exact, no transcendental).
-    let Scale      = bitcast<vec3f>(vec3u(Header.w & 255u, (Header.w >> 8u) & 255u, (Header.w >> 16u) & 255u) << vec3u(23u));
-    let NearX = (NodeOrigin.x + ExtractBytes(BoundsXY.x) * Scale.x - Origin.x) * Reciprocal.x;
-    let FarX  = (NodeOrigin.x + ExtractBytes(BoundsXY.y) * Scale.x - Origin.x) * Reciprocal.x;
-    let NearY = (NodeOrigin.y + ExtractBytes(BoundsXY.z) * Scale.y - Origin.y) * Reciprocal.y;
-    let FarY  = (NodeOrigin.y + ExtractBytes(BoundsXY.w) * Scale.y - Origin.y) * Reciprocal.y;
-    let NearZ = (NodeOrigin.z + ExtractBytes(BoundsZ.x) * Scale.z - Origin.z) * Reciprocal.z;
-    let FarZ  = (NodeOrigin.z + ExtractBytes(BoundsZ.y) * Scale.z - Origin.z) * Reciprocal.z;
-    let Entered = max(max(min(NearX, FarX), min(NearY, FarY)), max(min(NearZ, FarZ), vec4f(0.0)));
-    let Exited  = min(min(max(NearX, FarX), max(NearY, FarY)), min(max(NearZ, FarZ), vec4f(MaximumDistance)));
+    // 📝 Biased exponent byte E → 2^(E − 127) built directly from its float bits (exact power of 2).
+    //    Factoring Offset and ScaledRecip turns 24 sub+mul + 12 min/max swaps into 6 FMA slab tests with zero swaps.
+    let Scale       = bitcast<vec3f>(vec3u(Header.w & 255u, (Header.w >> 8u) & 255u, (Header.w >> 16u) & 255u) << vec3u(23u));
+    let Offset      = (NodeOrigin - Origin) * Reciprocal;
+    let ScaledRecip = Scale * Reciprocal;
+    let NegX        = Reciprocal.x < 0.0;
+    let NegY        = Reciprocal.y < 0.0;
+    let NegZ        = Reciprocal.z < 0.0;
+    let MinX = ExtractBytes(select(BoundsXY.x, BoundsXY.y, NegX)) * ScaledRecip.x + Offset.x;
+    let MaxX = ExtractBytes(select(BoundsXY.y, BoundsXY.x, NegX)) * ScaledRecip.x + Offset.x;
+    let MinY = ExtractBytes(select(BoundsXY.z, BoundsXY.w, NegY)) * ScaledRecip.y + Offset.y;
+    let MaxY = ExtractBytes(select(BoundsXY.w, BoundsXY.z, NegY)) * ScaledRecip.y + Offset.y;
+    let MinZ = ExtractBytes(select(BoundsZ.x,  BoundsZ.y,  NegZ)) * ScaledRecip.z + Offset.z;
+    let MaxZ = ExtractBytes(select(BoundsZ.y,  BoundsZ.x,  NegZ)) * ScaledRecip.z + Offset.z;
+    let Entered = max(max(MinX, MinY), max(MinZ, vec4f(0.0)));
+    let Exited  = min(min(MaxX, MaxY), min(MaxZ, vec4f(MaximumDistance)));
     let Present = Links != vec4u(EmptyLink);
     if (RayStatisticsEnabled) { RayStatistics.z += u32(Present.x) + u32(Present.y) + u32(Present.z) + u32(Present.w); }
     let Counts = vec4u(BoundsZ.z & 0xFFFFu, BoundsZ.z >> 16u, BoundsZ.w & 0xFFFFu, BoundsZ.w >> 16u);
-    return WideVisit(select(vec4f(UnboundedDistance), Entered, Present & (Entered <= Exited)), Counts, Links);
+    return WideVisit(select(vec4f(UnboundedDistance), Entered, Present & (Entered <= Exited * 1.000001)), Counts, Links);
 }
 
 // 📝 Instance record (8 vec4u): rows 0–2 world→object (xyz linear, w translation), rows 3–5 object→world, row 6 =
 //    vehicle tree root, paint slot to replace, replacement slot (EmptyLink = keep), rim replacement; row 7 x = rim
-//    slot. Transforms are rigid.
-fn InstanceRow(Instance: u32, Row: u32) -> vec4f
+//    slot. Transforms are rigid; loading the 3 rows once cuts storage traffic in half per instance transition.
+struct InstanceTransform
 {
-    return bitcast<vec4f>(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + Row]);
+    RowX : vec4f,
+    RowY : vec4f,
+    RowZ : vec4f,
 }
 
-fn TransformPoint(Instance: u32, FirstRow: u32, Point: vec3f) -> vec3f
+fn FetchInstanceTransform(Instance: u32, FirstRow: u32) -> InstanceTransform
 {
-    let RowX = InstanceRow(Instance, FirstRow);
-    let RowY = InstanceRow(Instance, FirstRow + 1u);
-    let RowZ = InstanceRow(Instance, FirstRow + 2u);
-    return vec3f(dot(RowX.xyz, Point) + RowX.w, dot(RowY.xyz, Point) + RowY.w, dot(RowZ.xyz, Point) + RowZ.w);
+    let Base = Tracing.Geometry.y + Instance * InstanceStride + FirstRow;
+    return InstanceTransform(bitcast<vec4f>(BoundsEntries[Base]),
+                             bitcast<vec4f>(BoundsEntries[Base + 1u]),
+                             bitcast<vec4f>(BoundsEntries[Base + 2u]));
 }
 
-fn TransformVector(Instance: u32, FirstRow: u32, Vector: vec3f) -> vec3f
+fn ApplyPoint(Transform: InstanceTransform, Point: vec3f) -> vec3f
 {
-    return vec3f(dot(InstanceRow(Instance, FirstRow).xyz, Vector), dot(InstanceRow(Instance, FirstRow + 1u).xyz, Vector),
-                 dot(InstanceRow(Instance, FirstRow + 2u).xyz, Vector));
+    return vec3f(dot(Transform.RowX.xyz, Point) + Transform.RowX.w,
+                 dot(Transform.RowY.xyz, Point) + Transform.RowY.w,
+                 dot(Transform.RowZ.xyz, Point) + Transform.RowZ.w);
+}
+
+fn ApplyVector(Transform: InstanceTransform, Vector: vec3f) -> vec3f
+{
+    return vec3f(dot(Transform.RowX.xyz, Vector),
+                 dot(Transform.RowY.xyz, Vector),
+                 dot(Transform.RowZ.xyz, Vector));
 }
 
 fn InstanceMaterialSlot(Instance: u32, TriangleSlot: u32) -> u32
@@ -292,24 +318,63 @@ fn InstanceMaterialSlot(Instance: u32, TriangleSlot: u32) -> u32
     return Slot;
 }
 
-// 📝 Möller–Trumbore against precomputed edges. Returns (t, u, v) with t < 0 on miss.
-fn IntersectTriangle(Origin: vec3f, Direction: vec3f, TriangleIndex: u32) -> vec3f
+// 📝 Möller–Trumbore against precomputed edges with deferred reciprocal: misses and out-of-range hits (95%+ of calls)
+//    pay zero SFU divisions; the single 1/AbsDet executes only on a genuine closer hit.
+fn IntersectTriangle(Origin: vec3f, Direction: vec3f, TriangleIndex: u32, MaxDistance: f32) -> vec3f
 {
     if (RayStatisticsEnabled) { RayStatistics.w += 1u; }
-    let Corner = TrianglePositions[TriangleIndex * 3u].xyz;
-    let EdgeA  = TrianglePositions[TriangleIndex * 3u + 1u].xyz;
-    let EdgeB  = TrianglePositions[TriangleIndex * 3u + 2u].xyz;
+    let Corner      = TrianglePositions[TriangleIndex * 3u].xyz;
+    let EdgeA       = TrianglePositions[TriangleIndex * 3u + 1u].xyz;
+    let EdgeB       = TrianglePositions[TriangleIndex * 3u + 2u].xyz;
     let PVector     = cross(Direction, EdgeB);
     let Determinant = dot(EdgeA, PVector);
     if (abs(Determinant) < 1.0e-12) { return vec3f(-1.0); }
-    let InverseDeterminant = 1.0 / Determinant;
-    let TVector = Origin - Corner;
-    let U = dot(TVector, PVector) * InverseDeterminant;
-    if (U < 0.0 || U > 1.0) { return vec3f(-1.0); }
-    let QVector = cross(TVector, EdgeA);
-    let V = dot(Direction, QVector) * InverseDeterminant;
-    if (V < 0.0 || U + V > 1.0) { return vec3f(-1.0); }
-    return vec3f(dot(EdgeB, QVector) * InverseDeterminant, U, V);
+    let Sign        = select(-1.0, 1.0, Determinant > 0.0);
+    let AbsDet      = Determinant * Sign;
+    let TVector     = Origin - Corner;
+    let UDet        = dot(TVector, PVector) * Sign;
+    if (UDet < 0.0 || UDet > AbsDet) { return vec3f(-1.0); }
+    let QVector     = cross(TVector, EdgeA);
+    let VDet        = dot(Direction, QVector) * Sign;
+    if (VDet < 0.0 || UDet + VDet > AbsDet) { return vec3f(-1.0); }
+    let TDet        = dot(EdgeB, QVector) * Sign;
+    if (TDet <= RayOffsetScale * AbsDet || TDet >= MaxDistance * AbsDet) { return vec3f(-1.0); }
+    let InvAbsDet   = 1.0 / AbsDet;
+    return vec3f(TDet * InvAbsDet, UDet * InvAbsDet, VDet * InvAbsDet);
+}
+
+// 📝 Shadow-ray triangle test: checks RayOffsetScale < t < MaxDistance with ZERO divisions even on hits.
+fn IntersectTriangleShadow(Origin: vec3f, Direction: vec3f, TriangleIndex: u32, MaxDistance: f32) -> bool
+{
+    if (RayStatisticsEnabled) { RayStatistics.w += 1u; }
+    let Corner      = TrianglePositions[TriangleIndex * 3u].xyz;
+    let EdgeA       = TrianglePositions[TriangleIndex * 3u + 1u].xyz;
+    let EdgeB       = TrianglePositions[TriangleIndex * 3u + 2u].xyz;
+    let PVector     = cross(Direction, EdgeB);
+    let Determinant = dot(EdgeA, PVector);
+    if (abs(Determinant) < 1.0e-12) { return false; }
+    let Sign        = select(-1.0, 1.0, Determinant > 0.0);
+    let AbsDet      = Determinant * Sign;
+    let TVector     = Origin - Corner;
+    let UDet        = dot(TVector, PVector) * Sign;
+    if (UDet < 0.0 || UDet > AbsDet) { return false; }
+    let QVector     = cross(TVector, EdgeA);
+    let VDet        = dot(Direction, QVector) * Sign;
+    if (VDet < 0.0 || UDet + VDet > AbsDet) { return false; }
+    let TDet        = dot(EdgeB, QVector) * Sign;
+    return TDet > RayOffsetScale * AbsDet && TDet < MaxDistance * AbsDet;
+}
+
+fn IntersectsBoundingSphere(Origin: vec3f, Direction: vec3f, Sphere: vec4f, MaxDistance: f32) -> bool
+{
+    let Offset = Origin - Sphere.xyz;
+    let HalfB  = dot(Offset, Direction);
+    let C      = dot(Offset, Offset) - Sphere.w * Sphere.w;
+    if (C <= 0.0) { return true; }
+    if (HalfB >= 0.0) { return false; }
+    let Discriminant = HalfB * HalfB - C;
+    if (Discriminant < 0.0) { return false; }
+    return (-HalfB - sqrt(Discriminant)) < MaxDistance;
 }
 
 fn IntersectSphere(Origin: vec3f, Direction: vec3f, Sphere: vec4f) -> f32
@@ -332,9 +397,10 @@ fn FetchAreaLight(LightIndex: u32) -> AreaLight
     return AreaLight(LightRecords[Base], LightRecords[Base + 1u], LightRecords[Base + 2u], LightRecords[Base + 3u]);
 }
 
+// 📝 Unit normal precomputed in StudioSceneAssembly.ConstructSoftboxLights and stored in the unused .w channels.
 fn LightNormal(Light: AreaLight) -> vec3f
 {
-    return normalize(cross(Light.EdgeU.xyz, Light.EdgeV.xyz));
+    return vec3f(Light.EdgeU.w, Light.EdgeV.w, Light.Radiance.w);
 }
 
 fn IntersectLight(Origin: vec3f, Direction: vec3f, Light: AreaLight) -> f32
@@ -358,23 +424,32 @@ fn TraceAnalyticHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Sur
     if (abs(Direction.y) > 1.0e-8)
     {
         let FloorDistance = -Origin.y / Direction.y;
-        let FloorPoint    = Origin + Direction * FloorDistance;
-        if (FloorDistance > RayOffsetScale && length(FloorPoint.xz) < Tracing.Tuning.y)
+        if (FloorDistance > RayOffsetScale)
         {
-            Hit = SurfaceHit(FloorDistance, HitFloor, 0u, vec2f(0.0));
+            let FloorPoint = Origin + Direction * FloorDistance;
+            if (dot(FloorPoint.xz, FloorPoint.xz) < Tracing.Tuning.y * Tracing.Tuning.y)
+            {
+                Hit = SurfaceHit(FloorDistance, HitFloor, 0u, vec2f(0.0));
+            }
         }
     }
 
-    for (var SphereIndex = 0u; SphereIndex < Tracing.DepthLimits.w; SphereIndex++)
+    if (Tracing.DepthLimits.w > 0u && IntersectsBoundingSphere(Origin, Direction, Tracing.SphereBounds, Hit.Distance))
     {
-        let Distance = IntersectSphere(Origin, Direction, Spheres[SphereIndex * 2u]);
-        if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitSphere, SphereIndex, vec2f(0.0)); }
+        for (var SphereIndex = 0u; SphereIndex < Tracing.DepthLimits.w; SphereIndex++)
+        {
+            let Distance = IntersectSphere(Origin, Direction, Spheres[SphereIndex * 2u]);
+            if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitSphere, SphereIndex, vec2f(0.0)); }
+        }
     }
 
-    for (var LightIndex = 0u; LightIndex < select(0u, Tracing.DepthLimits.z, LightsVisible); LightIndex++)
+    if (LightsVisible)
     {
-        let Distance = IntersectLight(Origin, Direction, FetchAreaLight(LightIndex));
-        if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
+        for (var LightIndex = 0u; LightIndex < Tracing.DepthLimits.z; LightIndex++)
+        {
+            let Distance = IntersectLight(Origin, Direction, FetchAreaLight(LightIndex));
+            if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
+        }
     }
     return Hit;
 }
@@ -397,11 +472,8 @@ fn SortChildren(Visit: WideVisit) -> SortedChildren
     return SortedChildren(D, E);
 }
 
-// 📝 Two-level closest-hit query in ONE loop (SwiftShader and GPUs alike pay for every inlined copy of a traversal).
-//    The stack starts at the instance tree root (world space). An instance leaf transforms the ray into that vehicle's
-//    object space (direction not renormalized, so distances stay world distances), pushes a return marker and the
-//    shared vehicle-tree root; popping the marker restores the world ray. Children — leaves and inner nodes alike —
-//    are pushed farthest first, so the nearest is popped next; entries beyond the current hit are skipped on pop.
+// 📝 Two-level closest-hit query in ONE loop with direct-descent into the nearest child (no push/pop for the closest
+//    child and zero SortChildren overhead when <= 1 child is hit). Identical visitation order to full push/pop.
 fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
 {
     if (RayStatisticsEnabled) { RayStatistics.x += 1u; }
@@ -414,13 +486,18 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
     var Instance     = 0u;
     var ObjectLevel  = false;
     var Stack        : array<vec2u, SceneStackCapacity>;
-    Stack[0]         = vec2u(Tracing.Geometry.x << 4u, 0u);
-    var StackSize = 1u;
+    var StackSize    = 0u;
+    var Entry        = vec2u(Tracing.Geometry.x << 4u, 0u);
+    var Active       = true;
     loop
     {
-        if (StackSize == 0u) { break; }
-        StackSize -= 1u;
-        let Entry = Stack[StackSize];
+        if (!Active)
+        {
+            if (StackSize == 0u) { break; }
+            StackSize -= 1u;
+            Entry = Stack[StackSize];
+        }
+        Active = false;
         if (Entry.x == ReturnMarker)
         {
             ObjectLevel = false; RayOrigin = Origin; RayDirection = Direction; Reciprocal = WorldReciprocal;
@@ -434,20 +511,22 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
             // 📝 Instance leaf (exactly one instance per leaf, see ConstructInstanceTree).
             Instance     = Link;
             ObjectLevel  = true;
-            RayOrigin    = TransformPoint(Instance, 0u, Origin);
-            RayDirection = TransformVector(Instance, 0u, Direction);
+            let WorldToObject = FetchInstanceTransform(Instance, 0u);
+            RayOrigin    = ApplyPoint(WorldToObject, Origin);
+            RayDirection = ApplyVector(WorldToObject, Direction);
             Reciprocal   = SafeReciprocal(RayDirection);
-            Stack[StackSize]      = vec2u(ReturnMarker, 0u);
-            Stack[StackSize + 1u] = vec2u(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u, 0u);
-            StackSize += 2u;
+            Stack[StackSize] = vec2u(ReturnMarker, 0u);
+            StackSize += 1u;
+            Entry  = vec2u(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u, 0u);
+            Active = true;
             continue;
         }
         if (Count > 0u)
         {
             for (var Offset = 0u; Offset < Count; Offset++)
             {
-                let Candidate = IntersectTriangle(RayOrigin, RayDirection, Link + Offset);
-                if (Candidate.x > RayOffsetScale && Candidate.x < Hit.Distance)
+                let Candidate = IntersectTriangle(RayOrigin, RayDirection, Link + Offset, Hit.Distance);
+                if (Candidate.x > 0.0)
                 {
                     Hit = SurfaceHit(Candidate.x, HitTriangle, (Instance << InstanceShift) | (Link + Offset), Candidate.yz);
                 }
@@ -455,11 +534,13 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
             continue;
         }
         let Sorted = SortChildren(IntersectWideNode(Link, RayOrigin, Reciprocal, Hit.Distance));
-        let Room   = StackSize + 4u <= SceneStackCapacity;
+        if (Sorted.Distances.x >= UnboundedDistance) { continue; }
+        let Room   = StackSize + 3u <= SceneStackCapacity;
         if (Room && Sorted.Distances.w < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.w, bitcast<u32>(Sorted.Distances.w)); StackSize += 1u; }
         if (Room && Sorted.Distances.z < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.z, bitcast<u32>(Sorted.Distances.z)); StackSize += 1u; }
         if (Room && Sorted.Distances.y < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.y, bitcast<u32>(Sorted.Distances.y)); StackSize += 1u; }
-        if (Room && Sorted.Distances.x < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.x, bitcast<u32>(Sorted.Distances.x)); StackSize += 1u; }
+        Entry  = vec2u(Sorted.Entries.x, bitcast<u32>(Sorted.Distances.x));
+        Active = true;
     }
     return Hit;
 }
@@ -472,16 +553,19 @@ fn ThinSheetTransmittance(CosineIncidence: f32, Material: SurfaceMaterial) -> ve
     return Material.AlbedoRoughness.rgb * Transmitted;
 }
 
-// 📝 Visibility of a light point, same two-level single loop. Thin sheets (glazing) attenuate and the walk continues;
-//    anything else occludes (returns 0). Children are visited in fixed child order (no sort: every crossing within the
-//    distance counts), so the transmittance product is bit-repeatable.
+// 📝 Visibility of a light point, same two-level single loop with zero-division shadow triangles and bit-31 opaque
+//    fast-path (skips InstanceMaterialSlot and Materials[] on opaque hits). Fixed child order keeps transmittance
+//    products bit-repeatable with minimal SIMT branch divergence.
 fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> vec3f
 {
     if (RayStatisticsEnabled) { RayStatistics.y += 1u; }
-    for (var SphereIndex = 0u; SphereIndex < Tracing.DepthLimits.w; SphereIndex++)
+    if (Tracing.DepthLimits.w > 0u && IntersectsBoundingSphere(Origin, Direction, Tracing.SphereBounds, Distance))
     {
-        let SphereDistance = IntersectSphere(Origin, Direction, Spheres[SphereIndex * 2u]);
-        if (SphereDistance > 0.0 && SphereDistance < Distance) { return vec3f(0.0); }
+        for (var SphereIndex = 0u; SphereIndex < Tracing.DepthLimits.w; SphereIndex++)
+        {
+            let SphereDistance = IntersectSphere(Origin, Direction, Spheres[SphereIndex * 2u]);
+            if (SphereDistance > 0.0 && SphereDistance < Distance) { return vec3f(0.0); }
+        }
     }
 
     var Transmittance = vec3f(1.0);
@@ -494,7 +578,7 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
     var ObjectLevel  = false;
     var Stack        : array<u32, SceneStackCapacity>;
     Stack[0]         = Tracing.Geometry.x << 4u;
-    var StackSize = 1u;
+    var StackSize    = 1u;
     loop
     {
         if (StackSize == 0u) { break; }
@@ -511,8 +595,9 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
         {
             Instance     = Link;
             ObjectLevel  = true;
-            RayOrigin    = TransformPoint(Instance, 0u, Origin);
-            RayDirection = TransformVector(Instance, 0u, Direction);
+            let WorldToObject = FetchInstanceTransform(Instance, 0u);
+            RayOrigin    = ApplyPoint(WorldToObject, Origin);
+            RayDirection = ApplyVector(WorldToObject, Direction);
             Reciprocal   = SafeReciprocal(RayDirection);
             Stack[StackSize]      = ReturnMarker;
             Stack[StackSize + 1u] = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u;
@@ -524,11 +609,11 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
             for (var Offset = 0u; Offset < Count; Offset++)
             {
                 let TriangleIndex = Link + Offset;
-                let Candidate = IntersectTriangle(RayOrigin, RayDirection, TriangleIndex);
-                if (Candidate.x > RayOffsetScale && Candidate.x < Distance)
+                if (IntersectTriangleShadow(RayOrigin, RayDirection, TriangleIndex, Distance))
                 {
-                    let Material = Materials[InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[TriangleIndex * 3u].w))];
-                    if (u32(Material.EtaCategory.w) != SurfaceThinDielectric) { return vec3f(0.0); }
+                    let PackedSlot = bitcast<u32>(TrianglePositions[TriangleIndex * 3u].w);
+                    if ((PackedSlot & ThinDielectricBit) == 0u) { return vec3f(0.0); }
+                    let Material = Materials[InstanceMaterialSlot(Instance, PackedSlot & MaterialSlotMask)];
                     // 📝 Rigid transform: the object-space cosine equals the world-space one.
                     let EdgeNormal = normalize(cross(TrianglePositions[TriangleIndex * 3u + 1u].xyz, TrianglePositions[TriangleIndex * 3u + 2u].xyz));
                     Transmittance *= ThinSheetTransmittance(dot(EdgeNormal, RayDirection), Material);
@@ -556,13 +641,14 @@ fn ResolveSurface(Origin: vec3f, Direction: vec3f, Hit: SurfaceHit) -> SurfaceSa
 
     if (Hit.Category == HitTriangle)
     {
-        let Instance     = Hit.PrimitiveIndex >> InstanceShift;
-        let CornerOffset = (Hit.PrimitiveIndex & TriangleMask) * 3u;
-        GeometricNormal = normalize(TransformVector(Instance, 3u, cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz)));
+        let Instance      = Hit.PrimitiveIndex >> InstanceShift;
+        let CornerOffset  = (Hit.PrimitiveIndex & TriangleMask) * 3u;
+        let ObjectToWorld = FetchInstanceTransform(Instance, 3u);
+        GeometricNormal = normalize(ApplyVector(ObjectToWorld, cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz)));
         let FirstCornerWeight = 1.0 - Hit.Barycentric.x - Hit.Barycentric.y;
-        ShadingNormal = normalize(TransformVector(Instance, 3u, TriangleNormals[CornerOffset].xyz * FirstCornerWeight + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
+        ShadingNormal = normalize(ApplyVector(ObjectToWorld, TriangleNormals[CornerOffset].xyz * FirstCornerWeight + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
                                 + TriangleNormals[CornerOffset + 2u].xyz * Hit.Barycentric.y));
-        MaterialSlot = InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[CornerOffset].w));
+        MaterialSlot = InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[CornerOffset].w) & MaterialSlotMask);
     }
     else if (Hit.Category == HitSphere)
     {
@@ -717,14 +803,10 @@ fn CosineHemisphere(Point: vec2f) -> vec3f
     return vec3f(Disk, sqrt(max(0.0, 1.0 - dot(Disk, Disk))));
 }
 
-// 📝 GGX reflection lobe value (f × cosθi) and VNDF pdf for one light direction.
-fn EvaluateGgxLobe(Normal: vec3f, ωo: vec3f, ωi: vec3f, α: f32) -> vec2f
+// 📝 GGX reflection lobe value (f × cosθi) and VNDF pdf for precomputed cosines (skips redundant normalize + dots).
+fn EvaluateGgxLobe(CosineOut: f32, CosineIn: f32, CosineHalf: f32, α: f32) -> vec2f
 {
-    let CosineOut = dot(Normal, ωo);
-    let CosineIn  = dot(Normal, ωi);
-    if (CosineOut <= 0.0 || CosineIn <= 0.0) { return vec2f(0.0); }
-    let HalfVector         = normalize(ωo + ωi);
-    let D         = DistributionGgx(max(dot(Normal, HalfVector), 0.0), α);
+    let D         = DistributionGgx(CosineHalf, α);
     let LambdaOut = SmithLambda(CosineOut, α);
     let LambdaIn  = SmithLambda(CosineIn, α);
     let G2        = 1.0 / (1.0 + LambdaOut + LambdaIn);
@@ -746,16 +828,18 @@ fn EvaluateLobes(Material: SurfaceMaterial, Normal: vec3f, GeometricNormal: vec3
     let CosineIn  = dot(Normal, ωi);
     let CosineOut = dot(Normal, ωo);
     if (CosineIn <= 0.0 || CosineOut <= 0.0 || dot(GeometricNormal, ωi) <= 0.0) { return Lobes; }
-    let HalfVector        = normalize(ωo + ωi);
-    let Category = u32(Material.EtaCategory.w);
-    let α        = max(MaterialAlpha(Material.AlbedoRoughness.w), 1.0e-4);
+    let HalfVector    = normalize(ωo + ωi);
+    let CosineHalf    = max(dot(Normal, HalfVector), 0.0);
+    let CosineHalfOut = dot(ωo, HalfVector);
+    let Category      = u32(Material.EtaCategory.w);
+    let α             = max(MaterialAlpha(Material.AlbedoRoughness.w), 1.0e-4);
 
     if (Category == SurfaceConductor)
     {
         if (α >= DeltaRoughnessAlpha)
         {
-            let Ggx = EvaluateGgxLobe(Normal, ωo, ωi, α);
-            Lobes.Specular    = FresnelConductor(dot(ωo, HalfVector), Material.EtaCategory.rgb, Material.KappaCoat.rgb) * Ggx.x;
+            let Ggx = EvaluateGgxLobe(CosineOut, CosineIn, CosineHalf, α);
+            Lobes.Specular    = FresnelConductor(CosineHalfOut, Material.EtaCategory.rgb, Material.KappaCoat.rgb) * Ggx.x;
             Lobes.SpecularPdf = Ggx.y;
         }
         return Lobes;
@@ -764,21 +848,21 @@ fn EvaluateLobes(Material: SurfaceMaterial, Normal: vec3f, GeometricNormal: vec3
     let CoatWeight = Material.KappaCoat.w;
     let CoatAlpha  = max(MaterialAlpha(Material.ExitanceCoat.w), 1.0e-4);
     let F0         = Material.SpecularLevel.x;
-    let CoatAttenuation = (1.0 - CoatWeight * FresnelSchlick(0.04, CosineOut)) * (1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn));
+    let CoatAttenuation = select(1.0, (1.0 - CoatWeight * FresnelSchlick(0.04, CosineOut)) * (1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn)), CoatWeight > 0.0);
 
     if (CoatWeight > 0.0 && CoatAlpha >= DeltaRoughnessAlpha)
     {
-        let Ggx = EvaluateGgxLobe(Normal, ωo, ωi, CoatAlpha);
-        Lobes.Coat    = vec3f(CoatWeight * FresnelSchlick(0.04, dot(ωo, HalfVector)) * Ggx.x);
+        let Ggx = EvaluateGgxLobe(CosineOut, CosineIn, CosineHalf, CoatAlpha);
+        Lobes.Coat    = vec3f(CoatWeight * FresnelSchlick(0.04, CosineHalfOut) * Ggx.x);
         Lobes.CoatPdf = Ggx.y;
     }
-    if (α >= DeltaRoughnessAlpha)
+    if (F0 > 0.0 && α >= DeltaRoughnessAlpha)
     {
-        let Ggx = EvaluateGgxLobe(Normal, ωo, ωi, α);
-        Lobes.Specular    = vec3f(CoatAttenuation * FresnelSchlick(F0, dot(ωo, HalfVector)) * Ggx.x);
+        let Ggx = EvaluateGgxLobe(CosineOut, CosineIn, CosineHalf, α);
+        Lobes.Specular    = vec3f(CoatAttenuation * FresnelSchlick(F0, CosineHalfOut) * Ggx.x);
         Lobes.SpecularPdf = Ggx.y;
     }
-    let DiffuseTransfer = (1.0 - FresnelSchlick(F0, CosineOut)) * (1.0 - FresnelSchlick(F0, CosineIn)) * CoatAttenuation;
+    let DiffuseTransfer = select(1.0, (1.0 - FresnelSchlick(F0, CosineOut)) * (1.0 - FresnelSchlick(F0, CosineIn)), F0 > 0.0) * CoatAttenuation;
     Lobes.Diffuse    = Material.AlbedoRoughness.rgb * (DiffuseTransfer * CosineIn / π);
     Lobes.DiffusePdf = CosineIn / π;
     return Lobes;
@@ -800,7 +884,7 @@ fn PowerHeuristic(Primary: f32, Secondary: f32) -> f32
 fn PushTransportRay(Ray: TransportRay)
 {
     let Peak = max(max(Ray.Throughput.x, Ray.Throughput.y), Ray.Throughput.z);
-    if (Peak < Tracing.Tuning.x || Ray.Depth >= Tracing.DepthLimits.y) { return; }
+    if (Peak < Tracing.Tuning.x || RayDepth(Ray) >= Tracing.DepthLimits.y) { return; }
     if (TransportStackSize >= TransportStackCapacity) { return; }
     TransportStack[TransportStackSize] = Ray;
     TransportStackSize += 1u;
@@ -812,12 +896,18 @@ fn OffsetOrigin(Position: vec3f, Normal: vec3f, Direction: vec3f) -> vec3f
     return Position + Normal * select(-Scale, Scale, dot(Normal, Direction) > 0.0);
 }
 
+// 📝 Exact algebraic cos(max(a − b, 0)) & sin(max(a − b, 0)) for angles a, b ∈ [0, π]: avoids acos/asin/cos SFU calls.
+fn CosSinSubClamped(CosA: f32, SinA: f32, CosB: f32, SinB: f32) -> vec2f
+{
+    if (CosA >= CosB) { return vec2f(1.0, 0.0); }
+    return vec2f(CosA * CosB + SinA * SinB, max(0.0, SinA * CosB - CosA * SinB));
+}
+
 // 📝 Practical lamps (PracticalLighting.js). Light-tree importance of node Node seen from Position with shading normal
-//    Normal (Conty Estevez & Kulla 2018): power × cos θ' / d² × cos θi', where θ' and θi' are the emission and incidence
-//    angles widened by the node's angular radius (and θ' by its axis cone θo). Zero only where every lamp of the node is
-//    provably dark or below the surface (θ' ≥ θe, θi' ≥ 90°), so the tree never culls a contributing lamp. Leaves use the
-//    lamp's exact beam instead.
-fn LightNodeImportance(Position: vec3f, Normal: vec3f, Node: u32) -> f32
+//    Normal (Conty Estevez & Kulla 2018): exact zero-transcendental algebraic formulation using precomputed
+//    (cos θo, sin θo, cos θe, θe) in LightRecords[Base + 3u]. Returns vec2f(Importance, LeafRelative) so the caller
+//    can reuse the leaf's EvaluateProfile without computing acos+atan2 a second time.
+fn LightNodeImportance(Position: vec3f, Normal: vec3f, Node: u32) -> vec2f
 {
     let Base      = Tracing.Practical.y + Node * 4u;
     let Lower     = LightRecords[Base];
@@ -832,28 +922,49 @@ fn LightNodeImportance(Position: vec3f, Normal: vec3f, Node: u32) -> f32
         let Distance2  = max(dot(Separation, Separation), 1.0e-12);
         let ωi         = Separation * inverseSqrt(Distance2);
         let Incidence  = dot(Normal, ωi);
-        if (Incidence <= 0.0) { return 0.0; }
+        if (Incidence <= 0.0) { return vec2f(0.0, 0.0); }
         let Relative   = EvaluateProfile(u32(Placement.w), -ωi, LightRecords[Lamp + 1u].xyz, LightRecords[Lamp + 2u].xyz);
-        return Relative * dot(LightRecords[Lamp + 3u].rgb, vec3f(0.2126, 0.7152, 0.0722)) * Incidence / Distance2;
+        let Importance = Relative * dot(LightRecords[Lamp + 3u].rgb, vec3f(0.2126, 0.7152, 0.0722)) * Incidence / Distance2;
+        return vec2f(Importance, Relative);
     }
     let Cone      = LightRecords[Base + 2u];
-    let Angles    = LightRecords[Base + 3u];
+    let Angles    = LightRecords[Base + 3u]; // (cos θo, sin θo, cos θe, θe)
     let Diagonal  = Upper.xyz - Lower.xyz;
     let Radius2   = 0.25 * dot(Diagonal, Diagonal);
     let Offset    = Position - 0.5 * (Lower.xyz + Upper.xyz);
     let Distance2 = dot(Offset, Offset);
-    let Toward    = Offset * inverseSqrt(max(Distance2, 1.0e-12));
-    let Bounding  = select(π, asin(sqrt(Radius2 / max(Distance2, 1.0e-12))), Distance2 > Radius2);
-    let Outer     = max(acos(clamp(dot(Cone.xyz, Toward), -1.0, 1.0)) - Angles.x - Bounding, 0.0);
-    let Inner     = max(acos(clamp(-dot(Normal, Toward), -1.0, 1.0)) - Bounding, 0.0);
-    if (Outer >= Angles.y || Inner >= 0.5 * π) { return 0.0; }
-    return Lower.w * max(cos(Outer), 1.0e-3) * cos(Inner) / max(Distance2, Radius2);
+    var CosOuter  = 1.0;
+    var CosInner  = 1.0;
+    if (Distance2 <= Radius2)
+    {
+        if (Angles.w <= 0.0) { return vec2f(0.0, -1.0); }
+    }
+    else
+    {
+        let InvDist = inverseSqrt(Distance2);
+        let Toward  = Offset * InvDist;
+        let SinB    = sqrt(Radius2 / Distance2);
+        let CosB    = sqrt(max(0.0, 1.0 - SinB * SinB));
+        // 📝 Early-out if the entire cluster lies below the surface horizon (CosInner <= 0) before evaluating the cone.
+        let CosN    = clamp(-dot(Normal, Toward), -1.0, 1.0);
+        let SinN    = sqrt(max(0.0, 1.0 - CosN * CosN));
+        CosInner    = select(CosN * CosB + SinN * SinB, 1.0, CosN >= CosB);
+        if (CosInner <= 0.0) { return vec2f(0.0, -1.0); }
+        let CosC    = clamp(dot(Cone.xyz, Toward), -1.0, 1.0);
+        let SinC    = sqrt(max(0.0, 1.0 - CosC * CosC));
+        let Step1   = CosSinSubClamped(CosC, SinC, Angles.x, Angles.y);
+        let Step2   = CosSinSubClamped(Step1.x, Step1.y, CosB, SinB);
+        CosOuter    = Step2.x;
+        if (CosOuter <= Angles.z) { return vec2f(0.0, -1.0); }
+    }
+    return vec2f(Lower.w * max(CosOuter, 1.0e-3) * CosInner / max(Distance2, Radius2), -1.0);
 }
 
 struct LampDraw
 {
     Lamp              : u32,
     Pdf               : f32,     // probability of having drawn this lamp; 0 = nothing drawn
+    Relative          : f32,     // cached leaf EvaluateProfile when >= 0; -1 means caller must evaluate
 }
 
 // 📝 Adaptive tree splitting (Conty Estevez & Kulla 2018): starting from the root, repeatedly replace the cut node with
@@ -896,24 +1007,25 @@ fn ResolveLampCut(Position: vec3f) -> u32
 //    path). With the all-lamps rule (Shading.z = 1) entry Entry is simply lamp Entry with probability 1.
 fn DrawPracticalLamp(Position: vec3f, Normal: vec3f, Entry: u32, Selection: f32) -> LampDraw
 {
-    if (Tracing.Shading.z > 0.5) { return LampDraw(Entry, 1.0); }
-    var Node  = LampCut[min(Entry, LampCutCapacity - 1u)];
-    var Pdf   = 1.0;
-    var Steer = fract(Selection + f32(Entry) * GoldenFraction);
+    if (Tracing.Shading.z > 0.5) { return LampDraw(Entry, 1.0, -1.0); }
+    var Node     = LampCut[min(Entry, LampCutCapacity - 1u)];
+    var Pdf      = 1.0;
+    var Relative = -1.0;
+    var Steer    = fract(Selection + f32(Entry) * GoldenFraction);
     for (var Level = 0u; Level < 32u; Level++)
     {
         let Link = bitcast<u32>(LightRecords[Tracing.Practical.y + Node * 4u + 1u].w);
-        if ((Link & LampLeafFlag) != 0u) { return LampDraw(Link & ~LampLeafFlag, Pdf); }
-        let Left  = LightNodeImportance(Position, Normal, Link);
-        let Right = LightNodeImportance(Position, Normal, Link + 1u);
-        let Total = Left + Right;
+        if ((Link & LampLeafFlag) != 0u) { return LampDraw(Link & ~LampLeafFlag, Pdf, Relative); }
+        let LeftRes  = LightNodeImportance(Position, Normal, Link);
+        let RightRes = LightNodeImportance(Position, Normal, Link + 1u);
+        let Total    = LeftRes.x + RightRes.x;
         if (!(Total > 0.0)) { break; }
-        let LeftShare  = Left / Total;
-        let RightShare = Right / Total;
-        if (Steer < LeftShare) { Node = Link;      Pdf *= LeftShare;  Steer = min(Steer / LeftShare, SelectionCeiling); }
-        else                   { Node = Link + 1u; Pdf *= RightShare; Steer = min((Steer - LeftShare) / RightShare, SelectionCeiling); }
+        let LeftShare  = LeftRes.x / Total;
+        let RightShare = RightRes.x / Total;
+        if (Steer < LeftShare) { Node = Link;      Pdf *= LeftShare;  Relative = LeftRes.y;  Steer = min(Steer / LeftShare, SelectionCeiling); }
+        else                   { Node = Link + 1u; Pdf *= RightShare; Relative = RightRes.y; Steer = min((Steer - LeftShare) / RightShare, SelectionCeiling); }
     }
-    return LampDraw(0u, 0.0);
+    return LampDraw(0u, 0.0, -1.0);
 }
 
 // 📝 Relative intensity (peak = 1) of IES profile Profile toward unit direction Toward (lamp → receiver): θ from the
@@ -942,9 +1054,10 @@ fn EvaluateProfile(Profile: u32, Toward: vec3f, Axis: vec3f, Reference: vec3f) -
 //    One loop and one EvaluateLobes / shadow-ray call site for both kinds (shader size matters on software adapters).
 fn IntegrateLightQuadrature(Surface: SurfaceSample, Material: SurfaceMaterial, ωo: vec3f, SampleIndex: u32, Depth: u32, LobesContinue: bool) -> vec3f
 {
-    var Radiance = vec3f(0.0);
-    let Point = DepthPair(SampleIndex, Depth, PairLight);
+    var Radiance  = vec3f(0.0);
     let AreaCount = Tracing.DepthLimits.z;
+    var Point     = vec2f(0.0);
+    if (AreaCount > 0u) { Point = DepthPair(SampleIndex, Depth, PairLight); }
     let AllLamps  = Tracing.Shading.z > 0.5;
     var LampDraws = select(min(Tracing.Practical.x, 1u), Tracing.Practical.x, AllLamps);
     var Selection = 0.0;
@@ -968,6 +1081,7 @@ fn IntegrateLightQuadrature(Surface: SurfaceSample, Material: SurfaceMaterial, �
             let Distance2   = dot(Separation, Separation);
             Distance        = sqrt(Distance2);
             ωi              = Separation / Distance;
+            if (dot(Surface.GeometricNormal, ωi) <= 0.0 || dot(Surface.ShadingNormal, ωi) <= 0.0) { continue; }
             let CosineLight = -dot(ωi, LightNormal(Light));
             if (CosineLight <= 0.0) { continue; }
             LightPdf = Distance2 / (CosineLight * Light.Centre.w);
@@ -983,7 +1097,9 @@ fn IntegrateLightQuadrature(Surface: SurfaceSample, Material: SurfaceMaterial, �
             let Distance2  = dot(Separation, Separation);
             Distance       = sqrt(Distance2);
             ωi             = Separation / Distance;
-            let Relative   = EvaluateProfile(u32(Placement.w), -ωi, LightRecords[Base + 1u].xyz, LightRecords[Base + 2u].xyz);
+            if (dot(Surface.GeometricNormal, ωi) <= 0.0 || dot(Surface.ShadingNormal, ωi) <= 0.0) { continue; }
+            let Relative   = select(EvaluateProfile(u32(Placement.w), -ωi, LightRecords[Base + 1u].xyz, LightRecords[Base + 2u].xyz),
+                                    Draw.Relative, Draw.Relative >= 0.0);
             if (Relative <= 0.0) { continue; }
             // 📝 Point lamp: E = I(ω) cosθ / d², divided by the draw probability (LightPdf carries d² × pdf).
             LightPdf = Distance2 * Draw.Pdf;
@@ -1013,72 +1129,85 @@ const LobeCoat      : u32 = 2u;
 
 // 📝 Reflection weight of one lobe toward ωi through microfacet normal HalfVector — the SAME expressions EvaluateLobes uses, so
 //    the BSDF-lobe rule and the light rule integrate one identical integrand and the MIS combination stays exact.
-fn ReflectionLobeFresnel(Material: SurfaceMaterial, Lobe: u32, CosineOut: f32, CosineIn: f32, CosineHalfOut: f32) -> vec3f
+fn ReflectionLobeFresnel(Material: SurfaceMaterial, Lobe: u32, CosineOut: f32, CosineIn: f32, CosineHalfOut: f32, CoatOut: f32) -> vec3f
 {
     if (Lobe == LobeConductor) { return FresnelConductor(CosineHalfOut, Material.EtaCategory.rgb, Material.KappaCoat.rgb); }
     let CoatWeight = Material.KappaCoat.w;
     if (Lobe == LobeCoat) { return vec3f(CoatWeight * FresnelSchlick(0.04, CosineHalfOut)); }
-    let CoatAttenuation = (1.0 - CoatWeight * FresnelSchlick(0.04, CosineOut)) * (1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn));
+    let CoatAttenuation = select(1.0, CoatOut * (1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn)), CoatWeight > 0.0);
     return vec3f(CoatAttenuation * FresnelSchlick(Material.SpecularLevel.x, CosineHalfOut));
 }
 
-// 📝 Pushes one reflection-lobe continuation. Delta lobes trace the exact mirror direction with pdf 0; glossy lobes
-//    warp their quadrature pair through the GGX visible-normal distribution.
-fn PushReflectionLobe(Surface: SurfaceSample, Ray: TransportRay, Material: SurfaceMaterial, ωo: vec3f, α: f32, Point: vec2f, Lobe: u32)
+// 📝 Pushes one reflection-lobe continuation. Delta lobes trace the exact mirror direction with pdf 0 (skipping
+//    DepthPair, Sobol' and BlueNoiseRanks); glossy lobes evaluate DepthPair lazily AFTER depth/weight early-outs.
+fn PushReflectionLobe(Surface: SurfaceSample, Ray: TransportRay, Material: SurfaceMaterial, ωo: vec3f, α: f32,
+                      SampleIndex: u32, PairSlot: u32, Lobe: u32, Basis: mat3x3f, ViewLocal: vec3f, CoatOut: f32)
 {
-    let Normal         = Surface.ShadingNormal;
-    let CosineOut = max(dot(Normal, ωo), 1.0e-6);
+    let Depth         = RayDepth(Ray);
+    let NonDeltaDepth = RayNonDeltaDepth(Ray);
+    let Medium        = RayMedium(Ray);
+    if (Depth + 1u >= Tracing.DepthLimits.y) { return; }
+    let Normal        = Surface.ShadingNormal;
+    let CosineOut     = max(dot(Normal, ωo), 1.0e-6);
     if (α < DeltaRoughnessAlpha)
     {
         let ωi = reflect(-ωo, Normal);
         if (dot(ωi, Surface.GeometricNormal) <= 0.0) { return; }
-        let Weight = ReflectionLobeFresnel(Material, Lobe, CosineOut, CosineOut, CosineOut);
-        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi), Ray.Depth + 1u, ωi,
-                                      Ray.NonDeltaDepth, Ray.Throughput * Weight, 0.0, Ray.Medium, 0.0));
+        let Weight = ReflectionLobeFresnel(Material, Lobe, CosineOut, CosineOut, CosineOut, CoatOut);
+        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi),
+                                      PackRayState(Depth + 1u, NonDeltaDepth, Medium), ωi, 0.0,
+                                      Ray.Throughput * Weight, 0.0));
         return;
     }
-    if (Ray.NonDeltaDepth >= Tracing.DepthLimits.x) { return; }
-    let Basis     = TangentBasis(Normal);
-    let HalfVector         = Basis * SampleVisibleNormal(transpose(Basis) * ωo, α, Point);
-    let ωi        = reflect(-ωo, HalfVector);
-    let CosineIn  = dot(Normal, ωi);
+    if (NonDeltaDepth >= Tracing.DepthLimits.x) { return; }
+    let Point      = DepthPair(SampleIndex, Depth, PairSlot);
+    let HalfVector = Basis * SampleVisibleNormal(ViewLocal, α, Point);
+    let ωi         = reflect(-ωo, HalfVector);
+    let CosineIn   = dot(Normal, ωi);
     if (CosineIn <= 0.0 || dot(ωi, Surface.GeometricNormal) <= 0.0) { return; }
     let LambdaOut = SmithLambda(CosineOut, α);
     let LambdaIn  = SmithLambda(CosineIn, α);
     let Masking   = (1.0 + LambdaOut) / (1.0 + LambdaOut + LambdaIn);    // G2 / G1
     let Pdf       = DistributionGgx(max(dot(Normal, HalfVector), 0.0), α) / ((1.0 + LambdaOut) * 4.0 * CosineOut);
-    let Weight    = ReflectionLobeFresnel(Material, Lobe, CosineOut, CosineIn, max(dot(ωo, HalfVector), 0.0)) * Masking;
-    PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi), Ray.Depth + 1u, ωi,
-                                  Ray.NonDeltaDepth + 1u, Ray.Throughput * Weight, Pdf, Ray.Medium, 0.0));
+    let Weight    = ReflectionLobeFresnel(Material, Lobe, CosineOut, CosineIn, max(dot(ωo, HalfVector), 0.0), CoatOut) * Masking;
+    PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi),
+                                  PackRayState(Depth + 1u, NonDeltaDepth + 1u, Medium), ωi, Pdf,
+                                  Ray.Throughput * Weight, 0.0));
 }
 
-fn ScatterSurface(Surface: SurfaceSample, Ray: TransportRay, SampleIndex: u32) -> vec3f
+fn ScatterSurface(Surface: SurfaceSample, Ray: TransportRay, HitDistance: f32, SampleIndex: u32) -> vec3f
 {
-    let Material = Materials[Surface.MaterialSlot];
-    let Category = u32(Material.EtaCategory.w);
-    let ωo       = -Ray.Direction;
+    let Material      = Materials[Surface.MaterialSlot];
+    let Category      = u32(Material.EtaCategory.w);
+    let ωo            = -Ray.Direction;
     let Normal        = Surface.ShadingNormal;
-    let CosineOut = max(dot(Normal, ωo), 1.0e-6);
-    var Radiance = vec3f(0.0);
+    let CosineOut     = max(dot(Normal, ωo), 1.0e-6);
+    let Depth         = RayDepth(Ray);
+    let NonDeltaDepth = RayNonDeltaDepth(Ray);
+    let Medium        = RayMedium(Ray);
+    var Radiance      = vec3f(0.0);
 
     if (Surface.FrontFacing) { Radiance += Ray.Throughput * Material.ExitanceCoat.rgb; }
 
     if (Category == SurfaceSolidDielectric)
     {
         // 📝 Fresnel splitting: reflection AND refraction both continue with their exact weights (no coin flip).
+        if (Depth + 1u >= Tracing.DepthLimits.y) { return Radiance; }
         let Ior       = Material.AbsorptionIor.w;
         let η         = select(1.0 / Ior, Ior, Surface.FrontFacing);
         let Cosine    = clamp(dot(Surface.GeometricNormal, ωo), 0.0, 1.0);
         let Reflected = FresnelDielectric(Cosine, η);
         let ωr        = reflect(-ωo, Surface.GeometricNormal);
-        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωr), Ray.Depth + 1u, ωr,
-                                      Ray.NonDeltaDepth, Ray.Throughput * Reflected, 0.0, Ray.Medium, 0.0));
+        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωr),
+                                      PackRayState(Depth + 1u, NonDeltaDepth, Medium), ωr, 0.0,
+                                      Ray.Throughput * Reflected, 0.0));
         if (Reflected < 1.0)
         {
             let ωt = refract(-ωo, Surface.GeometricNormal, 1.0 / η);
             let InnerMedium = select(InvalidMedium, Surface.MaterialSlot, Surface.FrontFacing);
-            PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωt), Ray.Depth + 1u, ωt,
-                                          Ray.NonDeltaDepth, Ray.Throughput * (1.0 - Reflected), 0.0, InnerMedium, 0.0));
+            PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωt),
+                                          PackRayState(Depth + 1u, NonDeltaDepth, InnerMedium), ωt, 0.0,
+                                          Ray.Throughput * (1.0 - Reflected), 0.0));
         }
         return Radiance;
     }
@@ -1087,51 +1216,73 @@ fn ScatterSurface(Surface: SurfaceSample, Ray: TransportRay, SampleIndex: u32) -
     {
         // 📝 Thin sheet: straight transmission keeps the lobe pdf and accumulates travel, so the light-quadrature MIS
         //    weight on the far side stays consistent with the shadow ray that already passed through this sheet.
+        if (Depth + 1u >= Tracing.DepthLimits.y) { return Radiance; }
         let Cosine      = clamp(dot(Surface.GeometricNormal, ωo), 0.0, 1.0);
         let Reflectance = FresnelDielectric(Cosine, Material.AbsorptionIor.w);
         let Sheet       = Reflectance + (1.0 - Reflectance) * (1.0 - Reflectance) * Reflectance / max(1.0 - Reflectance * Reflectance, 1.0e-6);
         let ωr          = reflect(-ωo, Surface.GeometricNormal);
-        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωr), Ray.Depth + 1u, ωr,
-                                      Ray.NonDeltaDepth, Ray.Throughput * Sheet, 0.0, Ray.Medium, 0.0));
-        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, Ray.Direction), Ray.Depth + 1u, Ray.Direction,
-                                      Ray.NonDeltaDepth, Ray.Throughput * ThinSheetTransmittance(Cosine, Material), Ray.LobePdf,
-                                      Ray.Medium, Ray.TravelSinceLobe));
+        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωr),
+                                      PackRayState(Depth + 1u, NonDeltaDepth, Medium), ωr, 0.0,
+                                      Ray.Throughput * Sheet, 0.0));
+        PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, Ray.Direction),
+                                      PackRayState(Depth + 1u, NonDeltaDepth, Medium), Ray.Direction, Ray.LobePdf,
+                                      Ray.Throughput * ThinSheetTransmittance(Cosine, Material), Ray.TravelSinceLobe + HitDistance));
         return Radiance;
     }
 
     // 📝 Layered / conductor: light quadrature first, then every lobe continues with its exact weight.
-    let LobesContinue = Ray.NonDeltaDepth < Tracing.DepthLimits.x && Ray.Depth + 1u < Tracing.DepthLimits.y;
-    Radiance += Ray.Throughput * IntegrateLightQuadrature(Surface, Material, ωo, SampleIndex, Ray.Depth, LobesContinue);
+    let CanContinue   = Depth + 1u < Tracing.DepthLimits.y;
+    let LobesContinue = NonDeltaDepth < Tracing.DepthLimits.x && CanContinue;
+    Radiance += Ray.Throughput * IntegrateLightQuadrature(Surface, Material, ωo, SampleIndex, Depth, LobesContinue);
+    if (!CanContinue) { return Radiance; }
 
     let α = max(MaterialAlpha(Material.AlbedoRoughness.w), 1.0e-4);
+    let NeedBasis = LobesContinue && (Category != SurfaceConductor || α >= DeltaRoughnessAlpha);
+    var Basis     = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
+    var ViewLocal = vec3f(0.0, 0.0, 1.0);
+    if (NeedBasis)
+    {
+        Basis     = TangentBasis(Normal);
+        ViewLocal = transpose(Basis) * ωo;
+    }
+
     if (Category == SurfaceConductor)
     {
-        PushReflectionLobe(Surface, Ray, Material, ωo, α, DepthPair(SampleIndex, Ray.Depth, PairSpecular), LobeConductor);
+        PushReflectionLobe(Surface, Ray, Material, ωo, α, SampleIndex, PairSpecular, LobeConductor, Basis, ViewLocal, 1.0);
         return Radiance;
     }
 
     let CoatWeight = Material.KappaCoat.w;
+    let CoatOut    = select(1.0, 1.0 - CoatWeight * FresnelSchlick(0.04, CosineOut), CoatWeight > 0.0);
     let F0         = Material.SpecularLevel.x;
     if (CoatWeight > 0.0)
     {
         let CoatAlpha = max(MaterialAlpha(Material.ExitanceCoat.w), 1.0e-4);
-        PushReflectionLobe(Surface, Ray, Material, ωo, CoatAlpha, DepthPair(SampleIndex, Ray.Depth, PairCoat), LobeCoat);
+        PushReflectionLobe(Surface, Ray, Material, ωo, CoatAlpha, SampleIndex, PairCoat, LobeCoat, Basis, ViewLocal, CoatOut);
     }
-    PushReflectionLobe(Surface, Ray, Material, ωo, α, DepthPair(SampleIndex, Ray.Depth, PairSpecular), LobeSpecular);
-
-    if (Ray.NonDeltaDepth < Tracing.DepthLimits.x)
+    if (F0 > 0.0)
     {
-        let Basis    = TangentBasis(Normal);
-        let ωi       = Basis * CosineHemisphere(DepthPair(SampleIndex, Ray.Depth, PairDiffuse));
-        let CosineIn = dot(Normal, ωi);
-        if (CosineIn > 0.0 && dot(ωi, Surface.GeometricNormal) > 0.0)
+        PushReflectionLobe(Surface, Ray, Material, ωo, α, SampleIndex, PairSpecular, LobeSpecular, Basis, ViewLocal, CoatOut);
+    }
+
+    if (LobesContinue)
+    {
+        let SpecularOut   = select(1.0, 1.0 - FresnelSchlick(F0, CosineOut), F0 > 0.0);
+        let BaseTransfer  = SpecularOut * CoatOut;
+        let MaxDiffuse    = Ray.Throughput * Material.AlbedoRoughness.rgb * BaseTransfer;
+        if (max(max(MaxDiffuse.x, MaxDiffuse.y), MaxDiffuse.z) >= Tracing.Tuning.x)
         {
-            let CoatOut  = 1.0 - CoatWeight * FresnelSchlick(0.04, CosineOut);
-            let CoatIn   = 1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn);
-            let Transfer = (1.0 - FresnelSchlick(F0, CosineOut)) * (1.0 - FresnelSchlick(F0, CosineIn)) * CoatOut * CoatIn;
-            PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi), Ray.Depth + 1u, ωi,
-                                          Ray.NonDeltaDepth + 1u, Ray.Throughput * Material.AlbedoRoughness.rgb * Transfer,
-                                          CosineIn / π, Ray.Medium, 0.0));
+            let ωi       = Basis * CosineHemisphere(DepthPair(SampleIndex, Depth, PairDiffuse));
+            let CosineIn = dot(Normal, ωi);
+            if (CosineIn > 0.0 && dot(ωi, Surface.GeometricNormal) > 0.0)
+            {
+                let CoatIn   = select(1.0, 1.0 - CoatWeight * FresnelSchlick(0.04, CosineIn), CoatWeight > 0.0);
+                let SpecIn   = select(1.0, 1.0 - FresnelSchlick(F0, CosineIn), F0 > 0.0);
+                let Transfer = BaseTransfer * SpecIn * CoatIn;
+                PushTransportRay(TransportRay(OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi),
+                                              PackRayState(Depth + 1u, NonDeltaDepth + 1u, Medium), ωi, CosineIn / π,
+                                              Ray.Throughput * Material.AlbedoRoughness.rgb * Transfer, 0.0));
+            }
         }
     }
     return Radiance;
@@ -1147,9 +1298,10 @@ fn ResolveRasterizedPrimary(Origin: vec3f, Direction: vec3f, PixelCoordinate: ve
     var Hit = TraceAnalyticHit(Origin, Direction, Tracing.Tuning.z > 0.5);
     let Identifier = textureLoad(VisibilityIds, vec2i(PixelCoordinate), 0).x;
     if (Identifier == 0u) { return Hit; }
-    let Instance  = (Identifier - 1u) >> InstanceShift;
-    let Candidate = IntersectTriangle(TransformPoint(Instance, 0u, Origin), TransformVector(Instance, 0u, Direction), (Identifier - 1u) & TriangleMask);
-    if (Candidate.x <= RayOffsetScale) { return SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0)); }
+    let Instance      = (Identifier - 1u) >> InstanceShift;
+    let WorldToObject = FetchInstanceTransform(Instance, 0u);
+    let Candidate     = IntersectTriangle(ApplyPoint(WorldToObject, Origin), ApplyVector(WorldToObject, Direction), (Identifier - 1u) & TriangleMask, UnboundedDistance);
+    if (Candidate.x <= 0.0) { return SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0)); }
     if (Candidate.x < Hit.Distance) { Hit = SurfaceHit(Candidate.x, HitTriangle, Identifier - 1u, Candidate.yz); }
     return Hit;
 }
@@ -1190,7 +1342,7 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
         Direction = normalize(FocusPoint - Origin);
     }
 
-    TransportStack[0]  = TransportRay(Origin, 0u, Direction, 0u, vec3f(1.0), 0.0, InvalidMedium, 0.0);
+    TransportStack[0]  = TransportRay(Origin, PackRayState(0u, 0u, InvalidMedium), Direction, 0.0, vec3f(1.0), 0.0);
     TransportStackSize = 1u;
     var Radiance = vec3f(0.0);
 
@@ -1211,11 +1363,12 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
         // 📝 Softboxes may be hidden from camera rays (studio practice); reflections and refractions always see them.
         var Hit = PrimaryHit;
         if (PrimaryPending) { PrimaryPending = false; }
-        else                { Hit = TraceClosestHit(Ray.Origin, Ray.Direction, Ray.Depth > 0u || Tracing.Tuning.z > 0.5); }
+        else                { Hit = TraceClosestHit(Ray.Origin, Ray.Direction, RayDepth(Ray) > 0u || Tracing.Tuning.z > 0.5); }
 
-        if (Ray.Medium != InvalidMedium)
+        let Medium = RayMedium(Ray);
+        if (Medium != InvalidMedium)
         {
-            let Absorption = Materials[Ray.Medium].AbsorptionIor.rgb;
+            let Absorption = Materials[Medium].AbsorptionIor.rgb;
             Ray.Throughput = Ray.Throughput * exp(-Absorption * min(Hit.Distance, 100.0));
         }
 
@@ -1240,12 +1393,7 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
         }
 
         let Surface = ResolveSurface(Ray.Origin, Ray.Direction, Hit);
-        // 📝 Straight thin-sheet transmissions carry the travelled distance for the light pdf of the original lobe.
-        if (u32(Materials[Surface.MaterialSlot].EtaCategory.w) == SurfaceThinDielectric)
-        {
-            Ray.TravelSinceLobe = Ray.TravelSinceLobe + Hit.Distance;
-        }
-        Radiance += ScatterSurface(Surface, Ray, SampleIndex);
+        Radiance += ScatterSurface(Surface, Ray, Hit.Distance, SampleIndex);
     }
     return Radiance;
 }
@@ -1372,13 +1520,14 @@ fn ResolveMirrorIdentity(Surface: SurfaceSample, Direction: vec3f) -> vec2f
 fn ReprojectHistory(@builtin(global_invocation_id) InvocationId: vec3u)
 {
     if (InvocationId.x >= Tracing.Extent.x || InvocationId.y >= Tracing.Extent.y) { return; }
+    let PixelCount    = Tracing.Extent.x * Tracing.Extent.y;
     let PixelIndex    = InvocationId.y * Tracing.Extent.x + InvocationId.x;
     let LightsVisible = Tracing.Tuning.z > 0.5;
     let Extent        = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
     let Footprint     = 2.0 * length(Tracing.CameraUp.xyz) / Extent.y;
     var Carried       = vec4f(0.0);
 
-    // ① Current surface.
+    // ① Current surface — also populates SurfaceFeatures so camera-motion frames skip the redundant Features pass.
     let Origin    = Tracing.CameraOrigin.xyz;
     let Direction = PixelCentreDirection(vec2f(InvocationId.xy), Tracing.CameraForward.xyz, Tracing.CameraRight.xyz, Tracing.CameraUp.xyz);
     let Hit       = TraceClosestHit(Origin, Direction, LightsVisible);
@@ -1386,13 +1535,28 @@ fn ReprojectHistory(@builtin(global_invocation_id) InvocationId: vec3u)
     let Point     = Origin + Direction * Travel;
     let Material  = Hit.Category != HitAbsent && Hit.Category != HitLight;
     var Surface   : SurfaceSample;
+    var Roughness = 0.0;
     var Sharp     = false;
     var Mirror    = vec2f(0.0);
     if (Material)
     {
-        Surface = ResolveSurface(Origin, Direction, Hit);
-        Sharp   = ResolveSharpestRoughness(Surface.MaterialSlot) <= 0.05;
+        Surface   = ResolveSurface(Origin, Direction, Hit);
+        Roughness = ResolveSharpestRoughness(Surface.MaterialSlot);
+        Sharp     = Roughness <= 0.05;
         if (Sharp) { Mirror = ResolveMirrorIdentity(Surface, Direction); }
+        let Packed = (Surface.MaterialSlot & 0xffffu) | (u32(clamp(Roughness, 0.0, 1.0) * 65535.0) << 16u);
+        SurfaceFeatures[PixelIndex]              = vec4f(Surface.Position, Hit.Distance);
+        SurfaceFeatures[PixelCount + PixelIndex] = vec4f(Surface.ShadingNormal, bitcast<f32>(Packed));
+    }
+    else if (Hit.Category == HitLight)
+    {
+        SurfaceFeatures[PixelIndex]              = vec4f(Point, Hit.Distance);
+        SurfaceFeatures[PixelCount + PixelIndex] = vec4f(-Direction, bitcast<f32>(0xfffeu));
+    }
+    else
+    {
+        SurfaceFeatures[PixelIndex]              = vec4f(Point, 0.0);
+        SurfaceFeatures[PixelCount + PixelIndex] = vec4f(-Direction, bitcast<f32>(0xffffu));
     }
 
     // ② Previous pixel: through the surface point, or through the virtual image for mirror-like surfaces.
@@ -1420,7 +1584,7 @@ fn ReprojectHistory(@builtin(global_invocation_id) InvocationId: vec3u)
             {
                 let PreviousPoint = PreviousOrigin + PreviousDirection * PreviousHit.Distance;
                 Accepted = Accepted && distance(Point, PreviousPoint) < 2.0 * Footprint * max(Travel, PreviousHit.Distance) + 2.0e-3;
-                Capacity = ResolveHistoryCapacity(Surface.MaterialSlot);
+                Capacity = Tracing.HistoryTuning.x * smoothstep(0.05, 0.4, Roughness);
             }
         }
         else if (Accepted && Hit.Category == HitLight)

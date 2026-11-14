@@ -387,8 +387,7 @@ async function AdvanceAccumulationLoop()
             const Revision = Interface.ConfigurationRevision;
             const Batch = Math.min(Configuration.SampleBatch, TargetIndices - Division.SampleCount);
             const Submitted = performance.now();
-            Division.AdvanceSamples(Batch);
-            await Division.PresentDisplay(ExposureMultiplier());
+            await Division.StepFrame(Batch, ExposureMultiplier());
             const Completion = Division.Device.queue.onSubmittedWorkDone().then(() =>
             {
                 const Finished = performance.now();

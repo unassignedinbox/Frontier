@@ -71,7 +71,8 @@ function Rotate(V, Axis, Angle)
 // 📝 Same rigid bay transform as TracingDivision.ConstructInstanceTree (rotation about +Y, then translation).
 function PlaceInBay(Bay, Point, IsDirection)
 {
-    const C = Bay.Yaw === 0 ? 1 : Math.cos(Bay.Yaw), S = Bay.Yaw === 0 ? 0 : Math.sin(Bay.Yaw);
+    const C = Bay.Yaw === 0 ? 1 : (Bay.Yaw === Math.PI ? -1 : Math.cos(Bay.Yaw));
+    const S = (Bay.Yaw === 0 || Bay.Yaw === Math.PI) ? 0 : Math.sin(Bay.Yaw);
     const X = C * Point[0] + S * Point[2], Z = -S * Point[0] + C * Point[2];
     return IsDirection ? [X, Point[1], Z] : [X + Bay.X, Point[1], Z + Bay.Z];
 }
@@ -203,7 +204,13 @@ export function PackLightRecords(AreaPacked, AreaCount, Lamps, Tree, Profiles)
     Tree.Nodes.forEach((Node, Index) =>
     {
         const O = (NodeBase + Index * TreeNodeVectors) * 4;
-        Floats.set([...Node.Lower, Node.Power, ...Node.Upper, 0, ...Node.Cone.Axis, 0, Node.Cone.Spread, Node.EmissionAngle, 0, 0], O);
+        // 📝 Precompute cos/sin of θo and cos(θe) so LightNodeImportance runs with zero asin/acos/cos SFU calls.
+        Floats.set([
+            ...Node.Lower, Node.Power,
+            ...Node.Upper, 0,
+            ...Node.Cone.Axis, 0,
+            Math.cos(Node.Cone.Spread), Math.sin(Node.Cone.Spread), Math.cos(Node.EmissionAngle), Node.EmissionAngle
+        ], O);
         Words[O + 7] = Node.Lamp >= 0 ? (LeafFlag | Node.Lamp) >>> 0 : Node.Left;
     });
     if (ProfileVectors) Profiles.forEach((Profile, Index) => Floats.set(Profile.Table, (ProfileBase + Index * ProfileFloatStride / 4) * 4));

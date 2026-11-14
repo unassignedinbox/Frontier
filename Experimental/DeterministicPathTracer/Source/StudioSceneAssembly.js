@@ -220,14 +220,25 @@ export function ConstructShowcaseSpheres(SlotIndex)
     const Radius = 0.46;
     const Layout = ['PolishedGold', 'BrushedCopper', 'MirrorChrome', 'ClearGlass', 'EmeraldGlass', 'GlazedCeramic', 'MatteChalk'];
     const Packed = new Float32Array(Layout.length * SphereFloatStride);
+    let MinX = Infinity, MinY = Infinity, MinZ = Infinity, MaxX = -Infinity, MaxY = -Infinity, MaxZ = -Infinity;
     Layout.forEach((Label, Index) =>
     {
         const ArcParameter = (Index - (Layout.length - 1) / 2) / ((Layout.length - 1) / 2);   // [-1, 1]
         const X = ArcParameter * 3.7;
         const Z = 2.75 + 0.55 * ArcParameter * ArcParameter;
         Packed.set([X, Radius, Z, Radius, SlotIndex[Label], 0, 0, 0], Index * SphereFloatStride);
+        MinX = Math.min(MinX, X - Radius); MaxX = Math.max(MaxX, X + Radius);
+        MinY = Math.min(MinY, 0);          MaxY = Math.max(MaxY, Radius * 2);
+        MinZ = Math.min(MinZ, Z - Radius); MaxZ = Math.max(MaxZ, Z + Radius);
     });
-    return { Packed, Count: Layout.length, Labels: Layout };
+    const Cx = 0.5 * (MinX + MaxX), Cy = 0.5 * (MinY + MaxY), Cz = 0.5 * (MinZ + MaxZ);
+    let BoundRadius = 0;
+    for (let Index = 0; Index < Layout.length; Index++)
+    {
+        const O = Index * SphereFloatStride;
+        BoundRadius = Math.max(BoundRadius, Math.hypot(Packed[O] - Cx, Packed[O + 1] - Cy, Packed[O + 2] - Cz) + Packed[O + 3]);
+    }
+    return { Packed, Count: Layout.length, Labels: Layout, BoundsSphere: [Cx, Cy, Cz, BoundRadius + 1e-3] };
 }
 
 // 📝 A rectangle of Width × Height centred at Centre whose emitting face looks at AimPoint. EdgeU is horizontal, and
@@ -256,9 +267,12 @@ export function ConstructSoftboxLights(Options)
     Lights.forEach((Light, Index) =>
     {
         const [Ux, Uy, Uz] = Light.EdgeU, [Vx, Vy, Vz] = Light.EdgeV;
-        const Area = Math.hypot(Uy * Vz - Uz * Vy, Uz * Vx - Ux * Vz, Ux * Vy - Uy * Vx);
-        Packed.set([...Light.Centre, Area, ...Light.EdgeU, 0, ...Light.EdgeV, 0,
-                    ...Light.Radiance.map(Channel => Channel * Light.Scale), 0], Index * LightFloatStride);
+        const Cx = Uy * Vz - Uz * Vy, Cy = Uz * Vx - Ux * Vz, Cz = Ux * Vy - Uy * Vx;
+        const Area = Math.hypot(Cx, Cy, Cz);
+        const InvArea = Area > 0 ? 1 / Area : 0;
+        // 📝 Pack precomputed unit normal in EdgeU.w, EdgeV.w, Radiance.w so the shader skips cross+normalize per ray.
+        Packed.set([...Light.Centre, Area, ...Light.EdgeU, Cx * InvArea, ...Light.EdgeV, Cy * InvArea,
+                    ...Light.Radiance.map(Channel => Channel * Light.Scale), Cz * InvArea], Index * LightFloatStride);
     });
     return { Packed, Count: Lights.length };
 }

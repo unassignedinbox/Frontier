@@ -6,7 +6,7 @@
 import { RetrieveVehicleArchives } from './VehicleAssembly.js';
 import { ConstructBoundingVolumes, ConstructBinaryTree, CollapseWideBounds, WideNodeWords, EmptyLink } from './BoundingVolumeConstruction.js';
 import { StageTiming } from './StageTiming.js';
-import { ConstructMaterialTable, PackMaterialTable, ConstructShowcaseSpheres, ConstructSoftboxLights, ResolveParkingBays } from './StudioSceneAssembly.js';
+import { ConstructMaterialTable, PackMaterialTable, ConstructShowcaseSpheres, ConstructSoftboxLights, ResolveParkingBays, SurfaceCategory } from './StudioSceneAssembly.js';
 import { ParseIesProfile, ResampleProfile } from './PhotometricProfile.js';
 import { PhotometryFiles, ConstructPracticalLamps, ConstructLightTree, PackLightRecords } from './PracticalLighting.js';
 
@@ -14,7 +14,10 @@ import { PhotometryFiles, ConstructPracticalLamps, ConstructLightTree, PackLight
 //                                                    CONSTANTS
 //------------------------------------------------------------------------------------------------------------------------
 
-const TracingUniformBytes  = 288;   // [B] - 18 × vec4
+const TracingUniformBytes  = 304;   // [B] - 19 × vec4
+const TracingSlotBytes     = 512;   // [B] - 256-byte aligned slot per pass (0 trace, 1 reproject, 2 features)
+const TracingSlotCount     = 3;     // [-] - Enables single-submit frame encoding with zero uniform overwrite stalls
+const ThinDielectricFlag   = 0x80000000; // [-] - Bit 31 of TrianglePositions[t*3].w flags thin glass for 1-cycle opaque shadow early-out
 const PointPatternCodes    = Object.freeze({ shared: 0, pixel: 1, bluenoise: 2 });   // 📝 Tracing.Realtime.x
 const DisplayUniformBytes  = 32;    // [B] - 2 × vec4
 const RasterUniformBytes   = 80;    // [B] - 5 × vec4
@@ -195,7 +198,7 @@ export class TracingDivision
             ValidateShaderCompilation(this.RasterUnit, 'VisibilityRasterization.wgsl')
         ]);
         this.Vehicle = Vehicle;
-        this.TracingUniformBuffer = this.Device.createBuffer({ size: TracingUniformBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+        this.TracingUniformBuffer = this.Device.createBuffer({ size: TracingSlotBytes * TracingSlotCount, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         this.DisplayUniformBuffer = this.Device.createBuffer({ size: DisplayUniformBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         this.RasterUniformBuffer  = this.Device.createBuffer({ size: RasterUniformBytes, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
         this.ReconstructionUniformBuffer = this.Device.createBuffer({ size: ReconstructionSlotBytes * (1 + AtrousSteps.length), usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -297,7 +300,9 @@ export class TracingDivision
                     Positions.set([Ax, Ay, Az, 0,
                                    Vehicle.Positions[P + 3] - Ax, Vehicle.Positions[P + 4] - Ay, Vehicle.Positions[P + 5] - Az, 0,
                                    Vehicle.Positions[P + 6] - Ax, Vehicle.Positions[P + 7] - Ay, Vehicle.Positions[P + 8] - Az, 0], O);
-                    PositionWords[O + 3] = MaterialTable.SlotIndex[Vehicle.Slots[Source]];
+                    const SlotNumber = MaterialTable.SlotIndex[Vehicle.Slots[Source]];
+                    const IsThinGlass = MaterialTable.Slots[SlotNumber]?.[1]?.Category === SurfaceCategory.ThinDielectric;
+                    PositionWords[O + 3] = (SlotNumber | (IsThinGlass ? ThinDielectricFlag : 0)) >>> 0;
                     Normals.set([Vehicle.Normals[P], Vehicle.Normals[P + 1], Vehicle.Normals[P + 2], 0,
                                  Vehicle.Normals[P + 3], Vehicle.Normals[P + 4], Vehicle.Normals[P + 5], 0,
                                  Vehicle.Normals[P + 6], Vehicle.Normals[P + 7], Vehicle.Normals[P + 8], 0], O);
@@ -350,6 +355,7 @@ export class TracingDivision
         this.MaterialBuffer = this.CreateStorage(PackMaterialTable(MaterialTable), 'Materials');
         this.LightBuffer    = this.CreateStorage(Records.Floats, 'LightRecords');
         this.SphereBuffer   = this.CreateStorage(Spheres.Packed, 'Spheres');
+        this.SphereBounds   = Spheres.BoundsSphere;
         this.SceneSummary.SphereCount = Spheres.Count;
         this.SceneSummary.LightCount  = Lights.Count;
         this.SceneSummary.LampCount   = Lamps.length;
@@ -394,14 +400,18 @@ export class TracingDivision
     RebuildIntegrationGroup()
     {
         if (!this.AccumulationBuffer || !this.MaterialBuffer) return;
-        const Buffers = [this.TracingUniformBuffer, this.BoundsBuffer, this.TrianglePositionBuffer, this.TriangleNormalBuffer,
-                         this.MaterialBuffer, this.LightBuffer, this.SphereBuffer, this.AccumulationBuffer];
-        this.IntegrationGroup = this.Device.createBindGroup({ layout: this.IntegrationLayout, entries: [
-            ...Buffers.map((Buffer, Slot) => ({ binding: Slot, resource: { buffer: Buffer } })),
+        const StorageBuffers = [this.BoundsBuffer, this.TrianglePositionBuffer, this.TriangleNormalBuffer,
+                                this.MaterialBuffer, this.LightBuffer, this.SphereBuffer, this.AccumulationBuffer];
+        const CreatePassGroup = Slot => this.Device.createBindGroup({ layout: this.IntegrationLayout, entries: [
+            { binding: 0, resource: { buffer: this.TracingUniformBuffer, offset: Slot * TracingSlotBytes, size: TracingUniformBytes } },
+            ...StorageBuffers.map((Buffer, Index) => ({ binding: Index + 1, resource: { buffer: Buffer } })),
             { binding: 8, resource: this.VisibilityTexture.createView() },
             { binding: 9, resource: this.BlueNoiseTexture.createView() },
             { binding: 10, resource: { buffer: this.FeatureBuffer } }
         ] });
+        this.IntegrationGroup  = CreatePassGroup(0);
+        this.ReprojectionGroup = CreatePassGroup(1);
+        this.FeatureGroup      = CreatePassGroup(2);
         this.ReconstructionGroups = Array.from({ length: 1 + AtrousSteps.length }, (_, Slot) => this.Device.createBindGroup({ layout: this.ReconstructionLayout, entries: [
             { binding: 0, resource: { buffer: this.ReconstructionUniformBuffer, offset: Slot * ReconstructionSlotBytes, size: 64 } },
             { binding: 1, resource: { buffer: this.AccumulationBuffer } },
@@ -451,7 +461,8 @@ export class TracingDivision
         const Bounds = new Float32Array(Count * 6), Centroids = new Float32Array(Count * 3);
         const Transforms = Bays.map(Bay =>
         {
-            const Cosine = Bay.Yaw === 0 ? 1 : Math.cos(Bay.Yaw), Sine = Bay.Yaw === 0 ? 0 : Math.sin(Bay.Yaw);
+            const Cosine = Bay.Yaw === 0 ? 1 : (Bay.Yaw === Math.PI ? -1 : Math.cos(Bay.Yaw));
+            const Sine   = (Bay.Yaw === 0 || Bay.Yaw === Math.PI) ? 0 : Math.sin(Bay.Yaw);
             return { Cosine, Sine, X: Bay.X, Z: Bay.Z };
         });
         Transforms.forEach((Transform, Index) =>
@@ -473,7 +484,7 @@ export class TracingDivision
         });
         const VehicleNodes = VehicleTree.Wide.NodeCount;
         const Binary = ConstructBinaryTree(Bounds, Centroids, Count, InstanceLeafLimit, InstanceLeafLimit);
-        const Wide   = CollapseWideBounds(Binary, VehicleNodes);
+        const Wide   = CollapseWideBounds(Binary, VehicleNodes, InstanceLeafLimit);
         const RecordBase = (VehicleNodes + Wide.NodeCount) * WideNodeWords;
         const Words  = new Uint32Array(RecordBase + Count * InstanceRecordWords);
         const Floats = new Float32Array(Words.buffer);
@@ -499,25 +510,32 @@ export class TracingDivision
     }
 
     // 📝 Carries the displayed image of the previous camera into the other history region, then clears the sums.
-    FlushPendingReprojection()
+    EncodePendingReprojection(Encoder)
     {
         if (!this.ReprojectionPending) return;
         const PixelCount   = this.AccumulationWidth * this.AccumulationHeight;
         const TargetRegion = 3 - this.HistoryRegion;
-        this.WriteTracingUniforms(0, 1, this.AccumulatedCamera, this.HistoryRegion * PixelCount, TargetRegion * PixelCount);
-        const Encoder = this.Device.createCommandEncoder();
+        this.WriteTracingUniforms(0, 1, this.AccumulatedCamera, this.HistoryRegion * PixelCount, TargetRegion * PixelCount, 1);
         const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Reprojection') });
         Compute.setPipeline(this.ReprojectionPipeline);
-        Compute.setBindGroup(0, this.IntegrationGroup);
+        Compute.setBindGroup(0, this.ReprojectionGroup);
         Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
         Compute.end();
         this.EncodeSumClear(Encoder);
-        this.Device.queue.submit([Encoder.finish()]);
-        this.FeaturesStale       = true;
+        // 📝 ReprojectHistory already wrote SurfaceFeatures for the new camera from its primary centre-ray hit.
+        this.FeaturesStale       = false;
         this.HistoryRegion       = TargetRegion;
         this.HistoryActive       = true;
         this.ReprojectionPending = false;
         this.AccumulatedCamera   = this.ResolveCurrentCamera();
+    }
+
+    FlushPendingReprojection()
+    {
+        if (!this.ReprojectionPending) return;
+        const Encoder = this.Device.createCommandEncoder();
+        this.EncodePendingReprojection(Encoder);
+        this.Device.queue.submit([Encoder.finish()]);
     }
 
     // 📝 Clears the exact sums and their luminance moments (regions 0 and 3); history regions are kept.
@@ -570,10 +588,10 @@ export class TracingDivision
         const Configuration = this.Configuration;
         if (this.FeaturesStale)
         {
-            this.WriteTracingUniforms(this.SampleCount, 0);
+            this.WriteTracingUniforms(this.SampleCount, 0, null, 0, 0, 2);
             const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Features') });
             Compute.setPipeline(this.FeaturePipeline);
-            Compute.setBindGroup(0, this.IntegrationGroup);
+            Compute.setBindGroup(0, this.FeatureGroup);
             Compute.dispatchWorkgroups(...Workgroups);
             Compute.end();
             this.FeaturesStale = false;
@@ -649,7 +667,7 @@ export class TracingDivision
         return { Origin, Forward, Right: Right.map(C => C * TangentHalf * Aspect), Up: Up.map(C => C * TangentHalf) };
     }
 
-    WriteTracingUniforms(FirstSample, SampleBatch, PreviousCamera = null, HistoryReadOffset = 0, HistoryWriteOffset = 0)
+    WriteTracingUniforms(FirstSample, SampleBatch, PreviousCamera = null, HistoryReadOffset = 0, HistoryWriteOffset = 0, UniformSlot = 0)
     {
         const Configuration = this.Configuration;
         const Camera = this.ResolveCurrentCamera();
@@ -674,7 +692,50 @@ export class TracingDivision
         Floats.set([0, 0, Configuration.LampSampling === 'all' ? 1 : 0, LampCutLimits[Configuration.LampSampling] ?? 1], 64);
         const Practical = this.PracticalLayout;
         Words.set([Practical.LampCount, Practical.NodeBase, Practical.LampBase, Practical.ProfileBase], 68);
-        this.Device.queue.writeBuffer(this.TracingUniformBuffer, 0, Bytes);
+        Floats.set(this.SphereBounds ?? [0, 0, 0, 0], 72);
+        this.Device.queue.writeBuffer(this.TracingUniformBuffer, UniformSlot * TracingSlotBytes, Bytes);
+    }
+
+    // 📝 Unified single-submit frame step: encodes Reprojection, Integration, Features, Reconstruction, and Display into
+    //    one CommandEncoder and one queue.submit() so interactive frames avoid multi-submission Dawn/D3D12 overhead.
+    StepFrame(SampleBatch, Exposure)
+    {
+        if (this.ReadbackSurface || (SampleBatch > 1 && this.RasterizedVisibilityActive()))
+        {
+            if (SampleBatch > 0) this.AdvanceSamples(SampleBatch);
+            return this.PresentDisplay(Exposure);
+        }
+        const Encoder = this.Device.createCommandEncoder();
+        this.EncodePendingReprojection(Encoder);
+        if (SampleBatch > 0)
+        {
+            const Rasterized = this.RasterizedVisibilityActive();
+            this.WriteTracingUniforms(this.SampleCount, SampleBatch, null, 0, 0, 0);
+            if (Rasterized) this.EncodeVisibilityRasterization(Encoder, this.SampleCount);
+            const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration') });
+            Compute.setPipeline(this.IntegrationPipeline);
+            Compute.setBindGroup(0, this.IntegrationGroup);
+            Compute.dispatchWorkgroups(...this.TraceWorkgroups());
+            Compute.end();
+            this.SampleCount += SampleBatch;
+        }
+        const Reconstructed = this.ReconstructionActive();
+        const PixelCount = this.AccumulationWidth * this.AccumulationHeight;
+        const Bytes = new ArrayBuffer(DisplayUniformBytes);
+        new Uint32Array(Bytes).set([this.AccumulationWidth, this.AccumulationHeight, 0, Reconstructed ? 3 * PixelCount : 0], 0);
+        new Float32Array(Bytes).set([Exposure, 0, Reconstructed ? 1 : 0, 0], 4);
+        this.Device.queue.writeBuffer(this.DisplayUniformBuffer, 0, Bytes);
+        if (Reconstructed) this.EncodeReconstruction(Encoder);
+        const Raster = Encoder.beginRenderPass({ colorAttachments: [{
+            view: this.CanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 }
+        }], timestampWrites: this.Timing.PassWrites('Display') });
+        Raster.setPipeline(this.DisplayPipeline);
+        Raster.setBindGroup(0, this.DisplayGroup);
+        Raster.draw(3);
+        Raster.end();
+        const Pending = this.Timing.Encode(Encoder);
+        this.Device.queue.submit([Encoder.finish()]);
+        this.Timing.Collect(Pending);
     }
 
     // 📝 Integrates samples [SampleCount, SampleCount + SampleBatch). Sample indices — and therefore results — do not

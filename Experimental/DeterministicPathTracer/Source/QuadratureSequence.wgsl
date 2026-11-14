@@ -38,19 +38,17 @@ fn NestedDigitPermutation(Input: u32, Key: u32) -> u32
 }
 
 // 📝 Second Sobol' dimension (primitive polynomial x + 1): direction numbers v₁ = 2³¹, vⱼ = vⱼ₋₁ ⊕ (vⱼ₋₁ >> 1).
+//    By Lucas's theorem over GF(2), C(j, i) mod 2 = 1 iff (i & j) == i, so the 32×32 Pascal matrix-vector product
+//    reduces to a branchless 5-stage bit-parallel zeta transform followed by reverseBits — bit-exact for all 2³² inputs.
 fn SobolSecondDimension(Index: u32) -> u32
 {
-    var Result    = 0u;
-    var Direction = 0x80000000u;
-    var Bits      = Index;
-    loop
-    {
-        if (Bits == 0u) { break; }
-        if ((Bits & 1u) != 0u) { Result ^= Direction; }
-        Bits      = Bits >> 1u;
-        Direction = Direction ^ (Direction >> 1u);
-    }
-    return Result;
+    var Bits = Index;
+    Bits ^= (Bits & 0xaaaaaaaau) >> 1u;
+    Bits ^= (Bits & 0xccccccccu) >> 2u;
+    Bits ^= (Bits & 0xf0f0f0f0u) >> 4u;
+    Bits ^= (Bits & 0xff00ff00u) >> 8u;
+    Bits ^= (Bits & 0xffff0000u) >> 16u;
+    return reverseBits(Bits);
 }
 
 // 📝 Point SampleIndex of quadrature pair PairIndex in [0,1)². The index permutation decorrelates pairs from each other;
