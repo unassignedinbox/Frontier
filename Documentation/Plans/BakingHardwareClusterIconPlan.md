@@ -1,9 +1,20 @@
 # Frontier Baking, Hardware Telemetry, Cluster LOD, Icon Capture & TextureStudio UI Plan
 
-> **TL;DR:** Branches `unassignedinbox/Frontier` (`arena/429d7dc7-frontier` @ `967b92c`) and `c7egoist/Frontier` (`arena/36d6f048-frontier` @ `34f384a`) are cleanly merged onto `arena/6eeea758-frontier` with zero conflicts, all 4 JS validation suites pass, and the `And` conjunction ban is now enforced in `CLAUDE.md`, `SKILL-Naming.md`, and `BannedWordsVocabulary.md`. No C++/JS/Slang code was edited this turn; this blueprint locks the architecture for splitting `GpuTextureAndSdfBaker` into `TextureBaker` + `SdfBaker`, promoting hardware probing (RTX/GTX + VRAM + RAM + SSD/HDD) into `Engine/Configuration/`, porting 3D object icon auto-baking plus the future Asset Import Editor, designing UV-aware & glass-safe Nanite-like `ClusterLodBaker` (with SDF LOD verdict), and resolving 6 pre-port UI coherence gaps in `Experimental/TextureStudio/`.
+> **TL;DR:** Branches `unassignedinbox/Frontier` (`arena/429d7dc7-frontier` @ `967b92c`) and `c7egoist/Frontier` (`arena/36d6f048-frontier` @ `34f384a`) are cleanly merged onto `arena/6eeea758-frontier` (`0` conflicts), all 4 JS validation suites pass, and the `And` ban is enforced in `CLAUDE.md` (§2.7). **Confirmed locks:** `TextureBaker` + `SdfBaker` + `GeometryRayAccelerator` (§3), `Engine/Configuration/HardwareProfile` + `ResourceBudgetRegister` (§4), and sparse `8×8×8` narrow-band SDF bricks `Mip0` + conservative `Mip1` + world `Clip0..2` + brick eviction (§6.3). **New decision in §7:** Create ONE dedicated **`GeometryCompiler` Workspace** (built on **`Experimental/ProjectZeroEditor/`** UI, hosted in existing reserved slot `Engine/Workspaces/Geometry/`) for **SDF + Cluster LOD (Nanite-like + Glass-Safe) + Dual-Contour SDF-to-Mesh + Fracture + Asset Import + Icon Capture**, keep **`Texturing → Baking`** focused on 2D UV PBR maps, and keep headless C++ solvers inside canonical engine folders (never `GeometryProcessing`, since `Process`/`Processor` is barred).
 
-**Status:** 🏁 Planning & Audit Report Only (Zero C++ / JS / Slang Code Edits This Turn) · **Date:** `2026-11-14`  
+**Status:** 🏁 Confirmed Core Architecture + §7 Workspace Decision Ready (Zero C++ / JS / Slang Code Edits This Turn) · **Date:** `2026-11-14`  
 **Branch:** `arena/6eeea758-frontier` · **Governance Updated:** `CLAUDE.md` (§2.7), `Documentation/AgenticInstructions/SKILL-Naming.md` (Gate ⑦), `Documentation/BannedWordsVocabulary.md`
+
+---
+
+## 0. 🏁 Confirmed Architectural Locks
+
+| Decision Domain | Confirmed Choice | Status |
+| :--- | :--- | :---: |
+| **Baker Split (§3)** | **🏆 🥇 Option A** — `TextureBaker.{h,cpp}` + `SdfBaker.{h,cpp}` sharing one `GeometryRayAccelerator.{h,cpp}` | 🟢 Confirmed |
+| **Hardware & Budgets (§4)** | **🏆 🥇 Option A** — Dedicated `Engine/Configuration/HardwareProfile.{h,cpp}` + `ResourceBudgetRegister.{h,cpp}` | 🟢 Confirmed |
+| **SDF Multi-Scale (§6.3)** | **🏆 🥇 Option A** — Sparse `8×8×8` narrow-band bricks (`Mip0`) + conservative `Mip1` + world `Clip0..2` + VRAM brick eviction | 🟢 Confirmed |
+| **Workspace & Folder Ownership (§7)** | **Pending your pick:** Standalone `GeometryCompiler` (`ProjectZeroEditor` UI) vs `Texturing` vs Engine Core layout (see §7 decision tables) | 🚧 Open Question |
 
 ---
 
@@ -34,7 +45,7 @@
 
 ---
 
-## 3. 🏆 Baker Architecture Decision: Split `TextureBaker` + `SdfBaker` vs Unified `GpuTextureBaker`
+## 3. 🏆 Baker Architecture Decision: Split `TextureBaker` + `SdfBaker` vs Unified `GpuTextureBaker` *(🟢 Confirmed — Option A)*
 
 > **Legend:** Reuse / Separation / VRAM Efficiency: **🔴 = Highest (Best)** · File Bloat / Coupling Cost: **✔️ = Lowest (Best)** · Quality: **⭐** (more = better).
 
@@ -67,14 +78,14 @@
                   (Workspace)    (Live Maps)       (Slice View)   (Clip0-2) (SDF Collisions)
                                                                        ▲
          ┌─────────────────────────────────────────────────────────────┴───────────────────┐
-         │ Future: AssetImportWorkspaceHost + GeometrySpecimenRasterizer + ClusterLodBaker │
+         │ Future: GeometryCompileWorkspaceHost + GeometrySpecimenRasterizer + ClusterLod  │
          │ (Import -> Repair -> UV -> Material -> SdfBaker -> ClusterLodBaker -> Icon)     │
          └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. 🔍 Hardware Capability Inventory & Starvation-Safe Budgets (`Engine/Configuration/`)
+## 4. 🔍 Hardware Capability Inventory & Starvation-Safe Budgets (`Engine/Configuration/`) *(🟢 Confirmed — Option A)*
 
 `HardwareRayQueryInterchange` should **not** live under `Baking/`. Hardware probing is currently fragmented across 3 places (`VulkanInterchange` for ray-query, `AssetStreamThread::DetectStorageHardwareTier` for SSD/HDD, and `EngineConfiguration::DeriveOptimalChannelLanes` for CPU threads), and **VRAM / System RAM budgets are not probed at all**.
 
@@ -127,9 +138,9 @@
    - When registering or indexing any `ContentCategory::Geometry` entry (`.GeometrySpace` or imported `.obj`/`.gltf`/`.stl`), check whether a valid pre-baked `128×128` icon already exists in `ThumbnailSheet.ImageSpace` or inside the `.GeometrySpace` binary icon section.
    - **If missing → auto-bake once** asynchronously on `WorkspaceThread` / `ExecutionChannels`, stamp into `ThumbnailSheetRepository::UpdateEntryThumbnailRgba(...)`, and persist to `ThumbnailSheet.ImageSpace` so future sessions load in `< 2 ms` with zero re-baking.
 
-### 5.3 Phase 2 (Saved Future Plan): Dedicated 3D Asset Import Editor (`AssetImportWorkspace`)
+### 5.3 Phase 2 (Saved Future Plan): Dedicated 3D Asset Import Editor *(Unified With §7 `GeometryCompiler`)*
 
-When the user imports a 3D asset (drag-drop or `Import` button), instead of immediately writing a raw `.GeometrySpace` after quarantine, Frontier will open a dedicated **Asset Import Editor** (`Engine/Workspaces/Import/AssetImportWorkspaceHost.{h,cpp}`):
+When the user imports a 3D asset (drag-drop or `Import` button), instead of immediately writing a raw `.GeometrySpace` after quarantine, Frontier opens **`GeometryCompileWorkspaceHost`** (`Engine/Workspaces/Geometry/` — see §7!) in Import mode:
 
 ```text
 [OS Drop / Import .obj .gltf .glb .stl]
@@ -187,15 +198,15 @@ Frontier already has a clean foundational `Engine/SpatialAcceleration/ClusterPyr
    | **③ `8×–16×` Curvature & Normal Error Weight** | Multiply QEM normal/curvature deviation cost by `8×–16×` on glass clusters (enforcing angular error `Δθ < 0.25°` and pinning curved optical silhouettes — generalizing `glassSafe` from `cluster-lod-core.js`). | Smooth continuous car windshields & optical reflections at every LOD. |
    | **④ Dedicated Glass Render Path** | Route `OpaqueSolid` clusters to `64-bit` `VisibilityClusterRasterization`; route `ThinWalledGlass` & `SolidRefractive` clusters automatically to **`DielectricTransmission.h` + `WideBoundingTree` / `VK_KHR_ray_query` deterministic Snell refraction + Abbe dispersion + exact exit-face trace**. | Physically accurate multi-bounce refractive glass alongside Nanite-scale opaque worlds. |
 
-4. **HTML Validation Gate First:** Before touching C++ `ClusterPyramid`, build **`Experimental/ClusterLodLab/`** (WebGPU) proving: (a) SDF Dual-Contour extraction → `128`-tri DAG, (b) live UV checkerboard & seam-integrity delta metric, and (c) split-screen **Naive Decimated Glass vs Frontier Glass-Safe Cluster** visual comparison!
+4. **HTML Validation Gate First:** Before touching C++ `ClusterPyramid`, build **`Experimental/GeometryCompiler/`** (WebGPU, styled with **`Experimental/ProjectZeroEditor/`** UI — see §7!) proving: (a) SDF Dual-Contour extraction → `128`-tri DAG, (b) live UV checkerboard & seam-integrity delta metric, and (c) split-screen **Naive Decimated Glass vs Frontier Glass-Safe Cluster** visual comparison!
 
-### 6.3 Technical Verdict: Do SDFs Require an LOD System, or Is It Unnecessary?
+### 6.3 Technical Verdict: Do SDFs Require an LOD System, or Is It Unnecessary? *(🟢 Confirmed — Option A)*
 
 > **Legend:** Quality / Bandwidth Efficiency / Memory Savings: **🔴 = Highest (Best)** · Authoring & Storage Cost: **✔️ = Lowest (Best)** · Rating: **⭐** (more = better).
 
 | SDF Strategy | Raymarch / Cone Anti-Aliasing | VRAM Footprint | Authoring & Bake Complexity | Verdict | Rating |
 | :--- | :---: | :---: | :---: | :--- | :---: |
-| **🏆 🥇 Option A — Sparse `8×8×8` Narrow-Band Bricks (`Mip0`) + Single Conservative `Mip1` Coarse Grid + World Clipmaps (`Clip0..2`) + Brick Streaming Eviction** | 🔴 **Zero cone aliasing + exact narrow-band near surface** | 🔴 **`~12.5%` overhead for `Mip1`; far props evict `Mip0` bricks under VRAM pressure** | ✔️ **Single bake pass + `2×` min-filter downsample** | **RECOMMENDED — Best across GI, Particles, Fracture & Streaming** | ⭐⭐⭐⭐⭐ |
+| **🏆 🥇 Option A — Sparse `8×8×8` Narrow-Band Bricks (`Mip0`) + Single Conservative `Mip1` Coarse Grid + World Clipmaps (`Clip0..2`) + Brick Streaming Eviction** | 🔴 **Zero cone aliasing + exact narrow-band near surface** | 🔴 **`~12.5%` overhead for `Mip1`; far props evict `Mip0` bricks under VRAM pressure** | ✔️ **Single bake pass + `2×` min-filter downsample** | **CONFIRMED — Best across GI, Particles, Fracture & Streaming** | ⭐⭐⭐⭐⭐ |
 | **🥈 Option B — Single-Resolution `Mip0` Only (No Mips, No Clipmaps)** | 🚩 **Wide GI/shadow cones undersample & thrash 3D texture cache at distance** | 🚩 **Wastes VRAM keeping fine bricks resident for distant objects** | ✔️ **Simplest** | Acceptable **only** for offline Baking Studio / Physics collisions | ⭐⭐⭐ |
 | **🥉 Option C — Discrete Mesh-Style Per-Object SDF LODs (`LOD0..LOD4` Copies)** | 🚩 **Popping artifacts when swapping distance fields** | 🔴 **`1.5×–2×` duplicate volume storage + redundant bakes** | 🔴 **High complexity with zero geometric benefit** | **UNNECESSARY — Reject** | ⭐⭐ |
 
@@ -205,7 +216,81 @@ Frontier already has a clean foundational `Engine/SpatialAcceleration/ClusterPyr
 
 ---
 
-## 7. 🔍 Experimental `TextureStudio` Validation & Pre-C++ UI Coherence Audit
+## 7. 🏆 Workspace Boundary & Engine Folder Ownership (`Texturing` vs Standalone `GeometryCompiler` vs Engine Core)
+
+Separating **user-facing Workspace UI** from **headless C++ Engine Solvers** solves all three parts of your question cleanly — and naturally unifies **SDF + Cluster LOD (Nanite-like) + Asset Import Editor** into one cohesive tool.
+
+### 7.1 Decision Table A — User-Facing Workspace Boundary (SDF + Cluster LOD vs `Texturing → Baking`)
+
+> **Legend:** Domain Clarity / UX Coherence / Asset-Import Synergy: **🔴 = Highest (Best)** · UI Clutter / Coupling: **✔️ = Lowest (Best)** · Quality: **⭐** (more = better).
+
+| Option | UX & Mental Model Clarity | Synergy With Future 3D Asset Import Editor | `ContentBrowser` Hard Category Mask Integrity | UI Clutter Cost | Rating |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **🏆 🥇 Option A — New Standalone `GeometryCompiler` Workspace (`ProjectZeroEditor` UI) for SDF + Cluster LOD (Nanite-Like + Glass-Safe) + Dual-Contour + Fracture + Import; Keep `Texturing → Baking` for 2D UV Surface Maps** | 🔴 **3D volumetric/geometric compilation stays separate from 2D UV texture baking** | 🔴 **This standalone workspace *IS* the Phase-2 Asset Import Editor (zero duplicate UI)** | 🔴 **`Geometry`/`Volumetrics`/`Materials` mask stays pure** | ✔️ **Clean focused cards on both sides** | ⭐⭐⭐⭐⭐ |
+| **🥈 Option B — Fold SDF + Cluster LOD + Glass Guard + Fracture Into `Texturing → BakingWorkspace`** | 🚩 **Texture artists wade through Nanite cluster DAGs, Dual Contouring & fracture** | 🚩 **Asset import forced to launch Texture Studio** | 🔴 **Breaks `Texturing` workspace category boundaries** | 🔴 **Overloaded Franken-UI** | ⭐⭐ |
+| **🥉 Option C — Split Into 3 Separate Workspaces (`TextureBaking` + `SdfWorkspace` + `ClusterLodWorkspace`)** | 🚩 **User must jump across 2–3 apps to prep one imported 3D asset** | 🔴 **Fractures unified import-to-icon capture flow** | 🚩 **Extra top-bar tab sprawl** | 🚩 **Duplicate 3D viewport chrome** | ⭐⭐⭐ |
+
+### 7.2 Decision Table B — C++ Engine Folder Ownership (`Engine/GeometryProcessing` Audit vs Canonical Layout)
+
+⚠️ **Naming Governance Alert:** `Process` is a **barred verb** in `SKILL-Naming.md` §4 and `Processor` is **hard-banned** in `BannedWordsVocabulary.md` §1.2 — avoid naming any folder `Engine/GeometryProcessing/`. Meanwhile **`Compile`** is an explicitly approved Frontier verb (`SKILL-Naming.md` §4) and **`Engine/Workspaces/Geometry/`** is **already reserved** in `Documentation/FolderStructure.md`!
+
+> **Legend:** Reuse Across GI/Particles/Shipping / Governance Compliance: **🔴 = Highest (Best)** · Folder Duplication / Build Coupling: **✔️ = Lowest (Best)** · Quality: **⭐** (more = better).
+
+| Option | Headless Reuse (GI, Particles, Fracture, Runtime) | Zero Duplication With Existing `FolderStructure.md` | Governance Compliance (`SKILL-Naming` + `And` Ban) | Rating |
+| :--- | :---: | :---: | :---: | :---: |
+| **🏆 🥇 Option A — Headless Solvers in Existing Canonical Folders + Standalone UI Host in Reserved `Engine/Workspaces/Geometry/`** | 🔴 **100% headless; `Development`/`Shipping` link solvers with zero Editor/UI code** | ✔️ **Uses existing `GeometrySpace`, `SpatialAcceleration`, `DistanceFieldSpace`, `GeometricRaster/Baking`, `Workspaces/Geometry`** | 🔴 **Zero banned words (`Compile` approved)** | ⭐⭐⭐⭐⭐ |
+| **🥈 Option B — New Top-Level `Engine/GeometryProcessing/` Folder** | 🚩 **Duplicates `GeometrySpace`, `SpatialAcceleration` & `DistanceFieldSpace`** | 🔴 **Splits `ClusterPyramid` & `SignedDistanceVolume` across 2 roots** | 🔴 **Violates `Process`/`Processor` ban** | ⭐⭐ |
+| **🥉 Option C — Put SDF & Cluster LOD Workspace Inside `Engine/Workspaces/Texturing/`** | 🚩 **Forces Geometry/SDF authoring to depend on Texturing/Paint stack** | 🚩 **Leaves `Workspaces/Geometry/` empty while bloating `Texturing/`** | 🚩 **Wrong domain ownership** | ⭐⭐ |
+
+### 7.3 Decision Table C — What Should Happen to `Volume SDF` Inside `TextureStudio → Baking`?
+
+> **Legend:** Artist Convenience / Simplicity: **🔴 = Highest (Best)** · Feature Duplication: **✔️ = Lowest (Best)** · Quality: **⭐** (more = better).
+
+| Sub-Option | 2D Texture Artist Workflow | Duplication With `GeometryCompiler` | Rating |
+| :--- | :---: | :---: | :---: |
+| **🏆 🥇 Sub-Option A1 — Keep 17 2D UV Surface Maps in `Texturing → Baking` + Add `"Open in GeometryCompiler"` Handoff *(optional 1-click `"Quick SDF"` trigger delegating to shared headless `SdfBaker`)* ** | 🔴 **Zero friction when a texture artist needs a quick SDF mask or wants to jump to full 3D SDF/Cluster view** | ✔️ **Zero duplicated UI panels — full 3D slice, Dual-Contour, Cluster LOD, Glass Guard & Fracture live exclusively in `GeometryCompiler`** | ⭐⭐⭐⭐⭐ |
+| **🥈 Sub-Option A2 — Remove `Volume SDF` Completely From `Texturing → Baking`** | 🚩 **100% pure 2D UV texture studio; requires switching workspace for any SDF check** | ✔️ **Strictest zero overlap** | ⭐⭐⭐⭐ |
+
+### 7.4 Unified Architecture & `ProjectZeroEditor` UI Prototype Plan
+
+```text
+   HTML PROTOTYPES (Experimental/)                   NATIVE C++20 WORKSPACES (Engine/Workspaces/)
+   ┌──────────────────────────────────────────┐      ┌──────────────────────────────────────────┐
+   │ Experimental/TextureStudio/              │ ───► │ Engine/Workspaces/Texturing/             │
+   │  Material · Pattern · Stamp · Paint ·    │      │  Material · Pattern · Stamp · Paint ·    │
+   │  Texture Baking (17 2D UV PBR maps)      │      │  BakingWorkspaceHost (17 2D UV maps)     │
+   └──────────────────────────────────────────┘      └────────────────────┬─────────────────────┘
+                                                                          │
+   ┌──────────────────────────────────────────┐      ┌────────────────────┼─────────────────────┐
+   │ NEW: Experimental/GeometryCompiler/      │ ───► │ Engine/Workspaces/Geometry/              │
+   │  (Built with ProjectZeroEditor UI!)      │      │  GeometryCompileWorkspaceHost            │
+   │  • Outliner: Parts + Optical Material Tag│      │  • Standalone Workspace (ProjectBrowser) │
+   │  • 3D GPU Viewport: Clusters, LOD Cut,   │      │  • Auto-opens as 3D Asset Import Editor  │
+   │    UV Seams, Glass Guard, SDF Iso/Slices │      │  • SDF + Dual-Contour + Cluster LOD +    │
+   │  • ProjectZero Inspector Cards + Notch   │      │    Glass Guard + Fracture + 128px Icon   │
+   └──────────────────────────────────────────┘      └────────────────────┬─────────────────────┘
+                                                                          │
+                                  BOTH WORKSPACES + WORLD GI + PARTICLES  │  CALL SHARED HEADLESS CORE
+                                                                          ▼
+   ┌────────────────────────────────────────────────────────────────────────────────────────────┐
+   │ HEADLESS C++20 ENGINE CORE (Zero UI · Linked in Editor, Development & Shipping)            │
+   │  • Engine/Configuration/           HardwareProfile · ResourceBudgetRegister                │
+   │  • Engine/GeometricRaster/RayAcceleration/  GeometryRayAccelerator (GTX BVH4 + RTX TLAS)   │
+   │  • Engine/GeometricRaster/Baking/  TextureBaker · SdfBaker · SurfaceBakeInputPacker ·      │
+   │                                    GeometrySpecimenRasterizer                              │
+   │  • Engine/DistanceFieldSpace/      SignedDistanceVolume (Mip0+Mip1) ·                      │
+   │                                    DualContourSurfaceExtractor                             │
+   │  • Engine/SpatialAcceleration/     ClusterPyramid · ClusterLodBaker · WideBoundingTree     │
+   │  • Engine/GeometrySpace/Primitives/ SpecimenGeometryLibrary                                │
+   │  • Engine/Interchange/             GeometryInterchange (.obj · .gltf · .glb · .stl)        │
+   └────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Recommendation:** Adopt **🏆 🥇 Option A (`GeometryCompiler` standalone workspace using `ProjectZeroEditor` UI in `Engine/Workspaces/Geometry/`) + 🏆 🥇 Canonical Headless Folders + 🏆 🥇 Sub-Option A1** (or pick **A2** if you prefer zero SDF toggle inside `Texturing → Baking`). Confirm your pick on **§7.1–§7.3** (plus any remaining questions) and we are cleared for **Step 1**!
+
+---
+
+## 8. 🔍 Experimental `TextureStudio` Validation & Pre-C++ UI Coherence Audit
 
 `node Experimental/TextureStudio/TextureStudioValidation.mjs` ran cleanly across **all `27/27` validation suites** (`Material`, `Pattern`, `Stamp`, `Texture Paint`, `Baking`, `UV Bridge`, `AssetBrowser`, `ColourCodex`, `Text Tool`). However, side-by-side inspection of all 5 HTML workspaces (`Experimental/TextureStudio/`) and the `34f384a` C++ Baking screenshots (`Exhibits/Images/Texturing/09..11-*.png`, `FrontierBaking_DesktopExecutable.png`) surfaced **6 concrete UI coherence gaps** to fix in `Experimental/TextureStudio/` and align **before** porting `Material` and `Texture Paint` to C++:
 
@@ -215,12 +300,12 @@ Frontier already has a clean foundational `Engine/SpatialAcceleration/ClusterPyr
 | **2** | 🚩 **UI Drift** | `BakingWorkspace.js:157` vs `ViewportHeaderKit.js` | `Pattern`, `Stamp`, and `Texture Paint` share the unified 2-tier AlloyStudio header (`docBar` + `toolsBar`: renameable canvas title, editable Resolution combo, View dropdown, Undo/Redo, Save menu, primary CTAs). **`BakingWorkspace.js` bypasses `ViewportHeaderKit.js`** — uses a custom 1-row toolbar lacking renameable study title, header resolution combo, Undo/Redo, and Save dropdown; its GPU pill clips in C++ (`09-BakingWorkspaceMain.png`: `GTX BVH4 · SwiftShader Device (Su...`). | Adopt `ViewportHeaderKit` (2-tier header) in `BakingWorkspace.js` + concise tier pill (`RTX RayQuery` / `GTX BVH4` / `CPU`) and mirror in C++ `BakingViewportPane`. |
 | **3** | 🚩 **UI Drift** | `AssetBrowser.js:76` (`MESH_PRESETS`) vs `BakingEngine.js:33` (`BAKE_STUDY_SHAPES`) | Preset IDs and names diverge (`chamfer`/`helmet` in AssetBrowser vs `box`/`sphere` in BakingEngine), and `Meshes` cards lack real 3D transparent thumbnails while `Materials` have `MaterialIconBaker.js`. | Unify both onto a single shared specimen list and hook `Meshes` cards to real transparent 3D icon baking (`ModelThumbnailRenderer` in HTML / `GeometrySpecimenRasterizer` in C++). |
 | **4** | 🚩 **Naming** | `TextureStudio` + `34f384a` C++ (`BakingInspectorPane`, `BakingViewportPane`) | Banned terms leaked from HTML into C++ UI & code: `"Compute Backend"`, `"Baking Quick Menu"`, `"Low Mesh" / "High Mesh"`, `"18 MAPS"`, and `ArtworkStack*` filenames in HTML. | Scrub UI copy (`Ray Execution Tier`, `Baking Quick Strip`, `Low Target / High Source`, `18 Targets`) and apply §2 C++ rename ledger. |
-| **5** | 🚩 **Parity** | `ContentBrowserPanel` (`FrontierBaking_DesktopExecutable.png`) vs `AssetBrowser.js` | C++ ContentBrowser top workspace strip lists only `[ Scene  UV  Material  Simulation  Audio ]` — missing `Baking`, `Pattern`, `Stamp`, and `TexturePaint` workspace masks. | Add `Baking` / `TexturePaint` / `Pattern` / `Stamp` entries to ContentBrowser workspace selector strip & `WorkspaceCapabilityRegister`. |
+| **5** | 🚩 **Parity** | `ContentBrowserPanel` (`FrontierBaking_DesktopExecutable.png`) vs `AssetBrowser.js` | C++ ContentBrowser top workspace strip lists only `[ Scene  UV  Material  Simulation  Audio ]` — missing `Baking`, `Pattern`, `Stamp`, and `TexturePaint` workspace masks. | Add `Baking` / `TexturePaint` / `Pattern` / `Stamp` / `GeometryCompiler` entries to ContentBrowser workspace selector strip & `WorkspaceCapabilityRegister`. |
 | **6** | 🚩 **Parity** | Coordinate Basis & Theme Support (`TextureStudio.css` vs `ThemeRepository`) | HTML `TextureStudio` is `+Y Up` (Three.js) and locked to Dark theme (`#0b0b0b`); C++ Frontier enforces strict **Right-Hand `+Z Up`** and 8 live themes (`ThemeRepository`). `MaterialWorkspace.js` uses a 2-column Look-Dev dock (`.studio-grid-2col`) vs 3-column dock in the other 4 studios. | Document explicit `+Y -> +Z` transform adapters for study meshes/normals, verify all C++ `TexturingPaneAppearance` colors resolve from `ThemeRepository`, and lock `MaterialWorkspaceHost`'s 2-column dock spec before C++ port. |
 
 ---
 
-## 8. 🏁 Recommended Execution Sequence (Pending Your Sign-Off)
+## 9. 🏁 Recommended Execution Sequence (Pending §7 Sign-Off)
 
 | Order | Milestone | Scope (Zero Code Until Approved) | Validation Gate |
 | :---: | :--- | :--- | :--- |
@@ -228,5 +313,5 @@ Frontier already has a clean foundational `Engine/SpatialAcceleration/ClusterPyr
 | **Step 2** | **C++ `HardwareProfile` + `ResourceBudgetRegister`** | Create `Engine/Configuration/HardwareProfile.{h,cpp}` + `ResourceBudgetRegister.{h,cpp}`; promote SSD/HDD probe from `AssetStreamThread`; wire `VK_EXT_memory_budget` + OS RAM + RTX/GTX tier into `VulkanInterchange`. | New `Exhibits/HardwareProfileValidation.cpp` + starvation-guard unit checks |
 | **Step 3** | **Refactor `34f384a` Baking Core (Zero `And`, Zero Banned Words)** | Split `GpuTextureAndSdfBaker` → `TextureBaker` + `SdfBaker` + shared `GeometryRayAccelerator`; replace `StudyGeometryBuilder` with `SpecimenGeometryLibrary` + `GeometryInterchange` (`.STL`) + `SurfaceBakeInputPacker`; scrub UI labels & wire `ResourceBudgetRegister`. | `BakingGPUValidation` + `BakingWorkspaceUIValidation` + refreshed `.png` exhibits |
 | **Step 4** | **C++ 3D Object Icon Auto-Baking (Phase 1)** | Implement `GeometrySpecimenRasterizer.{h,cpp}` (transparent 3-point OpenPBR `128×128` auto-fit) and wire auto-bake fallback into `ThumbnailSheetRepository` for `ContentCategory::Geometry`. | `ContentBrowserValidation` + side-by-side HTML vs C++ `.png` proof |
-| **Step 5** | **HTML Prototype: `Experimental/ClusterLodLab/` (WebGPU)** | Prototype Dual-Contour SDF-to-Mesh + 9D UV/seam-locked `128`-tri cluster DAG + side-by-side Naive vs Glass-Safe refractive cluster comparison before C++ `ClusterLodBaker`. | Automated watertight/UV-seam/glass-thickness validation + visual screenshots |
-| **Step 6** | **C++ `ClusterLodBaker` & Dedicated `AssetImportWorkspace` (Phase 2)** | Port validated `ClusterLodBaker` + `DualContourSurfaceExtractor` + sparse SDF `Mip1`, then build interactive Asset Import Editor (UV + Material + SDF + Cluster LOD + Fracture + final Icon capture into `.GeometrySpace`). | `GeometryCodec` round-trip + `ClusterLodValidation` + `AssetImportValidation` `.png` proofs |
+| **Step 5** | **HTML Prototype: `Experimental/GeometryCompiler/` (`ProjectZeroEditor` UI + WebGPU)** | Build standalone Project Zero UI studio prototyping: Dual-Contour SDF-to-Mesh + Sparse `Mip0`/`Mip1` SDF + 9D UV/seam-locked `128`-tri Cluster LOD DAG + side-by-side Naive vs Glass-Safe refractive comparison + `128×128` Icon Capture before C++ port. | Automated watertight / UV-seam / glass-thickness validation + visual screenshots |
+| **Step 6** | **C++ `ClusterLodBaker` & `Engine/Workspaces/Geometry/` (`GeometryCompiler` + Asset Import Editor)** | Port validated `ClusterLodBaker` + `DualContourSurfaceExtractor` + sparse SDF `Mip1`, then wire `GeometryCompileWorkspaceHost` (both standalone workspace & auto-opened 3D Asset Import Editor writing unified `.GeometrySpace`). | `GeometryCodec` round-trip + `ClusterLodValidation` + `GeometryCompileValidation` `.png` proofs |
