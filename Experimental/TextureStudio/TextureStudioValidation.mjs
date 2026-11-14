@@ -349,36 +349,36 @@ const baseUrl = process.argv[2];
 if (baseUrl) {
   await suite(`6. Live HTTP Endpoints (${baseUrl})`, async () => {
     const paths = [
-      "/Experimental%20Remastered/",
-      "/Experimental%20Remastered/TextureStudio/",
-      "/Experimental%20Remastered/TextureStudio/TextureStudio.css",
-      "/Experimental%20Remastered/TextureStudio/TextureStudio.js",
-      "/Experimental%20Remastered/TextureStudio/AssetBrowser.js",
-      "/Experimental%20Remastered/TextureStudio/ColourCodex.js",
-      "/Experimental%20Remastered/TextureStudio/StudioControls.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/MaterialWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/LayerStackKit.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/ViewportHeaderKit.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/ArtworkStackWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/PatternWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/StampWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/TexturePaintWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Workspaces/BakingWorkspace.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/NoiseField.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/WebGpuCompute.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/PbrChannelDefinitions.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/TexturePaintEngine.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/BakingEngine.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/Patterns/ArtworkStackEngine.js",
-      "/Experimental%20Remastered/TextureStudio/Engine/Patterns/StarterCatalogBridge.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/three.esm.min.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/orbit-controls.esm.min.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/addons/TeapotGeometry.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/addons/RoundedBoxGeometry.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/addons/OBJLoader.js",
-      "/Experimental%20Remastered/TextureStudio/Vendor/addons/STLLoader.js",
-      "/Experimental%20Remastered/TextureStudio/Assets/draped-cloth.js",
-      "/Experimental%20Remastered/TextureStudio/Fonts/dm-sans-latin-400-normal.woff2",
+      "/Experimental/TextureStudio/",
+      "/Experimental/TextureStudio/TextureStudio.css",
+      "/Experimental/TextureStudio/TextureStudio.js",
+      "/Experimental/TextureStudio/AssetBrowser.js",
+      "/Experimental/TextureStudio/ColourCodex.js",
+      "/Experimental/TextureStudio/GeometryIconBaker.js",
+      "/Experimental/TextureStudio/StudioControls.js",
+      "/Experimental/TextureStudio/Workspaces/MaterialWorkspace.js",
+      "/Experimental/TextureStudio/Workspaces/LayerStackKit.js",
+      "/Experimental/TextureStudio/Workspaces/ViewportHeaderKit.js",
+      "/Experimental/TextureStudio/Workspaces/ArtworkStackWorkspace.js",
+      "/Experimental/TextureStudio/Workspaces/PatternWorkspace.js",
+      "/Experimental/TextureStudio/Workspaces/StampWorkspace.js",
+      "/Experimental/TextureStudio/Workspaces/TexturePaintWorkspace.js",
+      "/Experimental/TextureStudio/Workspaces/BakingWorkspace.js",
+      "/Experimental/TextureStudio/Engine/NoiseField.js",
+      "/Experimental/TextureStudio/Engine/WebGpuCompute.js",
+      "/Experimental/TextureStudio/Engine/PbrChannelDefinitions.js",
+      "/Experimental/TextureStudio/Engine/TexturePaintEngine.js",
+      "/Experimental/TextureStudio/Engine/BakingEngine.js",
+      "/Experimental/TextureStudio/Engine/Patterns/ArtworkStackEngine.js",
+      "/Experimental/TextureStudio/Engine/Patterns/StarterCatalogBridge.js",
+      "/Experimental/TextureStudio/Vendor/three.esm.min.js",
+      "/Experimental/TextureStudio/Vendor/orbit-controls.esm.min.js",
+      "/Experimental/TextureStudio/Vendor/addons/TeapotGeometry.js",
+      "/Experimental/TextureStudio/Vendor/addons/RoundedBoxGeometry.js",
+      "/Experimental/TextureStudio/Vendor/addons/OBJLoader.js",
+      "/Experimental/TextureStudio/Vendor/addons/STLLoader.js",
+      "/Experimental/TextureStudio/Assets/draped-cloth.js",
+      "/Experimental/TextureStudio/Fonts/dm-sans-latin-400-normal.woff2",
     ];
     for (const p of paths) {
       const r = await fetch(baseUrl.replace(/\/$/, "") + p);
@@ -3214,6 +3214,27 @@ await suite("28. Texture Paint Text Tool (T), Dedicated Text Layer, Bitmap Raste
 
   assert.equal(studio.getSnapshot().layers, layerCountBeforeStamp + 1, "Stamping text in New Layer mode must add a new text layer");
   assert(rightAside.querySelector(".object-heading-copy strong")?.textContent?.includes("TURBO"), "Newly stamped Text layer must reflect typed text 'TURBO'");
+});
+
+await suite("28. Baking Unified 2-Tier Header, GeometryIconBaker & Coherence Guards", async () => {
+  const { readFileSync } = await import("node:fs");
+  const serveText = readFileSync(resolve(HERE, "Serve.py"), "utf8");
+  assert(serveText.includes("/Experimental/TextureStudio/"), "Serve.py must redirect to /Experimental/TextureStudio/");
+  assert(!serveText.includes("Experimental%20Remastered"), "Serve.py must not reference deleted Experimental Remastered folder");
+
+  const { renderSpecimenIconPixels } = await import("./GeometryIconBaker.js");
+  const iconRgba = renderSpecimenIconPixels("teapot", 64);
+  assert.equal(iconRgba.length, 64 * 64 * 4);
+  assert.equal(iconRgba[3], 0, "Corner pixel of 3D specimen icon must stay transparent");
+  let opaqueCount = 0;
+  for (let i = 3; i < iconRgba.length; i += 4) if (iconRgba[i] === 255) opaqueCount++;
+  assert(opaqueCount > 400 && opaqueCount < 64 * 64 * 0.9, `Expected centered 3D silhouette pixels, got ${opaqueCount}`);
+
+  const bakingSrc = readFileSync(resolve(HERE, "Workspaces/BakingWorkspace.js"), "utf8");
+  assert(bakingSrc.includes("createViewportHeader"), "BakingWorkspace must use unified ViewportHeaderKit");
+  assert(!bakingSrc.includes("Compute Backend"), "BakingWorkspace must scrub banned label 'Compute Backend'");
+  assert(!bakingSrc.includes("Baking Quick Menu"), "BakingWorkspace must scrub banned label 'Baking Quick Menu'");
+  assert(bakingSrc.includes("GeometryCompiler"), "BakingWorkspace must expose GeometryCompiler handoff");
 });
 
 console.log(`\nALL ${results.length} VALIDATION SUITES PASSED CLEANLY`);

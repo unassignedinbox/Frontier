@@ -17,6 +17,8 @@ import { STLLoader } from "./Vendor/addons/STLLoader.js";
 import { Construct, Toast } from "./StudioControls.js";
 import { materials } from "./Engine/Materials/materials.js";
 import { getBakedMaterialIcon } from "./MaterialIconBaker.js";
+import { getBakedGeometryIcon } from "./GeometryIconBaker.js";
+import { BAKE_STUDY_SHAPES } from "./Engine/BakingEngine.js";
 import {
   listPatternStarterCatalog,
   listStampStarterCatalog,
@@ -79,13 +81,15 @@ const CATEGORY_ALIASES = {
   image: "Images",
 };
 
-const MESH_PRESETS = [
-  { id: "teapot", name: "Studio Teapot", family: "Standard Study", desc: "Classic curved bevel & spout normals for curvature and AO validation.", topo: "High-Poly Tri", complexity: "6.4k tris", role: "Curvature & AO" },
-  { id: "chamfer", name: "Hard-Surface Bevel", family: "Hard Surface", desc: "Machined chamfer plates & crisp mitered edges for edge-wear masks.", topo: "Bevel Quad/Tri", complexity: "3.2k tris", role: "Edge Wear" },
-  { id: "helmet", name: "Visor Armor Study", family: "Hard Surface", desc: "Compound dome visor & neck flange for anisotropic specular look-dev.", topo: "Sub-D Hull", complexity: "8.1k tris", role: "Anisotropic Spec" },
-  { id: "torus", name: "Torus Knot Study", family: "Organic", desc: "Continuous braided curvature study for thin-film and velvet sheen.", topo: "Procedural Loop", complexity: "5.8k tris", role: "Thin-Film & Sheen" },
-  { id: "shaderball", name: "Frontier Shader Orb", family: "Standard Study", desc: "Nested cutaway studio orb on beveled pedestal.", topo: "Cutaway Multi", complexity: "7.2k tris", role: "SSS & Clearcoat" },
-];
+const MESH_PRESETS = BAKE_STUDY_SHAPES.map((s) => ({
+  id: s.id,
+  name: s.name || s.label,
+  family: s.family || "Standard Study",
+  desc: s.desc || s.label,
+  topo: s.topo || "Sub-D Tri",
+  complexity: s.complexity || "5k tris",
+  role: s.role || "Surface Bake",
+}));
 
 const ATTRIBUTE_FILTERS = {
   Materials: [
@@ -1408,7 +1412,17 @@ export function createAssetBrowser(hostOrOpts, maybeBridge) {
     }
     if (item.Kind === "Meshes") {
       thumb.classList.add("cb-icon-mesh");
-      thumb.innerHTML = makeMeshIconSvg(item.raw?.id || item.id, size);
+      const bakedUrl = getBakedGeometryIcon(item.raw?.id || item.id, Math.max(88, Math.min(128, size * 2)));
+      if (bakedUrl) {
+        const img = document.createElement("img");
+        img.className = "cb-mat-baked-img";
+        img.alt = item.name;
+        img.draggable = false;
+        img.src = bakedUrl;
+        thumb.append(img);
+      } else {
+        thumb.innerHTML = makeMeshIconSvg(item.raw?.id || item.id, size);
+      }
       return thumb;
     }
     if (item.Kind === "Images") {
