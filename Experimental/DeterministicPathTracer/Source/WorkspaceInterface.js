@@ -57,6 +57,7 @@ const Configuration = {
     VehicleCount:         VehicleCountOptions.includes(Number(QueryParameters.get('vehicles'))) ? Number(QueryParameters.get('vehicles')) : 1,
     ShowcaseEnabled:      true,
     PointPattern:         ['pixel', 'bluenoise'].includes(QueryParameters.get('pattern')) ? QueryParameters.get('pattern') : 'shared',
+    IntegratorMode:       ['wavefront', 'megakernel', 'auto'].includes(QueryParameters.get('integrator')) ? QueryParameters.get('integrator') : 'auto',
     VisibilityRasterEnabled:   QueryParameters.get('visibility') === 'raster',
     ReprojectionEnabled:       QueryParameters.get('reproject') === '1',
     HistoryCapacity:      32,

@@ -29,7 +29,8 @@ const InstanceShift           : u32 = 20u;         // [-]  - SurfaceHit.Primitiv
 const TriangleMask            : u32 = 0xFFFFFu;
 const ThinDielectricBit       : u32 = 0x80000000u; // [-]  - Bit 31 of TrianglePositions[t*3].w flags thin glass for 1-cycle opaque shadow early-out
 const MaterialSlotMask        : u32 = 0x7FFFFFFFu;
-const InstanceStride          : u32 = 8u;          // [vec4u] per instance record
+const InstanceStride          : u32 = 2u;          // [vec4u] per instance record: (Cosine, Sine, Tx, Tz) + (root, paint, rim)
+const UnusedMaterialSlot      : u32 = 0xFFFFu;     // [-]  - Sentinel for unchanged material slot in 16-bit packed swap words
 const DeltaRoughnessAlpha     : f32 = 0.0025;     // [-]  - α below this traces the exact mirror / refraction direction
 const RayOffsetScale          : f32 = 2.0e-4;     // [m]  - Self-intersection offset along the geometric normal
 const UnboundedDistance       : f32 = 1.0e30;     // [m]
@@ -276,45 +277,38 @@ fn IntersectWideNode(NodeIndex: u32, Origin: vec3f, Reciprocal: vec3f, MaximumDi
     return WideVisit(select(vec4f(UnboundedDistance), Entered, Present & (Entered <= Exited * 1.000001)), Counts, Links);
 }
 
-// 📝 Instance record (8 vec4u): rows 0–2 world→object (xyz linear, w translation), rows 3–5 object→world, row 6 =
-//    vehicle tree root, paint slot to replace, replacement slot (EmptyLink = keep), rim replacement; row 7 x = rim
-//    slot. Transforms are rigid; loading the 3 rows once cuts storage traffic in half per instance transition.
-struct InstanceTransform
+// 📝 Compact rigid 2D-yaw instance record (2 vec4u = 32 B):
+//    row 0 (vec4f): (Cosine, Sine, Tx, Tz) — yaw about +Y then XZ translation (bay 0 of 1 car is exact identity).
+//    row 1 (vec4u): x = vehicle tree root, y = BodySlot | (PaintSwap << 16), z = RimSlot | (RimSwap << 16).
+fn FetchInstanceYaw(Instance: u32) -> vec4f
 {
-    RowX : vec4f,
-    RowY : vec4f,
-    RowZ : vec4f,
+    return bitcast<vec4f>(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride]);
 }
 
-fn FetchInstanceTransform(Instance: u32, FirstRow: u32) -> InstanceTransform
+fn WorldToObjectPoint(Yaw: vec4f, Point: vec3f) -> vec3f
 {
-    let Base = Tracing.Geometry.y + Instance * InstanceStride + FirstRow;
-    return InstanceTransform(bitcast<vec4f>(BoundsEntries[Base]),
-                             bitcast<vec4f>(BoundsEntries[Base + 1u]),
-                             bitcast<vec4f>(BoundsEntries[Base + 2u]));
+    let Dx = Point.x - Yaw.z;
+    let Dz = Point.z - Yaw.w;
+    return vec3f(Yaw.x * Dx - Yaw.y * Dz, Point.y, Yaw.y * Dx + Yaw.x * Dz);
 }
 
-fn ApplyPoint(Transform: InstanceTransform, Point: vec3f) -> vec3f
+fn WorldToObjectVector(Yaw: vec4f, Vector: vec3f) -> vec3f
 {
-    return vec3f(dot(Transform.RowX.xyz, Point) + Transform.RowX.w,
-                 dot(Transform.RowY.xyz, Point) + Transform.RowY.w,
-                 dot(Transform.RowZ.xyz, Point) + Transform.RowZ.w);
+    return vec3f(Yaw.x * Vector.x - Yaw.y * Vector.z, Vector.y, Yaw.y * Vector.x + Yaw.x * Vector.z);
 }
 
-fn ApplyVector(Transform: InstanceTransform, Vector: vec3f) -> vec3f
+fn ObjectToWorldVector(Yaw: vec4f, Vector: vec3f) -> vec3f
 {
-    return vec3f(dot(Transform.RowX.xyz, Vector),
-                 dot(Transform.RowY.xyz, Vector),
-                 dot(Transform.RowZ.xyz, Vector));
+    return vec3f(Yaw.x * Vector.x + Yaw.y * Vector.z, Vector.y, -Yaw.y * Vector.x + Yaw.x * Vector.z);
 }
 
 fn InstanceMaterialSlot(Instance: u32, TriangleSlot: u32) -> u32
 {
-    let Record = Tracing.Geometry.y + Instance * InstanceStride;
-    let Paint  = BoundsEntries[Record + 6u];
-    var Slot   = select(TriangleSlot, Paint.z, Paint.z != EmptyLink && TriangleSlot == Paint.y);
-    // 📝 Per-car wheel finish: row 6 w replaces the rim slot named in row 7 x (EmptyLink = keep, e.g. the hero car).
-    if (Paint.w != EmptyLink && TriangleSlot == BoundsEntries[Record + 7u].x) { Slot = Paint.w; }
+    let Meta      = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 1u];
+    let PaintSwap = Meta.y >> 16u;
+    var Slot      = select(TriangleSlot, PaintSwap, PaintSwap != UnusedMaterialSlot && TriangleSlot == (Meta.y & 0xFFFFu));
+    let RimSwap   = Meta.z >> 16u;
+    if (RimSwap != UnusedMaterialSlot && TriangleSlot == (Meta.z & 0xFFFFu)) { Slot = RimSwap; }
     return Slot;
 }
 
@@ -379,9 +373,10 @@ fn IntersectsBoundingSphere(Origin: vec3f, Direction: vec3f, Sphere: vec4f, MaxD
 
 fn IntersectSphere(Origin: vec3f, Direction: vec3f, Sphere: vec4f) -> f32
 {
-    let Offset       = Origin - Sphere.xyz;
-    let HalfB        = dot(Offset, Direction);
-    let C            = dot(Offset, Offset) - Sphere.w * Sphere.w;
+    let Offset = Origin - Sphere.xyz;
+    let HalfB  = dot(Offset, Direction);
+    let C      = dot(Offset, Offset) - Sphere.w * Sphere.w;
+    if (C > 0.0 && HalfB >= 0.0) { return -1.0; }
     let Discriminant = HalfB * HalfB - C;
     if (Discriminant < 0.0) { return -1.0; }
     let Root = sqrt(Discriminant);
@@ -403,13 +398,13 @@ fn LightNormal(Light: AreaLight) -> vec3f
     return vec3f(Light.EdgeU.w, Light.EdgeV.w, Light.Radiance.w);
 }
 
-fn IntersectLight(Origin: vec3f, Direction: vec3f, Light: AreaLight) -> f32
+fn IntersectLight(Origin: vec3f, Direction: vec3f, Light: AreaLight, MaxDistance: f32) -> f32
 {
     let Normal   = LightNormal(Light);
     let Approach = dot(Direction, Normal);
     if (abs(Approach) < 1.0e-8) { return -1.0; }
     let Distance = dot(Light.Centre.xyz - Origin, Normal) / Approach;
-    if (Distance <= RayOffsetScale) { return -1.0; }
+    if (Distance <= RayOffsetScale || Distance >= MaxDistance) { return -1.0; }
     let Local = Origin + Direction * Distance - Light.Centre.xyz;
     let U = dot(Local, Light.EdgeU.xyz) / dot(Light.EdgeU.xyz, Light.EdgeU.xyz);
     let V = dot(Local, Light.EdgeV.xyz) / dot(Light.EdgeV.xyz, Light.EdgeV.xyz);
@@ -447,8 +442,8 @@ fn TraceAnalyticHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Sur
     {
         for (var LightIndex = 0u; LightIndex < Tracing.DepthLimits.z; LightIndex++)
         {
-            let Distance = IntersectLight(Origin, Direction, FetchAreaLight(LightIndex));
-            if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
+            let Distance = IntersectLight(Origin, Direction, FetchAreaLight(LightIndex), Hit.Distance);
+            if (Distance > 0.0) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
         }
     }
     return Hit;
@@ -473,21 +468,22 @@ fn SortChildren(Visit: WideVisit) -> SortedChildren
 }
 
 // 📝 Two-level closest-hit query in ONE loop with direct-descent into the nearest child (no push/pop for the closest
-//    child and zero SortChildren overhead when <= 1 child is hit). Identical visitation order to full push/pop.
+//    child) and a zero-overhead 1-vehicle identity fast path (bay 0 is exact identity, skipping instance tree & transform).
 fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
 {
     if (RayStatisticsEnabled) { RayStatistics.x += 1u; }
     var Hit = TraceAnalyticHit(Origin, Direction, LightsVisible);
     if (Tracing.SceneLayout.w == 0u || Tracing.Geometry.z == 0u) { return Hit; }
     let WorldReciprocal = SafeReciprocal(Direction);
+    let SingleIdentity  = Tracing.Geometry.z == 1u;
     var RayOrigin    = Origin;
     var RayDirection = Direction;
     var Reciprocal   = WorldReciprocal;
     var Instance     = 0u;
-    var ObjectLevel  = false;
+    var ObjectLevel  = SingleIdentity;
     var Stack        : array<vec2u, SceneStackCapacity>;
     var StackSize    = 0u;
-    var Entry        = vec2u(Tracing.Geometry.x << 4u, 0u);
+    var Entry        = vec2u(select(Tracing.Geometry.x, 0u, SingleIdentity) << 4u, 0u);
     var Active       = true;
     loop
     {
@@ -511,13 +507,13 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
             // 📝 Instance leaf (exactly one instance per leaf, see ConstructInstanceTree).
             Instance     = Link;
             ObjectLevel  = true;
-            let WorldToObject = FetchInstanceTransform(Instance, 0u);
-            RayOrigin    = ApplyPoint(WorldToObject, Origin);
-            RayDirection = ApplyVector(WorldToObject, Direction);
+            let Yaw      = FetchInstanceYaw(Instance);
+            RayOrigin    = WorldToObjectPoint(Yaw, Origin);
+            RayDirection = WorldToObjectVector(Yaw, Direction);
             Reciprocal   = SafeReciprocal(RayDirection);
             Stack[StackSize] = vec2u(ReturnMarker, 0u);
             StackSize += 1u;
-            Entry  = vec2u(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u, 0u);
+            Entry  = vec2u(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 1u].x << 4u, 0u);
             Active = true;
             continue;
         }
@@ -533,8 +529,9 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
             }
             continue;
         }
-        let Sorted = SortChildren(IntersectWideNode(Link, RayOrigin, Reciprocal, Hit.Distance));
-        if (Sorted.Distances.x >= UnboundedDistance) { continue; }
+        let Visit = IntersectWideNode(Link, RayOrigin, Reciprocal, Hit.Distance);
+        if (min(min(Visit.Distances.x, Visit.Distances.y), min(Visit.Distances.z, Visit.Distances.w)) >= UnboundedDistance) { continue; }
+        let Sorted = SortChildren(Visit);
         let Room   = StackSize + 3u <= SceneStackCapacity;
         if (Room && Sorted.Distances.w < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.w, bitcast<u32>(Sorted.Distances.w)); StackSize += 1u; }
         if (Room && Sorted.Distances.z < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.z, bitcast<u32>(Sorted.Distances.z)); StackSize += 1u; }
@@ -553,9 +550,9 @@ fn ThinSheetTransmittance(CosineIncidence: f32, Material: SurfaceMaterial) -> ve
     return Material.AlbedoRoughness.rgb * Transmitted;
 }
 
-// 📝 Visibility of a light point, same two-level single loop with zero-division shadow triangles and bit-31 opaque
-//    fast-path (skips InstanceMaterialSlot and Materials[] on opaque hits). Fixed child order keeps transmittance
-//    products bit-repeatable with minimal SIMT branch divergence.
+// 📝 Visibility of a light point: direct-descent stackless-first-child two-level loop, 1-vehicle identity fast path,
+//    zero-division shadow triangles, and bit-31 opaque early-out. Descending-area child ordering hits large opaque
+//    occluders first on slot 0 while preserving fixed deterministic x → y → z → w order for thin-glass products.
 fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> vec3f
 {
     if (RayStatisticsEnabled) { RayStatistics.y += 1u; }
@@ -571,19 +568,25 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
     var Transmittance = vec3f(1.0);
     if (Tracing.SceneLayout.w == 0u || Tracing.Geometry.z == 0u) { return Transmittance; }
     let WorldReciprocal = SafeReciprocal(Direction);
+    let SingleIdentity  = Tracing.Geometry.z == 1u;
     var RayOrigin    = Origin;
     var RayDirection = Direction;
     var Reciprocal   = WorldReciprocal;
     var Instance     = 0u;
-    var ObjectLevel  = false;
+    var ObjectLevel  = SingleIdentity;
     var Stack        : array<u32, SceneStackCapacity>;
-    Stack[0]         = Tracing.Geometry.x << 4u;
-    var StackSize    = 1u;
+    var StackSize    = 0u;
+    var Entry        = select(Tracing.Geometry.x, 0u, SingleIdentity) << 4u;
+    var Active       = true;
     loop
     {
-        if (StackSize == 0u) { break; }
-        StackSize -= 1u;
-        let Entry = Stack[StackSize];
+        if (!Active)
+        {
+            if (StackSize == 0u) { break; }
+            StackSize -= 1u;
+            Entry = Stack[StackSize];
+        }
+        Active = false;
         if (Entry == ReturnMarker)
         {
             ObjectLevel = false; RayOrigin = Origin; RayDirection = Direction; Reciprocal = WorldReciprocal;
@@ -595,13 +598,14 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
         {
             Instance     = Link;
             ObjectLevel  = true;
-            let WorldToObject = FetchInstanceTransform(Instance, 0u);
-            RayOrigin    = ApplyPoint(WorldToObject, Origin);
-            RayDirection = ApplyVector(WorldToObject, Direction);
+            let Yaw      = FetchInstanceYaw(Instance);
+            RayOrigin    = WorldToObjectPoint(Yaw, Origin);
+            RayDirection = WorldToObjectVector(Yaw, Direction);
             Reciprocal   = SafeReciprocal(RayDirection);
-            Stack[StackSize]      = ReturnMarker;
-            Stack[StackSize + 1u] = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u;
-            StackSize += 2u;
+            Stack[StackSize] = ReturnMarker;
+            StackSize += 1u;
+            Entry  = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 1u].x << 4u;
+            Active = true;
             continue;
         }
         if (Count > 0u)
@@ -623,11 +627,11 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
         }
         let Visit   = IntersectWideNode(Link, RayOrigin, Reciprocal, Distance);
         let Entries = (Visit.Links << vec4u(4u)) | Visit.Counts;
-        let Room    = StackSize + 4u <= SceneStackCapacity;
-        if (Room && Visit.Distances.w < UnboundedDistance) { Stack[StackSize] = Entries.w; StackSize += 1u; }
-        if (Room && Visit.Distances.z < UnboundedDistance) { Stack[StackSize] = Entries.z; StackSize += 1u; }
-        if (Room && Visit.Distances.y < UnboundedDistance) { Stack[StackSize] = Entries.y; StackSize += 1u; }
-        if (Room && Visit.Distances.x < UnboundedDistance) { Stack[StackSize] = Entries.x; StackSize += 1u; }
+        let Room    = StackSize + 3u <= SceneStackCapacity;
+        if (Visit.Distances.w < UnboundedDistance) { Entry = Entries.w; Active = true; }
+        if (Visit.Distances.z < UnboundedDistance) { if (Active && Room) { Stack[StackSize] = Entry; StackSize += 1u; } Entry = Entries.z; Active = true; }
+        if (Visit.Distances.y < UnboundedDistance) { if (Active && Room) { Stack[StackSize] = Entry; StackSize += 1u; } Entry = Entries.y; Active = true; }
+        if (Visit.Distances.x < UnboundedDistance) { if (Active && Room) { Stack[StackSize] = Entry; StackSize += 1u; } Entry = Entries.x; Active = true; }
     }
     return Transmittance;
 }
@@ -641,13 +645,24 @@ fn ResolveSurface(Origin: vec3f, Direction: vec3f, Hit: SurfaceHit) -> SurfaceSa
 
     if (Hit.Category == HitTriangle)
     {
-        let Instance      = Hit.PrimitiveIndex >> InstanceShift;
-        let CornerOffset  = (Hit.PrimitiveIndex & TriangleMask) * 3u;
-        let ObjectToWorld = FetchInstanceTransform(Instance, 3u);
-        GeometricNormal = normalize(ApplyVector(ObjectToWorld, cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz)));
+        let Instance          = Hit.PrimitiveIndex >> InstanceShift;
+        let CornerOffset      = (Hit.PrimitiveIndex & TriangleMask) * 3u;
+        let LocalGeometric    = cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz);
         let FirstCornerWeight = 1.0 - Hit.Barycentric.x - Hit.Barycentric.y;
-        ShadingNormal = normalize(ApplyVector(ObjectToWorld, TriangleNormals[CornerOffset].xyz * FirstCornerWeight + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
-                                + TriangleNormals[CornerOffset + 2u].xyz * Hit.Barycentric.y));
+        let LocalShading      = TriangleNormals[CornerOffset].xyz * FirstCornerWeight
+                              + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
+                              + TriangleNormals[CornerOffset + 2u].xyz * Hit.Barycentric.y;
+        if (Tracing.Geometry.z == 1u)
+        {
+            GeometricNormal = normalize(LocalGeometric);
+            ShadingNormal   = normalize(LocalShading);
+        }
+        else
+        {
+            let Yaw = FetchInstanceYaw(Instance);
+            GeometricNormal = normalize(ObjectToWorldVector(Yaw, LocalGeometric));
+            ShadingNormal   = normalize(ObjectToWorldVector(Yaw, LocalShading));
+        }
         MaterialSlot = InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[CornerOffset].w) & MaterialSlotMask);
     }
     else if (Hit.Category == HitSphere)
@@ -1230,13 +1245,17 @@ fn ScatterSurface(Surface: SurfaceSample, Ray: TransportRay, HitDistance: f32, S
         return Radiance;
     }
 
-    // 📝 Layered / conductor: light quadrature first, then every lobe continues with its exact weight.
+    // 📝 Layered / conductor: light quadrature first (exact short-circuit on mirror conductors whose non-delta lobes
+    //    are identically zero), then every lobe continues with its exact weight.
     let CanContinue   = Depth + 1u < Tracing.DepthLimits.y;
     let LobesContinue = NonDeltaDepth < Tracing.DepthLimits.x && CanContinue;
-    Radiance += Ray.Throughput * IntegrateLightQuadrature(Surface, Material, ωo, SampleIndex, Depth, LobesContinue);
+    let α             = max(MaterialAlpha(Material.AlbedoRoughness.w), 1.0e-4);
+    if (!(Category == SurfaceConductor && α < DeltaRoughnessAlpha))
+    {
+        Radiance += Ray.Throughput * IntegrateLightQuadrature(Surface, Material, ωo, SampleIndex, Depth, LobesContinue);
+    }
     if (!CanContinue) { return Radiance; }
 
-    let α = max(MaterialAlpha(Material.AlbedoRoughness.w), 1.0e-4);
     let NeedBasis = LobesContinue && (Category != SurfaceConductor || α >= DeltaRoughnessAlpha);
     var Basis     = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var ViewLocal = vec3f(0.0, 0.0, 1.0);
@@ -1298,9 +1317,16 @@ fn ResolveRasterizedPrimary(Origin: vec3f, Direction: vec3f, PixelCoordinate: ve
     var Hit = TraceAnalyticHit(Origin, Direction, Tracing.Tuning.z > 0.5);
     let Identifier = textureLoad(VisibilityIds, vec2i(PixelCoordinate), 0).x;
     if (Identifier == 0u) { return Hit; }
-    let Instance      = (Identifier - 1u) >> InstanceShift;
-    let WorldToObject = FetchInstanceTransform(Instance, 0u);
-    let Candidate     = IntersectTriangle(ApplyPoint(WorldToObject, Origin), ApplyVector(WorldToObject, Direction), (Identifier - 1u) & TriangleMask, UnboundedDistance);
+    let Instance = (Identifier - 1u) >> InstanceShift;
+    var LocalOrigin    = Origin;
+    var LocalDirection = Direction;
+    if (Tracing.Geometry.z > 1u)
+    {
+        let Yaw        = FetchInstanceYaw(Instance);
+        LocalOrigin    = WorldToObjectPoint(Yaw, Origin);
+        LocalDirection = WorldToObjectVector(Yaw, Direction);
+    }
+    let Candidate = IntersectTriangle(LocalOrigin, LocalDirection, (Identifier - 1u) & TriangleMask, UnboundedDistance);
     if (Candidate.x <= 0.0) { return SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0)); }
     if (Candidate.x < Hit.Distance) { Hit = SurfaceHit(Candidate.x, HitTriangle, Identifier - 1u, Candidate.yz); }
     return Hit;

@@ -28,7 +28,7 @@ struct RasterVarying
 
 @group(0) @binding(0) var<uniform>       Raster            : RasterUniforms;
 @group(0) @binding(1) var<storage, read> TrianglePositions : array<vec4f>;   // per triangle: corner, edge A, edge B (object space)
-@group(0) @binding(2) var<storage, read> BoundsEntries     : array<vec4u>;   // instance records from Raster.Sampling.w (8 vec4u each)
+@group(0) @binding(2) var<storage, read> BoundsEntries     : array<vec4u>;   // instance records from Raster.Sampling.w (2 vec4u each)
 
 const NearPlane : f32 = 0.02;    // [m]
 const FarPlane  : f32 = 500.0;   // [m]
@@ -45,12 +45,11 @@ fn ProjectTriangleCorner(@builtin(vertex_index) VertexIndex: u32, @builtin(insta
     let CornerIndex   = VertexIndex % 3u;
     var Local         = TrianglePositions[TriangleIndex * 3u].xyz;
     if (CornerIndex > 0u) { Local += TrianglePositions[TriangleIndex * 3u + CornerIndex].xyz; }
-    // 📝 Object → world rows 3–5 of the instance record (rigid bay transform).
-    let Record   = Raster.Sampling.w + Instance * 8u;
-    let RowX     = bitcast<vec4f>(BoundsEntries[Record + 3u]);
-    let RowY     = bitcast<vec4f>(BoundsEntries[Record + 4u]);
-    let RowZ     = bitcast<vec4f>(BoundsEntries[Record + 5u]);
-    let Position = vec3f(dot(RowX.xyz, Local) + RowX.w, dot(RowY.xyz, Local) + RowY.w, dot(RowZ.xyz, Local) + RowZ.w);
+    // 📝 Object → world rigid 2D-yaw bay transform: (Cosine, Sine, Tx, Tz) in row 0 of the 2-vec4u instance record.
+    let Transform = bitcast<vec4f>(BoundsEntries[Raster.Sampling.w + Instance * 2u]);
+    let Position  = vec3f(Transform.x * Local.x + Transform.y * Local.z + Transform.z,
+                          Local.y,
+                         -Transform.y * Local.x + Transform.x * Local.z + Transform.w);
 
     // 📝 Ray direction = Forward + NdcX·Right − NdcY·Up, so a point Offset = c·Forward + a·Right + b·Up has
     //    NdcX = a/c and image-up = b/c. The subpixel term moves pixel centres onto this sample's ray.

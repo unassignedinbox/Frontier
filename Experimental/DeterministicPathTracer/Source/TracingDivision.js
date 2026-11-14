@@ -21,7 +21,8 @@ const ThinDielectricFlag   = 0x80000000; // [-] - Bit 31 of TrianglePositions[t*
 const PointPatternCodes    = Object.freeze({ shared: 0, pixel: 1, bluenoise: 2 });   // 📝 Tracing.Realtime.x
 const DisplayUniformBytes  = 32;    // [B] - 2 × vec4
 const RasterUniformBytes   = 80;    // [B] - 5 × vec4
-const InstanceRecordWords  = 32;    // [-]  - 8 × vec4u per instance (RadianceIntegration.wgsl InstanceRow)
+const InstanceRecordWords  = 8;     // [-]  - 2 × vec4u per instance: (Cosine, Sine, Tx, Tz) + (root, paint swap, rim swap)
+const UnusedMaterialSlot   = 0xFFFF; // [-] - Sentinel for unchanged material slot in 16-bit packed instance swap words
 const InstanceLeafLimit    = 1;     // [-]  - Exactly one instance per instance-tree leaf (the traversal relies on it)
 const AccumulationRegions  = 4;     // [-]  - Exact sums, two ping-pong history regions, luminance moments
 const ReconstructionRegions = 4;    // [-]  - Estimate, two à-trous ping-pong regions, display radiance
@@ -31,6 +32,11 @@ const DenoiseFullUntil     = 4;     // [spp] - Full filter strength up to here �
 const DenoiseFadedAt       = 64;    // [spp] - … fading (log₂) to the exact image here
 const FloorRadius          = 60.0;  // [m]
 const WorkgroupEdge        = 8;     // [px]
+const WaveWorkgroupSize    = 64;    // [-] - 1D wavefront compute workgroup size
+const WaveUniformSlotBytes = 256;   // [B] - 256-byte dynamic uniform alignment per wave stage
+const WaveMaxBatchTiles    = 32768; // [-] - Tiles per wavefront batch (1.125 MiB L2-resident 96-bit RGB accumulator)
+const WaveQueueCapacity    = 131072;// [-] - Max active rays per wave depth (4 × WaveMaxBatchTiles)
+const WaveShadowCapacity   = 524288;// [-] - Max shadow rays per wave depth (16 × WaveMaxBatchTiles)
 const LampCutLimits        = Object.freeze({ tree: 1, split4: 4, split8: 8, all: 1 });   // 📝 Tracing.Shading.w
 const NightSkyFraction     = 0.02;  // [-]  - Environment left on at night so unlit geometry stays readable
 
@@ -160,6 +166,7 @@ export class TracingDivision
         const Adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         if (!Adapter) throw new Error('No WebGPU adapter was granted.');
         this.AdapterDescription = [Adapter.info?.vendor, Adapter.info?.architecture, Adapter.info?.description].filter(Boolean).join(' · ') || 'WebGPU adapter';
+        this.IsSoftwareAdapter  = Boolean(Adapter.isFallbackAdapter) || /swiftshader|llvmpipe|lavapipe|software|basic render/i.test(this.AdapterDescription);
         const TimestampsAvailable = Adapter.features.has('timestamp-query') && new URLSearchParams(location.search).get('timing') !== '0';
         this.Device = await Adapter.requestDevice({
             requiredFeatures: TimestampsAvailable ? ['timestamp-query'] : [],
@@ -179,9 +186,10 @@ export class TracingDivision
             this.CanvasContext.configure({ device: this.Device, format: this.CanvasFormat, alphaMode: 'opaque' });
         }
 
-        const [QuadratureSource, IntegrationSource, DisplaySource, RasterSource, ReconstructionSource, Vehicle, BlueNoiseRanks, Photometry] = await Promise.all([
+        const [QuadratureSource, IntegrationSource, WavefrontSource, DisplaySource, RasterSource, ReconstructionSource, Vehicle, BlueNoiseRanks, Photometry] = await Promise.all([
             RetrieveShaderSource('QuadratureSequence.wgsl'),
             RetrieveShaderSource('RadianceIntegration.wgsl'),
+            RetrieveShaderSource('WavefrontIntegration.wgsl'),
             RetrieveShaderSource('DisplayExposure.wgsl'),
             RetrieveShaderSource('VisibilityRasterization.wgsl'),
             RetrieveShaderSource('DisplayReconstruction.wgsl'),
@@ -190,10 +198,11 @@ export class TracingDivision
             RetrievePhotometry(AssetRoot)
         ]);
         this.Photometry = Photometry;
-        this.ConstructPipelines(QuadratureSource + IntegrationSource, DisplaySource, QuadratureSource + RasterSource, ReconstructionSource);
+        this.ConstructPipelines(QuadratureSource + IntegrationSource, QuadratureSource + WavefrontSource, DisplaySource, QuadratureSource + RasterSource, ReconstructionSource);
         await Promise.all([
             ValidateShaderCompilation(this.ReconstructionUnit, 'DisplayReconstruction.wgsl'),
             ValidateShaderCompilation(this.IntegrationUnit, 'RadianceIntegration.wgsl'),
+            ValidateShaderCompilation(this.WavefrontUnit, 'WavefrontIntegration.wgsl'),
             ValidateShaderCompilation(this.DisplayUnit, 'DisplayExposure.wgsl'),
             ValidateShaderCompilation(this.RasterUnit, 'VisibilityRasterization.wgsl')
         ]);
@@ -206,11 +215,12 @@ export class TracingDivision
         this.Device.queue.writeTexture({ texture: this.BlueNoiseTexture }, BlueNoiseRanks, { bytesPerRow: 64 * 4 }, [64, 64]);
     }
 
-    ConstructPipelines(IntegrationSource, DisplaySource, RasterSource, ReconstructionSource)
+    ConstructPipelines(IntegrationSource, WavefrontSource, DisplaySource, RasterSource, ReconstructionSource)
     {
         const Device = this.Device;
         this.ReconstructionUnit = Device.createShaderModule({ label: 'DisplayReconstruction', code: ReconstructionSource });
         this.IntegrationUnit = Device.createShaderModule({ label: 'RadianceIntegration', code: IntegrationSource });
+        this.WavefrontUnit   = Device.createShaderModule({ label: 'WavefrontIntegration', code: WavefrontSource });
         this.DisplayUnit     = Device.createShaderModule({ label: 'DisplayExposure', code: DisplaySource });
         this.RasterUnit      = Device.createShaderModule({ label: 'VisibilityRasterization', code: RasterSource });
 
@@ -228,6 +238,94 @@ export class TracingDivision
         this.QuadraturePipeline  = Device.createComputePipeline({ layout: IntegrationPipelineLayout, compute: { module: this.IntegrationUnit, entryPoint: 'ExtractQuadrature' } });
         this.ReprojectionPipeline = Device.createComputePipeline({ layout: IntegrationPipelineLayout, compute: { module: this.IntegrationUnit, entryPoint: 'ReprojectHistory' } });
         this.FeaturePipeline      = Device.createComputePipeline({ layout: IntegrationPipelineLayout, compute: { module: this.IntegrationUnit, entryPoint: 'ResolveSurfaceFeatures' } });
+
+        // 📝 Wavefront stage layouts (every pipeline keeps total storage buffers <= 8, matching WebGPU core minimum limits).
+        const ComputeStage = GPUShaderStage.COMPUTE;
+        const DynUniform   = { type: 'uniform', hasDynamicOffset: true };
+        const ReadWrite    = { type: 'storage' };
+
+        this.WaveEmptyLayout        = Device.createBindGroupLayout({ entries: [] });
+        this.WavePrimarySceneLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 2, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 3, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 5, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 6, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 7, visibility: ComputeStage, texture: { sampleType: 'uint' } },
+            { binding: 8, visibility: ComputeStage, texture: { sampleType: 'uint' } }
+        ] });
+        this.WaveShadeSceneLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: { type: 'uniform' } },
+            { binding: 4, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 5, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 8, visibility: ComputeStage, texture: { sampleType: 'uint' } }
+        ] });
+        this.WaveShadowSceneLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 2, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 4, visibility: ComputeStage, buffer: ReadOnly },
+            { binding: 6, visibility: ComputeStage, buffer: ReadOnly }
+        ] });
+        this.WaveFinalizeSceneLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: { type: 'uniform' } }
+        ] });
+
+        this.WavePrepareGroupLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: DynUniform },
+            { binding: 1, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 6, visibility: ComputeStage, buffer: ReadWrite }
+        ] });
+        this.WaveQueueGroupLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: DynUniform },
+            { binding: 1, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 2, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 3, visibility: ComputeStage, buffer: ReadWrite }
+        ] });
+        this.WaveShadeGroupLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: DynUniform },
+            { binding: 1, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 2, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 3, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 4, visibility: ComputeStage, buffer: ReadWrite }
+        ] });
+        this.WaveShadowGroupLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: DynUniform },
+            { binding: 1, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 3, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 4, visibility: ComputeStage, buffer: ReadWrite }
+        ] });
+        this.WaveFinalizeGroupLayout = Device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: ComputeStage, buffer: DynUniform },
+            { binding: 4, visibility: ComputeStage, buffer: ReadWrite },
+            { binding: 5, visibility: ComputeStage, buffer: ReadWrite }
+        ] });
+
+        this.WaveGeneratePipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WavePrimarySceneLayout, this.WaveQueueGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WaveGeneratePrimary' }
+        });
+        this.WavePreparePipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WaveEmptyLayout, this.WavePrepareGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WavePrepareStage' }
+        });
+        this.WaveClosestPipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WavePrimarySceneLayout, this.WaveQueueGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WaveTraceClosest' }
+        });
+        this.WaveShadePipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WaveShadeSceneLayout, this.WaveShadeGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WaveShadeScatter' }
+        });
+        this.WaveShadowPipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WaveShadowSceneLayout, this.WaveShadowGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WaveTraceShadow' }
+        });
+        this.WaveFinalizePipeline = Device.createComputePipeline({
+            layout: Device.createPipelineLayout({ bindGroupLayouts: [this.WaveFinalizeSceneLayout, this.WaveFinalizeGroupLayout] }),
+            compute: { module: this.WavefrontUnit, entryPoint: 'WaveFinalizeSample' }
+        });
 
         this.ReconstructionLayout = Device.createBindGroupLayout({ entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -288,12 +386,19 @@ export class TracingDivision
             if (!this.VehicleTree)
             {
                 const Vehicle = this.Vehicle;
-                const Binary  = ConstructBoundingVolumes(Vehicle.Positions, Vehicle.TriangleCount);
+                const UnsplittableMask = new Uint8Array(Vehicle.TriangleCount);
+                for (let Triangle = 0; Triangle < Vehicle.TriangleCount; Triangle++)
+                {
+                    const SlotNumber = MaterialTable.SlotIndex[Vehicle.Slots[Triangle]];
+                    if (MaterialTable.Slots[SlotNumber]?.[1]?.Category === SurfaceCategory.ThinDielectric) UnsplittableMask[Triangle] = 1;
+                }
+                const Binary  = ConstructBoundingVolumes(Vehicle.Positions, Vehicle.TriangleCount, UnsplittableMask);
                 const Wide    = CollapseWideBounds(Binary, 0);
-                const Positions = new Float32Array(Vehicle.TriangleCount * 12);
+                const ReferenceCount = Binary.Order.length;
+                const Positions = new Float32Array(ReferenceCount * 12);
                 const PositionWords = new Uint32Array(Positions.buffer);
-                const Normals   = new Float32Array(Vehicle.TriangleCount * 12);
-                for (let Slot = 0; Slot < Vehicle.TriangleCount; Slot++)
+                const Normals   = new Float32Array(ReferenceCount * 12);
+                for (let Slot = 0; Slot < ReferenceCount; Slot++)
                 {
                     const Source = Binary.Order[Slot], P = Source * 9, O = Slot * 12;
                     const Ax = Vehicle.Positions[P], Ay = Vehicle.Positions[P + 1], Az = Vehicle.Positions[P + 2];
@@ -318,7 +423,7 @@ export class TracingDivision
                 }
                 this.TrianglePositionBuffer = this.CreateStorage(Positions, 'TrianglePositions');
                 this.TriangleNormalBuffer   = this.CreateStorage(Normals, 'TriangleNormals');
-                this.VehicleTree = { Wide, BinaryEntries: Binary.EntryCount, BinaryDepth: Binary.MaximumDepthTier, Bounds,
+                this.VehicleTree = { Wide, ReferenceCount, BinaryEntries: Binary.EntryCount, BinaryDepth: Binary.MaximumDepthTier, Bounds,
                                      Milliseconds: Math.round(performance.now() - ConstructionStart) };
             }
             const Instances = TracingDivision.ConstructInstanceTree(this.VehicleTree, ResolveParkingBays(VehicleCount), MaterialTable.SlotIndex);
@@ -429,6 +534,248 @@ export class TracingDivision
             { binding: 1, resource: { buffer: this.AccumulationBuffer } },
             { binding: 2, resource: { buffer: this.ReconstructionBuffer } }
         ] });
+        if (this.WaveControlBuffer) this.RebuildWavefrontGroups();
+    }
+
+    WavefrontActive()
+    {
+        const Mode = this.Configuration?.IntegratorMode ?? 'auto';
+        if (Mode === 'megakernel') return false;
+        return true;
+    }
+
+    EnsureWavefrontResources(RequiredUniformSlots)
+    {
+        const Device = this.Device;
+        let Rebuilt = false;
+        if (!this.WaveControlBuffer)
+        {
+            this.WaveControlBuffer = Device.createBuffer({
+                label: 'WaveControl', size: 32,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+            });
+            this.WaveIndirectBuffer = Device.createBuffer({
+                label: 'WaveIndirect', size: 48,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST
+            });
+            this.WaveRaysBuffer = Device.createBuffer({
+                label: 'WaveRays', size: 2 * WaveQueueCapacity * 4 * 16,
+                usage: GPUBufferUsage.STORAGE
+            });
+            this.WaveWorkBuffer = Device.createBuffer({
+                label: 'WaveWork', size: (WaveQueueCapacity * 3 + WaveShadowCapacity * 3) * 16,
+                usage: GPUBufferUsage.STORAGE
+            });
+            this.WaveAccumBuffer = Device.createBuffer({
+                label: 'WaveAccum', size: WaveMaxBatchTiles * 9 * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            });
+            Rebuilt = true;
+        }
+        const MinSlots = Math.max(64, RequiredUniformSlots);
+        if (!this.WaveUniformBuffer || this.WaveUniformSlotCapacity < MinSlots)
+        {
+            this.WaveUniformBuffer?.destroy();
+            this.WaveUniformSlotCapacity = 1 << Math.ceil(Math.log2(MinSlots));
+            this.WaveUniformBuffer = Device.createBuffer({
+                label: 'WaveUniforms', size: this.WaveUniformSlotCapacity * WaveUniformSlotBytes,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            });
+            Rebuilt = true;
+        }
+        if (Rebuilt || !this.WavePrimarySceneGroup) this.RebuildWavefrontGroups();
+    }
+
+    RebuildWavefrontGroups()
+    {
+        if (!this.WaveControlBuffer || !this.AccumulationBuffer || !this.MaterialBuffer) return;
+        const Device = this.Device;
+        const TracingBinding = { buffer: this.TracingUniformBuffer, offset: 0, size: TracingUniformBytes };
+        const WaveBinding    = { buffer: this.WaveUniformBuffer, offset: 0, size: 32 };
+
+        this.WaveEmptyGroup = Device.createBindGroup({ layout: this.WaveEmptyLayout, entries: [] });
+        this.WavePrimarySceneGroup = Device.createBindGroup({ layout: this.WavePrimarySceneLayout, entries: [
+            { binding: 0, resource: TracingBinding },
+            { binding: 1, resource: { buffer: this.BoundsBuffer } },
+            { binding: 2, resource: { buffer: this.TrianglePositionBuffer } },
+            { binding: 3, resource: { buffer: this.TriangleNormalBuffer } },
+            { binding: 5, resource: { buffer: this.LightBuffer } },
+            { binding: 6, resource: { buffer: this.SphereBuffer } },
+            { binding: 7, resource: this.VisibilityTexture.createView() },
+            { binding: 8, resource: this.BlueNoiseTexture.createView() }
+        ] });
+        this.WaveShadeSceneGroup = Device.createBindGroup({ layout: this.WaveShadeSceneLayout, entries: [
+            { binding: 0, resource: TracingBinding },
+            { binding: 4, resource: { buffer: this.MaterialBuffer } },
+            { binding: 5, resource: { buffer: this.LightBuffer } },
+            { binding: 8, resource: this.BlueNoiseTexture.createView() }
+        ] });
+        this.WaveShadowSceneGroup = Device.createBindGroup({ layout: this.WaveShadowSceneLayout, entries: [
+            { binding: 0, resource: TracingBinding },
+            { binding: 1, resource: { buffer: this.BoundsBuffer } },
+            { binding: 2, resource: { buffer: this.TrianglePositionBuffer } },
+            { binding: 4, resource: { buffer: this.MaterialBuffer } },
+            { binding: 6, resource: { buffer: this.SphereBuffer } }
+        ] });
+        this.WaveFinalizeSceneGroup = Device.createBindGroup({ layout: this.WaveFinalizeSceneLayout, entries: [
+            { binding: 0, resource: TracingBinding }
+        ] });
+
+        this.WavePrepareGroup = Device.createBindGroup({ layout: this.WavePrepareGroupLayout, entries: [
+            { binding: 0, resource: WaveBinding },
+            { binding: 1, resource: { buffer: this.WaveControlBuffer } },
+            { binding: 6, resource: { buffer: this.WaveIndirectBuffer } }
+        ] });
+        this.WaveQueueGroup = Device.createBindGroup({ layout: this.WaveQueueGroupLayout, entries: [
+            { binding: 0, resource: WaveBinding },
+            { binding: 1, resource: { buffer: this.WaveControlBuffer } },
+            { binding: 2, resource: { buffer: this.WaveRaysBuffer } },
+            { binding: 3, resource: { buffer: this.WaveWorkBuffer } }
+        ] });
+        this.WaveShadeGroup = Device.createBindGroup({ layout: this.WaveShadeGroupLayout, entries: [
+            { binding: 0, resource: WaveBinding },
+            { binding: 1, resource: { buffer: this.WaveControlBuffer } },
+            { binding: 2, resource: { buffer: this.WaveRaysBuffer } },
+            { binding: 3, resource: { buffer: this.WaveWorkBuffer } },
+            { binding: 4, resource: { buffer: this.WaveAccumBuffer } }
+        ] });
+        this.WaveShadowGroup = Device.createBindGroup({ layout: this.WaveShadowGroupLayout, entries: [
+            { binding: 0, resource: WaveBinding },
+            { binding: 1, resource: { buffer: this.WaveControlBuffer } },
+            { binding: 3, resource: { buffer: this.WaveWorkBuffer } },
+            { binding: 4, resource: { buffer: this.WaveAccumBuffer } }
+        ] });
+        this.WaveFinalizeGroup = Device.createBindGroup({ layout: this.WaveFinalizeGroupLayout, entries: [
+            { binding: 0, resource: WaveBinding },
+            { binding: 4, resource: { buffer: this.WaveAccumBuffer } },
+            { binding: 5, resource: { buffer: this.AccumulationBuffer } }
+        ] });
+    }
+
+    ResolveWaveBatchTileLimit()
+    {
+        const AreaCount = this.SceneSummary?.LightCount ?? 0;
+        const Lamps     = this.SceneSummary?.LampCount ?? 0;
+        const LampDraws = this.Configuration?.LampSampling === 'all' ? Lamps : Math.min(Lamps, LampCutLimits[this.Configuration?.LampSampling] ?? 1);
+        const PerHitShadows = Math.max(4, AreaCount + LampDraws);
+        // 📝 Size each tile batch so worst-case depth-1 shadow rays never exceed WaveShadowCapacity, even under 'all' 228 lamps.
+        return Math.max(256, Math.min(WaveMaxBatchTiles, Math.floor(WaveShadowCapacity / (PerHitShadows * 2.5))));
+    }
+
+    // 📝 Encodes [FirstSample, FirstSample + SampleCount) through the 6-stage deterministic wavefront compute pipeline.
+    EncodeWavefrontSamples(Encoder, FirstSample, SampleCount, TimingBegin = true, TimingEnd = true)
+    {
+        const Scale      = this.TraceScale();
+        const TilesX     = Math.ceil(this.AccumulationWidth / Scale);
+        const TilesY     = Math.ceil(this.AccumulationHeight / Scale);
+        const TotalTiles = TilesX * TilesY;
+        const BatchLimit = this.ResolveWaveBatchTileLimit();
+        const BatchCount = Math.ceil(TotalTiles / BatchLimit);
+        const DepthLimit = Math.max(1, this.Configuration?.DepthLimit ?? 10);
+        const SlotsPerPass = DepthLimit * 3;
+        const TotalSlots   = SampleCount * BatchCount * SlotsPerPass;
+        this.EnsureWavefrontResources(TotalSlots);
+
+        const UniformBytes = new ArrayBuffer(TotalSlots * WaveUniformSlotBytes);
+        const UniformWords = new Uint32Array(UniformBytes);
+        let CursorSlot = 0;
+        for (let SampleOffset = 0; SampleOffset < SampleCount; SampleOffset++)
+        {
+            const SampleIndex = FirstSample + SampleOffset;
+            for (let Batch = 0; Batch < BatchCount; Batch++)
+            {
+                const BatchStart = Batch * BatchLimit;
+                const BatchTiles = Math.min(BatchLimit, TotalTiles - BatchStart);
+                for (let Depth = 0; Depth < DepthLimit; Depth++)
+                {
+                    const ReadSide  = Depth & 1;
+                    const WriteSide = (Depth + 1) & 1;
+                    for (let Stage = 0; Stage < 3; Stage++)
+                    {
+                        const Base = (CursorSlot++) * (WaveUniformSlotBytes / 4);
+                        UniformWords.set([BatchStart, BatchTiles, SampleIndex, Stage,
+                                          WaveQueueCapacity, WaveShadowCapacity, ReadSide, WriteSide], Base);
+                    }
+                }
+            }
+        }
+        this.Device.queue.writeBuffer(this.WaveUniformBuffer, 0, UniformBytes);
+
+        const TotalPasses = SampleCount * BatchCount;
+        let PassIndex = 0;
+        CursorSlot = 0;
+        for (let SampleOffset = 0; SampleOffset < SampleCount; SampleOffset++)
+        {
+            for (let Batch = 0; Batch < BatchCount; Batch++)
+            {
+                const BatchStart = Batch * BatchLimit;
+                const BatchTiles = Math.min(BatchLimit, TotalTiles - BatchStart);
+                const TileGroups = Math.ceil(BatchTiles / WaveWorkgroupSize);
+                Encoder.clearBuffer(this.WaveControlBuffer, 0, 32);
+                Encoder.clearBuffer(this.WaveAccumBuffer, 0, BatchTiles * 9 * 4);
+
+                const IsFirst = TimingBegin && PassIndex === 0;
+                const IsLast  = TimingEnd && PassIndex === TotalPasses - 1;
+                const PassDesc = (IsFirst || IsLast) ? { timestampWrites: this.Timing.PassWrites('Integration', IsFirst, IsLast) } : undefined;
+                const Compute = Encoder.beginComputePass(PassDesc);
+                const BaseSlotOffset = CursorSlot * WaveUniformSlotBytes;
+
+                // ① Fused Depth-0 primary generation + closest-hit trace (in 8×8 spatially coherent blocks)
+                Compute.setPipeline(this.WaveGeneratePipeline);
+                Compute.setBindGroup(0, this.WavePrimarySceneGroup);
+                Compute.setBindGroup(1, this.WaveQueueGroup, [BaseSlotOffset]);
+                Compute.dispatchWorkgroups(TileGroups);
+
+                // ② Wave depth loop: Depth 0 jumps straight to shading; Depth >= 1 runs indirect TraceClosest first.
+                for (let Depth = 0; Depth < DepthLimit; Depth++)
+                {
+                    const SlotClosest = (CursorSlot++) * WaveUniformSlotBytes;
+                    const SlotShade   = (CursorSlot++) * WaveUniformSlotBytes;
+                    const SlotShadow  = (CursorSlot++) * WaveUniformSlotBytes;
+
+                    if (Depth > 0)
+                    {
+                        Compute.setPipeline(this.WavePreparePipeline);
+                        Compute.setBindGroup(0, this.WaveEmptyGroup);
+                        Compute.setBindGroup(1, this.WavePrepareGroup, [SlotClosest]);
+                        Compute.dispatchWorkgroups(1);
+
+                        Compute.setPipeline(this.WaveClosestPipeline);
+                        Compute.setBindGroup(0, this.WavePrimarySceneGroup);
+                        Compute.setBindGroup(1, this.WaveQueueGroup, [SlotClosest]);
+                        Compute.dispatchWorkgroupsIndirect(this.WaveIndirectBuffer, 0);
+                    }
+
+                    Compute.setPipeline(this.WavePreparePipeline);
+                    Compute.setBindGroup(0, this.WaveEmptyGroup);
+                    Compute.setBindGroup(1, this.WavePrepareGroup, [SlotShade]);
+                    Compute.dispatchWorkgroups(1);
+
+                    Compute.setPipeline(this.WaveShadePipeline);
+                    Compute.setBindGroup(0, this.WaveShadeSceneGroup);
+                    Compute.setBindGroup(1, this.WaveShadeGroup, [SlotShade]);
+                    Compute.dispatchWorkgroupsIndirect(this.WaveIndirectBuffer, 12);
+
+                    Compute.setPipeline(this.WavePreparePipeline);
+                    Compute.setBindGroup(0, this.WaveEmptyGroup);
+                    Compute.setBindGroup(1, this.WavePrepareGroup, [SlotShadow]);
+                    Compute.dispatchWorkgroups(1);
+
+                    Compute.setPipeline(this.WaveShadowPipeline);
+                    Compute.setBindGroup(0, this.WaveShadowSceneGroup);
+                    Compute.setBindGroup(1, this.WaveShadowGroup, [SlotShadow]);
+                    Compute.dispatchWorkgroupsIndirect(this.WaveIndirectBuffer, 24);
+                }
+
+                // ③ Finalize exact 96-bit sample sums into IEEE-754 accumulation & luminance moments
+                Compute.setPipeline(this.WaveFinalizePipeline);
+                Compute.setBindGroup(0, this.WaveFinalizeSceneGroup);
+                Compute.setBindGroup(1, this.WaveFinalizeGroup, [BaseSlotOffset]);
+                Compute.dispatchWorkgroups(TileGroups);
+                Compute.end();
+                PassIndex++;
+            }
+        }
     }
 
     // 📝 ReprojectHistory = true (camera moved, reprojection enabled): the clear is deferred to the next dispatch or
@@ -493,12 +840,15 @@ export class TracingDivision
         for (let Slot = 0; Slot < Count; Slot++)
         {
             const Bay = Bays[Binary.Order[Slot]], T = Transforms[Binary.Order[Slot]], O = RecordBase + Slot * InstanceRecordWords;
-            const C = T.Cosine, S = T.Sine;
-            Floats.set([C, 0, -S, -(C * T.X - S * T.Z),  0, 1, 0, 0,  S, 0, C, -(S * T.X + C * T.Z),   // world → object
-                        C, 0, S, T.X,                     0, 1, 0, 0,  -S, 0, C, T.Z], O);               // object → world
-            Words.set([0, SlotIndex.BodyCoat ?? EmptyLink, Bay.PaintSlot ? SlotIndex[Bay.PaintSlot] : EmptyLink,
-                       Bay.RimSlot ? SlotIndex[Bay.RimSlot] : EmptyLink], O + 24);
-            Words.set([SlotIndex.RimAlloy ?? EmptyLink, 0, 0, 0], O + 28);
+            Floats.set([T.Cosine, T.Sine, T.X, T.Z], O);
+            const BodySlot  = SlotIndex.BodyCoat ?? UnusedMaterialSlot;
+            const PaintSwap = Bay.PaintSlot ? (SlotIndex[Bay.PaintSlot] ?? UnusedMaterialSlot) : UnusedMaterialSlot;
+            const RimSlot   = SlotIndex.RimAlloy ?? UnusedMaterialSlot;
+            const RimSwap   = Bay.RimSlot   ? (SlotIndex[Bay.RimSlot]   ?? UnusedMaterialSlot) : UnusedMaterialSlot;
+            Words.set([0,
+                       (BodySlot & 0xFFFF) | ((PaintSwap & 0xFFFF) << 16),
+                       (RimSlot  & 0xFFFF) | ((RimSwap   & 0xFFFF) << 16),
+                       0], O + 4);
         }
         return { Words, NodeCount: Wide.NodeCount, MaximumDepth: Wide.MaximumDepth,
                  Layout: { InstanceRoot: VehicleNodes, RecordBase: RecordBase / 4, InstanceCount: Count } };
@@ -712,11 +1062,18 @@ export class TracingDivision
             const Rasterized = this.RasterizedVisibilityActive();
             this.WriteTracingUniforms(this.SampleCount, SampleBatch, null, 0, 0, 0);
             if (Rasterized) this.EncodeVisibilityRasterization(Encoder, this.SampleCount);
-            const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration') });
-            Compute.setPipeline(this.IntegrationPipeline);
-            Compute.setBindGroup(0, this.IntegrationGroup);
-            Compute.dispatchWorkgroups(...this.TraceWorkgroups());
-            Compute.end();
+            if (this.WavefrontActive())
+            {
+                this.EncodeWavefrontSamples(Encoder, this.SampleCount, SampleBatch, true, true);
+            }
+            else
+            {
+                const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration') });
+                Compute.setPipeline(this.IntegrationPipeline);
+                Compute.setBindGroup(0, this.IntegrationGroup);
+                Compute.dispatchWorkgroups(...this.TraceWorkgroups());
+                Compute.end();
+            }
             this.SampleCount += SampleBatch;
         }
         const Reconstructed = this.ReconstructionActive();
@@ -746,18 +1103,27 @@ export class TracingDivision
     {
         this.FlushPendingReprojection();
         const Rasterized = this.RasterizedVisibilityActive();
-        for (let Submitted = 0; Submitted < SampleBatch; Submitted += Rasterized ? 1 : SampleBatch)
+        const Wavefront  = this.WavefrontActive();
+        const MaxChunk   = Rasterized ? 1 : (Wavefront ? 8 : SampleBatch);
+        for (let Submitted = 0; Submitted < SampleBatch; Submitted += MaxChunk)
         {
             const FirstSample = this.SampleCount + Submitted;
-            const Count       = Rasterized ? 1 : SampleBatch;
+            const Count       = Math.min(MaxChunk, SampleBatch - Submitted);
             this.WriteTracingUniforms(FirstSample, Count);
             const Encoder = this.Device.createCommandEncoder();
             if (Rasterized) this.EncodeVisibilityRasterization(Encoder, FirstSample);
-            const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration', Submitted === 0, Submitted + Count >= SampleBatch) });
-            Compute.setPipeline(this.IntegrationPipeline);
-            Compute.setBindGroup(0, this.IntegrationGroup);
-            Compute.dispatchWorkgroups(...this.TraceWorkgroups());
-            Compute.end();
+            if (Wavefront)
+            {
+                this.EncodeWavefrontSamples(Encoder, FirstSample, Count, Submitted === 0, Submitted + Count >= SampleBatch);
+            }
+            else
+            {
+                const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration', Submitted === 0, Submitted + Count >= SampleBatch) });
+                Compute.setPipeline(this.IntegrationPipeline);
+                Compute.setBindGroup(0, this.IntegrationGroup);
+                Compute.dispatchWorkgroups(...this.TraceWorkgroups());
+                Compute.end();
+            }
             this.Device.queue.submit([Encoder.finish()]);
         }
         this.SampleCount += SampleBatch;
@@ -785,7 +1151,7 @@ export class TracingDivision
         });
         Raster.setPipeline(this.RasterPipeline);
         Raster.setBindGroup(0, this.RasterGroup);
-        Raster.draw(this.SceneSummary.VehicleTriangleCount * 3, this.GeometryLayout.InstanceCount);
+        Raster.draw(this.VehicleTree.ReferenceCount * 3, this.GeometryLayout.InstanceCount);
         Raster.end();
     }
 
