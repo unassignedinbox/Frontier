@@ -1824,6 +1824,33 @@ export default function GtxWorldViewport({
 
   const [RenderBackend, SetRenderBackend] = useState(PreferInitialBackend);
   RenderBackendRef.current = RenderBackend;
+  // One-shot GPU probe of the native WebGPU mesh pass: null = still pending, number = fragments rasterized.
+  // 0 means Pass 2.5 produced nothing in this browser, so the WebGL2 mesh overlay takes over as the visible path.
+  const [MeshProbeFragments, SetMeshProbeFragments] = useState(null);
+  // Hard timeout: if the probe never reports (lost device, stalled readback), assume the native pass is fine
+  // rather than leaving the overlay canvas mounted forever.
+  const MeshProbeTimeoutRef = useRef(0);
+  const SetMeshProbeFragmentsOnce = useCallback((Value) => {
+    SetMeshProbeFragments((Prev) => (Prev === null ? Value : Prev));
+  }, []);
+  useEffect(() => {
+    if (MeshProbeFragments !== null) {
+      if (MeshProbeTimeoutRef.current) {
+        clearTimeout(MeshProbeTimeoutRef.current);
+        MeshProbeTimeoutRef.current = 0;
+      }
+      return undefined;
+    }
+    MeshProbeTimeoutRef.current = window.setTimeout(() => SetMeshProbeFragmentsOnce(1), 6000);
+    return () => {
+      if (MeshProbeTimeoutRef.current) {
+        clearTimeout(MeshProbeTimeoutRef.current);
+        MeshProbeTimeoutRef.current = 0;
+      }
+    };
+  }, [MeshProbeFragments, SetMeshProbeFragmentsOnce]);
+  const MeshProbeFragmentsRef = useRef(null);
+  MeshProbeFragmentsRef.current = MeshProbeFragments;
 
   const [CanvasInstance, SetCanvasInstance] = useState(0);
   const [ShaderError, SetShaderError] = useState(null);
@@ -2222,9 +2249,9 @@ export default function GtxWorldViewport({
     });
   }, []);
 
-  // Auxiliary Mesh Overlay renderer (used only for WebGL2 / CPU-GTX; WebGPU renders meshes natively in Pass 2.5!)
+  // Auxiliary Mesh Overlay renderer (used for WebGL2 / CPU-GTX, and as the safety net until WebGPU Pass 2.5 is proven)
   useEffect(() => {
-    if (RenderBackend === "webgpu") {
+    if (RenderBackend === "webgpu" && (MeshProbeFragments === null || MeshProbeFragments > 0)) {
       MeshOverlayRef.current = null;
       return;
     }
@@ -2241,7 +2268,7 @@ export default function GtxWorldViewport({
       MeshOverlayRef.current = null;
       Overlay?.Dispose();
     };
-  }, [RenderBackend]);
+  }, [RenderBackend, MeshProbeFragments]);
 
   // Tier-0 Hardware WebGPU (Dawn D3D12 / Vulkan / Metal — bypasses ANGLE WebGL context blocks completely!)
   useEffect(() => {
@@ -2262,9 +2289,20 @@ export default function GtxWorldViewport({
       SetRenderBackend(NextBackend);
     };
 
-    CreateWebgpuGtxRenderer((LostReason) => {
-      FallbackFromWebGpu(`device-lost:${LostReason}`);
-    }).then((Res) => {
+    CreateWebgpuGtxRenderer(
+      (LostReason) => {
+        FallbackFromWebGpu(`device-lost:${LostReason}`);
+      },
+      // One-shot GPU self-test result: proves Pass 2.5 actually rasterized mesh fragments in this browser.
+      (Fragments, OcclusionDisabled) => {
+        SendViewportDiag({
+          backend: "webgpu",
+          meshProbe: Fragments,
+          occlusion: OcclusionDisabled ? "fallback-off" : "on",
+        });
+        SetMeshProbeFragmentsOnce(Fragments);
+      },
+    ).then((Res) => {
       if (Cancelled) {
         if (Res.Ok) Res.Destroy();
         return;
@@ -2435,6 +2473,24 @@ export default function GtxWorldViewport({
         ViewProjZeroToOne,
         HighlightedHandle: Highlighted,
       });
+
+      // Safety net: only when the GPU probe proved Pass 2.5 rasterized nothing, drive the WebGL2/software
+      // overlay so BP_ControlVehicle and compiled assets stay visible instead of only in GI shadows.
+      if (MeshOverlayRef.current && MeshProbeFragmentsRef.current === 0) {
+        try {
+          MeshOverlayRef.current.Render(
+            ActiveScene,
+            Canvas.width,
+            Canvas.height,
+            Props.Selected,
+            EffectiveViewMode,
+            BuiltGizmo,
+            Highlighted,
+          );
+        } catch (Err) {
+          SetMeshProbeFragmentsOnce(-1); // overlay itself failed -> stop retrying every frame
+        }
+      }
 
       SampleViewportFps();
     };
@@ -3961,7 +4017,7 @@ export default function GtxWorldViewport({
           }
         }}
       />
-      {RenderBackend !== "webgpu" && (
+      {(RenderBackend !== "webgpu" || MeshProbeFragments === 0) && (
         <canvas
           ref={MeshCanvasRef}
           className="gtx-mesh-overlay"

@@ -1568,6 +1568,7 @@ struct MeshUniforms {
   uNormCol2   : vec4f,
   uPaintAndOn : vec4f, // xyz=paintLinear, w=paintOverrideOn
   uFlags      : vec4f, // x=headlightsOn, y=isSelected, z=groundZ, w=0
+  uDiag       : vec4f, // x=disableOcclusion(0/1), y=probeOn(0/1)
 };
 
 struct SceneUniforms {
@@ -1586,6 +1587,8 @@ struct SceneUniforms {
 @group(0) @binding(0) var<uniform> M : MeshUniforms;
 @group(0) @binding(1) var<uniform> U : SceneUniforms;
 @group(0) @binding(2) var<storage, read> uSceneData : array<vec4f, 3168>;
+// [0] = shaded fragment count for this frame's probe, [1] = reserved
+@group(0) @binding(3) var<storage, read_write> uProbe : array<atomic<u32>, 2>;
 
 const PI : f32 = 3.14159265359;
 
@@ -1689,6 +1692,7 @@ fn intersectPrimOcc(lo : vec3f, ld : vec3f, h : vec3f, shape : i32, tMax : f32) 
 }
 
 fn isOccludedByWorld(ro : vec3f, rd : vec3f, meshT : f32) -> bool {
+  if (M.uDiag.x > 0.5) { return false; }
   let limit = meshT - 0.008;
   if (limit <= 0.01) { return false; }
   let primCount = min(U.uCountsAndModes.x, 384);
@@ -1716,6 +1720,7 @@ fn isOccludedByWorld(ro : vec3f, rd : vec3f, meshT : f32) -> bool {
 }
 
 fn evalWorldShadow(pos : vec3f, dir : vec3f) -> f32 {
+  if (M.uDiag.x > 0.5) { return 1.0; }
   let ro = pos + dir * 0.03;
   var vis : f32 = 1.0;
   let primCount = min(U.uCountsAndModes.x, 384);
@@ -1815,6 +1820,10 @@ fn fsMain(inp : VsOut, @builtin(front_facing) isFront : bool) -> @location(0) ve
 
   if (isOccludedByWorld(ro, rd, meshT)) {
     discard;
+  }
+
+  if (M.uDiag.y > 0.5) {
+    atomicAdd(&uProbe[0], 1u);
   }
 
   var N = normalize(inp.vWorldNormal);
@@ -1931,7 +1940,7 @@ fn fsMain(inp : VsOut, @builtin(front_facing) isFront : bool) -> @location(0) ve
 }
 `;
 
-export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
+export async function CreateWebgpuGtxRenderer(OnDeviceLost, OnMeshProbe) {
   if (typeof navigator === "undefined" || !navigator.gpu) {
     return { Ok: false, Reason: "no-navigator-gpu" };
   }
@@ -2044,7 +2053,8 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       {
         binding: 0,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: 208 },
+        // MeshUniforms = 2 mat4x4f (128) + 6 vec4f (96) = 224 bytes (uDiag included)
+        buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: 224 },
       },
       {
         binding: 1,
@@ -2055,6 +2065,11 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
         binding: 2,
         visibility: GPUShaderStage.FRAGMENT,
         buffer: { type: "read-only-storage" },
+      },
+      {
+        binding: 3,
+        visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: "storage" },
       },
     ],
   });
@@ -2171,7 +2186,10 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
     },
   });
 
-  const MeshUniformStride = Math.max(256, Device.limits?.minUniformBufferOffsetAlignment || 256);
+  // WebGPU requires dynamic offsets to be a multiple of minUniformBufferOffsetAlignment (256 on all Dawn backends);
+  // never derive the stride from the alignment alone or slots will overlap on ≥512-byte alignment devices.
+  const MeshUniformAlign = Math.max(1, Device.limits?.minUniformBufferOffsetAlignment || 256);
+  const MeshUniformStride = Math.max(256, Math.ceil(224 / MeshUniformAlign) * MeshUniformAlign);
   const MeshUniformStrideF32 = MeshUniformStride >> 2;
 
   const SceneUniformBuf = Device.createBuffer({
@@ -2198,6 +2216,21 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
     size: MAX_MESH_DRAWS * MeshUniformStride,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  const MeshProbeBuf = Device.createBuffer({
+    size: 16,
+    usage:
+      GPUBufferUsage.STORAGE |
+      GPUBufferUsage.COPY_SRC |
+      GPUBufferUsage.COPY_DST,
+  });
+  const MeshProbeReadBuf = Device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+  });
+  let MeshProbePending = false;
+  let MeshProbeReported = false;
+  let MeshProbeArmed = false;
+  let MeshOcclusionDisabled = false;
 
   const AtlasTex = Device.createTexture({
     size: [ATLAS_WIDTH, ATLAS_HEIGHT, 1],
@@ -2241,6 +2274,7 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       { binding: 0, resource: { buffer: MeshUniformBuf, offset: 0, size: MeshUniformStride } },
       { binding: 1, resource: { buffer: SceneUniformBuf } },
       { binding: 2, resource: { buffer: SceneDataStorageBuf } },
+      { binding: 3, resource: { buffer: MeshProbeBuf } },
     ],
   });
 
@@ -2509,6 +2543,8 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
 
       // Pass 2.5: Native WebGPU GI-Lit 3D Mesh Pass (BP_ControlVehicle + Geometry-Compiled Meshes)
       const MeshInstances = Array.isArray(ActiveScene?.MeshInstances) ? ActiveScene.MeshInstances : [];
+      // One-shot GPU self-test: arm the atomic fragment counter on the first meshes-present frame.
+      const MeshProbeActive = !MeshProbeReported && !MeshProbePending && MeshInstances.length > 0;
       if (ViewProjZeroToOne && MeshInstances.length > 0) {
         EnsureVehicleMeshesGpu();
         const DrawList = [];
@@ -2567,6 +2603,11 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
             MeshUniformScratch[Base + 49] = IsSel;
             MeshUniformScratch[Base + 50] = GroundZ;
             MeshUniformScratch[Base + 51] = 0;
+            // uDiag: x=disableOcclusion, y=probeOn (one-shot GPU rasterization self-test)
+            MeshUniformScratch[Base + 52] = MeshOcclusionDisabled ? 1 : 0;
+            MeshUniformScratch[Base + 53] = MeshProbeActive ? 1 : 0;
+            MeshUniformScratch[Base + 54] = 0;
+            MeshUniformScratch[Base + 55] = 0;
             DrawList.push({ Slot, MeshBuf });
           }
         }
@@ -2595,6 +2636,12 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
             PassMesh.draw(Item.MeshBuf.count);
           }
           PassMesh.end();
+
+          if (MeshProbeActive) {
+            // Reset the counter before this frame's draws so a partial result never reads as "invisible".
+            Device.queue.writeBuffer(MeshProbeBuf, 0, new Uint32Array([0, 0]));
+            MeshProbeArmed = true;
+          }
         }
       }
 
@@ -2689,6 +2736,30 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       }
 
       Device.queue.submit([Encoder.finish()]);
+
+      if (MeshProbeArmed) {
+        MeshProbeArmed = false;
+        MeshProbePending = true;
+        const ProbeEncoder = Device.createCommandEncoder();
+        ProbeEncoder.copyBufferToBuffer(MeshProbeBuf, 0, MeshProbeReadBuf, 0, 16);
+        Device.queue.submit([ProbeEncoder.finish()]);
+        MeshProbeReadBuf
+          .mapAsync(GPUMapMode.READ)
+          .then(() => {
+            const Words = new Uint32Array(MeshProbeReadBuf.getMappedRange().slice(0));
+            MeshProbeReadBuf.unmap();
+            const Fragments = Words[0] || 0;
+            MeshProbePending = false;
+            MeshProbeReported = true;
+            if (OnMeshProbe) OnMeshProbe(Fragments, MeshOcclusionDisabled);
+            if (Fragments === 0) {
+              // Mesh depth-tested but produced no visible fragments -> occlusion test is the prime suspect.
+              // Disable it (still lit/shadowed) so the vehicle is never invisible in the viewport.
+              MeshOcclusionDisabled = true;
+            }
+          })
+          .catch(() => { MeshProbePending = false; MeshProbeReported = true; });
+      }
       return true;
     },
 
@@ -2702,6 +2773,8 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       try { GizmoUniformBuf?.destroy(); } catch {}
       try { ForceUniformBuf?.destroy(); } catch {}
       try { MeshUniformBuf?.destroy(); } catch {}
+      try { MeshProbeBuf?.destroy(); } catch {}
+      try { MeshProbeReadBuf?.destroy(); } catch {}
       for (const Entry of MeshGpuCache.values()) {
         try { Entry.buf?.destroy(); } catch {}
       }
