@@ -162,22 +162,22 @@
   <div class="pill-row" id="FilterRow">
     <button class="pill active" data-filter="all"><span class="dot"></span>All cards</button>
     <button class="pill" data-filter="asset"><span class="dot"></span>Assets</button>
-    <button class="pill" data-filter="rig"><span class="dot"></span>Rig pieces</button>
-    <button class="pill" data-filter="field"><span class="dot"></span>Field test</button>
+    <button class="pill" data-filter="assembly"><span class="dot"></span>Assembly</button>
+    <button class="pill" data-filter="eval"><span class="dot"></span>Evaluation</button>
   </div>
 
   <div class="grid" id="CardGrid">
 
-    <!-- 1 · HULL (mesh asset) -->
+    <!-- 1 · POLYGON COMPLEX (mesh asset) -->
     <section class="card" data-kind="asset">
       <div class="card-head">
         <span class="glyph">⬢</span>
-        <div><small>Asset · mesh</small><b>Hull</b></div>
+        <div><small>Asset · polygon surface</small><b>Polygon Complex</b></div>
         <span class="proposed">proposed · was “Static Mesh”</span>
       </div>
       <div class="big">25.1<small>k tris</small></div>
-      <p class="cap">ControlVehicle Body · 10 fittings reference it</p>
-      <span class="status" id="HullStatus"><span class="dot"></span>Staked · clean</span>
+      <p class="cap">ControlVehicle Body · 10 record entries reference it</p>
+      <span class="status" id="ComplexStatus"><span class="dot"></span>Compiled · clean</span>
       <div class="row" style="margin-top:14px">
         <canvas id="DensityRing" width="120" height="120" style="width:112px;height:112px"></canvas>
         <div class="nested" style="margin:0;flex:1">
@@ -186,7 +186,7 @@
           <div><b>Islands</b> · 14 UV charts</div>
         </div>
       </div>
-      <canvas class="chart" id="HullSpark" width="600" height="120"></canvas>
+      <canvas class="chart" id="ComplexSpark" width="600" height="120"></canvas>
       <div class="chips" id="SlotChips">
         <button class="chip on"><i style="background:#d6f26a"></i>paint</button>
         <button class="chip on"><i style="background:#7cc7ff"></i>glass</button>
@@ -195,60 +195,60 @@
       </div>
     </section>
 
-    <!-- 2 · STRATA (LOD hierarchy) -->
+    <!-- 2 · DETAIL TIERS (StrataPlot) -->
     <section class="card" data-kind="asset">
       <div class="card-head">
         <span class="glyph">☰</span>
-        <div><small>Asset · detail</small><b>Strata</b></div>
+        <div><small>Asset · StrataPlot</small><b>Detail Tiers</b></div>
         <span class="proposed">proposed · was “LOD levels”</span>
       </div>
       <div class="big" id="StrataNum">744<small>tris · S2</small></div>
-      <p class="cap">Tap a stratum to inspect it — like paging scan slices.</p>
+      <p class="cap">Tap a tier to inspect it — like paging scan slices.</p>
       <div class="strata" id="StrataSteps"></div>
       <div class="meter">
-        <div class="mrow"><span>Wrong-finish share</span><b id="StrataWrong">0.02%</b></div>
+        <div class="mrow"><span>Wrong-optics share</span><b id="StrataWrong">0.02%</b></div>
         <div class="track"><i id="StrataBar"></i></div>
       </div>
       <div class="nested">
-        <div><b>Slide</b> seams · clusters share one finish each</div>
+        <div><b>Slide</b> seams · clusters hold one optics entry each</div>
         <div><b>Pin</b> available · exact borders, earlier stop</div>
       </div>
     </section>
 
-    <!-- 3 · HITCH (socket dial) -->
-    <section class="card" data-kind="rig">
+    <!-- 3 · HINGE JOINT (PolarDial) -->
+    <section class="card" data-kind="assembly">
       <div class="card-head">
         <span class="glyph">⎋</span>
-        <div><small>Rig · joint</small><b>Hinge Hitch</b></div>
+        <div><small>Assembly · PolarDial</small><b>Hinge Joint</b></div>
         <span class="proposed">proposed · was “Socket”</span>
       </div>
-      <div class="big"><span id="HitchAngle">0.0</span><small>° steer</small></div>
+      <div class="big"><span id="JointAngle">0.0</span><small>° steer</small></div>
       <p class="cap">SteerFL · limits ±32° · nudge with steppers, no sliders.</p>
       <div class="dial-wrap">
-        <svg id="HitchDial" width="150" height="150" viewBox="0 0 150 150">
+        <svg id="JointDial" width="150" height="150" viewBox="0 0 150 150">
           <circle cx="75" cy="75" r="66" fill="#0e110e" stroke="#262b26"/>
-          <path id="HitchFan" fill="#d6f26a22" stroke="#d6f26a" stroke-width="1.5"/>
-          <line id="HitchNeedle" x1="75" y1="75" x2="75" y2="18" stroke="#d6f26a" stroke-width="3" stroke-linecap="round"/>
+          <path id="JointFan" fill="#d6f26a22" stroke="#d6f26a" stroke-width="1.5"/>
+          <line id="JointNeedle" x1="75" y1="75" x2="75" y2="18" stroke="#d6f26a" stroke-width="3" stroke-linecap="round"/>
           <circle cx="75" cy="75" r="7" fill="#d6f26a"/>
         </svg>
         <div class="nested" style="margin:0;flex:1">
-          <div><b>Drive</b> · <span id="HitchDrive">hold at pose</span></div>
-          <div><b>Load</b> · <span id="HitchLoad">0.0 kN</span></div>
-          <div><b>State</b> · <span id="HitchState">seated</span></div>
+          <div><b>Drive</b> · <span id="JointDrive">hold at pose</span></div>
+          <div><b>Load</b> · <span id="JointLoad">0.0 kN</span></div>
+          <div><b>State</b> · <span id="JointState">seated</span></div>
         </div>
       </div>
       <div class="stepper">
-        <button class="round-btn" id="HitchMinus" aria-label="nudge down">−</button>
-        <button class="wide-btn" id="HitchSweep">▶ sweep range</button>
-        <button class="round-btn" id="HitchPlus" aria-label="nudge up">+</button>
+        <button class="round-btn" id="JointMinus" aria-label="nudge down">−</button>
+        <button class="wide-btn" id="JointSweep">▶ sweep range</button>
+        <button class="round-btn" id="JointPlus" aria-label="nudge up">+</button>
       </div>
     </section>
 
-    <!-- 4 · SHAKEDOWN (vehicle telemetry) -->
-    <section class="card" data-kind="field">
+    <!-- 4 · PROPULSION EVALUATION (CurvePlot + ArcPlot) -->
+    <section class="card" data-kind="eval">
       <div class="card-head">
         <span class="glyph">◉</span>
-        <div><small>Field · drive</small><b>Shakedown</b></div>
+        <div><small>Field · CurvePlot + ArcPlot</small><b>Propulsion Evaluation</b></div>
         <span class="proposed">proposed · was “Simulate”</span>
       </div>
       <div class="row" style="margin-top:10px">
@@ -263,57 +263,57 @@
         <div class="pad" id="PadThrottle"><small>THROTTLE</small><b id="ThrottleVal">0%</b></div>
         <div class="pad" id="PadBrake"><small>BRAKE</small><b id="BrakeVal">0%</b></div>
       </div>
-      <p class="cap" style="margin:10px 0 0">Press-and-hold pads — throttle climbs while held.</p>
+      <p class="cap" style="margin:10px 0 0">Press-and-hold RampButtons — throttle climbs while held. Gears ride a DiscRow.</p>
       <div class="gears" id="GearRow">
         <button class="on">1</button><button>2</button><button>3</button><button>4</button><button>5</button>
       </div>
     </section>
 
-    <!-- 5 · CACHE ALERT (asset browser warning) -->
+    <!-- 5 · CONTENT DIRECTORY WATCH (notice) -->
     <section class="card" data-kind="asset">
       <div class="card-head">
         <span class="glyph">⚠</span>
-        <div><small>Cache · notice</small><b>Cache Watch</b></div>
+        <div><small>Directory · notice</small><b>Content Directory Watch</b></div>
         <span class="proposed">proposed · was “Content”</span>
       </div>
       <div class="alert-panel">
-        <div class="ahead"><span class="count">2</span><b>2 hulls left unstaked</b></div>
+        <div class="ahead"><span class="count">2</span><b>2 polygon complexes uncompiled</b></div>
         <small>4m ago · tap a row to open its card</small>
         <div class="nested" style="border-color:#5a2b24;margin-top:12px">
-          <div><b>Rim_Rear</b> · icon bake stale</div>
-          <div><b>Wing_Proto</b> · strata not built</div>
+          <div><b>Rim_Rear</b> · thumbnail atlas stale</div>
+          <div><b>Wing_Proto</b> · detail tiers not built</div>
         </div>
       </div>
       <div class="alert-panel" style="background:#241a10;border-color:#5a4a24">
-        <div class="ahead"><span class="count" style="background:var(--amber)">1</span><b>Hitch key mismatch</b></div>
-        <small>12m ago · dock keyed <b>wing</b>, plug carries <b>rack</b></small>
+        <div class="ahead"><span class="count" style="background:var(--amber)">1</span><b>Joint key mismatch</b></div>
+        <small>12m ago · joint keyed <b>wing</b>, plug carries <b>rack</b></small>
       </div>
     </section>
 
-    <!-- 6 · LEDGER (details summary) -->
-    <section class="card" data-kind="rig">
+    <!-- 6 · ASSEMBLY INSPECTOR (record summary) -->
+    <section class="card" data-kind="assembly">
       <div class="card-head">
         <span class="glyph">▤</span>
-        <div><small>Rig · record</small><b>Ledger</b></div>
+        <div><small>Assembly · record</small><b>Assembly Inspector</b></div>
         <span class="proposed">proposed · was “Details”</span>
       </div>
-      <div class="big">10<small>meshes · 2 lamps</small></div>
-      <p class="cap">Rig record · revision 24 · stakes clean</p>
+      <div class="big">10<small>complexes · 2 lamps</small></div>
+      <p class="cap">Assembly record · revision 24 · compiles clean</p>
       <div class="nested">
-        <div><b>Fittings</b> · 25 seated, 0 loose</div>
-        <div><b>Hitches</b> · 4 spring · 2 hinge · 1 dock · 1 tether</div>
-        <div><b>Drives</b> · road drive · spin drive</div>
+        <div><b>Entries</b> · 25 seated, 0 loose</div>
+        <div><b>Joints</b> · 4 spring · 2 hinge · 1 dock · 1 tether</div>
+        <div><b>Configurations</b> · propulsion · spin</div>
       </div>
       <div class="stepper">
-        <button class="wide-btn" id="StakeBtn">◆ stake this rig</button>
+        <button class="wide-btn" id="CompileBtn">◆ compile this assembly</button>
       </div>
-      <p class="cap" style="margin:10px 0 0" id="StakeNote">Staking seals the record — the old “Compile”.</p>
+      <p class="cap" style="margin:10px 0 0" id="CompileNote">Compiling seals the record — verdict and thumbnail included.</p>
     </section>
 
   </div>
 
   <footer class="note">
-    <b>How to judge P01:</b> every card is live — tap strata steps, slot chips, hitch steppers,
+    <b>How to judge P01:</b> every card is live — tap strata steps, slot chips, joint steppers,
     throttle pads and gears. Filter pills at the top sort by family.
     Approve the <b>card language</b> and the <b>proposed names</b> separately; only approved
     pieces get wired into the Component Viewer / Asset Previewer.
@@ -385,7 +385,7 @@
 
   /* ---------- 1 · sparkline ---------- */
   (function () {
-    var cv = $("HullSpark"), ctx = cv.getContext("2d");
+    var cv = $("ComplexSpark"), ctx = cv.getContext("2d");
     var W = cv.width, H = cv.height, t = 0, pts = [];
     var n = 90;
     for (var i = 0; i < n; i++) pts.push(0.5);
@@ -407,7 +407,7 @@
       ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
       ctx.fillStyle = "#d6f26a18"; ctx.fill();
       ctx.fillStyle = "#9aa39a"; ctx.font = "12px 'DM Sans', sans-serif"; ctx.textAlign = "left";
-      ctx.fillText("bake health · live", 10, 16);
+      ctx.fillText("compile health · live", 10, 16);
       setTimeout(function () { requestAnimationFrame(draw); }, 120);
     }
     draw();
@@ -418,11 +418,11 @@
     ch.addEventListener("click", function () {
       ch.classList.toggle("on");
       var n = document.querySelectorAll("#SlotChips .chip.on").length;
-      toast(n + " finish slot" + (n === 1 ? "" : "s") + " lit");
+      toast(n + " surface-optics slot" + (n === 1 ? "" : "s") + " lit");
     });
   });
 
-  /* ---------- 2 · strata steps ---------- */
+  /* ---------- 2 · tier steps ---------- */
   var strataData = [
     { s: "S0", tris: "25.1k", wrong: "0.00%", w: 2 },
     { s: "S1", tris: "6.3k", wrong: "0.01%", w: 6 },
@@ -445,55 +445,55 @@
         $("StrataNum").innerHTML = d.tris + "<small>tris · " + d.s + "</small>";
         $("StrataWrong").textContent = d.wrong;
         $("StrataBar").style.width = d.w + "%";
-        toast("Stratum " + d.s + " · " + d.tris + " tris");
+        toast("Tier " + d.s + " · " + d.tris + " tris");
       });
       host.appendChild(el);
     });
     $("StrataBar").style.width = strataData[current].w + "%";
   })();
 
-  /* ---------- 3 · hitch dial ---------- */
-  var hitch = { angle: 0, min: -32, max: 32, sweeping: false, sweepDir: 1 };
+  /* ---------- 3 · joint dial ---------- */
+  var joint = { angle: 0, min: -32, max: 32, sweeping: false, sweepDir: 1 };
   function polar(cx, cy, r, deg) {
     var a = (deg - 90) * Math.PI / 180;
     return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   }
-  function drawHitch() {
-    var fan = $("HitchFan");
-    var p0 = polar(75, 75, 62, hitch.min), p1 = polar(75, 75, 62, hitch.max);
+  function drawJoint() {
+    var fan = $("JointFan");
+    var p0 = polar(75, 75, 62, joint.min), p1 = polar(75, 75, 62, joint.max);
     fan.setAttribute("d", "M75,75 L" + p0[0].toFixed(1) + "," + p0[1].toFixed(1) +
       " A62,62 0 0 1 " + p1[0].toFixed(1) + "," + p1[1].toFixed(1) + " Z");
-    var tip = polar(75, 75, 56, hitch.angle);
-    var n = $("HitchNeedle");
+    var tip = polar(75, 75, 56, joint.angle);
+    var n = $("JointNeedle");
     n.setAttribute("x2", tip[0].toFixed(1));
     n.setAttribute("y2", tip[1].toFixed(1));
-    $("HitchAngle").textContent = hitch.angle.toFixed(1);
-    $("HitchLoad").textContent = (Math.abs(hitch.angle) / 32 * 1.2).toFixed(1) + " kN";
+    $("JointAngle").textContent = joint.angle.toFixed(1);
+    $("JointLoad").textContent = (Math.abs(joint.angle) / 32 * 1.2).toFixed(1) + " kN";
   }
-  function hitchNudge(d) {
-    hitch.angle = Math.max(hitch.min, Math.min(hitch.max, hitch.angle + d));
-    drawHitch();
+  function jointNudge(d) {
+    joint.angle = Math.max(joint.min, Math.min(joint.max, joint.angle + d));
+    drawJoint();
   }
-  $("HitchMinus").addEventListener("click", function () { hitchNudge(-2); });
-  $("HitchPlus").addEventListener("click", function () { hitchNudge(2); });
-  $("HitchSweep").addEventListener("click", function () {
-    hitch.sweeping = !hitch.sweeping;
-    this.classList.toggle("live", hitch.sweeping);
-    this.textContent = hitch.sweeping ? "■ hold pose" : "▶ sweep range";
-    $("HitchDrive").textContent = hitch.sweeping ? "sweep" : "hold at pose";
+  $("JointMinus").addEventListener("click", function () { jointNudge(-2); });
+  $("JointPlus").addEventListener("click", function () { jointNudge(2); });
+  $("JointSweep").addEventListener("click", function () {
+    joint.sweeping = !joint.sweeping;
+    this.classList.toggle("live", joint.sweeping);
+    this.textContent = joint.sweeping ? "■ hold pose" : "▶ sweep range";
+    $("JointDrive").textContent = joint.sweeping ? "sweep" : "hold at pose";
   });
   (function sweep() {
-    if (hitch.sweeping) {
-      hitch.angle += 0.6 * hitch.sweepDir;
-      if (hitch.angle >= hitch.max) { hitch.angle = hitch.max; hitch.sweepDir = -1; }
-      if (hitch.angle <= hitch.min) { hitch.angle = hitch.min; hitch.sweepDir = 1; }
-      drawHitch();
+    if (joint.sweeping) {
+      joint.angle += 0.6 * joint.sweepDir;
+      if (joint.angle >= joint.max) { joint.angle = joint.max; joint.sweepDir = -1; }
+      if (joint.angle <= joint.min) { joint.angle = joint.min; joint.sweepDir = 1; }
+      drawJoint();
     }
     requestAnimationFrame(sweep);
   })();
-  drawHitch();
+  drawJoint();
 
-  /* ---------- 4 · shakedown ---------- */
+  /* ---------- 4 · propulsion evaluation ---------- */
   var shake = { rpm: 700, speed: 0, throttle: 0, brake: 0, gear: 1, redline: 7200 };
   function drawRpm() {
     var cv = $("RpmArc"), ctx = cv.getContext("2d");
@@ -536,7 +536,7 @@
     ctx.beginPath(); ctx.arc(nx, ny, 6, 0, Math.PI * 2);
     ctx.fillStyle = "#d6f26a"; ctx.fill();
     ctx.fillStyle = "#9aa39a"; ctx.font = "12px 'DM Sans', sans-serif"; ctx.textAlign = "left";
-    ctx.fillText("twist curve · " + Math.round(torqueAt(shake.rpm)) + " N·m", 10, 16);
+    ctx.fillText("torque curve · " + Math.round(torqueAt(shake.rpm)) + " N·m", 10, 16);
   }
   function shakeTick() {
     var target = 700 + shake.throttle * (shake.redline - 700) - shake.brake * 2500;
@@ -574,10 +574,10 @@
   });
   shakeTick();
 
-  /* ---------- 6 · stake ---------- */
-  $("StakeBtn").addEventListener("click", function () {
-    $("StakeNote").textContent = "◆ staked · revision 25 · record sealed just now.";
-    toast("Rig staked · revision 25");
+  /* ---------- 6 · compile ---------- */
+  $("CompileBtn").addEventListener("click", function () {
+    $("CompileNote").textContent = "◆ compiled · revision 25 · record sealed just now.";
+    toast("Assembly compiled · revision 25");
   });
 
   toast("P01 live — tap any card");
