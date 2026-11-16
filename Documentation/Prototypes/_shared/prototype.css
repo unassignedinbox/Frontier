@@ -1,0 +1,45 @@
+/*==============================================================================================================
+  PROTOTYPE.CSS — shared base for the standalone UI card prototypes in Documentation/Prototypes/.
+  Only font faces, resets and type defaults live here; every card owns its own layout.
+  No external network requests: the fonts sit beside this file.
+==============================================================================================================*/
+@font-face {
+    font-family: 'DM Sans';
+    src: url('fonts/dm-sans-300.woff2') format('woff2');
+    font-weight: 300;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DM Sans';
+    src: url('fonts/dm-sans-400.woff2') format('woff2');
+    font-weight: 400;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DM Sans';
+    src: url('fonts/dm-sans-500.woff2') format('woff2');
+    font-weight: 500;
+    font-display: swap;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    min-height: 100%;
+}
+
+body {
+    background: #090A0B;
+    color: #E8EAE5;
+    font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+button { font: inherit; color: inherit; }
+svg { overflow: visible; }
+a { color: inherit; }
+::selection { background: rgba(216, 238, 102, 0.28); }
