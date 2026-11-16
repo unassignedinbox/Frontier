@@ -177,11 +177,10 @@ int main()
             return 1;
         }
 
-        // Verify Left Outliner -> Center Material Viewport -> Right Inspector 3-column dock alignment
+        // Verify strictly viewport-only dock pane (no deferred Inspector / Layer Stack windows mounted)
         {
-            ImGuiWindow* OutlinerWin  = nullptr;
-            ImGuiWindow* MaterialWin  = nullptr;
-            ImGuiWindow* InspectorWin = nullptr;
+            bool FoundMaterialWin = false;
+            bool FoundDeferredWin = false;
             if (ImGuiContext* Ctx = ImGui::GetCurrentContext())
             {
                 for (ImGuiWindow* Win : Ctx->Windows)
@@ -189,14 +188,12 @@ int main()
                     if (Win != nullptr && Win->Active)
                     {
                         const std::string_view Name(Win->Name);
-                        if (Name.starts_with("Outliner##")) OutlinerWin = Win;
-                        else if (Name.starts_with("Material##")) MaterialWin = Win;
-                        else if (Name.starts_with("Inspector##")) InspectorWin = Win;
+                        if (Name.starts_with("Material##")) FoundMaterialWin = true;
+                        if (Name.starts_with("Inspector##") || Name.starts_with("Layers##")) FoundDeferredWin = true;
                     }
                 }
             }
-            if (!VerifyCondition(OutlinerWin != nullptr && MaterialWin != nullptr && InspectorWin != nullptr, "All 3 Material columns (Outliner, Material, Inspector) mounted") ||
-                !VerifyCondition(OutlinerWin->Pos.x + OutlinerWin->Size.x <= MaterialWin->Pos.x + 2.0f && MaterialWin->Pos.x + MaterialWin->Size.x <= InspectorWin->Pos.x + 2.0f, "Left -> Center -> Right 3-column Material dock alignment verified"))
+            if (!VerifyCondition(FoundMaterialWin && !FoundDeferredWin, "Strictly Viewport-only Material pane mounted (Inspector deferred)"))
             {
                 Dock.Finalize();
                 ImGui::DestroyContext(GuiCtx);
@@ -256,6 +253,6 @@ int main()
 
     ImGui::DestroyContext(GuiCtx);
     TypographyRepository::AssignCurrent(nullptr);
-    std::printf("[MaterialWorkspaceUIValidation] ALL CHECKS PASSED (3-Column Project Zero Outliner + Viewport + Inspector + ContentBrowser)\n");
+    std::printf("[MaterialWorkspaceUIValidation] ALL CHECKS PASSED (Viewport-only + ContentBrowser 13 Dynamic Material thumbnails)\n");
     return 0;
 }

@@ -1409,32 +1409,6 @@ void ContentBrowserPanel::RenderColourRampSlotHighlights(
     }
 }
 
-void ContentBrowserPanel::ConfigureThumbnailScale(float Scale) noexcept
-{
-    ThumbnailScale = std::clamp(Scale, 0.55f, 2.00f);
-}
-
-void ContentBrowserPanel::ApplyRepositoryWheelInput(
-    Rectangle2D                       RepositoryArea,
-    const ContentBrowserPointerInput& PointerInput,
-    float                             ScrollStepPx) noexcept
-{
-    const Point2D Cursor{ PointerInput.CursorX, PointerInput.CursorY };
-    if (!RepositoryArea.Contains(Cursor) || std::fabs(PointerInput.WheelDeltaY) <= 1.0e-4f)
-    {
-        return;
-    }
-
-    if (PointerInput.ControlHeld)
-    {
-        // Ctrl + Scroll adjusts thumbnail / grid density only inside the content display area
-        ThumbnailScale = std::clamp(ThumbnailScale + PointerInput.WheelDeltaY * 0.10f, 0.55f, 2.00f);
-        return;
-    }
-
-    RepositoryScrollY = std::max(0.0f, RepositoryScrollY - PointerInput.WheelDeltaY * ScrollStepPx);
-}
-
 void ContentBrowserPanel::RenderColourRampsRepository(
     PixelSpace&                       Canvas,
     Rectangle2D                       RepositoryArea,
@@ -1479,17 +1453,18 @@ void ContentBrowserPanel::RenderColourRampsRepository(
     }
 
     Canvas.PushClip(RepositoryArea);
-    ApplyRepositoryWheelInput(RepositoryArea, PointerInput, 38.0f);
+    if (RepositoryArea.Contains(Cursor) && std::fabs(PointerInput.WheelDeltaY) > 1.0e-4f)
+    {
+        RepositoryScrollY = std::max(0.0f, RepositoryScrollY - PointerInput.WheelDeltaY * 38.0f);
+    }
 
-    const float    Gap       = 10.0f;
-    const float    StripH    = std::round(34.0f * ThumbnailScale);
-    const float    TileH     = StripH + 50.0f;
-    const float    TargetCol = std::max(120.0f, std::round(224.0f * ThumbnailScale));
-    const uint32_t Columns   = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + Gap) / TargetCol));
-    const float    TileW     = (RepositoryArea.Width - Gap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
-    const uint32_t Rows      = static_cast<uint32_t>((FilteredRamps.size() + Columns - 1u) / Columns);
-    const float    MaxScroll = std::max(0.0f, static_cast<float>(Rows) * (TileH + Gap) - RepositoryArea.Height);
-    RepositoryScrollY        = std::min(RepositoryScrollY, MaxScroll);
+    constexpr float Gap       = 10.0f;
+    constexpr float TileH     = 84.0f;
+    const uint32_t  Columns   = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + Gap) / 224.0f));
+    const float     TileW     = (RepositoryArea.Width - Gap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
+    const uint32_t  Rows      = static_cast<uint32_t>((FilteredRamps.size() + Columns - 1u) / Columns);
+    const float     MaxScroll = std::max(0.0f, static_cast<float>(Rows) * (TileH + Gap) - RepositoryArea.Height);
+    RepositoryScrollY         = std::min(RepositoryScrollY, MaxScroll);
 
     const ColorRgba IdleFill     = AppearanceColors.SectionSurface.ToRgba8();
     const ColorRgba HoverFill    = AppearanceColors.Raised.ToRgba8();
@@ -1520,7 +1495,7 @@ void ContentBrowserPanel::RenderColourRampsRepository(
         Canvas.FillRectangle(TileRect, Selected ? SelectedFill : (Hovered ? HoverFill : IdleFill), SectionRadius);
         Canvas.StrokeRectangle(TileRect, Selected ? SelStroke : IdleStroke, SectionRadius, Selected ? 1.5f : 1.0f);
 
-        const Rectangle2D StripRect { TileRect.X + 8.0f, TileRect.Y + 8.0f, TileRect.Width - 16.0f, StripH };
+        const Rectangle2D StripRect { TileRect.X + 8.0f, TileRect.Y + 8.0f, TileRect.Width - 16.0f, 34.0f };
         ConstructSmoothColourRampStrip(Canvas, StripRect, Entry, 6.0f);
 
         // Stop position ticks beneath gradient bar
@@ -1597,14 +1572,8 @@ void ContentBrowserPanel::RenderColoursRepository(
         Canvas.FillRectangle(RepositoryArea, AppearanceColors.SectionSurface.ToRgba8(), SectionRadius);
         Canvas.PushClip(RepositoryArea);
 
-        if (PointerInput.ControlHeld)
-        {
-            ApplyRepositoryWheelInput(RepositoryArea, PointerInput, 0.0f);
-        }
-
         const float StripCount = static_cast<float>(FilteredIndices.size());
-        const float BaseStripW = std::max(44.0f, RepositoryArea.Width / StripCount);
-        const float StripW     = std::max(28.0f, std::round(BaseStripW * ThumbnailScale));
+        const float StripW     = std::max(44.0f, RepositoryArea.Width / StripCount);
 
         for (std::size_t OrderIdx = 0u; OrderIdx < FilteredIndices.size(); ++OrderIdx)
         {
@@ -1665,10 +1634,12 @@ void ContentBrowserPanel::RenderColoursRepository(
         Canvas.FillRectangle(RepositoryArea, AppearanceColors.SectionSurface.ToRgba8(), SectionRadius);
         Canvas.PushClip(RepositoryArea);
 
-        ApplyRepositoryWheelInput(RepositoryArea, PointerInput, 36.0f);
+        if (RepositoryArea.Contains(Cursor) && std::fabs(PointerInput.WheelDeltaY) > 1.0e-4f)
+        {
+            RepositoryScrollY = std::max(0.0f, RepositoryScrollY - PointerInput.WheelDeltaY * 36.0f);
+        }
 
-        const float BaseBandH = std::max(40.0f, RepositoryArea.Height / std::min<float>(10.0f, static_cast<float>(FilteredIndices.size())));
-        const float BandH     = std::max(28.0f, std::round(BaseBandH * ThumbnailScale));
+        const float BandH     = std::max(40.0f, RepositoryArea.Height / std::min<float>(10.0f, static_cast<float>(FilteredIndices.size())));
         const float MaxScroll = std::max(0.0f, BandH * static_cast<float>(FilteredIndices.size()) - RepositoryArea.Height);
         RepositoryScrollY     = std::min(RepositoryScrollY, MaxScroll);
 
@@ -1730,17 +1701,18 @@ void ContentBrowserPanel::RenderColoursRepository(
 
     // GridCircles: Multi-column flat circular .ColourSwatch cells
     Canvas.PushClip(RepositoryArea);
-    ApplyRepositoryWheelInput(RepositoryArea, PointerInput, 38.0f);
+    if (RepositoryArea.Contains(Cursor) && std::fabs(PointerInput.WheelDeltaY) > 1.0e-4f)
+    {
+        RepositoryScrollY = std::max(0.0f, RepositoryScrollY - PointerInput.WheelDeltaY * 38.0f);
+    }
 
-    constexpr float CellGap    = 10.0f;
-    const float     CircleRad  = std::round(26.0f * ThumbnailScale);
-    const float     CellH      = std::round(CircleRad * 2.0f + 76.0f);
-    const float     TargetColW = std::max(72.0f, std::round(124.0f * ThumbnailScale));
-    const uint32_t  Columns    = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + CellGap) / TargetColW));
-    const float     CellW      = (RepositoryArea.Width - CellGap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
-    const uint32_t  RowCount   = static_cast<uint32_t>((FilteredIndices.size() + Columns - 1u) / Columns);
-    const float     TotalH     = static_cast<float>(RowCount) * (CellH + CellGap);
-    RepositoryScrollY          = std::min(RepositoryScrollY, std::max(0.0f, TotalH - RepositoryArea.Height));
+    constexpr float CellGap  = 10.0f;
+    constexpr float CellH    = 128.0f;
+    const uint32_t  Columns  = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + CellGap) / 124.0f));
+    const float     CellW    = (RepositoryArea.Width - CellGap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
+    const uint32_t  RowCount = static_cast<uint32_t>((FilteredIndices.size() + Columns - 1u) / Columns);
+    const float     TotalH   = static_cast<float>(RowCount) * (CellH + CellGap);
+    RepositoryScrollY        = std::min(RepositoryScrollY, std::max(0.0f, TotalH - RepositoryArea.Height));
 
     const ColorRgba IdleFill     = AppearanceColors.SectionSurface.ToRgba8();
     const ColorRgba HoverFill    = BlendRgba(AppearanceColors.SectionSurface, AppearanceColors.Raised, 0.55f);
@@ -1773,14 +1745,12 @@ void ContentBrowserPanel::RenderColoursRepository(
         Canvas.FillRectangle(CellRect, Selected ? SelectedFill : (Hovered ? HoverFill : IdleFill), SectionRadius);
         Canvas.StrokeRectangle(CellRect, Selected ? SelStroke : IdleStroke, SectionRadius, Selected ? 1.25f : 1.0f);
 
-        const float   CircleTopY = 18.0f + CircleRad;
-        const Point2D CircleCenter{ CellRect.Center().X, CellRect.Y + CircleTopY };
-        Canvas.FillCircle(CircleCenter, CircleRad, Entry.FillColour);
-        Canvas.StrokeCircle(CircleCenter, CircleRad, RingStroke, 1.0f);
+        const Point2D CircleCenter{ CellRect.Center().X, CellRect.Y + 46.0f };
+        Canvas.FillCircle(CircleCenter, 26.0f, Entry.FillColour);
+        Canvas.StrokeCircle(CircleCenter, 26.0f, RingStroke, 1.0f);
 
-        const float LabelY = CellRect.Y + CircleTopY + CircleRad + 12.0f;
-        Canvas.TextCentered({ CellRect.X + 4.0f, LabelY, CellRect.Width - 8.0f, 16.0f }, 10.5f, TitleInk, Entry.AliasName.c_str());
-        Canvas.TextCentered({ CellRect.X + 4.0f, LabelY + 18.0f, CellRect.Width - 8.0f, 14.0f }, 9.0f, SubInk, Entry.HexUpper.c_str());
+        Canvas.TextCentered({ CellRect.X + 4.0f, CellRect.Y + 84.0f, CellRect.Width - 8.0f, 16.0f }, 10.5f, TitleInk, Entry.AliasName.c_str());
+        Canvas.TextCentered({ CellRect.X + 4.0f, CellRect.Y + 102.0f, CellRect.Width - 8.0f, 14.0f }, 9.0f, SubInk, Entry.HexUpper.c_str());
 
         LastColourHitboxes.push_back({ EntryIdx, CellRect });
 
@@ -1828,7 +1798,10 @@ void ContentBrowserPanel::RenderNonColoursRepository(
 
     const Point2D Cursor{ PointerInput.CursorX, PointerInput.CursorY };
     Canvas.PushClip(RepositoryArea);
-    ApplyRepositoryWheelInput(RepositoryArea, PointerInput, 38.0f);
+    if (RepositoryArea.Contains(Cursor) && std::fabs(PointerInput.WheelDeltaY) > 1.0e-4f)
+    {
+        RepositoryScrollY = std::max(0.0f, RepositoryScrollY - PointerInput.WheelDeltaY * 38.0f);
+    }
 
     const ColorRgba IdleFill     = AppearanceColors.SectionSurface.ToRgba8();
     const ColorRgba HoverFill    = BlendRgba(AppearanceColors.SectionSurface, AppearanceColors.Raised, 0.55f);
@@ -1840,10 +1813,7 @@ void ContentBrowserPanel::RenderNonColoursRepository(
 
     if (StandardLayout == StandardRepositoryLayout::List)
     {
-        const float IconSide  = std::round(36.0f * ThumbnailScale);
-        const float RowH      = std::max(38.0f, IconSide + 12.0f);
-        const float RowStride = RowH + 4.0f;
-        const float MaxScroll = std::max(0.0f, static_cast<float>(Filtered.size()) * RowStride - RepositoryArea.Height);
+        const float MaxScroll = std::max(0.0f, static_cast<float>(Filtered.size()) * 52.0f - RepositoryArea.Height);
         RepositoryScrollY     = std::min(RepositoryScrollY, MaxScroll);
 
         for (std::size_t OrderIdx = 0u; OrderIdx < Filtered.size(); ++OrderIdx)
@@ -1854,7 +1824,7 @@ void ContentBrowserPanel::RenderNonColoursRepository(
             {
                 continue;
             }
-            const Rectangle2D RowRect{ RepositoryArea.X, RepositoryArea.Y + static_cast<float>(OrderIdx) * RowStride - RepositoryScrollY, RepositoryArea.Width, RowH };
+            const Rectangle2D RowRect{ RepositoryArea.X, RepositoryArea.Y + static_cast<float>(OrderIdx) * 52.0f - RepositoryScrollY, RepositoryArea.Width, 48.0f };
             if (RowRect.Bottom() < RepositoryArea.Y || RowRect.Y > RepositoryArea.Bottom())
             {
                 continue;
@@ -1870,10 +1840,10 @@ void ContentBrowserPanel::RenderNonColoursRepository(
             }
 
             const ThumbnailUvQuad TileUv = ThumbnailRepository.QueryTileUv(EntryIdx);
-            const Rectangle2D     IconBox{ RowRect.X + 8.0f, RowRect.Y + (RowRect.Height - IconSide) * 0.5f, IconSide, IconSide };
+            const Rectangle2D     IconBox{ RowRect.X + 8.0f, RowRect.Y + 6.0f, 36.0f, 36.0f };
             if (TileUv.Valid)
             {
-                Canvas.FillTexturedRectangle(IconBox, TileUv.TexturePointer, TileUv.UvMin, TileUv.UvMax, IsMatCap ? (IconSide * 0.5f) : 8.0f);
+                Canvas.FillTexturedRectangle(IconBox, TileUv.TexturePointer, TileUv.UvMin, TileUv.UvMax, IsMatCap ? 18.0f : 8.0f);
             }
 
             const auto  EntryCat    = static_cast<ContentCategory>(Entry->IndexHeader.CategoryCode);
@@ -1883,10 +1853,8 @@ void ContentBrowserPanel::RenderNonColoursRepository(
                                              ? (Entry->ContainerFormat + "  ·  Studio MatCap #" + std::to_string(Entry->IndexHeader.MatCapSlotOrdinal) + "  ·  " + OriginTag)
                                              : (Entry->ContainerFormat + "  ·  " + ThumbnailSheetRepository::QueryCategoryTitle(EntryCat) + "  ·  " + OriginTag);
 
-            const float TextLeftX = IconBox.Right() + 10.0f;
-            const float TextBaseY = RowRect.Y + std::max(5.0f, (RowRect.Height - 28.0f) * 0.5f);
-            Canvas.Text({ TextLeftX, TextBaseY }, 11.5f, TitleInk, Entry->DisplayTitle.c_str());
-            Canvas.Text({ TextLeftX, TextBaseY + 17.0f }, 9.2f, SubInk, MetaLine.c_str());
+            Canvas.Text({ RowRect.X + 54.0f, RowRect.Y + 10.0f }, 11.5f, TitleInk, Entry->DisplayTitle.c_str());
+            Canvas.Text({ RowRect.X + 54.0f, RowRect.Y + 27.0f }, 9.2f, SubInk, MetaLine.c_str());
 
             LastContentHitboxes.push_back({ EntryIdx, RowRect });
 
@@ -1925,14 +1893,12 @@ void ContentBrowserPanel::RenderNonColoursRepository(
     }
     else
     {
-        constexpr float CellGap    = 10.0f;
-        const float     ThumbSide  = std::round(62.0f * ThumbnailScale);
-        const float     CellH      = std::round(ThumbSide + 72.0f);
-        const float     TargetColW = std::max(78.0f, std::round(136.0f * ThumbnailScale));
-        const uint32_t  Columns    = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + CellGap) / TargetColW));
-        const float     CellW      = (RepositoryArea.Width - CellGap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
-        const uint32_t  RowCount   = static_cast<uint32_t>((Filtered.size() + Columns - 1u) / Columns);
-        RepositoryScrollY          = std::min(RepositoryScrollY, std::max(0.0f, static_cast<float>(RowCount) * (CellH + CellGap) - RepositoryArea.Height));
+        constexpr float CellGap  = 10.0f;
+        constexpr float CellH    = 134.0f;
+        const uint32_t  Columns  = std::max(1u, static_cast<uint32_t>((RepositoryArea.Width + CellGap) / 136.0f));
+        const float     CellW    = (RepositoryArea.Width - CellGap * static_cast<float>(Columns - 1u)) / static_cast<float>(Columns);
+        const uint32_t  RowCount = static_cast<uint32_t>((Filtered.size() + Columns - 1u) / Columns);
+        RepositoryScrollY        = std::min(RepositoryScrollY, std::max(0.0f, static_cast<float>(RowCount) * (CellH + CellGap) - RepositoryArea.Height));
 
         for (std::size_t OrderIdx = 0u; OrderIdx < Filtered.size(); ++OrderIdx)
         {
@@ -1963,19 +1929,17 @@ void ContentBrowserPanel::RenderNonColoursRepository(
 
             // Single textured quad sampled directly from pre-baked 1024x1024 ThumbnailSheet page
             const ThumbnailUvQuad TileUv = ThumbnailRepository.QueryTileUv(EntryIdx);
-            const float           FitThumb = std::min(ThumbSide, std::max(28.0f, CellRect.Width - 16.0f));
-            const Rectangle2D     ThumbRect{ CellRect.Center().X - FitThumb * 0.5f, CellRect.Y + 12.0f, FitThumb, FitThumb };
+            const Rectangle2D     ThumbRect{ CellRect.Center().X - 31.0f, CellRect.Y + 12.0f, 62.0f, 62.0f };
             if (TileUv.Valid)
             {
-                Canvas.FillTexturedRectangle(ThumbRect, TileUv.TexturePointer, TileUv.UvMin, TileUv.UvMax, IsMatCap ? (FitThumb * 0.5f) : std::min(14.0f, FitThumb * 0.2f));
+                Canvas.FillTexturedRectangle(ThumbRect, TileUv.TexturePointer, TileUv.UvMin, TileUv.UvMax, IsMatCap ? 31.0f : 12.0f);
             }
             if (IsMatCap)
             {
-                Canvas.StrokeCircle(ThumbRect.Center(), FitThumb * 0.5f, BlendRgba(AppearanceColors.StrokeStrong, AppearanceColors.Text, 0.22f), 1.0f);
+                Canvas.StrokeCircle(ThumbRect.Center(), 31.0f, BlendRgba(AppearanceColors.StrokeStrong, AppearanceColors.Text, 0.22f), 1.0f);
             }
 
-            const float TitleY = ThumbRect.Bottom() + 8.0f;
-            Canvas.TextCentered({ CellRect.X + 5.0f, TitleY, CellRect.Width - 10.0f, 16.0f }, 10.0f, TitleInk, Entry->DisplayTitle.c_str());
+            Canvas.TextCentered({ CellRect.X + 5.0f, CellRect.Y + 82.0f, CellRect.Width - 10.0f, 16.0f }, 10.0f, TitleInk, Entry->DisplayTitle.c_str());
 
             const auto EntryCat    = static_cast<ContentCategory>(Entry->IndexHeader.CategoryCode);
             const auto EntryOrigin = static_cast<ContentOriginFilter>(Entry->IndexHeader.OriginCode);
@@ -1983,7 +1947,7 @@ void ContentBrowserPanel::RenderNonColoursRepository(
             const std::string Sub  = IsMatCap
                                          ? (std::string("MatCap #") + std::to_string(Entry->IndexHeader.MatCapSlotOrdinal) + " · Studio")
                                          : (std::string(ThumbnailSheetRepository::QueryCategoryTitle(EntryCat)) + " · " + OriginTag);
-            Canvas.TextCentered({ CellRect.X + 5.0f, TitleY + 20.0f, CellRect.Width - 10.0f, 14.0f }, 8.8f, SubInk, Sub.c_str());
+            Canvas.TextCentered({ CellRect.X + 5.0f, CellRect.Y + 102.0f, CellRect.Width - 10.0f, 14.0f }, 8.8f, SubInk, Sub.c_str());
 
             LastContentHitboxes.push_back({ EntryIdx, CellRect });
 
@@ -3215,9 +3179,7 @@ void ContentBrowserPanel::RenderWithInput(
         AppearanceColors.TextDim.ToRgba8(),
         StatusMessage.empty() ? DefaultHint : StatusMessage.c_str());
 
-    const int         ZoomPct   = static_cast<int>(std::lround(ThumbnailScale * 100.0f));
-    const std::string RightMeta = std::string("Grid ") + std::to_string(ZoomPct) + "% · " +
-                                  std::string(Threading::AssetStreamThread::QueryHardwareTierTitle(StreamChannelThread.QueryResolvedTier())) +
+    const std::string RightMeta = std::string(Threading::AssetStreamThread::QueryHardwareTierTitle(StreamChannelThread.QueryResolvedTier())) +
                                   " · " + ThumbnailSheetRepository::QueryWorkspaceTitle(ActiveWorkspace) + " Mask";
     Canvas.TextRightAligned(FooterRect, 9.0f, AppearanceColors.TextFaint.ToRgba8(), RightMeta.c_str());
 
@@ -3381,7 +3343,6 @@ void ContentBrowserPanel::Render(Rectangle2D HostBoundsPhysical, double DeltaSec
         Pointer.Released      = Snapshot.QueryButtonReleased(0u);
         Pointer.DoubleClicked = Snapshot.QueryButtonDoubleClicked(0u);
         Pointer.WheelDeltaY   = Snapshot.ScrollDeltaY;
-        Pointer.ControlHeld   = Snapshot.ControlHeld;
     }
 
     RenderWithInput(Canvas, LogicalBounds, Pointer, DeltaSeconds);

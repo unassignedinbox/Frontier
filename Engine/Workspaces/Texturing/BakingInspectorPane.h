@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                             BAKINGINSPECTORPANE.H
 ============================================================================================================================================*/
-// 🧩 Right-docked TextureStudio Baking Inspector pane (old Materials header & 3 KPI tiles, categorized section boxes, TextureStudio sliders)
+// 🧩 Right-column inspector for Baking Studio: KPI trio, bake progress box, surface ray settings, 3D volume SDF & export bridge.
 
 #pragma once
 
@@ -12,8 +12,6 @@
 #include "Engine/Components/Panes/WorkspaceAppearance.h"
 #include "Engine/Components/PixelSpace.h"
 #include "Engine/Workspaces/Texturing/BakingWorkspaceSession.h"
-
-#include <cstdint>
 
 namespace Frontier::Workspaces
 {
@@ -39,12 +37,9 @@ private:
     float                   ScrollOffsetY      = 0.0f;
     float                   MaxScrollY         = 0.0f;
     int32_t                 ActiveSliderId     = -1;
-    bool                    StudyPopoverOpen   = false;
-    Rectangle2D             StudyAnchorRect    {};
-    bool                    ExecuteGroupOpen   = true;
-    bool                    TargetGroupOpen    = true;
-    bool                    OutputGroupOpen    = true;
-    bool                    VolumeGroupOpen    = true;
+    bool                    SurfaceSectionOpen = true;
+    bool                    VolumeSectionOpen  = true;
+    bool                    ExportSectionOpen  = true;
 };
 
 } // namespace Frontier::Workspaces

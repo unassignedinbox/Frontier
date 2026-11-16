@@ -1,15 +1,16 @@
 /*============================================================================================================================================
                                                            BAKINGINSPECTORPANE.CPP
 ============================================================================================================================================*/
-// 🧩 Right-docked TextureStudio Baking Inspector (pane-direct surface, TextureStudio OLD header & 3 KPI tiles, categorized groups & sliders)
+// 🧩 Implementation of BakingInspectorPane: study title, KPI trio, progress bar, raycaster sliders, volume SDF section & Paint bridge.
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                        INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/Workspaces/Texturing/BakingInspectorPane.h"
-#include "Engine/Workspaces/Texturing/BakingTargetsPane.h"
-#include "Engine/Workspaces/Texturing/StudioSurfaceKit.h"
+
+#include "Engine/Components/Controls/ControlAppearance.h"
+#include "Engine/Workspaces/Texturing/TexturingPaneAppearance.h"
 
 #include <imgui.h>
 
@@ -17,53 +18,18 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <string_view>
-#include <vector>
 
 namespace Frontier::Workspaces
 {
 
-using namespace StudioSurface;
+using namespace TexturingAppearance;
 
 namespace
 {
 
-[[nodiscard]] bool QueryNormalTargetKind(BakerTargetId Target) noexcept
+[[nodiscard]] bool PointInsideRect(Rectangle2D Rect, Point2D Cursor) noexcept
 {
-    return Target == BakerTargetId::TangentNormal ||
-           Target == BakerTargetId::WorldNormal ||
-           Target == BakerTargetId::ModelSpaceNormal ||
-           Target == BakerTargetId::BentNormal ||
-           Target == BakerTargetId::BevelNormal;
-}
-
-[[nodiscard]] bool QueryAoTargetKind(BakerTargetId Target) noexcept
-{
-    return Target == BakerTargetId::AmbientOcclusion ||
-           Target == BakerTargetId::SecondaryAo ||
-           Target == BakerTargetId::BentNormal ||
-           Target == BakerTargetId::Thickness ||
-           Target == BakerTargetId::Curvature;
-}
-
-[[nodiscard]] float EstimateOutputMegabytes(const BakingWorkspaceSession& Session) noexcept
-{
-    float Total = 0.0f;
-    const float Side = static_cast<float>(Session.TargetResolutionPx);
-    for (std::size_t Idx = 0u; Idx < BakingWorkspaceSession::TargetCount; ++Idx)
-    {
-        if (!Session.SelectedTargets[Idx]) continue;
-        if (static_cast<BakerTargetId>(Idx) == BakerTargetId::VolumeSdf)
-        {
-            const float D = static_cast<float>(Session.VolumeGridDim);
-            Total += (D * D * D * 4.0f) / (1024.0f * 1024.0f);
-        }
-        else
-        {
-            Total += (Side * Side * 4.0f) / (1024.0f * 1024.0f);
-        }
-    }
-    return Total;
+    return Cursor.X >= Rect.X && Cursor.X <= Rect.Right() && Cursor.Y >= Rect.Y && Cursor.Y <= Rect.Bottom();
 }
 
 } // namespace
@@ -109,432 +75,408 @@ void BakingInspectorPane::Render(
     PixelSpace&             Surface,
     Rectangle2D             Bounds,
     const PaneInputReading& Input,
-    double                  /*DeltaSeconds*/)
+    double                  DeltaSeconds)
 {
-    if (Session == nullptr || Bounds.Width < 60.0f || Bounds.Height < 60.0f)
+    (void)DeltaSeconds;
+    if (Session == nullptr || Bounds.Width < 180.0f || Bounds.Height < 180.0f)
     {
         return;
     }
 
-    const StudioToneSet Tone   = QueryStudioToneSet();
-    const Rectangle2D   Pane   = ConstructDockedSurfaceShell(Surface, Bounds, false, Tone);
-    const float         PadX   = 12.0f;
-    const float         InnerW = std::max(80.0f, Pane.Width - PadX * 2.0f);
-    const float         LeftX  = Pane.X + PadX;
+    const TexturingThemeColors Theme   = QueryTexturingThemeColors();
+    const Point2D              Cursor  { Input.PrimaryPointer.X, Input.PrimaryPointer.Y };
+    const bool                 Pressed = Input.PrimaryPointer.Pressed;
 
-    // 1. TextureStudio OLD Inspector Header Bar ("Baking Inspector" | "HIGH -> LOW CAGE" + Reset)
-    const Rectangle2D HeaderStrip { Pane.X, Pane.Y, Pane.Width, 42.0f };
-    const InspectorHeadingResult HeadOut = ConstructStudioInspectorHeader(
-        Surface, HeaderStrip, "Baking Inspector", "HIGH -> LOW CAGE", false, false, false, true, Input, Tone);
-    if (HeadOut.ResetClicked)
+    if (!Input.PrimaryPointer.Down)
     {
-        Session->ResetDefaults();
+        ActiveSliderId = -1;
     }
 
-    constexpr float FooterH = 62.0f;
-    const Rectangle2D FooterRect { Pane.X, Pane.Bottom() - FooterH, Pane.Width, FooterH };
-    const Rectangle2D BodyRect   { Pane.X, HeaderStrip.Bottom(), Pane.Width, std::max(60.0f, FooterRect.Y - HeaderStrip.Bottom()) };
+    Surface.PushClip(Bounds);
+    Surface.FillRectangle(Bounds, Theme.PaneBackground, 0.0f);
 
-    const Point2D Cursor = QueryInputCursor(Input);
-    if (!StudyPopoverOpen && BodyRect.Contains(Cursor) && std::fabs(Input.WheelDeltaY) > 1.0e-4f)
-    {
-        ScrollOffsetY = std::clamp(ScrollOffsetY - Input.WheelDeltaY * 36.0f, 0.0f, MaxScrollY);
-    }
-
-    const float StartY = BodyRect.Y + 10.0f - ScrollOffsetY;
-    float       Y      = StartY;
-    const bool  Interactive = !StudyPopoverOpen;
-
-    Surface.PushClip(BodyRect);
-
-    // 2a. TextureStudio OLD Object Heading (large 20px light study title + mono uppercase subtitle + Study switcher)
-    const auto& ActiveStudy = Session->QueryActiveStudyDescriptor();
-    char StudySub[80] {};
-    std::snprintf(StudySub, sizeof(StudySub), "LOW %u -> HIGH %u TRIS · %uPX",
-        Session->QueryActiveLowTriangles(), Session->QueryActiveHighTriangles(), Session->TargetResolutionPx);
-    if (ConstructStudioObjectHeading(
-            Surface,
-            { LeftX, Y, InnerW, 46.0f },
-            ActiveStudy.Label,
-            StudySub,
-            "Study",
-            StudyPopoverOpen,
-            Input,
-            Tone,
-            &StudyAnchorRect))
-    {
-        StudyPopoverOpen = !StudyPopoverOpen;
-    }
-    Y += 56.0f;
-
-    // 2b. TextureStudio OLD 3-Up KPI Info Tiles (Tile 1 lime-cream #EFF4CF: Queued; Tile 2: Output MB; Tile 3: Samples)
-    const std::size_t SelectedCount = Session->CountSelectedTargets();
-    const float       OutMb         = EstimateOutputMegabytes(*Session);
-    char QueuedVal[20] {}, ResSub[20] {}, MbVal[20] {}, RaySub[24] {};
-    std::snprintf(QueuedVal, sizeof(QueuedVal), "%zu/%zu", SelectedCount, BakingWorkspaceSession::TargetCount);
-    std::snprintf(ResSub,    sizeof(ResSub),    "%upx RGBA8", Session->TargetResolutionPx);
-    std::snprintf(MbVal,     sizeof(MbVal),     "%.1f MB", OutMb);
-    std::snprintf(RaySub,    sizeof(RaySub),    "%d AO rays", Session->AoSampleCount);
-
-    const std::array<KpiTileSpec, 3u> KpiTiles {{
-        { "Queued", QueuedVal, ResSub, true },
-        { "Output", MbVal,     Session->SurfaceBaked ? "Baked" : "Pending", false },
-        { "Status", Session->SurfaceBaked ? "Fresh" : "Ready", RaySub, false },
-    }};
-    ConstructStudioKpiTrio(Surface, { LeftX, Y, InnerW, 64.0f }, KpiTiles, Tone);
-    Y += 74.0f;
-
-    constexpr float GroupHeadH = 38.0f;
-    const float     BodyPad    = 12.0f;
-    const float     CtrlW      = InnerW - BodyPad * 2.0f;
-
-    // 2c. Category Group 1: Bake Queue & Sources (EXECUTE — white icon on green tile)
-    {
-        const float BodyH = ExecuteGroupOpen ? (10.0f + 38.0f + 10.0f + 28.0f + 10.0f + 24.0f + 8.0f) : 0.0f;
-        const float BoxH  = GroupHeadH + BodyH;
-        if (ConstructCategoryGroupBox(
-                Surface, { LeftX, Y, InnerW, BoxH }, GroupHeadH,
-                ControlIcon::BakeBox, IconAccentTone::Green, "Bake Queue & Sources", "EXECUTE", ExecuteGroupOpen, Input, Tone) && Interactive)
-        {
-            ExecuteGroupOpen = !ExecuteGroupOpen;
-        }
-
-        if (ExecuteGroupOpen)
-        {
-            const float CX = LeftX + BodyPad;
-            float       CY = Y + GroupHeadH + 10.0f;
-
-            // Low -> High Source Pair strip
-            constexpr float SlotGap = 16.0f;
-            const float SlotW = (CtrlW - SlotGap) * 0.5f;
-            const Rectangle2D LowSlot  { CX, CY, SlotW, 38.0f };
-            const Rectangle2D HighSlot { LowSlot.Right() + SlotGap, CY, SlotW, 38.0f };
-
-            auto ConstructSourceTile = [&](Rectangle2D Slot, std::string_view Title, std::string_view CustomLbl)
-            {
-                Surface.FillRectangle(Slot, Tone.FieldWell, 10.0f);
-                Surface.StrokeRectangle(Slot, Tone.BorderSubtle, 10.0f, 1.0f);
-                VectorIconRepository::ConstructControl(Surface, ControlIcon::UploadImport, {
-                    Slot.X + 9.0f, Slot.Center().Y - 6.0f, 12.0f, Tone.TextMuted, 1.85f
-                });
-                Surface.PushClip({ Slot.X + 26.0f, Slot.Y + 2.0f, Slot.Width - 30.0f, Slot.Height - 4.0f });
-                WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Medium, { Slot.X + 26.0f, Slot.Y + 6.0f }, 9.8f, Tone.TextPrimary, Title);
-                WorkspaceAppearance::ConstructWeightedText(
-                    Surface, FontWeightClass::Regular, { Slot.X + 26.0f, Slot.Y + 20.0f }, 8.6f,
-                    CustomLbl.empty() ? Tone.TextFaint : Tone.AccentBlue,
-                    CustomLbl.empty() ? std::string_view("Study source") : CustomLbl);
-                Surface.PopClip();
-            };
-            ConstructSourceTile(LowSlot, "Low", Session->CustomLowAssetLabel);
-            ConstructSourceTile(HighSlot, "High", Session->CustomHighAssetLabel);
-            WorkspaceAppearance::ConstructWeightedText(
-                Surface, FontWeightClass::Regular, { LowSlot.Right() + 4.0f, CY + 12.0f }, 10.0f, Tone.TextFaint, "->");
-            CY += 48.0f;
-
-            // Primary Bake trigger + Compute device selector
-            const float BtnW = std::clamp(CtrlW * 0.45f, 96.0f, 144.0f);
-            const Rectangle2D BakeBtn { CX, CY, BtnW, 28.0f };
-            const bool BakeHover = Interactive && BakeBtn.Contains(Cursor);
-
-            char BakeLabel[32] {};
-            std::snprintf(BakeLabel, sizeof(BakeLabel), Session->BakingActive ? "Baking..." : "Bake %zu", SelectedCount);
-            const ColorRgba BakeFill = Session->BakingActive
-                ? Tone.Crimson
-                : (BakeHover ? ColorRgba{ 246u, 250u, 222u, 255u } : Tone.HighlightFill);
-            const ColorRgba BakeInk = Session->BakingActive ? ColorRgba{ 255u, 255u, 255u, 255u } : Tone.HighlightInk;
-            Surface.FillRectangle(BakeBtn, BakeFill, 14.0f);
-            ConstructCenteredWeightedText(Surface, FontWeightClass::Medium, BakeBtn, 10.0f, BakeInk, BakeLabel);
-            if (BakeHover && QueryPrimaryPressed(Input) && SelectedCount > 0u)
-            {
-                Session->ExecuteBakeSimulation();
-            }
-
-            const Rectangle2D ComputeRect { BakeBtn.Right() + 8.0f, CY, CtrlW - BtnW - 8.0f, 28.0f };
-            constexpr std::array<std::string_view, 3u> ComputeOptions {{ "Auto", "GTX", "RTX" }};
-            const int32_t PickedCompute = ConstructSegmentedCapsuleBar(Surface, ComputeRect, ComputeOptions, static_cast<int32_t>(Session->ComputeDevice), Input, Tone);
-            if (PickedCompute >= 0 && Interactive)
-            {
-                Session->ComputeDevice = static_cast<BakerComputeDevice>(PickedCompute);
-            }
-            CY += 38.0f;
-
-            // Progress bar & telemetry line
-            const Rectangle2D ProgTrack { CX, CY, CtrlW, 6.0f };
-            Surface.FillRectangle(ProgTrack, Tone.FieldWell, 3.0f);
-            Surface.StrokeRectangle(ProgTrack, Tone.BorderSubtle, 3.0f, 1.0f);
-            const float ProgFill = Session->SurfaceBaked ? 1.0f : std::clamp(Session->BakeProgress, 0.0f, 1.0f);
-            if (ProgFill > 0.01f)
-            {
-                Surface.FillRectangle({ ProgTrack.X, ProgTrack.Y, ProgTrack.Width * ProgFill, ProgTrack.Height },
-                    Session->SurfaceBaked ? Tone.AccentGreen : Tone.HighlightFill, 3.0f);
-            }
-
-            char MetricLine[80] {};
-            std::snprintf(MetricLine, sizeof(MetricLine), "%.1f MB · %upx · %d rays", OutMb, Session->TargetResolutionPx, Session->AoSampleCount);
-            WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { CX, CY + 10.0f }, 8.9f, Tone.TextMuted, MetricLine);
-            WorkspaceAppearance::ConstructRightAlignedText(
-                Surface, FontWeightClass::Medium, { CX + CtrlW, CY + 10.0f }, 8.9f,
-                Session->SurfaceBaked ? Tone.AccentGreen : Tone.AccentAmber,
-                Session->SurfaceBaked ? "Fresh" : "Unbaked");
-        }
-        Y += BoxH + 10.0f;
-    }
-
-    // 2d. Category Group 2: Active Target Settings (TARGET — white icon on blue tile)
-    {
-        const auto& TargetDesc   = BakingWorkspaceSession::QueryTargetDescriptor(Session->InspectedTarget);
-        const bool  TargetQueued = Session->SelectedTargets[static_cast<std::size_t>(Session->InspectedTarget)];
-        const bool  TargetReady  = Session->QueryTargetReady(Session->InspectedTarget);
-        const bool  ShowNormal   = QueryNormalTargetKind(Session->InspectedTarget);
-        const bool  ShowAo       = QueryAoTargetKind(Session->InspectedTarget);
-        const bool  ShowVolume   = (Session->InspectedTarget == BakerTargetId::VolumeSdf);
-
-        float BodyH = 0.0f;
-        if (TargetGroupOpen)
-        {
-            BodyH = 10.0f + 36.0f + 18.0f; // target banner + telemetry line
-            if (ShowNormal) BodyH += 36.0f;
-            if (ShowAo)     BodyH += 104.0f;
-            if (ShowVolume) BodyH += 174.0f;
-            if (!ShowNormal && !ShowAo && !ShowVolume) BodyH += 52.0f;
-            BodyH += 8.0f;
-        }
-        const float BoxH = GroupHeadH + BodyH;
-        if (ConstructCategoryGroupBox(
-                Surface, { LeftX, Y, InnerW, BoxH }, GroupHeadH,
-                ControlIcon::SparklesAntiAliasing, IconAccentTone::Blue, "Active Target", "TARGET", TargetGroupOpen, Input, Tone) && Interactive)
-        {
-            TargetGroupOpen = !TargetGroupOpen;
-        }
-
-        if (TargetGroupOpen)
-        {
-            const float CX = LeftX + BodyPad;
-            float       CY = Y + GroupHeadH + 10.0f;
-
-            // Active Target Swatch + Title + Status Tag
-            const Rectangle2D SwatchBox { CX, CY, 26.0f, 26.0f };
-            BakingTargetsPane::ConstructTargetPreviewSwatch(Surface, SwatchBox, Session->InspectedTarget, TargetReady);
-            Surface.StrokeRectangle(SwatchBox, Tone.BorderStrong, 0.0f, 1.0f);
-
-            WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Medium, { SwatchBox.Right() + 9.0f, CY + 1.0f }, 11.0f, Tone.TextPrimary, TargetDesc.Label);
-            WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { SwatchBox.Right() + 9.0f, CY + 15.0f }, 8.8f, Tone.TextMuted, TargetDesc.ShortSummary);
-
-            const std::string_view StatusLabel = TargetReady ? "READY" : (TargetQueued ? "QUEUED" : "SKIPPED");
-            const TagTone          StatusTone  = TargetReady ? TagTone::Green : (TargetQueued ? TagTone::Amber : TagTone::Neutral);
-            const Rectangle2D      TagBox { CX + CtrlW - 54.0f, CY + 4.0f, 54.0f, 18.0f };
-            Surface.FillRectangle(TagBox, ResolveTagBackground(StatusTone, Tone), 9.0f);
-            ConstructCenteredWeightedText(Surface, FontWeightClass::Medium, TagBox, 8.2f, ResolveTagInk(StatusTone, Tone), StatusLabel);
-            CY += 36.0f;
-
-            if (ShowNormal)
-            {
-                constexpr std::array<std::string_view, 2u> Conventions {{ "OpenGL +Y", "DirectX -Y" }};
-                const int32_t PickedConv = ConstructSegmentedCapsuleBar(Surface, { CX, CY, CtrlW, 26.0f }, Conventions, static_cast<int32_t>(Session->NormalConvention), Input, Tone);
-                if (PickedConv >= 0 && Interactive)
-                {
-                    Session->NormalConvention = static_cast<TangentNormalConvention>(PickedConv);
-                }
-                CY += 36.0f;
-            }
-
-            if (ShowAo)
-            {
-                float AoRays = static_cast<float>(Session->AoSampleCount);
-                if (ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 301, ActiveSliderId, "AO Ray Samples", AoRays, 4.0f, 64.0f, "rays", 0, Input, Tone) && Interactive)
-                {
-                    Session->AoSampleCount = static_cast<int32_t>(std::lround(AoRays));
-                }
-                CY += 52.0f;
-                (void)ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 302, ActiveSliderId, "Max Ray Distance", Session->AoMaxRayDistanceMeters, 0.05f, 2.0f, "m", 2, Input, Tone);
-                CY += 52.0f;
-            }
-
-            if (ShowVolume)
-            {
-                constexpr std::array<std::string_view, 4u> GridLabels {{ "24^3", "36^3", "48^3", "64^3" }};
-                constexpr std::array<uint32_t, 4u> GridDims { 24u, 36u, 48u, 64u };
-                int32_t ActiveGrid = 1;
-                for (int32_t I = 0; I < 4; ++I)
-                {
-                    if (GridDims[static_cast<std::size_t>(I)] == Session->VolumeGridDim) ActiveGrid = I;
-                }
-                const int32_t PickedGrid = ConstructSegmentedCapsuleBar(Surface, { CX, CY, CtrlW, 26.0f }, GridLabels, ActiveGrid, Input, Tone);
-                if (PickedGrid >= 0 && Interactive)
-                {
-                    Session->AssignVolumeGridDim(GridDims[static_cast<std::size_t>(PickedGrid)]);
-                }
-                CY += 34.0f;
-
-                (void)ConstructStudioToggleRow(Surface, { CX, CY, CtrlW, 30.0f }, "Signed Interior", "Negative distance inside solid", Session->SignedInteriorDistance, Input, Tone);
-                CY += 36.0f;
-
-                (void)ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 303, ActiveSliderId, "Bounds Padding", Session->VolumeBoundsPadding, 0.02f, 0.50f, "m", 2, Input, Tone);
-                CY += 52.0f;
-
-                if (ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 304, ActiveSliderId, "Section Depth", Session->SectionDepthNormalized, 0.0f, 1.0f, "", 2, Input, Tone) && Interactive)
-                {
-                    Session->RefreshSdfSectionOnGpu();
-                }
-                CY += 52.0f;
-            }
-
-            if (!ShowNormal && !ShowAo && !ShowVolume)
-            {
-                (void)ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 305, ActiveSliderId, "Front Cage Offset", Session->FrontCageOffsetMeters, 0.01f, 0.60f, "m", 2, Input, Tone);
-                CY += 52.0f;
-            }
-
-            char EdFoot[72] {};
-            if (ShowVolume)
-            {
-                const uint32_t Vox = Session->VolumeGridDim * Session->VolumeGridDim * Session->VolumeGridDim;
-                std::snprintf(EdFoot, sizeof(EdFoot), "volumeSdf · %u voxels", Vox);
-            }
-            else
-            {
-                std::snprintf(EdFoot, sizeof(EdFoot), "%s · %upx RGBA8", TargetDesc.Label, Session->TargetResolutionPx);
-            }
-            WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { CX, CY }, 8.6f, Tone.TextFaint, EdFoot);
-        }
-        Y += BoxH + 10.0f;
-    }
-
-    // 2e. Category Group 3: Output & Cage (OUTPUT — white icon on amber tile)
-    {
-        const float BodyH = OutputGroupOpen ? (10.0f + 34.0f + 52.0f * 3.0f + 34.0f * 2.0f + 8.0f) : 0.0f;
-        const float BoxH  = GroupHeadH + BodyH;
-        if (ConstructCategoryGroupBox(
-                Surface, { LeftX, Y, InnerW, BoxH }, GroupHeadH,
-                ControlIcon::SlidersQuality, IconAccentTone::Amber, "Output & Cage", "OUTPUT", OutputGroupOpen, Input, Tone) && Interactive)
-        {
-            OutputGroupOpen = !OutputGroupOpen;
-        }
-
-        if (OutputGroupOpen)
-        {
-            const float CX = LeftX + BodyPad;
-            float       CY = Y + GroupHeadH + 10.0f;
-
-            constexpr std::array<std::string_view, 4u> ResLabels {{ "256", "512", "1K", "2K" }};
-            constexpr std::array<uint32_t, 4u> ResVals { 256u, 512u, 1024u, 2048u };
-            int32_t ActiveRes = 1;
-            for (int32_t I = 0; I < 4; ++I)
-            {
-                if (ResVals[static_cast<std::size_t>(I)] == Session->TargetResolutionPx) ActiveRes = I;
-            }
-            const int32_t PickedRes = ConstructSegmentedCapsuleBar(Surface, { CX, CY, CtrlW, 26.0f }, ResLabels, ActiveRes, Input, Tone);
-            if (PickedRes >= 0 && Interactive)
-            {
-                Session->AssignResolution(ResVals[static_cast<std::size_t>(PickedRes)]);
-            }
-            CY += 34.0f;
-
-            float PadPx = static_cast<float>(Session->UvEdgePaddingPx);
-            if (ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 310, ActiveSliderId, "UV Edge Padding", PadPx, 0.0f, 32.0f, "px", 0, Input, Tone) && Interactive)
-            {
-                Session->UvEdgePaddingPx = static_cast<int32_t>(std::lround(PadPx));
-            }
-            CY += 52.0f;
-
-            (void)ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 311, ActiveSliderId, "Front Cage Offset", Session->FrontCageOffsetMeters, 0.01f, 0.60f, "m", 2, Input, Tone);
-            CY += 52.0f;
-
-            (void)ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 312, ActiveSliderId, "Rear Cage Offset", Session->RearCageOffsetMeters, 0.01f, 0.60f, "m", 2, Input, Tone);
-            CY += 52.0f;
-
-            (void)ConstructStudioToggleRow(Surface, { CX, CY, CtrlW, 28.0f }, "High-Poly Wireframe", "", Session->ShowHighWireOverlay, Input, Tone);
-            CY += 34.0f;
-            (void)ConstructStudioToggleRow(Surface, { CX, CY, CtrlW, 28.0f }, "Cage Shell Overlay", "", Session->ShowCageOverlay, Input, Tone);
-        }
-        Y += BoxH + 10.0f;
-    }
-
-    // 2f. Category Group 4: Volume SDF Slice (VOLUME — white icon on violet tile)
-    {
-        const float BodyH = VolumeGroupOpen ? (10.0f + 34.0f + 52.0f + 8.0f) : 0.0f;
-        const float BoxH  = GroupHeadH + BodyH;
-        if (ConstructCategoryGroupBox(
-                Surface, { LeftX, Y, InnerW, BoxH }, GroupHeadH,
-                ControlIcon::VolumeBoxes, IconAccentTone::Violet, "Volume SDF Slice", "VOLUME", VolumeGroupOpen, Input, Tone) && Interactive)
-        {
-            VolumeGroupOpen = !VolumeGroupOpen;
-        }
-
-        if (VolumeGroupOpen)
-        {
-            const float CX = LeftX + BodyPad;
-            float       CY = Y + GroupHeadH + 10.0f;
-
-            constexpr std::array<std::string_view, 3u> Axes {{ "Axis Z", "Axis Y", "Axis X" }};
-            const int32_t PickedAxis = ConstructSegmentedCapsuleBar(Surface, { CX, CY, CtrlW, 26.0f }, Axes, static_cast<int32_t>(Session->SectionAxis), Input, Tone);
-            if (PickedAxis >= 0 && Interactive)
-            {
-                Session->SectionAxis = static_cast<VolumeSectionAxis>(PickedAxis);
-                Session->RefreshSdfSectionOnGpu();
-            }
-            CY += 34.0f;
-
-            if (ConstructStudioKnobSlider(Surface, { CX, CY, CtrlW, 46.0f }, 320, ActiveSliderId, "Slice Depth", Session->SectionDepthNormalized, 0.0f, 1.0f, "", 2, Input, Tone) && Interactive)
-            {
-                Session->RefreshSdfSectionOnGpu();
-            }
-        }
-        Y += BoxH + 12.0f;
-    }
-
-    const float TotalHeight = (Y - StartY) + 6.0f;
-    MaxScrollY              = std::max(0.0f, TotalHeight - BodyRect.Height);
-    ScrollOffsetY           = std::clamp(ScrollOffsetY, 0.0f, MaxScrollY);
-    Surface.PopClip();
-
-    // 3. Edge-to-Edge Inspector Footer (Send to Paint lime-cream primary button + PNG + .fvol + status)
-    const InspectorFooterResult FootOut = ConstructInspectorFooterBar(
+    // Header
+    constexpr float PadX       = 14.0f;
+    constexpr float HeaderTopY = 12.0f;
+    const float     InnerW     = std::max(80.0f, Bounds.Width - PadX * 2.0f);
+    const float     HeaderH    = ConstructPaneHeadingBar(
         Surface,
-        FooterRect,
-        Session->BridgedToPaint ? "Synced to Paint" : "Send to Paint",
-        "PNG",
-        ".fvol",
-        Session->SurfaceBaked || Session->BridgedToPaint,
-        Session->ProgressStatus,
-        Input,
-        Tone);
-    if (FootOut.PrimaryClicked)
+        Bounds.X + PadX,
+        Bounds.Y + HeaderTopY,
+        InnerW,
+        "Baker Parameters",
+        "SURFACE + VOLUME SDF",
+        Theme);
+
+    // Footer
+    constexpr float   FooterH = 26.0f;
+    const Rectangle2D FooterBounds{ Bounds.X, Bounds.Bottom() - FooterH, Bounds.Width, FooterH };
+    ConstructPaneStatusFooter(Surface, FooterBounds, "Edge Dilation Padding Included", "Real Float32 SDF", Theme);
+
+    // Scrollable region
+    const float       ScrollTop = Bounds.Y + HeaderTopY + HeaderH;
+    const Rectangle2D ScrollViewport{
+        Bounds.X,
+        ScrollTop,
+        Bounds.Width,
+        std::max(1.0f, FooterBounds.Y - ScrollTop),
+    };
+
+    if (PointInsideRect(ScrollViewport, Cursor) && std::abs(Input.WheelDeltaY) > 0.01f)
     {
-        Session->SendBakedTargetsToPaint();
-    }
-    else if (FootOut.SecondaryAClicked)
-    {
-        (void)Session->ExportInspectedTargetPng();
-    }
-    else if (FootOut.SecondaryBClicked)
-    {
-        (void)Session->ExportVolumeSdfFvol();
+        ScrollOffsetY = std::clamp(ScrollOffsetY - Input.WheelDeltaY * 32.0f, 0.0f, MaxScrollY);
     }
 
-    // 4. Overlay Study Library Popover
-    if (StudyPopoverOpen)
+    Surface.PushClip(ScrollViewport);
+    const float LeftX = ScrollViewport.X + PadX;
+    float       CurY  = ScrollViewport.Y + 8.0f - ScrollOffsetY;
+
+    // 1. Study Object Heading
+    const BakerStudyDescriptor& StudyDesc = Session->QueryActiveStudyDescriptor();
+    char TriMeta[64];
+    std::snprintf(TriMeta, sizeof(TriMeta), "%u LOW · %u HIGH TRIS", Session->QueryActiveLowTriangles(), Session->QueryActiveHighTriangles());
+    const char* StudyTitle = !Session->CustomLowAssetLabel.empty() ? Session->CustomLowAssetLabel.c_str() : StudyDesc.Label;
+    CurY += ConstructSubjectHeadingBlock(Surface, LeftX, CurY, InnerW, ControlIcon::BakeBox, StudyTitle, TriMeta, Theme) + 10.0f;
+
+    // 2. KPI Trio
+    char ResVal[32];
+    char ResSub[32];
+    char SamplesVal[16];
+    char VolumeVal[16];
+    std::snprintf(ResVal, sizeof(ResVal), "%upx", Session->TargetResolutionPx);
+    std::snprintf(ResSub, sizeof(ResSub), "%zu Maps", Session->CountSelectedTargets());
+    std::snprintf(SamplesVal, sizeof(SamplesVal), "%d", Session->AoSampleCount);
+    std::snprintf(VolumeVal, sizeof(VolumeVal), "%u³", Session->VolumeGridDim);
+
+    const std::array<MetricTileReading, 3u> Kpis {{
+        { "Resolution", ResVal,     ResSub,                                       true  },
+        { "Rays / Px",  SamplesVal, "Hemisphere",                                 false },
+        { "Volume SDF", VolumeVal,  Session->VolumeSdfBaked ? "Baked" : "Pending", false },
+    }};
+    CurY += ConstructMetricTrioTiles(Surface, LeftX, CurY, InnerW, Kpis, Theme) + 12.0f;
+
+    // 3. Bake Progress Box
     {
-        const auto& Studies = BakingWorkspaceSession::QueryStudyRegistry();
-        std::vector<PopoverOptionSpec> Options {};
-        Options.reserve(Studies.size());
-        for (const auto& St : Studies)
+        const Rectangle2D ProgBox{ LeftX, CurY, InnerW, 78.0f };
+        BeginSectionContainer(Surface, ProgBox, Theme, 16.0f);
+        WorkspaceAppearance::ConstructTruncatedText(
+            Surface,
+            FontWeightClass::Regular,
+            { LeftX + 12.0f, CurY + 10.0f },
+            InnerW - 24.0f,
+            10.0f,
+            Theme.TextMuted,
+            Session->ProgressStatus);
+
+        const Rectangle2D TrackRect{ LeftX + 12.0f, CurY + 28.0f, InnerW - 24.0f, 6.0f };
+        Surface.FillRectangle(TrackRect, Theme.WellSurface, 3.0f);
+        const float ClampedProg = std::clamp(Session->BakeProgress, 0.0f, 1.0f);
+        if (ClampedProg > 0.005f)
         {
-            Options.push_back(PopoverOptionSpec{ St.Label, "", Tone.AccentAmber });
+            Surface.FillRectangle({ TrackRect.X, TrackRect.Y, std::max(6.0f, TrackRect.Width * ClampedProg), TrackRect.Height }, Theme.HighlightFill, 3.0f);
         }
-        bool Dismissed = false;
-        const int32_t Picked = ConstructStudioPopoverList(
-            Surface, StudyAnchorRect, Pane, "BAKE STUDY", Options, static_cast<int32_t>(Session->Study), Input, Tone, Dismissed);
-        if (Picked >= 0 && static_cast<std::size_t>(Picked) < Studies.size())
+
+        const Rectangle2D BakeBtnRect{ LeftX + 12.0f, CurY + 42.0f, InnerW - 24.0f, 26.0f };
+        if (ConstructCapsuleButtonControl(
+                Surface,
+                BakeBtnRect,
+                Session->BakingActive ? "Baking..." : "Bake Selected Maps",
+                Theme,
+                Cursor,
+                Pressed,
+                false,
+                true,
+                ControlIcon::BakeBox,
+                10.0f,
+                13.0f,
+                OptionalTooltip::FromTitled("Bake Selected Maps", "Compute all checked surface and volume SDF output targets.")))
         {
-            Session->SelectStudy(Studies[static_cast<std::size_t>(Picked)].Study);
-            StudyPopoverOpen = false;
+            Session->ExecuteBakeSimulation();
         }
-        else if (Dismissed)
-        {
-            StudyPopoverOpen = false;
-        }
+        CurY += ProgBox.Height + 12.0f;
     }
+
+    // Interactive slider row retaining ActiveSliderId across drags
+    auto RenderFloatSlider = [&](int32_t SliderKey, const char* Label, float MinVal, float MaxVal, const char* UnitText, const char* Fmt, float& InOutScalar)
+    {
+        float Norm = std::clamp((InOutScalar - MinVal) / std::max(0.0001f, MaxVal - MinVal), 0.0f, 1.0f);
+        bool  Drag = (ActiveSliderId == SliderKey);
+        char  NumBuf[32];
+        std::snprintf(NumBuf, sizeof(NumBuf), Fmt, InOutScalar);
+        if (ConstructSliderReadoutRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, Label, NumBuf, UnitText, Norm, Theme, Input.PrimaryPointer, Drag))
+        {
+            InOutScalar = std::clamp(MinVal + Norm * (MaxVal - MinVal), MinVal, MaxVal);
+        }
+        if (Drag)
+        {
+            ActiveSliderId = SliderKey;
+        }
+        CurY += 52.0f;
+    };
+
+    // 4. Section 1: GPU Device & Surface Ray Settings
+    {
+        const float       SecStartY = CurY;
+        const float       SecBodyH  = SurfaceSectionOpen ? (40.0f + 56.0f * 3.0f + 52.0f * 5.0f + 36.0f * 2.0f) : 38.0f;
+        const Rectangle2D SecRect{ LeftX, SecStartY, InnerW, SecBodyH };
+        BeginSectionContainer(Surface, SecRect, Theme, 18.0f);
+
+        if (ConstructSectionHeaderRow(
+                Surface,
+                { LeftX + 12.0f, CurY + 10.0f, InnerW - 24.0f, 22.0f },
+                ControlIcon::SlidersQuality,
+                "GPU Device & Surface Ray Settings",
+                SurfaceSectionOpen ? "-" : "+",
+                SurfaceSectionOpen,
+                Theme,
+                Cursor,
+                Pressed))
+        {
+            SurfaceSectionOpen = !SurfaceSectionOpen;
+        }
+        CurY += 38.0f;
+
+        if (SurfaceSectionOpen)
+        {
+            static constexpr const char* DeviceOpts[3] { "Auto GPU", "GTX BVH4", "RTX Query" };
+            uint32_t ChosenDevice = static_cast<uint32_t>(Session->ComputeDevice);
+            if (ConstructSegmentedCapsuleRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, "Compute Backend", DeviceOpts, 3u, ChosenDevice, ChosenDevice, Theme, Input.PrimaryPointer))
+            {
+                Session->ComputeDevice = static_cast<BakerComputeDevice>(ChosenDevice);
+            }
+            CurY += 56.0f;
+
+            static constexpr const char* ResOpts[4] { "256", "512", "1024", "2048" };
+            static constexpr uint32_t    ResVals[4] { 256u, 512u, 1024u, 2048u };
+            uint32_t ActiveResIdx = 1u;
+            for (uint32_t I = 0u; I < 4u; ++I)
+            {
+                if (ResVals[I] == Session->TargetResolutionPx)
+                {
+                    ActiveResIdx = I;
+                }
+            }
+            uint32_t ChosenResIdx = ActiveResIdx;
+            if (ConstructSegmentedCapsuleRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, "Map Resolution", ResOpts, 4u, ActiveResIdx, ChosenResIdx, Theme, Input.PrimaryPointer))
+            {
+                Session->AssignResolution(ResVals[ChosenResIdx]);
+            }
+            CurY += 56.0f;
+
+            static constexpr const char* NormOpts[2] { "OpenGL (+Y)", "DirectX (-Y)" };
+            uint32_t ChosenNorm = static_cast<uint32_t>(Session->NormalConvention);
+            if (ConstructSegmentedCapsuleRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, "Tangent Normal Convention", NormOpts, 2u, ChosenNorm, ChosenNorm, Theme, Input.PrimaryPointer))
+            {
+                Session->NormalConvention = static_cast<TangentNormalConvention>(ChosenNorm);
+            }
+            CurY += 56.0f;
+
+            {
+                float SamplesFloat = static_cast<float>(Session->AoSampleCount);
+                RenderFloatSlider(101, "AO / Bent Samples", 4.0f, 36.0f, "ray", "%.0f", SamplesFloat);
+                Session->AoSampleCount = std::clamp(static_cast<int32_t>(std::round(SamplesFloat * 0.5f)) * 2, 4, 36);
+            }
+            RenderFloatSlider(102, "Front Cage Offset", 0.02f, 0.80f, "m", "%.2f", Session->FrontCageOffsetMeters);
+            RenderFloatSlider(103, "Rear Cage Offset", 0.02f, 0.80f, "m", "%.2f", Session->RearCageOffsetMeters);
+            RenderFloatSlider(104, "AO Max Ray Distance", 0.10f, 2.00f, "m", "%.2f", Session->AoMaxRayDistanceMeters);
+            {
+                float PadFloat = static_cast<float>(Session->UvEdgePaddingPx);
+                RenderFloatSlider(105, "UV Edge Padding", 0.0f, 14.0f, "px", "%.0f", PadFloat);
+                Session->UvEdgePaddingPx = std::clamp(static_cast<int32_t>(std::round(PadFloat)), 0, 14);
+            }
+
+            ConstructSwitchControlRow(
+                Surface,
+                LeftX + 12.0f,
+                CurY,
+                InnerW - 24.0f,
+                "Show High-Poly Wire Overlay",
+                Session->ShowHighWireOverlay,
+                Theme,
+                Input.PrimaryPointer,
+                OptionalTooltip::FromTitled("Show High-Poly Wire Overlay", "Overlay source high-resolution silhouette wireframe on the 3D view."));
+            CurY += 36.0f;
+
+            ConstructSwitchControlRow(
+                Surface,
+                LeftX + 12.0f,
+                CurY,
+                InnerW - 24.0f,
+                "Show Translucent Cage",
+                Session->ShowCageOverlay,
+                Theme,
+                Input.PrimaryPointer,
+                OptionalTooltip::FromTitled("Show Translucent Cage", "Render the ray projection envelope cage over the 3D low mesh."));
+            CurY += 38.0f;
+        }
+        CurY += 12.0f;
+    }
+
+    // 5. Section 2: 3D Volume SDF & Slice Inspector
+    {
+        const float       SecStartY = CurY;
+        const float       SecBodyH  = VolumeSectionOpen ? (40.0f + 56.0f * 2.0f + 52.0f * 2.0f + 36.0f) : 38.0f;
+        const Rectangle2D SecRect{ LeftX, SecStartY, InnerW, SecBodyH };
+        BeginSectionContainer(Surface, SecRect, Theme, 18.0f);
+
+        if (ConstructSectionHeaderRow(
+                Surface,
+                { LeftX + 12.0f, CurY + 10.0f, InnerW - 24.0f, 22.0f },
+                ControlIcon::VolumeBoxes,
+                "3D Volume SDF & Slice Inspector",
+                VolumeSectionOpen ? "-" : "+",
+                VolumeSectionOpen,
+                Theme,
+                Cursor,
+                Pressed))
+        {
+            VolumeSectionOpen = !VolumeSectionOpen;
+        }
+        CurY += 38.0f;
+
+        if (VolumeSectionOpen)
+        {
+            static constexpr const char* DimOpts[4] { "24³", "36³", "48³", "64³" };
+            static constexpr uint32_t    DimVals[4] { 24u, 36u, 48u, 64u };
+            uint32_t ActiveDimIdx = 1u;
+            for (uint32_t I = 0u; I < 4u; ++I)
+            {
+                if (DimVals[I] == Session->VolumeGridDim)
+                {
+                    ActiveDimIdx = I;
+                }
+            }
+            uint32_t ChosenDimIdx = ActiveDimIdx;
+            if (ConstructSegmentedCapsuleRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, "Voxel Grid Dim", DimOpts, 4u, ActiveDimIdx, ChosenDimIdx, Theme, Input.PrimaryPointer))
+            {
+                Session->AssignVolumeGridDim(DimVals[ChosenDimIdx]);
+            }
+            CurY += 56.0f;
+
+            const bool PrevSigned = Session->SignedInteriorDistance;
+            ConstructSwitchControlRow(
+                Surface,
+                LeftX + 12.0f,
+                CurY,
+                InnerW - 24.0f,
+                "Signed Interior Distance",
+                Session->SignedInteriorDistance,
+                Theme,
+                Input.PrimaryPointer);
+            if (Session->SignedInteriorDistance != PrevSigned)
+            {
+                Session->RefreshSdfSectionOnGpu();
+            }
+            CurY += 36.0f;
+
+            RenderFloatSlider(201, "Bounds Padding", 0.05f, 0.45f, "", "%.2f", Session->VolumeBoundsPadding);
+
+            static constexpr const char* AxisOpts[3] { "Z Slice", "Y Slice", "X Slice" };
+            uint32_t ChosenAxis = static_cast<uint32_t>(Session->SectionAxis);
+            if (ConstructSegmentedCapsuleRow(Surface, LeftX + 12.0f, CurY, InnerW - 24.0f, "Inspect Slice Axis", AxisOpts, 3u, ChosenAxis, ChosenAxis, Theme, Input.PrimaryPointer))
+            {
+                Session->SectionAxis = static_cast<VolumeSectionAxis>(ChosenAxis);
+                Session->InspectTarget(BakerTargetId::VolumeSdf);
+                Session->RefreshSdfSectionOnGpu();
+            }
+            CurY += 56.0f;
+
+            const float PrevDepth = Session->SectionDepthNormalized;
+            RenderFloatSlider(202, "Slice Depth", 0.0f, 1.0f, "", "%.2f", Session->SectionDepthNormalized);
+            if (std::abs(Session->SectionDepthNormalized - PrevDepth) > 0.0005f)
+            {
+                Session->RefreshSdfSectionOnGpu();
+            }
+        }
+        CurY += 12.0f;
+    }
+
+    // 6. Section 3: Export & Texture Paint Bridge
+    {
+        const float       SecStartY = CurY;
+        const float       SecBodyH  = ExportSectionOpen ? 120.0f : 38.0f;
+        const Rectangle2D SecRect{ LeftX, SecStartY, InnerW, SecBodyH };
+        BeginSectionContainer(Surface, SecRect, Theme, 18.0f);
+
+        if (ConstructSectionHeaderRow(
+                Surface,
+                { LeftX + 12.0f, CurY + 10.0f, InnerW - 24.0f, 22.0f },
+                ControlIcon::DownloadExport,
+                "Export & Texture Paint Bridge",
+                ExportSectionOpen ? "-" : "+",
+                ExportSectionOpen,
+                Theme,
+                Cursor,
+                Pressed))
+        {
+            ExportSectionOpen = !ExportSectionOpen;
+        }
+        CurY += 38.0f;
+
+        if (ExportSectionOpen)
+        {
+            const float HalfBtnW = (InnerW - 24.0f - 8.0f) * 0.5f;
+            if (ConstructCapsuleButtonControl(
+                    Surface,
+                    { LeftX + 12.0f, CurY, HalfBtnW, 28.0f },
+                    "Download Current PNG",
+                    Theme,
+                    Cursor,
+                    Pressed,
+                    false,
+                    false,
+                    ControlIcon::DownloadExport,
+                    9.5f,
+                    14.0f))
+            {
+                (void)Session->ExportInspectedTargetPng();
+            }
+
+            if (ConstructCapsuleButtonControl(
+                    Surface,
+                    { LeftX + 12.0f + HalfBtnW + 8.0f, CurY, HalfBtnW, 28.0f },
+                    "Download .fvol SDF",
+                    Theme,
+                    Cursor,
+                    Pressed && Session->VolumeSdfBaked,
+                    Session->VolumeSdfBaked,
+                    false,
+                    ControlIcon::VolumeBoxes,
+                    9.5f,
+                    14.0f,
+                    OptionalTooltip::FromTitled("Download .fvol SDF", Session->VolumeSdfBaked ? "Export signed distance volume grid as .fvol JSON." : "Bake Volume SDF first.")))
+            {
+                (void)Session->ExportVolumeSdfFvol();
+            }
+            CurY += 36.0f;
+
+            if (ConstructCapsuleButtonControl(
+                    Surface,
+                    { LeftX + 12.0f, CurY, InnerW - 24.0f, 30.0f },
+                    "Send Baked AO/Curv/Normals to Texture Paint",
+                    Theme,
+                    Cursor,
+                    Pressed && Session->SurfaceBaked,
+                    Session->BridgedToPaint,
+                    false,
+                    ControlIcon::BrushTool,
+                    9.5f,
+                    15.0f,
+                    OptionalTooltip::FromTitled("Send to Texture Paint", Session->SurfaceBaked ? "Push baked surface maps directly into Texture Paint." : "Bake surface maps first.")))
+            {
+                Session->SendBakedTargetsToPaint();
+            }
+            CurY += 42.0f;
+        }
+        CurY += 12.0f;
+    }
+
+    const float ContentBottom = CurY + ScrollOffsetY + 12.0f;
+    MaxScrollY                = std::max(0.0f, ContentBottom - ScrollViewport.Bottom());
+    ScrollOffsetY             = std::clamp(ScrollOffsetY, 0.0f, MaxScrollY);
+
+    Surface.PopClip();
+    Surface.PopClip();
 }
 
 } // namespace Frontier::Workspaces

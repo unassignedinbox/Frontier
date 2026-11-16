@@ -1,298 +1,230 @@
 /*============================================================================================================================================
                                                         PATTERNSTAMPLAYERSTACKPANE.CPP
 ============================================================================================================================================*/
-// 🧩 Pane-direct Layers Outliner for Pattern Studio & Stamp Studio (sharp entries, live procedural layer previews, green tick + eye + lock, TextureStudio + & footer)
+// 🧩 Left-docked Pattern/Stamp Layer Stack renderer: Add Layer overlay sheet, stat filters, search, tree rows, masks, toolbar & footer.
 
 #include "Engine/Workspaces/Texturing/PatternStampLayerStackPane.h"
-#include "Engine/Workspaces/Texturing/StudioSurfaceKit.h"
+
+#include "Engine/Components/Panes/WorkspaceAppearance.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
-#include <string>
-#include <string_view>
 
 namespace Frontier::Workspaces
 {
 
-using namespace StudioSurface;
+using namespace TexturingAppearance;
 
 namespace
 {
 
-[[nodiscard]] bool ContainsCaseInsensitive(std::string_view Haystack, std::string_view Needle) noexcept
+std::string FormatTwoDigits(std::size_t N) noexcept
 {
-    if (Needle.empty())
+    char Buf[16];
+    std::snprintf(Buf, sizeof(Buf), "%02zu", N);
+    return std::string(Buf);
+}
+
+std::string FormatHexColor(ColorRgba Rgba) noexcept
+{
+    char Buf[16];
+    FormatHexLower(Rgba, Buf, sizeof(Buf));
+    return std::string(Buf);
+}
+
+std::string ToLowerAscii(std::string_view S) noexcept
+{
+    std::string Out(S);
+    for (char& C : Out)
     {
-        return true;
-    }
-    if (Needle.size() > Haystack.size())
-    {
-        return false;
-    }
-    for (std::size_t Start = 0u; Start + Needle.size() <= Haystack.size(); ++Start)
-    {
-        bool Match = true;
-        for (std::size_t Idx = 0u; Idx < Needle.size(); ++Idx)
+        if (C >= 'A' && C <= 'Z')
         {
-            const unsigned char A = static_cast<unsigned char>(Haystack[Start + Idx]);
-            const unsigned char B = static_cast<unsigned char>(Needle[Idx]);
-            if (std::tolower(A) != std::tolower(B))
-            {
-                Match = false;
-                break;
-            }
-        }
-        if (Match)
-        {
-            return true;
+            C = static_cast<char>(C + ('a' - 'A'));
         }
     }
-    return false;
+    return Out;
 }
 
-[[nodiscard]] std::string_view QueryBlendModeLabel(uint8_t BlendMode) noexcept
+void AssignEditText(TextEditBuffer& Buf, std::string_view TextContent) noexcept
 {
-    switch (BlendMode)
+    const std::size_t CopyLen = std::min(TextContent.size(), static_cast<std::size_t>(TextEditBuffer::Capacity - 1u));
+    for (std::size_t I = 0u; I < CopyLen; ++I)
     {
-        case 1u: return "Multiply";
-        case 2u: return "Screen";
-        case 3u: return "Overlay";
-        case 4u: return "Add";
-        case 5u: return "Darken";
-        default: return "Normal";
+        Buf.Text[I] = TextContent[I];
+    }
+    Buf.Text[CopyLen]   = '\0';
+    Buf.Length          = static_cast<uint32_t>(CopyLen);
+    Buf.Caret           = Buf.Length;
+    Buf.SelectionAnchor = Buf.Length;
+}
+
+void ClearEditText(TextEditBuffer& Buf) noexcept
+{
+    Buf.Text[0]         = '\0';
+    Buf.Length          = 0u;
+    Buf.Caret           = 0u;
+    Buf.SelectionAnchor = 0u;
+}
+
+ControlIcon QueryMotifPreviewIcon(const PatternStampLayerSpec& Layer) noexcept
+{
+    if (Layer.Category == PatternStampLayerCategory::Folder)       return ControlIcon::FolderOpen;
+    if (Layer.Category == PatternStampLayerCategory::Typographic)  return ControlIcon::TextType;
+    if (Layer.Category == PatternStampLayerCategory::GradientWash) return ControlIcon::PointGradient;
+    switch (Layer.MotifShape)
+    {
+        case PatternStampMotifShape::Ring:
+        case PatternStampMotifShape::Circle:    return ControlIcon::ShapeCircle;
+        case PatternStampMotifShape::Square:
+        case PatternStampMotifShape::RoundedBox:return ControlIcon::ShapeSquare;
+        case PatternStampMotifShape::Diamond:   return ControlIcon::ShapeDiamond;
+        case PatternStampMotifShape::Hexagon:   return ControlIcon::ShapeHexagon;
+        case PatternStampMotifShape::Triangle:  return ControlIcon::ShapeTriangle;
+        case PatternStampMotifShape::Star:      return ControlIcon::ShapeStar;
+        case PatternStampMotifShape::StripeBar:
+        case PatternStampMotifShape::LineStroke:return ControlIcon::ShapeStripe;
+        default:                           return ControlIcon::VectorCurve;
     }
 }
 
-[[nodiscard]] ControlIcon QueryModifierIcon(PatternStampModifierCategory Category) noexcept
+void RenderSchematicLayerThumb(
+    PixelSpace&                 Surface,
+    Rectangle2D                 ThumbRect,
+    const PatternStampLayerSpec&     Layer,
+    const TexturingThemeColors& Theme) noexcept
 {
-    switch (Category)
-    {
-        case PatternStampModifierCategory::GridArray:     return ControlIcon::LayoutGrid;
-        case PatternStampModifierCategory::NoiseScale:    return ControlIcon::VectorCurve;
-        case PatternStampModifierCategory::RadialArray:   return ControlIcon::SparklesAntiAliasing;
-        case PatternStampModifierCategory::MirrorSymmetry:return ControlIcon::LayoutSplit;
-        case PatternStampModifierCategory::InsetEcho:     return ControlIcon::ShapeCircle;
-        case PatternStampModifierCategory::ScatterDropout: return ControlIcon::SparklesAntiAliasing;
-        case PatternStampModifierCategory::DomainWarp:    return ControlIcon::NoiseWave;
-        case PatternStampModifierCategory::BevelEdgeWear: return ControlIcon::CubeShape;
-        default:                                          return ControlIcon::SlidersQuality;
-    }
-}
-
-[[nodiscard]] IconAccentTone QueryModifierAccent(PatternStampModifierCategory Category) noexcept
-{
-    switch (Category)
-    {
-        case PatternStampModifierCategory::GridArray:     return IconAccentTone::Blue;
-        case PatternStampModifierCategory::NoiseScale:    return IconAccentTone::Amber;
-        case PatternStampModifierCategory::RadialArray:   return IconAccentTone::Teal;
-        case PatternStampModifierCategory::MirrorSymmetry:return IconAccentTone::Violet;
-        case PatternStampModifierCategory::InsetEcho:     return IconAccentTone::Blue;
-        case PatternStampModifierCategory::ScatterDropout: return IconAccentTone::Green;
-        case PatternStampModifierCategory::DomainWarp:    return IconAccentTone::Violet;
-        case PatternStampModifierCategory::BevelEdgeWear: return IconAccentTone::Amber;
-        default:                                          return IconAccentTone::Slate;
-    }
-}
-
-[[nodiscard]] const char* QueryModifierDisplayName(PatternStampModifierCategory Category) noexcept
-{
-    const auto& Labels = PatternStampWorkspaceSession::InspectModifierLabels();
-    const std::size_t Idx = static_cast<std::size_t>(Category);
-    return (Idx < Labels.size()) ? Labels[Idx] : "Modifier";
-}
-
-// Live procedural preview inside each sharp outliner layer thumbnail (matches real canvas composition: grid/hex rings, dots, motifs, gradients, text)
-void ConstructLiveLayerPreview(
-    PixelSpace&                  Surface,
-    Rectangle2D                  ThumbRect,
-    const PatternStampLayerSpec& Layer,
-    bool                         PatternMode,
-    const StudioToneSet&         Tone) noexcept
-{
-    Surface.PushClip(ThumbRect.Inset(1.0f));
-
-    // Checkerboard backdrop for transparent decals, deep dark tile for seamless patterns
-    if (!PatternMode)
-    {
-        constexpr float Cell = 5.0f;
-        const ColorRgba CheckA = Tone.LightSurface ? ColorRgba{ 230u, 232u, 236u, 255u } : ColorRgba{ 26u, 28u, 32u, 255u };
-        const ColorRgba CheckB = Tone.LightSurface ? ColorRgba{ 210u, 214u, 220u, 255u } : ColorRgba{ 16u, 17u, 20u, 255u };
-        for (float Py = ThumbRect.Y; Py < ThumbRect.Bottom(); Py += Cell)
-        {
-            for (float Px = ThumbRect.X; Px < ThumbRect.Right(); Px += Cell)
-            {
-                const int Ix = static_cast<int>((Px - ThumbRect.X) / Cell);
-                const int Iy = static_cast<int>((Py - ThumbRect.Y) / Cell);
-                Surface.FillRectangle({ Px, Py, Cell, Cell }, ((Ix + Iy) & 1) ? CheckA : CheckB, 0.0f);
-            }
-        }
-    }
-    else
-    {
-        Surface.FillRectangle(ThumbRect, Tone.LightSurface ? ColorRgba{ 30u, 33u, 40u, 255u } : ColorRgba{ 14u, 16u, 20u, 255u }, 0.0f);
-    }
+    Surface.FillRectangle(ThumbRect, Theme.LightSurface ? Theme.NestedSurface : ColorRgba{ 16u, 18u, 22u, 255u }, 6.0f);
+    Surface.StrokeRectangle(ThumbRect, Theme.BorderSubtle, 6.0f, 1.0f);
 
     if (Layer.Category == PatternStampLayerCategory::Folder)
     {
-        ConstructWhiteIconTile(Surface, ThumbRect, ControlIcon::FolderOpen, IconAccentTone::Amber, 0.0f, Tone, !Layer.Visible);
-        Surface.PopClip();
+        VectorIconRepository::ConstructControl(
+            Surface, ControlIcon::FolderOpen, VectorIconPlacement{ ThumbRect.X + 9.0f, ThumbRect.Y + 9.0f, 16.0f, Theme.HighlightFill, 1.6f });
         return;
     }
 
-    const float AlphaScale = Layer.Visible ? 1.0f : 0.42f;
-    const ColorRgba InkA = (Layer.FillTint.Alpha > 20u ? Layer.FillTint : Tone.HighlightFill).ScaledAlpha(AlphaScale);
-    const ColorRgba InkB = (Layer.FillTintB.Alpha > 20u ? Layer.FillTintB : InkA).ScaledAlpha(AlphaScale);
-    const float Cx = ThumbRect.Center().X;
-    const float Cy = ThumbRect.Center().Y;
+    const ColorRgba Ink = Layer.FillTint.Alpha > 20u ? Layer.FillTint : Theme.TextPrimary;
+    const float     Cx  = ThumbRect.X + ThumbRect.Width * 0.5f;
+    const float     Cy  = ThumbRect.Y + ThumbRect.Height * 0.5f;
 
-    if (Layer.Category == PatternStampLayerCategory::GradientWash)
-    {
-        Surface.FillRectangle({ ThumbRect.X + 2.0f, ThumbRect.Y + 2.0f, (ThumbRect.Width - 4.0f) * 0.55f, ThumbRect.Height - 4.0f }, InkA, 0.0f);
-        Surface.FillRectangle({ ThumbRect.X + 2.0f + (ThumbRect.Width - 4.0f) * 0.45f, ThumbRect.Y + 2.0f, (ThumbRect.Width - 4.0f) * 0.55f, ThumbRect.Height - 4.0f }, InkB, 0.0f);
-        Surface.PopClip();
-        return;
-    }
+    const bool ArrayModifierActive = std::any_of(
+        Layer.Modifiers.begin(),
+        Layer.Modifiers.end(),
+        [](const PatternStampModifierSpec& M) { return M.Enabled && (M.Category == PatternStampModifierCategory::GridArray || M.Category == PatternStampModifierCategory::RadialArray); });
 
-    if (Layer.Category == PatternStampLayerCategory::Typographic)
+    if (ArrayModifierActive)
     {
-        ConstructCenteredWeightedText(Surface, FontWeightClass::Bold, ThumbRect, 14.0f, InkA, "Aa");
-        Surface.PopClip();
-        return;
-    }
-
-    bool GridActive   = false;
-    bool RadialActive = false;
-    bool HexStagger   = false;
-    for (const auto& Mod : Layer.Modifiers)
-    {
-        if (!Mod.Enabled) continue;
-        if (Mod.Category == PatternStampModifierCategory::GridArray)
-        {
-            GridActive = true;
-            HexStagger = (Mod.GridLayout == 1u || Mod.GridLayout == 2u || Mod.GridLayout == 3u);
-        }
-        else if (Mod.Category == PatternStampModifierCategory::RadialArray)
-        {
-            RadialActive = true;
-        }
-    }
-
-    if (GridActive)
-    {
-        const float Step = ThumbRect.Width * 0.27f;
         for (int Row = -1; Row <= 1; ++Row)
         {
             for (int Col = -1; Col <= 1; ++Col)
             {
-                const float OffsetX = (HexStagger && (Row & 1)) ? (Step * 0.32f) : 0.0f;
-                const float DotX    = Cx + static_cast<float>(Col) * Step + OffsetX;
-                const float DotY    = Cy + static_cast<float>(Row) * Step;
-                const float Rad     = ((Row == 0 && Col == 0) ? 2.7f : 2.1f);
-                const ColorRgba DotInk = (((Row + Col) & 1) == 0) ? InkA : InkB;
+                const float DotX = Cx + static_cast<float>(Col) * 8.0f + ((Row & 1) ? 2.0f : 0.0f);
+                const float DotY = Cy + static_cast<float>(Row) * 8.0f;
+                const float R    = (Row == 0 && Col == 0) ? 2.8f : 2.1f;
                 if (Layer.MotifShape == PatternStampMotifShape::Ring)
                 {
-                    Surface.StrokeCircle({ DotX, DotY }, Rad, DotInk, 1.25f);
-                }
-                else if (Layer.MotifShape == PatternStampMotifShape::Square || Layer.MotifShape == PatternStampMotifShape::StripeBar)
-                {
-                    Surface.FillRectangle({ DotX - Rad, DotY - Rad, Rad * 2.0f, Rad * 2.0f }, DotInk, 0.0f);
+                    Surface.StrokeCircle({ DotX, DotY }, R, Ink, 1.2f);
                 }
                 else
                 {
-                    Surface.FillCircle({ DotX, DotY }, Rad, DotInk);
+                    Surface.FillCircle({ DotX, DotY }, R, (Row == 0 && Col == 1) ? Layer.FillTintB : Ink);
                 }
             }
         }
-        Surface.PopClip();
         return;
     }
 
-    if (RadialActive)
+    if (Layer.MotifShape == PatternStampMotifShape::Circle)
     {
-        const float OrbitR = ThumbRect.Width * 0.30f;
-        for (int Idx = 0; Idx < 8; ++Idx)
-        {
-            const float Angle = static_cast<float>(Idx) * (6.2831853f / 8.0f);
-            const Point2D Pt { Cx + std::cos(Angle) * OrbitR, Cy + std::sin(Angle) * OrbitR };
-            Surface.FillCircle(Pt, 2.0f, (Idx & 1) ? InkB : InkA);
-        }
-        Surface.FillCircle({ Cx, Cy }, 2.6f, InkA);
-        Surface.PopClip();
+        Surface.FillCircle({ Cx, Cy }, 10.5f, Ink);
+        return;
+    }
+    if (Layer.MotifShape == PatternStampMotifShape::Ring)
+    {
+        Surface.StrokeCircle({ Cx, Cy }, 10.0f, Ink, 2.4f);
         return;
     }
 
-    // Single motif live silhouette
-    const float R = ThumbRect.Width * 0.34f;
-    switch (Layer.MotifShape)
-    {
-        case PatternStampMotifShape::Circle:
-            Surface.FillCircle({ Cx, Cy }, R, InkA);
-            break;
-        case PatternStampMotifShape::Ring:
-            Surface.StrokeCircle({ Cx, Cy }, R * 0.92f, InkA, 2.4f);
-            break;
-        case PatternStampMotifShape::Square:
-            Surface.FillRectangle({ Cx - R * 0.85f, Cy - R * 0.85f, R * 1.7f, R * 1.7f }, InkA, 0.0f);
-            break;
-        case PatternStampMotifShape::StripeBar:
-            Surface.FillRectangle({ Cx - R, Cy - 3.2f, R * 2.0f, 6.4f }, InkA, 0.0f);
-            break;
-        case PatternStampMotifShape::Diamond:
-        {
-            const std::array<Point2D, 4u> Pts {{
-                { Cx, Cy - R }, { Cx + R, Cy }, { Cx, Cy + R }, { Cx - R, Cy },
-            }};
-            Surface.FillPolygon(Pts, InkA);
-            break;
-        }
-        case PatternStampMotifShape::Triangle:
-        {
-            const std::array<Point2D, 3u> Pts {{
-                { Cx, Cy - R }, { Cx + R * 0.92f, Cy + R * 0.82f }, { Cx - R * 0.92f, Cy + R * 0.82f },
-            }};
-            Surface.FillPolygon(Pts, InkA);
-            break;
-        }
-        default:
-        {
-            std::array<Point2D, 6u> Hex {};
-            for (std::size_t K = 0u; K < 6u; ++K)
-            {
-                const float A = static_cast<float>(K) * (6.2831853f / 6.0f) - 1.5707963f;
-                Hex[K] = { Cx + std::cos(A) * R, Cy + std::sin(A) * R };
-            }
-            Surface.FillPolygon(Hex, InkA);
-            break;
-        }
-    }
-    Surface.PopClip();
+    VectorIconRepository::ConstructControl(
+        Surface,
+        QueryMotifPreviewIcon(Layer),
+        VectorIconPlacement{ ThumbRect.X + 8.0f, ThumbRect.Y + 8.0f, 18.0f, Ink, 1.8f });
 }
 
-void ConstructCanvasRootPreview(
-    PixelSpace&                         Surface,
-    Rectangle2D                         ThumbRect,
-    const PatternStampWorkspaceSession& Session,
-    const StudioToneSet&                Tone) noexcept
+void RenderSchematicMaskThumb(PixelSpace& Surface, Rectangle2D ThumbRect, const PatternStampLayerMaskSpec& Mask) noexcept
 {
-    const auto& Layers = Session.Document.Layers;
-    if (!Layers.empty())
+    const ColorRgba Bg = Mask.Invert ? ColorRgba{ 239u, 244u, 207u, 255u } : ColorRgba{ 20u, 22u, 26u, 255u };
+    const ColorRgba Fg = Mask.Invert ? ColorRgba{ 20u, 22u, 26u, 255u } : ColorRgba{ 239u, 244u, 207u, 225u };
+    Surface.FillRectangle(ThumbRect, Bg, 4.0f);
+
+    if (Mask.Mode == PatternStampMaskMode::Radial)
     {
-        ConstructLiveLayerPreview(Surface, ThumbRect, Layers.front(), Session.Mode == PatternStampWorkspaceMode::Pattern, Tone);
-        return;
+        Surface.FillCircle({ ThumbRect.X + ThumbRect.Width * 0.5f, ThumbRect.Y + ThumbRect.Height * 0.5f }, ThumbRect.Width * 0.30f, Fg);
     }
-    ConstructWhiteIconTile(Surface, ThumbRect, ControlIcon::LayersSlabs, IconAccentTone::Teal, 0.0f, Tone, false);
+    else if (Mask.Mode == PatternStampMaskMode::Stripe)
+    {
+        Surface.FillRectangle({ ThumbRect.X + 4.0f, ThumbRect.Y + 2.0f, 4.0f, ThumbRect.Height - 4.0f }, Fg, 0.0f);
+        Surface.FillRectangle({ ThumbRect.X + 12.0f, ThumbRect.Y + 2.0f, 4.0f, ThumbRect.Height - 4.0f }, Fg, 0.0f);
+    }
+    else
+    {
+        Surface.FillCircle({ ThumbRect.X + 7.5f, ThumbRect.Y + 8.5f }, 4.2f, Fg);
+        Surface.FillCircle({ ThumbRect.X + 14.5f, ThumbRect.Y + 14.0f }, 3.8f, Fg);
+        Surface.FillCircle({ ThumbRect.X + 14.5f, ThumbRect.Y + 6.5f }, 2.4f, Fg);
+    }
+    Surface.StrokeRectangle(ThumbRect, ColorRgba{ 255u, 255u, 255u, 45u }, 4.0f, 1.0f);
+}
+
+bool RenderToolIconButton(
+    PixelSpace&                 Surface,
+    Rectangle2D                 Bounds,
+    ControlIcon                 Icon,
+    bool                        Enabled,
+    bool                        Highlighted,
+    bool                        DangerTint,
+    const TexturingThemeColors& Theme,
+    Point2D                     Cursor,
+    bool                        Pressed) noexcept
+{
+    const bool Hovered = Enabled && Bounds.Contains(Cursor);
+    ColorRgba Fill = Highlighted
+        ? Theme.HighlightFill
+        : (Hovered ? Theme.HoverSurface : Theme.RaisedSurface);
+    if (!Enabled)
+    {
+        Fill.Alpha = 115u;
+    }
+    ColorRgba Stroke = Highlighted
+        ? Theme.HighlightFill
+        : (Hovered ? (DangerTint ? ColorRgba{ 232u, 110u, 110u, 190u } : Theme.BorderStrong) : Theme.BorderSubtle);
+    ColorRgba Ink = Highlighted
+        ? Theme.HighlightInk
+        : (DangerTint && Hovered ? ColorRgba{ 244u, 130u, 130u, 255u } : (Enabled ? Theme.TextPrimary : Theme.TextFaint));
+
+    Surface.FillRectangle(Bounds, Fill, Bounds.Height * 0.5f);
+    Surface.StrokeRectangle(Bounds, Stroke, Bounds.Height * 0.5f, 1.0f);
+    const float IconSz = std::min(14.0f, Bounds.Height * 0.52f);
+    VectorIconRepository::ConstructControl(
+        Surface,
+        Icon,
+        VectorIconPlacement{
+            Bounds.X + (Bounds.Width - IconSz) * 0.5f,
+            Bounds.Y + (Bounds.Height - IconSz) * 0.5f,
+            IconSz,
+            Ink,
+            1.7f });
+    return Hovered && Pressed;
 }
 
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                    IMPLEMENTATION
+//                                                     LIFECYCLE
 //------------------------------------------------------------------------------------------------------------------------
 
 PatternStampLayerStackPane::~PatternStampLayerStackPane() noexcept
@@ -302,519 +234,760 @@ PatternStampLayerStackPane::~PatternStampLayerStackPane() noexcept
 
 void PatternStampLayerStackPane::AttachSession(PatternStampWorkspaceSession* TargetSession) noexcept
 {
-    Session = TargetSession;
+    Session            = TargetSession;
+    AddLayerSheetOpen  = false;
+    RenamingLayerId    = 0u;
+    LastClickLayerId   = 0u;
+    TimeSinceLastClick = 10.0;
+    ClearEditText(SearchBuffer);
+    SearchBuffer.Active = false;
+    if (Session != nullptr)
+    {
+        Session->LayerSearch.clear();
+    }
 }
 
 void PatternStampLayerStackPane::PresentInImGuiPane(double DeltaSeconds, float ScaleFactor)
 {
-    const ImVec2      Origin = ImGui::GetCursorScreenPos();
-    const ImVec2      Avail  = ImGui::GetContentRegionAvail();
-    const float       SafeScale = std::max(0.5f, ScaleFactor);
-    const Rectangle2D ScreenBounds { Origin.x, Origin.y, std::max(1.0f, Avail.x), std::max(1.0f, Avail.y) };
-    const Rectangle2D LocalBounds  { 0.0f, 0.0f, ScreenBounds.Width / SafeScale, ScreenBounds.Height / SafeScale };
+    const float  SafeScale = std::max(0.25f, ScaleFactor);
+    const ImVec2 WinPos    = ImGui::GetWindowPos();
+    const ImVec2 WinSize   = ImGui::GetWindowSize();
+    const ImVec2 CursorPos = ImGui::GetCursorScreenPos();
+    const float  TopY      = CursorPos.y - ImGui::GetStyle().WindowPadding.y;
+    const float  PaneH     = std::max(1.0f, (WinPos.y + WinSize.y) - TopY);
 
     ImGui::InvisibleButton(
-        "##PatternStampLayersCanvas",
-        ImVec2(ScreenBounds.Width, ScreenBounds.Height),
+        "##PatternStampLayerStackCanvas",
+        ImVec2(std::max(1.0f, ImGui::GetContentRegionAvail().x), std::max(1.0f, ImGui::GetContentRegionAvail().y)),
         ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
 
+    const Rectangle2D ScreenBounds { WinPos.x, TopY, WinSize.x, PaneH };
+    const Rectangle2D LogicalBounds{ 0.0f, 0.0f, WinSize.x / SafeScale, PaneH / SafeScale };
+
+    PixelSpace       Surface(ImGui::GetWindowDrawList(), { ScreenBounds.X, ScreenBounds.Y }, SafeScale);
     PaneInputReading Input = WorkspaceAppearance::CaptureImGuiPaneInput(ScreenBounds, SafeScale);
     WorkspaceAppearance::EnforcePanePointerOwnership(this, Input);
 
-    PixelSpace Surface(ImGui::GetWindowDrawList(), { ScreenBounds.X, ScreenBounds.Y }, SafeScale);
-    Render(Surface, LocalBounds, Input, DeltaSeconds);
-
+    Render(Surface, LogicalBounds, Input, DeltaSeconds);
     WorkspaceAppearance::UpdatePanePointerOwnership(this, ScreenBounds, SafeScale, Input, false);
 }
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    PANE RENDERING
+//------------------------------------------------------------------------------------------------------------------------
 
 void PatternStampLayerStackPane::Render(
     PixelSpace&             Surface,
     Rectangle2D             Bounds,
     const PaneInputReading& Input,
-    double                  /*DeltaSeconds*/)
+    double                  DeltaSeconds)
 {
-    if (Session == nullptr || Bounds.Width < 40.0f || Bounds.Height < 40.0f)
+    if (Session == nullptr || Bounds.Width < 120.0f || Bounds.Height < 160.0f)
     {
         return;
     }
 
-    const StudioToneSet Tone        = QueryStudioToneSet();
-    const Rectangle2D   Pane        = ConstructDockedSurfaceShell(Surface, Bounds, true, Tone);
-    const bool          PatternMode = (Session->Mode == PatternStampWorkspaceMode::Pattern);
-    const auto&         Layers      = Session->Document.Layers;
+    TimeSinceLastClick += std::max(0.0, DeltaSeconds);
+    const TexturingThemeColors Theme = QueryTexturingThemeColors();
 
-    const float PadX   = 11.0f;
-    const float InnerW = std::max(80.0f, Pane.Width - PadX * 2.0f);
-    const float LeftX  = Pane.X + PadX;
+    Surface.PushClip(Bounds);
+    Surface.FillRectangle(Bounds, Theme.PaneBackground, 0.0f);
+    Surface.StrokeLine({ Bounds.Right(), Bounds.Y }, { Bounds.Right(), Bounds.Bottom() }, Theme.BorderSubtle, 1.0f);
 
-    // 1. TextureStudio OLD Outliner Heading Strip ("Layers  N / 32" + FolderPlus + circular '+' button)
-    char CountTagBuf[24] {};
-    std::snprintf(CountTagBuf, sizeof(CountTagBuf), "%zu / 32", Layers.size());
-    const Rectangle2D HeaderStrip { Pane.X, Pane.Y, Pane.Width, 44.0f };
-    const OutlinerHeaderResult HeadOut = ConstructOutlinerHeaderStrip(
-        Surface,
-        HeaderStrip,
-        "Layers",
-        CountTagBuf,
-        true,
-        ControlIcon::PlusAdd,
-        AddLayerSheetOpen,
-        Input,
-        Tone,
-        &AddButtonAnchor);
-    if (HeadOut.FolderClicked)
+    const Point2D Cursor  { Input.PrimaryPointer.X, Input.PrimaryPointer.Y };
+    const bool    Pressed = Input.PrimaryPointer.Pressed;
+    const float   PadX    = 12.0f;
+    const float   InnerW  = Bounds.Width - PadX * 2.0f;
+    const float   LeftX   = Bounds.X + PadX;
+    float         CursorY = Bounds.Y + 12.0f;
+
+    // 1. Heading row ("Layers  2 / 32" + New Folder circle + Add Layer '+' circle)
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::SemiBold, { LeftX, CursorY + 4.0f }, 15.0f, Theme.TextPrimary, "Layers");
+
+    const std::string CountLabel = std::to_string(Session->Document.Layers.size()) + " / " + std::to_string(PatternStampWorkspaceSession::MaxLayerLimit);
+    const float CountW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Regular, 9.8f, CountLabel) + 14.0f;
+    const float TitleW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::SemiBold, 15.0f, "Layers");
+    const Rectangle2D CountRect{ LeftX + TitleW + 8.0f, CursorY + 5.0f, CountW, 20.0f };
+    Surface.FillRectangle(CountRect, Theme.RaisedSurface, 10.0f);
+    Surface.StrokeRectangle(CountRect, Theme.BorderSubtle, 10.0f, 1.0f);
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::Regular, { CountRect.X + 7.0f, CountRect.Y + 4.0f }, 9.8f, Theme.TextMuted, CountLabel);
+
+    const Rectangle2D AddBtnRect{ Bounds.Right() - PadX - 28.0f, CursorY, 28.0f, 28.0f };
+    const Rectangle2D FolderBtnRect{ AddBtnRect.X - 34.0f, CursorY, 28.0f, 28.0f };
+    if (RenderToolIconButton(Surface, FolderBtnRect, ControlIcon::FolderPlus, true, false, false, Theme, Cursor, Pressed))
     {
         AddLayerSheetOpen = false;
         Session->AddLayer(PatternStampLayerCategory::Folder);
     }
-    if (HeadOut.PlusClicked)
+    if (RenderToolIconButton(
+            Surface, AddBtnRect, AddLayerSheetOpen ? ControlIcon::CloseCross : ControlIcon::PlusAdd, true, AddLayerSheetOpen, false, Theme, Cursor, Pressed))
     {
         AddLayerSheetOpen = !AddLayerSheetOpen;
     }
 
-    float CursorY = HeaderStrip.Bottom() + 9.0f;
+    const float AddSheetAnchorBottomY = CursorY + 34.0f;
+    CursorY += 38.0f;
 
-    // 2. Stat tile pair: VISIBLE & MODIFIERS (white icons on solid coloured circular backgrounds)
-    const std::size_t TotalLayers   = Layers.size();
-    const std::size_t VisibleLayers = Session->CountVisibleLayers();
-    std::size_t       TotalMods     = 0u;
-    for (const auto& L : Layers)
+    // 2. Visible / Hidden Stat Filter Boxes (2-column grid matching 01-HTML-pattern.png)
+    const std::size_t TotalCount   = Session->Document.Layers.size();
+    const std::size_t VisibleCount = Session->CountVisibleLayers();
+    const std::size_t HiddenCount  = TotalCount >= VisibleCount ? (TotalCount - VisibleCount) : 0u;
+
+    const float StatGap = 8.0f;
+    const float StatW   = (InnerW - StatGap) * 0.5f;
+    const float StatH   = 56.0f;
+
+    auto RenderStatBox = [&](Rectangle2D BoxRect, ControlIcon Icon, ColorRgba DiscFill, std::string_view SubLabel, std::size_t CountReading, bool ActiveFilter) -> bool
     {
-        TotalMods += L.Modifiers.size();
-    }
-    const std::size_t EnabledMods = Session->CountEnabledModifiers();
+        const bool Hovered = !AddLayerSheetOpen && BoxRect.Contains(Cursor);
+        Surface.FillRectangle(BoxRect, ActiveFilter ? Theme.AccentSoft : (Hovered ? Theme.HoverSurface : Theme.SectionSurface), 10.0f);
+        Surface.StrokeRectangle(BoxRect, ActiveFilter ? Theme.AccentBorder : (Hovered ? Theme.BorderStrong : Theme.BorderSubtle), 10.0f, 1.0f);
 
-    char VisBuf[24] {};
-    char ModBuf[24] {};
-    std::snprintf(VisBuf, sizeof(VisBuf), "%zu/%zu", VisibleLayers, TotalLayers);
-    std::snprintf(ModBuf, sizeof(ModBuf), "%zu/%zu", EnabledMods, TotalMods);
+        const Rectangle2D DiscRect{ BoxRect.X + 10.0f, BoxRect.Y + 10.0f, 16.0f, 16.0f };
+        Surface.FillCircle({ DiscRect.X + 8.0f, DiscRect.Y + 8.0f }, 8.0f, DiscFill);
+        VectorIconRepository::ConstructControl(
+            Surface, Icon, VectorIconPlacement{ DiscRect.X + 3.0f, DiscRect.Y + 3.0f, 10.0f, ColorRgba{ 18u, 22u, 18u, 255u }, 1.8f });
 
-    const OutlinerStatTileSpec LeftStat {
-        "VISIBLE",
-        VisBuf,
-        ControlIcon::EyeVisible,
-        VisibleLayers > 0u ? IconAccentTone::Green : IconAccentTone::Slate,
-        Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly,
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::Regular, { BoxRect.X + 10.0f, BoxRect.Y + 34.0f }, 10.0f, Theme.TextMuted, SubLabel);
+
+        const std::string NumStr = FormatTwoDigits(CountReading);
+        WorkspaceAppearance::ConstructRightAlignedText(
+            Surface, FontWeightClass::Medium, { BoxRect.Right() - 12.0f, BoxRect.Y + 20.0f }, 18.0f, Theme.TextPrimary, NumStr);
+
+        return Hovered && Pressed;
     };
-    const OutlinerStatTileSpec RightStat {
-        "MODIFIERS",
-        ModBuf,
-        ControlIcon::SparklesAntiAliasing,
-        EnabledMods > 0u ? IconAccentTone::Blue : IconAccentTone::Slate,
-        FilterModsOnly,
-    };
-    const int32_t StatClick = ConstructStatTilePair(Surface, { LeftX, CursorY, InnerW, 50.0f }, LeftStat, RightStat, Input, Tone);
-    if (StatClick == 0)
+
+    if (RenderStatBox(
+            { LeftX, CursorY, StatW, StatH },
+            ControlIcon::CircleCheck,
+            ColorRgba{ 118u, 198u, 126u, 230u },
+            "Visible",
+            VisibleCount,
+            Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly))
     {
         Session->LayerFilter = (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly)
             ? PatternStampLayerFilterMode::AllLayers
             : PatternStampLayerFilterMode::VisibleOnly;
     }
-    else if (StatClick == 1)
-    {
-        FilterModsOnly = !FilterModsOnly;
-    }
-    CursorY += 58.0f;
 
-    // 3. Search input + Filter button
-    const bool FilterArmed = (Session->LayerFilter != PatternStampLayerFilterMode::AllLayers) || FilterModsOnly;
-    const std::string_view FilterText = (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly)
-        ? "Visible"
-        : (FilterModsOnly ? "Mods" : "Filter");
-    if (ConstructSearchFilterRow(
-            Surface, { LeftX, CursorY, InnerW, 29.0f }, SearchBuffer, "Find a layer...", FilterText, FilterArmed, Input, Tone))
+    if (RenderStatBox(
+            { LeftX + StatW + StatGap, CursorY, StatW, StatH },
+            ControlIcon::EyeHidden,
+            ColorRgba{ 115u, 120u, 130u, 140u },
+            "Hidden",
+            HiddenCount,
+            Session->LayerFilter == PatternStampLayerFilterMode::HiddenOnly))
     {
-        if (Session->LayerFilter == PatternStampLayerFilterMode::AllLayers && !FilterModsOnly)
-        {
-            Session->LayerFilter = PatternStampLayerFilterMode::VisibleOnly;
-        }
-        else if (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly)
+        Session->LayerFilter = (Session->LayerFilter == PatternStampLayerFilterMode::HiddenOnly)
+            ? PatternStampLayerFilterMode::AllLayers
+            : PatternStampLayerFilterMode::HiddenOnly;
+    }
+    CursorY += StatH + 8.0f;
+
+    // Optional filter status bar
+    const bool FilterActive = (Session->LayerFilter != PatternStampLayerFilterMode::AllLayers) || !Session->LayerSearch.empty();
+    if (FilterActive)
+    {
+        const Rectangle2D NoteR{ LeftX, CursorY, InnerW, 24.0f };
+        Surface.FillRectangle(NoteR, Theme.AccentSoft, 6.0f);
+        std::string NoteMsg = "Filtered:";
+        if (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly) NoteMsg += " Visible layers";
+        else if (Session->LayerFilter == PatternStampLayerFilterMode::HiddenOnly) NoteMsg += " Hidden layers";
+        if (!Session->LayerSearch.empty()) NoteMsg += " \"" + Session->LayerSearch + "\"";
+        WorkspaceAppearance::ConstructTruncatedText(
+            Surface, FontWeightClass::Regular, { NoteR.X + 8.0f, NoteR.Y + 5.0f }, InnerW - 64.0f, 9.2f, Theme.TextPrimary, NoteMsg);
+
+        const Rectangle2D ResetR{ NoteR.Right() - 56.0f, NoteR.Y + 3.0f, 50.0f, 18.0f };
+        if (ConstructCapsuleButtonControl(Surface, ResetR, "Show all", Theme, Cursor, Pressed && !AddLayerSheetOpen, false, false, ControlIcon::Count, 8.6f))
         {
             Session->LayerFilter = PatternStampLayerFilterMode::AllLayers;
-            FilterModsOnly       = true;
+            Session->LayerSearch.clear();
+            ClearEditText(SearchBuffer);
+            SearchBuffer.Active = false;
         }
-        else
+        CursorY += 28.0f;
+    }
+
+    // 3. Search Bar ("Find a layer...")
+    const Rectangle2D SearchRect{ LeftX, CursorY, InnerW, 30.0f };
+    Surface.FillRectangle(SearchRect, SearchBuffer.Active ? Theme.HoverSurface : Theme.WellSurface, 15.0f);
+    Surface.StrokeRectangle(SearchRect, SearchBuffer.Active ? Theme.BorderStrong : Theme.BorderSubtle, 15.0f, 1.0f);
+    VectorIconRepository::ConstructControl(
+        Surface, ControlIcon::SearchGlass, VectorIconPlacement{ SearchRect.X + 10.0f, SearchRect.Y + 8.0f, 13.0f, Theme.TextFaint, 1.7f });
+
+    if (Pressed && !AddLayerSheetOpen)
+    {
+        const Rectangle2D ClearBtnR{ SearchRect.Right() - 24.0f, SearchRect.Y + 4.0f, 20.0f, 22.0f };
+        if (SearchBuffer.Length > 0u && ClearBtnR.Contains(Cursor))
         {
-            Session->LayerFilter = PatternStampLayerFilterMode::AllLayers;
-            FilterModsOnly       = false;
+            ClearEditText(SearchBuffer);
+            Session->LayerSearch.clear();
+            SearchBuffer.Active = false;
+        }
+        else if (SearchRect.Contains(Cursor))
+        {
+            SearchBuffer.Active       = true;
+            RenamingLayerId           = 0u;
+            InlineRenameBuffer.Active = false;
+        }
+        else if (SearchBuffer.Active)
+        {
+            SearchBuffer.Active = false;
         }
     }
-    Session->LayerSearch = std::string(QueryEditTextView(SearchBuffer));
-    CursorY += 36.0f;
-
-    // 4. Quick-add layer chips (+ Motif / + Text / + Gradient)
-    const std::array<OutlinerChipSpec, 3u> QuickChips {{
-        { "Motif",    {}, {}, false, true, false, false },
-        { "Text",     {}, {}, false, true, false, false },
-        { "Gradient", {}, {}, false, true, false, false },
-    }};
-    float ChipsH = 0.0f;
-    const int32_t PickedChip = ConstructQuickChipStrip(Surface, LeftX, CursorY, InnerW, QuickChips, Input, Tone, ChipsH);
-    if (PickedChip == 0)
+    if (SearchBuffer.Active)
     {
-        Session->AddLayer(PatternStampLayerCategory::Motif);
+        WorkspaceAppearance::ForwardInputToTextBuffer(SearchBuffer, Input, DeltaSeconds);
+        Session->LayerSearch = std::string(SearchBuffer.Text);
     }
-    else if (PickedChip == 1)
+    else if (std::string_view(SearchBuffer.Text) != Session->LayerSearch)
     {
-        Session->AddLayer(PatternStampLayerCategory::Typographic);
-    }
-    else if (PickedChip == 2)
-    {
-        Session->AddLayer(PatternStampLayerCategory::GradientWash);
-    }
-    CursorY += ChipsH + 8.0f;
-
-    // Reserve TextureStudio OLD Bottom Footer Stack: Command Toolbar (34px) + Canvas Ground Row (38px) + 3-Metric Footer (28px)
-    constexpr float ToolbarH = 34.0f;
-    constexpr float GroundH  = 38.0f;
-    constexpr float MetricsH = 28.0f;
-    const float FooterTotalH = ToolbarH + GroundH + MetricsH;
-    const Rectangle2D ToolbarRect { Pane.X, Pane.Bottom() - FooterTotalH, Pane.Width, ToolbarH };
-    const Rectangle2D GroundRect  { Pane.X, ToolbarRect.Bottom(), Pane.Width, GroundH };
-    const Rectangle2D MetricsRect { Pane.X, GroundRect.Bottom(), Pane.Width, MetricsH };
-
-    const Rectangle2D TreeRect { Pane.X, CursorY, Pane.Width, std::max(40.0f, ToolbarRect.Y - CursorY - 4.0f) };
-    const Point2D Cursor = QueryInputCursor(Input);
-    if (!AddLayerSheetOpen && TreeRect.Contains(Cursor) && std::fabs(Input.WheelDeltaY) > 1.0e-4f)
-    {
-        ScrollOffsetY = std::clamp(ScrollOffsetY - Input.WheelDeltaY * 32.0f, 0.0f, MaxScrollY);
+        AssignEditText(SearchBuffer, Session->LayerSearch);
     }
 
-    // 5. Scrollable Sharp-Cornered Hierarchy Tree (NO Starters folder!)
-    Surface.PushClip(TreeRect);
-    float RowY = TreeRect.Y - ScrollOffsetY;
-    const float RowX = LeftX;
-    const float RowW = InnerW;
-    const std::string_view SearchNeedle = QueryEditTextView(SearchBuffer);
-
-    // Document root row (live preview + metadata + SEAMLESS/CUTOUT tag)
+    const std::string_view SearchDisplay = (SearchBuffer.Length == 0u) ? std::string_view("Find a layer...") : std::string_view(SearchBuffer.Text);
+    WorkspaceAppearance::ConstructTruncatedText(
+        Surface,
+        FontWeightClass::Regular,
+        { SearchRect.X + 29.0f, SearchRect.Y + 8.0f },
+        SearchRect.Width - 52.0f,
+        10.2f,
+        (SearchBuffer.Length == 0u) ? Theme.TextFaint : Theme.TextPrimary,
+        SearchDisplay);
+    if (SearchBuffer.Length > 0u)
     {
-        char CanvasMeta[72] {};
-        std::snprintf(CanvasMeta, sizeof(CanvasMeta), "%s · %u px · %s",
-            PatternMode ? "Canvas tile" : "Decal",
-            Session->ResolutionPx,
-            Session->Document.GroundEnabled ? "ground on" : "no ground");
+        VectorIconRepository::ConstructControl(
+            Surface, ControlIcon::CloseCross, VectorIconPlacement{ SearchRect.Right() - 20.0f, SearchRect.Y + 9.0f, 11.0f, Theme.TextMuted, 1.6f });
+    }
+    CursorY += 38.0f;
 
-        HierarchyRowSpec RootSpec {};
-        RootSpec.DepthLevel        = 0;
-        RootSpec.Title             = Session->Document.DocumentName;
-        RootSpec.Subtitle          = CanvasMeta;
-        RootSpec.TagLabel          = PatternMode ? "SEAMLESS" : "CUTOUT";
-        RootSpec.TagStyle          = PatternMode ? TagTone::Green : TagTone::Blue;
-        RootSpec.CustomLeadPreview = true;
-        RootSpec.LeadPreviewSize   = 28.0f;
-        RootSpec.Expandable        = true;
-        RootSpec.Expanded          = RootExpanded;
-        RootSpec.GroupStyle        = true;
+    // Collect top -> bottom filtered entries
+    struct VisibleEntry
+    {
+        uint32_t Identity = 0u;
+        uint32_t Depth    = 0u;
+        bool     EffVis   = true;
+    };
+    std::vector<VisibleEntry> Displayed;
+    const std::string QueryLower = ToLowerAscii(Session->LayerSearch);
+    const bool SearchOrFilterOn  = (Session->LayerFilter != PatternStampLayerFilterMode::AllLayers) || !QueryLower.empty();
 
-        const Rectangle2D RowRect { RowX, RowY, RowW, 40.0f };
-        const HierarchyRowResult Res = ConstructHierarchyRow(Surface, RowRect, RootSpec, Input, Tone);
-        ConstructCanvasRootPreview(Surface, Res.LeadPreviewRect, *Session, Tone);
-        if (!AddLayerSheetOpen && (Res.ChevronClicked || Res.RowClicked))
+    for (auto It = Session->Document.Layers.rbegin(); It != Session->Document.Layers.rend(); ++It)
+    {
+        const auto& L = *It;
+        if (!SearchOrFilterOn && Session->QueryUnderCollapsedFolder(L.Identity))
         {
-            RootExpanded = !RootExpanded;
+            continue;
         }
-        RowY += 43.0f;
+        const bool EffVis = Session->QueryEffectiveVisible(L.Identity);
+        if (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly && !EffVis) continue;
+        if (Session->LayerFilter == PatternStampLayerFilterMode::HiddenOnly && EffVis) continue;
+        if (!QueryLower.empty())
+        {
+            const std::string Hay = ToLowerAscii(L.Name + " " + PatternStampWorkspaceSession::DescribeLayerSubtitle(L));
+            if (Hay.find(QueryLower) == std::string::npos)
+            {
+                continue;
+            }
+        }
+        Displayed.push_back({ L.Identity, SearchOrFilterOn ? 0u : Session->QueryLayerDepth(L.Identity), EffVis });
     }
 
-    // Layer rows (sharp 0px corners, real procedural layer previews, metadata, green tick + eye + lock)
-    if (RootExpanded)
+    // 4. "TOP -> BOTTOM" + "N SHOWN"
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::SemiBold, { LeftX, CursorY }, 9.0f, Theme.TextFaint, "TOP -> BOTTOM");
+    const std::string ShownLabel = std::to_string(Displayed.size()) + " SHOWN";
+    WorkspaceAppearance::ConstructRightAlignedText(
+        Surface, FontWeightClass::Medium, { LeftX + InnerW, CursorY }, 9.0f, Theme.TextFaint, ShownLabel);
+    CursorY += 18.0f;
+
+    // 5. Reserve bottom blocks cleanly (Toolbar + Canvas Tile ground + 3-metric Pane Footer)
+    const float FooterH     = 26.0f;
+    const float GroundTileH = 44.0f;
+    const float ToolbarH    = 34.0f;
+    const float BottomBandY = Bounds.Bottom() - FooterH - GroundTileH - ToolbarH - 12.0f;
+    const Rectangle2D ScrollRect{ Bounds.X, CursorY, Bounds.Width, std::max(40.0f, BottomBandY - CursorY) };
+
+    if (!AddLayerSheetOpen && ScrollRect.Contains(Cursor) && std::abs(Input.WheelDeltaY) > 0.001f)
     {
-        const std::size_t LayerCount = Layers.size();
-        for (std::size_t RevIdx = 0u; RevIdx < LayerCount; ++RevIdx)
+        const float MaxScroll = std::max(0.0f, CachedContentHeight - ScrollRect.Height);
+        ScrollOffsetY         = std::clamp(ScrollOffsetY - Input.WheelDeltaY * 32.0f, 0.0f, MaxScroll);
+    }
+
+    const Point2D ListCursor = (!AddLayerSheetOpen && ScrollRect.Contains(Cursor)) ? Cursor : Point2D{ -9999.0f, -9999.0f };
+    const bool    ListPress  = (!AddLayerSheetOpen && ScrollRect.Contains(Cursor)) && Pressed;
+
+    if (!Input.PrimaryPointer.Down)
+    {
+        DraggingReorder  = false;
+        ScrubbingOpacity = false;
+    }
+
+    // 6. Scrollable Layer Tree
+    Surface.PushClip(ScrollRect);
+    float RowCursorY          = ScrollRect.Y + 2.0f - ScrollOffsetY;
+    const float RowTopAnchorY = RowCursorY;
+
+    if (Displayed.empty())
+    {
+        const Rectangle2D EmptyR{ LeftX, RowCursorY + 8.0f, InnerW, 56.0f };
+        Surface.FillRectangle(EmptyR, Theme.SectionSurface, 10.0f);
+        Surface.StrokeRectangle(EmptyR, Theme.BorderSubtle, 10.0f, 1.0f);
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::SemiBold, { EmptyR.X + 12.0f, EmptyR.Y + 11.0f }, 10.5f, Theme.TextPrimary, SearchOrFilterOn ? "No matching layers" : "No layers yet");
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::Regular, { EmptyR.X + 12.0f, EmptyR.Y + 30.0f }, 9.2f, Theme.TextFaint, SearchOrFilterOn ? "Clear filter or search query to view all." : "Use + above to add a layer.");
+        RowCursorY += 70.0f;
+    }
+    else
+    {
+        struct PendingMoveOp
         {
-            const std::size_t LIdx  = LayerCount - 1u - RevIdx;
-            const auto&       Layer = Layers[LIdx];
+            bool     Ready          = false;
+            uint32_t Identity       = 0u;
+            int32_t  StepDelta      = 0;
+            bool     DragDrop       = false;
+            uint32_t TargetIdentity = 0u;
+            bool     DropAbove      = true;
+        } PendingMove {};
 
-            if (Session->QueryUnderCollapsedFolder(Layer.Identity))
+        for (std::size_t VisIdx = 0u; VisIdx < Displayed.size(); ++VisIdx)
+        {
+            const VisibleEntry Entry = Displayed[VisIdx];
+            PatternStampLayerSpec*  Layer = Session->FindLayerById(Entry.Identity);
+            if (Layer == nullptr)
             {
                 continue;
             }
-            if (Session->LayerFilter == PatternStampLayerFilterMode::VisibleOnly && !Layer.Visible)
+            const bool SelectedRow = (Session->Document.SelectedLayerId == Layer->Identity);
+            const bool FolderEntry   = (Layer->Category == PatternStampLayerCategory::Folder);
+            const float IndentPx  = static_cast<float>(Entry.Depth) * 14.0f;
+            const Rectangle2D RowRect{ LeftX + IndentPx, RowCursorY, std::max(120.0f, InnerW - IndentPx), 48.0f };
+            const bool RowHover   = RowRect.Contains(ListCursor);
+
+            ColorRgba RowFill   = SelectedRow ? Theme.HoverSurface : (RowHover ? Theme.RaisedSurface : Theme.SectionSurface);
+            ColorRgba RowStroke = SelectedRow ? Theme.HighlightFill : (RowHover ? Theme.BorderStrong : Theme.BorderSubtle);
+            if (!Entry.EffVis)
             {
-                continue;
+                RowFill.Alpha = 145u;
             }
-            if (FilterModsOnly && Layer.Modifiers.empty())
+            Surface.FillRectangle(RowRect, RowFill, 8.0f);
+            Surface.StrokeRectangle(RowRect, RowStroke, 8.0f, SelectedRow ? 1.2f : 1.0f);
+
+            if (SelectedRow)
             {
-                continue;
-            }
-            if (!SearchNeedle.empty() && !ContainsCaseInsensitive(Layer.Name, SearchNeedle))
-            {
-                continue;
+                Surface.FillRectangle({ RowRect.X, RowRect.Y + 4.0f, 3.0f, RowRect.Height - 8.0f }, Theme.HighlightFill, 1.5f);
             }
 
-            const bool     Selected = (Layer.Identity == Session->Document.SelectedLayerId);
-            const uint32_t Depth    = Session->QueryLayerDepth(Layer.Identity);
-            const bool     NestedEntries = (Layer.Category == PatternStampLayerCategory::Folder) || !Layer.Modifiers.empty() || !Layer.Channels.empty();
-
-            char LayerMeta[96] {};
-            if (Layer.Category == PatternStampLayerCategory::Folder)
+            // Drag grip
+            const Rectangle2D GripR{ RowRect.X + 6.0f, RowRect.Y + 8.0f, 14.0f, 32.0f };
+            VectorIconRepository::ConstructControl(
+                Surface,
+                ControlIcon::DragGrip,
+                VectorIconPlacement{ GripR.X + 1.0f, GripR.Y + 9.0f, 12.0f, GripR.Contains(ListCursor) ? Theme.TextPrimary : Theme.TextFaint, 1.6f });
+            if (ListPress && GripR.Contains(ListCursor))
             {
-                std::snprintf(LayerMeta, sizeof(LayerMeta), "Group · %zu layers", Session->CountFolderImmediateMembers(Layer.Identity));
+                DraggingLayerId  = Layer->Identity;
+                DragStartCursorY = ListCursor.Y;
+                DraggingReorder  = true;
             }
-            else if (!Layer.Modifiers.empty())
+            if (DraggingReorder && DraggingLayerId == Layer->Identity && Input.PrimaryPointer.Down)
             {
-                std::size_t ActiveModCount = 0u;
-                for (const auto& M : Layer.Modifiers)
+                if (ListCursor.Y < RowRect.Y - 12.0f && VisIdx > 0u)
                 {
-                    if (M.Enabled) ++ActiveModCount;
+                    PendingMove = { true, Layer->Identity, 0, true, Displayed[VisIdx - 1u].Identity, true };
                 }
-                const std::string_view BlendTxt = QueryBlendModeLabel(Layer.BlendMode);
-                std::snprintf(LayerMeta, sizeof(LayerMeta), "%.*s · %.0f%% · %zu/%zu mods",
-                    static_cast<int>(BlendTxt.size()), BlendTxt.data(),
-                    Layer.Opacity * 100.0f, ActiveModCount, Layer.Modifiers.size());
+                else if (ListCursor.Y > RowRect.Bottom() + 12.0f && VisIdx + 1u < Displayed.size())
+                {
+                    PendingMove = { true, Layer->Identity, 0, true, Displayed[VisIdx + 1u].Identity, false };
+                }
+            }
+
+            // Disclosure chevron
+            const Rectangle2D ChevR{ GripR.Right() + 2.0f, RowRect.Y + 14.0f, 16.0f, 20.0f };
+            const bool ChevronExpanded = FolderEntry ? !Layer->CollapsedFolder : Layer->ExpandedInStack;
+            VectorIconRepository::ConstructControl(
+                Surface,
+                ChevronExpanded ? ControlIcon::ChevronDown : ControlIcon::ChevronForward,
+                VectorIconPlacement{ ChevR.X + 3.0f, ChevR.Y + 5.0f, 10.0f, ChevR.Contains(ListCursor) ? Theme.TextPrimary : Theme.TextFaint, 1.7f });
+            bool ConsumedSubClick = false;
+            if (ListPress && ChevR.Contains(ListCursor))
+            {
+                ConsumedSubClick = true;
+                if (FolderEntry) Session->ToggleFolderCollapsed(Layer->Identity);
+                else Session->ToggleLayerExpandedDrawer(Layer->Identity);
+            }
+
+            // Schematic 36x36 thumbnail
+            const Rectangle2D ThumbR{ ChevR.Right() + 4.0f, RowRect.Y + 6.0f, 36.0f, 36.0f };
+            RenderSchematicLayerThumb(Surface, ThumbR, *Layer, Theme);
+
+            // Right control cluster
+            const Rectangle2D LockR{ RowRect.Right() - 26.0f, RowRect.Y + 13.0f, 20.0f, 22.0f };
+            const Rectangle2D EyeR{ LockR.X - 22.0f, RowRect.Y + 13.0f, 20.0f, 22.0f };
+            const Rectangle2D UpArrowR{ EyeR.X - 18.0f, RowRect.Y + 11.0f, 14.0f, 13.0f };
+            const Rectangle2D DnArrowR{ EyeR.X - 18.0f, RowRect.Y + 24.0f, 14.0f, 13.0f };
+            const Rectangle2D OpacityChipR{ UpArrowR.X - 38.0f, RowRect.Y + 14.0f, 34.0f, 20.0f };
+
+            // Name & Subtitle
+            const float TextLeftX = ThumbR.Right() + 8.0f;
+            const float TextMaxW  = std::max(36.0f, OpacityChipR.X - TextLeftX - 6.0f);
+            if (RenamingLayerId == Layer->Identity)
+            {
+                const Rectangle2D RenameR{ TextLeftX, RowRect.Y + 7.0f, TextMaxW, 20.0f };
+                Surface.FillRectangle(RenameR, Theme.WellSurface, 4.0f);
+                Surface.StrokeRectangle(RenameR, Theme.HighlightFill, 4.0f, 1.0f);
+                WorkspaceAppearance::ForwardInputToTextBuffer(InlineRenameBuffer, Input, DeltaSeconds);
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Medium, { RenameR.X + 4.0f, RenameR.Y + 3.0f }, TextMaxW - 8.0f, 10.0f, Theme.TextPrimary, InlineRenameBuffer.Text);
+                if (!InlineRenameBuffer.Active || (ListPress && !RenameR.Contains(ListCursor)))
+                {
+                    if (InlineRenameBuffer.Length > 0u)
+                    {
+                        Layer->Name = std::string(InlineRenameBuffer.Text);
+                    }
+                    RenamingLayerId           = 0u;
+                    InlineRenameBuffer.Active = false;
+                }
             }
             else
             {
-                const std::string_view BlendTxt = QueryBlendModeLabel(Layer.BlendMode);
-                std::snprintf(LayerMeta, sizeof(LayerMeta), "%.*s · %.0f%%",
-                    static_cast<int>(BlendTxt.size()), BlendTxt.data(), Layer.Opacity * 100.0f);
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface,
+                    FontWeightClass::SemiBold,
+                    { TextLeftX, RowRect.Y + 8.0f },
+                    TextMaxW,
+                    10.5f,
+                    Entry.EffVis ? Theme.TextPrimary : Theme.TextMuted,
+                    Layer->Name);
+                const std::string Sub = FolderEntry
+                    ? ("Folder · " + std::to_string(Session->CountFolderImmediateMembers(Layer->Identity)) + " entries")
+                    : PatternStampWorkspaceSession::DescribeLayerSubtitle(*Layer);
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Regular, { TextLeftX, RowRect.Y + 25.0f }, TextMaxW, 8.8f, Theme.TextFaint, Sub);
             }
 
-            HierarchyRowSpec Spec {};
-            Spec.DepthLevel        = 1 + static_cast<int32_t>(Depth);
-            Spec.Title             = Layer.Name;
-            Spec.Subtitle          = LayerMeta;
-            Spec.CustomLeadPreview = true;
-            Spec.LeadPreviewSize   = 32.0f;
-            Spec.Expandable        = NestedEntries;
-            Spec.Expanded          = (Layer.Category == PatternStampLayerCategory::Folder)
-                ? !Layer.CollapsedFolder
-                : (Layer.ExpandedInStack || Selected);
-            Spec.Selected          = Selected;
-            Spec.Muted             = !Layer.Visible;
-            Spec.ShowGreenCheck    = true;
-            Spec.GreenCheckOn      = Layer.Visible;
-            Spec.ShowEyeToggle     = true;
-            Spec.EyeVisible        = Layer.Visible;
-            Spec.ShowLockToggle    = true;
-            Spec.LockEnabled       = Layer.Locked;
-
-            const Rectangle2D RowRect { RowX, RowY, RowW, 44.0f };
-            const HierarchyRowResult Res = ConstructHierarchyRow(Surface, RowRect, Spec, Input, Tone);
-            ConstructLiveLayerPreview(Surface, Res.LeadPreviewRect, Layer, PatternMode, Tone);
-
-            // Inline rename editing when double-clicked
-            if (RenamingLayerId == Layer.Identity && InlineRenameBuffer.Active)
+            if (!FolderEntry)
             {
-                const Rectangle2D RenameRect { Res.LeadPreviewRect.Right() + 6.0f, RowRect.Y + 4.0f, std::max(60.0f, RowRect.Width - 138.0f), 22.0f };
-                Surface.FillRectangle(RenameRect, Tone.FieldWell, 0.0f);
-                Surface.StrokeRectangle(RenameRect, Tone.HighlightFill, 0.0f, 1.0f);
-                (void)TextInputField::Construct(Surface, RenameRect, InlineRenameBuffer, Input.PrimaryPointer, 10.5f);
-                if (!InlineRenameBuffer.Active)
+                Surface.FillRectangle(OpacityChipR, OpacityChipR.Contains(ListCursor) ? Theme.HoverSurface : Theme.WellSurface, 6.0f);
+                Surface.StrokeRectangle(OpacityChipR, Theme.BorderSubtle, 6.0f, 1.0f);
+                const std::string OpStr = std::to_string(static_cast<int>(std::lround(Layer->Opacity * 100.0f))) + "%";
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Regular, { OpacityChipR.X + 5.0f, OpacityChipR.Y + 4.0f }, OpacityChipR.Width - 6.0f, 8.8f, Theme.TextPrimary, OpStr);
+                if (ListPress && OpacityChipR.Contains(ListCursor) && !Layer->Locked)
                 {
-                    if (auto* Mutable = Session->FindLayerById(Layer.Identity); Mutable != nullptr && InlineRenameBuffer.Length > 0u)
-                    {
-                        Mutable->Name = std::string(QueryEditTextView(InlineRenameBuffer));
-                        Session->BumpRevision();
-                    }
-                    RenamingLayerId = 0u;
+                    ConsumedSubClick   = true;
+                    ScrubbingOpacityId = Layer->Identity;
+                    ScrubbingOpacity   = true;
+                    ScrubStartCursorX  = ListCursor.X;
+                    ScrubStartOpacity  = Layer->Opacity;
+                }
+                if (ScrubbingOpacity && ScrubbingOpacityId == Layer->Identity && Input.PrimaryPointer.Down)
+                {
+                    Layer->Opacity = std::clamp(ScrubStartOpacity + (Input.PrimaryPointer.X - ScrubStartCursorX) / 110.0f, 0.0f, 1.0f);
                 }
             }
 
-            if (!AddLayerSheetOpen)
+            VectorIconRepository::ConstructControl(
+                Surface,
+                ControlIcon::ChevronUp,
+                VectorIconPlacement{ UpArrowR.X + 2.0f, UpArrowR.Y + 1.0f, 10.0f, (VisIdx > 0u && UpArrowR.Contains(ListCursor)) ? Theme.TextPrimary : Theme.TextFaint, 1.6f });
+            VectorIconRepository::ConstructControl(
+                Surface,
+                ControlIcon::ChevronDown,
+                VectorIconPlacement{ DnArrowR.X + 2.0f, DnArrowR.Y + 1.0f, 10.0f, (VisIdx + 1u < Displayed.size() && DnArrowR.Contains(ListCursor)) ? Theme.TextPrimary : Theme.TextFaint, 1.6f });
+            if (ListPress && UpArrowR.Contains(ListCursor) && VisIdx > 0u)
             {
-                if (Res.CheckToggled || Res.EyeToggled)
-                {
-                    Session->ToggleLayerVisible(Layer.Identity);
-                }
-                else if (Res.LockToggled)
-                {
-                    Session->ToggleLayerLocked(Layer.Identity);
-                }
-                else if (Res.ChevronClicked)
-                {
-                    if (Layer.Category == PatternStampLayerCategory::Folder)
-                    {
-                        Session->ToggleFolderCollapsed(Layer.Identity);
-                    }
-                    else
-                    {
-                        Session->ToggleLayerExpandedDrawer(Layer.Identity);
-                    }
-                }
-                else if (Res.DoubleClicked)
-                {
-                    RenamingLayerId = Layer.Identity;
-                    InlineRenameBuffer.Begin(Layer.Name.c_str());
-                }
-                else if (Res.RowClicked)
-                {
-                    Session->SelectLayer(Layer.Identity);
-                }
+                ConsumedSubClick = true;
+                PendingMove      = { true, Layer->Identity, +1, false, 0u, false };
+            }
+            if (ListPress && DnArrowR.Contains(ListCursor) && VisIdx + 1u < Displayed.size())
+            {
+                ConsumedSubClick = true;
+                PendingMove      = { true, Layer->Identity, -1, false, 0u, false };
             }
 
-            RowY += 46.0f;
-
-            // Nested modifier rows & surface summary row under expanded layer
-            const bool ShowNested = (Layer.Category != PatternStampLayerCategory::Folder) && (Layer.ExpandedInStack || Selected);
-            if (ShowNested)
+            Surface.FillRectangle(EyeR, EyeR.Contains(ListCursor) ? Theme.HoverSurface : Theme.WellSurface, 6.0f);
+            VectorIconRepository::ConstructControl(
+                Surface,
+                Layer->Visible ? ControlIcon::EyeVisible : ControlIcon::EyeHidden,
+                VectorIconPlacement{ EyeR.X + 4.0f, EyeR.Y + 5.0f, 12.0f, Layer->Visible ? Theme.HighlightFill : Theme.TextFaint, 1.6f });
+            if (ListPress && EyeR.Contains(ListCursor))
             {
-                for (std::size_t MIdx = 0u; MIdx < Layer.Modifiers.size(); ++MIdx)
+                ConsumedSubClick = true;
+                Session->ToggleLayerVisible(Layer->Identity);
+            }
+
+            VectorIconRepository::ConstructControl(
+                Surface,
+                Layer->Locked ? ControlIcon::LockClosed : ControlIcon::LockOpen,
+                VectorIconPlacement{ LockR.X + 4.0f, LockR.Y + 5.0f, 12.0f, Layer->Locked ? Theme.HighlightFill : Theme.TextFaint, 1.6f });
+            if (ListPress && LockR.Contains(ListCursor))
+            {
+                ConsumedSubClick = true;
+                Session->ToggleLayerLocked(Layer->Identity);
+            }
+
+            if (ListPress && !ConsumedSubClick && RowHover)
+            {
+                if (LastClickLayerId == Layer->Identity && TimeSinceLastClick <= 0.35)
                 {
-                    const auto& Mod = Layer.Modifiers[MIdx];
-                    char ModMeta[72] {};
-                    std::snprintf(ModMeta, sizeof(ModMeta), "#%zu · %s", MIdx + 1u, Mod.Enabled ? "Active" : "Bypassed");
+                    RenamingLayerId           = Layer->Identity;
+                    AssignEditText(InlineRenameBuffer, Layer->Name);
+                    InlineRenameBuffer.Active = true;
+                }
+                LastClickLayerId   = Layer->Identity;
+                TimeSinceLastClick = 0.0;
+                Session->SelectLayer(Layer->Identity);
+            }
 
-                    HierarchyRowSpec ModSpec {};
-                    ModSpec.DepthLevel      = 2 + static_cast<int32_t>(Depth);
-                    ModSpec.Title           = QueryModifierDisplayName(Mod.Category);
-                    ModSpec.Subtitle        = ModMeta;
-                    ModSpec.LeadIcon        = QueryModifierIcon(Mod.Category);
-                    ModSpec.LeadIconTone    = Mod.Enabled ? QueryModifierAccent(Mod.Category) : IconAccentTone::Slate;
-                    ModSpec.LeadPreviewSize = 22.0f;
-                    ModSpec.Muted           = !Mod.Enabled;
-                    ModSpec.ShowGreenCheck  = true;
-                    ModSpec.GreenCheckOn    = Mod.Enabled;
+            RowCursorY += 52.0f;
 
-                    const Rectangle2D ModRect { RowX, RowY, RowW, 34.0f };
-                    const HierarchyRowResult ModRes = ConstructHierarchyRow(Surface, ModRect, ModSpec, Input, Tone);
-                    if (!AddLayerSheetOpen && (ModRes.CheckToggled || ModRes.RowClicked))
+            // Inline Layer Mask sub-row
+            if (!FolderEntry)
+            {
+                const float MaskIndent = IndentPx + 14.0f;
+                const Rectangle2D MaskR{ LeftX + MaskIndent, RowCursorY, std::max(100.0f, InnerW - MaskIndent), 34.0f };
+                Surface.FillRectangle(MaskR, Layer->Mask.Enabled ? Theme.AccentSoft : Theme.SectionSurface, 6.0f);
+                Surface.StrokeRectangle(MaskR, Theme.BorderSubtle, 6.0f, 1.0f);
+
+                const Rectangle2D MThumbR{ MaskR.X + 8.0f, MaskR.Y + 6.0f, 22.0f, 22.0f };
+                RenderSchematicMaskThumb(Surface, MThumbR, Layer->Mask);
+
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Medium, { MThumbR.Right() + 8.0f, MaskR.Y + 4.0f }, MaskR.Width - 64.0f, 9.5f, Layer->Mask.Enabled ? Theme.TextPrimary : Theme.TextMuted, "Layer mask");
+
+                static constexpr const char* MaskModeNames[3] { "noise", "radial", "stripe" };
+                char MetaBuf[64];
+                std::snprintf(MetaBuf, sizeof(MetaBuf), "%s · T:%.2f", MaskModeNames[static_cast<std::size_t>(Layer->Mask.Mode) % 3u], Layer->Mask.Threshold);
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Regular, { MThumbR.Right() + 8.0f, MaskR.Y + 18.0f }, MaskR.Width - 64.0f, 8.2f, Theme.TextFaint, MetaBuf);
+
+                const Rectangle2D MEyeR{ MaskR.Right() - 26.0f, MaskR.Y + 6.0f, 20.0f, 22.0f };
+                VectorIconRepository::ConstructControl(
+                    Surface,
+                    Layer->Mask.Enabled ? ControlIcon::EyeVisible : ControlIcon::EyeHidden,
+                    VectorIconPlacement{ MEyeR.X + 4.0f, MEyeR.Y + 5.0f, 12.0f, Layer->Mask.Enabled ? Theme.HighlightFill : Theme.TextFaint, 1.6f });
+
+                if (ListPress && MEyeR.Contains(ListCursor))
+                {
+                    Session->PushUndoSnapshot();
+                    Layer->Mask.Enabled = !Layer->Mask.Enabled;
+                    Session->RecomputeSummaryMetrics();
+                }
+                else if (ListPress && MaskR.Contains(ListCursor))
+                {
+                    Session->SelectLayer(Layer->Identity);
+                }
+
+                RowCursorY += 40.0f;
+            }
+
+            if (!FolderEntry && Layer->ExpandedInStack)
+            {
+                const Rectangle2D ExpR{ LeftX + IndentPx + 14.0f, RowCursorY, std::max(100.0f, InnerW - IndentPx - 14.0f), 46.0f };
+                Surface.FillRectangle(ExpR, Theme.WellSurface, 6.0f);
+                Surface.StrokeRectangle(ExpR, Theme.BorderSubtle, 6.0f, 1.0f);
+
+                float Cx = ExpR.X + 8.0f;
+                for (const auto& Ch : Layer->Channels)
+                {
+                    const auto& Desc = PatternStampWorkspaceSession::QueryChannelDescriptor(Ch.Key);
+                    const float CW   = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Regular, 8.2f, Desc.ShortLabel) + 12.0f;
+                    if (Cx + CW > ExpR.Right() - 8.0f)
                     {
-                        Session->SelectLayer(Layer.Identity);
-                        if (ModRes.CheckToggled)
-                        {
-                            if (auto* Mutable = Session->FindLayerById(Layer.Identity); Mutable != nullptr && MIdx < Mutable->Modifiers.size())
-                            {
-                                Session->PushUndoSnapshot();
-                                Mutable->Modifiers[MIdx].Enabled = !Mutable->Modifiers[MIdx].Enabled;
-                                Session->RecomputeSummaryMetrics();
-                                Session->BumpRevision();
-                            }
-                        }
+                        break;
                     }
-                    RowY += 36.0f;
+                    Surface.FillRectangle({ Cx, ExpR.Y + 6.0f, CW, 16.0f }, Theme.RaisedSurface, 8.0f);
+                    WorkspaceAppearance::ConstructWeightedText(
+                        Surface, FontWeightClass::Regular, { Cx + 6.0f, ExpR.Y + 9.0f }, 8.2f, Theme.TextPrimary, Desc.ShortLabel);
+                    Cx += CW + 4.0f;
                 }
+                char GeoBuf[64];
+                std::snprintf(GeoBuf, sizeof(GeoBuf), "Pos (%.0f, %.0f) · %.0fx%.0f", Layer->CenterX, Layer->CenterY, Layer->WidthPx, Layer->HeightPx);
+                WorkspaceAppearance::ConstructTruncatedText(
+                    Surface, FontWeightClass::Regular, { ExpR.X + 8.0f, ExpR.Y + 26.0f }, ExpR.Width - 16.0f, 8.5f, Theme.TextFaint, GeoBuf);
 
-                // Surface PBR channel summary nested row
-                char SurfMeta[64] {};
-                std::snprintf(SurfMeta, sizeof(SurfMeta), "%zu PBR channels", Layer.Channels.size());
-                HierarchyRowSpec SurfSpec {};
-                SurfSpec.DepthLevel      = 2 + static_cast<int32_t>(Depth);
-                SurfSpec.Title           = "Surface";
-                SurfSpec.Subtitle        = SurfMeta;
-                SurfSpec.LeadIcon        = ControlIcon::LayersSlabs;
-                SurfSpec.LeadIconTone    = IconAccentTone::Teal;
-                SurfSpec.LeadPreviewSize = 22.0f;
+                RowCursorY += 52.0f;
+            }
+        }
 
-                const Rectangle2D SurfRect { RowX, RowY, RowW, 33.0f };
-                const HierarchyRowResult SurfRes = ConstructHierarchyRow(Surface, SurfRect, SurfSpec, Input, Tone);
-                if (!AddLayerSheetOpen && SurfRes.RowClicked)
-                {
-                    Session->SelectLayer(Layer.Identity);
-                }
-                RowY += 35.0f;
+        if (PendingMove.Ready)
+        {
+            if (PendingMove.DragDrop)
+            {
+                Session->ReorderLayerRelative(PendingMove.Identity, PendingMove.TargetIdentity, PendingMove.DropAbove);
+            }
+            else
+            {
+                Session->MoveLayerStep(PendingMove.Identity, PendingMove.StepDelta);
             }
         }
     }
 
-    const float ContentH = (RowY + ScrollOffsetY) - TreeRect.Y;
-    MaxScrollY           = std::max(0.0f, ContentH - TreeRect.Height);
-    ScrollOffsetY        = std::clamp(ScrollOffsetY, 0.0f, MaxScrollY);
+    CachedContentHeight = std::max(ScrollRect.Height, RowCursorY - RowTopAnchorY + 8.0f);
+    ScrollOffsetY       = std::clamp(ScrollOffsetY, 0.0f, std::max(0.0f, CachedContentHeight - ScrollRect.Height));
+    WorkspaceAppearance::ConstructVerticalScrollIndicator(Surface, ScrollRect, CachedContentHeight, ScrollOffsetY, ListCursor);
     Surface.PopClip();
 
-    // 6. TextureStudio OLD Bottom Command Toolbar (Up / Down  ---  Duplicate / Mask / Delete)
-    const PatternStampLayerSpec* SelectedLayer = Session->InspectSelectedLayer();
-    const bool LayerSelected = (SelectedLayer != nullptr);
-    const OutlinerToolbarResult ToolOut = ConstructOutlinerCommandToolbar(
-        Surface,
-        ToolbarRect,
-        LayerSelected && Layers.size() > 1u,
-        LayerSelected && Layers.size() > 1u,
-        LayerSelected,
-        true,
-        LayerSelected && Layers.size() > 1u,
-        Input,
-        Tone);
-    if (LayerSelected)
+    // 7. Bottom Toolbar (Up / Down | Duplicate / Mask / Delete)
+    float ToolBarY = Bounds.Bottom() - FooterH - GroundTileH - ToolbarH - 6.0f;
+    Surface.StrokeLine({ Bounds.X, ToolBarY - 3.0f }, { Bounds.Right(), ToolBarY - 3.0f }, Theme.BorderSubtle, 1.0f);
+
+    const bool ModifiableLayer = (Session->InspectSelectedLayer() != nullptr);
+    const Rectangle2D ActUpR{ LeftX, ToolBarY + 3.0f, 28.0f, 26.0f };
+    const Rectangle2D ActDnR{ LeftX + 32.0f, ToolBarY + 3.0f, 28.0f, 26.0f };
+    const Rectangle2D ActDelR{ Bounds.Right() - PadX - 28.0f, ToolBarY + 3.0f, 28.0f, 26.0f };
+    const Rectangle2D ActMaskR{ ActDelR.X - 32.0f, ToolBarY + 3.0f, 28.0f, 26.0f };
+    const Rectangle2D ActDupR{ ActMaskR.X - 32.0f, ToolBarY + 3.0f, 28.0f, 26.0f };
+
+    if (RenderToolIconButton(Surface, ActUpR, ControlIcon::ChevronUp, ModifiableLayer, false, false, Theme, Cursor, Pressed && !AddLayerSheetOpen))
     {
-        if (ToolOut.MoveUpClicked)
-        {
-            Session->MoveLayerStep(SelectedLayer->Identity, 1);
-        }
-        else if (ToolOut.MoveDownClicked)
-        {
-            Session->MoveLayerStep(SelectedLayer->Identity, -1);
-        }
-        else if (ToolOut.DuplicateClicked)
-        {
-            Session->DuplicateSelectedLayer();
-        }
-        else if (ToolOut.MaskClicked)
-        {
-            Session->ToggleSelectedLayerMask();
-        }
-        else if (ToolOut.DeleteClicked)
-        {
-            Session->DeleteSelectedLayer();
-        }
+        Session->MoveLayerStep(Session->Document.SelectedLayerId, +1);
+    }
+    if (RenderToolIconButton(Surface, ActDnR, ControlIcon::ChevronDown, ModifiableLayer, false, false, Theme, Cursor, Pressed && !AddLayerSheetOpen))
+    {
+        Session->MoveLayerStep(Session->Document.SelectedLayerId, -1);
+    }
+    if (RenderToolIconButton(Surface, ActDupR, ControlIcon::CopyDuplicate, ModifiableLayer, false, false, Theme, Cursor, Pressed && !AddLayerSheetOpen))
+    {
+        Session->DuplicateSelectedLayer();
+    }
+    if (RenderToolIconButton(Surface, ActMaskR, ControlIcon::MaskCutout, ModifiableLayer, false, false, Theme, Cursor, Pressed && !AddLayerSheetOpen))
+    {
+        Session->ToggleSelectedLayerMask();
+    }
+    if (RenderToolIconButton(Surface, ActDelR, ControlIcon::TrashDelete, Session->Document.Layers.size() > 1u, false, true, Theme, Cursor, Pressed && !AddLayerSheetOpen))
+    {
+        Session->DeleteSelectedLayer();
     }
 
-    // 7. TextureStudio OLD Ground Canvas Row
-    char GroundTitle[64] {};
-    std::snprintf(GroundTitle, sizeof(GroundTitle), "%s · %ux%u",
-        PatternMode ? "Canvas Tile" : "Decal Canvas", Session->ResolutionPx, Session->ResolutionPx);
-    ConstructOutlinerGroundRow(
-        Surface,
-        GroundRect,
-        ControlIcon::LayersSlabs,
-        IconAccentTone::Slate,
-        GroundTitle,
-        Session->Document.GroundEnabled ? "Solid canvas ground" : "Transparent alpha cutout",
-        PatternMode ? "Seamless" : "Cutout",
-        Tone);
+    // 8. Canvas Tile Ground Bar ("Canvas Tile · 1024x1024" + "Seamless"/"Cutout")
+    const float GroundY = ToolBarY + ToolbarH + 2.0f;
+    const Rectangle2D GroundR{ LeftX, GroundY, InnerW, GroundTileH - 4.0f };
+    Surface.FillRectangle(GroundR, Theme.SectionSurface, 8.0f);
+    Surface.StrokeRectangle(GroundR, Theme.BorderSubtle, 8.0f, 1.0f);
 
-    // 8. TextureStudio OLD 3-Metric Outliner Footer (LAYERS | VISIBLE | MODS)
-    char FLayers[16] {};
-    char FVis[16] {};
-    char FMods[16] {};
-    std::snprintf(FLayers, sizeof(FLayers), "%zu", TotalLayers);
-    std::snprintf(FVis, sizeof(FVis), "%zu", VisibleLayers);
-    std::snprintf(FMods, sizeof(FMods), "%zu", EnabledMods);
-    const std::array<ThreeMetricFooterCell, 3u> FooterCells {{
-        { "LAYERS",  FLayers, TagTone::Neutral },
-        { "VISIBLE", FVis,    VisibleLayers > 0u ? TagTone::Green : TagTone::Neutral },
-        { "MODS",    FMods,   TagTone::Neutral },
+    const Rectangle2D GroundIconBox{ GroundR.X + 8.0f, GroundR.Y + 8.0f, 24.0f, 24.0f };
+    Surface.FillRectangle(GroundIconBox, Theme.RaisedSurface, 6.0f);
+    VectorIconRepository::ConstructControl(
+        Surface, ControlIcon::LayersSlabs, VectorIconPlacement{ GroundIconBox.X + 5.0f, GroundIconBox.Y + 5.0f, 14.0f, Theme.TextMuted, 1.6f });
+
+    const std::string TileTitle = "Canvas Tile · " + std::to_string(Session->ResolutionPx) + "x" + std::to_string(Session->ResolutionPx);
+    const std::string TileSub   = Session->Document.GroundEnabled
+        ? ("Background " + FormatHexColor(Session->Document.GroundTintA))
+        : "Transparent alpha cutout";
+    WorkspaceAppearance::ConstructTruncatedText(
+        Surface, FontWeightClass::SemiBold, { GroundIconBox.Right() + 8.0f, GroundR.Y + 7.0f }, InnerW - 110.0f, 9.8f, Theme.TextPrimary, TileTitle);
+    WorkspaceAppearance::ConstructTruncatedText(
+        Surface, FontWeightClass::Regular, { GroundIconBox.Right() + 8.0f, GroundR.Y + 21.0f }, InnerW - 110.0f, 8.8f, Theme.TextFaint, TileSub);
+
+    const std::string_view ModeTag = (Session->Mode == PatternStampWorkspaceMode::Pattern) ? "Seamless" : "Cutout";
+    const float TagW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Medium, 8.8f, ModeTag) + 14.0f;
+    const Rectangle2D TagR{ GroundR.Right() - TagW - 8.0f, GroundR.Y + 10.0f, TagW, 20.0f };
+    Surface.FillRectangle(TagR, Theme.RaisedSurface, 6.0f);
+    Surface.StrokeRectangle(TagR, Theme.BorderSubtle, 6.0f, 1.0f);
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::Medium, { TagR.X + 7.0f, TagR.Y + 4.0f }, 8.8f, Theme.TextMuted, ModeTag);
+
+    // 9. 3-Metric Pane Footer (LAYERS 2 | VISIBLE 2 | MODS 4)
+    const Rectangle2D FooterR{ Bounds.X, Bounds.Bottom() - FooterH, Bounds.Width, FooterH };
+    Surface.FillRectangle(FooterR, Theme.LightSurface ? Theme.NestedSurface : WorkspaceSurfaceColors::FooterBackground);
+    Surface.StrokeLine({ FooterR.X, FooterR.Y }, { FooterR.Right(), FooterR.Y }, Theme.BorderSubtle, 1.0f);
+
+    const std::size_t ModsCount = Session->CountEnabledModifiers();
+    struct FooterMetric { const char* Label; std::string ValStr; float XFrac; };
+    const std::array<FooterMetric, 3> Metrics {{
+        { "LAYERS",  std::to_string(TotalCount),   0.04f },
+        { "VISIBLE", std::to_string(VisibleCount), 0.36f },
+        { "MODS",    std::to_string(ModsCount),    0.68f },
     }};
-    ConstructThreeMetricFooter(Surface, MetricsRect, FooterCells, Tone);
+    for (const auto& M : Metrics)
+    {
+        const float Mx = Bounds.X + Bounds.Width * M.XFrac;
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::Regular, { Mx, FooterR.Y + 7.0f }, 8.6f, Theme.TextFaint, M.Label);
+        const float LW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Regular, 8.6f, M.Label);
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::SemiBold, { Mx + LW + 6.0f, FooterR.Y + 7.0f }, 9.2f, Theme.TextPrimary, M.ValStr);
+    }
 
-    // 9. Add Layer Overlay Popover anchored to the TextureStudio '+' button
+    // 10. Overlay Add Layer OverlaySheet Sheet
     if (AddLayerSheetOpen)
     {
-        const std::array<PopoverOptionSpec, 4u> AddOptions {{
-            { "Motif layer",   "Vector shape",  Tone.AccentBlue   },
-            { "Text block",    "Engraved type", Tone.AccentTeal   },
-            { "Gradient wash", "Tile fill field", Tone.AccentViolet },
-            { "Group folder",  "Nest layers",   Tone.AccentAmber  },
+        const Rectangle2D SheetR{ LeftX, AddSheetAnchorBottomY, InnerW, 214.0f };
+        Surface.FillRectangle({ SheetR.X + 2.0f, SheetR.Y + 4.0f, SheetR.Width, SheetR.Height }, ColorRgba{ 0u, 0u, 0u, 110u }, 12.0f);
+        Surface.FillRectangle(SheetR, Theme.SectionSurface, 12.0f);
+        Surface.StrokeRectangle(SheetR, Theme.BorderStrong, 12.0f, 1.0f);
+
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::SemiBold, { SheetR.X + 14.0f, SheetR.Y + 12.0f }, 9.2f, Theme.TextFaint, "ADD LAYER");
+        const Rectangle2D CloseR{ SheetR.Right() - 28.0f, SheetR.Y + 8.0f, 20.0f, 20.0f };
+        VectorIconRepository::ConstructControl(
+            Surface, ControlIcon::CloseCross, VectorIconPlacement{ CloseR.X + 4.0f, CloseR.Y + 4.0f, 12.0f, CloseR.Contains(Cursor) ? Theme.TextPrimary : Theme.TextFaint, 1.7f });
+
+        struct AddLayerOption
+        {
+            PatternStampLayerCategory Category;
+            ControlIcon      Icon;
+            const char*      Label;
+            const char*      Hint;
+        };
+        static constexpr std::array<AddLayerOption, 4> AddOpts {{
+            { PatternStampLayerCategory::Motif,        ControlIcon::ShapeStar,      "+ Motif",  "Vector shape / procedural motif" },
+            { PatternStampLayerCategory::Typographic,  ControlIcon::TextType,       "+ Text",   "Typography & engraved label" },
+            { PatternStampLayerCategory::GradientWash, ControlIcon::SlidersQuality, "+ Grad",   "Linear / radial surface gradient" },
+            { PatternStampLayerCategory::Folder,       ControlIcon::FolderClosed,   "+ Folder", "Group & nest layers" },
         }};
-        bool Dismissed = false;
-        const int32_t Picked = ConstructStudioPopoverList(
-            Surface, AddButtonAnchor, Pane, "ADD LAYER", AddOptions, -1, Input, Tone, Dismissed);
-        if (Picked == 0)
+
+        bool ConsumedSheetPress = false;
+        float EntryTopY         = SheetR.Y + 34.0f;
+        for (const auto& Opt : AddOpts)
         {
-            Session->AddLayer(PatternStampLayerCategory::Motif);
+            const Rectangle2D OptR{ SheetR.X + 10.0f, EntryTopY, SheetR.Width - 20.0f, 40.0f };
+            const bool Hovered = OptR.Contains(Cursor);
+            Surface.FillRectangle(OptR, Hovered ? Theme.HoverSurface : Theme.RaisedSurface, 8.0f);
+            Surface.StrokeRectangle(OptR, Hovered ? Theme.BorderStrong : Theme.BorderSubtle, 8.0f, 1.0f);
+
+            const Rectangle2D IconBox{ OptR.X + 8.0f, OptR.Y + 6.0f, 28.0f, 28.0f };
+            Surface.FillRectangle(IconBox, Theme.WellSurface, 6.0f);
+            Surface.StrokeRectangle(IconBox, Theme.BorderSubtle, 6.0f, 1.0f);
+            VectorIconRepository::ConstructControl(
+                Surface, Opt.Icon, VectorIconPlacement{ IconBox.X + 7.0f, IconBox.Y + 7.0f, 14.0f, Theme.HighlightFill, 1.6f });
+
+            const float ChipW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Medium, 9.8f, Opt.Label) + 16.0f;
+            const Rectangle2D LabelCap{ IconBox.Right() + 8.0f, OptR.Y + 4.0f, ChipW, 18.0f };
+            Surface.FillRectangle(LabelCap, Theme.WellSurface, 9.0f);
+            Surface.StrokeRectangle(LabelCap, Theme.BorderSubtle, 9.0f, 1.0f);
+            WorkspaceAppearance::ConstructWeightedText(
+                Surface, FontWeightClass::Medium, { LabelCap.X + 8.0f, LabelCap.Y + 3.0f }, 9.8f, Theme.TextPrimary, Opt.Label);
+
+            WorkspaceAppearance::ConstructTruncatedText(
+                Surface, FontWeightClass::Regular, { IconBox.Right() + 8.0f, OptR.Y + 24.0f }, OptR.Width - 52.0f, 8.5f, Theme.TextFaint, Opt.Hint);
+
+            if (Pressed && Hovered)
+            {
+                ConsumedSheetPress = true;
+                AddLayerSheetOpen  = false;
+                Session->AddLayer(Opt.Category);
+            }
+            EntryTopY += 44.0f;
+        }
+
+        if (Pressed && CloseR.Contains(Cursor))
+        {
             AddLayerSheetOpen = false;
         }
-        else if (Picked == 1)
-        {
-            Session->AddLayer(PatternStampLayerCategory::Typographic);
-            AddLayerSheetOpen = false;
-        }
-        else if (Picked == 2)
-        {
-            Session->AddLayer(PatternStampLayerCategory::GradientWash);
-            AddLayerSheetOpen = false;
-        }
-        else if (Picked == 3)
-        {
-            Session->AddLayer(PatternStampLayerCategory::Folder);
-            AddLayerSheetOpen = false;
-        }
-        else if (Dismissed)
+        else if (Pressed && !ConsumedSheetPress && !SheetR.Contains(Cursor) && !AddBtnRect.Contains(Cursor))
         {
             AddLayerSheetOpen = false;
         }
     }
+
+    Surface.PopClip();
 }
 
 } // namespace Frontier::Workspaces

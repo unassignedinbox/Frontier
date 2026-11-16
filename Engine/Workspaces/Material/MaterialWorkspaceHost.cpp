@@ -37,8 +37,6 @@ namespace
 
 MaterialWorkspaceHost::MaterialWorkspaceHost()
 {
-    OutlinerPane.AttachSession(&Session);
-    InspectorPane.AttachSession(&Session);
     ViewportHost.AttachSession(&Session);
     ViewportHost.AttachRenderer(&PreviewRenderer);
 }
@@ -217,18 +215,11 @@ void MaterialWorkspaceHost::RegisterDockPanes(Components::HeadlessWorkspaceDockC
 
     RegisteredTabCount = 0u;
 
-    (void)DockContainer.RegisterPane(WorkspaceDockPaneDescriptor{
-        "Outliner",
-        DockPlacementDirection::SplitLeft,
-        0.21f,
-        PaneDirectiveMask::StandardPaneDirectives,
-        [this]() { OutlinerPane.PresentInImGuiPane(1.0 / 60.0, 1.0f); },
-    });
-
+    // Viewport-only Material Workspace dock (Inspector & Layer Stack intentionally deferred pending redesign)
     (void)DockContainer.RegisterPane(WorkspaceDockPaneDescriptor{
         "Material",
         DockPlacementDirection::CenterTabGroup,
-        0.53f,
+        1.0f,
         PaneDirectiveMask::CentralViewportDirectives,
         [this]()
         {
@@ -237,14 +228,6 @@ void MaterialWorkspaceHost::RegisterDockPanes(Components::HeadlessWorkspaceDockC
         },
     });
     ++RegisteredTabCount;
-
-    (void)DockContainer.RegisterPane(WorkspaceDockPaneDescriptor{
-        "Inspector",
-        DockPlacementDirection::SplitRight,
-        0.26f,
-        PaneDirectiveMask::StandardPaneDirectives,
-        [this]() { InspectorPane.PresentInImGuiPane(1.0 / 60.0, 1.0f); },
-    });
 }
 
 } // namespace Frontier::Workspaces
