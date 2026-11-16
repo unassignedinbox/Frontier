@@ -48,6 +48,7 @@ struct MaterialWorkspaceSession
     PreviewCameraSetup      Camera               {};
 
     // Telemetry & diagnostics
+    uint32_t SelectedChannelOrdinal    = 0u;
     uint64_t LastCompiledSignatureHash = 0u;
     uint32_t LastRenderWidthPx         = 0u;
     uint32_t LastRenderHeightPx        = 0u;

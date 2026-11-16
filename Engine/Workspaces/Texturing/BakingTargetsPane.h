@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                              BAKINGTARGETSPANE.H
 ============================================================================================================================================*/
-// 🧩 Left-column pane for Baking Studio: 4 target-set presets + 18 surface & volume SDF target swatches with check selection.
+// 🧩 Left-docked Project Zero Queue Outliner pane for Baking Studio (preset chips, categorized 18-target queue tree, studies library, footer)
 
 #pragma once
 
@@ -9,11 +9,12 @@
 //                                                        INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/Components/Controls/TextInputField.h"
 #include "Engine/Components/Panes/WorkspaceAppearance.h"
 #include "Engine/Components/PixelSpace.h"
 #include "Engine/Workspaces/Texturing/BakingWorkspaceSession.h"
 
-#include <array>
+#include <cstdint>
 
 namespace Frontier::Workspaces
 {
@@ -34,16 +35,21 @@ public:
         const PaneInputReading& Input,
         double                  DeltaSeconds);
 
-private:
-    void RenderTargetSwatchGraphic(
-        PixelSpace&       Surface,
-        Rectangle2D       SwatchBounds,
-        BakerTargetId     Target,
-        bool              Ready) const noexcept;
+    static void ConstructTargetPreviewSwatch(
+        PixelSpace&   Surface,
+        Rectangle2D   SwatchBounds,
+        BakerTargetId Target,
+        bool          Ready) noexcept;
 
-    BakingWorkspaceSession* Session       = nullptr;
-    float                   ScrollOffsetY = 0.0f;
-    float                   MaxScrollY    = 0.0f;
+private:
+    BakingWorkspaceSession* Session            = nullptr;
+    TextEditBuffer          SearchBuffer       {};
+    float                   ScrollOffsetY      = 0.0f;
+    float                   MaxScrollY         = 0.0f;
+    bool                    FilterQueuedOnly   = false;
+    bool                    FilterReadyOnly    = false;
+    bool                    StudiesExpanded    = false;
+    uint32_t                ExpandedGroupMask  = 0x0Fu; // All 4 groups expanded initially
 };
 
 } // namespace Frontier::Workspaces

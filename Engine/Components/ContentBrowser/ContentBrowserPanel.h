@@ -100,6 +100,7 @@ struct ContentBrowserPointerInput
     bool  Released      = false;     // [-]  - Primary button released this step
     bool  DoubleClicked = false;     // [-]  - Primary button double-clicked this step
     float WheelDeltaY   = 0.0f;      // [-]  - Vertical scroll wheel delta
+    bool  ControlHeld   = false;     // [-]  - Ctrl modifier held (scales content grid/thumbnails inside repository area)
 };
 
 struct ContentBrowserReading
@@ -194,6 +195,8 @@ public:
     [[nodiscard]] ContentBrowserReading               InspectReading() const noexcept;
     [[nodiscard]] bool                                QueryOpen() const noexcept;
     [[nodiscard]] bool                                QueryShelfDragging() const noexcept { return ShelfDragContact; }
+    void                                              ConfigureThumbnailScale(float Scale) noexcept;
+    [[nodiscard]] float                               QueryThumbnailScale() const noexcept { return ThumbnailScale; }
     [[nodiscard]] bool                                QueryBlocksUnderlyingWorkspace() const noexcept;
     void SynchronizeHostBounds(Rectangle2D HostBoundsPhysical, float ScaleFactor) noexcept;
     [[nodiscard]] bool                                QueryBlocksPointerAt(Point2D PhysicalCursor) const noexcept;
@@ -254,6 +257,10 @@ private:
         const ContentBrowserPointerInput& PointerInput,
         const ControlColorSet&            AppearanceColors,
         float                             SectionRadius);
+    void ApplyRepositoryWheelInput(
+        Rectangle2D                       RepositoryArea,
+        const ContentBrowserPointerInput& PointerInput,
+        float                             ScrollStepPx = 38.0f) noexcept;
 
     ColourSwatchBrowserView                         CodexLibrary          {};                                       // [-]   - Built-in + custom ColourSwatchBrowserView (.ColourSwatch)
     ThumbnailSheetRepository            ThumbnailRepository   {};                                       // [-]   - Pre-baked 1024x1024 ThumbnailSheet + 64B index
@@ -276,6 +283,7 @@ private:
     std::size_t                         SelectedRampIndex     = 0u;                                     // [idx] - Selected ColourRamp preset index
     std::size_t                         SelectedContentIndex  = 0u;                                     // [idx] - Selected ThumbnailSheetRepository index
     float                               RepositoryScrollY     = 0.0f;                                   // [px]  - Vertical scroll offset
+    float                               ThumbnailScale        = 1.0f;                                   // [0.55-2.0] - Ctrl+Scroll thumbnail & grid zoom factor
     uint32_t                            LastVisibleCount      = 0u;                                     // [cnt] - Cached visible entry count
     std::string                         StatusMessage         {};                                       // [-]   - Latest footer status string
 

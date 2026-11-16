@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                          PATTERNSTAMPLAYERSTACKPANE.H
 ============================================================================================================================================*/
-// 🧩 Left-docked Layer Stack pane shared by Pattern Studio and Stamp Studio (filters, search, nested tree, mask sub-rows, footer metrics).
+// 🧩 Left-docked Project Zero Layers Outliner pane shared by Pattern Studio and Stamp Studio (stat tiles, quick chips, tree, starters, footer)
 
 #pragma once
 
@@ -10,8 +10,8 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/Components/Controls/TextInputField.h"
+#include "Engine/Components/Panes/WorkspaceAppearance.h"
 #include "Engine/Workspaces/Texturing/PatternStampStackSession.h"
-#include "Engine/Workspaces/Texturing/TexturingPaneAppearance.h"
 
 #include <cstdint>
 
@@ -42,22 +42,15 @@ public:
     float ScrollOffsetY     = 0.0f;
 
 private:
-    PatternStampWorkspaceSession* Session             = nullptr;
-    TextEditBuffer           SearchBuffer        {};
-    TextEditBuffer           InlineRenameBuffer  {};
-    uint32_t                 RenamingLayerId     = 0u;
-    uint32_t                 LastClickLayerId    = 0u;
-    double                   TimeSinceLastClick  = 10.0;
-    float                    CachedContentHeight = 0.0f;
-
-    // Inline drag reorder & opacity scrub tracking
-    uint32_t DraggingLayerId    = 0u;
-    bool     DraggingReorder    = false;
-    float    DragStartCursorY   = 0.0f;
-    uint32_t ScrubbingOpacityId = 0u;
-    bool     ScrubbingOpacity   = false;
-    float    ScrubStartCursorX  = 0.0f;
-    float    ScrubStartOpacity  = 1.0f;
+    PatternStampWorkspaceSession* Session            = nullptr;
+    TextEditBuffer                SearchBuffer       {};
+    TextEditBuffer                InlineRenameBuffer {};
+    uint32_t                      RenamingLayerId    = 0u;
+    float                         MaxScrollY         = 0.0f;
+    Rectangle2D                   AddButtonAnchor    {};
+    bool                          RootExpanded       = true;
+    bool                          StartersExpanded   = false;
+    bool                          FilterModsOnly     = false;
 };
 
 } // namespace Frontier::Workspaces

@@ -13,6 +13,8 @@
 #include "Engine/Components/Docking/WorkspaceDockContainer.h"
 #include "Engine/Configuration/EngineConfiguration.h"
 #include "Engine/GeometricRaster/VulkanInterchange.h"
+#include "Engine/Workspaces/Material/MaterialInspectorPane.h"
+#include "Engine/Workspaces/Material/MaterialOutlinerPane.h"
 #include "Engine/Workspaces/Material/MaterialPreviewRenderer.h"
 #include "Engine/Workspaces/Material/MaterialViewportHost.h"
 #include "Engine/Workspaces/Material/MaterialWorkspaceSession.h"
@@ -59,6 +61,8 @@ public:
     [[nodiscard]] const MaterialWorkspaceSession& InspectSession() const noexcept { return Session; }
     [[nodiscard]] MaterialPreviewRenderer&        AccessPreviewRenderer() noexcept { return PreviewRenderer; }
     [[nodiscard]] MaterialViewportHost&           AccessViewportHost() noexcept { return ViewportHost; }
+    [[nodiscard]] MaterialOutlinerPane&           AccessOutlinerPane() noexcept { return OutlinerPane; }
+    [[nodiscard]] MaterialInspectorPane&          AccessInspectorPane() noexcept { return InspectorPane; }
     [[nodiscard]] uint32_t                        QueryRegisteredTabCount() const noexcept { return RegisteredTabCount; }
     [[nodiscard]] std::size_t                     QueryPopulatedThumbnailCount() const noexcept { return PopulatedThumbnailCount; }
 
@@ -68,7 +72,9 @@ private:
     Configuration::EngineConfiguration ActiveEngineConfig      {};
     MaterialWorkspaceSession           Session                 {};
     MaterialPreviewRenderer            PreviewRenderer         {};
+    MaterialOutlinerPane               OutlinerPane            {};
     MaterialViewportHost               ViewportHost            {};
+    MaterialInspectorPane              InspectorPane           {};
     ContentBrowserPanel*               BoundBrowserPanel       = nullptr;
 #if FRONTIER_EDITOR_ENABLED
     Editor::Explorer::ContentBrowser*  BoundBrowser            = nullptr;

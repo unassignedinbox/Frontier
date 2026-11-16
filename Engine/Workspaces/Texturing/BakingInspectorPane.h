@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                             BAKINGINSPECTORPANE.H
 ============================================================================================================================================*/
-// 🧩 Right-column inspector for Baking Studio: KPI trio, bake progress box, surface ray settings, 3D volume SDF & export bridge.
+// 🧩 Right-docked Project Zero Channel Baking Inspector pane (study selector, bake progress bar, inspected target editor, output & cage fold, export)
 
 #pragma once
 
@@ -12,6 +12,8 @@
 #include "Engine/Components/Panes/WorkspaceAppearance.h"
 #include "Engine/Components/PixelSpace.h"
 #include "Engine/Workspaces/Texturing/BakingWorkspaceSession.h"
+
+#include <cstdint>
 
 namespace Frontier::Workspaces
 {
@@ -37,9 +39,10 @@ private:
     float                   ScrollOffsetY      = 0.0f;
     float                   MaxScrollY         = 0.0f;
     int32_t                 ActiveSliderId     = -1;
-    bool                    SurfaceSectionOpen = true;
-    bool                    VolumeSectionOpen  = true;
-    bool                    ExportSectionOpen  = true;
+    bool                    StudyPopoverOpen   = false;
+    Rectangle2D             StudyAnchorRect    {};
+    bool                    OutputFoldExpanded = true;
+    bool                    VolumeFoldExpanded = true;
 };
 
 } // namespace Frontier::Workspaces
