@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                           MATERIALOUTLINERPANE.H
 ============================================================================================================================================*/
-// 🧩 Left-docked Project Zero Outliner pane for Material Workspace (surface layers, grouped optical channels, preset library, 4-column readout)
+// 🧩 Left-docked Material Outliner pane (pane-direct surface, sharp entries, live material/layer previews, green tick + eye + lock, TextureStudio + & footer)
 
 #pragma once
 
@@ -40,15 +40,17 @@ public:
     void PresentInImGuiPane(double DeltaSeconds, float ScaleFactor = 1.0f);
 
 private:
-    MaterialWorkspaceSession* Session            = nullptr;
-    TextEditBuffer            SearchBuffer       {};
-    float                     ScrollOffsetY      = 0.0f;
-    float                     MaxScrollY         = 0.0f;
-    bool                      RootExpanded       = true;
-    bool                      LibraryExpanded    = true;
-    bool                      FilterEnabledOnly  = false;
-    bool                      FilterDrivenOnly   = false;
-    uint32_t                  ExpandedGroupMask  = 0x05u; // Primary + Dynamic open initially
+    MaterialWorkspaceSession* Session           = nullptr;
+    TextEditBuffer            SearchBuffer      {};
+    float                     ScrollOffsetY     = 0.0f;
+    float                     MaxScrollY        = 0.0f;
+    bool                      RootExpanded      = true;
+    bool                      AddLayerPopoverOpen  = false;
+    Rectangle2D               AddButtonAnchor   {};
+    bool                      FilterEnabledOnly = false;
+    bool                      FilterDrivenOnly  = false;
+    uint32_t                  ExpandedGroupMask = 0x05u; // Primary + Dynamic open initially
+    uint32_t                  LockedLayerMask   = 0u;
 };
 
 } // namespace Frontier::Workspaces

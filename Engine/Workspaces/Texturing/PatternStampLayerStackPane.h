@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                          PATTERNSTAMPLAYERSTACKPANE.H
 ============================================================================================================================================*/
-// 🧩 Left-docked Project Zero Layers Outliner pane shared by Pattern Studio and Stamp Studio (stat tiles, quick chips, tree, starters, footer)
+// 🧩 Left-docked Layers Outliner pane shared by Pattern Studio and Stamp Studio (pane-direct surface, sharp rows, live previews, lock/eye/tick, TextureStudio footer)
 
 #pragma once
 
@@ -49,7 +49,6 @@ private:
     float                         MaxScrollY         = 0.0f;
     Rectangle2D                   AddButtonAnchor    {};
     bool                          RootExpanded       = true;
-    bool                          StartersExpanded   = false;
     bool                          FilterModsOnly     = false;
 };
 

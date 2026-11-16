@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                             BAKINGTARGETSPANE.CPP
 ============================================================================================================================================*/
-// 🧩 Implementation of BakingTargetsPane in Project Zero Queue Outliner styling wired live to BakingWorkspaceSession
+// 🧩 Left-docked Baking Queue Outliner pane (pane-direct surface, sharp entries, live target previews, green tick + eye + lock, TextureStudio footer)
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                        INCLUDES
@@ -48,15 +48,15 @@ namespace
     return false;
 }
 
-[[nodiscard]] ColorRgba ResolveGroupAccent(BakerTargetGroup Group, const StudioToneSet& Tone) noexcept
+[[nodiscard]] IconAccentTone ResolveGroupTone(BakerTargetGroup Group) noexcept
 {
     switch (Group)
     {
-        case BakerTargetGroup::Normals:         return { 124u, 143u, 255u, 255u };
-        case BakerTargetGroup::Surface:         return Tone.Amber;
-        case BakerTargetGroup::DiagnosticMasks: return Tone.Green;
-        case BakerTargetGroup::VolumeDistance:  return Tone.Violet;
-        default:                                return Tone.TextMuted;
+        case BakerTargetGroup::Normals:         return IconAccentTone::Blue;
+        case BakerTargetGroup::Surface:         return IconAccentTone::Amber;
+        case BakerTargetGroup::DiagnosticMasks: return IconAccentTone::Green;
+        case BakerTargetGroup::VolumeDistance:  return IconAccentTone::Violet;
+        default:                                return IconAccentTone::Slate;
     }
 }
 
@@ -173,7 +173,7 @@ void BakingTargetsPane::ConstructTargetPreviewSwatch(
     const float Cx = SwatchBounds.X + SwatchBounds.Width * 0.5f;
     const float Cy = SwatchBounds.Y + SwatchBounds.Height * 0.5f;
     const float R  = std::min(SwatchBounds.Width, SwatchBounds.Height) * 0.40f;
-    constexpr float Rad = 6.0f;
+    constexpr float Rad = 0.0f;
 
     switch (Target)
     {
@@ -201,7 +201,7 @@ void BakingTargetsPane::ConstructTargetPreviewSwatch(
             break;
         case BakerTargetId::BevelNormal:
             Surface.FillRectangle(SwatchBounds, { 98u, 104u, 228u, 255u }, Rad);
-            Surface.StrokeRectangle(SwatchBounds.Inset(4.0f), { 198u, 204u, 255u, 235u }, 3.0f, 1.6f);
+            Surface.StrokeRectangle(SwatchBounds.Inset(4.0f), { 198u, 204u, 255u, 235u }, 1.5f, 1.6f);
             break;
         case BakerTargetId::AmbientOcclusion:
             Surface.FillRectangle(SwatchBounds, { 184u, 188u, 194u, 255u }, Rad);
@@ -269,42 +269,48 @@ void BakingTargetsPane::Render(
     const PaneInputReading& Input,
     double                  /*DeltaSeconds*/)
 {
-    const StudioToneSet Tone      = QueryStudioToneSet();
-    const Rectangle2D   ShellRect = ConstructDockedSurfaceShell(Surface, Bounds, true, Tone);
-    if (Session == nullptr)
+    if (Session == nullptr || Bounds.Width < 40.0f || Bounds.Height < 40.0f)
     {
         return;
     }
 
-    constexpr float PadX    = 12.0f;
-    constexpr float FooterH = 46.0f;
-    const float     InnerW  = std::max(60.0f, ShellRect.Width - PadX * 2.0f);
-    const float     LeftX   = ShellRect.X + PadX;
-    float           CursorY = ShellRect.Y + 13.0f;
+    const StudioToneSet Tone   = QueryStudioToneSet();
+    const Rectangle2D   Pane   = ConstructDockedSurfaceShell(Surface, Bounds, true, Tone);
+    const float         PadX   = 11.0f;
+    const float         InnerW = std::max(60.0f, Pane.Width - PadX * 2.0f);
+    const float         LeftX  = Pane.X + PadX;
 
-    // 1. Outliner Heading ("Queue" + active study & resolution + Reset round button)
-    const auto& ActiveStudy = Session->QueryActiveStudyDescriptor();
-    char SubTitleBuf[64] {};
-    std::snprintf(SubTitleBuf, sizeof(SubTitleBuf), "%s · %upx", ActiveStudy.Label, Session->TargetResolutionPx);
-    if (ConstructOutlinerHeading(Surface, { LeftX, CursorY, InnerW, 38.0f }, "Queue", SubTitleBuf, ControlIcon::RefreshCycle, Input, Tone))
-    {
-        Session->ResetDefaults();
-    }
-    CursorY += 46.0f;
-
-    // 2. Stat Tile Pair: QUEUED & READY / UNBAKED
     const std::size_t SelectedCount = Session->CountSelectedTargets();
     uint32_t ReadyCount = 0u;
+    float    TotalMb    = 0.0f;
     for (std::size_t Idx = 0u; Idx < BakingWorkspaceSession::TargetCount; ++Idx)
     {
-        if (Session->QueryTargetReady(static_cast<BakerTargetId>(Idx)))
+        const auto Target = static_cast<BakerTargetId>(Idx);
+        if (Session->QueryTargetReady(Target))
         {
             ++ReadyCount;
         }
+        if (Session->SelectedTargets[Idx])
+        {
+            TotalMb += EstimateTargetMegabytes(*Session, Target);
+        }
     }
 
-    char QueuedBuf[24] {};
-    char ReadyBuf[24] {};
+    // 1. TextureStudio OLD Outliner Header Strip ("Queue" + "N / 18" + circular '+' quick-preset button)
+    char CountTagBuf[24] {};
+    std::snprintf(CountTagBuf, sizeof(CountTagBuf), "%zu / %zu", SelectedCount, BakingWorkspaceSession::TargetCount);
+    const Rectangle2D HeaderStrip { Pane.X, Pane.Y, Pane.Width, 44.0f };
+    const OutlinerHeaderResult HeadOut = ConstructOutlinerHeaderStrip(
+        Surface, HeaderStrip, "Queue", CountTagBuf, false, ControlIcon::PlusAdd, PresetPopoverOpen, Input, Tone, &AddButtonAnchor);
+    if (HeadOut.PlusClicked)
+    {
+        PresetPopoverOpen = !PresetPopoverOpen;
+    }
+
+    float CursorY = HeaderStrip.Bottom() + 9.0f;
+
+    // 2. Stat Tile Pair: QUEUED & READY / UNBAKED (white icons on solid coloured circular discs)
+    char QueuedBuf[24] {}, ReadyBuf[24] {};
     std::snprintf(QueuedBuf, sizeof(QueuedBuf), "%zu/%zu", SelectedCount, BakingWorkspaceSession::TargetCount);
     if (ReadyCount > 0u)
     {
@@ -319,19 +325,17 @@ void BakingTargetsPane::Render(
         "QUEUED",
         QueuedBuf,
         ControlIcon::CircleCheck,
-        SelectedCount > 0u,
-        false,
+        SelectedCount > 0u ? IconAccentTone::Green : IconAccentTone::Slate,
         FilterQueuedOnly,
     };
     const OutlinerStatTileSpec RightStat {
         (ReadyCount > 0u) ? "READY" : "UNBAKED",
         ReadyBuf,
         ControlIcon::BakeBox,
-        ReadyCount > 0u,
-        ReadyCount == 0u && SelectedCount > 0u,
+        ReadyCount > 0u ? IconAccentTone::Green : (SelectedCount > 0u ? IconAccentTone::Amber : IconAccentTone::Slate),
         FilterReadyOnly,
     };
-    const int32_t StatClicked = ConstructStatTilePair(Surface, { LeftX, CursorY, InnerW, 54.0f }, LeftStat, RightStat, Input, Tone);
+    const int32_t StatClicked = ConstructStatTilePair(Surface, { LeftX, CursorY, InnerW, 50.0f }, LeftStat, RightStat, Input, Tone);
     if (StatClicked == 0)
     {
         FilterQueuedOnly = !FilterQueuedOnly;
@@ -340,13 +344,13 @@ void BakingTargetsPane::Render(
     {
         FilterReadyOnly = !FilterReadyOnly;
     }
-    CursorY += 62.0f;
+    CursorY += 58.0f;
 
     // 3. Search + Filter row
     const bool FilterActive = FilterQueuedOnly || FilterReadyOnly;
     if (ConstructSearchFilterRow(
             Surface,
-            { LeftX, CursorY, InnerW, 32.0f },
+            { LeftX, CursorY, InnerW, 29.0f },
             SearchBuffer,
             "Search targets, groups...",
             FilterActive ? "Filtered" : "Filter",
@@ -368,9 +372,9 @@ void BakingTargetsPane::Render(
             FilterReadyOnly = false;
         }
     }
-    CursorY += 40.0f;
+    CursorY += 36.0f;
 
-    // 4. Quick preset chips (PBR / PBR + Volume / Normals / All)
+    // 4. Quick preset chips (PBR Standard / PBR + Volume / Normals / All)
     const std::array<OutlinerChipSpec, 4u> PresetChips {{
         { "PBR Core",     {}, {}, false, false, Session->QueryPresetMatched(BakerQuickPreset::PbrStandard),   false },
         { "PBR + Volume", {}, {}, false, false, Session->QueryPresetMatched(BakerQuickPreset::PbrPlusVolume), false },
@@ -379,66 +383,36 @@ void BakingTargetsPane::Render(
     }};
     float ChipsH = 0.0f;
     const int32_t PresetClicked = ConstructQuickChipStrip(Surface, LeftX, CursorY, InnerW, PresetChips, Input, Tone, ChipsH);
-    if (PresetClicked >= 0)
+    if (PresetClicked >= 0 && !PresetPopoverOpen)
     {
         Session->ApplyQuickPreset(static_cast<BakerQuickPreset>(PresetClicked));
     }
     CursorY += ChipsH + 8.0f;
 
-    Surface.StrokeLine({ ShellRect.X + 1.0f, CursorY }, { ShellRect.Right() - 1.0f, CursorY }, Tone.Hairline, 1.0f);
-    CursorY += 6.0f;
-
-    // 5. Scrollable Queue Hierarchy Tree
-    const Rectangle2D FooterRect { ShellRect.X + 1.0f, ShellRect.Bottom() - FooterH, ShellRect.Width - 2.0f, FooterH };
-    const Rectangle2D TreeRect   { ShellRect.X + 4.0f, CursorY, ShellRect.Width - 8.0f, std::max(40.0f, FooterRect.Y - CursorY - 4.0f) };
+    // Reserve TextureStudio OLD Bottom Footer Stack: Ray Cage Ground Row (38px) + 3-Metric Footer (28px)
+    constexpr float GroundH  = 38.0f;
+    constexpr float MetricsH = 28.0f;
+    const Rectangle2D GroundRect  { Pane.X, Pane.Bottom() - (GroundH + MetricsH), Pane.Width, GroundH };
+    const Rectangle2D MetricsRect { Pane.X, GroundRect.Bottom(), Pane.Width, MetricsH };
+    const Rectangle2D TreeRect    { Pane.X, CursorY, Pane.Width, std::max(40.0f, GroundRect.Y - CursorY - 4.0f) };
 
     const Point2D Cursor = QueryInputCursor(Input);
-    if (TreeRect.Contains(Cursor) && std::fabs(Input.WheelDeltaY) > 1.0e-4f)
+    if (!PresetPopoverOpen && TreeRect.Contains(Cursor) && std::fabs(Input.WheelDeltaY) > 1.0e-4f)
     {
         ScrollOffsetY = std::clamp(ScrollOffsetY - Input.WheelDeltaY * 34.0f, 0.0f, MaxScrollY);
     }
 
-    const float RowLeftX = TreeRect.X + 4.0f;
-    const float RowW     = TreeRect.Width - 8.0f;
+    // 5. Scrollable Sharp-Cornered Categorized Queue Tree (NO Studies asset folder!)
+    const float RowLeftX = LeftX;
+    const float RowW     = InnerW;
     const float StartY   = TreeRect.Y - ScrollOffsetY;
     float       RowY     = StartY;
-    constexpr float RowH   = 37.0f;
+    constexpr float RowH   = 41.0f;
     constexpr float RowGap = 2.0f;
     const std::string_view Query = QueryEditTextView(SearchBuffer);
 
     Surface.PushClip(TreeRect);
 
-    // 5a. Active Study Root Row
-    {
-        char StudyMeta[64] {};
-        char ResTag[16] {};
-        std::snprintf(StudyMeta, sizeof(StudyMeta), "High/Low · %uk tris", Session->QueryActiveHighTriangles() / 1000u);
-        if (Session->TargetResolutionPx >= 1024u)
-        {
-            std::snprintf(ResTag, sizeof(ResTag), "%uK", Session->TargetResolutionPx / 1024u);
-        }
-        else
-        {
-            std::snprintf(ResTag, sizeof(ResTag), "%u", Session->TargetResolutionPx);
-        }
-
-        HierarchyRowSpec StudyRow {};
-        StudyRow.DepthLevel   = 0;
-        StudyRow.Title        = ActiveStudy.Label;
-        StudyRow.Subtitle     = StudyMeta;
-        StudyRow.LeadIcon     = ControlIcon::BakeBox;
-        StudyRow.LeadTileFill = Tone.AmberWash;
-        StudyRow.LeadIconInk  = Tone.Amber;
-        StudyRow.TagLabel     = ResTag;
-        StudyRow.TagStyle     = TagTone::Neutral;
-        if (RowY + RowH >= TreeRect.Y && RowY <= TreeRect.Bottom())
-        {
-            (void)ConstructHierarchyRow(Surface, { RowLeftX, RowY, RowW, RowH }, StudyRow, Input, Tone);
-        }
-        RowY += RowH + RowGap;
-    }
-
-    // 5b. Categorized target groups (Normals, Surface, Masks & IDs, Volume & Distance)
     const auto& Registry = BakingWorkspaceSession::QueryTargetRegistry();
     constexpr std::array<BakerTargetGroup, 4u> GroupOrder {{
         BakerTargetGroup::Normals,
@@ -492,32 +466,34 @@ void BakingTargetsPane::Render(
         GrpRow.Title            = GroupTitle;
         GrpRow.Subtitle         = GroupMeta;
         GrpRow.LeadIcon         = ResolveGroupIcon(Group);
-        GrpRow.LeadTileFill     = Tone.InsetSurface;
-        GrpRow.LeadIconInk      = ResolveGroupAccent(Group, Tone);
+        GrpRow.LeadIconTone     = ResolveGroupTone(Group);
         GrpRow.Expandable       = true;
         GrpRow.Expanded         = GroupOpen;
         GrpRow.GroupStyle       = true;
-        GrpRow.TrailingSwitch   = TrailingSwitchKind::GreenCheck;
-        GrpRow.TrailingEnabled  = (QueuedInGroup == TotalInGroup && TotalInGroup > 0u);
+        GrpRow.ShowGreenCheck   = true;
+        GrpRow.GreenCheckOn     = (QueuedInGroup == TotalInGroup && TotalInGroup > 0u);
         GrpRow.PartialIndicator = (QueuedInGroup > 0u && QueuedInGroup < TotalInGroup);
 
         if (RowY + RowH >= TreeRect.Y && RowY <= TreeRect.Bottom())
         {
             const auto Hit = ConstructHierarchyRow(Surface, { RowLeftX, RowY, RowW, RowH }, GrpRow, Input, Tone);
-            if (Hit.TrailingToggled)
+            if (!PresetPopoverOpen)
             {
-                const bool EnableAll = (QueuedInGroup < TotalInGroup);
-                for (const auto& Desc : Registry)
+                if (Hit.CheckToggled)
                 {
-                    if (Desc.Group == Group)
+                    const bool EnableAll = (QueuedInGroup < TotalInGroup);
+                    for (const auto& Desc : Registry)
                     {
-                        Session->SelectedTargets[static_cast<std::size_t>(Desc.Id)] = EnableAll;
+                        if (Desc.Group == Group)
+                        {
+                            Session->SelectedTargets[static_cast<std::size_t>(Desc.Id)] = EnableAll;
+                        }
                     }
                 }
-            }
-            else if (Hit.ChevronClicked || Hit.RowClicked)
-            {
-                ExpandedGroupMask ^= (1u << GroupIdx);
+                else if (Hit.ChevronClicked || Hit.RowClicked)
+                {
+                    ExpandedGroupMask ^= (1u << GroupIdx);
+                }
             }
         }
         RowY += RowH + RowGap;
@@ -535,143 +511,114 @@ void BakingTargetsPane::Render(
             if (!SubstringMatchFold(Desc.Label, Query) && !SubstringMatchFold(GroupTitle, Query)) continue;
 
             const bool Inspected = (Session->InspectedTarget == Desc.Id);
+            const bool Locked    = ((LockedTargetMask & (1u << static_cast<uint32_t>(Idx & 31u))) != 0u);
+
             char TargetMeta[64] {};
-            if (Queued)
+            const float Mb = EstimateTargetMegabytes(*Session, Desc.Id);
+            if (Desc.Id == BakerTargetId::VolumeSdf)
             {
-                std::snprintf(TargetMeta, sizeof(TargetMeta), "%s · %.1f MB", Desc.ShortSummary, EstimateTargetMegabytes(*Session, Desc.Id));
+                std::snprintf(TargetMeta, sizeof(TargetMeta), "%u^3 · %.1f MB", Session->VolumeGridDim, Mb);
             }
             else
             {
-                std::snprintf(TargetMeta, sizeof(TargetMeta), "%s", Desc.ShortSummary);
+                std::snprintf(TargetMeta, sizeof(TargetMeta), "%upx · %.1f MB", Session->TargetResolutionPx, Mb);
             }
 
-            HierarchyRowSpec RowSpec {};
-            RowSpec.DepthLevel      = 1;
-            RowSpec.Title           = Desc.Label;
-            RowSpec.Subtitle        = TargetMeta;
-            RowSpec.LeadSolidSwatch = true;
-            RowSpec.LeadTileFill    = Tone.RecessedWell;
-            RowSpec.Selected        = Inspected;
-            RowSpec.Muted           = !Queued;
-            RowSpec.TagLabel        = Ready ? "READY" : (Session->BakingActive && Queued ? "BAKING" : "");
-            RowSpec.TagStyle        = Ready ? TagTone::Green : TagTone::Amber;
-            RowSpec.TrailingSwitch  = TrailingSwitchKind::GreenCheck;
-            RowSpec.TrailingEnabled = Queued;
+            HierarchyRowSpec Row {};
+            Row.DepthLevel        = 1;
+            Row.Title             = Desc.Label;
+            Row.Subtitle          = TargetMeta;
+            Row.TagLabel          = Ready ? "READY" : "";
+            Row.TagStyle          = TagTone::Green;
+            Row.CustomLeadPreview = true;
+            Row.LeadPreviewSize   = 28.0f;
+            Row.Selected          = Inspected;
+            Row.Muted             = !Queued;
+            Row.ShowGreenCheck    = true;
+            Row.GreenCheckOn      = Queued;
+            Row.ShowEyeToggle     = true;
+            Row.EyeVisible        = Inspected;
+            Row.ShowLockToggle    = true;
+            Row.LockEnabled       = Locked;
 
-            const Rectangle2D TargetRect { RowLeftX, RowY, RowW, RowH };
             if (RowY + RowH >= TreeRect.Y && RowY <= TreeRect.Bottom())
             {
-                const auto Hit = ConstructHierarchyRow(Surface, TargetRect, RowSpec, Input, Tone);
-                // Overlay custom procedural target swatch over the 22x22 leading tile
-                const Rectangle2D SwatchBox { TargetRect.X + 8.0f + 13.0f + 14.0f, TargetRect.Center().Y - 11.0f, 22.0f, 22.0f };
-                ConstructTargetPreviewSwatch(Surface, SwatchBox, Desc.Id, Ready);
-                Surface.StrokeRectangle(SwatchBox, Inspected ? Tone.Amber : Tone.BorderSubtle, 6.0f, 1.0f);
+                const auto Hit = ConstructHierarchyRow(Surface, { RowLeftX, RowY, RowW, RowH }, Row, Input, Tone);
+                ConstructTargetPreviewSwatch(Surface, Hit.LeadPreviewRect, Desc.Id, Ready);
 
-                if (Hit.TrailingToggled)
+                if (!PresetPopoverOpen)
                 {
-                    Session->ToggleTargetSelected(Desc.Id);
-                }
-                else if (Hit.RowClicked)
-                {
-                    Session->InspectTarget(Desc.Id);
+                    if (Hit.LockToggled)
+                    {
+                        LockedTargetMask ^= (1u << static_cast<uint32_t>(Idx & 31u));
+                    }
+                    else if (Hit.CheckToggled && !Locked)
+                    {
+                        Session->SelectedTargets[Idx] = !Session->SelectedTargets[Idx];
+                    }
+                    else if (Hit.EyeToggled || Hit.RowClicked)
+                    {
+                        Session->InspectedTarget = Desc.Id;
+                    }
                 }
             }
             RowY += RowH + RowGap;
         }
     }
 
-    // 5c. Collapsible Studies Library Folder
-    {
-        const auto& Studies = BakingWorkspaceSession::QueryStudyRegistry();
-        char StudiesMeta[32] {};
-        std::snprintf(StudiesMeta, sizeof(StudiesMeta), "%zu study targets", Studies.size());
-
-        HierarchyRowSpec StudHead {};
-        StudHead.DepthLevel   = 0;
-        StudHead.Title        = "Studies";
-        StudHead.Subtitle     = StudiesMeta;
-        StudHead.LeadIcon     = ControlIcon::FolderClosed;
-        StudHead.LeadTileFill = Tone.InsetSurface;
-        StudHead.LeadIconInk  = Tone.TextMuted;
-        StudHead.Expandable   = true;
-        StudHead.Expanded     = StudiesExpanded || !Query.empty();
-        StudHead.GroupStyle   = true;
-
-        if (RowY + RowH >= TreeRect.Y && RowY <= TreeRect.Bottom())
-        {
-            const auto Hit = ConstructHierarchyRow(Surface, { RowLeftX, RowY, RowW, RowH }, StudHead, Input, Tone);
-            if (Hit.RowClicked || Hit.ChevronClicked)
-            {
-                StudiesExpanded = !StudiesExpanded;
-            }
-        }
-        RowY += RowH + RowGap;
-
-        if (StudiesExpanded || !Query.empty())
-        {
-            for (const auto& Study : Studies)
-            {
-                if (!SubstringMatchFold(Study.Label, Query)) continue;
-                const bool Active = (Study.Study == Session->Study);
-                char TriMeta[48] {};
-                std::snprintf(TriMeta, sizeof(TriMeta), "%uk low · %uk high", Study.LowTris / 1000u, Study.HighTris / 1000u);
-
-                HierarchyRowSpec SRow {};
-                SRow.DepthLevel   = 1;
-                SRow.Title        = Study.Label;
-                SRow.Subtitle     = TriMeta;
-                SRow.LeadIcon     = ControlIcon::CubeShape;
-                SRow.LeadTileFill = Active ? Tone.AmberWash : Tone.TileSurface;
-                SRow.LeadIconInk  = Active ? Tone.Amber : Tone.TextMuted;
-                SRow.Selected     = Active;
-                SRow.TagLabel     = Active ? "ACTIVE" : "";
-                SRow.TagStyle     = TagTone::Green;
-
-                if (RowY + RowH >= TreeRect.Y && RowY <= TreeRect.Bottom())
-                {
-                    const auto Hit = ConstructHierarchyRow(Surface, { RowLeftX, RowY, RowW, RowH }, SRow, Input, Tone);
-                    if (Hit.RowClicked && !Active)
-                    {
-                        Session->SelectStudy(Study.Study);
-                    }
-                }
-                RowY += RowH + RowGap;
-            }
-        }
-    }
-
+    const float ContentH = (RowY - StartY);
+    MaxScrollY           = std::max(0.0f, ContentH - TreeRect.Height);
+    ScrollOffsetY        = std::clamp(ScrollOffsetY, 0.0f, MaxScrollY);
     Surface.PopClip();
-    const float TotalHeight = (RowY - StartY) + 8.0f;
-    MaxScrollY              = std::max(0.0f, TotalHeight - TreeRect.Height);
-    ScrollOffsetY           = std::clamp(ScrollOffsetY, 0.0f, MaxScrollY);
 
-    // 6. Four-column Baking Queue Footer (OUTPUT / RAYS / GRID / DEVICE)
-    float TotalMb = 0.0f;
-    for (std::size_t Idx = 0u; Idx < BakingWorkspaceSession::TargetCount; ++Idx)
+    // 6. TextureStudio OLD Baker Ground Reference Row
+    const auto& ActiveStudy = Session->QueryActiveStudyDescriptor();
+    char GroundSub[64] {};
+    std::snprintf(GroundSub, sizeof(GroundSub), "%s · %uk high tris", ActiveStudy.Label, Session->QueryActiveHighTriangles() / 1000u);
+    ConstructOutlinerGroundRow(
+        Surface,
+        GroundRect,
+        ControlIcon::BakeBox,
+        IconAccentTone::Amber,
+        "Cage · Ray Projection",
+        GroundSub,
+        "RayCage",
+        Tone);
+
+    // 7. TextureStudio OLD 3-Metric Footer (QUEUED | OUTPUT | RAYS)
+    char QueuedFoot[20] {}, MbFoot[20] {}, RaysFoot[20] {};
+    std::snprintf(QueuedFoot, sizeof(QueuedFoot), "%zu/%zu", SelectedCount, BakingWorkspaceSession::TargetCount);
+    std::snprintf(MbFoot,     sizeof(MbFoot),     "%.1f MB", TotalMb);
+    FormatCompactCount(EstimateTotalRays(*Session), RaysFoot, sizeof(RaysFoot));
+    const std::array<ThreeMetricFooterCell, 3u> FooterCells {{
+        { "QUEUED", QueuedFoot, SelectedCount > 0u ? TagTone::Green : TagTone::Neutral },
+        { "OUTPUT", MbFoot,     TagTone::Neutral },
+        { "RAYS",   RaysFoot,   TagTone::Amber   },
+    }};
+    ConstructThreeMetricFooter(Surface, MetricsRect, FooterCells, Tone);
+
+    // 8. Quick Queue Preset Popover anchored to '+' button
+    if (PresetPopoverOpen)
     {
-        if (Session->SelectedTargets[Idx])
+        const std::array<PopoverOptionSpec, 4u> PresetOptions {{
+            { "PBR Core",     "Normals, AO, Curvature", Tone.AccentGreen  },
+            { "PBR + Volume", "PBR set plus 3D SDF",    Tone.AccentViolet },
+            { "Normals Only", "Tangent, World, Bent",   Tone.AccentBlue   },
+            { "Queue All 18", "Full diagnostic suite",  Tone.AccentAmber  },
+        }};
+        bool Dismissed = false;
+        const int32_t Picked = ConstructStudioPopoverList(
+            Surface, AddButtonAnchor, Pane, "QUEUE PRESETS", PresetOptions, -1, Input, Tone, Dismissed);
+        if (Picked >= 0)
         {
-            TotalMb += EstimateTargetMegabytes(*Session, static_cast<BakerTargetId>(Idx));
+            Session->ApplyQuickPreset(static_cast<BakerQuickPreset>(Picked));
+            PresetPopoverOpen = false;
+        }
+        else if (Dismissed)
+        {
+            PresetPopoverOpen = false;
         }
     }
-    char OutBuf[20] {};
-    char RayBuf[20] {};
-    char GridBuf[20] {};
-    std::snprintf(OutBuf, sizeof(OutBuf), "%.1f", TotalMb);
-    FormatCompactCount(EstimateTotalRays(*Session), RayBuf, sizeof(RayBuf));
-    std::snprintf(GridBuf, sizeof(GridBuf), "%u", Session->TargetResolutionPx);
-
-    const std::string_view ComputeLabel = (Session->ComputeDevice == BakerComputeDevice::RtxHardwareRayQuery)
-        ? "RTX"
-        : ((Session->ComputeDevice == BakerComputeDevice::GtxComputeBvh4) ? "GTX" : "AUTO");
-
-    const std::array<FooterMetricColumn, 4u> FooterCols {{
-        { "OUTPUT", OutBuf,       "MB", TagTone::Neutral },
-        { "RAYS",   RayBuf,       "",   TagTone::Neutral },
-        { "RES",    GridBuf,      "px", TagTone::Neutral },
-        { "DEVICE", ComputeLabel, "",   TagTone::Green   },
-    }};
-    ConstructFourColumnFooter(Surface, FooterRect, FooterCols, Tone);
 }
 
 } // namespace Frontier::Workspaces

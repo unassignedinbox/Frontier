@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                           MATERIALINSPECTORPANE.H
 ============================================================================================================================================*/
-// 🧩 Right-docked Project Zero Inspector pane for Material Workspace (meter stat trio, inline channel editors, surface finish fold, export bar)
+// 🧩 Right-docked TextureStudio Material Inspector pane (old Materials header & KPI tiles, categorized section groups, TextureStudio sliders)
 
 #pragma once
 
@@ -40,15 +40,16 @@ public:
     void PresentInImGuiPane(double DeltaSeconds, float ScaleFactor = 1.0f);
 
 private:
-    MaterialWorkspaceSession* Session             = nullptr;
-    TextEditBuffer            ChannelSearchBuffer {};
-    float                     ScrollOffsetY       = 0.0f;
-    float                     MaxScrollY          = 0.0f;
-    int32_t                   ActiveSliderId      = -1;
-    bool                      PresetPopoverOpen   = false;
-    Rectangle2D               PresetAnchorRect    {};
-    bool                      FinishFoldExpanded  = false;
-    uint32_t                  OpenGroupMask       = 0x05u; // Primary + Dynamic open initially
+    MaterialWorkspaceSession* Session           = nullptr;
+    float                     ScrollOffsetY     = 0.0f;
+    float                     MaxScrollY        = 0.0f;
+    int32_t                   ActiveSliderId    = -1;
+    bool                      PresetPopoverOpen = false;
+    Rectangle2D               PresetAnchorRect  {};
+    bool                      SurfaceGroupOpen  = true;
+    bool                      OpticalGroupOpen  = true;
+    bool                      DynamicGroupOpen  = true;
+    bool                      OptionsGroupOpen  = false;
 };
 
 } // namespace Frontier::Workspaces

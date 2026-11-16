@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                              BAKINGTARGETSPANE.H
 ============================================================================================================================================*/
-// 🧩 Left-docked Project Zero Queue Outliner pane for Baking Studio (preset chips, categorized 18-target queue tree, studies library, footer)
+// 🧩 Left-docked Baking Queue Outliner pane (pane-direct surface, sharp entries, procedural target previews, green tick + eye + lock, TextureStudio footer)
 
 #pragma once
 
@@ -42,14 +42,16 @@ public:
         bool          Ready) noexcept;
 
 private:
-    BakingWorkspaceSession* Session            = nullptr;
-    TextEditBuffer          SearchBuffer       {};
-    float                   ScrollOffsetY      = 0.0f;
-    float                   MaxScrollY         = 0.0f;
-    bool                    FilterQueuedOnly   = false;
-    bool                    FilterReadyOnly    = false;
-    bool                    StudiesExpanded    = false;
-    uint32_t                ExpandedGroupMask  = 0x0Fu; // All 4 groups expanded initially
+    BakingWorkspaceSession* Session           = nullptr;
+    TextEditBuffer          SearchBuffer      {};
+    float                   ScrollOffsetY     = 0.0f;
+    float                   MaxScrollY        = 0.0f;
+    bool                    FilterQueuedOnly  = false;
+    bool                    FilterReadyOnly   = false;
+    bool                    PresetPopoverOpen = false;
+    Rectangle2D             AddButtonAnchor   {};
+    uint32_t                ExpandedGroupMask = 0x0Fu; // All 4 groups expanded initially
+    uint32_t                LockedTargetMask  = 0u;
 };
 
 } // namespace Frontier::Workspaces

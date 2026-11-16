@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                            STUDIOSURFACEKIT.H
 ============================================================================================================================================*/
-// 🧩 Shared Project Zero surface tokens, outliner hierarchy rows, meter tiles, accordion rows, capsule tracks, switches, and popovers
+// 🧩 Shared Frontier TextureStudio surface tokens, pane-direct fills, sharp outliner rows, white-on-color icons, KPI tiles, category groups, and sliders
 
 #pragma once
 
@@ -31,30 +31,23 @@ namespace Frontier::Workspaces::StudioSurface
 //                                                      ENUMERATIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-enum class MeterVariant : uint8_t
-{
-    None       = 0,
-    BandDot    = 1, // Horizontal track with single positional indicator dot
-    FillBar    = 2, // Solid horizontal fill bar
-    StackBar   = 3, // Multi-segment proportional horizontal bar
-    SwatchLine = 4, // Inline row of mini colour swatches
-    StepTicks  = 5, // Discrete completion segments
-};
-
 enum class TagTone : uint8_t
 {
     Neutral = 0, // Quiet grey capsule tag
-    Amber   = 1, // Warm amber highlight (ACTIVE / STALE / BAKING)
+    Amber   = 1, // Warm highlight (ACTIVE / STALE / BAKING)
     Green   = 2, // Fresh green highlight (SEAMLESS / READY / DONE)
     Blue    = 3, // Sky blue highlight (CUTOUT / CUSTOM)
     Crimson = 4, // Alert red highlight
 };
 
-enum class TrailingSwitchKind : uint8_t
+enum class IconAccentTone : uint8_t
 {
-    None       = 0,
-    GreenCheck = 1, // 16px circular solid #34C759 check disc or hollow ring
-    Visibility = 2, // Eye visible / hidden toggle button
+    Slate  = 0, // Neutral dark studio tile with white icon
+    Green  = 1, // Solid green tile with white icon
+    Blue   = 2, // Solid studio blue tile with white icon
+    Amber  = 3, // Solid burnt-amber tile with white icon
+    Violet = 4, // Solid studio violet tile with white icon
+    Teal   = 5, // Solid studio teal tile with white icon
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -63,44 +56,53 @@ enum class TrailingSwitchKind : uint8_t
 
 struct StudioToneSet
 {
-    ColorRgba DockBackdrop        {}; // #121212 outer dock backdrop
-    ColorRgba OutlinerTop         {}; // #1E1E1E outliner block top
-    ColorRgba OutlinerBottom      {}; // #171717 outliner block bottom
-    ColorRgba OutlinerStroke      {}; // #2C2C2C outliner block stroke
-    ColorRgba InspectorTop        {}; // #222222 inspector block top
-    ColorRgba InspectorBottom     {}; // #1B1B1B inspector block bottom
-    ColorRgba InspectorStroke     {}; // #2F2F2F inspector block stroke
-    ColorRgba InsetSurface        {}; // #161616 dark stat tile / open editor fill
-    ColorRgba TileSurface         {}; // #191919 stat pair & chip fill
-    ColorRgba FoldSurface         {}; // #181818 bottom collapsible fold fill
-    ColorRgba FooterSurface       {}; // #151515 bottom summary bar fill
-    ColorRgba RecessedWell        {}; // #0E0E0E track / capsule well / readout fill
-    ColorRgba ReadoutDark         {}; // #0D0D0D numeric readout fill
-    ColorRgba ReadoutWarm         {}; // #1D180E driven amber readout fill
-    ColorRgba RowHover            {}; // Subtle hover surface
-    ColorRgba RowSelected         {}; // #262626 selected hierarchy row
-    ColorRgba RowSelectedStroke   {}; // #444444 selected hierarchy border
-    ColorRgba OpenRowStroke       {}; // Warm amber open accordion border
-    ColorRgba Hairline            {}; // #262626 internal divider
-    ColorRgba BorderSubtle        {}; // #2E2E2E standard control outline
-    ColorRgba BorderStrong        {}; // #3F3F3F emphasized outline
-    ColorRgba PrimaryFill         {}; // #E8E8E8 active segment & primary CTA fill
-    ColorRgba PrimaryInk          {}; // #111111 crisp ink over PrimaryFill
-    ColorRgba Amber               { 255u, 178u, 56u,  255u }; // #FFB238
-    ColorRgba AmberWash           { 38u,  31u,  16u,  255u }; // #261F10
-    ColorRgba AmberStroke         { 74u,  59u,  29u,  255u }; // #4A3B1D
-    ColorRgba Green               { 70u,  210u, 103u, 255u }; // #46D267
-    ColorRgba ToggleGreen         { 52u,  199u, 89u,  255u }; // #34C759
+    ColorRgba PaneSurface         {}; // Direct edge-to-edge outliner / inspector fill
+    ColorRgba PaneHeaderSurface   {}; // Edge-to-edge top heading strip fill
+    ColorRgba SectionHeaderBg     {}; // Categorized section top header strip
+    ColorRgba SectionBodyBg       {}; // Categorized section body fill
+    ColorRgba InsetSurface        {}; // Dark KPI tile & inset container fill
+    ColorRgba TileSurface         {}; // Outliner stat tile & chip fill
+    ColorRgba FooterSurface       {}; // Edge-to-edge bottom footer fill
+    ColorRgba ToolbarSurface      {}; // Bottom outliner command strip fill
+    ColorRgba GroundRowSurface    {}; // Bottom canvas/layer-0 reference row fill
+    ColorRgba FieldWell           {}; // #050506 deep numeric capsule well
+    ColorRgba UnitWell            {}; // #161618 split unit cell well
+    ColorRgba RecessedWell        {}; // Track / recessed background fill
+    ColorRgba SliderTrack         {}; // #232326 unfilled thick capsule slider track
+    ColorRgba SliderFill          {}; // #4C4D52 filled thick capsule slider bar
+    ColorRgba SliderThumb         {}; // #EBEBEB solid circular thumb
+    ColorRgba RowSurface          {}; // #17181C sharp outliner row background
+    ColorRgba RowHover            {}; // #1D1F24 hover row background
+    ColorRgba RowSelected         {}; // #232520 selected row background
+    ColorRgba RowSelectedStroke   {}; // Lime-cream subtle selected row stroke
+    ColorRgba HighlightFill       {}; // #EFF4CF TextureStudio lime-cream highlight
+    ColorRgba HighlightInk        {}; // #17190E crisp dark ink over HighlightFill
+    ColorRgba HighlightMutedInk   {}; // Sub-label ink over HighlightFill
+    ColorRgba Hairline            {}; // Subtle internal separator
+    ColorRgba BorderSubtle        {}; // Standard control outline
+    ColorRgba BorderStrong        {}; // Emphasized outline
+    ColorRgba PrimaryFill         {}; // Active segment & primary CTA fill
+    ColorRgba PrimaryInk          {}; // Crisp ink over PrimaryFill
+    ColorRgba WhiteInk            { 255u, 255u, 255u, 255u };
+    ColorRgba AccentGreen         { 46u,  168u, 82u,  255u }; // Solid green icon fill
+    ColorRgba AccentBlue          { 52u,  118u, 214u, 255u }; // Solid blue icon fill
+    ColorRgba AccentAmber         { 196u, 118u, 42u,  255u }; // Solid warm icon fill
+    ColorRgba AccentViolet        { 124u, 86u,  196u, 255u }; // Solid violet icon fill
+    ColorRgba AccentTeal          { 40u,  138u, 128u, 255u }; // Solid teal icon fill
+    ColorRgba AccentSlate         { 48u,  51u,  58u,  255u }; // Solid neutral icon fill
+    ColorRgba Green               { 70u,  210u, 103u, 255u };
+    ColorRgba ToggleGreen         { 52u,  199u, 89u,  255u };
     ColorRgba GreenWash           { 26u,  47u,  32u,  255u };
-    ColorRgba Blue                { 77u,  155u, 255u, 255u }; // #4D9BFF
+    ColorRgba Amber               { 232u, 194u, 122u, 255u };
+    ColorRgba AmberWash           { 44u,  37u,  22u,  255u };
+    ColorRgba Blue                { 158u, 207u, 255u, 255u };
     ColorRgba BlueWash            { 25u,  38u,  56u,  255u };
-    ColorRgba Violet              { 196u, 140u, 255u, 255u }; // #C48CFF
-    ColorRgba Crimson             { 255u, 107u, 94u,  255u }; // #FF6B5E
+    ColorRgba Crimson             { 255u, 107u, 98u,  255u };
     ColorRgba CrimsonWash         { 54u,  26u,  25u,  255u };
-    ColorRgba TextPrimary         {}; // #F0F0F0
-    ColorRgba TextSecondary       {}; // #D4D4D4
-    ColorRgba TextMuted           {}; // #8A8A8A
-    ColorRgba TextFaint           {}; // #626262
+    ColorRgba TextPrimary         {};
+    ColorRgba TextSecondary       {};
+    ColorRgba TextMuted           {};
+    ColorRgba TextFaint           {};
     bool      LightSurface        = false;
 };
 
@@ -109,106 +111,86 @@ struct OutlinerStatTileSpec
     std::string_view Label       {};
     std::string_view Reading     {};
     ControlIcon      Icon        = ControlIcon::CircleCheck;
-    bool             ActiveGlow  = false; // Green disc when true
-    bool             AmberGlow   = false; // Amber disc when true
-    bool             FilterArmed = false; // Highlight tile border when active filter
+    IconAccentTone   IconTone    = IconAccentTone::Slate;
+    bool             FilterArmed = false;
 };
 
 struct OutlinerChipSpec
 {
-    std::string_view Label         {};
-    ColorRgba        SwatchStart   { 0u, 0u, 0u, 0u };
-    ColorRgba        SwatchEnd     { 0u, 0u, 0u, 0u };
-    bool             ShowSwatch    = false;
-    bool             ShowPlusIcon  = false;
-    bool             Selected      = false;
-    bool             Disabled      = false;
+    std::string_view Label        {};
+    ColorRgba        SwatchStart  { 0u, 0u, 0u, 0u };
+    ColorRgba        SwatchEnd    { 0u, 0u, 0u, 0u };
+    bool             ShowSwatch   = false;
+    bool             ShowPlusIcon = false;
+    bool             Selected     = false;
+    bool             Disabled     = false;
+};
+
+struct OutlinerHeaderResult
+{
+    bool FolderClicked = false;
+    bool PlusClicked   = false;
 };
 
 struct HierarchyRowSpec
 {
-    int32_t            DepthLevel       = 0;
-    std::string_view   Title            {};
-    std::string_view   Subtitle         {};
-    std::string_view   TagLabel         {};
-    TagTone            TagStyle         = TagTone::Neutral;
-    ControlIcon        LeadIcon         = ControlIcon::LayersSlabs;
-    ColorRgba          LeadTileFill     { 34u, 34u, 34u, 255u };
-    ColorRgba          LeadIconInk      { 210u, 210u, 210u, 255u };
-    bool               LeadSolidSwatch  = false; // Fill entire 22x22 tile with LeadTileFill colour
-    bool               Expandable       = false;
-    bool               Expanded         = false;
-    bool               Selected         = false;
-    bool               Muted            = false;
-    bool               GroupStyle       = false; // Subtle section-group typography
-    bool               LockedSign       = false;
-    TrailingSwitchKind TrailingSwitch   = TrailingSwitchKind::None;
-    bool               TrailingEnabled  = true;
-    bool               PartialIndicator = false; // Small amber dot when some nested entries enabled
+    int32_t          DepthLevel        = 0;
+    std::string_view Title             {};
+    std::string_view Subtitle          {};
+    std::string_view TagLabel          {};
+    TagTone          TagStyle          = TagTone::Neutral;
+    ControlIcon      LeadIcon          = ControlIcon::LayersSlabs;
+    IconAccentTone   LeadIconTone      = IconAccentTone::Slate;
+    bool             CustomLeadPreview = false; // Caller paints live preview into *OutLeadPreviewRect
+    float            LeadPreviewSize   = 28.0f; // 28..32px sharp square live preview box
+    bool             Expandable        = false;
+    bool             Expanded          = false;
+    bool             Selected          = false;
+    bool             Muted             = false;
+    bool             GroupStyle        = false;
+    bool             ShowGreenCheck    = false;
+    bool             GreenCheckOn      = false;
+    bool             PartialIndicator  = false;
+    bool             ShowEyeToggle     = false;
+    bool             EyeVisible        = true;
+    bool             ShowLockToggle    = false;
+    bool             LockEnabled       = false;
 };
 
 struct HierarchyRowResult
 {
-    bool RowClicked      = false;
-    bool DoubleClicked   = false;
-    bool ChevronClicked  = false;
-    bool TrailingToggled = false;
-    bool Hovered         = false;
+    bool        RowClicked      = false;
+    bool        DoubleClicked   = false;
+    bool        ChevronClicked  = false;
+    bool        CheckToggled    = false;
+    bool        EyeToggled      = false;
+    bool        LockToggled     = false;
+    bool        Hovered         = false;
+    Rectangle2D LeadPreviewRect {};
 };
 
-struct FooterMetricColumn
+struct OutlinerToolbarResult
+{
+    bool MoveUpClicked    = false;
+    bool MoveDownClicked  = false;
+    bool DuplicateClicked = false;
+    bool MaskClicked      = false;
+    bool DeleteClicked    = false;
+};
+
+struct ThreeMetricFooterCell
 {
     std::string_view Label   {};
     std::string_view Reading {};
-    std::string_view Unit    {};
     TagTone          Tone    = TagTone::Neutral;
 };
 
-struct MeterSegment
-{
-    float     Share  = 0.0f;
-    ColorRgba Colour { 210u, 210u, 210u, 255u };
-};
-
-struct MeterStatTileSpec
-{
-    std::string_view              Label         {};
-    std::string_view              Reading       {};
-    std::string_view              Unit          {};
-    std::string_view              Caption       {};
-    TagTone                       ReadingTone   = TagTone::Neutral;
-    bool                          PrimaryAccent = false;
-    MeterVariant                  MeterKind     = MeterVariant::FillBar;
-    float                         MeterRatio    = 0.5f;
-    float                         BandLow       = 0.0f;
-    float                         BandHigh      = 1.0f;
-    ColorRgba                     MeterColour   { 210u, 210u, 210u, 255u };
-    std::array<MeterSegment, 4u>  StackParts    {};
-    uint32_t                      StackCount    = 0u;
-    std::array<ColorRgba, 6u>     Swatches      {};
-    uint32_t                      SwatchCount   = 0u;
-    int32_t                       StepTotal     = 0;
-    int32_t                       StepDone      = 0;
-};
-
-struct AccordionRowSpec
-{
-    std::string_view Title           {};
-    std::string_view Subtitle        {};
-    std::string_view Readout         {};
-    bool             DrivenWarm      = false; // Warm amber readout capsule
-    bool             SolidSwatch     = false; // Solid colour swatch tile
-    bool             ScalarBarSwatch = false; // Scalar fill swatch tile
-    float            ScalarFill      = 0.5f;
-    ColorRgba        SwatchColour    { 200u, 200u, 200u, 255u };
-    ControlIcon      LeadIcon        = ControlIcon::SlidersQuality;
-};
-
-struct PopoverOptionSpec
+struct KpiTileSpec
 {
     std::string_view Label       {};
-    std::string_view Detail      {};
-    ColorRgba        SwatchDot   { 0u, 0u, 0u, 0u };
+    std::string_view Reading     {};
+    std::string_view Caption     {};
+    bool             Highlighted = false; // Signature #EFF4CF pale lime-cream tile 1
 };
 
 struct InspectorHeadingResult
@@ -225,8 +207,15 @@ struct InspectorFooterResult
     bool SecondaryBClicked = false;
 };
 
+struct PopoverOptionSpec
+{
+    std::string_view Label     {};
+    std::string_view Detail    {};
+    ColorRgba        SwatchDot { 0u, 0u, 0u, 0u };
+};
+
 //------------------------------------------------------------------------------------------------------------------------
-//                                                  THEME & COLOUR HELPERS
+//                                                  THEME & COLOUR QUERIES
 //------------------------------------------------------------------------------------------------------------------------
 
 [[nodiscard]] inline StudioToneSet QueryStudioToneSet() noexcept
@@ -237,69 +226,76 @@ struct InspectorFooterResult
 
     if (!Colors.LightSurface)
     {
-        Tone.DockBackdrop      = { 15u,  15u,  16u,  255u };
-        Tone.OutlinerTop       = { 30u,  30u,  30u,  255u };
-        Tone.OutlinerBottom    = { 23u,  23u,  23u,  255u };
-        Tone.OutlinerStroke    = { 44u,  44u,  44u,  255u };
-        Tone.InspectorTop      = { 34u,  34u,  34u,  255u };
-        Tone.InspectorBottom   = { 27u,  27u,  27u,  255u };
-        Tone.InspectorStroke   = { 47u,  47u,  47u,  255u };
-        Tone.InsetSurface      = { 22u,  22u,  22u,  255u };
-        Tone.TileSurface       = { 25u,  25u,  25u,  255u };
-        Tone.FoldSurface       = { 24u,  24u,  24u,  255u };
-        Tone.FooterSurface     = { 21u,  21u,  21u,  255u };
-        Tone.RecessedWell      = { 14u,  14u,  14u,  255u };
-        Tone.ReadoutDark       = { 13u,  13u,  13u,  255u };
-        Tone.ReadoutWarm       = { 29u,  24u,  14u,  255u };
-        Tone.RowHover          = { 34u,  34u,  34u,  255u };
-        Tone.RowSelected       = { 38u,  38u,  38u,  255u };
-        Tone.RowSelectedStroke = { 68u,  68u,  68u,  255u };
-        Tone.OpenRowStroke     = { 255u, 178u, 56u,  76u  };
-        Tone.Hairline          = { 38u,  38u,  38u,  255u };
-        Tone.BorderSubtle      = { 45u,  45u,  45u,  255u };
-        Tone.BorderStrong      = { 66u,  66u,  66u,  255u };
-        Tone.PrimaryFill       = { 232u, 232u, 232u, 255u };
-        Tone.PrimaryInk        = { 17u,  17u,  17u,  255u };
-        Tone.TextPrimary       = { 240u, 240u, 240u, 255u };
-        Tone.TextSecondary     = { 214u, 214u, 214u, 255u };
-        Tone.TextMuted         = { 138u, 138u, 138u, 255u };
-        Tone.TextFaint         = { 98u,  98u,  98u,  255u };
+        Tone.PaneSurface       = { 20u,  21u,  24u,  255u }; // #141518 pane-direct surface
+        Tone.PaneHeaderSurface = { 23u,  24u,  28u,  255u }; // #17181C heading strip
+        Tone.SectionHeaderBg   = { 33u,  35u,  40u,  255u }; // #212328 category section header
+        Tone.SectionBodyBg     = { 24u,  25u,  29u,  255u }; // #18191D category section body
+        Tone.InsetSurface      = { 25u,  26u,  29u,  255u }; // #191A1D KPI dark tile
+        Tone.TileSurface       = { 26u,  27u,  31u,  255u }; // #1A1B1F stat tile & chip
+        Tone.FooterSurface     = { 16u,  17u,  20u,  255u }; // #101114 3-metric footer
+        Tone.ToolbarSurface    = { 20u,  21u,  24u,  255u }; // #141518 command strip
+        Tone.GroundRowSurface  = { 17u,  18u,  21u,  255u }; // #111215 layer-0 ground row
+        Tone.FieldWell         = { 6u,   6u,   8u,   255u }; // #060608 numeric well
+        Tone.UnitWell          = { 22u,  22u,  24u,  255u }; // #161618 split unit cell
+        Tone.RecessedWell      = { 13u,  14u,  16u,  255u };
+        Tone.SliderTrack       = { 35u,  35u,  38u,  255u }; // #232326
+        Tone.SliderFill        = { 76u,  77u,  82u,  255u }; // #4C4D52
+        Tone.SliderThumb       = { 235u, 235u, 235u, 255u }; // #EBEBEB
+        Tone.RowSurface        = { 23u,  24u,  28u,  255u }; // #17181C sharp row
+        Tone.RowHover          = { 29u,  31u,  36u,  255u }; // #1D1F24
+        Tone.RowSelected       = { 35u,  37u,  32u,  255u }; // #232520 warm lime-tinted selection
+        Tone.RowSelectedStroke = { 239u, 244u, 207u, 108u }; // rgba(239,244,207,0.42)
+        Tone.HighlightFill     = { 239u, 244u, 207u, 255u }; // #EFF4CF
+        Tone.HighlightInk      = { 23u,  25u,  14u,  255u }; // #17190E
+        Tone.HighlightMutedInk = { 23u,  25u,  14u,  204u };
+        Tone.Hairline          = { 38u,  40u,  45u,  255u };
+        Tone.BorderSubtle      = { 44u,  46u,  52u,  255u };
+        Tone.BorderStrong      = { 68u,  71u,  79u,  255u };
+        Tone.PrimaryFill       = { 239u, 244u, 207u, 255u }; // #EFF4CF TextureStudio primary CTA
+        Tone.PrimaryInk        = { 23u,  25u,  14u,  255u };
+        Tone.TextPrimary       = { 242u, 243u, 245u, 255u };
+        Tone.TextSecondary     = { 205u, 208u, 214u, 255u };
+        Tone.TextMuted         = { 136u, 140u, 149u, 255u };
+        Tone.TextFaint         = { 98u,  102u, 111u, 255u };
         return Tone;
     }
 
-    // Crisp light-mode counterpart when ControlCentre selects Light appearance
-    Tone.DockBackdrop      = { 234u, 236u, 240u, 255u };
-    Tone.OutlinerTop       = { 248u, 249u, 251u, 255u };
-    Tone.OutlinerBottom    = { 241u, 243u, 247u, 255u };
-    Tone.OutlinerStroke    = { 210u, 214u, 222u, 255u };
-    Tone.InspectorTop      = { 250u, 251u, 253u, 255u };
-    Tone.InspectorBottom   = { 243u, 245u, 248u, 255u };
-    Tone.InspectorStroke   = { 208u, 212u, 220u, 255u };
-    Tone.InsetSurface      = { 236u, 239u, 244u, 255u };
-    Tone.TileSurface       = { 240u, 242u, 246u, 255u };
-    Tone.FoldSurface       = { 238u, 241u, 246u, 255u };
+    // Crisp light-mode counterpart
+    Tone.PaneSurface       = { 243u, 244u, 247u, 255u };
+    Tone.PaneHeaderSurface = { 238u, 240u, 244u, 255u };
+    Tone.SectionHeaderBg   = { 232u, 235u, 241u, 255u };
+    Tone.SectionBodyBg     = { 248u, 249u, 251u, 255u };
+    Tone.InsetSurface      = { 236u, 238u, 243u, 255u };
+    Tone.TileSurface       = { 238u, 240u, 245u, 255u };
     Tone.FooterSurface     = { 233u, 236u, 241u, 255u };
+    Tone.ToolbarSurface    = { 236u, 238u, 243u, 255u };
+    Tone.GroundRowSurface  = { 231u, 234u, 240u, 255u };
+    Tone.FieldWell         = { 255u, 255u, 255u, 255u };
+    Tone.UnitWell          = { 236u, 239u, 244u, 255u };
     Tone.RecessedWell      = { 226u, 229u, 235u, 255u };
-    Tone.ReadoutDark       = { 226u, 229u, 235u, 255u };
-    Tone.ReadoutWarm       = { 252u, 240u, 214u, 255u };
-    Tone.RowHover          = { 232u, 236u, 242u, 255u };
-    Tone.RowSelected       = { 225u, 230u, 239u, 255u };
-    Tone.RowSelectedStroke = { 184u, 192u, 206u, 255u };
-    Tone.OpenRowStroke     = { 214u, 134u, 18u,  125u };
-    Tone.Hairline          = { 216u, 220u, 227u, 255u };
-    Tone.BorderSubtle      = { 206u, 211u, 220u, 255u };
-    Tone.BorderStrong      = { 172u, 179u, 192u, 255u };
-    Tone.PrimaryFill       = { 28u,  31u,  38u,  255u };
+    Tone.SliderTrack       = { 216u, 220u, 228u, 255u };
+    Tone.SliderFill        = { 148u, 155u, 168u, 255u };
+    Tone.SliderThumb       = { 32u,  36u,  44u,  255u };
+    Tone.RowSurface        = { 249u, 250u, 252u, 255u };
+    Tone.RowHover          = { 236u, 240u, 246u, 255u };
+    Tone.RowSelected       = { 226u, 233u, 244u, 255u };
+    Tone.RowSelectedStroke = { 52u,  118u, 214u, 140u };
+    Tone.HighlightFill     = { 30u,  35u,  44u,  255u };
+    Tone.HighlightInk      = { 248u, 249u, 252u, 255u };
+    Tone.HighlightMutedInk = { 214u, 218u, 226u, 215u };
+    Tone.Hairline          = { 214u, 218u, 226u, 255u };
+    Tone.BorderSubtle      = { 204u, 210u, 220u, 255u };
+    Tone.BorderStrong      = { 166u, 174u, 188u, 255u };
+    Tone.PrimaryFill       = { 26u,  30u,  38u,  255u };
     Tone.PrimaryInk        = { 248u, 249u, 252u, 255u };
-    Tone.Amber             = { 206u, 128u, 12u,  255u };
-    Tone.AmberWash         = { 252u, 241u, 218u, 255u };
-    Tone.AmberStroke       = { 232u, 188u, 114u, 255u };
-    Tone.Green             = { 30u,  148u, 64u,  255u };
-    Tone.ToggleGreen       = { 38u,  166u, 74u,  255u };
+    Tone.AccentSlate       = { 104u, 112u, 126u, 255u };
+    Tone.Green             = { 28u,  148u, 62u,  255u };
+    Tone.ToggleGreen       = { 34u,  166u, 72u,  255u };
     Tone.GreenWash         = { 218u, 245u, 226u, 255u };
+    Tone.Amber             = { 186u, 112u, 16u,  255u };
+    Tone.AmberWash         = { 252u, 241u, 218u, 255u };
     Tone.Blue              = { 32u,  108u, 220u, 255u };
     Tone.BlueWash          = { 220u, 235u, 252u, 255u };
-    Tone.Violet            = { 132u, 74u,  214u, 255u };
     Tone.Crimson           = { 206u, 52u,  44u,  255u };
     Tone.CrimsonWash       = { 252u, 224u, 222u, 255u };
     Tone.TextPrimary       = { 24u,  28u,  34u,  255u };
@@ -307,6 +303,19 @@ struct InspectorFooterResult
     Tone.TextMuted         = { 104u, 112u, 124u, 255u };
     Tone.TextFaint         = { 138u, 145u, 156u, 255u };
     return Tone;
+}
+
+[[nodiscard]] inline ColorRgba ResolveAccentFill(IconAccentTone Accent, const StudioToneSet& Tone) noexcept
+{
+    switch (Accent)
+    {
+        case IconAccentTone::Green:  return Tone.AccentGreen;
+        case IconAccentTone::Blue:   return Tone.AccentBlue;
+        case IconAccentTone::Amber:  return Tone.AccentAmber;
+        case IconAccentTone::Violet: return Tone.AccentViolet;
+        case IconAccentTone::Teal:   return Tone.AccentTeal;
+        default:                     return Tone.AccentSlate;
+    }
 }
 
 [[nodiscard]] inline ColorRgba ResolveTagBackground(TagTone ToneKind, const StudioToneSet& Tone) noexcept
@@ -333,6 +342,10 @@ struct InspectorFooterResult
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                 TEXT & VECTOR MARKS
+//------------------------------------------------------------------------------------------------------------------------
+
 inline void ConstructCenteredWeightedText(
     PixelSpace&      Surface,
     FontWeightClass  Weight,
@@ -351,7 +364,7 @@ inline void ConstructCenteredWeightedText(
     WorkspaceAppearance::ConstructWeightedText(Surface, Weight, { LeftX, TopY }, PixelSize, Ink, Utf8);
 }
 
-inline void ConstructCheckMark(PixelSpace& Surface, Point2D Center, float Scale, ColorRgba Ink, float Thickness = 1.6f) noexcept
+inline void ConstructCheckMark(PixelSpace& Surface, Point2D Center, float Scale, ColorRgba Ink, float Thickness = 1.65f) noexcept
 {
     const std::array<Point2D, 3u> Strokes {{
         { Center.X - 3.3f * Scale, Center.Y + 0.1f * Scale },
@@ -383,6 +396,28 @@ inline void ConstructChevronMark(PixelSpace& Surface, Point2D Center, bool Expan
     }
 }
 
+// White icon rendered inside a solid coloured background tile (replaces yellow-on-yellow)
+inline void ConstructWhiteIconTile(
+    PixelSpace&          Surface,
+    Rectangle2D          TileRect,
+    ControlIcon          Icon,
+    IconAccentTone       Accent,
+    float                CornerRadius,
+    const StudioToneSet& Tone,
+    bool                 Muted = false) noexcept
+{
+    const ColorRgba Fill = Muted ? ResolveAccentFill(Accent, Tone).ScaledAlpha(0.45f) : ResolveAccentFill(Accent, Tone);
+    Surface.FillRectangle(TileRect, Fill, CornerRadius);
+    const float IconSize = std::min(TileRect.Width, TileRect.Height) * 0.54f;
+    VectorIconRepository::ConstructControl(Surface, Icon, {
+        TileRect.Center().X - IconSize * 0.5f,
+        TileRect.Center().Y - IconSize * 0.5f,
+        IconSize,
+        Muted ? Tone.WhiteInk.ScaledAlpha(0.55f) : Tone.WhiteInk,
+        1.95f,
+    });
+}
+
 [[nodiscard]] inline Point2D QueryInputCursor(const PaneInputReading& Input) noexcept
 {
     return { Input.PrimaryPointer.X, Input.PrimaryPointer.Y };
@@ -404,35 +439,18 @@ inline void ConstructChevronMark(PixelSpace& Surface, Point2D Center, bool Expan
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                   SHELL CONTAINERS
+//                                              PANE-DIRECT SURFACE CONTAINER
 //------------------------------------------------------------------------------------------------------------------------
 
+// Applies surface colour directly onto the Outliner/Inspector pane edge-to-edge (zero nested rounded outer border)
 inline Rectangle2D ConstructDockedSurfaceShell(
     PixelSpace&          Surface,
     Rectangle2D          PaneBounds,
-    bool                 OutlinerVariant,
+    bool                 /*OutlinerVariant*/,
     const StudioToneSet& Tone) noexcept
 {
-    Surface.FillRectangle(PaneBounds, Tone.DockBackdrop, 0.0f);
-    const Rectangle2D ShellRect = PaneBounds.Inset(6.0f);
-    if (ShellRect.Width <= 24.0f || ShellRect.Height <= 24.0f)
-    {
-        return PaneBounds;
-    }
-
-    const ColorRgba TopFill    = OutlinerVariant ? Tone.OutlinerTop    : Tone.InspectorTop;
-    const ColorRgba BottomFill = OutlinerVariant ? Tone.OutlinerBottom : Tone.InspectorBottom;
-    const ColorRgba StrokeCol  = OutlinerVariant ? Tone.OutlinerStroke : Tone.InspectorStroke;
-    constexpr float Radius     = 18.0f;
-
-    Surface.FillRectangle(ShellRect, BottomFill, Radius);
-    // Subtle top vertical sheen band approximating linear-gradient(135deg, top, bottom)
-    Surface.PushClip(ShellRect);
-    const float TopBandH = std::min(ShellRect.Height * 0.52f, 220.0f);
-    Surface.FillRectangle({ ShellRect.X, ShellRect.Y, ShellRect.Width, TopBandH }, ColorRgba::Blend(TopFill, BottomFill, 0.25f), Radius);
-    Surface.PopClip();
-    Surface.StrokeRectangle(ShellRect, StrokeCol, Radius, 1.0f);
-    return ShellRect;
+    Surface.FillRectangle(PaneBounds, Tone.PaneSurface, 0.0f);
+    return PaneBounds;
 }
 
 inline bool ConstructRoundIconButton(
@@ -442,21 +460,21 @@ inline bool ConstructRoundIconButton(
     const PaneInputReading& Input,
     const StudioToneSet&    Tone,
     bool                    Disabled = false,
-    bool                    Accent   = false) noexcept
+    bool                    Armed    = false) noexcept
 {
     const Point2D Cursor  = QueryInputCursor(Input);
     const bool    Hovered = !Disabled && ButtonRect.Contains(Cursor);
     const float   Radius  = ButtonRect.Height * 0.5f;
 
-    const ColorRgba Fill = Accent
-        ? Tone.AmberWash
-        : (Hovered ? Tone.RowSelected : Tone.TileSurface);
-    const ColorRgba Stroke = Accent
-        ? Tone.AmberStroke
+    const ColorRgba Fill = Armed
+        ? Tone.HighlightFill
+        : (Hovered ? Tone.RowHover : Tone.TileSurface);
+    const ColorRgba Stroke = Armed
+        ? Tone.HighlightFill
         : (Hovered ? Tone.BorderStrong : Tone.BorderSubtle);
     const ColorRgba Ink = Disabled
         ? Tone.TextFaint
-        : (Accent ? Tone.Amber : (Hovered ? Tone.TextPrimary : Tone.TextMuted));
+        : (Armed ? Tone.HighlightInk : (Hovered ? Tone.TextPrimary : Tone.TextSecondary));
 
     Surface.FillRectangle(ButtonRect, Fill, Radius);
     Surface.StrokeRectangle(ButtonRect, Stroke, Radius, 1.0f);
@@ -475,23 +493,52 @@ inline bool ConstructRoundIconButton(
 //                                                  OUTLINER PRIMITIVES
 //------------------------------------------------------------------------------------------------------------------------
 
-inline bool ConstructOutlinerHeading(
+// TextureStudio OLD heading bar: Title + mono count tag + optional FolderPlus button + circular '+' button
+inline OutlinerHeaderResult ConstructOutlinerHeaderStrip(
     PixelSpace&             Surface,
-    Rectangle2D             HeadingRect,
+    Rectangle2D             StripRect,
     std::string_view        Title,
-    std::string_view        Subtitle,
-    ControlIcon             TrailingIcon,
+    std::string_view        CountTag,
+    bool                    ShowFolderButton,
+    ControlIcon             PrimaryButtonIcon,
+    bool                    PrimaryButtonArmed,
     const PaneInputReading& Input,
     const StudioToneSet&    Tone,
-    bool                    TrailingDisabled = false) noexcept
+    Rectangle2D*            OutPrimaryButtonRect = nullptr) noexcept
 {
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Light, { HeadingRect.X, HeadingRect.Y + 1.0f }, 19.0f, Tone.TextPrimary, Title);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Regular, { HeadingRect.X, HeadingRect.Y + 24.0f }, 10.0f, Tone.TextMuted, Subtitle);
+    OutlinerHeaderResult Result {};
+    Surface.FillRectangle(StripRect, Tone.PaneHeaderSurface, 0.0f);
+    Surface.StrokeLine({ StripRect.X, StripRect.Bottom() }, { StripRect.Right(), StripRect.Bottom() }, Tone.Hairline, 1.0f);
 
-    const Rectangle2D RoundBtn { HeadingRect.Right() - 28.0f, HeadingRect.Y + 4.0f, 28.0f, 28.0f };
-    return ConstructRoundIconButton(Surface, RoundBtn, TrailingIcon, Input, Tone, TrailingDisabled, false);
+    const float LeftX = StripRect.X + 12.0f;
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::Light, { LeftX, StripRect.Center().Y - 9.5f }, 17.5f, Tone.TextPrimary, Title);
+
+    if (!CountTag.empty())
+    {
+        const float TitleW = Surface.MeasureTextWidth(17.8f, Title.data(), Title.data() + Title.size());
+        const float TagW   = Surface.MeasureTextWidth(9.2f, CountTag.data(), CountTag.data() + CountTag.size()) + 14.0f;
+        const Rectangle2D TagRect { LeftX + TitleW + 8.0f, StripRect.Center().Y - 9.0f, TagW, 18.0f };
+        Surface.FillRectangle(TagRect, Tone.TileSurface, 9.0f);
+        Surface.StrokeRectangle(TagRect, Tone.BorderSubtle, 9.0f, 1.0f);
+        ConstructCenteredWeightedText(Surface, FontWeightClass::Medium, TagRect, 9.2f, Tone.TextMuted, CountTag);
+    }
+
+    float RightX = StripRect.Right() - 12.0f;
+    const Rectangle2D PlusRect { RightX - 28.0f, StripRect.Center().Y - 14.0f, 28.0f, 28.0f };
+    if (OutPrimaryButtonRect != nullptr)
+    {
+        *OutPrimaryButtonRect = PlusRect;
+    }
+    Result.PlusClicked = ConstructRoundIconButton(Surface, PlusRect, PrimaryButtonIcon, Input, Tone, false, PrimaryButtonArmed);
+    RightX = PlusRect.X - 6.0f;
+
+    if (ShowFolderButton)
+    {
+        const Rectangle2D FolderRect { RightX - 28.0f, StripRect.Center().Y - 14.0f, 28.0f, 28.0f };
+        Result.FolderClicked = ConstructRoundIconButton(Surface, FolderRect, ControlIcon::FolderPlus, Input, Tone, false, false);
+    }
+    return Result;
 }
 
 inline int32_t ConstructStatTilePair(
@@ -502,7 +549,7 @@ inline int32_t ConstructStatTilePair(
     const PaneInputReading&     Input,
     const StudioToneSet&        Tone) noexcept
 {
-    constexpr float Gap = 8.0f;
+    constexpr float Gap   = 7.0f;
     const float     TileW = (Area.Width - Gap) * 0.5f;
     const std::array<const OutlinerStatTileSpec*, 2u> Specs { &LeftSpec, &RightSpec };
     const Point2D Cursor = QueryInputCursor(Input);
@@ -515,45 +562,40 @@ inline int32_t ConstructStatTilePair(
         const bool Hovered = TileRect.Contains(Cursor);
 
         const ColorRgba Fill = Spec.FilterArmed
-            ? Tone.AmberWash
+            ? Tone.RowSelected
             : (Hovered ? Tone.RowHover : Tone.TileSurface);
         const ColorRgba Stroke = Spec.FilterArmed
-            ? Tone.Amber
+            ? Tone.RowSelectedStroke
             : (Hovered ? Tone.BorderStrong : Tone.BorderSubtle);
 
-        Surface.FillRectangle(TileRect, Fill, 16.0f);
-        Surface.StrokeRectangle(TileRect, Stroke, 16.0f, 1.0f);
+        Surface.FillRectangle(TileRect, Fill, 12.0f);
+        Surface.StrokeRectangle(TileRect, Stroke, 12.0f, 1.0f);
 
-        const float   DiscRad = 12.5f;
+        // White icon inside solid coloured circular background
+        const float   DiscRad = 11.5f;
         const Point2D DiscCenter { TileRect.X + 10.0f + DiscRad, TileRect.Center().Y };
-        const ColorRgba DiscFill = Spec.ActiveGlow
-            ? Tone.ToggleGreen
-            : (Spec.AmberGlow ? Tone.Amber : Tone.RowSelected);
-        Surface.FillCircle(DiscCenter, DiscRad, DiscFill);
+        Surface.FillCircle(DiscCenter, DiscRad, ResolveAccentFill(Spec.IconTone, Tone));
 
-        if (Spec.ActiveGlow && Spec.Icon == ControlIcon::CircleCheck)
+        if (Spec.Icon == ControlIcon::CircleCheck)
         {
-            ConstructCheckMark(Surface, DiscCenter, 1.15f, { 16u, 22u, 18u, 255u }, 1.85f);
+            ConstructCheckMark(Surface, DiscCenter, 1.1f, Tone.WhiteInk, 1.85f);
         }
         else
         {
-            const ColorRgba IconInk = (Spec.ActiveGlow || Spec.AmberGlow)
-                ? ColorRgba{ 16u, 18u, 16u, 255u }
-                : Tone.TextMuted;
             VectorIconRepository::ConstructControl(Surface, Spec.Icon, {
-                DiscCenter.X - 6.0f,
-                DiscCenter.Y - 6.0f,
-                12.0f,
-                IconInk,
-                2.0f,
+                DiscCenter.X - 5.5f,
+                DiscCenter.Y - 5.5f,
+                11.0f,
+                Tone.WhiteInk,
+                1.95f,
             });
         }
 
         const float TextLeft = DiscCenter.X + DiscRad + 8.0f;
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Medium, { TextLeft, TileRect.Y + 9.0f }, 8.5f, Tone.TextMuted, Spec.Label);
+            Surface, FontWeightClass::Medium, { TextLeft, TileRect.Y + 8.0f }, 8.4f, Tone.TextMuted, Spec.Label);
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Light, { TextLeft, TileRect.Y + 23.0f }, 18.0f, Tone.TextPrimary, Spec.Reading);
+            Surface, FontWeightClass::Light, { TextLeft, TileRect.Y + 21.0f }, 17.5f, Tone.TextPrimary, Spec.Reading);
 
         if (Hovered && QueryPrimaryPressed(Input))
         {
@@ -573,15 +615,14 @@ inline bool ConstructSearchFilterRow(
     const PaneInputReading& Input,
     const StudioToneSet&    Tone) noexcept
 {
-    constexpr float Gap      = 7.0f;
-    const float     FilterW  = std::clamp(Surface.MeasureTextWidth(10.0f, FilterLabel.data(), FilterLabel.data() + FilterLabel.size()) + 30.0f, 64.0f, 98.0f);
+    constexpr float Gap     = 7.0f;
+    const float     FilterW = std::clamp(Surface.MeasureTextWidth(10.0f, FilterLabel.data(), FilterLabel.data() + FilterLabel.size()) + 30.0f, 64.0f, 96.0f);
     const Rectangle2D SearchRect { RowRect.X, RowRect.Y, std::max(60.0f, RowRect.Width - FilterW - Gap), RowRect.Height };
     const Rectangle2D FilterRect { SearchRect.Right() + Gap, RowRect.Y, FilterW, RowRect.Height };
     const float       Radius     = RowRect.Height * 0.5f;
 
-    // Capsule search bar
-    Surface.FillRectangle(SearchRect, Tone.InsetSurface, Radius);
-    Surface.StrokeRectangle(SearchRect, SearchBuffer.Active ? Tone.Amber : Tone.BorderSubtle, Radius, 1.0f);
+    Surface.FillRectangle(SearchRect, Tone.FieldWell, Radius);
+    Surface.StrokeRectangle(SearchRect, SearchBuffer.Active ? Tone.HighlightFill : Tone.BorderSubtle, Radius, 1.0f);
     VectorIconRepository::ConstructControl(Surface, ControlIcon::SearchGlass, {
         SearchRect.X + 11.0f,
         SearchRect.Center().Y - 6.0f,
@@ -619,15 +660,14 @@ inline bool ConstructSearchFilterRow(
         Surface.PopClip();
     }
 
-    // Capsule Filter toggle button
     const bool FilterHover = FilterRect.Contains(Cursor);
     const ColorRgba FilterFill = FilterActive
-        ? Tone.AmberWash
-        : (FilterHover ? Tone.RowHover : Tone.InsetSurface);
+        ? Tone.HighlightFill
+        : (FilterHover ? Tone.RowHover : Tone.TileSurface);
     const ColorRgba FilterStroke = FilterActive
-        ? Tone.Amber
+        ? Tone.HighlightFill
         : (FilterHover ? Tone.BorderStrong : Tone.BorderSubtle);
-    const ColorRgba FilterInk = FilterActive ? Tone.Amber : Tone.TextSecondary;
+    const ColorRgba FilterInk = FilterActive ? Tone.HighlightInk : Tone.TextSecondary;
 
     Surface.FillRectangle(FilterRect, FilterFill, Radius);
     Surface.StrokeRectangle(FilterRect, FilterStroke, Radius, 1.0f);
@@ -639,18 +679,18 @@ inline bool ConstructSearchFilterRow(
 }
 
 inline int32_t ConstructQuickChipStrip(
-    PixelSpace&                      Surface,
-    float                            LeftX,
-    float                            TopY,
-    float                            MaxWidth,
+    PixelSpace&                       Surface,
+    float                             LeftX,
+    float                             TopY,
+    float                             MaxWidth,
     std::span<const OutlinerChipSpec> Chips,
-    const PaneInputReading&          Input,
-    const StudioToneSet&             Tone,
-    float&                           OutConsumedHeight) noexcept
+    const PaneInputReading&           Input,
+    const StudioToneSet&              Tone,
+    float&                            OutConsumedHeight) noexcept
 {
     const Point2D Cursor = QueryInputCursor(Input);
     constexpr float ChipH = 24.0f;
-    constexpr float GapX  = 6.0f;
+    constexpr float GapX  = 5.0f;
     constexpr float GapY  = 5.0f;
 
     float   CursorX = LeftX;
@@ -675,14 +715,14 @@ inline int32_t ConstructQuickChipStrip(
         const bool Hovered = !Chip.Disabled && ChipRect.Contains(Cursor);
 
         const ColorRgba Fill = Chip.Selected
-            ? Tone.PrimaryFill
-            : (Hovered ? Tone.RowSelected : Tone.TileSurface);
+            ? Tone.HighlightFill
+            : (Hovered ? Tone.RowHover : Tone.TileSurface);
         const ColorRgba Stroke = Chip.Selected
-            ? Tone.PrimaryFill
+            ? Tone.HighlightFill
             : (Hovered ? Tone.BorderStrong : Tone.BorderSubtle);
         const ColorRgba Ink = Chip.Disabled
             ? Tone.TextFaint
-            : (Chip.Selected ? Tone.PrimaryInk : (Hovered ? Tone.TextPrimary : Tone.TextSecondary));
+            : (Chip.Selected ? Tone.HighlightInk : (Hovered ? Tone.TextPrimary : Tone.TextSecondary));
 
         Surface.FillRectangle(ChipRect, Fill, ChipH * 0.5f);
         Surface.StrokeRectangle(ChipRect, Stroke, ChipH * 0.5f, 1.0f);
@@ -721,6 +761,7 @@ inline int32_t ConstructQuickChipStrip(
     return Clicked;
 }
 
+// Sharp-cornered outliner entry (0px radius) preserving metadata, live preview slot, green tick, eye & lock buttons
 inline HierarchyRowResult ConstructHierarchyRow(
     PixelSpace&             Surface,
     Rectangle2D             RowRect,
@@ -732,114 +773,131 @@ inline HierarchyRowResult ConstructHierarchyRow(
     const Point2D Cursor = QueryInputCursor(Input);
     Outcome.Hovered = RowRect.Contains(Cursor);
 
+    // Sharp 0px corners for all outliner entries (matches TextureStudio OLD .tp-layer-row)
+    const ColorRgba BgFill = Spec.Selected
+        ? Tone.RowSelected
+        : (Outcome.Hovered ? Tone.RowHover : (Spec.GroupStyle ? Tone.PaneHeaderSurface : Tone.RowSurface));
+    const ColorRgba BgStroke = Spec.Selected ? Tone.RowSelectedStroke : Tone.Hairline;
+    Surface.FillRectangle(RowRect, BgFill, 0.0f);
+    Surface.StrokeRectangle(RowRect, BgStroke, 0.0f, 1.0f);
+
     if (Spec.Selected)
     {
-        Surface.FillRectangle(RowRect, Tone.RowSelected, 8.0f);
-        Surface.StrokeRectangle(RowRect, Tone.RowSelectedStroke, 8.0f, 1.0f);
-        // Signature 3px amber left indicator bar
-        Surface.FillRectangle({ RowRect.X + 1.0f, RowRect.Y + 4.0f, 3.0f, RowRect.Height - 8.0f }, Tone.Amber, 1.5f);
-    }
-    else if (Outcome.Hovered)
-    {
-        Surface.FillRectangle(RowRect, Tone.RowHover, 8.0f);
+        // Sharp 3px left selection spine
+        Surface.FillRectangle({ RowRect.X, RowRect.Y, 3.0f, RowRect.Height }, Tone.HighlightFill, 0.0f);
     }
 
-    const float IndentX = RowRect.X + 8.0f + static_cast<float>(std::max(0, Spec.DepthLevel)) * 13.0f;
+    const float IndentX = RowRect.X + 7.0f + static_cast<float>(std::max(0, Spec.DepthLevel)) * 12.0f;
     float LeftX = IndentX;
 
     // Expand / collapse chevron hit target
-    Rectangle2D ChevronRect { LeftX - 2.0f, RowRect.Y + 4.0f, 15.0f, RowRect.Height - 8.0f };
+    const Rectangle2D ChevronRect { LeftX - 2.0f, RowRect.Y + 3.0f, 15.0f, RowRect.Height - 6.0f };
     if (Spec.Expandable)
     {
         ConstructChevronMark(Surface, { LeftX + 5.0f, RowRect.Center().Y }, Spec.Expanded, 3.0f, Tone.TextMuted);
     }
     LeftX += 14.0f;
 
-    // 22x22 rounded icon or colour swatch tile
-    const Rectangle2D LeadTile { LeftX, RowRect.Center().Y - 11.0f, 22.0f, 22.0f };
-    const ColorRgba   TileFill = Spec.Muted ? Spec.LeadTileFill.ScaledAlpha(0.45f) : Spec.LeadTileFill;
-    Surface.FillRectangle(LeadTile, TileFill, 6.5f);
-    Surface.StrokeRectangle(LeadTile, Tone.BorderSubtle, 6.5f, 1.0f);
-    if (!Spec.LeadSolidSwatch)
+    // Sharp square preview box (live procedural preview or white icon on solid coloured fill)
+    const float PreviewSz = std::clamp(Spec.LeadPreviewSize, 20.0f, RowRect.Height - 6.0f);
+    const Rectangle2D LeadTile { LeftX, RowRect.Center().Y - PreviewSz * 0.5f, PreviewSz, PreviewSz };
+    Outcome.LeadPreviewRect = LeadTile;
+
+    if (Spec.CustomLeadPreview)
     {
-        const ColorRgba IconInk = Spec.Muted ? Spec.LeadIconInk.ScaledAlpha(0.45f) : Spec.LeadIconInk;
-        VectorIconRepository::ConstructControl(Surface, Spec.LeadIcon, {
-            LeadTile.Center().X - 6.0f,
-            LeadTile.Center().Y - 6.0f,
-            12.0f,
-            IconInk,
-            1.9f,
-        });
+        Surface.FillRectangle(LeadTile, Tone.FieldWell, 0.0f);
+        Surface.StrokeRectangle(LeadTile, Tone.BorderSubtle, 0.0f, 1.0f);
+    }
+    else
+    {
+        ConstructWhiteIconTile(Surface, LeadTile, Spec.LeadIcon, Spec.LeadIconTone, 0.0f, Tone, Spec.Muted);
     }
     LeftX = LeadTile.Right() + 8.0f;
 
-    // Right controls (trailing green check / visibility eye + tag chip)
-    float RightX = RowRect.Right() - 8.0f;
-    Rectangle2D TrailingRect {};
-    if (Spec.TrailingSwitch != TrailingSwitchKind::None)
-    {
-        TrailingRect = { RightX - 18.0f, RowRect.Center().Y - 9.0f, 18.0f, 18.0f };
-        const bool SwitchHover = TrailingRect.Contains(Cursor);
+    // Trailing controls right-to-left: Green check -> Lock -> Eye -> Tag chip
+    float RightX = RowRect.Right() - 7.0f;
+    Rectangle2D CheckRect {};
+    Rectangle2D LockRect {};
+    Rectangle2D EyeRect {};
 
-        if (Spec.TrailingSwitch == TrailingSwitchKind::GreenCheck)
+    if (Spec.ShowGreenCheck)
+    {
+        CheckRect = { RightX - 18.0f, RowRect.Center().Y - 9.0f, 18.0f, 18.0f };
+        const bool CheckHover = CheckRect.Contains(Cursor);
+        const Point2D Centre = CheckRect.Center();
+        if (Spec.GreenCheckOn)
         {
-            const Point2D Centre = TrailingRect.Center();
-            if (Spec.TrailingEnabled)
+            Surface.FillCircle(Centre, 7.5f, Tone.ToggleGreen);
+            ConstructCheckMark(Surface, Centre, 0.85f, Tone.WhiteInk, 1.7f);
+        }
+        else
+        {
+            Surface.FillCircle(Centre, 7.5f, CheckHover ? Tone.RowHover : Tone.FieldWell);
+            Surface.StrokeCircle(Centre, 7.5f, CheckHover ? Tone.TextMuted : Tone.BorderStrong, 1.25f);
+            if (Spec.PartialIndicator)
             {
-                Surface.FillCircle(Centre, 7.5f, Tone.ToggleGreen);
-                ConstructCheckMark(Surface, Centre, 0.85f, { 15u, 22u, 17u, 255u }, 1.65f);
-            }
-            else
-            {
-                Surface.FillCircle(Centre, 7.5f, SwitchHover ? Tone.RowHover : Tone.InsetSurface);
-                Surface.StrokeCircle(Centre, 7.5f, SwitchHover ? Tone.TextMuted : Tone.BorderStrong, 1.25f);
-                if (Spec.PartialIndicator)
-                {
-                    Surface.FillCircle(Centre, 2.5f, Tone.Amber);
-                }
+                Surface.FillCircle(Centre, 2.6f, Tone.Amber);
             }
         }
-        else if (Spec.TrailingSwitch == TrailingSwitchKind::Visibility)
+        RightX = CheckRect.X - 4.0f;
+    }
+
+    if (Spec.ShowLockToggle)
+    {
+        LockRect = { RightX - 18.0f, RowRect.Center().Y - 9.0f, 18.0f, 18.0f };
+        const bool LockHover = LockRect.Contains(Cursor);
+        if (Spec.LockEnabled)
         {
-            const ControlIcon EyeIcon = Spec.TrailingEnabled ? ControlIcon::EyeVisible : ControlIcon::EyeHidden;
-            const ColorRgba   EyeInk  = Spec.TrailingEnabled
-                ? (SwitchHover ? Tone.TextPrimary : Tone.TextMuted)
-                : Tone.TextFaint;
-            VectorIconRepository::ConstructControl(Surface, EyeIcon, {
-                TrailingRect.Center().X - 6.0f,
-                TrailingRect.Center().Y - 6.0f,
-                12.0f,
-                EyeInk,
-                1.85f,
-            });
+            Surface.FillRectangle(LockRect, Tone.AccentAmber, 0.0f);
         }
-        RightX = TrailingRect.X - 6.0f;
+        else if (LockHover)
+        {
+            Surface.FillRectangle(LockRect, Tone.AccentSlate, 0.0f);
+        }
+        VectorIconRepository::ConstructControl(Surface, ControlIcon::LockClosed, {
+            LockRect.Center().X - 5.2f,
+            LockRect.Center().Y - 5.2f,
+            10.4f,
+            Spec.LockEnabled ? Tone.WhiteInk : (LockHover ? Tone.WhiteInk : Tone.TextFaint),
+            1.85f,
+        });
+        RightX = LockRect.X - 3.0f;
+    }
+
+    if (Spec.ShowEyeToggle)
+    {
+        EyeRect = { RightX - 20.0f, RowRect.Center().Y - 10.0f, 20.0f, 20.0f };
+        const bool EyeHover = EyeRect.Contains(Cursor);
+        if (EyeHover)
+        {
+            Surface.FillRectangle(EyeRect, Tone.AccentSlate, 0.0f);
+        }
+        const ControlIcon EyeIcon = Spec.EyeVisible ? ControlIcon::EyeVisible : ControlIcon::EyeHidden;
+        const ColorRgba   EyeInk  = Spec.EyeVisible
+            ? (EyeHover ? Tone.WhiteInk : Tone.TextSecondary)
+            : Tone.TextFaint;
+        VectorIconRepository::ConstructControl(Surface, EyeIcon, {
+            EyeRect.Center().X - 5.8f,
+            EyeRect.Center().Y - 5.8f,
+            11.6f,
+            EyeInk,
+            1.85f,
+        });
+        RightX = EyeRect.X - 4.0f;
     }
 
     if (!Spec.TagLabel.empty())
     {
-        const float TagTextW = Surface.MeasureTextWidth(8.2f, Spec.TagLabel.data(), Spec.TagLabel.data() + Spec.TagLabel.size());
+        const float TagTextW = Surface.MeasureTextWidth(8.0f, Spec.TagLabel.data(), Spec.TagLabel.data() + Spec.TagLabel.size());
         const float TagW     = TagTextW + 10.0f;
         const Rectangle2D TagRect { RightX - TagW, RowRect.Center().Y - 8.0f, TagW, 16.0f };
-        Surface.FillRectangle(TagRect, ResolveTagBackground(Spec.TagStyle, Tone), 5.0f);
+        Surface.FillRectangle(TagRect, ResolveTagBackground(Spec.TagStyle, Tone), 0.0f);
         ConstructCenteredWeightedText(
-            Surface, FontWeightClass::Medium, TagRect, 8.2f, ResolveTagInk(Spec.TagStyle, Tone), Spec.TagLabel);
-        RightX = TagRect.X - 6.0f;
+            Surface, FontWeightClass::Medium, TagRect, 8.0f, ResolveTagInk(Spec.TagStyle, Tone), Spec.TagLabel);
+        RightX = TagRect.X - 5.0f;
     }
 
-    if (Spec.LockedSign)
-    {
-        VectorIconRepository::ConstructControl(Surface, ControlIcon::LockClosed, {
-            RightX - 11.0f,
-            RowRect.Center().Y - 5.5f,
-            11.0f,
-            Tone.TextFaint,
-            1.85f,
-        });
-        RightX -= 15.0f;
-    }
-
-    // Clipped Title + Subtitle
+    // Clipped Title + Metadata Subtitle
     const float TextAreaW = std::max(16.0f, RightX - LeftX);
     Surface.PushClip({ LeftX, RowRect.Y, TextAreaW, RowRect.Height });
     const ColorRgba TitleInk = Spec.Muted
@@ -859,23 +917,32 @@ inline HierarchyRowResult ConstructHierarchyRow(
     }
     else
     {
+        const float TitleY = RowRect.Center().Y - 12.5f;
         WorkspaceAppearance::ConstructWeightedText(
             Surface,
             Spec.Selected ? FontWeightClass::Medium : FontWeightClass::Regular,
-            { LeftX, RowRect.Y + 5.0f },
+            { LeftX, TitleY },
             11.0f,
             TitleInk,
             Spec.Title);
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Regular, { LeftX, RowRect.Y + 20.0f }, 9.0f, SubInk, Spec.Subtitle);
+            Surface, FontWeightClass::Regular, { LeftX, TitleY + 14.5f }, 9.0f, SubInk, Spec.Subtitle);
     }
     Surface.PopClip();
 
     if (QueryPrimaryPressed(Input) && Outcome.Hovered)
     {
-        if (Spec.TrailingSwitch != TrailingSwitchKind::None && TrailingRect.Contains(Cursor))
+        if (Spec.ShowGreenCheck && CheckRect.Contains(Cursor))
         {
-            Outcome.TrailingToggled = true;
+            Outcome.CheckToggled = true;
+        }
+        else if (Spec.ShowLockToggle && LockRect.Contains(Cursor))
+        {
+            Outcome.LockToggled = true;
+        }
+        else if (Spec.ShowEyeToggle && EyeRect.Contains(Cursor))
+        {
+            Outcome.EyeToggled = true;
         }
         else if (Spec.Expandable && ChevronRect.Contains(Cursor))
         {
@@ -893,57 +960,158 @@ inline HierarchyRowResult ConstructHierarchyRow(
     return Outcome;
 }
 
-inline void ConstructFourColumnFooter(
+// TextureStudio OLD bottom command toolbar (Up / Down  ---  Duplicate / Mask / Delete)
+inline OutlinerToolbarResult ConstructOutlinerCommandToolbar(
+    PixelSpace&             Surface,
+    Rectangle2D             BarRect,
+    bool                    AllowMoveUp,
+    bool                    AllowMoveDown,
+    bool                    AllowDuplicate,
+    bool                    ShowMaskButton,
+    bool                    AllowDelete,
+    const PaneInputReading& Input,
+    const StudioToneSet&    Tone) noexcept
+{
+    OutlinerToolbarResult Result {};
+    Surface.FillRectangle(BarRect, Tone.ToolbarSurface, 0.0f);
+    Surface.StrokeLine({ BarRect.X, BarRect.Y }, { BarRect.Right(), BarRect.Y }, Tone.Hairline, 1.0f);
+
+    const Point2D Cursor = QueryInputCursor(Input);
+    auto ConstructBtn = [&](Rectangle2D Rect, ControlIcon Icon, bool Enabled, bool Danger) -> bool
+    {
+        const bool Hovered = Enabled && Rect.Contains(Cursor);
+        const ColorRgba Fill = Hovered
+            ? (Danger ? Tone.CrimsonWash : Tone.AccentSlate)
+            : Tone.TileSurface;
+        const ColorRgba Stroke = Hovered
+            ? (Danger ? Tone.Crimson : Tone.BorderStrong)
+            : Tone.BorderSubtle;
+        const ColorRgba Ink = !Enabled
+            ? Tone.TextFaint
+            : (Hovered && Danger ? Tone.Crimson : Tone.WhiteInk);
+
+        Surface.FillRectangle(Rect, Fill, 0.0f);
+        Surface.StrokeRectangle(Rect, Stroke, 0.0f, 1.0f);
+        VectorIconRepository::ConstructControl(Surface, Icon, {
+            Rect.Center().X - 6.0f,
+            Rect.Center().Y - 6.0f,
+            12.0f,
+            Ink,
+            1.85f,
+        });
+        return Hovered && QueryPrimaryPressed(Input);
+    };
+
+    const float BtnY = BarRect.Center().Y - 12.0f;
+    const Rectangle2D UpRect   { BarRect.X + 10.0f, BtnY, 25.0f, 24.0f };
+    const Rectangle2D DownRect { UpRect.Right() + 4.0f, BtnY, 25.0f, 24.0f };
+    Result.MoveUpClicked   = ConstructBtn(UpRect, ControlIcon::ChevronUp, AllowMoveUp, false);
+    Result.MoveDownClicked = ConstructBtn(DownRect, ControlIcon::ChevronDown, AllowMoveDown, false);
+
+    float RightX = BarRect.Right() - 10.0f;
+    const Rectangle2D DelRect { RightX - 25.0f, BtnY, 25.0f, 24.0f };
+    Result.DeleteClicked = ConstructBtn(DelRect, ControlIcon::TrashDelete, AllowDelete, true);
+    RightX = DelRect.X - 4.0f;
+
+    if (ShowMaskButton)
+    {
+        const Rectangle2D MaskRect { RightX - 25.0f, BtnY, 25.0f, 24.0f };
+        Result.MaskClicked = ConstructBtn(MaskRect, ControlIcon::MaskCutout, AllowDuplicate, false);
+        RightX = MaskRect.X - 4.0f;
+    }
+
+    const Rectangle2D DupRect { RightX - 25.0f, BtnY, 25.0f, 24.0f };
+    Result.DuplicateClicked = ConstructBtn(DupRect, ControlIcon::CopyDuplicate, AllowDuplicate, false);
+    return Result;
+}
+
+// TextureStudio OLD Canvas/Layer-0 ground bar above the 3-metric footer
+inline void ConstructOutlinerGroundRow(
+    PixelSpace&          Surface,
+    Rectangle2D          RowRect,
+    ControlIcon          Icon,
+    IconAccentTone       IconTone,
+    std::string_view     Title,
+    std::string_view     Subtitle,
+    std::string_view     RightTag,
+    const StudioToneSet& Tone) noexcept
+{
+    Surface.FillRectangle(RowRect, Tone.GroundRowSurface, 0.0f);
+    Surface.StrokeLine({ RowRect.X, RowRect.Y }, { RowRect.Right(), RowRect.Y }, Tone.Hairline, 1.0f);
+
+    const Rectangle2D IconRect { RowRect.X + 10.0f, RowRect.Center().Y - 11.0f, 22.0f, 22.0f };
+    ConstructWhiteIconTile(Surface, IconRect, Icon, IconTone, 0.0f, Tone, false);
+
+    float RightX = RowRect.Right() - 10.0f;
+    if (!RightTag.empty())
+    {
+        const float TagW = Surface.MeasureTextWidth(8.6f, RightTag.data(), RightTag.data() + RightTag.size()) + 12.0f;
+        const Rectangle2D TagRect { RightX - TagW, RowRect.Center().Y - 9.0f, TagW, 18.0f };
+        Surface.FillRectangle(TagRect, Tone.TileSurface, 0.0f);
+        Surface.StrokeRectangle(TagRect, Tone.BorderSubtle, 0.0f, 1.0f);
+        ConstructCenteredWeightedText(Surface, FontWeightClass::Medium, TagRect, 8.6f, Tone.TextSecondary, RightTag);
+        RightX = TagRect.X - 8.0f;
+    }
+
+    const float TextX = IconRect.Right() + 8.0f;
+    Surface.PushClip({ TextX, RowRect.Y, std::max(20.0f, RightX - TextX), RowRect.Height });
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::Regular, { TextX, RowRect.Y + 6.0f }, 10.2f, Tone.TextSecondary, Title);
+    WorkspaceAppearance::ConstructWeightedText(
+        Surface, FontWeightClass::Regular, { TextX, RowRect.Y + 20.0f }, 8.6f, Tone.TextFaint, Subtitle);
+    Surface.PopClip();
+}
+
+// TextureStudio OLD 3-Metric Outliner Footer (LAYERS 2 | VISIBLE 2 | MODS 4)
+inline void ConstructThreeMetricFooter(
     PixelSpace&                                  Surface,
     Rectangle2D                                  FooterRect,
-    const std::array<FooterMetricColumn, 4u>&    Columns,
+    const std::array<ThreeMetricFooterCell, 3u>& Cells,
     const StudioToneSet&                         Tone) noexcept
 {
-    Surface.FillRectangleBottomRounded(FooterRect, Tone.FooterSurface, 17.0f);
+    Surface.FillRectangle(FooterRect, Tone.FooterSurface, 0.0f);
     Surface.StrokeLine({ FooterRect.X, FooterRect.Y }, { FooterRect.Right(), FooterRect.Y }, Tone.Hairline, 1.0f);
 
-    const float ColW = FooterRect.Width * 0.25f;
-    for (std::size_t Idx = 0u; Idx < 4u; ++Idx)
+    const float ColW = FooterRect.Width / 3.0f;
+    for (std::size_t Idx = 0u; Idx < 3u; ++Idx)
     {
-        const FooterMetricColumn& Col = Columns[Idx];
-        const float LeftX = FooterRect.X + static_cast<float>(Idx) * ColW + 10.0f;
-        if (Idx > 0u)
+        const ThreeMetricFooterCell& Cell = Cells[Idx];
+        const float LblW  = Surface.MeasureTextWidth(8.6f, Cell.Label.data(), Cell.Label.data() + Cell.Label.size());
+        const float ReadW = Surface.MeasureTextWidth(9.8f, Cell.Reading.data(), Cell.Reading.data() + Cell.Reading.size());
+        const float PairW = LblW + 5.0f + ReadW;
+
+        float StartX = FooterRect.X + 12.0f;
+        if (Idx == 1u)
         {
-            Surface.StrokeLine(
-                { FooterRect.X + static_cast<float>(Idx) * ColW, FooterRect.Y + 9.0f },
-                { FooterRect.X + static_cast<float>(Idx) * ColW, FooterRect.Bottom() - 9.0f },
-                Tone.Hairline,
-                1.0f);
+            StartX = FooterRect.X + ColW + (ColW - PairW) * 0.5f;
+        }
+        else if (Idx == 2u)
+        {
+            StartX = FooterRect.Right() - 12.0f - PairW;
         }
 
+        const float MidY = FooterRect.Center().Y;
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Medium, { LeftX, FooterRect.Y + 8.0f }, 8.0f, Tone.TextFaint, Col.Label);
+            Surface, FontWeightClass::Medium, { StartX, MidY - 4.8f }, 8.6f, Tone.TextFaint, Cell.Label);
 
-        const ColorRgba ReadInk = (Col.Tone == TagTone::Amber)
-            ? Tone.Amber
-            : (Col.Tone == TagTone::Green ? Tone.Green : Tone.TextPrimary);
+        const ColorRgba Ink = (Cell.Tone == TagTone::Green)
+            ? Tone.Green
+            : (Cell.Tone == TagTone::Amber ? Tone.Amber : Tone.TextPrimary);
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Medium, { LeftX, FooterRect.Y + 21.0f }, 11.2f, ReadInk, Col.Reading);
-
-        if (!Col.Unit.empty())
-        {
-            const float ValW = Surface.MeasureTextWidth(11.6f, Col.Reading.data(), Col.Reading.data() + Col.Reading.size());
-            WorkspaceAppearance::ConstructWeightedText(
-                Surface, FontWeightClass::Regular, { LeftX + ValW + 5.0f, FooterRect.Y + 23.0f }, 8.6f, Tone.TextMuted, Col.Unit);
-        }
+            Surface, FontWeightClass::Medium, { StartX + LblW + 5.0f, MidY - 5.2f }, 9.8f, Ink, Cell.Reading);
     }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                  INSPECTOR PRIMITIVES
+//                                        TEXTURESTUDIO OLD INSPECTOR PRIMITIVES
 //------------------------------------------------------------------------------------------------------------------------
 
-inline InspectorHeadingResult ConstructInspectorHeading(
+// Old TextureStudio Material Inspector Top Heading Strip (Title left, Mono Eyebrow + optional compact buttons right)
+inline InspectorHeadingResult ConstructStudioInspectorHeader(
     PixelSpace&             Surface,
-    Rectangle2D             HeadingRect,
-    ControlIcon             MarkIcon,
+    Rectangle2D             StripRect,
     std::string_view        Title,
-    std::string_view        Eyebrow,
+    std::string_view        CategoryEyebrow,
     bool                    ShowUndoRedo,
     bool                    UndoAvailable,
     bool                    RedoAvailable,
@@ -952,296 +1120,185 @@ inline InspectorHeadingResult ConstructInspectorHeading(
     const StudioToneSet&    Tone) noexcept
 {
     InspectorHeadingResult Result {};
-
-    // Signature 26x26 warm-amber mark tile
-    const Rectangle2D MarkRect { HeadingRect.X, HeadingRect.Center().Y - 13.0f, 26.0f, 26.0f };
-    Surface.FillRectangle(MarkRect, Tone.AmberWash, 8.5f);
-    Surface.StrokeRectangle(MarkRect, Tone.AmberStroke, 8.5f, 1.0f);
-    VectorIconRepository::ConstructControl(Surface, MarkIcon, {
-        MarkRect.Center().X - 6.5f,
-        MarkRect.Center().Y - 6.5f,
-        13.0f,
-        Tone.Amber,
-        1.9f,
-    });
+    Surface.FillRectangle(StripRect, Tone.PaneHeaderSurface, 0.0f);
+    Surface.StrokeLine({ StripRect.X, StripRect.Bottom() }, { StripRect.Right(), StripRect.Bottom() }, Tone.Hairline, 1.0f);
 
     WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Medium, { MarkRect.Right() + 9.0f, HeadingRect.Y + 5.0f }, 12.2f, Tone.TextPrimary, Title);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Medium, { MarkRect.Right() + 9.0f, HeadingRect.Y + 21.0f }, 8.0f, Tone.TextFaint, Eyebrow);
+        Surface, FontWeightClass::Medium, { StripRect.X + 14.0f, StripRect.Center().Y - 6.8f }, 12.8f, Tone.TextPrimary, Title);
 
-    float RightX = HeadingRect.Right();
+    float RightX = StripRect.Right() - 12.0f;
     if (ShowReset)
     {
-        const Rectangle2D Btn { RightX - 26.0f, HeadingRect.Center().Y - 13.0f, 26.0f, 26.0f };
+        const Rectangle2D Btn { RightX - 24.0f, StripRect.Center().Y - 12.0f, 24.0f, 24.0f };
         Result.ResetClicked = ConstructRoundIconButton(Surface, Btn, ControlIcon::RefreshCycle, Input, Tone);
         RightX = Btn.X - 5.0f;
     }
     if (ShowUndoRedo)
     {
-        const Rectangle2D RedoBtn { RightX - 26.0f, HeadingRect.Center().Y - 13.0f, 26.0f, 26.0f };
+        const Rectangle2D RedoBtn { RightX - 24.0f, StripRect.Center().Y - 12.0f, 24.0f, 24.0f };
         Result.RedoClicked = ConstructRoundIconButton(Surface, RedoBtn, ControlIcon::RedoArrow, Input, Tone, !RedoAvailable);
-        RightX = RedoBtn.X - 5.0f;
+        RightX = RedoBtn.X - 4.0f;
 
-        const Rectangle2D UndoBtn { RightX - 26.0f, HeadingRect.Center().Y - 13.0f, 26.0f, 26.0f };
+        const Rectangle2D UndoBtn { RightX - 24.0f, StripRect.Center().Y - 12.0f, 24.0f, 24.0f };
         Result.UndoClicked = ConstructRoundIconButton(Surface, UndoBtn, ControlIcon::UndoArrow, Input, Tone, !UndoAvailable);
+        RightX = UndoBtn.X - 8.0f;
     }
 
-    Surface.StrokeLine({ HeadingRect.X - 14.0f, HeadingRect.Bottom() }, { HeadingRect.Right() + 14.0f, HeadingRect.Bottom() }, Tone.Hairline, 1.0f);
+    if (!CategoryEyebrow.empty())
+    {
+        WorkspaceAppearance::ConstructRightAlignedText(
+            Surface, FontWeightClass::Medium, { RightX, StripRect.Center().Y - 4.8f }, 8.6f, Tone.TextFaint, CategoryEyebrow);
+    }
     return Result;
 }
 
-inline bool ConstructIdentityBlock(
+// Old TextureStudio Object Heading (.object-heading: large 20px light title + mono uppercase subtitle + optional selector)
+inline bool ConstructStudioObjectHeading(
     PixelSpace&             Surface,
     Rectangle2D             BlockRect,
-    std::string_view        Eyebrow,
-    std::string_view        Name,
-    std::string_view        Subtitle,
+    std::string_view        ObjectTitle,
+    std::string_view        MonoSubtitle,
     std::string_view        SelectorLabel,
     bool                    SelectorOpen,
     const PaneInputReading& Input,
     const StudioToneSet&    Tone,
-    Rectangle2D*            OutSelectorBounds = nullptr,
-    bool                    ReserveLeftThumb  = false,
-    Rectangle2D*            OutThumbBounds    = nullptr) noexcept
+    Rectangle2D*            OutSelectorBounds = nullptr) noexcept
 {
-    float TextLeftX = BlockRect.X;
-    if (ReserveLeftThumb)
+    bool SelectorClicked = false;
+    float TitleRightLimit = BlockRect.Right();
+
+    if (!SelectorLabel.empty())
     {
-        const Rectangle2D ThumbRect { BlockRect.X, BlockRect.Y + 2.0f, 52.0f, 52.0f };
-        Surface.FillRectangle(ThumbRect, Tone.InsetSurface, 12.0f);
-        Surface.StrokeRectangle(ThumbRect, Tone.BorderSubtle, 12.0f, 1.0f);
-        if (OutThumbBounds != nullptr)
+        const float SelW = std::clamp(Surface.MeasureTextWidth(9.6f, SelectorLabel.data(), SelectorLabel.data() + SelectorLabel.size()) + 26.0f, 64.0f, 108.0f);
+        const Rectangle2D SelRect { BlockRect.Right() - SelW, BlockRect.Y + 4.0f, SelW, 25.0f };
+        if (OutSelectorBounds != nullptr)
         {
-            *OutThumbBounds = ThumbRect;
+            *OutSelectorBounds = SelRect;
         }
-        TextLeftX = ThumbRect.Right() + 10.0f;
+        const Point2D Cursor  = QueryInputCursor(Input);
+        const bool    Hovered = SelRect.Contains(Cursor);
+        Surface.FillRectangle(SelRect, SelectorOpen ? Tone.RowSelected : (Hovered ? Tone.RowHover : Tone.TileSurface), 12.5f);
+        Surface.StrokeRectangle(SelRect, SelectorOpen ? Tone.HighlightFill : (Hovered ? Tone.BorderStrong : Tone.BorderSubtle), 12.5f, 1.0f);
+        WorkspaceAppearance::ConstructWeightedText(
+            Surface, FontWeightClass::Medium, { SelRect.X + 10.0f, SelRect.Center().Y - 5.0f }, 9.5f, Tone.TextSecondary, SelectorLabel);
+        ConstructChevronMark(Surface, { SelRect.Right() - 10.0f, SelRect.Center().Y }, !SelectorOpen, 2.8f, Tone.TextMuted);
+        SelectorClicked = Hovered && QueryPrimaryPressed(Input);
+        TitleRightLimit = SelRect.X - 8.0f;
     }
 
-    const float SelTextW = Surface.MeasureTextWidth(9.8f, SelectorLabel.data(), SelectorLabel.data() + SelectorLabel.size());
-    const float SelW     = std::clamp(SelTextW + 26.0f, 68.0f, 118.0f);
-    const Rectangle2D SelectorRect { BlockRect.Right() - SelW, BlockRect.Y + 14.0f, SelW, 27.0f };
-    if (OutSelectorBounds != nullptr)
-    {
-        *OutSelectorBounds = SelectorRect;
-    }
-
-    const float TitleClipW = std::max(40.0f, SelectorRect.X - TextLeftX - 8.0f);
-    const float TitleSize  = (ReserveLeftThumb || Name.size() > 20u) ? 14.8f : 17.0f;
-    Surface.PushClip({ TextLeftX, BlockRect.Y, TitleClipW, BlockRect.Height });
+    const float TitleSize = (ObjectTitle.size() > 22u) ? 16.5f : 19.5f;
+    Surface.PushClip({ BlockRect.X, BlockRect.Y, std::max(40.0f, TitleRightLimit - BlockRect.X), BlockRect.Height - 18.0f });
     WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Medium, { TextLeftX, BlockRect.Y + 1.0f }, 8.2f, Tone.TextFaint, Eyebrow);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Light, { TextLeftX, BlockRect.Y + 15.0f }, TitleSize, Tone.TextPrimary, Name);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Regular, { TextLeftX, BlockRect.Y + 37.0f }, 9.6f, Tone.TextMuted, Subtitle);
+        Surface, FontWeightClass::Light, { BlockRect.X, BlockRect.Y + 2.0f }, TitleSize, Tone.TextPrimary, ObjectTitle);
     Surface.PopClip();
 
-    const Point2D Cursor = QueryInputCursor(Input);
-    const bool    Hovered = SelectorRect.Contains(Cursor);
-    Surface.FillRectangle(SelectorRect, SelectorOpen ? Tone.RowSelected : (Hovered ? Tone.RowHover : Tone.InsetSurface), 13.5f);
-    Surface.StrokeRectangle(SelectorRect, SelectorOpen ? Tone.Amber : (Hovered ? Tone.BorderStrong : Tone.BorderSubtle), 13.5f, 1.0f);
+    Surface.PushClip({ BlockRect.X, BlockRect.Y + 26.0f, BlockRect.Width, 16.0f });
     WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Medium, { SelectorRect.X + 10.0f, SelectorRect.Center().Y - 5.2f }, 9.8f, Tone.TextSecondary, SelectorLabel);
-    ConstructChevronMark(Surface, { SelectorRect.Right() - 11.0f, SelectorRect.Center().Y }, !SelectorOpen, 2.8f, Tone.TextMuted);
+        Surface, FontWeightClass::Medium, { BlockRect.X, BlockRect.Y + 28.0f }, 8.6f, Tone.TextMuted, MonoSubtitle);
+    Surface.PopClip();
 
-    return Hovered && QueryPrimaryPressed(Input);
+    Surface.StrokeLine({ BlockRect.X, BlockRect.Bottom() }, { BlockRect.Right(), BlockRect.Bottom() }, Tone.Hairline, 1.0f);
+    return SelectorClicked;
 }
 
-inline void ConstructMeterStatTrio(
-    PixelSpace&                              Surface,
-    Rectangle2D                              Area,
-    const std::array<MeterStatTileSpec, 3u>& Tiles,
-    const StudioToneSet&                     Tone) noexcept
+// Old TextureStudio 3-Up KPI Info Tiles (.kpi-trio: Tile 0 lime-cream #EFF4CF highlight + Tiles 1 & 2 dark rounded)
+inline void ConstructStudioKpiTrio(
+    PixelSpace&                        Surface,
+    Rectangle2D                        Area,
+    const std::array<KpiTileSpec, 3u>& Tiles,
+    const StudioToneSet&               Tone) noexcept
 {
     constexpr float Gap   = 7.0f;
     const float     TileW = (Area.Width - Gap * 2.0f) / 3.0f;
 
     for (std::size_t Idx = 0u; Idx < 3u; ++Idx)
     {
-        const MeterStatTileSpec& Spec = Tiles[Idx];
-        const Rectangle2D TileRect { Area.X + static_cast<float>(Idx) * (TileW + Gap), Area.Y, TileW, Area.Height };
+        const KpiTileSpec& Spec = Tiles[Idx];
+        const Rectangle2D  TileRect { Area.X + static_cast<float>(Idx) * (TileW + Gap), Area.Y, TileW, Area.Height };
 
-        const ColorRgba TileFill   = Spec.PrimaryAccent ? ColorRgba::Blend(Tone.InsetSurface, Tone.AmberWash, 0.55f) : Tone.InsetSurface;
-        const ColorRgba TileStroke = Spec.PrimaryAccent ? Tone.AmberStroke : Tone.BorderSubtle;
-        Surface.FillRectangle(TileRect, TileFill, 13.0f);
-        Surface.StrokeRectangle(TileRect, TileStroke, 13.0f, 1.0f);
+        const ColorRgba Fill   = Spec.Highlighted ? Tone.HighlightFill : Tone.InsetSurface;
+        const ColorRgba Stroke = Spec.Highlighted ? Tone.HighlightFill : Tone.BorderSubtle;
+        Surface.FillRectangle(TileRect, Fill, 15.0f);
+        if (!Spec.Highlighted)
+        {
+            Surface.StrokeRectangle(TileRect, Stroke, 15.0f, 1.0f);
+        }
 
-        const float PadX = 9.0f;
+        const ColorRgba LabelInk   = Spec.Highlighted ? Tone.HighlightMutedInk : Tone.TextMuted;
+        const ColorRgba ReadingInk = Spec.Highlighted ? Tone.HighlightInk      : Tone.TextPrimary;
+        const ColorRgba SubInk     = Spec.Highlighted ? Tone.HighlightMutedInk : Tone.TextFaint;
+
+        const float PadX = 10.0f;
         Surface.PushClip(TileRect.InsetXY(PadX, 4.0f));
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Medium, { TileRect.X + PadX, TileRect.Y + 8.0f }, 8.5f, Tone.TextMuted, Spec.Label);
-
-        const ColorRgba ReadInk = (Spec.ReadingTone == TagTone::Amber)
-            ? Tone.Amber
-            : (Spec.ReadingTone == TagTone::Green ? Tone.Green
-            : (Spec.ReadingTone == TagTone::Crimson ? Tone.Crimson
-            : (Spec.PrimaryAccent ? Tone.Amber : Tone.TextPrimary)));
+            Surface, FontWeightClass::Regular, { TileRect.X + PadX, TileRect.Y + 9.0f }, 9.0f, LabelInk, Spec.Label);
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Light, { TileRect.X + PadX, TileRect.Y + 21.0f }, 16.0f, ReadInk, Spec.Reading);
-
-        if (!Spec.Unit.empty())
-        {
-            const float ValW = Surface.MeasureTextWidth(16.6f, Spec.Reading.data(), Spec.Reading.data() + Spec.Reading.size());
-            WorkspaceAppearance::ConstructWeightedText(
-                Surface, FontWeightClass::Regular, { TileRect.X + PadX + ValW + 5.5f, TileRect.Y + 27.0f }, 8.6f, Tone.TextMuted, Spec.Unit);
-        }
-
-        // Inline Project Zero meter strip
-        const Rectangle2D MeterRect { TileRect.X + PadX, TileRect.Y + 44.0f, TileRect.Width - PadX * 2.0f, 4.5f };
-        if (Spec.MeterKind == MeterVariant::FillBar)
-        {
-            Surface.FillRectangle(MeterRect, Tone.RecessedWell, 2.25f);
-            const float FillW = std::clamp(Spec.MeterRatio, 0.0f, 1.0f) * MeterRect.Width;
-            if (FillW > 1.0f)
-            {
-                Surface.FillRectangle({ MeterRect.X, MeterRect.Y, FillW, MeterRect.Height }, Spec.MeterColour, 2.25f);
-            }
-        }
-        else if (Spec.MeterKind == MeterVariant::BandDot)
-        {
-            Surface.FillRectangle(MeterRect, Tone.RecessedWell, 2.25f);
-            const float LoX = MeterRect.X + std::clamp(Spec.BandLow, 0.0f, 1.0f) * MeterRect.Width;
-            const float HiX = MeterRect.X + std::clamp(Spec.BandHigh, 0.0f, 1.0f) * MeterRect.Width;
-            if (HiX > LoX + 1.0f)
-            {
-                Surface.FillRectangle({ LoX, MeterRect.Y, HiX - LoX, MeterRect.Height }, Tone.RowSelected, 2.0f);
-            }
-            const float DotX = MeterRect.X + std::clamp(Spec.MeterRatio, 0.0f, 1.0f) * MeterRect.Width;
-            Surface.FillCircle({ DotX, MeterRect.Center().Y }, 3.2f, Spec.MeterColour);
-        }
-        else if (Spec.MeterKind == MeterVariant::StackBar)
-        {
-            Surface.FillRectangle(MeterRect, Tone.RecessedWell, 2.25f);
-            float Total = 0.0f;
-            for (uint32_t P = 0u; P < Spec.StackCount; ++P) Total += std::max(0.0f, Spec.StackParts[P].Share);
-            if (Total > 1.0e-5f)
-            {
-                float RunX = MeterRect.X;
-                for (uint32_t P = 0u; P < Spec.StackCount; ++P)
-                {
-                    const float SegW = (std::max(0.0f, Spec.StackParts[P].Share) / Total) * MeterRect.Width;
-                    if (SegW > 0.5f)
-                    {
-                        Surface.FillRectangle({ RunX, MeterRect.Y, std::max(1.5f, SegW - 1.0f), MeterRect.Height }, Spec.StackParts[P].Colour, 2.0f);
-                    }
-                    RunX += SegW;
-                }
-            }
-        }
-        else if (Spec.MeterKind == MeterVariant::SwatchLine && Spec.SwatchCount > 0u)
-        {
-            const float GapS  = 3.0f;
-            const float EachW = std::min(14.0f, (MeterRect.Width - GapS * static_cast<float>(Spec.SwatchCount - 1u)) / static_cast<float>(Spec.SwatchCount));
-            for (uint32_t S = 0u; S < Spec.SwatchCount; ++S)
-            {
-                Surface.FillRectangle({ MeterRect.X + static_cast<float>(S) * (EachW + GapS), MeterRect.Y - 1.0f, EachW, 6.0f }, Spec.Swatches[S], 3.0f);
-            }
-        }
-        else if (Spec.MeterKind == MeterVariant::StepTicks && Spec.StepTotal > 0)
-        {
-            const int32_t Count = std::clamp(Spec.StepTotal, 1, 10);
-            const float   GapT  = 2.0f;
-            const float   SegW  = (MeterRect.Width - GapT * static_cast<float>(Count - 1)) / static_cast<float>(Count);
-            for (int32_t T = 0; T < Count; ++T)
-            {
-                const ColorRgba SegFill = (T < Spec.StepDone) ? Tone.Green : Tone.RecessedWell;
-                Surface.FillRectangle({ MeterRect.X + static_cast<float>(T) * (SegW + GapT), MeterRect.Y, SegW, MeterRect.Height }, SegFill, 2.0f);
-            }
-        }
-
+            Surface, FontWeightClass::Regular, { TileRect.X + PadX, TileRect.Y + 23.5f }, 16.5f, ReadingInk, Spec.Reading);
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Regular, { TileRect.X + PadX, TileRect.Y + 55.0f }, 8.6f, Tone.TextFaint, Spec.Caption);
+            Surface, FontWeightClass::Regular, { TileRect.X + PadX, TileRect.Y + 46.5f }, 8.6f, SubInk, Spec.Caption);
         Surface.PopClip();
     }
 }
 
-inline bool ConstructAccordionRowHeader(
+// Old TextureStudio Categorized Section Group (distinct Header strip with white-on-color icon + right tag, and distinct Body fill)
+inline bool ConstructCategoryGroupBox(
     PixelSpace&             Surface,
-    Rectangle2D             RowRect,
-    const AccordionRowSpec& Spec,
+    Rectangle2D             OuterRect,
+    float                   HeaderHeight,
+    ControlIcon             CategoryIcon,
+    IconAccentTone          IconTone,
+    std::string_view        Title,
+    std::string_view        CategoryTag,
     bool                    Expanded,
     const PaneInputReading& Input,
     const StudioToneSet&    Tone) noexcept
 {
-    const Point2D Cursor = QueryInputCursor(Input);
-    const bool    Hovered = RowRect.Contains(Cursor);
+    constexpr float Radius = 16.0f;
+    const Rectangle2D HeaderRect { OuterRect.X, OuterRect.Y, OuterRect.Width, HeaderHeight };
 
-    if (!Expanded && Hovered)
+    if (Expanded && OuterRect.Height > HeaderHeight + 2.0f)
     {
-        Surface.FillRectangle(RowRect, Tone.RowHover, 10.0f);
-    }
-
-    // Leading 22x22 live swatch or icon box
-    const Rectangle2D SwatchRect { RowRect.X + 8.0f, RowRect.Center().Y - 11.0f, 22.0f, 22.0f };
-    if (Spec.SolidSwatch)
-    {
-        Surface.FillRectangle(SwatchRect, Spec.SwatchColour, 6.5f);
-        Surface.StrokeRectangle(SwatchRect, Tone.BorderStrong, 6.5f, 1.0f);
-    }
-    else if (Spec.ScalarBarSwatch)
-    {
-        Surface.FillRectangle(SwatchRect, Tone.RecessedWell, 6.5f);
-        const float BarH = std::clamp(Spec.ScalarFill, 0.05f, 1.0f) * (SwatchRect.Height - 4.0f);
-        Surface.FillRectangle(
-            { SwatchRect.X + 2.0f, SwatchRect.Bottom() - 2.0f - BarH, SwatchRect.Width - 4.0f, BarH },
-            Spec.DrivenWarm ? Tone.Amber : Tone.TextSecondary,
-            3.5f);
-        Surface.StrokeRectangle(SwatchRect, Tone.BorderSubtle, 6.5f, 1.0f);
+        Surface.FillRectangle(OuterRect, Tone.SectionBodyBg, Radius);
+        Surface.PushClip(HeaderRect);
+        Surface.FillRectangle({ HeaderRect.X, HeaderRect.Y, HeaderRect.Width, HeaderRect.Height + Radius }, Tone.SectionHeaderBg, Radius);
+        Surface.PopClip();
+        Surface.StrokeLine({ OuterRect.X + 1.0f, HeaderRect.Bottom() }, { OuterRect.Right() - 1.0f, HeaderRect.Bottom() }, Tone.Hairline, 1.0f);
+        Surface.StrokeRectangle(OuterRect, Tone.BorderSubtle, Radius, 1.0f);
     }
     else
     {
-        Surface.FillRectangle(SwatchRect, Tone.TileSurface, 6.5f);
-        Surface.StrokeRectangle(SwatchRect, Tone.BorderSubtle, 6.5f, 1.0f);
-        VectorIconRepository::ConstructControl(Surface, Spec.LeadIcon, {
-            SwatchRect.Center().X - 6.0f,
-            SwatchRect.Center().Y - 6.0f,
-            12.0f,
-            Spec.DrivenWarm ? Tone.Amber : Tone.TextMuted,
-            1.85f,
-        });
+        Surface.FillRectangle(HeaderRect, Tone.SectionHeaderBg, Radius);
+        Surface.StrokeRectangle(HeaderRect, Tone.BorderSubtle, Radius, 1.0f);
     }
 
-    // Right readout capsule
-    const float ReadTextW = Surface.MeasureTextWidth(9.5f, Spec.Readout.data(), Spec.Readout.data() + Spec.Readout.size());
-    const float ReadW     = std::clamp(ReadTextW + 16.0f, 40.0f, 118.0f);
-    const Rectangle2D ReadRect { RowRect.Right() - ReadW - 8.0f, RowRect.Center().Y - 10.5f, ReadW, 21.0f };
+    // White icon inside coloured category square
+    const Rectangle2D IconRect { HeaderRect.X + 11.0f, HeaderRect.Center().Y - 10.0f, 20.0f, 20.0f };
+    ConstructWhiteIconTile(Surface, IconRect, CategoryIcon, IconTone, 5.5f, Tone, false);
 
-    Surface.FillRectangle(ReadRect, Spec.DrivenWarm ? Tone.ReadoutWarm : Tone.ReadoutDark, 10.5f);
-    Surface.StrokeRectangle(ReadRect, Spec.DrivenWarm ? Tone.AmberStroke : Tone.Hairline, 10.5f, 1.0f);
-    ConstructCenteredWeightedText(
-        Surface,
-        FontWeightClass::Medium,
-        ReadRect,
-        9.4f,
-        Spec.DrivenWarm ? Tone.Amber : Tone.TextSecondary,
-        Spec.Readout);
-
-    // Label + Hint
-    const float TextLeftX = SwatchRect.Right() + 9.0f;
-    const float TextClipW = std::max(24.0f, ReadRect.X - TextLeftX - 8.0f);
-    Surface.PushClip({ TextLeftX, RowRect.Y, TextClipW, RowRect.Height });
     WorkspaceAppearance::ConstructWeightedText(
-        Surface,
-        Expanded ? FontWeightClass::Medium : FontWeightClass::Regular,
-        { TextLeftX, RowRect.Y + 5.5f },
-        11.2f,
-        Tone.TextPrimary,
-        Spec.Title);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Regular, { TextLeftX, RowRect.Y + 20.5f }, 9.0f, Tone.TextMuted, Spec.Subtitle);
-    Surface.PopClip();
+        Surface, FontWeightClass::Light, { IconRect.Right() + 8.0f, HeaderRect.Center().Y - 6.8f }, 13.0f, Tone.TextPrimary, Title);
 
-    return Hovered && QueryPrimaryPressed(Input);
+    float RightX = HeaderRect.Right() - 12.0f;
+    ConstructChevronMark(Surface, { RightX - 3.0f, HeaderRect.Center().Y }, Expanded, 3.0f, Tone.TextMuted);
+    RightX -= 14.0f;
+
+    if (!CategoryTag.empty())
+    {
+        WorkspaceAppearance::ConstructRightAlignedText(
+            Surface, FontWeightClass::Medium, { RightX, HeaderRect.Center().Y - 4.5f }, 8.4f, Tone.TextFaint, CategoryTag);
+    }
+
+    const Point2D Cursor = QueryInputCursor(Input);
+    return HeaderRect.Contains(Cursor) && QueryPrimaryPressed(Input);
 }
 
 inline int32_t ConstructSegmentedCapsuleBar(
-    PixelSpace&                        Surface,
-    Rectangle2D                        BarRect,
-    std::span<const std::string_view>  Labels,
-    int32_t                            SelectedIndex,
-    const PaneInputReading&            Input,
-    const StudioToneSet&               Tone) noexcept
+    PixelSpace&                       Surface,
+    Rectangle2D                       BarRect,
+    std::span<const std::string_view> Labels,
+    int32_t                           SelectedIndex,
+    const PaneInputReading&           Input,
+    const StudioToneSet&              Tone) noexcept
 {
     if (Labels.empty())
     {
@@ -1249,11 +1306,11 @@ inline int32_t ConstructSegmentedCapsuleBar(
     }
 
     const float Radius = BarRect.Height * 0.5f;
-    Surface.FillRectangle(BarRect, Tone.RecessedWell, Radius);
-    Surface.StrokeRectangle(BarRect, Tone.Hairline, Radius, 1.0f);
+    Surface.FillRectangle(BarRect, Tone.FieldWell, Radius);
+    Surface.StrokeRectangle(BarRect, Tone.BorderSubtle, Radius, 1.0f);
 
     const Point2D Cursor = QueryInputCursor(Input);
-    const float   Pad    = 3.0f;
+    const float   Pad    = 2.5f;
     const float   InnerW = BarRect.Width - Pad * 2.0f;
     const float   SegW   = InnerW / static_cast<float>(Labels.size());
     int32_t       Picked = -1;
@@ -1271,16 +1328,16 @@ inline int32_t ConstructSegmentedCapsuleBar(
 
         if (Selected)
         {
-            Surface.FillRectangle(SegRect, Tone.PrimaryFill, SegRect.Height * 0.5f);
+            Surface.FillRectangle(SegRect, Tone.HighlightFill, SegRect.Height * 0.5f);
         }
         else if (Hovered)
         {
             Surface.FillRectangle(SegRect, Tone.RowHover, SegRect.Height * 0.5f);
         }
 
-        const ColorRgba Ink = Selected ? Tone.PrimaryInk : (Hovered ? Tone.TextPrimary : Tone.TextMuted);
+        const ColorRgba Ink = Selected ? Tone.HighlightInk : (Hovered ? Tone.TextPrimary : Tone.TextMuted);
         ConstructCenteredWeightedText(
-            Surface, Selected ? FontWeightClass::Medium : FontWeightClass::Regular, SegRect, 9.6f, Ink, Labels[Idx]);
+            Surface, Selected ? FontWeightClass::Medium : FontWeightClass::Regular, SegRect, 9.5f, Ink, Labels[Idx]);
 
         if (Hovered && QueryPrimaryPressed(Input))
         {
@@ -1290,6 +1347,7 @@ inline int32_t ConstructSegmentedCapsuleBar(
     return Picked;
 }
 
+// TextureStudio OLD Slider (.slider-control: Label on top; LEFT split reading|unit capsule + RIGHT thick capsule track & large thumb)
 inline bool ConstructStudioKnobSlider(
     PixelSpace&             Surface,
     Rectangle2D             Area,
@@ -1318,29 +1376,40 @@ inline bool ConstructStudioKnobSlider(
         std::snprintf(NumBuf, sizeof(NumBuf), "%.2f", InOutReading);
     }
 
-    // Header row: Label left + split reading|unit capsule right
+    // Label on top (.property-label)
     WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Regular, { Area.X, Area.Y + 2.0f }, 10.2f, Tone.TextMuted, Label);
+        Surface, FontWeightClass::Light, { Area.X, Area.Y + 1.0f }, 10.4f, Tone.TextSecondary, Label);
 
-    const float NumW  = Surface.MeasureTextWidth(9.6f, NumBuf) + 12.0f;
-    const float UnitW = UnitSuffix.empty() ? 0.0f : (Surface.MeasureTextWidth(9.0f, UnitSuffix.data(), UnitSuffix.data() + UnitSuffix.size()) + 10.0f);
-    const float BoxW  = NumW + UnitW;
-    const Rectangle2D ReadBox { Area.Right() - BoxW, Area.Y, BoxW, 18.0f };
-    Surface.FillRectangle(ReadBox, Tone.RecessedWell, 6.0f);
-    if (UnitW > 1.0f)
+    const float RowY = Area.Y + 18.0f;
+    constexpr float RowH = 26.0f;
+    constexpr float Gap  = 8.0f;
+    const float CapsuleW = std::min(82.0f, Area.Width * 0.38f);
+    const Rectangle2D ReadCapsule { Area.X, RowY, CapsuleW, RowH };
+    const Rectangle2D TrackRect   { ReadCapsule.Right() + Gap, RowY + 1.0f, std::max(44.0f, Area.Width - CapsuleW - Gap), RowH - 2.0f };
+
+    // Left split reading | unit capsule (reading capsule + unit cell)
+    const float CapRad = RowH * 0.5f;
+    Surface.FillRectangle(ReadCapsule, Tone.FieldWell, CapRad);
+    if (!UnitSuffix.empty() && CapsuleW >= 62.0f)
     {
-        Surface.FillRectangle({ ReadBox.X + NumW, ReadBox.Y, UnitW, ReadBox.Height }, Tone.TileSurface, 5.0f);
-        ConstructCenteredWeightedText(
-            Surface, FontWeightClass::Regular, { ReadBox.X + NumW, ReadBox.Y, UnitW, ReadBox.Height }, 8.8f, Tone.TextMuted, UnitSuffix);
+        const float UnitW = 28.0f;
+        const float NumW  = CapsuleW - UnitW;
+        Surface.PushClip(ReadCapsule);
+        Surface.FillRectangle({ ReadCapsule.X + NumW, ReadCapsule.Y, UnitW, RowH }, Tone.UnitWell, 0.0f);
+        Surface.StrokeLine({ ReadCapsule.X + NumW, ReadCapsule.Y }, { ReadCapsule.X + NumW, ReadCapsule.Bottom() }, Tone.BorderSubtle, 1.0f);
+        Surface.PopClip();
+        ConstructCenteredWeightedText(Surface, FontWeightClass::Regular, { ReadCapsule.X, ReadCapsule.Y, NumW, RowH }, 10.2f, Tone.TextPrimary, NumBuf);
+        ConstructCenteredWeightedText(Surface, FontWeightClass::Regular, { ReadCapsule.X + NumW, ReadCapsule.Y, UnitW, RowH }, 8.8f, Tone.TextMuted, UnitSuffix);
     }
-    Surface.StrokeRectangle(ReadBox, Tone.Hairline, 6.0f, 1.0f);
-    ConstructCenteredWeightedText(
-        Surface, FontWeightClass::Medium, { ReadBox.X, ReadBox.Y, NumW, ReadBox.Height }, 9.4f, Tone.TextPrimary, NumBuf);
+    else
+    {
+        ConstructCenteredWeightedText(Surface, FontWeightClass::Regular, ReadCapsule, 10.2f, Tone.TextPrimary, NumBuf);
+    }
+    Surface.StrokeRectangle(ReadCapsule, (ActiveSliderId == SliderId) ? Tone.HighlightFill : Tone.BorderSubtle, CapRad, 1.0f);
 
-    // 20px Project Zero recessed capsule track + solid 16px circular light thumb
-    const Rectangle2D TrackRect { Area.X, Area.Y + 22.0f, Area.Width, 18.0f };
-    const Point2D     Cursor = QueryInputCursor(Input);
-    const bool        TrackHit = TrackRect.Contains(Cursor);
+    // Right thick capsule track + solid 22px light thumb (capsule track)
+    const Point2D Cursor   = QueryInputCursor(Input);
+    const bool    TrackHit = TrackRect.Contains(Cursor) || ReadCapsule.Contains(Cursor);
 
     if (TrackHit && QueryPrimaryPressed(Input))
     {
@@ -1355,7 +1424,7 @@ inline bool ConstructStudioKnobSlider(
     const float Span = std::max(1.0e-5f, MaxLimit - MinLimit);
     if (ActiveSliderId == SliderId && QueryPrimaryDown(Input))
     {
-        const float Pad   = 9.0f;
+        const float Pad   = 11.0f;
         const float Ratio = std::clamp((Input.PrimaryPointer.X - (TrackRect.X + Pad)) / std::max(1.0f, TrackRect.Width - Pad * 2.0f), 0.0f, 1.0f);
         const float Next  = MinLimit + Ratio * Span;
         if (std::fabs(Next - InOutReading) > 1.0e-5f)
@@ -1366,19 +1435,18 @@ inline bool ConstructStudioKnobSlider(
     }
 
     const float Norm     = std::clamp((InOutReading - MinLimit) / Span, 0.0f, 1.0f);
-    const float ThumbRad = 7.5f;
-    const float ThumbX   = TrackRect.X + ThumbRad + 2.0f + Norm * std::max(1.0f, TrackRect.Width - (ThumbRad + 2.0f) * 2.0f);
+    const float TrackRad = TrackRect.Height * 0.5f;
+    const float ThumbRad = (TrackRect.Height - 2.0f) * 0.5f;
+    const float ThumbX   = TrackRect.X + ThumbRad + 1.0f + Norm * std::max(1.0f, TrackRect.Width - (ThumbRad + 1.0f) * 2.0f);
 
-    Surface.FillRectangle(TrackRect, Tone.RecessedWell, TrackRect.Height * 0.5f);
-    Surface.FillRectangle(
-        { TrackRect.X + 2.0f, TrackRect.Y + 2.0f, std::max(TrackRect.Height - 4.0f, (ThumbX - TrackRect.X) + ThumbRad), TrackRect.Height - 4.0f },
-        Tone.RowSelected,
-        (TrackRect.Height - 4.0f) * 0.5f);
-    Surface.StrokeRectangle(TrackRect, (ActiveSliderId == SliderId) ? Tone.Amber : Tone.BorderSubtle, TrackRect.Height * 0.5f, 1.0f);
-    Surface.FillCircle({ ThumbX, TrackRect.Center().Y }, ThumbRad, Tone.PrimaryFill);
+    Surface.FillRectangle(TrackRect, Tone.SliderTrack, TrackRad);
+    const float FillW = std::max(TrackRect.Height, (ThumbX - TrackRect.X) + ThumbRad + 1.0f);
+    Surface.FillRectangle({ TrackRect.X, TrackRect.Y, std::min(TrackRect.Width, FillW), TrackRect.Height }, Tone.SliderFill, TrackRad);
+    Surface.FillCircle({ ThumbX, TrackRect.Center().Y }, ThumbRad, Tone.SliderThumb);
     return Changed;
 }
 
+// TextureStudio OLD Switch (.switch: 42x24; OFF=#232326 + light-grey knob; ON=#FFFFFF + dark knob)
 inline bool ConstructStudioToggleRow(
     PixelSpace&             Surface,
     Rectangle2D             RowRect,
@@ -1388,27 +1456,31 @@ inline bool ConstructStudioToggleRow(
     const PaneInputReading& Input,
     const StudioToneSet&    Tone) noexcept
 {
-    const Point2D Cursor = QueryInputCursor(Input);
+    const Point2D Cursor  = QueryInputCursor(Input);
     const bool    Hovered = RowRect.Contains(Cursor);
 
-    const Rectangle2D SwitchRect { RowRect.Right() - 36.0f, RowRect.Center().Y - 10.0f, 36.0f, 20.0f };
+    const Rectangle2D SwitchRect { RowRect.Right() - 40.0f, RowRect.Center().Y - 11.0f, 40.0f, 22.0f };
     const float       TextClipW = std::max(24.0f, SwitchRect.X - RowRect.X - 8.0f);
 
     Surface.PushClip({ RowRect.X, RowRect.Y, TextClipW, RowRect.Height });
     WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Regular, { RowRect.X, RowRect.Y + (Hint.empty() ? 8.0f : 3.0f) }, 10.8f, Tone.TextPrimary, Title);
+        Surface, FontWeightClass::Light, { RowRect.X, RowRect.Y + (Hint.empty() ? 7.0f : 3.0f) }, 10.6f, Tone.TextSecondary, Title);
     if (!Hint.empty())
     {
         WorkspaceAppearance::ConstructWeightedText(
-            Surface, FontWeightClass::Regular, { RowRect.X, RowRect.Y + 18.0f }, 8.8f, Tone.TextMuted, Hint);
+            Surface, FontWeightClass::Regular, { RowRect.X, RowRect.Y + 18.0f }, 8.8f, Tone.TextFaint, Hint);
     }
     Surface.PopClip();
 
-    Surface.FillRectangle(SwitchRect, InOutEnabled ? Tone.ToggleGreen : Tone.RecessedWell, 10.0f);
-    Surface.StrokeRectangle(SwitchRect, InOutEnabled ? Tone.ToggleGreen : Tone.BorderStrong, 10.0f, 1.0f);
-    const float KnobX = InOutEnabled ? (SwitchRect.Right() - 10.0f) : (SwitchRect.X + 10.0f);
-    const ColorRgba KnobCol = InOutEnabled ? ColorRgba{ 248u, 248u, 248u, 255u } : ColorRgba{ 146u, 146u, 152u, 255u };
-    Surface.FillCircle({ KnobX, SwitchRect.Center().Y }, 7.2f, KnobCol);
+    const ColorRgba TrackOn  = Tone.LightSurface ? ColorRgba{ 28u, 32u, 40u, 255u } : ColorRgba{ 255u, 255u, 255u, 255u };
+    const ColorRgba KnobOn   = Tone.LightSurface ? ColorRgba{ 250u, 250u, 252u, 255u } : ColorRgba{ 17u, 17u, 17u, 255u };
+    const ColorRgba TrackOff = Tone.SliderTrack;
+    const ColorRgba KnobOff  = Tone.LightSurface ? ColorRgba{ 102u, 108u, 120u, 255u } : ColorRgba{ 188u, 188u, 192u, 255u };
+
+    Surface.FillRectangle(SwitchRect, InOutEnabled ? TrackOn : TrackOff, 11.0f);
+    Surface.StrokeRectangle(SwitchRect, InOutEnabled ? TrackOn : Tone.BorderSubtle, 11.0f, 1.0f);
+    const float KnobX = InOutEnabled ? (SwitchRect.Right() - 11.0f) : (SwitchRect.X + 11.0f);
+    Surface.FillCircle({ KnobX, SwitchRect.Center().Y }, 8.0f, InOutEnabled ? KnobOn : KnobOff);
 
     if (Hovered && QueryPrimaryPressed(Input))
     {
@@ -1418,30 +1490,7 @@ inline bool ConstructStudioToggleRow(
     return false;
 }
 
-inline bool ConstructCollapsibleFoldHeader(
-    PixelSpace&             Surface,
-    Rectangle2D             FoldRect,
-    std::string_view        Title,
-    std::string_view        SummaryRight,
-    bool                    Expanded,
-    const PaneInputReading& Input,
-    const StudioToneSet&    Tone) noexcept
-{
-    const Point2D Cursor = QueryInputCursor(Input);
-    const bool    Hovered = FoldRect.Contains(Cursor);
-
-    ConstructChevronMark(Surface, { FoldRect.X + 14.0f, FoldRect.Center().Y }, Expanded, 3.2f, Tone.TextMuted);
-    WorkspaceAppearance::ConstructWeightedText(
-        Surface, FontWeightClass::Medium, { FoldRect.X + 26.0f, FoldRect.Center().Y - 5.5f }, 11.2f, Tone.TextPrimary, Title);
-
-    if (!SummaryRight.empty())
-    {
-        WorkspaceAppearance::ConstructRightAlignedText(
-            Surface, FontWeightClass::Regular, { FoldRect.Right() - 12.0f, FoldRect.Center().Y - 5.0f }, 9.4f, Tone.TextMuted, SummaryRight);
-    }
-    return Hovered && QueryPrimaryPressed(Input);
-}
-
+// Edge-to-edge Inspector Footer Bar (sharp pane edges, lime-cream primary CTA + dark secondary buttons + status line)
 inline InspectorFooterResult ConstructInspectorFooterBar(
     PixelSpace&             Surface,
     Rectangle2D             FooterRect,
@@ -1454,24 +1503,24 @@ inline InspectorFooterResult ConstructInspectorFooterBar(
     const StudioToneSet&    Tone) noexcept
 {
     InspectorFooterResult Outcome {};
-    Surface.FillRectangleBottomRounded(FooterRect, Tone.FooterSurface, 17.0f);
+    Surface.FillRectangle(FooterRect, Tone.FooterSurface, 0.0f);
     Surface.StrokeLine({ FooterRect.X, FooterRect.Y }, { FooterRect.Right(), FooterRect.Y }, Tone.Hairline, 1.0f);
 
     const Point2D Cursor = QueryInputCursor(Input);
-    const float   PadX = 12.0f;
-    const float   BtnY = FooterRect.Y + 9.0f;
-    constexpr float BtnH = 26.0f;
+    const float   PadX   = 12.0f;
+    const float   BtnY   = FooterRect.Y + 9.0f;
+    constexpr float BtnH = 27.0f;
     constexpr float Gap  = 6.0f;
 
     const int32_t BtnCount = 1 + (!SecondaryALabel.empty() ? 1 : 0) + (!SecondaryBLabel.empty() ? 1 : 0);
     const float   TotalW   = FooterRect.Width - PadX * 2.0f;
-    const float   PrimW    = (BtnCount == 1) ? TotalW : (BtnCount == 2 ? (TotalW - Gap) * 0.56f : (TotalW - Gap * 2.0f) * 0.42f);
+    const float   PrimW    = (BtnCount == 1) ? TotalW : (BtnCount == 2 ? (TotalW - Gap) * 0.56f : (TotalW - Gap * 2.0f) * 0.44f);
     const float   SecW     = (BtnCount > 1) ? (TotalW - PrimW - Gap * static_cast<float>(BtnCount - 1)) / static_cast<float>(BtnCount - 1) : 0.0f;
 
-    // White primary command capsule
+    // Signature TextureStudio lime-cream primary command capsule
     const Rectangle2D PrimRect { FooterRect.X + PadX, BtnY, PrimW, BtnH };
     const bool PrimHover = PrimRect.Contains(Cursor);
-    Surface.FillRectangle(PrimRect, PrimHover ? ColorRgba{ 250u, 250u, 250u, 255u } : Tone.PrimaryFill, BtnH * 0.5f);
+    Surface.FillRectangle(PrimRect, PrimHover ? ColorRgba::Blend(Tone.PrimaryFill, Tone.WhiteInk, 0.25f) : Tone.PrimaryFill, BtnH * 0.5f);
     ConstructCenteredWeightedText(
         Surface, FontWeightClass::Medium, PrimRect, 10.2f, Tone.PrimaryInk, PrimaryLabel);
     Outcome.PrimaryClicked = PrimHover && QueryPrimaryPressed(Input);
@@ -1481,7 +1530,7 @@ inline InspectorFooterResult ConstructInspectorFooterBar(
     {
         const Rectangle2D SecRect { RunX, BtnY, SecW, BtnH };
         const bool Hover = SecRect.Contains(Cursor);
-        Surface.FillRectangle(SecRect, Hover ? Tone.RowSelected : Tone.FoldSurface, BtnH * 0.5f);
+        Surface.FillRectangle(SecRect, Hover ? Tone.RowHover : Tone.TileSurface, BtnH * 0.5f);
         Surface.StrokeRectangle(SecRect, Hover ? Tone.BorderStrong : Tone.BorderSubtle, BtnH * 0.5f, 1.0f);
         ConstructCenteredWeightedText(
             Surface, FontWeightClass::Medium, SecRect, 9.8f, Hover ? Tone.TextPrimary : Tone.TextSecondary, SecondaryALabel);
@@ -1492,15 +1541,14 @@ inline InspectorFooterResult ConstructInspectorFooterBar(
     {
         const Rectangle2D SecRect { RunX, BtnY, SecW, BtnH };
         const bool Hover = SecRect.Contains(Cursor);
-        Surface.FillRectangle(SecRect, Hover ? Tone.RowSelected : Tone.FoldSurface, BtnH * 0.5f);
+        Surface.FillRectangle(SecRect, Hover ? Tone.RowHover : Tone.TileSurface, BtnH * 0.5f);
         Surface.StrokeRectangle(SecRect, Hover ? Tone.BorderStrong : Tone.BorderSubtle, BtnH * 0.5f, 1.0f);
         ConstructCenteredWeightedText(
             Surface, FontWeightClass::Medium, SecRect, 9.8f, Hover ? Tone.TextPrimary : Tone.TextSecondary, SecondaryBLabel);
         Outcome.SecondaryBClicked = Hover && QueryPrimaryPressed(Input);
     }
 
-    // Quiet status indicator line below buttons
-    const float StatusY = BtnY + BtnH + 10.0f;
+    const float StatusY = BtnY + BtnH + 9.0f;
     Surface.FillCircle({ FooterRect.X + PadX + 4.0f, StatusY + 4.5f }, 3.0f, StatusPositive ? Tone.Green : Tone.Amber);
     Surface.PushClip({ FooterRect.X + PadX + 12.0f, StatusY - 1.0f, FooterRect.Width - PadX * 2.0f - 12.0f, 14.0f });
     WorkspaceAppearance::ConstructWeightedText(
@@ -1537,7 +1585,7 @@ inline int32_t ConstructStudioPopoverList(
 
     const Rectangle2D PopRect { PopX, PopY, PopW, PopH };
     Surface.FillRectangle({ PopRect.X, PopRect.Y + 4.0f, PopRect.Width, PopRect.Height }, { 0u, 0u, 0u, 110u }, 15.0f);
-    Surface.FillRectangle(PopRect, Tone.OutlinerTop, 14.0f);
+    Surface.FillRectangle(PopRect, Tone.SectionHeaderBg, 14.0f);
     Surface.StrokeRectangle(PopRect, Tone.BorderStrong, 14.0f, 1.0f);
 
     if (!Heading.empty())

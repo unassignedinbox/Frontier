@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                             BAKINGINSPECTORPANE.H
 ============================================================================================================================================*/
-// 🧩 Right-docked Project Zero Channel Baking Inspector pane (study selector, bake progress bar, inspected target editor, output & cage fold, export)
+// 🧩 Right-docked TextureStudio Baking Inspector pane (old Materials header & 3 KPI tiles, categorized section boxes, TextureStudio sliders)
 
 #pragma once
 
@@ -41,8 +41,10 @@ private:
     int32_t                 ActiveSliderId     = -1;
     bool                    StudyPopoverOpen   = false;
     Rectangle2D             StudyAnchorRect    {};
-    bool                    OutputFoldExpanded = true;
-    bool                    VolumeFoldExpanded = true;
+    bool                    ExecuteGroupOpen   = true;
+    bool                    TargetGroupOpen    = true;
+    bool                    OutputGroupOpen    = true;
+    bool                    VolumeGroupOpen    = true;
 };
 
 } // namespace Frontier::Workspaces
