@@ -53,32 +53,13 @@ using SimulationSpace::ForceFields::ForceModel;
     }
 }
 
-void DrawForceBadgeIcon(PixelSpace& Surface, Rectangle2D Box, ForceModel Model) noexcept
+void ConstructForceModelTileIcon(PixelSpace& Surface, Rectangle2D Box, ForceModel Model) noexcept
 {
     const ColorRgba Accent = QueryForceIconAccent(Model);
     Surface.FillRectangle(Box, Accent.ScaledAlpha(0.14f), 7.0f);
     Surface.StrokeRectangle(Box, Accent.ScaledAlpha(0.32f), 7.0f, 0.8f);
-    const Point2D C = Box.Center();
-    if (Model == ForceModel::LinearWind || Model == ForceModel::FlowStream)
-    {
-        RasterizeWindLinesGlyph(Surface, C, 5.2f, Accent);
-    }
-    else if (Model == ForceModel::RotationalColumn)
-    {
-        Surface.StrokeLine({ C.X - 5.0f, C.Y - 3.2f }, { C.X + 5.0f, C.Y - 3.2f }, Accent, 1.3f);
-        Surface.StrokeLine({ C.X - 3.5f, C.Y },        { C.X + 3.5f, C.Y },        Accent, 1.3f);
-        Surface.StrokeLine({ C.X - 1.8f, C.Y + 3.2f }, { C.X + 1.8f, C.Y + 3.2f }, Accent, 1.3f);
-    }
-    else if (Model == ForceModel::RadialBurst)
-    {
-        Surface.StrokeCircle(C, 5.2f, Accent, 1.2f);
-        Surface.StrokeCircle(C, 2.5f, Accent, 1.2f);
-        Surface.FillCircle(C, 1.2f, Accent);
-    }
-    else
-    {
-        RasterizePlusGlyph(Surface, C, 4.4f, Accent);
-    }
+    VectorIconRepository::ConstructForceModelInBounds(
+        Surface, static_cast<uint32_t>(Model), Box.Inset(4.0f), Accent, 1.0f);
 }
 
 } // namespace
@@ -140,7 +121,7 @@ void ParticleOutlinerPanel::Render(
 
     Surface.FillCircle(AddBtn.Center(), 14.0f, AddHover ? C.CardElevated : C.CardBg);
     Surface.StrokeCircle(AddBtn.Center(), 14.0f, AddHover ? C.WarmAccent : C.Hairline, 1.0f);
-    RasterizePlusGlyph(Surface, AddBtn.Center(), 4.5f, AddHover ? C.WarmAccent : C.TextPrimary);
+    VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::PlusAdd, AddBtn, AddHover ? C.WarmAccent : C.TextPrimary, 12.0f, 1.45f);
     if (AddHover && Pointer.Pressed)
     {
         Session.ActiveNavView = ParticleNavView::Assets;
@@ -157,7 +138,9 @@ void ParticleOutlinerPanel::Render(
 
     Surface.FillRectangle(VisTile, C.CardBg, 14.0f);
     Surface.StrokeRectangle(VisTile, C.Hairline, 14.0f, 1.0f);
-    RasterizeCheckBadgeGlyph(Surface, { VisTile.X + 21.0f, VisTile.Y + 21.0f }, 10.0f, C.LiveGreen, { 12u, 18u, 14u, 255u });
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::CheckCircleFilled, { VisTile.X + 21.0f, VisTile.Y + 21.0f }, 20.0f, C.LiveGreen,
+        1.7f, VectorIconAlignment::ViewBoxCentered, { 12u, 18u, 14u, 255u });
     Surface.Text({ VisTile.X + 12.0f, VisTile.Bottom() - 20.0f }, 10.0f, C.TextMuted, "Visible");
     char VisBuf[16];
     std::snprintf(VisBuf, sizeof(VisBuf), "%u", Session.CountVisibleEntities());
@@ -166,7 +149,8 @@ void ParticleOutlinerPanel::Render(
     Surface.FillRectangle(HidTile, C.CardBg, 14.0f);
     Surface.StrokeRectangle(HidTile, C.Hairline, 14.0f, 1.0f);
     Surface.FillCircle({ HidTile.X + 21.0f, HidTile.Y + 21.0f }, 10.0f, ColorRgba { 38u, 38u, 40u, 255u });
-    RasterizeEyeGlyph(Surface, { HidTile.X + 21.0f, HidTile.Y + 21.0f }, 5.0f, C.TextMuted, true);
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::EyeHidden, { HidTile.X + 21.0f, HidTile.Y + 21.0f }, 12.5f, C.TextMuted, 1.3f);
     Surface.Text({ HidTile.X + 12.0f, HidTile.Bottom() - 20.0f }, 10.0f, C.TextMuted, "Hidden");
     char HidBuf[16];
     std::snprintf(HidBuf, sizeof(HidBuf), "%u", Session.CountHiddenEntities());
@@ -178,7 +162,8 @@ void ParticleOutlinerPanel::Render(
     const Rectangle2D SearchRect { Bounds.X + PadX, Y, InnerW, 32.0f };
     Surface.FillRectangle(SearchRect, C.WellBg, 16.0f);
     Surface.StrokeRectangle(SearchRect, C.Hairline, 16.0f, 1.0f);
-    RasterizeMagnifierGlyph(Surface, { SearchRect.X + 17.0f, SearchRect.Center().Y }, 5.0f, C.TextMuted);
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::SearchGlass, { SearchRect.X + 17.0f, SearchRect.Center().Y }, 12.5f, C.TextMuted, 1.35f);
     Surface.Text({ SearchRect.X + 30.0f, SearchRect.Center().Y - 5.5f }, 10.5f,
         Session.OutlinerSearch.empty() ? C.TextMuted : C.TextPrimary,
         Session.OutlinerSearch.empty() ? "Search scene..." : Session.OutlinerSearch.c_str());
@@ -248,12 +233,16 @@ void ParticleOutlinerPanel::Render(
             Surface.FillRectangle(RootRow, RootSel ? C.CardElevated : ColorRgba { 24u, 24u, 26u, 255u }, 10.0f);
         }
         Surface.StrokeCircle({ RowX + 12.0f, RowY + 18.0f }, 6.5f, C.TextFaint, 1.1f);
-        RasterizePlusGlyph(Surface, { RowX + 12.0f, RowY + 18.0f }, 3.4f, C.TextFaint);
+        VectorIconRepository::ConstructControlCentered(
+            Surface, ControlIcon::PlusAdd, { RowX + 12.0f, RowY + 18.0f }, 8.5f, C.TextFaint, 1.3f);
         Surface.Text({ RowX + 30.0f, RowY + 6.0f }, 10.8f, C.TextMuted, "Force Field");
         char RootSub[48];
         std::snprintf(RootSub, sizeof(RootSub), "%zu bounded forces · overlay %s", Session.ForceSources.size(), Session.ShowFieldOverlay ? "on" : "off");
         Surface.Text({ RowX + 30.0f, RowY + 20.0f }, 8.8f, C.TextFaint, RootSub);
-        RasterizeEyeGlyph(Surface, { RowX + RowW - 10.0f, RowY + 18.0f }, 5.0f, Session.ShowFieldOverlay ? C.LiveGreen : C.DangerRed.ScaledAlpha(0.75f), !Session.ShowFieldOverlay);
+        VectorIconRepository::ConstructControlCentered(
+            Surface, Session.ShowFieldOverlay ? ControlIcon::EyeVisible : ControlIcon::EyeHidden,
+            { RowX + RowW - 10.0f, RowY + 18.0f }, 12.5f,
+            Session.ShowFieldOverlay ? C.LiveGreen : C.DangerRed.ScaledAlpha(0.75f), 1.3f);
         if (RootHov && Pointer.Pressed)
         {
             Session.SelectForceFieldRoot();
@@ -268,7 +257,7 @@ void ParticleOutlinerPanel::Render(
         {
             Surface.FillRectangle(WindRow, WindSel ? C.CardElevated : ColorRgba { 24u, 24u, 26u, 255u }, 10.0f);
         }
-        DrawForceBadgeIcon(Surface, { RowX + 12.0f, RowY + 7.0f, 22.0f, 22.0f }, ForceModel::LinearWind);
+        ConstructForceModelTileIcon(Surface, { RowX + 12.0f, RowY + 7.0f, 22.0f, 22.0f }, ForceModel::LinearWind);
         Surface.Text({ RowX + 42.0f, RowY + 6.0f }, 10.8f, C.TextPrimary, "Ambient Wind");
         char WindSub[64];
         std::snprintf(WindSub, sizeof(WindSub), "%.1f m/s at %.0f deg (Light breeze)", Session.AmbientWind.SpeedMetersSec, Session.AmbientWind.BearingDegrees);
@@ -295,7 +284,7 @@ void ParticleOutlinerPanel::Render(
                 Surface.FillRectangle(RowRect, Sel ? C.CardElevated : ColorRgba { 24u, 24u, 26u, 255u }, 10.0f);
                 if (Sel) Surface.StrokeRectangle(RowRect, C.HairlineStrong, 10.0f, 0.9f);
             }
-            DrawForceBadgeIcon(Surface, { RowX + 12.0f, RowY + 7.0f, 22.0f, 22.0f }, F.Model);
+            ConstructForceModelTileIcon(Surface, { RowX + 12.0f, RowY + 7.0f, 22.0f, 22.0f }, F.Model);
             Surface.Text({ RowX + 42.0f, RowY + 6.0f }, 10.8f, C.TextPrimary, F.Label.c_str());
 
             char Sub[64];
@@ -365,7 +354,7 @@ void ParticleOutlinerPanel::Render(
             }
             const Rectangle2D IconBox { RowX + 8.0f, RowY + 7.0f, 22.0f, 22.0f };
             Surface.FillRectangle(IconBox, C.WarmAccent.ScaledAlpha(0.14f), 7.0f);
-            RasterizeSparkleGlyph(Surface, IconBox.Center(), 4.8f, C.WarmAccent);
+            VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::SparkleFourPoint, IconBox, C.WarmAccent, 13.0f, 1.35f);
             Surface.Text({ RowX + 38.0f, RowY + 6.0f }, 10.8f, C.TextPrimary, Rig.DisplayName.c_str());
 
             char RigSub[64];

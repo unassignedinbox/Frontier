@@ -7,7 +7,7 @@
 
 #include "Engine/Components/Controls/DropdownSelector.h"
 #include "Engine/Components/Controls/TextInputField.h"
-#include "Engine/Workspaces/Fracture/FractureIcons.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 #include "Engine/Workspaces/Particle/ParticlePaneAppearance.h"
 
 #include <algorithm>
@@ -35,19 +35,19 @@ using namespace ParticleAppearance;
     return Hay.find(Needle) != std::string::npos;
 }
 
-[[nodiscard]] std::string PrimitiveShortDescription(FractureIcons::PrimitiveShapeId Shape)
+[[nodiscard]] std::string PrimitiveShortDescription(PrimitiveShapeIcon Shape)
 {
     switch (Shape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:       return "1.00 × 1.00 × 1.00 m";
-    case FractureIcons::PrimitiveShapeId::Sphere:    return "Ø 1.00 m";
-    case FractureIcons::PrimitiveShapeId::Cylinder:  return "Ø 0.80 × 1.20 m";
-    case FractureIcons::PrimitiveShapeId::Cone:      return "Ø 1.00 × 1.10 m";
-    case FractureIcons::PrimitiveShapeId::Capsule:   return "Ø 0.60 × 1.30 m";
-    case FractureIcons::PrimitiveShapeId::Torus:     return "R 0.50 · r 0.19 m · segmented";
-    case FractureIcons::PrimitiveShapeId::Pipe:      return "Ø 0.96 / 0.68 × 0.80 m · segmented";
-    case FractureIcons::PrimitiveShapeId::Pane:      return "1.70 × 1.15 m · 14 mm";
-    case FractureIcons::PrimitiveShapeId::HexColumn: return "0.56 AF × 1.20 m";
+    case PrimitiveShapeIcon::Box:       return "1.00 × 1.00 × 1.00 m";
+    case PrimitiveShapeIcon::Sphere:    return "Ø 1.00 m";
+    case PrimitiveShapeIcon::Cylinder:  return "Ø 0.80 × 1.20 m";
+    case PrimitiveShapeIcon::Cone:      return "Ø 1.00 × 1.10 m";
+    case PrimitiveShapeIcon::Capsule:   return "Ø 0.60 × 1.30 m";
+    case PrimitiveShapeIcon::Torus:     return "R 0.50 · r 0.19 m · segmented";
+    case PrimitiveShapeIcon::Pipe:      return "Ø 0.96 / 0.68 × 0.80 m · segmented";
+    case PrimitiveShapeIcon::Pane:      return "1.70 × 1.15 m · 14 mm";
+    case PrimitiveShapeIcon::HexColumn: return "0.56 AF × 1.20 m";
     default: return "";
     }
 }
@@ -96,8 +96,9 @@ void FractureOutlinerPanel::Render(
         const bool ColHov = ControlAppearance::QueryPointerOver(CollapseBtn, Pointer);
         Surface.FillCircle(CollapseBtn.Center(), 15.5f, ColHov ? ColorRgba { 36u, 36u, 38u, 255u } : ColorRgba { 27u, 27u, 27u, 255u });
         Surface.StrokeCircle(CollapseBtn.Center(), 15.5f, ColorRgba { 255u, 255u, 255u, 18u }, 1.0f);
-        FractureIcons::DrawSlidersGlyph(Surface, { CollapseBtn.Center().X - 7.5f, CollapseBtn.Center().Y - 7.5f, 15.0f, 15.0f },
-            ColHov ? ColorRgba { 228u, 228u, 226u, 255u } : ColorRgba { 154u, 154u, 152u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::FilterSliders, CollapseBtn,
+            ColHov ? ColorRgba { 228u, 228u, 226u, 255u } : ColorRgba { 154u, 154u, 152u, 255u }, 15.0f, 1.35f);
         if (ColHov && Pointer.Pressed)
         {
             const bool AllShut = !Session.GroupExpanded[0] && !Session.GroupExpanded[1] && !Session.GroupExpanded[2];
@@ -128,12 +129,14 @@ void FractureOutlinerPanel::Render(
             if (IsReleased)
             {
                 Surface.FillCircle(BadgeC, 11.0f, ColorRgba { 52u, 199u, 89u, 255u });
-                FractureIcons::DrawCheckGlyph(Surface, { BadgeC.X - 6.5f, BadgeC.Y - 6.5f, 13.0f, 13.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.6f);
+                VectorIconRepository::ConstructControlCentered(
+                    Surface, ControlIcon::CheckMark, BadgeC, 13.0f, ColorRgba { 11u, 36u, 18u, 255u }, 2.1f, VectorIconAlignment::GeometricCentered);
             }
             else
             {
                 Surface.FillCircle(BadgeC, 11.0f, ColorRgba { 38u, 38u, 38u, 255u });
-                FractureIcons::DrawTriangleGlyph(Surface, { BadgeC.X - 6.0f, BadgeC.Y - 6.0f, 12.0f, 12.0f }, ColorRgba { 98u, 98u, 96u, 255u });
+                VectorIconRepository::ConstructControlCentered(
+                    Surface, ControlIcon::TriangleWire, BadgeC, 12.0f, ColorRgba { 98u, 98u, 96u, 255u }, 1.4f, VectorIconAlignment::GeometricCentered);
             }
 
             Surface.Text({ Card.X + 14.0f, Card.Bottom() - 25.0f }, 11.2f, ColorRgba { 176u, 176u, 174u, 255u }, Label);
@@ -162,7 +165,9 @@ void FractureOutlinerPanel::Render(
         const Rectangle2D SearchRect { Bounds.X + PadX, Y, SearchW, 38.0f };
         Surface.FillRectangle(SearchRect, ColorRgba { 16u, 16u, 16u, 255u }, 19.0f);
         Surface.StrokeRectangle(SearchRect, ColorRgba { 255u, 255u, 255u, 22u }, 19.0f, 1.0f);
-        FractureIcons::DrawSearchGlyph(Surface, { SearchRect.X + 13.0f, SearchRect.Center().Y - 7.0f, 14.0f, 14.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::SearchGlass, { SearchRect.X + 13.0f, SearchRect.Center().Y - 7.0f, 14.0f, 14.0f },
+            ColorRgba { 138u, 138u, 136u, 255u }, 14.0f, 1.4f);
 
         (void)TextInputField::Construct(
             Surface,
@@ -183,10 +188,14 @@ void FractureOutlinerPanel::Render(
         const bool DropHov = ControlAppearance::QueryPointerOver(DropRect, Pointer);
         Surface.FillRectangle(DropRect, DropHov ? ColorRgba { 24u, 24u, 25u, 255u } : ColorRgba { 16u, 16u, 16u, 255u }, 19.0f);
         Surface.StrokeRectangle(DropRect, ColorRgba { 255u, 255u, 255u, 22u }, 19.0f, 1.0f);
-        FractureIcons::DrawFilterGlyph(Surface, { DropRect.X + 11.0f, DropRect.Center().Y - 6.0f, 12.0f, 12.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::FilterFunnel, { DropRect.X + 11.0f, DropRect.Center().Y - 6.0f, 12.0f, 12.0f },
+            ColorRgba { 138u, 138u, 136u, 255u }, 12.0f, 1.3f);
         Surface.Text({ DropRect.X + 27.0f, DropRect.Center().Y - 5.5f }, 10.2f, ColorRgba { 181u, 181u, 179u, 255u },
             FilterLabels[static_cast<uint32_t>(Session.OutlinerFilter) % 5u]);
-        FractureIcons::DrawChevronDownGlyph(Surface, { DropRect.Right() - 19.0f, DropRect.Center().Y - 6.0f, 12.0f, 12.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::ChevronDown, { DropRect.Right() - 19.0f, DropRect.Center().Y - 6.0f, 12.0f, 12.0f },
+            ColorRgba { 138u, 138u, 136u, 255u }, 12.0f, 1.35f, VectorIconAlignment::GeometricCentered);
 
         if (DropHov && Pointer.Pressed)
         {
@@ -218,28 +227,26 @@ void FractureOutlinerPanel::Render(
         {
             Surface.FillRectangle(Row, ColorRgba { 255u, 255u, 255u, 8u }, 11.0f);
         }
-        if (Session.GroupExpanded[GroupIdx])
-        {
-            FractureIcons::DrawChevronDownGlyph(Surface, { Row.X + 4.0f, Row.Center().Y - 7.0f, 14.0f, 14.0f }, ColorRgba { 111u, 111u, 109u, 255u });
-        }
-        else
-        {
-            FractureIcons::DrawChevronRightGlyph(Surface, { Row.X + 4.0f, Row.Center().Y - 7.0f, 14.0f, 14.0f }, ColorRgba { 111u, 111u, 109u, 255u });
-        }
+        VectorIconRepository::ConstructControlInBounds(
+            Surface,
+            Session.GroupExpanded[GroupIdx] ? ControlIcon::ChevronDown : ControlIcon::ChevronForward,
+            { Row.X + 4.0f, Row.Center().Y - 7.0f, 14.0f, 14.0f },
+            ColorRgba { 111u, 111u, 109u, 255u }, 13.0f, 1.45f, VectorIconAlignment::GeometricCentered);
 
         const Rectangle2D IconBox { Row.X + 24.0f, Row.Center().Y - 13.0f, 26.0f, 26.0f };
         if (IconKind == 0)
         {
-            FractureIcons::DrawFolderSceneIcon(Surface, IconBox);
+            VectorIconRepository::ConstructStudioInBounds(Surface, StudioIcon::SceneFolder, IconBox);
         }
         else if (IconKind == 1)
         {
-            FractureIcons::DrawMaterialSphereIcon(Surface, { IconBox.X + 2.0f, IconBox.Y + 2.0f, 22.0f, 22.0f },
-                MaterialLinearToSrgbSwatch(Session.ActiveMaterialSpec().ExteriorLinearRgb), false);
+            VectorIconRepository::ConstructStudioInBounds(
+                Surface, StudioIcon::MaterialSphere, { IconBox.X + 2.0f, IconBox.Y + 2.0f, 22.0f, 22.0f },
+                MaterialLinearToSrgbSwatch(Session.ActiveMaterialSpec().ExteriorLinearRgb));
         }
         else
         {
-            FractureIcons::DrawCollectionIcon(Surface, IconBox);
+            VectorIconRepository::ConstructStudioInBounds(Surface, StudioIcon::CollectionCubes, IconBox);
         }
 
         Surface.Text({ Row.X + 58.0f, Row.Y + 7.0f }, 12.2f, ColorRgba { 228u, 228u, 226u, 255u }, Title);
@@ -277,7 +284,8 @@ void FractureOutlinerPanel::Render(
                 Surface.FillRectangle(Row, ColorRgba { 255u, 255u, 255u, 9u }, 10.0f);
             }
 
-            FractureIcons::DrawPrimitiveIcon(Surface, { Row.X + 31.0f, Row.Center().Y - 10.0f, 20.0f, 20.0f }, Prim.Shape, SelectedShape ? 1.0f : 0.72f);
+            VectorIconRepository::ConstructPrimitiveInBounds(
+                Surface, Prim.Shape, { Row.X + 31.0f, Row.Center().Y - 10.0f, 20.0f, 20.0f }, SelectedShape ? 1.0f : 0.72f);
             Surface.Text({ Row.X + 60.0f, Row.Y + 5.5f }, 11.6f, ColorRgba { 226u, 226u, 224u, 255u }, Prim.Title);
             const std::string Desc = SelectedShape ? Session.FormatPrimitiveSubtitle() : PrimitiveShortDescription(Prim.Shape);
             Surface.Text({ Row.X + 60.0f, Row.Y + 21.0f }, 9.6f, ColorRgba { 132u, 132u, 130u, 255u }, Desc.c_str());
@@ -286,7 +294,8 @@ void FractureOutlinerPanel::Render(
             {
                 const Point2D MarkC { Row.Right() - 18.0f, Row.Center().Y };
                 Surface.FillCircle(MarkC, 9.0f, ColorRgba { 52u, 199u, 89u, 255u });
-                FractureIcons::DrawCheckGlyph(Surface, { MarkC.X - 5.5f, MarkC.Y - 5.5f, 11.0f, 11.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.6f);
+                VectorIconRepository::ConstructControlCentered(
+                    Surface, ControlIcon::CheckMark, MarkC, 11.0f, ColorRgba { 11u, 36u, 18u, 255u }, 2.0f, VectorIconAlignment::GeometricCentered);
             }
 
             if (Hov && Pointer.Pressed && !Session.FilterDropdownOpen)
@@ -376,15 +385,17 @@ void FractureOutlinerPanel::Render(
                 const bool EyeHov = ControlAppearance::QueryPointerOver(EyeBtn, Pointer);
                 if (Hov || Selected || !Visible)
                 {
-                    FractureIcons::DrawEyeGlyph(Surface, { EyeBtn.X + 3.0f, EyeBtn.Y + 3.0f, 14.0f, 14.0f },
-                        EyeHov ? ColorRgba { 230u, 230u, 228u, 255u } : ColorRgba { 106u, 106u, 104u, 255u }, Visible);
+                    VectorIconRepository::ConstructControlInBounds(
+                        Surface, Visible ? ControlIcon::EyeVisible : ControlIcon::EyeHidden, EyeBtn,
+                        EyeHov ? ColorRgba { 230u, 230u, 228u, 255u } : ColorRgba { 106u, 106u, 104u, 255u }, 14.0f, 1.35f);
                 }
 
                 const Point2D MarkC { Row.Right() - 18.0f, Row.Center().Y };
                 if (Released)
                 {
                     Surface.FillCircle(MarkC, 9.0f, ColorRgba { 52u, 199u, 89u, 255u });
-                    FractureIcons::DrawCheckGlyph(Surface, { MarkC.X - 5.5f, MarkC.Y - 5.5f, 11.0f, 11.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.6f);
+                    VectorIconRepository::ConstructControlCentered(
+                        Surface, ControlIcon::CheckMark, MarkC, 11.0f, ColorRgba { 11u, 36u, 18u, 255u }, 2.0f, VectorIconAlignment::GeometricCentered);
                 }
                 else
                 {

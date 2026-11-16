@@ -60,36 +60,6 @@ using namespace ParticleAppearance;
     return { Pix.Red, Pix.Green, Pix.Blue, Alpha };
 }
 
-void DrawToolGlyph(PixelSpace& Surface, Point2D C, uint32_t ToolIndex, ColorRgba Ink) noexcept
-{
-    if (ToolIndex == 0u) // Orbit rings
-    {
-        Surface.StrokeCircle({ C.X - 2.2f, C.Y }, 4.6f, Ink, 1.25f);
-        Surface.StrokeCircle({ C.X + 2.2f, C.Y }, 4.6f, Ink, 1.25f);
-    }
-    else if (ToolIndex == 1u) // 3D Handles target
-    {
-        Surface.StrokeCircle(C, 5.2f, Ink, 1.25f);
-        Surface.FillCircle(C, 1.8f, Ink);
-    }
-    else if (ToolIndex == 2u) // Throw ball sphere
-    {
-        Surface.StrokeCircle(C, 5.2f, Ink, 1.25f);
-        Surface.StrokeLine({ C.X - 4.0f, C.Y - 1.5f }, { C.X + 4.0f, C.Y + 2.2f }, Ink, 1.1f);
-    }
-    else if (ToolIndex == 3u) // Wind probe crosshair
-    {
-        Surface.StrokeCircle(C, 4.4f, Ink, 1.2f);
-        Surface.StrokeLine({ C.X - 6.5f, C.Y }, { C.X + 6.5f, C.Y }, Ink, 1.1f);
-        Surface.StrokeLine({ C.X, C.Y - 6.5f }, { C.X, C.Y + 6.5f }, Ink, 1.1f);
-    }
-    else // Turntable rotation arrow
-    {
-        Surface.StrokeCircle(C, 4.8f, Ink, 1.2f);
-        Surface.FillCircle({ C.X + 4.8f, C.Y }, 1.6f, Ink);
-    }
-}
-
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -325,7 +295,8 @@ void ParticleViewportHost::Render(
     float BarX = TopBar.X + 4.0f;
     const float BarCY = TopBar.Center().Y;
 
-    RasterizeSparkleGlyph(Surface, { BarX + 7.0f, BarCY }, 5.5f, C.TextSoft);
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::SparkleFourPoint, { BarX + 7.0f, BarCY }, 13.0f, C.TextSoft, 1.35f);
     Surface.Text({ BarX + 18.0f, BarCY - 10.0f }, 11.2f, C.TextPrimary, "Scene");
     Surface.Text({ BarX + 18.0f, BarCY + 2.0f },  10.8f, C.TextPrimary, "view");
     BarX += 66.0f;
@@ -351,7 +322,7 @@ void ParticleViewportHost::Render(
 
     // Right-side controls in Viewport Bar: Throw Ball · T, Field · V, and 4 compact icon buttons
     float RightX = TopBar.Right() - 4.0f;
-    auto DrawBarIcon = [&](bool Active, auto DrawFn) -> bool {
+    auto ConstructBarIconBtn = [&](bool Active, ControlIcon Icon) -> bool {
         RightX -= 24.0f;
         const Rectangle2D R { RightX, BarCY - 11.0f, 22.0f, 22.0f };
         const bool Hov = ControlAppearance::QueryPointerOver(R, Pointer);
@@ -360,34 +331,15 @@ void ParticleViewportHost::Render(
             Surface.FillRectangle(R, Active ? C.CardElevated : ColorRgba { 30u, 30u, 32u, 255u }, 6.0f);
             if (Active) Surface.StrokeRectangle(R, C.HairlineStrong, 6.0f, 0.8f);
         }
-        DrawFn(R.Center(), Active ? C.TextPrimary : C.TextMuted);
+        VectorIconRepository::ConstructControlInBounds(Surface, Icon, R, Active ? C.TextPrimary : C.TextMuted, 13.0f, 1.25f);
         RightX -= 4.0f;
         return Hov && Pointer.Pressed;
     };
 
-    // Maximize icon
-    if (DrawBarIcon(Session.ViewportMaximized, [&](Point2D Pt, ColorRgba Ink) {
-        Surface.StrokeRectangle({ Pt.X - 4.5f, Pt.Y - 4.5f, 9.0f, 9.0f }, Ink, 1.5f, 1.1f);
-    })) { Session.ViewportMaximized = !Session.ViewportMaximized; }
-
-    // Log Drawer icon
-    if (DrawBarIcon(Session.ShowLogDrawer, [&](Point2D Pt, ColorRgba Ink) {
-        Surface.StrokeRectangle({ Pt.X - 5.0f, Pt.Y - 4.5f, 10.0f, 9.0f }, Ink, 2.0f, 1.1f);
-        Surface.StrokeLine({ Pt.X - 2.0f, Pt.Y - 1.5f }, { Pt.X + 2.5f, Pt.Y - 1.5f }, Ink, 1.1f);
-        Surface.StrokeLine({ Pt.X - 2.0f, Pt.Y + 1.5f }, { Pt.X + 1.0f, Pt.Y + 1.5f }, Ink, 1.1f);
-    })) { Session.ShowLogDrawer = !Session.ShowLogDrawer; }
-
-    // Minimap icon
-    if (DrawBarIcon(Session.ShowMinimap, [&](Point2D Pt, ColorRgba Ink) {
-        Surface.StrokeRectangle({ Pt.X - 5.0f, Pt.Y - 4.5f, 10.0f, 9.0f }, Ink, 1.5f, 1.1f);
-        Surface.StrokeLine({ Pt.X - 1.5f, Pt.Y - 4.5f }, { Pt.X - 1.5f, Pt.Y + 4.5f }, Ink, 1.0f);
-        Surface.StrokeLine({ Pt.X + 1.8f, Pt.Y - 4.5f }, { Pt.X + 1.8f, Pt.Y + 4.5f }, Ink, 1.0f);
-    })) { Session.ShowMinimap = !Session.ShowMinimap; }
-
-    // Vector arrows icon
-    if (DrawBarIcon(Session.ShowFieldArrows, [&](Point2D Pt, ColorRgba Ink) {
-        RasterizeWindLinesGlyph(Surface, Pt, 4.6f, Ink);
-    })) { Session.ShowFieldArrows = !Session.ShowFieldArrows; }
+    if (ConstructBarIconBtn(Session.ViewportMaximized, ControlIcon::MaximizeSquare)) { Session.ViewportMaximized = !Session.ViewportMaximized; }
+    if (ConstructBarIconBtn(Session.ShowLogDrawer,     ControlIcon::LogDrawerLines)) { Session.ShowLogDrawer     = !Session.ShowLogDrawer; }
+    if (ConstructBarIconBtn(Session.ShowMinimap,       ControlIcon::MinimapColumns)) { Session.ShowMinimap       = !Session.ShowMinimap; }
+    if (ConstructBarIconBtn(Session.ShowFieldArrows,   ControlIcon::WindStreamlines)){ Session.ShowFieldArrows   = !Session.ShowFieldArrows; }
 
     // Field · V pill
     RightX -= 58.0f;
@@ -512,7 +464,15 @@ void ParticleViewportHost::Render(
             Surface.FillCircle(Btn.Center(), 12.5f, Active ? ColorRgba { 48u, 50u, 54u, 255u } : ColorRgba { 32u, 33u, 36u, 255u });
             if (Active) Surface.StrokeCircle(Btn.Center(), 12.5f, C.HairlineStrong, 1.0f);
         }
-        DrawToolGlyph(Surface, Btn.Center(), T, Active ? C.TextPrimary : C.TextMuted);
+        static constexpr std::array<ControlIcon, 5> RailToolIcons {{
+            ControlIcon::OrbitRings,
+            ControlIcon::TargetBullseye,
+            ControlIcon::BallTrajectory,
+            ControlIcon::CrosshairProbe,
+            ControlIcon::TurntableOrbit,
+        }};
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, RailToolIcons[T], Btn, Active ? C.TextPrimary : C.TextMuted, 14.0f, 1.25f);
         if (Hov && Pointer.Pressed)
         {
             Session.ActiveTool = static_cast<ViewportToolCategory>(T);

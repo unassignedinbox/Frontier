@@ -78,16 +78,8 @@ SimulationTimelineFooterResult SimulationTimelineFooter::Construct(
     const bool        StartHover = StartBtn.Contains(Cursor);
     Surface.FillCircle(StartBtn.Center(), 13.0f, ScaleAlpha(StartHover ? ColorRgba{ 48, 48, 52, 255 } : ColorRgba{ 32, 32, 35, 255 }, Opacity));
     Surface.StrokeCircle(StartBtn.Center(), 13.0f, ScaleAlpha(ColorRgba{ 255, 255, 255, 24 }, Opacity), 1.0f);
-    {
-        const ColorRgba Ink = ScaleAlpha(ColorRgba{ 218, 222, 226, 255 }, Opacity);
-        Surface.StrokeLine({ StartBtn.X + 8.5f, StartBtn.Y + 8.0f }, { StartBtn.X + 8.5f, StartBtn.Bottom() - 8.0f }, Ink, 1.6f);
-        const std::array<Point2D, 3> Tri = {{
-            { StartBtn.X + 10.5f, StartBtn.Center().Y },
-            { StartBtn.X + 17.5f, StartBtn.Y + 8.0f },
-            { StartBtn.X + 17.5f, StartBtn.Bottom() - 8.0f },
-        }};
-        Surface.FillPolygon(Tri, Ink);
-    }
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, ControlIcon::SkipToStartSolid, StartBtn, ScaleAlpha(ColorRgba{ 218, 222, 226, 255 }, Opacity), 13.0f);
     if (StartHover && Pointer.Pressed)
     {
         Result.ToStartPressed = true;
@@ -100,23 +92,12 @@ SimulationTimelineFooterResult SimulationTimelineFooter::Construct(
                                     : (PlayHover ? ColorRgba{ 62, 62, 66, 255 } : ColorRgba{ 44, 44, 48, 255 });
     Surface.FillCircle(PlayBtn.Center(), 16.0f, ScaleAlpha(PlayBg, Opacity));
     Surface.StrokeCircle(PlayBtn.Center(), 16.0f, ScaleAlpha(ColorRgba{ 255, 255, 255, 34 }, Opacity), 1.0f);
-    {
-        const ColorRgba Ink = ScaleAlpha(Reading.Playing ? ColorRgba{ 16, 16, 18, 255 } : ColorRgba{ 240, 240, 242, 255 }, Opacity);
-        if (Reading.Playing)
-        {
-            Surface.FillRectangle({ PlayBtn.Center().X - 4.5f, PlayBtn.Center().Y - 5.5f, 3.2f, 11.0f }, Ink, 1.0f);
-            Surface.FillRectangle({ PlayBtn.Center().X + 1.3f, PlayBtn.Center().Y - 5.5f, 3.2f, 11.0f }, Ink, 1.0f);
-        }
-        else
-        {
-            const std::array<Point2D, 3> Tri = {{
-                { PlayBtn.Center().X - 3.5f, PlayBtn.Center().Y - 6.0f },
-                { PlayBtn.Center().X - 3.5f, PlayBtn.Center().Y + 6.0f },
-                { PlayBtn.Center().X + 6.5f, PlayBtn.Center().Y },
-            }};
-            Surface.FillPolygon(Tri, Ink);
-        }
-    }
+    VectorIconRepository::ConstructControlInBounds(
+        Surface,
+        Reading.Playing ? ControlIcon::PauseSolid : ControlIcon::PlaySolid,
+        PlayBtn,
+        ScaleAlpha(Reading.Playing ? ColorRgba{ 16, 16, 18, 255 } : ColorRgba{ 240, 240, 242, 255 }, Opacity),
+        15.0f);
     if (PlayHover && Pointer.Pressed)
     {
         Result.TogglePlayPressed = true;
@@ -126,16 +107,8 @@ SimulationTimelineFooterResult SimulationTimelineFooter::Construct(
     const bool        StepHover = StepBtn.Contains(Cursor);
     Surface.FillCircle(StepBtn.Center(), 13.0f, ScaleAlpha(StepHover ? ColorRgba{ 48, 48, 52, 255 } : ColorRgba{ 32, 32, 35, 255 }, Opacity));
     Surface.StrokeCircle(StepBtn.Center(), 13.0f, ScaleAlpha(ColorRgba{ 255, 255, 255, 24 }, Opacity), 1.0f);
-    {
-        const ColorRgba Ink = ScaleAlpha(ColorRgba{ 218, 222, 226, 255 }, Opacity);
-        const std::array<Point2D, 3> Tri = {{
-            { StepBtn.X + 8.5f, StepBtn.Y + 8.0f },
-            { StepBtn.X + 8.5f, StepBtn.Bottom() - 8.0f },
-            { StepBtn.X + 15.5f, StepBtn.Center().Y },
-        }};
-        Surface.FillPolygon(Tri, Ink);
-        Surface.StrokeLine({ StepBtn.X + 17.5f, StepBtn.Y + 8.0f }, { StepBtn.X + 17.5f, StepBtn.Bottom() - 8.0f }, Ink, 1.6f);
-    }
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, ControlIcon::StepForwardSolid, StepBtn, ScaleAlpha(ColorRgba{ 218, 222, 226, 255 }, Opacity), 13.0f);
     if (StepHover && Pointer.Pressed)
     {
         Result.SingleStepPressed = true;

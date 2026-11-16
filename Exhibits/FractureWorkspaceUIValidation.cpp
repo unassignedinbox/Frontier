@@ -211,7 +211,7 @@ int main()
     Workspace.AccessSession().TransitionExecutionPhase(ExecutionStripPhase::Edit);
     for (uint32_t P = 0u; P < FractureWorkspaceSession::PrimitiveCount; ++P)
     {
-        Workspace.AccessSession().ApplyPrimitiveShape(static_cast<FractureIcons::PrimitiveShapeId>(P));
+        Workspace.AccessSession().ApplyPrimitiveShape(static_cast<PrimitiveShapeIcon>(P));
         if (!VerifyCheck(Workspace.InspectSession().PartitionResult.Receipt.WatertightManifold, "Primitive watertight conservation"))
         {
             ImGui::DestroyContext(Gui);

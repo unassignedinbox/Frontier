@@ -193,8 +193,11 @@ void ConstructIcon(PixelSpace &Surface, float X, float Y, float Size, ColorQuad 
 void ConstructIconCentered(PixelSpace &Surface, Rectangle2D Bounds, float Size, ColorQuad Ink, ControlIcon Icon,
                       float StrokeWidth) noexcept
 {
-    ConstructIcon(Surface, Bounds.X + (Bounds.Width - Size) * 0.5f, Bounds.Y + (Bounds.Height - Size) * 0.5f, Size, Ink, Icon,
-             StrokeWidth);
+    const Rectangle2D Square = VectorIconRepository::ComputeFittedSquare(Bounds, Size);
+    VectorIconRepository::ConstructControl(
+        Surface,
+        Icon,
+        VectorIconPlacement{Square.X, Square.Y, Square.Width, Ink.ToRgba8(), StrokeWidth});
 }
 
 Rectangle2D ConstructSectionContainer(PixelSpace &Surface, Rectangle2D Bounds, float Radius, float Opacity) noexcept

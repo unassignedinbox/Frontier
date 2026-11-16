@@ -357,87 +357,38 @@ inline bool ConstructToggleRow(
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                  CRISP STUDIO VECTOR vector icons (MATCHING STUDIOCONTROLS.JS)
+//                                      UNIFIED STUDIO VECTOR ICONS (SHARED REPOSITORY)
 //------------------------------------------------------------------------------------------------------------------------
 
 inline void ConstructComponentModeIcon(PixelSpace& Surface, Point2D Origin, float Size, uint32_t ModeIdx, ColorRgba Ink)
 {
-    WorkspaceAppearance::ConstructComponentModeIcon(Surface, Origin, Size, ModeIdx, Ink);
+    VectorIconRepository::ConstructComponentModeInBounds(
+        Surface,
+        static_cast<ComponentModeIcon>(std::min(ModeIdx, 3u)),
+        { Origin.X, Origin.Y, Size, Size },
+        Ink);
 }
 
 inline void ConstructRailToolIcon(PixelSpace& Surface, Point2D Origin, float Size, uint32_t ToolSlot, ColorRgba Ink)
 {
-    const float CX = Origin.X + Size * 0.5f;
-    const float CY = Origin.Y + Size * 0.5f;
-    switch (ToolSlot)
-    {
-        case 0u: // Cursor Select
-            Surface.StrokeLine({ Origin.X + 4.0f, Origin.Y + 2.5f }, { Origin.X + 4.0f, Origin.Y + Size - 3.0f }, Ink, 1.45f);
-            Surface.StrokeLine({ Origin.X + 4.0f, Origin.Y + 2.5f }, { Origin.X + Size - 3.0f, Origin.Y + Size * 0.62f }, Ink, 1.45f);
-            Surface.StrokeLine({ Origin.X + 4.0f, Origin.Y + Size - 3.0f }, { Origin.X + Size * 0.52f, Origin.Y + Size * 0.68f }, Ink, 1.35f);
-            Surface.StrokeLine({ Origin.X + Size - 3.0f, Origin.Y + Size * 0.62f }, { Origin.X + Size * 0.52f, Origin.Y + Size * 0.68f }, Ink, 1.35f);
-            break;
-        case 1u: // Box Marquee
-            Surface.StrokeRectangle({ Origin.X + 2.5f, Origin.Y + 2.5f, Size - 5.0f, Size - 5.0f }, Ink, 2.0f, 1.3f);
-            break;
-        case 2u: // Circle Brush
-            Surface.StrokeCircle({ CX, CY }, Size * 0.36f, Ink, 1.35f);
-            Surface.FillCircle({ CX, CY }, 1.4f, Ink);
-            break;
-        case 3u: // Lasso Polygon
-        {
-            const std::array<Point2D, 7u> Loop {{
-                { Origin.X + 3.0f,         Origin.Y + Size * 0.42f },
-                { Origin.X + Size * 0.34f, Origin.Y + 2.2f },
-                { Origin.X + Size - 2.6f,  Origin.Y + Size * 0.30f },
-                { Origin.X + Size * 0.78f, Origin.Y + Size * 0.66f },
-                { Origin.X + Size * 0.44f, Origin.Y + Size - 2.5f },
-                { Origin.X + 2.6f,         Origin.Y + Size * 0.72f },
-                { Origin.X + 3.0f,         Origin.Y + Size * 0.42f },
-            }};
-            Surface.StrokePolyline(Loop, Ink, 1.3f, false);
-            Surface.FillCircle({ Origin.X + Size * 0.44f, Origin.Y + Size - 2.5f }, 1.6f, Ink);
-            break;
-        }
-        case 4u: // Move (G)
-            Surface.StrokeLine({ CX, Origin.Y + 2.0f }, { CX, Origin.Y + Size - 2.0f }, Ink, 1.35f);
-            Surface.StrokeLine({ Origin.X + 2.0f, CY }, { Origin.X + Size - 2.0f, CY }, Ink, 1.35f);
-            break;
-        case 5u: // Rotate (R)
-            Surface.StrokeCircle({ CX, CY }, Size * 0.34f, Ink, 1.35f);
-            Surface.FillCircle({ CX + Size * 0.34f, CY }, 1.8f, Ink);
-            break;
-        case 6u: // Scale (S)
-            Surface.StrokeRectangle({ Origin.X + 2.5f, Origin.Y + 5.5f, Size - 8.0f, Size - 8.0f }, Ink, 1.5f, 1.25f);
-            Surface.StrokeLine({ Origin.X + 5.0f, Origin.Y + Size - 5.0f }, { Origin.X + Size - 2.5f, Origin.Y + 2.5f }, Ink, 1.35f);
-            break;
-        case 7u: // Split / Scissors
-            Surface.StrokeCircle({ Origin.X + 4.2f, Origin.Y + 4.5f }, 2.2f, Ink, 1.25f);
-            Surface.StrokeCircle({ Origin.X + 4.2f, Origin.Y + Size - 4.5f }, 2.2f, Ink, 1.25f);
-            Surface.StrokeLine({ Origin.X + 6.0f, Origin.Y + 5.5f }, { Origin.X + Size - 2.5f, Origin.Y + Size - 3.5f }, Ink, 1.35f);
-            Surface.StrokeLine({ Origin.X + 6.0f, Origin.Y + Size - 5.5f }, { Origin.X + Size - 2.5f, Origin.Y + 3.5f }, Ink, 1.35f);
-            break;
-        case 8u: // Seam Brush
-            Surface.StrokeLine({ Origin.X + 3.0f, Origin.Y + Size - 3.0f }, { Origin.X + Size - 3.0f, Origin.Y + 3.0f }, Ink, 1.65f);
-            Surface.FillCircle({ CX, CY }, 2.0f, Ink);
-            break;
-        case 9u: // Stitch / Weld
-            Surface.StrokeLine({ Origin.X + 3.0f, Origin.Y + 3.0f }, { Origin.X + 3.0f, Origin.Y + Size - 3.0f }, Ink, 1.35f);
-            Surface.StrokeLine({ Origin.X + Size - 3.0f, Origin.Y + 3.0f }, { Origin.X + Size - 3.0f, Origin.Y + Size - 3.0f }, Ink, 1.35f);
-            Surface.StrokeLine({ Origin.X + 4.5f, CY }, { Origin.X + Size - 4.5f, CY }, Ink, 1.35f);
-            break;
-        case 10u: // Pin UV
-            Surface.FillCircle({ CX, Origin.Y + 4.5f }, 2.6f, Ink);
-            Surface.StrokeLine({ CX, Origin.Y + 7.0f }, { CX, Origin.Y + Size - 2.5f }, Ink, 1.45f);
-            break;
-        case 11u: // Relax Stretch
-            Surface.StrokeCircle({ CX, CY }, Size * 0.36f, Ink, 1.25f);
-            Surface.StrokeCircle({ CX, CY }, Size * 0.16f, Ink, 1.25f);
-            break;
-        default: // step / Reset View
-            WorkspaceAppearance::ConstructFocusIcon(Surface, Origin, Size, Ink);
-            break;
-    }
+    static constexpr std::array<ControlIcon, 13> RailIcons = {{
+        ControlIcon::CursorPointer,      // 0 Cursor Select
+        ControlIcon::MarqueeDashed,      // 1 Box Marquee
+        ControlIcon::CircleSelectBrush,  // 2 Circle Brush
+        ControlIcon::LassoFreehand,      // 3 Lasso Polygon
+        ControlIcon::MoveArrows,         // 4 Move (G)
+        ControlIcon::RotateOrbit,        // 5 Rotate (R)
+        ControlIcon::ScaleDiagonal,      // 6 Scale (S)
+        ControlIcon::ScissorsCut,        // 7 Split / Scissors
+        ControlIcon::SeamKnife,          // 8 Seam Brush
+        ControlIcon::StitchWeld,         // 9 Stitch / Weld
+        ControlIcon::PinAnchor,          // 10 Pin UV
+        ControlIcon::RelaxWave,          // 11 Relax Stretch
+        ControlIcon::FocusReticleSolid,  // 12 Focus / Reset View
+    }};
+    const ControlIcon Icon = (ToolSlot < RailIcons.size()) ? RailIcons[ToolSlot] : ControlIcon::FocusReticleSolid;
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, Icon, { Origin.X, Origin.Y, Size, Size }, Ink, Size, 1.4f);
 }
 
 inline void ConstructMatCapOrbPreview(

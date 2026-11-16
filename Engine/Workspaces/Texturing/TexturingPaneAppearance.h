@@ -427,16 +427,7 @@ inline bool ConstructRoundIconButton(
     Surface.StrokeRectangle(Bounds, Border, Radius, 1.0f);
 
     const float IconSz = std::min(15.0f, std::min(Bounds.Width, Bounds.Height) * 0.52f);
-    VectorIconRepository::ConstructControl(
-        Surface,
-        Icon,
-        VectorIconPlacement{
-            Bounds.X + (Bounds.Width - IconSz) * 0.5f,
-            Bounds.Y + (Bounds.Height - IconSz) * 0.5f,
-            IconSz,
-            Ink,
-            1.7f,
-        });
+    VectorIconRepository::ConstructControlInBounds(Surface, Icon, Bounds, Ink, IconSz, 1.45f);
 
     if (Hovered && Tooltip.Enabled)
     {

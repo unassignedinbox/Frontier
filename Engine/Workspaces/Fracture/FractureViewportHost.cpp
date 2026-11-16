@@ -10,7 +10,7 @@
 #include "Engine/Components/Controls/ScalarSlider.h"
 #include "Engine/Components/Controls/SimulationTimelineFooter.h"
 #include "Engine/Components/Diagnostics/DiagnosticsOverlay.h"
-#include "Engine/Workspaces/Fracture/FractureIcons.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 #include "Engine/Workspaces/Particle/ParticlePaneAppearance.h"
 
 #include <algorithm>
@@ -241,7 +241,8 @@ void FractureViewportHost::Render(
     const float Row2Y = Bounds.Y + 52.0f;
     {
         // Row 1 Left: [Primitive SVG] Title / Sub + [LIVE FRACTURE / BAKED / SIMULATED] badge
-        FractureIcons::DrawPrimitiveIcon(Surface, { Bounds.X + 14.0f, Row1Y + 11.0f, 26.0f, 26.0f }, Session.ActiveShape, 1.0f);
+        VectorIconRepository::ConstructPrimitiveInBounds(
+            Surface, Session.ActiveShape, { Bounds.X + 14.0f, Row1Y + 11.0f, 26.0f, 26.0f }, 1.0f);
         Surface.Text({ Bounds.X + 49.0f, Row1Y + 9.0f }, 12.2f, ColorRgba { 226u, 226u, 226u, 255u }, ActivePrim.Title);
 
         char SubStr[96] {};
@@ -312,7 +313,8 @@ void FractureViewportHost::Render(
         const Rectangle2D PrimBtn { Ax, Row2Y, PrimW, 31.0f };
         const bool PrimHov = ControlAppearance::QueryPointerOver(PrimBtn, Pointer);
         Surface.FillRectangle(PrimBtn, PrimHov ? ColorRgba { 242u, 242u, 239u, 255u } : ColorRgba { 222u, 222u, 219u, 255u }, 15.5f);
-        FractureIcons::DrawSimulateGearPlayIcon(Surface, { PrimBtn.X + 9.0f, PrimBtn.Center().Y - 8.5f, 17.0f, 17.0f });
+        VectorIconRepository::ConstructStudioInBounds(
+            Surface, StudioIcon::SimulateGearPlay, { PrimBtn.X + 9.0f, PrimBtn.Center().Y - 8.5f, 17.0f, 17.0f });
         Surface.Text({ PrimBtn.X + 31.0f, PrimBtn.Y + 9.5f }, 10.6f, ColorRgba { 34u, 34u, 34u, 255u }, PrimTxt);
         const Rectangle2D KeyPill { PrimBtn.Right() - 40.0f, PrimBtn.Center().Y - 8.0f, 34.0f, 16.0f };
         Surface.FillRectangle(KeyPill, ColorRgba { 0u, 0u, 0u, 20u }, 5.0f);
@@ -327,8 +329,9 @@ void FractureViewportHost::Render(
         const Rectangle2D FrameBtn { Ax, Row2Y, 31.0f, 31.0f };
         const bool FrameHov = ControlAppearance::QueryPointerOver(FrameBtn, Pointer);
         Surface.FillRectangle(FrameBtn, FrameHov ? ColorRgba { 34u, 34u, 34u, 255u } : ColorRgba { 26u, 26u, 26u, 255u }, 8.0f);
-        FractureIcons::DrawFrameGlyph(Surface, { FrameBtn.Center().X - 7.5f, FrameBtn.Center().Y - 7.5f, 15.0f, 15.0f },
-            FrameHov ? ColorRgba { 228u, 228u, 226u, 255u } : ColorRgba { 147u, 147u, 147u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::FocusBoundsCorners, FrameBtn,
+            FrameHov ? ColorRgba { 228u, 228u, 226u, 255u } : ColorRgba { 147u, 147u, 147u, 255u }, 15.0f, 1.35f);
         if (FrameHov && Pointer.Pressed)
         {
             Session.ApplyCameraView(0u);
@@ -343,8 +346,9 @@ void FractureViewportHost::Render(
         {
             Surface.StrokeRectangle(ImpactBtn, ColorRgba { 191u, 162u, 122u, 88u }, 8.0f, 1.0f);
         }
-        FractureIcons::DrawLightningIcon(Surface, { ImpactBtn.Center().X - 8.0f, ImpactBtn.Center().Y - 8.0f, 16.0f, 16.0f },
-            Session.AimingImpactTool ? ColorRgba { 222u, 193u, 147u, 255u } : ColorRgba { 148u, 160u, 178u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::LightningBoltSolid, ImpactBtn,
+            Session.AimingImpactTool ? ColorRgba { 222u, 193u, 147u, 255u } : ColorRgba { 148u, 160u, 178u, 255u }, 16.0f);
         if (ImpHov && Pointer.Pressed)
         {
             Session.AimingImpactTool = !Session.AimingImpactTool;
@@ -359,9 +363,13 @@ void FractureViewportHost::Render(
         const bool ShadeHov = ControlAppearance::QueryPointerOver(ShadingDropRect, Pointer);
         Surface.FillRectangle(ShadingDropRect, ShadeHov ? ColorRgba { 32u, 32u, 33u, 255u } : ColorRgba { 26u, 26u, 26u, 255u }, 9.0f);
         Surface.StrokeRectangle(ShadingDropRect, ColorRgba { 255u, 255u, 255u, 18u }, 9.0f, 0.9f);
-        FractureIcons::DrawSphereWireGlyph(Surface, { ShadingDropRect.X + 9.0f, ShadingDropRect.Center().Y - 7.0f, 14.0f, 14.0f }, ColorRgba { 145u, 145u, 143u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::WireSphere, { ShadingDropRect.X + 9.0f, ShadingDropRect.Center().Y - 7.0f, 14.0f, 14.0f },
+            ColorRgba { 145u, 145u, 143u, 255u }, 14.0f, 1.3f);
         Surface.Text({ ShadingDropRect.X + 27.0f, ShadingDropRect.Y + 9.5f }, 10.4f, ColorRgba { 196u, 196u, 194u, 255u }, ShadingLabels[ShadingIdx]);
-        FractureIcons::DrawChevronDownGlyph(Surface, { ShadingDropRect.Right() - 18.0f, ShadingDropRect.Center().Y - 6.0f, 12.0f, 12.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::ChevronDown, { ShadingDropRect.Right() - 18.0f, ShadingDropRect.Center().Y - 6.0f, 12.0f, 12.0f },
+            ColorRgba { 138u, 138u, 136u, 255u }, 12.0f, 1.35f, VectorIconAlignment::GeometricCentered);
         if (ShadeHov && Pointer.Pressed)
         {
             Session.ShadingDropdownOpen = !Session.ShadingDropdownOpen;
@@ -377,11 +385,14 @@ void FractureViewportHost::Render(
             DebugActive ? ColorRgba { 52u, 199u, 89u, 24u } : (DebugHov ? ColorRgba { 32u, 32u, 33u, 255u } : ColorRgba { 26u, 26u, 26u, 255u }), 9.0f);
         Surface.StrokeRectangle(DebugDropRect,
             DebugActive ? ColorRgba { 72u, 214u, 128u, 96u } : ColorRgba { 255u, 255u, 255u, 18u }, 9.0f, 0.95f);
-        FractureIcons::DrawWireCubeGlyph(Surface, { DebugDropRect.X + 9.0f, DebugDropRect.Center().Y - 7.0f, 14.0f, 14.0f },
-            Session.RenderOptions.ShowCollisionShapes ? ColorRgba { 91u, 219u, 135u, 255u } : ColorRgba { 145u, 145u, 143u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::WireCubeIsometric, { DebugDropRect.X + 9.0f, DebugDropRect.Center().Y - 7.0f, 14.0f, 14.0f },
+            Session.RenderOptions.ShowCollisionShapes ? ColorRgba { 91u, 219u, 135u, 255u } : ColorRgba { 145u, 145u, 143u, 255u }, 14.0f, 1.35f);
         Surface.Text({ DebugDropRect.X + 27.0f, DebugDropRect.Y + 9.5f }, 10.4f,
             Session.RenderOptions.ShowCollisionShapes ? ColorRgba { 224u, 246u, 232u, 255u } : ColorRgba { 196u, 196u, 194u, 255u }, "Debug");
-        FractureIcons::DrawChevronDownGlyph(Surface, { DebugDropRect.Right() - 18.0f, DebugDropRect.Center().Y - 6.0f, 12.0f, 12.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::ChevronDown, { DebugDropRect.Right() - 18.0f, DebugDropRect.Center().Y - 6.0f, 12.0f, 12.0f },
+            ColorRgba { 138u, 138u, 136u, 255u }, 12.0f, 1.35f, VectorIconAlignment::GeometricCentered);
         if (DebugHov && Pointer.Pressed)
         {
             Session.DebugDropdownOpen   = !Session.DebugDropdownOpen;
@@ -427,11 +438,12 @@ void FractureViewportHost::Render(
             Surface.StrokeCircle(Btn.Center(), 15.5f,
                 Active ? ColorRgba { 191u, 162u, 122u, 90u } : ColorRgba { 255u, 255u, 255u, 18u }, 1.0f);
             const ColorRgba Ink = Active ? ColorRgba { 222u, 193u, 147u, 255u } : ColorRgba { 154u, 154u, 152u, 255u };
-            const Rectangle2D GBox { Btn.Center().X - 7.5f, Btn.Center().Y - 7.5f, 15.0f, 15.0f };
-            if (GlyphKind == 0) FractureIcons::DrawPulseGlyph(Surface, GBox, Ink);
-            else if (GlyphKind == 1) FractureIcons::DrawWireCubeGlyph(Surface, GBox, Ink);
-            else if (GlyphKind == 2) FractureIcons::DrawSeedsDotsGlyph(Surface, GBox, Ink);
-            else FractureIcons::DrawGridGlyph(Surface, GBox, Ink);
+            const ControlIcon ToolIcon =
+                (GlyphKind == 0) ? ControlIcon::PulseWave :
+                (GlyphKind == 1) ? ControlIcon::WireCubeIsometric :
+                (GlyphKind == 2) ? ControlIcon::SeedsNetwork :
+                                   ControlIcon::GridAxes;
+            VectorIconRepository::ConstructControlInBounds(Surface, ToolIcon, Btn, Ink, 15.0f, 1.35f);
 
             if (Hov && Pointer.Pressed) Active = !Active;
             Rx -= 6.0f;
@@ -503,7 +515,8 @@ void FractureViewportHost::Render(
             if (CheckBadge)
             {
                 Surface.FillCircle(Bc, 8.0f, ColorRgba { 52u, 199u, 89u, 255u });
-                FractureIcons::DrawCheckGlyph(Surface, { Bc.X - 4.5f, Bc.Y - 4.5f, 9.0f, 9.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.6f);
+                VectorIconRepository::ConstructControlCentered(
+                    Surface, ControlIcon::CheckMark, Bc, 9.5f, ColorRgba { 11u, 36u, 18u, 255u }, 1.9f, VectorIconAlignment::GeometricCentered);
             }
             else
             {
@@ -787,7 +800,8 @@ void FractureViewportHost::Render(
             Surface.StrokeRectangle(BoxRect, Active ? ColorRgba { 88u, 232u, 136u, 255u } : ColorRgba { 255u, 255u, 255u, 34u }, 4.0f, 0.9f);
             if (Active)
             {
-                FractureIcons::DrawCheckGlyph(Surface, { BoxRect.X + 2.5f, BoxRect.Y + 2.5f, 9.0f, 9.0f }, ColorRgba { 11u, 34u, 18u, 255u }, 2.2f);
+                VectorIconRepository::ConstructControlInBounds(
+                    Surface, ControlIcon::CheckMark, BoxRect, ColorRgba { 11u, 34u, 18u, 255u }, 9.5f, 1.9f, VectorIconAlignment::GeometricCentered);
             }
 
             Surface.Text({ BoxRect.Right() + 9.0f, RowRect.Y + 7.0f }, 10.2f,

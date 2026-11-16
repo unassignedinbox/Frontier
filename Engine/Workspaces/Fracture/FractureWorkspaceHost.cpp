@@ -139,7 +139,7 @@ void FractureWorkspaceHost::RenderStudio(
         if (PlusClicked)
         {
             const uint32_t Next = (static_cast<uint32_t>(Session.ActiveShape) + 1u) % FractureWorkspaceSession::PrimitiveCount;
-            Session.ApplyPrimitiveShape(static_cast<FractureIcons::PrimitiveShapeId>(Next));
+            Session.ApplyPrimitiveShape(static_cast<PrimitiveShapeIcon>(Next));
         }
         if (CloseClicked)
         {

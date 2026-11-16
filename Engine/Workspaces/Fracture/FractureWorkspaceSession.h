@@ -13,11 +13,11 @@
 #include "Engine/Components/Controls/SimulationTimelineFooter.h"
 #include "Engine/Components/Controls/TextInputField.h"
 #include "Engine/Components/Diagnostics/DiagnosticsOverlay.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 #include "Engine/GeometrySpace/Fracture/ConvexPartitioning.h"
 #include "Engine/GeometrySpace/Fracture/FractureMaterialRepository.h"
 #include "Engine/GeometrySpace/Fracture/FracturePartitionTypes.h"
 #include "Engine/SimulationSpace/PhysicsSpace/FractureSimulationRunner.h"
-#include "Engine/Workspaces/Fracture/FractureIcons.h"
 #include "Engine/Workspaces/Fracture/FractureViewportRenderer.h"
 
 #include <array>
@@ -62,7 +62,7 @@ struct FracturePresetEntry
 {
     const char*                               Title          = "";
     const char*                               Subtitle       = "";
-    FractureIcons::PrimitiveShapeId           Shape          = FractureIcons::PrimitiveShapeId::Torus;
+    PrimitiveShapeIcon                        Shape          = PrimitiveShapeIcon::Torus;
     GeometrySpace::Fracture::FractureSolidCategory SolidCategory = GeometrySpace::Fracture::FractureSolidCategory::Boulder;
     const char*                               SurfaceMatId   = "concrete";
     const char*                               MaterialId     = "concrete";
@@ -76,7 +76,7 @@ struct FracturePresetEntry
 
 struct FracturePrimitiveDescriptor
 {
-    FractureIcons::PrimitiveShapeId Shape       = FractureIcons::PrimitiveShapeId::Box;
+    PrimitiveShapeIcon              Shape       = PrimitiveShapeIcon::Box;
     const char*                     Id          = "box";
     const char*                     Title       = "Box";
     const char*                     Formula     = "W · H · D";
@@ -118,7 +118,7 @@ public:
     static const std::array<FracturePrimitiveDescriptor, PrimitiveCount>& InspectPrimitives() noexcept;
 
     void ApplyPreset(uint32_t PresetIndex);
-    void ApplyPrimitiveShape(FractureIcons::PrimitiveShapeId Shape);
+    void ApplyPrimitiveShape(PrimitiveShapeIcon Shape);
     void ApplySolverMethod(GeometrySpace::Fracture::FractureSolverMethod Method);
     void ApplyCameraView(uint32_t ViewIndex) noexcept;
     void RebuildSourceGeometry();
@@ -152,7 +152,7 @@ public:
     [[nodiscard]] std::string                                          BuildWorkspaceReportMarkdown() const;
 
     // Active primitive & dimensions
-    FractureIcons::PrimitiveShapeId                ActiveShape         = FractureIcons::PrimitiveShapeId::Torus;
+    PrimitiveShapeIcon                             ActiveShape         = PrimitiveShapeIcon::Torus;
     FractureFacetDetail                            FacetDetail         = FractureFacetDetail::Medium;
     uint32_t                                       SourceSegmentCount  = 40u;
     uint32_t                                       SourceFaceCount     = 800u;

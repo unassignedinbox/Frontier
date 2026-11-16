@@ -11,6 +11,7 @@
 
 #include "Engine/Components/Controls/ControlAppearance.h"
 #include "Engine/Components/PixelSpace.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 
 #include <algorithm>
 #include <array>
@@ -219,69 +220,6 @@ inline void RasterizeTripletPillsRow(
     Surface.StrokeLine({ Chev.X - 3.2f, Chev.Y }, { Chev.X, Chev.Y + 3.4f }, C.TextSoft, 1.3f);
     Surface.StrokeLine({ Chev.X, Chev.Y + 3.4f }, { Chev.X + 3.2f, Chev.Y }, C.TextSoft, 1.3f);
     return Hover && Pointer.Pressed;
-}
-
-//------------------------------------------------------------------------------------------------------------------------
-//                                              CRISP TWO-TONE VECTOR GLYPHS
-//------------------------------------------------------------------------------------------------------------------------
-
-inline void RasterizeSparkleGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Ink) noexcept
-{
-    Surface.StrokeLine({ C.X, C.Y - R }, { C.X, C.Y + R }, Ink, 1.35f);
-    Surface.StrokeLine({ C.X - R, C.Y }, { C.X + R, C.Y }, Ink, 1.35f);
-    Surface.FillCircle(C, R * 0.28f, Ink);
-    Surface.FillCircle({ C.X + R * 0.65f, C.Y - R * 0.65f }, R * 0.16f, Ink);
-}
-
-inline void RasterizeCheckBadgeGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Bg, ColorRgba Ink) noexcept
-{
-    Surface.FillCircle(C, R, Bg);
-    Surface.StrokeLine({ C.X - R * 0.38f, C.Y + R * 0.04f }, { C.X - R * 0.06f, C.Y + R * 0.36f }, Ink, 1.6f);
-    Surface.StrokeLine({ C.X - R * 0.06f, C.Y + R * 0.36f }, { C.X + R * 0.44f, C.Y - R * 0.30f }, Ink, 1.6f);
-}
-
-inline void RasterizeEyeGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Ink, bool Slashed) noexcept
-{
-    const std::array<Point2D, 5> TopArc = {{
-        { C.X - R, C.Y },
-        { C.X - R * 0.45f, C.Y - R * 0.52f },
-        { C.X, C.Y - R * 0.62f },
-        { C.X + R * 0.45f, C.Y - R * 0.52f },
-        { C.X + R, C.Y },
-    }};
-    const std::array<Point2D, 5> BotArc = {{
-        { C.X - R, C.Y },
-        { C.X - R * 0.45f, C.Y + R * 0.52f },
-        { C.X, C.Y + R * 0.62f },
-        { C.X + R * 0.45f, C.Y + R * 0.52f },
-        { C.X + R, C.Y },
-    }};
-    Surface.StrokePolyline(TopArc, Ink, 1.2f, false);
-    Surface.StrokePolyline(BotArc, Ink, 1.2f, false);
-    Surface.FillCircle(C, R * 0.28f, Ink);
-    if (Slashed)
-    {
-        Surface.StrokeLine({ C.X - R * 0.85f, C.Y - R * 0.78f }, { C.X + R * 0.85f, C.Y + R * 0.78f }, Ink, 1.3f);
-    }
-}
-
-inline void RasterizeWindLinesGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Ink) noexcept
-{
-    Surface.StrokeLine({ C.X - R, C.Y - R * 0.45f }, { C.X + R * 0.65f, C.Y - R * 0.45f }, Ink, 1.35f);
-    Surface.StrokeLine({ C.X - R * 0.7f, C.Y }, { C.X + R, C.Y }, Ink, 1.35f);
-    Surface.StrokeLine({ C.X - R * 0.9f, C.Y + R * 0.45f }, { C.X + R * 0.45f, C.Y + R * 0.45f }, Ink, 1.35f);
-}
-
-inline void RasterizeMagnifierGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Ink) noexcept
-{
-    Surface.StrokeCircle({ C.X - R * 0.18f, C.Y - R * 0.18f }, R * 0.62f, Ink, 1.35f);
-    Surface.StrokeLine({ C.X + R * 0.28f, C.Y + R * 0.28f }, { C.X + R * 0.88f, C.Y + R * 0.88f }, Ink, 1.5f);
-}
-
-inline void RasterizePlusGlyph(PixelSpace& Surface, Point2D C, float R, ColorRgba Ink) noexcept
-{
-    Surface.StrokeLine({ C.X - R, C.Y }, { C.X + R, C.Y }, Ink, 1.45f);
-    Surface.StrokeLine({ C.X, C.Y - R }, { C.X, C.Y + R }, Ink, 1.45f);
 }
 
 } // namespace Frontier::Workspaces::ParticleAppearance

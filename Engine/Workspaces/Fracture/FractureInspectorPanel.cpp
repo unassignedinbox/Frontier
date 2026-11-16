@@ -7,7 +7,7 @@
 
 #include "Engine/Components/Controls/ExclusiveSelector.h"
 #include "Engine/Components/Controls/ScalarSlider.h"
-#include "Engine/Workspaces/Fracture/FractureIcons.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 #include "Engine/Workspaces/Particle/ParticlePaneAppearance.h"
 
 #include <algorithm>
@@ -227,7 +227,9 @@ void DrawKpiGrid(
         const Rectangle2D Tile { X + static_cast<float>(Col) * (W + Gap), Y + static_cast<float>(Row) * (H + Gap), W, H };
         Surface.FillRectangle(Tile, ColorRgba { 23u, 23u, 24u, 255u }, 17.0f);
         Surface.StrokeRectangle(Tile, ColorRgba { 255u, 255u, 255u, 20u }, 17.0f, 1.0f);
-        FractureIcons::DrawArrowNeGlyph(Surface, { Tile.Right() - 22.0f, Tile.Y + 10.0f, 13.0f, 13.0f }, ColorRgba { 118u, 118u, 116u, 255u });
+        VectorIconRepository::ConstructControlInBounds(
+            Surface, ControlIcon::ArrowNorthEast, { Tile.Right() - 22.0f, Tile.Y + 10.0f, 13.0f, 13.0f },
+            ColorRgba { 118u, 118u, 116u, 255u }, 13.0f, 1.35f, VectorIconAlignment::GeometricCentered);
 
         float Nx = Tile.X + 14.0f;
         const float Ny = Tile.Y + 13.0f;
@@ -336,7 +338,9 @@ void FractureInspectorPanel::Render(
         Surface.StrokeRectangle(TopBtn, Hov ? ColorRgba { 98u, 98u, 98u, 255u } : ColorRgba { 72u, 72u, 72u, 255u }, 14.0f, 1.0f);
         if (SelFrag < 0)
         {
-            FractureIcons::DrawDiceGlyph(Surface, { TopBtn.X + 10.0f, TopBtn.Center().Y - 6.5f, 13.0f, 13.0f }, ColorRgba { 176u, 176u, 174u, 255u });
+            VectorIconRepository::ConstructControlInBounds(
+                Surface, ControlIcon::DiceIsometric, { TopBtn.X + 10.0f, TopBtn.Center().Y - 6.5f, 13.0f, 13.0f },
+                ColorRgba { 176u, 176u, 174u, 255u }, 13.0f, 1.35f);
         }
         Surface.Text({ TopBtn.X + (SelFrag >= 0 ? 14.0f : 27.0f), TopBtn.Y + 8.0f }, 10.2f,
             Hov ? ColorRgba { 236u, 236u, 234u, 255u } : ColorRgba { 176u, 176u, 174u, 255u }, TopBtnLabel);
@@ -386,14 +390,11 @@ void FractureInspectorPanel::Render(
         const bool Hov = ControlAppearance::QueryPointerOver(Head, Pointer) && ScrollRect.Contains({ Pointer.X, Pointer.Y });
         Surface.Text({ Head.X, Head.Y + 4.0f }, 10.4f, ColorRgba { 174u, 174u, 172u, 255u }, Title);
         Surface.TextRightAligned({ Head.X, Head.Y + 4.0f, Head.Width - 18.0f, 14.0f }, 9.8f, ColorRgba { 132u, 132u, 130u, 255u }, Note);
-        if (Session.SectionExpanded[SecIdx])
-        {
-            FractureIcons::DrawChevronDownGlyph(Surface, { Head.Right() - 13.0f, Head.Y + 4.0f, 13.0f, 13.0f }, ColorRgba { 95u, 95u, 93u, 255u });
-        }
-        else
-        {
-            FractureIcons::DrawChevronRightGlyph(Surface, { Head.Right() - 13.0f, Head.Y + 4.0f, 13.0f, 13.0f }, ColorRgba { 95u, 95u, 93u, 255u });
-        }
+        VectorIconRepository::ConstructControlInBounds(
+            Surface,
+            Session.SectionExpanded[SecIdx] ? ControlIcon::ChevronDown : ControlIcon::ChevronForward,
+            { Head.Right() - 13.0f, Head.Y + 4.0f, 13.0f, 13.0f },
+            ColorRgba { 95u, 95u, 93u, 255u }, 13.0f, 1.4f, VectorIconAlignment::GeometricCentered);
         if (Hov && Pointer.Pressed)
         {
             Session.SectionExpanded[SecIdx] = !Session.SectionExpanded[SecIdx];
@@ -489,11 +490,12 @@ void FractureInspectorPanel::Render(
                 const Rectangle2D IconSeat { Card.X + 14.0f, Card.Y + 13.0f, 28.0f, 28.0f };
                 if (Mode == FractureMethodMode::Baked)
                 {
-                    FractureIcons::DrawBakeIcon(Surface, IconSeat);
+                    VectorIconRepository::ConstructStudioInBounds(Surface, StudioIcon::BakeGrid, IconSeat);
                 }
                 else
                 {
-                    FractureIcons::DrawLightningIcon(Surface, IconSeat, ColorRgba { 246u, 197u, 94u, 255u });
+                    VectorIconRepository::ConstructControlInBounds(
+                        Surface, ControlIcon::LightningBoltSolid, IconSeat, ColorRgba { 246u, 197u, 94u, 255u }, 22.0f);
                 }
 
                 Surface.Text({ Card.X + 50.0f, Card.Y + 12.0f }, 13.5f, ColorRgba { 240u, 240u, 238u, 255u }, Title);
@@ -503,7 +505,8 @@ void FractureInspectorPanel::Render(
                 {
                     const Point2D CheckC { Card.Right() - 22.0f, Card.Y + 25.0f };
                     Surface.FillCircle(CheckC, 9.5f, ColorRgba { 52u, 199u, 89u, 255u });
-                    FractureIcons::DrawCheckGlyph(Surface, { CheckC.X - 5.5f, CheckC.Y - 5.5f, 11.0f, 11.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.2f);
+                    VectorIconRepository::ConstructControlCentered(
+                        Surface, ControlIcon::CheckMark, CheckC, 11.0f, ColorRgba { 11u, 36u, 18u, 255u }, 2.0f, VectorIconAlignment::GeometricCentered);
                 }
 
                 const float Cw = (Card.Width - 28.0f) * 0.5f;
@@ -574,7 +577,10 @@ void FractureInspectorPanel::Render(
                 const bool Hov    = ControlAppearance::QueryPointerOver(Tile, Pointer);
                 Surface.FillRectangle(Tile, Active ? ColorRgba { 32u, 30u, 26u, 255u } : (Hov ? ColorRgba { 30u, 30u, 31u, 255u } : ColorRgba { 24u, 24u, 25u, 255u }), 14.0f);
                 Surface.StrokeRectangle(Tile, Active ? ColorRgba { 242u, 169u, 59u, 125u } : ColorRgba { 255u, 255u, 255u, 20u }, 14.0f, Active ? 1.2f : 1.0f);
-                FractureIcons::DrawAlgorithmGlyph(Surface, { Tile.X + 10.0f, Tile.Y + 13.0f, 22.0f, 22.0f }, Algs[I].GlyphIdx,
+                VectorIconRepository::ConstructFractureAlgorithmInBounds(
+                    Surface,
+                    static_cast<FractureAlgorithmIcon>(Algs[I].GlyphIdx),
+                    { Tile.X + 10.0f, Tile.Y + 13.0f, 22.0f, 22.0f },
                     Active ? ColorRgba { 228u, 198u, 150u, 255u } : ColorRgba { 164u, 164u, 162u, 255u });
                 Surface.Text({ Tile.X + 38.0f, Tile.Y + 10.0f }, 10.6f, ColorRgba { 232u, 232u, 230u, 255u }, Algs[I].Name);
                 Surface.Text({ Tile.X + 38.0f, Tile.Y + 28.0f }, 9.2f, ColorRgba { 132u, 132u, 130u, 255u }, Algs[I].Sub);
@@ -596,7 +602,7 @@ void FractureInspectorPanel::Render(
 
             char DimABuf[24] {}, DimBBuf[24] {};
             std::snprintf(DimABuf, sizeof(DimABuf), "%.2f", Session.DimPrimaryA);
-            const char* LabelA = (Session.ActiveShape == FractureIcons::PrimitiveShapeId::Torus) ? "Ring radius" : "Primary extent";
+            const char* LabelA = (Session.ActiveShape == PrimitiveShapeIcon::Torus) ? "Ring radius" : "Primary extent";
             const float NewA = DrawScalarField(0, LabelA, DimABuf, "m", 0.15f, 1.60f, Session.DimPrimaryA);
             if (std::abs(NewA - Session.DimPrimaryA) > 0.005f)
             {
@@ -606,7 +612,7 @@ void FractureInspectorPanel::Render(
             }
 
             std::snprintf(DimBBuf, sizeof(DimBBuf), "%.2f", Session.DimPrimaryB);
-            const char* LabelB = (Session.ActiveShape == FractureIcons::PrimitiveShapeId::Torus) ? "Tube radius" : "Height / span";
+            const char* LabelB = (Session.ActiveShape == PrimitiveShapeIcon::Torus) ? "Tube radius" : "Height / span";
             const float NewB = DrawScalarField(1, LabelB, DimBBuf, "m", 0.05f, 1.50f, Session.DimPrimaryB);
             if (std::abs(NewB - Session.DimPrimaryB) > 0.005f)
             {
@@ -631,7 +637,9 @@ void FractureInspectorPanel::Render(
                 Surface.StrokeRectangle(Card, ColorRgba { 48u, 48u, 48u, 255u }, 20.0f, 1.0f);
 
                 const ColorRgba SwRgb = MaterialLinearToSrgbSwatch(Outside ? Mat.ExteriorLinearRgb : Mat.InteriorLinearRgb);
-                FractureIcons::DrawMaterialSphereIcon(Surface, { Card.X + 12.0f, Card.Y + 12.0f, 44.0f, 44.0f }, SwRgb, !Outside);
+                VectorIconRepository::ConstructStudioInBounds(
+                    Surface, Outside ? StudioIcon::MaterialSphere : StudioIcon::MaterialCutCube,
+                    { Card.X + 12.0f, Card.Y + 12.0f, 44.0f, 44.0f }, SwRgb);
 
                 Surface.Text({ Card.X + 68.0f, Card.Y + 12.0f }, 7.6f, ColorRgba { 123u, 123u, 121u, 255u },
                     Outside ? "OUTSIDE · ORIGINAL SURFACE" : "INTERIOR · CUT FACES AND BULK");
@@ -647,7 +655,9 @@ void FractureInspectorPanel::Render(
                         Mat.FractureToughnessGc, Mat.DensityKgPerM3);
                 }
                 Surface.Text({ Card.X + 68.0f, Card.Y + 44.0f }, 8.6f, ColorRgba { 138u, 138u, 136u, 255u }, MatDesc);
-                FractureIcons::DrawChevronDownGlyph(Surface, { Card.Right() - 26.0f, Card.Center().Y - 7.0f, 14.0f, 14.0f }, ColorRgba { 138u, 138u, 136u, 255u });
+                VectorIconRepository::ConstructControlInBounds(
+                    Surface, ControlIcon::ChevronDown, { Card.Right() - 26.0f, Card.Center().Y - 7.0f, 14.0f, 14.0f },
+                    ColorRgba { 138u, 138u, 136u, 255u }, 14.0f, 1.4f, VectorIconAlignment::GeometricCentered);
 
                 if (Hov && Pointer.Pressed)
                 {
@@ -710,10 +720,12 @@ void FractureInspectorPanel::Render(
                     Flag ? ColorRgba { 36u, 58u, 42u, 255u } : ColorRgba { 38u, 38u, 38u, 255u }, 12.0f);
                 const ColorRgba Ink = Flag ? ColorRgba { 91u, 219u, 135u, 255u } : ColorRgba { 160u, 160u, 158u, 255u };
                 const Rectangle2D GBox { SeatC.X - 8.5f, SeatC.Y - 8.5f, 17.0f, 17.0f };
-                if (GlyphKind == 0) FractureIcons::DrawTriangleGlyph(Surface, GBox, Ink);
-                else if (GlyphKind == 1) FractureIcons::DrawWireCubeGlyph(Surface, GBox, Ink);
-                else if (GlyphKind == 2) FractureIcons::DrawGridGlyph(Surface, GBox, Ink);
-                else FractureIcons::DrawSphereWireGlyph(Surface, GBox, Ink);
+                const ControlIcon QualityIcon =
+                    (GlyphKind == 0) ? ControlIcon::TriangleWire :
+                    (GlyphKind == 1) ? ControlIcon::WireCubeIsometric :
+                    (GlyphKind == 2) ? ControlIcon::GridAxes :
+                                       ControlIcon::WireSphere;
+                VectorIconRepository::ConstructControlInBounds(Surface, QualityIcon, GBox, Ink, 17.0f, 1.45f);
 
                 Surface.TextCentered({ Tile.X, Tile.Y + 54.0f, Tile.Width, 14.0f }, 10.2f, ColorRgba { 220u, 220u, 218u, 255u }, Label);
                 Surface.TextCentered({ Tile.X, Tile.Y + 71.0f, Tile.Width, 12.0f }, 7.8f, Flag ? ColorRgba { 91u, 219u, 135u, 255u } : ColorRgba { 111u, 111u, 109u, 255u },
@@ -802,7 +814,9 @@ void FractureInspectorPanel::Render(
                     Surface.FillRectangle(Opt, ColorRgba { 255u, 255u, 255u, static_cast<uint8_t>(Active ? 16u : 10u) }, 12.0f);
                 }
                 const ColorRgba Sw = MaterialLinearToSrgbSwatch(Outside ? M.ExteriorLinearRgb : M.InteriorLinearRgb);
-                FractureIcons::DrawMaterialSphereIcon(Surface, { Opt.X + 9.0f, Opt.Center().Y - 13.0f, 26.0f, 26.0f }, Sw, !Outside);
+                VectorIconRepository::ConstructStudioInBounds(
+                    Surface, Outside ? StudioIcon::MaterialSphere : StudioIcon::MaterialCutCube,
+                    { Opt.X + 9.0f, Opt.Center().Y - 13.0f, 26.0f, 26.0f }, Sw);
                 Surface.Text({ Opt.X + 46.0f, Opt.Y + 7.0f }, 11.2f, Active ? ColorRgba { 255u, 255u, 255u, 255u } : ColorRgba { 226u, 226u, 224u, 255u }, M.ShortLabel);
                 char Sub[56] {};
                 std::snprintf(Sub, sizeof(Sub), "Gc %.0f J/m2 · %.0f kg/m3", M.FractureToughnessGc, M.DensityKgPerM3);
@@ -811,7 +825,8 @@ void FractureInspectorPanel::Render(
                 {
                     const Point2D Ck { Opt.Right() - 16.0f, Opt.Center().Y };
                     Surface.FillCircle(Ck, 8.0f, ColorRgba { 52u, 199u, 89u, 255u });
-                    FractureIcons::DrawCheckGlyph(Surface, { Ck.X - 4.5f, Ck.Y - 4.5f, 9.0f, 9.0f }, ColorRgba { 11u, 36u, 18u, 255u }, 2.6f);
+                    VectorIconRepository::ConstructControlCentered(
+                        Surface, ControlIcon::CheckMark, Ck, 9.5f, ColorRgba { 11u, 36u, 18u, 255u }, 1.9f, VectorIconAlignment::GeometricCentered);
                 }
                 if (Hov && Pointer.Pressed)
                 {

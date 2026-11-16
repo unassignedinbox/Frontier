@@ -266,7 +266,7 @@ constexpr double TauConst = PiConst * 2.0;
 }
 
 [[nodiscard]] double SignedDistanceLocal(
-    FractureIcons::PrimitiveShapeId Shape,
+    PrimitiveShapeIcon Shape,
     float                           DimA,
     float                           DimB,
     float                           DimC,
@@ -276,7 +276,7 @@ constexpr double TauConst = PiConst * 2.0;
     const double Rho = std::hypot(X, Y);
     switch (Shape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:
+    case PrimitiveShapeIcon::Box:
     {
         const double Qx = std::abs(X) - std::max(0.02, DimA * 0.5);
         const double Qy = std::abs(Y) - std::max(0.02, DimC * 0.5);
@@ -284,7 +284,7 @@ constexpr double TauConst = PiConst * 2.0;
         return std::hypot(std::max(Qx, 0.0), std::hypot(std::max(Qy, 0.0), std::max(Qz, 0.0)))
              + std::min(std::max({ Qx, Qy, Qz }), 0.0);
     }
-    case FractureIcons::PrimitiveShapeId::Pane:
+    case PrimitiveShapeIcon::Pane:
     {
         const double Qx = std::abs(X) - std::max(0.02, DimA * 0.5);
         const double Qy = std::abs(Y) - std::max(0.007, DimC / 2000.0);
@@ -292,27 +292,27 @@ constexpr double TauConst = PiConst * 2.0;
         return std::hypot(std::max(Qx, 0.0), std::hypot(std::max(Qy, 0.0), std::max(Qz, 0.0)))
              + std::min(std::max({ Qx, Qy, Qz }), 0.0);
     }
-    case FractureIcons::PrimitiveShapeId::Sphere:
+    case PrimitiveShapeIcon::Sphere:
         return std::hypot(X, std::hypot(Y, Z)) - std::max(0.05, static_cast<double>(DimA));
-    case FractureIcons::PrimitiveShapeId::Cylinder:
+    case PrimitiveShapeIcon::Cylinder:
     {
         const double Dr = Rho - std::max(0.04, static_cast<double>(DimA));
         const double Dz = std::abs(Z) - std::max(0.04, DimB * 0.5);
         return (Dr > 0.0 && Dz > 0.0) ? std::hypot(Dr, Dz) : std::max(Dr, Dz);
     }
-    case FractureIcons::PrimitiveShapeId::Capsule:
+    case PrimitiveShapeIcon::Capsule:
     {
         const double HalfL = std::max(0.0, DimB * 0.5);
         const double Cz    = std::clamp(Z, -HalfL, HalfL);
         return std::hypot(X, std::hypot(Y, Z - Cz)) - std::max(0.04, static_cast<double>(DimA));
     }
-    case FractureIcons::PrimitiveShapeId::Torus:
+    case PrimitiveShapeIcon::Torus:
     {
         const double R = std::max(0.15, static_cast<double>(DimA));
         const double r = std::min(R * 0.90, std::max(0.04, static_cast<double>(DimB)));
         return std::hypot(Rho - R, Z) - r;
     }
-    case FractureIcons::PrimitiveShapeId::Pipe:
+    case PrimitiveShapeIcon::Pipe:
     {
         const double Ro = std::max(0.08, static_cast<double>(DimA));
         const double Ri = std::clamp(static_cast<double>(DimB), 0.02, Ro - 0.02);
@@ -327,7 +327,7 @@ constexpr double TauConst = PiConst * 2.0;
 }
 
 [[nodiscard]] Mathematics::Axis3D AnalyticalSurfaceNormal(
-    FractureIcons::PrimitiveShapeId Shape,
+    PrimitiveShapeIcon Shape,
     float                           DimA,
     float                           DimB,
     float                           DimC,
@@ -336,7 +336,7 @@ constexpr double TauConst = PiConst * 2.0;
 {
     switch (Shape)
     {
-    case FractureIcons::PrimitiveShapeId::Torus:
+    case PrimitiveShapeIcon::Torus:
     {
         const float R   = std::max(0.15f, DimA);
         const float Rho = std::hypot(P.X, P.Y);
@@ -345,7 +345,7 @@ constexpr double TauConst = PiConst * 2.0;
         const auto N = Mathematics::NormalizeAxis(P - TubeCenter, FallbackFlat);
         return (Mathematics::EvaluateDot(N, FallbackFlat) > 0.2f) ? N : FallbackFlat;
     }
-    case FractureIcons::PrimitiveShapeId::Pipe:
+    case PrimitiveShapeIcon::Pipe:
     {
         const float Hz = std::max(0.025f, DimC * 0.5f);
         if (std::abs(P.Z) > Hz - 2.0e-3f)
@@ -361,26 +361,26 @@ constexpr double TauConst = PiConst * 2.0;
             : Mathematics::NormalizeAxis({  P.X,  P.Y, 0.0f }, FallbackFlat);
         return (Mathematics::EvaluateDot(RadialN, FallbackFlat) > 0.2f) ? RadialN : FallbackFlat;
     }
-    case FractureIcons::PrimitiveShapeId::Sphere:
+    case PrimitiveShapeIcon::Sphere:
     {
         const auto N = Mathematics::NormalizeAxis(P, FallbackFlat);
         return (Mathematics::EvaluateDot(N, FallbackFlat) > 0.2f) ? N : FallbackFlat;
     }
-    case FractureIcons::PrimitiveShapeId::Cylinder:
+    case PrimitiveShapeIcon::Cylinder:
     {
         const float Hz = std::max(0.025f, DimB * 0.5f);
         if (std::abs(P.Z) > Hz - 2.0e-3f) return FallbackFlat;
         const auto N = Mathematics::NormalizeAxis({ P.X, P.Y, 0.0f }, FallbackFlat);
         return (Mathematics::EvaluateDot(N, FallbackFlat) > 0.2f) ? N : FallbackFlat;
     }
-    case FractureIcons::PrimitiveShapeId::Capsule:
+    case PrimitiveShapeIcon::Capsule:
     {
         const float HalfL = std::max(0.0f, DimB * 0.5f);
         const float Cz    = std::clamp(P.Z, -HalfL, HalfL);
         const auto N = Mathematics::NormalizeAxis({ P.X, P.Y, P.Z - Cz }, FallbackFlat);
         return (Mathematics::EvaluateDot(N, FallbackFlat) > 0.2f) ? N : FallbackFlat;
     }
-    case FractureIcons::PrimitiveShapeId::Cone:
+    case PrimitiveShapeIcon::Cone:
     {
         const float Hz = std::max(0.025f, DimB * 0.5f);
         if (P.Z < -Hz + 2.0e-3f) return FallbackFlat;
@@ -552,7 +552,7 @@ bool ClipPolyhedronKeepHalfSpace(
 
 [[nodiscard]] EngineeringSurface BuildDetailedSurfaceForChunks(
     const std::vector<ConvexPolyhedron>& Chunks,
-    FractureIcons::PrimitiveShapeId      Shape,
+    PrimitiveShapeIcon      Shape,
     float                                DimA,
     float                                DimB,
     float                                DimC,
@@ -640,7 +640,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Torus",
             "Clustered Voronoi · Concrete · 2.50 kJ",
-            FractureIcons::PrimitiveShapeId::Torus,
+            PrimitiveShapeIcon::Torus,
             FractureSolidCategory::Boulder,
             "concrete",
             "concrete",
@@ -654,7 +654,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Curtain Pane",
             "Radial · Tempered · 0.48 kJ",
-            FractureIcons::PrimitiveShapeId::Pane,
+            PrimitiveShapeIcon::Pane,
             FractureSolidCategory::CurtainPane,
             "glass",
             "tempered",
@@ -668,7 +668,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Monolith",
             "Uniform Voronoi · Concrete · 3.20 kJ",
-            FractureIcons::PrimitiveShapeId::Box,
+            PrimitiveShapeIcon::Box,
             FractureSolidCategory::Monolith,
             "concrete",
             "concrete",
@@ -682,7 +682,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Baked Granite",
             "Brick · Bedded Granite · 4.20 kJ",
-            FractureIcons::PrimitiveShapeId::HexColumn,
+            PrimitiveShapeIcon::HexColumn,
             FractureSolidCategory::Cylinder,
             "granite",
             "granite",
@@ -696,7 +696,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Spruce Cylinder",
             "Planar slices · Spruce Wood · 1.80 kJ",
-            FractureIcons::PrimitiveShapeId::Cylinder,
+            PrimitiveShapeIcon::Cylinder,
             FractureSolidCategory::TimberBeam,
             "wood",
             "wood",
@@ -710,7 +710,7 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
         {
             "Polymer Pipe",
             "Recursive split · ABS Polymer · 3.60 kJ",
-            FractureIcons::PrimitiveShapeId::Pipe,
+            PrimitiveShapeIcon::Pipe,
             FractureSolidCategory::HollowCavity,
             "plastic",
             "plastic",
@@ -728,15 +728,15 @@ const std::array<FracturePresetEntry, FractureWorkspaceSession::PresetCount>& Fr
 const std::array<FracturePrimitiveDescriptor, FractureWorkspaceSession::PrimitiveCount>& FractureWorkspaceSession::InspectPrimitives() noexcept
 {
     static constexpr std::array<FracturePrimitiveDescriptor, PrimitiveCount> Primitives {{
-        { FractureIcons::PrimitiveShapeId::Box,       "box",      "Box",        "W · H · D",        "Analytical box",      false },
-        { FractureIcons::PrimitiveShapeId::Sphere,    "sphere",   "Sphere",     "4/3 pi r^3",       "Analytical sphere",   false },
-        { FractureIcons::PrimitiveShapeId::Cylinder,  "cylinder", "Cylinder",   "pi r^2 h",         "Analytical cylinder", false },
-        { FractureIcons::PrimitiveShapeId::Cone,      "cone",     "Cone",       "1/3 pi r^2 h",     "Analytical cone",     false },
-        { FractureIcons::PrimitiveShapeId::Capsule,   "capsule",  "Capsule",    "pi r^2 l + 4/3r3", "Analytical capsule",  false },
-        { FractureIcons::PrimitiveShapeId::Torus,     "torus",    "Torus",      "2 pi^2 R r^2",     "Analytical torus",    true  },
-        { FractureIcons::PrimitiveShapeId::Pipe,      "pipe",     "Pipe",       "pi (R^2 - r^2) h", "Analytical pipe",     true  },
-        { FractureIcons::PrimitiveShapeId::Pane,      "pane",     "Pane",       "W · H · t",        "Analytical pane",     false },
-        { FractureIcons::PrimitiveShapeId::HexColumn, "hex",      "Hex column", "2 sqrt(3) a^2 h",  "Analytical hex",      false },
+        { PrimitiveShapeIcon::Box,       "box",      "Box",        "W · H · D",        "Analytical box",      false },
+        { PrimitiveShapeIcon::Sphere,    "sphere",   "Sphere",     "4/3 pi r^3",       "Analytical sphere",   false },
+        { PrimitiveShapeIcon::Cylinder,  "cylinder", "Cylinder",   "pi r^2 h",         "Analytical cylinder", false },
+        { PrimitiveShapeIcon::Cone,      "cone",     "Cone",       "1/3 pi r^2 h",     "Analytical cone",     false },
+        { PrimitiveShapeIcon::Capsule,   "capsule",  "Capsule",    "pi r^2 l + 4/3r3", "Analytical capsule",  false },
+        { PrimitiveShapeIcon::Torus,     "torus",    "Torus",      "2 pi^2 R r^2",     "Analytical torus",    true  },
+        { PrimitiveShapeIcon::Pipe,      "pipe",     "Pipe",       "pi (R^2 - r^2) h", "Analytical pipe",     true  },
+        { PrimitiveShapeIcon::Pane,      "pane",     "Pane",       "W · H · t",        "Analytical pane",     false },
+        { PrimitiveShapeIcon::HexColumn, "hex",      "Hex column", "2 sqrt(3) a^2 h",  "Analytical hex",      false },
     }};
     return Primitives;
 }
@@ -775,60 +775,60 @@ void FractureWorkspaceSession::ApplyPreset(uint32_t PresetIndex)
     AppendLog("preset", Preset.Title, Preset.Subtitle, true);
 }
 
-void FractureWorkspaceSession::ApplyPrimitiveShape(FractureIcons::PrimitiveShapeId Shape)
+void FractureWorkspaceSession::ApplyPrimitiveShape(PrimitiveShapeIcon Shape)
 {
     ActiveShape = Shape;
     switch (Shape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:
+    case PrimitiveShapeIcon::Box:
         SolidCategory = FractureSolidCategory::Cube;
         DimPrimaryA = 1.00f; DimPrimaryB = 1.00f; DimPrimaryC = 1.00f;
         ImpactPointLocal = { 0.42f, -0.45f, 0.16f };
         ImpactNormalLocal = { 0.25f, -0.94f, 0.22f };
         break;
-    case FractureIcons::PrimitiveShapeId::Sphere:
+    case PrimitiveShapeIcon::Sphere:
         SolidCategory = FractureSolidCategory::Boulder;
         DimPrimaryA = 0.50f; DimPrimaryB = 0.50f; DimPrimaryC = 0.50f;
         ImpactPointLocal = { 0.30f, -0.34f, 0.21f };
         ImpactNormalLocal = { 0.60f, -0.68f, 0.42f };
         break;
-    case FractureIcons::PrimitiveShapeId::Cylinder:
+    case PrimitiveShapeIcon::Cylinder:
         SolidCategory = FractureSolidCategory::Cylinder;
         DimPrimaryA = 0.40f; DimPrimaryB = 1.20f; DimPrimaryC = 0.40f;
         ImpactPointLocal = { 0.26f, -0.30f, 0.20f };
         ImpactNormalLocal = { 0.65f, -0.76f, 0.0f };
         break;
-    case FractureIcons::PrimitiveShapeId::Cone:
+    case PrimitiveShapeIcon::Cone:
         SolidCategory = FractureSolidCategory::Cone;
         DimPrimaryA = 0.50f; DimPrimaryB = 1.10f; DimPrimaryC = 0.50f;
         ImpactPointLocal = { 0.22f, -0.26f, 0.05f };
         ImpactNormalLocal = { 0.62f, -0.74f, 0.25f };
         break;
-    case FractureIcons::PrimitiveShapeId::Capsule:
+    case PrimitiveShapeIcon::Capsule:
         SolidCategory = FractureSolidCategory::Cylinder;
         DimPrimaryA = 0.30f; DimPrimaryB = 0.70f; DimPrimaryC = 0.30f;
         ImpactPointLocal = { 0.19f, -0.22f, 0.10f };
         ImpactNormalLocal = { 0.65f, -0.76f, 0.0f };
         break;
-    case FractureIcons::PrimitiveShapeId::Torus:
+    case PrimitiveShapeIcon::Torus:
         SolidCategory = FractureSolidCategory::Boulder;
         DimPrimaryA = 0.50f; DimPrimaryB = 0.19f; DimPrimaryC = 0.50f;
         ImpactPointLocal = { 0.32f, -0.52f, 0.10f };
         ImpactNormalLocal = { 0.48f, -0.84f, 0.24f };
         break;
-    case FractureIcons::PrimitiveShapeId::Pipe:
+    case PrimitiveShapeIcon::Pipe:
         SolidCategory = FractureSolidCategory::HollowCavity;
         DimPrimaryA = 0.48f; DimPrimaryB = 0.34f; DimPrimaryC = 0.80f;
         ImpactPointLocal = { 0.30f, -0.36f, 0.12f };
         ImpactNormalLocal = { 0.64f, -0.77f, 0.0f };
         break;
-    case FractureIcons::PrimitiveShapeId::Pane:
+    case PrimitiveShapeIcon::Pane:
         SolidCategory = FractureSolidCategory::CurtainPane;
         DimPrimaryA = 1.70f; DimPrimaryB = 1.15f; DimPrimaryC = 14.0f;
         ImpactPointLocal = { 0.10f, -0.02f, 0.08f };
         ImpactNormalLocal = { 0.0f, -1.0f, 0.0f };
         break;
-    case FractureIcons::PrimitiveShapeId::HexColumn:
+    case PrimitiveShapeIcon::HexColumn:
         SolidCategory = FractureSolidCategory::Cylinder;
         DimPrimaryA = 0.56f; DimPrimaryB = 1.20f; DimPrimaryC = 0.56f;
         ImpactPointLocal = { 0.18f, -0.24f, 0.14f };
@@ -867,9 +867,9 @@ void FractureWorkspaceSession::ApplyCameraView(uint32_t ViewIndex) noexcept
     switch (CameraViewIndex)
     {
     case 0u:
-        Camera.YawRadians   = (ActiveShape == FractureIcons::PrimitiveShapeId::Torus) ? 0.64f : 0.72f;
-        Camera.PitchRadians = (ActiveShape == FractureIcons::PrimitiveShapeId::Torus) ? 0.44f : 0.38f;
-        Camera.DistanceM    = (ActiveShape == FractureIcons::PrimitiveShapeId::Torus) ? 2.25f : 2.65f;
+        Camera.YawRadians   = (ActiveShape == PrimitiveShapeIcon::Torus) ? 0.64f : 0.72f;
+        Camera.PitchRadians = (ActiveShape == PrimitiveShapeIcon::Torus) ? 0.44f : 0.38f;
+        Camera.DistanceM    = (ActiveShape == PrimitiveShapeIcon::Torus) ? 2.25f : 2.65f;
         break;
     case 1u:
         Camera.YawRadians = 0.0f; Camera.PitchRadians = 1.38f; Camera.DistanceM = 2.60f;
@@ -894,37 +894,37 @@ void FractureWorkspaceSession::RebuildSourceGeometry()
     SourceParts.clear();
     switch (ActiveShape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:
+    case PrimitiveShapeIcon::Box:
         SourceSolid = BuildBoxExtent(DimPrimaryA, DimPrimaryB, DimPrimaryC);
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::Pane:
+    case PrimitiveShapeIcon::Pane:
         SourceSolid = BuildBoxExtent(DimPrimaryA, DimPrimaryB, std::max(0.014f, DimPrimaryC / 1000.0f));
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::Sphere:
+    case PrimitiveShapeIcon::Sphere:
         SourceSolid = BuildSpherePolyhedron(DimPrimaryA, 14u, AroundN / 2u);
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::Cylinder:
+    case PrimitiveShapeIcon::Cylinder:
         SourceSolid = ConvexPartitioning::ConstructPrismPolyhedron(DimPrimaryA, DimPrimaryA, DimPrimaryB, AroundN);
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::Cone:
+    case PrimitiveShapeIcon::Cone:
         SourceSolid = ConvexPartitioning::ConstructPrismPolyhedron(DimPrimaryA, 0.008f, DimPrimaryB, AroundN);
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::Capsule:
+    case PrimitiveShapeIcon::Capsule:
         SourceSolid = BuildCapsulePolyhedron(DimPrimaryA, DimPrimaryB, 14u, AroundN / 2u);
         SourceParts.push_back(SourceSolid);
         SourceSegmentCount = 1u;
         break;
-    case FractureIcons::PrimitiveShapeId::HexColumn:
+    case PrimitiveShapeIcon::HexColumn:
     {
         const float SideR = (DimPrimaryA * 0.5f) / std::cos(static_cast<float>(PiConst / 6.0));
         SourceSolid = ConvexPartitioning::ConstructPrismPolyhedron(SideR, SideR, DimPrimaryB, 6u);
@@ -932,12 +932,12 @@ void FractureWorkspaceSession::RebuildSourceGeometry()
         SourceSegmentCount = 1u;
         break;
     }
-    case FractureIcons::PrimitiveShapeId::Torus:
+    case PrimitiveShapeIcon::Torus:
         SourceParts = BuildTorusWedges(DimPrimaryA, DimPrimaryB, AroundN, std::max(12u, AroundN / 2u));
         SourceSolid = MergePartsPreview(SourceParts);
         SourceSegmentCount = static_cast<uint32_t>(SourceParts.size());
         break;
-    case FractureIcons::PrimitiveShapeId::Pipe:
+    case PrimitiveShapeIcon::Pipe:
         SourceParts = BuildPipeWedges(DimPrimaryA, DimPrimaryB, DimPrimaryC, AroundN);
         SourceSolid = MergePartsPreview(SourceParts);
         SourceSegmentCount = static_cast<uint32_t>(SourceParts.size());
@@ -1885,15 +1885,15 @@ double FractureWorkspaceSession::QueryExactVolumeM3() const noexcept
 {
     switch (ActiveShape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:       return static_cast<double>(DimPrimaryA) * DimPrimaryB * DimPrimaryC;
-    case FractureIcons::PrimitiveShapeId::Sphere:    return (4.0 / 3.0) * PiConst * std::pow(DimPrimaryA, 3.0);
-    case FractureIcons::PrimitiveShapeId::Cylinder:  return PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB;
-    case FractureIcons::PrimitiveShapeId::Cone:      return (PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB) / 3.0;
-    case FractureIcons::PrimitiveShapeId::Capsule:   return PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB + (4.0 / 3.0) * PiConst * std::pow(DimPrimaryA, 3.0);
-    case FractureIcons::PrimitiveShapeId::Torus:     return 2.0 * PiConst * PiConst * DimPrimaryA * DimPrimaryB * DimPrimaryB;
-    case FractureIcons::PrimitiveShapeId::Pipe:      return PiConst * (DimPrimaryA * DimPrimaryA - DimPrimaryB * DimPrimaryB) * DimPrimaryC;
-    case FractureIcons::PrimitiveShapeId::Pane:      return static_cast<double>(DimPrimaryA) * DimPrimaryB * (DimPrimaryC / 1000.0);
-    case FractureIcons::PrimitiveShapeId::HexColumn: return 2.0 * std::sqrt(3.0) * std::pow(DimPrimaryA * 0.5, 2.0) * DimPrimaryB;
+    case PrimitiveShapeIcon::Box:       return static_cast<double>(DimPrimaryA) * DimPrimaryB * DimPrimaryC;
+    case PrimitiveShapeIcon::Sphere:    return (4.0 / 3.0) * PiConst * std::pow(DimPrimaryA, 3.0);
+    case PrimitiveShapeIcon::Cylinder:  return PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB;
+    case PrimitiveShapeIcon::Cone:      return (PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB) / 3.0;
+    case PrimitiveShapeIcon::Capsule:   return PiConst * DimPrimaryA * DimPrimaryA * DimPrimaryB + (4.0 / 3.0) * PiConst * std::pow(DimPrimaryA, 3.0);
+    case PrimitiveShapeIcon::Torus:     return 2.0 * PiConst * PiConst * DimPrimaryA * DimPrimaryB * DimPrimaryB;
+    case PrimitiveShapeIcon::Pipe:      return PiConst * (DimPrimaryA * DimPrimaryA - DimPrimaryB * DimPrimaryB) * DimPrimaryC;
+    case PrimitiveShapeIcon::Pane:      return static_cast<double>(DimPrimaryA) * DimPrimaryB * (DimPrimaryC / 1000.0);
+    case PrimitiveShapeIcon::HexColumn: return 2.0 * std::sqrt(3.0) * std::pow(DimPrimaryA * 0.5, 2.0) * DimPrimaryB;
     default: return PartitionResult.Receipt.SourceVolumeM3;
     }
 }
@@ -1902,15 +1902,15 @@ double FractureWorkspaceSession::QueryExactAreaM2() const noexcept
 {
     switch (ActiveShape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:       return 2.0 * (DimPrimaryA * DimPrimaryB + DimPrimaryB * DimPrimaryC + DimPrimaryA * DimPrimaryC);
-    case FractureIcons::PrimitiveShapeId::Sphere:    return 4.0 * PiConst * DimPrimaryA * DimPrimaryA;
-    case FractureIcons::PrimitiveShapeId::Cylinder:  return TauConst * DimPrimaryA * (DimPrimaryA + DimPrimaryB);
-    case FractureIcons::PrimitiveShapeId::Cone:      return PiConst * DimPrimaryA * (DimPrimaryA + std::hypot(DimPrimaryA, DimPrimaryB));
-    case FractureIcons::PrimitiveShapeId::Capsule:   return TauConst * DimPrimaryA * DimPrimaryB + 4.0 * PiConst * DimPrimaryA * DimPrimaryA;
-    case FractureIcons::PrimitiveShapeId::Torus:     return 4.0 * PiConst * PiConst * DimPrimaryA * DimPrimaryB;
-    case FractureIcons::PrimitiveShapeId::Pipe:      return TauConst * (DimPrimaryA + DimPrimaryB) * DimPrimaryC + 2.0 * PiConst * (DimPrimaryA * DimPrimaryA - DimPrimaryB * DimPrimaryB);
-    case FractureIcons::PrimitiveShapeId::Pane:      return 2.0 * (DimPrimaryA * DimPrimaryB + (DimPrimaryA + DimPrimaryB) * (DimPrimaryC / 1000.0));
-    case FractureIcons::PrimitiveShapeId::HexColumn:
+    case PrimitiveShapeIcon::Box:       return 2.0 * (DimPrimaryA * DimPrimaryB + DimPrimaryB * DimPrimaryC + DimPrimaryA * DimPrimaryC);
+    case PrimitiveShapeIcon::Sphere:    return 4.0 * PiConst * DimPrimaryA * DimPrimaryA;
+    case PrimitiveShapeIcon::Cylinder:  return TauConst * DimPrimaryA * (DimPrimaryA + DimPrimaryB);
+    case PrimitiveShapeIcon::Cone:      return PiConst * DimPrimaryA * (DimPrimaryA + std::hypot(DimPrimaryA, DimPrimaryB));
+    case PrimitiveShapeIcon::Capsule:   return TauConst * DimPrimaryA * DimPrimaryB + 4.0 * PiConst * DimPrimaryA * DimPrimaryA;
+    case PrimitiveShapeIcon::Torus:     return 4.0 * PiConst * PiConst * DimPrimaryA * DimPrimaryB;
+    case PrimitiveShapeIcon::Pipe:      return TauConst * (DimPrimaryA + DimPrimaryB) * DimPrimaryC + 2.0 * PiConst * (DimPrimaryA * DimPrimaryA - DimPrimaryB * DimPrimaryB);
+    case PrimitiveShapeIcon::Pane:      return 2.0 * (DimPrimaryA * DimPrimaryB + (DimPrimaryA + DimPrimaryB) * (DimPrimaryC / 1000.0));
+    case PrimitiveShapeIcon::HexColumn:
     {
         const double A = DimPrimaryA * 0.5;
         const double S = (2.0 * A) / std::sqrt(3.0);
@@ -1925,15 +1925,15 @@ std::string FractureWorkspaceSession::FormatPrimitiveSubtitle() const
     char Buf[64] {};
     switch (ActiveShape)
     {
-    case FractureIcons::PrimitiveShapeId::Box:       std::snprintf(Buf, sizeof(Buf), "%.2f × %.2f × %.2f m", DimPrimaryA, DimPrimaryB, DimPrimaryC); break;
-    case FractureIcons::PrimitiveShapeId::Sphere:    std::snprintf(Buf, sizeof(Buf), "Ø %.2f m", DimPrimaryA * 2.0f); break;
-    case FractureIcons::PrimitiveShapeId::Cylinder:  std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB); break;
-    case FractureIcons::PrimitiveShapeId::Cone:      std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB); break;
-    case FractureIcons::PrimitiveShapeId::Capsule:   std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB + DimPrimaryA * 2.0f); break;
-    case FractureIcons::PrimitiveShapeId::Torus:     std::snprintf(Buf, sizeof(Buf), "R %.2f · r %.2f m", DimPrimaryA, DimPrimaryB); break;
-    case FractureIcons::PrimitiveShapeId::Pipe:      std::snprintf(Buf, sizeof(Buf), "Ø %.2f / %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB * 2.0f, DimPrimaryC); break;
-    case FractureIcons::PrimitiveShapeId::Pane:      std::snprintf(Buf, sizeof(Buf), "%.2f × %.2f m · %.0f mm", DimPrimaryA, DimPrimaryB, DimPrimaryC); break;
-    case FractureIcons::PrimitiveShapeId::HexColumn: std::snprintf(Buf, sizeof(Buf), "%.2f AF × %.2f m", DimPrimaryA, DimPrimaryB); break;
+    case PrimitiveShapeIcon::Box:       std::snprintf(Buf, sizeof(Buf), "%.2f × %.2f × %.2f m", DimPrimaryA, DimPrimaryB, DimPrimaryC); break;
+    case PrimitiveShapeIcon::Sphere:    std::snprintf(Buf, sizeof(Buf), "Ø %.2f m", DimPrimaryA * 2.0f); break;
+    case PrimitiveShapeIcon::Cylinder:  std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB); break;
+    case PrimitiveShapeIcon::Cone:      std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB); break;
+    case PrimitiveShapeIcon::Capsule:   std::snprintf(Buf, sizeof(Buf), "Ø %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB + DimPrimaryA * 2.0f); break;
+    case PrimitiveShapeIcon::Torus:     std::snprintf(Buf, sizeof(Buf), "R %.2f · r %.2f m", DimPrimaryA, DimPrimaryB); break;
+    case PrimitiveShapeIcon::Pipe:      std::snprintf(Buf, sizeof(Buf), "Ø %.2f / %.2f × %.2f m", DimPrimaryA * 2.0f, DimPrimaryB * 2.0f, DimPrimaryC); break;
+    case PrimitiveShapeIcon::Pane:      std::snprintf(Buf, sizeof(Buf), "%.2f × %.2f m · %.0f mm", DimPrimaryA, DimPrimaryB, DimPrimaryC); break;
+    case PrimitiveShapeIcon::HexColumn: std::snprintf(Buf, sizeof(Buf), "%.2f AF × %.2f m", DimPrimaryA, DimPrimaryB); break;
     default: break;
     }
     return Buf;

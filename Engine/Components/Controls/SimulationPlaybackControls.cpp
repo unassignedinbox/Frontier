@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/Components/Controls/SimulationPlaybackControls.h"
+#include "Engine/Components/VectorIcons/VectorIconRepository.h"
 
 #include <algorithm>
 #include <array>
@@ -19,54 +20,6 @@ namespace Frontier
 
 namespace
 {
-
-void DrawResetArcGlyph(PixelSpace& Surface, Point2D Center, float Radius, ColorRgba Ink) noexcept
-{
-    constexpr uint32_t Segments = 14u;
-    std::array<Point2D, Segments + 1u> Arc {};
-    constexpr float StartAngle = -2.35f;
-    constexpr float Sweep      = 4.75f;
-    for (uint32_t I = 0u; I <= Segments; ++I)
-    {
-        const float Angle = StartAngle + Sweep * (static_cast<float>(I) / static_cast<float>(Segments));
-        Arc[I]            = { Center.X + std::cos(Angle) * Radius, Center.Y + std::sin(Angle) * Radius };
-    }
-    Surface.StrokePolyline(Arc, Ink, 1.45f, false);
-    // Arrowhead at start of arc
-    const Point2D Tip = Arc[0];
-    Surface.StrokeLine(Tip, { Tip.X - 3.6f, Tip.Y + 0.6f }, Ink, 1.45f);
-    Surface.StrokeLine(Tip, { Tip.X + 0.4f, Tip.Y - 3.6f }, Ink, 1.45f);
-}
-
-void DrawPlayGlyph(PixelSpace& Surface, Point2D Center, float Size, ColorRgba Ink) noexcept
-{
-    const std::array<Point2D, 3> Tri = {{
-        { Center.X - Size * 0.34f, Center.Y - Size * 0.50f },
-        { Center.X + Size * 0.54f, Center.Y },
-        { Center.X - Size * 0.34f, Center.Y + Size * 0.50f },
-    }};
-    Surface.FillPolygon(Tri, Ink);
-}
-
-void DrawPauseGlyph(PixelSpace& Surface, Point2D Center, float Size, ColorRgba Ink) noexcept
-{
-    const float BarW = Size * 0.24f;
-    const float BarH = Size * 0.84f;
-    const float Gap  = Size * 0.16f;
-    Surface.FillRectangle({ Center.X - Gap - BarW, Center.Y - BarH * 0.5f, BarW, BarH }, Ink, 1.2f);
-    Surface.FillRectangle({ Center.X + Gap,        Center.Y - BarH * 0.5f, BarW, BarH }, Ink, 1.2f);
-}
-
-void DrawSingleStepGlyph(PixelSpace& Surface, Point2D Center, float Size, ColorRgba Ink) noexcept
-{
-    const std::array<Point2D, 3> Tri = {{
-        { Center.X - Size * 0.46f, Center.Y - Size * 0.42f },
-        { Center.X + Size * 0.16f, Center.Y },
-        { Center.X - Size * 0.46f, Center.Y + Size * 0.42f },
-    }};
-    Surface.FillPolygon(Tri, Ink);
-    Surface.FillRectangle({ Center.X + Size * 0.24f, Center.Y - Size * 0.42f, Size * 0.18f, Size * 0.84f }, Ink, 0.8f);
-}
 
 [[nodiscard]] float NextTimeScale(float Current) noexcept
 {
@@ -119,7 +72,8 @@ SimulationPlaybackResult SimulationPlaybackControls::Construct(
     {
         Surface.FillCircle(ResetRect.Center(), 14.0f, HoverFill);
     }
-    DrawResetArcGlyph(Surface, ResetRect.Center(), 5.5f, ResetHover ? TextPrimary : TextSoft);
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, ControlIcon::ResetArc, ResetRect, ResetHover ? TextPrimary : TextSoft, 14.0f, 1.45f);
     if (ResetHover && Pointer.Pressed)
     {
         Result.ResetPressed = true;
@@ -134,14 +88,8 @@ SimulationPlaybackResult SimulationPlaybackControls::Construct(
         : ColorRgba { 236u, 236u, 236u, static_cast<uint8_t>(255.0f * Opacity) };
     const ColorRgba PlayInk { 16u, 16u, 16u, static_cast<uint8_t>(255.0f * Opacity) };
     Surface.FillCircle(PlayRect.Center(), 18.0f, PlayBg);
-    if (Reading.Playing)
-    {
-        DrawPauseGlyph(Surface, PlayRect.Center(), 13.0f, PlayInk);
-    }
-    else
-    {
-        DrawPlayGlyph(Surface, PlayRect.Center(), 13.0f, PlayInk);
-    }
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, Reading.Playing ? ControlIcon::PauseSolid : ControlIcon::PlaySolid, PlayRect, PlayInk, 16.0f);
     if (PlayHover && Pointer.Pressed)
     {
         Result.TogglePlayPressed = true;
@@ -155,7 +103,8 @@ SimulationPlaybackResult SimulationPlaybackControls::Construct(
     {
         Surface.FillCircle(StepRect.Center(), 14.0f, HoverFill);
     }
-    DrawSingleStepGlyph(Surface, StepRect.Center(), 11.0f, StepHover ? TextPrimary : TextSoft);
+    VectorIconRepository::ConstructControlInBounds(
+        Surface, ControlIcon::StepForwardSolid, StepRect, StepHover ? TextPrimary : TextSoft, 14.0f);
     if (StepHover && Pointer.Pressed)
     {
         Result.SingleStepPressed = true;
@@ -186,10 +135,9 @@ SimulationPlaybackResult SimulationPlaybackControls::Construct(
     if (std::fabs(Reading.TimeScale - 0.25f) < 0.05f) std::snprintf(SpeedBuf, sizeof(SpeedBuf), "0.25x");
     else std::snprintf(SpeedBuf, sizeof(SpeedBuf), "%.1fx", Reading.TimeScale);
     Surface.Text({ SpeedRect.X + 11.0f, CenterY - 5.8f }, 11.0f, TextPrimary, SpeedBuf);
-    // Small chevron down
-    const Point2D Chev { SpeedRect.Right() - 13.0f, CenterY - 1.5f };
-    Surface.StrokeLine({ Chev.X - 3.0f, Chev.Y }, { Chev.X, Chev.Y + 3.2f }, TextMuted, 1.2f);
-    Surface.StrokeLine({ Chev.X, Chev.Y + 3.2f }, { Chev.X + 3.0f, Chev.Y }, TextMuted, 1.2f);
+    // Small chevron down via shared VectorIconRepository
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::ChevronDown, { SpeedRect.Right() - 13.0f, CenterY }, 10.0f, TextMuted, 1.25f);
     if (SpeedHover && Pointer.Pressed)
     {
         Result.TimeScaleChanged = true;

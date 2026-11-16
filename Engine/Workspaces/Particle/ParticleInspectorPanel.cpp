@@ -134,25 +134,26 @@ void ParticleInspectorPanel::Render(
         EntityTitle = Rig->DisplayName.c_str();
         EntitySub   = Rig->BadgeTypeLine.c_str();
         TogglePtr   = &Rig->Visible;
-        RasterizeSparkleGlyph(Surface, IconTile.Center(), 7.5f, C.TealTint);
+        VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::SparkleFourPoint, IconTile, C.TealTint, 18.0f, 1.5f);
     }
     else if (auto* Force = Session.AccessSelectedForce())
     {
         EntityTitle = Force->Label.c_str();
         EntitySub   = "VECTOR FIELD FORCE · BOUNDED";
         TogglePtr   = &Force->Enabled;
-        RasterizeWindLinesGlyph(Surface, IconTile.Center(), 7.5f, C.TealTint);
+        VectorIconRepository::ConstructForceModelInBounds(
+            Surface, static_cast<uint32_t>(Force->Model), IconTile.Inset(9.0f), C.TealTint, 1.0f);
     }
     else if (Session.SelectionKind == ParticleSelectionCategory::AmbientWind)
     {
         EntityTitle = "Ambient Wind";
         EntitySub   = "GLOBAL ATMOSPHERIC FIELD";
         TogglePtr   = &Session.AmbientWind.Enabled;
-        RasterizeWindLinesGlyph(Surface, IconTile.Center(), 7.5f, C.LiveGreen);
+        VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::WindStreamlines, IconTile, C.LiveGreen, 18.0f, 1.5f);
     }
     else
     {
-        RasterizePlusGlyph(Surface, IconTile.Center(), 6.5f, C.WarmAccent);
+        VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::PlusAdd, IconTile, C.WarmAccent, 16.0f, 1.6f);
     }
 
     const Rectangle2D SwitchRect { EntityCard.Right() - 52.0f, EntityCard.Center().Y - 11.0f, 38.0f, 22.0f };
@@ -253,7 +254,9 @@ void ParticleInspectorPanel::RenderOverviewTab(
     Surface.FillRectangle(HeroCard, C.CardBg, 18.0f);
     Surface.StrokeRectangle(HeroCard, C.Hairline, 18.0f, 1.0f);
 
-    RasterizeCheckBadgeGlyph(Surface, { HeroCard.X + 22.0f, HeroCard.Y + 22.0f }, 8.5f, C.EmeraldSoft, C.LiveGreen);
+    VectorIconRepository::ConstructControlCentered(
+        Surface, ControlIcon::CheckCircleFilled, { HeroCard.X + 22.0f, HeroCard.Y + 22.0f }, 17.0f, C.EmeraldSoft,
+        1.65f, VectorIconAlignment::ViewBoxCentered, C.LiveGreen);
     Surface.Text({ HeroCard.X + 36.0f, HeroCard.Y + 17.0f }, 10.2f, C.TextSoft, "Within capacity");
     Surface.TextRightAligned({ HeroCard.X, HeroCard.Y + 17.0f, HeroCard.Width - 14.0f, 14.0f }, 8.8f, C.TextFaint, "01 / LIVE SOLVER");
 
@@ -350,11 +353,16 @@ void ParticleInspectorPanel::RenderOverviewTab(
         Surface.StrokeRectangle(Tile, Active ? C.LiveGreen.ScaledAlpha(0.35f) : (Hover ? C.HairlineStrong : C.Hairline), 14.0f, 1.0f);
 
         const Point2D IconC { Tile.Center().X, Tile.Y + 23.0f };
-        Surface.FillRectangle({ IconC.X - 11.0f, IconC.Y - 11.0f, 22.0f, 22.0f }, Active ? C.EmeraldSoft : ColorRgba { 32u, 32u, 34u, 255u }, 7.0f);
-        if (I == 0)      RasterizeEyeGlyph(Surface, IconC, 5.2f, Active ? C.LiveGreen : C.TextFaint, !Active);
-        else if (I == 1) RasterizeWindLinesGlyph(Surface, IconC, 4.8f, Active ? C.LiveGreen : C.TextFaint);
-        else if (I == 2) RasterizeSparkleGlyph(Surface, IconC, 4.8f, Active ? C.LiveGreen : C.TextFaint);
-        else             Surface.StrokeLine({ IconC.X - 5.0f, IconC.Y + 2.0f }, { IconC.X + 5.0f, IconC.Y + 2.0f }, C.TextFaint, 1.2f);
+        const Rectangle2D IconWell { IconC.X - 11.0f, IconC.Y - 11.0f, 22.0f, 22.0f };
+        Surface.FillRectangle(IconWell, Active ? C.EmeraldSoft : ColorRgba { 32u, 32u, 34u, 255u }, 7.0f);
+        if (I == 0)
+            VectorIconRepository::ConstructControlInBounds(Surface, Active ? ControlIcon::EyeVisible : ControlIcon::EyeHidden, IconWell, Active ? C.LiveGreen : C.TextFaint, 13.0f, 1.35f);
+        else if (I == 1)
+            VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::WindStreamlines, IconWell, Active ? C.LiveGreen : C.TextFaint, 13.0f, 1.35f);
+        else if (I == 2)
+            VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::SparkleFourPoint, IconWell, Active ? C.LiveGreen : C.TextFaint, 13.0f, 1.35f);
+        else
+            VectorIconRepository::ConstructControlInBounds(Surface, ControlIcon::MinimizeUnderscore, IconWell, C.TextFaint, 13.0f, 1.3f);
 
         Surface.TextCentered({ Tile.X + 2.0f, Tile.Bottom() - 30.0f, Tile.Width - 4.0f, 12.0f }, 8.6f, Active ? C.TextPrimary : C.TextMuted, Tiles[I].Title);
         Surface.TextCentered({ Tile.X + 2.0f, Tile.Bottom() - 16.0f, Tile.Width - 4.0f, 11.0f }, 7.8f,

@@ -642,6 +642,82 @@ bool ValidateContentBrowserSnapshots()
         return false;
     }
 
+    // Verify Ctrl + Scroll thumbnail/grid scaling applies strictly inside the content display region, never in rails/headers/sidebars
+    {
+        const Rectangle2D DrawerRect = Browser.QueryDrawerPhysicalBounds();
+        const float InitialScale     = Browser.QueryThumbnailScale();
+
+        // 1. Ctrl + Scroll over Left Category Rail -> MUST NOT scale
+        ContentBrowserPointerInput RailWheel {};
+        RailWheel.CursorX     = DrawerRect.X + 48.0f;
+        RailWheel.CursorY     = DrawerRect.Y + DrawerRect.Height * 0.65f;
+        RailWheel.WheelDeltaY = 2.0f;
+        RailWheel.ControlHeld = true;
+        StepPresentation(RailWheel);
+        if (!VerifyAssertion(std::fabs(Browser.QueryThumbnailScale() - InitialScale) < 1.0e-4f, "Ctrl+Scroll over category rail must not resize thumbnails"))
+        {
+            std::filesystem::remove_all(TempDropDir, DropErr);
+            ImGui::DestroyContext(GuiSession);
+            return false;
+        }
+
+        // 2. Ctrl + Scroll over Header / Toolbar -> MUST NOT scale
+        ContentBrowserPointerInput HeaderWheel {};
+        HeaderWheel.CursorX     = DrawerRect.Center().X;
+        HeaderWheel.CursorY     = DrawerRect.Y + 26.0f;
+        HeaderWheel.WheelDeltaY = 2.0f;
+        HeaderWheel.ControlHeld = true;
+        StepPresentation(HeaderWheel);
+        if (!VerifyAssertion(std::fabs(Browser.QueryThumbnailScale() - InitialScale) < 1.0e-4f, "Ctrl+Scroll over ContentBrowser header must not resize thumbnails"))
+        {
+            std::filesystem::remove_all(TempDropDir, DropErr);
+            ImGui::DestroyContext(GuiSession);
+            return false;
+        }
+
+        // 3. Ctrl + Scroll over Right Details Sidebar -> MUST NOT scale
+        ContentBrowserPointerInput DetailsWheel {};
+        DetailsWheel.CursorX     = DrawerRect.Right() - 64.0f;
+        DetailsWheel.CursorY     = DrawerRect.Y + DrawerRect.Height * 0.65f;
+        DetailsWheel.WheelDeltaY = 2.0f;
+        DetailsWheel.ControlHeld = true;
+        StepPresentation(DetailsWheel);
+        if (!VerifyAssertion(std::fabs(Browser.QueryThumbnailScale() - InitialScale) < 1.0e-4f, "Ctrl+Scroll over details sidebar must not resize thumbnails"))
+        {
+            std::filesystem::remove_all(TempDropDir, DropErr);
+            ImGui::DestroyContext(GuiSession);
+            return false;
+        }
+
+        // 4. Ctrl + Scroll inside Content Grid Region -> MUST zoom thumbnails larger, then smaller
+        ContentBrowserPointerInput ContentZoomIn {};
+        ContentZoomIn.CursorX     = DrawerRect.X + DrawerRect.Width * 0.45f;
+        ContentZoomIn.CursorY     = DrawerRect.Y + DrawerRect.Height * 0.65f;
+        ContentZoomIn.WheelDeltaY = 3.0f;
+        ContentZoomIn.ControlHeld = true;
+        StepPresentation(ContentZoomIn);
+        const float ZoomedInScale = Browser.QueryThumbnailScale();
+        if (!VerifyAssertion(ZoomedInScale > InitialScale + 0.15f, "Ctrl+Scroll up inside content grid increases thumbnail scale"))
+        {
+            std::filesystem::remove_all(TempDropDir, DropErr);
+            ImGui::DestroyContext(GuiSession);
+            return false;
+        }
+
+        ContentBrowserPointerInput ContentZoomOut = ContentZoomIn;
+        ContentZoomOut.WheelDeltaY                = -5.0f;
+        StepPresentation(ContentZoomOut);
+        if (!VerifyAssertion(Browser.QueryThumbnailScale() < InitialScale - 0.05f, "Ctrl+Scroll down inside content grid decreases thumbnail scale"))
+        {
+            std::filesystem::remove_all(TempDropDir, DropErr);
+            ImGui::DestroyContext(GuiSession);
+            return false;
+        }
+
+        Browser.ConfigureThumbnailScale(1.0f);
+        StepPresentation(IdleInput);
+    }
+
     std::filesystem::remove_all(TempDropDir, DropErr);
     TypographyRepository::AssignCurrent(nullptr);
     Dock.Finalize();
