@@ -40,6 +40,14 @@ body {
 }
 
 button { font: inherit; color: inherit; }
+
+/* Custom controls draw their own focus. Pointer focus is silent; keyboard focus is visible. */
+[role="slider"], [role="application"], .bar-row { outline: none; }
+[role="slider"]:focus-visible, [role="application"]:focus-visible, .bar-row:focus-visible {
+    outline: 1px solid rgba(216, 238, 102, 0.45);
+    outline-offset: 3px;
+    border-radius: 10px;
+}
 svg { overflow: visible; }
 a { color: inherit; }
 ::selection { background: rgba(216, 238, 102, 0.28); }

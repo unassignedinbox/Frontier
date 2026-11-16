@@ -19,9 +19,11 @@ disagree, treat `CLAUDE.md` as canonical and fix this file to match it.
    explicit approval in chat.
 4. Cards are interactive infographics: polar rings, dot fields, budget arcs, draggable sweeps, dot rows,
    drag-to-reorder rows. A slider is a fallback, never the only control in a card.
-5. The visual language comes from `SourceImages/General UI/`: obsidian surface, 18–22 px bento tiles,
+5. Keep a card small: one or two controls, everything else read-only.
+6. Preview through `Documentation/Prototypes/ServePrototypes.py` on port 8097, never from `file://`.
+7. The visual language comes from `SourceImages/General UI/`: obsidian surface, 18–22 px bento tiles,
    hairline strokes, weight-300 tabular numerals with muted decimals, one calm accent per group.
-6. Render every card and every viewer state to PNG and inspect it with `read_file` before calling it done.
+8. Render every card and every viewer state to PNG and inspect it with `read_file` before calling it done.
 
 ## Ask first
 

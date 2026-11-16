@@ -18,6 +18,8 @@ try {
 }
 
 const ROOT = new URL('../../../', import.meta.url).pathname.replace(/\/$/, '');
+// Cards are captured through the prototype server, never from file:// — that is how the user sees them.
+const ORIGIN = process.env.PROTOTYPE_ORIGIN || 'http://127.0.0.1:8097';
 const OUT = process.env.CAPTURE_OUT || '/tmp/renderer/proto';
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -48,7 +50,7 @@ const drag = async (page, selector, fx1, fy1, fx2, fy2) => {
 };
 
 /*------------------------------------------------------------------ Placement Frame */
-const frameUrl = `file://${ROOT}/Documentation/Prototypes/PlacementFrame/index.html`;
+const frameUrl = `${ORIGIN}/Documentation/Prototypes/PlacementFrame/`;
 let page = await open(frameUrl, 620, 1400);
 await page.locator('#Deck').screenshot({ path: `${OUT}/placement-frame-01-default.png` });
 await page.context().close();
@@ -56,10 +58,9 @@ await page.context().close();
 page = await open(frameUrl, 620, 1400);
 await drag(page, '#Pad', 0.52, 0.52, 0.68, 0.36);
 await drag(page, '#Dial', 0.5, 0.18, 0.86, 0.44);
-await drag(page, '.meter[data-axis="x"]', 0.32, 0.5, 0.62, 0.5);
-await drag(page, '#HeftPlot', 0.9, 0.4, 0.9, 0.58);
+await drag(page, '.bar-row[data-axis="x"]', 0.55, 0.5, 0.72, 0.5);
+await drag(page, '#HeftPlot', 0.9, 0.42, 0.9, 0.58);
 await page.locator('#GripDots button').nth(5).click();
-await page.locator('#Slots button').nth(2).click();
 await page.waitForTimeout(220);
 await page.locator('#Deck').screenshot({ path: `${OUT}/placement-frame-02-engaged.png` });
 await page.context().close();
@@ -71,20 +72,19 @@ await page.locator('#Deck').screenshot({ path: `${OUT}/placement-frame-03-warnin
 await page.context().close();
 
 /*------------------------------------------------------------------ Lattice Reach */
-const latticeUrl = `file://${ROOT}/Documentation/Prototypes/LatticeReach/index.html`;
+const latticeUrl = `${ORIGIN}/Documentation/Prototypes/LatticeReach/`;
 page = await open(latticeUrl, 560, 1200);
 await page.locator('#Deck').screenshot({ path: `${OUT}/lattice-reach-01-default.png` });
 await page.context().close();
 
 page = await open(latticeUrl, 560, 1200);
-await drag(page, '#Sweep', 0.72, 0.6, 0.95, 0.6);
-await page.locator('#Grain button').nth(58).hover();
+await drag(page, '#Sweep', 0.72, 0.6, 0.9, 0.6);
 await page.waitForTimeout(220);
 await page.locator('#Deck').screenshot({ path: `${OUT}/lattice-reach-02-swept.png` });
 await page.context().close();
 
 /*------------------------------------------------------------------ live Asset Viewer */
-page = await open('http://127.0.0.1:8096/', 1520, 940, 1.5);
+page = await open(`${ORIGIN}/Experimental/ComponentViewer/AssetViewer.html`, 1520, 940, 1.5);
 await page.screenshot({ path: `${OUT}/viewer-01-home.png` });
 await page.click('#AddComponentBtn');
 await page.waitForTimeout(300);

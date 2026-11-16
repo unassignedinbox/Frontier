@@ -1,7 +1,22 @@
 # Card prototypes
 
-One folder per card. Each folder holds `index.html` (opens straight from disk — no server, no network),
-`README.md` (what it does and what is being asked), and `renders/` (the accepted renders).
+One folder per card. Each folder holds `index.html`, `README.md` (what it does and what is being asked),
+and `renders/` (the accepted renders).
+
+Serve them; do not open them from disk. The pages load the shared stylesheet and fonts by absolute path,
+which is how they will resolve once integrated.
+
+```sh
+python3 Documentation/Prototypes/ServePrototypes.py 8097
+```
+
+| URL | What |
+| -------------------------------------------------- | ------------------------------------------ |
+| `http://localhost:8097/` | index of the cards |
+| `http://localhost:8097/Documentation/Prototypes/PlacementFrame/` | Placement Frame |
+| `http://localhost:8097/Documentation/Prototypes/LatticeReach/` | Lattice Reach |
+| `http://localhost:8097/Experimental/ComponentViewer/AssetViewer.html` | the live Asset Viewer |
+| `http://localhost:8097/Experimental/ComponentViewer/index.html` | the live Component Viewer |
 
 Nothing here is wired into `Experimental/`. Integration is a separate, approved step.
 
@@ -19,7 +34,7 @@ Nothing here is wired into `Experimental/`. Integration is a separate, approved 
 | # | Card | Replaces | The interactive idea | State |
 | -- | ------------------ | ------------------------------------ | ------------------------------------------------------------------ | --------- |
 | 1 | Placement Frame | `Transform`, `Physics` | ground pad with a turned footprint, three-ring facing dial, spread bands | 🚩 built |
-| 2 | Lattice Reach | `Static Mesh`, `Geometry`, `Cluster LOD` | budget arc, grain dot field, two-handle size sweep | 🚩 built |
+| 2 | Lattice Reach | `Static Mesh`, `Geometry`, `Cluster LOD` | budget arc, two-edge size sweep | 🚩 built |
 | 3 | Surface Finish | `Material channels` (≈ 1 900 px today) | channel fan cards, a colour well that reads one channel at a time | ☐ queued |
 | 4 | Mark | `Icon & thumbnail` | crop frame with a scale ring and a plate that previews live | ☐ queued |
 | 5 | Unwrap | `UV Layout` | a flat sheet the faces are dragged across, with real coverage | ☐ queued |
@@ -41,7 +56,8 @@ Each card is built only when the previous one is approved or dropped. A card's n
 - weight-300 tabular numerals with a muted decimal and a small unit
 - at least one interactive infographic control, and no card whose only control is a slider
 - no prose blocks inside a card body; one sentence of consequence at most, in a callout
-- no external fonts, scripts, or images — the page must open from `file://`
+- no external fonts, scripts, or images; everything comes from `_shared/` on the prototype server
+- small on purpose: one or two controls per card, everything else read-only
 - rendered and inspected in every reachable state before it is shown
 
 ---

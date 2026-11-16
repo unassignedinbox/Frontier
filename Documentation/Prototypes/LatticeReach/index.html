@@ -4,184 +4,134 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Lattice Reach — standalone prototype</title>
-<link rel="stylesheet" href="../_shared/prototype.css" />
+<link rel="stylesheet" href="/Documentation/Prototypes/_shared/prototype.css" />
 <style>
 /*--------------------------------------------------------------------------------------------------------------
-  Lattice Reach — a shape-statistics card. Standalone; nothing here is wired into Experimental/.
-  Interactive infographics: a budget ring, a density dot-square, a draggable sweep over the size spread.
+  Lattice Reach — two readings and one control. Calm pass: the dot field is gone, the arc stays quiet,
+  and the only control is the sweep over the size spread.
 --------------------------------------------------------------------------------------------------------------*/
-.deck { width: 470px; margin: 0 auto; padding: 24px 0 36px; }
+.deck { width: 470px; margin: 0 auto; padding: 28px 0 40px; }
 .card {
-    border-radius: 22px; padding: 18px 18px 16px;
-    background: linear-gradient(178deg, #131517 0%, #0F1113 64%, #0D0F11 100%);
+    border-radius: 22px; padding: 20px 20px 18px;
+    background: linear-gradient(178deg, #141618 0%, #101214 60%, #0E1012 100%);
     border: 1px solid rgba(255, 255, 255, 0.07);
-    box-shadow: 0 34px 70px -34px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    box-shadow: 0 30px 60px -34px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-.eyebrow { display: flex; align-items: center; gap: 8px; font-size: 9.5px; font-weight: 500;
-           letter-spacing: 1.5px; text-transform: uppercase; color: #6E747A; }
-.glyph { width: 12px; height: 12px; }
-.glyph svg, .ico svg { width: 100%; height: 100%; stroke: currentColor; fill: none; stroke-width: 1.6;
-                       stroke-linecap: round; stroke-linejoin: round; }
-.eyebrow .lamp { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 22px;
-                 padding: 0 10px; border-radius: 999px; font-size: 9.5px; letter-spacing: 0.5px;
-                 color: #C9D8A6; border: 1px solid rgba(216, 238, 102, 0.22);
-                 background: rgba(216, 238, 102, 0.06); }
-.eyebrow .lamp i { width: 5px; height: 5px; border-radius: 50%; background: #D8EE66; }
-h1 { margin: 12px 2px 0; font-size: 24px; font-weight: 300; letter-spacing: -0.5px; color: #F4F5F2; }
-h1 small { font-size: 11px; font-weight: 400; letter-spacing: 0.2px; color: #6E747A; margin-left: 8px; }
+.head { display: flex; align-items: center; gap: 8px; }
+.head .name { font-size: 10px; font-weight: 500; letter-spacing: 1.4px; text-transform: uppercase;
+              color: #6E747A; }
+.head .pill { margin-left: auto; height: 23px; display: inline-flex; align-items: center; gap: 6px;
+              padding: 0 10px 0 9px; border-radius: 999px; font-size: 10px; letter-spacing: 0.4px;
+              color: #D5E2B0; border: 1px solid rgba(216, 238, 102, 0.2);
+              background: rgba(216, 238, 102, 0.05); }
+.head .pill i { width: 5px; height: 5px; border-radius: 50%; background: #D8EE66; }
+h1 { margin: 12px 0 0; font-size: 25px; font-weight: 300; letter-spacing: -0.6px; color: #F4F5F2; }
+h1 small { font-size: 11px; font-weight: 400; color: #6E747A; margin-left: 9px; }
 
-.num { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.num { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; }
 .num b { font-weight: 300; color: #F2F3F0; }
 .num i { font-style: normal; font-weight: 300; color: #7E848A; }
-.num em { font-style: normal; font-size: 0.5em; letter-spacing: 0.4px; color: #62686E; margin-left: 3px; }
+.num em { font-style: normal; font-size: 0.5em; letter-spacing: 0.3px; color: #646A70; margin-left: 3px; }
 
-.head-grid { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; margin-top: 16px;
-             align-items: center; }
-.ring-shell { position: relative; }
-.ring-shell svg { display: block; width: 100%; height: auto; }
-.ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-               justify-content: center; gap: 1px; pointer-events: none; }
-.ring-center .num { font-size: 19px; }
-.ring-center small { font-size: 8.5px; letter-spacing: 1.1px; color: #5C6167; text-transform: uppercase; }
+.top { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 16px; align-items: center;
+       margin-top: 18px; }
+.ring { position: relative; }
+.ring svg { display: block; width: 100%; height: auto; }
+.ring .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 1px; pointer-events: none; }
+.ring .mid .num { font-size: 17px; letter-spacing: -0.4px; }
+.ring .mid small { font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: #5C6167; }
 
-.ledger { display: flex; flex-direction: column; gap: 7px; }
-.ledger-row { display: flex; align-items: baseline; gap: 8px; padding-bottom: 6px;
-              border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
-.ledger-row:last-child { border-bottom: 0; padding-bottom: 0; }
-.ledger-row span { font-size: 10px; letter-spacing: 0.4px; color: #6E747A; }
-.ledger-row .num { margin-left: auto; font-size: 15px; }
+.ledger { display: flex; flex-direction: column; gap: 8px; }
+.ledger div { display: flex; align-items: baseline; gap: 10px; }
+.ledger span { font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: #6E747A; }
+.ledger .num { margin-left: auto; font-size: 15px; letter-spacing: -0.2px; }
 
-.section { margin-top: 16px; padding-top: 13px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
-.section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.section-head .mark { width: 5px; height: 5px; border-radius: 50%; }
-.section-head h2 { margin: 0; font-size: 9.5px; font-weight: 500; letter-spacing: 1.5px;
+.section { margin-top: 20px; }
+.section-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+.section-head .mark { width: 5px; height: 5px; border-radius: 50%; background: #F26430; }
+.section-head h2 { margin: 0; font-size: 9.5px; font-weight: 500; letter-spacing: 1.4px;
                    text-transform: uppercase; color: #8A9096; }
-.section-head .tail { margin-left: auto; font-size: 10px; color: #5C6167; white-space: nowrap; }
+.section-head .tail { margin-left: auto; font-size: 10px; color: #5C6167; }
 
-.grain-shell { display: grid; grid-template-columns: 152px minmax(0, 1fr); gap: 12px; align-items: center; }
-.grain { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
-.grain button { aspect-ratio: 1; border: 0; border-radius: 2.5px; padding: 0; cursor: crosshair;
-                background: transparent; transition: box-shadow 110ms, transform 110ms; }
-.grain button:hover { transform: scale(1.35); }
-.grain button.hot { box-shadow: 0 0 0 1px #F26430, 0 0 10px rgba(242, 100, 48, 0.5);
-                    transform: scale(1.35); border-radius: 2px; }
-.grain-legend { font-size: 9.5px; color: #62686E; letter-spacing: 0.3px; margin-top: 7px;
-                display: flex; gap: 10px; }
-.grain-legend i { display: inline-block; width: 5px; height: 5px; border-radius: 1px; margin-right: 4px;
-                  vertical-align: 1px; }
-.grain-read { display: flex; flex-direction: column; gap: 6px; }
-.grain-read .num { font-size: 22px; }
-.grain-read small { font-size: 9.5px; color: #5C6167; letter-spacing: 0.4px; }
-.pill-note { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; color: #9AA1A7;
-             padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, 0.04);
-             border: 1px solid rgba(255, 255, 255, 0.07); width: fit-content; }
-
-.sweep-shell { position: relative; border-radius: 15px; background: #0C0E10;
-               border: 1px solid rgba(255, 255, 255, 0.055); padding: 11px 12px 8px; }
-.sweep-shell svg { display: block; width: 100%; height: 96px; cursor: ew-resize; touch-action: none;
+.sweep-shell { border-radius: 15px; background: #0D0F11; border: 1px solid rgba(255, 255, 255, 0.05);
+               padding: 12px 13px 9px; }
+.sweep-shell svg { display: block; width: 100%; height: 84px; cursor: ew-resize; touch-action: none;
                    outline: none; }
-.sweep-shell svg:focus-visible { outline: 1px solid rgba(216, 238, 102, 0.5); outline-offset: 2px; }
-.grain button:focus-visible { outline: 1px solid rgba(216, 238, 102, 0.6); outline-offset: 1px; }
-.grain button:focus { outline: none; }
-.sweep-cap { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 0.9px;
-             color: #4A5056; margin: 4px 0 0; text-transform: uppercase; }
-.sweep-legend { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
-.sweep-legend .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: #9AA1A7;
-                      padding: 4px 9px; border-radius: 8px; background: rgba(255, 255, 255, 0.035);
-                      border: 1px solid rgba(255, 255, 255, 0.07); font-variant-numeric: tabular-nums; }
-.sweep-legend .chip b { color: #E4E7E1; font-weight: 500; }
-.sweep-legend .chip i { width: 5px; height: 5px; border-radius: 50%; background: #D8EE66; }
-.sweep-legend .chip.coral i { background: #F26430; }
+.sweep-shell svg:focus-visible { outline: 1px solid rgba(216, 238, 102, 0.45); outline-offset: 3px;
+                                 border-radius: 10px; }
+.sweep-cap { display: flex; justify-content: space-between; font-size: 8px; letter-spacing: 0.8px;
+             color: #454B51; text-transform: uppercase; margin-top: 4px; }
+.read { display: flex; align-items: center; gap: 7px; margin-top: 11px; }
+.read .chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px;
+              border-radius: 7px; font-size: 10px; color: #A9B0B6;
+              border: 1px solid rgba(255, 255, 255, 0.07); background: rgba(255, 255, 255, 0.025);
+              font-variant-numeric: tabular-nums; }
+.read .chip b { font-weight: 500; color: #E4E7E1; }
+.read .chip i { width: 5px; height: 5px; border-radius: 50%; background: #D8EE66; }
+.read .chip.coral i { background: #F26430; }
+.read .note { margin-left: auto; font-size: 9.5px; color: #4E545A; }
 
-.foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
-.foot .note { margin-left: auto; font-size: 9.5px; color: #4E545A; }
-.icon-btn { width: 24px; height: 24px; border-radius: 8px; display: inline-flex; align-items: center;
-            justify-content: center; border: 1px solid rgba(255, 255, 255, 0.07);
-            background: rgba(255, 255, 255, 0.03); color: #7C838A; cursor: pointer; padding: 0; }
-.icon-btn:hover { color: #E8EAE5; border-color: rgba(255, 255, 255, 0.16); }
-.icon-btn .ico { width: 13px; height: 13px; }
-.meta { width: 470px; margin: 20px auto 0; font-size: 10px; letter-spacing: 0.4px; color: #4E545A; }
-.meta b { color: #8A9096; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; font-size: 9.5px; }
+.callout { position: relative; margin-top: 16px; padding: 10px 12px 10px 14px; border-radius: 12px;
+           font-size: 10.5px; line-height: 1.5; color: #A9CDB6;
+           background: rgba(93, 242, 155, 0.05); border: 1px solid rgba(93, 242, 155, 0.13); }
+.callout::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px;
+                   border-radius: 2px; background: #5DF29B; }
+.callout b { font-weight: 500; color: #E3EFDD; }
+.callout.warn { color: #DCB4A2; background: rgba(242, 100, 48, 0.07);
+                border-color: rgba(242, 100, 48, 0.15); }
+.callout.warn::before { background: #F26430; }
+.callout.warn b { color: #FFDCCB; }
+
+.meta { width: 470px; margin: 0 auto 18px; display: flex; align-items: center; gap: 9px; font-size: 10px;
+        color: #4E545A; }
+.meta b { color: #8A9096; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase;
+          font-size: 9.5px; }
+.meta .dot { width: 3px; height: 3px; border-radius: 50%; background: #3A4046; }
 </style>
 </head>
 <body>
 <div class="deck">
-<div class="meta"><b>Standalone prototype</b> · Lattice Reach card</div>
+<div class="meta"><b>Prototype</b><span class="dot"></span>Lattice Reach<span class="dot"></span>served from the local prototype server</div>
 
 <article class="card" id="Deck">
-    <header>
-        <div class="eyebrow">
-            <span class="glyph" data-ico="lattice"></span>
-            Lattice Reach
-            <span class="lamp"><i></i>Dense</span>
-        </div>
-        <h1>Stone Plinth<small>ground prop · 1 shape</small></h1>
-    </header>
+    <div class="head">
+        <span class="name">Lattice Reach</span>
+        <span class="pill"><i></i>Dense</span>
+    </div>
+    <h1>Stone Plinth<small>ground prop</small></h1>
 
-    <div class="head-grid">
-        <div class="ring-shell">
-            <svg id="BudgetRing" viewBox="0 0 132 132" role="img" aria-label="Triangle budget used"></svg>
-            <div class="ring-center">
-                <span class="num" id="RingNum"></span>
-                <small>budget used</small>
-            </div>
+    <div class="top">
+        <div class="ring">
+            <svg id="Ring" viewBox="0 0 116 116" role="img" aria-label="Face budget used"></svg>
+            <div class="mid"><span class="num" id="RingNum"></span><small>budget</small></div>
         </div>
         <div class="ledger">
-            <div class="ledger-row"><span>Corners</span><span class="num" id="LedCorners"></span></div>
-            <div class="ledger-row"><span>Faces</span><span class="num" id="LedFaces"></span></div>
-            <div class="ledger-row"><span>Pieces</span><span class="num" id="LedPieces"></span></div>
-            <div class="ledger-row"><span>Packed size</span><span class="num" id="LedSize"></span></div>
+            <div><span>Corners</span><span class="num" id="Corners"></span></div>
+            <div><span>Faces</span><span class="num" id="Faces"></span></div>
+            <div><span>Pieces</span><span class="num" id="Pieces"></span></div>
+            <div><span>Packed</span><span class="num" id="Packed"></span></div>
         </div>
     </div>
 
     <section class="section">
         <div class="section-head">
-            <span class="mark" style="background:#D8EE66"></span>
-            <h2>Grain</h2>
-            <span class="tail">where the faces cluster</span>
-        </div>
-        <div class="grain-shell">
-            <div>
-                <div class="grain" id="Grain" role="group" aria-label="Face density across the shape"></div>
-                <div class="grain-legend">
-                    <span><i style="background:#D8EE66"></i>dense</span>
-                    <span><i style="background:rgba(255,255,255,0.16)"></i>sparse</span>
-                </div>
-            </div>
-            <div class="grain-read">
-                <span class="num" id="GrainNum"></span>
-                <small>faces in the hottest tile</small>
-                <span class="pill-note" id="GrainNote">12 tiles over budget</span>
-            </div>
-        </div>
-    </section>
-
-    <section class="section">
-        <div class="section-head">
-            <span class="mark" style="background:#F26430"></span>
-            <h2>Size spread</h2>
+            <span class="mark"></span><h2>Size spread</h2>
             <span class="tail">faces per piece</span>
         </div>
         <div class="sweep-shell">
-            <svg id="Sweep" viewBox="0 0 300 96" preserveAspectRatio="none" role="slider" tabindex="0"
-                 aria-label="Size spread, drag to sweep a range" aria-valuemin="0" aria-valuemax="100"
-                 aria-valuenow="60">
-                <g id="SweepArt"></g>
-            </svg>
+            <svg id="Sweep" viewBox="0 0 300 84" preserveAspectRatio="none" role="slider" tabindex="0"
+                 aria-label="Size spread: drag either edge" aria-valuemin="16" aria-valuemax="512"
+                 aria-valuenow="180"><g id="SweepArt"></g></svg>
             <div class="sweep-cap"><span>16 faces</span><span>512 faces</span></div>
         </div>
-        <div class="sweep-legend">
-            <span class="chip"><i></i><span id="SweepCount">0</span> pieces, <b id="SweepShare">0%</b></span>
-            <span class="chip coral"><i></i>reweld below <b id="SweepFloor">0</b></span>
+        <div class="read">
+            <span class="chip"><i></i><b id="InRange">0</b> pieces</span>
+            <span class="chip coral"><i></i>reweld below <b id="Floor">0</b></span>
+            <span class="note">drag an edge</span>
         </div>
+        <div class="callout" id="Callout"></div>
     </section>
-
-    <footer class="foot">
-        <button class="icon-btn" id="Reset" title="Restore the card" aria-label="Restore the card">
-            <span class="ico" data-ico="undo"></span>
-        </button>
-        <span class="note">one card, three readings, no sliders</span>
-    </footer>
 </article>
 </div>
 
@@ -194,159 +144,114 @@ const el = (tag, attrs = {}, parent) => {
     return node;
 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const ICONS = {
-    lattice: '<svg viewBox="0 0 16 16"><path d="M8 1.8 13.4 4.9v6.2L8 14.2 2.6 11.1V4.9L8 1.8Z"/>'
-        + '<path d="M2.6 4.9 8 8l5.4-3.1M8 8v6.2"/></svg>',
-    undo: '<svg viewBox="0 0 16 16"><path d="M3.4 7.2A5 5 0 1 1 4 11.4"/><path d="M3 3.6v3.8h3.8"/></svg>'
-};
-document.querySelectorAll('[data-ico]').forEach((node) => { node.innerHTML = ICONS[node.dataset.ico]; });
-
 const writeNum = (node, value, unit, digits = 0) => {
     const [whole, dec] = Number(value).toFixed(digits).split('.');
-    const grouped = Number(whole).toLocaleString('en-US');
-    node.innerHTML = `<b>${grouped}</b>${dec ? `<i>.${dec}</i>` : ''}${unit ? `<em>${unit}</em>` : ''}`;
+    node.innerHTML = `<b>${Number(whole).toLocaleString('en-US')}</b>`
+        + `${dec ? `<i>.${dec}</i>` : ''}${unit ? `<em>${unit}</em>` : ''}`;
 };
 
-const DEFAULTS = { budget: 0.42, pieces: 168, corners: 21480, faces: 13740, size: 318 };
-const record = { ...DEFAULTS, sweep: [0.34, 0.72], hot: 7 };
+const RECORD = { budget: 0.42, corners: 21480, faces: 13740, pieces: 168, packed: 318 };
+const DEFAULTS = { sweep: [0.34, 0.72] };
+const state = { sweep: [...DEFAULTS.sweep] };
 
-/*----------------------------------------------------------------------- budget ring */
-function paintBudget() {
-    const host = document.getElementById('BudgetRing');
+/*------------------------------------------------------------------------- budget arc */
+function paintRing() {
+    const host = document.getElementById('Ring');
     host.innerHTML = '';
-    const cx = 66; const cy = 66;
-    el('circle', { cx, cy, r: 52, fill: 'none', stroke: 'rgba(255,255,255,0.06)', 'stroke-width': 8 }, host);
-    const use = clamp(record.budget, 0, 1);
-    const circumference = 2 * Math.PI * 52;
-    const ring = el('circle', { cx, cy, r: 52, fill: 'none', stroke: '#D8EE66', 'stroke-width': 8,
-        'stroke-linecap': 'round', 'stroke-dasharray': `${(circumference * use).toFixed(1)} ${circumference}`,
-        transform: `rotate(-90 ${cx} ${cy})` }, host);
-    el('circle', { cx, cy, r: 44, fill: 'none', stroke: 'rgba(255,255,255,0.035)',
-        'stroke-dasharray': '1 4' }, host);
-    // tick marks: one per 10% of the whole budget
+    const c = 58;
+    const radius = 46;
+    const circ = 2 * Math.PI * radius;
+    el('circle', { cx: c, cy: c, r: radius, fill: 'none', stroke: 'rgba(255,255,255,0.055)',
+        'stroke-width': 6 }, host);
+    // one segment per 10% of the budget: filled where the shape has spent it
     for (let i = 0; i < 10; i += 1) {
-        const angle = (i / 10) * Math.PI * 2 - Math.PI / 2;
-        el('circle', { cx: cx + Math.cos(angle) * 62, cy: cy + Math.sin(angle) * 62, r: 0.9,
-            fill: i / 10 <= use ? 'rgba(216,238,102,0.8)' : 'rgba(255,255,255,0.18)' }, host);
+        const from = (i / 10) * circ + 2;
+        const to = ((i + 1) / 10) * circ - 2;
+        el('circle', { cx: c, cy: c, r: radius, fill: 'none',
+            stroke: i / 10 < RECORD.budget ? '#D8EE66' : 'rgba(255,255,255,0.07)',
+            'stroke-width': 6, 'stroke-linecap': 'butt',
+            'stroke-dasharray': `${(to - from).toFixed(1)} ${circ}`,
+            'stroke-dashoffset': `${(-from).toFixed(1)}`,
+            transform: `rotate(-90 ${c} ${c})` }, host);
     }
-    ring.setAttribute('aria-hidden', 'true');
-    writeNum(document.getElementById('RingNum'), Math.round(record.budget * 100), '%');
-    writeNum(document.getElementById('LedCorners'), record.corners);
-    writeNum(document.getElementById('LedFaces'), record.faces);
-    writeNum(document.getElementById('LedPieces'), record.pieces);
-    writeNum(document.getElementById('LedSize'), record.size, 'KB');
+    writeNum(document.getElementById('RingNum'), Math.round(RECORD.budget * 100), '%');
+    writeNum(document.getElementById('Corners'), RECORD.corners);
+    writeNum(document.getElementById('Faces'), RECORD.faces);
+    writeNum(document.getElementById('Pieces'), RECORD.pieces);
+    writeNum(document.getElementById('Packed'), RECORD.packed, 'KB');
 }
 
-/*----------------------------------------------------------------------- grain square */
-const GRAIN = Array.from({ length: 144 }, (_, i) => {
-    const x = i % 12; const y = Math.floor(i / 12);
-    const value = Math.max(0, 1 - (Math.hypot(x - 5.4, y - 5) / 8.2)) * 1.05 + ((i * 37) % 11) / 90;
-    return clamp(value, 0.03, 1);
+/*------------------------------------------------------------------------- sweep */
+const BINS = Array.from({ length: 20 }, (_, i) => {
+    const t = i / 19;
+    return 0.22 + Math.exp(-Math.pow((t - 0.44) / 0.26, 2)) * 0.7 + ((i * 7) % 5) / 90;
 });
-const grainHost = document.getElementById('Grain');
-
-function paintGrain() {
-    grainHost.innerHTML = '';
-    GRAIN.forEach((value, i) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.setAttribute('aria-label', `Tile ${i + 1}, density ${Math.round(value * 100)} percent`);
-        // one calm accent ramp: neutral floor, lime ceiling, no second hue in the field
-        const t = Math.pow(clamp((value - 0.2) / 0.8, 0, 1), 1.6);
-        const mix = (a, b) => Math.round(a + (b - a) * t);
-        button.style.background = `rgb(${mix(28, 216)}, ${mix(32, 238)}, ${mix(35, 102)})`;
-        button.style.opacity = String(0.35 + t * 0.65);
-        if (i === record.hot) button.classList.add('hot');
-        button.addEventListener('pointerenter', () => {
-            if (record.hot === i) return;
-            record.hot = i;
-            [...grainHost.children].forEach((cell) => cell.classList.remove('hot'));
-            button.classList.add('hot');
-            paintGrainRead(button);
-        });
-        grainHost.appendChild(button);
-    });
-    paintGrainRead(grainHost.children[record.hot]);
-}
-
-function paintGrainRead(button) {
-    const index = [...grainHost.children].indexOf(button);
-    const value = GRAIN[index] || 0;
-    writeNum(document.getElementById('GrainNum'), Math.round(value * 412));
-    const over = GRAIN.filter((v) => v > 0.55).length;
-    document.getElementById('GrainNote').textContent =
-        over ? `${over} tiles over budget` : 'every tile inside budget';
-}
-
-grainHost.addEventListener('pointerleave', () => {
-    record.hot = 7;
-    paintGrain();
-});
-
-/*----------------------------------------------------------------------- sweep */
+const FACES_LOW = 16;
+const FACES_HIGH = 512;
 const sweepSvg = document.getElementById('Sweep');
 const sweepArt = document.getElementById('SweepArt');
-const BINS = Array.from({ length: 22 }, (_, i) => {
-    const t = i / (22 - 1);
-    return 0.25 + Math.exp(-Math.pow((t - 0.42) / 0.24, 2)) * 0.72 + ((i * 13) % 7) / 100;
-});
 
 function paintSweep() {
     sweepArt.innerHTML = '';
-    const [from, to] = record.sweep;
-    const width = 300; const height = 96; const base = height - 14;
+    const [from, to] = state.sweep;
+    const width = 300;
+    const height = 84;
+    const base = height - 10;
 
-    el('rect', { x: from * width, y: 6, width: (to - from) * width, height: base - 6,
+    el('rect', { x: from * width, y: 4, width: (to - from) * width, height: base - 4,
         fill: 'rgba(216,238,102,0.045)' }, sweepArt);
-    el('line', { x1: from * width, y1: 4, x2: from * width, y2: base + 3, stroke: '#D8EE66',
-        'stroke-width': 1.2 }, sweepArt);
-    el('line', { x1: to * width, y1: 4, x2: to * width, y2: base + 3, stroke: '#D8EE66',
-        'stroke-width': 1.2 }, sweepArt);
 
     const step = width / BINS.length;
     BINS.forEach((value, i) => {
-        const x = i * step + step * 0.22;
-        const barWidth = step * 0.56;
-        const top = base - value * (base - 10);
         const inside = (i + 0.5) / BINS.length >= from && (i + 0.5) / BINS.length <= to;
-        el('rect', { x, y: top, width: barWidth, height: base - top, rx: 1.4,
-            fill: inside ? 'rgba(216,238,102,0.6)' : 'rgba(255,255,255,0.1)' }, sweepArt);
-        if (inside) {
-            el('circle', { cx: x + barWidth / 2, cy: top, r: 1.5, fill: '#EDEFE9' }, sweepArt);
-        }
+        const barHeight = value * (base - 8);
+        el('rect', { x: i * step + step * 0.24, y: base - barHeight, width: step * 0.52,
+            height: barHeight, rx: 1.2,
+            fill: inside ? 'rgba(216,238,102,0.55)' : 'rgba(255,255,255,0.1)' }, sweepArt);
     });
 
-    el('line', { x1: 0, y1: base, x2: width, y2: base, stroke: 'rgba(255,255,255,0.14)' }, sweepArt);
+    el('line', { x1: 0, y1: base, x2: width, y2: base, stroke: 'rgba(255,255,255,0.1)' }, sweepArt);
 
-    // floor marker: the reweld threshold follows the left edge of the sweep
+    // the two edges are the only handles, so they are the only strong marks
+    [from, to].forEach((edge, index) => {
+        const x = edge * width;
+        el('line', { x1: x, y1: 2, x2: x, y2: base + 2, stroke: '#D8EE66', 'stroke-width': 1.1 }, sweepArt);
+        el('rect', { x: x - 3, y: base + 3, width: 6, height: 4.4, rx: 1.6,
+            fill: index === 0 ? '#D8EE66' : 'rgba(216,238,102,0.65)' }, sweepArt);
+    });
+
+    // reweld floor rides the left edge
     const floorX = from * width;
-    el('rect', { x: floorX - 6, y: base + 1, width: 12, height: 6, rx: 2, fill: 'rgba(242,100,48,0.3)',
-        stroke: 'rgba(242,100,48,0.75)' }, sweepArt);
-    el('path', { d: `M ${floorX - 2.4} ${base + 3} L ${floorX} ${base + 1.6} L ${floorX + 2.4} ${base + 3}`,
-        fill: 'none', stroke: '#F26430', 'stroke-width': 1.1 }, sweepArt);
+    el('path', { d: `M ${floorX - 2.6} ${base - 1} L ${floorX} ${base - 5} L ${floorX + 2.6} ${base - 1}`,
+        fill: 'none', stroke: '#F26430', 'stroke-width': 1.1, 'stroke-linejoin': 'round' }, sweepArt);
 
     const inside = BINS.filter((_, i) => (i + 0.5) / BINS.length >= from && (i + 0.5) / BINS.length <= to);
-    const pieces = Math.round((inside.length / BINS.length) * record.pieces);
-    const share = Math.round((inside.length / BINS.length) * 100);
-    document.getElementById('SweepCount').textContent = pieces;
-    document.getElementById('SweepShare').textContent = `${share}%`;
-    document.getElementById('SweepFloor').textContent =
-        `${Math.round(16 + from * (512 - 16))}`;
-    sweepSvg.setAttribute('aria-valuenow', Math.round(((from + to) / 2) * 100));
+    const pieces = Math.round((inside.length / BINS.length) * RECORD.pieces);
+    const floor = Math.round(FACES_LOW + from * (FACES_HIGH - FACES_LOW));
+    document.getElementById('InRange').textContent = pieces;
+    document.getElementById('Floor').textContent = floor;
+    sweepSvg.setAttribute('aria-valuenow', floor);
+
+    const share = pieces / RECORD.pieces;
+    const node = document.getElementById('Callout');
+    node.className = share > 0.8 ? 'callout warn' : 'callout';
+    node.innerHTML = share > 0.8
+        ? `<b>${Math.round(share * 100)}% of the shape is inside the range</b> — nearly every piece merges `
+          + `into its neighbour and the split saves nothing.`
+        : `<b>${Math.round(share * 100)}% of the shape is inside the range</b> — ${pieces} pieces held, `
+          + `${RECORD.pieces - pieces} collapsed into neighbours.`;
 }
 
-let sweepGrab = null;
-const sweeplLocal = (evt) => {
+const localX = (evt) => {
     const box = sweepSvg.getBoundingClientRect();
     return clamp((evt.clientX - box.left) / box.width, 0, 1);
 };
+let grab = 'from';
 sweepSvg.addEventListener('pointerdown', (evt) => {
     sweepSvg.setPointerCapture(evt.pointerId);
-    const x = sweeplLocal(evt);
-    const [from, to] = record.sweep;
-    sweepGrab = Math.abs(x - from) < Math.abs(x - to) ? 'from' : 'to';
-    sweepGrab = Math.abs(x - from) < 0.045 ? 'from' : Math.abs(x - to) < 0.045 ? 'to'
-        : x < (from + to) / 2 ? 'from' : 'to';
+    const [from, to] = state.sweep;
+    const x = localX(evt);
+    grab = Math.abs(x - from) <= Math.abs(x - to) ? 'from' : 'to';
     sweepDrag(evt);
 });
 sweepSvg.addEventListener('pointermove', (evt) => {
@@ -356,27 +261,21 @@ sweepSvg.addEventListener('keydown', (evt) => {
     const dir = evt.key === 'ArrowRight' ? 1 : evt.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
     evt.preventDefault();
-    const step = (evt.shiftKey ? 0.1 : 0.02) * dir;
-    const [from, to] = record.sweep;
-    if (evt.altKey) record.sweep = [clamp(to - (to - from) - step, 0, to), to];
-    else record.sweep = [from, clamp(to + step, from + 0.05, 1)];
+    const step = dir * (evt.shiftKey ? 0.1 : 0.02);
+    const [from, to] = state.sweep;
+    state.sweep = [from, clamp(to + step, from + 0.05, 1)];
     paintSweep();
 });
 function sweepDrag(evt) {
-    const x = sweeplLocal(evt);
-    const [from, to] = record.sweep;
-    if (sweepGrab === 'from') record.sweep = [clamp(x, 0, to - 0.05), to];
-    else record.sweep = [from, clamp(x, from + 0.05, 1)];
+    const x = localX(evt);
+    const [from, to] = state.sweep;
+    state.sweep = grab === 'from'
+        ? [clamp(x, 0, to - 0.05), to]
+        : [from, clamp(x, from + 0.05, 1)];
     paintSweep();
 }
 
-document.getElementById('Reset').addEventListener('click', () => {
-    Object.assign(record, JSON.parse(JSON.stringify(DEFAULTS)), { sweep: [0.34, 0.72], hot: 7 });
-    paintBudget(); paintGrain(); paintSweep();
-});
-
-paintBudget();
-paintGrain();
+paintRing();
 paintSweep();
 </script>
 </body>

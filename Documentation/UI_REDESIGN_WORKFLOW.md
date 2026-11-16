@@ -26,12 +26,18 @@ git -C /tmp/src-sultan sparse-checkout set Experimental EngineDocs SYSTEM_NOMENC
 ## 2. Servers
 
 ```sh
+python3 Documentation/Prototypes/ServePrototypes.py 8097        # the cards, plus both viewers
 python3 Experimental/ComponentViewer/Serve.py 8095              # Component Viewer
 python3 Experimental/ComponentViewer/ServeAssetViewer.py 8096   # Asset Viewer
 ```
 
-Both bind `0.0.0.0`, both serve from the repository root, both are dependency-free Python. Check with
-`ss -ltnp | grep -E '8095|8096'` before assuming they are up.
+All three bind `0.0.0.0` and serve from the repository root. Check with
+`ss -ltnp | grep -E '8095|8096|8097'` before assuming they are up.
+
+**Preview every prototype through the server (8097), never from `file://`.** Cards load
+`/Documentation/Prototypes/_shared/…` by absolute path; that is how they resolve once integrated, and it
+is how the user looks at them. `8097` also serves the two viewers, so one port shows everything.
+`_shared/capture.mjs` points at `http://127.0.0.1:8097` for exactly this reason.
 
 ---
 
@@ -133,6 +139,19 @@ Borrowed from the reference set, not from any engine:
 
 Never: a bare slider as the only control, a row of five identical steppers, a card whose body is prose,
 a footnote that disclaims the card.
+
+### Keep a card small
+
+The first two cards were built too heavy and were cut back. The rule that came out of it:
+
+| Keep | Drop |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| One or two controls, everything else read-only | a control that repeats a readout |
+| One accent per section | a second hue inside the same group |
+| A single sentence of consequence | a paragraph explaining the card |
+| Symmetric captions on a ranged control | a label that implies the axis starts or ends at the mark |
+
+If a card's height passes roughly 900 px in one column, something in it is decoration.
 
 ---
 

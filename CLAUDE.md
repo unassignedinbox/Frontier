@@ -31,10 +31,12 @@ These are authoritative and override any default habit.
 4. **Cards are interactive infographics**, not rows of sliders. Allowed: polar rings, dot fields, budget
    arcs, draggable sweeps, hatch-versus-solid deltas, dot rows, drag-to-reorder rows, fan cards.
    A plain slider is the fallback, never the starting point. No slider may be the only control.
-5. **Design language comes from `SourceImages/General UI/`** — matte obsidian surface, 18–22 px bento
+5. **Small cards.** One or two controls per card; everything else read-only. If a card needs a paragraph
+   to explain itself, or two hues in one section, it is too heavy.
+6. **Design language comes from `SourceImages/General UI/`** — matte obsidian surface, 18–22 px bento
    tiles, hairline inner strokes, weight-300 tabular numerals with a muted decimal and a small unit,
    one calm accent per group, tinted diagnostic callouts with a vertical bar.
-6. **Always render, always look.** Every prototype and every viewer state must be rendered to PNG with
+7. **Always render, always look.** Every prototype and every viewer state must be rendered to PNG with
    the headless recipe and inspected with `read_file` before it is called done.
 
 ---
@@ -81,11 +83,15 @@ These are authoritative and override any default habit.
 ## Servers
 
 ```sh
+python3 Documentation/Prototypes/ServePrototypes.py 8097    # the cards, plus both viewers
 python3 Experimental/ComponentViewer/Serve.py 8095          # Component Viewer
 python3 Experimental/ComponentViewer/ServeAssetViewer.py 8096   # Asset Viewer
 ```
 
-Both bind `0.0.0.0`. Re-run them from the repository root whenever they are not listed by `ss -ltnp`.
+All bind `0.0.0.0`. Re-run them from the repository root whenever they are not listed by `ss -ltnp`.
+
+**Look at prototypes through the server, never from `file://`.** `8097` is the one to hand the user: it
+lists the cards and also serves both viewers.
 
 ---
 

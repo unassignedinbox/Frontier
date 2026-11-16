@@ -16,7 +16,7 @@ prototype is being shown, because that is what the user is being asked to approv
 | Placement Frame | Transform / Details panel | the frame a record is placed inside | 🚩 |
 | Lattice Reach | Static Mesh / Geometry statistics | how far the lattice of faces reaches and how it packs | 🚩 |
 | Heft | Mass / weight property | the load a record carries at rest | 🚩 |
-| Grain | triangle density / cluster heatmap | where the faces bunch up | 🚩 |
+| ~~Grain~~ | triangle density / cluster heatmap | cut from card 2 — too much for one card | 🔴 dropped by this pass |
 | Coupling | component attachments / socket list | what fastens the record to the world | 🚩 |
 | Slot | placement target / attach point | a named place on the world the frame claims | 🚩 |
 | Grip | collision response / mobility | how firmly the record is held in place | 🚩 |
