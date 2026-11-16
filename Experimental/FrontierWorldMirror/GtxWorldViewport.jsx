@@ -1827,8 +1827,8 @@ export default function GtxWorldViewport({
   // One-shot GPU probe of the native WebGPU mesh pass: null = still pending, number = fragments rasterized.
   // 0 means Pass 2.5 produced nothing in this browser, so the WebGL2 mesh overlay takes over as the visible path.
   const [MeshProbeFragments, SetMeshProbeFragments] = useState(null);
-  // Hard timeout: if the probe never reports (lost device, stalled readback), assume the native pass is fine
-  // rather than leaving the overlay canvas mounted forever.
+  // Hard timeout: if the probe never reports (lost device, stalled readback), fall back to the overlay rather
+  // than leaving the viewport empty.
   const MeshProbeTimeoutRef = useRef(0);
   const MeshOverlayBrokenRef = useRef(false);
   const SetMeshProbeFragmentsOnce = useCallback((Value) => {
