@@ -134,7 +134,7 @@ function BuildRearWingRawZUp() {
 // [px, py, pz,  nx, ny, nz,  ar, ag, ab,  rough, metal, coat, family,  er, eg, eb] = 16 floats/vertex
 const STRIDE_FLOATS = 16;
 
-function HexToLinear(Hex, Fallback = [0.72, 0.74, 0.78]) {
+export function HexToLinear(Hex, Fallback = [0.72, 0.74, 0.78]) {
   if (typeof Hex !== "string" || !/^#[0-9a-f]{6}$/i.test(Hex.trim())) return Fallback;
   const S = Hex.trim().slice(1);
   return [
@@ -247,7 +247,7 @@ function ConcatFloat32(Arrays) {
 
 let CachedVehicleStreams = null;
 
-function EnsureVehicleStreamsSync() {
+export function EnsureVehicleStreamsSync() {
   if (CachedVehicleStreams) return CachedVehicleStreams;
   const NativeFacets = typeof window !== "undefined" ? window.NativeAssets?.ControlVehicleFacets : null;
   if (!NativeFacets || !NativeFacets.body || !NativeFacets.tyre || !NativeFacets.rim) return null;
@@ -284,7 +284,7 @@ function EnsureVehicleStreamsSync() {
   return CachedVehicleStreams;
 }
 
-function BuildCompiledAssetStream(Asset) {
+export function BuildCompiledAssetStream(Asset) {
   const Geom = Asset?.out?.geometry || Asset?.out?.source;
   if (!Geom || !Geom.positions || !Geom.indices) return null;
   const Pos = Geom.positions;
@@ -716,7 +716,7 @@ function LinkProgram(Gl, VsSrc, FsSrc) {
   return Prog;
 }
 
-function ComposeModelMat4(Pos, RotRad, Scale) {
+export function ComposeModelMat4(Pos, RotRad, Scale) {
   const [Rx, Ry, Rz] = RotRad;
   const Cx = Math.cos(Rx), Sx = Math.sin(Rx);
   const Cy = Math.cos(Ry), Sy = Math.sin(Ry);
@@ -811,8 +811,9 @@ export class WorldMeshOverlayRenderer {
       premultipliedAlpha: false,
       preserveDrawingBuffer: false,
     });
-    this.Supported = Boolean(this.Gl);
-    if (!this.Supported) return;
+    this.Ctx2d = this.Gl ? null : Canvas.getContext("2d");
+    this.Supported = Boolean(this.Gl || this.Ctx2d);
+    if (!this.Gl) return;
 
     const Gl = this.Gl;
     this.MeshProg = LinkProgram(Gl, MESH_VS, MESH_FS);
@@ -932,15 +933,119 @@ export class WorldMeshOverlayRenderer {
     return this._UploadStream(Key, Stream);
   }
 
+  _RenderSoftware2d(ActiveScene, TargetW, TargetH, SelectedId) {
+    const Ctx = this.Ctx2d;
+    if (!Ctx) return;
+    Ctx.clearRect(0, 0, TargetW, TargetH);
+    const Instances = ActiveScene?.MeshInstances || [];
+    if (Instances.length === 0) return;
+
+    const Aspect = TargetW / Math.max(1, TargetH);
+    const { ViewProj, CamFwd } = ComputeViewProj(ActiveScene, Aspect);
+    const SunDir = ActiveScene.SunDir || [0.55, -0.45, 0.7];
+    const SunLen = Math.hypot(SunDir[0], SunDir[1], SunDir[2]) || 1;
+    const Sx = SunDir[0] / SunLen, Sy = SunDir[1] / SunLen, Sz = SunDir[2] / SunLen;
+    const HalfW = TargetW * 0.5;
+    const HalfH = TargetH * 0.5;
+    const Tris = [];
+
+    const PushStream = (Stream, Model, Normal, CustomPaint, PaintLin, HeadOn) => {
+      if (!Stream) return;
+      const VertCount = Math.floor(Stream.length / STRIDE_FLOATS);
+      for (let I = 0; I + 2 < VertCount; I += 3) {
+        const B0 = I * STRIDE_FLOATS;
+        const B1 = (I + 1) * STRIDE_FLOATS;
+        const B2 = (I + 2) * STRIDE_FLOATS;
+        const P0x = Model[0] * Stream[B0] + Model[4] * Stream[B0 + 1] + Model[8] * Stream[B0 + 2] + Model[12];
+        const P0y = Model[1] * Stream[B0] + Model[5] * Stream[B0 + 1] + Model[9] * Stream[B0 + 2] + Model[13];
+        const P0z = Model[2] * Stream[B0] + Model[6] * Stream[B0 + 1] + Model[10] * Stream[B0 + 2] + Model[14];
+        const P1x = Model[0] * Stream[B1] + Model[4] * Stream[B1 + 1] + Model[8] * Stream[B1 + 2] + Model[12];
+        const P1y = Model[1] * Stream[B1] + Model[5] * Stream[B1 + 1] + Model[9] * Stream[B1 + 2] + Model[13];
+        const P1z = Model[2] * Stream[B1] + Model[6] * Stream[B1 + 1] + Model[10] * Stream[B1 + 2] + Model[14];
+        const P2x = Model[0] * Stream[B2] + Model[4] * Stream[B2 + 1] + Model[8] * Stream[B2 + 2] + Model[12];
+        const P2y = Model[1] * Stream[B2] + Model[5] * Stream[B2 + 1] + Model[9] * Stream[B2 + 2] + Model[13];
+        const P2z = Model[2] * Stream[B2] + Model[6] * Stream[B2 + 1] + Model[10] * Stream[B2 + 2] + Model[14];
+
+        const C0w = ViewProj[3] * P0x + ViewProj[7] * P0y + ViewProj[11] * P0z + ViewProj[15];
+        const C1w = ViewProj[3] * P1x + ViewProj[7] * P1y + ViewProj[11] * P1z + ViewProj[15];
+        const C2w = ViewProj[3] * P2x + ViewProj[7] * P2y + ViewProj[11] * P2z + ViewProj[15];
+        if (C0w <= 0.05 || C1w <= 0.05 || C2w <= 0.05) continue;
+
+        const X0 = ((ViewProj[0] * P0x + ViewProj[4] * P0y + ViewProj[8] * P0z + ViewProj[12]) / C0w + 1) * HalfW;
+        const Y0 = (1 - (ViewProj[1] * P0x + ViewProj[5] * P0y + ViewProj[9] * P0z + ViewProj[13]) / C0w) * HalfH;
+        const X1 = ((ViewProj[0] * P1x + ViewProj[4] * P1y + ViewProj[8] * P1z + ViewProj[12]) / C1w + 1) * HalfW;
+        const Y1 = (1 - (ViewProj[1] * P1x + ViewProj[5] * P1y + ViewProj[9] * P1z + ViewProj[13]) / C1w) * HalfH;
+        const X2 = ((ViewProj[0] * P2x + ViewProj[4] * P2y + ViewProj[8] * P2z + ViewProj[12]) / C2w + 1) * HalfW;
+        const Y2 = (1 - (ViewProj[1] * P2x + ViewProj[5] * P2y + ViewProj[9] * P2z + ViewProj[13]) / C2w) * HalfH;
+
+        const Nx0 = Normal[0] * Stream[B0 + 3] + Normal[3] * Stream[B0 + 4] + Normal[6] * Stream[B0 + 5];
+        const Ny0 = Normal[1] * Stream[B0 + 3] + Normal[4] * Stream[B0 + 4] + Normal[7] * Stream[B0 + 5];
+        const Nz0 = Normal[2] * Stream[B0 + 3] + Normal[5] * Stream[B0 + 4] + Normal[8] * Stream[B0 + 5];
+        const Nl = Math.hypot(Nx0, Ny0, Nz0) || 1;
+        let Nx = Nx0 / Nl, Ny = Ny0 / Nl, Nz = Nz0 / Nl;
+        if (Nx * CamFwd[0] + Ny * CamFwd[1] + Nz * CamFwd[2] > 0) {
+          Nx = -Nx; Ny = -Ny; Nz = -Nz;
+        }
+        const Fam = Math.round(Stream[B0 + 12]);
+        const Ar = Fam === 6 && CustomPaint ? PaintLin[0] : Stream[B0 + 6];
+        const Ag = Fam === 6 && CustomPaint ? PaintLin[1] : Stream[B0 + 7];
+        const Ab = Fam === 6 && CustomPaint ? PaintLin[2] : Stream[B0 + 8];
+        const EmitScale = Fam === 13 && !HeadOn ? 0 : 1;
+        const Diff = Math.max(0, Nx * Sx + Ny * Sy + Nz * Sz) * 0.95 + (0.28 + 0.22 * Nz);
+        const R = Math.min(255, Math.round(Math.pow(Math.min(1, Ar * Diff + Stream[B0 + 13] * EmitScale), 1 / 2.2) * 255));
+        const G = Math.min(255, Math.round(Math.pow(Math.min(1, Ag * Diff + Stream[B0 + 14] * EmitScale), 1 / 2.2) * 255));
+        const B = Math.min(255, Math.round(Math.pow(Math.min(1, Ab * Diff + Stream[B0 + 15] * EmitScale), 1 / 2.2) * 255));
+        Tris.push({ z: (C0w + C1w + C2w) * 0.3333, x0: X0, y0: Y0, x1: X1, y1: Y1, x2: X2, y2: Y2, c: `rgb(${R},${G},${B})` });
+      }
+    };
+
+    const VehicleStreams = EnsureVehicleStreamsSync();
+    for (const Inst of Instances) {
+      const { Model, Normal } = ComposeModelMat4(Inst.Position, Inst.RotationRad, Inst.Scale);
+      const CustomPaint =
+        typeof Inst.PaintHex === "string" &&
+        /^#[0-9a-f]{6}$/i.test(Inst.PaintHex) &&
+        Inst.PaintHex.toLowerCase() !== "#e4e440" &&
+        Inst.PaintHex.toLowerCase() !== "#d4d4d4";
+      const PaintLin = CustomPaint ? HexToLinear(Inst.PaintHex, [0.68, 0.8, 0.0]) : [0.68, 0.8, 0.0];
+      const HeadOn = Inst.HeadlightsOn !== false;
+      if (Inst.Kind === "BP_ControlVehicle" && VehicleStreams) {
+        PushStream(VehicleStreams.core, Model, Normal, CustomPaint, PaintLin, HeadOn);
+        if (Inst.WingVisible !== false) {
+          PushStream(VehicleStreams.wing, Model, Normal, CustomPaint, PaintLin, HeadOn);
+        }
+      } else if (Inst.CompiledAssetId) {
+        const Asset = GetCompiledMeshAsset(Inst.CompiledAssetId);
+        if (Asset) PushStream(BuildCompiledAssetStream(Asset), Model, Normal, CustomPaint, PaintLin, HeadOn);
+      }
+    }
+
+    Tris.sort((A, B) => B.z - A.z);
+    for (let I = 0; I < Tris.length; ++I) {
+      const T = Tris[I];
+      Ctx.fillStyle = T.c;
+      Ctx.beginPath();
+      Ctx.moveTo(T.x0, T.y0);
+      Ctx.lineTo(T.x1, T.y1);
+      Ctx.lineTo(T.x2, T.y2);
+      Ctx.closePath();
+      Ctx.fill();
+    }
+  }
+
   Render(ActiveScene, Width, Height, SelectedId, ViewMode = 0, GizmoGeo = null, HighlightedHandle = 0) {
     if (!this.Supported) return;
-    const Gl = this.Gl;
     const TargetW = Math.max(1, Math.round(Width));
     const TargetH = Math.max(1, Math.round(Height));
     if (this.Canvas.width !== TargetW || this.Canvas.height !== TargetH) {
       this.Canvas.width = TargetW;
       this.Canvas.height = TargetH;
     }
+    if (!this.Gl) {
+      this._RenderSoftware2d(ActiveScene, TargetW, TargetH, SelectedId);
+      return;
+    }
+    const Gl = this.Gl;
 
     Gl.viewport(0, 0, TargetW, TargetH);
     Gl.clearColor(0, 0, 0, 0);
@@ -991,7 +1096,19 @@ export class WorldMeshOverlayRenderer {
       }
       Gl.activeTexture(Gl.TEXTURE0);
       Gl.bindTexture(Gl.TEXTURE_2D, this.OccTex);
-      Gl.texSubImage2D(Gl.TEXTURE_2D, 0, 0, 0, 5, Math.max(1, OccCount), Gl.RGBA, Gl.FLOAT, this.OccData);
+      Gl.pixelStorei(Gl.UNPACK_FLIP_Y_WEBGL, false);
+      const OccRows = Math.max(1, OccCount);
+      Gl.texSubImage2D(
+        Gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        5,
+        OccRows,
+        Gl.RGBA,
+        Gl.FLOAT,
+        this.OccData.subarray(0, 5 * OccRows * 4),
+      );
 
       // Pack ActiveScene Area Lights
       const Lights = ActiveScene.AreaLights || [];
@@ -1114,7 +1231,7 @@ export class WorldMeshOverlayRenderer {
   }
 
   Dispose() {
-    if (!this.Supported) return;
+    if (!this.Gl) return;
     const Gl = this.Gl;
     for (const Entry of this.GpuBuffers.values()) {
       Gl.deleteVertexArray(Entry.vao);

@@ -13,10 +13,19 @@ import {
   ATLAS_TILE_SIZE,
   TILES_PER_PRIM,
 } from "./MaterialAtlasCompiler.js";
+import {
+  EnsureVehicleStreamsSync,
+  BuildCompiledAssetStream,
+  GetCompiledMeshAsset,
+  ComposeModelMat4,
+  HexToLinear,
+} from "./WorldMeshOverlay.js";
 
 const SCENE_DATA_FLOATS = 8 * 396 * 4; // 12672 floats = 50688 bytes (384 primitives + 12 area lights)
 const LIGHT_ROW_BASE = 384;
 const GIZMO_STRIDE_BYTES = 12 * 4; // 48 bytes per vertex
+const MESH_STRIDE_BYTES = 16 * 4; // 64 bytes per vertex
+const MAX_MESH_DRAWS = 64;
 
 export const GTX_WGSL_SCENE_SHADER = /* wgsl */ `
 struct SceneUniforms {
@@ -1549,6 +1558,379 @@ fn fsMain(inp : VsOut) -> @location(0) vec4f {
 }
 `;
 
+// Native WebGPU Pass 2.5: GI-Lit 3D Mesh Renderer for exact BP_ControlVehicle & Geometry-Compiled Assets
+export const GTX_WGSL_MESH_SHADER = /* wgsl */ `
+struct MeshUniforms {
+  uViewProj   : mat4x4f,
+  uModel      : mat4x4f,
+  uNormCol0   : vec4f,
+  uNormCol1   : vec4f,
+  uNormCol2   : vec4f,
+  uPaintAndOn : vec4f, // xyz=paintLinear, w=paintOverrideOn
+  uFlags      : vec4f, // x=headlightsOn, y=isSelected, z=groundZ, w=0
+};
+
+struct SceneUniforms {
+  uResAndFov       : vec4f,
+  uCamOriginAndExp : vec4f,
+  uCamForward      : vec4f,
+  uCamRight        : vec4f,
+  uCamUp           : vec4f,
+  uSunDir          : vec4f,
+  uSunIrradiance   : vec4f,
+  uSkyRadiance     : vec4f,
+  uCountsAndModes  : vec4i,
+  uSelection       : vec4i,
+};
+
+@group(0) @binding(0) var<uniform> M : MeshUniforms;
+@group(0) @binding(1) var<uniform> U : SceneUniforms;
+@group(0) @binding(2) var<storage, read> uSceneData : array<vec4f, 3168>;
+
+const PI : f32 = 3.14159265359;
+
+struct VsIn {
+  @location(0) aPos    : vec3f,
+  @location(1) aNormal : vec3f,
+  @location(2) aAlbedo : vec3f,
+  @location(3) aPbr    : vec4f, // x=rough, y=metal, z=coat, w=family
+  @location(4) aEmit   : vec3f,
+};
+
+struct VsOut {
+  @builtin(position) pos : vec4f,
+  @location(0) vWorldPos    : vec3f,
+  @location(1) vWorldNormal : vec3f,
+  @location(2) vAlbedo      : vec3f,
+  @location(3) vPbr         : vec4f,
+  @location(4) vEmit        : vec3f,
+};
+
+@vertex
+fn vsMain(inp : VsIn) -> VsOut {
+  var out : VsOut;
+  let wp = M.uModel * vec4f(inp.aPos, 1.0);
+  out.pos = M.uViewProj * wp;
+  out.vWorldPos = wp.xyz;
+  let wn = M.uNormCol0.xyz * inp.aNormal.x + M.uNormCol1.xyz * inp.aNormal.y + M.uNormCol2.xyz * inp.aNormal.z;
+  let wnLen = length(wn);
+  out.vWorldNormal = select(vec3f(0.0, 0.0, 1.0), wn / wnLen, wnLen > 1e-5);
+  out.vAlbedo = inp.aAlbedo;
+  out.vPbr = inp.aPbr;
+  out.vEmit = inp.aEmit;
+  return out;
+}
+
+fn sdFetch(col : i32, row : i32) -> vec4f {
+  return uSceneData[row * 8 + col];
+}
+
+fn invRot(v : vec3f, c0 : vec3f, c1 : vec3f, c2 : vec3f) -> vec3f {
+  return vec3f(dot(v, c0), dot(v, c1), dot(v, c2));
+}
+
+fn intersectPrimOcc(lo : vec3f, ld : vec3f, h : vec3f, shape : i32, tMax : f32) -> f32 {
+  if (shape == 1) {
+    let invH = vec3f(1.0) / max(h, vec3f(1e-4));
+    let o = lo * invH;
+    let d = ld * invH;
+    let a = dot(d, d);
+    let b = dot(o, d);
+    let c = dot(o, o) - 1.0;
+    let disc = b * b - a * c;
+    if (disc < 0.0) { return tMax; }
+    let t = (-b - sqrt(disc)) / max(a, 1e-7);
+    return select(tMax, t, t > 0.002 && t < tMax);
+  }
+  if (shape == 2) {
+    let invR = vec2f(1.0) / max(h.xy, vec2f(1e-4));
+    let o = lo.xy * invR;
+    let d = ld.xy * invR;
+    let a = dot(d, d);
+    let b = dot(o, d);
+    let c = dot(o, o) - 1.0;
+    var best = tMax;
+    let disc = b * b - a * c;
+    if (disc >= 0.0 && a > 1e-7) {
+      let sq = sqrt(disc);
+      let t0 = (-b - sq) / a;
+      if (t0 > 0.002 && t0 < best && abs(lo.z + ld.z * t0) <= h.z) { best = t0; }
+      let t1 = (-b + sq) / a;
+      if (t1 > 0.002 && t1 < best && abs(lo.z + ld.z * t1) <= h.z) { best = t1; }
+    }
+    if (abs(ld.z) > 1e-6) {
+      let tc0 = (-h.z - lo.z) / ld.z;
+      if (tc0 > 0.002 && tc0 < best) {
+        let p0 = (lo.xy + ld.xy * tc0) * invR;
+        if (dot(p0, p0) <= 1.0) { best = tc0; }
+      }
+      let tc1 = (h.z - lo.z) / ld.z;
+      if (tc1 > 0.002 && tc1 < best) {
+        let p1 = (lo.xy + ld.xy * tc1) * invR;
+        if (dot(p1, p1) <= 1.0) { best = tc1; }
+      }
+    }
+    return best;
+  }
+  let safeLd = vec3f(
+    select(ld.x, select(-1e-6, 1e-6, ld.x >= 0.0), abs(ld.x) < 1e-6),
+    select(ld.y, select(-1e-6, 1e-6, ld.y >= 0.0), abs(ld.y) < 1e-6),
+    select(ld.z, select(-1e-6, 1e-6, ld.z >= 0.0), abs(ld.z) < 1e-6),
+  );
+  let invD = vec3f(1.0) / safeLd;
+  let t0 = (-h - lo) * invD;
+  let t1 = ( h - lo) * invD;
+  let tmin = min(t0, t1);
+  let tmax = max(t0, t1);
+  let tEnter = max(max(tmin.x, tmin.y), tmin.z);
+  let tExit  = min(min(tmax.x, tmax.y), tmax.z);
+  if (tExit < max(tEnter, 0.002) || tEnter >= tMax) { return tMax; }
+  return select(tMax, tEnter, tEnter > 0.002);
+}
+
+fn isOccludedByWorld(ro : vec3f, rd : vec3f, meshT : f32) -> bool {
+  let limit = meshT - 0.008;
+  if (limit <= 0.01) { return false; }
+  let primCount = min(U.uCountsAndModes.x, 384);
+  for (var i : i32 = 0; i < primCount; i = i + 1) {
+    let hf = sdFetch(1, i);
+    let flags = i32(hf.w + 0.5);
+    // Skip proxy volumes (16) and glass shells (4)
+    if ((flags & 20) != 0) { continue; }
+    let ps = sdFetch(0, i);
+    let oc = ps.xyz - ro;
+    let proj = dot(oc, rd);
+    let rad = length(hf.xyz);
+    if (proj < -rad || proj - rad > limit) { continue; }
+    let perp2 = dot(oc, oc) - proj * proj;
+    if (perp2 > dot(hf.xyz, hf.xyz) * 1.45) { continue; }
+    let c0 = sdFetch(2, i).xyz;
+    let c1 = sdFetch(3, i).xyz;
+    let c2 = sdFetch(4, i).xyz;
+    let lo = invRot(-oc, c0, c1, c2);
+    let ld = invRot(rd, c0, c1, c2);
+    let tHit = intersectPrimOcc(lo, ld, hf.xyz, i32(ps.w + 0.5), limit);
+    if (tHit < limit) { return true; }
+  }
+  return false;
+}
+
+fn evalWorldShadow(pos : vec3f, dir : vec3f) -> f32 {
+  let ro = pos + dir * 0.03;
+  var vis : f32 = 1.0;
+  let primCount = min(U.uCountsAndModes.x, 384);
+  for (var i : i32 = 0; i < primCount; i = i + 1) {
+    let hf = sdFetch(1, i);
+    let flags = i32(hf.w + 0.5);
+    if ((flags & 20) != 0 || (flags & 1) == 0) { continue; }
+    let ps = sdFetch(0, i);
+    let oc = ps.xyz - ro;
+    let proj = dot(oc, dir);
+    if (proj < -0.25 || proj > 26.0) { continue; }
+    let perp2 = dot(oc, oc) - proj * proj;
+    if (perp2 > dot(hf.xyz, hf.xyz) * 1.55) { continue; }
+    let c0 = sdFetch(2, i).xyz;
+    let c1 = sdFetch(3, i).xyz;
+    let c2 = sdFetch(4, i).xyz;
+    let lo = invRot(-oc, c0, c1, c2);
+    let ld = invRot(dir, c0, c1, c2);
+    let tHit = intersectPrimOcc(lo, ld, hf.xyz, i32(ps.w + 0.5), 26.0);
+    if (tHit < 25.9) {
+      vis = vis * 0.28;
+      if (vis < 0.30) { break; }
+    }
+  }
+  return vis;
+}
+
+fn D_GGX(NoH : f32, a : f32) -> f32 {
+  let a2 = a * a;
+  let d = (NoH * NoH) * (a2 - 1.0) + 1.0;
+  return a2 / max(PI * d * d, 1e-5);
+}
+
+fn G_Smith(NoV : f32, NoL : f32, a : f32) -> f32 {
+  let k = (a + 1.0) * (a + 1.0) * 0.125;
+  let g1 = NoV / (NoV * (1.0 - k) + k);
+  let g2 = NoL / (NoL * (1.0 - k) + k);
+  return g1 * g2;
+}
+
+fn F_Schlick(cosT : f32, F0 : vec3f) -> vec3f {
+  return F0 + (vec3f(1.0) - F0) * pow(clamp(1.0 - cosT, 0.0, 1.0), 5.0);
+}
+
+fn evalBrdf(N : vec3f, V : vec3f, L : vec3f, albedo : vec3f, rough : f32, metal : f32, coat : f32) -> vec3f {
+  let NoL = max(dot(N, L), 0.0);
+  if (NoL <= 0.0) { return vec3f(0.0); }
+  let NoV = max(dot(N, V), 0.001);
+  let hv = V + L;
+  let hvLen = length(hv);
+  let H = select(N, hv / hvLen, hvLen > 1e-5);
+  let NoH = max(dot(N, H), 0.0);
+  let VoH = max(dot(V, H), 0.0);
+
+  let F0 = mix(vec3f(0.04), albedo, metal);
+  let a = max(0.045, rough * rough);
+  let D = D_GGX(NoH, a);
+  let G = G_Smith(NoV, NoL, rough);
+  let F = F_Schlick(VoH, F0);
+  let spec = (D * G * F) / max(4.0 * NoV * NoL, 1e-4);
+  let diff = (vec3f(1.0) - F) * (1.0 - metal) * (albedo / PI);
+
+  let cD = D_GGX(NoH, 0.065);
+  let cG = G_Smith(NoV, NoL, 0.08);
+  let cF = 0.04 + 0.96 * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
+  let coatSpec = vec3f(coat * 0.44 * cD * cG * cF / max(4.0 * NoV * NoL, 1e-4));
+
+  return (diff + spec + coatSpec) * NoL;
+}
+
+fn acesFilm(x : vec3f) -> vec3f {
+  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
+  return clamp((x * (a * x + vec3f(b))) / (x * (c * x + vec3f(d)) + vec3f(e)), vec3f(0.0), vec3f(1.0));
+}
+
+@fragment
+fn fsMain(inp : VsOut, @builtin(front_facing) isFront : bool) -> @location(0) vec4f {
+  let camOrigin = U.uCamOriginAndExp.xyz;
+  let camFwd    = U.uCamForward.xyz;
+  let orthoH    = U.uResAndFov.w;
+
+  var ro : vec3f;
+  var rd : vec3f;
+  var meshT : f32;
+  if (orthoH > 0.0) {
+    let delta = inp.vWorldPos - camOrigin;
+    let dAlong = dot(delta, camFwd);
+    ro = inp.vWorldPos - camFwd * dAlong;
+    rd = camFwd;
+    meshT = dAlong;
+  } else {
+    ro = camOrigin;
+    let d = inp.vWorldPos - camOrigin;
+    meshT = length(d);
+    rd = d / max(meshT, 1e-5);
+  }
+
+  if (isOccludedByWorld(ro, rd, meshT)) {
+    discard;
+  }
+
+  var N = normalize(inp.vWorldNormal);
+  if (!isFront) { N = -N; }
+  let V = -rd;
+
+  let fam = i32(inp.vPbr.w + 0.5);
+  var albedo = inp.vAlbedo;
+  if (fam == 6 && M.uPaintAndOn.w > 0.5) {
+    albedo = M.uPaintAndOn.xyz;
+  }
+  let rough = clamp(inp.vPbr.x, 0.03, 0.96);
+  let metal = clamp(inp.vPbr.y, 0.0, 1.0);
+  let coat  = clamp(inp.vPbr.z, 0.0, 1.0);
+  var emit  = inp.vEmit;
+  if (fam == 13 && M.uFlags.x < 0.5) {
+    emit = vec3f(0.0);
+  }
+
+  let viewMode = U.uCountsAndModes.z;
+  if (viewMode == 2) {
+    return vec4f(pow(clamp(albedo, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 1.0);
+  }
+  if (viewMode == 10) {
+    return vec4f(N * 0.5 + vec3f(0.5), 1.0);
+  }
+  if (viewMode == 11) {
+    return vec4f(vec3f(rough), 1.0);
+  }
+  if (viewMode == 12) {
+    return vec4f(vec3f(metal), 1.0);
+  }
+
+  // Ground-contact & wheel-arch ambient occlusion
+  let hAbove = max(0.0, inp.vWorldPos.z - M.uFlags.z);
+  let heightAo = mix(0.32, 1.0, smoothstep(0.0, 0.46, hAbove));
+  let upBias = 0.5 + 0.5 * N.z;
+  let ao = mix(0.45, 1.0, upBias) * heightAo;
+
+  // 1) Direct Sun PBR + soft world shadow
+  let sunL = normalize(U.uSunDir.xyz);
+  let sunIrr = U.uSunIrradiance.xyz;
+  var sunVis : f32 = 0.0;
+  if (dot(N, sunL) > 0.0) {
+    sunVis = evalWorldShadow(inp.vWorldPos, sunL);
+  }
+  var color = evalBrdf(N, V, sunL, albedo, rough, metal, coat) * sunIrr * sunVis;
+
+  // 2) Live Area Lights read directly from uSceneData rows 384..395
+  let R = reflect(-V, N);
+  let lightCount = min(U.uCountsAndModes.y, 12);
+  for (var li : i32 = 0; li < lightCount; li = li + 1) {
+    let row = ${LIGHT_ROW_BASE} + li;
+    let l0 = sdFetch(0, row);
+    let l1 = sdFetch(1, row);
+    let l2 = sdFetch(2, row);
+    let l5 = sdFetch(5, row);
+    let lPos = l0.xyz;
+    let hw   = max(0.08, l0.w);
+    let hh   = max(0.08, l1.x);
+    let lRad = l1.yzw;
+    let omni = l2.z;
+    let lNrmLen = length(l5.xyz);
+    let lNrm = select(vec3f(0.0, 0.0, -1.0), l5.xyz / lNrmLen, lNrmLen > 1e-4);
+
+    let toL = lPos - inp.vWorldPos;
+    let dist = max(0.25, length(toL));
+    let L = toL / dist;
+    let area = 4.0 * hw * hh;
+    let facing = select(smoothstep(-0.15, 0.55, dot(lNrm, -L)), 1.0, omni > 0.5);
+    let atten = (area * facing) / (dist * dist + area * 0.45 + 0.55);
+
+    let rProj = max(0.0, dot(toL, R));
+    let closest = inp.vWorldPos + R * rProj;
+    let specDist = length(closest - lPos);
+    let lRadSize = max(hw, hh) * 1.15;
+    let specHit = 1.0 - smoothstep(lRadSize * 0.25, lRadSize * 2.2 + rough * 2.8, specDist);
+    let lsRaw = mix(L, R, clamp(specHit * (1.0 - rough * 0.75), 0.0, 0.78));
+    let lsLen = length(lsRaw);
+    let Lspec = select(L, lsRaw / lsLen, lsLen > 1e-5);
+
+    let dTerm = evalBrdf(N, V, L, albedo, rough, metal, coat * 0.35);
+    let sTerm = evalBrdf(N, V, Lspec, albedo, max(0.04, rough * 0.7), metal, coat);
+    color = color + mix(dTerm, sTerm, 0.55) * lRad * atten * 0.90;
+  }
+
+  // 3) Multi-bounce GI hemisphere + architectural floor/wall bounce + sky clearcoat reflection
+  let skyCol = max(U.uSkyRadiance.xyz, vec3f(0.09, 0.12, 0.17));
+  let warmWallBounce = vec3f(0.30, 0.21, 0.14) * max(0.20, length(sunIrr) * 0.12);
+  let floorBounce = vec3f(0.15, 0.15, 0.17) * (0.65 + 0.35 * max(0.0, sunL.z));
+  let hemi = mix(floorBounce, skyCol * 1.40 + warmWallBounce * 0.48, upBias);
+  let latTint = mix(vec3f(0.32, 0.16, 0.11), vec3f(0.18, 0.22, 0.28), clamp(N.x * 0.5 + 0.5, 0.0, 1.0));
+  let giIrr = (hemi + latTint * 0.18 * (1.0 - abs(N.z))) * ao;
+
+  let Fenv = F_Schlick(max(dot(N, V), 0.0), mix(vec3f(0.04), albedo, metal));
+  var envRefl = mix(floorBounce * 0.85, skyCol * 1.80 + sunIrr * 0.18, smoothstep(-0.18, 0.65, R.z));
+  let stripGlow = smoothstep(0.55, 0.94, R.z) * (1.0 - rough * 0.85);
+  envRefl = envRefl + vec3f(0.68, 0.65, 0.60) * stripGlow * (0.45 + coat * 0.65);
+
+  color = color + (vec3f(1.0) - Fenv) * (1.0 - metal) * albedo * giIrr * 0.96;
+  color = color + Fenv * envRefl * (1.0 - rough * 0.55) * mix(0.45, 1.0, ao);
+  color = color + vec3f(coat * 0.24 * pow(clamp(1.0 - max(dot(N, V), 0.0), 0.0, 1.0), 4.0)) * envRefl * ao;
+  color = color + emit;
+
+  // Selection Fresnel Rim Glow (#F6C66B Frontier Amber)
+  if (M.uFlags.y > 0.5) {
+    let rim = pow(clamp(1.0 - max(dot(N, V), 0.0), 0.0, 1.0), 2.8);
+    color = color + vec3f(1.15, 0.78, 0.24) * rim * 0.85;
+  }
+
+  let mapped = acesFilm(max(vec3f(0.0), color) * U.uCamOriginAndExp.w);
+  let srgb = pow(mapped, vec3f(1.0 / 2.2));
+  return vec4f(srgb, 1.0);
+}
+`;
+
 export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   if (typeof navigator === "undefined" || !navigator.gpu) {
     return { Ok: false, Reason: "no-navigator-gpu" };
@@ -1588,20 +1970,25 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
     }
   });
 
-  // Compile all 3 WGSL shader modules and verify zero compilation errors before touching any canvas!
+  // Compile all 4 WGSL shader modules and verify zero compilation errors before touching any canvas!
   const SceneMod = Device.createShaderModule({ code: GTX_WGSL_SCENE_SHADER });
   const OutlineMod = Device.createShaderModule({ code: GTX_WGSL_OUTLINE_SHADER });
   const GizmoMod = Device.createShaderModule({ code: GTX_WGSL_GIZMO_SHADER });
+  const MeshMod = Device.createShaderModule({ code: GTX_WGSL_MESH_SHADER });
 
   if (typeof SceneMod.getCompilationInfo === "function") {
-    const [SInfo, OInfo, GInfo] = await Promise.all([
+    const [SInfo, OInfo, GInfo, MInfo] = await Promise.all([
       SceneMod.getCompilationInfo(),
       OutlineMod.getCompilationInfo(),
       GizmoMod.getCompilationInfo(),
+      MeshMod.getCompilationInfo(),
     ]);
-    const Errors = [...SInfo.messages, ...OInfo.messages, ...GInfo.messages].filter(
-      (M) => M.type === "error",
-    );
+    const Errors = [
+      ...SInfo.messages,
+      ...OInfo.messages,
+      ...GInfo.messages,
+      ...MInfo.messages,
+    ].filter((M) => M.type === "error");
     if (Errors.length > 0) {
       const Msg = Errors.map((E) => `L${E.lineNum}:${E.message}`).join(" | ");
       try { Device.destroy(); } catch {}
@@ -1649,6 +2036,31 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   const GizmoPipelineLayout = Device.createPipelineLayout({
     label: "GtxGizmoPL",
     bindGroupLayouts: [GizmoBindGroupLayout],
+  });
+
+  const MeshBindGroupLayout = Device.createBindGroupLayout({
+    label: "GtxMeshBGL",
+    entries: [
+      {
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: 208 },
+      },
+      {
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: "uniform" },
+      },
+      {
+        binding: 2,
+        visibility: GPUShaderStage.FRAGMENT,
+        buffer: { type: "read-only-storage" },
+      },
+    ],
+  });
+  const MeshPipelineLayout = Device.createPipelineLayout({
+    label: "GtxMeshPL",
+    bindGroupLayouts: [MeshBindGroupLayout],
   });
 
   const ScenePipeline = Device.createRenderPipeline({
@@ -1729,6 +2141,39 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
     },
   });
 
+  const MeshVertexLayout = [
+    {
+      arrayStride: MESH_STRIDE_BYTES,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: "float32x3" },  // aPos
+        { shaderLocation: 1, offset: 12, format: "float32x3" }, // aNormal
+        { shaderLocation: 2, offset: 24, format: "float32x3" }, // aAlbedo
+        { shaderLocation: 3, offset: 36, format: "float32x4" }, // aPbr
+        { shaderLocation: 4, offset: 52, format: "float32x3" }, // aEmit
+      ],
+    },
+  ];
+
+  const MeshPipeline = Device.createRenderPipeline({
+    label: "GtxWorldMeshPipeline",
+    layout: MeshPipelineLayout,
+    vertex: { module: MeshMod, entryPoint: "vsMain", buffers: MeshVertexLayout },
+    fragment: {
+      module: MeshMod,
+      entryPoint: "fsMain",
+      targets: [{ format: SwapFormat }],
+    },
+    primitive: { topology: "triangle-list", cullMode: "none" },
+    depthStencil: {
+      format: "depth24plus",
+      depthWriteEnabled: true,
+      depthCompare: "less-equal",
+    },
+  });
+
+  const MeshUniformStride = Math.max(256, Device.limits?.minUniformBufferOffsetAlignment || 256);
+  const MeshUniformStrideF32 = MeshUniformStride >> 2;
+
   const SceneUniformBuf = Device.createBuffer({
     size: 160,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -1747,6 +2192,10 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   });
   const ForceUniformBuf = Device.createBuffer({
     size: 80,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  const MeshUniformBuf = Device.createBuffer({
+    size: MAX_MESH_DRAWS * MeshUniformStride,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -1784,6 +2233,59 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
     layout: GizmoBindGroupLayout,
     entries: [{ binding: 0, resource: { buffer: ForceUniformBuf } }],
   });
+
+  const MeshBindGroup = Device.createBindGroup({
+    label: "GtxMeshBG",
+    layout: MeshBindGroupLayout,
+    entries: [
+      { binding: 0, resource: { buffer: MeshUniformBuf, offset: 0, size: MeshUniformStride } },
+      { binding: 1, resource: { buffer: SceneUniformBuf } },
+      { binding: 2, resource: { buffer: SceneDataStorageBuf } },
+    ],
+  });
+
+  const MeshGpuCache = new Map();
+  const EnsureStaticMeshGpu = (CacheKey, FloatStream) => {
+    if (!FloatStream || FloatStream.length < 16) return null;
+    const Existing = MeshGpuCache.get(CacheKey);
+    const Count = Math.floor(FloatStream.length / 16);
+    if (Existing && Existing.count === Count) return Existing;
+    if (Existing) {
+      try { Existing.buf.destroy(); } catch {}
+    }
+    const ByteLen = ((FloatStream.byteLength + 3) & ~3);
+    const Buf = Device.createBuffer({
+      size: Math.max(64, ByteLen),
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    Device.queue.writeBuffer(Buf, 0, FloatStream);
+    const Entry = { buf: Buf, count: Count };
+    MeshGpuCache.set(CacheKey, Entry);
+    return Entry;
+  };
+
+  let VehicleMeshesUploaded = false;
+  const EnsureVehicleMeshesGpu = () => {
+    if (VehicleMeshesUploaded) return true;
+    const Streams = EnsureVehicleStreamsSync();
+    if (!Streams || !Streams.core || !Streams.wing) return false;
+    EnsureStaticMeshGpu("vehicle-core", Streams.core);
+    EnsureStaticMeshGpu("vehicle-wing", Streams.wing);
+    VehicleMeshesUploaded = true;
+    return true;
+  };
+
+  const EnsureCompiledMeshGpu = (AssetId) => {
+    const Key = `compiled:${AssetId}`;
+    if (MeshGpuCache.has(Key)) return MeshGpuCache.get(Key);
+    const Asset = GetCompiledMeshAsset(AssetId);
+    if (!Asset) return null;
+    const Stream = BuildCompiledAssetStream(Asset);
+    if (!Stream) return null;
+    return EnsureStaticMeshGpu(Key, Stream);
+  };
+
+  const MeshUniformScratch = new Float32Array(MAX_MESH_DRAWS * MeshUniformStrideF32);
 
   let ConfiguredCanvas = null;
   let CanvasCtx = null;
@@ -1869,6 +2371,7 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       EffectiveViewMode,
       ShowGrid,
       SelectedCode,
+      SelectedId,
       PrimCount,
       LightCount,
       BuiltGizmo,
@@ -2004,6 +2507,97 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       Pass2.draw(3);
       Pass2.end();
 
+      // Pass 2.5: Native WebGPU GI-Lit 3D Mesh Pass (BP_ControlVehicle + Geometry-Compiled Meshes)
+      const MeshInstances = Array.isArray(ActiveScene?.MeshInstances) ? ActiveScene.MeshInstances : [];
+      if (ViewProjZeroToOne && MeshInstances.length > 0) {
+        EnsureVehicleMeshesGpu();
+        const DrawList = [];
+        for (const Inst of MeshInstances) {
+          if (DrawList.length >= MAX_MESH_DRAWS) break;
+          const Targets = [];
+          if (Inst.Kind === "BP_ControlVehicle") {
+            const Core = MeshGpuCache.get("vehicle-core");
+            if (Core) Targets.push(Core);
+            if (Inst.WingVisible !== false) {
+              const Wing = MeshGpuCache.get("vehicle-wing");
+              if (Wing) Targets.push(Wing);
+            }
+          } else if (Inst.CompiledAssetId) {
+            const Compiled = EnsureCompiledMeshGpu(Inst.CompiledAssetId);
+            if (Compiled) Targets.push(Compiled);
+          }
+          if (Targets.length === 0) continue;
+
+          const { Model, Normal } = ComposeModelMat4(Inst.Position, Inst.RotationRad, Inst.Scale);
+          const CustomPaint =
+            typeof Inst.PaintHex === "string" &&
+            /^#[0-9a-f]{6}$/i.test(Inst.PaintHex) &&
+            Inst.PaintHex.toLowerCase() !== "#e4e440" &&
+            Inst.PaintHex.toLowerCase() !== "#d4d4d4";
+          const PaintLin = CustomPaint
+            ? HexToLinear(Inst.PaintHex, [0.68, 0.8, 0.0])
+            : [0.68, 0.8, 0.0];
+          const IsSel = SelectedId === Inst.Id ? 1.0 : 0.0;
+          const HeadOn = Inst.HeadlightsOn !== false ? 1.0 : 0.0;
+          const GroundZ = Number(Inst.Position?.[2] || 0);
+
+          for (const MeshBuf of Targets) {
+            if (DrawList.length >= MAX_MESH_DRAWS) break;
+            const Slot = DrawList.length;
+            const Base = Slot * MeshUniformStrideF32;
+            MeshUniformScratch.set(ViewProjZeroToOne, Base + 0);
+            MeshUniformScratch.set(Model, Base + 16);
+            MeshUniformScratch[Base + 32] = Normal[0];
+            MeshUniformScratch[Base + 33] = Normal[1];
+            MeshUniformScratch[Base + 34] = Normal[2];
+            MeshUniformScratch[Base + 35] = 0;
+            MeshUniformScratch[Base + 36] = Normal[3];
+            MeshUniformScratch[Base + 37] = Normal[4];
+            MeshUniformScratch[Base + 38] = Normal[5];
+            MeshUniformScratch[Base + 39] = 0;
+            MeshUniformScratch[Base + 40] = Normal[6];
+            MeshUniformScratch[Base + 41] = Normal[7];
+            MeshUniformScratch[Base + 42] = Normal[8];
+            MeshUniformScratch[Base + 43] = 0;
+            MeshUniformScratch[Base + 44] = PaintLin[0];
+            MeshUniformScratch[Base + 45] = PaintLin[1];
+            MeshUniformScratch[Base + 46] = PaintLin[2];
+            MeshUniformScratch[Base + 47] = CustomPaint ? 1.0 : 0.0;
+            MeshUniformScratch[Base + 48] = HeadOn;
+            MeshUniformScratch[Base + 49] = IsSel;
+            MeshUniformScratch[Base + 50] = GroundZ;
+            MeshUniformScratch[Base + 51] = 0;
+            DrawList.push({ Slot, MeshBuf });
+          }
+        }
+
+        if (DrawList.length > 0) {
+          Device.queue.writeBuffer(
+            MeshUniformBuf,
+            0,
+            MeshUniformScratch.buffer,
+            0,
+            DrawList.length * MeshUniformStride,
+          );
+          const PassMesh = Encoder.beginRenderPass({
+            colorAttachments: [{ view: SwapView, loadOp: "load", storeOp: "store" }],
+            depthStencilAttachment: {
+              view: DepthView,
+              depthLoadOp: "clear",
+              depthStoreOp: "store",
+              depthClearValue: 1.0,
+            },
+          });
+          PassMesh.setPipeline(MeshPipeline);
+          for (const Item of DrawList) {
+            PassMesh.setBindGroup(0, MeshBindGroup, [Item.Slot * MeshUniformStride]);
+            PassMesh.setVertexBuffer(0, Item.MeshBuf.buf);
+            PassMesh.draw(Item.MeshBuf.count);
+          }
+          PassMesh.end();
+        }
+      }
+
       if (ViewProjZeroToOne && (ForceOverlay || BuiltGizmo)) {
         // Optional Pass 3A: 3D ForceField / VectorField Overlay (envelope + directional arrows)
         if (ForceOverlay && (ForceOverlay.OpaqueVertexCount > 0 || ForceOverlay.TranslucentVertexCount > 0)) {
@@ -2107,6 +2701,11 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
       try { OutlineUniformBuf?.destroy(); } catch {}
       try { GizmoUniformBuf?.destroy(); } catch {}
       try { ForceUniformBuf?.destroy(); } catch {}
+      try { MeshUniformBuf?.destroy(); } catch {}
+      for (const Entry of MeshGpuCache.values()) {
+        try { Entry.buf?.destroy(); } catch {}
+      }
+      MeshGpuCache.clear();
       try { GizmoOpaqueBuf?.destroy(); } catch {}
       try { GizmoTransBuf?.destroy(); } catch {}
       try { ForceOpaqueBuf?.destroy(); } catch {}

@@ -41,23 +41,6 @@ if (fs.existsSync(path.join(Frontier, "EngineContent/Icons"))) {
         path.join(Frontier, "Exhibits/DistanceFieldGI/ShaderBall.mesh"),
       )
       .toString("base64"),
-    ControlVehicleFacets: {
-      body: fs
-        .readFileSync(
-          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleBody.facet"),
-        )
-        .toString("base64"),
-      tyre: fs
-        .readFileSync(
-          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleTyre.facet"),
-        )
-        .toString("base64"),
-      rim: fs
-        .readFileSync(
-          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleRim.facet"),
-        )
-        .toString("base64"),
-    },
     Notices: {
       Fonts: fs.readFileSync(
         path.join(Frontier, "EngineContent/Fonts/SunReference/OFL.txt"),
@@ -128,6 +111,25 @@ if (fs.existsSync(path.join(Frontier, "EngineContent/Icons"))) {
     Notices: Embedded.Notices,
   };
 }
+
+// Always embed exact BP_ControlVehicle FCT1 facet streams (body, tyre, rim) into window.NativeAssets
+Assets.ControlVehicleFacets = {
+  body: fs
+    .readFileSync(
+      path.join(Frontier, "Experimental/Shared/Models/ControlVehicleBody.facet"),
+    )
+    .toString("base64"),
+  tyre: fs
+    .readFileSync(
+      path.join(Frontier, "Experimental/Shared/Models/ControlVehicleTyre.facet"),
+    )
+    .toString("base64"),
+  rim: fs
+    .readFileSync(
+      path.join(Frontier, "Experimental/Shared/Models/ControlVehicleRim.facet"),
+    )
+    .toString("base64"),
+};
 
 // Preserve the reference's document-wide CSS and control behaviour without restyling the current editor.
 const ReferenceOutput = await build({

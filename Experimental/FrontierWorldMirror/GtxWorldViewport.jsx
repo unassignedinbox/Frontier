@@ -2215,7 +2215,19 @@ export default function GtxWorldViewport({
     RequestRedrawRef.current?.(false);
   }, [HoveredHandle, ActiveHandle, EffectiveGizmo, SelectedGizmoTarget, CompiledScene.ForceSignature]);
 
+  // Subscribe to Geometry Compile asset registry updates across ALL render backends (WebGPU / WebGL2 / CPU-GTX)
   useEffect(() => {
+    return SubscribeCompiledMeshAssets(() => {
+      RequestRedrawRef.current?.(true);
+    });
+  }, []);
+
+  // Auxiliary Mesh Overlay renderer (used only for WebGL2 / CPU-GTX; WebGPU renders meshes natively in Pass 2.5!)
+  useEffect(() => {
+    if (RenderBackend === "webgpu") {
+      MeshOverlayRef.current = null;
+      return;
+    }
     const MeshCanvas = MeshCanvasRef.current;
     if (!MeshCanvas) return;
     let Overlay = null;
@@ -2225,15 +2237,11 @@ export default function GtxWorldViewport({
     } catch (Err) {
       console.warn("WorldMeshOverlay init skipped:", Err);
     }
-    const Unsub = SubscribeCompiledMeshAssets(() => {
-      RequestRedrawRef.current?.(true);
-    });
     return () => {
-      Unsub();
       MeshOverlayRef.current = null;
       Overlay?.Dispose();
     };
-  }, []);
+  }, [RenderBackend]);
 
   // Tier-0 Hardware WebGPU (Dawn D3D12 / Vulkan / Metal — bypasses ANGLE WebGL context blocks completely!)
   useEffect(() => {
@@ -2271,7 +2279,7 @@ export default function GtxWorldViewport({
       SceneDirtyRef.current = true;
       WebgpuRef.current = Res;
       SetShaderError(null);
-      SendViewportDiag({ backend: "webgpu", format: Res.SwapFormat });
+      SendViewportDiag({ backend: "webgpu", format: Res.SwapFormat, meshPass: "native-wgsl" });
       SetWgpuEpoch((N) => N + 1);
     });
 
@@ -2419,6 +2427,7 @@ export default function GtxWorldViewport({
         EffectiveViewMode,
         ShowGrid: Props.EffectiveGrid,
         SelectedCode,
+        SelectedId: Props.Selected,
         PrimCount: PCount,
         LightCount: LCount,
         BuiltGizmo,
@@ -2426,18 +2435,6 @@ export default function GtxWorldViewport({
         ViewProjZeroToOne,
         HighlightedHandle: Highlighted,
       });
-
-      if (MeshOverlayRef.current) {
-        MeshOverlayRef.current.Render(
-          ActiveScene,
-          Canvas.width,
-          Canvas.height,
-          Props.Selected,
-          EffectiveViewMode,
-          BuiltGizmo,
-          Highlighted,
-        );
-      }
 
       SampleViewportFps();
     };
@@ -3964,19 +3961,21 @@ export default function GtxWorldViewport({
           }
         }}
       />
-      <canvas
-        ref={MeshCanvasRef}
-        className="gtx-mesh-overlay"
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-          zIndex: 2,
-        }}
-      />
+      {RenderBackend !== "webgpu" && (
+        <canvas
+          ref={MeshCanvasRef}
+          className="gtx-mesh-overlay"
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+        />
+      )}
       {(LiveDragPreview?.Hud ||
         ActiveHandle !== GizmoHandle.None ||
         HoveredHandle !== GizmoHandle.None ||
