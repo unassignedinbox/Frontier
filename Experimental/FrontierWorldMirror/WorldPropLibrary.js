@@ -207,7 +207,17 @@ function Part(Shape, Pos, HalfExtents, RotDeg, MaterialRec, FaceColors = null, E
     FaceColors,
     CastShadows: Extra.CastShadows ?? true,
     GiContributor: Extra.GiContributor ?? true,
+    MeshProxy: Boolean(Extra.MeshProxy),
   };
+}
+
+function HexToLinearBounce(Hex, Fallback = [0.65, 0.65, 0.65]) {
+  if (typeof Hex !== "string" || !/^#[0-9a-f]{6}$/i.test(Hex.trim())) return Fallback;
+  const Clean = Hex.trim().slice(1);
+  const R = parseInt(Clean.slice(0, 2), 16) / 255;
+  const G = parseInt(Clean.slice(2, 4), 16) / 255;
+  const B = parseInt(Clean.slice(4, 6), 16) / 255;
+  return [Math.pow(R, 2.2), Math.pow(G, 2.2), Math.pow(B, 2.2)];
 }
 
 // Helper: build a strut cylinder from P0 to P1 with radius R
@@ -1339,6 +1349,39 @@ export const WORLD_PROP_CATALOG = [
       Part(2, [0.14, 0.06, 0.45], [0.032, 0.032, 0.015], [0, 0, 0], PAL.chrome),
     ],
   },
+  {
+    PropId: "bp_control_vehicle",
+    Name: "BP_ControlVehicle",
+    Category: "Vehicles & Blueprints",
+    BlueprintKind: "BP_ControlVehicle",
+    Panel: "geometry",
+    Icon: "editor-cube",
+    HalfHeightZ: 0.0,
+    NominalScale: [1, 1, 1],
+    Description: "Exact Component Inspector BP_ControlVehicle FCT1 assembly (body, 4 tyres, 4 forged rims, rear wing) with GI shadow & yellow bounce proxy",
+    BuildParts: (Rec = {}) => {
+      const BodyPaint = Mat(Rec.PaintHex || "#e4e440", 0.24, 0.14, { Coat: 0.75 });
+      const CabinGlass = Mat("#191d24", 0.08, 0.05);
+      const TyreRubber = Mat("#25262a", 0.78, 0.0);
+      const CarbonWing = Mat("#2d3036", 0.36, 0.35);
+      const WingOn = Rec.WingVisible !== false;
+      const Parts = [
+        // Main aerodynamic body shadow + warm yellow GI bounce hull (aligned to VEHICLE_SHEET groundOffset = 0.41715 m)
+        Part(0, [0.02, 0.0, 0.62], [2.85, 1.18, 0.36], [0, 0, 0], BodyPaint, null, { MeshProxy: true }),
+        // Sculpted cockpit canopy shadow & floor reflection silhouette
+        Part(0, [-0.14, 0.0, 1.12], [1.26, 0.80, 0.28], [0, 0, 0], CabinGlass, null, { MeshProxy: true }),
+        // 4 wheel contact-shadow cylinders at exact VEHICLE_SHEET.axleMount coordinates (ground contact at z = 0)
+        Part(2, [1.7274, 1.0475, 0.50855], [0.505, 0.505, 0.165], [90, 0, 0], TyreRubber, null, { MeshProxy: true }),
+        Part(2, [1.7274, -1.0475, 0.50855], [0.505, 0.505, 0.165], [90, 0, 0], TyreRubber, null, { MeshProxy: true }),
+        Part(2, [-1.6686, 1.0475, 0.50855], [0.505, 0.505, 0.165], [90, 0, 0], TyreRubber, null, { MeshProxy: true }),
+        Part(2, [-1.6686, -1.0475, 0.50855], [0.505, 0.505, 0.165], [90, 0, 0], TyreRubber, null, { MeshProxy: true }),
+      ];
+      if (WingOn) {
+        Parts.push(Part(0, [-2.9822, 0.0, 1.50], [0.22, 1.24, 0.09], [0, 8, 0], CarbonWing, null, { MeshProxy: true }));
+      }
+      return Parts;
+    },
+  },
 ];
 
 export function GetWorldPropById(PropId) {
@@ -1426,11 +1469,12 @@ export function ExpandPropPrimitives(Row, Rec = {}, PickCode = 1) {
       CastShadows: (Rec["Cast shadows"] ?? P.CastShadows) ? 1 : 0,
       GiContributor: (Rec.GI ?? P.GiContributor) ? 1 : 0,
       GlassShell: false,
+      MeshProxy: Boolean(P.MeshProxy),
       FaceAtlas: UseFaceAtlas,
       FaceColors: UseFaceAtlas ? FaceColors : null,
       ResolvedMaterial: ResolvedMat,
       MaterialType: ResolvedMat.Type,
-      BaseColor: [0.65, 0.65, 0.65],
+      BaseColor: HexToLinearBounce(Ch.colour?.Fill, [0.65, 0.65, 0.65]),
       Metallic,
       Roughness,
       DiffuseRoughness: Roughness * 0.85,

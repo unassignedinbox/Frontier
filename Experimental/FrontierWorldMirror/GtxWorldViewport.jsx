@@ -56,6 +56,10 @@ import {
 import { CreateWebgpuGtxRenderer } from "./WebgpuGtxRenderer.js";
 import { CpuGtxRenderer, DrawSlateGizmo2D } from "./CpuGtxFallbackRenderer.js";
 import {
+  WorldMeshOverlayRenderer,
+  SubscribeCompiledMeshAssets,
+} from "./WorldMeshOverlay.js";
+import {
   ApplyUnrealDolly,
   ApplyUnrealMouseLook,
   ApplyUnrealOrbit,
@@ -152,6 +156,7 @@ bool PrimFlagShadow(int flags)    { return (flags & 1) != 0; }
 bool PrimFlagGi(int flags)        { return (flags & 2) != 0; }
 bool PrimFlagGlass(int flags)     { return (flags & 4) != 0; }
 bool PrimFlagFaceAtlas(int flags) { return (flags & 8) != 0; }
+bool PrimFlagMeshProxy(int flags) { return (flags & 16) != 0; }
 
 void loadPrimRot(int i, out vec3 c0, out vec3 c1, out vec3 c2) {
   c0 = sdFetch(2, i).xyz;
@@ -527,8 +532,10 @@ HitInfo tracePrimaryScene(vec3 ro, vec3 rd, float tMax) {
   int bestIdx = -1;
 
   for (int i = 0; i < uPrimCount; ++i) {
+    vec4 hf = sdFetch(1, i);
+    if (PrimFlagMeshProxy(int(hf.w + 0.5))) continue;
     vec4 ps = sdFetch(0, i);
-    vec3 h = sdFetch(1, i).xyz;
+    vec3 h = hf.xyz;
     vec3 oc = ps.xyz - ro;
     float proj = dot(oc, rd);
     float perp2 = dot(oc, oc) - proj * proj;
@@ -1564,7 +1571,8 @@ function PackSceneDataBuffer(ActiveScene, PCount, LCount, Out) {
       (P.CastShadows ? 1 : 0) |
       (P.GiContributor ? 2 : 0) |
       (P.GlassShell ? 4 : 0) |
-      (P.FaceAtlas ? 8 : 0);
+      (P.FaceAtlas ? 8 : 0) |
+      (P.MeshProxy ? 16 : 0);
     Out[Base + 0] = P.Center[0];
     Out[Base + 1] = P.Center[1];
     Out[Base + 2] = P.Center[2];
@@ -1771,6 +1779,8 @@ export default function GtxWorldViewport({
   OnDropWorldActor,
   OnApplyMaterialDrop,
   OnApplyColourDrop,
+  OnOpenComponentInspector,
+  OnImportGeometryFile,
   OnFpsSample,
 }) {
   const SelectCallback = OnSelectEntity || Select;
@@ -1780,6 +1790,8 @@ export default function GtxWorldViewport({
   const EffectiveGizmo = ShowGizmo && Settings?.Gizmos !== false;
 
   const CanvasRef = useRef(null);
+  const MeshCanvasRef = useRef(null);
+  const MeshOverlayRef = useRef(null);
   const WebgpuRef = useRef(null);
   const GlStateRef = useRef(null);
   const CpuRendererRef = useRef(null);
@@ -2203,6 +2215,26 @@ export default function GtxWorldViewport({
     RequestRedrawRef.current?.(false);
   }, [HoveredHandle, ActiveHandle, EffectiveGizmo, SelectedGizmoTarget, CompiledScene.ForceSignature]);
 
+  useEffect(() => {
+    const MeshCanvas = MeshCanvasRef.current;
+    if (!MeshCanvas) return;
+    let Overlay = null;
+    try {
+      Overlay = new WorldMeshOverlayRenderer(MeshCanvas);
+      MeshOverlayRef.current = Overlay;
+    } catch (Err) {
+      console.warn("WorldMeshOverlay init skipped:", Err);
+    }
+    const Unsub = SubscribeCompiledMeshAssets(() => {
+      RequestRedrawRef.current?.(true);
+    });
+    return () => {
+      Unsub();
+      MeshOverlayRef.current = null;
+      Overlay?.Dispose();
+    };
+  }, []);
+
   // Tier-0 Hardware WebGPU (Dawn D3D12 / Vulkan / Metal — bypasses ANGLE WebGL context blocks completely!)
   useEffect(() => {
     if (RenderBackend !== "webgpu") return;
@@ -2394,6 +2426,18 @@ export default function GtxWorldViewport({
         ViewProjZeroToOne,
         HighlightedHandle: Highlighted,
       });
+
+      if (MeshOverlayRef.current) {
+        MeshOverlayRef.current.Render(
+          ActiveScene,
+          Canvas.width,
+          Canvas.height,
+          Props.Selected,
+          EffectiveViewMode,
+          BuiltGizmo,
+          Highlighted,
+        );
+      }
 
       SampleViewportFps();
     };
@@ -3027,6 +3071,24 @@ export default function GtxWorldViewport({
           BuiltGizmoRef.current = null;
         }
 
+        if (MeshOverlayRef.current) {
+          const OverlayViewMode =
+            Props.Debug > 0 && Props.Debug <= 15
+              ? 10 + Props.Debug
+              : VIEW_MODE_CODES[Props.ViewMode] ?? 0;
+          const OverlayHighlight =
+            Props.ActiveHandle !== GizmoHandle.None ? Props.ActiveHandle : Props.HoveredHandle;
+          MeshOverlayRef.current.Render(
+            ActiveScene,
+            Width,
+            Height,
+            Props.Selected,
+            OverlayViewMode,
+            BuiltGizmoRef.current,
+            OverlayHighlight,
+          );
+        }
+
         SampleViewportFps();
       });
     };
@@ -3215,6 +3277,22 @@ export default function GtxWorldViewport({
       }
       if (BuiltGizmo && ViewProj) {
         DrawSlateGizmo2D(Ctx2d, Width, Height, BuiltGizmo, ViewProj, Highlighted);
+      }
+
+      if (MeshOverlayRef.current) {
+        const CpuViewMode =
+          Props.Debug > 0 && Props.Debug <= 15
+            ? 10 + Props.Debug
+            : VIEW_MODE_CODES[Props.ViewMode] ?? 0;
+        MeshOverlayRef.current.Render(
+          ActiveScene,
+          Width,
+          Height,
+          Props.Selected,
+          CpuViewMode,
+          BuiltGizmo,
+          Highlighted,
+        );
       }
 
       SampleViewportFps();
@@ -3667,6 +3745,17 @@ export default function GtxWorldViewport({
   };
 
   const HandleStageDragOver = (Ev) => {
+    const HasFiles = Boolean(Ev.dataTransfer?.types && Array.from(Ev.dataTransfer.types).includes("Files"));
+    if (HasFiles && typeof OnImportGeometryFile === "function") {
+      Ev.preventDefault();
+      if (Ev.dataTransfer) Ev.dataTransfer.dropEffect = "copy";
+      SetLiveDragPreview((Prev) =>
+        Prev?.Hud === "Drop 3D model to open Geometry Compile"
+          ? Prev
+          : { HighlightId: null, Hud: "Drop 3D model to open Geometry Compile" },
+      );
+      return;
+    }
     const ActorDrag = GetActiveWorldDrag();
     const HasActorMime =
       Boolean(ActorDrag) ||
@@ -3738,6 +3827,17 @@ export default function GtxWorldViewport({
   };
 
   const HandleStageDrop = (Ev) => {
+    const DroppedFiles = Ev.dataTransfer?.files;
+    if (DroppedFiles && DroppedFiles.length > 0 && typeof OnImportGeometryFile === "function") {
+      const File = DroppedFiles[0];
+      if (/\.(obj|gltf|glb|stl|ply|facet|fbx)$/i.test(File.name || "")) {
+        Ev.preventDefault();
+        Ev.stopPropagation();
+        SetLiveDragPreview(null);
+        OnImportGeometryFile(File);
+        return;
+      }
+    }
     const ActorPayload = ReadWorldActorDropData(Ev);
     const ColourPayload = !ActorPayload && HasColourDragData(Ev) ? ReadColourDragData(Ev) : null;
     if (!ActorPayload && !ColourPayload) return;
@@ -3854,6 +3954,28 @@ export default function GtxWorldViewport({
         onPointerMove={OnPointerMove}
         onPointerUp={OnPointerUp}
         onPointerCancel={OnPointerUp}
+        onDoubleClick={(Ev) => {
+          if (typeof OnOpenComponentInspector !== "function") return;
+          const { U, V, Aspect, SceneForRay } = ComputeViewportUvAndLiveScene(Ev);
+          const HitId = PickSceneEntityAtUv(SceneForRay, U, V, Aspect);
+          if (HitId) {
+            SelectCallback?.(HitId);
+            OnOpenComponentInspector(HitId);
+          }
+        }}
+      />
+      <canvas
+        ref={MeshCanvasRef}
+        className="gtx-mesh-overlay"
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          zIndex: 2,
+        }}
       />
       {(LiveDragPreview?.Hud ||
         ActiveHandle !== GizmoHandle.None ||
@@ -4021,11 +4143,23 @@ export default function GtxWorldViewport({
       <button
         type="button"
         className="gtx-camera-home"
-        title="Reset EditorCamera to C++ ShowcaseWorldSceneBundle Pose (RMB + WASDQE to fly, RMB + Wheel for speed, F to focus)"
+        title="Reset EditorCamera to Active Level Hero Pose (RMB + WASDQE to fly, RMB + Wheel for speed, F to focus)"
         onClick={() => {
+          const IsLobby = Rows.some((R) => R.Id === "lobby-terrazzo-floor");
+          const IsTraining = Rows.some((R) => R.Id === "train-asphalt");
+          const HomePos = IsLobby
+            ? [5.45, -5.35, 1.98]
+            : IsTraining
+              ? [5.4, -10.8, 2.55]
+              : CanonicalEditorCamera.Position;
+          const HomeTarget = IsLobby
+            ? [-0.15, 1.25, 0.68]
+            : IsTraining
+              ? [-0.2, -1.4, 0.72]
+              : CanonicalEditorCamera.Target;
           const Home = DeriveUnrealCameraState(
-            CanonicalEditorCamera.Position,
-            CanonicalEditorCamera.Target,
+            HomePos,
+            HomeTarget,
             LiveCamRef.current?.SpeedScalar || 1.0,
           );
           ApplyLiveCameraUpdate(Home, true);

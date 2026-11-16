@@ -41,6 +41,23 @@ if (fs.existsSync(path.join(Frontier, "EngineContent/Icons"))) {
         path.join(Frontier, "Exhibits/DistanceFieldGI/ShaderBall.mesh"),
       )
       .toString("base64"),
+    ControlVehicleFacets: {
+      body: fs
+        .readFileSync(
+          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleBody.facet"),
+        )
+        .toString("base64"),
+      tyre: fs
+        .readFileSync(
+          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleTyre.facet"),
+        )
+        .toString("base64"),
+      rim: fs
+        .readFileSync(
+          path.join(Frontier, "Experimental/Shared/Models/ControlVehicleRim.facet"),
+        )
+        .toString("base64"),
+    },
     Notices: {
       Fonts: fs.readFileSync(
         path.join(Frontier, "EngineContent/Fonts/SunReference/OFL.txt"),

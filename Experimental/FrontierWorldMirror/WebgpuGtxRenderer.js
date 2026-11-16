@@ -63,6 +63,7 @@ fn PrimFlagShadow(flags : i32) -> bool    { return (flags & 1) != 0; }
 fn PrimFlagGi(flags : i32) -> bool        { return (flags & 2) != 0; }
 fn PrimFlagGlass(flags : i32) -> bool     { return (flags & 4) != 0; }
 fn PrimFlagFaceAtlas(flags : i32) -> bool { return (flags & 8) != 0; }
+fn PrimFlagMeshProxy(flags : i32) -> bool { return (flags & 16) != 0; }
 
 struct RotBasis {
   c0 : vec3f,
@@ -459,8 +460,10 @@ fn tracePrimaryScene(ro : vec3f, rd : vec3f, tMax : f32) -> HitInfo {
   let primCount = U.uCountsAndModes.x;
 
   for (var i : i32 = 0; i < primCount; i = i + 1) {
+    let hf = sdFetch(1, i);
+    if (PrimFlagMeshProxy(i32(hf.w + 0.5))) { continue; }
     let ps = sdFetch(0, i);
-    let h = sdFetch(1, i).xyz;
+    let h = hf.xyz;
     let oc = ps.xyz - ro;
     let proj = dot(oc, rd);
     let perp2 = dot(oc, oc) - proj * proj;

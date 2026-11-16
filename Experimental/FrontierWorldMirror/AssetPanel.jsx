@@ -142,6 +142,8 @@ export default function AssetPanel({
   OnColourDragChange,
   SpawnForce,
   SpawnModel,
+  OnOpenGeometryCompile,
+  OnInspectModelAsset,
   Appearance = {},
 }) {
   const BuiltIn = useMemo(() => EngineAssets(), []),
@@ -389,6 +391,11 @@ export default function AssetPanel({
     const Files = [...Event.target.files];
     Event.target.value = "";
     if (!Files.length) return;
+    const FirstModel = Files.find((F) => /\.(obj|gltf|glb|stl|ply|facet|fbx)$/i.test(F.name || ""));
+    if (FirstModel && typeof OnOpenGeometryCompile === "function") {
+      OnOpenGeometryCompile({ mode: "file", file: FirstModel });
+      return;
+    }
     Locked.current = true;
     Work(true);
     const Added = [],
@@ -529,8 +536,16 @@ export default function AssetPanel({
                 Export .toml
               </button>
             )}
+            {typeof OnOpenGeometryCompile === "function" && (
+              <button
+                className="primary"
+                title="Open Geometry Compile 8-step asset importer & inspector (OBJ, glTF, GLB, STL, PLY, FCT1)"
+                onClick={() => OnOpenGeometryCompile({ mode: "start" })}
+              >
+                Geometry Compile…
+              </button>
+            )}
             <button
-              className="primary"
               disabled={Busy || Assets.length >= 256}
               onClick={() => Input.current.click()}
             >
@@ -882,7 +897,13 @@ export default function AssetPanel({
                     }}
                   >
                     <span className="asset-thumbnail">
-                      {Asset.Kind === "Models" ? (
+                      {Asset.Kind === "Models" && Asset.IconDataUrl ? (
+                        <img
+                          src={Asset.IconDataUrl}
+                          alt={Asset.Name}
+                          style={{ width: 48, height: 48, objectFit: "contain", borderRadius: 6 }}
+                        />
+                      ) : Asset.Kind === "Models" ? (
                         <span
                           className="asset-force-badge"
                           style={{
@@ -1152,6 +1173,30 @@ export default function AssetPanel({
                       />
                     ) : Current.Id === "engine-shaderball" ? (
                       <ShaderballPanel Material={ResolveMaterial({})} Compact />
+                    ) : Current.Kind === "Models" && Current.IconDataUrl ? (
+                      <div
+                        className="asset-file-preview"
+                        draggable
+                        onDragStart={(Ev) => BeginAssetWorldDrag(Ev, Current)}
+                        onDragEnd={EndAssetWorldDrag}
+                        title="Drag compiled 3D asset into the GI viewport to place"
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "10px",
+                          background: "rgba(11, 12, 16, 0.85)",
+                          borderRadius: 10,
+                          cursor: "grab",
+                        }}
+                      >
+                        <img
+                          src={Current.IconDataUrl}
+                          alt={Current.Name}
+                          style={{ width: 172, height: 172, objectFit: "contain", borderRadius: 8 }}
+                        />
+                      </div>
                     ) : Current.Kind === "Models" &&
                       (Current.PropId || Current.PrimitiveShape) ? (
                       <div
@@ -1215,11 +1260,30 @@ export default function AssetPanel({
                           className="primary"
                           onClick={() => {
                             SpawnModel(Current);
-                            Report("Placed " + Current.Name + " in scene");
+                            Report("Placed " + Current.Name + " in GI World");
                           }}
                         >
-                          Place {Current.Name} in Scene (or Drag to Viewport)
+                          Place {Current.Name} in GI World
                         </button>
+                        {Current.CompiledAssetId && typeof OnOpenGeometryCompile === "function" && (
+                          <button
+                            onClick={() =>
+                              OnOpenGeometryCompile({
+                                mode: "asset",
+                                compiledAssetId: Current.CompiledAssetId,
+                                recompile: true,
+                              })
+                            }
+                          >
+                            Inspect / Recompile (Geometry Compile)
+                          </button>
+                        )}
+                        {(Current.CompiledAssetId || Current.PropId === "bp_control_vehicle") &&
+                          typeof OnInspectModelAsset === "function" && (
+                            <button onClick={() => OnInspectModelAsset(Current)}>
+                              Open in Component Inspector
+                            </button>
+                          )}
                       </div>
                     )}
                     {Current.Kind === "Materials" && (

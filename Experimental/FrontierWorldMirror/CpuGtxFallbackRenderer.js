@@ -188,6 +188,7 @@ export function CreateGtxBandKernel(AtlasWidth, AtlasCols, AtlasTileSize, TilesP
           CastShadows: !!P.CastShadows,
           GiContributor: !!P.GiContributor,
           GlassShell: !!P.GlassShell,
+          MeshProxy: !!P.MeshProxy,
           R0x: Cz * Cy, R0y: Sz * Cy, R0z: -Sy,
           R1x: Cz * Sy * Sx - Sz * Cx, R1y: Sz * Sy * Sx + Cz * Cx, R1z: Cy * Sx,
           R2x: Cz * Sy * Cx + Sz * Sx, R2y: Sz * Sy * Cx - Cz * Sx, R2z: Cy * Cx,
@@ -523,6 +524,7 @@ export function CreateGtxBandKernel(AtlasWidth, AtlasCols, AtlasTileSize, TilesP
       let BestIdx = -1;
       for (let I = 0; I < Prims.length; ++I) {
         if (I === SkipIdx) continue;
+        if (!SkipGlass && Prims[I].MeshProxy) continue;
         if (SkipGlass && Prims[I].GlassShell) continue;
         const T = this.IntersectPrimT(Prims[I], Rox, Roy, Roz, Rdx, Rdy, Rdz, BestT, false);
         if (T < BestT) {

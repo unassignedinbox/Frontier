@@ -687,16 +687,42 @@ export function CompileLiveGtxScene(
 
   // Geometry, Multi-Part Props, Placed Camera Rigs, Fans & Studio Light Rigs (up to 384 primitives)
   const Primitives = [];
+  const MeshInstances = [];
   let NextActorPickCode = 1;
   let HasSpinningFans = false;
   const FanSpinDeg = Number(ExtraOptions?.FanSpinDeg || 0);
   for (const Row of Rows) {
     const Rec = Values?.[Row.Id] || {};
     const PropId = Row.PropId || Rec.PropId || (Row.Panel === "camera" && Row.Id !== "camera" ? "engine_camera" : null);
+    const BlueprintKind = Row.BlueprintKind || Rec.BlueprintKind || (PropId === "bp_control_vehicle" ? "BP_ControlVehicle" : null);
+    const CompiledAssetId = Row.CompiledAssetId || Rec.CompiledAssetId || null;
     const IsRenderableProp =
       Boolean(PropId) && ["geometry", "camera", "light"].includes(Row.Panel) && Row.Id !== "camera";
     if (Row.Panel !== "geometry" && !IsRenderableProp) continue;
     if (!RowEffectivelyVisible(Row, Rows, Hidden)) continue;
+
+    if (BlueprintKind === "BP_ControlVehicle" || CompiledAssetId) {
+      const MPos = Array.isArray(Rec.Position) ? Rec.Position : [0, 0, 0];
+      const MRot = Array.isArray(Rec.Rotation) ? Rec.Rotation : [0, 0, 0];
+      const MScale = Array.isArray(Rec.Scale) ? Rec.Scale : [1, 1, 1];
+      const Mat = ResolveMaterial(Rec);
+      MeshInstances.push({
+        Id: Row.Id,
+        Name: Row.Name,
+        Kind: BlueprintKind === "BP_ControlVehicle" ? "BP_ControlVehicle" : "CompiledMesh",
+        CompiledAssetId: CompiledAssetId || null,
+        Position: [Number(MPos[0]) || 0, Number(MPos[1]) || 0, Number(MPos[2]) || 0],
+        RotationRad: MRot.map((Deg) => ((Number(Deg) || 0) * Math.PI) / 180),
+        Scale: [
+          Math.max(0.05, Number(MScale[0]) || 1),
+          Math.max(0.05, Number(MScale[1]) || 1),
+          Math.max(0.05, Number(MScale[2]) || 1),
+        ],
+        PaintHex: Rec.PaintHex || Mat?.Channels?.colour?.Fill || null,
+        WingVisible: Rec.WingVisible !== false,
+        HeadlightsOn: Rec.HeadlightsOn !== false,
+      });
+    }
 
     if (IsRenderableProp && GetWorldPropById(PropId)) {
       const SharedPickCode =
@@ -773,6 +799,7 @@ export function CompileLiveGtxScene(
       CastShadows: (Rec["Cast shadows"] ?? !IsTransparentShell) ? 1 : 0,
       GiContributor: (Rec.GI ?? !IsTransparentShell) ? 1 : 0,
       GlassShell: IsTransparentShell,
+      MeshProxy: Boolean(Rec.MeshProxy || CompiledAssetId),
       FaceAtlas: UseFaceAtlas,
       FaceColors: UseFaceAtlas ? Rec.FaceColors : null,
       ResolvedMaterial: Mat,
@@ -869,6 +896,7 @@ export function CompileLiveGtxScene(
     SkyRadiance,
     AreaLights,
     Primitives,
+    MeshInstances,
     ForceNodes: EffectiveForceNodes,
     ForceOverlay,
     ForceSignature,

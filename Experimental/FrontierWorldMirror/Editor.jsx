@@ -77,6 +77,12 @@ import {
 } from "./WorldDragDrop.js";
 import { AnalyticalShapeThumbnail } from "./AnalyticalShapeThumbnail.jsx";
 import { GetWorldPropById, IsFanProp, WORLD_PROP_CATALOG } from "./WorldPropLibrary.js";
+import StudioWorkspacesModal from "./StudioWorkspacesModal.jsx";
+import {
+  RegisterCompiledMeshAsset,
+  GetCompiledMeshAsset,
+  ListCompiledMeshAssets,
+} from "./WorldMeshOverlay.js";
 import "./Editor.css";
 
 const ConstructExtraCones = [
@@ -312,11 +318,12 @@ const DebugViews = [
   "ForceField · Vorticity |∇×F|",
   "ForceField · Divergence ∇·F",
 ];
-const StorageKey = "Frontier.WorldMirrorGtx.v3";
+const StorageKey = "Frontier.WorldMirrorGtx.v4";
 function Restore() {
   try {
     localStorage.removeItem("Frontier.WorldMirrorGtx.v1");
     localStorage.removeItem("Frontier.WorldMirrorGtx.v2");
+    localStorage.removeItem("Frontier.WorldMirrorGtx.v3");
     return JSON.parse(localStorage.getItem(StorageKey)) || {};
   } catch {
     return {};
@@ -541,6 +548,11 @@ function RealtimeFpsReadout({ FallbackFps = 60 }) {
     </b>
   );
 }
+const BootLevelsState = LoadSavedLevelsState();
+const BootActiveLevel =
+  BootLevelsState.Levels.find((L) => L.Id === BootLevelsState.ActiveLevelId) ||
+  BootLevelsState.Levels[0];
+
 function App() {
   const [Debug, SetDebug] = useState(0),
     [DiagnosticsOpen, SetDiagnosticsOpen] = useState(false),
@@ -552,19 +564,21 @@ function App() {
     LiveFpsRef.current = NextFps;
   }, []);
   const [Rows, StoreRows] = useState(() =>
-      EnsureEditorCamera(Saved.Rows || ShowcaseInitialRows),
+      EnsureEditorCamera(Saved.Rows || BootActiveLevel?.Rows || ShowcaseInitialRows),
     ),
     [Selected, Select] = useState(
       new URLSearchParams(location.search).get("inspect") ||
         Saved.Selected ||
-        "chrome-sphere",
+        BootActiveLevel?.Selected ||
+        "hero-vehicle",
     ),
     [Values, AssignValues] = useState(() => {
-      const Restored = { ...ShowcaseInitialValues };
+      const BaseValues = Saved.Rows ? ShowcaseInitialValues : (BootActiveLevel?.Values || ShowcaseInitialValues);
+      const Restored = JSON.parse(JSON.stringify(BaseValues));
       for (const [Key, Val] of Object.entries(Saved.Values || {})) {
-        Restored[Key] = { ...(ShowcaseInitialValues[Key] || {}), ...Val };
+        Restored[Key] = { ...(BaseValues[Key] || {}), ...Val };
       }
-      for (const Row of Saved.Rows || ShowcaseInitialRows) {
+      for (const Row of Saved.Rows || BootActiveLevel?.Rows || ShowcaseInitialRows) {
         const Record = ReadFracture(Row.Id);
         if (
           Row.Panel === "geometry" &&
@@ -578,8 +592,8 @@ function App() {
       }
       return Restored;
     }),
-    [Hidden, AssignHidden] = useState({ ...Saved.Hidden, camera: false }),
-    [Collapsed, Collapse] = useState(Saved.Collapsed || {}),
+    [Hidden, AssignHidden] = useState({ ...(Saved.Hidden || BootActiveLevel?.Hidden || {}), camera: false }),
+    [Collapsed, Collapse] = useState(Saved.Collapsed || BootActiveLevel?.Collapsed || {}),
     [Query, Search] = useState(""),
     [Filters, Filter] = useState([]),
     [Menu, ShowMenu] = useState(null),
@@ -597,7 +611,8 @@ function App() {
       () =>
         new URLSearchParams(location.search).get("project") ||
         Saved.Name ||
-        "Cornell-Studio Gallery",
+        BootActiveLevel?.Name ||
+        "Frontier Lobby",
     ),
     [Rename, RenameRow] = useState(null),
     [Construct, OpenConstruct] = useState(false),
@@ -621,7 +636,10 @@ function App() {
     [ShowGizmo, SetShowGizmo] = useState(true),
     [ForceOverlaySettings, SetForceOverlaySettings] = useState(DEFAULT_FORCE_OVERLAY),
     [CreateLevelOpen, SetCreateLevelOpen] = useState(false),
-    [LevelsState, SetLevelsState] = useState(() => LoadSavedLevelsState());
+    [LevelsState, SetLevelsState] = useState(() => BootLevelsState),
+    [ActiveStudio, SetActiveStudio] = useState(null),
+    [InspectPayload, SetInspectPayload] = useState(null),
+    [CompilePayload, SetCompilePayload] = useState(null);
   const PreviousFractureRows = useRef(Rows);
   useEffect(() => {
     const Receive = (Event) => {
@@ -1720,15 +1738,170 @@ function App() {
     });
     Select("showcase");
   };
+  const ResolveDefaultFloorZ = () => {
+    const HasLobbyOrTrainFloor = Rows.some(
+      (R) => R.Id === "lobby-terrazzo-floor" || R.Id === "train-asphalt",
+    );
+    return HasLobbyOrTrainFloor ? 0.0 : -0.64;
+  };
   const SpawnModelFromAsset = (Asset) => {
     const Payload = BuildActorPayloadFromAsset(Asset);
     if (!Payload?.Template) return;
-    const DefaultPos = [0, 0, +(-0.64 + (Payload.HalfHeightZ || 0.39)).toFixed(3)];
+    const FloorZ = ResolveDefaultFloorZ();
+    const DefaultPos = [0, 0, +(FloorZ + (Payload.HalfHeightZ ?? 0.39)).toFixed(3)];
     AddRow(
       Payload.Template,
       { ...Payload.Properties, Position: DefaultPos },
       true,
     );
+  };
+  const OpenComponentInspectorForEntity = (EntityId) => {
+    const TargetId = EntityId || Selected;
+    let TargetRow = Rows.find((R) => R.Id === TargetId);
+    if (!TargetRow || TargetRow.Panel === "group") {
+      TargetRow =
+        Rows.find((R) => R.Id === "hero-vehicle" || R.BlueprintKind === "BP_ControlVehicle") ||
+        Rows.find((R) => R.Panel === "geometry") ||
+        Subject;
+    }
+    if (!TargetRow) return;
+    const Rec = Values[TargetRow.Id] || {};
+    const Mat = ResolveMaterial(Rec);
+    const CompiledAssetId = TargetRow.CompiledAssetId || Rec.CompiledAssetId || null;
+    const CompiledAsset = CompiledAssetId ? GetCompiledMeshAsset(CompiledAssetId) : null;
+    const Shape =
+      TargetRow.PrimitiveShape ||
+      (TargetRow.Icon === "editor-sphere"
+        ? "sphere"
+        : TargetRow.Icon === "editor-cylinder"
+          ? "cylinder"
+          : TargetRow.Icon === "editor-cone"
+            ? "cone"
+            : "box");
+    const EntityDescriptor = {
+      Id: TargetRow.Id,
+      Name: TargetRow.Name,
+      Panel: TargetRow.Panel,
+      PropId: TargetRow.PropId || Rec.PropId || null,
+      BlueprintKind:
+        TargetRow.BlueprintKind ||
+        Rec.BlueprintKind ||
+        ((TargetRow.PropId || Rec.PropId) === "bp_control_vehicle" ? "BP_ControlVehicle" : null),
+      CompiledAssetId,
+      Shape,
+      Size: Array.isArray(Rec.Scale) ? [...Rec.Scale] : [1, 1, 1],
+      ColorHex: Rec.PaintHex || Mat?.Channels?.colour?.Fill || "#cbd2dc",
+      Roughness: Number(Mat?.Channels?.roughness?.Fill ?? 0.44),
+      Metallic: Number(Mat?.Channels?.metallic?.Fill ?? 0.10),
+      MaterialName: Mat?.Type || "OpenPBR",
+      IsAreaLight: TargetRow.Panel === "light",
+      IsCamera: TargetRow.Panel === "camera",
+      LevelName:
+        LevelsState.Levels.find((L) => L.Id === LevelsState.ActiveLevelId)?.Name ||
+        Name ||
+        "Frontier Lobby",
+    };
+    SetInspectPayload({
+      entity: EntityDescriptor,
+      compiledAsset: CompiledAsset,
+      nonce: Date.now(),
+    });
+    SetActiveStudio("component-viewer");
+  };
+  const OpenGeometryCompileInspector = (Options = { mode: "start" }) => {
+    if (Options?.mode === "asset" && Options.compiledAssetId) {
+      const Asset = GetCompiledMeshAsset(Options.compiledAssetId);
+      if (Asset) {
+        SetCompilePayload({
+          mode: "asset",
+          asset: Asset,
+          recompile: Options.recompile !== false,
+          nonce: Date.now(),
+        });
+        SetActiveStudio("geometry-compile");
+        return;
+      }
+    }
+    if (Options?.mode === "file" && Options.file) {
+      SetCompilePayload({
+        mode: "file",
+        file: Options.file,
+        recompile: false,
+        nonce: Date.now(),
+      });
+      SetActiveStudio("geometry-compile");
+      return;
+    }
+    SetCompilePayload({ mode: "start", recompile: false, nonce: Date.now() });
+    SetActiveStudio("geometry-compile");
+  };
+  const HandleComponentSync = (Summary, ShouldClose) => {
+    if (!Summary || !Summary.entityId) return;
+    AssignValues((Previous) => {
+      const Cur = Previous[Summary.entityId];
+      if (!Cur) return Previous;
+      return {
+        ...Previous,
+        [Summary.entityId]: {
+          ...Cur,
+          WingVisible: Summary.wingVisible !== false,
+          HeadlightsOn: Summary.headlightsOn !== false,
+        },
+      };
+    });
+    Toast(
+      `${Summary.blueprintName || "Blueprint"} synced to GI World${Summary.componentCount ? ` · ${Summary.componentCount} components` : ""}`,
+    );
+    if (ShouldClose) SetActiveStudio(null);
+  };
+  const HandleCompiledAssetReady = (CompiledAsset, { recompile = false, openInWorld = true } = {}) => {
+    if (!CompiledAsset || !CompiledAsset.id) return;
+    RegisterCompiledMeshAsset(CompiledAsset);
+    const Geom = CompiledAsset.out?.geometry || CompiledAsset.out?.source;
+    const Tris = Geom?.indices ? Math.round(Geom.indices.length / 3) : 0;
+    const B = Geom?.bounds?.size || [1.2, 1.2, 1.2];
+    const BoundsZUp = [
+      Math.max(0.2, Number(B[0]) || 1.0),
+      Math.max(0.2, Number(B[2]) || 1.0),
+      Math.max(0.2, Number(B[1]) || 1.0),
+    ];
+    const AssetCardId = `compiled-asset-${CompiledAsset.id}`;
+    const IconDataUrl = CompiledAsset.out?.icon?.dataUrl || null;
+    const DetailText = `Geometry Compile · ${Tris.toLocaleString()} tris · ${CompiledAsset.out?.collision?.type || "box"} collision · ${(CompiledAsset.out?.uv?.charts || 0)} UV charts · ${(CompiledAsset.out?.lod?.levels?.length || 1)} LODs`;
+    const NewAssetRecord = {
+      Id: AssetCardId,
+      Name: CompiledAsset.name || "Compiled Model",
+      Kind: "Models",
+      Origin: "Imported",
+      Format: CompiledAsset.format || "COMPILED",
+      Size: CompiledAsset.fileSize || 0,
+      Detail: DetailText,
+      CompiledAssetId: CompiledAsset.id,
+      CompiledBoundsSize: BoundsZUp,
+      IconDataUrl,
+    };
+    StoreAssets((Prev) => {
+      const Exists = Prev.some((Item) => Item.Id === AssetCardId);
+      return Exists
+        ? Prev.map((Item) => (Item.Id === AssetCardId ? NewAssetRecord : Item))
+        : [NewAssetRecord, ...Prev];
+    });
+    if (!recompile && openInWorld) {
+      const FloorZ = ResolveDefaultFloorZ();
+      const SpawnOffsetX = Rows.some((R) => R.Id === "hero-vehicle") ? -3.1 : 0.0;
+      const SpawnOffsetY = Rows.some((R) => R.Id === "hero-vehicle") ? 2.4 : 0.0;
+      const Payload = BuildActorPayloadFromAsset(NewAssetRecord);
+      if (Payload?.Template) {
+        AddRow(
+          Payload.Template,
+          { ...Payload.Properties, Position: [SpawnOffsetX, SpawnOffsetY, FloorZ] },
+          true,
+        );
+      }
+      Toast(`Compiled "${NewAssetRecord.Name}" (${Tris.toLocaleString()} tris) → placed in GI World & ContentBrowser`);
+    } else {
+      Toast(`Recompiled "${NewAssetRecord.Name}" (${Tris.toLocaleString()} tris) · live world meshes updated`);
+    }
   };
   const HandleDropWorldActor = (Payload, WorldPos) => {
     if (!Payload?.Template) return;
@@ -2238,6 +2411,24 @@ function App() {
             <kbd>Ctrl+A</kbd>
           </button>
           <button
+            className="viewport-construct"
+            aria-label="Component Inspector"
+            title="Open selected world object in Component Inspector (Blueprint Editor)"
+            onClick={() => OpenComponentInspectorForEntity(Selected)}
+          >
+            <Icon Name="editor-cube" Size={15} />
+            <span>Component Inspector</span>
+          </button>
+          <button
+            className="viewport-construct"
+            aria-label="Geometry Compile"
+            title="Open Geometry Compile Asset Importer & 8-Step Compiler"
+            onClick={() => OpenGeometryCompileInspector({ mode: "start" })}
+          >
+            <ActionIcon Name="bake" Size={15} />
+            <span>Geometry Compile</span>
+          </button>
+          <button
             className="viewport-icon-button"
             aria-label="Frame selected"
             title={
@@ -2639,6 +2830,10 @@ function App() {
           OnDropWorldActor={HandleDropWorldActor}
           OnApplyMaterialDrop={HandleApplyMaterialDrop}
           OnApplyColourDrop={HandleApplyColourDrop}
+          OnOpenComponentInspector={OpenComponentInspectorForEntity}
+          OnImportGeometryFile={(File) =>
+            OpenGeometryCompileInspector({ mode: "file", file: File })
+          }
           OnFpsSample={HandleFpsSample}
         />
         {SplitView && (
@@ -2659,6 +2854,10 @@ function App() {
             OnDropWorldActor={HandleDropWorldActor}
             OnApplyMaterialDrop={HandleApplyMaterialDrop}
             OnApplyColourDrop={HandleApplyColourDrop}
+            OnOpenComponentInspector={OpenComponentInspectorForEntity}
+            OnImportGeometryFile={(File) =>
+              OpenGeometryCompileInspector({ mode: "file", file: File })
+            }
             View={2}
           />
         )}
@@ -2733,6 +2932,39 @@ function App() {
             <ActionIcon Name="construct" Size={16} />
             <span>Create Level</span>
           </button>
+          <div style={{ display: "inline-flex", gap: 4, marginLeft: 4 }}>
+            {[
+              ["level-frontier-lobby", "Lobby"],
+              ["level-training-area", "Training Area"],
+            ].map(([LvlId, Label]) => {
+              const Exists = LevelsState.Levels.some((L) => L.Id === LvlId);
+              if (!Exists) return null;
+              const IsCurrent = LevelsState.ActiveLevelId === LvlId;
+              return (
+                <button
+                  key={LvlId}
+                  type="button"
+                  onClick={() => SwitchToLevel(LvlId)}
+                  style={{
+                    padding: "3px 9px",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    border: IsCurrent
+                      ? "1px solid rgba(246, 198, 107, 0.55)"
+                      : "1px solid rgba(255, 255, 255, 0.12)",
+                    background: IsCurrent
+                      ? "rgba(246, 198, 107, 0.18)"
+                      : "rgba(255, 255, 255, 0.04)",
+                    color: IsCurrent ? "#f6c66b" : "#cbd5e1",
+                  }}
+                >
+                  {Label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="viewport-footer-telemetry">
           CONSTRUCTED{" "}
@@ -2778,6 +3010,68 @@ function App() {
     ) : Tab === "Inspector" ? (
       <>
         <div className="inspector-scroll" key={Subject.Id}>
+          {Subject.Panel !== "group" && Subject.Panel !== "post" && Subject.Panel !== "sun" && (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+                padding: "8px 12px 4px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => OpenComponentInspectorForEntity(Subject.Id)}
+                style={{
+                  flex: "1 1 auto",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  padding: "6px 10px",
+                  borderRadius: 7,
+                  border: "1px solid rgba(246, 198, 107, 0.45)",
+                  background: "rgba(246, 198, 107, 0.13)",
+                  color: "#f6c66b",
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <Icon Name="editor-cube" Size={14} />
+                <span>
+                  {Subject.BlueprintKind === "BP_ControlVehicle" || Values[Subject.Id]?.BlueprintKind === "BP_ControlVehicle"
+                    ? "Open BP_ControlVehicle in Component Inspector"
+                    : "Inspect Blueprint in Component Inspector"}
+                </span>
+              </button>
+              {(Subject.CompiledAssetId || Values[Subject.Id]?.CompiledAssetId) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    OpenGeometryCompileInspector({
+                      mode: "asset",
+                      compiledAssetId: Subject.CompiledAssetId || Values[Subject.Id]?.CompiledAssetId,
+                      recompile: true,
+                    })
+                  }
+                  style={{
+                    flex: "1 1 auto",
+                    padding: "6px 10px",
+                    borderRadius: 7,
+                    border: "1px solid rgba(52, 211, 153, 0.40)",
+                    background: "rgba(52, 211, 153, 0.12)",
+                    color: "#6ee7b7",
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Recompile in Geometry Compile
+                </button>
+              )}
+            </div>
+          )}
           {Subject.Panel === "group" ? (
             <FolderInspector
               Subject={Subject}
@@ -3105,6 +3399,24 @@ function App() {
           OnColourDragChange={SetDraggingColour}
           SpawnForce={SpawnForceFromAsset}
           SpawnModel={SpawnModelFromAsset}
+          OnOpenGeometryCompile={OpenGeometryCompileInspector}
+          OnInspectModelAsset={(ModelAsset) => {
+            if (ModelAsset?.CompiledAssetId) {
+              const Compiled = GetCompiledMeshAsset(ModelAsset.CompiledAssetId);
+              SetInspectPayload({
+                entity: {
+                  Id: `asset-${ModelAsset.CompiledAssetId}`,
+                  Name: ModelAsset.Name,
+                  CompiledAssetId: ModelAsset.CompiledAssetId,
+                },
+                compiledAsset: Compiled,
+                nonce: Date.now(),
+              });
+              SetActiveStudio("component-viewer");
+            } else {
+              OpenComponentInspectorForEntity("hero-vehicle");
+            }
+          }}
           Appearance={Settings}
         />
         {Wide && (
@@ -3138,6 +3450,22 @@ function App() {
                   }}
                 >
                   Project Browser
+                </button>
+                <button
+                  onClick={() => {
+                    ShowMenu(null);
+                    OpenComponentInspectorForEntity(Selected);
+                  }}
+                >
+                  Component Inspector (Blueprint)
+                </button>
+                <button
+                  onClick={() => {
+                    ShowMenu(null);
+                    OpenGeometryCompileInspector({ mode: "start" });
+                  }}
+                >
+                  Geometry Compile (Import 3D…)
                 </button>
                 <button
                   onClick={() => {
@@ -3281,6 +3609,14 @@ function App() {
                   }}
                 >
                   {Hidden[Selected] ? "Show" : "Hide"}
+                </button>
+                <button
+                  onClick={() => {
+                    ShowMenu(null);
+                    OpenComponentInspectorForEntity(Selected);
+                  }}
+                >
+                  Open in Component Inspector (Blueprint)
                 </button>
                 <button
                   onClick={() => {
@@ -3434,10 +3770,19 @@ function App() {
         ActiveLevelName={
           LevelsState.Levels.find((L) => L.Id === LevelsState.ActiveLevelId)?.Name ||
           Name ||
-          "Cornell-Studio Gallery"
+          "Frontier Lobby"
         }
         OnCancel={() => SetCreateLevelOpen(false)}
         OnCreate={HandleCreateLevel}
+      />
+      <StudioWorkspacesModal
+        ActiveStudio={ActiveStudio}
+        InspectPayload={InspectPayload}
+        CompilePayload={CompilePayload}
+        CompiledAssets={ListCompiledMeshAssets()}
+        OnCloseStudio={() => SetActiveStudio(null)}
+        OnComponentSync={HandleComponentSync}
+        OnCompiledAssetReady={HandleCompiledAssetReady}
       />
       {Message && (
         <div className="toast" role="status">

@@ -11,10 +11,29 @@ EDITOR_DIR = Path(__file__).resolve().parent
 
 
 class FrontierWorldMirrorHandler(SimpleHTTPRequestHandler):
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        ".js": "application/javascript; charset=utf-8",
+        ".mjs": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".facet": "application/octet-stream",
+        ".glb": "model/gltf-binary",
+        ".gltf": "model/gltf+json",
+    }
+
     def translate_path(self, path):
         clean = path.split("?", 1)[0].split("#", 1)[0]
         rel = clean.lstrip("/")
-        if clean.startswith("/ProjectBrowser") or clean.startswith("/FrontierWorldMirror"):
+        if clean.startswith((
+            "/ProjectBrowser",
+            "/FrontierWorldMirror",
+            "/ComponentViewer",
+            "/GeometryCompiler",
+            "/Shared",
+            "/FractureEditor",
+            "/TextureStudio",
+        )):
             return str(REPO_ROOT / "Experimental" / rel)
         return super().translate_path(path)
 

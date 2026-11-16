@@ -474,6 +474,35 @@ export function BuildActorPayloadFromConstructItem(Item) {
 export function BuildActorPayloadFromAsset(Asset) {
   if (!Asset) return null;
   if (Asset.Kind === "Models") {
+    if (Asset.CompiledAssetId) {
+      const BoundsSize = Array.isArray(Asset.CompiledBoundsSize) ? Asset.CompiledBoundsSize : [1.2, 1.2, 1.2];
+      return {
+        ActorKind: "geometry",
+        Label: Asset.Name || "Compiled Mesh",
+        HalfHeightZ: 0.0,
+        Template: {
+          Id: `compiled-${Asset.CompiledAssetId}`,
+          Name: Asset.Name || "Compiled Mesh",
+          PrimitiveShape: "box",
+          Panel: "geometry",
+          Icon: "editor-cube",
+          Parent: "scene",
+          Preview: true,
+          CompiledAssetId: Asset.CompiledAssetId,
+          Description: Asset.Detail || "Geometry-Compiled 3D mesh asset",
+        },
+        Properties: {
+          Rotation: [0, 0, 0],
+          Scale: [1, 1, 1],
+          CompiledAssetId: Asset.CompiledAssetId,
+          MeshProxy: true,
+          "Cast shadows": true,
+          GI: true,
+          Material: BuildNeutralPrimitiveMaterial("#cbd2dc", 0.42, 0.12),
+          CompiledBoundsSize: BoundsSize,
+        },
+      };
+    }
     const SpecMatch = WORLD_PLACEABLE_MODELS.find(
       (M) =>
         M.Id === Asset.Id ||
