@@ -1830,6 +1830,7 @@ export default function GtxWorldViewport({
   // Hard timeout: if the probe never reports (lost device, stalled readback), assume the native pass is fine
   // rather than leaving the overlay canvas mounted forever.
   const MeshProbeTimeoutRef = useRef(0);
+  const MeshOverlayBrokenRef = useRef(false);
   const SetMeshProbeFragmentsOnce = useCallback((Value) => {
     SetMeshProbeFragments((Prev) => (Prev === null ? Value : Prev));
   }, []);
@@ -1841,7 +1842,9 @@ export default function GtxWorldViewport({
       }
       return undefined;
     }
-    MeshProbeTimeoutRef.current = window.setTimeout(() => SetMeshProbeFragmentsOnce(1), 6000);
+    // No answer in 6s (lost device / stalled readback): assume the native pass drew nothing so the
+    // overlay safety net renders the vehicle rather than leaving the viewport empty.
+    MeshProbeTimeoutRef.current = window.setTimeout(() => SetMeshProbeFragmentsOnce(0), 6000);
     return () => {
       if (MeshProbeTimeoutRef.current) {
         clearTimeout(MeshProbeTimeoutRef.current);
@@ -2264,6 +2267,8 @@ export default function GtxWorldViewport({
     } catch (Err) {
       console.warn("WorldMeshOverlay init skipped:", Err);
     }
+    // The safety-net overlay only paints inside the draw loop; request a frame so it appears immediately.
+    if (RenderBackend === "webgpu") RequestRedrawRef.current?.(false);
     return () => {
       MeshOverlayRef.current = null;
       Overlay?.Dispose();
@@ -2476,7 +2481,11 @@ export default function GtxWorldViewport({
 
       // Safety net: only when the GPU probe proved Pass 2.5 rasterized nothing, drive the WebGL2/software
       // overlay so BP_ControlVehicle and compiled assets stay visible instead of only in GI shadows.
-      if (MeshOverlayRef.current && MeshProbeFragmentsRef.current === 0) {
+      if (
+        MeshOverlayRef.current &&
+        MeshProbeFragmentsRef.current === 0 &&
+        !MeshOverlayBrokenRef.current
+      ) {
         try {
           MeshOverlayRef.current.Render(
             ActiveScene,
@@ -2488,7 +2497,9 @@ export default function GtxWorldViewport({
             Highlighted,
           );
         } catch (Err) {
-          SetMeshProbeFragmentsOnce(-1); // overlay itself failed -> stop retrying every frame
+          // Overlay itself cannot draw here: stop retrying every frame instead of spamming the console.
+          MeshOverlayBrokenRef.current = true;
+          console.warn("WorldMeshOverlay render skipped:", Err);
         }
       }
 
