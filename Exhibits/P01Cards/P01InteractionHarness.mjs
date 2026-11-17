@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { JSDOM } from "/tmp/smoke/node_modules/jsdom/lib/api.js";
 
-const html = readFileSync("Experimental/ComponentViewer/Prototypes/P01-InfographicCards.html", "utf8");
+const html = readFileSync("Experimental/Prototypes/P01-InfographicCards.html", "utf8");
 const results = [];
 function check(name, fn) {
   try {

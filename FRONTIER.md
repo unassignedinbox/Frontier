@@ -23,7 +23,7 @@ MUST follow this file. Repo live branch for viewer work: `arena/a99371c6-frontie
 - Asset Previewer: `python3 Experimental/ComponentViewer/ServeAssetViewer.py 8096`
   → `/` redirects to `/Experimental/ComponentViewer/AssetViewer.html`
 - Prototype cards: same servers, e.g.
-  `/Experimental/ComponentViewer/Prototypes/P01-InfographicCards.html` on port 8095.
+  `/Experimental/Prototypes/P01-InfographicCards.html` on port 8095.
 - Bind `0.0.0.0`, never `127.0.0.1` (Arena live preview).
 
 ## 3. Naming law (SKILL-Naming is authoritative)
@@ -43,14 +43,13 @@ MUST follow this file. Repo live branch for viewer work: `arena/a99371c6-frontie
   `Cache` BANNED → `Atlas`/`Store`/`Table` (§1) · controls use authorized nouns
   (`ArcPlot, PolarDial, StrataPlot, CurvePlot, SpectrumBar, DiscRow, TimeSeriesPlot`).
 - All user-approved replacement names are recorded in `Documentation/Tracker.md`.
-  New names may appear ONLY inside `Prototypes/Pxx-*` sandbox pages until the user
+  New names may appear ONLY inside `Experimental/Prototypes/Pxx-*` sandbox pages until the user
   approves them; only then wire ONE approved prototype into the real viewers.
 - Conflicts between user taste and SKILL-Naming are REPORTED (table + options), never
   silently resolved.
 
 ## 4. Prototype workflow (one at a time, approval-gated)
-1. Each redesign is ONE standalone page in `Experimental/ComponentViewer/Prototypes/
-   Pxx-<Name>.html` (self-contained HTML+CSS+JS). Number sequentially.
+1. Each redesign is ONE standalone page in `Experimental/Prototypes/Pxx-<Name>.html` (self-contained HTML+CSS+JS). Number sequentially.
 2. Verify before presenting: JS syntax check + serve check + interaction evidence
    harness under `Exhibits/Pxx*/` (generating code + report together, per CLAUDE.md).
    Rendered-pixel capture is BLOCKED in this sandbox (no headless browser) — mark it
