@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<!--
+==============================================================================================================================================
+                                                                  INDEX.HTML
+==============================================================================================================================================
+ 🧩 Distance-field GI exhibit & dedicated in-world Road Studio workspace in the Frontier Editor.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontier · Studio Lobby &amp; Proving Grounds</title>
+<link rel="stylesheet" href="Style/FrontierEditor.css">
+<link rel="stylesheet" href="Style/InspectorReference.css">
+</head>
+<body>
+    <header id="workspace-bar" aria-label="Frontier Workspaces">
+        <div class="workspace-brand">
+            <span class="workspace-brand-mark">frontier<span class="workspace-brand-dot">.</span></span>
+        </div>
+        <nav class="workspace-tabs" role="tablist">
+            <button type="button" class="workspace-tab" data-workspace-tab="lobby" role="tab" aria-selected="false">
+                <span class="workspace-tab-dot lobby"></span>
+                <span class="workspace-tab-title">Lobby</span>
+                <span class="workspace-tab-sub">10 Venues · HMI · Cinematic</span>
+            </button>
+            <button type="button" class="workspace-tab active" data-workspace-tab="proving" role="tab" aria-selected="true">
+                <span class="workspace-tab-dot"></span>
+                <span class="workspace-tab-title">Drive</span>
+                <span class="workspace-tab-sub">3D Driving · GI · Physics</span>
+            </button>
+        </nav>
+        <div class="workspace-bar-fill"></div>
+        <div class="workspace-level-picker">
+            <label for="workspace-level-select" class="workspace-level-label">Level</label>
+            <select id="workspace-level-select" class="workspace-level-select" aria-label="Select driving level">
+                <option value="demolish">Demolish Run · Fracture City</option>
+                <option value="foundry">Assembly Line · Conveyor</option>
+                <option value="inversion">Inversion Arena</option>
+                <option value="city">City District</option>
+                <option value="dday">D-Day · Race to The Wall</option>
+                <option value="candy">Candy Village · Sugar Siege</option>
+                <option value="proving">Proving Grounds</option>
+            </select>
+        </div>
+    </header>
+
+    <div id="shell">
+        <aside id="outliner" class="column editor-column">
+            <div class="column-tabs">
+                <div class="column-tab">Outliner <button data-overlay="Panel" title="Hide the editor columns (P)">×</button></div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="outliner-body" id="outliner-body"></div>
+        </aside>
+
+        <aside id="studio-outliner" class="column editor-column studio-only">
+            <div class="column-tabs">
+                <div class="column-tab">World Network</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="studio-hierarchy" id="studio-hierarchy"></div>
+            <div class="studio-plan-dock">
+                <div class="studio-plan-header">
+                    <span>2D World Plan</span>
+                    <div class="studio-plan-actions">
+                        <button type="button" id="studio-plan-fit" title="Fit plan to network">Fit</button>
+                    </div>
+                </div>
+                <canvas id="studio-plan-canvas" width="272" height="224"></canvas>
+            </div>
+        </aside>
+
+        <section id="viewport-column" class="column">
+            <div class="column-tabs viewport-tabs">
+                <div class="column-tab">Viewport</div>
+                <div class="scene-pill" id="viewport-mode-pill">Proving Grounds</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="viewport-bar" id="viewport-bar"></div>
+            <div class="viewport-bar studio-toolbar studio-only" id="studio-toolbar"></div>
+            <div id="stage">
+                <canvas id="viewport"></canvas>
+                <canvas id="capture" class="capture"></canvas>
+                <div id="cinematic-fade" aria-hidden="true"></div>
+                <div id="lobby-cinema-bar" class="hidden" aria-label="Cinematic Director">
+                    <span class="lobby-cinema-dot"></span>
+                    <span id="lobby-cinema-title" class="lobby-cinema-title">01 · Hero Low Dolly</span>
+                    <button type="button" id="lobby-cinema-next" class="lobby-cinema-next" title="Next cinematic shot (N)">Next Shot →</button>
+                </div>
+                <div id="lobby-hud" class="hidden" aria-label="Showroom Lobby Controls">
+                    <div class="lobby-hud-row">
+                        <div class="lobby-roster-group">
+                            <button type="button" id="lobby-players-pill" class="lobby-roster-badge" title="View connected Lobby players inside the Cockpit HMI">
+                                <span class="lobby-live-dot"></span>
+                                <span id="lobby-roster-count">4 / 5 Online</span>
+                            </button>
+                            <div class="lobby-roster-actions">
+                                <button type="button" id="lobby-stage-btn" class="lobby-mini-btn" title="Raise or lower the hero hydraulic showcase stage">Stage ↑</button>
+                                <button type="button" id="lobby-audio-btn" class="lobby-mini-btn lobby-audio-btn" aria-pressed="true" title="Toggle hydraulic stage audio">Sound</button>
+                            </div>
+                        </div>
+                        <div class="lobby-cam-group" role="group" aria-label="Lobby camera and HMI">
+                            <button type="button" class="lobby-cam-btn active" data-lobby-cam="Orbit" title="Orbit showroom showcase (Esc)">Orbit</button>
+                            <button type="button" class="lobby-cam-btn" data-lobby-cam="Cockpit" title="Sit in the driver seat (C)">Cockpit</button>
+                            <button type="button" class="lobby-cam-btn" data-lobby-cam="HMI" title="Open the interactive in-car HMI tablet (M or click the car)">HMI</button>
+                            <button type="button" class="lobby-cam-btn" data-lobby-cam="Cinematic" title="Toggle continuous 8-shot director camera (V · N next shot)">Cinematic</button>
+                        </div>
+                    </div>
+                    <div class="lobby-hud-row lobby-hud-venues">
+                        <span class="lobby-section-label">Venue</span>
+                        <div id="lobby-venue-pills" class="lobby-venue-pills" role="group" aria-label="Choose Lobby Venue"></div>
+                    </div>
+                    <div class="lobby-hud-row lobby-hud-levels">
+                        <span class="lobby-section-label">Circuit</span>
+                        <div id="lobby-level-pills" class="lobby-level-pills"></div>
+                        <button type="button" id="lobby-launch-btn" class="lobby-launch-btn">Drive Inversion Arena →</button>
+                    </div>
+                </div>
+                <canvas id="road-studio-gizmo" class="studio-only"></canvas>
+                <div id="studio-viewport-hint" class="studio-only">
+                    Left-click: Draw / Drag nodes &amp; gold tangent handles (Shift = Height Z) · Right-drag + WASD / Q·E: Fly camera · Wheel: Dolly
+                </div>
+                <div id="hud"><button class="overlay-close" data-overlay="Hud" title="Hide the readout (H)">×</button><pre id="hud-text">Starting…</pre></div>
+                <div id="inset-frame" class="hidden">
+                    <button class="overlay-close" data-overlay="Inset" title="Hide the distance slice (J)">×</button>
+                    <div id="inset-legend">GDF slice · blue inside · amber outside · magenta = rewritten by a moving occupant · teal = scrolled · green = cascade 0</div>
+                </div>
+                <div id="overlay-dock" class="hidden"></div>
+                <div id="overlay-notice" class="hidden"></div>
+                <div id="event-notice" class="hidden"></div>
+                <div id="bring-up">
+                    <h2>Frontier · Proving Grounds</h2>
+                    <div class="bring-up-caption">Starting</div>
+                    <div class="bring-up-bar"><div></div></div>
+                </div>
+                <div id="failure" class="hidden"></div>
+            </div>
+        </section>
+
+        <aside id="inspector" class="column editor-column">
+            <div class="column-tabs">
+                <div class="column-tab">Inspector <button data-overlay="Panel" title="Hide the editor columns (P)">×</button></div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="inspector-top" id="inspector-top"></div>
+            <div class="inspector-content" id="inspector-content"></div>
+        </aside>
+
+        <aside id="studio-inspector" class="column editor-column studio-only">
+            <div class="column-tabs">
+                <div class="column-tab">Road Studio Inspector</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="studio-inspector-tabs" id="studio-inspector-tabs"></div>
+            <div class="inspector-content studio-inspector-body" id="studio-inspector-body"></div>
+        </aside>
+
+        <footer id="status"></footer>
+    </div>
+
+    <script type="module" src="Source/IlluminationHost.js?v=road-studio-world-3"></script>
+</body>
+</html>

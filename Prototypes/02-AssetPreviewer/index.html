@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpecimenBay · Frontier Asset Previewer (Prototype 02)</title>
+  <link rel="stylesheet" href="../../Experimental/Shared/Studio/Studio.css" />
+  <link rel="stylesheet" href="./SpecimenBay.css" />
+</head>
+<body>
+  <div id="App" class="bay-shell">
+    <!-- Top Studio Header: Brand + Horizontal Aspect Strip + Import -->
+    <header class="bay-topbar">
+      <div class="topbar-left">
+        <div class="bay-brand">
+          <span class="bay-brand-mark" aria-hidden="true"></span>
+          <div class="bay-brand-copy">
+            <strong>SpecimenBay</strong>
+            <span id="TopSelectionMeta">Loading assets…</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Horizontal Studio Aspect Strip (keeps Left Outliner 100% dedicated to Objects) -->
+      <nav class="aspect-strip" id="AspectStrip" aria-label="Studio aspects">
+        <button class="aspect-pill on" data-aspect="overview"><i class="adot ready"></i>Overview</button>
+        <button class="aspect-pill" data-aspect="collision"><i class="adot ready"></i>Collision</button>
+        <button class="aspect-pill" data-aspect="sdf"><i class="adot"></i>Distance Field</button>
+        <button class="aspect-pill" data-aspect="uv"><i class="adot"></i>UV Atlas</button>
+        <button class="aspect-pill" data-aspect="lod"><i class="adot"></i>Surface Strata</button>
+        <button class="aspect-pill" data-aspect="bounds"><i class="adot ready"></i>Form &amp; Bounds</button>
+        <button class="aspect-pill" data-aspect="portrait"><i class="adot ready"></i>Portrait</button>
+        <button class="aspect-pill" data-aspect="finish"><i class="adot ready"></i>Surface Finish</button>
+        <button class="aspect-pill" data-aspect="fracture"><i class="adot blank"></i>Fracture</button>
+      </nav>
+
+      <div class="topbar-right">
+        <button id="ImportBtn" class="tb-btn accent" title="Import .obj, .glb, .gltf, or .facet as 1 object">+ Import</button>
+        <input id="FileInput" type="file" accept=".obj,.glb,.gltf,.facet" multiple hidden />
+        <span class="bay-badge">P02 · SPECIMENBAY</span>
+      </div>
+    </header>
+
+    <!-- Main 3-Column Studio Workbench: Redesigned Outliner | Panoramic 3D Stage | Dynamic 1-or-Many Inspector -->
+    <div class="bay-workspace">
+      <!-- LEFT: Redesigned Clean Frontier Outliner (1 Imported Asset = 1 Object Row; Click = 1, ⌘/⇧/Check = Many) -->
+      <aside class="panel bay-outliner" id="OutlinerPanel" aria-label="Object Outliner">
+        <div class="outliner-head">
+          <div class="outliner-title-group">
+            <h2>Outliner</h2>
+            <span class="sel-count-pill" id="OutlinerSelBadge">1 selected</span>
+          </div>
+          <div class="outliner-head-actions">
+            <button id="AddSpecimenBtn" class="outliner-icon-btn" title="Add Frontier specimen object">+</button>
+          </div>
+        </div>
+
+        <div class="outliner-controls">
+          <div class="outliner-search-wrap">
+            <input id="OutlinerSearch" type="search" placeholder="Filter objects…" autocomplete="off" />
+          </div>
+          <div class="outliner-quick-row">
+            <button id="SelectAllBtn" class="oq-btn" title="Select all objects">All</button>
+            <button id="SoloFirstBtn" class="oq-btn" title="Select only primary object">Solo 1</button>
+            <button id="ShowAllBtn" class="oq-btn" title="Unhide all objects">Unhide</button>
+            <span class="oq-hint">⇧ / ⌘ multi</span>
+          </div>
+        </div>
+
+        <!-- Clean Add Specimen Popover (when user clicks +) -->
+        <div class="add-popover hidden" id="AddPopover">
+          <div class="add-pop-head">
+            <span>Add Specimen Object</span>
+            <button id="AddPopoverClose" class="oq-btn">✕</button>
+          </div>
+          <div class="add-pop-list" id="AddPopoverList"></div>
+        </div>
+
+        <!-- Flat, Crisp Object List: 1 imported asset = 1 item -->
+        <div class="outliner-list" id="OutlinerList" role="listbox" aria-multiselectable="true"></div>
+
+        <div class="outliner-foot">
+          <span id="OutlinerFootSummary">5 objects</span>
+          <div class="outliner-foot-btns">
+            <button id="DupSelectedBtn" class="oq-btn" title="Duplicate selected object(s)">Dup</button>
+            <button id="DelSelectedBtn" class="oq-btn danger" title="Remove selected object(s)">Del</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER: Panoramic 3D Viewport Stage -->
+      <main class="bay-stage-column">
+        <!-- Component Viewer Floating Pill Bar -->
+        <div class="stage-bar-wrap">
+          <div class="bar stage-bar" id="StageBar">
+            <div class="seg" id="ChannelSeg">
+              <button class="on" data-ch="lit">Shaded</button>
+              <button data-ch="unlit">Albedo</button>
+              <button data-ch="density">Density</button>
+              <button data-ch="normals">Normals</button>
+              <button data-ch="uv">UV Grid</button>
+              <button data-ch="lod">Strata</button>
+              <button data-ch="bounds">Bounds</button>
+            </div>
+            <div class="sep"></div>
+            <div class="seg" id="ViewSeg">
+              <button class="on" data-view="persp">Persp</button>
+              <button data-view="front">Front</button>
+              <button data-view="side">Side</button>
+              <button data-view="top">Top</button>
+              <button data-view="iso">Iso</button>
+            </div>
+            <div class="sep"></div>
+            <button class="chip" id="WireChip">Wire</button>
+            <button class="chip on" id="GridChip">Grid</button>
+            <button class="chip" id="PivotChip">Pivot</button>
+            <button class="chip" id="SpinChip">Spin</button>
+            <button class="chip" id="FitChip">Fit</button>
+          </div>
+
+          <!-- Context Debug Strip (Collision / SDF / UV / Strata) -->
+          <div class="debug-strip hidden" id="DebugStrip"></div>
+        </div>
+
+        <!-- 3D Viewport Well -->
+        <div class="viewport-well" id="ViewportWell">
+          <canvas class="stage-canvas" id="StageCanvas"></canvas>
+
+          <!-- Live 3D Sparse SDF Raymarch Overlay -->
+          <div class="sdf-overlay hidden" id="SdfOverlay">
+            <canvas id="SdfGpuCanvas"></canvas>
+            <canvas id="SdfHudCanvas"></canvas>
+          </div>
+
+          <!-- Clean Blank Overlay when Fracture is active -->
+          <div class="blank-stage-overlay hidden" id="BlankStageOverlay">
+            <div class="blank-stage-card">
+              <span class="blank-eyebrow">STRESS FRACTURE</span>
+              <strong>Blank Workspace</strong>
+              <p>Intentionally left blank — reserved for future fracture authoring.</p>
+            </div>
+          </div>
+
+          <!-- Multi-selection Viewport Badge (shows cleanly when >1 objects are staged) -->
+          <div class="multi-stage-pill hidden" id="MultiStagePill">
+            <span class="dot"></span>
+            <span id="MultiStageText">3 Objects Staged</span>
+          </div>
+
+          <!-- Drag & Drop Import Overlay -->
+          <div class="drop-overlay hidden" id="DropOverlay">
+            <div class="drop-card">
+              <strong>Drop 3D Asset to Import</strong>
+              <span>Each file (.obj · .glb · .gltf · .facet) imports as 1 object in Outliner</span>
+            </div>
+          </div>
+
+          <!-- Toast Banner -->
+          <div class="toast hidden" id="Toast"></div>
+        </div>
+      </main>
+
+      <!-- RIGHT: Dynamic 1-or-Many Inspector -->
+      <aside class="panel bay-inspector" id="InspectorPanel">
+        <div class="bay-insp-head">
+          <h2 id="InspectorHeading">Overview</h2>
+          <span class="insp-scope-pill" id="InspectorScopeBadge">1 OBJECT</span>
+        </div>
+        <div class="panel-body bay-insp-body" id="InspectorBody"></div>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="./SpecimenBay.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# Scratch & temporary outputs
+_Scratch/
+_ClaudeScratch/
+*.log
+
+# Node & tool caches
+node_modules/
+.cache/
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db

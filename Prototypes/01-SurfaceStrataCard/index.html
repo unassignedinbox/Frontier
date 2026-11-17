@@ -1,0 +1,1731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype 01 · Surface Strata Card · Frontier UI Lab</title>
+<style>
+  /* Local DM Sans font faces shared with Frontier Studio (zero external CDN dependency) */
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+    src: url('/Experimental/Shared/Studio/Fonts/dm-sans-latin-300-normal.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    src: url('/Experimental/Shared/Studio/Fonts/dm-sans-latin-400-normal.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+    src: url('/Experimental/Shared/Studio/Fonts/dm-sans-latin-500-normal.woff2') format('woff2');
+  }
+
+  :root {
+    --bg-stage: #060709;
+    --card-bg: #111215;
+    --bento-bg: #17191d;
+    --bento-deep: #0c0d10;
+    --hairline: rgba(255, 255, 255, 0.075);
+    --hairline-strong: rgba(255, 255, 255, 0.14);
+    --ink-1: #f2f4f7;
+    --ink-2: #8c909a;
+    --ink-3: #575b65;
+    --lime: #d8f35a;
+    --lime-dim: rgba(216, 243, 90, 0.14);
+    --mint: #6ee79d;
+    --mint-dim: rgba(110, 231, 157, 0.16);
+    --amber: #f5b841;
+    --amber-dim: rgba(245, 184, 65, 0.16);
+    --coral: #ff7373;
+    --coral-dim: rgba(255, 115, 115, 0.16);
+    --card-w: 356px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg-stage);
+    color: var(--ink-1);
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 20px 44px;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(216, 243, 90, 0.045), transparent 44%),
+      radial-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+    background-size: 100% 100%, 22px 22px;
+  }
+
+  /* ============================================================ SANDBOX BAR (outside card) */
+  .sandbox-bar {
+    width: 100%;
+    max-width: 920px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    margin-bottom: 24px;
+    border-radius: 999px;
+    background: rgba(17, 18, 21, 0.85);
+    border: 1px solid var(--hairline);
+    backdrop-filter: blur(12px);
+  }
+  .sandbox-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--ink-2);
+    padding-left: 4px;
+  }
+  .sandbox-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--hairline);
+    color: var(--ink-1);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .sandbox-badge i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 8px var(--lime);
+  }
+  .sandbox-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .pill-group {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border-radius: 999px;
+    background: #0b0c0e;
+    border: 1px solid var(--hairline);
+    gap: 2px;
+  }
+  .pill-group button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: 400 11px/1 'DM Sans', sans-serif;
+    padding: 6px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .pill-group button:hover { color: var(--ink-1); }
+  .pill-group button.active {
+    background: #23262c;
+    color: var(--ink-1);
+  }
+
+  /* ============================================================ STAGE LAYOUT */
+  .stage-shell {
+    width: 100%;
+    max-width: 920px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 28px;
+  }
+
+  /* ============================================================ THE CARD (Standalone Deliverable) */
+  .strata-card {
+    width: var(--card-w);
+    max-width: 100%;
+    border-radius: 24px;
+    padding: 16px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.032) 0%, rgba(255, 255, 255, 0) 24%),
+      var(--card-bg);
+    border: 1px solid var(--hairline);
+    box-shadow:
+      0 28px 70px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    position: relative;
+    transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Header */
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 2px 4px;
+  }
+  .card-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-orb {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mint);
+    box-shadow: 0 0 10px rgba(110, 231, 157, 0.65);
+    flex-shrink: 0;
+    transition: background 180ms ease, box-shadow 180ms ease;
+  }
+  .strata-card.is-stale .status-orb {
+    background: var(--amber);
+    box-shadow: 0 0 10px rgba(245, 184, 65, 0.7);
+  }
+  .card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    color: var(--ink-1);
+  }
+  .card-sub {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--ink-2);
+    padding-left: 16px;
+  }
+  .card-sub .dot-sep { color: var(--ink-3); }
+  .expand-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--hairline);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--ink-2);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 150ms ease;
+  }
+  .expand-btn:hover {
+    color: var(--ink-1);
+    border-color: var(--hairline-strong);
+    background: rgba(255, 255, 255, 0.07);
+    transform: translate(1px, -1px);
+  }
+
+  /* Hero KPI + Concentric Fidelity Bento Row */
+  .hero-bento {
+    display: grid;
+    grid-template-columns: minmax(0, 1.48fr) minmax(0, 1fr);
+    gap: 9px;
+  }
+  .bento-tile {
+    border-radius: 17px;
+    background: var(--bento-bg);
+    border: 1px solid var(--hairline);
+    padding: 13px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .tile-kicker {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-bottom: 6px;
+  }
+  .hero-num {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    font-size: 31px;
+    font-weight: 300;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+    color: var(--ink-1);
+  }
+  .hero-num .dim {
+    color: var(--ink-3);
+    font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .hero-num .unit {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--ink-2);
+    margin-left: 3px;
+    letter-spacing: 0.01em;
+  }
+  .hero-foot {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .delta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--mint-dim);
+    color: var(--mint);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+  .delta-pill.neutral {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--ink-2);
+  }
+  .cluster-chip {
+    font-size: 11px;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  /* Concentric Radial Ring Tile (Reference: 13ed + bef5) */
+  .ring-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .ring-wrap {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .ring-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ring-metric strong {
+    font-size: 21px;
+    font-weight: 300;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    color: var(--ink-1);
+  }
+  .ring-metric small {
+    font-size: 10px;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .concentric-svg {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+  }
+
+  /* Interactive 3D Facet Cluster Stage */
+  .facet-stage {
+    border-radius: 17px;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.03), transparent 68%),
+      var(--bento-deep);
+    border: 1px solid var(--hairline);
+    position: relative;
+    height: 146px;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+  }
+  .facet-stage:active { cursor: grabbing; }
+  .facet-stage canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .stage-hud-top {
+    position: absolute;
+    top: 9px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  .hud-tag {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(14, 15, 18, 0.76);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(8px);
+    font-size: 10px;
+    color: var(--ink-2);
+  }
+  .hud-tag b {
+    color: var(--ink-1);
+    font-weight: 500;
+  }
+  .view-toggle {
+    pointer-events: auto;
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(14, 15, 18, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(8px);
+  }
+  .view-toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: 400 9.5px/1 'DM Sans', sans-serif;
+    padding: 4px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 140ms ease;
+  }
+  .view-toggle button.active {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--ink-1);
+  }
+  .stage-hud-bottom {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9.5px;
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+
+  /* Interactive Stratum Waterfall Bars (Reference: 14d2 hatched vs solid comparison) */
+  .waterfall-tile {
+    padding: 12px 13px 11px;
+  }
+  .waterfall-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .waterfall-head span {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .waterfall-head em {
+    font-style: normal;
+    font-size: 10px;
+    color: var(--ink-3);
+  }
+  .waterfall-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    align-items: end;
+    user-select: none;
+    touch-action: none;
+  }
+  .stratum-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+  }
+  .stratum-val {
+    font-size: 10px;
+    color: var(--ink-3);
+    transition: color 150ms ease;
+  }
+  .stratum-col.active .stratum-val {
+    color: var(--lime);
+    font-weight: 500;
+  }
+  .stratum-col:hover .stratum-val {
+    color: var(--ink-1);
+  }
+  .bar-track {
+    width: 100%;
+    height: 66px;
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    /* Diagonal hatched source baseline (Reference: 14d2fdb2) */
+    background-color: #101114;
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.05) 0px,
+      rgba(255, 255, 255, 0.05) 3px,
+      transparent 3px,
+      transparent 8px
+    );
+    display: flex;
+    align-items: flex-end;
+    padding: 3px;
+    transition: border-color 150ms ease, transform 150ms ease;
+  }
+  .stratum-col:hover .bar-track {
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+  .stratum-col.active .bar-track {
+    border-color: rgba(216, 243, 90, 0.45);
+    box-shadow: 0 0 0 1px rgba(216, 243, 90, 0.15);
+  }
+  .bar-fill {
+    width: 100%;
+    border-radius: 7px;
+    background: linear-gradient(180deg, #3c404a 0%, #262930 100%);
+    transition: height 240ms cubic-bezier(0.22, 1, 0.36, 1), background 180ms ease, box-shadow 180ms ease;
+    position: relative;
+    min-height: 7px;
+  }
+  .stratum-col.active .bar-fill {
+    background: linear-gradient(180deg, #e5fb74 0%, #c8e547 100%);
+    box-shadow: 0 0 18px rgba(216, 243, 90, 0.28);
+  }
+  .stratum-label {
+    font-size: 10.5px;
+    color: var(--ink-3);
+    padding: 2px 7px;
+    border-radius: 999px;
+    transition: all 150ms ease;
+  }
+  .stratum-col.active .stratum-label {
+    background: var(--lime-dim);
+    color: var(--lime);
+    font-weight: 500;
+  }
+
+  /* Interactive Deviation Telemetry Curve + Retention Control (Reference: 0bab2767) */
+  .curve-tile {
+    padding: 12px 13px 10px;
+  }
+  .curve-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .curve-title-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .curve-title-stack span {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .curve-title-stack strong {
+    font-size: 18px;
+    font-weight: 300;
+    letter-spacing: -0.025em;
+    color: var(--ink-1);
+  }
+  .curve-title-stack strong small {
+    font-size: 10.5px;
+    font-weight: 400;
+    color: var(--ink-2);
+    margin-left: 2px;
+  }
+  .retention-pills {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--bento-deep);
+    border: 1px solid var(--hairline);
+    gap: 2px;
+  }
+  .retention-pills button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: 400 10px/1 'DM Sans', sans-serif;
+    padding: 5px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 140ms ease;
+  }
+  .retention-pills button:hover { color: var(--ink-1); }
+  .retention-pills button.active {
+    background: var(--ink-1);
+    color: #0b0c0e;
+    font-weight: 500;
+  }
+  .curve-svg-wrap {
+    position: relative;
+    height: 76px;
+    margin-top: 2px;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .curve-svg-wrap svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+  }
+
+  /* Segmented Calibration Rail + Cluster Dot Matrix (Reference: bef5178e + 13edfbc6) */
+  .rail-tile {
+    padding: 12px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .rail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .rail-top span {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .rail-val {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-1);
+  }
+  .rail-val small {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  .cal-rail {
+    position: relative;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+  }
+  .cal-segments {
+    width: 100%;
+    height: 5px;
+    display: grid;
+    grid-template-columns: 1.1fr 1.6fr 1.3fr;
+    gap: 4px;
+  }
+  .cal-segments i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #272a32;
+    transition: background 150ms ease;
+  }
+  .cal-segments i.seg-fine { background: linear-gradient(90deg, rgba(110, 231, 157, 0.35), rgba(110, 231, 157, 0.65)); }
+  .cal-segments i.seg-mid { background: linear-gradient(90deg, rgba(216, 243, 90, 0.45), rgba(216, 243, 90, 0.85)); }
+  .cal-segments i.seg-coarse { background: linear-gradient(90deg, rgba(245, 184, 65, 0.4), rgba(255, 115, 115, 0.6)); }
+  .cal-puck {
+    position: absolute;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #f6f7f9;
+    border: 3px solid #121316;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 14px rgba(216, 243, 90, 0.45);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: left 90ms ease;
+  }
+  .cal-ticks {
+    position: relative;
+    height: 14px;
+    font-size: 9.5px;
+    color: var(--ink-3);
+    margin-top: -4px;
+  }
+  .cal-ticks button {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: 0 2px;
+    cursor: pointer;
+    transition: color 120ms ease;
+  }
+  .cal-ticks button:first-child { transform: translateX(0); }
+  .cal-ticks button:last-child { transform: translateX(-100%); }
+  .cal-ticks button:hover, .cal-ticks button.active { color: var(--ink-1); }
+
+  /* Dot-Matrix Partition Strip (Reference: 13ed Cognitive State dot strip) */
+  .dot-matrix-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .dot-matrix-row small {
+    font-size: 10px;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .dot-matrix {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .dot-matrix i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #282b33;
+    transition: background 180ms ease, transform 180ms ease;
+  }
+  .dot-matrix i.on {
+    background: var(--lime);
+    box-shadow: 0 0 6px rgba(216, 243, 90, 0.45);
+  }
+  .dot-matrix i.mid {
+    background: #757c8a;
+  }
+
+  /* Material Seam Lock Row */
+  .seam-tile {
+    padding: 11px 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .seam-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .seam-meta span {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .drift-readout {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--mint);
+  }
+  .drift-readout i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .drift-readout.warn { color: var(--amber); }
+  .drift-readout.bad { color: var(--coral); }
+
+  .seam-pills {
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--bento-deep);
+    border: 1px solid var(--hairline);
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .seam-pills button {
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font: 400 11px/1 'DM Sans', sans-serif;
+    padding: 6px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 140ms ease;
+  }
+  .seam-pills button:hover { color: var(--ink-1); }
+  .seam-pills button.active {
+    background: var(--lime);
+    color: #0b0c0e;
+    font-weight: 500;
+  }
+
+  /* Bottom Action Cluster (Reference: 146a bottom pills) */
+  .card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 2px;
+  }
+  .rebuild-pill {
+    flex: 1;
+    height: 38px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: #1a1c21;
+    color: var(--ink-2);
+    font: 500 12px/1 'DM Sans', sans-serif;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 180ms ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .rebuild-pill:hover {
+    border-color: var(--hairline-strong);
+    color: var(--ink-1);
+  }
+  .strata-card.is-stale .rebuild-pill {
+    background: var(--lime);
+    border-color: var(--lime);
+    color: #0a0b0d;
+    box-shadow: 0 8px 24px rgba(216, 243, 90, 0.22);
+  }
+  .strata-card.is-stale .rebuild-pill:hover {
+    filter: brightness(1.04);
+  }
+  .rebuild-pill.is-baking {
+    pointer-events: none;
+    background: #20232a;
+    color: var(--lime);
+    border-color: rgba(216, 243, 90, 0.4);
+  }
+  .icon-pill {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid var(--hairline);
+    background: #17191d;
+    color: var(--ink-2);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+  .icon-pill:hover {
+    color: var(--ink-1);
+    border-color: var(--hairline-strong);
+  }
+  .icon-pill.active {
+    background: var(--lime-dim);
+    border-color: rgba(216, 243, 90, 0.45);
+    color: var(--lime);
+  }
+
+  /* ============================================================ INTERACTION SPEC CARD (Side Callout) */
+  .spec-sheet {
+    width: 310px;
+    max-width: 100%;
+    border-radius: 20px;
+    padding: 16px 18px;
+    background: rgba(17, 18, 21, 0.72);
+    border: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .spec-sheet h2 {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .spec-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .spec-list li {
+    display: grid;
+    grid-template-columns: 6px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+  .spec-list li::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--lime);
+    margin-top: 6px;
+    opacity: 0.85;
+  }
+  .spec-list li b { color: var(--ink-1); font-weight: 500; }
+  .spec-note {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink-3);
+    padding-top: 8px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  /* Toast */
+  .proto-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    opacity: 0;
+    pointer-events: none;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: #f2f4f7;
+    color: #0b0c0e;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .proto-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+  <!-- Sandbox harness bar (not part of the card itself) -->
+  <nav class="sandbox-bar" aria-label="Prototype controls">
+    <div class="sandbox-meta">
+      <span class="sandbox-badge"><i></i>PROTOTYPE 01</span>
+      <span>Standalone Infographic Card · Not yet integrated</span>
+    </div>
+    <div class="sandbox-controls">
+      <div class="pill-group" id="DatasetSwitch" role="group" aria-label="Sample dataset">
+        <button type="button" data-sample="vehicle" class="active">ControlVehicle · 25.1k</button>
+        <button type="button" data-sample="torus">8-Region Torus · 14.2k</button>
+      </div>
+      <div class="pill-group" id="WidthSwitch" role="group" aria-label="Dock width">
+        <button type="button" data-width="356px" class="active">Dock 356px</button>
+        <button type="button" data-width="430px">Wide 430px</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="stage-shell">
+    <!-- ============================================================ STANDALONE CARD -->
+    <section class="strata-card" id="StrataCard" aria-label="Surface Strata Infographic Card">
+
+      <!-- Card Header -->
+      <header class="card-head">
+        <div class="card-title-wrap">
+          <div class="card-title-row">
+            <span class="status-orb" id="StatusOrb" aria-hidden="true"></span>
+            <h1 class="card-title">Surface Strata</h1>
+          </div>
+          <div class="card-sub">
+            <span id="SampleLabel">ControlVehicle Body</span>
+            <span class="dot-sep">·</span>
+            <span id="SyncLabel">Synced · 5 tiers</span>
+          </div>
+        </div>
+        <button type="button" class="expand-btn" id="ExpandWorkspaceBtn" title="Open Full Stratum Bay" aria-label="Open Full Stratum Bay">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 11L11 5M6 5h5v5"/>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Hero KPI + Concentric Seam Fidelity Gauge -->
+      <div class="hero-bento">
+        <div class="bento-tile">
+          <div class="tile-kicker">
+            <span>Active Tier</span>
+            <span id="TierTag" style="color: var(--lime); font-weight: 500;">S2</span>
+          </div>
+          <div class="hero-num" id="HeroTris">744<span class="unit">tris</span></div>
+          <div class="hero-foot">
+            <span class="delta-pill" id="ReductionPill">-97.0%</span>
+            <span class="cluster-chip" id="ClusterChip">12 clusters</span>
+          </div>
+        </div>
+
+        <div class="bento-tile ring-tile">
+          <div class="tile-kicker" style="width:100%">
+            <span>Seam Fidelity</span>
+          </div>
+          <div class="ring-wrap">
+            <div class="ring-metric">
+              <strong id="FidelityVal">99.9<span style="color:var(--ink-3);font-size:14px">%</span></strong>
+              <small id="FidelitySub">8 materials</small>
+            </div>
+            <svg class="concentric-svg" viewBox="0 0 60 60" aria-hidden="true">
+              <circle cx="30" cy="30" r="24" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="2.5"/>
+              <circle cx="30" cy="30" r="17" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.2"/>
+              <circle cx="30" cy="30" r="10.5" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+              <circle id="FidelityArc" cx="30" cy="30" r="24" fill="none" stroke="#d8f35a" stroke-width="2.8"
+                stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="3"
+                transform="rotate(-90 30 30)" style="transition: stroke-dashoffset 280ms ease, stroke 200ms ease;"/>
+              <circle id="InnerArc" cx="30" cy="30" r="17" fill="none" stroke="rgba(110,231,157,0.75)" stroke-width="1.8"
+                stroke-linecap="round" stroke-dasharray="106.8" stroke-dashoffset="16"
+                transform="rotate(-90 30 30)" style="transition: stroke-dashoffset 280ms ease;"/>
+              <circle cx="30" cy="30" r="3" fill="#d8f35a"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Live 3D Facet Cluster Preview (drag to orbit) -->
+      <div class="facet-stage" id="FacetStage" aria-label="Interactive cluster preview — drag to orbit">
+        <canvas id="FacetCanvas"></canvas>
+        <div class="stage-hud-top">
+          <span class="hud-tag"><b id="HudTier">S2</b> · <span id="HudMatMode">Slide seams</span></span>
+          <div class="view-toggle" id="StageModeToggle" role="group" aria-label="Preview shading">
+            <button type="button" data-mode="patches" class="active">Patches</button>
+            <button type="button" data-mode="heat">Deviation</button>
+          </div>
+        </div>
+        <div class="stage-hud-bottom">
+          <span>Drag to orbit</span>
+          <span id="HudRatio">64 tris / patch</span>
+        </div>
+      </div>
+
+      <!-- Interactive Hatched-vs-Solid Stratum Waterfall (replaces Preview Level slider) -->
+      <div class="bento-tile waterfall-tile">
+        <div class="waterfall-head">
+          <span>Stratum Budget</span>
+          <em>Click or drag across tiers</em>
+        </div>
+        <div class="waterfall-grid" id="WaterfallGrid" role="radiogroup" aria-label="Select detail stratum"></div>
+      </div>
+
+      <!-- Interactive Deviation Curve + Retention Step Selector (replaces Keep Per Level slider) -->
+      <div class="bento-tile curve-tile">
+        <div class="curve-head">
+          <div class="curve-title-stack">
+            <span>Geometric Deviation</span>
+            <strong id="DeviationReadout">0.68<small>px max</small></strong>
+          </div>
+          <div class="retention-pills" id="RetentionPills" role="group" aria-label="Retention per tier">
+            <button type="button" data-ratio="0.35">35%</button>
+            <button type="button" data-ratio="0.50" class="active">50%</button>
+            <button type="button" data-ratio="0.65">65%</button>
+          </div>
+        </div>
+        <div class="curve-svg-wrap" id="CurveWrap" title="Click or drag horizontally to inspect tier deviation">
+          <svg id="DeviationSvg" viewBox="0 0 300 76" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <!-- Segmented Calibration Rail + Dot-Matrix Density (replaces Triangles Per Cluster slider) -->
+      <div class="bento-tile rail-tile">
+        <div class="rail-top">
+          <span>Cluster Granularity</span>
+          <span class="rail-val" id="GranularityVal">64 <small>tris / patch</small></span>
+        </div>
+        <div class="cal-rail" id="CalRail" role="slider" tabindex="0" aria-label="Triangles per cluster" aria-valuemin="32" aria-valuemax="256" aria-valuenow="64">
+          <div class="cal-segments">
+            <i class="seg-fine"></i>
+            <i class="seg-mid"></i>
+            <i class="seg-coarse"></i>
+          </div>
+          <div class="cal-puck" id="CalPuck" style="left: 14.3%;"></div>
+        </div>
+        <div class="cal-ticks" id="CalTicks">
+          <button type="button" data-val="32" style="left:0%">32</button>
+          <button type="button" data-val="64" class="active" style="left:14.29%">64</button>
+          <button type="button" data-val="128" style="left:42.86%">128</button>
+          <button type="button" data-val="192" style="left:71.43%">192</button>
+          <button type="button" data-val="256" style="left:100%">256</button>
+        </div>
+        <div class="dot-matrix-row">
+          <small id="PartitionCaption">Partition density · Balanced</small>
+          <div class="dot-matrix" id="DotMatrix" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- Seam Policy Pill Bar -->
+      <div class="bento-tile seam-tile">
+        <div class="seam-meta">
+          <span>Material Seams</span>
+          <span class="drift-readout" id="DriftReadout"><i></i>0.02% drift</span>
+        </div>
+        <div class="seam-pills" id="SeamPills" role="group" aria-label="Material seam policy">
+          <button type="button" data-seam="free">Free</button>
+          <button type="button" data-seam="slide" class="active">Slide</button>
+          <button type="button" data-seam="pin">Pin</button>
+        </div>
+      </div>
+
+      <!-- Minimal Bottom Action Strip -->
+      <footer class="card-foot">
+        <button type="button" class="rebuild-pill" id="RebuildBtn">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.7"/>
+            <path d="M13.5 3v3.5H10"/>
+          </svg>
+          <span id="RebuildLabel">Strata Synced · 42 ms</span>
+        </button>
+        <button type="button" class="icon-pill" id="OverlayBtn" title="Toggle Viewport Overlay" aria-pressed="false">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1.5 8s2.4-4 6.5-4 6.5 4 6.5 4-2.4 4-6.5 4-6.5-4-6.5-4Z"/>
+            <circle cx="8" cy="8" r="2"/>
+          </svg>
+        </button>
+        <button type="button" class="icon-pill" id="ResetBtn" title="Reset defaults" aria-label="Reset defaults">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 8a5 5 0 1 0 1.5-3.5L2.5 6.5"/>
+            <path d="M2.5 3v3.5H6"/>
+          </svg>
+        </button>
+      </footer>
+    </section>
+
+    <!-- Companion Design Notes (for review only — never injected into viewer) -->
+    <aside class="spec-sheet" aria-label="Prototype design notes">
+      <h2>Infographic Controls Used</h2>
+      <ul class="spec-list">
+        <li><span><b>Hatched Waterfall Bars</b> replace the raw LOD level slider — click or scrub horizontally across S0–S4.</span></li>
+        <li><span><b>Interactive Deviation Curve</b> plots geometric error against a 1.2 px dashed threshold with clickable/scrubbable tiers.</span></li>
+        <li><span><b>3-Zone Calibration Rail + Dot Matrix</b> replaces the cluster-size slider with aligned tick stops &amp; live partition density.</span></li>
+        <li><span><b>Concentric Radial Ring</b> reports live material seam fidelity as you switch <b>Free / Slide / Pin</b>.</span></li>
+        <li><span><b>Orbitable Cluster Canvas</b> updates triangle density &amp; patch count in real time as you drag or scrub.</span></li>
+        <li><span><b>Corner ↗ Trigger</b> replaces bulky full-width "Open Workspace" buttons.</span></li>
+      </ul>
+      <div class="spec-note">
+        Labels in this standalone card are <b>provisional</b> pending Frontier naming approval. Nothing here has been added to Component Viewer or Asset Viewer yet.
+      </div>
+    </aside>
+  </main>
+
+  <div class="proto-toast" id="ProtoToast" role="status"></div>
+
+<script>
+(() => {
+  const SAMPLES = {
+    vehicle: {
+      name: 'ControlVehicle Body',
+      sourceTris: 25120,
+      materials: 8,
+      driftBySeam: { free: 2.60, slide: 0.02, pin: 0.30 },
+      pinFloorFactor: 1.18,
+      bakeMs: 42,
+      shape: 'chassis',
+    },
+    torus: {
+      name: '8-Region Torus',
+      sourceTris: 14240,
+      materials: 8,
+      driftBySeam: { free: 24.0, slide: 0.90, pin: 0.30 },
+      pinFloorFactor: 1.48,
+      bakeMs: 28,
+      shape: 'torus',
+    },
+  };
+
+  const GRANULARITY_STOPS = [32, 64, 128, 192, 256];
+  const TIER_COUNT = 5;
+
+  const State = {
+    sampleKey: 'vehicle',
+    activeTier: 2,
+    retention: 0.50,
+    clusterTris: 64,
+    seamPolicy: 'slide',
+    stageMode: 'patches',
+    overlayActive: false,
+    stale: false,
+    baking: false,
+    yaw: 0.62,
+    pitch: 0.34,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  let ToastTimer = null;
+  function ShowToast(msg) {
+    const t = $('ProtoToast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(ToastTimer);
+    ToastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  function FormatCompact(n) {
+    if (n >= 10000) return `${(n / 1000).toFixed(1)}k`;
+    return n.toLocaleString('en-US');
+  }
+
+  // Compute live stratum pyramid metrics from current settings
+  function ComputeTiers() {
+    const sample = SAMPLES[State.sampleKey];
+    const pinBias = State.seamPolicy === 'pin' ? sample.pinFloorFactor : State.seamPolicy === 'slide' ? 1.03 : 0.96;
+    const tiers = [];
+    for (let i = 0; i < TIER_COUNT; i++) {
+      const rawFrac = i === 0 ? 1 : Math.pow(State.retention, i) * Math.pow(pinBias, Math.min(i, 2.2));
+      const frac = i === 0 ? 1 : Math.max(0.035, Math.min(0.86, rawFrac));
+      const tris = Math.max(24, Math.round(sample.sourceTris * frac));
+      const clusters = Math.max(1, Math.ceil(tris / State.clusterTris));
+      const baseErr = i === 0 ? 0.0 : Number((0.18 * Math.pow(2.05, i) * (0.68 / State.retention) * (State.seamPolicy === 'pin' ? 0.84 : 1)).toFixed(2));
+      const drift = i === 0 ? 0 : Number((sample.driftBySeam[State.seamPolicy] * (0.35 + 0.32 * i)).toFixed(2));
+      tiers.push({ index: i, label: `S${i}`, tris, frac, clusters, errorPx: baseErr, driftPct: Math.min(40, drift) });
+    }
+    return tiers;
+  }
+
+  function RenderAll() {
+    const sample = SAMPLES[State.sampleKey];
+    const tiers = ComputeTiers();
+    const cur = tiers[State.activeTier];
+    const card = $('StrataCard');
+
+    card.classList.toggle('is-stale', State.stale);
+    $('SampleLabel').textContent = sample.name;
+    $('SyncLabel').textContent = State.stale ? 'Modified · Rebuild pending' : `Synced · ${TIER_COUNT} tiers`;
+    $('TierTag').textContent = cur.label;
+
+    // Hero numeral: crisp integer under 10k, editorial dimmed decimal above 10k (Reference: 0bab2767)
+    if (cur.tris >= 10000) {
+      const kStr = (cur.tris / 1000).toFixed(1);
+      const [kWhole, kFrac] = kStr.split('.');
+      $('HeroTris').innerHTML = `${kWhole}<span class="dim">.${kFrac}k</span><span class="unit">tris</span>`;
+    } else {
+      $('HeroTris').innerHTML = `${cur.tris.toLocaleString('en-US')}<span class="unit">tris</span>`;
+    }
+
+    const cutPct = ((1 - cur.tris / sample.sourceTris) * 100);
+    const pill = $('ReductionPill');
+    if (cur.index === 0) {
+      pill.textContent = 'Source 100%';
+      pill.className = 'delta-pill neutral';
+    } else {
+      pill.textContent = `-${cutPct.toFixed(1)}%`;
+      pill.className = 'delta-pill';
+    }
+    $('ClusterChip').textContent = `${cur.clusters} patch${cur.clusters === 1 ? '' : 'es'}`;
+
+    // Concentric radial seam fidelity gauge
+    const fidelity = Math.max(0, 100 - cur.driftPct);
+    const fidStr = fidelity >= 99.95 ? '100' : fidelity.toFixed(1);
+    const [whole, frac] = fidStr.split('.');
+    $('FidelityVal').innerHTML = frac !== undefined
+      ? `${whole}<span style="color:var(--ink-3);font-size:14px">.${frac}%</span>`
+      : `${whole}<span style="color:var(--ink-3);font-size:14px">%</span>`;
+    $('FidelitySub').textContent = `${sample.materials} materials`;
+
+    const outerCirc = 150.8;
+    const innerCirc = 106.8;
+    const arc = $('FidelityArc');
+    arc.setAttribute('stroke-dashoffset', String((outerCirc * (1 - fidelity / 100)).toFixed(2)));
+    arc.setAttribute('stroke', cur.driftPct > 5 ? '#ff7373' : cur.driftPct > 1 ? '#f5b841' : '#d8f35a');
+    $('InnerArc').setAttribute('stroke-dashoffset', String((innerCirc * (1 - cur.frac)).toFixed(2)));
+
+    // Stage HUD
+    $('HudTier').textContent = cur.label;
+    const seamName = State.seamPolicy === 'slide' ? 'Slide seams' : State.seamPolicy === 'pin' ? 'Pinned seams' : 'Free seams';
+    $('HudMatMode').textContent = seamName;
+    $('HudRatio').textContent = `${State.clusterTris} tris / patch`;
+
+    // Waterfall bars
+    const grid = $('WaterfallGrid');
+    grid.innerHTML = '';
+    for (const t of tiers) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `stratum-col ${t.index === State.activeTier ? 'active' : ''}`;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(t.index === State.activeTier));
+      btn.dataset.tier = String(t.index);
+      // Visual perceptual scale so lower tiers stay legible and clickable
+      const pctHeight = Math.max(13, Math.round(Math.pow(t.frac, 0.48) * 100));
+      btn.innerHTML = `
+        <span class="stratum-val">${FormatCompact(t.tris)}</span>
+        <span class="bar-track"><span class="bar-fill" style="height:${pctHeight}%"></span></span>
+        <span class="stratum-label">${t.label}</span>
+      `;
+      btn.addEventListener('click', () => {
+        State.activeTier = t.index;
+        RenderAll();
+      });
+      grid.append(btn);
+    }
+
+    // Deviation SVG chart
+    $('DeviationReadout').innerHTML = `${cur.errorPx.toFixed(2)}<small>px max</small>`;
+    RenderDeviationSvg(tiers);
+
+    // Calibration rail + dot matrix
+    $('GranularityVal').innerHTML = `${State.clusterTris} <small>tris / patch</small>`;
+    const railNorm = (State.clusterTris - 32) / (256 - 32);
+    $('CalPuck').style.left = `${(railNorm * 100).toFixed(2)}%`;
+    $('CalRail').setAttribute('aria-valuenow', String(State.clusterTris));
+    for (const b of $('CalTicks').querySelectorAll('button')) {
+      b.classList.toggle('active', Number(b.dataset.val) === State.clusterTris);
+    }
+    const densityLabel = State.clusterTris <= 64 ? 'Fine' : State.clusterTris <= 144 ? 'Balanced' : 'Coarse';
+    $('PartitionCaption').textContent = `Partition density · ${densityLabel}`;
+    const dotHost = $('DotMatrix');
+    dotHost.innerHTML = '';
+    const dotTotal = 14;
+    const activeDots = Math.max(2, Math.min(dotTotal, Math.round((1 - railNorm) * (dotTotal - 2) + 2)));
+    for (let d = 0; d < dotTotal; d++) {
+      const dot = document.createElement('i');
+      if (d < activeDots) dot.className = d < Math.ceil(activeDots * 0.65) ? 'on' : 'mid';
+      dotHost.append(dot);
+    }
+
+    // Drift badge
+    const driftEl = $('DriftReadout');
+    driftEl.className = `drift-readout ${cur.driftPct > 5 ? 'bad' : cur.driftPct > 1 ? 'warn' : ''}`;
+    driftEl.innerHTML = `<i></i>${cur.driftPct.toFixed(2)}% drift`;
+
+    // Sync pills
+    for (const b of $('RetentionPills').querySelectorAll('button')) {
+      b.classList.toggle('active', Math.abs(Number(b.dataset.ratio) - State.retention) < 0.01);
+    }
+    for (const b of $('SeamPills').querySelectorAll('button')) {
+      b.classList.toggle('active', b.dataset.seam === State.seamPolicy);
+    }
+    for (const b of $('StageModeToggle').querySelectorAll('button')) {
+      b.classList.toggle('active', b.dataset.mode === State.stageMode);
+    }
+
+    // Bottom button
+    if (!State.baking) {
+      $('RebuildLabel').textContent = State.stale ? 'Rebuild Strata' : `Strata Synced · ${sample.bakeMs} ms`;
+    }
+    $('OverlayBtn').classList.toggle('active', State.overlayActive);
+    $('OverlayBtn').setAttribute('aria-pressed', String(State.overlayActive));
+
+    DrawClusterPreview(cur);
+  }
+
+  // Render telemetry error curve (Reference: 0bab2767 Operational Efficiency chart)
+  function RenderDeviationSvg(tiers) {
+    const svg = $('DeviationSvg');
+    const W = 300, H = 76;
+    const padL = 12, padR = 34, padT = 10, padB = 18;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const maxErr = Math.max(2.4, ...tiers.map((t) => t.errorPx * 1.18));
+    const targetErr = 1.2;
+
+    const pts = tiers.map((t, idx) => ({
+      x: padL + (idx / (tiers.length - 1)) * plotW,
+      y: padT + plotH - (t.errorPx / maxErr) * plotH,
+      t,
+    }));
+
+    const targetY = padT + plotH - (targetErr / maxErr) * plotH;
+
+    // Smooth cubic path through tier points
+    let lineD = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      const cx = (p0.x + p1.x) / 2;
+      lineD += ` C ${cx.toFixed(1)} ${p0.y.toFixed(1)}, ${cx.toFixed(1)} ${p1.y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+    }
+    const areaD = `${lineD} L ${pts[pts.length - 1].x.toFixed(1)} ${(padT + plotH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(padT + plotH).toFixed(1)} Z`;
+
+    const curPt = pts[State.activeTier];
+    const bandW = plotW / (tiers.length - 1) * 0.52;
+    const overBudget = curPt.t.errorPx > targetErr;
+    const dotStroke = overBudget ? '#f5b841' : '#d8f35a';
+
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="ErrFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${overBudget ? 'rgba(245,184,65,0.22)' : 'rgba(216,243,90,0.20)'}"/>
+          <stop offset="100%" stop-color="rgba(216,243,90,0.0)"/>
+        </linearGradient>
+        <linearGradient id="ActiveBand" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.11)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0.01)"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Active tier vertical highlight band anchored cleanly under the active point -->
+      <rect x="${Math.max(padL, curPt.x - bandW / 2).toFixed(1)}" y="${curPt.y.toFixed(1)}" width="${bandW.toFixed(1)}" height="${Math.max(2, padT + plotH - curPt.y).toFixed(1)}" rx="3" fill="url(#ActiveBand)"/>
+      <line x1="${curPt.x.toFixed(1)}" y1="${padT}" x2="${curPt.x.toFixed(1)}" y2="${(padT + plotH).toFixed(1)}" stroke="rgba(255,255,255,0.12)" stroke-width="1" stroke-dasharray="2 3"/>
+
+      <!-- Target threshold dashed line -->
+      <line x1="${padL}" y1="${targetY.toFixed(1)}" x2="${W - padR + 2}" y2="${targetY.toFixed(1)}"
+        stroke="rgba(255,255,255,0.22)" stroke-width="1" stroke-dasharray="4 4"/>
+      <text x="${W - padR + 6}" y="${(targetY + 3).toFixed(1)}" fill="#6d717d" font-size="8.5" font-family="DM Sans">1.2px</text>
+
+      <!-- Baseline -->
+      <line x1="${padL}" y1="${padT + plotH}" x2="${W - padR + 2}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+
+      <!-- Area & curve -->
+      <path d="${areaD}" fill="url(#ErrFill)"/>
+      <path d="${lineD}" fill="none" stroke="rgba(242,244,247,0.75)" stroke-width="1.6" stroke-linecap="round"/>
+
+      <!-- All tier nodes -->
+      ${pts.map((p) => {
+        const isCur = p.t.index === State.activeTier;
+        return `
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isCur ? 4.2 : 2.3}"
+            fill="${isCur ? '#ffffff' : '#2a2d35'}"
+            stroke="${isCur ? dotStroke : 'rgba(255,255,255,0.35)'}" stroke-width="${isCur ? 2 : 1}"/>
+          <text x="${p.x.toFixed(1)}" y="${H - 3}" text-anchor="middle"
+            fill="${isCur ? '#f2f4f7' : '#575b65'}" font-size="9" font-weight="${isCur ? 500 : 400}" font-family="DM Sans">${p.t.label}</text>
+        `;
+      }).join('')}
+    `;
+  }
+
+  // Procedural 3D faceted cluster preview canvas (responds to orbit, tier, granularity, mode)
+  function DrawClusterPreview(tier) {
+    const canvas = $('FacetCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(260, Math.round(rect.width || 324));
+    const h = Math.max(120, Math.round(rect.height || 146));
+    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+    }
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+
+    // Subtle spatial floor grid dots inside viewport
+    g.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let gx = 16; gx < w; gx += 18) {
+      for (let gy = 16; gy < h; gy += 18) {
+        g.fillRect(gx, gy, 1, 1);
+      }
+    }
+
+    const sample = SAMPLES[State.sampleKey];
+    const uSegs = Math.max(8, Math.round(28 - tier.index * 4.5));
+    const vSegs = Math.max(6, Math.round(16 - tier.index * 2.4));
+    const cy = Math.cos(State.yaw), sy = Math.sin(State.yaw);
+    const cp = Math.cos(State.pitch), sp = Math.sin(State.pitch);
+
+    function Project(x, y, z) {
+      const rx = x * cy - z * sy;
+      const rz = x * sy + z * cy;
+      const ry = y * cp - rz * sp;
+      const rz2 = y * sp + rz * cp;
+      const baseScale = sample.shape === 'torus' ? 116 : 124;
+      const scale = baseScale / (3.15 - rz2 * 0.42);
+      return { x: w * 0.5 + rx * scale, y: h * 0.56 - ry * scale, z: rz2 };
+    }
+
+    const quads = [];
+    if (sample.shape === 'torus') {
+      const R = 1.05, r = 0.42;
+      for (let iu = 0; iu < uSegs; iu++) {
+        for (let iv = 0; iv < vSegs; iv++) {
+          const u0 = (iu / uSegs) * Math.PI * 2, u1 = ((iu + 1) / uSegs) * Math.PI * 2;
+          const v0 = (iv / vSegs) * Math.PI * 2, v1 = ((iv + 1) / vSegs) * Math.PI * 2;
+          const pt = (u, v) => {
+            const c = R + r * Math.cos(v);
+            return Project(c * Math.cos(u), r * Math.sin(v), c * Math.sin(u));
+          };
+          const p00 = pt(u0, v0), p10 = pt(u1, v0), p11 = pt(u1, v1), p01 = pt(u0, v1);
+          const clusterId = Math.floor(iu / Math.max(1, Math.round(uSegs / Math.min(12, tier.clusters)))) * 3 + Math.floor(iv / Math.max(1, Math.round(vSegs / 3)));
+          const seamEdge = (iu % Math.max(2, Math.round(uSegs / 8))) === 0;
+          quads.push({ pts: [p00, p10, p11, p01], z: (p00.z + p10.z + p11.z + p01.z) / 4, clusterId, seamEdge, err: Math.abs(Math.sin(u0 * 3 + v0)) * (tier.errorPx / 2.2) });
+        }
+      }
+    } else {
+      // Sculpted aerodynamic vehicle shell (parametric faceted body)
+      const L = 1.85, Wb = 0.86;
+      const sampleBody = (u, v) => {
+        const x = (u - 0.5) * 2 * L;
+        const angle = v * Math.PI;
+        const arch = Math.sin(angle);
+        const side = Math.cos(angle);
+        // Roof profile along vehicle length
+        const cabin = Math.exp(-Math.pow((u - 0.52) / 0.24, 2)) * 0.44;
+        const hood = Math.exp(-Math.pow((u - 0.82) / 0.22, 2)) * 0.14;
+        const tail = Math.exp(-Math.pow((u - 0.14) / 0.18, 2)) * 0.20;
+        const y = -0.32 + arch * (0.28 + cabin + hood + tail);
+        const taper = 1 - 0.18 * Math.pow((u - 0.5) * 2, 2);
+        const z = side * Wb * taper * (0.72 + 0.28 * Math.sin(angle * 0.9 + 0.2));
+        return Project(x, y, z);
+      };
+      for (let iu = 0; iu < uSegs; iu++) {
+        for (let iv = 0; iv < vSegs; iv++) {
+          const u0 = iu / uSegs, u1 = (iu + 1) / uSegs;
+          const v0 = iv / vSegs, v1 = (iv + 1) / vSegs;
+          const p00 = sampleBody(u0, v0), p10 = sampleBody(u1, v0), p11 = sampleBody(u1, v1), p01 = sampleBody(u0, v1);
+          const groupSpan = Math.max(1, Math.round(State.clusterTris / 42));
+          const clusterId = Math.floor(iu / groupSpan) * 5 + Math.floor(iv / Math.max(1, Math.round(vSegs / 4)));
+          const seamEdge = (iu === Math.round(uSegs * 0.34) || iu === Math.round(uSegs * 0.68));
+          quads.push({ pts: [p00, p10, p11, p01], z: (p00.z + p10.z + p11.z + p01.z) / 4, clusterId, seamEdge, err: Math.abs(Math.sin(u0 * 9 + v0 * 5)) * (tier.errorPx / 2.2) });
+        }
+      }
+    }
+
+    quads.sort((a, b) => a.z - b.z);
+    for (const q of quads) {
+      const [a, b, c, d] = q.pts;
+      // Compute 2D winding & rough light shade
+      const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      const shade = Math.max(0.32, Math.min(1, 0.56 + (q.z * 0.24) + (cross > 0 ? 0.08 : -0.06)));
+
+      g.beginPath();
+      g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c.x, c.y); g.lineTo(d.x, d.y);
+      g.closePath();
+
+      if (State.stageMode === 'heat') {
+        const heat = Math.min(1, q.err);
+        const hue = 150 - heat * 145;
+        g.fillStyle = `hsla(${hue.toFixed(0)} 78% ${(36 + shade * 24).toFixed(0)}% / 0.88)`;
+      } else {
+        // Restrained technical cluster palette harmonized with obsidian + lime + teal + slate
+        const palette = [74, 158, 198, 218, 42, 174, 245, 96];
+        const hue = palette[Math.abs(q.clusterId) % palette.length];
+        const sat = (Math.abs(q.clusterId) % 3 === 0) ? 56 : 30;
+        const lit = 24 + shade * 30;
+        g.fillStyle = `hsla(${hue} ${sat}% ${lit.toFixed(0)}% / 0.90)`;
+      }
+      g.fill();
+
+      if (q.seamEdge && State.seamPolicy !== 'free') {
+        g.strokeStyle = State.seamPolicy === 'pin' ? 'rgba(110, 231, 157, 0.82)' : 'rgba(216, 243, 90, 0.85)';
+        g.lineWidth = 1.25;
+      } else {
+        g.strokeStyle = 'rgba(10, 11, 14, 0.52)';
+        g.lineWidth = 0.7;
+      }
+      g.stroke();
+    }
+  }
+
+  // ============================================================ INTERACTIONS
+  // 1. Scrub-drag across waterfall bars
+  const wf = $('WaterfallGrid');
+  let wfDragging = false;
+  function PickWaterfall(clientX) {
+    const rect = wf.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(0.999, (clientX - rect.left) / rect.width));
+    const idx = Math.floor(frac * TIER_COUNT);
+    if (idx !== State.activeTier) {
+      State.activeTier = idx;
+      RenderAll();
+    }
+  }
+  wf.addEventListener('pointerdown', (e) => {
+    wfDragging = true;
+    wf.setPointerCapture(e.pointerId);
+    PickWaterfall(e.clientX);
+  });
+  wf.addEventListener('pointermove', (e) => { if (wfDragging) PickWaterfall(e.clientX); });
+  wf.addEventListener('pointerup', () => { wfDragging = false; });
+
+  // 2. Scrub-drag on deviation curve
+  const cw = $('CurveWrap');
+  let cwDragging = false;
+  function PickCurve(clientX) {
+    const rect = cw.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left - 12) / (rect.width - 46)));
+    const idx = Math.round(frac * (TIER_COUNT - 1));
+    if (idx !== State.activeTier) {
+      State.activeTier = idx;
+      RenderAll();
+    }
+  }
+  cw.addEventListener('pointerdown', (e) => {
+    cwDragging = true;
+    cw.setPointerCapture(e.pointerId);
+    PickCurve(e.clientX);
+  });
+  cw.addEventListener('pointermove', (e) => { if (cwDragging) PickCurve(e.clientX); });
+  cw.addEventListener('pointerup', () => { cwDragging = false; });
+
+  // 3. Calibration rail pointer drag & keyboard
+  const rail = $('CalRail');
+  let railDragging = false;
+  function SetGranularityFromPointer(clientX) {
+    const rect = rail.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const raw = 32 + frac * (256 - 32);
+    const snapped = Math.round(raw / 16) * 16;
+    if (snapped !== State.clusterTris) {
+      State.clusterTris = snapped;
+      State.stale = true;
+      RenderAll();
+    }
+  }
+  rail.addEventListener('pointerdown', (e) => {
+    railDragging = true;
+    rail.setPointerCapture(e.pointerId);
+    SetGranularityFromPointer(e.clientX);
+  });
+  rail.addEventListener('pointermove', (e) => { if (railDragging) SetGranularityFromPointer(e.clientX); });
+  rail.addEventListener('pointerup', () => { railDragging = false; });
+  rail.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      State.clusterTris = Math.min(256, State.clusterTris + 16);
+      State.stale = true; RenderAll();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      State.clusterTris = Math.max(32, State.clusterTris - 16);
+      State.stale = true; RenderAll();
+    }
+  });
+  $('CalTicks').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    State.clusterTris = Number(btn.dataset.val);
+    State.stale = true;
+    RenderAll();
+  });
+
+  // 4. Orbit 3D cluster preview
+  const stage = $('FacetStage');
+  let orbit = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    orbit = { x: e.clientX, y: e.clientY, yaw: State.yaw, pitch: State.pitch };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!orbit) return;
+    State.yaw = orbit.yaw + (e.clientX - orbit.x) * 0.012;
+    State.pitch = Math.max(-0.9, Math.min(1.1, orbit.pitch + (e.clientY - orbit.y) * 0.01));
+    DrawClusterPreview(ComputeTiers()[State.activeTier]);
+  });
+  stage.addEventListener('pointerup', () => { orbit = null; });
+
+  // 5. Retention pills, seam pills, preview mode
+  $('RetentionPills').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    State.retention = Number(btn.dataset.ratio);
+    State.stale = true;
+    RenderAll();
+  });
+  $('SeamPills').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    State.seamPolicy = btn.dataset.seam;
+    State.stale = true;
+    RenderAll();
+  });
+  $('StageModeToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    State.stageMode = btn.dataset.mode;
+    RenderAll();
+  });
+
+  // 6. Rebuild, overlay, reset, expand
+  $('RebuildBtn').addEventListener('click', () => {
+    if (!State.stale) {
+      ShowToast('Strata already synchronized');
+      return;
+    }
+    State.baking = true;
+    $('RebuildBtn').classList.add('is-baking');
+    $('RebuildLabel').textContent = 'Rebuilding 5 strata…';
+    setTimeout(() => {
+      State.baking = false;
+      State.stale = false;
+      $('RebuildBtn').classList.remove('is-baking');
+      RenderAll();
+      ShowToast('Strata rebuilt & synchronized');
+    }, 520);
+  });
+  $('OverlayBtn').addEventListener('click', () => {
+    State.overlayActive = !State.overlayActive;
+    RenderAll();
+    ShowToast(State.overlayActive ? 'Viewport stratum overlay ON' : 'Viewport stratum overlay OFF');
+  });
+  $('ResetBtn').addEventListener('click', () => {
+    State.activeTier = 2;
+    State.retention = 0.50;
+    State.clusterTris = 64;
+    State.seamPolicy = 'slide';
+    State.stageMode = 'patches';
+    State.stale = false;
+    State.yaw = 0.62;
+    State.pitch = 0.34;
+    RenderAll();
+    ShowToast('Restored default stratum settings');
+  });
+  $('ExpandWorkspaceBtn').addEventListener('click', () => {
+    ShowToast('Opens Full Stratum Bay workspace on integration');
+  });
+
+  // 7. Sandbox harness controls
+  $('DatasetSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    State.sampleKey = btn.dataset.sample;
+    State.stale = false;
+    for (const b of $('DatasetSwitch').querySelectorAll('button')) b.classList.toggle('active', b === btn);
+    RenderAll();
+  });
+  $('WidthSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    document.documentElement.style.setProperty('--card-w', btn.dataset.width);
+    for (const b of $('WidthSwitch').querySelectorAll('button')) b.classList.toggle('active', b === btn);
+    setTimeout(() => DrawClusterPreview(ComputeTiers()[State.activeTier]), 240);
+  });
+
+  // Expose quick test hook for visual state verification
+  window.__ProtoState = State;
+  window.__ProtoRender = RenderAll;
+
+  window.addEventListener('resize', () => DrawClusterPreview(ComputeTiers()[State.activeTier]));
+  RenderAll();
+})();
+</script>
+</body>
+</html>

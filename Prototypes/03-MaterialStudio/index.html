@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surface Finish Studio · Material Prototype 03 · Frontier</title>
+<link rel="stylesheet" href="/Experimental/Shared/Studio/Studio.css">
+<link rel="stylesheet" href="./MaterialStudio.css">
+</head>
+<body>
+<div class="workspace mat-workspace">
+
+  <!-- ============================================================ LEFT/MAIN DOCK: ISOLATED MATERIAL 3D STAGE + FILMSTRIP -->
+  <section class="dock centre mat-stage-dock" aria-label="Isolated Material Viewer">
+    <div class="tab-strip">
+      <div class="document-tab active">Surface Finish Studio</div>
+      <div class="tab-badge-right">P03 · ISOLATED MATERIAL &amp; TEXTURE EDITOR</div>
+    </div>
+
+    <header class="viewport-heading">
+      <span class="mat-brand-dot" id="StageBrandDot" aria-hidden="true"></span>
+      <div class="scene-title">
+        <b id="StageMatName">Amber Lacquer</b>
+        <small id="StageMatSub">Dielectric Clearcoat · ShaderBall.mesh</small>
+      </div>
+      <span class="state-tag live" id="StageSoloTag">LIT PBR</span>
+      <span class="spacer"></span>
+      <div class="segmented" id="FormSwitch" role="group" aria-label="Preview specimen shape">
+        <button type="button" data-form="shaderball" class="active">Shader Ball</button>
+        <button type="button" data-form="cloth">Cloth</button>
+        <button type="button" data-form="cube">Bevel Cube</button>
+        <button type="button" data-form="sphere">Sphere</button>
+      </div>
+    </header>
+
+    <!-- Full Material Viewport Debug Bar -->
+    <div class="viewport-tools mat-vtools">
+      <div class="segmented small" id="SoloBar" role="group" aria-label="Material channel debug isolation">
+        <button type="button" data-solo="pbr" class="active">Lit PBR</button>
+        <button type="button" data-solo="albedo">Base Colour</button>
+        <button type="button" data-solo="roughness">Roughness</button>
+        <button type="button" data-solo="metallic">Metallic</button>
+        <button type="button" data-solo="normal">Normals</button>
+        <button type="button" data-solo="uv">UV Check</button>
+      </div>
+      <span class="divider"></span>
+      <div class="segmented small" id="RigSwitch" role="group" aria-label="Studio lighting rig">
+        <button type="button" data-rig="softbox" class="active">Softbox</button>
+        <button type="button" data-rig="warmrim">Amber Rim</button>
+        <button type="button" data-rig="overcast">Overcast</button>
+        <button type="button" data-rig="dark">Dark Lab</button>
+      </div>
+      <span class="divider"></span>
+      <button type="button" class="tool" id="MatWireBtn" title="Toggle mesh wireframe">Wire</button>
+      <button type="button" class="tool active" id="MatShadowBtn" title="Toggle floor shadow">Shadow</button>
+      <button type="button" class="tool active" id="TurnToggle" title="Toggle turntable orbit">Spin</button>
+      <button type="button" class="tool" id="ResetCamBtn" title="Reset view">Fit</button>
+    </div>
+
+    <!-- Lighting / Exposure Live Debug Strip -->
+    <div class="mat-light-bar">
+      <span class="ctx-tag">STUDIO LIGHTS</span>
+      <label class="ctx-inline-range">
+        <span>Exposure</span>
+        <input id="ExposureSlider" type="range" min="0.5" max="2.0" step="0.05" value="1.12">
+        <output id="ExposureOut">1.12 EV</output>
+      </label>
+      <label class="ctx-inline-range">
+        <span>Light Angle</span>
+        <input id="LightRotSlider" type="range" min="-180" max="180" step="5" value="35">
+        <output id="LightRotOut">35°</output>
+      </label>
+      <label class="ctx-inline-range">
+        <span>Env Boost</span>
+        <input id="EnvBoostSlider" type="range" min="0.2" max="2.5" step="0.05" value="1.25">
+        <output id="EnvBoostOut">1.25×</output>
+      </label>
+    </div>
+
+    <!-- Isolated 3D WebGL Material Viewport -->
+    <div class="canvas-well mat-canvas-well" id="MaterialStageFrame">
+      <canvas id="MaterialCanvas" tabindex="0" aria-label="3D Material Preview"></canvas>
+      <div class="readout" id="OpticalReadout"></div>
+    </div>
+
+    <!-- Bottom Filmstrip Material Preset Carousel (Unique Material Studio strip in Component Viewer theme) -->
+    <section class="filmstrip-deck" aria-label="Material presets">
+      <div class="filmstrip-head">
+        <div>
+          <b>Material Library</b>
+          <span>Select a preset to load onto the isolated specimen</span>
+        </div>
+        <div class="filmstrip-nav">
+          <button type="button" class="circle-arrow" id="StripPrev" aria-label="Scroll left">‹</button>
+          <button type="button" class="circle-arrow" id="StripNext" aria-label="Scroll right">›</button>
+        </div>
+      </div>
+      <div class="filmstrip-track" id="PresetStrip"></div>
+    </section>
+  </section>
+
+  <!-- ============================================================ RIGHT DOCK: FULL MATERIAL & TEXTURE CHANNEL EDITOR -->
+  <aside class="dock right" aria-label="Material Channels and Texture Editor">
+    <div class="tab-strip">
+      <div class="document-tab active">Channels</div>
+      <div class="tab-badge-right" id="ActivePatternBadge">CERAMIC</div>
+    </div>
+
+    <div class="inspector-scroll mat-panel-scroll">
+      <!-- Material Identity Card (Component Viewer neutral dark + amber border accent) -->
+      <div class="mat-hero-card">
+        <div class="hero-top">
+          <div class="hero-swatch" id="HeroSwatch"></div>
+          <div class="hero-meta">
+            <input id="MaterialNameInput" class="name-input mat-name-input" value="Amber Lacquer" aria-label="Material name" spellcheck="false">
+            <small id="HeroFormula">Dielectric Clearcoat · Ceramic</small>
+          </div>
+          <button type="button" class="tool round" id="ExportMaterialBtn" title="Copy material JSON spec" aria-label="Copy material JSON">↗</button>
+        </div>
+        <div class="chips" id="HeroTagRow"></div>
+      </div>
+
+      <!-- Channel Section Switcher (Component Viewer white active pill) -->
+      <div class="segmented mat-tabs" id="ChannelTabs" role="tablist" aria-label="Material channel sections">
+        <button type="button" role="tab" data-tab="surface" class="active">Surface</button>
+        <button type="button" role="tab" data-tab="texture">Texture</button>
+        <button type="button" role="tab" data-tab="optics">Optics</button>
+        <button type="button" role="tab" data-tab="emission">Glow</button>
+      </div>
+
+      <div id="ChannelPanels" class="stack-gap">
+
+        <!-- TAB 1: SURFACE (Pigment Swatches + 2D Roughness×Metallic Pad + BRDF Lobe + Quick Texture Bar) -->
+        <div class="tab-pane" data-pane="surface">
+          <div class="panel">
+            <div class="w-head">
+              <span>Base Pigment</span>
+              <label class="color-wrap" title="Pick exact base colour">
+                <code id="ColorHexLabel">#FFB238</code>
+                <input type="color" id="BaseColorInput" value="#ffb238">
+              </label>
+            </div>
+            <div class="pigment-swatches" id="PigmentSwatches"></div>
+          </div>
+
+          <!-- 2D Interactive Roughness × Metallic Finish Matrix -->
+          <div class="panel">
+            <div class="w-head">
+              <span>Finish Matrix · Roughness × Metal</span>
+              <em id="FinishQuadrant">Gloss Dielectric</em>
+            </div>
+            <div class="finish-pad-layout">
+              <div class="finish-pad" id="FinishPad" tabindex="0" role="application" aria-label="2D Roughness and Metallic control pad">
+                <span class="pad-corner tl">Mirror</span>
+                <span class="pad-corner tr">Chrome</span>
+                <span class="pad-corner bl">Chalk</span>
+                <span class="pad-corner br">Raw Alloy</span>
+                <div class="pad-cross-x" id="PadCrossX"></div>
+                <div class="pad-cross-y" id="PadCrossY"></div>
+                <div class="pad-puck" id="PadPuck"></div>
+              </div>
+              <div class="brdf-side">
+                <span class="brdf-label">BRDF Lobe</span>
+                <svg id="BrdfSvg" viewBox="0 0 110 110" aria-hidden="true"></svg>
+                <div class="brdf-nums">
+                  <div><span>Rough</span><b id="PadRoughNum">0.24</b></div>
+                  <div><span>Metal</span><b id="PadMetalNum">0.08</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Texture Switcher right on main Surface tab -->
+          <div class="panel">
+            <div class="w-head">
+              <span>Quick Surface Texture</span>
+              <button type="button" class="tool" id="QuickUploadBtn" style="height:24px;min-height:24px;font-size:10px;padding:0 10px">+ Upload Map</button>
+            </div>
+            <div class="quick-tex-strip" id="QuickTexStrip"></div>
+          </div>
+        </div>
+
+        <!-- TAB 2: TEXTURE (Procedural Patterns + Custom Image Upload + Full UV Tiling & Relief Controls) -->
+        <div class="tab-pane" data-pane="texture" hidden>
+          <div class="panel">
+            <div class="w-head">
+              <span>Procedural Texture Pattern</span>
+              <em id="ActiveTexLabel">Ceramic</em>
+            </div>
+            <div class="tex-grid" id="ProceduralTexGrid"></div>
+          </div>
+
+          <div class="panel">
+            <div class="w-head">
+              <span>Custom Image Texture Map</span>
+              <button type="button" class="tool" id="ClearUploadBtn" hidden style="height:22px;min-height:22px;font-size:10px">Remove</button>
+            </div>
+            <div class="tex-dropzone" id="TexDropzone" tabindex="0" role="button">
+              <div class="tex-thumb-well" id="UploadThumbWell"><span>+</span></div>
+              <div class="tex-drop-copy">
+                <b id="UploadFileName">Drop or upload texture image</b>
+                <small>PNG · JPG · WebP · applies live to Base, Relief &amp; Roughness</small>
+              </div>
+            </div>
+            <input type="file" id="TexFileInput" hidden accept="image/png,image/jpeg,image/webp">
+          </div>
+
+          <div class="panel">
+            <div class="w-head">
+              <span>UV Tiling, Offset &amp; Relief</span>
+              <em id="RepeatLabel">2×2 · Bump 22%</em>
+            </div>
+            <div class="tiling-row">
+              <div class="tile-matrix" id="TileMatrix" role="group" aria-label="UV texture repeat"></div>
+              <div class="stack-gap">
+                <label class="field"><span>Relief Depth</span><output id="BumpValLabel">22%</output><input id="BumpRange" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+                <label class="field"><span>Roughness Mix</span><output id="RoughMixLabel">40%</output><input id="RoughMixRange" type="range" min="0" max="1" step="0.01" value="0.40"></label>
+              </div>
+            </div>
+            <label class="field"><span>UV Rotation</span><output id="UvRotLabel">0°</output><input id="UvRotRange" type="range" min="0" max="360" step="5" value="0"></label>
+          </div>
+        </div>
+
+        <!-- TAB 3: OPTICS (Interactive Fresnel IOR Curve + Clearcoat + Sheen & Specular) -->
+        <div class="tab-pane" data-pane="optics" hidden>
+          <div class="panel">
+            <div class="w-head">
+              <span>Fresnel Reflectance (0° → 90°)</span>
+              <em id="IorChip">IOR 1.52 · F0 4.3%</em>
+            </div>
+            <div class="fresnel-wrap" id="FresnelPad" title="Drag horizontally for IOR, vertically for Clearcoat">
+              <svg id="FresnelSvg" viewBox="0 0 280 124"></svg>
+            </div>
+            <div class="ior-presets" id="IorPresets">
+              <button type="button" data-ior="1.33">Water 1.33</button>
+              <button type="button" data-ior="1.52" class="active">Glass 1.52</button>
+              <button type="button" data-ior="1.76">Sapphire 1.76</button>
+              <button type="button" data-ior="2.40">Diamond 2.40</button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="w-head">
+              <span>Clearcoat &amp; Specular Finish</span>
+              <em id="CoatReadout">45% · Polish 90%</em>
+            </div>
+            <label class="field"><span>Clearcoat Weight</span><output id="CoatWeightNum">45%</output><input id="CoatWeightRange" type="range" min="0" max="1" step="0.01" value="0.45"></label>
+            <label class="field"><span>Clearcoat Roughness</span><output id="CoatRoughNum">10%</output><input id="CoatRoughRange" type="range" min="0" max="1" step="0.01" value="0.10"></label>
+            <label class="field"><span>Specular Intensity</span><output id="SpecIntNum">100%</output><input id="SpecIntRange" type="range" min="0" max="1" step="0.01" value="1.00"></label>
+            <label class="field"><span>Velvet Sheen</span><output id="SheenNum">0%</output><input id="SheenRange" type="range" min="0" max="1" step="0.01" value="0.00"></label>
+          </div>
+        </div>
+
+        <!-- TAB 4: EMISSION / GLOW -->
+        <div class="tab-pane" data-pane="emission" hidden>
+          <div class="panel">
+            <div class="w-head">
+              <span>Self-Emission Radiance</span>
+              <em id="EmissiveLabel">0.00 cd</em>
+            </div>
+            <div class="emissive-swatches" id="EmissiveSwatches"></div>
+            <label class="field"><span>Emission Intensity</span><output id="EmissiveNum">0%</output><input id="EmissiveRange" type="range" min="0" max="1" step="0.01" value="0.00"></label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<div class="toast" id="AtelierToast" role="status"></div>
+<script type="module" src="./MaterialStudio.js"></script>
+</body>
+</html>
