@@ -22,8 +22,8 @@ MUST follow this file. Repo live branch for viewer work: `arena/a99371c6-frontie
   → `/` redirects to `/Experimental/ComponentViewer/`
 - Asset Previewer: `python3 Experimental/ComponentViewer/ServeAssetViewer.py 8096`
   → `/` redirects to `/Experimental/ComponentViewer/AssetViewer.html`
-- Prototype cards: same servers, e.g.
-  `/Experimental/Prototypes/P01-InfographicCards.html` on port 8095.
+- Prototype cards: same servers, plus a dedicated preview (port 8097
+  `Experimental/Prototypes/ServePrototypes.py`, / redirects to latest P0x). E.g. `/Experimental/Prototypes/P01-InfographicCards.html` on port 8095.
 - Bind `0.0.0.0`, never `127.0.0.1` (Arena live preview).
 
 ## 3. Naming law (SKILL-Naming is authoritative)

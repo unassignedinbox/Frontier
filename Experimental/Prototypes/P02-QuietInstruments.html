@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P02 · Quiet Instruments · Frontier</title>
+<style>
+  @font-face {
+    font-family: "DM Sans";
+    src: url("../Shared/Studio/Fonts/dm-sans-latin-400-normal.woff2") format("woff2");
+    font-weight: 400; font-display: swap;
+  }
+  @font-face {
+    font-family: "DM Sans";
+    src: url("../Shared/Studio/Fonts/dm-sans-latin-300-normal.woff2") format("woff2");
+    font-weight: 300; font-display: swap;
+  }
+  @font-face {
+    font-family: "DM Sans";
+    src: url("../Shared/Studio/Fonts/dm-sans-latin-500-normal.woff2") format("woff2");
+    font-weight: 500; font-display: swap;
+  }
+  :root {
+    --ground: #090b09;
+    --card: #121412;
+    --card-2: #161916;
+    --ink: #e9ebe5;
+    --muted: #878d87;
+    --faint: #5c625c;
+    --brass: #d8c08a;
+    --brass-dim: #d8c08a26;
+    --clay: #c96a5a;
+    --sage: #7fa88f;
+    --plot: #a9aea9;
+    --line: #222722;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 40px 28px 90px; }
+  header.top h1 { font-weight: 300; font-size: 40px; margin: 0; letter-spacing: -0.5px; }
+  header.top h1 b { font-weight: 500; }
+  header.top p { color: var(--muted); max-width: 620px; font-size: 14.5px; line-height: 1.6; }
+  header.top p b { color: var(--ink); font-weight: 500; }
+  .pill-row { display: flex; gap: 8px; margin: 20px 0 24px; flex-wrap: wrap; align-items: center; }
+  .pill {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 999px; padding: 8px 16px; font-size: 12.5px; cursor: pointer;
+  }
+  .pill.active { color: var(--ink); border-color: var(--faint); }
+  a.pill { text-decoration: none; margin-left: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px; }
+  .card {
+    background: linear-gradient(180deg, var(--card-2), var(--card));
+    border: 1px solid var(--line); border-radius: 20px; padding: 22px;
+    transition: border-color .18s ease;
+  }
+  .card:hover { border-color: #31382f; }
+  .card-head { display: flex; align-items: center; gap: 11px; cursor: pointer; user-select: none; }
+  .card-head .glyph {
+    width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+    background: #0c0e0c; border: 1px solid var(--line); font-size: 16px; color: var(--muted);
+  }
+  .card-head small { display: block; color: var(--faint); font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase; }
+  .card-head b { font-size: 17.5px; font-weight: 500; }
+  .card-head .caret { margin-left: auto; color: var(--faint); font-size: 13px; transition: transform .2s; }
+  .card.open .card-head .caret { transform: rotate(180deg); }
+  .big { font-size: 52px; font-weight: 300; line-height: 1; margin: 16px 0 2px; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+  .big small { font-size: 15px; color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .cap { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
+  canvas.plot { width: 100%; height: 96px; display: block; margin-top: 12px;
+    background: #0c0e0c; border: 1px solid var(--line); border-radius: 14px;
+    cursor: ew-resize; touch-action: none; }
+  .readline { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); margin-top: 8px; }
+  .readline b { color: var(--brass); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .readout { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  .card.open .readout { max-height: 300px; }
+  .rows { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 9px; }
+  .rows div { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .rows div b { color: var(--ink); font-weight: 400; }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--faint);
+    border-radius: 9px; padding: 6px 11px; font-size: 11.5px; cursor: pointer; }
+  .chip.on { color: var(--ink); border-color: var(--faint); }
+  /* tier rail */
+  .tier-flex { display: flex; gap: 18px; margin-top: 14px; }
+  #TierRail {
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 6px 0; cursor: ns-resize; touch-action: none; outline: none;
+  }
+  #TierRail .stop {
+    width: 44px; height: 30px; border-radius: 9px; border: 1px solid transparent;
+    background: transparent; color: var(--faint); font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  #TierRail .stop.on { color: var(--brass); border-color: #4a4436; background: var(--brass-dim); }
+  .tier-read { flex: 1; }
+  .meter { margin-top: 12px; }
+  .meter .mrow { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); margin-bottom: 7px; }
+  .meter .mrow b { color: var(--muted); font-weight: 400; }
+  .meter .track { height: 4px; border-radius: 3px; background: #20241f; overflow: hidden; }
+  .meter .track i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--muted); transition: width .25s ease; }
+  /* dial */
+  #JointDial { cursor: grab; touch-action: none; display: block; margin: 12px auto 0; }
+  #JointDial.dragging { cursor: grabbing; }
+  .stepper { display: flex; gap: 8px; margin-top: 14px; }
+  .round-btn {
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line);
+    background: transparent; color: var(--muted); font-size: 18px; cursor: pointer;
+  }
+  .round-btn:hover { color: var(--ink); border-color: var(--faint); }
+  .wide-btn {
+    flex: 1; border-radius: 999px; border: 1px solid var(--line); background: transparent;
+    color: var(--muted); font-size: 12.5px; cursor: pointer; padding: 0 16px;
+  }
+  .wide-btn.live { color: var(--brass); border-color: #4a4436; background: var(--brass-dim); }
+  /* throttle strip */
+  .drive-flex { display: flex; gap: 16px; margin-top: 12px; align-items: stretch; }
+  #ThrottleStrip {
+    width: 52px; border-radius: 14px; background: #0c0e0c; border: 1px solid var(--line);
+    position: relative; cursor: ns-resize; touch-action: none; min-height: 150px;
+  }
+  #ThrottleFill {
+    position: absolute; left: 6px; right: 6px; bottom: 6px; height: 10px;
+    border-radius: 9px; background: #2c332c; transition: none;
+  }
+  #ThrottleStrip.hot #ThrottleFill { background: #4a4436; }
+  .drive-read { flex: 1; }
+  .gears { display: flex; gap: 7px; margin-top: 12px; }
+  .gears button { flex: 1; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+    color: var(--faint); padding: 8px 0; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .gears button.on { color: var(--brass); border-color: #4a4436; background: var(--brass-dim); }
+  /* slim compile strip */
+  .strip {
+    margin-top: 20px; border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px;
+    display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .strip b { color: var(--ink); font-weight: 400; }
+  .strip .wide-btn { flex: 0 0 auto; padding: 10px 22px; }
+  .strip .wide-btn.ready { color: var(--ink); border-color: var(--faint); }
+  footer.note { margin-top: 22px; color: var(--faint); font-size: 12.5px; line-height: 1.7; }
+  footer.note b { color: var(--muted); font-weight: 400; }
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: #10130e; font-size: 13px;
+    padding: 10px 20px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Frontier survey · <b>P02 instruments</b></h1>
+    <p>Quieter than P01: one instrument per card, details folded away until tapped,
+    a single muted brass accent. <b>Everything responds to drag</b> — scrub the plot,
+    ride the tier rail, turn the dial, pull the throttle. Selecting a tier retunes
+    the Polygon Complex card. Names carry over from the P01 vote.</p>
+  </header>
+
+  <div class="pill-row" id="FilterRow">
+    <button class="pill active" data-filter="all">All</button>
+    <button class="pill" data-filter="asset">Assets</button>
+    <button class="pill" data-filter="assembly">Assembly</button>
+    <button class="pill" data-filter="eval">Evaluation</button>
+    <a class="pill" href="P01-InfographicCards.html">← P01</a>
+  </div>
+
+  <div class="grid" id="CardGrid">
+
+    <!-- A · POLYGON COMPLEX -->
+    <section class="card" data-kind="asset" id="CardComplex">
+      <div class="card-head">
+        <span class="glyph">⬢</span>
+        <div><small>Asset · TimeSeriesPlot</small><b>Polygon Complex</b></div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="big"><span id="ComplexNum">25.1k</span><small> tris</small></div>
+      <p class="cap" id="ComplexCap">ControlVehicle Body · Tier S0 · full density</p>
+      <canvas class="plot" id="ComplexPlot" width="600" height="140"></canvas>
+      <div class="readline"><span>compile history · drag to scrub</span><b id="ScrubRead">T-0 · live</b></div>
+      <div class="readout"><div class="rows">
+        <div><span>Open seams</span><b>0</b></div>
+        <div><span>UV islands</span><b>14 charts</b></div>
+        <div><span>Optics slots</span><b id="OpticsCount">2 of 4 lit</b></div>
+        <div class="chips" id="OpticsChips">
+          <button class="chip on">paint</button><button class="chip on">glass</button><button class="chip">trim</button><button class="chip">rubber</button>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- B · DETAIL TIERS -->
+    <section class="card" data-kind="asset" id="CardTiers">
+      <div class="card-head">
+        <span class="glyph">☰</span>
+        <div><small>Asset · StrataPlot</small><b>Detail Tiers</b></div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="tier-flex">
+        <div id="TierRail" tabindex="0" aria-label="tier rail"></div>
+        <div class="tier-read">
+          <div class="big" style="margin-top:0"><span id="TierNum">25.1k</span></div>
+          <p class="cap" id="TierCap">Tier S0 · full density</p>
+          <div class="meter">
+            <div class="mrow"><span>wrong-optics</span><b id="TierWrong">0.00%</b></div>
+            <div class="track"><i id="TierBar"></i></div>
+          </div>
+        </div>
+      </div>
+      <div class="readline"><span>drag the rail · ↑ ↓ keys work</span><b id="TierRead">S0</b></div>
+      <div class="readout"><div class="rows">
+        <div><span>Seam rule</span><b>slide</b></div>
+        <div><span>Cluster fill</span><b>one optics entry</b></div>
+        <div><span>Pin mode</span><b>available</b></div>
+      </div></div>
+    </section>
+
+    <!-- C · HINGE JOINT -->
+    <section class="card" data-kind="assembly" id="CardJoint">
+      <div class="card-head">
+        <span class="glyph">⎋</span>
+        <div><small>Assembly · PolarDial</small><b>Hinge Joint</b></div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="big"><span id="JointAngle">0.0</span><small>° · ±32°</small></div>
+      <p class="cap">SteerFL · drag the needle · double-tap resets</p>
+      <svg id="JointDial" width="170" height="170" viewBox="0 0 150 150">
+        <circle cx="75" cy="75" r="66" fill="#0c0e0c" stroke="#222722"/>
+        <circle cx="75" cy="75" r="66" fill="none" stroke="#2c332c" stroke-width="5"
+          stroke-dasharray="2 7" id="JointTicks"/>
+        <path id="JointFan" fill="#d8c08a14" stroke="#5c625c" stroke-width="1"/>
+        <line id="JointNeedle" x1="75" y1="75" x2="75" y2="18" stroke="#d8c08a" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="75" cy="75" r="6" fill="#d8c08a"/>
+      </svg>
+      <div class="stepper">
+        <button class="round-btn" id="JointMinus" aria-label="nudge down">−</button>
+        <button class="wide-btn" id="JointSweep">sweep range</button>
+        <button class="round-btn" id="JointPlus" aria-label="nudge up">+</button>
+      </div>
+      <div class="readout"><div class="rows">
+        <div><span>Drive</span><b id="JointDrive">hold at pose</b></div>
+        <div><span>Load</span><b id="JointLoad">0.0 kN</b></div>
+        <div><span>State</span><b>seated</b></div>
+      </div></div>
+    </section>
+
+    <!-- D · PROPULSION -->
+    <section class="card" data-kind="eval" id="CardDrive">
+      <div class="card-head">
+        <span class="glyph">◉</span>
+        <div><small>Field · ArcPlot + CurvePlot</small><b>Propulsion Evaluation</b></div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="drive-flex">
+        <div id="ThrottleStrip" aria-label="throttle pull"><div id="ThrottleFill"></div></div>
+        <div class="drive-read">
+          <div class="big" style="margin-top:0"><span id="DriveSpeed">0</span><small> km/h</small></div>
+          <p class="cap"><span id="DriveRpm">700</span> rpm · pull the strip</p>
+          <canvas class="plot" id="RpmPlot" width="150" height="150" style="height:96px;cursor:default"></canvas>
+        </div>
+      </div>
+      <div class="readline"><span>throttle</span><b id="ThrottleVal">0%</b></div>
+      <canvas class="plot" id="TorquePlot" width="600" height="140" style="cursor:default"></canvas>
+      <div class="gears" id="GearRow">
+        <button class="on">1</button><button>2</button><button>3</button><button>4</button><button>5</button>
+      </div>
+      <div class="readout"><div class="rows">
+        <div><span>Peak twist</span><b>520 N·m</b></div>
+        <div><span>Redline</span><b>7200 rpm</b></div>
+        <div><span>Mass</span><b>1300 kg</b></div>
+      </div></div>
+    </section>
+
+  </div>
+
+  <div class="strip">
+    <b>Assembly record</b><span>revision <span id="RevNum">24</span> · <span id="CompileNote">unedited</span></span>
+    <span style="flex:1"></span>
+    <button class="wide-btn ready" id="CompileBtn">compile this assembly</button>
+  </div>
+
+  <footer class="note">
+    <b>How to judge P02:</b> drag the history plot, the tier rail, the dial needle and the
+    throttle strip. Tap any card header to fold details away. Only one accent colour is used;
+    everything else is graphite. Say approve, tweak, or redo.
+  </footer>
+</div>
+<div class="toast" id="Toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $("Toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2000);
+  }
+  function rectOf(el, fbW, fbH) {
+    var r = { left: 0, top: 0, width: fbW, height: fbH };
+    try {
+      var b = el.getBoundingClientRect();
+      if (b && b.width > 0 && b.height > 0) r = b;
+    } catch (e) { /* headless fallback */ }
+    return r;
+  }
+
+  /* ---------- filter pills ---------- */
+  var pills = document.querySelectorAll("#FilterRow .pill[data-filter]");
+  var cards = document.querySelectorAll("#CardGrid .card");
+  Array.prototype.forEach.call(pills, function (p) {
+    p.addEventListener("click", function () {
+      Array.prototype.forEach.call(pills, function (q) { q.classList.remove("active"); });
+      p.classList.add("active");
+      var f = p.getAttribute("data-filter");
+      Array.prototype.forEach.call(cards, function (c) {
+        c.style.display = (f === "all" || c.getAttribute("data-kind") === f) ? "" : "none";
+      });
+    });
+  });
+
+  /* ---------- fold / unfold ---------- */
+  Array.prototype.forEach.call(cards, function (c) {
+    var head = c.querySelector(".card-head");
+    head.addEventListener("click", function () { c.classList.toggle("open"); });
+  });
+  function holdToggle(root) { // controls must not fold the card
+    Array.prototype.forEach.call(root.querySelectorAll("button, canvas, #TierRail, #ThrottleStrip, #JointDial"),
+      function (el) { el.addEventListener("click", function (e) { e.stopPropagation(); }); });
+  }
+  Array.prototype.forEach.call(cards, holdToggle);
+
+  /* ---------- tiers (shared state) ---------- */
+  var tiers = [
+    { s: "S0", tris: "25.1k", wrong: "0.00%", w: 2, cap: "full density" },
+    { s: "S1", tris: "6.3k", wrong: "0.01%", w: 6, cap: "near" },
+    { s: "S2", tris: "744", wrong: "0.02%", w: 12, cap: "mid" },
+    { s: "S3", tris: "188", wrong: "0.40%", w: 34, cap: "far" },
+    { s: "S4", tris: "52", wrong: "1.90%", w: 72, cap: "distant" }
+  ];
+  var tierIndex = 0;
+  var rail = $("TierRail"), stops = [];
+  tiers.forEach(function (d, i) {
+    var b = document.createElement("button");
+    b.className = "stop" + (i === 0 ? " on" : "");
+    b.textContent = d.s;
+    b.addEventListener("click", function (e) { e.stopPropagation(); selectTier(i, true); });
+    rail.appendChild(b);
+    stops.push(b);
+  });
+  function selectTier(i, announce) {
+    tierIndex = Math.max(0, Math.min(tiers.length - 1, i));
+    var d = tiers[tierIndex];
+    stops.forEach(function (s, j) { s.classList.toggle("on", j === tierIndex); });
+    $("TierNum").textContent = d.tris;
+    $("TierCap").textContent = "Tier " + d.s + " · " + d.cap;
+    $("TierWrong").textContent = d.wrong;
+    $("TierBar").style.width = d.w + "%";
+    $("TierRead").textContent = d.s;
+    $("ComplexNum").textContent = d.tris; // cross-card link
+    $("ComplexCap").textContent = "ControlVehicle Body · Tier " + d.s + " · " + d.cap;
+    if (announce) toast("Tier " + d.s + " · " + d.tris + " tris");
+  }
+  var railHeld = false;
+  function railPick(clientY) {
+    var r = rectOf(rail, 44, 200);
+    var f = (clientY - r.top) / r.height;
+    selectTier(Math.round(f * (tiers.length - 1)), false);
+  }
+  rail.addEventListener("pointerdown", function (e) { railHeld = true; railPick(e.clientY); });
+  window.addEventListener("pointermove", function (e) { if (railHeld) railPick(e.clientY); });
+  window.addEventListener("pointerup", function () {
+    if (railHeld) { railHeld = false; toast("Tier " + tiers[tierIndex].s); }
+  });
+  rail.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowDown") { selectTier(tierIndex + 1, true); e.preventDefault(); }
+    if (e.key === "ArrowUp") { selectTier(tierIndex - 1, true); e.preventDefault(); }
+  });
+
+  /* ---------- A · history plot with scrubber ---------- */
+  var plot = $("ComplexPlot"), pctx = plot.getContext("2d");
+  var PW = plot.width, PH = plot.height, hist = [], scrub = -1;
+  (function () {
+    var v = 0.62;
+    for (var i = 0; i < 110; i++) { v += (Math.random() - 0.5) * 0.09; v = Math.max(0.2, Math.min(0.9, v)); hist.push(v); }
+  })();
+  function drawPlot() {
+    pctx.clearRect(0, 0, PW, PH);
+    pctx.strokeStyle = "#222722"; pctx.lineWidth = 1;
+    pctx.beginPath(); pctx.moveTo(0, PH * 0.3); pctx.lineTo(PW, PH * 0.3); pctx.stroke();
+    pctx.beginPath();
+    for (var i = 0; i < hist.length; i++) {
+      var x = (i / (hist.length - 1)) * PW, y = PH - hist[i] * (PH - 24) - 8;
+      if (i === 0) pctx.moveTo(x, y); else pctx.lineTo(x, y);
+    }
+    pctx.strokeStyle = "#a9aea9"; pctx.lineWidth = 1.6; pctx.stroke();
+    if (scrub >= 0) {
+      var sx = (scrub / (hist.length - 1)) * PW;
+      var sy = PH - hist[scrub] * (PH - 24) - 8;
+      pctx.strokeStyle = "#d8c08a"; pctx.lineWidth = 1;
+      pctx.beginPath(); pctx.moveTo(sx, 0); pctx.lineTo(sx, PH); pctx.stroke();
+      pctx.beginPath(); pctx.arc(sx, sy, 5, 0, Math.PI * 2);
+      pctx.fillStyle = "#d8c08a"; pctx.fill();
+    }
+  }
+  var scrubbing = false;
+  function scrubTo(clientX) {
+    var r = rectOf(plot, PW, 96);
+    var f = (clientX - r.left) / r.width;
+    scrub = Math.max(0, Math.min(hist.length - 1, Math.round(f * (hist.length - 1))));
+    var back = hist.length - 1 - scrub;
+    $("ScrubRead").textContent = back === 0 ? "T-0 · live"
+      : "T-" + back + " · " + (hist[scrub] * 40).toFixed(1) + "k tris";
+    drawPlot();
+  }
+  plot.addEventListener("pointerdown", function (e) { scrubbing = true; scrubTo(e.clientX); });
+  window.addEventListener("pointermove", function (e) { if (scrubbing) scrubTo(e.clientX); });
+  window.addEventListener("pointerup", function () { scrubbing = false; });
+  drawPlot();
+
+  /* ---------- A · optics chips ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll("#OpticsChips .chip"), function (ch) {
+    ch.addEventListener("click", function (e) {
+      e.stopPropagation();
+      ch.classList.toggle("on");
+      var n = document.querySelectorAll("#OpticsChips .chip.on").length;
+      $("OpticsCount").textContent = n + " of 4 lit";
+    });
+  });
+
+  /* ---------- C · draggable dial ---------- */
+  var joint = { angle: 0, min: -32, max: 32, sweeping: false, sweepDir: 1 };
+  function polar(cx, cy, r, deg) {
+    var a = (deg - 90) * Math.PI / 180;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  }
+  function drawJoint() {
+    var p0 = polar(75, 75, 62, joint.min), p1 = polar(75, 75, 62, joint.max);
+    $("JointFan").setAttribute("d", "M75,75 L" + p0[0].toFixed(1) + "," + p0[1].toFixed(1) +
+      " A62,62 0 0 1 " + p1[0].toFixed(1) + "," + p1[1].toFixed(1) + " Z");
+    var tip = polar(75, 75, 56, joint.angle);
+    var n = $("JointNeedle");
+    n.setAttribute("x2", tip[0].toFixed(1));
+    n.setAttribute("y2", tip[1].toFixed(1));
+    $("JointAngle").textContent = joint.angle.toFixed(1);
+    $("JointLoad").textContent = (Math.abs(joint.angle) / 32 * 1.2).toFixed(1) + " kN";
+  }
+  var dial = $("JointDial"), dialHeld = false;
+  function dialSet(clientX, clientY) {
+    var r = rectOf(dial, 170, 170);
+    var dx = (clientX - r.left) / r.width * 150 - 75;
+    var dy = (clientY - r.top) / r.height * 150 - 75;
+    var deg = Math.atan2(dx, -dy) * 180 / Math.PI;
+    joint.angle = Math.max(joint.min, Math.min(joint.max, deg));
+    drawJoint();
+  }
+  dial.addEventListener("pointerdown", function (e) {
+    dialHeld = true; dial.classList.add("dragging"); dialSet(e.clientX, e.clientY);
+  });
+  window.addEventListener("pointermove", function (e) { if (dialHeld) dialSet(e.clientX, e.clientY); });
+  window.addEventListener("pointerup", function () { dialHeld = false; dial.classList.remove("dragging"); });
+  dial.addEventListener("dblclick", function () { joint.angle = 0; drawJoint(); toast("Joint centred"); });
+  $("JointMinus").addEventListener("click", function (e) {
+    e.stopPropagation(); joint.angle = Math.max(joint.min, joint.angle - 2); drawJoint();
+  });
+  $("JointPlus").addEventListener("click", function (e) {
+    e.stopPropagation(); joint.angle = Math.min(joint.max, joint.angle + 2); drawJoint();
+  });
+  $("JointSweep").addEventListener("click", function (e) {
+    e.stopPropagation();
+    joint.sweeping = !joint.sweeping;
+    this.classList.toggle("live", joint.sweeping);
+    this.textContent = joint.sweeping ? "hold pose" : "sweep range";
+    $("JointDrive").textContent = joint.sweeping ? "sweep" : "hold at pose";
+  });
+  (function sweep() {
+    if (joint.sweeping) {
+      joint.angle += 0.6 * joint.sweepDir;
+      if (joint.angle >= joint.max) { joint.angle = joint.max; joint.sweepDir = -1; }
+      if (joint.angle <= joint.min) { joint.angle = joint.min; joint.sweepDir = 1; }
+      drawJoint();
+    }
+    requestAnimationFrame(sweep);
+  })();
+  drawJoint();
+
+  /* ---------- D · propulsion ---------- */
+  var drive = { rpm: 700, speed: 0, throttle: 0, gear: 1, redline: 7200 };
+  function torqueAt(r) {
+    var x = (r - 700) / (drive.redline - 700);
+    return 520 * Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, 0.12 + 0.88 * x))), 0.7);
+  }
+  function drawRpm() {
+    var cv = $("RpmPlot"), ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, 150, 150);
+    var frac = Math.min(1, drive.rpm / drive.redline);
+    ctx.lineWidth = 11; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.strokeStyle = "#222722";
+    ctx.arc(75, 75, 60, Math.PI * 0.75, Math.PI * 2.25); ctx.stroke();
+    ctx.beginPath();
+    ctx.strokeStyle = frac > 0.9 ? "#c96a5a" : "#a9aea9";
+    ctx.arc(75, 75, 60, Math.PI * 0.75, Math.PI * (0.75 + 1.5 * frac)); ctx.stroke();
+    ctx.fillStyle = "#e9ebe5"; ctx.font = "500 21px 'DM Sans', sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(String(Math.round(drive.rpm)), 75, 80);
+    ctx.fillStyle = "#5c625c"; ctx.font = "11px 'DM Sans', sans-serif";
+    ctx.fillText("rpm", 75, 97);
+  }
+  function drawTorque() {
+    var cv = $("TorquePlot"), ctx = cv.getContext("2d");
+    var W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath();
+    for (var px = 0; px <= W; px += 4) {
+      var r = 700 + (px / W) * (drive.redline - 700);
+      var y = H - 14 - (torqueAt(r) / 560) * (H - 30);
+      if (px === 0) ctx.moveTo(px, y); else ctx.lineTo(px, y);
+    }
+    ctx.strokeStyle = "#a9aea9"; ctx.lineWidth = 1.6; ctx.stroke();
+    var nx = ((drive.rpm - 700) / (drive.redline - 700)) * W;
+    var ny = H - 14 - (torqueAt(drive.rpm) / 560) * (H - 30);
+    ctx.beginPath(); ctx.arc(nx, ny, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "#d8c08a"; ctx.fill();
+  }
+  function driveTick() {
+    var target = 700 + drive.throttle * (drive.redline - 700);
+    drive.rpm += (target - drive.rpm) * 0.06;
+    var top = [0, 62, 98, 142, 189, 236][drive.gear] || 62;
+    var sTarget = Math.min(top, drive.speed + drive.throttle * (1 - drive.speed / (top + 1)) * 3.4);
+    if (drive.throttle < 0.02) sTarget = Math.max(0, drive.speed - 1.2);
+    drive.speed += (sTarget - drive.speed) * 0.08;
+    $("DriveSpeed").textContent = Math.round(drive.speed);
+    $("DriveRpm").textContent = Math.round(drive.rpm);
+    drawRpm(); drawTorque();
+    requestAnimationFrame(driveTick);
+  }
+  var strip = $("ThrottleStrip"), stripHeld = false;
+  function stripSet(clientY) {
+    var r = rectOf(strip, 52, 150);
+    var f = 1 - (clientY - r.top) / r.height;
+    drive.throttle = Math.max(0, Math.min(1, f));
+    $("ThrottleFill").style.height = "calc(" + Math.round(drive.throttle * 100) + "% - 12px)";
+    strip.classList.toggle("hot", drive.throttle > 0.03);
+    $("ThrottleVal").textContent = Math.round(drive.throttle * 100) + "%";
+  }
+  strip.addEventListener("pointerdown", function (e) { stripHeld = true; stripSet(e.clientY); });
+  window.addEventListener("pointermove", function (e) { if (stripHeld) stripSet(e.clientY); });
+  window.addEventListener("pointerup", function () { stripHeld = false; });
+  Array.prototype.forEach.call(document.querySelectorAll("#GearRow button"), function (b) {
+    b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      Array.prototype.forEach.call(document.querySelectorAll("#GearRow button"), function (q) { q.classList.remove("on"); });
+      b.classList.add("on");
+      drive.gear = parseInt(b.textContent, 10);
+      drive.rpm = Math.max(700, drive.rpm * 0.62);
+      toast("Gear " + drive.gear);
+    });
+  });
+  driveTick();
+
+  /* ---------- compile strip ---------- */
+  $("CompileBtn").addEventListener("click", function () {
+    $("RevNum").textContent = "25";
+    $("CompileNote").textContent = "compiled just now · verdict clean";
+    toast("Assembly compiled · revision 25");
+  });
+
+  selectTier(0, false);
+  toast("P02 live — drag everything");
+})();
+</script>
+</body>
+</html>

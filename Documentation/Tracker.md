@@ -3,7 +3,8 @@
 ## Prototypes
 | ID | Title | Status | Evidence | Integrated into |
 |----|-------|--------|----------|-----------------|
-| P01 | Infographic Cards (PolygonComplex / DetailTiers-StrataPlot / HingeJoint-PolarDial / PropulsionEvaluation / ContentDirectoryWatch / AssemblyInspector) | 🚧 REVISED PER SKILL-NAMING — PENDING USER APPROVAL | `Exhibits/P01Cards/P01InteractionReport.md` (9/9 PASS); pixels 🏴 blocked | — |
+| P01 | Infographic Cards (6 cards) | 🏳️ FEEDBACK: cluttered, weak interaction, too bright → SUPERSEDED BY P02 | `Exhibits/P01Cards/P01InteractionReport.md` (9/9 PASS); pixels 🏴 blocked | — |
+| P02 | Quiet Instruments (4 cards, drag-first, brass-on-graphite) | 🚧 AWAITING USER REVIEW | `Exhibits/P02Cards/P02InteractionReport.md` (13/13 PASS); pixels 🏴 blocked | — |
 
 ## Approved names (SKILL-Naming construction; NOT YET user-approved — vote pending)
 | Retired (borrowed/generic) | Proposed | SKILL basis |

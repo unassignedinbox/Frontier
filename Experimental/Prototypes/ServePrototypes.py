@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview server that opens straight on the P01 cards page (default port 8097).
+"""Preview server that opens straight on the latest cards page (default port 8097).
 
 Serves the repository root with no-store caching; / redirects to P01.
 Usage: python3 Experimental/Prototypes/ServePrototypes.py [port]
@@ -17,7 +17,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def redirect_root(self):
         if self.path in ("/", "/index.html"):
             self.send_response(302)
-            self.send_header("Location", "/Experimental/Prototypes/P01-InfographicCards.html")
+            self.send_header("Location", "/Experimental/Prototypes/P02-QuietInstruments.html")
             self.end_headers()
             return True
         return False
@@ -40,5 +40,5 @@ if __name__ == "__main__":
     root = pathlib.Path(__file__).resolve().parents[2]
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port),
                                              functools.partial(Handler, directory=str(root)))
-    print(f"P01 Cards on http://0.0.0.0:{port}/", flush=True)
+    print(f"Prototype Cards on http://0.0.0.0:{port}/", flush=True)
     server.serve_forever()
