@@ -60,6 +60,8 @@ import { CandyVillageSequence } from "./CandyVillageSequence.js";
 import { FoundryConveyorSequence } from "./FoundryConveyorSequence.js";
 import { DemolishRunSequence } from "./DemolishRunSequence.js";
 import { PrepareDemolishCity } from "./DemolishRunStructure.js";
+import { PistonLabyrinthSequence } from "./PistonLabyrinthSequence.js";
+import { PrepareLabyrinthMaze } from "./PistonLabyrinthStructure.js";
 import { VehicleGeometry } from "./VehicleSpecification.js";
 import { PickVehicle } from "./VehiclePicking.js";
 import { LobbyVenues, ResolveLobbyRequested, ResolveLobbyVenue, ResolveLobbyVenueDescriptor, ResolveLobbyStudioLights } from "./LobbyStructure.js";
@@ -142,6 +144,11 @@ class IlluminationHost
             const SeedParam = Query.get("seed");
             PrepareDemolishCity(SeedParam !== null && SeedParam !== "" ? Number(SeedParam) : null);
         }
+        if (this.LevelKey === "labyrinth")
+        {
+            const SeedParam = Query.get("seed");
+            PrepareLabyrinthMaze(SeedParam !== null && SeedParam !== "" ? Number(SeedParam) : null);
+        }
 
         this.LevelDescriptor = ResolveLevelDescriptor(this.LevelKey, this.LobbyVenueKey);
         const VenueLight = this.Lobby ? this.LobbyVenue.Lighting : null;
@@ -162,8 +169,8 @@ class IlluminationHost
             SmokeEnabled: !this.Lobby, SmokeResolution: 2, IgnitionMode: 0, ThermalGrip: false, LineLock: true,
             TyreMarks: !this.Lobby, TyreMarkStrength: 1.0,
             Gas: ConstructGasParameters(),
-            SunElevation: VenueLight ? VenueLight.SunElevation : 38.0,
-            SunAzimuth: VenueLight ? VenueLight.SunAzimuth : 145.0,
+            SunElevation: VenueLight ? VenueLight.SunElevation : (this.LevelKey === "labyrinth" ? 54.0 : 38.0),
+            SunAzimuth: VenueLight ? VenueLight.SunAzimuth : (this.LevelKey === "labyrinth" ? 132.0 : 145.0),
             SolarIlluminance: VenueLight ? VenueLight.SolarIlluminance : 12.0,
             SkyScale: VenueLight ? VenueLight.SkyScale : 1.0,
             EmissionScale: VenueLight ? VenueLight.EmissionScale : 1.0,
@@ -393,6 +400,8 @@ class IlluminationHost
         this.UploadFoundryOccupants();
         this.DemolishRun = new DemolishRunSequence(this);
         this.UploadDemolishOccupants();
+        this.PistonLabyrinth = new PistonLabyrinthSequence(this);
+        this.UploadLabyrinthOccupants();
         this.LobbyRoster = new LobbyRosterSequence(this);
         this.UploadLobbyOccupants();
 
@@ -576,6 +585,7 @@ class IlluminationHost
             {
                 this.Shell?.Announce(`${Prop.Definition.Name} — ${Prop.Pieces.length} fragments`);
                 this.DemolishRun?.OnWallBroken?.(Prop);
+                this.PistonLabyrinth?.OnWallBroken?.(Prop);
             };
         if (this.PendingPreset)
         {
@@ -1047,6 +1057,24 @@ class IlluminationHost
     RegenerateDemolishCity(Seed = null)
     {
         return this.SwitchSceneInPlace("demolish", this.LobbyVenueKey || "studio", { Seed });
+    }
+
+    UploadLabyrinthOccupants()
+    {
+        if (!this.PistonLabyrinth?.Enabled || !this.Scene.LabyrinthBlock || !this.OccupantRecords || !this.Volumes)
+            return;
+        const Block = this.Scene.LabyrinthBlock;
+        if (Block.Count > 0)
+        {
+            const Scalars = this.Scene.EncodeOccupantRange(this.Volumes, Block.First, Block.Count);
+            this.Exchange.Device.queue.writeBuffer(this.OccupantRecords, Block.First * OccupantStride, Scalars);
+        }
+    }
+
+    // 📝 Generates a brand-new random procedural Piston Labyrinth seed and rebuilds in place (zero reload!).
+    RegenerateLabyrinthMaze(Seed = null)
+    {
+        return this.SwitchSceneInPlace("labyrinth", this.LobbyVenueKey || "studio", { Seed });
     }
 
     UploadLobbyOccupants()
@@ -1562,6 +1590,8 @@ class IlluminationHost
                 this.SelectedRouteLevel = NextLevelKey;
             if (NextLevelKey === "demolish")
                 PrepareDemolishCity(Options.Seed !== undefined ? Options.Seed : null);
+            if (NextLevelKey === "labyrinth")
+                PrepareLabyrinthMaze(Options.Seed !== undefined ? Options.Seed : null);
             this.LevelDescriptor = ResolveLevelDescriptor(NextLevelKey, NextVenueKey);
             this.Spawn = this.LevelDescriptor.Spawn;
             this.LevelZones = this.LevelDescriptor.Zones;
@@ -1590,8 +1620,8 @@ class IlluminationHost
                 SmokeEnabled: !NextLobby,
                 TyreMarks: !NextLobby,
                 Sparks: !NextLobby,
-                SunElevation: VenueLight ? VenueLight.SunElevation : 38.0,
-                SunAzimuth: VenueLight ? VenueLight.SunAzimuth : 145.0,
+                SunElevation: VenueLight ? VenueLight.SunElevation : (NextLevelKey === "labyrinth" ? 54.0 : 38.0),
+                SunAzimuth: VenueLight ? VenueLight.SunAzimuth : (NextLevelKey === "labyrinth" ? 132.0 : 145.0),
                 SolarIlluminance: VenueLight ? VenueLight.SolarIlluminance : 12.0,
                 SkyScale: VenueLight ? VenueLight.SkyScale : 1.0,
                 EmissionScale: VenueLight ? VenueLight.EmissionScale : 1.0,
@@ -1687,6 +1717,7 @@ class IlluminationHost
             {
                 this.Shell?.Announce(`${Prop.Definition.Name} — ${Prop.Pieces.length} fragments`);
                 this.DemolishRun?.OnWallBroken?.(Prop);
+                this.PistonLabyrinth?.OnWallBroken?.(Prop);
             };
             this.DDayCombat = new DDayCombatSequence(this);
             this.UploadDDayOccupants();
@@ -1699,6 +1730,9 @@ class IlluminationHost
             this.DemolishRun?.Dispose?.();
             this.DemolishRun = new DemolishRunSequence(this);
             this.UploadDemolishOccupants();
+            this.PistonLabyrinth?.Dispose?.();
+            this.PistonLabyrinth = new PistonLabyrinthSequence(this);
+            this.UploadLabyrinthOccupants();
             this.LobbyRoster = new LobbyRosterSequence(this);
             this.UploadLobbyOccupants();
             this.Training = new TrainingSequence(this);
@@ -2300,6 +2334,7 @@ class IlluminationHost
         const CandyMoved   = this.CandyVillage ? this.CandyVillage.Advance(Step) : false;
         const FoundryMoved = this.FoundryConveyor ? this.FoundryConveyor.Advance(Step) : false;
         const DemolishMoved = this.DemolishRun ? this.DemolishRun.Advance(Step) : false;
+        const LabyrinthMoved = this.PistonLabyrinth ? this.PistonLabyrinth.Advance(Step) : false;
         const LobbyMoved   = this.LobbyRoster ? this.LobbyRoster.Advance(Step) : false;
         const VehicleEvents = this.Vehicle.ResolveEvents();
         this.PositionVehicle();
@@ -2397,6 +2432,8 @@ class IlluminationHost
             Emissions.push(...this.CandyVillage.QueryPlumeEmissions());
         if (this.DemolishRun)
             Emissions.push(...this.DemolishRun.QueryPlumeEmissions());
+        if (this.PistonLabyrinth)
+            Emissions.push(...this.PistonLabyrinth.QueryPlumeEmissions());
         if (this.Settings.TestPlume > 0)
             Emissions.push(this.ResolveTestPlume(this.Settings.TestPlume === 2));
         this.Marks.Advance(Readings, { Enabled: this.Settings.TyreMarks, Strength: this.Settings.TyreMarkStrength });
@@ -2479,6 +2516,8 @@ class IlluminationHost
             this.UploadFoundryOccupants();
         if (DemolishMoved)
             this.UploadDemolishOccupants();
+        if (LabyrinthMoved)
+            this.UploadLabyrinthOccupants();
         if (LobbyMoved)
             this.UploadLobbyOccupants();
 
@@ -2490,7 +2529,8 @@ class IlluminationHost
                 ...(this.DDayCombat ? this.DDayCombat.QueryDynamicLightRecords() : []),
                 ...(this.CandyVillage ? this.CandyVillage.QueryDynamicLightRecords() : []),
                 ...(this.FoundryConveyor ? this.FoundryConveyor.QueryDynamicLightRecords() : []),
-                ...(this.DemolishRun ? this.DemolishRun.QueryDynamicLightRecords() : [])
+                ...(this.DemolishRun ? this.DemolishRun.QueryDynamicLightRecords() : []),
+                ...(this.PistonLabyrinth ? this.PistonLabyrinth.QueryDynamicLightRecords() : [])
             ];
             const LightData = this.Lighting.Update(this.Vehicle.QueryBodyTransform(), ActivePoles, this.Clock);
             Device.queue.writeBuffer(this.LightRecords, 0, LightData);

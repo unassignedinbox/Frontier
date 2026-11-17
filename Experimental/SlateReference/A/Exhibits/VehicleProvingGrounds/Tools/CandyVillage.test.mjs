@@ -73,7 +73,7 @@ function VerifyWatertight2Manifold(Facets, Label)
 test("Refractive Jelly & Liquid Materials + All 22 Candy Shapes Are Closed Watertight 2-Manifolds", () =>
 {
     const Materials = ConstructMaterialSpecification();
-    assert.equal(Materials.length, 186, "Expected 186 total PBR material records (0..185 incl. 10 Lobby venues + Foundry + Demolish Run)");
+    assert.equal(Materials.length, 200, "Expected 200 total PBR material records (0..199 incl. 10 Lobby venues + Foundry + Demolish Run + Piston Labyrinth)");
     const Encoded = EncodeMaterialRecords(Materials);
 
     // Verify ray-traced Snell refraction (Transmission = 1.0) on all gummy jelly & water materials!

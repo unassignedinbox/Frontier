@@ -59,7 +59,7 @@ function VerifyClosedWatertightManifold(Name, Facets)
 
     for (const F of Facets)
     {
-        assert.ok(F.Family >= 0 && F.Family < 186, `${Name}: invalid material family ${F.Family}`);
+        assert.ok(F.Family >= 0 && F.Family < 200, `${Name}: invalid material family ${F.Family}`);
         if (F.Corners.length === 3)
             AddTri(F.Corners[0], F.Corners[1], F.Corners[2]);
         else if (F.Corners.length === 4)
@@ -93,7 +93,7 @@ function BoxesOverlap(A, B)
 test("Demolish Run PBR Materials (170..185), FractureMaterials & All Procedural + Dynamic Shapes Are Closed Watertight 2-Manifolds", () =>
 {
     const Materials = ConstructMaterialSpecification();
-    assert.equal(Materials.length, 186);
+    assert.equal(Materials.length, 200);
     assert.ok(Materials[CourseMaterial.DemoBrickRed]);
     assert.ok(Materials[CourseMaterial.DemoGarageDoor]);
     assert.ok(Materials[CourseMaterial.DemoCraneYellow]);

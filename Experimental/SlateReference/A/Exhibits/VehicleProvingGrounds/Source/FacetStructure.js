@@ -24,6 +24,7 @@ import { TrafficLightSequence } from "./TrafficLightSequence.js";
 import { CandyWaterGridSpec, CandyWormMeshSpec } from "./CandyVillageStructure.js";
 import { FoundryPoolCounts } from "./FoundryConveyorStructure.js";
 import { DemolishPoolCounts } from "./DemolishRunStructure.js";
+import { LabyrinthPoolCounts } from "./PistonLabyrinthStructure.js";
 
 // 📝 What an occupant takes part in. A ground tile only owns a surface card; the ground occupant is only rastered,
 //    because the scene distance field carries the ground as its analytic plane rather than as a sampled volume.
@@ -652,6 +653,41 @@ export class SceneStructure
                 Count:         0
             };
             this.DemolishBlock.Count = this.Occupants.length - DemoFirst;
+        }
+
+        // ⑩g The Piston Labyrinth ("labyrinth") Dynamic Megawalls, 7 Hidden Traps, Pendulums & Ability VFX Rings ---
+        this.LabyrinthBlock = null;
+        if (ShapeSets.LabSlidingWall !== undefined)
+        {
+            const LabFirst = this.Occupants.length;
+            const DynRoles = OccupantRole.Raster | OccupantRole.Dynamic;
+            const AllocLab = (Prefix, ShapeIdx, Count) =>
+            {
+                const Arr = [];
+                for (let I = 0; I < Count; ++I)
+                    Arr.push(this.ConstructOccupant(`${Prefix} ${I}`, ShapeIdx, ParkedBelow, DynRoles));
+                return Arr;
+            };
+            this.LabyrinthBlock = {
+                First:          LabFirst,
+                SlidingWalls:   AllocLab("Lab Sliding Wall",   ShapeSets.LabSlidingWall,   LabyrinthPoolCounts.SlidingWalls),
+                SlidingBeacons: AllocLab("Lab Wall Beacon",    ShapeSets.LabBeaconRed,     LabyrinthPoolCounts.SlidingBeacons),
+                TrapSlabs:      AllocLab("Lab Trap Slab",      ShapeSets.LabTrapSlab,      LabyrinthPoolCounts.TrapSlabs),
+                SlamPlates:     AllocLab("Lab Slam Plate",     ShapeSets.LabSlamPlate,     LabyrinthPoolCounts.SlamPlates),
+                AmbushWalls:    AllocLab("Lab Ambush Wall",    ShapeSets.LabAmbushWall,    LabyrinthPoolCounts.AmbushWalls),
+                DropGates:      AllocLab("Lab Drop Gate",      ShapeSets.LabDropGate,      LabyrinthPoolCounts.DropGates),
+                TripBeams:      AllocLab("Lab Trip Beam",      ShapeSets.LabTripBeam,      LabyrinthPoolCounts.TripBeams),
+                RollerSlats:    AllocLab("Lab Roller Slat",    ShapeSets.LabRollerSlat,    LabyrinthPoolCounts.RollerSlats),
+                AcidSlicks:     AllocLab("Lab Acid Slick",     ShapeSets.LabAcidSlick,     LabyrinthPoolCounts.AcidSlicks),
+                PendulumArms:   AllocLab("Lab Pendulum Arm",   ShapeSets.LabPendulumArm,   LabyrinthPoolCounts.PendulumArms),
+                PendulumBlocks: AllocLab("Lab Pendulum Block", ShapeSets.LabPendulumBlock, LabyrinthPoolCounts.PendulumBlocks),
+                AbilityRings:   [
+                    this.ConstructOccupant("Lab Sonic Ring", ShapeSets.LabSonicRing, ParkedBelow, DynRoles),
+                    this.ConstructOccupant("Lab Hack Ring",  ShapeSets.LabHackRing,  ParkedBelow, DynRoles)
+                ],
+                Count:          0
+            };
+            this.LabyrinthBlock.Count = this.Occupants.length - LabFirst;
         }
 
         // ⑪ live-streamed Road Studio road, junction & highway bridge network (skipped in Studio Lobby) ------

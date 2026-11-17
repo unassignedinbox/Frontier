@@ -244,10 +244,11 @@ test("ChaseCameraSolver tracks 90° vertical and 180° inverted orientations wit
     assert.ok(Chase.Up[2] < -0.7, `Camera Up must invert smoothly with loop crown, got ${Chase.Up[2]}`);
 });
 
-test("LevelCatalog exposes Demolish Run, Assembly Line, Inversion Arena, City District, D-Day, Candy Village, and Proving Grounds descriptors cleanly", () =>
+test("LevelCatalog exposes Piston Labyrinth, Demolish Run, Assembly Line, Inversion Arena, City District, D-Day, Candy Village, and Proving Grounds descriptors cleanly", () =>
 {
-    assert.equal(LevelCatalog.length, 7);
-    assert.deepEqual(LevelCatalog.map((L) => L.Key), ["demolish", "foundry", "inversion", "city", "dday", "candy", "proving"]);
+    assert.equal(LevelCatalog.length, 8);
+    assert.deepEqual(LevelCatalog.map((L) => L.Key), ["labyrinth", "demolish", "foundry", "inversion", "city", "dday", "candy", "proving"]);
+    const Labyrinth = ResolveLevelDescriptor("labyrinth");
     const Demolish  = ResolveLevelDescriptor("demolish");
     const Foundry   = ResolveLevelDescriptor("foundry");
     const Inversion = ResolveLevelDescriptor("inversion");
@@ -255,6 +256,7 @@ test("LevelCatalog exposes Demolish Run, Assembly Line, Inversion Arena, City Di
     const DDay      = ResolveLevelDescriptor("dday");
     const Candy     = ResolveLevelDescriptor("candy");
     const Proving   = ResolveLevelDescriptor("proving");
+    assert.equal(Labyrinth.Key, "labyrinth");
     assert.equal(Demolish.Key, "demolish");
     assert.equal(Foundry.Key, "foundry");
     assert.equal(Inversion.Title, "Inversion Arena");

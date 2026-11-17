@@ -460,6 +460,8 @@ export class DrivingHudSequence
             this.Host.FoundryConveyor.ControlStrip.classList.toggle("hidden", !ShowControls || !this.Host.FoundryConveyor.Enabled);
         if (this.Host?.DemolishRun?.ControlStrip)
             this.Host.DemolishRun.ControlStrip.classList.toggle("hidden", !ShowControls || !this.Host.DemolishRun.Enabled);
+        if (this.Host?.PistonLabyrinth?.ControlStrip)
+            this.Host.PistonLabyrinth.ControlStrip.classList.toggle("hidden", !ShowControls || !this.Host.PistonLabyrinth.Enabled);
 
         if (Mode !== this.LastActiveMode)
         {
@@ -1114,6 +1116,7 @@ export class DrivingHudSequence
         this.Host?.CandyVillage?.RenderHudOverlay?.(Ctx, W, H, CameraState, Mode);
         this.Host?.FoundryConveyor?.RenderHudOverlay?.(Ctx, W, H, CameraState, Mode);
         this.Host?.DemolishRun?.RenderHudOverlay?.(Ctx, W, H, CameraState, Mode);
+        this.Host?.PistonLabyrinth?.RenderHudOverlay?.(Ctx, W, H, CameraState, Mode);
 
         // ③ Camera-Specific 2D + 2.5D HUD Overlay (pure optical light-on-glass, zero black background boxes):
         //    • "cockpit" -> Collimated Windshield Combiner Trapezoidal AR-HUD (Screenshots 1 & 2)

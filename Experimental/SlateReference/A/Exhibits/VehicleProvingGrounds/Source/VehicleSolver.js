@@ -99,6 +99,7 @@ export class VehicleSolver
         this.Burnout     = false;   // [-] line lock currently engaged
         this.Support     = null;    // [-] RigidBodyWorld: heavy debris the wheels can drive over (QuerySupport)
         this.SurfaceVelocityQuery = null; // [-] optional (x,y,z) => [vx,vy,vz] moving ground / conveyor surface velocity
+        this.SurfaceGripQuery     = null; // [-] optional (x,y,z) => grip multiplier (e.g., Acid Rain / Acid-Mist slicks)
         this.Frozen      = false;   // [-] held where it is (rezzing in): no integration, no forces
         this.Respawn();
     }
@@ -667,8 +668,10 @@ export class VehicleSolver
                 let [Fx, Fy] = this.Tyres.Combine(Wheel.SlipRatio, Wheel.SlipAngle, 0.0, AxleLoad);
                 // 📝 Grip is 1 unless thermal grip is enabled: then the tyre's own condition multiplier (hot tread,
                 //    pressure away from cold) scales this wheel's force and its friction limit, and no other wheel's.
-                Fx *= Wheel.Grip;
-                Fy *= Wheel.Grip;
+                //    SurfaceGripQuery allows per-wheel physical surface friction (e.g. Acid Rain / Acid-Mist slicks).
+                const SurfaceGrip = this.SurfaceGripQuery ? ClampScalar(this.SurfaceGripQuery(Contact[0], Contact[1], Contact[2]), 0.15, 2.0) : 1.0;
+                Fx *= Wheel.Grip * SurfaceGrip;
+                Fy *= Wheel.Grip * SurfaceGrip;
                 // 📝 An underinflated tyre grips less, a pinched one less again, a bare rim least of all.
                 const PressureGrip = Wheel.Shredded ? RimGrip
                                    : (0.62 + 0.38 * Math.min(1.0, Math.pow(Math.max(0.0, Wheel.Pressure / (0.75 * TyreReferencePressure)), 0.7)))
@@ -681,7 +684,7 @@ export class VehicleSolver
                 // 📝 GRIT's sheet peaks above μ 2.3 laterally (pDy1 · Ly), past the chassis's 1.98 g static rollover
                 //    threshold; VehicleGeometry.h states the intent that the car slides before it rolls, so the combined
                 //    force is held to FrictionLimit · Fz.
-                const Limit = FrictionLimit * AxleLoad * Wheel.Grip * PressureGrip;
+                const Limit = FrictionLimit * AxleLoad * Wheel.Grip * SurfaceGrip * PressureGrip;
                 const Magnitude = Math.hypot(Fx, Fy);
                 if (Magnitude > Limit)
                 {

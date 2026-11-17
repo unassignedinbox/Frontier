@@ -67,9 +67,9 @@ function VerifyWatertightClosedMesh(Name, Facets)
 test("Foundry PBR Materials (160..169) & All Static + Dynamic Shapes Are Closed Watertight 2-Manifolds", () =>
 {
     const Materials = ConstructMaterialSpecification();
-    assert.equal(Materials.length, 186, "Expected 186 total PBR materials");
+    assert.equal(Materials.length, 200, "Expected 200 total PBR materials");
     const Encoded = EncodeMaterialRecords(Materials);
-    assert.equal(Encoded.length, 186 * 12);
+    assert.equal(Encoded.length, 200 * 12);
 
     const PeakEmissive = (Id) => Math.max(...(Materials[Id].Emission || [0, 0, 0]));
     assert.ok(PeakEmissive(CourseMaterial.FoundryMagCyan) > 2.0,    "FoundryMagCyan must glow brightly");

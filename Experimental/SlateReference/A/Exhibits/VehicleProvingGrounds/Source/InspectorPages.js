@@ -950,17 +950,33 @@ function HexToRgb(Hex)
 function BuildLevel(Host, C, Body)
 {
     const ShortLevelTitle = {
+        labyrinth: "Maze",
         demolish:  "Demo",
         foundry:   "Belt",
-        inversion: "Arena",
+        inversion: "Flip",
         city:      "City",
         dday:      "D-Day",
         candy:     "Candy",
-        proving:   "Track"
+        proving:   "Base"
     };
     const Selector = C.Card(Body, "Level arena", "Layers", { Accent: Accent.Level, Index: 1, Subtitle: "Switch active environment" });
     C.Segmented(Selector, Host.Settings, "Level", LevelCatalog.map((Entry) => [ShortLevelTitle[Entry.Key] || Entry.Title, Entry.Key]),
                 { Label: "Arena", OnChange: () => Host.ApplySetting("Level") });
+    if (Host.LevelKey === "labyrinth" && Host.PistonLabyrinth?.Enabled)
+    {
+        C.Stats(Selector, [
+            ["Maze seed", () => `#${Host.PistonLabyrinth.Maze?.SeedTag || "------"}`],
+            ["Traps tripped", () => Host.PistonLabyrinth.TrapsTriggered, "", 0],
+            ["Mirage smashed", () => Host.PistonLabyrinth.MirageSmashed, "", 0],
+            ["Systems hacked", () => Host.PistonLabyrinth.SystemsHacked, "", 0]
+        ]);
+        const LabRow1 = C.ActionRow(Selector);
+        C.Button(LabRow1, "Acoustic Horn [H]", "Zap",       () => Host.PistonLabyrinth?.TriggerAcousticHorn());
+        C.Button(LabRow1, "Hack Traps [Q]",    "Cpu",       () => Host.PistonLabyrinth?.TriggerVehicleHack());
+        const LabRow2 = C.ActionRow(Selector);
+        C.Button(LabRow2, "New random maze",   "Layers",    () => Host.RegenerateLabyrinthMaze());
+        C.Button(LabRow2, "Reset run",         "RotateCcw", () => Host.PistonLabyrinth?.Reset());
+    }
     if (Host.LevelKey === "demolish" && Host.DemolishRun?.Enabled)
     {
         C.Stats(Selector, [
@@ -1022,7 +1038,11 @@ function BuildLevel(Host, C, Body)
     }
     const MaxKey = Math.min(9, ActiveZones.length);
     const Zones = C.Card(Body, ActiveTitle, "Map", { Accent: Accent.Level, Index: 3, Subtitle: `Teleport the car (keys 1–${MaxKey})` });
-    if (Host.LevelKey === "demolish")
+    if (Host.LevelKey === "labyrinth")
+    {
+        C.Muted(Zones, "A procedurally generated 380 m brutalist concrete labyrinth with towering 20 m monolith walls, 8 giant sliding hydraulic megawalls, and all 7 hidden industrial traps (False-Slab Pitfalls dropping into real subterranean shafts, Pneumatic Slam-Plate kickers, Snap-Ambush wall crushers, Drop-Gate Guillotines w/ red trip-beams, Concealed Reverse-Roller strips, Corner Acid-Mist slicks & Mirage cheat walls). Fire the Acoustic Resonance Horn [H] to pre-shatter mirage walls & clear acid mist, or trigger Vehicle Hacking [Q] to open gates, lock pitfalls, and flip reverse rollers into emerald turbo slings!");
+    }
+    else if (Host.LevelKey === "demolish")
     {
         C.Muted(Zones, "A procedurally generated & procedurally fractured 370 m urban demolition corridor — brand-new random houses, street curves, and fracture cuts every time you enter! Choose between tight sunlit alley crevices or smashing straight through illuminated 2-story residential garages, tempered glass storefronts, interior drywall partitions, and rear brick walls while 5 giant swinging wrecking-ball cranes and 12 C4 charges blast facades down around you.");
     }

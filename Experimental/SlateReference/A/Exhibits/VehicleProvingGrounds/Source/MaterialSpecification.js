@@ -214,7 +214,22 @@ export const CourseMaterial = Object.freeze({
     DemoBlastEmissive:  182,
     DemoBeaconAmber:    183,
     DemoDetonatorRed:   184,
-    DemoFinishGreen:    185
+    DemoFinishGreen:    185,
+    // 📝 The Piston Labyrinth ("labyrinth") brutalist concrete monolith, hydraulic rail, hidden trap & ability PBR finishes.
+    LabConcreteLight:   186,
+    LabConcreteMid:     187,
+    LabConcreteDark:    188,
+    LabFloorSlate:      189,
+    LabRailSteel:       190,
+    LabCatwalkSteel:    191,
+    LabHazardAmber:     192,
+    LabMirageWall:      193,
+    LabWarningRed:      194,
+    LabBeaconEmerald:   195,
+    LabSonicCyan:       196,
+    LabAcidGlow:        197,
+    LabSodiumLamp:      198,
+    LabPortalViolet:    199
 });
 
 export const MarkedFamilyFirst = CourseMaterial.Asphalt;   // [-]
@@ -701,6 +716,42 @@ export function ConstructMaterialSpecification()
     const DemoFinishGreen = Dielectric(0.18, 1.0, 0.48, 0.20);
     DemoFinishGreen.Emission = [0.28, 3.20, 1.15];
     Materials[CourseMaterial.DemoFinishGreen]    = DemoFinishGreen;
+
+    // 📝 The Piston Labyrinth ("labyrinth") brutalist concrete monolith, hydraulic rail, hidden trap & ability PBR finishes.
+    Materials[CourseMaterial.LabConcreteLight]   = Dielectric(0.55, 0.54, 0.51, 0.84);
+    Materials[CourseMaterial.LabConcreteMid]     = Dielectric(0.35, 0.36, 0.37, 0.88);
+    Materials[CourseMaterial.LabConcreteDark]    = Dielectric(0.16, 0.17, 0.19, 0.86);
+    const LabFloorSlate = Dielectric(0.22, 0.23, 0.25, 0.50);
+    LabFloorSlate.CoatWeight = 0.20;
+    LabFloorSlate.CoatRoughness = 0.24;
+    Materials[CourseMaterial.LabFloorSlate]      = LabFloorSlate;
+    Materials[CourseMaterial.LabRailSteel]       = Metal(0.32, 0.35, 0.40, 0.28);
+    Materials[CourseMaterial.LabCatwalkSteel]    = Metal(0.22, 0.24, 0.27, 0.36);
+    const LabHazardAmber = Dielectric(0.92, 0.62, 0.04, 0.36);
+    LabHazardAmber.CoatWeight = 0.22;
+    LabHazardAmber.CoatRoughness = 0.18;
+    Materials[CourseMaterial.LabHazardAmber]     = LabHazardAmber;
+    Materials[CourseMaterial.LabMirageWall]      = Dielectric(0.47, 0.46, 0.42, 0.92);
+    const LabWarningRed = Dielectric(1.0, 0.12, 0.10, 0.22);
+    LabWarningRed.Emission = [3.90, 0.18, 0.12];
+    Materials[CourseMaterial.LabWarningRed]      = LabWarningRed;
+    const LabBeaconEmerald = Dielectric(0.18, 1.0, 0.52, 0.20);
+    LabBeaconEmerald.Emission = [0.24, 3.60, 1.35];
+    Materials[CourseMaterial.LabBeaconEmerald]   = LabBeaconEmerald;
+    const LabSonicCyan = Dielectric(0.24, 0.88, 1.0, 0.18);
+    LabSonicCyan.Emission = [0.35, 2.85, 4.10];
+    Materials[CourseMaterial.LabSonicCyan]       = LabSonicCyan;
+    const LabAcidGlow = Dielectric(0.34, 0.68, 0.08, 0.14);
+    LabAcidGlow.Emission = [0.55, 1.65, 0.14];
+    LabAcidGlow.CoatWeight = 0.72;
+    LabAcidGlow.CoatRoughness = 0.08;
+    Materials[CourseMaterial.LabAcidGlow]        = LabAcidGlow;
+    const LabSodiumLamp = Dielectric(1.0, 0.72, 0.32, 0.22);
+    LabSodiumLamp.Emission = [3.60, 2.35, 0.95];
+    Materials[CourseMaterial.LabSodiumLamp]      = LabSodiumLamp;
+    const LabPortalViolet = Dielectric(0.68, 0.22, 1.0, 0.18);
+    LabPortalViolet.Emission = [1.95, 0.48, 3.85];
+    Materials[CourseMaterial.LabPortalViolet]    = LabPortalViolet;
 
     return Materials;
 }

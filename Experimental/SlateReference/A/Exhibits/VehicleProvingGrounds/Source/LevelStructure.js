@@ -26,6 +26,9 @@ import { FoundryStaticShapes, FoundryDynamicShapes, FoundryBounds, FoundrySpawn,
 import { DemolishBounds, DemolishSpawn, ResolveDemolishZones, ResolveDemolishShapes,
          ResolveDemolishPlacements, ResolveDemolishExtraObstacles, ResolveDemolishCones,
          ResolveDemolishBreakables, EmitDemolishGroundFacets } from "./DemolishRunStructure.js";
+import { LabyrinthBounds, LabyrinthSpawn, QueryLabyrinthFloorHeight, ResolveLabyrinthZones, ResolveLabyrinthShapes,
+         ResolveLabyrinthPlacements, ResolveLabyrinthCones, ResolveLabyrinthBreakables,
+         EmitLabyrinthGroundFacets } from "./PistonLabyrinthStructure.js";
 import { LobbyShapes, LobbyDistanceCutouts, ResolveLobbyVenue, ResolveLobbyVenueDescriptor,
          ResolveLobbyPlacements, EmitLobbyGroundFacets } from "./LobbyStructure.js";
 import { VehicleGeometry } from "./VehicleSpecification.js";
@@ -479,6 +482,7 @@ export const LevelClearZones = Object.freeze([
 //------------------------------------------------------------------------------------------------------------------------
 
 export const LevelCatalog = Object.freeze([
+    { Key: "labyrinth", Title: "Piston Labyrinth · Concrete Maze", Subtitle: "Shifting 20 m concrete monoliths, 7 hidden traps, mirage walls, Acoustic Horn & Vehicle Hacking" },
     { Key: "demolish",  Title: "Demolish Run · Fracture City", Subtitle: "Procedural fractured houses, drive-through garages, breakable walls, wrecking cranes & C4 blasts" },
     { Key: "foundry",   Title: "Assembly Line · Conveyor",   Subtitle: "Fast/slow conveyor belts, stamping presses, side-pushers & magnetic robots attracting parts + cars" },
     { Key: "inversion", Title: "Inversion Arena",            Subtitle: "Tracks A–I: Stunt loops, collapsing bridge/road, 3-lane subway, trams & robot factory" },
@@ -494,6 +498,15 @@ export function ResolveLevelShapes(LevelKey = "proving")
     {
         return {
             ...LobbyShapes
+        };
+    }
+    if (LevelKey === "labyrinth")
+    {
+        const { Cone, Jersey } = LevelShapes;
+        return {
+            Cone:   { ...Cone,   Voxel: 0.05 },
+            Jersey: { ...Jersey, Voxel: 0.09 },
+            ...ResolveLabyrinthShapes()
         };
     }
     if (LevelKey === "demolish")
@@ -611,6 +624,29 @@ export function ResolveLevelDescriptor(LevelKey = "proving", LobbyVenueKey = nul
             Cones:           () => [],
             Breakables:      () => [],
             EmitGround:      () => EmitLobbyGroundFacets(Venue.Key)
+        };
+    }
+    if (LevelKey === "labyrinth")
+    {
+        return {
+            Key:           "labyrinth",
+            Title:         "Piston Labyrinth · Concrete Maze",
+            Relief:        false,
+            TerrainHeight: QueryLabyrinthFloorHeight,
+            Bounds:        LabyrinthBounds,
+            AeroGrip:      0.40,
+            Spawn:         LabyrinthSpawn,
+            Zones:         ResolveLabyrinthZones(),
+            Drills:        [],
+            ClearZones:    [[-150.0, -32.0, 215.0, 32.0]],
+            Surfaces:      [],
+            TerrainHulls:  null,
+            Shapes:        ResolveLevelShapes("labyrinth"),
+            Placements:    ResolveLabyrinthPlacements,
+            TrafficLights: () => [],
+            Cones:         ResolveLabyrinthCones,
+            Breakables:    ResolveLabyrinthBreakables,
+            EmitGround:    EmitLabyrinthGroundFacets
         };
     }
     if (LevelKey === "demolish")

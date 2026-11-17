@@ -42,7 +42,10 @@ export const FractureMaterials = Object.freeze({
                 Grain: 0, Note: "Sectional residential garage door. Splits cleanly into hinged panels and framing splinters." },
     drywall:  { Label: "Interior wall",  Density: 780,  Gc: 85,  StoredEnergy: 0,     Restitution: 0.12, Friction: 0.68, Threshold: 1600,
                 Skin: CourseMaterial.DemoInteriorWall, Interior: CourseMaterial.DemoRubbleConcrete, Colour: "#c8c2b6", InteriorColour: "#8e8b84",
-                Note: "Plasterboard partition wall. Punches straight through into chalky slabs and dust." }
+                Note: "Plasterboard partition wall. Punches straight through into chalky slabs and dust." },
+    mirage:   { Label: "Mirage concrete", Density: 1350, Gc: 90, StoredEnergy: 8000,  Restitution: 0.14, Friction: 0.72, Threshold: 1800,
+                Skin: CourseMaterial.LabMirageWall, Interior: CourseMaterial.LabConcreteDark, Colour: "#94928a", InteriorColour: "#3f4146",
+                Note: "Camouflaged hollow brutalist cheat-partition. Shatters into jagged slabs on bumper smash or Acoustic Horn shockwave." }
 });
 
 export const FractureMaterialOrder = ["concrete", "rock", "wood", "glass", "tempered", "plastic"];

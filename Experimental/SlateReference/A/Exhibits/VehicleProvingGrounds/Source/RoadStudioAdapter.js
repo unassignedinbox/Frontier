@@ -106,7 +106,7 @@ export function StudioDirectionToWorld(Dir)
 
 export function ComputeWorldAnchorForBounds(Bounds, LevelKey = "inversion")
 {
-    if (LevelKey === "city" || LevelKey === "dday" || LevelKey === "candy" || LevelKey === "foundry" || LevelKey === "demolish")
+    if (LevelKey === "city" || LevelKey === "dday" || LevelKey === "candy" || LevelKey === "foundry" || LevelKey === "demolish" || LevelKey === "labyrinth")
         return [0.0, 0.0, 0.0];
     const MinStudioX = Bounds && Number.isFinite(Bounds.min?.[0]) ? Bounds.min[0] : -85.0;
     if (LevelKey === "inversion")
@@ -347,14 +347,15 @@ export function CreateStarterStudioProject(LevelKey = "inversion")
 {
     if (LevelKey === "city")
         return CreateCityPursuitStudioProject();
-    if (LevelKey === "dday" || LevelKey === "candy" || LevelKey === "foundry" || LevelKey === "demolish")
+    if (LevelKey === "dday" || LevelKey === "candy" || LevelKey === "foundry" || LevelKey === "demolish" || LevelKey === "labyrinth")
     {
         return {
             version:    1,
             worldSpace: true,
-            name:       LevelKey === "demolish" ? "Demolish Run Fracture City"
+            name:       LevelKey === "labyrinth" ? "The Piston Labyrinth Maze"
+                      : (LevelKey === "demolish" ? "Demolish Run Fracture City"
                       : (LevelKey === "foundry" ? "Assembly Line Conveyor"
-                      : (LevelKey === "candy" ? "Candy Village Lanes" : "D-Day Combat Sector Roads")),
+                      : (LevelKey === "candy" ? "Candy Village Lanes" : "D-Day Combat Sector Roads"))),
             nodes:      [],
             roads:      [],
             sites:      []
