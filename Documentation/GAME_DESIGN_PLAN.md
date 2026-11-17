@@ -44,6 +44,14 @@
    - Automated military testing canyon locked onto your vehicle as a live target dummy: rail-mounted sled guns race alongside leading your speed, pneumatic steel flipper-plates snap out of the floor to launch cars sky-high, and parachuting concrete tank-traps rain down from cargo drops shifting safe lanes every second.
 7. **The Logging Mountain Slide (Downhill Chaos)**
    - Steep downhill mud-and-timber run while a logging mountain collapses around you: 10-ton stripped tree trunks bounce end-over-end down the slope right over your hood, runaway logging trailers jackknife through wooden cabins, and players smash straight through plank sawmills to escape the main log chute.
+8. **The Active Blast Quarry ("Cascading Dynamite Terraces")**
+   - Race across the terraced benches of a massive canyon mine while **sequential demolition charges blow entire cliff faces off** right beside your tyres.
+   - Thundering boulder avalanches bounce down across lower ledges; unmanned 300-ton haul-truck husks slide sideways across switchbacks; rockslides erase the road behind you.
+   - *Hardware Payoff:* **Acoustic Resonance Horn** shatters falling boulders & cracked tunnel plugs into harmless gravel before impact; **Downforce Suction Fans** let you climb **straight UP the steep 50° quarry cliff faces** to skip entire exploding switchbacks; **Winch/Towbar** rips collapsed mine carts out of shortcut tunnels.
+9. **The Orbital Launch Trench ("Rocket Ignition Countdown")**
+   - Teleport straight into the colossal concrete flame-trench directly beneath a 120-meter heavy-lift rocket at **T-minus 45 seconds**.
+   - Retracting service gantries slam across the causeway, ruptured liquid-oxygen pipes flood sections with zero-grip cryo mist, acoustic shockwaves peel concrete off the trench walls, and at **T-minus 10 seconds a roaring wall of white-hot rocket exhaust fire surges down the trench straight behind your rear bumper**.
+   - *Hardware Payoff:* **Vehicle Hacking** forces blast gates open at 200 km/h, **Cyclone Turbocharger** drinks the superheated shock-air for blistering escape boost, and you launch off the curved flame-deflector ramp straight into the exit portal as the rocket lifts off.
 
 ---
 
@@ -57,14 +65,21 @@
   - **Skyscraper glass curtain-walls & billboards** shear off leaning towers above, shattering across avenues while **automated rooftop HVAC units and elevators** crash into streets.
   - **Natural Multi-Level Route Choices:** Drop into a flooded subway concourse and smash through ticket turnstiles, blast up a multi-story parking garage spiral and jump through the 3rd-floor parapet onto an elevated monorail deck, or cut straight through ground-floor glass bank lobbies to bypass a freshly opened sinkhole crater.
 
-### B. Giant Concrete Maze — **"The Piston Labyrinth"**
-*Colossal, oppressive brutalist concrete corridors (`18–25 m` tall monolith walls) that physically shift, crush, and reconfigure around you — procedurally generated every run.*
-- **What's actively trying to kill you:**
+### B. Giant Shifting Concrete Maze with Hidden Traps — **"The Piston Labyrinth"**
+*Colossal, oppressive brutalist concrete corridors (`18–25 m` tall monolith walls) that procedurally randomize, physically shift, crush, and spring concealed industrial traps every run.*
+- **Core Shifting Architecture:**
   - **Sliding Hydraulic Megawalls:** Enormous 20-meter-tall concrete monoliths grind sideways on recessed steel floor rails with deafening warning horns, **sealing corridors shut** or **trying to pancake slow cars** between closing faces.
-  - **Moving Floor Slats & Drop Pits:** Dead-end traps suddenly retract their floor slabs unless you flick a 180° handbrake spin or punch through a thin cracked escape panel.
   - **Breakable Cheat Partitions:** Thin weathered concrete/masonry maintenance doors hidden inside corners let observant drivers **smash shortcuts straight across maze rings** instead of taking the long outer corridor.
-  - **Overhead Stalker Bridges & Sweeper Blades:** Elevated steel catwalks carry roving floodlights and swinging concrete pendulum counterweights through long straightaways, so even straight corridors force aggressive weaving.
-  - **Vertical Sightlines & Exit Beacon:** Narrow sky shafts let beams of sun/acid rain stab down into the canyon, and a tall pulsing green/amber extraction beacon peeks over the shifting walls so players navigate by instinct and sight rather than staring at a minimap.
+  - **Overhead Stalker Bridges & Sweeper Blades:** Elevated steel catwalks carry roving floodlights and swinging concrete pendulum counterweights through long straightaways, forcing aggressive weaving.
+  - **Vertical Sightlines & Exit Beacon:** Narrow sky shafts let beams of sun/acid rain stab down into the canyon (critical for **Deployable Solar Panel** emergencies!), while a tall pulsing green/amber extraction beacon peeks over the shifting walls so players navigate by sight and instinct rather than a minimap.
+- **7 Hidden Brutalist Traps (Camouflaged Until Triggered — Readable by Subtle Tells & Hardware):**
+  1. **False-Slab Pitfalls (Counterweighted Trap Floors):** Flush concrete floor panels with hairline expansion seams that look solid until your front tyres roll across — hydraulic latches snap open and the entire 12 m slab tilts vertically into an abyss. *Tell/Counterplay:* Hairline dust puffs & floor rivets visible in **Long-Throw High Beams**; gun it to jump the lip, slam **Air-Brake Spoiler** to stop short, ride the vertical sidewall with **Downforce Fans**, or **Hack** the latches shut ahead of you.
+  2. **Pneumatic Slam-Plates (Spring-Loaded Floor Kickers):** Concealed steel-backed floor slabs that violently hinge upward at 45° mid-pass, trying to slam your car into overhead concrete beams or flip you backward. *Tell/Counterplay:* Spot hydraulic oil seams — **EMP Lights / Vehicle Hacking** locks the plate flat, OR ride it deliberately as a launch ramp onto an upper catwalk shortcut!
+  3. **Snap-Ambush Alcoves (Concealed Crusher Walls):** Seamless recessed monolith panels flush with blind corridor walls that explode sideways on proximity triggers to T-bone or sandwich your chassis. *Tell/Counterplay:* **Acoustic Resonance Horn** triggers/jams the seam early, **Vehicle Hacking** reverses the piston back into the wall, or fire **Cyclone Afterburner** to shoot the closing gap.
+  4. **Drop-Gate Guillotine Shutters (Hidden Ceiling Slabs):** Heavy concrete slabs hidden in dark overhead shadow bays that free-fall across the corridor when your nose breaks an infrared trip-beam. *Tell/Counterplay:* **EMP Headlights / Hacking** kills the trip-beam so the gate stays up; **Ablative Roof Shutters** survive a clip; or spot the sensor housing with **High Beams** and smash the adjacent cheat-partition instead.
+  5. **Concealed Reverse-Roller Strips (Hidden Floor Drag Traps):** Flush ribbed concrete tiles inside tight turns that retract covers to expose high-speed reverse traction rollers pulling your tyres backward straight into a closing monolith wall. *Tell/Counterplay:* **Grip Claws** or **Downforce Fans** bite through, **Vehicle Hacking** flips the rollers forward into a turbo sling, or **Front Winch** hooks a corner pylon to haul you clear.
+  6. **Corner Ambush Vent Slits (Hidden Acid-Mist / Steam Blasters):** Narrow shadow slits tucked at blind 90° turns blast blinding pressurized steam or corrosive Acid Mist across your windshield right as you brake — slashing tyre grip (`μ`) to zero. *Tell/Counterplay:* **Cyclone Vortex Turbine** inhales the trap blast straight into your turbocharger for an exit surge; **Vortex-Deflector Canards** keep vision clear; **Hydro cars** drink the mist for free power.
+  7. **Mirage Dead-End Walls vs. Pincer Alleys:** Some "solid" concrete dead-ends are thin hollow plaster-concrete shells hiding massive shortcuts, while some inviting side alleys are pincer traps whose rear monolith slams shut once you enter. *Tell/Counterplay:* **Acoustic Resonance Horn** shatters mirage walls on approach (solid concrete rings dull); **Long-Throw High Beams** reveal fracture hairlines on fake walls and recessed floor rails on pincer traps.
 
 ### C. Global / Biome Hazard — **Acid Rain**
 - **Direct Vehicle Physics Effect:**
@@ -210,11 +225,19 @@ Every exterior part bolted onto the car serves a **real mechanical purpose** in 
 
 ---
 
-## 7. Teleport Portal Meta-Mechanic: **Momentum, State & Hardware Carry-Over**
+## 7. Teleport Portal Meta-Mechanic: **Momentum Carry-Over & Blind Split Portals**
 
+### A. Momentum, State & Hardware Carry-Over
 Because there are no laps or reset grids, **every portal preserves your exact physical state**:
 - Enter a portal at 160 km/h mid-air → burst out of the exit portal in the next biome still flying at 160 km/h (with your **Glider Spoiler** holding pitch straight through the transition!).
 - Carry latched parasites, fire, acid slickness, fuel/battery/reactor-heat state, mounted Tool Pickups, and active Vehicle Abilities straight across worlds:
   - Drag Dead Forest weight-ticks through a portal straight into a Demolish Run C4 fireball or Wasteland Acid Rain squall to wipe your chassis clean in one second.
   - Suck up a lungful of falling skyscraper glass with your **Cyclone Vortex Turbine** in Sinkhole Downtown, blast through the exit portal into Overgrown Lab, and unleash the shrapnel hurricane straight into a lunging giant plant!
   - Let your **Hydro** car drink Acid Rain to 100% charge right before teleporting into a dry Nuclear Wasteland, or deploy your **Solar Panel** inside a Piston Labyrinth sunbeam shaft before hacking the final hydraulic exit gate open.
+
+### B. Blind Split Portals (Choose Your Next Biome at 180 km/h)
+- At the end of a gauntlet, **2 or 3 giant shimmering portals open side-by-side**, each showing a live visual slice of the chaos waiting inside (e.g., Acid Rain Piston Labyrinth vs. Orbital Rocket Launch Trench vs. Capsizing Mega-Ship).
+- Players pick their next hell **at full throttle based on their current build, power source, and emergency state**:
+  - Running low in a **Hydro** car? Dive into the Acid Rain portal to refill on the move!
+  - Covered in heavy weight-ticks or alien vines? Dive straight into the **Orbital Launch Trench** to roast every latched creature off in seconds!
+  - Rocking **Downforce Suction Fans** + **Acoustic Resonance Horn**? Pick **The Active Blast Quarry** to climb the 50° cliffs and shatter falling boulders!
