@@ -122,17 +122,93 @@
    - Extends retractable tungsten carbide studs out of all 4 tyres for 10 seconds: **completely neutralizes Acid Rain slickness, oil, mud, and tilted ship decks**, letting you carve impossible corners and climb counter-moving conveyor belts at full grip.
 4. **Siphon-Harvester Scoop ("Fuel Skimmer")**
    - Magnetized intake scoop under the nose for 12 seconds: automatically vacuums fuel vapor from nearby drums, burning wreckage, and crushed fuel-mosquitoes/ticks without needing a direct dead-center hit, rapidly refilling your tank on the move.
-5. **Thermal Roof Shield / Ablative Canopy**
+5. **Ablative Roof Shutters (Thermal Roof Shield / Armored Canopy)**
    - Drops armored louvered shutters over the roof and windshield for 10 seconds: **blocks Acid Rain corrosion, falling masonry/glass shards from skyscrapers, aerial shrapnel, and overhead scrapyard crane claws** trying to grab your roof.
 6. **Emergency Rear Anchor-Thruster ("Extraction Kick")**
    - Single-use solid-fuel booster cartridge strapped to the rear frame: fires a violent 1.8-second straight-line thrust + scorching rear flame cone — specifically designed to **rip your car free from a giant plant's jaws, outrun a closing concrete maze wall, clear a collapsing sinkhole gap, or roast everything latched to your tail**.
-7. **Magnetic Tow-Winch Hook (Environmental Grapple)**
-   - Automatically snaps a steel cable onto overhead girders, crane hooks, or maze corner posts on hard turns — letting you **whip-pivot a 90° concrete maze corner at 120 km/h** without scrubbing speed or pull yourself up a tilting ship deck.
+7. **Magnetic Corner-Winch (Environmental Grapple)**
+   - Automatically snaps a steel cable onto overhead girders, crane hooks, or concrete maze corner posts on hard turns — letting you **whip-pivot a 90° concrete maze corner at 120 km/h** without scrubbing speed or haul yourself up a tilting ship deck.
 
 ---
 
-## 6. Teleport Portal Meta-Mechanic: **Momentum & State Carry-Over**
+## 6. Vehicle Abilities (Built-In Mechanical Hardware — Pure Physics Survival)
+
+> **Design Rule:** Just like Tool Pickups, Vehicle Abilities are **NOT** anti-vehicle PvP weapons and **NOT** boring passive stat buffs (`+10% speed`). Every ability is a **tactile, mechanical chassis system** wired directly into the Jolt physics + Pacejka tyre model that physically changes how your car survives collapsing walls, acid rain, shifting monoliths, and latched creatures.
+>
+> **No Boring Arcade Timers:** Abilities run on real physical vehicle resources — **Kinetic Flywheel Charge** (earned by smashing debris, drifting, and hard braking), **Fuel Burn**, **Alternator Charge**, or **Thermal Headroom** — rewarding aggressive driving instead of waiting on a HUD clock.
+
+### A. Universal Chassis Skill Moves (Built Into Every Vehicle)
+Every car has two emergency mechanical survival maneuvers baked into the pedals/controls:
+1. **Exhaust Backfire Dump (Fuel-Burn Purge):** Dumps raw fuel into the hot exhaust manifold to blast a scorching flame cone off the rear bumper — **burns off tail-latched mosquitoes, severs Harpoon-Tongue Anchor Grubs**, and gives a short emergency torque kick at the cost of a gulp of fuel.
+2. **Rotor-Cook Pulse (Throttle + Brake Burn):** Briefly pins throttle against brake pressure to glow the brake rotors red-hot — **cooks Wheel-Well Leech Slugs straight out of the wheel arches** and flashes acid slickness off the tyres (briefly elevates brake heat).
+
+### B. 8 Original Signature Vehicle Abilities (Mechanical Chassis Systems)
+
+1. **Hydraulic Side-Tilt & Strut Slam ("Two-Wheel Knife")**
+   - *Physics Mechanic:* Independently extends left or right hydraulic suspension struts on demand — physically tilting the entire chassis up onto **two wheels at 40–45°**, OR compressing all four struts flat and snapping a rebound hop.
+   - *Gauntlet Payoff:*
+     - **Knife through almost-closed concrete maze monoliths**, narrow brick rubble slots, or gaps between derailing boxcars that no flat car can fit through.
+     - **Counter-lean into the Capsizing Mega-Ship's 25° deck tilt** to keep weight centered and tyres gripping.
+     - **Rebound-hop** cleanly over low erupting Dead Forest roots or widening sinkhole lips.
+2. **Split-Brake Tank Pivot ("Anchor-Snap Differential")**
+   - *Physics Mechanic:* Instantly locks the inside rear wheel solid while routing maximum drive torque to the outside wheels via an active spool differential.
+   - *Gauntlet Payoff:*
+     - Snap razor-tight **90° and 180° pivots on a dime** inside shifting Piston Labyrinth dead-ends or collapsing Sinkhole Downtown intersections without washing wide into walls.
+     - **Creature Synergy:** The violent lateral G-whip **flings fuel-bloated mosquitoes sideways like live grenades** straight into blocked doors, roots, or giant carnivorous plants.
+3. **Flywheel Kinetic Bank ("Crush-Capacitor")**
+   - *Physics Mechanic:* A heavy mechanical flywheel coupled to the driveline harvests rotational energy every time you **hard-brake, drift hard, or smash straight through breakable wood, glass, and masonry**.
+   - *Gauntlet Payoff:*
+     - Dump the clutch to unleash all banked RPM straight into the wheels as a brutal 2.5-second torque surge — enough to **overpower reverse Conveyor Belts**, rip out of a giant plant's jaws, or punch through thick reinforced concrete walls.
+     - *Physical Trade-Off:* Holding the flywheel overcharged introduces slight gyroscopic steering weight until you dump it, keeping driving hands-on.
+4. **Underbody Vacuum Skirt ("Ground-Suck Turbine")**
+   - *Physics Mechanic:* Drops flexible armored rubber skirts around the sill perimeter and spools up a high-RPM floorpan fan that creates real negative-pressure aerodynamic downforce independent of speed.
+   - *Gauntlet Payoff:*
+     - **Completely defies Acid Rain ice-slickness** on command, gluing tyres to wet asphalt and steel decks.
+     - Lets you **traverse steep tilted ship decks, collapsed freeway slabs, or ride high onto angled concrete wall banking** to bypass blocked lanes.
+     - *Physical Risk:* Running the vacuum directly over alien spore pods sucks spores under the chassis — toggle it intentionally.
+5. **Tesla Exo-Cage Discharge ("Arc Skin")**
+   - *Physics Mechanic:* Alternator/wheel-spin charges an exposed steel exo-rollcage surrounding the hull; triggering dumps a crisp high-voltage snap across the entire exterior body.
+   - *Gauntlet Payoff:*
+     - **Instantly electrocutes and detaches every latched parasite** (ballast ticks, mosquitoes, anchor-grub tendons, wheel-well leech slugs) in one flash.
+     - **Shocks giant carnivorous plants and Scrapyard claw cranes** into spasming open and dropping your car mid-air.
+     - *Chain Reaction:* Triggering the arc while a fuel-bloated mosquito is still latched **detonates it in a concussive shock-ring**, blasting nearby debris out of your path.
+6. **Telescoping Morph-Axle ("Wide-Track / Narrow-Track Shift")**
+   - *Physics Mechanic:* Hydraulic telescoping half-shafts physically widen or retract all four wheels by `±0.65 m` mid-drive, dynamically changing track width, roll stiffness, and ground clearance in real time.
+   - *Gauntlet Payoff:*
+     - **Narrow-Track Mode:** Tucks wheels tight into the body to thread razor-thin demolition alleys, closing maze gates, and broken bridge girders (nimbler fit, livelier roll).
+     - **Wide-Track Crawler Mode:** Extends axles outward and lifts ride height — **straddles opening sinkhole cracks and erupting root fissures right between the tyres**, and resists water geysers, side-pushers, and rolling mountain logs without flipping.
+7. **Acoustic Resonance Horn ("Shock-Wave Grille")**
+   - *Physics Mechanic:* A massive industrial low-frequency air-cannon recessed behind the front grille fires a focused directional concussive pressure cone straight ahead (environmental interaction tool, not an anti-car weapon).
+   - *Gauntlet Payoff:*
+     - **Pre-shatters fractured brick, glass, and maze cheat-partitions** 15 m ahead so you blast through the debris cloud with near-zero slowdown.
+     - **Staggers lunging giant plants mid-bite**, **blasts diving mosquito swarms & windshield spore clouds clear away**, and **deflects falling skyscraper glass/masonry** right off your line.
+8. **Overdrive Mass-Lock ("Lead-Sled Battering Mode")**
+   - *Physics Mechanic:* Rigidly locks suspension dampers, clamps center-of-gravity down, and dumps hydraulic inertia ballast for 3 seconds — temporarily multiplying effective collision mass and frontal fracture force.
+   - *Gauntlet Payoff:*
+     - Turns the car into an **unstoppable demolition sledge**: smash straight through stacked scrapyard cars, heavy concrete bulkheads, and Ram-Beetle T-bones, or **shatter rolling 10-ton tree trunks** instead of deflecting off them.
+     - *Physical Trade-Off:* Minimal steering authority while mass-locked — aim your line, lock mass, breach straight through, then unlock cleanly for the exit corner.
+
+### C. Playable Vehicle Archetypes (Modular Rigs for the Lobby)
+Each selectable vehicle in the Lobby ships with a distinct chassis tune, **1 Passive Mechanical Trait**, and **1 Signature Active Ability** (with optional garage customization to swap ability modules onto favorite hulls):
+
+| Rig Codename | Chassis Class | Signature Active Ability | Passive Mechanical Trait |
+| :--- | :--- | :--- | :--- |
+| **Wedge** | Armored Rally Coupe | **Flywheel Kinetic Bank** | Angled steel nose preserves +25% momentum through fracture walls. |
+| **Spider** | Articulated Tube Buggy | **Hydraulic Side-Tilt & Strut Slam** | High-travel suspension absorbs sinkhole drops & root impacts cleanly. |
+| **Leech** | Aero Ground-Effect Interceptor | **Underbody Vacuum Skirt** | Acid-resistant compound slows Acid Rain tyre corrosion by 40%. |
+| **Pivot** | Short-Wheelbase Drift Utility | **Split-Brake Tank Pivot** | Extreme steering lock + instant counter-steer snap on slick surfaces. |
+| **Cage** | High-Voltage Exo-Runner | **Tesla Exo-Cage Discharge** | Full external rollcage shrugs off falling masonry & crane roof grabs. |
+| **Crawler** | Telescoping Industrial Hauler | **Telescoping Morph-Axle** | High-torque AWD climbs counter-moving conveyors & mud slopes effortlessly. |
+| **Siren** | Sonic Breach Interceptor | **Acoustic Resonance Horn** | Reinforced polycarbonate windshield resists spore splatter & glass bursts. |
+| **Hammer** | Heavy Twin-Axle Brute | **Overdrive Mass-Lock** | Heavy steel frame ignores light ballast-tick lean & side-pusher shoves. |
+
+---
+
+## 7. Teleport Portal Meta-Mechanic: **Momentum, State & Ability Carry-Over**
 
 Because there are no laps or reset grids, **every portal preserves your exact physical state**:
 - Enter a portal at 160 km/h mid-air → burst out of the exit portal in the next biome still flying at 160 km/h.
-- Carry latched parasites, fire, acid slickness, and mounted survival tools right across worlds — turning cross-biome interactions into clutch survival tricks (e.g., dragging Dead Forest weight-ticks through a portal straight into a Demolish Run C4 fireball or Wasteland Acid Rain squall to wipe your chassis clean in one second).
+- Carry latched parasites, fire, acid slickness, mounted survival tools, and active vehicle ability states right across worlds — turning cross-biome transitions into clutch plays:
+  - Drag Dead Forest weight-ticks through a portal straight into a Demolish Run C4 fireball or Wasteland Acid Rain squall to wipe your chassis clean in one second.
+  - Max out your **Flywheel Kinetic Bank** smashing walls through Demolish Run, leap into the portal at redline, and dump the entire charge the instant your tyres touch a fast counter-moving Conveyor Belt.
+  - Hit **Hydraulic Side-Tilt** mid-jump out of a sinking street to thread straight through a half-closed Piston Labyrinth concrete gate on landing.
