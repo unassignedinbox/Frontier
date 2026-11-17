@@ -177,23 +177,27 @@ test("Procedural Piston Labyrinth Randomizes Distinct Topologies Across Seeds Wh
 //                    3. FULL SCENESTRUCTURE("labyrinth") BUILD & LABYRINTHBLOCK DYNAMIC POOL
 //------------------------------------------------------------------------------------------------------------------------
 
-test("SceneStructure('labyrinth') Constructs Cleanly Under IdentityCeiling & Allocates 85 Dynamic Trap/Ability Occupants", async () =>
+test("SceneStructure('labyrinth') Constructs Cleanly Under IdentityCeiling & Allocates 95 Dynamic Trap/Wall/Door/Ability Occupants", async () =>
 {
     const RestoreFetch = InstallArchiveFetch();
     try
     {
-        PrepareLabyrinthMaze(0x20261AB1);
+        const Maze = PrepareLabyrinthMaze(0x20261AB1);
         const Scene = new SceneStructure();
         await Scene.ConstructScene("Archive", 0, "labyrinth");
 
         assert.ok(Scene.Occupants.length < IdentityCeiling,
             `Occupant count ${Scene.Occupants.length} exceeds IdentityCeiling (${IdentityCeiling})`);
         assert.ok(Scene.LabyrinthBlock, "Scene.LabyrinthBlock must be allocated for 'labyrinth'");
-        assert.equal(Scene.LabyrinthBlock.Count, 85, `Expected 85 dynamic occupants in LabyrinthBlock (got ${Scene.LabyrinthBlock.Count})`);
+        assert.equal(Scene.LabyrinthBlock.Count, 95, `Expected 95 dynamic occupants in LabyrinthBlock (got ${Scene.LabyrinthBlock.Count})`);
+        assert.equal(Scene.LabyrinthBlock.HeadingWalls.length, 4, "Expected 4 Heading-Direction moving piston walls");
+        assert.equal(Scene.LabyrinthBlock.PerpDoors.length, 6, "Expected 6 Perpendicular sliding blast doors");
+        assert.equal(Maze.Surfaces.length, 5, "Expected 5 drivable Top/Bottom overpass bridges & longitudinal sky-ramps");
         assert.ok(Scene.Breakables.length >= 10, `Expected >= 10 Jolt Fracture Mirage Walls (got ${Scene.Breakables.length})`);
 
-        // Verify live GPU transforms place all 8 sliding walls & 6 trap slabs at Z >= 0 (not parked at -45!)
+        // Verify live GPU transforms place sliding walls, heading pistons, perpendicular doors & trap slabs at Z >= 0!
         const Car = new VehicleSolver(Scene.QueryObstacleBounds());
+        Car.Surfaces = Maze.Surfaces;
         Car.Respawn(LabyrinthSpawn.Position.slice(), 0.0);
         const Seq = new PistonLabyrinthSequence({ LevelKey: "labyrinth", Scene, Vehicle: Car });
         assert.equal(Seq.Enabled, true);
@@ -201,6 +205,10 @@ test("SceneStructure('labyrinth') Constructs Cleanly Under IdentityCeiling & All
 
         for (const OccIdx of Scene.LabyrinthBlock.SlidingWalls)
             assert.ok(Scene.Occupants[OccIdx].Transform[14] >= -0.05, "Sliding megawall must stand above ground");
+        for (const OccIdx of Scene.LabyrinthBlock.HeadingWalls)
+            assert.ok(Scene.Occupants[OccIdx].Transform[14] >= -0.05, "Heading-direction piston wall must stand above ground");
+        for (const OccIdx of Scene.LabyrinthBlock.PerpDoors)
+            assert.ok(Scene.Occupants[OccIdx].Transform[14] >= -0.05, "Perpendicular sliding blast door must stand above ground");
         for (const OccIdx of Scene.LabyrinthBlock.TrapSlabs)
             assert.ok(Math.abs(Scene.Occupants[OccIdx].Transform[14]) < 0.5, "Armed trap slab must sit flush at Z = 0");
         Seq.Dispose();
@@ -328,6 +336,33 @@ test("All 7 Hidden Traps, Real Pacejka Reverse-Roller/Acid-Slick Physics, Acoust
         Seq.HackCooldown = 0.0;
         Seq.TriggerVehicleHack();
         assert.equal(GateTest.State, "hacked", "Vehicle Hack [Q] must kill Guillotine & hoist blade clear");
+
+        // (G) Multi-Level Top/Bottom Overpass Bridge: car drives CLEANLY UNDER Cross-Bridge A at Z=0 AND ON TOP at Z=+5.0 m!
+        Car.Surfaces = Maze.Surfaces;
+        Car.Respawn([-56.0, 0.0, 0.65], 0.0);
+        for (let I = 0; I < 20; ++I) Car.Advance({ Throttle: 0.4, Brake: 0.0, Steer: 0.0, Handbrake: false }, 0.02);
+        assert.ok(Car.Position[2] < 1.2, `Underpass car must stay cleanly on Z=0 road under +5.0 m bridge (got Z=${Car.Position[2]})`);
+
+        Car.Respawn([-56.0, 0.0, 5.65], 0.5 * Math.PI);
+        for (let I = 0; I < 25; ++I) Car.Advance({ Throttle: 0.3, Brake: 0.0, Steer: 0.0, Handbrake: false }, 0.02);
+        assert.ok(Car.Position[2] > 5.0 && Car.Position[2] < 6.2, `Overpass car must ride cleanly on top of +5.0 m concrete bridge deck (got Z=${Car.Position[2]})`);
+
+        // (H) Heading-Direction Moving Piston Walls surge longitudinally (±X) & Perpendicular Blast Doors slide across apertures!
+        const HWTest = Seq.HeadingWalls[1];
+        const HWStartX = HWTest.CurrentX;
+        const DoorTest = Seq.PerpDoors[1];
+        const DoorStartOpen = DoorTest.OpenFrac;
+        for (let I = 0; I < 20; ++I) Seq.Advance(0.04);
+        assert.ok(Math.abs(HWTest.CurrentX - HWStartX) > 1.5, "Heading-direction piston wall must travel longitudinally along ±X");
+        assert.ok(Math.abs(DoorTest.OpenFrac - DoorStartOpen) > 0.05, "Perpendicular blast door must continuously open/close squeeze gap");
+
+        // [Q] Vehicle Hack forces nearby Perpendicular Blast Doors WIDE OPEN & retreats Heading-Direction Piston Walls!
+        Car.Respawn([DoorTest.ClosedX, DoorTest.ClosedY - 6.0, 0.65], 0.0);
+        Seq.HackCooldown = 0.0;
+        Seq.TriggerVehicleHack();
+        for (let I = 0; I < 20; ++I) Seq.Advance(0.05);
+        assert.ok(DoorTest.HackedLeft > 0.0 && DoorTest.OpenFrac > 0.92, `Vehicle Hack [Q] must lock Perp Blast Door wide open (got OpenFrac=${DoorTest.OpenFrac})`);
+        assert.ok(HWTest.HackedLeft > 0.0, "Vehicle Hack [Q] must hijack nearby Heading-Direction Piston Wall");
 
         Seq.Dispose();
         AssignCustomTerrainHeight(null);

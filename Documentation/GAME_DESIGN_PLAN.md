@@ -68,7 +68,10 @@
 ### B. Giant Shifting Concrete Maze with Hidden Traps — **"The Piston Labyrinth"**
 *Colossal, oppressive brutalist concrete corridors (`18–25 m` tall monolith walls) that procedurally randomize, physically shift, crush, and spring concealed industrial traps every run.*
 - **Core Shifting Architecture:**
-  - **Sliding Hydraulic Megawalls:** Enormous 20-meter-tall concrete monoliths grind sideways on recessed steel floor rails with deafening warning horns, **sealing corridors shut** or **trying to pancake slow cars** between closing faces.
+  - **Sliding Hydraulic Megawalls (Lateral):** Enormous 20-meter-tall concrete monoliths grind sideways on recessed steel floor rails with deafening warning horns, **sealing corridors shut** or **trying to pancake slow cars** between closing faces.
+  - **Heading-Direction Moving Walls (Longitudinal Pistons):** Massive concrete piston monoliths that grind **parallel to the player's heading axis (`±X`)** straight down corridors — surging toward your bumper or chasing right behind your tail like a horizontal hydraulic press, forcing you to outpace them, ramp over them onto an upper deck, or slip through a side doorway.
+  - **Perpendicular Sliding Blast Doors (Small Squeeze Openings & Alternative Routes):** Heavy armored steel-and-concrete doors inset into canyon divider walls that slide **perpendicularly** across narrow doorway apertures — rhythmically cracking open tight car-width squeeze openings straight into hidden cross-lane alternative routes.
+  - **Multi-Level Concrete Ramps & Top/Bottom Overpass Bridges:** Stacked brutalist concrete viaducts and longitudinal sky-ramps (`+5.0 m` elevated upper decks crossing cleanly OVER `0.0 m` ground-level underpass tunnels) — creating genuine **top/bottom multi-level route choices** where players can climb ramps to fly over ground pitfalls, acid vents, rollers, and advancing walls, or blast straight through the shadowed underpasses below.
   - **Breakable Cheat Partitions:** Thin weathered concrete/masonry maintenance doors hidden inside corners let observant drivers **smash shortcuts straight across maze rings** instead of taking the long outer corridor.
   - **Overhead Stalker Bridges & Sweeper Blades:** Elevated steel catwalks carry roving floodlights and swinging concrete pendulum counterweights through long straightaways, forcing aggressive weaving.
   - **Vertical Sightlines & Exit Beacon:** Narrow sky shafts let beams of sun/acid rain stab down into the canyon (critical for **Deployable Solar Panel** emergencies!), while a tall pulsing green/amber extraction beacon peeks over the shifting walls so players navigate by sight and instinct rather than a minimap.
@@ -222,6 +225,30 @@ Every exterior part bolted onto the car serves a **real mechanical purpose** in 
 ### D. Universal Chassis Emergency Moves (Built Into Every Vehicle)
 - **Power-Source Purge:** Every car can dump a small burst of its active power source to shed clinging threats — **Exhaust Backfire Flame** *(Fuel)*, **Thermal Steam/Rad Vent** *(Nuclear)*, **High-Pressure Steam Blast** *(Hydro)*, or **Static Hull Discharge** *(Electric)*.
 - **Rotor-Cook Pulse (Throttle + Brake):** Spikes brake rotor heat red-hot to **cook Wheel-Well Leech Slugs straight out of the wheel arches** and flash-dry acid slickness off tyres.
+
+---
+
+### E. Military-Grade & Tactical Recon Vehicle Equipment *(Car-Specific / Equipable Systems)*
+
+*Specialized tactical, military, and electronic-warfare rigs carried by dedicated chassis or mounted into modular utility hardpoints — engineered to interact with collapsing terrain, shifting concrete mazes, volumetric smoke, hostile drones, and creatures:*
+
+1. **Tactical Airstrike Designator *(Target Ping → High-Velocity Kinetic Salvo)***
+   - Equipable military laser target-designator pod: the driver **pings a ground or structure coordinate** ahead (or along a blocked choke point) with a pulsing laser marker + brief countdown lock, calling down a devastating **precision airstrike salvo**.
+   - **Gauntlet Payoff:** Obliterates reinforced concrete roadblocks, jams/crushes giant carnivorous plants or armored Ram-Beetle ambushes, clears collapsed boulder slides in the **Active Blast Quarry**, or blows open an instant shortcut through a dense building cluster — while forcing the driver to time their throttle straight through the shockwave and falling debris!
+2. **Tactical Smoke Grenade Discharger *(Multi-Tube Volumetric Smoke Mortar)***
+   - Chassis-mounted multi-barrel grenade launcher fires dense **thermal/multispectral volumetric smoke canisters** forward, around, or behind the vehicle.
+   - **Gauntlet Payoff:** Instantly breaks visual & optical lock from **automated shore turrets, rogue proving-range railguns, scrapyard tracking cranes, and diving creature swarms**; conceals high-speed lane switches through narrow **Perpendicular Blast Doors**; and pairs directly with **LIDAR** so you can drive blind at 180 km/h through impenetrable smoke clouds while pursuers cannot see the road!
+3. **Equipable Front & Rear LIDAR Scanner Array *(Independent Front / Rear Mounts)***
+   - Spinning high-frequency laser-radar pods equipable on the **front nose, rear deck, or both** — painting real-time 3D point-cloud / wireframe telemetry straight onto the Windshield AR HUD.
+   - **Gauntlet Payoff:**
+     - **Front LIDAR:** Sees cleanly **through thick Smoke Grenade clouds, Acid Rain sheets, and dark concrete tunnels**; exposes flush **False-Slab Pitfalls**, **Concealed Reverse-Roller Strips**, **hollow Mirage Shortcut Walls**, and subterranean **Sinkhole cavities** well before your front tyres touch them; highlights elevated **Top/Bottom Bridge ramps** and active **Perpendicular Door openings**.
+     - **Rear LIDAR:** Continuously watches your blind spot behind the rear bumper — painting live distance & closing-speed warnings for **Heading-Direction Moving Walls** surging from behind, collapsing Hydro-Dam flood walls, rocket exhaust surges, chasing **Follow-Target Jammer Drones**, or leaping rear-bumper snatchers!
+4. **Deployable Recon / Utility Drone *(Car-Launched Aerial Scout)***
+   - Launches an autonomous quad/tilt-rotor scout drone straight off the vehicle's roof deck that climbs above `20 m` concrete labyrinth canyons, downtown skylines, or quarry cliffs.
+   - **Gauntlet Payoff:** Streams an overhead tactical sweep to your HUD showing **which upper/lower bridge spans are clear, which perpendicular blast doors are opening, and where the next Blind Split Portals sit**; paints spotlight beams onto shadow-lurking creatures; and acts as an **elevated signal relay** extending **Vehicle Hacking** and **Airstrike Ping** range over tall solid concrete walls!
+5. **Follow-Target Drone Jammers *(Autonomous Tracking ECM Jammer Pods)***
+   - Deploys compact hovering **ECM jammer drones** that lock onto and **physically shadow target vehicles** (or hostile recon drones, automated turrets, and security cranes) at high speed.
+   - **Gauntlet Payoff:** Continuously floods the target's electronic suite with directional static — **scrambling HUD/LIDAR point-clouds, hijacking/blinding enemy scout drones, cutting remote Vehicle Hacking uplinks, and disrupting automated turret/crane locks** until the tracked target scrapes the jammer off through tight concrete cover, dives under steel overpasses, or fries it with an **EMP Headlight / Acoustic Horn** burst!
 
 ---
 

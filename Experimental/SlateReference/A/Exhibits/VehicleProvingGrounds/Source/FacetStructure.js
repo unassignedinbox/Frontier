@@ -672,6 +672,8 @@ export class SceneStructure
                 First:          LabFirst,
                 SlidingWalls:   AllocLab("Lab Sliding Wall",   ShapeSets.LabSlidingWall,   LabyrinthPoolCounts.SlidingWalls),
                 SlidingBeacons: AllocLab("Lab Wall Beacon",    ShapeSets.LabBeaconRed,     LabyrinthPoolCounts.SlidingBeacons),
+                HeadingWalls:   AllocLab("Lab Heading Wall",   ShapeSets.LabHeadingWall,   LabyrinthPoolCounts.HeadingWalls),
+                PerpDoors:      AllocLab("Lab Perp Door",      ShapeSets.LabPerpDoor,      LabyrinthPoolCounts.PerpDoors),
                 TrapSlabs:      AllocLab("Lab Trap Slab",      ShapeSets.LabTrapSlab,      LabyrinthPoolCounts.TrapSlabs),
                 SlamPlates:     AllocLab("Lab Slam Plate",     ShapeSets.LabSlamPlate,     LabyrinthPoolCounts.SlamPlates),
                 AmbushWalls:    AllocLab("Lab Ambush Wall",    ShapeSets.LabAmbushWall,    LabyrinthPoolCounts.AmbushWalls),

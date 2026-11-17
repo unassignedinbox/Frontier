@@ -19,6 +19,7 @@
 import { CourseMaterial } from "./MaterialSpecification.js";
 import { EmitBoxFacets, EmitQuad } from "./CourseStructure.js";
 import { ConstructBox, SplitPart, MeasureMass, MeasureFaceNormal, TriangulateFace, ConstructRandom } from "./FractureStructure.js";
+import { ConstructTabletopRampSurface, ConstructSurfaceSegmentDescriptors } from "./RampSurfaceProjection.js";
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                             POOL COUNTS & GLOBAL CONSTANTS
@@ -27,6 +28,8 @@ import { ConstructBox, SplitPart, MeasureMass, MeasureFaceNormal, TriangulateFac
 export const LabyrinthPoolCounts = Object.freeze({
     SlidingWalls:   8,
     SlidingBeacons: 8,
+    HeadingWalls:   4,  // Longitudinal pistons surging directly along player heading (±X)!
+    PerpDoors:      6,  // Perpendicular sliding blast doors opening tight alternative-route squeeze gaps!
     TrapSlabs:      6,
     SlamPlates:     6,
     AmbushWalls:    6,
@@ -423,6 +426,88 @@ function EmitAbilityRing(Mat)
     return F;
 }
 
+// ⑫ Heavy Fluted Concrete Bridge Pier Supporting Top/Bottom Overpass Spans (4.38 m tall under the 5.0 m deck!)
+function EmitBridgePier()
+{
+    const F = [];
+    EmitBoxAt(F, 0.0, 0.0, 0.0,  1.65, 1.85, 0.42, CourseMaterial.LabConcreteDark);
+    EmitBoxAt(F, 0.0, 0.0, 0.44, 1.32, 1.48, 3.60, CourseMaterial.LabConcreteLight);
+    EmitBoxAt(F, 0.0, 0.0, 4.06, 1.56, 1.72, 0.32, CourseMaterial.LabRailSteel);
+    EmitBoxAt(F, 0.0, 0.0, 1.85, 1.38, 0.24, 1.60, CourseMaterial.LabHazardAmber);
+    return F;
+}
+
+// ⑬ Recessed Longitudinal Steel Floor Rail Track for Heading-Direction Moving Piston Walls (32 m along X!)
+function EmitLongRailTrack()
+{
+    const F = [];
+    EmitBoxAt(F, 0.0, -0.58, 0.0, 32.0, 0.24, 0.055, CourseMaterial.LabRailSteel);
+    EmitBoxAt(F, 0.0,  0.58, 0.0, 32.0, 0.24, 0.055, CourseMaterial.LabRailSteel);
+    EmitBoxAt(F, -15.6, 0.0, 0.06, 0.65, 1.65, 0.16, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F,  15.6, 0.0, 0.06, 0.65, 1.65, 0.16, CourseMaterial.LabHazardAmber);
+    return F;
+}
+
+// ⑭ Heading-Direction Moving Concrete Piston Wall (9.0 m long along X × 3.0 m wide × 15.6 m tall — surges along ±X!)
+function EmitHeadingWall()
+{
+    const F = [];
+    // Main monumental brutalist concrete core
+    EmitBoxAt(F, 0.0, 0.0, 0.06, 8.2, 2.86, 15.2, CourseMaterial.LabConcreteDark);
+    // Aggressive steel hydraulic ramming bumpers at BOTH front (+X) & rear (-X) ends!
+    EmitBoxAt(F,  4.28, 0.0, 0.16, 0.32, 2.76, 3.6, CourseMaterial.LabRailSteel);
+    EmitBoxAt(F, -4.28, 0.0, 0.16, 0.32, 2.76, 3.6, CourseMaterial.LabRailSteel);
+    // High-contrast amber warning chevron plates + crimson beacon strips on nose & tail
+    EmitBoxAt(F,  4.48, 0.0, 0.72, 0.10, 2.40, 0.56, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F,  4.48, 0.0, 2.10, 0.10, 2.40, 0.56, CourseMaterial.LabWarningRed);
+    EmitBoxAt(F, -4.48, 0.0, 0.72, 0.10, 2.40, 0.56, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F, -4.48, 0.0, 2.10, 0.10, 2.40, 0.56, CourseMaterial.LabWarningRed);
+    // Upper concrete crown rib + side structural pilasters
+    EmitBoxAt(F, 0.0, 0.0, 15.28, 8.4, 3.04, 0.42, CourseMaterial.LabConcreteLight);
+    EmitBoxAt(F, 0.0,  1.49, 1.2, 7.2, 0.12, 0.46, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F, 0.0, -1.49, 1.2, 7.2, 0.12, 0.46, CourseMaterial.LabHazardAmber);
+    return F;
+}
+
+// ⑮ Perpendicular Blast Doorway Static Surround: Solid Concrete Jamb (Collider: true) & Overhead Lintel (Collider: false)
+function EmitDoorJamb()
+{
+    const F = [];
+    EmitBoxAt(F, 0.0, 0.0, 0.0, 1.85, 4.42, 6.82, CourseMaterial.LabConcreteDark);
+    EmitBoxAt(F, 0.0,  2.26, 0.4, 1.72, 0.10, 5.8, CourseMaterial.LabRailSteel);
+    EmitBoxAt(F, 0.0, -2.26, 0.4, 1.72, 0.10, 5.8, CourseMaterial.LabRailSteel);
+    return F;
+}
+
+function EmitDoorLintel()
+{
+    const F = [];
+    // Heavy brutalist concrete mass spanning Z = 6.84..19.20 m right over the 7.4 m blast doorway opening!
+    EmitBoxAt(F, 0.0, 0.0, 6.84, 11.4, 4.40, 12.36, CourseMaterial.LabConcreteMid);
+    // Glowing cyan/amber doorway portal header bars on both canyon sides so drivers spot the alternative opening from afar!
+    EmitBoxAt(F, 0.0,  2.26, 6.92, 8.2, 0.14, 0.42, CourseMaterial.LabSonicCyan);
+    EmitBoxAt(F, 0.0, -2.26, 6.92, 8.2, 0.14, 0.42, CourseMaterial.LabSonicCyan);
+    EmitBoxAt(F, 0.0,  2.26, 7.52, 9.6, 0.12, 0.34, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F, 0.0, -2.26, 7.52, 9.6, 0.12, 0.34, CourseMaterial.LabHazardAmber);
+    return F;
+}
+
+// ⑯ Dynamic Perpendicular Sliding Blast Door Blade (7.2 m × 1.1 m × 6.65 m — slides perpendicularly across aperture!)
+function EmitPerpDoor()
+{
+    const F = [];
+    EmitBoxAt(F, 0.0, 0.0, 0.04, 7.2, 1.06, 6.62, CourseMaterial.LabRailSteel);
+    // Recessed concrete blast inset panels on both faces
+    EmitBoxAt(F, 0.0,  0.58, 0.45, 6.3, 0.12, 5.65, CourseMaterial.LabConcreteDark);
+    EmitBoxAt(F, 0.0, -0.58, 0.45, 6.3, 0.12, 5.65, CourseMaterial.LabConcreteDark);
+    // Blazing amber leading-edge & trailing-edge vertical pinch warning strips!
+    EmitBoxAt(F,  3.64, 0.0, 0.12, 0.14, 1.18, 6.42, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F, -3.64, 0.0, 0.12, 0.14, 1.18, 6.42, CourseMaterial.LabHazardAmber);
+    EmitBoxAt(F,  0.0,  0.66, 3.10, 5.6, 0.08, 0.36, CourseMaterial.LabWarningRed);
+    EmitBoxAt(F,  0.0, -0.66, 3.10, 5.6, 0.08, 0.36, CourseMaterial.LabWarningRed);
+    return F;
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                   DYNAMIC FLOOR HEIGHT ORACLE (FALSE-SLAB PITFALLS & SLAM-PLATES)
 //------------------------------------------------------------------------------------------------------------------------
@@ -515,8 +600,10 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
         PrevLane = MainLane;
     }
 
-    // ② Allocate ALL 7 Hidden Trap Families + Sliding Megawalls + Swinging Pendulums along randomized + guaranteed lanes!
+    // ② Allocate ALL 7 Hidden Trap Families + Lateral Sliding Megawalls + Heading-Direction Pistons + Perpendicular Doors + Bridges!
     const SlidingWalls = [];
+    const HeadingWalls = [];
+    const PerpDoors    = [];
     const Pitfalls     = [];
     const SlamPlates   = [];
     const AmbushWalls  = [];
@@ -529,14 +616,14 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
     // Helper: pick an alternate non-overlapping lane Y
     const AltLaneY = (MainIdx, Offset = 1) => LabyrinthLaneY[(MainIdx + Offset) % 3];
 
-    // -- 8 Giant Sliding Hydraulic Megawalls (grinding back & forth across active corridors on steel floor rails!)
+    // -- 8 Giant Sliding Hydraulic Megawalls (grinding laterally ±Y across active corridors on steel floor rails!)
     const SlideSpecs = [
-        { R: 0, XOff: 16.0, Lane: Rings[0].MainLane, Freq: 1.05 }, // Immediate visual spectacle right ahead of spawn!
-        { R: 1, XOff: 14.0, Lane: Rings[1].MainLane, Freq: 1.25 },
-        { R: 1, XOff: 34.0, Lane: (Rings[1].MainLane + 1) % 3, Freq: 1.15 },
-        { R: 2, XOff: 12.0, Lane: Rings[2].MainLane, Freq: 1.38 },
-        { R: 2, XOff: 32.0, Lane: Rings[2].MainLane, Freq: 1.38 }, // Twin counter-phased crusher gauntlet!
-        { R: 3, XOff: 18.0, Lane: Rings[3].MainLane, Freq: 1.45 },
+        { R: 0, XOff: 38.0, Lane: Rings[0].MainLane, Freq: 1.05 }, // Frames Cross-Bridge A cleanly past HeadingWall[0]!
+        { R: 1, XOff:  8.0, Lane: Rings[1].MainLane, Freq: 1.25 },
+        { R: 1, XOff: 36.0, Lane: (Rings[1].MainLane + 2) % 3, Freq: 1.15 },
+        { R: 2, XOff:  8.0, Lane: Rings[2].MainLane, Freq: 1.38 },
+        { R: 2, XOff: 38.0, Lane: (Rings[2].MainLane + 2) % 3, Freq: 1.38 },
+        { R: 3, XOff:  8.0, Lane: Rings[3].MainLane, Freq: 1.45 },
         { R: 4, XOff: 14.0, Lane: Rings[4].MainLane, Freq: 1.55 },
         { R: 4, XOff: 36.0, Lane: Rings[4].MainLane, Freq: 1.65 }
     ];
@@ -558,10 +645,41 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
         });
     });
 
-    // -- 6 False-Slab Pitfalls (real 3.6 m cut-out subterranean shafts with 23° East rescue ramps!)
+    // -- 4 Heading-Direction Moving Concrete Piston Walls (grinding LONGITUDINALLY ±X along player heading!)
+    //    Offset at Y = LaneY ± 6.5 (HalfY = 1.52 -> stays strictly outside Pitfall Y ∈ [-4.8,+4.8] & inside ±8.3 walls!)
+    const HeadingSpecs = [
+        { R: 0, XMinOff:  6.0, XMaxOff: 30.0, Lane: Rings[0].MainLane, Rate: 0.92 }, // Immediately visible surging down Ring 0!
+        { R: 1, XMinOff: 18.0, XMaxOff: 38.0, Lane: Rings[1].MainLane, Rate: 1.04 },
+        { R: 2, XMinOff: 18.0, XMaxOff: 38.0, Lane: Rings[2].MainLane, Rate: 1.14 },
+        { R: 3, XMinOff: 18.0, XMaxOff: 38.0, Lane: Rings[3].MainLane, Rate: 1.22 }
+    ];
+    const HeadingSideByRing = [];
+    HeadingSpecs.forEach((HS, Idx) =>
+    {
+        const Ring = Rings[HS.R];
+        const Side = (Idx % 2 === 0 ? 1 : -1) * (Rng() < 0.5 ? 1 : -1);
+        HeadingSideByRing[HS.R] = Side;
+        const XMin = Ring.X0 + HS.XMinOff;
+        const XMax = Ring.X0 + HS.XMaxOff;
+        HeadingWalls.push({
+            Id:         Idx,
+            Ring:       HS.R,
+            LaneY:      LabyrinthLaneY[HS.Lane],
+            Side,
+            Y:          LabyrinthLaneY[HS.Lane] + Side * 6.5,
+            CenterX:    0.5 * (XMin + XMax),
+            TravelHalf: 0.5 * (XMax - XMin),
+            HalfX:      4.45,
+            HalfY:      1.52,
+            Rate:       HS.Rate,
+            Phase:      (Idx * 1.45 + Rng() * 1.8) % (Math.PI * 2.0)
+        });
+    });
+
+    // -- 6 False-Slab Pitfalls (real 2.8 m cut-out subterranean shafts with 23.3° East rescue ramps!)
     //    Strictly spaced away from sliding wall rails & roller bays so every trap bay is crisp and unambiguous.
     const PitSpecs = [
-        { R: 0, XOff: 28.0, Lane: Rings[0].MainLane }, // First hidden floor trap right in Ring 0!
+        { R: 0, XOff: 22.0, Lane: Rings[0].MainLane }, // First hidden floor trap right in Ring 0!
         { R: 1, XOff: 22.0, Lane: (Rings[1].MainLane + 2) % 3 },
         { R: 2, XOff: 18.0, Lane: (Rings[2].MainLane + 1) % 3 },
         { R: 3, XOff: 26.0, Lane: Rings[3].MainLane },
@@ -592,7 +710,7 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
         { R: 1, XOff: 24.0, Lane: Rings[1].MainLane },
         { R: 2, XOff: 21.0, Lane: Rings[2].MainLane },
         { R: 2, XOff: 22.0, Lane: (Rings[2].MainLane + 2) % 3 },
-        { R: 3, XOff: 6.0,  Lane: (Rings[3].MainLane + 2) % 3 },
+        { R: 3, XOff: 24.0, Lane: (Rings[3].MainLane + 1) % 3 },
         { R: 4, XOff: 4.0,  Lane: Rings[4].MainLane }
     ];
     SlamSpecs.forEach((S, Idx) =>
@@ -609,19 +727,20 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
     });
 
     // -- 6 Snap-Ambush Crusher Walls (recessed concrete pistons exploding sideways out of blind walls!)
+    //    Mounted on the opposite wall from any HeadingWall in the same lane so zero mechanical clipping!
     const AmbushSpecs = [
-        { R: 0, XOff: 23.0, Lane: Rings[0].MainLane, Side: 1 },
-        { R: 1, XOff: 33.0, Lane: Rings[1].MainLane, Side: -1 },
+        { R: 0, XOff: 16.0, Lane: Rings[0].MainLane, Side: -(HeadingSideByRing[0] || 1) },
+        { R: 1, XOff: 33.0, Lane: Rings[1].MainLane, Side: -(HeadingSideByRing[1] || 1) },
         { R: 2, XOff: 27.0, Lane: (Rings[2].MainLane + 1) % 3, Side: 1 },
-        { R: 3, XOff: 12.0, Lane: Rings[3].MainLane, Side: -1 },
-        { R: 3, XOff: 38.0, Lane: (Rings[3].MainLane + 2) % 3, Side: 1 },
+        { R: 3, XOff: 12.0, Lane: Rings[3].MainLane, Side: -(HeadingSideByRing[3] || 1) },
+        { R: 3, XOff: 38.0, Lane: Rings[3].MainLane, Side: -(HeadingSideByRing[3] || 1) },
         { R: 4, XOff: 30.0, Lane: Rings[4].MainLane, Side: -1 }
     ];
     AmbushSpecs.forEach((A, Idx) =>
     {
         const Ring = Rings[A.R];
         const CY   = LabyrinthLaneY[A.Lane];
-        const WallSide = A.Side * (Rng() < 0.5 ? 1 : -1);
+        const WallSide = A.Side;
         AmbushWalls.push({
             Id:        Idx,
             Ring:      A.R,
@@ -776,9 +895,27 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
             }
             else
             {
-                // Continuous monumental brutalist concrete divider (24 m + 14.5 m monoliths)
-                Place("LabMonolithLong",  `R${R} Div ${DivY > 0 ? "N" : "S"} A`, X0 + 12.2, DivY, 0.0, 0.0, true);
-                Place("LabMonolithShort", `R${R} Div ${DivY > 0 ? "N" : "S"} B`, X0 + 32.2, DivY, 0.0, 0.0, true);
+                // Split divider with a 7.4 m steel-framed PERPENDICULAR SLIDING BLAST DOOR creating small alternative-route openings!
+                Place("LabMonolithShort", `R${R} Div ${DivY > 0 ? "N" : "S"} West`, X0 + 7.2,  DivY, 0.0, 0.0, true);
+                Place("LabMonolithShort", `R${R} Div ${DivY > 0 ? "N" : "S"} East`, X0 + 32.8, DivY, 0.0, 0.0, true);
+                // Solid left/right doorway concrete jambs (Collider: true) + elevated overhead concrete wall mass (Z = 6.84..19.2 m, Collider: false)!
+                Place("LabDoorJamb",   `R${R} Door Jamb W`, X0 + 15.35, DivY, 0.0, 0.0, true);
+                Place("LabDoorJamb",   `R${R} Door Jamb E`, X0 + 24.65, DivY, 0.0, 0.0, true);
+                Place("LabDoorLintel", `R${R} Door Lintel`, X0 + 20.0,  DivY, 0.0, 0.0, false);
+                PerpDoors.push({
+                    Id:        PerpDoors.length,
+                    Ring:      R,
+                    Axis:      "x",           // Slides along X (perpendicular to the N↔S cross-lane passage!)
+                    ClosedX:   X0 + 20.0,
+                    ClosedY:   DivY,
+                    Yaw:       0.0,
+                    SlideDir:  (R % 2 === 0 ? 1.0 : -1.0),
+                    MaxSlide:  6.4,           // Opens a crisp tight car-width squeeze opening (4.0..6.4 m) into the parallel lane!
+                    HalfLen:   3.6,
+                    HalfThick: 0.62,
+                    Rate:      0.85 + R * 0.14,
+                    Phase:     (R * 1.3 + Rng() * 2.0) % (Math.PI * 2.0)
+                });
             }
             // Iconic corner brutalist pylon framing the cross-passage hall turn!
             Place("LabMonolithPillar", `R${R} Pylon ${DivY > 0 ? "N" : "S"}`, X0 + 40.5, DivY, 0.0, 0.0, true);
@@ -829,9 +966,118 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
         Seed:     (Seed ^ 0xF14A1E99) >>> 0
     });
 
-    // Static hardware telling players where Sliding Walls, Guillotine Shutters, Roller Bays & Acid Vents live!
+    // 6th Perpendicular Sliding Blast Door: guards a narrow alternative side-lane entry into the Extraction Portal Hall!
+    const PortalDoorSide = (Rng() < 0.5 ? 1 : -1);
+    const PortalDoorY    = PortalDoorSide * 21.0;
+    Place("LabDoorJamb",   "Extraction Side Door Jamb N", 176.5, PortalDoorY + 4.65, 0.0, 0.5 * Math.PI, true);
+    Place("LabDoorJamb",   "Extraction Side Door Jamb S", 176.5, PortalDoorY - 4.65, 0.0, 0.5 * Math.PI, true);
+    Place("LabDoorLintel", "Extraction Side Door Lintel", 176.5, PortalDoorY,        0.0, 0.5 * Math.PI, false);
+    PerpDoors.push({
+        Id:        PerpDoors.length,
+        Ring:      4,
+        Axis:      "y",           // Slides along Y (perpendicular to the +X alternative extraction entry!)
+        ClosedX:   176.5,
+        ClosedY:   PortalDoorY,
+        Yaw:       0.5 * Math.PI,
+        SlideDir:  -PortalDoorSide,
+        MaxSlide:  6.4,
+        HalfLen:   3.6,
+        HalfThick: 0.62,
+        Rate:      1.25,
+        Phase:     Rng() * Math.PI * 2.0
+    });
+
+    // Multi-Level Concrete Ramps & Top/Bottom Overpass Bridges (5 real 480 Hz drivable viaducts via CastSurfaceRay!)
+    const Viaduct1Lane = (Rings[1].MainLane + 1) % 3;
+    const Viaduct2Lane = (Rings[3].MainLane + 2) % 3;
+    const Launch4Lane  = (Rings[4].MainLane + (Rng() < 0.5 ? 1 : 2)) % 3; // North (+21) or South (-21) high-road!
+    const Surfaces = [
+        // ① Ring 0 Cross-Canyon Top/Bottom Overpass Bridge (spans S→N at X=-56 RIGHT OVER the Center Spawn Canyon!)
+        ConstructTabletopRampSurface({
+            Key:            "LabCrossBridgeA",
+            ShapePrefix:    "LabCrossBridge50",
+            Origin:         [-56.0, -27.0, 0.0],
+            Yaw:            0.5 * Math.PI,
+            UpLength:       16.0,
+            DeckLength:     22.0,
+            DownLength:     16.0,
+            Height:         5.0,
+            Width:          7.4,
+            Thickness:      0.58,
+            AccentMaterial: CourseMaterial.LabSonicCyan
+        }),
+        // ② Ring 2 Cross-Canyon Top/Bottom Overpass Bridge (spans N→S at X=+56 RIGHT OVER Center Ring 2!)
+        ConstructTabletopRampSurface({
+            Key:            "LabCrossBridgeB",
+            ShapePrefix:    "LabCrossBridge50",
+            Origin:         [56.0, 27.0, 0.0],
+            Yaw:            -0.5 * Math.PI,
+            UpLength:       16.0,
+            DeckLength:     22.0,
+            DownLength:     16.0,
+            Height:         5.0,
+            Width:          7.4,
+            Thickness:      0.58,
+            AccentMaterial: CourseMaterial.LabHazardAmber
+        }),
+        // ③ Ring 1 Longitudinal Elevated Concrete Viaduct (climbs UP & OVER Ring 1 Cross-Hall on high-road side lane!)
+        ConstructTabletopRampSurface({
+            Key:            "LabViaductRamp1",
+            ShapePrefix:    "LabViaduct49",
+            Origin:         [-46.0, LabyrinthLaneY[Viaduct1Lane], 0.0],
+            Yaw:            0.0,
+            UpLength:       16.0,
+            DeckLength:     20.0,
+            DownLength:     16.0,
+            Height:         4.9,
+            Width:          6.8,
+            Thickness:      0.58,
+            AccentMaterial: CourseMaterial.LabSonicCyan
+        }),
+        // ④ Ring 3 Longitudinal Elevated Concrete Viaduct (climbs UP & OVER Ring 3 Cross-Hall on high-road side lane!)
+        ConstructTabletopRampSurface({
+            Key:            "LabViaductRamp2",
+            ShapePrefix:    "LabViaduct49",
+            Origin:         [66.0, LabyrinthLaneY[Viaduct2Lane], 0.0],
+            Yaw:            0.0,
+            UpLength:       16.0,
+            DeckLength:     20.0,
+            DownLength:     16.0,
+            Height:         4.9,
+            Width:          6.8,
+            Thickness:      0.58,
+            AccentMaterial: CourseMaterial.LabHazardAmber
+        }),
+        // ⑤ Ring 4 Extraction Overpass Ramp (elevated emerald deck racing straight into the Blind Split Portals!)
+        ConstructTabletopRampSurface({
+            Key:            "LabLaunchRamp4",
+            ShapePrefix:    "LabLaunch46",
+            Origin:         [122.0, LabyrinthLaneY[Launch4Lane], 0.0],
+            Yaw:            0.0,
+            UpLength:       14.0,
+            DeckLength:     14.0,
+            DownLength:     14.0,
+            Height:         4.6,
+            Width:          7.2,
+            Thickness:      0.56,
+            AccentMaterial: CourseMaterial.LabBeaconEmerald
+        })
+    ];
+    const SurfaceBundle = ConstructSurfaceSegmentDescriptors(Surfaces);
+    for (const P of SurfaceBundle.Placements)
+        StaticPlacements.push(P);
+
+    // Fluted brutalist concrete bridge piers tucked cleanly at outer divider edges (Y = ±10.2) framing both Cross-Bridge underpasses!
+    Place("LabBridgePier", "Bridge A Pier N", -56.0,  10.2, 0.0, 0.0, true);
+    Place("LabBridgePier", "Bridge A Pier S", -56.0, -10.2, 0.0, 0.0, true);
+    Place("LabBridgePier", "Bridge B Pier N",  56.0,  10.2, 0.0, 0.0, true);
+    Place("LabBridgePier", "Bridge B Pier S",  56.0, -10.2, 0.0, 0.0, true);
+
+    // Static hardware telling players where Sliding Walls, Heading Pistons, Guillotines, Roller Bays & Acid Vents live!
     for (const SW of SlidingWalls)
         Place("LabFloorRail", `Slide Rail ${SW.Id}`, SW.X, SW.CenterY, 0.0, 0.0, false);
+    for (const HW of HeadingWalls)
+        Place("LabLongRail", `Heading Rail ${HW.Id}`, HW.CenterX, HW.Y, 0.0, 0.0, false);
     for (const DG of DropGates)
         Place("LabOverheadSoffit", `Guillotine Soffit ${DG.Id}`, DG.X, DG.CenterY, 6.2, 0.0, false);
     for (const RS of RollerStrips)
@@ -854,13 +1100,14 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
 
     // ④ Teleport Zones for Inspector / Keys 1–9
     const Zones = [
-        { Name: "Labyrinth Spawn Atrium",   Note: "Towering 20 m concrete canyon start",      Position: [-134.0,  0.0, 0.65], Yaw: 0.0 },
-        { Name: "Ring 1 · First Pitfall",   Note: "Sliding megawall & false-slab drop pit",   Position: [ -96.0,  0.0, 0.65], Yaw: 0.0 },
-        { Name: "Ring 2 · Reverse Rollers", Note: "Hack [Q] reverse belt into turbo sling",   Position: [ -44.0, Rings[1].MainY, 0.65], Yaw: 0.0 },
-        { Name: "Ring 3 · Slam-Plate Core", Note: "Pneumatic floor kicker & twin crushers",   Position: [  12.0, Rings[2].MainY, 0.65], Yaw: 0.0 },
-        { Name: "Ring 4 · Acid Ambush",     Note: "Corner acid-mist slick & guillotine",      Position: [  68.0, Rings[3].MainY, 0.65], Yaw: 0.0 },
-        { Name: "Ring 5 · Mirage Finale",   Note: "Blast final mirage slab w/ Horn [H]",      Position: [ 124.0,  0.0, 0.65], Yaw: 0.0 },
-        { Name: "Blind Split Portals",      Note: "42 m Extraction Beacon & twin portals",    Position: [ 182.0,  0.0, 0.65], Yaw: 0.0 }
+        { Name: "Labyrinth Spawn Atrium",   Note: "Towering 20 m concrete canyon start",           Position: [-134.0,   0.0, 0.65], Yaw: 0.0 },
+        { Name: "Heading Piston & Door",    Note: "Surging ±X piston wall & perp blast door",      Position: [ -98.0,   0.0, 0.65], Yaw: 0.0 },
+        { Name: "Top/Bottom Bridge Ramp",   Note: "Climb +5.0 m overpass bridge over canyon",      Position: [ -56.0, -24.5, 0.72], Yaw: 0.5 * Math.PI },
+        { Name: "Ring 2 · Viaduct & Rollers", Note: "Elevated viaduct & hackable reverse belt",    Position: [ -44.0, Rings[1].MainY, 0.65], Yaw: 0.0 },
+        { Name: "Ring 3 · Slam-Plate Core", Note: "Pneumatic kicker & cross-bridge overpass",      Position: [  12.0, Rings[2].MainY, 0.65], Yaw: 0.0 },
+        { Name: "Ring 4 · Acid Ambush",     Note: "Corner acid-mist slick & guillotine",           Position: [  68.0, Rings[3].MainY, 0.65], Yaw: 0.0 },
+        { Name: "Ring 5 · Mirage Finale",   Note: "Blast final mirage slab w/ Horn [H]",           Position: [ 124.0,   0.0, 0.65], Yaw: 0.0 },
+        { Name: "Blind Split Portals",      Note: "42 m Extraction Beacon & twin portals",         Position: [ 182.0,   0.0, 0.65], Yaw: 0.0 }
     ];
 
     return {
@@ -868,6 +1115,10 @@ export function GenerateLabyrinthMaze(RequestedSeed = null)
         SeedTag,
         Rings,
         SlidingWalls,
+        HeadingWalls,
+        PerpDoors,
+        Surfaces,
+        SurfaceBundle,
         Pitfalls,
         SlamPlates,
         AmbushWalls,
@@ -904,20 +1155,31 @@ export const LabyrinthSpawn = Object.freeze({
     Yaw:      0.0
 });
 
+export function ResolveLabyrinthSurfaces()
+{
+    return GetActiveLabyrinthMaze().Surfaces.slice();
+}
+
 export function ResolveLabyrinthShapes()
 {
     const Maze = GetActiveLabyrinthMaze();
     const Rng  = ConstructRandom(Maze.Seed ^ 0x9E3779B9);
     const RubbleSeed = (Maze.Seed ^ 0xA55A1234) >>> 0;
     return {
+        // Multi-level Top/Bottom concrete overpass bridges & sky-ramps (480 Hz CastSurfaceRay surfaces!)
+        ...Maze.SurfaceBundle.Shapes,
         // Static brutalist monoliths & hardware
         LabMonolithLong:      { Emit: () => EmitMonolithWall(24.0, 4.4, 20.0, CourseMaterial.LabConcreteMid, CourseMaterial.LabConcreteLight, true), Voxel: 0.28, Cards: 5 },
         LabMonolithShort:     { Emit: () => EmitMonolithWall(14.5, 4.4, 19.2, CourseMaterial.LabConcreteLight, CourseMaterial.LabConcreteMid, true), Voxel: 0.26, Cards: 5 },
         LabMonolithGate:      { Emit: () => EmitMonolithWall(16.8, 4.2, 19.6, CourseMaterial.LabConcreteDark, CourseMaterial.LabConcreteMid, true), Voxel: 0.26, Cards: 5 },
         LabMonolithPillar:    { Emit: () => EmitMonolithPillar(), Voxel: 0.24, Cards: 6 },
+        LabBridgePier:        { Emit: () => EmitBridgePier(), Voxel: 0.20, Cards: 6 },
+        LabDoorJamb:          { Emit: () => EmitDoorJamb(), Voxel: 0.22, Cards: 6 },
+        LabDoorLintel:        { Emit: () => EmitDoorLintel(), Voxel: 0.26, Cards: 5, Distance: false },
         LabCatwalkBridge:     { Emit: () => EmitCatwalkBridge(), Voxel: 0.26, Cards: 5, Distance: false },
         LabOverheadSoffit:    { Emit: () => EmitGuillotineSoffit(), Voxel: 0.24, Cards: 5, Distance: false },
         LabFloorRail:         { Emit: () => EmitFloorRailTrack(), Voxel: 0.16, Cards: 6, Distance: false },
+        LabLongRail:          { Emit: () => EmitLongRailTrack(), Voxel: 0.16, Cards: 6, Distance: false },
         LabRollerFrame:       { Emit: () => EmitRollerBayFrame(), Voxel: 0.18, Cards: 6, Distance: false },
         LabVentHousing:       { Emit: () => EmitAcidVentHousing(), Voxel: 0.14, Cards: 8, Distance: false },
         LabExtractionSpire:   { Emit: () => EmitExtractionSpire(), Voxel: 0.34, Cards: 4 },
@@ -933,9 +1195,11 @@ export function ResolveLabyrinthShapes()
             },
             Voxel: 0.16, Cards: 6, Distance: false
         },
-        // Dynamic shifting megawalls, hidden traps & ability VFX
+        // Dynamic shifting megawalls, heading pistons, perpendicular blast doors, hidden traps & ability VFX
         LabSlidingWall:       { Emit: () => EmitSlidingMegawall(), Voxel: 0.26, Cards: 4, Distance: false },
         LabBeaconRed:         { Emit: () => EmitStatusBeacon(CourseMaterial.LabWarningRed), Voxel: 0.16, Cards: 4, Distance: false },
+        LabHeadingWall:       { Emit: () => EmitHeadingWall(), Voxel: 0.24, Cards: 4, Distance: false },
+        LabPerpDoor:          { Emit: () => EmitPerpDoor(), Voxel: 0.20, Cards: 4, Distance: false },
         LabTrapSlab:          { Emit: () => EmitTrapSlab(), Voxel: 0.22, Cards: 5, Distance: false },
         LabSlamPlate:         { Emit: () => EmitSlamPlate(), Voxel: 0.20, Cards: 5, Distance: false },
         LabAmbushWall:        { Emit: () => EmitAmbushWall(), Voxel: 0.22, Cards: 5, Distance: false },
@@ -1066,8 +1330,8 @@ export function EmitLabyrinthGroundFacets()
     // Subtle recessed glowing cyan runway chevrons & side curbing in the Spawn Atrium (guides player into Ring 0!)
     for (const CX of [-125.0, -119.0, -113.0, -107.0])
     {
-        EmitQuad(F, [CX - 0.85, -1.6, 0.012], [CX + 0.15, -1.6, 0.012], [CX + 1.05, 0.0, 0.012], [CX + 0.05, 0.0, 0.012], CourseMaterial.LabBeaconCyan);
-        EmitQuad(F, [CX + 0.05,  0.0, 0.012], [CX + 1.05,  0.0, 0.012], [CX + 0.15, 1.6, 0.012], [CX - 0.85, 1.6, 0.012], CourseMaterial.LabBeaconCyan);
+        EmitQuad(F, [CX - 0.85, -1.6, 0.012], [CX + 0.15, -1.6, 0.012], [CX + 1.05, 0.0, 0.012], [CX + 0.05, 0.0, 0.012], CourseMaterial.LabSonicCyan);
+        EmitQuad(F, [CX + 0.05,  0.0, 0.012], [CX + 1.05,  0.0, 0.012], [CX + 0.15, 1.6, 0.012], [CX - 0.85, 1.6, 0.012], CourseMaterial.LabSonicCyan);
     }
     EmitQuad(F, [-140.0, -7.75, 0.012], [-104.0, -7.75, 0.012], [-104.0, -7.40, 0.012], [-140.0, -7.40, 0.012], CourseMaterial.LabHazardAmber);
     EmitQuad(F, [-140.0,  7.40, 0.012], [-104.0,  7.40, 0.012], [-104.0,  7.75, 0.012], [-140.0,  7.75, 0.012], CourseMaterial.LabHazardAmber);

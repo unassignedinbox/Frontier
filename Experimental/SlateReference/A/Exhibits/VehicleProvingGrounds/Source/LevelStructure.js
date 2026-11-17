@@ -26,8 +26,8 @@ import { FoundryStaticShapes, FoundryDynamicShapes, FoundryBounds, FoundrySpawn,
 import { DemolishBounds, DemolishSpawn, ResolveDemolishZones, ResolveDemolishShapes,
          ResolveDemolishPlacements, ResolveDemolishExtraObstacles, ResolveDemolishCones,
          ResolveDemolishBreakables, EmitDemolishGroundFacets } from "./DemolishRunStructure.js";
-import { LabyrinthBounds, LabyrinthSpawn, QueryLabyrinthFloorHeight, ResolveLabyrinthZones, ResolveLabyrinthShapes,
-         ResolveLabyrinthPlacements, ResolveLabyrinthCones, ResolveLabyrinthBreakables,
+import { LabyrinthBounds, LabyrinthSpawn, QueryLabyrinthFloorHeight, ResolveLabyrinthZones, ResolveLabyrinthSurfaces,
+         ResolveLabyrinthShapes, ResolveLabyrinthPlacements, ResolveLabyrinthCones, ResolveLabyrinthBreakables,
          EmitLabyrinthGroundFacets } from "./PistonLabyrinthStructure.js";
 import { LobbyShapes, LobbyDistanceCutouts, ResolveLobbyVenue, ResolveLobbyVenueDescriptor,
          ResolveLobbyPlacements, EmitLobbyGroundFacets } from "./LobbyStructure.js";
@@ -639,7 +639,7 @@ export function ResolveLevelDescriptor(LevelKey = "proving", LobbyVenueKey = nul
             Zones:         ResolveLabyrinthZones(),
             Drills:        [],
             ClearZones:    [[-150.0, -32.0, 215.0, 32.0]],
-            Surfaces:      [],
+            Surfaces:      ResolveLabyrinthSurfaces(),
             TerrainHulls:  null,
             Shapes:        ResolveLevelShapes("labyrinth"),
             Placements:    ResolveLabyrinthPlacements,

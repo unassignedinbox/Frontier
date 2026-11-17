@@ -121,6 +121,30 @@ export class PistonLabyrinthSequence
             HitCool:    0.0
         }));
 
+        this.HeadingWalls = (Maze.HeadingWalls || []).map((HW) => ({
+            ...HW,
+            CurrentX:   HW.CenterX + Math.sin(HW.Phase) * HW.TravelHalf,
+            VelX:       Math.cos(HW.Phase) * HW.TravelHalf * HW.Rate,
+            StallLeft:  0.0,
+            HackedLeft: 0.0,
+            HitCool:    0.0
+        }));
+
+        this.PerpDoors = (Maze.PerpDoors || []).map((D) =>
+        {
+            const OpenFrac = 0.5 + 0.5 * Math.sin(D.Phase);
+            const Shift = OpenFrac * D.MaxSlide * D.SlideDir;
+            return {
+                ...D,
+                OpenFrac,
+                CurrentX:   D.Axis === "x" ? (D.ClosedX + Shift) : D.ClosedX,
+                CurrentY:   D.Axis === "y" ? (D.ClosedY + Shift) : D.ClosedY,
+                HornLeft:   0.0,
+                HackedLeft: 0.0,
+                HitCool:    0.0
+            };
+        });
+
         this.Pitfalls = Maze.Pitfalls.map((P) => ({
             ...P,
             State:      "armed", // armed | snapping | open | hacked
@@ -358,6 +382,21 @@ export class PistonLabyrinthSequence
             }
         }
 
+        // ④ Stall advancing Heading-Direction Pistons & jolt nearby Perpendicular Blast Doors open wider!
+        for (const HW of this.HeadingWalls)
+        {
+            if (Math.hypot(HW.CurrentX - Pos[0], HW.Y - Pos[1]) < 32.0)
+            {
+                HW.StallLeft = 3.5;
+                Jammed++;
+            }
+        }
+        for (const D of this.PerpDoors)
+        {
+            if (Math.hypot(D.ClosedX - Pos[0], D.ClosedY - Pos[1]) < 32.0)
+                D.HornLeft = 4.0;
+        }
+
         // Dramatic cyan shockwave light flash + dust burst + sonic boom!
         this.FlashLights.push({
             Pos:      [Pos[0] + Dir[0] * 6.0, Pos[1] + Dir[1] * 6.0, Pos[2] + 1.4],
@@ -415,6 +454,23 @@ export class PistonLabyrinthSequence
             if (Math.hypot(SW.X - Pos[0], SW.CenterY - Pos[1]) <= Radius)
             {
                 SW.HackedLeft = 12.0;
+                Count++;
+            }
+        }
+        // ①b Retreat & freeze Heading-Direction Piston Walls + lock Perpendicular Blast Doors WIDE OPEN!
+        for (const HW of this.HeadingWalls)
+        {
+            if (Math.hypot(HW.CurrentX - Pos[0], HW.Y - Pos[1]) <= Radius)
+            {
+                HW.HackedLeft = 12.0;
+                Count++;
+            }
+        }
+        for (const D of this.PerpDoors)
+        {
+            if (Math.hypot(D.ClosedX - Pos[0], D.ClosedY - Pos[1]) <= Radius)
+            {
+                D.HackedLeft = 12.0;
                 Count++;
             }
         }
@@ -601,6 +657,116 @@ export class PistonLabyrinthSequence
             }
         }
 
+        // ①b 4 Heading-Direction Moving Concrete Piston Walls (grinding longitudinally ±X along player heading!)
+        for (const HW of this.HeadingWalls)
+        {
+            if (HW.HitCool > 0.0) HW.HitCool = Math.max(0.0, HW.HitCool - Dt);
+            const PrevX = HW.CurrentX;
+            if (HW.HackedLeft > 0.0)
+            {
+                HW.HackedLeft = Math.max(0.0, HW.HackedLeft - Dt);
+                // Retreat away from the player along its longitudinal rail!
+                const TargetX = (CarPos[0] <= HW.CenterX) ? (HW.CenterX + HW.TravelHalf) : (HW.CenterX - HW.TravelHalf);
+                HW.CurrentX += (TargetX - HW.CurrentX) * Math.min(1.0, Dt * 4.5);
+            }
+            else if (HW.StallLeft > 0.0)
+            {
+                HW.StallLeft = Math.max(0.0, HW.StallLeft - Dt);
+            }
+            else
+            {
+                HW.Phase   += Dt * HW.Rate;
+                HW.CurrentX = HW.CenterX + Math.sin(HW.Phase) * HW.TravelHalf;
+            }
+            HW.VelX = Dt > 1.0e-5 ? (HW.CurrentX - PrevX) / Dt : 0.0;
+
+            if (Car && HW.HitCool <= 0.0 && CarPos[2] < 15.2)
+            {
+                const DX = CarPos[0] - HW.CurrentX;
+                const DY = CarPos[1] - HW.Y;
+                const ReachX = HW.HalfX + 1.85;
+                const ReachY = HW.HalfY + 1.05;
+                if (Math.abs(DX) < ReachX && Math.abs(DY) < ReachY)
+                {
+                    const PenX = ReachX - Math.abs(DX);
+                    const PenY = ReachY - Math.abs(DY);
+                    if (PenX < PenY)
+                    {
+                        const Sgn = DX >= 0.0 ? 1.0 : -1.0;
+                        Car.Position[0] += Sgn * (PenX + 0.14);
+                        Car.LinearVelocity[0] = HW.VelX + Sgn * Math.max(7.5, Math.abs(Car.LinearVelocity[0]) * 0.50);
+                        this.EmitImpactSparks([HW.CurrentX + Sgn * HW.HalfX, CarPos[1], 1.1], [Sgn, 0.0, 0.0]);
+                    }
+                    else
+                    {
+                        const Sgn = DY >= 0.0 ? 1.0 : -1.0;
+                        Car.Position[1] += Sgn * (PenY + 0.14);
+                        Car.LinearVelocity[1] = Sgn * Math.max(8.0, Math.abs(Car.LinearVelocity[1]) * 0.60);
+                        this.EmitImpactSparks([CarPos[0], HW.Y + Sgn * HW.HalfY, 1.1], [0.0, Sgn, 0.0]);
+                    }
+                    HW.HitCool = 0.25;
+                    this.ShowBanner("⚠ HEADING PISTON WALL SURGING ALONG LANE! DODGE OR HACK [Q]!", "warn", 2.0);
+                    this.Host?.DrivingHud?.Audio?.PlayExplosionBoom?.(0.36);
+                }
+            }
+        }
+
+        // ①c 6 Perpendicular Sliding Blast Doors (creating tight moving squeeze gaps & alternative cross-routes!)
+        for (const D of this.PerpDoors)
+        {
+            if (D.HitCool > 0.0) D.HitCool = Math.max(0.0, D.HitCool - Dt);
+            if (D.HackedLeft > 0.0)
+            {
+                D.HackedLeft = Math.max(0.0, D.HackedLeft - Dt);
+                D.OpenFrac += (1.0 - D.OpenFrac) * Math.min(1.0, Dt * 6.5);
+            }
+            else if (D.HornLeft > 0.0)
+            {
+                D.HornLeft = Math.max(0.0, D.HornLeft - Dt);
+                D.OpenFrac += (0.92 - D.OpenFrac) * Math.min(1.0, Dt * 5.0);
+            }
+            else
+            {
+                D.Phase   += Dt * D.Rate;
+                // Smooth rhythm spending deliberate time cracked open as a tight 3.6..6.4 m squeeze gap!
+                D.OpenFrac = 0.5 + 0.5 * Math.sin(D.Phase);
+            }
+            const Shift = D.OpenFrac * D.MaxSlide * D.SlideDir;
+            D.CurrentX  = D.Axis === "x" ? (D.ClosedX + Shift) : D.ClosedX;
+            D.CurrentY  = D.Axis === "y" ? (D.ClosedY + Shift) : D.ClosedY;
+
+            // Dynamic collision strictly against the solid moving door panel (leaving the open squeeze gap 100% drivable!)
+            if (Car && D.HitCool <= 0.0 && CarPos[2] < 6.4)
+            {
+                const DX = CarPos[0] - D.CurrentX;
+                const DY = CarPos[1] - D.CurrentY;
+                const ReachX = (D.Axis === "x" ? D.HalfLen : D.HalfThick) + 1.15;
+                const ReachY = (D.Axis === "y" ? D.HalfLen : D.HalfThick) + 1.15;
+                if (Math.abs(DX) < ReachX && Math.abs(DY) < ReachY)
+                {
+                    const PenX = ReachX - Math.abs(DX);
+                    const PenY = ReachY - Math.abs(DY);
+                    if (PenX < PenY)
+                    {
+                        const Sgn = DX >= 0.0 ? 1.0 : -1.0;
+                        Car.Position[0] += Sgn * (PenX + 0.12);
+                        Car.LinearVelocity[0] = Sgn * Math.max(5.5, Math.abs(Car.LinearVelocity[0]) * 0.45);
+                        this.EmitImpactSparks([D.CurrentX + Sgn * (D.Axis === "x" ? D.HalfLen : D.HalfThick), CarPos[1], 1.1], [Sgn, 0.0, 0.0]);
+                    }
+                    else
+                    {
+                        const Sgn = DY >= 0.0 ? 1.0 : -1.0;
+                        Car.Position[1] += Sgn * (PenY + 0.12);
+                        Car.LinearVelocity[1] = Sgn * Math.max(5.5, Math.abs(Car.LinearVelocity[1]) * 0.45);
+                        this.EmitImpactSparks([CarPos[0], D.CurrentY + Sgn * (D.Axis === "y" ? D.HalfLen : D.HalfThick), 1.1], [0.0, Sgn, 0.0]);
+                    }
+                    D.HitCool = 0.25;
+                    this.ShowBanner("⚠ PERPENDICULAR BLAST DOOR! THREAD SQUEEZE GAP OR HACK [Q]!", "warn", 2.0);
+                    this.Host?.DrivingHud?.Audio?.PlayExplosionBoom?.(0.28);
+                }
+            }
+        }
+
         // ② 6 False-Slab Pitfalls (real dynamic floor drop to -2.8 m!)
         for (const P of this.Pitfalls)
         {
@@ -611,7 +777,7 @@ export class PistonLabyrinthSequence
             }
             const InLane = Math.abs(CarPos[1] - P.CenterY) < (P.HalfW + 1.8);
             const NearApproach = CarPos[0] >= (P.X0 - 9.5) && CarPos[0] <= (P.X0 + P.SlabLen + 1.0);
-            if (P.State === "armed" && InLane && NearApproach)
+            if (P.State === "armed" && InLane && NearApproach && CarPos[2] < 2.2)
             {
                 P.State    = "snapping";
                 P.ArmTimer = 0.30;
@@ -660,7 +826,7 @@ export class PistonLabyrinthSequence
                 continue;
             }
             const OnPlate = CarPos[0] >= (S.X0 - 1.2) && CarPos[0] <= (S.X0 + S.Len) && Math.abs(CarPos[1] - S.CenterY) <= (S.HalfW + 0.8);
-            if (S.State === "armed" && OnPlate)
+            if (S.State === "armed" && OnPlate && CarPos[2] < 2.2)
             {
                 S.State      = "sprung";
                 S.ResetTimer = 5.5;
@@ -757,7 +923,7 @@ export class PistonLabyrinthSequence
                 continue;
             }
             const InLane = Math.abs(CarPos[1] - G.CenterY) < 8.0;
-            if (G.State === "armed" && InLane && CarPos[0] >= (G.TripX - 1.2) && CarPos[0] <= (G.TripX + 3.0))
+            if (G.State === "armed" && InLane && CarPos[2] < 2.4 && CarPos[0] >= (G.TripX - 1.2) && CarPos[0] <= (G.TripX + 3.0))
             {
                 G.State = "falling";
                 G.VelZ  = -3.5;
@@ -838,7 +1004,7 @@ export class PistonLabyrinthSequence
         {
             if (AV.BurstTimer > 0.0) AV.BurstTimer -= Dt;
             const Dist = Math.hypot(AV.X - CarPos[0], AV.CenterY - CarPos[1]);
-            if (!AV.Active && !AV.Cleared && Dist < 17.5)
+            if (!AV.Active && !AV.Cleared && Dist < 17.5 && CarPos[2] < 2.4)
             {
                 AV.Active = true;
                 this.TrapsTriggered++;
@@ -960,6 +1126,31 @@ export class PistonLabyrinthSequence
                 this.AssignDynamicOcc(Block.SlidingBeacons[I], Parked, false, true);
             else
                 this.AssignDynamicOcc(Block.SlidingBeacons[I], ConstructRigidTransform([SW.X, SW.CurrentY, 16.96], IdentityQ), true, false);
+        }
+
+        // ①b 4 Heading-Direction Moving Concrete Piston Walls (±X longitudinal travel!)
+        for (let I = 0; I < (Block.HeadingWalls?.length || 0); ++I)
+        {
+            const HW = this.HeadingWalls[I];
+            if (!HW)
+            {
+                this.AssignDynamicOcc(Block.HeadingWalls[I], Parked, false, true);
+                continue;
+            }
+            this.AssignDynamicOcc(Block.HeadingWalls[I], ConstructRigidTransform([HW.CurrentX, HW.Y, 0.0], IdentityQ), true, false);
+        }
+
+        // ①c 6 Perpendicular Sliding Blast Doors (creating moving squeeze apertures & alternative cross-routes!)
+        for (let I = 0; I < (Block.PerpDoors?.length || 0); ++I)
+        {
+            const D = this.PerpDoors[I];
+            if (!D)
+            {
+                this.AssignDynamicOcc(Block.PerpDoors[I], Parked, false, true);
+                continue;
+            }
+            const QDoor = Math.abs(D.Yaw) > 1.0e-3 ? ConstructAxisQuaternion([0.0, 0.0, 1.0], D.Yaw) : IdentityQ;
+            this.AssignDynamicOcc(Block.PerpDoors[I], ConstructRigidTransform([D.CurrentX, D.CurrentY, 0.0], QDoor), true, false);
         }
 
         // ② 6 False-Slab Pitfall Decks (hinge DOWNWARD around local +Y axis at West edge X0!)
