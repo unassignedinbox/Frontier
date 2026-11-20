@@ -9,6 +9,7 @@
 //                                                        INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/GeometricRaster/DirectLighting/SurfelOccluderField.h"
 #include "Engine/GeometricRaster/Visibility/VisibilityMaterialResolve.h"
 #include "Engine/SpatialAcceleration/WideBoundingTree.h"
 
@@ -31,11 +32,12 @@ enum class DirectShadowTier : uint8_t
 
 enum class SolarShadowAlgorithm : uint8_t
 {
-    ContactPcss      = 0u, // [-] - 2-Cascade PCSS + 0.24 m BVH4 Contact Gate + Plane-Aware Filter
-    PcssPlaneAware   = 1u, // [-] - 2-Cascade Vogel Blocker Search + Continuous Penumbra + Plane-Aware Filter
-    ShadowRayMarch   = 2u, // [-] - EEVEE-Next Quadratic Shadow Depth Raymarch (SMRT)
-    PcfBilinear      = 3u, // [-] - Fast 3x3 Tent-Weighted Orthographic PCF
-    WideTreeRayQuery = 4u, // [-] - Deterministic Vogel Solar Disc BVH4 Raytrace + Plane-Aware Filter (Best non-GI)
+    ContactPcss         = 0u, // [-] - 2-Cascade PCSS + 0.24 m BVH4 Contact Gate + Plane-Aware Filter
+    PcssPlaneAware      = 1u, // [-] - 2-Cascade Vogel Blocker Search + Continuous Penumbra + Plane-Aware Filter
+    ShadowRayMarch      = 2u, // [-] - EEVEE-Next Quadratic Shadow Depth Raymarch (SMRT)
+    PcfBilinear         = 3u, // [-] - Fast 3x3 Tent-Weighted Orthographic PCF
+    WideTreeRayQuery    = 4u, // [-] - Deterministic Vogel Solar Disc BVH4 Raytrace + Plane-Aware Filter (Best non-GI)
+    SurfelTriangleField = 5u, // [-] - Real-Triangle SurfelOccluderField + 0.28 m BVH4 Contact Gate + Plane-Aware Filter
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -95,8 +97,9 @@ public:
         uint32_t                                       ViewportHeight,
         std::span<const AnalyticResolvedSurfaceSample> PrimarySamples,
         const SpatialAcceleration::WideBoundingTree&   SceneTree,
-        const OrthographicShadowCascade*               OptionalFineClip   = nullptr,
-        const OrthographicShadowCascade*               OptionalCoarseClip = nullptr);
+        const OrthographicShadowCascade*               OptionalFineClip    = nullptr,
+        const OrthographicShadowCascade*               OptionalCoarseClip  = nullptr,
+        const SurfelOccluderField*                     OptionalSurfelField = nullptr);
 
     // Compatibility wrapper mapping DirectShadowTier -> SolarShadowAlgorithm (Zero SDF Shadows!)
     [[nodiscard]] static SolarShadowFieldResult EvaluateSolarShadowField(

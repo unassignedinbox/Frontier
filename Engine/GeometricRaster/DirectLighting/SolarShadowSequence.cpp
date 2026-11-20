@@ -475,7 +475,8 @@ SolarShadowFieldResult SolarShadowSequence::EvaluateSolarShadowFieldWithAlgorith
     std::span<const AnalyticResolvedSurfaceSample> PrimarySamples,
     const SpatialAcceleration::WideBoundingTree&   SceneTree,
     const OrthographicShadowCascade*               OptionalFineClip,
-    const OrthographicShadowCascade*               OptionalCoarseClip)
+    const OrthographicShadowCascade*               OptionalCoarseClip,
+    const SurfelOccluderField*                     OptionalSurfelField)
 {
     SolarShadowFieldResult Result {};
     Result.WidthPx  = ViewportWidth;
@@ -488,6 +489,14 @@ SolarShadowFieldResult SolarShadowSequence::EvaluateSolarShadowFieldWithAlgorith
     {
         Result.CascadeZeroTexelMm = (2.0f * OptionalFineClip->HalfSpanMeters * 1000.0f) /
                                     static_cast<float>(OptionalFineClip->ResolutionTexels);
+    }
+
+    SurfelOccluderField FallbackSurfelField {};
+    const SurfelOccluderField* ActiveSurfelField = OptionalSurfelField;
+    if (Algorithm == SolarShadowAlgorithm::SurfelTriangleField && ActiveSurfelField == nullptr)
+    {
+        FallbackSurfelField.BuildFromTriangles(SceneTree);
+        ActiveSurfelField = &FallbackSurfelField;
     }
 
     const Mathematics::Axis3D SunDir = Mathematics::NormalizeAxis(Sun.DirectionToSun, { 0.0f, 0.0f, 1.0f });
@@ -519,7 +528,20 @@ SolarShadowFieldResult SolarShadowSequence::EvaluateSolarShadowFieldWithAlgorith
             const float SlopeScale   = std::sqrt(std::max(0.0f, 1.0f - NdotL * NdotL)) / std::max(0.15f, NdotL);
             const Mathematics::Axis3D BiasedOrigin = Hit.WorldPosition + Hit.TangentFrame.NormalZ * 3.5e-3f;
 
-            if (Algorithm == SolarShadowAlgorithm::WideTreeRayQuery)
+            if (Algorithm == SolarShadowAlgorithm::SurfelTriangleField && ActiveSurfelField != nullptr)
+            {
+                float BlockerDist = 0.0f;
+                const float Vis = ActiveSurfelField->EvaluateSolarVisibility(
+                    SceneTree,
+                    Hit.WorldPosition,
+                    Hit.TangentFrame.NormalZ,
+                    SunDir,
+                    TanSunRadius,
+                    &BlockerDist);
+                Result.RawVisibility[Off]         = std::clamp(Vis, 0.0f, 1.0f);
+                Result.BlockerDistanceMeters[Off] = BlockerDist;
+            }
+            else if (Algorithm == SolarShadowAlgorithm::WideTreeRayQuery)
             {
                 // Deterministic Vogel Solar Disc Raytrace against 4-Wide WideBoundingTree!
                 const uint32_t RayCount = std::clamp(Sun.RtxSamplesPerPixel, 8u, 32u);

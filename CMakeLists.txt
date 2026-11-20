@@ -411,7 +411,11 @@ frontier_compile_modular_slang_shader(Visibility/MicroFaceSoftwareRasterization.
 frontier_compile_modular_slang_shader(Visibility/AnalyticBarycentricResolve.slang                AnalyticResolveComputeEntry     compute  AnalyticBarycentricResolve.comp.spv)
 frontier_compile_modular_slang_shader(DirectLighting/SolarFrustumShadow.slang                    SolarShadowComputeEntry         compute  SolarFrustumShadow.comp.spv)
 frontier_compile_modular_slang_shader(DirectLighting/PlaneAwareShadowFilter.slang                PlaneFilterComputeEntry         compute  PlaneAwareShadowFilter.comp.spv)
-frontier_compile_modular_slang_shader(GlobalIllumination/SpecularGlassRaytrace.slang          SpecularRaytraceComputeEntry    compute  SpecularGlassRaytrace.comp.spv)
+frontier_compile_modular_slang_shader(DirectLighting/SurfelTriangleShadow.slang                  SurfelShadowComputeEntry        compute  SurfelTriangleShadow.comp.spv)
+frontier_compile_modular_slang_shader(GlobalIllumination/SpecularGlassRaytrace.slang             SpecularRaytraceComputeEntry    compute  SpecularGlassRaytrace.comp.spv)
+frontier_compile_modular_slang_shader(GlobalIllumination/StokesContourGiCompute.slang            StokesContourGiComputeEntry     compute  StokesContourGiCompute.comp.spv)
+frontier_compile_modular_slang_shader(GlobalIllumination/SurfelCascadeGiCompute.slang            SurfelCascadeGiComputeEntry     compute  SurfelCascadeGiCompute.comp.spv)
+frontier_compile_modular_slang_shader(GlobalIllumination/WavefrontPathTraceCompute.slang         WavefrontPathTraceComputeEntry  compute  WavefrontPathTraceCompute.comp.spv)
 frontier_compile_modular_slang_shader(Atmosphere/SkyViewTransmittanceCompute.slang              TransmittanceLutComputeEntry    compute  TransmittanceLutCompute.comp.spv)
 frontier_compile_modular_slang_shader(Atmosphere/SkyViewTransmittanceCompute.slang              MultiScatterLutComputeEntry     compute  MultiScatterLutCompute.comp.spv)
 frontier_compile_modular_slang_shader(Atmosphere/SkyViewTransmittanceCompute.slang              ComputeEntry                    compute  SkyViewTransmittanceCompute.comp.spv)
@@ -620,6 +624,7 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/GeometricRaster/DirectLighting/SolarShadowSequence.cpp
     Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.cpp
     Engine/GeometricRaster/DirectLighting/SurfelOccluderField.cpp
+    Engine/GeometricRaster/GlobalIllumination/DeterministicPathTraceSequence.cpp
     Engine/GeometricRaster/GlobalIllumination/StokesContourGiSequence.cpp
     Engine/GeometricRaster/GlobalIllumination/SurfelCascadeGiSequence.cpp
     Engine/GeometricRaster/GlobalIllumination/SpecularReflectionSequence.cpp
@@ -1064,6 +1069,7 @@ if(BUILD_TESTING)
     frontier_register_exhibit(VisibilityRasterValidation     Exhibits/VisibilityRasterValidation.cpp)
     frontier_register_exhibit(SolarShadowValidation          Exhibits/SolarShadowValidation.cpp)
     frontier_register_exhibit(TieredWorldRenderValidation    Exhibits/TieredWorldRenderValidation.cpp)
+    frontier_register_exhibit(WorldGiShadowPathTraceValidation Exhibits/WorldGiShadowPathTraceValidation.cpp)
     frontier_register_exhibit(AudioSpaceValidation           Exhibits/AudioSpaceValidation.cpp)
     frontier_register_exhibit(CelestialCloudsValidation      Exhibits/CelestialCloudsValidation.cpp)
     frontier_register_exhibit(AtmosphereAuditProof           Exhibits/AtmosphereAuditProof.cpp)

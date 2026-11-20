@@ -94,13 +94,26 @@ namespace
 
 [[nodiscard]] const char* QueryRenderEngineName(uint32_t EngineIdx) noexcept
 {
-    constexpr std::array<const char*, 2> Names = {{ "MatCap", "OpenPBR Direct" }};
+    constexpr std::array<const char*, 5> Names = {{
+        "MatCap",
+        "OpenPBR Direct",
+        "Stokes Contour GI",
+        "Surfel Cascade GI",
+        "Path Tracer",
+    }};
     return Names[std::min<std::size_t>(EngineIdx, Names.size() - 1u)];
 }
 
 [[nodiscard]] const char* QueryShadowAlgorithmName(uint32_t AlgIdx) noexcept
 {
-    constexpr std::array<const char*, 5> Names = {{ "Contact PCSS", "PCSS + Filter", "SMRT", "PCF 3x3", "BVH4 Ray" }};
+    constexpr std::array<const char*, 6> Names = {{
+        "Contact PCSS",
+        "PCSS + Filter",
+        "SMRT",
+        "PCF 3x3",
+        "BVH4 Ray",
+        "Surfel Field",
+    }};
     return Names[std::min<std::size_t>(AlgIdx, Names.size() - 1u)];
 }
 
@@ -1243,12 +1256,15 @@ void ViewportPanel::RenderSettingsSheet(
     // Active Option Sheet rendered last for clean z-ordering
     if (EngineDropdownOpen)
     {
-        constexpr std::array<const char*, 2> EngineOptions = {{
+        constexpr std::array<const char*, 5> EngineOptions = {{
             "Engine: MatCap",
             "Engine: OpenPBR Direct",
+            "Engine: Stokes Contour GI",
+            "Engine: Surfel Cascade GI",
+            "Engine: Path Tracer",
         }};
         const Rectangle2D DropBounds = DropdownSelector::QuerySheetBounds(EngineBtn, static_cast<uint32_t>(EngineOptions.size()));
-        const uint32_t    CurIdx     = DisplaySettings.RenderEngineIndex % 2u;
+        const uint32_t    CurIdx     = DisplaySettings.RenderEngineIndex % 5u;
         uint32_t          ChosenIdx  = CurIdx;
         if (DropdownSelector::ConstructOptionSheet(
                 Overlay, EngineBtn, EngineOptions.data(), static_cast<uint32_t>(EngineOptions.size()),
@@ -1264,15 +1280,16 @@ void ViewportPanel::RenderSettingsSheet(
     }
     else if (ShadowDropdownOpen)
     {
-        constexpr std::array<const char*, 5> ShadowOptions = {{
+        constexpr std::array<const char*, 6> ShadowOptions = {{
             "Shadow: Contact PCSS",
             "Shadow: PCSS + Filter",
             "Shadow: SMRT",
             "Shadow: PCF 3x3",
             "Shadow: BVH4 Ray",
+            "Shadow: Surfel Field",
         }};
         const Rectangle2D DropBounds = DropdownSelector::QuerySheetBounds(ShadowBtn, static_cast<uint32_t>(ShadowOptions.size()));
-        const uint32_t    CurIdx     = DisplaySettings.ShadowAlgorithmIndex % 5u;
+        const uint32_t    CurIdx     = DisplaySettings.ShadowAlgorithmIndex % 6u;
         uint32_t          ChosenIdx  = CurIdx;
         if (DropdownSelector::ConstructOptionSheet(
                 Overlay, ShadowBtn, ShadowOptions.data(), static_cast<uint32_t>(ShadowOptions.size()),

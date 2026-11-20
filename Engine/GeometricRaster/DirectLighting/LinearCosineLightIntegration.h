@@ -99,9 +99,10 @@ public:
         std::span<const PolygonalAreaQuadLight>        AreaLights,
         const OrthographicShadowCascade*               OptionalFineClip   = nullptr,
         const OrthographicShadowCascade*               OptionalCoarseClip = nullptr,
-        const AmbientOcclusionSettings&                AoSettings         = {},
-        std::span<const DirectPointLightSpec>          PointLights        = {},
-        Mathematics::LinearRGB                         SkyFillRadiance    = { 0.14f, 0.19f, 0.28f });
+        const AmbientOcclusionSettings&                AoSettings          = {},
+        std::span<const DirectPointLightSpec>          PointLights         = {},
+        Mathematics::LinearRGB                         SkyFillRadiance     = { 0.14f, 0.19f, 0.28f },
+        const SurfelOccluderField*                     OptionalSurfelField = nullptr);
 
     // Compatibility wrapper mapping DirectShadowTier -> SolarShadowAlgorithm
     [[nodiscard]] static DirectLightingOutput EvaluateDirectLightingFrame(

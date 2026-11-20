@@ -58,12 +58,20 @@ void SurfelOccluderField::BuildFromTriangles(const SpatialAcceleration::WideBoun
 float SurfelOccluderField::EvaluateSolarVisibility(
     const SpatialAcceleration::WideBoundingTree& SceneTree,
     Mathematics::Axis3D Position, Mathematics::Axis3D Normal,
-    Mathematics::Axis3D DirectionToSun, float TanSunRadius) const noexcept
+    Mathematics::Axis3D DirectionToSun, float TanSunRadius,
+    float* OutBlockerDistanceMeters) const noexcept
 {
+    if (OutBlockerDistanceMeters != nullptr) *OutBlockerDistanceMeters = 0.0f;
     if (Mathematics::EvaluateDot(Normal, DirectionToSun) <= 0) return 0;
     const auto Origin = Position + Normal * 0.006f;
-    if (SceneTree.QueryRayOccluded({ Origin, 0.002f, DirectionToSun, 0.28f })) return 0;
+    const auto ContactHit = SceneTree.TraceClosestRay({ Origin, 0.002f, DirectionToSun, 0.28f }, false);
+    if (ContactHit.HitConfirmed)
+    {
+        if (OutBlockerDistanceMeters != nullptr) *OutBlockerDistanceMeters = ContactHit.HitDistanceMeters;
+        return 0;
+    }
     float Visibility = 1;
+    float ClosestBlocker = 0.0f;
     for (const auto& Disk : Disks)
     {
         const auto Delta = Disk.Position - Origin;
@@ -76,9 +84,18 @@ float SurfelOccluderField::EvaluateSolarVisibility(
         const float ProjectedRadius = Disk.RadiusMeters *
             std::sqrt(std::max(0.02f, std::abs(Mathematics::EvaluateDot(Disk.Normal, DirectionToSun))));
         const float T = std::clamp((Perpendicular - ProjectedRadius + ConeRadius) / (2*ConeRadius), 0.0f, 1.0f);
-        Visibility = std::min(Visibility, T*T*(3-2*T));
+        const float DiskVis = T * T * (3 - 2 * T);
+        if (DiskVis < Visibility)
+        {
+            Visibility = DiskVis;
+            if (DiskVis < 0.995f && (ClosestBlocker <= 0.0f || Distance < ClosestBlocker))
+            {
+                ClosestBlocker = Distance;
+            }
+        }
         if (Visibility == 0) break;
     }
+    if (OutBlockerDistanceMeters != nullptr) *OutBlockerDistanceMeters = ClosestBlocker;
     return Visibility;
 }
 } // namespace Frontier::GeometricRaster

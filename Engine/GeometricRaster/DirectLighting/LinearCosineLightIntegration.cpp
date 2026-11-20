@@ -533,7 +533,8 @@ DirectLightingOutput LinearCosineLightIntegration::EvaluateDirectLightingFrameWi
     const OrthographicShadowCascade*               OptionalCoarseClip,
     const AmbientOcclusionSettings&                AoSettings,
     std::span<const DirectPointLightSpec>          PointLights,
-    Mathematics::LinearRGB                         SkyFillRadiance)
+    Mathematics::LinearRGB                         SkyFillRadiance,
+    const SurfelOccluderField*                     OptionalSurfelField)
 {
     DirectLightingOutput Out {};
     Out.WidthPx  = VisibilityTargets.WidthPx;
@@ -560,7 +561,7 @@ DirectLightingOutput LinearCosineLightIntegration::EvaluateDirectLightingFrameWi
     // 1. Evaluate Shadow Lab Solar Shadows + Plane-Aware Penumbra Filter (Zero GI / Zero SDF)
     Out.SolarShadows = SolarShadowSequence::EvaluateSolarShadowFieldWithAlgorithm(
         Algorithm, Sun, Out.WidthPx, Out.HeightPx, PrimarySamples, SceneTree,
-        OptionalFineClip, OptionalCoarseClip);
+        OptionalFineClip, OptionalCoarseClip, OptionalSurfelField);
 
     const Mathematics::Axis3D SunDir = Mathematics::NormalizeAxis(Sun.DirectionToSun, { 0.0f, 0.0f, 1.0f });
     const uint32_t MatCount = MaterialRegister.QuerySlotCount();

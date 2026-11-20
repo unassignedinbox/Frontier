@@ -11,7 +11,11 @@
 
 #include "Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.h"
 #include "Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.h"
+#include "Engine/GeometricRaster/DirectLighting/SurfelOccluderField.h"
+#include "Engine/GeometricRaster/GlobalIllumination/DeterministicPathTraceSequence.h"
 #include "Engine/GeometricRaster/GlobalIllumination/SpecularReflectionSequence.h"
+#include "Engine/GeometricRaster/GlobalIllumination/StokesContourGiSequence.h"
+#include "Engine/GeometricRaster/GlobalIllumination/SurfelCascadeGiSequence.h"
 #include "Engine/MaterialSpace/CompactMaterialRegister.h"
 #include "Engine/MaterialSpace/MaterialSurfaceLayer/BounceLayerSummary.h"
 #include "Engine/SpatialAcceleration/ClusterPyramid.h"
@@ -36,8 +40,11 @@ enum class WorldRenderTier : uint8_t
 
 enum class WorldRenderEngine : uint8_t
 {
-    MatCap        = 0u, // [-] - Studio MatCap Normal/Roughness Shading (Zero GI, Zero Shadow Maps)
-    OpenPbrDirect = 1u, // [-] - Plain OpenPBR Direct + LTC Area Lights + Shadow Lab + BVH4/Sky Reflections (Zero GI)
+    MatCap                 = 0u, // [-] - Studio MatCap Normal/Roughness Shading (Zero GI, Zero Shadow Maps)
+    OpenPbrDirect          = 1u, // [-] - Plain OpenPBR Direct + LTC Area Lights + 6-Mode Shadow Lab + BVH4/Sky Reflections (Zero GI)
+    StokesContourGi        = 2u, // [-] - GTX GI #1: Exact Spherical-Polygon Stokes Contour Emissive + 2-Bounce Triangle Patches
+    SurfelCascadeGi        = 3u, // [-] - GTX GI #2: Dual-Cascade Octahedral Surfel Irradiance + Chebyshev Depth Moments
+    DeterministicPathTrace = 4u, // [-] - Unified GTX (BVH4) & RTX (VK_KHR_ray_query) Deterministic Sobol (0,2) Path Tracer
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -53,6 +60,8 @@ struct WorldRenderConfiguration
     bool                     ReflectionsEnabled  = true; // [-]     - Specular reflection toggle
     bool                     RaytracingEnabled   = true; // [-]     - Hardware/BVH raytracing toggle
     uint32_t                 QualityTier         = 1u;   // [0..4]  - Quality tier
+    uint32_t                 PathTraceSpp        = 8u;   // [count] - Samples per pixel for DeterministicPathTrace
+    uint32_t                 PathTraceStartIdx   = 0u;   // [idx]   - First Sobol (0,2) sample index for progressive accumulation
 };
 
 struct WorldSceneSpecification
@@ -111,15 +120,23 @@ public:
         const PerspectiveCameraBasis&  PreviousCamera,
         const WorldSceneSpecification& PreparedScene);
 
-    [[nodiscard]] const OrthographicShadowCascade& InspectFineContactClip() const noexcept   { return FineContactClip; }
-    [[nodiscard]] const OrthographicShadowCascade& InspectCoarseContactClip() const noexcept { return CoarseContactClip; }
-    [[nodiscard]] const AtmosphericSkySequence&    InspectSkySequence() const noexcept       { return SkySequence; }
+    [[nodiscard]] const OrthographicShadowCascade&     InspectFineContactClip() const noexcept   { return FineContactClip; }
+    [[nodiscard]] const OrthographicShadowCascade&     InspectCoarseContactClip() const noexcept { return CoarseContactClip; }
+    [[nodiscard]] const AtmosphericSkySequence&        InspectSkySequence() const noexcept       { return SkySequence; }
+    [[nodiscard]] const SurfelOccluderField&           InspectSurfelShadowField() const noexcept { return SurfelShadowField; }
+    [[nodiscard]] const StokesContourGiSequence&       InspectStokesGiSequence() const noexcept  { return StokesGiSequence; }
+    [[nodiscard]] const SurfelCascadeGiSequence&       InspectSurfelGiSequence() const noexcept  { return SurfelGiSequence; }
+    [[nodiscard]] const DeterministicPathTraceSequence& InspectPathTracer() const noexcept       { return PathTracerSequence; }
 
 private:
-    OrthographicShadowCascade FineContactClip   {};
-    OrthographicShadowCascade CoarseContactClip {};
-    DepthPyramidSequence      PreviousHiZ       {};
-    AtmosphericSkySequence    SkySequence       {};
+    OrthographicShadowCascade      FineContactClip    {};
+    OrthographicShadowCascade      CoarseContactClip  {};
+    DepthPyramidSequence           PreviousHiZ        {};
+    AtmosphericSkySequence         SkySequence        {};
+    SurfelOccluderField            SurfelShadowField  {};
+    StokesContourGiSequence        StokesGiSequence   {};
+    SurfelCascadeGiSequence        SurfelGiSequence   {};
+    DeterministicPathTraceSequence PathTracerSequence {};
 };
 
 } // namespace Frontier::GeometricRaster

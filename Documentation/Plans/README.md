@@ -16,6 +16,7 @@
 | [ColourSpaceArchitecturePlan.md](ColourSpaceArchitecturePlan.md) | Tristimulus color spaces, spectral distributions & tone transforms |
 | [RenderingRaytracingArchitecturePlan.md](RenderingRaytracingArchitecturePlan.md) | Dual-tier GTX Hybrid & Deterministic RTX architecture |
 | [WorldRenderEngineUnificationPlan.md](WorldRenderEngineUnificationPlan.md) | Shared Cornell-Studio World renderer & SDF Clipmap GI unification |
+| [WorldGiShadowPathTracerPlan.md](WorldGiShadowPathTracerPlan.md) | Real-triangle 2 GTX GI renderers, 6 Shadow Lab modes & GTX/RTX Deterministic Path Tracer |
 | [MaterialVisibilityRenderingBringupPlan.md](MaterialVisibilityRenderingBringupPlan.md) | 10-lobe `MaterialSpace`, 64-bit VisBuffer & rendering bringup |
 | [DynamicMaterialSystemPlan.md](DynamicMaterialSystemPlan.md) | Time-varying procedural/transition OpenPBR material compiler |
 | [DeterministicPathTracerVulkanOptimizationPlan.md](DeterministicPathTracerVulkanOptimizationPlan.md) | Vulkan compute optimization for deterministic path tracing |

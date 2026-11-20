@@ -24,6 +24,7 @@ public:
     [[nodiscard]] float EvaluateSolarVisibility(
         const SpatialAcceleration::WideBoundingTree& SceneTree,
         Mathematics::Axis3D Position, Mathematics::Axis3D Normal,
-        Mathematics::Axis3D DirectionToSun, float TanSunRadius) const noexcept;
+        Mathematics::Axis3D DirectionToSun, float TanSunRadius,
+        float* OutBlockerDistanceMeters = nullptr) const noexcept;
 };
 } // namespace Frontier::GeometricRaster

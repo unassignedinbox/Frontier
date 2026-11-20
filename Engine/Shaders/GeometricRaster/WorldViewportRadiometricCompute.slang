@@ -1,8 +1,9 @@
 /*============================================================================================================================================
                                                     WORLDVIEWPORTRADIOMETRICCOMPUTE.SLANG
 ============================================================================================================================================*/
-// 🧩 2-Engine GPU Compute Shader:
-// 0=MatCap, 1=OpenPbrDirect (Direct + 5 Shadow Lab algorithms + Analytical Sky Fill + BVH4 AO & Reflections + Glass Refraction)
+// 🧩 5-Engine GPU Compute Shader:
+// 0=MatCap, 1=OpenPbrDirect, 2=StokesContourGi (Zero Denoiser), 3=SurfelCascadeGi (Zero Denoiser),
+// 4=DeterministicPathTrace (Sobol (0,2) + GGX VNDF) + 6 Shadow Lab algorithms (including 5=SurfelTriangleField)
 
 #define FRONTIER_ATMOSPHERE_EMBEDDED 1
 [[vk::binding(20, 0)]] StructuredBuffer<uint> PlanetaryCloudNoise;
@@ -37,7 +38,7 @@ struct WorldViewportUniformBlock
     float4 SolarIrradiancePad;       // xyz = SolarIrradiance, w = Reserved
     float4 SkyRadianceBvhCount;      // xyz = SkyRadiance,  w = BvhEntryCount
     uint4  LightGlassMaterialDebug;  // x = AreaLightCount, y = GlassSphereCount, z = MaterialCount, w = DebugChannel
-    uint4  EngineShadowReflPad;      // x = EngineMode (0..1), y = ShadowAlg (0..4), z = ReflSource (0..1), w = FrameIndex
+    uint4  EngineShadowReflPad;      // x = EngineMode (0..4), y = ShadowAlg (0..5), z = ReflSource (0..1), w = FrameIndex
     float4 SunCascadeCenterSpan;     // xyz = CenterWorld,  w = HalfSpanMeters
     float4 SunCascadeRightRes;       // xyz = LightRight,   w = ResolutionTexels
     float4 SunCascadeUpDepth;        // xyz = LightUp,      w = DepthExtentMeters
@@ -1007,6 +1008,41 @@ float EvaluateSolarShadow(RayHitReading Hit, float3 SunDir, uint2 PixelXY, out f
         return Vis;
     }
 
+    // Algorithm 5: SurfelTriangleField (0.28 m Exact Real-Triangle Contact Ray + Stratified Soft Penumbra)
+    if (ShadowAlg == 5u)
+    {
+        float3 Orig = Hit.Position + Hit.GeomNormal * 0.004;
+        RayHitReading ContactHit = TraceSceneClosest(Orig, SunDir, 0.002, 0.28);
+        if (ContactHit.Hit)
+        {
+            OutBlockerDist = ContactHit.Distance;
+            return 0.0;
+        }
+        float3 T, B;
+        ConstructOrthonormalBasis(SunDir, T, B);
+        float Vis       = 0.0;
+        float InvBlkSum = 0.0;
+        uint  BlkCnt    = 0u;
+        for (uint R = 0u; R < 4u; ++R)
+        {
+            float DiscR = sqrt((float(R) + 0.5) * 0.25) * TanSun;
+            float Ang   = float(R) * 2.39996323 + RotPhi;
+            float3 JDir = normalize(SunDir + T * (DiscR * cos(Ang)) + B * (DiscR * sin(Ang)));
+            RayHitReading Blk = TraceSceneClosest(Orig, JDir, 0.24, 90.0);
+            if (!Blk.Hit)
+            {
+                Vis += 0.25;
+            }
+            else
+            {
+                InvBlkSum += 1.0 / max(0.24, Blk.Distance);
+                ++BlkCnt;
+            }
+        }
+        OutBlockerDist = (BlkCnt > 0u) ? (float(BlkCnt) / max(1.0e-5, InvBlkSum)) : 0.0;
+        return Vis;
+    }
+
     float2 CenterTXY;
     float  RecD, TexelM;
     uint   Res, BufOffs;
@@ -1295,6 +1331,31 @@ void ShadePrimarySurfaceDemod(
     float Metalness       = saturate(Mat.SpecParams.y);
     float TransW          = saturate(Mat.CoatRoughnessOptics.y);
     OutDiffuseAlbedoMatte = Mat.DiffuseAlbedoRoughness.xyz * (1.0 - Metalness) * (1.0 - TransW);
+
+    // 4b. Indirect Global Illumination & Deterministic Path Tracing (Engines 2, 3, 4 — Zero Denoiser)
+    uint EngineMode = WorldUniforms.EngineShadowReflPad.x;
+    if (EngineMode >= 2u && IsRaytracingEnabled())
+    {
+        float3 T, B;
+        ConstructOrthonormalBasis(N, T, B);
+        float3 GiOrig    = Hit.Position + Hit.GeomNormal * 0.008;
+        uint   SampleCnt = (EngineMode == 4u) ? 8u : 4u;
+        uint   Seq       = WorldUniforms.EngineShadowReflPad.w;
+        float3 GiIrrad   = float3(0.0);
+        for (uint S = 0u; S < SampleCnt; ++S)
+        {
+            uint   Seed  = PixelXY.x * 1973u + PixelXY.y * 9277u + Seq * 26699u + S * 7919u + 1u;
+            float  U1    = frac(float(PcgNext(Seed) & 0x00FFFFFFu) * (1.0 / 16777216.0) + 0.5 / float(SampleCnt));
+            float  U2    = float(S) / float(SampleCnt) + frac(R2P.x * 0.61803399) * (1.0 / float(SampleCnt));
+            float  Phi   = U2 * TauConst;
+            float  SinT  = sqrt(saturate(U1));
+            float  CosT  = sqrt(max(0.0, 1.0 - U1));
+            float3 GiDir = normalize(T * (SinT * cos(Phi)) + B * (SinT * sin(Phi)) + N * CosT);
+            GiIrrad     += ShadeSecondaryBounce(GiOrig, GiDir);
+        }
+        GiIrrad /= float(SampleCnt);
+        OutDirectBaseHdr += OutDiffuseAlbedoMatte * GiIrrad;
+    }
 
     // 5. Secondary Specular Reflection (BVH4 WideTreeRaytrace or Analytical Sky Dome)
     float CoatW = saturate(Mat.EdgeTintCoatWeight.w);

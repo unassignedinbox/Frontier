@@ -1577,8 +1577,8 @@ void EditorLifecycle::RefreshShowcaseViewportRaster()
     const uint32_t QTier = std::min(4u, DisplayCfg.QualityTier);
 
     GeometricRaster::WorldRenderConfiguration RenderConfig {};
-    RenderConfig.Engine           = static_cast<GeometricRaster::WorldRenderEngine>(std::min(1u, DisplayCfg.RenderEngineIndex));
-    RenderConfig.ShadowAlgorithm  = static_cast<GeometricRaster::SolarShadowAlgorithm>(std::min(4u, DisplayCfg.ShadowAlgorithmIndex));
+    RenderConfig.Engine           = static_cast<GeometricRaster::WorldRenderEngine>(std::min(4u, DisplayCfg.RenderEngineIndex));
+    RenderConfig.ShadowAlgorithm  = static_cast<GeometricRaster::SolarShadowAlgorithm>(std::min(5u, DisplayCfg.ShadowAlgorithmIndex));
     RenderConfig.ReflectionSource = (DisplayCfg.ReflectionsEnabled && DisplayCfg.RaytracingEnabled && DisplayCfg.ReflectionSourceIndex == 0u)
         ? GeometricRaster::SpecularReflectionSource::WideTreeRaytrace
         : GeometricRaster::SpecularReflectionSource::SkyEnvironment;
@@ -1735,8 +1735,11 @@ void EditorLifecycle::RefreshShowcaseViewportRaster()
     const char* EngineShortTag = "OpenPBR";
     switch (RenderConfig.Engine)
     {
-    case GeometricRaster::WorldRenderEngine::MatCap:        EngineShortTag = "MatCap"; break;
-    case GeometricRaster::WorldRenderEngine::OpenPbrDirect: EngineShortTag = "OpenPBR"; break;
+    case GeometricRaster::WorldRenderEngine::MatCap:                 EngineShortTag = "MatCap"; break;
+    case GeometricRaster::WorldRenderEngine::OpenPbrDirect:          EngineShortTag = "OpenPBR"; break;
+    case GeometricRaster::WorldRenderEngine::StokesContourGi:        EngineShortTag = "StokesGI"; break;
+    case GeometricRaster::WorldRenderEngine::SurfelCascadeGi:        EngineShortTag = "SurfelGI"; break;
+    case GeometricRaster::WorldRenderEngine::DeterministicPathTrace: EngineShortTag = "PathTrace"; break;
     }
     if (RenderedOnGpu)
     {

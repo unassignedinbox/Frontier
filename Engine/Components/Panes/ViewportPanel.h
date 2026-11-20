@@ -61,8 +61,8 @@ struct ViewportDisplaySettings
 {
     uint32_t QualityTier           = 2u;     // [idx] - 0=Low, 1=Medium, 2=Standard, 3=High, 4=Ultra
     uint32_t DebugChannelIndex     = 0u;     // [idx] - 0=Off, 1..11=Modular Debug Channels
-    uint32_t RenderEngineIndex     = 1u;     // [idx] - 0=MatCap, 1=OpenPbrDirect
-    uint32_t ShadowAlgorithmIndex  = 4u;     // [idx] - 0=ContactPcss, 1=PcssPlaneAware, 2=ShadowRayMarch, 3=PcfBilinear, 4=WideTreeRayQuery
+    uint32_t RenderEngineIndex     = 1u;     // [idx] - 0=MatCap, 1=OpenPbrDirect, 2=StokesContourGi, 3=SurfelCascadeGi, 4=DeterministicPathTrace
+    uint32_t ShadowAlgorithmIndex  = 4u;     // [idx] - 0=ContactPcss, 1=PcssPlaneAware, 2=ShadowRayMarch, 3=PcfBilinear, 4=WideTreeRayQuery, 5=SurfelTriangleField
     uint32_t ReflectionSourceIndex = 0u;     // [idx] - 0=WideTreeRaytrace, 1=SkyEnvironment
     uint32_t TraceResolutionIndex  = 0u;     // [idx] - 0=Full Trace, 1=1/2 Trace, 2=1/4 Trace
     float    RenderScalePercent    = 100.0f; // [%]   - Internal resolution percentage [50..200]

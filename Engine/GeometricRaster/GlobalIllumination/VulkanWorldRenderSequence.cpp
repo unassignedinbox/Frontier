@@ -176,7 +176,7 @@ struct WorldViewportUniformBlockStd140
     float                        SolarIrradiancePad[4]      {};
     float                        SkyRadianceBvhCount[4]     {};
     uint32_t                     LightGlassMaterialDebug[4] {}; // x=AreaLights, y=GlassSpheres, z=Materials, w=DebugChannel
-    uint32_t                     EngineShadowReflPad[4]     {}; // x=EngineMode(0..1), y=ShadowAlg(0..4), z=ReflSource(0..1), w=FrameIdx
+    uint32_t                     EngineShadowReflPad[4]     {}; // x=EngineMode(0..4), y=ShadowAlg(0..5), z=ReflSource(0..1), w=FrameIdx
     float                        SunCascadeCenterSpan[4]    {};
     float                        SunCascadeRightRes[4]      {};
     float                        SunCascadeUpDepth[4]       {};

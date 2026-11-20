@@ -10,6 +10,7 @@
 #include "Engine/GeometricRaster/GlobalIllumination/TieredWorldRenderSequence.h"
 #include "Engine/Constants/MathConstants.h"
 #include "Engine/GeometricRaster/Atmosphere/LensFlareSequence.h"
+#include "Engine/MaterialSpace/Scattering/BlackbodyEmission.h"
 
 #include <algorithm>
 #include <array>
@@ -447,6 +448,23 @@ void TieredWorldRenderSequence::PrepareWorldScene(WorldSceneSpecification& InOut
     const Mathematics::Axis3D FocusCenter = (InOutScene.SceneTree.RootBoundsMin + InOutScene.SceneTree.RootBoundsMax) * 0.5f;
     SolarShadowSequence::BuildTwoCascadeContactClips(
         InOutScene.Sun, FocusCenter, InOutScene.SceneTree, FineContactClip, CoarseContactClip);
+
+    SurfelShadowField.BuildFromTriangles(InOutScene.SceneTree);
+
+    const uint32_t MatCount = InOutScene.MaterialRegister.QuerySlotCount();
+    std::vector<Mathematics::LinearRGB> EmissionBySlot(MatCount);
+    std::vector<Mathematics::LinearRGB> ReflectanceBySlot(MatCount);
+    for (uint32_t Slot = 0u; Slot < MatCount; ++Slot)
+    {
+        const auto& Mat = InOutScene.MaterialRegister.InspectAuthoredMaterial(static_cast<uint16_t>(Slot));
+        EmissionBySlot[Slot]    = MaterialSpace::Scattering::EvaluatePlanckianBlackbodyRadiance(Mat.PorosityLight);
+        ReflectanceBySlot[Slot] = Mat.Diffuse.BaseColor * ((1.0f - Mat.Specular.Metalness) * Mat.Diffuse.BaseWeight);
+    }
+
+    const Mathematics::Axis3D SunDir = Mathematics::NormalizeAxis(InOutScene.Sun.DirectionToSun, { 0.0f, 0.0f, 1.0f });
+    StokesGiSequence.Prepare(InOutScene.SceneTree, EmissionBySlot, ReflectanceBySlot, SunDir, InOutScene.Sun.SolarIrradiance);
+    SurfelGiSequence.Prepare(StokesGiSequence, InOutScene.SceneTree);
+    PathTracerSequence.PrepareSceneSources(InOutScene.SceneTree, InOutScene.MaterialRegister);
 }
 
 WorldRenderOutput TieredWorldRenderSequence::RenderWorldFrame(
@@ -604,7 +622,37 @@ WorldRenderOutput TieredWorldRenderSequence::RenderWorldFrameWithEngine(
     }
 
     //====================================================================================================================
-    // ENGINE 1: OPENPBR DIRECT + SHADOW LAB + BVH4 / SKY SPECULAR & ABBE GLASS (ZERO GI)
+    // ENGINE 4: UNIFIED DETERMINISTIC PATH TRACER (GTX BVH4 & RTX VK_KHR_ray_query)
+    //====================================================================================================================
+    if (Config.Engine == WorldRenderEngine::DeterministicPathTrace && Config.DebugChannel == 0u)
+    {
+        PathTraceConfiguration PtCfg {};
+        PtCfg.WidthPx               = Result.WidthPx;
+        PtCfg.HeightPx              = Result.HeightPx;
+        PtCfg.SamplesPerPixel       = std::max(1u, Config.PathTraceSpp);
+        PtCfg.MaxBounceCount        = (Config.QualityTier >= 3u) ? 5u : 4u;
+        PtCfg.StartSampleIndex      = Config.PathTraceStartIdx;
+        PtCfg.AccelerationMode      = Config.RaytracingEnabled
+            ? PathTraceAccelerationMode::RtxInlineRayQuery
+            : PathTraceAccelerationMode::GtxWideBoundingTree;
+        PtCfg.SolarAngularRadiusRad = PreparedScene.Sun.SunAngularRadiusRadians;
+
+        const auto PtOut = PathTracerSequence.RenderViewport(
+            PtCfg,
+            CurrentCamera,
+            PreparedScene.SceneTree,
+            PreparedScene.MaterialRegister,
+            PreparedScene.Sun,
+            PreparedScene.AreaLights,
+            PreparedScene.SkyRadiance);
+        Result.CompositeLinearHdr = PtOut.LinearHdrRadiance;
+        Result.DisplayRgba8       = PtOut.DisplayRgba8;
+        PreviousHiZ = std::move(CurrentHiZ);
+        return Result;
+    }
+
+    //====================================================================================================================
+    // ENGINE 1/2/3: OPENPBR DIRECT + STOKES CONTOUR GI + SURFEL CASCADE GI + 6-MODE SHADOW LAB
     //====================================================================================================================
     Result.DirectLighting = LinearCosineLightIntegration::EvaluateDirectLightingFrameWithAlgorithm(
         Config.ShadowAlgorithm,
@@ -619,7 +667,8 @@ WorldRenderOutput TieredWorldRenderSequence::RenderWorldFrameWithEngine(
         &CoarseContactClip,
         {},
         PreparedScene.PointLights,
-        { 0.0f, 0.0f, 0.0f });
+        { 0.0f, 0.0f, 0.0f },
+        &SurfelShadowField);
 
     Result.SpecularGlass = SpecularReflectionSequence::EvaluateSpecularRefractionWithSource(
         Config.ReflectionSource,
@@ -699,11 +748,27 @@ WorldRenderOutput TieredWorldRenderSequence::RenderWorldFrameWithEngine(
                                          (1.0f - Mat.Transmission.TransmissionWeight) *
                                          Mat.Diffuse.BaseWeight;
 
-                // Clean hemispherical ambient sky fill (Zero GI)
+                // Clean hemispherical ambient sky fill + GTX GI #1 (StokesContourGi) / GTX GI #2 (SurfelCascadeGi)
                 const auto SkyFill = EvaluateSkyDome(Hit.TangentFrame.NormalZ, PreparedScene.SkyRadiance, &PreparedScene, &SkySequence);
-                FinalHdr.R += SkyFill.R * 0.22f * Mat.Diffuse.BaseColor.R * DiffFactor * (0.35f + 0.65f * DiffAo);
-                FinalHdr.G += SkyFill.G * 0.22f * Mat.Diffuse.BaseColor.G * DiffFactor * (0.35f + 0.65f * DiffAo);
-                FinalHdr.B += SkyFill.B * 0.22f * Mat.Diffuse.BaseColor.B * DiffFactor * (0.35f + 0.65f * DiffAo);
+                const float SkyScale = (Config.Engine == WorldRenderEngine::OpenPbrDirect) ? 0.22f : 0.06f;
+                FinalHdr.R += SkyFill.R * SkyScale * Mat.Diffuse.BaseColor.R * DiffFactor * (0.35f + 0.65f * DiffAo);
+                FinalHdr.G += SkyFill.G * SkyScale * Mat.Diffuse.BaseColor.G * DiffFactor * (0.35f + 0.65f * DiffAo);
+                FinalHdr.B += SkyFill.B * SkyScale * Mat.Diffuse.BaseColor.B * DiffFactor * (0.35f + 0.65f * DiffAo);
+
+                if (Config.Engine == WorldRenderEngine::StokesContourGi)
+                {
+                    const auto GiOverPi = StokesGiSequence.EvaluateIrradianceOverPi(Hit.WorldPosition, Hit.TangentFrame.NormalZ);
+                    FinalHdr.R += GiOverPi.R * Mat.Diffuse.BaseColor.R * DiffFactor;
+                    FinalHdr.G += GiOverPi.G * Mat.Diffuse.BaseColor.G * DiffFactor;
+                    FinalHdr.B += GiOverPi.B * Mat.Diffuse.BaseColor.B * DiffFactor;
+                }
+                else if (Config.Engine == WorldRenderEngine::SurfelCascadeGi)
+                {
+                    const auto GiOverPi = SurfelGiSequence.EvaluateIrradianceOverPi(Hit.WorldPosition, Hit.TangentFrame.NormalZ);
+                    FinalHdr.R += GiOverPi.R * Mat.Diffuse.BaseColor.R * DiffFactor;
+                    FinalHdr.G += GiOverPi.G * Mat.Diffuse.BaseColor.G * DiffFactor;
+                    FinalHdr.B += GiOverPi.B * Mat.Diffuse.BaseColor.B * DiffFactor;
+                }
 
                 if (Config.ReflectionsEnabled)
                 {
