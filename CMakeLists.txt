@@ -619,6 +619,7 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/GeometricRaster/Visibility/VisibilityMaterialResolve.cpp
     Engine/GeometricRaster/DirectLighting/SolarShadowSequence.cpp
     Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.cpp
+    Engine/GeometricRaster/DirectLighting/SurfelOccluderField.cpp
     Engine/GeometricRaster/GlobalIllumination/StokesContourGiSequence.cpp
     Engine/GeometricRaster/GlobalIllumination/SurfelCascadeGiSequence.cpp
     Engine/GeometricRaster/GlobalIllumination/SpecularReflectionSequence.cpp

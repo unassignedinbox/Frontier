@@ -12,6 +12,7 @@
 #include "Engine/GeometricRaster/GlobalIllumination/StokesContourGiSequence.h"
 #include "Engine/GeometricRaster/GlobalIllumination/SurfelCascadeGiSequence.h"
 #include <chrono>
+#include "Engine/GeometricRaster/DirectLighting/SurfelOccluderField.h"
 #include "Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.h"
 #include "Engine/GeometricRaster/DirectLighting/SolarShadowSequence.h"
 #include "Engine/GeometrySpace/Analysis/CurvatureAnalysis.h"
@@ -582,7 +583,8 @@ struct SceneData
     bool                   AllowReflection,
     uint32_t               BounceDepth = 0u,
     bool                   IncludeAmbient = true,
-    bool                   IncludeSoftbox = true) noexcept
+    bool                   IncludeSoftbox = true,
+    float                  SolarVisibilityOverride = -1.0f) noexcept
 {
     const auto& RawMat = Sc.MatReg.InspectAuthoredMaterial(MatSlot);
     MaterialSpace::SurfaceMaterial Mat = RawMat;
@@ -602,8 +604,8 @@ struct SceneData
     const float NdotL = Mathematics::EvaluateDot(SmoothN, SunDir);
     if (NdotL > 1.0e-4f)
     {
-        float SunVis = 1.0f;
-        if (TraceSunSoft)
+        float SunVis = SolarVisibilityOverride >= 0.0f ? SolarVisibilityOverride : 1.0f;
+        if (TraceSunSoft && SolarVisibilityOverride < 0.0f)
         {
             Mathematics::Axis3D ST {}, SB {};
             GeometrySpace::ConstructDuffOrthonormalBasis(SunDir, ST, SB);
@@ -956,7 +958,8 @@ struct SceneData
 
 int main(int ArgCount, char** Args)
 {
-    const bool MethodComparison = ArgCount > 1 && std::string(Args[1]) == "--methods";
+    const bool ShadowComparison = ArgCount > 1 && std::string(Args[1]) == "--shadow-methods";
+    const bool MethodComparison = ShadowComparison || (ArgCount > 1 && std::string(Args[1]) == "--methods");
     const bool GiComparison = MethodComparison || (ArgCount > 1 && std::string(Args[1]) == "--gi");
     constexpr uint32_t W = 1280u;
     constexpr uint32_t H = 720u;
@@ -1083,7 +1086,7 @@ int main(int ArgCount, char** Args)
     }
     std::printf("BVH4 built: %zu wide entries, depth=%u.\n", Sc.Tree.WideEntries.size(), Sc.Tree.MaxTreeDepth);
 
-    const std::filesystem::path OutDir = MethodComparison ? "Exhibits/ControlVehicleGiMethods" : GiComparison ? "Exhibits/ControlVehicleGiRenders" : "Exhibits/ControlVehicleRenders";
+    const std::filesystem::path OutDir = ShadowComparison ? "Exhibits/ControlVehicleShadowMethods" : MethodComparison ? "Exhibits/ControlVehicleGiMethods" : GiComparison ? "Exhibits/ControlVehicleGiRenders" : "Exhibits/ControlVehicleRenders";
     std::filesystem::create_directories(OutDir);
 
     const Mathematics::Axis3D StdSun = Mathematics::NormalizeAxis({ 0.58f, 0.48f, 0.658f });
@@ -1092,6 +1095,7 @@ int main(int ArgCount, char** Args)
 
     StokesContourGiSequence StokesGi;
     SurfelCascadeGiSequence SurfelGi;
+    SurfelOccluderField ShadowField;
     if (MethodComparison)
     {
         std::vector<Mathematics::LinearRGB> Reflectance(Sc.MatReg.QuerySlotCount());
@@ -1107,6 +1111,7 @@ int main(int ArgCount, char** Args)
             StokesGi.Sources.size(), StokesGi.Patches.size(),
             std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count());
         SurfelGi.Prepare(StokesGi, Sc.Tree);
+        if (ShadowComparison) ShadowField.BuildFromTriangles(Sc.Tree);
         std::printf("Surfel cascades prepared: %zu radiant surfels, %zu + %zu probes, %.3f seconds total\n",
             SurfelGi.RadiantSurfels.size(), SurfelGi.Cascades[0].Probes.size(), SurfelGi.Cascades[1].Probes.size(),
             std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count());
@@ -1134,11 +1139,11 @@ int main(int ArgCount, char** Args)
         {
             const auto Base = View == 0u ? Front : Rear;
             const std::string Prefix = View == 0u ? "front_" : "rear_";
-            for (uint32_t Mode : (MethodComparison ? std::vector<uint32_t>{3u, 6u, 7u, 2u} : std::vector<uint32_t>{3u, 4u, 5u, 2u}))
+            for (uint32_t Mode : (ShadowComparison ? std::vector<uint32_t>{8u, 9u, 10u, 11u} : MethodComparison ? std::vector<uint32_t>{3u, 6u, 7u, 2u} : std::vector<uint32_t>{3u, 4u, 5u, 2u}))
             {
                 auto Rig = Base;
                 Rig.Mode = Mode;
-                Rig.OutputName = Prefix + (Mode == 6u ? "stokes_contour_gi" : Mode == 7u ? "surfel_cascade_gi" : Mode == 3u ? "direct_only" : Mode == 4u ? "diffuse_gi_32spp" : Mode == 5u ? "indirect_only_32spp" : "path_trace_64spp");
+                Rig.OutputName = Prefix + (Mode == 8u ? "bvh4_shadow_surfel_gi" : Mode == 9u ? "surfel_shadow_surfel_gi" : Mode == 10u ? "bvh4_visibility" : Mode == 11u ? "surfel_visibility" : Mode == 6u ? "stokes_contour_gi" : Mode == 7u ? "surfel_cascade_gi" : Mode == 3u ? "direct_only" : Mode == 4u ? "diffuse_gi_32spp" : Mode == 5u ? "indirect_only_32spp" : "path_trace_64spp");
                 Rig.Label = Rig.OutputName;
                 if (MethodComparison) Rig.SkyColor = {};
                 Rigs.push_back(Rig);
@@ -1229,11 +1234,14 @@ int main(int ArgCount, char** Args)
                                 }
                                 else
                                 {
+                                    float ShadowOverride = -1.0f;
+                                    if (ShadowComparison && (Rig.Mode == 9u || Rig.Mode == 11u))
+                                        ShadowOverride = ShadowField.EvaluateSolarVisibility(Sc.Tree, HitPos, GN, Rig.SunDir, 0.016f);
                                     Hdr = ShadeSurfaceDirect(
                                         Sc, HitPos, N, GN, RayDir * -1.0f, Hit.MaterialOrdinal, PX, PY,
                                         Rig.SunDir, Rig.SunIrrad, Rig.SkyColor, Rig.EmissiveBoost,
-                                        true, !GiComparison, 0u, !GiComparison, !MethodComparison);
-                                    if (MethodComparison && (Rig.Mode == 6u || Rig.Mode == 7u))
+                                        true, !GiComparison, 0u, !GiComparison, !MethodComparison, ShadowOverride);
+                                    if (MethodComparison && (Rig.Mode == 6u || Rig.Mode == 7u || Rig.Mode == 8u || Rig.Mode == 9u))
                                     {
                                         const auto Irradiance = Rig.Mode == 6u
                                             ? StokesGi.EvaluateIrradianceOverPi(HitPos, N)
@@ -1245,6 +1253,28 @@ int main(int ArgCount, char** Args)
                                         Hdr = Hdr + MulRgb(Albedo, Irradiance) *
                                             ((1.0f - Material.Specular.Metalness) * Material.Diffuse.BaseWeight);
                                     }
+                                    if (ShadowComparison && Rig.Mode >= 10u)
+                                    {
+                                        float Visibility = ShadowOverride;
+                                        if (Rig.Mode == 10u)
+                                        {
+                                            Visibility = 0.0f;
+                                            Mathematics::Axis3D ST {}, SB {};
+                                            GeometrySpace::ConstructDuffOrthonormalBasis(Rig.SunDir, ST, SB);
+                                            for (uint32_t K = 0; K < 16; ++K)
+                                            {
+                                                const float Radius = std::sqrt((K+0.5f)/16) * 0.016f;
+                                                const float Angle = K * 2.39996323f;
+                                                const auto D = Mathematics::NormalizeAxis(Rig.SunDir +
+                                                    ST * (Radius*std::cos(Angle)) + SB * (Radius*std::sin(Angle)));
+                                                if (!Sc.Tree.QueryRayOccluded({ HitPos + GN*0.006f, 0.002f, D, 80.0f }))
+                                                    Visibility += 1.0f/16;
+                                            }
+                                            if (Mathematics::EvaluateDot(GN,Rig.SunDir) <= 0) Visibility = 0;
+                                        }
+                                        // Encode scalar visibility directly; bypass ACES below.
+                                        Hdr = { Visibility, Visibility, Visibility };
+                                    }
                                     if (GiComparison && (Rig.Mode == 4u || Rig.Mode == 5u))
                                     {
                                         const auto Gi = ShadeVehicleDiffuseGi(Sc, HitPos, N, GN,
@@ -1255,7 +1285,7 @@ int main(int ArgCount, char** Args)
                             }
                         }
 
-                        const auto Tone = ApplyAcesFilmic(Hdr, Rig.Exposure);
+                        const auto Tone = ShadowComparison && Rig.Mode >= 10u ? Hdr : ApplyAcesFilmic(Hdr, Rig.Exposure);
                         const std::size_t Off = (static_cast<std::size_t>(PY) * W + PX) * 3u;
                         Rgb[Off + 0u] = ToSrgb8(Tone.R);
                         Rgb[Off + 1u] = ToSrgb8(Tone.G);
