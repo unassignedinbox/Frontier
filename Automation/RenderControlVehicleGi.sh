@@ -27,3 +27,7 @@ for Image in "$Output"/*.ppm; do
     convert "$Image" "${Image%.ppm}.png"
     rm "$Image"
 done
+case "$Mode" in
+    --methods) python3 Automation/BuildVehicleGiComparison.py gi ;;
+    --shadow-methods) python3 Automation/BuildVehicleGiComparison.py shadows ;;
+esac

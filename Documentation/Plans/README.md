@@ -14,6 +14,7 @@
 | [DocumentSpacesRevisionPlan.md](DocumentSpacesRevisionPlan.md) | Confirmed `.Space` codecs, `215`/`750 MiB` revision DAG & workspace tree |
 | [ContentBrowserArchitecturePlan.md](ContentBrowserArchitecturePlan.md) | Pre-baked `ThumbnailSheet`, streaming, quarantine import & UV masks |
 | [ColourSpaceArchitecturePlan.md](ColourSpaceArchitecturePlan.md) | Tristimulus color spaces, spectral distributions & tone transforms |
+| [WorldGiShadowPathTracerPlan.md](WorldGiShadowPathTracerPlan.md) | Real-triangle Stokes / surfel GI CPU proofs, shadow comparisons and remaining GPU work |
 | [RenderingRaytracingArchitecturePlan.md](RenderingRaytracingArchitecturePlan.md) | Dual-tier GTX Hybrid & Deterministic RTX architecture |
 | [WorldRenderEngineUnificationPlan.md](WorldRenderEngineUnificationPlan.md) | Shared Cornell-Studio World renderer & SDF Clipmap GI unification |
 | [MaterialVisibilityRenderingBringupPlan.md](MaterialVisibilityRenderingBringupPlan.md) | 10-lobe `MaterialSpace`, 64-bit VisBuffer & rendering bringup |

@@ -6,6 +6,12 @@ Deferred items live in [Backlog.md](Backlog.md); architectural invariants live i
 
 ---
 
+## Real-triangle GI restoration (2026-11-20)
+
+- CPU Stokes contour GI, octahedral surfel irradiance cascades, and triangle-derived surfel solar shadows are implemented and registered in CMake.
+- Vehicle method comparisons and analytic validation: see [WorldGiShadowPathTracerPlan.md](Plans/WorldGiShadowPathTracerPlan.md).
+- GPU dispatch, editor controls, hardware path-tracing parity and deforming-character validation remain pending; CPU images do not certify them.
+
 ## Milestone Overview
 
 | Phase | Milestone | Status | Primary Domains |
