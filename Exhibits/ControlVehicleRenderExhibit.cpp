@@ -9,6 +9,9 @@
 
 #include "Engine/Constants/MathConstants.h"
 #include "Engine/GeometricRaster/GlobalIllumination/DeterministicDiffuseGi.h"
+#include "Engine/GeometricRaster/GlobalIllumination/StokesContourGiSequence.h"
+#include "Engine/GeometricRaster/GlobalIllumination/SurfelCascadeGiSequence.h"
+#include <chrono>
 #include "Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.h"
 #include "Engine/GeometricRaster/DirectLighting/SolarShadowSequence.h"
 #include "Engine/GeometrySpace/Analysis/CurvatureAnalysis.h"
@@ -578,7 +581,8 @@ struct SceneData
     bool                   TraceSunSoft,
     bool                   AllowReflection,
     uint32_t               BounceDepth = 0u,
-    bool                   IncludeAmbient = true) noexcept
+    bool                   IncludeAmbient = true,
+    bool                   IncludeSoftbox = true) noexcept
 {
     const auto& RawMat = Sc.MatReg.InspectAuthoredMaterial(MatSlot);
     MaterialSpace::SurfaceMaterial Mat = RawMat;
@@ -629,6 +633,7 @@ struct SceneData
     }
 
     // 2. Overhead Studio Softbox Area Light (4-point stratified quad visibility + OpenPBR BSDF)
+    if (IncludeSoftbox)
     {
         const auto& Q = Sc.Softbox;
         const uint32_t QTaps = (BounceDepth == 0u) ? 4u : 1u;
@@ -951,7 +956,8 @@ struct SceneData
 
 int main(int ArgCount, char** Args)
 {
-    const bool GiComparison = ArgCount > 1 && std::string(Args[1]) == "--gi";
+    const bool MethodComparison = ArgCount > 1 && std::string(Args[1]) == "--methods";
+    const bool GiComparison = MethodComparison || (ArgCount > 1 && std::string(Args[1]) == "--gi");
     constexpr uint32_t W = 1280u;
     constexpr uint32_t H = 720u;
 
@@ -1077,12 +1083,34 @@ int main(int ArgCount, char** Args)
     }
     std::printf("BVH4 built: %zu wide entries, depth=%u.\n", Sc.Tree.WideEntries.size(), Sc.Tree.MaxTreeDepth);
 
-    const std::filesystem::path OutDir = GiComparison ? "Exhibits/ControlVehicleGiRenders" : "Exhibits/ControlVehicleRenders";
+    const std::filesystem::path OutDir = MethodComparison ? "Exhibits/ControlVehicleGiMethods" : GiComparison ? "Exhibits/ControlVehicleGiRenders" : "Exhibits/ControlVehicleRenders";
     std::filesystem::create_directories(OutDir);
 
     const Mathematics::Axis3D StdSun = Mathematics::NormalizeAxis({ 0.58f, 0.48f, 0.658f });
     const Mathematics::LinearRGB StdSunI { 3.5f, 3.35f, 3.10f };
     const Mathematics::LinearRGB StdSky  { 0.34f, 0.42f, 0.56f };
+
+    StokesContourGiSequence StokesGi;
+    SurfelCascadeGiSequence SurfelGi;
+    if (MethodComparison)
+    {
+        std::vector<Mathematics::LinearRGB> Reflectance(Sc.MatReg.QuerySlotCount());
+        for (uint16_t Slot = 0; Slot < Reflectance.size(); ++Slot)
+        {
+            const auto& Material = Sc.MatReg.InspectAuthoredMaterial(Slot);
+            Reflectance[Slot] = Material.Diffuse.BaseColor * (Material.Diffuse.BaseWeight *
+                (1.0f - Material.Specular.Metalness));
+        }
+        const auto Start = std::chrono::steady_clock::now();
+        StokesGi.Prepare(Sc.Tree, Sc.MatEmission, Reflectance, StdSun, StdSunI);
+        std::printf("Stokes prepared: %zu emissive triangles, %zu diffuse patches, %.3f seconds\n",
+            StokesGi.Sources.size(), StokesGi.Patches.size(),
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count());
+        SurfelGi.Prepare(StokesGi, Sc.Tree);
+        std::printf("Surfel cascades prepared: %zu radiant surfels, %zu + %zu probes, %.3f seconds total\n",
+            SurfelGi.RadiantSurfels.size(), SurfelGi.Cascades[0].Probes.size(), SurfelGi.Cascades[1].Probes.size(),
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - Start).count());
+    }
 
     std::vector<RenderRigConfig> Rigs = {
         { "01_hero_front_3q_openpbr",        "Hero Front 3/4 (OpenPBR + BVH4 Reflections)", {  5.40f,  3.65f, 1.82f }, {  0.05f,  0.00f, 0.78f }, 38.0f, StdSun, StdSunI, StdSky, 0u, 1.05f, 1.0f },
@@ -1106,12 +1134,13 @@ int main(int ArgCount, char** Args)
         {
             const auto Base = View == 0u ? Front : Rear;
             const std::string Prefix = View == 0u ? "front_" : "rear_";
-            for (uint32_t Mode : { 3u, 4u, 5u, 2u })
+            for (uint32_t Mode : (MethodComparison ? std::vector<uint32_t>{3u, 6u, 7u, 2u} : std::vector<uint32_t>{3u, 4u, 5u, 2u}))
             {
                 auto Rig = Base;
                 Rig.Mode = Mode;
-                Rig.OutputName = Prefix + (Mode == 3u ? "direct_only" : Mode == 4u ? "diffuse_gi_32spp" : Mode == 5u ? "indirect_only_32spp" : "path_trace_64spp");
+                Rig.OutputName = Prefix + (Mode == 6u ? "stokes_contour_gi" : Mode == 7u ? "surfel_cascade_gi" : Mode == 3u ? "direct_only" : Mode == 4u ? "diffuse_gi_32spp" : Mode == 5u ? "indirect_only_32spp" : "path_trace_64spp");
                 Rig.Label = Rig.OutputName;
+                if (MethodComparison) Rig.SkyColor = {};
                 Rigs.push_back(Rig);
             }
         }
@@ -1203,7 +1232,19 @@ int main(int ArgCount, char** Args)
                                     Hdr = ShadeSurfaceDirect(
                                         Sc, HitPos, N, GN, RayDir * -1.0f, Hit.MaterialOrdinal, PX, PY,
                                         Rig.SunDir, Rig.SunIrrad, Rig.SkyColor, Rig.EmissiveBoost,
-                                        true, !GiComparison, 0u, !GiComparison);
+                                        true, !GiComparison, 0u, !GiComparison, !MethodComparison);
+                                    if (MethodComparison && (Rig.Mode == 6u || Rig.Mode == 7u))
+                                    {
+                                        const auto Irradiance = Rig.Mode == 6u
+                                            ? StokesGi.EvaluateIrradianceOverPi(HitPos, N)
+                                            : SurfelGi.EvaluateIrradianceOverPi(HitPos, N);
+                                        const auto& Material = Sc.MatReg.InspectAuthoredMaterial(Hit.MaterialOrdinal);
+                                        auto Albedo = Material.Diffuse.BaseColor;
+                                        if (Hit.MaterialOrdinal == Sc.FloorMat)
+                                            Albedo = EvaluateStudioFloorPattern(HitPos, Albedo);
+                                        Hdr = Hdr + MulRgb(Albedo, Irradiance) *
+                                            ((1.0f - Material.Specular.Metalness) * Material.Diffuse.BaseWeight);
+                                    }
                                     if (GiComparison && (Rig.Mode == 4u || Rig.Mode == 5u))
                                     {
                                         const auto Gi = ShadeVehicleDiffuseGi(Sc, HitPos, N, GN,
@@ -1226,8 +1267,8 @@ int main(int ArgCount, char** Args)
         for (auto& Wk : Workers) Wk.join();
 
         const auto PpmPath = OutDir / (Rig.OutputName + ".ppm");
-        (void)WritePpmImage(PpmPath, W, H, Rgb);
-        std::printf("[%2zu/10] Rendered %s (%ux%u) -> %s\n", RIdx + 1u, Rig.Label.c_str(), W, H, PpmPath.c_str());
+        if (!WritePpmImage(PpmPath, W, H, Rgb)) return 2;
+        std::printf("[%2zu/%zu] Rendered %s (%ux%u) -> %s\n", RIdx + 1u, Rigs.size(), Rig.Label.c_str(), W, H, PpmPath.c_str());
     }
 
     return 0;
