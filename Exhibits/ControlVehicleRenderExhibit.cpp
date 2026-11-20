@@ -8,6 +8,7 @@
 //------------------------------------------------------------------------------------------------------------------------
 
 #include "Engine/Constants/MathConstants.h"
+#include "Engine/GeometricRaster/GlobalIllumination/DeterministicDiffuseGi.h"
 #include "Engine/GeometricRaster/DirectLighting/LinearCosineLightIntegration.h"
 #include "Engine/GeometricRaster/DirectLighting/SolarShadowSequence.h"
 #include "Engine/GeometrySpace/Analysis/CurvatureAnalysis.h"
@@ -576,7 +577,8 @@ struct SceneData
     float                  EmissiveBoost,
     bool                   TraceSunSoft,
     bool                   AllowReflection,
-    uint32_t               BounceDepth = 0u) noexcept
+    uint32_t               BounceDepth = 0u,
+    bool                   IncludeAmbient = true) noexcept
 {
     const auto& RawMat = Sc.MatReg.InspectAuthoredMaterial(MatSlot);
     MaterialSpace::SurfaceMaterial Mat = RawMat;
@@ -658,8 +660,10 @@ struct SceneData
         Out = Out + QuadSum;
     }
 
-    // 3. Hemisphere Sky Ambient + Short-Range BVH4 Cavity AO
     float Ao = 1.0f;
+    if (IncludeAmbient)
+    {
+    // 3. Hemisphere Sky Ambient + Short-Range BVH4 Cavity AO
     if (BounceDepth == 0u)
     {
         float Occ = 0.0f;
@@ -681,6 +685,8 @@ struct SceneData
     Out.R += SkyFill.R * 0.28f * Mat.Diffuse.BaseColor.R * DiffWeight * Ao;
     Out.G += SkyFill.G * 0.28f * Mat.Diffuse.BaseColor.G * DiffWeight * Ao;
     Out.B += SkyFill.B * 0.28f * Mat.Diffuse.BaseColor.B * DiffWeight * Ao;
+
+    }
 
     // 4. Specular / Clearcoat Reflection Ray (BVH4 exact reflection on vehicle paint, glass, rims, brakes!)
     if (AllowReflection && BounceDepth == 0u)
@@ -756,6 +762,40 @@ struct SceneData
         }
     }
     return Out;
+}
+
+// Exact BVH4 secondary visibility with direct lighting at the secondary surface.
+// Includes sky escape and one diffuse surface bounce; not a surfel approximation.
+[[nodiscard]] Mathematics::LinearRGB ShadeVehicleDiffuseGi(
+    const SceneData& Sc, Mathematics::Axis3D P, Mathematics::Axis3D N,
+    Mathematics::Axis3D GN, uint16_t Slot, uint32_t PX, uint32_t PY,
+    Mathematics::Axis3D SunDir, Mathematics::LinearRGB SunI,
+    Mathematics::LinearRGB Sky)
+{
+    auto Mat = Sc.MatReg.InspectAuthoredMaterial(Slot);
+    if (Slot == Sc.FloorMat)
+        Mat.Diffuse.BaseColor = EvaluateStudioFloorPattern(P, Mat.Diffuse.BaseColor);
+    Mathematics::Axis3D T {}, B {};
+    GeometrySpace::ConstructDuffOrthonormalBasis(N, T, B);
+    const MaterialSpace::Scattering::SurfaceShadingBasis Basis { T, B, N };
+    return IntegrateDeterministicDiffuseGi(
+        Mat.Diffuse.BaseColor * ((1.0f - Mat.Specular.Metalness) * Mat.Diffuse.BaseWeight),
+        32u, AvalancheKey32(PX * 1973u + PY * 9277u + 17u),
+        [&](Mathematics::Axis3D LocalD) {
+            const auto D = Basis.LocalToWorld(LocalD);
+            const SpatialAcceleration::RaySegmentQuery Q { P + GN * 0.003f, 0.002f, D, 120.0f };
+            const auto H = Sc.Tree.TraceClosestRay(Q, false);
+            if (!H.HitConfirmed) return EvaluateSkyBackdrop(D, Sky, SunDir, SunI);
+            const auto& TN = Sc.Tree.PrimitiveNormals[H.PrimitiveIndex];
+            auto SN = Mathematics::NormalizeAxis(TN.Normal0 * (1.0f - H.BarycentricU - H.BarycentricV)
+                + TN.Normal1 * H.BarycentricU + TN.Normal2 * H.BarycentricV, H.GeometricNormal);
+            auto NG = H.GeometricNormal;
+            if (Mathematics::EvaluateDot(NG, D) > 0) NG = NG * -1.0f;
+            if (Mathematics::EvaluateDot(SN, D) > 0) SN = SN * -1.0f;
+            return ShadeSurfaceDirect(Sc, Q.Origin + D * H.HitDistanceMeters, SN, NG,
+                D * -1.0f, H.MaterialOrdinal, PX, PY, SunDir, SunI, Sky, 1.0f,
+                true, false, 1u, false);
+        });
 }
 
 [[nodiscard]] Mathematics::LinearRGB IntegrateDeterministicPathPixel(
@@ -909,8 +949,9 @@ struct SceneData
 
 } // namespace
 
-int main()
+int main(int ArgCount, char** Args)
 {
+    const bool GiComparison = ArgCount > 1 && std::string(Args[1]) == "--gi";
     constexpr uint32_t W = 1280u;
     constexpr uint32_t H = 720u;
 
@@ -1036,14 +1077,14 @@ int main()
     }
     std::printf("BVH4 built: %zu wide entries, depth=%u.\n", Sc.Tree.WideEntries.size(), Sc.Tree.MaxTreeDepth);
 
-    const std::filesystem::path OutDir = "Exhibits/ControlVehicleRenders";
+    const std::filesystem::path OutDir = GiComparison ? "Exhibits/ControlVehicleGiRenders" : "Exhibits/ControlVehicleRenders";
     std::filesystem::create_directories(OutDir);
 
     const Mathematics::Axis3D StdSun = Mathematics::NormalizeAxis({ 0.58f, 0.48f, 0.658f });
     const Mathematics::LinearRGB StdSunI { 3.5f, 3.35f, 3.10f };
     const Mathematics::LinearRGB StdSky  { 0.34f, 0.42f, 0.56f };
 
-    const std::vector<RenderRigConfig> Rigs = {
+    std::vector<RenderRigConfig> Rigs = {
         { "01_hero_front_3q_openpbr",        "Hero Front 3/4 (OpenPBR + BVH4 Reflections)", {  5.40f,  3.65f, 1.82f }, {  0.05f,  0.00f, 0.78f }, 38.0f, StdSun, StdSunI, StdSky, 0u, 1.05f, 1.0f },
         { "02_hero_rear_3q_openpbr",         "Hero Rear 3/4 (RearWing + Taillights)",       { -5.50f, -3.65f, 1.88f }, { -0.20f,  0.00f, 0.80f }, 38.0f, StdSun, StdSunI, StdSky, 0u, 1.05f, 1.0f },
         { "03_side_profile_elevation",       "Long-Lens Side Elevation (Ride Height & Aero)", {  0.00f, 10.60f, 0.96f }, {  0.00f,  0.00f, 0.84f }, 28.0f, StdSun, StdSunI, StdSky, 0u, 1.05f, 1.0f },
@@ -1055,6 +1096,26 @@ int main()
         { "09_deterministic_pt_32spp",       "32-SPP Deterministic (0,2) Sobol + GGX VNDF", {  5.10f,  3.45f, 1.72f }, {  0.05f,  0.00f, 0.76f }, 38.0f, StdSun, StdSunI, StdSky, 2u, 1.10f, 1.0f },
         { "10_dusk_emissive_showcase",       "Twilight Dusk Showcase (Emissive Lamps/Hubs)",{  5.15f,  3.35f, 1.55f }, {  0.05f,  0.00f, 0.76f }, 38.0f, Mathematics::NormalizeAxis({ -0.82f, -0.35f, 0.452f }), { 1.45f, 0.82f, 0.48f }, { 0.09f, 0.14f, 0.28f }, 0u, 1.25f, 2.0f },
     };
+
+    if (GiComparison)
+    {
+        const auto Front = Rigs[0];
+        const auto Rear = Rigs[1];
+        Rigs.clear();
+        for (uint32_t View = 0u; View < 2u; ++View)
+        {
+            const auto Base = View == 0u ? Front : Rear;
+            const std::string Prefix = View == 0u ? "front_" : "rear_";
+            for (uint32_t Mode : { 3u, 4u, 5u, 2u })
+            {
+                auto Rig = Base;
+                Rig.Mode = Mode;
+                Rig.OutputName = Prefix + (Mode == 3u ? "direct_only" : Mode == 4u ? "diffuse_gi_32spp" : Mode == 5u ? "indirect_only_32spp" : "path_trace_64spp");
+                Rig.Label = Rig.OutputName;
+                Rigs.push_back(Rig);
+            }
+        }
+    }
 
     const unsigned NumThreads = std::max(1u, std::thread::hardware_concurrency());
 
@@ -1093,7 +1154,7 @@ int main()
                         if (Rig.Mode == 2u)
                         {
                             Hdr = IntegrateDeterministicPathPixel(
-                                Sc, Basis.CameraOrigin, RayDir, PX, PY, 32u,
+                                Sc, Basis.CameraOrigin, RayDir, PX, PY, GiComparison ? 64u : 32u,
                                 Rig.SunDir, Rig.SunIrrad, Rig.SkyColor);
                         }
                         else
@@ -1102,7 +1163,7 @@ int main()
                             const auto Hit = Sc.Tree.TraceClosestRay(PQ, false);
                             if (!Hit.HitConfirmed)
                             {
-                                Hdr = (Rig.Mode == 1u)
+                                Hdr = (Rig.Mode == 1u || Rig.Mode == 5u)
                                     ? Mathematics::LinearRGB{ 0.14f, 0.16f, 0.19f }
                                     : EvaluateSkyBackdrop(RayDir, Rig.SkyColor, Rig.SunDir, Rig.SunIrrad);
                             }
@@ -1142,7 +1203,13 @@ int main()
                                     Hdr = ShadeSurfaceDirect(
                                         Sc, HitPos, N, GN, RayDir * -1.0f, Hit.MaterialOrdinal, PX, PY,
                                         Rig.SunDir, Rig.SunIrrad, Rig.SkyColor, Rig.EmissiveBoost,
-                                        true, true, 0u);
+                                        true, !GiComparison, 0u, !GiComparison);
+                                    if (GiComparison && (Rig.Mode == 4u || Rig.Mode == 5u))
+                                    {
+                                        const auto Gi = ShadeVehicleDiffuseGi(Sc, HitPos, N, GN,
+                                            Hit.MaterialOrdinal, PX, PY, Rig.SunDir, Rig.SunIrrad, Rig.SkyColor);
+                                        Hdr = Rig.Mode == 5u ? Gi : Hdr + Gi;
+                                    }
                                 }
                             }
                         }
