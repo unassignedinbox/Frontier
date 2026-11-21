@@ -621,8 +621,10 @@ export function Inspector({
       Change("Local Hours", NextHours);
       const Solved = Solar({
         LocalHours: NextHours,
-        Month: Latest.current.Month ?? 10,
-        Day: Latest.current["Day of Month"] ?? 4,
+        Month: Latest.current.Month ?? 9,
+        Day: Latest.current["Day of Month"] ?? 10,
+        Year: Latest.current.Year ?? 2026,
+        UtcOffset: Latest.current.UtcOffset ?? 2,
         Latitude: Latest.current.Latitude ?? -26.19,
         Longitude: Latest.current.Longitude ?? 28.32,
       });
@@ -1188,6 +1190,8 @@ export function Inspector({
       LocalHours: Time,
       Month: V("Month"),
       Day: V("Day of Month"),
+      Year: V("Year"),
+      UtcOffset: V("UtcOffset"),
       Latitude: V("Latitude"),
       Longitude: V("Longitude"),
     });

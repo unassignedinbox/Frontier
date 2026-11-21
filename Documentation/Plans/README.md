@@ -35,6 +35,7 @@
 | [FractureWorkspaceImplementationPlan.md](FractureWorkspaceImplementationPlan.md) | `FractureWorkspace` |
 | [ParametricSketcherIntegrationPlan.md](ParametricSketcherIntegrationPlan.md) · [ParametricSketcherOverhaulPlan.md](ParametricSketcherOverhaulPlan.md) | `SketcherWorkspace` (`ParametricSketcher`) |
 | [ComponentEditorArchitecturePlan.md](ComponentEditorArchitecturePlan.md) | `ComponentEditor` |
+| [WorldMirrorSunSkyParityReport.md](WorldMirrorSunSkyParityReport.md) · [WorldMirrorLobbyDefaultSceneReport.md](WorldMirrorLobbyDefaultSceneReport.md) · [WorldMirrorInspectorCarouselReport.md](WorldMirrorInspectorCarouselReport.md) | `FrontierWorldMirror` |
 
 ---
 

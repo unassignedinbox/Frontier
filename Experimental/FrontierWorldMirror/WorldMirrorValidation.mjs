@@ -38,9 +38,15 @@ import {
 } from "./ShadowPipeline.js";
 import {
   BuildSkyViewLut,
+  ComputeSolarTransmittance,
   EvalMoonAndStarsCpu,
   EvalVolumetricCloudsCpu,
+  EvaluateNeckelLabsLimbDarkening,
+  EvaluateSolarCoronaRadiance,
+  GetMultiScatterLut,
+  GetTransmittanceLut,
   PackSkyViewRgba16f,
+  ResolveAtmosphericMedium,
   SKY_VIEW_HEIGHT,
   SKY_VIEW_WIDTH,
   SampleSkyViewLutCpu,
@@ -49,7 +55,14 @@ import {
   BuildActorPayloadFromModelSpec,
   WORLD_PLACEABLE_MODELS,
 } from "./WorldDragDrop.js";
-import { Solar } from "./Solar.mjs";
+import {
+  AdvanceDayCycleHours,
+  ConvertAzimuthElevationToWorldAxis,
+  ConvertWorldAxisToAzimuthElevation,
+  EvaluateKelvinToLinearRgb,
+  Solar,
+  SolveSolarEphemeris,
+} from "./Solar.mjs";
 import {
   MOON_ATLAS_H,
   MOON_ATLAS_W,
@@ -1923,6 +1936,177 @@ assert.ok(
   );
 }
 
+// 21. Sun & Sky algorithmic parity — CelestialEphemerisSolver + AtmosphericSkySequence (1:1 native ports)
+{
+  const SkySun = NormalizeVec3([0.58, -0.55, 0.6]);
+  BuildSkyViewLut(SkySun, {});
+  assert.equal(
+    GetTransmittanceLut().length,
+    256 * 64 * 3,
+    "Transmittance LUT matches AtmosphericSkySequence 256x64x3",
+  );
+  assert.equal(
+    GetMultiScatterLut().length,
+    32 * 32 * 3,
+    "Multi-scatter LUT matches AtmosphericSkySequence 32x32x3",
+  );
+
+  // Compass convention: +X North, -Y East, +Z Up
+  assert.deepEqual(
+    ConvertAzimuthElevationToWorldAxis(0, 0).map((C) => Number(C.toFixed(6))),
+    [1, 0, 0],
+    "Azimuth 0 / elevation 0 maps to +X North",
+  );
+  assert.deepEqual(
+    ConvertAzimuthElevationToWorldAxis(90, 0).map((C) => Number(C.toFixed(6))),
+    [0, -1, 0],
+    "Azimuth 90 maps to -Y East",
+  );
+  assert.deepEqual(
+    ConvertAzimuthElevationToWorldAxis(0, 90).map((C) => Number(C.toFixed(6))),
+    [0, 0, 1],
+    "Elevation 90 maps to +Z Up",
+  );
+  const [RoundAzimuth, RoundElevation] = ConvertWorldAxisToAzimuthElevation([0.58, -0.55, 0.6]);
+  assert.ok(
+    Math.abs(RoundAzimuth - 43.479) < 0.01 && Math.abs(RoundElevation - 36.894) < 0.01,
+    `World axis round-trips through the compass conversion (${RoundAzimuth.toFixed(3)}, ${RoundElevation.toFixed(3)})`,
+  );
+
+  // Kelvin -> linear RGB tint
+  const WhiteTint = EvaluateKelvinToLinearRgb(6500);
+  assert.ok(
+    WhiteTint.every((C) => Math.abs(C - 1.0) < 0.05),
+    `6500 K solar tint is near white (${WhiteTint.map((C) => C.toFixed(3)).join(",")})`,
+  );
+  const WarmTint = EvaluateKelvinToLinearRgb(1900);
+  assert.ok(
+    WarmTint[0] >= WarmTint[1] && WarmTint[1] >= WarmTint[2] && WarmTint[2] < 0.2,
+    `Low Kelvin tint reddens monotonically (${WarmTint.map((C) => C.toFixed(3)).join(",")})`,
+  );
+
+  // Neckel & Labs limb darkening falls from disc centre to limb
+  const CentreDark = EvaluateNeckelLabsLimbDarkening(1.0);
+  const LimbDark = EvaluateNeckelLabsLimbDarkening(0.1);
+  assert.ok(
+    CentreDark.every((C, I) => C > LimbDark[I] + 0.4) && CentreDark.every((C) => C > 0.99),
+    `Neckel & Labs limb darkening darkens the limb (${LimbDark.map((C) => C.toFixed(3)).join(",")})`,
+  );
+
+  // Solar disc + K/F corona + glare falloff
+  const CoronaConfig = {
+    SolarEnabled: true,
+    AngularDiameterDegrees: 0.533,
+    SolarIntensityMultiplier: 22.0,
+    AppearanceMode: 1,
+    SunGlareStrength: 0.25,
+  };
+  const CoronaMedium = ResolveAtmosphericMedium({});
+  const SunTransmittance = ComputeSolarTransmittance([0, 0, 1], CoronaMedium, 100);
+  assert.ok(
+    SunTransmittance.every((C) => C > 0.5),
+    `Zenith solar transmittance is high (${SunTransmittance.map((C) => C.toFixed(3)).join(",")})`,
+  );
+  assert.deepEqual(
+    ComputeSolarTransmittance([0, 0, -1], CoronaMedium, 100),
+    [0, 0, 0],
+    "Solar transmittance is zero for a ray aimed into the planet",
+  );
+  const OffAxis = (Degrees) => {
+    const Axis = NormalizeVec3([0, 1, 0]);
+    const U = NormalizeVec3([
+      SkySun[0] * Math.cos((Degrees * Math.PI) / 180) + Axis[0] * Math.sin((Degrees * Math.PI) / 180),
+      SkySun[1] * Math.cos((Degrees * Math.PI) / 180) + Axis[1] * Math.sin((Degrees * Math.PI) / 180),
+      SkySun[2] * Math.cos((Degrees * Math.PI) / 180) + Axis[2] * Math.sin((Degrees * Math.PI) / 180),
+    ]);
+    return EvaluateSolarCoronaRadiance(
+      U,
+      SkySun,
+      CoronaConfig,
+      SunTransmittance,
+      [1, 1, 1],
+      false,
+      CoronaMedium,
+      0.0012,
+      [1, 1, 1],
+      1.0,
+    );
+  };
+  const DiscCentre = OffAxis(0);
+  const JustOffLimb = OffAxis(0.6);
+  assert.ok(
+    DiscCentre[0] > JustOffLimb[0] * 4.0,
+    `Photosphere dominates the corona just off the limb (${DiscCentre[0].toFixed(2)} vs ${JustOffLimb[0].toFixed(2)})`,
+  );
+  assert.ok(
+    DiscCentre[0] > 40.0 && DiscCentre[0] < 90.0,
+    `Disc radiance sits on the native 22 * 2.1 solar scale (${DiscCentre[0].toFixed(2)})`,
+  );
+  assert.deepEqual(OffAxis(45), [0, 0, 0], "Glare/corona terminate at the 30 degree window");
+
+  // Ephemeris: noon elevation equals 90 - |latitude - declination|
+  const Noon = SolveSolarEphemeris({
+    Year: 2026,
+    Month: 9,
+    DayOfMonth: 10,
+    LocalHours: 12,
+    UtcOffsetHours: 2,
+    SiteLatitudeDegrees: -26.19,
+    SiteLongitudeDegrees: 28.32,
+  });
+  assert.ok(
+    Math.abs(Noon.ElevationDegrees - (90 - Math.abs(-26.19 - Noon.DeclinationDegrees))) < 1.0,
+    `Solar noon elevation follows the declination formula (${Noon.ElevationDegrees.toFixed(2)})`,
+  );
+  const Wrapped = AdvanceDayCycleHours(
+    { LocalHours: 23.5, DayOfMonth: 10, Month: 9, Year: 2026 },
+    24 * 1800,
+  );
+  assert.ok(
+    Wrapped.LocalHours >= 0 && Wrapped.LocalHours < 24,
+    `Day cycle wraps Local Hours into 0..24 (${Wrapped.LocalHours.toFixed(3)})`,
+  );
+
+  // Shipped panels + defaults carry the native solar/atmosphere schema
+  const PanelsJson = JSON.parse(
+    fs.readFileSync(new URL("./NativePanels.json", import.meta.url), "utf8"),
+  ).Panels;
+  const SunLabels = PanelsJson.sun.map((F) => F.Label);
+  const AtmoLabels = PanelsJson.atmosphere.map((F) => F.Label);
+  for (const Label of ["Angular Diameter", "Direct", "Intensity", "Local Hours", "Latitude", "Longitude"]) {
+    assert.ok(SunLabels.includes(Label), `Sun panel exposes ${Label}`);
+  }
+  for (const Label of ["Air Mass", "Tier Samples", "Fetch Baked Dome", "Dome Path", "Sheet"]) {
+    assert.ok(AtmoLabels.includes(Label), `Atmosphere panel exposes ${Label}`);
+  }
+  assert.ok(
+    ShowcaseInitialValues.sun["Angular Diameter"] === 0.533 &&
+      ShowcaseInitialValues.sun.Direct === 2.5 &&
+      ShowcaseInitialValues.sun.Intensity === 22,
+    "Showcase sun row uses the native 0.533 deg / Direct 2.5 / Intensity 22 defaults",
+  );
+
+  // All three renderers consume the same ports
+  const WgslSrc = fs.readFileSync(new URL("./WebgpuGtxRenderer.js", import.meta.url), "utf8");
+  const GlslSrc = fs.readFileSync(new URL("./GtxWorldViewport.jsx", import.meta.url), "utf8");
+  const CpuSrc = fs.readFileSync(new URL("./CpuGtxFallbackRenderer.js", import.meta.url), "utf8");
+  assert.ok(
+    WgslSrc.includes("uSolarCfgA") && WgslSrc.includes("evaluateSolarCoronaRadiance") &&
+      WgslSrc.includes("sampleSkyViewDirection") && WgslSrc.includes("704"),
+    "WGSL scene shader ports the solar corona, sky-view sampling and matching 704 B uniform block",
+  );
+  assert.ok(
+    GlslSrc.includes("evaluateSolarCoronaRadiance") && GlslSrc.includes("sampleSkyViewDirection") &&
+      GlslSrc.includes("uMediumCfg1"),
+    "WebGL2 scene shader ports the solar corona and sky-view sampling",
+  );
+  assert.ok(
+    CpuSrc.includes("SolarCoronaRadiance") && CpuSrc.includes("SampleSkyViewInto") &&
+      CpuSrc.includes("SolarTransmittanceDirection"),
+    "Zero-WebGL CPU kernel ports the solar corona, sky-view sampling and solar transmittance",
+  );
+}
+
 console.log(
-  "[WorldMirrorValidation] ALL 20 SUITES PASSED (incl. Frontier Lobby default scene): ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
+  "[WorldMirrorValidation] ALL 21 SUITES PASSED (incl. Frontier Lobby default scene): ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
 );

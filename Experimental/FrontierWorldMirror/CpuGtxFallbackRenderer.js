@@ -150,6 +150,7 @@ export function CreateGtxBandKernel(
       this._FallbackLimbAngle = 1.5707;
       this.PixelAngularSizeRad = 0.0007;
       this.SkyLimbAngle = 0.0;
+      this._ActiveSkyLut = null;
       this._TlasStack = new Int32Array(48);
       this._BlasStack = new Int32Array(48);
       this._Hit = {
@@ -1090,8 +1091,9 @@ export function CreateGtxBandKernel(
     }
 
     EvalSky(Rdx, Rdy, Rdz, SkyRad, SunDir, SunIrr, OutRgb, SkyLut = null) {
-      if (SkyLut && SkyLut.length >= SkyLutW * SkyLutH * 4) {
-        this.SampleSkyViewInto(Rdx, Rdy, Rdz, SkyLut, OutRgb, this.SkyLimbAngle);
+      const Lut = SkyLut || this._ActiveSkyLut || null;
+      if (Lut && Lut.length >= SkyLutW * SkyLutH * 4) {
+        this.SampleSkyViewInto(Rdx, Rdy, Rdz, Lut, OutRgb, this.SkyLimbAngle);
         return;
       }
       // TieredWorldRenderSequence::EvaluateSkyDome fallback (no atmosphere LUT available)
@@ -1765,6 +1767,9 @@ export function CreateGtxBandKernel(
       const OrthoH = CompiledScene.OrthoHalfHeight;
       this.PixelAngularSizeRad = (2.0 * TanHalfFov) / Math.max(1, Height);
       this.SkyLimbAngle = this.SkyViewLimbAngle(CompiledScene.Medium || CompiledScene.Atmosphere || null);
+      // Every background lookup (glass transmission, mirror reflection, sky fill) must sample the baked
+      // SkyView LUT, matching TieredWorldRenderSequence::EvaluateBackgroundSkyRadiance.
+      this._ActiveSkyLut = SkyLut;
 
       const SkyOut = [0, 0, 0];
       const SecOut = [0, 0, 0];
