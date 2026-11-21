@@ -2199,6 +2199,42 @@ assert.ok(
   const WgslUsedMembers = [...new Set([...WgslBody.matchAll(/\bU\.(\w+)/g)].map((M) => M[1]))];
   const WgslMissingMembers = WgslUsedMembers.filter((Name) => !WgslMembers.has(Name));
   assert.deepEqual(WgslMissingMembers, [], "WGSL scene shader only reads declared SceneUniforms members");
+  // WGSL requires braced if/else bodies, and naga rejects mixing '*' with '^' without parentheses.
+  const UnbracedIf = [];
+  for (const M of WgslBody.matchAll(/\bif\s*\(/g)) {
+    let Index = M.index + M[0].length;
+    let Depth = 1;
+    while (Index < WgslBody.length && Depth > 0) {
+      if (WgslBody[Index] === "(") Depth += 1;
+      else if (WgslBody[Index] === ")") Depth -= 1;
+      Index += 1;
+    }
+    if (WgslBody.slice(Index).trimStart()[0] !== "{") {
+      UnbracedIf.push(WgslBody.slice(M.index, M.index + 70).split("\n")[0]);
+    }
+  }
+  assert.deepEqual(UnbracedIf, [], "every WGSL if body is braced");
+  const StripParens = (Line) => {
+    let Out = Line;
+    for (let Pass = 0; Pass < 6; ++Pass) {
+      const Next = Out.replace(/\([^()]*\)/g, "");
+      if (Next === Out) break;
+      Out = Next;
+    }
+    return Out;
+  };
+  const MixedPrecedence = WgslBody.split("\n")
+    .map((Line, Index) => [Index + 1, Line])
+    .filter(([, Line]) => {
+      const Bare = StripParens(Line);
+      return /[*/](?!=)/.test(Bare) && /\^|(?<![&])&(?![&])/.test(Bare);
+    });
+  assert.deepEqual(
+    MixedPrecedence.map(([Index, Line]) => `${Index}: ${Line.trim().slice(0, 60)}`),
+    [],
+    "WGSL never mixes '*' with bitwise operators without parentheses",
+  );
+
   for (const Required of ["evalMoonAndStars", "evalStarlightAmbient", "evalMoonIrradiance", "evalVolumetricClouds"]) {
     assert.ok(WgslFns.has(Required), `WGSL scene shader still defines ${Required}`);
   }

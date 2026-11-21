@@ -1481,17 +1481,17 @@ float cloudCellEnvelope(vec2 planePos, float height, float coverage, float seed,
       uint word = cloudHash3(address.x, address.y, seedCell);
       vec4 random = vec4(float(word & 255u), float((word >> 8u) & 255u),
                          float((word >> 16u) & 255u), float((word >> 24u) & 255u)) / 255.0;
-      vec2 center = vec2(address) + 0.5 + 0.76 * (random.xy - 0.5);
+      vec2 center = vec2(address) + vec2(0.5) + 0.76 * (random.xy - vec2(0.5));
       float occurrence = cloudSmooth(0.18, 0.65, coverage + 0.30 * (random.z - 0.5));
       float radius = (0.19 + 0.27 * random.w) * mix(0.65, 1.15, occurrence);
       float towerHeight = 0.30 + 0.58 * random.z;
-      vec2 tilt = (random.yw - 0.5) * (0.38 * height * height);
+      vec2 tilt = (random.yw - vec2(0.5)) * (0.38 * height * height);
       vec2 offset = (coord - center - tilt) / radius;
       float offsetSquared = dot(offset, offset);
       if (offsetSquared > 3.2) continue;
       float vertical = (height - 0.36 * towerHeight) / max(0.1, towerHeight * 0.64);
       float main = 1.0 - sqrt(offsetSquared + vertical * vertical);
-      vec2 budOffset = offset - (random.yz - 0.5) * 0.95;
+      vec2 budOffset = offset - (random.yz - vec2(0.5)) * 0.95;
       float budHeight = (height - towerHeight * 0.70) / max(0.08, towerHeight * 0.35);
       float bud = 0.90 - sqrt(dot(budOffset, budOffset) * 1.65 + budHeight * budHeight);
       envelope = max(envelope, max(main, bud) - (1.0 - occurrence) * 0.75);
@@ -1563,13 +1563,13 @@ float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottom
   if (!lightQuery && (formation == 8 || formation == 12)) {
     float warpS = (formation == 8) ? 2.2 : 3.7;
     float warpA = (formation == 8) ? 1.4 : 1.15;
-    shapeCoordinate += warpA * (cloudLatticeNoise(coordinate / (scaleM * warpS)) - 0.5);
+    shapeCoordinate += vec3(warpA * (cloudLatticeNoise(coordinate / (scaleM * warpS)) - 0.5));
   }
   shape = cloudShapeField(shapeCoordinate, footprintM, scaleM);
   if (!lightQuery) {
     float fineFilter = 1.0 - cloudSmooth(scaleM * 0.015, scaleM * 0.11, footprintM);
     if (fineFilter > 0.01) {
-      detail = mix(0.48, cloudShapeField(rotateCloudOctave(shapeCoordinate) * 3.17 + 0.337, footprintM, scaleM / 3.17).y, fineFilter);
+      detail = mix(0.48, cloudShapeField(rotateCloudOctave(shapeCoordinate) * 3.17 + vec3(0.337), footprintM, scaleM / 3.17).y, fineFilter);
     }
   }
 
@@ -1578,16 +1578,16 @@ float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottom
 
   if (formation == 5 || formation == 10) {
     vec3 fiber = rotateCloudOctave(coordinate) * vec3(0.000075, 0.0028, 0.00065) / max(0.3, uCloudCfg0.w);
-    float bend = cloudLatticeNoise(coordinate * 0.00014 + 41.3);
-    float bank = cloudLatticeNoise(coordinate * vec3(0.000045, 0.000070, 0.00013) + 59.1);
+    float bend = cloudLatticeNoise(coordinate * 0.00014 + vec3(41.3));
+    float bank = cloudLatticeNoise(coordinate * vec3(0.000045, 0.000070, 0.00013) + vec3(59.1));
     fiber.y += 4.8 * bend + 2.7 * height * height;
     fiber.x += 0.60 * height * height;
-    float strand = 0.65 * cloudLatticeNoise(fiber + 3.7) + 0.35 * cloudLatticeNoise(fiber * 2.13 + 16.9);
+    float strand = 0.65 * cloudLatticeNoise(fiber + vec3(3.7)) + 0.35 * cloudLatticeNoise(fiber * 2.13 + vec3(16.9));
     if (!lightQuery) {
-      fiber.z += 1.3 * cloudLatticeNoise(coordinate * 0.00023 - 23.0);
+      fiber.z += 1.3 * cloudLatticeNoise(coordinate * 0.00023 - vec3(23.0));
       float filt = footprintM * 0.0028 / max(0.3, uCloudCfg0.w);
-      strand = 0.64 * mix(0.5, cloudLatticeNoise(fiber + 3.7), 1.0 - cloudSmooth(0.6, 1.5, filt))
-             + 0.36 * mix(0.5, cloudLatticeNoise(fiber * 2.13 + 16.9), 1.0 - cloudSmooth(0.6, 1.5, filt * 2.13));
+      strand = 0.64 * mix(0.5, cloudLatticeNoise(fiber + vec3(3.7)), 1.0 - cloudSmooth(0.6, 1.5, filt))
+             + 0.36 * mix(0.5, cloudLatticeNoise(fiber * 2.13 + vec3(16.9)), 1.0 - cloudSmooth(0.6, 1.5, filt * 2.13));
     }
     float bankEnvelope = cloudSmooth(0.30, 0.67, bank + (amount - 0.6) * 0.35);
     if (formation == 10) {
@@ -1598,7 +1598,7 @@ float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottom
     heightEnvelope *= cloudSmooth(0.0, 0.23, height) * (1.0 - cloudSmooth(0.55, 1.0, height)) * bankEnvelope;
     raw = strand - mix(0.70, 0.43, amount) - (1.0 - heightEnvelope) * 0.16;
   } else if (formation == 6) {
-    float macroLobes = cloudLatticeNoise(coordinate * vec3(0.00011, 0.00024, 0.0) / max(0.25, uCloudCfg0.w) + 1.7);
+    float macroLobes = cloudLatticeNoise(coordinate * vec3(0.00011, 0.00024, 0.0) / max(0.25, uCloudCfg0.w) + vec3(1.7));
     float laminar = pow(0.5 + 0.5 * sin(height * 3.14159265 * 2.4 - 0.3 + (shape.x - 0.5) * 0.85), 1.15);
     float lensMask = cloudSmooth(0.42, 0.72, macroLobes + (shape.x - 0.5) * 0.24);
     heightEnvelope *= cloudSmooth(0.04, 0.24, height) * (1.0 - cloudSmooth(0.74, 0.96, height));
@@ -1607,7 +1607,7 @@ float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottom
     float tiltOffset = 320.0 * sin(height * 3.14159265) + 220.0 * height * height;
     float wavePhase = (coordinate.x + tiltOffset) * (0.0020 / max(0.25, uCloudCfg0.w)) + (shape.x - 0.5) * 2.8;
     float breakCurl = cloudSmooth(0.26, 0.88, 0.5 + 0.5 * sin(wavePhase + height * 3.0));
-    float macroBand = cloudSmooth(0.36, 0.72, cloudLatticeNoise(coordinate * 0.00012 + 3.1));
+    float macroBand = cloudSmooth(0.36, 0.72, cloudLatticeNoise(coordinate * 0.00012 + vec3(3.1)));
     heightEnvelope *= cloudSmooth(0.08, 0.30, height) * (1.0 - cloudSmooth(0.72, 0.98, height));
     raw = macroBand * (0.58 * breakCurl + 0.42 * shape.x) - mix(0.56, 0.24, amount) - (1.0 - heightEnvelope) * 0.26;
   } else if (formation == 9) {
@@ -1624,7 +1624,7 @@ float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottom
     heightEnvelope *= cloudSmooth(0.05, 0.22, height) * (1.0 - cloudSmooth(0.72, 0.96, height));
     raw = 0.62 * shape.x + 0.38 * swell - mix(0.62, 0.26, amount) - (1.0 - heightEnvelope) * 0.28;
   } else if (formation == 0 || formation == 4) {
-    float fold = cloudLatticeNoise(coordinate * 0.00016 + 37.1);
+    float fold = cloudLatticeNoise(coordinate * 0.00016 + vec3(37.1));
     float vertical = height + (fold - 0.5) * 0.25;
     heightEnvelope *= cloudSmooth(0.0, 0.19, vertical) * (1.0 - cloudSmooth(0.66, 1.0, vertical));
     raw = 0.72 * shape.x + 0.28 * shape.y - mix(0.77, 0.38, amount) - (1.0 - heightEnvelope) * 0.36;
