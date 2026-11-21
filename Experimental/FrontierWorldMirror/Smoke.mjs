@@ -62,6 +62,11 @@ await new Promise((Resolve) => setTimeout(Resolve, 9000));
 const Document = Window.document;
 const Body = Document.body.textContent || "";
 const Outliner = Document.querySelector(".outliner")?.textContent || Document.body.textContent || "";
+const NativeIconNames = new Set(
+  [...Document.querySelectorAll("[data-native-icon]")].map((Element) =>
+    Element.getAttribute("data-native-icon"),
+  ),
+);
 const Checks = [
   ["Editor mounts", Boolean(Document.querySelector("#Editor")?.childElementCount)],
   ["Default project is Frontier Lobby", Body.includes("Frontier Lobby")],
@@ -74,6 +79,8 @@ const Checks = [
   ["Editor Camera Lens Flare component", Outliner.includes("Lens Flare")],
   ["Editor Camera Tonemapping component", Outliner.includes("Tonemapping")],
   ["Editor Camera Render Settings component", Outliner.includes("Render Settings")],
+  ["Atmosphere row uses the native sky-scattering icon", NativeIconNames.has("sky-scattering")],
+  ["Volumetric Clouds row uses the native clouds icon", NativeIconNames.has("clouds")],
   ["Cone Slalom template retired", !Body.includes("Cone Slalom")],
 ];
 
