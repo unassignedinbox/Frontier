@@ -52,6 +52,10 @@ import {
   SampleSkyViewLutCpu,
 } from "./AtmosphereSky.js";
 import {
+  EvaluateVolumetricClouds,
+  ResolveCloudDeck,
+} from "./CloudSequence.js";
+import {
   BuildActorPayloadFromModelSpec,
   WORLD_PLACEABLE_MODELS,
 } from "./WorldDragDrop.js";
@@ -114,6 +118,7 @@ import {
   ApplyUnrealMouseLook,
   ApplyUnrealOrbit,
   ApplyUnrealPan,
+  ApplyUnrealSpeedScalar,
   BuildUnrealCameraBasis,
   DeriveUnrealCameraState,
   StepUnrealWasdCamera,
@@ -447,6 +452,28 @@ const MovedSprint = StepUnrealWasdCamera(StartCam, new Set(["KeyW", "ShiftLeft"]
 assert.ok(
   Math.abs((MovedSprint.Position[1] - StartCam.Position[1]) / (MovedFwd.Position[1] - StartCam.Position[1]) - 2.5) < 1e-4,
   "ShiftLeft applies exact 2.5x Unreal sprint boost",
+);
+const MovedPrecision = StepUnrealWasdCamera(StartCam, new Set(["KeyW", "ControlLeft"]), 0.5, 3.4);
+assert.ok(
+  Math.abs((MovedPrecision.Position[1] - StartCam.Position[1]) / (MovedFwd.Position[1] - StartCam.Position[1]) - 0.25) < 1e-4,
+  "ControlLeft applies exact 0.25x Unreal precision creep",
+);
+const MovedCreepSprint = StepUnrealWasdCamera(StartCam, new Set(["KeyW", "ControlRight", "ShiftRight"]), 0.5, 3.4);
+assert.ok(
+  Math.abs((MovedCreepSprint.Position[1] - StartCam.Position[1]) / (MovedFwd.Position[1] - StartCam.Position[1]) - 0.625) < 1e-4,
+  "Ctrl + Shift compose (2.5 x 0.25 = 0.625x) like the Unreal editor",
+);
+const SpeedRaised = ApplyUnrealSpeedScalar(StartCam, 3, 1.12);
+assert.ok(
+  Math.abs(SpeedRaised.SpeedScalar - Math.pow(1.12, 3)) < 1e-6 && SpeedRaised.FocusDist === StartCam.FocusDist,
+  "RMB + wheel steps the fly-speed scalar without moving the camera",
+);
+assert.equal(ApplyUnrealSpeedScalar({ ...StartCam, SpeedScalar: 15.0 }, 10, 1.45).SpeedScalar, 16.0, "Fly-speed scalar clamps at 16x");
+assert.equal(ApplyUnrealSpeedScalar({ ...StartCam, SpeedScalar: 0.2 }, -10, 1.45).SpeedScalar, 0.15, "Fly-speed scalar clamps at 0.15x");
+const FastFly = StepUnrealWasdCamera({ ...StartCam, SpeedScalar: 4.0 }, new Set(["KeyW"]), 0.5, 3.4);
+assert.ok(
+  Math.abs((FastFly.Position[1] - StartCam.Position[1]) / (MovedFwd.Position[1] - StartCam.Position[1]) - 4.0) < 1e-4,
+  "Fly-speed scalar multiplies the WASD step",
 );
 const MovedDiag = StepUnrealWasdCamera(StartCam, new Set(["KeyW", "KeyD"]), 0.5, 3.4);
 const DistFwd = Math.hypot(
@@ -2092,8 +2119,8 @@ assert.ok(
   const CpuSrc = fs.readFileSync(new URL("./CpuGtxFallbackRenderer.js", import.meta.url), "utf8");
   assert.ok(
     WgslSrc.includes("uSolarCfgA") && WgslSrc.includes("evaluateSolarCoronaRadiance") &&
-      WgslSrc.includes("sampleSkyViewDirection") && WgslSrc.includes("704"),
-    "WGSL scene shader ports the solar corona, sky-view sampling and matching 704 B uniform block",
+      WgslSrc.includes("sampleSkyViewDirection") && WgslSrc.includes("new ArrayBuffer(768)"),
+    "WGSL scene shader ports the solar corona, sky-view sampling and the 768 B uniform block",
   );
   assert.ok(
     GlslSrc.includes("evaluateSolarCoronaRadiance") && GlslSrc.includes("sampleSkyViewDirection") &&
@@ -2105,8 +2132,57 @@ assert.ok(
       CpuSrc.includes("SolarTransmittanceDirection"),
     "Zero-WebGL CPU kernel ports the solar corona, sky-view sampling and solar transmittance",
   );
+
+  // VolumetricCloudSequence: all three renderers run the native trace, not the legacy FBM
+  for (const [Name, Source] of [["WebGPU", WgslSrc], ["WebGL2", GlslSrc]]) {
+    for (const Token of [
+      "cloudPermute",
+      "cloudLatticeNoise",
+      "cloudCellEnvelope",
+      "cloudConvectiveEnvelope",
+      "cloudShapeField",
+      "sampleCloudDensityAdvected",
+      "sampleCloudShadowDensity",
+      "cloudLayerSpans",
+      "cloudScatteringOrder",
+      "cloudSolarOpticalDepth",
+      "cloudAirColumn",
+      "evalVolumetricClouds",
+    ]) {
+      assert.ok(Source.includes(Token), `${Name} shader ports ${Token}`);
+    }
+    for (const Legacy of ["cloudFbm", "intersectEarthShell", "sampleCloudDensity("]) {
+      assert.ok(!Source.includes(Legacy), `${Name} shader dropped the legacy ${Legacy} substitute`);
+    }
+    for (const Cfg of ["uCloudCfg0", "uCloudCfg1", "uCloudCfg2", "uCloudCfg3", "uCloudCfg4", "uCloudCfg5", "uCloudCfg6"]) {
+      assert.ok(Source.includes(Cfg), `${Name} shader consumes ${Cfg}`);
+    }
+  }
+  assert.ok(
+    CpuSrc.includes("EvaluateVolumetricClouds") && CpuSrc.includes("BuildCloudKernelPrelude") &&
+      CpuSrc.includes("CloudLib"),
+    "Zero-WebGL CPU kernel and worker run EvaluateVolumetricClouds through the injected CloudLib",
+  );
+
+  const Deck = ResolveCloudDeck({ type: 2, coverage: 0.42, density: 2.2, featureScale: 0.4, baseM: 1400, thicknessM: 1100 });
+  assert.equal(Deck.Category, 2, "ResolveCloudDeck maps the inspector Type onto the native formation index");
+  const Medium = ResolveAtmosphericMedium({});
+  const SunDir = NormalizeVec3([0.58, -0.55, 0.6]);
+  let Covered = 0;
+  for (let Az = 0; Az < 24; ++Az) {
+    for (const El of [10, 20, 35, 55, 75]) {
+      const A = (Az / 24) * Math.PI * 2;
+      const E = (El * Math.PI) / 180;
+      const Ray = [Math.cos(A) * Math.cos(E), Math.sin(A) * Math.cos(E), Math.sin(E)];
+      const Sample = EvaluateVolumetricClouds([0, 0, 0], Ray, Deck, Medium, SunDir, [2.2, 1.7, 1.1], [0.05, 0.1, 0.22], 30, 0.3, 0.6);
+      if (Sample.Transmittance < 0.999) Covered += 1;
+      assert.ok(Sample.Transmittance >= 0 && Sample.Transmittance <= 1, "cloud transmittance stays in 0..1");
+      assert.ok(Number.isFinite(Sample.Radiance[0]), "cloud radiance stays finite");
+    }
+  }
+  assert.ok(Covered > 5, `native cumulus deck resolves sky cover from a ground observer (${Covered}/120 rays)`);
 }
 
 console.log(
-  "[WorldMirrorValidation] ALL 21 SUITES PASSED (incl. Frontier Lobby default scene): ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
+  "[WorldMirrorValidation] ALL 22 SUITES PASSED (incl. Frontier Lobby default scene): ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
 );

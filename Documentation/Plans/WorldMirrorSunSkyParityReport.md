@@ -96,7 +96,9 @@ height, Mie scale height, ozone strength, Mie strength) — all derived from `Ac
 
 ## 6. Gates
 
-* `node WorldMirrorValidation.mjs` → **ALL 21 SUITES PASSED** (new suite 21 covers LUT dimensions, compass axes, Kelvin tint, limb darkening, corona falloff, transmittance, ephemeris noon/wrap, panel schema and the three renderer ports).
+* `node WorldMirrorValidation.mjs` → **ALL 22 SUITES PASSED** (suite 21 covers LUT dimensions, compass axes, Kelvin tint, limb darkening, corona falloff,
+  transmittance, ephemeris noon/wrap, panel schema, the cloud trace in all three renderers and a sky-cover probe through `EvaluateVolumetricClouds`;
+  suite 9 now also pins the Unreal camera modifiers — Shift 2.5x, Ctrl 0.25x, Ctrl+Shift 0.625x, wheel fly-speed scalar with its 0.15x/16x clamps).
 * `node Build.mjs` → standalone `index.html` (5.40 MiB).
 * `JSDOM_DIR=… node Smoke.mjs` → **ALL CHECKS PASSED** (14/14).
 * Shader syntax checked out-of-band: GLSL through `@webgpu/glslang` (Vulkan 450 profile) — the full vertex + fragment source compiles to 102 197 B of SPIR-V after the cloud port; WGSL mirrored field-for-field from it (uniform block now 768 B, `uSkyCfg @576 … uCloudCfg6 @752`).
