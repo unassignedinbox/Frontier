@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Glyph } from "./Inspectors.jsx";
 import { LEVEL_TEMPLATES } from "./LevelSystem.js";
 
-const LEVEL_GROUPS = ["All", "Architectural", "Automotive", "Look-Dev", "Blank"];
+const LEVEL_GROUPS = ["All", "Lobby", "Architectural", "Simulation", "Look-Dev", "Blank"];
 
 function StagePreviewArtwork({ TemplateId }) {
   if (TemplateId === "gallery") {
@@ -39,39 +39,52 @@ function StagePreviewArtwork({ TemplateId }) {
     );
   }
 
-  if (TemplateId === "slalom") {
+  if (TemplateId === "lobby") {
     return (
       <svg viewBox="0 0 240 124" className="level-stage-svg" aria-hidden="true">
         <defs>
-          <linearGradient id="lg-auto-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#1b2432" />
-            <stop offset="52%" stopColor="#262b34" />
-            <stop offset="53%" stopColor="#17191d" />
-            <stop offset="100%" stopColor="#111216" />
+          <linearGradient id="lg-lobby-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8fbfe4" />
+            <stop offset="60%" stopColor="#bcd9ee" />
+            <stop offset="100%" stopColor="#dbe8f0" />
           </linearGradient>
+          <linearGradient id="lg-lobby-floor" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7d7468" />
+            <stop offset="100%" stopColor="#3f3a33" />
+          </linearGradient>
+          <radialGradient id="lg-lobby-sun" cx="72%" cy="16%" r="46%">
+            <stop offset="0%" stopColor="rgba(255,236,198,0.55)" />
+            <stop offset="100%" stopColor="rgba(255,236,198,0)" />
+          </radialGradient>
         </defs>
-        <rect width="240" height="124" fill="url(#lg-auto-sky)" />
-        <path d="M24 124L96 64H144L216 124Z" fill="#1e2127" />
-        <path d="M120 66V122" stroke="#e2b95b" strokeWidth="1.6" strokeDasharray="6 5" opacity="0.65" />
-        <path d="M40 124L100 64M200 124L140 64" stroke="rgba(255,255,255,0.18)" strokeWidth="1.2" />
-        {/* Traffic Cone (cone-like cone) */}
-        <g transform="translate(68,68)">
-          <polygon points="2,34 10,30 22,30 30,34 25,38 7,38" fill="#252830" />
-          <polygon points="8,33 14,6 18,6 24,33" fill="#ff5414" />
-          <polygon points="10.8,20 12.2,13.5 19.8,13.5 21.2,20" fill="#f5f7fc" />
+        <rect width="240" height="124" fill="#efe9df" />
+        <rect x="58" y="18" width="124" height="62" fill="url(#lg-lobby-sky)" />
+        <rect x="58" y="18" width="124" height="62" fill="url(#lg-lobby-sun)" />
+        <ellipse cx="96" cy="40" rx="20" ry="7" fill="rgba(255,255,255,0.72)" />
+        <ellipse cx="150" cy="33" rx="15" ry="5" fill="rgba(255,255,255,0.55)" />
+        <rect x="58" y="18" width="124" height="62" fill="none" stroke="#9aa7b4" strokeWidth="1.4" />
+        <rect x="0" y="12" width="58" height="70" fill="#e3dbcd" />
+        <rect x="182" y="12" width="58" height="70" fill="#e3dbcd" />
+        <rect x="0" y="10" width="240" height="6" fill="#cfc4b2" />
+        <polygon points="0,124 0,82 240,82 240,124" fill="url(#lg-lobby-floor)" />
+        <polygon points="96,82 144,82 120,124" fill="#4a4540" opacity="0.55" />
+        {/* ControlVehicle hero exhibit */}
+        <g transform="translate(26,86)">
+          <path d="M4 16 L9 7 H39 L46 16 H52 V24 H0 V16 Z" fill="#eef3f8" stroke="#c3ccd6" strokeWidth="0.9" />
+          <path d="M11 8 H37 L42 16 H6 Z" fill="#25303d" opacity="0.85" />
+          <circle cx="12" cy="25" r="5.2" fill="#1b1e23" stroke="#9aa6b4" strokeWidth="1.1" />
+          <circle cx="40" cy="25" r="5.2" fill="#1b1e23" stroke="#9aa6b4" strokeWidth="1.1" />
         </g>
-        {/* Center Traffic Cone */}
-        <g transform="translate(116,54) scale(0.78)">
-          <polygon points="2,34 10,30 22,30 30,34 25,38 7,38" fill="#252830" />
-          <polygon points="8,33 14,6 18,6 24,33" fill="#ff5414" />
-          <polygon points="10.8,20 12.2,13.5 19.8,13.5 21.2,20" fill="#f5f7fc" />
-        </g>
-        {/* Cylinder Cone (cylinder-like cone) */}
-        <g transform="translate(154,62)">
-          <ellipse cx="16" cy="39" rx="12" ry="3.4" fill="#23262e" />
-          <polygon points="11,38 12.4,5 19.6,5 21,38" fill="#f03e18" />
-          <polygon points="11.9,16 12.1,11 19.9,11 20.1,16" fill="#f5f7fc" />
-          <polygon points="11.4,26 11.7,21 20.3,21 20.6,26" fill="#f5f7fc" />
+        {/* Atrium Display Aircraft hero exhibit */}
+        <g transform="translate(132,64)">
+          <path d="M0 20 H52 L58 24 H6 Z" fill="#f2f6fa" stroke="#c8d2dc" strokeWidth="0.9" />
+          <path d="M22 12 H34 L38 20 H18 Z" fill="#123a8c" opacity="0.9" />
+          <path d="M4 26 H44" stroke="#123a8c" strokeWidth="2.2" />
+          <path d="M14 24 L10 32 M40 24 L44 32" stroke="#98a4b0" strokeWidth="1.4" />
+          <circle cx="13" cy="33" r="2.6" fill="#1b1e23" />
+          <circle cx="45" cy="33" r="2.6" fill="#1b1e23" />
+          <path d="M52 15 V28" stroke="#1b1e23" strokeWidth="2.4" />
+          <path d="M50 22 L56 16" stroke="#1b1e23" strokeWidth="1.6" />
         </g>
       </svg>
     );
@@ -125,7 +138,7 @@ function StagePreviewArtwork({ TemplateId }) {
 export default function LevelDialogModal({
   Open,
   LevelCount = 1,
-  ActiveLevelName = "Cornell-Studio Gallery",
+  ActiveLevelName = "Frontier Lobby",
   OnCancel,
   OnCreate,
 }) {
@@ -222,7 +235,7 @@ export default function LevelDialogModal({
         <label className="construct-search">
           <Glyph Name="search" Size={16} />
           <input
-            placeholder="Search stage templates (Cornell, Cone Slalom, Look-Dev, Empty)…"
+            placeholder="Search stage templates (Lobby, Cornell, Look-Dev, Empty)…"
             aria-label="Search level templates"
             value={Query}
             onChange={(Ev) => SetQuery(Ev.target.value)}
@@ -306,7 +319,7 @@ export default function LevelDialogModal({
                   type="text"
                   value={LevelName}
                   maxLength={64}
-                  placeholder="e.g. Exterior Courtyard, Cone Chicane…"
+                  placeholder="e.g. Exterior Courtyard, Atrium West…"
                   onChange={(Ev) => SetLevelName(Ev.target.value)}
                 />
               </label>

@@ -18,6 +18,7 @@ import {
   CanonicalEditorCamera,
   CanonicalRenderSettings,
   CompileLiveGtxScene,
+  NormalizeVec3,
   PickSceneEntityAtUv,
   RaycastWorldPlacementAtUv,
   ResolveRenderSettings,
@@ -92,6 +93,7 @@ import { CreateWebgpuGtxRenderer, GTX_WGSL_SCENE_SHADER } from "./WebgpuGtxRende
 import {
   BuildDefaultLevels,
   CreateNewLevelRecord,
+  LEVEL_TEMPLATES,
 } from "./LevelSystem.js";
 import { CreateGtxBandKernel, CpuGtxRenderer } from "./CpuGtxFallbackRenderer.js";
 import {
@@ -267,7 +269,11 @@ assert.equal(SnappedMove.Position[0], 0.25, "Ctrl-snap quantizes TranslateX to 0
 
 // 6. Verify Multi-Level System & Create Level templates
 const DefaultLevels = BuildDefaultLevels();
-assert.equal(DefaultLevels.length, 3, "3 built-in Frontier levels shipped");
+assert.equal(DefaultLevels.length, 4, "4 built-in Frontier levels shipped (Lobby, Gallery, Look-Dev, Empty)");
+assert.equal(DefaultLevels[0].Id, "level-lobby", "Frontier Lobby is the default scene shipped first");
+assert.equal(DefaultLevels[0].Name, "Frontier Lobby", "Default scene is named Frontier Lobby");
+const GalleryLevel = DefaultLevels.find((L) => L.Id === "level-showcase-gallery");
+assert.ok(GalleryLevel, "Cornell-Studio Gallery remains available as a built-in level");
 const CreatedLookDev = CreateNewLevelRecord({
   Name: "Custom Courtyard",
   TemplateId: "lookdev",
@@ -281,7 +287,7 @@ assert.ok(
 const Duplicated = CreateNewLevelRecord({
   Name: "Gallery Variant B",
   TemplateId: "duplicate",
-  CurrentLevel: DefaultLevels[0],
+  CurrentLevel: GalleryLevel,
 });
 assert.equal(
   Duplicated.Rows.length,
@@ -686,7 +692,7 @@ assert.ok(
   assert.equal(MainDraws.length, 6, "All 6 WebGPU main/overlay passes (Scene, Outline, ForceOpaque, ForceTrans, GizmoOpaque, GizmoTrans) executed cleanly");
 }
 
-// 12. Verify Automotive Traffic Cone (cone-like) & Cylinder Cone (cylinder-like), Unreal-Style Surface Raycast Placement, and Cone Slalom Level
+// 12. Verify Automotive Traffic Cone (cone-like) & Cylinder Cone (cylinder-like), Unreal-Style Surface Raycast Placement, and Lobby Level
 {
   const TrafficSpec = WORLD_PLACEABLE_MODELS.find((M) => M.Id === "model-traffic-cone");
   const CylConeSpec = WORLD_PLACEABLE_MODELS.find((M) => M.Id === "model-cylinder-cone");
@@ -749,13 +755,13 @@ assert.ok(
     "CPU GTX raytraces Traffic Cone (Shape 3) & Cylinder Cone (Shape 5) cleanly",
   );
 
-  // Verify WGSL & Automotive Cone Slalom level template
+  // Verify WGSL & Frontier Lobby level template
   assert.ok(GTX_WGSL_SCENE_SHADER.includes("fn intersectFrustumZ") && GTX_WGSL_SCENE_SHADER.includes("shape == 5"), "WGSL shader includes analytical cone & cylinder-cone");
-  const SlalomLvl = CreateNewLevelRecord({ Name: "Test Chicane", TemplateId: "slalom" });
+  const LobbyLvl = CreateNewLevelRecord({ Name: "Test Atrium", TemplateId: "lobby" });
   assert.ok(
-    SlalomLvl.Rows.some((R) => R.PrimitiveShape === "cone") &&
-      SlalomLvl.Rows.some((R) => R.PrimitiveShape === "cylinder-cone"),
-    "Automotive Cone Slalom template provisions both Traffic Cones & Cylinder Cones",
+    LobbyLvl.Rows.some((R) => R.PrimitiveShape === "vehicle") &&
+      LobbyLvl.Rows.some((R) => R.PropId === "lobby_aircraft"),
+    "Frontier Lobby template provisions the ControlVehicle and the Atrium Display Aircraft",
   );
 
   // Verify 3D Analytical OpenPBR Thumbnail Raytracer across Traffic Cone, Cylinder Cone & Analytical Shapes (100% transparent sky)
@@ -793,14 +799,14 @@ assert.ok(
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
-// 13. 24-Prop Studio Camera/Light/Track Library, Transparent Thumbnails, Per-Face Colours, 15 Debug Views & ProjectBrowser
+// 13. 29-Prop Studio Camera/Light/Aircraft/Track Library, Transparent Thumbnails, Per-Face Colours, 15 Debug Views & ProjectBrowser
 // ---------------------------------------------------------------------------------------------------------------------------------------
 {
-  assert.equal(WORLD_PROP_CATALOG.length, 28, "WORLD_PROP_CATALOG exposes 28 bespoke cinema cameras, studio lights, fans, ControlVehicle tyres, and barriers");
+  assert.equal(WORLD_PROP_CATALOG.length, 29, "WORLD_PROP_CATALOG exposes 29 bespoke cinema cameras, studio lights, fans, ControlVehicle tyres, barriers and the lobby aircraft");
   assert.equal(WORLD_PROP_CATALOG.filter((P) => P.Panel === "camera").length, 6, "6 bespoke 3D cinema camera models registered");
   assert.equal(WORLD_PROP_CATALOG.filter((P) => P.Panel === "light").length, 6, "6 3D studio light models registered");
   assert.equal(WORLD_PROP_CATALOG.filter((P) => P.Category === "Fans & Wind").length, 3, "3 motorsport & studio fan models registered");
-  assert.equal(WORLD_PROP_CATALOG.filter((P) => P.Panel === "geometry").length, 16, "16 fans, ControlVehicle tyre stack, barriers, sawtooth kerb & paddock props registered");
+  assert.equal(WORLD_PROP_CATALOG.filter((P) => P.Panel === "geometry").length, 17, "17 showroom aircraft, fans, ControlVehicle tyre stack, barriers, sawtooth kerb & paddock props registered");
 
   // Verify every single prop renders a transparent, unclipped, tightly-framed 3D thumbnail
   for (const Prop of WORLD_PROP_CATALOG) {
@@ -1175,14 +1181,14 @@ assert.ok(
   }
   assert.ok(CpuVehPixels > 100, `CpuGtxRenderer rendered ${CpuVehPixels} ControlVehicle BVH pixels cleanly`);
 
-  const SlalomLevel = CreateNewLevelRecord({
-    Name: "Automotive Cone Slalom",
-    TemplateId: "slalom",
+  const LobbyLevelCopy = CreateNewLevelRecord({
+    Name: "Frontier Lobby Copy",
+    TemplateId: "lobby",
   });
   assert.ok(
-    SlalomLevel.Rows.some((R) => R.Id === "control-vehicle") &&
-      SlalomLevel.Rows.some((R) => R.Id === "render-settings"),
-    "Cone Slalom template includes ControlVehicle & Render Settings",
+    LobbyLevelCopy.Rows.some((R) => R.Id === "control-vehicle") &&
+      LobbyLevelCopy.Rows.some((R) => R.Id === "render-settings"),
+    "Lobby template includes ControlVehicle, Atrium Aircraft & Render Settings",
   );
   assert.ok(
     DefaultLevels.every((L) => L.Rows.some((R) => R.Id === "render-settings")),
@@ -1686,6 +1692,236 @@ assert.ok(
   assert.ok(FSun[3] > FMoon[3] * 2.0, `Daytime sunlight strongly illuminates the scene above moonlight (sun=${FSun[3].toFixed(4)} vs moon=${FMoon[3].toFixed(4)})`);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// 20. Frontier Lobby Default Scene — architectural atrium, ControlVehicle + Atrium Display Aircraft, sun/sky/clouds, camera framing
+// ---------------------------------------------------------------------------------------------------------------------------------------
+{
+  const LobbyLevel = DefaultLevels[0];
+  assert.equal(LobbyLevel.Rows.length, 32, "Frontier Lobby ships 32 Outliner entries (17 scene children + cameras + camera components + world + lights)");
+  assert.equal(LobbyLevel.Rows.filter((R) => R.Parent === "scene").length, 17, "Lobby scene collection holds 15 architectural/exhibit rows + ControlVehicle + Aircraft");
+  assert.ok(
+    LobbyLevel.Rows.some((R) => R.PrimitiveShape === "vehicle" && R.Id === "control-vehicle"),
+    "Lobby places the ControlVehicle BVH mesh",
+  );
+  const AircraftRow = LobbyLevel.Rows.find((R) => R.PropId === "lobby_aircraft");
+  assert.ok(AircraftRow && AircraftRow.Panel === "geometry", "Lobby places the Atrium Display Aircraft world prop");
+  for (const EnvId of ["sun", "atmosphere", "clouds", "moon", "stars"]) {
+    assert.ok(LobbyLevel.Rows.some((R) => R.Id === EnvId), `Lobby carries the physical ${EnvId} environment row`);
+  }
+  assert.ok(
+    LobbyLevel.Rows.some((R) => R.Id === "camera-flare") &&
+      LobbyLevel.Rows.some((R) => R.Id === "camera-tonemap") &&
+      LobbyLevel.Rows.some((R) => R.Id === "render-settings"),
+    "Lobby Editor Camera keeps its Lens Flare, Tonemapping and Render Settings components",
+  );
+
+  const AircraftDef = WORLD_PROP_CATALOG.find((P) => P.PropId === "lobby_aircraft");
+  assert.ok(AircraftDef && AircraftDef.Category === "Aircraft", "Atrium Display Aircraft is registered in the WORLD_PROP_CATALOG");
+  const AircraftPrims = ExpandPropPrimitives(
+    AircraftRow,
+    LobbyLevel.Values["lobby-aircraft"],
+    7,
+  );
+  assert.ok(AircraftPrims.length >= 30, `Aircraft expands to ${AircraftPrims.length} analytical parts (fuselage, wings, tail, canopy, gear, prop)`);
+  assert.ok(
+    AircraftPrims.some((P) => P.Shape === 3),
+    "Aircraft nose carries an analytical cone spinner",
+  );
+  assert.ok(
+    AircraftPrims.every((P) => Number.isFinite(P.Center[0]) && Number.isFinite(P.Center[2])),
+    "Every aircraft part resolves to finite world coordinates",
+  );
+
+  const LobbyScene = CompileLiveGtxScene(
+    LobbyLevel.Rows,
+    LobbyLevel.Values,
+    {},
+    "PERSP",
+  );
+  assert.equal(LobbyScene.Vehicles.length, 1, "Lobby compiles exactly one ControlVehicle BVH");
+  assert.equal(LobbyScene.AreaLights.length, 2, "Lobby compiles both LTC area lights");
+  assert.ok(
+    LobbyScene.Primitives.some((P) => P.GlassShell && P.OwnerId === "lobby-glazed-portal"),
+    "Full-height glazed portal compiles as a transmissive glass shell",
+  );
+  assert.ok(
+    LobbyScene.Primitives.some((P) => P.OwnerId === "lobby-sign-panel") &&
+      LobbyScene.Primitives.find((P) => P.OwnerId === "lobby-sign-panel").Emission > 1.0,
+    "Frontier sign panel compiles as an emissive surface",
+  );
+
+  const Aabb = (Predicate) => {
+    const Min = [Infinity, Infinity, Infinity];
+    const Max = [-Infinity, -Infinity, -Infinity];
+    for (const P of LobbyScene.Primitives.filter(Predicate)) {
+      const [Rx, Ry, Rz] = P.RotationRad || [0, 0, 0];
+      const Cx = Math.cos(Rx), Sx = Math.sin(Rx);
+      const Cy = Math.cos(Ry), Sy = Math.sin(Ry);
+      const Cz = Math.cos(Rz), Sz = Math.sin(Rz);
+      const M = [
+        [Cz * Cy, Cz * Sy * Sx - Sz * Cx, Cz * Sy * Cx + Sz * Sx],
+        [Sz * Cy, Sz * Sy * Sx + Cz * Cx, Sz * Sy * Cx - Cz * Sx],
+        [-Sy, Cy * Sx, Cy * Cx],
+      ];
+      const H = P.HalfExtents;
+      const Ext = [0, 1, 2].map(
+        (Row) =>
+          Math.abs(M[Row][0]) * H[0] +
+          Math.abs(M[Row][1]) * H[1] +
+          Math.abs(M[Row][2]) * H[2],
+      );
+      for (let A = 0; A < 3; A++) {
+        Min[A] = Math.min(Min[A], P.Center[A] - Ext[A]);
+        Max[A] = Math.max(Max[A], P.Center[A] + Ext[A]);
+      }
+    }
+    return { Min, Max, Size: Max.map((V, A) => V - Min[A]) };
+  };
+
+  const AircraftBox = Aabb((P) => P.OwnerId === "lobby-aircraft");
+  const RugBox = Aabb((P) => P.OwnerId === "lobby-display-rug");
+  const FloorBox = Aabb((P) => P.OwnerId === "lobby-floor");
+  assert.ok(
+    Math.abs(AircraftBox.Min[2] - RugBox.Max[2]) <= 0.02,
+    `Aircraft wheels rest on the display rug (gear z=${AircraftBox.Min[2].toFixed(3)}, rug top z=${RugBox.Max[2].toFixed(3)})`,
+  );
+  assert.ok(
+    Math.abs(RugBox.Min[2] - FloorBox.Max[2]) <= 0.02,
+    "Display rug lies flat on the travertine floor",
+  );
+  assert.ok(
+    AircraftBox.Size[0] > 3.0 && AircraftBox.Size[1] > 2.2 && AircraftBox.Size[2] > 1.1,
+    `Aircraft occupies a showroom footprint of ${AircraftBox.Size.map((V) => V.toFixed(2)).join(" x ")} m`,
+  );
+
+  const Intersects = (A, B) =>
+    A.Min[0] < B.Max[0] && A.Max[0] > B.Min[0] &&
+    A.Min[1] < B.Max[1] && A.Max[1] > B.Min[1] &&
+    A.Min[2] < B.Max[2] && A.Max[2] > B.Min[2];
+  for (const Obstacle of ["lobby-east-column", "lobby-west-column", "lobby-sign-pylon", "lobby-reception-desk"]) {
+    assert.ok(
+      !Intersects(AircraftBox, Aabb((P) => P.OwnerId === Obstacle)),
+      `Aircraft stays clear of ${Obstacle}`,
+    );
+  }
+
+  // Camera framing: every aircraft AABB corner must land inside the editor camera frustum
+  const Forward = NormalizeVec3(
+    LobbyScene.CameraTarget.map((V, I) => V - LobbyScene.CameraOrigin[I]),
+    [0, 1, 0],
+  );
+  // Right = normalize(cross(Forward, worldUp [0,0,1])), Up = cross(Right, Forward)
+  const Right = NormalizeVec3(
+    [
+      Forward[1] * 1 - Forward[2] * 0,
+      Forward[2] * 0 - Forward[0] * 1,
+      Forward[0] * 0 - Forward[1] * 0,
+    ],
+    [1, 0, 0],
+  );
+  const Up = [
+    Right[1] * Forward[2] - Right[2] * Forward[1],
+    Right[2] * Forward[0] - Right[0] * Forward[2],
+    Right[0] * Forward[1] - Right[1] * Forward[0],
+  ];
+  const TanHalf = Math.tan(LobbyScene.VerticalFovRad * 0.5);
+  const Aspect = 16 / 9;
+  let MaxNdc = 0;
+  for (const Prim of LobbyScene.Primitives.filter((P) => P.OwnerId === "lobby-aircraft")) {
+    const [Rx, Ry, Rz] = Prim.RotationRad || [0, 0, 0];
+    const Cx = Math.cos(Rx), Sx = Math.sin(Rx);
+    const Cy = Math.cos(Ry), Sy = Math.sin(Ry);
+    const Cz = Math.cos(Rz), Sz = Math.sin(Rz);
+    const M = [
+      [Cz * Cy, Cz * Sy * Sx - Sz * Cx, Cz * Sy * Cx + Sz * Sx],
+      [Sz * Cy, Sz * Sy * Sx + Cz * Cx, Sz * Sy * Cx - Cz * Sx],
+      [-Sy, Cy * Sx, Cy * Cx],
+    ];
+    const Ext = [0, 1, 2].map(
+      (Row) =>
+        Math.abs(M[Row][0]) * Prim.HalfExtents[0] +
+        Math.abs(M[Row][1]) * Prim.HalfExtents[1] +
+        Math.abs(M[Row][2]) * Prim.HalfExtents[2],
+    );
+    for (const SxSign of [-1, 1]) {
+      for (const SySign of [-1, 1]) {
+        for (const SzSign of [-1, 1]) {
+          const Point = [
+            Prim.Center[0] + SxSign * Ext[0],
+            Prim.Center[1] + SySign * Ext[1],
+            Prim.Center[2] + SzSign * Ext[2],
+          ];
+          const D = [
+            Point[0] - LobbyScene.CameraOrigin[0],
+            Point[1] - LobbyScene.CameraOrigin[1],
+            Point[2] - LobbyScene.CameraOrigin[2],
+          ];
+          const Depth = D[0] * Forward[0] + D[1] * Forward[1] + D[2] * Forward[2];
+          assert.ok(Depth > 0.5, "Aircraft sits in front of the editor camera");
+          const NdcX = (D[0] * Right[0] + D[1] * Right[1] + D[2] * Right[2]) / (Depth * TanHalf * Aspect);
+          const NdcY = (D[0] * Up[0] + D[1] * Up[1] + D[2] * Up[2]) / (Depth * TanHalf);
+          MaxNdc = Math.max(MaxNdc, Math.abs(NdcX), Math.abs(NdcY));
+        }
+      }
+    }
+  }
+  assert.ok(MaxNdc < 1.0, `Aircraft is fully framed by the lobby camera (max |NDC| = ${MaxNdc.toFixed(2)})`);
+
+  // CPU GTX render of the lobby: lit frame, aircraft + vehicle pixels visible
+  const LobbyAtlas = new MaterialAtlasSynchronizer();
+  LobbyAtlas.UpdatePrimitives(LobbyScene.Primitives);
+  const LobbyCpu = new CpuGtxRenderer();
+  const LobbyDone = LobbyCpu.RenderSlice(
+    {
+      CompiledScene: LobbyScene,
+      AtlasPixels: LobbyAtlas.Pixels,
+      Width: 192,
+      Height: 108,
+      ViewModeCode: 0,
+      ShowGrid: 0,
+    },
+    108,
+  );
+  assert.equal(LobbyDone, true, "CpuGtxRenderer completes a full Frontier Lobby frame");
+  let LobbyLit = 0;
+  for (let I = 0; I < LobbyCpu.OffscreenImg.data.length; I += 4) {
+    if (
+      LobbyCpu.OffscreenImg.data[I] +
+        LobbyCpu.OffscreenImg.data[I + 1] +
+        LobbyCpu.OffscreenImg.data[I + 2] >
+      30
+    ) {
+      LobbyLit += 1;
+    }
+  }
+  assert.ok(LobbyLit > 192 * 108 * 0.85, `Frontier Lobby renders fully lit (${LobbyLit} px)`);
+  let AircraftPixels = 0;
+  const AircraftCodes = new Set(AircraftPrims.map((P) => P.PickCode));
+  for (let I = 0; I < LobbyCpu.EntityBuf.length; I++) {
+    if (AircraftCodes.has(LobbyCpu.EntityBuf[I])) AircraftPixels += 1;
+  }
+  assert.ok(AircraftPixels > 150, `Aircraft occupies ${AircraftPixels} visible pixels in the lobby frame`);
+
+  // Outliner thumbnail for the new world prop renders as a real 3D silhouette
+  const AircraftThumb = RenderAnalyticalThumbnailRgba({
+    PropId: "lobby_aircraft",
+    Width: 64,
+    Height: 64,
+  });
+  let ThumbLit = 0;
+  for (let I = 0; I < AircraftThumb.Pixels.length; I += 4) {
+    if (AircraftThumb.Pixels[I + 3] > 16) ThumbLit += 1;
+  }
+  assert.ok(ThumbLit > 64 * 64 * 0.08, `Atrium Display Aircraft thumbnail raytraces ${ThumbLit} opaque pixels`);
+
+  // Level templates: the lobby replaces the retired cone-slalom stage
+  assert.ok(
+    LEVEL_TEMPLATES.some((T) => T.Id === "lobby") &&
+      !LEVEL_TEMPLATES.some((T) => T.Id === "slalom"),
+    "Create-Level catalogue offers the Frontier Lobby and no cone-slalom stage",
+  );
+}
+
 console.log(
-  "[WorldMirrorValidation] ALL 19 SUITES PASSED: ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
+  "[WorldMirrorValidation] ALL 20 SUITES PASSED (incl. Frontier Lobby default scene): ShadowAlgorithmLab Parity (PCF/PCSS/SMRT/BVH, LTC Area Lights, Cone & 2-Bounce BVH GI, BVH Reflections, No SDF Shadows/Reflections), Sun+Moon+Starlight Illumination, Moon Atlas, Physical Sky/Clouds, RenderSettings, ControlVehicle BVH, and ProjectBrowser verified!",
 );

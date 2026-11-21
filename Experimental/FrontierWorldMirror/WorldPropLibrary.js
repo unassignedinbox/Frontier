@@ -113,6 +113,13 @@ const PAL = {
   unlitDiffuser: Mat("#2d333f", 0.52, 0.05),
   copper: Mat("#c87538", 0.24, 0.92),
 
+  // Showroom aircraft: polished airframe, deep livery cobalt, smoked canopy glazing
+  airframeIvory: Mat("#eef2f6", 0.24, 0.18, { Type: "Clear coat", Coat: 0.85, CoatRoughness: 0.05 }),
+  liveryCobalt: Mat("#123a8c", 0.26, 0.22, { Type: "Clear coat", Coat: 0.70, CoatRoughness: 0.07 }),
+  canopySmoke: Mat("#0e1620", 0.05, 0.30, { Type: "Clear coat", Coat: 1.0, CoatRoughness: 0.02 }),
+  propellerDark: Mat("#15171b", 0.40, 0.55),
+  chromeSpinner: Mat("#e3e9f1", 0.10, 0.98),
+
   // Exact ControlVehicle (VehicleProvingGrounds CourseMaterial) wheel & tyre palette
   cvTyreRubber: Mat("#25262a", 0.761, 0.02), // CourseMaterial.Tyre: Dielectric(0.03741, 0.76087)
   cvRimGunmetal: Mat("#2d3036", 0.38, 0.76), // Forged dark gunmetal ControlVehicle rim
@@ -1337,6 +1344,67 @@ export const WORLD_PROP_CATALOG = [
       Part(4, [0, 0, -0.14], [0.298, 0.298, 0.016], [0, 0, 0], PAL.chrome),
       Part(4, [0, 0, 0.14], [0.298, 0.298, 0.016], [0, 0, 0], PAL.chrome),
       Part(2, [0.14, 0.06, 0.45], [0.032, 0.032, 0.015], [0, 0, 0], PAL.chrome),
+    ],
+  },
+  // ===================================================== 9. AIRCRAFT (1) =====================================================
+  {
+    PropId: "lobby_aircraft",
+    Name: "Atrium Display Aircraft",
+    Category: "Aircraft",
+    Panel: "geometry",
+    Icon: "editor-mesh",
+    HalfHeightZ: 0.98,
+    NominalScale: [1, 1, 1],
+    Description:
+      "High-wing single-engine showroom aircraft · 6.08 m span, tricycle gear, 3-blade prop, smoked canopy & cobalt livery (nose -Y, wheels on Z = 0)",
+    BuildParts: () => [
+      // ---- Airframe barrel, belly sill and tail cone (nose -Y, +Z up) ----
+      Part(2, [0, 0.15, 0], [0.42, 0.42, 1.05], [90, 0, 0], PAL.airframeIvory),
+      Part(0, [0, 0.12, -0.30], [0.37, 1.00, 0.15], [0, 0, 0], PAL.airframeIvory),
+      Part(0, [0, 1.62, 0.06], [0.22, 0.50, 0.28], [0, 0, 0], PAL.airframeIvory),
+      Part(0, [0, 2.26, 0.12], [0.10, 0.18, 0.16], [0, 0, 0], PAL.airframeIvory),
+      // Cobalt cheat line down both fuselage flanks
+      Part(0, [0.425, 0.10, 0.02], [0.006, 0.92, 0.075], [0, 0, 0], PAL.liveryCobalt),
+      Part(0, [-0.425, 0.10, 0.02], [0.006, 0.92, 0.075], [0, 0, 0], PAL.liveryCobalt),
+      // ---- Engine cowl, chrome lip, spinner and 3-blade propeller ----
+      Part(2, [0, -1.30, 0], [0.40, 0.40, 0.46], [90, 0, 0], PAL.airframeIvory),
+      Part(2, [0, -1.74, 0], [0.33, 0.33, 0.030], [90, 0, 0], PAL.chromeSpinner),
+      Part(3, [0, -1.90, 0], [0.17, 0.17, 0.24], [90, 0, 0], PAL.chromeSpinner),
+      ...[0, 120, 240].map((Yaw) =>
+        Part(0, [0, -1.99, 0], [0.048, 0.012, 0.78], [0, Yaw, 0], PAL.propellerDark),
+      ),
+      // ---- High wing: root fairing, two dihedral panels, cobalt tips & lift struts ----
+      Part(0, [0, 0.30, 0.48], [0.44, 0.62, 0.10], [0, 0, 0], PAL.airframeIvory),
+      Part(0, [-1.52, 0.30, 0.56], [1.52, 0.60, 0.045], [0, 3.5, 0], PAL.airframeIvory),
+      Part(0, [1.52, 0.30, 0.56], [1.52, 0.60, 0.045], [0, -3.5, 0], PAL.airframeIvory),
+      Part(0, [-3.01, 0.30, 0.61], [0.06, 0.60, 0.050], [0, 3.5, 0], PAL.liveryCobalt),
+      Part(0, [3.01, 0.30, 0.61], [0.06, 0.60, 0.050], [0, -3.5, 0], PAL.liveryCobalt),
+      StrutPart([-0.34, 0.02, -0.28], [-1.30, 0.28, 0.52], 0.035, PAL.machinedSilver),
+      StrutPart([0.34, 0.02, -0.28], [1.30, 0.28, 0.52], 0.035, PAL.machinedSilver),
+      // Port red / starboard green navigation lamps
+      Part(1, [-3.03, 0.30, 0.64], [0.05, 0.05, 0.05], [0, 0, 0], PAL.tallyRed),
+      Part(1, [3.03, 0.30, 0.64], [0.05, 0.05, 0.05], [0, 0, 0], PAL.tallyGreen),
+      // ---- Tailplane, elevators, fin and cobalt rudder accent ----
+      Part(0, [0, 2.20, 0.22], [0.86, 0.26, 0.030], [0, 0, 0], PAL.airframeIvory),
+      Part(0, [0, 2.48, 0.22], [0.86, 0.06, 0.028], [0, 0, 0], PAL.liveryCobalt),
+      Part(0, [0, 2.18, 0.52], [0.035, 0.30, 0.30], [0, 0, 0], PAL.airframeIvory),
+      Part(0, [0, 2.18, 0.72], [0.037, 0.26, 0.10], [0, 0, 0], PAL.liveryCobalt),
+      // ---- Smoked canopy: raked windshield, cabin glazing, rear window ----
+      Part(0, [0, -0.58, 0.26], [0.33, 0.030, 0.22], [-30, 0, 0], PAL.canopySmoke),
+      Part(0, [0, -0.05, 0.34], [0.36, 0.42, 0.15], [0, 0, 0], PAL.canopySmoke),
+      Part(0, [0, 0.36, 0.34], [0.28, 0.12, 0.12], [30, 0, 0], PAL.canopySmoke),
+      // ---- Tricycle gear: nose strut/wheel + canted main legs and wheels ----
+      Part(2, [0, -1.12, -0.50], [0.038, 0.038, 0.48], [0, 0, 0], PAL.machinedSilver),
+      Part(4, [0, -1.12, -0.80], [0.18, 0.18, 0.060], [0, 90, 0], PAL.rubberDark),
+      Part(2, [0, -1.12, -0.80], [0.09, 0.09, 0.055], [0, 90, 0], PAL.chromeSpinner),
+      StrutPart([-0.30, 0.10, -0.34], [-1.00, 0.30, -0.76], 0.045, PAL.machinedSilver),
+      StrutPart([0.30, 0.10, -0.34], [1.00, 0.30, -0.76], 0.045, PAL.machinedSilver),
+      Part(4, [-1.00, 0.30, -0.79], [0.19, 0.19, 0.065], [0, 90, 0], PAL.rubberDark),
+      Part(4, [1.00, 0.30, -0.79], [0.19, 0.19, 0.065], [0, 90, 0], PAL.rubberDark),
+      Part(2, [-1.00, 0.30, -0.79], [0.10, 0.10, 0.060], [0, 90, 0], PAL.chromeSpinner),
+      Part(2, [1.00, 0.30, -0.79], [0.10, 0.10, 0.060], [0, 90, 0], PAL.chromeSpinner),
+      // Dorsal blade antenna
+      Part(0, [0, 0.92, 0.44], [0.014, 0.10, 0.05], [0, 0, 0], PAL.anodizedBlack),
     ],
   },
 ];

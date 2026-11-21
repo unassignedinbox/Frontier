@@ -329,7 +329,7 @@ const DebugViews = [
   "ForceField · Vorticity |∇×F|",
   "ForceField · Divergence ∇·F",
 ];
-const StorageKey = "Frontier.WorldMirrorGtx.v6";
+const StorageKey = "Frontier.WorldMirrorGtx.v7";
 function Restore() {
   try {
     localStorage.removeItem("Frontier.WorldMirrorGtx.v1");
@@ -337,6 +337,7 @@ function Restore() {
     localStorage.removeItem("Frontier.WorldMirrorGtx.v3");
     localStorage.removeItem("Frontier.WorldMirrorGtx.v4");
     localStorage.removeItem("Frontier.WorldMirrorGtx.v5");
+    localStorage.removeItem("Frontier.WorldMirrorGtx.v6");
     return JSON.parse(localStorage.getItem(StorageKey)) || {};
   } catch {
     return {};
@@ -554,6 +555,12 @@ Saved.Collapsed = ConsolidateAtmosphereFlags(Saved.Collapsed, Saved.Rows);
 if (SceneRows)
   Saved.Rows = PrepareLightRows(SceneRows, Saved.LightDesignRevision);
 if (SkyAlias && Saved.Selected === "sky") Saved.Selected = "atmosphere";
+const SeedLevelsState = LoadSavedLevelsState();
+const SeedLevel =
+  SeedLevelsState.Levels.find(
+    (Lvl) => Lvl.Id === SeedLevelsState.ActiveLevelId,
+  ) || SeedLevelsState.Levels[0];
+const SeedRows = SeedLevel?.Rows?.length ? SeedLevel.Rows : ShowcaseInitialRows;
 if (SkyAlias && new URLSearchParams(location.search).get("inspect") === "sky") {
   const Address = new URL(location.href);
   Address.searchParams.set("inspect", "atmosphere");
@@ -581,19 +588,23 @@ function App() {
     LiveFpsRef.current = NextFps;
   }, []);
   const [Rows, StoreRows] = useState(() =>
-      EnsureEditorCamera(Saved.Rows || ShowcaseInitialRows),
+      EnsureEditorCamera(Saved.Rows || SeedRows),
     ),
     [Selected, Select] = useState(
       new URLSearchParams(location.search).get("inspect") ||
         Saved.Selected ||
-        "chrome-sphere",
+        SeedLevel?.Selected ||
+        "camera",
     ),
     [Values, AssignValues] = useState(() => {
       const Restored = { ...ShowcaseInitialValues };
-      for (const [Key, Val] of Object.entries(Saved.Values || {})) {
+      const SeededValues = Saved.Rows
+        ? Saved.Values || {}
+        : SeedLevel?.Values || {};
+      for (const [Key, Val] of Object.entries(SeededValues)) {
         Restored[Key] = { ...(ShowcaseInitialValues[Key] || {}), ...Val };
       }
-      for (const Row of Saved.Rows || ShowcaseInitialRows) {
+      for (const Row of Saved.Rows || SeedRows) {
         const Record = ReadFracture(Row.Id);
         if (
           Row.Panel === "geometry" &&
@@ -607,8 +618,13 @@ function App() {
       }
       return Restored;
     }),
-    [Hidden, AssignHidden] = useState({ ...Saved.Hidden, camera: false }),
-    [Collapsed, Collapse] = useState(Saved.Collapsed || {}),
+    [Hidden, AssignHidden] = useState({
+      ...(Saved.Rows ? Saved.Hidden : SeedLevel?.Hidden),
+      camera: false,
+    }),
+    [Collapsed, Collapse] = useState(
+      (Saved.Rows ? Saved.Collapsed : SeedLevel?.Collapsed) || {},
+    ),
     [Query, Search] = useState(""),
     [Filters, Filter] = useState([]),
     [Menu, ShowMenu] = useState(null),
@@ -626,7 +642,8 @@ function App() {
       () =>
         new URLSearchParams(location.search).get("project") ||
         Saved.Name ||
-        "Cornell-Studio Gallery",
+        SeedLevel?.Name ||
+        "Frontier Lobby",
     ),
     [Rename, RenameRow] = useState(null),
     [Construct, OpenConstruct] = useState(false),
@@ -650,7 +667,7 @@ function App() {
     [ShowGizmo, SetShowGizmo] = useState(true),
     [ForceOverlaySettings, SetForceOverlaySettings] = useState(DEFAULT_FORCE_OVERLAY),
     [CreateLevelOpen, SetCreateLevelOpen] = useState(false),
-    [LevelsState, SetLevelsState] = useState(() => LoadSavedLevelsState());
+    [LevelsState, SetLevelsState] = useState(() => SeedLevelsState);
   const PreviousFractureRows = useRef(Rows);
   useEffect(() => {
     const Receive = (Event) => {
@@ -3468,7 +3485,7 @@ function App() {
         ActiveLevelName={
           LevelsState.Levels.find((L) => L.Id === LevelsState.ActiveLevelId)?.Name ||
           Name ||
-          "Cornell-Studio Gallery"
+          "Frontier Lobby"
         }
         OnCancel={() => SetCreateLevelOpen(false)}
         OnCreate={HandleCreateLevel}
