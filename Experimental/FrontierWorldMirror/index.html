@@ -1338,11 +1338,10 @@ struct CloudLayerParams {
 }
 
 fn cloudPermute(word : u32) -> u32 {
-
-  word = (word ^ (word >> 16u)) * 0x7feb352du;
-  word = (word ^ (word >> 15u)) * 0x846ca68bu;
-  return word ^ (word >> 16u);
-
+  var w : u32 = word;
+  w = (w ^ (w >> 16u)) * 0x7feb352du;
+  w = (w ^ (w >> 15u)) * 0x846ca68bu;
+  return w ^ (w >> 16u);
 }
 
 fn cloudHash3(x : i32, y : i32, z : i32) -> u32 {
@@ -1925,6 +1924,91 @@ fn evalVolumetricClouds(dir : vec3f, skyCol : vec3f, jitter : f32, steps : i32) 
   return vec4f(radiance, clamp(transmittance, 0.0, 1.0));
 
 }
+fn evalMoonAndStars(dir : vec3f) -> vec3f {
+  var out = vec3f(0.0);
+  // Lunar disc with 3D spherical phase terminator + mare detail
+  if (U.uMoonCfg1.w > 0.5 && dir.z > -0.05) {
+    let mDir = U.uMoonCfg0.xyz;
+    let angR = max(0.002, U.uMoonCfg0.w);
+    let cosM = dot(dir, mDir);
+    let mTint = U.uMoonTint.xyz;
+    let mBright = U.uMoonCfg1.y;
+    let mGlow = U.uMoonCfg1.z;
+    out = out + mTint * pow(max(0.0, cosM), 420.0) * mGlow * 0.28 * mBright;
+    let cosEdge = cos(angR);
+    if (cosM > cosEdge) {
+      let upRef = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), abs(mDir.z) < 0.98);
+      let mRight = normalize(cross(upRef, mDir));
+      let mUp = cross(mDir, mRight);
+      let px = dot(dir, mRight) / angR;
+      let py = dot(dir, mUp) / angR;
+      let r2 = px * px + py * py;
+      if (r2 < 1.0) {
+        let pz = sqrt(max(0.0, 1.0 - r2));
+        let phAng = (U.uMoonCfg1.x - 0.5) * 6.2831853;
+        let lDir = normalize(vec3f(sin(phAng), 0.18, cos(phAng)));
+        let ndl = max(0.0, dot(vec3f(px, py, pz), lDir));
+        var albedo = vec3f(0.68 + 0.32 * noise3D(vec3f(px * 3.8 + 4.1, py * 3.8 - 2.3, pz * 3.8)));
+        if (U.uAtmoCfg1.w > 0.5) {
+          let uMoon = atan2(px, pz) * (0.5 / PI) + 0.5;
+          let vMoon = 0.5 - asin(clamp(py, -1.0, 1.0)) / PI;
+          let tileV = (clamp(U.uMoonTint.w, 0.0, 5.0) + clamp(vMoon, 0.015, 0.985)) / 6.0;
+          let texSample = textureSampleLevel(uMoonAtlasTex, uAtlasSampler, vec2f(uMoon, tileV), 0.0).rgb;
+          albedo = pow(max(vec3f(0.0), texSample), vec3f(2.2)) * 1.45;
+        }
+        let edgeAA = clamp((1.0 - sqrt(r2)) * 14.0, 0.0, 1.0);
+        let lum = (0.014 + ndl * 1.55) * mBright * edgeAA;
+        out = out + mTint * albedo * lum;
+      }
+    }
+  }
+  // Procedural deterministic starfield
+  if (U.uStarCfg0.x > 0.5 && dir.z > 0.005) {
+    let dayFade = clamp(1.0 - (U.uSunDir.z + 0.08) * 5.0, 0.0, 1.0);
+    if (dayFade > 0.01) {
+      let rot = U.uStarCfg1.w;
+      let cr = cos(rot);
+      let sr = sin(rot);
+      let rDir = vec3f(dir.x * cr - dir.y * sr, dir.x * sr + dir.y * cr, dir.z);
+      let grid = rDir * 175.0;
+      let cell = floor(grid);
+      let h = hash33(cell);
+      let magThresh = clamp(U.uStarCfg0.z / 8.5, 0.05, 0.98);
+      if (h.x > 1.0 - 0.18 * magThresh) {
+        let starCenter = cell + 0.2 + 0.6 * vec3f(h.y, h.z, fract(h.x * 7.13));
+        let d2 = dot(grid - starCenter, grid - starCenter);
+        let rad = 0.08 * clamp(U.uStarCfg0.w, 0.4, 3.0);
+        if (d2 < rad * rad) {
+          let falloff = exp(-d2 / (rad * rad * 0.35));
+          let twRate = U.uStarCfg1.z;
+          let twDepth = U.uStarCfg1.y * 0.008;
+          let twMod = 1.0 - twDepth * (0.5 + 0.5 * sin(U.uAtmoCfg0.w * twRate * 5.0 + h.y * 40.0));
+          let tw = select(1.0, twMod, U.uStarCfg1.x > 0.5);
+          let intensity = (0.45 + 1.55 * h.z * h.z) * U.uStarCfg0.y * dayFade * tw * falloff * clamp(dir.z * 4.0, 0.0, 1.0);
+          let starCol = vec3f(0.78 + 0.42 * h.y, 0.88 + 0.12 * h.y, 1.20 - 0.35 * h.y);
+          out = out + starCol * intensity;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+fn evalStarlightAmbient(N : vec3f) -> vec3f {
+  if (U.uStarCfg0.x < 0.5) { return vec3f(0.0); }
+  let magGain = clamp(U.uStarCfg0.z / 5.5, 0.35, 1.85);
+  let starFade = clamp(1.0 - (U.uSunDir.z + 0.04) * 5.0, 0.12, 1.0);
+  let hemi = 0.35 + 0.65 * clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
+  return vec3f(0.00048, 0.00062, 0.00105) * max(0.0, U.uStarCfg0.y) * magGain * starFade * hemi;
+}
+
+fn evalMoonIrradiance() -> vec3f {
+  if (U.uMoonCfg1.w < 0.5 || U.uMoonCfg0.z <= 0.01) { return vec3f(0.0); }
+  let mPhaseGain = 0.25 + 0.75 * sin(clamp(U.uMoonCfg1.x, 0.0, 1.0) * PI);
+  let mFade = clamp(1.0 - (U.uSunDir.z + 0.05) * 4.5, 0.08, 1.0);
+  return U.uMoonTint.xyz * max(0.0, U.uMoonCfg1.y) * 0.085 * mPhaseGain * mFade;
+}
+
 fn evalSkyDome(dir : vec3f) -> vec3f {
   if (U.uSolarCfgC.y < 0.5) {
     let up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);

@@ -2164,6 +2164,45 @@ assert.ok(
     "Zero-WebGL CPU kernel and worker run EvaluateVolumetricClouds through the injected CloudLib",
   );
 
+  // WGSL integrity: the scene shader is not compiled in Node, so every call site and uniform member is resolved here.
+  const WgslStart = WgslSrc.indexOf("export const GTX_WGSL_SCENE_SHADER");
+  const WgslBodyStart = WgslSrc.indexOf("`", WgslStart) + 1;
+  const WgslBody = WgslSrc.slice(WgslBodyStart, WgslSrc.indexOf("`;", WgslBodyStart))
+    .replace(/\$\{[^}]*\}/g, "0")
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/@\w+/g, "");
+  const WgslFns = new Set([...WgslBody.matchAll(/\bfn\s+(\w+)\s*\(/g)].map((M) => M[1]));
+  const WgslBuiltins = new Set(
+    ("abs acos acosh all any arrayLength asin asinh atan atan2 atanh atomicAdd atomicAnd atomicCompareExchangeWeak atomicExchange " +
+      "atomicLoad atomicMax atomicMin atomicOr atomicStore atomicSub atomicXor ceil clamp cos cosh countLeadingZeros countOneBits " +
+      "countTrailingZeros cross degrees determinant distance dot dpdx dpdxCoarse dpdxFine dpdy dpdyCoarse dpdyFine exp exp2 extractBits " +
+      "faceForward firstLeadingBit firstTrailingBit floor fma fract frexp insertBits inverseSqrt ldexp length log log2 max min mix modf " +
+      "normalize pow quantizeToF16 radians reflect refract reverseBits round saturate select sign sin sinh smoothstep sqrt step tan tanh " +
+      "transpose trunc textureSample textureSampleLevel textureSampleBias textureSampleCompare textureSampleCompareLevel textureSampleGrad " +
+      "textureLoad textureStore textureDimensions textureGather textureNumLayers textureNumLevels textureNumSamples workgroupBarrier " +
+      "subgroupBarrier array vec2 vec3 vec4 vec2f vec3f vec4f vec2i vec3i vec4i vec2u vec3u vec4u f32 i32 u32 bool bitcast mat2x2f mat3x3f mat4x4f").split(
+      " ",
+    ),
+  );
+  const WgslStructs = new Set([...WgslBody.matchAll(/\bstruct\s+(\w+)/g)].map((M) => M[1]));
+  const WgslKeywords = new Set(["if", "for", "while", "switch", "return", "else", "loop", "case"]);
+  const WgslUnknownCalls = [
+    ...new Set([...WgslBody.matchAll(/(?<![\w.])(\w+)\s*\(/g)].map((M) => M[1])),
+  ].filter((Name) => !WgslFns.has(Name) && !WgslBuiltins.has(Name) && !WgslStructs.has(Name) && !WgslKeywords.has(Name));
+  assert.deepEqual(
+    WgslUnknownCalls,
+    [],
+    `WGSL scene shader resolves every call site (${WgslFns.size} fns)`,
+  );
+  const WgslStruct = WgslBody.slice(WgslBody.indexOf("struct SceneUniforms {"), WgslBody.indexOf("};", WgslBody.indexOf("struct SceneUniforms {")));
+  const WgslMembers = new Set([...WgslStruct.matchAll(/^\s*(\w+)\s*:/gm)].map((M) => M[1]));
+  const WgslUsedMembers = [...new Set([...WgslBody.matchAll(/\bU\.(\w+)/g)].map((M) => M[1]))];
+  const WgslMissingMembers = WgslUsedMembers.filter((Name) => !WgslMembers.has(Name));
+  assert.deepEqual(WgslMissingMembers, [], "WGSL scene shader only reads declared SceneUniforms members");
+  for (const Required of ["evalMoonAndStars", "evalStarlightAmbient", "evalMoonIrradiance", "evalVolumetricClouds"]) {
+    assert.ok(WgslFns.has(Required), `WGSL scene shader still defines ${Required}`);
+  }
+
   const Deck = ResolveCloudDeck({ type: 2, coverage: 0.42, density: 2.2, featureScale: 0.4, baseM: 1400, thicknessM: 1100 });
   assert.equal(Deck.Category, 2, "ResolveCloudDeck maps the inspector Type onto the native formation index");
   const Medium = ResolveAtmosphericMedium({});
