@@ -21,11 +21,13 @@ import {
   EncodeRenderSettingsUniforms,
 } from "./ShadowPipeline.js";
 import { ExpandVehicleInstances } from "./VehicleBvhAssets.js";
+import { ResolveCloudDeck } from "./CloudSequence.js";
 import {
   BuildSkyViewLut,
   GetSkyViewCacheKey,
   PackSkyViewRgba16f,
   ResolveAtmosphericMedium,
+  SampleSkyViewDirection,
   SKY_VIEW_HEIGHT,
   SKY_VIEW_WIDTH,
   SkyViewState,
@@ -95,6 +97,10 @@ struct SceneUniforms {
   uSolarCfgC       : vec4f, // x=orbitalView, y=atmosphereEnabled, z,w=reserved
   uSolarTint       : vec4f, // xyz=EffectiveSolarTint
   uSolarTrans      : vec4f, // xyz=ComputeSolarTransmittance toward the Sun
+  uCloudCfg3       : vec4f, // x=shearPerKm, y=veer [rad/km], z=turbulence, w=simulation seconds
+  uCloudCfg4       : vec4f, // x=planet radius [m], y=seed, z=footprint angle [rad/m], w=march steps
+  uCloudCfg5       : vec4f, // xyz=sky ambient (OverheadSkyRadiance), w=RayleighStrength
+  uCloudCfg6       : vec4f, // x=RayleighScaleHeight [m], y=MieScaleHeight [m], z=OzoneStrength, w=MieStrength
 };
 
 @group(0) @binding(0) var<uniform> U : SceneUniforms;
@@ -1284,201 +1290,605 @@ fn noise3D(p : vec3f) -> f32 {
   );
 }
 
-fn cloudFbm(p : vec3f) -> f32 {
-  var sum = 0.0;
-  var amp = 0.52;
-  var q = p;
-  for (var i : i32 = 0; i < 4; i = i + 1) {
-    sum = sum + amp * noise3D(q);
-    q = q * 2.07 + vec3f(13.1, 7.7, 5.3);
-    amp = amp * 0.48;
-  }
-  return sum;
+// VolumetricCloudSequence (native single source: CloudNoise / CloudDensity / CloudTransport / CloudAerialPerspective)
+// One documented deviation, identical to the WebGL2 port: the baked 128^3 Perlin-Worley condensate volume is replaced
+// by the same lattice hash sampled as a footprint-filtered multi-octave field.
+struct CloudLayerParams {
+  bottomM  : f32,
+  topM     : f32,
+  amount   : f32,
+  sigma    : f32,
+  category : i32,
 }
 
-fn intersectEarthShell(origZ : f32, dirZ : f32, radius : f32) -> f32 {
-  let b = origZ * dirZ;
-  let c = origZ * origZ - radius * radius;
-  let disc = b * b - c;
-  if (disc < 0.0) { return -1.0; }
-  return -b + sqrt(disc);
+fn cloudPermute(word : u32) -> u32 {
+
+  word = (word ^ (word >> 16u)) * 0x7feb352du;
+  word = (word ^ (word >> 15u)) * 0x846ca68bu;
+  return word ^ (word >> 16u);
+
 }
 
-fn sampleCloudDensity(pos : vec3f, baseM : f32, thickM : f32, cov : f32, densMul : f32, fScale : f32, anvil : f32, cType : i32, wind : vec2f) -> f32 {
-  let earthR = 6360000.0;
-  let alt = length(pos) - earthR;
-  let h = clamp((alt - baseM) / thickM, 0.0, 1.0);
-  var bot = smoothstep(0.0, 0.16, h);
-  var top = smoothstep(1.0, 0.72 + 0.18 * anvil, h);
-  if (cType == 1) {
-    bot = smoothstep(0.0, 0.25, h);
-    top = smoothstep(1.0, 0.55, h);
-  } else if (cType == 2) {
-    bot = smoothstep(0.15, 0.45, h);
-    top = smoothstep(0.95, 0.55, h);
+fn cloudHash3(x : i32, y : i32, z : i32) -> u32 {
+
+  var h : u32 = u32(x) * 0x8da6b343u ^ u32(y) * 0xd8163841u ^ u32(z) * 0xcb1ab31Fu;
+  return cloudPermute(h);
+
+}
+
+fn cloudQuintic(f : f32) -> f32 {
+
+  return f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+
+}
+
+fn cloudCorner(x : i32, y : i32, z : i32) -> f32 {
+
+  return f32(cloudHash3(x, y, z) & 0xffffffu) / 16777216.0;
+
+}
+
+fn cloudLatticeNoise(p : vec3f) -> f32 {
+
+  var i : vec3f = floor(p);
+  var f : vec3f = p - i;
+  var ux : f32 = cloudQuintic(f.x);
+  var uy : f32 = cloudQuintic(f.y);
+  var uz : f32 = cloudQuintic(f.z);
+  var ix : i32 = i32(i.x);
+  var iy : i32 = i32(i.y);
+  var iz : i32 = i32(i.z);
+  var c000 : f32 = cloudCorner(ix, iy, iz);
+  var c100 : f32 = cloudCorner(ix + 1, iy, iz);
+  var c010 : f32 = cloudCorner(ix, iy + 1, iz);
+  var c110 : f32 = cloudCorner(ix + 1, iy + 1, iz);
+  var c001 : f32 = cloudCorner(ix, iy, iz + 1);
+  var c101 : f32 = cloudCorner(ix + 1, iy, iz + 1);
+  var c011 : f32 = cloudCorner(ix, iy + 1, iz + 1);
+  var c111 : f32 = cloudCorner(ix + 1, iy + 1, iz + 1);
+  return mix(mix(mix(c000, c100, ux), mix(c010, c110, ux), uy),
+             mix(mix(c001, c101, ux), mix(c011, c111, ux), uy), uz);
+
+}
+
+fn rotateCloudOctave(p : vec3f) -> vec3f {
+
+  return vec3f(p.y * 0.80 + p.z * 0.60,
+              p.x * -0.80 + p.y * 0.36 + p.z * 0.48,
+              p.x * -0.60 + p.y * -0.48 + p.z * 0.64);
+
+}
+
+fn cloudSmooth(e0 : f32, e1 : f32, x : f32) -> f32 {
+
+  return smoothstep(e0, e1, x);
+
+}
+
+fn hgCloud(mu : f32, g : f32) -> f32 {
+
+  var g2 : f32 = g * g;
+  var den : f32 = max(1.0e-4, 1.0 + g2 - 2.0 * g * mu);
+  return (1.0 - g2) / (4.0 * 3.14159265 * den * sqrt(den));
+
+}
+
+fn cloudSphere(origin : vec3f, dir : vec3f, radiusM : f32) -> vec2f {
+
+  var radial : f32 = length(origin);
+  var projection : f32 = dot(origin, dir);
+  var quadratic : f32 = (radial - radiusM) * (radial + radiusM);
+  var disc : f32 = projection * projection - quadratic;
+  if (disc < 0.0) return vec2f(1.0, -1.0);
+  var root : f32 = sqrt(disc);
+  var stable : f32 = -projection - (projection < 0.0 ? -1.0 : 1.0) * root;
+  var companion : f32 = (abs(stable) > 1.0e-6) ? quadratic / stable : stable;
+  return vec2f(min(stable, companion), max(stable, companion));
+
+}
+
+fn cloudGroundDistance(origin : vec3f, dir : vec3f) -> f32 {
+
+  var ground : vec2f = cloudSphere(origin, dir, U.uCloudCfg4.x);
+  if (ground.x > ground.y || ground.y <= 0.0) return 1.0e9;
+  if (ground.x > 0.0) return ground.x;
+  return (dot(origin, dir) < 0.0) ? 0.0 : 1.0e9;
+
+}
+
+fn cloudLayerSpans(origin : vec3f, dir : vec3f) -> vec4f {
+
+  var planetR : f32 = U.uCloudCfg4.x;
+  var bottomM : f32 = max(100.0, U.uCloudCfg1.x);
+  var topM : f32 = bottomM + max(100.0, U.uCloudCfg1.y);
+  var outer : vec2f = cloudSphere(origin, dir, planetR + topM);
+  var outerX : f32 = max(0.0, outer.x);
+  var outerY : f32 = min(cloudGroundDistance(origin, dir), outer.y);
+  if (outerY <= outerX) return vec4f(0.0);
+  var inner : vec2f = cloudSphere(origin, dir, planetR + bottomM);
+  if (inner.y <= outerX || inner.x >= outerY || inner.x >= inner.y) return vec4f(outerX, outerY, 0.0, 0.0);
+  return vec4f(outerX, min(outerY, inner.x), max(outerX, inner.y), outerY);
+
+}
+
+fn cloudShapeField(c : vec3f, footprintM : f32, periodM : f32) -> vec2f {
+
+  var filt : f32 = clamp(footprintM / max(1.0, periodM), 0.0, 1.0);
+  var fade : f32 = 1.0 - cloudSmooth(0.08, 0.55, filt);
+  var fade2 : f32 = 1.0 - cloudSmooth(0.16, 0.90, filt);
+  var a : f32 = cloudLatticeNoise(c);
+  var r1 : vec3f = rotateCloudOctave(c) * 2.03;
+  var b : f32 = cloudLatticeNoise(r1 + vec3f(11.3, -7.1, 5.7));
+  var r2 : vec3f = rotateCloudOctave(c * 4.11);
+  var cc : f32 = cloudLatticeNoise(r2 + vec3f(31.7, -17.3, 23.9));
+  var macroField : f32 = clamp((0.58 * a + 0.29 * mix(0.5, b, fade) + 0.13 * mix(0.5, cc, fade2) - 0.30) / 0.44, 0.0, 1.0);
+  var meso : f32 = clamp((0.34 * a + 0.44 * mix(0.5, b, fade) + 0.22 * mix(0.5, cc, fade2) - 0.30) / 0.44, 0.0, 1.0);
+  var billow : f32 = clamp((0.46 * mix(0.5, b, fade) + 0.30 * mix(0.5, cc, fade2) + 0.24 * a - 0.30) / 0.44, 0.0, 1.0);
+  return vec2f(macroField, billow);
+
+}
+
+fn cloudAdvect(pos : vec3f) -> vec3f {
+
+  var radius : f32 = length(pos);
+  var altM : f32 = radius - U.uCloudCfg4.x;
+  var heightKm : f32 = max(0.0, altM - max(100.0, U.uCloudCfg1.x)) * 0.001;
+  var turn : f32 = heightKm * U.uCloudCfg3.y;
+  var cs : vec2f = vec2f(sin(turn), cos(turn));
+  var wind : vec2f = vec2f(U.uCloudCfg2.z * cs.y - U.uCloudCfg2.w * cs.x, U.uCloudCfg2.z * cs.x + U.uCloudCfg2.w * cs.y);
+  var speed : f32 = length(wind);
+  if (speed <= 1.0e-5 || U.uCloudCfg3.w <= 0.0) return pos;
+  var axis : vec3f = vec3f(-wind.y, wind.x, 0.0) / speed;
+  var angle : f32 = -speed * U.uCloudCfg3.w * (1.0 + U.uCloudCfg3.x * heightKm) / U.uCloudCfg4.x;
+  var s : f32 = sin(angle);
+  var c : f32 = cos(angle);
+  var rotated : vec3f = pos * c + cross(axis, pos) * s + axis * dot(axis, pos) * (1.0 - c);
+  return rotated * (radius / max(1.0e-6, length(rotated)));
+
+}
+
+fn cloudWeather(advectedNormal : vec3f) -> vec2f {
+
+  var broadCoord : vec3f = rotateCloudOctave(advectedNormal * 13.0) + U.uCloudCfg4.y * vec3f(0.73, -0.46, 1.17);
+  var broad : f32 = cloudLatticeNoise(broadCoord + vec3f(12.8, -7.9, 42.1));
+  var mesoCoord : vec3f = rotateCloudOctave(advectedNormal * 470.0) + vec3f(17.4, U.uCloudCfg4.y, 36.1);
+  var meso : f32 = cloudLatticeNoise(mesoCoord);
+  var moisture : f32 = clamp(0.48 + 0.57 * (broad - 0.5) + 0.43 * (meso - 0.5), 0.0, 1.0);
+  return vec2f(moisture, meso);
+
+}
+
+fn cloudCellEnvelope(planePos : vec2f, height : f32, coverage : f32, seed : f32, scaleM : f32) -> f32 {
+
+  var coord : vec2f = planePos / scaleM;
+  var cell : vec2f = floor(coord);
+  var seedCell : i32 = i32(floor(seed * 53.0));
+  var envelope : f32 = -1.0;
+  for (var y : i32 = -1; y <= 1; y = y + 1) {
+    for (var x : i32 = -1; x <= 1; x = x + 1) {
+      var address : vec2i = vec2i(cell) + vec2i(x, y);
+      var word : u32 = cloudHash3(address.x, address.y, seedCell);
+      var random : vec4f = vec4f(f32(word & 255u), f32((word >> 8u) & 255u),
+                         f32((word >> 16u) & 255u), f32((word >> 24u) & 255u)) / 255.0;
+      var center : vec2f = vec2f(address) + 0.5 + 0.76 * (random.xy - 0.5);
+      var occurrence : f32 = cloudSmooth(0.18, 0.65, coverage + 0.30 * (random.z - 0.5));
+      var radius : f32 = (0.19 + 0.27 * random.w) * mix(0.65, 1.15, occurrence);
+      var towerHeight : f32 = 0.30 + 0.58 * random.z;
+      var tilt : vec2f = (random.yw - 0.5) * (0.38 * height * height);
+      var offset : vec2f = (coord - center - tilt) / radius;
+      var offsetSquared : f32 = dot(offset, offset);
+      if (offsetSquared > 3.2) continue;
+      var vertical : f32 = (height - 0.36 * towerHeight) / max(0.1, towerHeight * 0.64);
+      var main : f32 = 1.0 - sqrt(offsetSquared + vertical * vertical);
+      var budOffset : vec2f = offset - (random.yz - 0.5) * 0.95;
+      var budHeight : f32 = (height - towerHeight * 0.70) / max(0.08, towerHeight * 0.35);
+      var bud : f32 = 0.90 - sqrt(dot(budOffset, budOffset) * 1.65 + budHeight * budHeight);
+      envelope = max(envelope, max(main, bud) - (1.0 - occurrence) * 0.75);
+    }
   }
-  let profile = bot * top;
-  if (profile <= 0.001) { return 0.0; }
-  let shapeCov = clamp(cov + anvil * h * h * 0.25, 0.0, 1.0);
-  let stretch = select(1.0, 2.2, cType == 2);
-  let wp = vec3f((pos.x + wind.x) * fScale * stretch, (pos.y + wind.y) * fScale * stretch, (alt - baseM) * fScale * 1.45);
-  let n = cloudFbm(wp);
-  let nNorm = clamp((n - 0.28) / 0.44, 0.0, 1.0);
-  let thr = 1.0 - shapeCov;
-  return max(0.0, (nNorm - thr) / max(0.18, shapeCov)) * profile * densMul;
+  return envelope;
+
+}
+
+fn cloudConvectiveEnvelope(advected : vec3f, altitudeM : f32, height : f32, amount : f32, scaleM : f32) -> f32 {
+
+  var normal : vec3f = normalize(advected);
+  var seaLevel : vec3f = advected - normal * altitudeM;
+  var weightRaw : vec3f = smoothstep(vec3f(0.40), vec3f(0.82), abs(normal));
+  var weight : vec3f = weightRaw * weightRaw;
+  var weightSum : f32 = max(0.001, weight.x + weight.y + weight.z);
+  var envelope : f32 = 0.0;
+  for (var axis : i32 = 0; axis < 3; axis = axis + 1) {
+    var w : f32 = (axis == 0) ? weight.z : ((axis == 1) ? weight.x : weight.y);
+    if (w <= 0.001) continue;
+    var planePos : vec2f = (axis == 0) ? seaLevel.xy : ((axis == 1) ? seaLevel.yz : seaLevel.xz);
+    var axisSeed : f32 = U.uCloudCfg4.y + ((axis == 0) ? 0.0 : ((axis == 1) ? 23.0 : 59.0));
+    envelope += w * cloudCellEnvelope(planePos, height, amount, axisSeed, scaleM);
+  }
+  return envelope / weightSum;
+
+}
+
+fn cloudLayer() -> CloudLayerParams {
+  let bottomM = max(100.0, U.uCloudCfg1.x);
+  let topM = bottomM + max(100.0, U.uCloudCfg1.y);
+  let amount = clamp(U.uCloudCfg0.y, 0.0, 1.0);
+  let formation = i32(round(U.uCloudCfg2.x));
+  var sigma = 0.0042 * max(0.0, U.uCloudCfg0.z);
+  var category = 0;
+  if (formation == 5 || formation == 10) {
+    category = 2;
+    sigma = select(0.00055, 0.0012, formation == 10) * max(0.0, U.uCloudCfg0.z);
+  } else if (formation == 0 || formation == 4 || formation == 6 || formation == 8 || formation == 9) {
+    category = 1;
+    sigma = select(0.0032, 0.0018, formation == 4) * max(0.0, U.uCloudCfg0.z);
+  } else if (formation == 1) {
+    sigma = 0.0036 * max(0.0, U.uCloudCfg0.z);
+  } else {
+    sigma = 0.0045 * max(0.0, U.uCloudCfg0.z);
+  }
+  return CloudLayerParams(bottomM, topM, amount, sigma, category);
+}
+
+fn sampleCloudDensityAdvected(position : vec3f, advected : vec3f, layerBottomM : f32, layerTopM : f32, layerAmount : f32, layerSigma : f32, moisture : f32, footprintM : f32, lightQuery : bool) -> f32 {
+
+  var radius : f32 = length(position);
+  var altitudeM : f32 = radius - U.uCloudCfg4.x;
+  var height : f32 = (altitudeM - layerBottomM) / max(1.0, layerTopM - layerBottomM);
+  if (height <= 0.0 || height >= 1.0 || layerAmount <= 0.0) return 0.0;
+
+  var coordinate : vec3f = rotateCloudOctave(advected - vec3f(0.0, 0.0, U.uCloudCfg4.x)) + U.uCloudCfg4.y * vec3f(731.0, -1261.0, 3179.0);
+  var scaleM : f32 = max(900.0, 7200.0 * max(0.15, U.uCloudCfg0.w));
+  var shapeCoordinate : vec3f = coordinate / scaleM + vec3f(0.143, 0.713, 0.337);
+  var formation : i32 = i32(round(U.uCloudCfg2.x));
+  var amount : f32 = clamp(layerAmount + 0.38 * (moisture - 0.5), 0.0, 1.0);
+
+  var convEnvelope : f32 = 0.0;
+  var isConvective : i32 = ((formation == 1 || formation == 2 || formation == 3 || formation == 7 || formation == 11)) ? 1 : 0;
+  if (isConvective == 1) {
+    var cellScaleM : f32 = scaleM * ((formation == 1 || formation == 11) ? 0.5525 : 0.85);
+    convEnvelope = cloudConvectiveEnvelope(advected, altitudeM, height, amount, cellScaleM);
+    if (convEnvelope < -0.92 && formation != 3 && formation != 11) return 0.0;
+  }
+
+  var shape : vec2f = vec2f(0.47);
+  var detail : f32 = 0.48;
+  if (!lightQuery && (formation == 8 || formation == 12)) {
+    var warpS : f32 = (formation == 8) ? 2.2 : 3.7;
+    var warpA : f32 = (formation == 8) ? 1.4 : 1.15;
+    shapeCoordinate += warpA * (cloudLatticeNoise(coordinate / (scaleM * warpS)) - 0.5);
+  }
+  shape = cloudShapeField(shapeCoordinate, footprintM, scaleM);
+  if (!lightQuery) {
+    var fineFilter : f32 = 1.0 - cloudSmooth(scaleM * 0.015, scaleM * 0.11, footprintM);
+    if (fineFilter > 0.01) {
+      detail = mix(0.48, cloudShapeField(rotateCloudOctave(shapeCoordinate) * 3.17 + 0.337, footprintM, scaleM / 3.17).y, fineFilter);
+    }
+  }
+
+  var raw : f32 = 0.0;
+  var heightEnvelope : f32 = cloudSmooth(0.0, 0.045, height) * (1.0 - cloudSmooth(0.93, 1.0, height));
+
+  if (formation == 5 || formation == 10) {
+    var fiber : vec3f = rotateCloudOctave(coordinate) * vec3f(0.000075, 0.0028, 0.00065) / max(0.3, U.uCloudCfg0.w);
+    var bend : f32 = cloudLatticeNoise(coordinate * 0.00014 + 41.3);
+    var bank : f32 = cloudLatticeNoise(coordinate * vec3f(0.000045, 0.000070, 0.00013) + 59.1);
+    fiber.y += 4.8 * bend + 2.7 * height * height;
+    fiber.x += 0.60 * height * height;
+    var strand : f32 = 0.65 * cloudLatticeNoise(fiber + 3.7) + 0.35 * cloudLatticeNoise(fiber * 2.13 + 16.9);
+    if (!lightQuery) {
+      fiber.z += 1.3 * cloudLatticeNoise(coordinate * 0.00023 - 23.0);
+      var filt : f32 = footprintM * 0.0028 / max(0.3, U.uCloudCfg0.w);
+      strand = 0.64 * mix(0.5, cloudLatticeNoise(fiber + 3.7), 1.0 - cloudSmooth(0.6, 1.5, filt))
+             + 0.36 * mix(0.5, cloudLatticeNoise(fiber * 2.13 + 16.9), 1.0 - cloudSmooth(0.6, 1.5, filt * 2.13));
+    }
+    var bankEnvelope : f32 = cloudSmooth(0.30, 0.67, bank + (amount - 0.6) * 0.35);
+    if (formation == 10) {
+      var silk : f32 = pow(0.5 + 0.5 * sin(fiber.y * 0.45 + 3.0 * bend), 0.78);
+      strand = 0.55 * silk + 0.45 * shape.x;
+      bankEnvelope = mix(0.45, 1.0, bankEnvelope);
+    }
+    heightEnvelope *= cloudSmooth(0.0, 0.23, height) * (1.0 - cloudSmooth(0.55, 1.0, height)) * bankEnvelope;
+    raw = strand - mix(0.70, 0.43, amount) - (1.0 - heightEnvelope) * 0.16;
+  } else if (formation == 6) {
+    var macroLobes : f32 = cloudLatticeNoise(coordinate * vec3f(0.00011, 0.00024, 0.0) / max(0.25, U.uCloudCfg0.w) + 1.7);
+    var laminar : f32 = pow(0.5 + 0.5 * sin(height * 3.14159265 * 2.4 - 0.3 + (shape.x - 0.5) * 0.85), 1.15);
+    var lensMask : f32 = cloudSmooth(0.42, 0.72, macroLobes + (shape.x - 0.5) * 0.24);
+    heightEnvelope *= cloudSmooth(0.04, 0.24, height) * (1.0 - cloudSmooth(0.74, 0.96, height));
+    raw = lensMask * mix(0.72, laminar, 0.58) - (1.0 - amount) * 0.45 - (1.0 - heightEnvelope) * 0.28;
+  } else if (formation == 8) {
+    var tiltOffset : f32 = 320.0 * sin(height * 3.14159265) + 220.0 * height * height;
+    var wavePhase : f32 = (coordinate.x + tiltOffset) * (0.0020 / max(0.25, U.uCloudCfg0.w)) + (shape.x - 0.5) * 2.8;
+    var breakCurl : f32 = cloudSmooth(0.26, 0.88, 0.5 + 0.5 * sin(wavePhase + height * 3.0));
+    var macroBand : f32 = cloudSmooth(0.36, 0.72, cloudLatticeNoise(coordinate * 0.00012 + 3.1));
+    heightEnvelope *= cloudSmooth(0.08, 0.30, height) * (1.0 - cloudSmooth(0.72, 0.98, height));
+    raw = macroBand * (0.58 * breakCurl + 0.42 * shape.x) - mix(0.56, 0.24, amount) - (1.0 - heightEnvelope) * 0.26;
+  } else if (formation == 9) {
+    var waveFilter : f32 = lightQuery ? 0.0 : (1.0 - cloudSmooth(320.0, 2200.0, footprintM));
+    var k : f32 = 0.0018 / max(0.25, U.uCloudCfg0.w);
+    var swell : f32 = 0.5;
+    if (waveFilter > 0.01) {
+      swell += 0.125 * waveFilter * (
+        sin((coordinate.x * 0.966 + coordinate.y * 0.259) * k + (shape.x - 0.5) * 3.2) +
+        cos((coordinate.x * 0.391 + coordinate.y * 0.920) * k * 1.08 - (shape.y - 0.5) * 2.8) +
+        sin((-coordinate.x * 0.391 + coordinate.y * 0.920) * k * 1.15 + (detail - 0.5) * 2.4) +
+        cos((-coordinate.x * 0.927 + coordinate.y * 0.375) * k * 0.96 - (shape.x - 0.5) * 3.0));
+    }
+    heightEnvelope *= cloudSmooth(0.05, 0.22, height) * (1.0 - cloudSmooth(0.72, 0.96, height));
+    raw = 0.62 * shape.x + 0.38 * swell - mix(0.62, 0.26, amount) - (1.0 - heightEnvelope) * 0.28;
+  } else if (formation == 0 || formation == 4) {
+    var fold : f32 = cloudLatticeNoise(coordinate * 0.00016 + 37.1);
+    var vertical : f32 = height + (fold - 0.5) * 0.25;
+    heightEnvelope *= cloudSmooth(0.0, 0.19, vertical) * (1.0 - cloudSmooth(0.66, 1.0, vertical));
+    raw = 0.72 * shape.x + 0.28 * shape.y - mix(0.77, 0.38, amount) - (1.0 - heightEnvelope) * 0.36;
+  } else {
+    var envelope : f32 = convEnvelope;
+    if (formation == 3) {
+      var anvilDisc : f32 = cloudSmooth(0.68, 0.88, height) * (1.0 - cloudSmooth(0.92, 1.0, height));
+      envelope = max(envelope, anvilDisc * (0.45 * U.uCloudCfg1.z + 0.40 * (shape.x - 0.35)));
+    } else if (formation == 7 && !lightQuery) {
+      var pouchFilter : f32 = 1.0 - cloudSmooth(260.0, 1800.0, footprintM);
+      var k : f32 = 0.0017 / max(0.25, U.uCloudCfg0.w);
+      var px : f32 = coordinate.x + (shape.x - 0.5) * 420.0;
+      var py : f32 = coordinate.y - (shape.y - 0.5) * 420.0;
+      var pouch : f32 = pow(clamp((cos(px * k) + cos((-0.5 * px + 0.866025 * py) * k) + cos((-0.5 * px - 0.866025 * py) * k) + 1.5) / 4.5, 0.0, 1.0), 1.15) * pouchFilter;
+      envelope += pouch * (1.0 - cloudSmooth(0.18, 0.62, height)) * 0.42;
+    } else if (formation == 11) {
+      var towerCap : f32 = cloudSmooth(0.70, 0.96, height) * U.uCloudCfg1.z;
+      envelope = max(envelope * 1.12, towerCap * (0.42 + 0.45 * (shape.x - 0.40)));
+    }
+    raw = 0.90 * envelope + 1.05 * (shape.x - 0.45) + 0.37 * (shape.y - 0.45) + 0.32 * (detail - 0.5);
+    raw -= 0.06 + (1.0 - amount) * 0.10;
+  }
+
+  var coherentEdge : i32 = ((formation == 3 || formation == 11 || formation == 12)) ? 1 : 0;
+  if (raw <= (coherentEdge == 1 ? 0.0 : -0.08) || heightEnvelope <= 0.0) return 0.0;
+
+  var response : f32 = 0.048;
+  return layerSigma * cloudSmooth(0.0, response, raw) * heightEnvelope;
+
+}
+
+fn cloudDualLobe(mu : f32, asymmetry : f32, scale : f32) -> f32 {
+
+  return 0.86 * hgCloud(mu, asymmetry * scale) + 0.14 * hgCloud(mu, -0.25 * scale);
+
+}
+
+fn cloudScatteringOrder(dir : vec3f) -> vec3f {
+
+  var mu : f32 = dot(dir, U.uSunDir.xyz);
+  var g : f32 = clamp(U.uCloudCfg1.w, 0.35, 0.92);
+  return vec3f(cloudDualLobe(mu, g, 1.0), cloudDualLobe(mu, g, 0.49), cloudDualLobe(mu, g, 0.19));
+
+}
+
+fn cloudAirColumn(scaleHeightM : f32, radiusM : f32, altitudeM : f32, mu : f32) -> f32 {
+
+  var absMu : f32 = abs(mu);
+  var upward : f32 = 2.0 * scaleHeightM / (absMu + sqrt(absMu * absMu + 8.0 * scaleHeightM / (3.14159265 * radiusM)));
+  var rise : f32 = (radiusM + altitudeM) * mu * mu / (1.0 + sqrt(clamp(1.0 - mu * mu, 0.0, 1.0)));
+  var downward : f32 = sqrt(2.0 * 3.14159265 * (radiusM + altitudeM) * scaleHeightM) * exp(min(9.0, rise / scaleHeightM)) - upward;
+  return exp(-max(0.0, altitudeM) / scaleHeightM) * ((mu < 0.0) ? downward : upward);
+
+}
+
+fn cloudSolarAirTransmittance(position : vec3f) -> vec3f {
+
+  var radiusM : f32 = length(position);
+  var altitudeM : f32 = max(0.0, radiusM - U.uCloudCfg4.x);
+  var mu : f32 = dot(position, U.uSunDir.xyz) / max(1.0e-6, radiusM);
+  var tangent : f32 = -sqrt(clamp(altitudeM * (radiusM + U.uCloudCfg4.x) / (radiusM * radiusM), 0.0, 1.0));
+  var visibility : f32 = cloudSmooth(-0.00465, 0.00465, mu - tangent);
+  if (visibility <= 0.0) return vec3f(0.0);
+  var rayleighColumn : f32 = cloudAirColumn(max(400.0, U.uCloudCfg6.x), U.uCloudCfg4.x, altitudeM, mu);
+  var aerosolColumn : f32 = cloudAirColumn(max(200.0, U.uCloudCfg6.y), U.uCloudCfg4.x, altitudeM, mu);
+  var ozoneColumn : f32 = 15000.0 * exp(-max(0.0, altitudeM - 25000.0) / 8000.0) / max(0.15, abs(mu));
+  var betaRay : vec3f = vec3f(5.802e-6, 13.558e-6, 33.1e-6) * max(0.0, U.uCloudCfg5.w);
+  var betaMie : vec3f = vec3f(4.40e-6) * max(0.0, U.uCloudCfg6.w);
+  var tau : vec3f = betaRay * rayleighColumn + betaMie * aerosolColumn + U.uCloudCfg6.z * vec3f(0.650e-6, 1.881e-6, 0.085e-6) * ozoneColumn;
+  return visibility * exp(-tau);
+
+}
+
+fn sampleCloudShadowDensity(position : vec3f, advected : vec3f, layerBottomM : f32, layerTopM : f32, layerAmount : f32, layerSigma : f32, moisture : f32, footprintM : f32, category : i32) -> f32 {
+
+  var radius : f32 = length(position);
+  var altitudeM : f32 = radius - U.uCloudCfg4.x;
+  var height : f32 = (altitudeM - layerBottomM) / max(1.0, layerTopM - layerBottomM);
+  if (height <= 0.0 || height >= 1.0 || layerAmount <= 0.0) return 0.0;
+  var coordinate : vec3f = rotateCloudOctave(advected - vec3f(0.0, 0.0, U.uCloudCfg4.x)) + U.uCloudCfg4.y * vec3f(731.0, -1261.0, 3179.0);
+  var scaleM : f32 = max(900.0, 7200.0 * max(0.15, U.uCloudCfg0.w));
+  var amount : f32 = clamp(layerAmount + 0.38 * (moisture - 0.5), 0.0, 1.0);
+  var heightEnv : f32 = cloudSmooth(0.0, 0.12, height) * (1.0 - cloudSmooth(0.75, 1.0, height));
+  var shape : vec2f = cloudShapeField(coordinate / scaleM + vec3f(0.143, 0.713, 0.337), footprintM, scaleM);
+  var raw : f32 = 0.78 * (shape.x - 0.45) + 0.28 * (shape.y - 0.45) - (1.0 - amount) * 0.42 - (1.0 - heightEnv) * 0.25;
+  if (raw <= 0.0 || heightEnv <= 0.0) return 0.0;
+  var response : f32 = (category == 2) ? 0.14 : 0.06;
+  return layerSigma * cloudSmooth(0.0, response, raw) * heightEnv;
+
+}
+
+fn cloudSolarOpticalDepth(position : vec3f, bottomM : f32, topM : f32, amount : f32, sigma : f32, moisture : f32, steps : i32, footprintM : f32, category : i32) -> f32 {
+
+  if (U.uCloudCfg2.y < 0.5) return 0.0;
+  var spans : vec4f = cloudLayerSpans(position, U.uSunDir.xyz);
+  var tau : f32 = 0.0;
+  for (var interval : i32 = 0; interval < 2; interval = interval + 1) {
+    var nearM : f32 = (interval == 0) ? spans.x : spans.z;
+    var farM : f32 = (interval == 0) ? spans.y : spans.w;
+    if (farM <= nearM) continue;
+    var lengthM : f32 = farM - nearM;
+    var startM : f32 = 0.0;
+    for (var index : i32 = 0; index < 6; index = index + 1) {
+      if (index >= steps) break;
+      var fraction : f32 = f32(index + 1) / f32(steps);
+      var endM : f32 = lengthM * fraction * fraction;
+      var sampleM : f32 = nearM + 0.5 * (startM + endM);
+      var segmentM : f32 = endM - startM;
+      var samplePos : vec3f = position + U.uSunDir.xyz * sampleM;
+      var adv : vec3f = cloudAdvect(samplePos);
+      var sampleSigma : f32 = sampleCloudShadowDensity(samplePos, adv, bottomM, topM, amount, sigma, moisture,
+                                                   max(footprintM, 16.0 + 0.18 * segmentM), category);
+      tau += segmentM * sampleSigma;
+      if (tau >= 18.0) return 18.0;
+      startM = endM;
+    }
+  }
+  return min(18.0, tau);
+
+}
+
+fn cloudSource(position : vec3f, dir : vec3f, bottomM : f32, topM : f32, sigma : f32, layerSigma : f32, category : i32, moisture : f32, footprintM : f32, phases : vec3f) -> vec3f {
+
+  var direct : vec3f = U.uSunIrradiance.xyz * cloudSolarAirTransmittance(position);
+  var solarTau : f32 = 0.0;
+  if (dot(direct, direct) > 1.0e-6) {
+    solarTau = cloudSolarOpticalDepth(position, bottomM, topM, clamp(U.uCloudCfg0.y, 0.0, 1.0), layerSigma, moisture, 4,
+                                      footprintM, category);
+  }
+  var attenuated : vec3f = exp(-solarTau * vec3f(1.0, 0.35, 0.12));
+  var scattered : vec3f = direct * dot(phases * vec3f(1.0, 0.45, 0.20), attenuated);
+
+  var heightFraction : f32 = clamp((length(position) - U.uCloudCfg4.x - bottomM) / max(1.0, topM - bottomM), 0.0, 1.0);
+  var sunUp : f32 = dot(normalize(position), U.uSunDir.xyz);
+  var day : f32 = cloudSmooth(-0.20, 0.23, sunUp);
+  var warm : f32 = exp(-abs(sunUp - 0.045) * 9.5) * cloudSmooth(-0.20, -0.025, sunUp);
+  var skyVisibility : f32 = mix(1.0, 0.16 + 0.84 * exp(-0.24 * solarTau), cloudSmooth(0.12, 0.50, sunUp));
+  var twilight : f32 = cloudSmooth(-0.30, -0.12, sunUp);
+  var sky : vec3f = U.uCloudCfg5.xyz * (0.025 * twilight + 0.36 * day) * mix(0.48, 1.0, heightFraction) * skyVisibility;
+  var bounce : vec3f = (1.0 - heightFraction) * (vec3f(0.032, 0.048, 0.071) * day + vec3f(0.077, 0.029, 0.015) * warm);
+
+  var formation : i32 = i32(round(U.uCloudCfg2.x));
+  if (formation == 10) {
+    // Nacreous stratospheric iridescence
+    var irid : f32 = dot(dir, U.uSunDir.xyz) * 9.0 + heightFraction * 5.0 + (position.x + position.y) * 0.00020;
+    scattered *= vec3f(0.98 + 0.28 * sin(irid), 0.95 + 0.28 * sin(irid + 2.094), 1.04 + 0.30 * sin(irid + 4.188));
+  } else if (formation == 11) {
+    // Pyrocumulus warm ember base under-glow
+    var coreDense : f32 = cloudSmooth(layerSigma * 0.22, layerSigma * 0.85, sigma);
+    bounce += vec3f(1.25, 0.34, 0.05) * pow(1.0 - heightFraction, 2.8) * coreDense;
+  }
+  var solarMean : f32 = dot(U.uSunIrradiance.xyz, vec3f(0.3333333)) / 16.0;
+  return scattered + sky + bounce * solarMean;
+
 }
 
 fn evalVolumetricClouds(dir : vec3f, skyCol : vec3f, jitter : f32, steps : i32) -> vec4f {
+
   if (U.uCloudCfg0.x < 0.5 || dir.z <= 0.006 || U.uCloudCfg0.y <= 0.01 || U.uCloudCfg0.z <= 0.01) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
-  let earthR = 6360000.0;
-  let baseM = max(200.0, U.uCloudCfg1.x);
-  let thickM = max(150.0, U.uCloudCfg1.y);
-  let origZ = earthR + 100.0;
-  let tEnter = intersectEarthShell(origZ, dir.z, earthR + baseM);
-  let tExit = intersectEarthShell(origZ, dir.z, earthR + baseM + thickM);
-  let maxDist = min(tExit, 48000.0);
-  if (tEnter < 0.0 || maxDist <= tEnter) {
-    return vec4f(0.0, 0.0, 0.0, 1.0);
-  }
+  var planetR : f32 = U.uCloudCfg4.x;
+  var originZ : f32 = planetR + 100.0;
+  var origin : vec3f = vec3f(0.0, 0.0, originZ);
+  let lyr = cloudLayer();
+  let bottomM = lyr.bottomM;
+  let topM = lyr.topM;
+  let amount = lyr.amount;
+  let sigma = lyr.sigma;
 
-  let dt = (maxDist - tEnter) / f32(steps);
-  let cov = clamp(U.uCloudCfg0.y, 0.0, 1.0);
-  let densMul = max(0.0, U.uCloudCfg0.z) * 0.008;
-  let fScale = 0.00065 / max(0.08, U.uCloudCfg0.w);
-  let anvil = clamp(U.uCloudCfg1.z, 0.0, 1.0);
-  let g = clamp(U.uCloudCfg1.w, -0.5, 0.9);
-  let cType = i32(round(U.uCloudCfg2.x));
-  let shadOn = U.uCloudCfg2.y > 0.5;
-  let timeSec = U.uAtmoCfg0.w;
-  let wind = U.uCloudCfg2.zw * timeSec;
+  var viewAltitudeM : f32 = length(origin) - planetR;
+  if (viewAltitudeM < bottomM - 10.0 && dir.z < -0.02) return vec4f(0.0, 0.0, 0.0, 1.0);
 
-  let sunDir = U.uSunDir.xyz;
-  let sunIrr = U.uSunIrradiance.xyz;
-  let cosT = dot(dir, sunDir);
-  let g2 = g * g;
-  let hgFwd = (1.0 - g2) / (4.0 * PI * pow(max(1e-3, 1.0 + g2 - 2.0 * g * cosT), 1.5));
-  let hgBack = (1.0 - 0.0625) / (4.0 * PI * pow(max(1e-3, 1.0 + 0.0625 + 0.5 * cosT), 1.5));
-  let phase = 0.78 * hgFwd + 0.22 * hgBack;
+  var limitM : f32 = min(62000.0, cloudGroundDistance(origin, dir));
+  var spans : vec4f = cloudLayerSpans(origin, dir);
+  var blueJitter : f32 = jitter;
+  var phases : vec3f = cloudScatteringOrder(dir);
+  var radiance : vec3f = vec3f(0.0);
+  var transmittance : f32 = 1.0;
+  var centroidM : f32 = 0.0;
 
-  var trans = 1.0;
-  var accum = vec3f(0.0);
-  let sStep = (thickM * 0.55) / 3.0;
-  for (var i : i32 = 0; i < 24; i = i + 1) {
-    if (i >= steps) { break; }
-    let t = tEnter + (f32(i) + 0.15 + 0.7 * jitter) * dt;
-    let p = vec3f(dir.x * t, dir.y * t, origZ + dir.z * t);
-    let d = sampleCloudDensity(p, baseM, thickM, cov, densMul, fScale, anvil, cType, wind);
-    if (d > 1e-6) {
-      var sunTau = 0.0;
-      if (shadOn) {
-        for (var s : i32 = 1; s <= 3; s = s + 1) {
-          let sp = p + sunDir * (f32(s) * sStep);
-          sunTau = sunTau + sampleCloudDensity(sp, baseM, thickM, cov, densMul, fScale, anvil, cType, wind) * sStep;
+  for (var interval : i32 = 0; interval < 2; interval = interval + 1) {
+    var nearM : f32 = (interval == 0) ? spans.x : spans.z;
+    var farM : f32 = (interval == 0) ? spans.y : spans.w;
+    if (farM <= nearM) continue;
+    var lengthM : f32 = farM - nearM;
+    var growth : f32 = (viewAltitudeM > 19000.0) ? 0.0 : clamp(log(1.0 + lengthM / 1900.0), 0.1, 4.8);
+    var denominator : f32 = max(1.0e-6, exp(growth) - 1.0);
+    var lastM : f32 = nearM;
+    var litAtM : f32 = -1.0e9;
+    var source : vec3f = vec3f(0.0);
+    for (var index : i32 = 0; index < 32; index = index + 1) {
+      if (index >= steps || transmittance <= 0.0001) break;
+      var fraction : f32 = f32(index + 1) / f32(steps);
+      var nextM : f32 = nearM + lengthM * ((growth < 0.01) ? fraction : (exp(growth * fraction) - 1.0) / denominator);
+      var distanceM : f32 = nextM - lastM;
+      var sampleM : f32 = lastM + distanceM * (0.40 + blueJitter * 0.20);
+      var position : vec3f = origin + dir * sampleM;
+      var footprintM : f32 = max(1.0, sampleM * U.uCloudCfg4.z);
+      var advected : vec3f = cloudAdvect(position);
+      var advLen : f32 = max(1.0e-9, length(advected));
+      var weather : vec2f = cloudWeather(advected / advLen);
+      var density : f32 = sampleCloudDensityAdvected(position, advected, bottomM, topM, amount, sigma, weather.x, footprintM, false);
+      if (density > 1.0e-9) {
+        var segmentT : f32 = exp(-density * distanceM);
+        var weight : f32 = transmittance * (1.0 - segmentT);
+        var lightStrideM : f32 = clamp(footprintM * 0.75 + 120.0, 100.0, 280.0);
+        if (sampleM - litAtM >= lightStrideM) {
+          source = cloudSource(position, dir, bottomM, topM, density, sigma, category, weather.x, footprintM, phases);
+          litAtM = sampleM;
         }
+        radiance += weight * source;
+        centroidM += weight * sampleM;
+        transmittance *= segmentT;
       }
-      let sunAtt = exp(-sunTau * 1.15) * (0.35 + 0.65 * (1.0 - exp(-sunTau * 2.2 + 0.25)));
-      let segT = exp(-d * dt);
-      let alt = length(p) - earthR;
-      let h = clamp((alt - baseM) / thickM, 0.0, 1.0);
-      let amb = 0.28 + 0.52 * h;
-      let lit = sunIrr * sunAtt * phase * 2.4 + skyCol * amb * 0.55;
-      accum = accum + trans * lit * (1.0 - segT);
-      trans = trans * segT;
-      if (trans < 0.015) { break; }
+      lastM = nextM;
     }
   }
-  let haze = 1.0 - exp(-tEnter * 0.00004);
-  accum = mix(accum, skyCol * (1.0 - trans), haze);
-  return vec4f(accum, trans);
-}
 
-fn evalMoonAndStars(dir : vec3f) -> vec3f {
-  var out = vec3f(0.0);
-  // Lunar disc with 3D spherical phase terminator + mare detail
-  if (U.uMoonCfg1.w > 0.5 && dir.z > -0.05) {
-    let mDir = U.uMoonCfg0.xyz;
-    let angR = max(0.002, U.uMoonCfg0.w);
-    let cosM = dot(dir, mDir);
-    let mTint = U.uMoonTint.xyz;
-    let mBright = U.uMoonCfg1.y;
-    let mGlow = U.uMoonCfg1.z;
-    out = out + mTint * pow(max(0.0, cosM), 420.0) * mGlow * 0.28 * mBright;
-    let cosEdge = cos(angR);
-    if (cosM > cosEdge) {
-      let upRef = select(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 0.0, 1.0), abs(mDir.z) < 0.98);
-      let mRight = normalize(cross(upRef, mDir));
-      let mUp = cross(mDir, mRight);
-      let px = dot(dir, mRight) / angR;
-      let py = dot(dir, mUp) / angR;
-      let r2 = px * px + py * py;
-      if (r2 < 1.0) {
-        let pz = sqrt(max(0.0, 1.0 - r2));
-        let phAng = (U.uMoonCfg1.x - 0.5) * 6.2831853;
-        let lDir = normalize(vec3f(sin(phAng), 0.18, cos(phAng)));
-        let ndl = max(0.0, dot(vec3f(px, py, pz), lDir));
-        var albedo = vec3f(0.68 + 0.32 * noise3D(vec3f(px * 3.8 + 4.1, py * 3.8 - 2.3, pz * 3.8)));
-        if (U.uAtmoCfg1.w > 0.5) {
-          let uMoon = atan2(px, pz) * (0.5 / PI) + 0.5;
-          let vMoon = 0.5 - asin(clamp(py, -1.0, 1.0)) / PI;
-          let tileV = (clamp(U.uMoonTint.w, 0.0, 5.0) + clamp(vMoon, 0.015, 0.985)) / 6.0;
-          let texSample = textureSampleLevel(uMoonAtlasTex, uAtlasSampler, vec2f(uMoon, tileV), 0.0).rgb;
-          albedo = pow(max(vec3f(0.0), texSample), vec3f(2.2)) * 1.45;
-        }
-        let edgeAA = clamp((1.0 - sqrt(r2)) * 14.0, 0.0, 1.0);
-        let lum = (0.014 + ndl * 1.55) * mBright * edgeAA;
-        out = out + mTint * albedo * lum;
-      }
-    }
-  }
-  // Procedural deterministic starfield
-  if (U.uStarCfg0.x > 0.5 && dir.z > 0.005) {
-    let dayFade = clamp(1.0 - (U.uSunDir.z + 0.08) * 5.0, 0.0, 1.0);
-    if (dayFade > 0.01) {
-      let rot = U.uStarCfg1.w;
-      let cr = cos(rot);
-      let sr = sin(rot);
-      let rDir = vec3f(dir.x * cr - dir.y * sr, dir.x * sr + dir.y * cr, dir.z);
-      let grid = rDir * 175.0;
-      let cell = floor(grid);
-      let h = hash33(cell);
-      let magThresh = clamp(U.uStarCfg0.z / 8.5, 0.05, 0.98);
-      if (h.x > 1.0 - 0.18 * magThresh) {
-        let starCenter = cell + 0.2 + 0.6 * vec3f(h.y, h.z, fract(h.x * 7.13));
-        let d2 = dot(grid - starCenter, grid - starCenter);
-        let rad = 0.08 * clamp(U.uStarCfg0.w, 0.4, 3.0);
-        if (d2 < rad * rad) {
-          let falloff = exp(-d2 / (rad * rad * 0.35));
-          let twRate = U.uStarCfg1.z;
-          let twDepth = U.uStarCfg1.y * 0.008;
-          let twMod = 1.0 - twDepth * (0.5 + 0.5 * sin(U.uAtmoCfg0.w * twRate * 5.0 + h.y * 40.0));
-          let tw = select(1.0, twMod, U.uStarCfg1.x > 0.5);
-          let intensity = (0.45 + 1.55 * h.z * h.z) * U.uStarCfg0.y * dayFade * tw * falloff * clamp(dir.z * 4.0, 0.0, 1.0);
-          let starCol = vec3f(0.78 + 0.42 * h.y, 0.88 + 0.12 * h.y, 1.20 - 0.35 * h.y);
-          out = out + starCol * intensity;
+  var opacity : f32 = 1.0 - transmittance;
+  if (opacity > 1.0e-5) centroidM /= opacity;
+
+  // CloudAerialPerspective: optical-centroid foreground haze
+  if (transmittance < 0.999999 && opacity > 1.0e-5) {
+    var atmosphere : vec2f = cloudSphere(origin, dir, planetR + 100000.0);
+    var enterM : f32 = max(0.0, atmosphere.x);
+    var exitM : f32 = min(centroidM, atmosphere.y);
+    if (exitM > enterM) {
+      var mu : f32 = dot(dir, U.uSunDir.xyz);
+      var rayPhase : f32 = (3.0 / (16.0 * 3.14159265)) * (1.0 + mu * mu);
+      var miePhase : f32 = hgCloud(mu, 0.78);
+      var betaRay : vec3f = vec3f(5.802e-6, 13.558e-6, 33.1e-6) * max(0.0, U.uCloudCfg5.w);
+      var betaMie : vec3f = vec3f(4.40e-6) * max(0.0, U.uCloudCfg6.w);
+      var betaOzone : vec3f = U.uCloudCfg6.z * vec3f(0.650e-6, 1.881e-6, 0.085e-6);
+      var airSolar : vec3f = U.uSunIrradiance.xyz * 0.3333333;
+      var airRadiance : vec3f = vec3f(0.0);
+      var airTrans : vec3f = vec3f(1.0);
+      var closestM : f32 = clamp(-dot(origin, dir), enterM, exitM);
+      for (var side : i32 = 0; side < 2; side = side + 1) {
+        var sideLength : f32 = (side == 0) ? (closestM - enterM) : (exitM - closestM);
+        if (sideLength < 0.1) continue;
+        var previousM : f32 = (side == 0) ? enterM : closestM;
+        for (var index : i32 = 0; index < 8; index = index + 1) {
+          var fraction : f32 = f32(index + 1) / 8.0;
+          var radial : f32 = (side == 0) ? 1.0 - fraction : fraction;
+          var distanceM : f32 = closestM + sideLength * (0.30 * radial + 0.70 * radial * radial * radial) * (side == 0 ? -1.0 : 1.0);
+          var ds : f32 = distanceM - previousM;
+          var midpointM : f32 = (distanceM + previousM) * 0.5;
+          previousM = distanceM;
+          var position : vec3f = origin + dir * midpointM;
+          var altitudeM : f32 = max(0.0, length(position) - planetR);
+          var rayleigh : vec3f = betaRay * exp(-altitudeM / max(400.0, U.uCloudCfg6.x));
+          var mie : vec3f = betaMie * exp(-altitudeM / max(200.0, U.uCloudCfg6.y));
+          var ozone : vec3f = betaOzone * clamp(1.0 - abs(altitudeM - 25000.0) / 16000.0, 0.0, 1.0);
+          var extinction : vec3f = max(vec3f(1.0e-8), rayleigh + mie + ozone);
+          var segmentT : vec3f = exp(-extinction * ds);
+          var sunT : vec3f = cloudSolarAirTransmittance(position);
+          var sunUp : f32 = dot(normalize(position), U.uSunDir.xyz);
+          var twilight : f32 = cloudSmooth(-0.21, 0.095, sunUp + altitudeM * 0.000002);
+          var sourceAir : vec3f = sunT * (rayleigh * rayPhase + 0.88 * mie * miePhase);
+          sourceAir += (rayleigh + 0.48 * mie) * twilight * vec3f(0.019, 0.025, 0.034);
+          airRadiance += airTrans * airSolar * sourceAir * (1.0 - segmentT) / extinction;
+          airTrans *= segmentT;
         }
       }
+      radiance = airTrans * radiance + opacity * airRadiance;
     }
   }
-  return out;
-}
+  return vec4f(radiance, clamp(transmittance, 0.0, 1.0));
 
-fn evalStarlightAmbient(N : vec3f) -> vec3f {
-  if (U.uStarCfg0.x < 0.5) { return vec3f(0.0); }
-  let magGain = clamp(U.uStarCfg0.z / 5.5, 0.35, 1.85);
-  let starFade = clamp(1.0 - (U.uSunDir.z + 0.04) * 5.0, 0.12, 1.0);
-  let hemi = 0.35 + 0.65 * clamp(N.z * 0.5 + 0.5, 0.0, 1.0);
-  return vec3f(0.00048, 0.00062, 0.00105) * max(0.0, U.uStarCfg0.y) * magGain * starFade * hemi;
 }
-
-fn evalMoonIrradiance() -> vec3f {
-  if (U.uMoonCfg1.w < 0.5 || U.uMoonCfg0.z <= 0.01) { return vec3f(0.0); }
-  let mPhaseGain = 0.25 + 0.75 * sin(clamp(U.uMoonCfg1.x, 0.0, 1.0) * PI);
-  let mFade = clamp(1.0 - (U.uSunDir.z + 0.05) * 4.5, 0.08, 1.0);
-  return U.uMoonTint.xyz * max(0.0, U.uMoonCfg1.y) * 0.085 * mPhaseGain * mFade;
-}
-
 fn evalSkyDome(dir : vec3f) -> vec3f {
   if (U.uSolarCfgC.y < 0.5) {
     let up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);
@@ -3449,7 +3859,7 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   let ForceTransBuf = null;
   let ForceTransCap = 0;
 
-  const SceneUniformScratch = new ArrayBuffer(704);
+  const SceneUniformScratch = new ArrayBuffer(768);
   const SceneUniformF32 = new Float32Array(SceneUniformScratch);
   const SceneUniformI32 = new Int32Array(SceneUniformScratch);
   const OutlineUniformI32 = new Int32Array(4);
@@ -3835,18 +4245,21 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
         SceneUniformF32[95] = MoonSnap.ready ? 1.0 : 0.0;
 
         // uCloudCfg0 (96..99), uCloudCfg1 (100..103), uCloudCfg2 (104..107)
+        // CloudDeck (VolumetricCloudSequence parity) — formation preset + authored row overrides
+        const CloudDeckW = ActiveScene.CloudDeck || ResolveCloudDeck(Cl);
+        const CloudWindRadW = (CloudDeckW.WindBearingDegrees * Math.PI) / 180;
         SceneUniformF32[96] = Cl.enabled ? 1.0 : 0.0;
-        SceneUniformF32[97] = Cl.coverage ?? 0.42;
-        SceneUniformF32[98] = Cl.density ?? 2.2;
-        SceneUniformF32[99] = Cl.featureScale ?? 0.4;
-        SceneUniformF32[100] = Cl.baseM ?? 1400.0;
-        SceneUniformF32[101] = Cl.thicknessM ?? 1100.0;
-        SceneUniformF32[102] = Cl.anvil ?? 0.5;
-        SceneUniformF32[103] = Cl.anisotropy ?? 0.48;
-        SceneUniformF32[104] = Cl.type ?? 0;
-        SceneUniformF32[105] = Cl.shadowEnabled !== false ? 1.0 : 0.0;
-        SceneUniformF32[106] = Cl.windX ?? 6.0;
-        SceneUniformF32[107] = Cl.windY ?? 2.0;
+        SceneUniformF32[97] = CloudDeckW.CloudFraction;
+        SceneUniformF32[98] = CloudDeckW.ExtinctionMultiplier;
+        SceneUniformF32[99] = CloudDeckW.FeatureScaleMultiplier;
+        SceneUniformF32[100] = CloudDeckW.CloudFloorMeters;
+        SceneUniformF32[101] = CloudDeckW.LayerThicknessMeters;
+        SceneUniformF32[102] = CloudDeckW.AnvilTopSpread;
+        SceneUniformF32[103] = CloudDeckW.ForwardScatterAnisotropy;
+        SceneUniformF32[104] = CloudDeckW.Category;
+        SceneUniformF32[105] = CloudDeckW.ShadowEnabled ? 1.0 : 0.0;
+        SceneUniformF32[106] = CloudDeckW.FollowWindEnabled ? Math.cos(CloudWindRadW) * CloudDeckW.WindSpeedMetersPerSecond : 0.0;
+        SceneUniformF32[107] = CloudDeckW.FollowWindEnabled ? -Math.sin(CloudWindRadW) * CloudDeckW.WindSpeedMetersPerSecond : 0.0;
 
         // uMoonCfg0 (108..111), uMoonCfg1 (112..115), uMoonTint (116..119)
         const MDir = Mn.dir || [-0.5, 0.4, 0.45];
@@ -3931,6 +4344,29 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
         SceneUniformF32[173] = SolarTransU[1];
         SceneUniformF32[174] = SolarTransU[2];
         SceneUniformF32[175] = 0.0;
+
+        // VolumetricCloudSequence deck: uCloudCfg3..6 (176..191). Field-for-field the WebGL2 viewport upload.
+        const CloudDeckU = CloudDeckW;
+        const OverheadProbe = SampleSkyViewDirection(0.0, 0.0, 1.0);
+        const OverheadSkyU = (ActiveScene.IsOrbitalView)
+          ? [Math.max(0.001, OverheadProbe[0]), Math.max(0.001, OverheadProbe[1]), Math.max(0.002, OverheadProbe[2])]
+          : [Math.max(0.015, OverheadProbe[0]), Math.max(0.02, OverheadProbe[1]), Math.max(0.032, OverheadProbe[2])];
+        SceneUniformF32[176] = CloudDeckU.WindShearPerKilometer;
+        SceneUniformF32[177] = (CloudDeckU.WindVeerDegreesPerKm * Math.PI) / 180;
+        SceneUniformF32[178] = CloudDeckU.WindTurbulence;
+        SceneUniformF32[179] = ActiveScene.SimulationSeconds ?? 0.0;
+        SceneUniformF32[180] = MediumU.PlanetRadiusMeters;
+        SceneUniformF32[181] = 0.04;
+        SceneUniformF32[182] = 0.002;
+        SceneUniformF32[183] = Math.min(28, Math.max(18, CloudDeckU.CloudMarchSteps));
+        SceneUniformF32[184] = OverheadSkyU[0];
+        SceneUniformF32[185] = OverheadSkyU[1];
+        SceneUniformF32[186] = OverheadSkyU[2];
+        SceneUniformF32[187] = MediumU.RayleighStrength;
+        SceneUniformF32[188] = MediumU.RayleighScaleHeightMeters;
+        SceneUniformF32[189] = MediumU.MieScaleHeightMeters;
+        SceneUniformF32[190] = MediumU.OzoneStrength;
+        SceneUniformF32[191] = MediumU.MieStrength;
 
         Device.queue.writeBuffer(SceneUniformBuf, 0, SceneUniformScratch);
 

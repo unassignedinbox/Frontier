@@ -13,6 +13,7 @@ import {
   TILES_PER_PRIM,
 } from "./MaterialAtlasCompiler.js";
 import { BuildVehicleTlasAndInstances } from "./VehicleBvhAssets.js";
+import { BuildCloudKernelPrelude, CloudLibrary } from "./CloudSequence.js";
 import {
   BuildSkyViewLut,
   GetSkyViewCacheKey,
@@ -30,6 +31,7 @@ export function CreateGtxBandKernel(
   TilesPerPrim,
   SkyLutW = 96,
   SkyLutH = 48,
+  CloudLib = null,
 ) {
   const PI = Math.PI;
 
@@ -151,6 +153,7 @@ export function CreateGtxBandKernel(
       this.PixelAngularSizeRad = 0.0007;
       this.SkyLimbAngle = 0.0;
       this._ActiveSkyLut = null;
+      this.CloudLib = CloudLib;
       this._TlasStack = new Int32Array(48);
       this._BlasStack = new Int32Array(48);
       this._Hit = {
@@ -1541,57 +1544,27 @@ export function CreateGtxBandKernel(
         }
       }
 
-      // Volumetric 3D Clouds
+      // Volumetric 3D Clouds — VolumetricCloudSequence::EvaluateVolumetricClouds (ported single source)
       const Cl = CompiledScene.Clouds;
-      if (Cl?.enabled && Rdz > 0.006 && (Cl.coverage ?? 0) > 0.01 && (Cl.density ?? 0) > 0.01) {
-        const EarthR = 6360000.0, OrigZ = EarthR + 100.0;
-        const BaseM = Math.max(200, Cl.baseM ?? 1400), ThickM = Math.max(150, Cl.thicknessM ?? 1100);
-        const Sh = (Rad) => {
-          const B0 = OrigZ * Rdz, C0 = OrigZ * OrigZ - Rad * Rad, D0 = B0 * B0 - C0;
-          return D0 < 0 ? -1 : -B0 + Math.sqrt(D0);
-        };
-        const T0 = Sh(EarthR + BaseM), T1 = Math.min(Sh(EarthR + BaseM + ThickM), 45000);
-        if (T0 >= 0 && T1 > T0) {
-          const Steps = 10, Dt = (T1 - T0) / Steps;
-          const Cov = Clamp(Cl.coverage ?? 0.42, 0, 1);
-          const DensMul = Math.max(0, Cl.density ?? 2.2) * 0.008;
-          const FScale = 0.00065 / Math.max(0.08, Cl.featureScale ?? 0.4);
-          const Anvil = Clamp(Cl.anvil ?? 0.5, 0, 1);
-          const Gp = Clamp(Cl.anisotropy ?? 0.48, -0.5, 0.9), G2 = Gp * Gp;
-          const CosT = Rdx * SunDir[0] + Rdy * SunDir[1] + Rdz * SunDir[2];
-          const Phase = 0.78 * ((1 - G2) / (4 * PI * Math.pow(Math.max(1e-3, 1 + G2 - 2 * Gp * CosT), 1.5)))
-            + 0.22 * ((1 - 0.0625) / (4 * PI * Math.pow(Math.max(1e-3, 1 + 0.0625 + 0.5 * CosT), 1.5)));
-          const Wx = (Cl.windX ?? 6) * TimeSec, Wy = (Cl.windY ?? 2) * TimeSec;
-          const Jitter = Fract(Math.sin(Px * 12.9898 + Py * 78.233 + TimeSec * 7.1) * 43758.5453);
-          const SStep = (ThickM * 0.55) / 2.0;
-          let Trans = 1.0, Ar = 0, Ag = 0, Ab = 0;
-          for (let I = 0; I < Steps; ++I) {
-            const T = T0 + (I + 0.15 + 0.7 * Jitter) * Dt;
-            const Cx = Rdx * T, Cy = Rdy * T, Cz = OrigZ + Rdz * T;
-            const D = this._CloudDens(Cx, Cy, Cz, BaseM, ThickM, Cov, DensMul, FScale, Anvil, Cl.type | 0, Wx, Wy);
-            if (D > 1e-6) {
-              let Tau = 0;
-              if (Cl.shadowEnabled !== false) {
-                for (let S = 1; S <= 2; ++S) {
-                  Tau += this._CloudDens(Cx + SunDir[0] * S * SStep, Cy + SunDir[1] * S * SStep, Cz + SunDir[2] * S * SStep, BaseM, ThickM, Cov, DensMul, FScale, Anvil, Cl.type | 0, Wx, Wy) * SStep;
-                }
-              }
-              const SunAtt = Math.exp(-Tau * 1.15) * (0.35 + 0.65 * (1 - Math.exp(-Tau * 2.2 + 0.25)));
-              const SegT = Math.exp(-D * Dt);
-              const H = Clamp((Math.sqrt(Cx * Cx + Cy * Cy + Cz * Cz) - EarthR - BaseM) / ThickM, 0, 1);
-              const Amb = 0.28 + 0.52 * H;
-              Ar += Trans * (SunIrradiance[0] * SunAtt * Phase * 2.4 + OutRgb[0] * Amb * 0.55) * (1 - SegT);
-              Ag += Trans * (SunIrradiance[1] * SunAtt * Phase * 2.4 + OutRgb[1] * Amb * 0.55) * (1 - SegT);
-              Ab += Trans * (SunIrradiance[2] * SunAtt * Phase * 2.4 + OutRgb[2] * Amb * 0.55) * (1 - SegT);
-              Trans *= SegT;
-              if (Trans < 0.02) break;
-            }
-          }
-          const Haze = 1 - Math.exp(-T0 * 0.00004);
-          R = R * Trans + Mix(Ar, OutRgb[0] * (1 - Trans), Haze);
-          G = G * Trans + Mix(Ag, OutRgb[1] * (1 - Trans), Haze);
-          B = B * Trans + Mix(Ab, OutRgb[2] * (1 - Trans), Haze);
-        }
+      const Lib = this.CloudLib;
+      if (Lib && Cl?.enabled && Rdz > 0.006 && (Cl.coverage ?? 0) > 0.01 && (Cl.density ?? 0) > 0.01) {
+        const Deck = CompiledScene.CloudDeck || Lib.ResolveCloudDeck(Cl);
+        const SkyAmbient = [OutRgb[0], OutRgb[1], OutRgb[2]];
+        const CloudOut = Lib.EvaluateVolumetricClouds(
+          [0, 0, 0],
+          [Rdx, Rdy, Rdz],
+          Deck,
+          CompiledScene.Medium || CompiledScene.Atmosphere || null,
+          SunDir,
+          SunIrradiance,
+          SkyAmbient,
+          CompiledScene.SimulationSeconds ?? TimeSec ?? 0,
+          Px,
+          Py,
+        );
+        R = R * CloudOut.Transmittance + CloudOut.Radiance[0];
+        G = G * CloudOut.Transmittance + CloudOut.Radiance[1];
+        B = B * CloudOut.Transmittance + CloudOut.Radiance[2];
       }
       OutRgb[0] = R; OutRgb[1] = G; OutRgb[2] = B;
     }
@@ -2466,6 +2439,7 @@ const LocalKernel = CreateGtxBandKernel(
   TILES_PER_PRIM,
   SKY_VIEW_WIDTH,
   SKY_VIEW_HEIGHT,
+  CloudLibrary,
 );
 
 //==========================================================================================================================================
@@ -2646,7 +2620,8 @@ export class CpuGtxRenderer {
       const WorkerCount = Math.min(10, Math.max(4, Hw));
       const Source = [
         `"use strict";`,
-        `const Kernel = (${CreateGtxBandKernel.toString()})(${ATLAS_WIDTH}, ${ATLAS_COLS}, ${ATLAS_TILE_SIZE}, ${TILES_PER_PRIM}, ${SKY_VIEW_WIDTH}, ${SKY_VIEW_HEIGHT});`,
+        BuildCloudKernelPrelude(),
+        `const Kernel = (${CreateGtxBandKernel.toString()})(${ATLAS_WIDTH}, ${ATLAS_COLS}, ${ATLAS_TILE_SIZE}, ${TILES_PER_PRIM}, ${SKY_VIEW_WIDTH}, ${SKY_VIEW_HEIGHT}, CloudLib);`,
         `const Engine = new Kernel.GtxBandEngine();`,
         `let CachedAtlas = null;`,
         `let CachedMoonAtlas = null;`,

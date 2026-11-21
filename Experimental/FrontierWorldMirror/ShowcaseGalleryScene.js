@@ -5,6 +5,7 @@
 // Defines the canonical Architectural Cornell-Studio Gallery scene, EditorCamera, OpenPBR materials, and live Outliner/Inspector compiler.
 
 import { ResolveMaterial } from "./MaterialSpecification.js";
+import { ResolveCloudDeck } from "./CloudSequence.js";
 import {
   BuildDefaultDiagnosticForceRig,
   BuildForceOverlayGeometry,
@@ -997,7 +998,7 @@ export function CompileLiveGtxScene(
   const FollowWind = CloudRec["Follow Wind"] !== false;
   const Clouds = {
     enabled: CloudVisible && CloudRec.Enabled !== false,
-    type: Math.max(0, Math.min(3, Math.round(Num(CloudRec.Type, 0)))),
+    type: Math.max(0, Math.min(11, Math.round(Num(CloudRec.Type, 0)))),
     coverage: Math.max(0, Math.min(1, Num(CloudRec.Coverage, 0.42))),
     density: Math.max(0, Num(CloudRec.Density, 2.2)),
     featureScale: Math.max(0.05, Num(CloudRec["Feature Scale"], 0.4)),
@@ -1008,6 +1009,14 @@ export function CompileLiveGtxScene(
     shadowEnabled: CloudRec["Shadow Enabled"] !== false,
     windX: FollowWind ? Math.sin(WindBearingRad) * WindSpeed : 0,
     windY: FollowWind ? Math.cos(WindBearingRad) * WindSpeed : 0,
+    ceilingM: Math.max(4000, Num(CloudRec.Ceiling, 16000)),
+    windSpeed: WindSpeed,
+    windBearing: CloudRec["Wind Bearing"] ?? 250,
+    windShear: Num(CloudRec["Wind Shear"], 0.35),
+    windVeer: Num(CloudRec["Wind Veer"], 12),
+    turbulence: Num(CloudRec.Turbulence, 0.3),
+    marchSteps: Num(CloudRec.Steps, 36),
+    followWind: FollowWind,
   };
 
   const MoonRow = Rows.find((Row) => Row.Panel === "moon");
@@ -1388,6 +1397,8 @@ export function CompileLiveGtxScene(
     IsOrbitalView,
     Atmosphere,
     Clouds,
+    CloudDeck: ResolveCloudDeck(Clouds),
+    SimulationSeconds: Num(CloudRec.Time, 0),
     Moon,
     Stars,
     HasAnimatedSky: Boolean(SunRec.Animate || Clouds.enabled || (Stars.enabled && Stars.twinkle)),

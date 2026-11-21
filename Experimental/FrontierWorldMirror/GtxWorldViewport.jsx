@@ -41,6 +41,7 @@ import {
   SKY_VIEW_WIDTH,
   SkyViewState,
 } from "./AtmosphereSky.js";
+import { ResolveCloudDeck } from "./CloudSequence.js";
 import {
   GetMoonAtlasSnapshot,
   LoadMoonAtlas,
@@ -78,6 +79,7 @@ import {
   ApplyUnrealPan,
   BuildUnrealCameraBasis,
   DeriveUnrealCameraState,
+  ApplyUnrealSpeedScalar,
   StepUnrealWasdCamera,
 } from "./UnrealViewportCamera.js";
 import {
@@ -177,9 +179,13 @@ uniform vec3  uSolarTransmittance; // ComputeSolarTransmittance toward the Sun
 uniform sampler2D uMoonAtlasTex;
 uniform vec4  uAtmoCfg0;
 uniform vec4  uAtmoCfg1;
-uniform vec4  uCloudCfg0;
-uniform vec4  uCloudCfg1;
-uniform vec4  uCloudCfg2;
+uniform vec4  uCloudCfg0;   // x=SegEnabled y=Coverage z=Extinction(σ scale) w=FeatureScale
+uniform vec4  uCloudCfg1;   // x=FloorM y=ThicknessM z=Anvil w=PhaseG
+uniform vec4  uCloudCfg2;   // x=Formation y=UseCloudShadows z=WindVX w=WindVY
+uniform vec4  uCloudCfg3;   // x=ShearPerKm y=VeerRadPerKm z=Turbulence w=TimeSeconds
+uniform vec4  uCloudCfg4;   // x=PlanetRadiusM y=Seed z=PixelAngle w=MarchSteps
+uniform vec4  uCloudCfg5;   // xyz=SkyAmbient rgb w=RayleighStrength
+uniform vec4  uCloudCfg6;   // x=RayleighScaleH y=MieScaleH z=OzoneStrength w=MieStrength
 uniform vec4  uMoonCfg0;
 uniform vec4  uMoonCfg1;
 uniform vec4  uMoonTint;
@@ -1334,110 +1340,549 @@ float noise3D(vec3 p) {
   );
 }
 
-float cloudFbm(vec3 p) {
-  float sum = 0.0;
-  float amp = 0.52;
-  vec3 q = p;
-  for (int i = 0; i < 4; ++i) {
-    sum += amp * noise3D(q);
-    q = q * 2.07 + vec3(13.1, 7.7, 5.3);
-    amp *= 0.48;
-  }
-  return sum;
+//==============================================================================================================================
+// VolumetricCloudSequence (native single source: CloudNoise / CloudDensity / CloudTransport / CloudAerialPerspective)
+// One documented deviation: the baked 128^3 Perlin-Worley condensate volume is replaced by the same lattice hash sampled
+// as a footprint-filtered multi-octave field.
+//==============================================================================================================================
+
+uint cloudPermute(uint word) {
+  word = (word ^ (word >> 16u)) * 0x7feb352du;
+  word = (word ^ (word >> 15u)) * 0x846ca68bu;
+  return word ^ (word >> 16u);
 }
 
-float intersectEarthShell(float origZ, float dirZ, float radius) {
-  float b = origZ * dirZ;
-  float c = origZ * origZ - radius * radius;
-  float disc = b * b - c;
-  if (disc < 0.0) return -1.0;
-  return -b + sqrt(disc);
+uint cloudHash3(int x, int y, int z) {
+  uint h = uint(x) * 0x8da6b343u ^ uint(y) * 0xd8163841u ^ uint(z) * 0xcb1ab31Fu;
+  return cloudPermute(h);
 }
 
-float sampleCloudDensity(vec3 pos, float baseM, float thickM, float cov, float densMul, float fScale, float anvil, int cType, vec2 wind) {
-  float earthR = 6360000.0;
-  float alt = length(pos) - earthR;
-  float h = clamp((alt - baseM) / thickM, 0.0, 1.0);
-  float bot = smoothstep(0.0, 0.16, h);
-  float top = smoothstep(1.0, 0.72 + 0.18 * anvil, h);
-  if (cType == 1) {
-    bot = smoothstep(0.0, 0.25, h);
-    top = smoothstep(1.0, 0.55, h);
-  } else if (cType == 2) {
-    bot = smoothstep(0.15, 0.45, h);
-    top = smoothstep(0.95, 0.55, h);
+float cloudQuintic(float f) {
+  return f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+}
+
+float cloudCorner(int x, int y, int z) {
+  return float(cloudHash3(x, y, z) & 0xffffffu) / 16777216.0;
+}
+
+float cloudLatticeNoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = p - i;
+  float ux = cloudQuintic(f.x), uy = cloudQuintic(f.y), uz = cloudQuintic(f.z);
+  int ix = int(i.x), iy = int(i.y), iz = int(i.z);
+  float c000 = cloudCorner(ix, iy, iz);
+  float c100 = cloudCorner(ix + 1, iy, iz);
+  float c010 = cloudCorner(ix, iy + 1, iz);
+  float c110 = cloudCorner(ix + 1, iy + 1, iz);
+  float c001 = cloudCorner(ix, iy, iz + 1);
+  float c101 = cloudCorner(ix + 1, iy, iz + 1);
+  float c011 = cloudCorner(ix, iy + 1, iz + 1);
+  float c111 = cloudCorner(ix + 1, iy + 1, iz + 1);
+  return mix(mix(mix(c000, c100, ux), mix(c010, c110, ux), uy),
+             mix(mix(c001, c101, ux), mix(c011, c111, ux), uy), uz);
+}
+
+vec3 rotateCloudOctave(vec3 p) {
+  return vec3(p.y * 0.80 + p.z * 0.60,
+              p.x * -0.80 + p.y * 0.36 + p.z * 0.48,
+              p.x * -0.60 + p.y * -0.48 + p.z * 0.64);
+}
+
+float cloudSmooth(float e0, float e1, float x) {
+  return smoothstep(e0, e1, x);
+}
+
+float hgCloud(float mu, float g) {
+  float g2 = g * g;
+  float den = max(1.0e-4, 1.0 + g2 - 2.0 * g * mu);
+  return (1.0 - g2) / (4.0 * 3.14159265 * den * sqrt(den));
+}
+
+vec2 cloudSphere(vec3 origin, vec3 dir, float radiusM) {
+  float radial = length(origin);
+  float projection = dot(origin, dir);
+  float quadratic = (radial - radiusM) * (radial + radiusM);
+  float disc = projection * projection - quadratic;
+  if (disc < 0.0) return vec2(1.0, -1.0);
+  float root = sqrt(disc);
+  float stable = -projection - (projection < 0.0 ? -1.0 : 1.0) * root;
+  float companion = (abs(stable) > 1.0e-6) ? quadratic / stable : stable;
+  return vec2(min(stable, companion), max(stable, companion));
+}
+
+float cloudGroundDistance(vec3 origin, vec3 dir) {
+  vec2 ground = cloudSphere(origin, dir, uCloudCfg4.x);
+  if (ground.x > ground.y || ground.y <= 0.0) return 1.0e9;
+  if (ground.x > 0.0) return ground.x;
+  return (dot(origin, dir) < 0.0) ? 0.0 : 1.0e9;
+}
+
+vec4 cloudLayerSpans(vec3 origin, vec3 dir) {
+  float planetR = uCloudCfg4.x;
+  float bottomM = max(100.0, uCloudCfg1.x);
+  float topM = bottomM + max(100.0, uCloudCfg1.y);
+  vec2 outer = cloudSphere(origin, dir, planetR + topM);
+  float outerX = max(0.0, outer.x);
+  float outerY = min(cloudGroundDistance(origin, dir), outer.y);
+  if (outerY <= outerX) return vec4(0.0);
+  vec2 inner = cloudSphere(origin, dir, planetR + bottomM);
+  if (inner.y <= outerX || inner.x >= outerY || inner.x >= inner.y) return vec4(outerX, outerY, 0.0, 0.0);
+  return vec4(outerX, min(outerY, inner.x), max(outerX, inner.y), outerY);
+}
+
+vec2 cloudShapeField(vec3 c, float footprintM, float periodM) {
+  float filt = clamp(footprintM / max(1.0, periodM), 0.0, 1.0);
+  float fade = 1.0 - cloudSmooth(0.08, 0.55, filt);
+  float fade2 = 1.0 - cloudSmooth(0.16, 0.90, filt);
+  float a = cloudLatticeNoise(c);
+  vec3 r1 = rotateCloudOctave(c) * 2.03;
+  float b = cloudLatticeNoise(r1 + vec3(11.3, -7.1, 5.7));
+  vec3 r2 = rotateCloudOctave(c * 4.11);
+  float cc = cloudLatticeNoise(r2 + vec3(31.7, -17.3, 23.9));
+  float macro = clamp((0.58 * a + 0.29 * mix(0.5, b, fade) + 0.13 * mix(0.5, cc, fade2) - 0.30) / 0.44, 0.0, 1.0);
+  float meso = clamp((0.34 * a + 0.44 * mix(0.5, b, fade) + 0.22 * mix(0.5, cc, fade2) - 0.30) / 0.44, 0.0, 1.0);
+  float billow = clamp((0.46 * mix(0.5, b, fade) + 0.30 * mix(0.5, cc, fade2) + 0.24 * a - 0.30) / 0.44, 0.0, 1.0);
+  return vec2(macro, billow);
+}
+
+vec3 cloudAdvect(vec3 pos) {
+  float radius = length(pos);
+  float altM = radius - uCloudCfg4.x;
+  float heightKm = max(0.0, altM - max(100.0, uCloudCfg1.x)) * 0.001;
+  float turn = heightKm * uCloudCfg3.y;
+  vec2 cs = vec2(sin(turn), cos(turn));
+  vec2 wind = vec2(uCloudCfg2.z * cs.y - uCloudCfg2.w * cs.x, uCloudCfg2.z * cs.x + uCloudCfg2.w * cs.y);
+  float speed = length(wind);
+  if (speed <= 1.0e-5 || uCloudCfg3.w <= 0.0) return pos;
+  vec3 axis = vec3(-wind.y, wind.x, 0.0) / speed;
+  float angle = -speed * uCloudCfg3.w * (1.0 + uCloudCfg3.x * heightKm) / uCloudCfg4.x;
+  float s = sin(angle), c = cos(angle);
+  vec3 rotated = pos * c + cross(axis, pos) * s + axis * dot(axis, pos) * (1.0 - c);
+  return rotated * (radius / max(1.0e-6, length(rotated)));
+}
+
+vec2 cloudWeather(vec3 advectedNormal) {
+  vec3 broadCoord = rotateCloudOctave(advectedNormal * 13.0) + uCloudCfg4.y * vec3(0.73, -0.46, 1.17);
+  float broad = cloudLatticeNoise(broadCoord + vec3(12.8, -7.9, 42.1));
+  vec3 mesoCoord = rotateCloudOctave(advectedNormal * 470.0) + vec3(17.4, uCloudCfg4.y, 36.1);
+  float meso = cloudLatticeNoise(mesoCoord);
+  float moisture = clamp(0.48 + 0.57 * (broad - 0.5) + 0.43 * (meso - 0.5), 0.0, 1.0);
+  return vec2(moisture, meso);
+}
+
+float cloudCellEnvelope(vec2 planePos, float height, float coverage, float seed, float scaleM) {
+  vec2 coord = planePos / scaleM;
+  vec2 cell = floor(coord);
+  int seedCell = int(floor(seed * 53.0));
+  float envelope = -1.0;
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      ivec2 address = ivec2(cell) + ivec2(x, y);
+      uint word = cloudHash3(address.x, address.y, seedCell);
+      vec4 random = vec4(float(word & 255u), float((word >> 8u) & 255u),
+                         float((word >> 16u) & 255u), float((word >> 24u) & 255u)) / 255.0;
+      vec2 center = vec2(address) + 0.5 + 0.76 * (random.xy - 0.5);
+      float occurrence = cloudSmooth(0.18, 0.65, coverage + 0.30 * (random.z - 0.5));
+      float radius = (0.19 + 0.27 * random.w) * mix(0.65, 1.15, occurrence);
+      float towerHeight = 0.30 + 0.58 * random.z;
+      vec2 tilt = (random.yw - 0.5) * (0.38 * height * height);
+      vec2 offset = (coord - center - tilt) / radius;
+      float offsetSquared = dot(offset, offset);
+      if (offsetSquared > 3.2) continue;
+      float vertical = (height - 0.36 * towerHeight) / max(0.1, towerHeight * 0.64);
+      float main = 1.0 - sqrt(offsetSquared + vertical * vertical);
+      vec2 budOffset = offset - (random.yz - 0.5) * 0.95;
+      float budHeight = (height - towerHeight * 0.70) / max(0.08, towerHeight * 0.35);
+      float bud = 0.90 - sqrt(dot(budOffset, budOffset) * 1.65 + budHeight * budHeight);
+      envelope = max(envelope, max(main, bud) - (1.0 - occurrence) * 0.75);
+    }
   }
-  float profile = bot * top;
-  if (profile <= 0.001) return 0.0;
-  float shapeCov = clamp(cov + anvil * h * h * 0.25, 0.0, 1.0);
-  float stretch = (cType == 2) ? 2.2 : 1.0;
-  vec3 wp = vec3((pos.x + wind.x) * fScale * stretch, (pos.y + wind.y) * fScale * stretch, (alt - baseM) * fScale * 1.45);
-  float n = cloudFbm(wp);
-  float nNorm = clamp((n - 0.28) / 0.44, 0.0, 1.0);
-  float thr = 1.0 - shapeCov;
-  return max(0.0, (nNorm - thr) / max(0.18, shapeCov)) * profile * densMul;
+  return envelope;
+}
+
+float cloudConvectiveEnvelope(vec3 advected, float altitudeM, float height, float amount, float scaleM) {
+  vec3 normal = normalize(advected);
+  vec3 seaLevel = advected - normal * altitudeM;
+  vec3 weightRaw = smoothstep(vec3(0.40), vec3(0.82), abs(normal));
+  vec3 weight = weightRaw * weightRaw;
+  float weightSum = max(0.001, weight.x + weight.y + weight.z);
+  float envelope = 0.0;
+  for (int axis = 0; axis < 3; ++axis) {
+    float w = (axis == 0) ? weight.z : ((axis == 1) ? weight.x : weight.y);
+    if (w <= 0.001) continue;
+    vec2 planePos = (axis == 0) ? seaLevel.xy : ((axis == 1) ? seaLevel.yz : seaLevel.xz);
+    float axisSeed = uCloudCfg4.y + ((axis == 0) ? 0.0 : ((axis == 1) ? 23.0 : 59.0));
+    envelope += w * cloudCellEnvelope(planePos, height, amount, axisSeed, scaleM);
+  }
+  return envelope / weightSum;
+}
+
+void cloudLayer(out float bottomM, out float topM, out float amount, out float sigma, out int category) {
+  bottomM = max(100.0, uCloudCfg1.x);
+  topM = bottomM + max(100.0, uCloudCfg1.y);
+  amount = clamp(uCloudCfg0.y, 0.0, 1.0);
+  sigma = 0.0042 * max(0.0, uCloudCfg0.z);
+  category = 0;
+  int formation = int(round(uCloudCfg2.x));
+  if (formation == 5 || formation == 10) {
+    category = 2;
+    sigma = (formation == 10 ? 0.0012 : 0.00055) * max(0.0, uCloudCfg0.z);
+  } else if (formation == 0 || formation == 4 || formation == 6 || formation == 8 || formation == 9) {
+    category = 1;
+    sigma = (formation == 4 ? 0.0018 : 0.0032) * max(0.0, uCloudCfg0.z);
+  } else if (formation == 1) {
+    sigma = 0.0036 * max(0.0, uCloudCfg0.z);
+  } else {
+    sigma = 0.0045 * max(0.0, uCloudCfg0.z);
+  }
+}
+
+float sampleCloudDensityAdvected(vec3 position, vec3 advected, float layerBottomM, float layerTopM,
+                                 float layerAmount, float layerSigma, float moisture, float footprintM, bool lightQuery) {
+  float radius = length(position);
+  float altitudeM = radius - uCloudCfg4.x;
+  float height = (altitudeM - layerBottomM) / max(1.0, layerTopM - layerBottomM);
+  if (height <= 0.0 || height >= 1.0 || layerAmount <= 0.0) return 0.0;
+
+  vec3 coordinate = rotateCloudOctave(advected - vec3(0.0, 0.0, uCloudCfg4.x)) + uCloudCfg4.y * vec3(731.0, -1261.0, 3179.0);
+  float scaleM = max(900.0, 7200.0 * max(0.15, uCloudCfg0.w));
+  vec3 shapeCoordinate = coordinate / scaleM + vec3(0.143, 0.713, 0.337);
+  int formation = int(round(uCloudCfg2.x));
+  float amount = clamp(layerAmount + 0.38 * (moisture - 0.5), 0.0, 1.0);
+
+  float convEnvelope = 0.0;
+  int isConvective = ((formation == 1 || formation == 2 || formation == 3 || formation == 7 || formation == 11)) ? 1 : 0;
+  if (isConvective == 1) {
+    float cellScaleM = scaleM * ((formation == 1 || formation == 11) ? 0.5525 : 0.85);
+    convEnvelope = cloudConvectiveEnvelope(advected, altitudeM, height, amount, cellScaleM);
+    if (convEnvelope < -0.92 && formation != 3 && formation != 11) return 0.0;
+  }
+
+  vec2 shape = vec2(0.47);
+  float detail = 0.48;
+  if (!lightQuery && (formation == 8 || formation == 12)) {
+    float warpS = (formation == 8) ? 2.2 : 3.7;
+    float warpA = (formation == 8) ? 1.4 : 1.15;
+    shapeCoordinate += warpA * (cloudLatticeNoise(coordinate / (scaleM * warpS)) - 0.5);
+  }
+  shape = cloudShapeField(shapeCoordinate, footprintM, scaleM);
+  if (!lightQuery) {
+    float fineFilter = 1.0 - cloudSmooth(scaleM * 0.015, scaleM * 0.11, footprintM);
+    if (fineFilter > 0.01) {
+      detail = mix(0.48, cloudShapeField(rotateCloudOctave(shapeCoordinate) * 3.17 + 0.337, footprintM, scaleM / 3.17).y, fineFilter);
+    }
+  }
+
+  float raw = 0.0;
+  float heightEnvelope = cloudSmooth(0.0, 0.045, height) * (1.0 - cloudSmooth(0.93, 1.0, height));
+
+  if (formation == 5 || formation == 10) {
+    vec3 fiber = rotateCloudOctave(coordinate) * vec3(0.000075, 0.0028, 0.00065) / max(0.3, uCloudCfg0.w);
+    float bend = cloudLatticeNoise(coordinate * 0.00014 + 41.3);
+    float bank = cloudLatticeNoise(coordinate * vec3(0.000045, 0.000070, 0.00013) + 59.1);
+    fiber.y += 4.8 * bend + 2.7 * height * height;
+    fiber.x += 0.60 * height * height;
+    float strand = 0.65 * cloudLatticeNoise(fiber + 3.7) + 0.35 * cloudLatticeNoise(fiber * 2.13 + 16.9);
+    if (!lightQuery) {
+      fiber.z += 1.3 * cloudLatticeNoise(coordinate * 0.00023 - 23.0);
+      float filt = footprintM * 0.0028 / max(0.3, uCloudCfg0.w);
+      strand = 0.64 * mix(0.5, cloudLatticeNoise(fiber + 3.7), 1.0 - cloudSmooth(0.6, 1.5, filt))
+             + 0.36 * mix(0.5, cloudLatticeNoise(fiber * 2.13 + 16.9), 1.0 - cloudSmooth(0.6, 1.5, filt * 2.13));
+    }
+    float bankEnvelope = cloudSmooth(0.30, 0.67, bank + (amount - 0.6) * 0.35);
+    if (formation == 10) {
+      float silk = pow(0.5 + 0.5 * sin(fiber.y * 0.45 + 3.0 * bend), 0.78);
+      strand = 0.55 * silk + 0.45 * shape.x;
+      bankEnvelope = mix(0.45, 1.0, bankEnvelope);
+    }
+    heightEnvelope *= cloudSmooth(0.0, 0.23, height) * (1.0 - cloudSmooth(0.55, 1.0, height)) * bankEnvelope;
+    raw = strand - mix(0.70, 0.43, amount) - (1.0 - heightEnvelope) * 0.16;
+  } else if (formation == 6) {
+    float macroLobes = cloudLatticeNoise(coordinate * vec3(0.00011, 0.00024, 0.0) / max(0.25, uCloudCfg0.w) + 1.7);
+    float laminar = pow(0.5 + 0.5 * sin(height * 3.14159265 * 2.4 - 0.3 + (shape.x - 0.5) * 0.85), 1.15);
+    float lensMask = cloudSmooth(0.42, 0.72, macroLobes + (shape.x - 0.5) * 0.24);
+    heightEnvelope *= cloudSmooth(0.04, 0.24, height) * (1.0 - cloudSmooth(0.74, 0.96, height));
+    raw = lensMask * mix(0.72, laminar, 0.58) - (1.0 - amount) * 0.45 - (1.0 - heightEnvelope) * 0.28;
+  } else if (formation == 8) {
+    float tiltOffset = 320.0 * sin(height * 3.14159265) + 220.0 * height * height;
+    float wavePhase = (coordinate.x + tiltOffset) * (0.0020 / max(0.25, uCloudCfg0.w)) + (shape.x - 0.5) * 2.8;
+    float breakCurl = cloudSmooth(0.26, 0.88, 0.5 + 0.5 * sin(wavePhase + height * 3.0));
+    float macroBand = cloudSmooth(0.36, 0.72, cloudLatticeNoise(coordinate * 0.00012 + 3.1));
+    heightEnvelope *= cloudSmooth(0.08, 0.30, height) * (1.0 - cloudSmooth(0.72, 0.98, height));
+    raw = macroBand * (0.58 * breakCurl + 0.42 * shape.x) - mix(0.56, 0.24, amount) - (1.0 - heightEnvelope) * 0.26;
+  } else if (formation == 9) {
+    float waveFilter = lightQuery ? 0.0 : (1.0 - cloudSmooth(320.0, 2200.0, footprintM));
+    float k = 0.0018 / max(0.25, uCloudCfg0.w);
+    float swell = 0.5;
+    if (waveFilter > 0.01) {
+      swell += 0.125 * waveFilter * (
+        sin((coordinate.x * 0.966 + coordinate.y * 0.259) * k + (shape.x - 0.5) * 3.2) +
+        cos((coordinate.x * 0.391 + coordinate.y * 0.920) * k * 1.08 - (shape.y - 0.5) * 2.8) +
+        sin((-coordinate.x * 0.391 + coordinate.y * 0.920) * k * 1.15 + (detail - 0.5) * 2.4) +
+        cos((-coordinate.x * 0.927 + coordinate.y * 0.375) * k * 0.96 - (shape.x - 0.5) * 3.0));
+    }
+    heightEnvelope *= cloudSmooth(0.05, 0.22, height) * (1.0 - cloudSmooth(0.72, 0.96, height));
+    raw = 0.62 * shape.x + 0.38 * swell - mix(0.62, 0.26, amount) - (1.0 - heightEnvelope) * 0.28;
+  } else if (formation == 0 || formation == 4) {
+    float fold = cloudLatticeNoise(coordinate * 0.00016 + 37.1);
+    float vertical = height + (fold - 0.5) * 0.25;
+    heightEnvelope *= cloudSmooth(0.0, 0.19, vertical) * (1.0 - cloudSmooth(0.66, 1.0, vertical));
+    raw = 0.72 * shape.x + 0.28 * shape.y - mix(0.77, 0.38, amount) - (1.0 - heightEnvelope) * 0.36;
+  } else {
+    float envelope = convEnvelope;
+    if (formation == 3) {
+      float anvilDisc = cloudSmooth(0.68, 0.88, height) * (1.0 - cloudSmooth(0.92, 1.0, height));
+      envelope = max(envelope, anvilDisc * (0.45 * uCloudCfg1.z + 0.40 * (shape.x - 0.35)));
+    } else if (formation == 7 && !lightQuery) {
+      float pouchFilter = 1.0 - cloudSmooth(260.0, 1800.0, footprintM);
+      float k = 0.0017 / max(0.25, uCloudCfg0.w);
+      float px = coordinate.x + (shape.x - 0.5) * 420.0;
+      float py = coordinate.y - (shape.y - 0.5) * 420.0;
+      float pouch = pow(clamp((cos(px * k) + cos((-0.5 * px + 0.866025 * py) * k) + cos((-0.5 * px - 0.866025 * py) * k) + 1.5) / 4.5, 0.0, 1.0), 1.15) * pouchFilter;
+      envelope += pouch * (1.0 - cloudSmooth(0.18, 0.62, height)) * 0.42;
+    } else if (formation == 11) {
+      float towerCap = cloudSmooth(0.70, 0.96, height) * uCloudCfg1.z;
+      envelope = max(envelope * 1.12, towerCap * (0.42 + 0.45 * (shape.x - 0.40)));
+    }
+    raw = 0.90 * envelope + 1.05 * (shape.x - 0.45) + 0.37 * (shape.y - 0.45) + 0.32 * (detail - 0.5);
+    raw -= 0.06 + (1.0 - amount) * 0.10;
+  }
+
+  int coherentEdge = ((formation == 3 || formation == 11 || formation == 12)) ? 1 : 0;
+  if (raw <= (coherentEdge == 1 ? 0.0 : -0.08) || heightEnvelope <= 0.0) return 0.0;
+
+  float response = 0.048;
+  return layerSigma * cloudSmooth(0.0, response, raw) * heightEnvelope;
+}
+
+float cloudDualLobe(float mu, float asymmetry, float scale) {
+  return 0.86 * hgCloud(mu, asymmetry * scale) + 0.14 * hgCloud(mu, -0.25 * scale);
+}
+
+// CloudTransport.slang :: CloudScatteringOrderPhases
+vec3 cloudScatteringOrder(vec3 dir) {
+  float mu = dot(dir, uSunDir);
+  float g = clamp(uCloudCfg1.w, 0.35, 0.92);
+  return vec3(cloudDualLobe(mu, g, 1.0), cloudDualLobe(mu, g, 0.49), cloudDualLobe(mu, g, 0.19));
+}
+
+// CloudTransport.slang :: CloudAirColumn (upward and shadowed downward columns)
+float cloudAirColumn(float scaleHeightM, float radiusM, float altitudeM, float mu) {
+  float absMu = abs(mu);
+  float upward = 2.0 * scaleHeightM / (absMu + sqrt(absMu * absMu + 8.0 * scaleHeightM / (3.14159265 * radiusM)));
+  float rise = (radiusM + altitudeM) * mu * mu / (1.0 + sqrt(clamp(1.0 - mu * mu, 0.0, 1.0)));
+  float downward = sqrt(2.0 * 3.14159265 * (radiusM + altitudeM) * scaleHeightM) * exp(min(9.0, rise / scaleHeightM)) - upward;
+  return exp(-max(0.0, altitudeM) / scaleHeightM) * ((mu < 0.0) ? downward : upward);
+}
+
+vec3 cloudSolarAirTransmittance(vec3 position) {
+  float radiusM = length(position);
+  float altitudeM = max(0.0, radiusM - uCloudCfg4.x);
+  float mu = dot(position, uSunDir) / max(1.0e-6, radiusM);
+  float tangent = -sqrt(clamp(altitudeM * (radiusM + uCloudCfg4.x) / (radiusM * radiusM), 0.0, 1.0));
+  float visibility = cloudSmooth(-0.00465, 0.00465, mu - tangent);
+  if (visibility <= 0.0) return vec3(0.0);
+  float rayleighColumn = cloudAirColumn(max(400.0, uCloudCfg6.x), uCloudCfg4.x, altitudeM, mu);
+  float aerosolColumn = cloudAirColumn(max(200.0, uCloudCfg6.y), uCloudCfg4.x, altitudeM, mu);
+  float ozoneColumn = 15000.0 * exp(-max(0.0, altitudeM - 25000.0) / 8000.0) / max(0.15, abs(mu));
+  vec3 betaRay = vec3(5.802e-6, 13.558e-6, 33.1e-6) * max(0.0, uCloudCfg5.w);
+  vec3 betaMie = vec3(4.40e-6) * max(0.0, uCloudCfg6.w);
+  vec3 tau = betaRay * rayleighColumn + betaMie * aerosolColumn + uCloudCfg6.z * vec3(0.650e-6, 1.881e-6, 0.085e-6) * ozoneColumn;
+  return visibility * exp(-tau);
+}
+
+// CloudDensity.slang :: SamplePlanetCloudShadowDensity — the cheaper shape-only density the solar march taps.
+float sampleCloudShadowDensity(vec3 position, vec3 advected, float layerBottomM, float layerTopM,
+                               float layerAmount, float layerSigma, float moisture, float footprintM, int category) {
+  float radius = length(position);
+  float altitudeM = radius - uCloudCfg4.x;
+  float height = (altitudeM - layerBottomM) / max(1.0, layerTopM - layerBottomM);
+  if (height <= 0.0 || height >= 1.0 || layerAmount <= 0.0) return 0.0;
+  vec3 coordinate = rotateCloudOctave(advected - vec3(0.0, 0.0, uCloudCfg4.x)) + uCloudCfg4.y * vec3(731.0, -1261.0, 3179.0);
+  float scaleM = max(900.0, 7200.0 * max(0.15, uCloudCfg0.w));
+  float amount = clamp(layerAmount + 0.38 * (moisture - 0.5), 0.0, 1.0);
+  float heightEnv = cloudSmooth(0.0, 0.12, height) * (1.0 - cloudSmooth(0.75, 1.0, height));
+  vec2 shape = cloudShapeField(coordinate / scaleM + vec3(0.143, 0.713, 0.337), footprintM, scaleM);
+  float raw = 0.78 * (shape.x - 0.45) + 0.28 * (shape.y - 0.45) - (1.0 - amount) * 0.42 - (1.0 - heightEnv) * 0.25;
+  if (raw <= 0.0 || heightEnv <= 0.0) return 0.0;
+  float response = (category == 2) ? 0.14 : 0.06;
+  return layerSigma * cloudSmooth(0.0, response, raw) * heightEnv;
+}
+
+float cloudSolarOpticalDepth(vec3 position, float bottomM, float topM, float amount, float sigma, float moisture,
+                             int steps, float footprintM, int category) {
+  if (uCloudCfg2.y < 0.5) return 0.0;
+  vec4 spans = cloudLayerSpans(position, uSunDir);
+  float tau = 0.0;
+  for (int interval = 0; interval < 2; ++interval) {
+    float nearM = (interval == 0) ? spans.x : spans.z;
+    float farM = (interval == 0) ? spans.y : spans.w;
+    if (farM <= nearM) continue;
+    float lengthM = farM - nearM;
+    float startM = 0.0;
+    for (int index = 0; index < 6; ++index) {
+      if (index >= steps) break;
+      float fraction = float(index + 1) / float(steps);
+      float endM = lengthM * fraction * fraction;
+      float sampleM = nearM + 0.5 * (startM + endM);
+      float segmentM = endM - startM;
+      vec3 samplePos = position + uSunDir * sampleM;
+      vec3 adv = cloudAdvect(samplePos);
+      float sampleSigma = sampleCloudShadowDensity(samplePos, adv, bottomM, topM, amount, sigma, moisture,
+                                                   max(footprintM, 16.0 + 0.18 * segmentM), category);
+      tau += segmentM * sampleSigma;
+      if (tau >= 18.0) return 18.0;
+      startM = endM;
+    }
+  }
+  return min(18.0, tau);
+}
+
+// CloudTransport.slang :: PlanetCloudSource
+vec3 cloudSource(vec3 position, vec3 dir, float bottomM, float topM, float sigma, float layerSigma, int category,
+                 float moisture, float footprintM, vec3 phases) {
+  vec3 direct = uSunIrradiance * cloudSolarAirTransmittance(position);
+  float solarTau = 0.0;
+  if (dot(direct, direct) > 1.0e-6) {
+    solarTau = cloudSolarOpticalDepth(position, bottomM, topM, clamp(uCloudCfg0.y, 0.0, 1.0), layerSigma, moisture, 4,
+                                      footprintM, category);
+  }
+  vec3 attenuated = exp(-solarTau * vec3(1.0, 0.35, 0.12));
+  vec3 scattered = direct * dot(phases * vec3(1.0, 0.45, 0.20), attenuated);
+
+  float heightFraction = clamp((length(position) - uCloudCfg4.x - bottomM) / max(1.0, topM - bottomM), 0.0, 1.0);
+  float sunUp = dot(normalize(position), uSunDir);
+  float day = cloudSmooth(-0.20, 0.23, sunUp);
+  float warm = exp(-abs(sunUp - 0.045) * 9.5) * cloudSmooth(-0.20, -0.025, sunUp);
+  float skyVisibility = mix(1.0, 0.16 + 0.84 * exp(-0.24 * solarTau), cloudSmooth(0.12, 0.50, sunUp));
+  float twilight = cloudSmooth(-0.30, -0.12, sunUp);
+  vec3 sky = uCloudCfg5.xyz * (0.025 * twilight + 0.36 * day) * mix(0.48, 1.0, heightFraction) * skyVisibility;
+  vec3 bounce = (1.0 - heightFraction) * (vec3(0.032, 0.048, 0.071) * day + vec3(0.077, 0.029, 0.015) * warm);
+
+  int formation = int(round(uCloudCfg2.x));
+  if (formation == 10) {
+    // Nacreous stratospheric iridescence
+    float irid = dot(dir, uSunDir) * 9.0 + heightFraction * 5.0 + (position.x + position.y) * 0.00020;
+    scattered *= vec3(0.98 + 0.28 * sin(irid), 0.95 + 0.28 * sin(irid + 2.094), 1.04 + 0.30 * sin(irid + 4.188));
+  } else if (formation == 11) {
+    // Pyrocumulus warm ember base under-glow
+    float coreDense = cloudSmooth(layerSigma * 0.22, layerSigma * 0.85, sigma);
+    bounce += vec3(1.25, 0.34, 0.05) * pow(1.0 - heightFraction, 2.8) * coreDense;
+  }
+  float solarMean = dot(uSunIrradiance, vec3(0.3333333)) / 16.0;
+  return scattered + sky + bounce * solarMean;
 }
 
 vec4 evalVolumetricClouds(vec3 dir, vec3 skyCol, float jitter, int steps) {
   if (uCloudCfg0.x < 0.5 || dir.z <= 0.006 || uCloudCfg0.y <= 0.01 || uCloudCfg0.z <= 0.01) {
     return vec4(0.0, 0.0, 0.0, 1.0);
   }
-  float earthR = 6360000.0;
-  float baseM = max(200.0, uCloudCfg1.x);
-  float thickM = max(150.0, uCloudCfg1.y);
-  float origZ = earthR + 100.0;
-  float tEnter = intersectEarthShell(origZ, dir.z, earthR + baseM);
-  float tExit = intersectEarthShell(origZ, dir.z, earthR + baseM + thickM);
-  float maxDist = min(tExit, 48000.0);
-  if (tEnter < 0.0 || maxDist <= tEnter) return vec4(0.0, 0.0, 0.0, 1.0);
+  float planetR = uCloudCfg4.x;
+  float originZ = planetR + 100.0;
+  vec3 origin = vec3(0.0, 0.0, originZ);
+  float bottomM, topM, amount, sigma;
+  int category;
+  cloudLayer(bottomM, topM, amount, sigma, category);
 
-  float dt = (maxDist - tEnter) / float(steps);
-  float cov = clamp(uCloudCfg0.y, 0.0, 1.0);
-  float densMul = max(0.0, uCloudCfg0.z) * 0.008;
-  float fScale = 0.00065 / max(0.08, uCloudCfg0.w);
-  float anvil = clamp(uCloudCfg1.z, 0.0, 1.0);
-  float g = clamp(uCloudCfg1.w, -0.5, 0.9);
-  int cType = int(round(uCloudCfg2.x));
-  bool shadOn = uCloudCfg2.y > 0.5;
-  float timeSec = uAtmoCfg0.w;
-  vec2 wind = uCloudCfg2.zw * timeSec;
+  float viewAltitudeM = length(origin) - planetR;
+  if (viewAltitudeM < bottomM - 10.0 && dir.z < -0.02) return vec4(0.0, 0.0, 0.0, 1.0);
 
-  float cosT = dot(dir, uSunDir);
-  float g2 = g * g;
-  float hgFwd = (1.0 - g2) / (4.0 * 3.14159265 * pow(max(1e-3, 1.0 + g2 - 2.0 * g * cosT), 1.5));
-  float hgBack = (1.0 - 0.0625) / (4.0 * 3.14159265 * pow(max(1e-3, 1.0 + 0.0625 + 0.5 * cosT), 1.5));
-  float phase = 0.78 * hgFwd + 0.22 * hgBack;
+  float limitM = min(62000.0, cloudGroundDistance(origin, dir));
+  vec4 spans = cloudLayerSpans(origin, dir);
+  float blueJitter = jitter;
+  vec3 phases = cloudScatteringOrder(dir);
+  vec3 radiance = vec3(0.0);
+  float transmittance = 1.0;
+  float centroidM = 0.0;
 
-  float trans = 1.0;
-  vec3 accum = vec3(0.0);
-  float sStep = (thickM * 0.55) / 3.0;
-  for (int i = 0; i < 24; ++i) {
-    if (i >= steps) break;
-    float t = tEnter + (float(i) + 0.15 + 0.7 * jitter) * dt;
-    vec3 p = vec3(dir.x * t, dir.y * t, origZ + dir.z * t);
-    float d = sampleCloudDensity(p, baseM, thickM, cov, densMul, fScale, anvil, cType, wind);
-    if (d > 1e-6) {
-      float sunTau = 0.0;
-      if (shadOn) {
-        for (int s = 1; s <= 3; ++s) {
-          vec3 sp = p + uSunDir * (float(s) * sStep);
-          sunTau += sampleCloudDensity(sp, baseM, thickM, cov, densMul, fScale, anvil, cType, wind) * sStep;
+  for (int interval = 0; interval < 2; ++interval) {
+    float nearM = (interval == 0) ? spans.x : spans.z;
+    float farM = (interval == 0) ? spans.y : spans.w;
+    if (farM <= nearM) continue;
+    float lengthM = farM - nearM;
+    float growth = (viewAltitudeM > 19000.0) ? 0.0 : clamp(log(1.0 + lengthM / 1900.0), 0.1, 4.8);
+    float denominator = max(1.0e-6, exp(growth) - 1.0);
+    float lastM = nearM;
+    float litAtM = -1.0e9;
+    vec3 source = vec3(0.0);
+    for (int index = 0; index < 32; ++index) {
+      if (index >= steps || transmittance <= 0.0001) break;
+      float fraction = float(index + 1) / float(steps);
+      float nextM = nearM + lengthM * ((growth < 0.01) ? fraction : (exp(growth * fraction) - 1.0) / denominator);
+      float distanceM = nextM - lastM;
+      float sampleM = lastM + distanceM * (0.40 + blueJitter * 0.20);
+      vec3 position = origin + dir * sampleM;
+      float footprintM = max(1.0, sampleM * uCloudCfg4.z);
+      vec3 advected = cloudAdvect(position);
+      float advLen = max(1.0e-9, length(advected));
+      vec2 weather = cloudWeather(advected / advLen);
+      float density = sampleCloudDensityAdvected(position, advected, bottomM, topM, amount, sigma, weather.x, footprintM, false);
+      if (density > 1.0e-9) {
+        float segmentT = exp(-density * distanceM);
+        float weight = transmittance * (1.0 - segmentT);
+        float lightStrideM = clamp(footprintM * 0.75 + 120.0, 100.0, 280.0);
+        if (sampleM - litAtM >= lightStrideM) {
+          source = cloudSource(position, dir, bottomM, topM, density, sigma, category, weather.x, footprintM, phases);
+          litAtM = sampleM;
         }
+        radiance += weight * source;
+        centroidM += weight * sampleM;
+        transmittance *= segmentT;
       }
-      float sunAtt = exp(-sunTau * 1.15) * (0.35 + 0.65 * (1.0 - exp(-sunTau * 2.2 + 0.25)));
-      float segT = exp(-d * dt);
-      float alt = length(p) - earthR;
-      float h = clamp((alt - baseM) / thickM, 0.0, 1.0);
-      float amb = 0.28 + 0.52 * h;
-      vec3 lit = uSunIrradiance * sunAtt * phase * 2.4 + skyCol * amb * 0.55;
-      accum += trans * lit * (1.0 - segT);
-      trans *= segT;
-      if (trans < 0.015) break;
+      lastM = nextM;
     }
   }
-  float haze = 1.0 - exp(-tEnter * 0.00004);
-  accum = mix(accum, skyCol * (1.0 - trans), haze);
-  return vec4(accum, trans);
+
+  float opacity = 1.0 - transmittance;
+  if (opacity > 1.0e-5) centroidM /= opacity;
+
+  // CloudAerialPerspective: optical-centroid foreground haze
+  if (transmittance < 0.999999 && opacity > 1.0e-5) {
+    vec2 atmosphere = cloudSphere(origin, dir, planetR + 100000.0);
+    float enterM = max(0.0, atmosphere.x);
+    float exitM = min(centroidM, atmosphere.y);
+    if (exitM > enterM) {
+      float mu = dot(dir, uSunDir);
+      float rayPhase = (3.0 / (16.0 * 3.14159265)) * (1.0 + mu * mu);
+      float miePhase = hgCloud(mu, 0.78);
+      vec3 betaRay = vec3(5.802e-6, 13.558e-6, 33.1e-6) * max(0.0, uCloudCfg5.w);
+      vec3 betaMie = vec3(4.40e-6) * max(0.0, uCloudCfg6.w);
+      vec3 betaOzone = uCloudCfg6.z * vec3(0.650e-6, 1.881e-6, 0.085e-6);
+      vec3 airSolar = uSunIrradiance * 0.3333333;
+      vec3 airRadiance = vec3(0.0);
+      vec3 airTrans = vec3(1.0);
+      float closestM = clamp(-dot(origin, dir), enterM, exitM);
+      for (int side = 0; side < 2; ++side) {
+        float sideLength = (side == 0) ? (closestM - enterM) : (exitM - closestM);
+        if (sideLength < 0.1) continue;
+        float previousM = (side == 0) ? enterM : closestM;
+        for (int index = 0; index < 8; ++index) {
+          float fraction = float(index + 1) / 8.0;
+          float radial = (side == 0) ? 1.0 - fraction : fraction;
+          float distanceM = closestM + sideLength * (0.30 * radial + 0.70 * radial * radial * radial) * (side == 0 ? -1.0 : 1.0);
+          float ds = distanceM - previousM;
+          float midpointM = (distanceM + previousM) * 0.5;
+          previousM = distanceM;
+          vec3 position = origin + dir * midpointM;
+          float altitudeM = max(0.0, length(position) - planetR);
+          vec3 rayleigh = betaRay * exp(-altitudeM / max(400.0, uCloudCfg6.x));
+          vec3 mie = betaMie * exp(-altitudeM / max(200.0, uCloudCfg6.y));
+          vec3 ozone = betaOzone * clamp(1.0 - abs(altitudeM - 25000.0) / 16000.0, 0.0, 1.0);
+          vec3 extinction = max(vec3(1.0e-8), rayleigh + mie + ozone);
+          vec3 segmentT = exp(-extinction * ds);
+          vec3 sunT = cloudSolarAirTransmittance(position);
+          float sunUp = dot(normalize(position), uSunDir);
+          float twilight = cloudSmooth(-0.21, 0.095, sunUp + altitudeM * 0.000002);
+          vec3 sourceAir = sunT * (rayleigh * rayPhase + 0.88 * mie * miePhase);
+          sourceAir += (rayleigh + 0.48 * mie) * twilight * vec3(0.019, 0.025, 0.034);
+          airRadiance += airTrans * airSolar * sourceAir * (1.0 - segmentT) / extinction;
+          airTrans *= segmentT;
+        }
+      }
+      radiance = airTrans * radiance + opacity * airRadiance;
+    }
+  }
+  return vec4(radiance, clamp(transmittance, 0.0, 1.0));
 }
 
 vec3 evalMoonAndStars(vec3 dir) {
@@ -4389,6 +4834,10 @@ export default function GtxWorldViewport({
               uCloudCfg0: Loc("uCloudCfg0"),
               uCloudCfg1: Loc("uCloudCfg1"),
               uCloudCfg2: Loc("uCloudCfg2"),
+              uCloudCfg3: Loc("uCloudCfg3"),
+              uCloudCfg4: Loc("uCloudCfg4"),
+              uCloudCfg5: Loc("uCloudCfg5"),
+              uCloudCfg6: Loc("uCloudCfg6"),
               uMoonCfg0: Loc("uMoonCfg0"),
               uMoonCfg1: Loc("uMoonCfg1"),
               uMoonTint: Loc("uMoonTint"),
@@ -4825,9 +5274,42 @@ export default function GtxWorldViewport({
           const SkyTint = Atmo.skyTint || [1, 1, 1];
           Gl.uniform4f(U.uAtmoCfg0, Atmo.skyBrightness ?? 1.0, Atmo.mieG ?? 0.78, Atmo.horizonGlow ?? 1.0, ForceTimeRef.current);
           Gl.uniform4f(U.uAtmoCfg1, SkyTint[0], SkyTint[1], SkyTint[2], MoonSnap.ready ? 1.0 : 0.0);
-          Gl.uniform4f(U.uCloudCfg0, Cl.enabled ? 1.0 : 0.0, Cl.coverage ?? 0.42, Cl.density ?? 2.2, Cl.featureScale ?? 0.4);
-          Gl.uniform4f(U.uCloudCfg1, Cl.baseM ?? 1400.0, Cl.thicknessM ?? 1100.0, Cl.anvil ?? 0.5, Cl.anisotropy ?? 0.48);
-          Gl.uniform4f(U.uCloudCfg2, Cl.type ?? 0, Cl.shadowEnabled !== false ? 1.0 : 0.0, Cl.windX ?? 6.0, Cl.windY ?? 2.0);
+          const CloudDeck = ActiveScene.CloudDeck || ResolveCloudDeck(Cl);
+          const CloudMedium = ActiveScene.Medium || {};
+          const CloudWindRad = (CloudDeck.WindBearingDegrees * Math.PI) / 180;
+          const CloudWindX = CloudDeck.FollowWindEnabled ? Math.cos(CloudWindRad) * CloudDeck.WindSpeedMetersPerSecond : 0.0;
+          const CloudWindY = CloudDeck.FollowWindEnabled ? -Math.sin(CloudWindRad) * CloudDeck.WindSpeedMetersPerSecond : 0.0;
+          Gl.uniform4f(U.uCloudCfg0, Cl.enabled ? 1.0 : 0.0, CloudDeck.CloudFraction, CloudDeck.ExtinctionMultiplier, CloudDeck.FeatureScaleMultiplier);
+          Gl.uniform4f(U.uCloudCfg1, CloudDeck.CloudFloorMeters, CloudDeck.LayerThicknessMeters, CloudDeck.AnvilTopSpread, CloudDeck.ForwardScatterAnisotropy);
+          Gl.uniform4f(U.uCloudCfg2, CloudDeck.Category, CloudDeck.ShadowEnabled ? 1.0 : 0.0, CloudWindX, CloudWindY);
+          Gl.uniform4f(
+            U.uCloudCfg3,
+            CloudDeck.WindShearPerKilometer,
+            (CloudDeck.WindVeerDegreesPerKm * Math.PI) / 180,
+            CloudDeck.WindTurbulence,
+            ActiveScene.SimulationSeconds ?? 0.0,
+          );
+          Gl.uniform4f(
+            U.uCloudCfg4,
+            CloudMedium.PlanetRadiusMeters ?? 6360000.0,
+            0.04,
+            0.002,
+            Math.max(18.0, Math.min(28.0, CloudDeck.CloudMarchSteps)),
+          );
+          Gl.uniform4f(
+            U.uCloudCfg5,
+            OverheadSkyRadiance[0],
+            OverheadSkyRadiance[1],
+            OverheadSkyRadiance[2],
+            CloudMedium.RayleighStrength ?? 1.0,
+          );
+          Gl.uniform4f(
+            U.uCloudCfg6,
+            CloudMedium.RayleighScaleHeightMeters ?? 8000.0,
+            CloudMedium.MieScaleHeightMeters ?? 1200.0,
+            CloudMedium.OzoneStrength ?? 1.2,
+            CloudMedium.MieStrength ?? 1.0,
+          );
           const MDir = Mn.dir || [-0.5, 0.4, 0.45];
           const MTint = Mn.tint || [0.94, 0.93, 0.90];
           Gl.uniform4f(U.uMoonCfg0, MDir[0], MDir[1], MDir[2], Mn.sizeRad ?? 0.012);
@@ -5313,6 +5795,8 @@ export default function GtxWorldViewport({
       "PageDown",
       "ShiftLeft",
       "ShiftRight",
+      "ControlLeft",
+      "ControlRight",
     ]);
 
     const IsTypingTarget = (Target) =>
@@ -5322,9 +5806,12 @@ export default function GtxWorldViewport({
 
     const Down = (Ev) => {
       if (IsTypingTarget(Ev.target)) return;
-      if (Ev.ctrlKey || Ev.metaKey || Ev.altKey) return;
+      if (Ev.metaKey || Ev.altKey) return;
 
       const IsRmbFly = DragRef.current?.Kind === "fly";
+      // Ctrl is a live Unreal modifier (precision creep). Only lift it off application shortcuts while
+      // the RMB fly drag owns the keyboard, so Ctrl+S / Ctrl+Z still reach the editor.
+      if (Ev.ctrlKey && !IsRmbFly && !KeysRef.current.has("ControlLeft") && Ev.code !== "ControlLeft" && Ev.code !== "ControlRight") return;
       const IsOutlinerArrow =
         (Ev.code === "ArrowLeft" || Ev.code === "ArrowRight" || Ev.code === "ArrowUp" || Ev.code === "ArrowDown") &&
         !!Ev.target?.closest?.(".outliner-row");
@@ -5361,7 +5848,12 @@ export default function GtxWorldViewport({
       if (!IsRmbFly && !ViewportHoveredRef.current) return;
 
       if (MovementCodes.has(Ev.code)) {
-        if (Ev.code !== "ShiftLeft" && Ev.code !== "ShiftRight") {
+        if (
+          Ev.code !== "ShiftLeft" &&
+          Ev.code !== "ShiftRight" &&
+          Ev.code !== "ControlLeft" &&
+          Ev.code !== "ControlRight"
+        ) {
           Ev.preventDefault();
         }
         KeysRef.current.add(Ev.code);
@@ -5666,12 +6158,13 @@ export default function GtxWorldViewport({
     const Cur = LiveCamRef.current;
     const IsRmbHeld = DragRef.current?.Kind === "fly" || (Event.buttons & 2) !== 0;
 
-    // Authentic Unreal Engine RMB + Scroll Wheel: Adjust WASD Camera Fly Speed Scalar!
-    if (IsRmbHeld) {
-      const Factor = Event.deltaY < 0 ? 1.22 : 1 / 1.22;
-      const NextScalar = Math.max(0.15, Math.min(16.0, (Cur.SpeedScalar || 1.0) * Factor));
-      LiveCamRef.current = { ...Cur, SpeedScalar: NextScalar };
-      SetCameraSpeedHud(`Camera Speed · ${(3.4 * NextScalar).toFixed(1)} m/s`);
+    // Authentic Unreal Engine fly-speed scalar: RMB + Wheel, Ctrl + Wheel (fine), Shift + Ctrl + Wheel (coarse)
+    if (IsRmbHeld || Event.ctrlKey) {
+      const Step = Event.deltaY < 0 ? 1 : -1;
+      const Gain = Event.shiftKey ? 1.45 : 1.12;
+      const NextCam = ApplyUnrealSpeedScalar(Cur, Step, Gain);
+      LiveCamRef.current = NextCam;
+      SetCameraSpeedHud(`Camera Speed · ${(3.4 * NextCam.SpeedScalar).toFixed(2)} m/s`);
       if (SpeedHudTimerRef.current) window.clearTimeout(SpeedHudTimerRef.current);
       SpeedHudTimerRef.current = window.setTimeout(() => SetCameraSpeedHud(""), 1300);
       return;
@@ -6068,7 +6561,7 @@ export default function GtxWorldViewport({
       <button
         type="button"
         className="gtx-camera-home"
-        title="Reset EditorCamera to C++ ShowcaseWorldSceneBundle Pose (RMB + WASDQE to fly, RMB + Wheel for speed, F to focus)"
+        title="Reset EditorCamera to C++ ShowcaseWorldSceneBundle Pose (RMB + WASDQE to fly · Shift sprint · Ctrl precision · RMB/Ctrl + Wheel speed · F focus)"
         onClick={() => {
           const Home = DeriveUnrealCameraState(
             CanonicalEditorCamera.Position,

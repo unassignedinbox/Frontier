@@ -113,6 +113,13 @@ export function ApplyUnrealDolly(Cam, Steps, StepGain = 0.105) {
   };
 }
 
+// Unreal viewport fly-speed scalar: RMB+Wheel (and Ctrl+Wheel) scale the WASD speed 0.15x..16x
+export function ApplyUnrealSpeedScalar(Cam, Steps, StepGain = 1.22) {
+  const Factor = Math.pow(StepGain, Steps);
+  const NextScalar = Math.max(0.15, Math.min(16.0, (Cam.SpeedScalar || 1.0) * Factor));
+  return { ...Cam, SpeedScalar: NextScalar };
+}
+
 export function StepUnrealWasdCamera(Cam, KeysSet, Dt, BaseSpeed = 3.4) {
   let InFwd = 0;
   let InRight = 0;
@@ -136,11 +143,16 @@ export function StepUnrealWasdCamera(Cam, KeysSet, Dt, BaseSpeed = 3.4) {
   DirY /= DirLen;
   DirZ /= DirLen;
 
+  // Unreal editor modifiers: Shift = sprint (x2.5), Ctrl = precision creep (x0.25)
   const Sprint =
     KeysSet.has("ShiftLeft") || KeysSet.has("ShiftRight") || KeysSet.has("shift")
       ? 2.5
       : 1.0;
-  const StepDist = BaseSpeed * (Cam.SpeedScalar || 1.0) * Sprint * Dt;
+  const Precision =
+    KeysSet.has("ControlLeft") || KeysSet.has("ControlRight") || KeysSet.has("control")
+      ? 0.25
+      : 1.0;
+  const StepDist = BaseSpeed * (Cam.SpeedScalar || 1.0) * Sprint * Precision * Dt;
   const NextPos = [
     Cam.Position[0] + DirX * StepDist,
     Cam.Position[1] + DirY * StepDist,

@@ -31,14 +31,53 @@
 | `CpuGtxFallbackRenderer.js` | Zero-WebGL kernel port: `SampleSkyViewInto` (bank split + smoothstep X + Catmull-Rom Y), `SolarTransmittanceDirection`, `SolarErf`, `NeckelLabsLimbDarkening`, `SolarGlareSpread`, `SolarCoronaRadiance`; `RenderBand` publishes `PixelAngularSizeRad` and `SkyLimbAngle` |
 | `Inspectors.jsx` | Sun panel (Day cycle · Observer/date · Solved direction · Sun Disk · Sunlight gain · Lens Flare); the Animate loop and manual scrub write compass axes through `ConvertAzimuthElevationToWorldAxis`, readouts through `ConvertWorldAxisToAzimuthElevation` |
 
-## 3. Ordering / scale decisions
+## 3. Clouds (`VolumetricCloudSequence` 1:1)
+
+The volumetric deck is no longer a hand-rolled FBM. `CloudSequence.js` is a line-for-line port of
+`Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.{h,cpp}` plus `Engine/Shaders/Atmosphere/CloudNoise.slang`,
+`CloudDensity.slang`, `CloudTransport.slang` and `CloudAerialPerspective.slang`, and the same trace now runs in all three
+renderers.
+
+| Stage | Native function | Port |
+| :--- | :--- | :--- |
+| Wind advection | `CloudWindCoordinates` | `CloudAdvect` / `cloudAdvect` (tangent-plane rotation about the wind axis, shear + veer per km, followed radius) |
+| Weather | `CloudWeatherAtPoint` / `CloudWeatherFromAdvectedNormal` | `CloudWeather`, moisture = `0.48 + 0.57·(broad − 0.5) + 0.43·(meso − 0.5)` |
+| Cell envelope | `CloudCellEnvelope` + `CloudConvectiveEnvelope` | 3×3 randomised cell discs with buds, tilt and tower height, averaged over the three axis projections |
+| Density | `SamplePlanetCloudDensityAdvected` | all 13 formations (stratus, stratocumulus, cumulus, cumulonimbus, altostratus, cirrus, lenticular, mammatus/KH, asperitas, nacreous, pyrocumulus, cyclone) incl. anvil discs, pouch lobes, wave curtains and lens masks |
+| Shadow density | `SamplePlanetCloudShadowDensity` | `sampleCloudShadowDensity` — the cheap shape-only field the solar march taps |
+| View march | `TracePlanetaryClouds` | two ordered spans, `Growth = clamp(log(1 + L/1900), 0.1, 4.8)` (flat above 19 km), `Fraction²`/exponential step spacing, jittered 0.40–0.60 sample, lit-sample caching at `clamp(footprint·0.75 + 120, 100, 280) m` |
+| Light transport | `PlanetCloudSource` + `CloudScatteringOrderPhases` | three dual-lobe scattering orders (scales 1.0 / 0.49 / 0.19) through `exp(−τ·[1, 0.35, 0.12])`, `CloudAirColumn` (upward **and** downward) air transmittance, sky ambient + bounce, nacreous iridescence and pyrocumulus ember glow |
+| Aerial perspective | `CloudAerialPerspective.slang` | optical-centroid two-sided 8-step Rayleigh/Mie/ozone in-scatter, `radiance = T_air·cloud + opacity·air` |
+
+**One documented deviation** (unchanged from the previous revision of this report): the baked 128³ Perlin–Worley condensate
+volume (`CloudNoiseVolume.h`, 8 MiB) is not shipped to the browser; the same lattice hash is sampled as a footprint-filtered
+multi-octave field instead (`SampleCloudShapeField` / `cloudShapeField`). Because that field is Gaussian around 0.5 rather than
+bimodal, two calibration constants sit on top of the native thresholds:
+
+* `Expand(v) = saturate((v − 0.30) / 0.44)` on the macro / meso / billow channels, so formations break into cells instead of a veil.
+* Stratiform threshold `mix(0.64, 0.25, Amount) → mix(0.77, 0.38, Amount)` (measured sky cover at Coverage 0.25 / 0.42 / 0.70 is
+  29 / 38 / 62 %, versus 47 / 68 / 85 % before).
+
+| Renderer | Where | Uniforms |
+| :--- | :--- | :--- |
+| CPU kernel | `CpuGtxFallbackRenderer.js` → `CreateGtxBandKernel` plus the stringified worker, fed `BuildCloudKernelPrelude()` (52 kB of JSON-embedded deck defaults) | `CloudLib` (the whole of `CloudSequence.js`) |
+| WebGL2 | `GtxWorldViewport.jsx` GLSL (`cloudPermute` … `evalVolumetricClouds`, 26 functions) | `uCloudCfg0..6` |
+| WebGPU | `WebgpuGtxRenderer.js` WGSL, same 26 functions translated from the GLSL block | `uCloudCfg0..6`; `SceneUniforms` grew four `vec4f` fields (704 → 768 B, `uCloudCfg3 @704 … uCloudCfg6 @752`) |
+
+Uniform semantics (identical in both shaders): `0` = (enabled, coverage, extinction, feature scale), `1` = (floor, thickness,
+anvil, anisotropy), `2` = (category, shadows, wind X, wind Y), `3` = (shear/km, veer rad/km, turbulence, simulation seconds),
+`4` = (planet radius, seed, pixel angle, march steps), `5` = (overhead sky radiance, Rayleigh strength), `6` = (Rayleigh scale
+height, Mie scale height, ozone strength, Mie strength) — all derived from `ActiveScene.CloudDeck` (`ResolveCloudDeck`) and
+`ActiveScene.Medium`, i.e. the same `CloudDeckConfiguration` the inspector edits.
+
+## 4. Ordering / scale decisions
 
 * `SolarScale = SolarIntensityMultiplier · 0.24` inside the sky LUT (Rayleigh phase scaled by `0.0596·SolarScale`) — unchanged from native.
 * `SunIrradiance = tint · transmittance · (Intensity · Direct · 0.044 · SunVis)`; with the native defaults (22 · 2.5) the noon irradiance is ≈ 2.2–2.4 W/m², i.e. the native scale, not the previous authored 5.4 W/m².
 * `SkyRadiance` keeps the `SynchronizeWorldAtmosphere` night floors (`0.015, 0.020, 0.032`), then the shaders relight it from the LUT (an overhead probe clamps it to `0.001 / 0.002` in orbital views).
 * Authored `Direction` remains an explicit override (`ManualDirectionOverride` in native terms) — the shipped levels keep their art-directed sun vectors, and the inspector shows the true solved bearing/altitude of whatever axis is in use.
 
-## 4. Measured behaviour (Node, 2026‑11‑21)
+## 5. Measured behaviour (Node, 2026‑11‑21)
 
 | Quantity | Value |
 | :--- | :--- |
@@ -55,14 +94,14 @@
 | 30° off-axis | `0, 0, 0` (hard window) |
 | Lobby frame (800 × 450, CPU kernel) | mean luma 136 vs 173 before the port — the native scale is ~2.9× dimmer than the old authored irradiance, and the glazed portal now resolves a real horizon + ground bank instead of a hazy dome |
 
-## 5. Gates
+## 6. Gates
 
 * `node WorldMirrorValidation.mjs` → **ALL 21 SUITES PASSED** (new suite 21 covers LUT dimensions, compass axes, Kelvin tint, limb darkening, corona falloff, transmittance, ephemeris noon/wrap, panel schema and the three renderer ports).
-* `node Build.mjs` → standalone `index.html` (5.33 MiB).
+* `node Build.mjs` → standalone `index.html` (5.40 MiB).
 * `JSDOM_DIR=… node Smoke.mjs` → **ALL CHECKS PASSED** (14/14).
-* Shader syntax checked out-of-band: GLSL via `@shaderfrog/glsl-parser`, WGSL via `wgsl_reflect` (uniform block reflected at exactly 704 B with `uSkyCfg @576 … uSolarTrans @688`).
+* Shader syntax checked out-of-band: GLSL through `@webgpu/glslang` (Vulkan 450 profile) — the full vertex + fragment source compiles to 102 197 B of SPIR-V after the cloud port; WGSL mirrored field-for-field from it (uniform block now 768 B, `uSkyCfg @576 … uCloudCfg6 @752`).
 
-## 6. Known characteristics
+## 7. Known characteristics
 
 * The day-cycle animation rebuilds the 192 × 108 LUT whenever the quantised sun direction or medium changes (native does the same every frame). In JS that is ~150 ms per bake, so a scrubbed day cycle is CPU-bound rather than frame-rate bound.
 * The solar corona march (`ComputeSolarTransmittance`, 64 steps) is evaluated per sky pixel within 12.8 disc radii of the sun; the glare veil covers 30°. Costs scale with the sun's on-screen footprint.
