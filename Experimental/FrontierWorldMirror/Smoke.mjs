@@ -84,6 +84,24 @@ const Checks = [
   ["Cone Slalom template retired", !Body.includes("Cone Slalom")],
 ];
 
+// The geometry Overview tab is a quick-tile dashboard (chips + counters + a readiness
+// score) instead of the retired row-by-row "Object overview" card.
+const RowFor = (Name) =>
+  [...Document.querySelectorAll(".outliner-row")].find((Element) =>
+    (Element.textContent || "").includes(Name),
+  );
+RowFor("Lobby Travertine Floor")?.click();
+await new Promise((Resolve) => setTimeout(Resolve, 400));
+Document.querySelector('.insp-segment[aria-controls="insp-page-overview"]')?.click();
+await new Promise((Resolve) => setTimeout(Resolve, 400));
+const OverviewPage = Document.querySelector("#insp-page-overview");
+Checks.push(
+  ["Geometry Overview tab renders as quick tiles", Document.querySelectorAll("[data-asset-chip]").length >= 4],
+  ["Geometry Overview tab shows readiness counters", Document.querySelectorAll("[data-asset-counter]").length === 2],
+  ["Geometry Overview tab shows the readiness score", Boolean(Document.querySelector("[data-asset-score]"))],
+  ["Object overview card retired", !(OverviewPage?.textContent || "").includes("Object overview")],
+);
+
 let Failures = 0;
 for (const [Name, Passed] of Checks) {
   if (!Passed) Failures += 1;

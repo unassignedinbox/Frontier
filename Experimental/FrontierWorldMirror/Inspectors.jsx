@@ -946,91 +946,135 @@ export function Inspector({
         </Card>
       </>
     ) : null;
-    const OverviewNode = IsGeometry ? (
-      <>
-        <Card Title="Object overview" Height={470}>
-          {[
-            [
-              "Transform",
-              "transform",
-              Array.isArray(Values.Position)
-                ? `P [${Values.Position.map((N) => (+N).toFixed(2)).join(", ")}]`
-                : "—",
-            ],
-            [
-              "Material",
-              "material",
-              Values.Material?.Material?.Type || "Standard",
-            ],
-            [
-              "Physics",
-              "physics",
-              PhysicsOn
-                ? `Rigid · ${Number.isFinite(+Values["Physics Mass"]) ? +Values["Physics Mass"] : 120} kg`
-                : "Off",
-            ],
-            [
-              "UV",
-              "uv",
-              `${(Number.isFinite(+Values["UV Scale X"]) ? +Values["UV Scale X"] : 1).toFixed(2)}× · ${
-                Number.isFinite(+Values["UV Rotation"]) ? +Values["UV Rotation"] : 0
-              }°`,
-            ],
-            [
-              "Geometry",
-              "geometry",
-              (Subject.PrimitiveShape || "box") +
-                (Values.Fracture?.Enabled ? " · fractured" : ""),
-            ],
-          ].map(([Name, Page, Readout]) => (
-            <div
-              key={Page}
-              className="component-row"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                padding: "7px 9px",
-                borderRadius: 8,
-                background: "rgba(255,255,255,0.03)",
-                marginBottom: 6,
-                fontSize: 12,
-              }}
-            >
-              <span style={{ fontWeight: 500 }}>{Name}</span>
-              <output style={{ color: "#9aa0a6", fontSize: 11 }}>{Readout}</output>
-              <button
-                type="button"
-                onClick={() => JumpToPage(Page)}
-                aria-label={`Open ${Name} tab`}
-                style={{ padding: "3px 9px", fontSize: 11 }}
-              >
-                Open
-              </button>
+    // Overview = quick tiles only (asset dashboard): category chips, ready/missing
+    // counters and a readiness score with an aspect sparkline. Deep editing lives in
+    // the Component Viewer, so the old row-by-row "Object overview" card is gone.
+    const MaterialOf = (V) => V?.Material?.Material || V?.Material || {};
+    const OverviewNode = IsGeometry
+      ? (() => {
+          const Mat = MaterialOf(Values);
+          const Channels = Object.values(Mat.Channels || {});
+          const TexturedChannels = Channels.filter(
+            (C) => (C?.Source || "Fill") !== "Fill",
+          ).length;
+          const UvScale = Number.isFinite(+Values["UV Scale X"])
+            ? +Values["UV Scale X"]
+            : 1;
+          const UvRotation = Number.isFinite(+Values["UV Rotation"])
+            ? +Values["UV Rotation"]
+            : 0;
+          const MeshName = Subject.PrimitiveShape || "box";
+          const MaterialName = Mat.Type || "Standard";
+          const Shadowed = Values["Cast shadows"] ?? true;
+          const Lit = Values.GI ?? true;
+          const Noted = String(Values.Notes || "").trim().length > 8;
+
+          const Aspects = [
+            ["Geometry", Subject.PrimitiveShape ? 100 : 72],
+            ["Material", Mat.Type ? (TexturedChannels > 0 ? 100 : 76) : 38],
+            ["UV", UvScale !== 1 || UvRotation !== 0 ? 100 : 64],
+            ["Lighting", Shadowed && Lit ? 100 : 42],
+            ["Physics", PhysicsOn ? 100 : 0],
+            ["Notes", Noted ? 100 : 34],
+          ];
+          const Ready = Aspects.filter(([, Score]) => Score >= 70).length;
+          const Missing = Aspects.length - Ready;
+          const Readiness = Math.round(
+            Aspects.reduce((Sum, [, Score]) => Sum + Score, 0) / Aspects.length,
+          );
+
+          const Plot = { W: 320, H: 104, Top: 8, Bottom: 92 };
+          const Step = Aspects.length > 1 ? Plot.W / (Aspects.length - 1) : Plot.W;
+          const Points = Aspects.map(([, Score], Index) => ({
+            X: Index * Step,
+            Y: Plot.Bottom - (Score / 100) * (Plot.Bottom - Plot.Top),
+            Score,
+          }));
+          const Line = Points.map((P, I) => `${I ? "L" : "M"}${P.X.toFixed(1)} ${P.Y.toFixed(1)}`).join(" ");
+          const Area = `${Line} L${Plot.W} ${Plot.Bottom} L0 ${Plot.Bottom} Z`;
+          const Target = Plot.Bottom - 0.8 * (Plot.Bottom - Plot.Top);
+
+          const Chip = (Label, Value) => (
+            <div className="asset-chip" key={Label} data-asset-chip={Label}>
+              <b>{Value}</b>
+              <span>{Label}</span>
             </div>
-          ))}
-          <button
-            type="button"
-            className="open-component-viewer"
-            onClick={OpenComponentViewer}
-            style={{
-              width: "100%",
-              marginTop: 10,
-              justifyContent: "center",
-              fontWeight: 600,
-            }}
-          >
-            Open Component Viewer ↗
-          </button>
-          <p>
-            Deep component editing — mesh, UV charts, SDF bake, cluster LOD &
-            collision — runs in the Component Viewer workspace.
-          </p>
-        </Card>
-        {Capabilities()}
-      </>
-    ) : null;
+          );
+
+          return (
+            <>
+              <Card Title="Quick summary" Height={432} Class="asset-overview">
+                <div className="asset-chips" role="list" aria-label="Asset categories">
+                  {Chip("Mesh", MeshName)}
+                  {Chip("UV", `${UvScale.toFixed(2)}× · ${UvRotation}°`)}
+                  {Chip("Material", `${MaterialName} · ${Channels.length}ch`)}
+                  {Chip("Physics", PhysicsOn ? "Rigid" : "Off")}
+                </div>
+
+                <div className="asset-counters">
+                  <div className="asset-counter ok" data-asset-counter="ready">
+                    <i aria-hidden="true">✓</i>
+                    <span>Ready</span>
+                    <strong>{Ready}</strong>
+                  </div>
+                  <div className="asset-counter warn" data-asset-counter="missing">
+                    <i aria-hidden="true">!</i>
+                    <span>Missing</span>
+                    <strong>{Missing}</strong>
+                  </div>
+                </div>
+
+                <section className="asset-score" data-asset-score={Readiness}>
+                  <header>
+                    <span>Asset readiness</span>
+                    <small>{Aspects.length} aspects</small>
+                  </header>
+                  <div className="asset-score-value">
+                    {Readiness}
+                    <small>%</small>
+                  </div>
+                  <p className="asset-score-target">Target: 100%</p>
+                  <svg
+                    className="asset-spark"
+                    viewBox={`0 0 ${Plot.W} ${Plot.H}`}
+                    role="img"
+                    aria-label={`Readiness by aspect: ${Aspects.map(([Name, Score]) => `${Name} ${Score}%`).join(", ")}`}
+                  >
+                    <line className="asset-target" x1="0" y1={Target} x2={Plot.W} y2={Target} />
+                    <path className="asset-area" d={Area} />
+                    <path className="asset-line" d={Line} />
+                    {Points.map((P, Index) => (
+                      <g key={Aspects[Index][0]}>
+                        <circle className="asset-dot" cx={P.X} cy={P.Y} r="2.6" />
+                        <title>{`${Aspects[Index][0]} · ${P.Score}%`}</title>
+                      </g>
+                    ))}
+                    {Points.map((P, Index) => (
+                      <text
+                        key={`label-${Aspects[Index][0]}`}
+                        className="asset-tick"
+                        x={Math.min(Plot.W - 2, Math.max(2, P.X))}
+                        y={Plot.H - 2}
+                        textAnchor={Index === 0 ? "start" : Index === Points.length - 1 ? "end" : "middle"}
+                      >
+                        {Aspects[Index][0]}
+                      </text>
+                    ))}
+                  </svg>
+                </section>
+                <button
+                  type="button"
+                  className="asset-open-viewer"
+                  onClick={OpenComponentViewer}
+                >
+                  Open Component Viewer ↗
+                </button>
+              </Card>
+              {Capabilities()}
+            </>
+          );
+        })()
+      : null;
     const SheetGroupNodes = [...new Set(Sheet.map((Field) => Field.Group))]
       .filter(
           (Group) =>
