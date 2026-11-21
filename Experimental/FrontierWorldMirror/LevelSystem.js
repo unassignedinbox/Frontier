@@ -173,7 +173,7 @@ function BuildLookDevStudioLevel() {
     { Id: "camera", Name: "Editor Camera", Panel: "camera", Icon: "camera", Parent: "cameras", Description: "Permanent editor navigation camera" },
     { Id: "post", Name: "ACES Post-Process", Panel: "post", Icon: "environment-exposure", Parent: "cameras", Description: "Exposure & tonemapping" },
     { Id: "world", Name: "World", Panel: "group", Icon: "folder-world", Parent: null, Description: "Solar & sky environment" },
-    { Id: "sun", Name: "Key Rim Sun", Panel: "sun", Icon: "sun", Parent: "world", Preview: true, Description: "Directional · 4.2 W/m²" },
+    { Id: "sun", Name: "Key Rim Sun", Panel: "sun", Icon: "sun", Parent: "world", Preview: true, Description: "Directional · 1:1 celestial ephemeris + AtmosphericSkySequence" },
     { Id: "lighting", Name: "Lighting", Panel: "group", Icon: "folder-generic", Parent: null, Description: "Studio LTC area lights" },
     {
       Id: "key-softbox",
@@ -338,7 +338,7 @@ function BuildEmptyProvingGroundLevel(Id = "level-proving-ground", Name = "Empty
     { Id: "camera", Name: "Editor Camera", Panel: "camera", Icon: "camera", Parent: "cameras", Description: "Permanent editor navigation camera" },
     { Id: "post", Name: "ACES Post-Process", Panel: "post", Icon: "environment-exposure", Parent: "cameras", Description: "Exposure & tonemapping" },
     { Id: "world", Name: "World", Panel: "group", Icon: "folder-world", Parent: null, Description: "Solar environment" },
-    { Id: "sun", Name: "Sun", Panel: "sun", Icon: "sun", Parent: "world", Preview: true, Description: "Directional · 5.4 W/m²" },
+    { Id: "sun", Name: "Sun", Panel: "sun", Icon: "sun", Parent: "world", Preview: true, Description: "Directional · 1:1 celestial ephemeris + AtmosphericSkySequence" },
   ];
 
   const Values = {
