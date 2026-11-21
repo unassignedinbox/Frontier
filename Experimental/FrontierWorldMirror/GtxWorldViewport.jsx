@@ -35,8 +35,11 @@ import {
   BuildSkyViewLut,
   GetSkyViewCacheKey,
   PackSkyViewRgba16f,
+  ResolveAtmosphericMedium,
+  SampleSkyViewDirection,
   SKY_VIEW_HEIGHT,
   SKY_VIEW_WIDTH,
+  SkyViewState,
 } from "./AtmosphereSky.js";
 import {
   GetMoonAtlasSnapshot,
@@ -162,6 +165,15 @@ uniform vec3  uSunIrradiance;
 uniform float uSunAngularRadius;
 uniform vec3  uSkyRadiance;
 uniform sampler2D uSkyViewTex;
+uniform vec4  uSkyCfg;        // x=SkyView W, y=SkyView H, z=HalfH, w=Geometric limb polar angle [rad]
+uniform float uAtmoEnabled;   // 1 = physical AtmosphereSkySequence SkyView LUT is authoritative
+uniform vec4  uMediumCfg0;    // x=RayleighStrength, y=MieStrength, z=OzoneStrength, w=PlanetRadius [m]
+uniform vec4  uMediumCfg1;    // x=RayleighScaleHeight [m], y=MieScaleHeight [m], z=AtmosphereThickness [m], w=ObserverAltitude [m]
+uniform vec4  uSolarCfgA;     // x=SolarIntensityMultiplier, y=SkyBrightnessMultiplier, z=AngularDiameter [deg], w=SunGlareStrength
+uniform vec4  uSolarCfgB;     // x=AppearanceMode (0 Muted / 1 Radiant), y=PixelAngularSize [rad], z=PlanetRadius [m], w=ObserverAltitude [m]
+uniform float uSolarOrbital;  // 1 = orbital view (zero horizon occlusion)
+uniform vec3  uSolarTint;     // EffectiveSolarTint
+uniform vec3  uSolarTransmittance; // ComputeSolarTransmittance toward the Sun
 uniform sampler2D uMoonAtlasTex;
 uniform vec4  uAtmoCfg0;
 uniform vec4  uAtmoCfg1;
@@ -1005,12 +1017,290 @@ float traceLightQuad(vec3 ro, vec3 rd, float tMax, out vec3 emitOut, out int hit
   return best;
 }
 
-vec2 projectSkyViewUV(vec3 dir) {
-  float az = atan(dir.y, dir.x);
-  float el = asin(clamp(dir.z, -1.0, 1.0));
-  float u = az * (0.5 / 3.14159265359) + 0.5;
-  float v = 0.5 - 0.5 * sign(el) * sqrt(abs(el) / (3.14159265359 * 0.5));
-  return vec2(u, clamp(v, 0.0, 1.0));
+// ---------------------------------------------------------------------------------------------------
+// AtmosphereSkySequence parity: SkyView LUT sampling (bank split + smoothstep horizontal + vertical Catmull-Rom)
+// ---------------------------------------------------------------------------------------------------
+const float SKY_TAU = 6.28318530717958647692;
+
+vec3 fetchSkyViewTexel(int x, int y) {
+  return texelFetch(uSkyViewTex, ivec2(x, y), 0).rgb;
+}
+
+vec3 mixSkyRgb(vec3 a, vec3 b, float t) {
+  return a + (b - a) * t;
+}
+
+vec3 sampleSkyViewDirection(vec3 dir) {
+  int w = int(uSkyCfg.x + 0.5);
+  int halfH = int(uSkyCfg.z + 0.5);
+  float limb = uSkyCfg.w;
+
+  float azimuth = atan(dir.y, dir.x);
+  float polar = acos(clamp(dir.z, -1.0, 1.0));
+
+  float u = azimuth / SKY_TAU + 0.5;
+  u = u - floor(u);
+
+  bool lowerBank = polar > limb;
+  float q;
+  float coordY;
+  if (!lowerBank) {
+    q = sqrt(clamp(1.0 - polar / max(1.0e-4, limb), 0.0, 1.0));
+    coordY = q * float(halfH - 1);
+  } else {
+    q = sqrt(clamp((polar - limb) / max(1.0e-4, 3.141592653589793 - limb), 0.0, 1.0));
+    coordY = float(halfH) + q * float(halfH - 1);
+  }
+
+  int bankMin = lowerBank ? halfH : 0;
+  int bankMax = lowerBank ? (halfH * 2 - 1) : (halfH - 1);
+
+  float fx = u * float(w) - 0.5;
+  int ix0 = ((int(floor(fx)) % w) + w) % w;
+  int ix1 = (ix0 + 1) % w;
+  float tx = fx - floor(fx);
+  float sx = tx * tx * (3.0 - 2.0 * tx);
+
+  int iy1 = clamp(int(floor(coordY)), bankMin, bankMax);
+  int iy0 = clamp(iy1 - 1, bankMin, bankMax);
+  int iy2 = clamp(iy1 + 1, bankMin, bankMax);
+  int iy3 = clamp(iy1 + 2, bankMin, bankMax);
+  float ty = clamp(coordY - float(iy1), 0.0, 1.0);
+
+  vec3 r0 = mixSkyRgb(fetchSkyViewTexel(ix0, iy0), fetchSkyViewTexel(ix1, iy0), sx);
+  vec3 r1 = mixSkyRgb(fetchSkyViewTexel(ix0, iy1), fetchSkyViewTexel(ix1, iy1), sx);
+  vec3 r2 = mixSkyRgb(fetchSkyViewTexel(ix0, iy2), fetchSkyViewTexel(ix1, iy2), sx);
+  vec3 r3 = mixSkyRgb(fetchSkyViewTexel(ix0, iy3), fetchSkyViewTexel(ix1, iy3), sx);
+
+  float t2 = ty * ty;
+  float t3 = t2 * ty;
+  vec3 catmull = 0.5 * ((2.0 * r1) + (-r0 + r2) * ty + (2.0 * r0 - 5.0 * r1 + 4.0 * r2 - r3) * t2 +
+                        (-r0 + 3.0 * r1 - 3.0 * r2 + r3) * t3);
+  return max(catmull, vec3(0.0));
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Solar photosphere + K/F corona + Radiant glare (AtmosphericSkySequence::EvaluateSolarCoronaRadiance)
+// ---------------------------------------------------------------------------------------------------
+float intersectUpperSphereDistanceKm(float radiusKm, float cosPolar, float topKm) {
+  float disc = max(0.0, radiusKm * radiusKm * cosPolar * cosPolar + (topKm - radiusKm) * (topKm + radiusKm));
+  return max(0.0, -radiusKm * cosPolar + sqrt(disc));
+}
+
+void evaluateMediumAtAltitudeKm(float altKm, out vec3 rayScatter, out float mieScatter, out vec3 extinction) {
+  float altM = max(0.0, altKm * 1000.0);
+  float rayH = max(500.0, uMediumCfg1.x);
+  float mieH = max(200.0, uMediumCfg1.y);
+  float denR = exp(-altM / rayH) * max(0.0, uMediumCfg0.x);
+  float denM = exp(-altM / mieH) * max(0.0, uMediumCfg0.y);
+  float denO = max(0.0, 1.0 - abs(altM - 25000.0) / 15000.0) * max(0.0, uMediumCfg0.z);
+
+  rayScatter = vec3(5.802e-6, 13.558e-6, 33.1e-6) * 1000.0 * denR;
+  mieScatter = 3.996e-6 * 1000.0 * denM;
+  float mieExt = 4.40e-6 * 1000.0 * denM;
+  vec3 ozone = vec3(0.650e-6, 1.881e-6, 0.085e-6) * 1000.0 * denO;
+  extinction = rayScatter + vec3(mieExt) + ozone;
+}
+
+// AtmosphericSkySequence::ComputeSolarTransmittance (64 quadratic Fraction^2 steps)
+vec3 computeSolarTransmittanceDirection(vec3 sunDir) {
+  float groundKm = max(500.0, uMediumCfg0.w * 0.001);
+  float thicknessKm = max(10.0, uMediumCfg1.z * 0.001);
+  float topKm = groundKm + thicknessKm;
+  float altKm = max(0.001, uMediumCfg1.w * 0.001);
+  if (altKm >= thicknessKm) {
+    return vec3(1.0);
+  }
+  float sunMag = length(sunDir);
+  float cosPolar = sunMag > 1.0e-6 ? clamp(sunDir.z / sunMag, -1.0, 1.0) : 1.0;
+  float radiusKm = groundKm + altKm;
+
+  if (cosPolar < 0.0) {
+    float blockDisc = radiusKm * radiusKm * cosPolar * cosPolar - (radiusKm - groundKm) * (radiusKm + groundKm);
+    if (blockDisc >= 0.0 && radiusKm > groundKm + 1.0e-4) {
+      return vec3(0.0);
+    }
+  }
+  float distTopKm = intersectUpperSphereDistanceKm(radiusKm, cosPolar, topKm);
+  if (distTopKm <= 1.0e-5) {
+    return vec3(1.0);
+  }
+
+  vec3 opticalDepth = vec3(0.0);
+  for (int s = 0; s < 64; ++s) {
+    float f0 = float(s) / 64.0;
+    float f1 = float(s + 1) / 64.0;
+    float t0 = distTopKm * f0 * f0;
+    float t1 = distTopKm * f1 * f1;
+    float t = 0.5 * (t0 + t1);
+    float stepKm = max(1.0e-5, t1 - t0);
+    float rk = sqrt(max(groundKm * groundKm, radiusKm * radiusKm + 2.0 * radiusKm * cosPolar * t + t * t));
+    vec3 rayScatter;
+    float mieScatter;
+    vec3 extinction;
+    evaluateMediumAtAltitudeKm(rk - groundKm, rayScatter, mieScatter, extinction);
+    opticalDepth += extinction * stepKm;
+  }
+  return exp(-opticalDepth);
+}
+
+// Abramowitz & Stegun 7.1.26 five-term erf
+float evaluateSolarErf(float x) {
+  float v = 1.0 / (1.0 + 0.3275911 * abs(x));
+  float poly = ((((1.061405429 * v - 1.453152027) * v + 1.421413741) * v - 0.284496736) * v + 0.254829592) * v;
+  float res = 1.0 - poly * exp(-x * x);
+  return x < 0.0 ? -res : res;
+}
+
+// Neckel & Labs (1994) 5th-order photospheric limb darkening at 650/550/450 nm
+vec3 evaluateNeckelLabsLimbDarkening(float muPhotosphere) {
+  float mu = clamp(muPhotosphere, 0.0, 1.0);
+  float mu2 = mu * mu;
+  float mu3 = mu2 * mu;
+  float mu4 = mu2 * mu2;
+  float mu5 = mu4 * mu;
+  float limbR = 0.34685 + 1.37539 * mu - 2.04425 * mu2 + 2.70493 * mu3 - 1.94290 * mu4 + 0.55999 * mu5;
+  float limbG = 0.23698 + 1.37916 * mu - 1.83226 * mu2 + 2.34540 * mu3 - 1.65319 * mu4 + 0.52391 * mu5;
+  float limbB = 0.11903 + 1.24089 * mu - 1.19977 * mu2 + 1.33936 * mu3 - 0.98690 * mu4 + 0.48739 * mu5;
+  return clamp(vec3(limbR, limbG, limbB), vec3(0.0), vec3(1.05));
+}
+
+// Radial optical glare bloom + clean-air aureole bounded within 30 deg solar reach
+float evaluateSolarGlareSpread(float separation, float discRadius) {
+  const float reach = 30.0 * 0.017453292519943295;
+  const float bloomWeight = 1.50;
+  const float aureoleWeight = 0.25;
+  const float aureoleDegrees = 6.0;
+  if (separation >= reach) {
+    return 0.0;
+  }
+  float sepDeg = separation * 57.2957795130823208768;
+  float discDeg = discRadius * 57.2957795130823208768;
+  float effective = sqrt(sepDeg * sepDeg + discDeg * discDeg);
+  float windowTerm = 1.0 - separation / reach;
+  float bloom = bloomWeight / ((effective + 0.02) * (effective + 0.02));
+  float aureoleRatio = effective / aureoleDegrees;
+  float aureole = aureoleWeight / (1.0 + aureoleRatio * aureoleRatio);
+  return (bloom + aureole) * windowTerm * windowTerm;
+}
+
+vec3 evaluateSolarCoronaRadiance(vec3 rayDirection) {
+  if (uSolarCfgA.x <= 0.0 || uSolarCfgA.y <= 0.0) {
+    return vec3(0.0);
+  }
+
+  vec3 unitRay = normalize(rayDirection);
+  vec3 unitSun = normalize(uSunDir);
+  float halfChord = 0.5 * length(unitRay - unitSun);
+  float separation = 2.0 * asin(clamp(halfChord, 0.0, 1.0));
+  float halfRad = max(0.0008, uSolarCfgA.z * 0.5 * 0.017453292519943295);
+
+  float skyBrightness = max(0.0, uSolarCfgA.y);
+  float discIntensity = max(0.0, uSolarCfgA.x) * skyBrightness * 2.1;
+  if (discIntensity <= 0.0) {
+    return vec3(0.0);
+  }
+
+  bool orbitalView = uSolarOrbital > 0.5;
+  float planetR = max(500000.0, uSolarCfgB.z);
+  float obsAlt = max(5.0, uSolarCfgB.w);
+  float viewerR = planetR + obsAlt;
+  float ratio = clamp(planetR / viewerR, 0.0, 1.0);
+  float limbZ = -sqrt(max(0.0, 1.0 - ratio * ratio));
+
+  float pixelSizeRad = max(0.0, uSolarCfgB.y);
+  float maxDiscCoronaR = max(halfRad * 48.0, pixelSizeRad * 8.0);
+  float horizonBand = max(0.00035, 0.65 * max(pixelSizeRad, 1.0e-4));
+  float horizonVis = orbitalView
+    ? 1.0
+    : smoothstep(limbZ - horizonBand, limbZ + horizonBand, unitRay.z);
+
+  vec3 outRadiance = vec3(0.0);
+  if (separation <= maxDiscCoronaR && horizonVis > 1.0e-5) {
+    vec3 lineTransmittance = orbitalView
+      ? uSolarTransmittance
+      : computeSolarTransmittanceDirection(vec3(unitRay.xy, max(unitRay.z, limbZ + 1.0e-4)));
+
+    if (dot(lineTransmittance, vec3(1.0)) > 1.0e-6) {
+      float normalizedRadius = separation / halfRad;
+
+      float smallWeight = 0.0;
+      if (pixelSizeRad > 1.0e-6) {
+        float radiusPixels = halfRad / pixelSizeRad;
+        float blend = clamp((6.0 - radiusPixels) / 3.0, 0.0, 1.0);
+        smallWeight = blend * blend * (3.0 - 2.0 * blend);
+      }
+
+      vec3 resolvedPhotosphere = vec3(0.0);
+      if (smallWeight < 1.0 && normalizedRadius < 1.32) {
+        float clampedR = min(1.0, normalizedRadius);
+        float muSun = sqrt(max(0.0, 1.0 - clampedR * clampedR));
+        vec3 limbDark = evaluateNeckelLabsLimbDarkening(muSun);
+        float edgeErfc = 0.5 * (1.0 - evaluateSolarErf((normalizedRadius - 0.997) / 0.012));
+        resolvedPhotosphere = limbDark * (edgeErfc * discIntensity);
+      }
+
+      vec3 subPixelPhotosphere = vec3(0.0);
+      if (smallWeight > 0.0 && dot(unitRay, unitSun) > 0.0) {
+        vec3 refAxis = abs(unitSun.z) < 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+        vec3 tangentT = normalize(cross(refAxis, unitSun));
+        vec3 tangentB = normalize(cross(unitSun, tangentT));
+        float deltaX = dot(unitRay, tangentT);
+        float deltaY = dot(unitRay, tangentB);
+        float smallSigma = sqrt(0.25 * halfRad * halfRad + 0.20 * pixelSizeRad * pixelSizeRad);
+        float invSqrt2Sigma = 1.0 / (1.4142135623730951 * max(1.0e-6, smallSigma));
+        float lowX = (deltaX - 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        float highX = (deltaX + 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        float lowY = (deltaY - 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        float highY = (deltaY + 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        float xMass = max(0.0, 0.5 * (evaluateSolarErf(highX) - evaluateSolarErf(lowX)));
+        float yMass = max(0.0, 0.5 * (evaluateSolarErf(highY) - evaluateSolarErf(lowY)));
+        float sinHalf = sin(0.5 * halfRad);
+        float solidAngle = 4.0 * 3.141592653589793 * sinHalf * sinHalf;
+        float pixelArea = max(1.0e-12, pixelSizeRad * pixelSizeRad);
+        float subGain = (solidAngle / pixelArea) * xMass * yMass * discIntensity;
+        subPixelPhotosphere = vec3(0.83276, 0.77447, 0.69061) * subGain;
+      }
+
+      vec3 photosphere = mix(resolvedPhotosphere, subPixelPhotosphere, smallWeight);
+
+      vec3 coronaColour = vec3(0.0);
+      float coronaBlurAngle = 0.30 * pixelSizeRad * smallWeight;
+      float coronaNormR = sqrt(separation * separation + coronaBlurAngle * coronaBlurAngle) / halfRad;
+      if (coronaNormR < 48.0) {
+        float r1 = coronaNormR / 1.18;
+        float r2 = coronaNormR / 3.40;
+        float r3 = coronaNormR / 11.5;
+        float innerTerm = 1.0 / pow(1.0 + r1 * r1, 1.85);
+        float middleTerm = 1.0 / pow(1.0 + r2 * r2, 1.38);
+        float outerTerm = 1.0 / pow(1.0 + r3 * r3, 1.22);
+        float scatterFactor = orbitalView ? 0.38 : clamp(0.55 + 0.85 * (1.0 - lineTransmittance.b), 0.55, 1.35);
+        float coronaProfile = discIntensity *
+          (0.042 * innerTerm + 0.0085 * scatterFactor * middleTerm + 0.0014 * scatterFactor * outerTerm);
+        float windowFade = clamp(1.0 - coronaNormR / 48.0, 0.0, 1.0);
+        float smoothWindow = windowFade * windowFade;
+        coronaColour = coronaProfile * smoothWindow * vec3(1.04, 0.99, 0.91);
+      }
+
+      outRadiance += (photosphere + coronaColour) * lineTransmittance * uSolarTint * horizonVis;
+    }
+  }
+
+  // Optical glare veil (Radiant vs Muted): bounded 30 deg spread tinted by solar-axis transmittance
+  if (uSolarCfgB.x > 0.5 && uSolarCfgA.w > 0.0) {
+    float spread = evaluateSolarGlareSpread(separation, halfRad);
+    if (spread > 0.0) {
+      float sunAxisHorizonVis = orbitalView
+        ? 1.0
+        : smoothstep(limbZ - max(0.001, halfRad), limbZ + max(0.001, halfRad), unitSun.z);
+      if (sunAxisHorizonVis > 1.0e-4) {
+        float glareScale = max(0.0, uSolarCfgA.w) * spread * (0.045 * discIntensity) * sunAxisHorizonVis;
+        outRadiance += uSolarTint * uSolarTransmittance * glareScale * vec3(1.02, 1.00, 0.96);
+      }
+    }
+  }
+
+  return outRadiance;
 }
 
 float hash31(vec3 p) {
@@ -1232,23 +1522,26 @@ vec3 evalMoonIrradiance() {
   return uMoonTint.xyz * max(0.0, uMoonCfg1.y) * 0.085 * mPhaseGain * mFade;
 }
 
+vec3 evalSkyDome(vec3 dir) {
+  if (uAtmoEnabled < 0.5) {
+    // TieredWorldRenderSequence::EvaluateSkyDome fallback when AtmosphereEnabled == false
+    float up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);
+    return uSkyRadiance * (0.65 + 0.70 * up);
+  }
+  return sampleSkyViewDirection(dir);
+}
+
 vec3 evalSky(vec3 dir) {
-  vec3 skyCol = textureLod(uSkyViewTex, projectSkyViewUV(dir), 0.0).rgb;
+  vec3 skyCol = evalSkyDome(dir);
   vec3 cel = evalMoonAndStars(dir);
   vec4 cl = evalVolumetricClouds(dir, skyCol, 0.5, 5);
   return (skyCol + cel) * cl.w + cl.rgb;
 }
 
 vec3 evalSkyPrimary(vec3 dir, vec2 fragPx) {
-  vec3 skyCol = textureLod(uSkyViewTex, projectSkyViewUV(dir), 0.0).rgb;
+  vec3 skyCol = evalSkyDome(dir);
   vec3 cel = evalMoonAndStars(dir);
-  float sunAng = max(0.002, uSunAngularRadius);
-  float cosSun = dot(dir, uSunDir);
-  float sunEdge = smoothstep(cos(sunAng * 1.25), cos(sunAng * 0.65), cosSun);
-  float muDisc = clamp((cosSun - cos(sunAng)) / max(1e-5, 1.0 - cos(sunAng)), 0.0, 1.0);
-  float limb = 0.65 + 0.35 * pow(muDisc, 0.45);
-  float sunAureole = pow(max(0.0, cosSun), 160.0) * 0.25;
-  vec3 sunVisual = uSunIrradiance * (sunEdge * limb * 4.2 + sunAureole) * (dir.z > -0.02 ? 1.0 : 0.0);
+  vec3 sunVisual = evaluateSolarCoronaRadiance(dir);
   float jitter = fract(sin(dot(fragPx, vec2(12.9898, 78.233)) + uAtmoCfg0.w * 7.1) * 43758.5453);
   vec4 cl = evalVolumetricClouds(dir, skyCol, jitter, 18);
   return (skyCol + cel + sunVisual) * cl.w + cl.rgb;
@@ -4081,6 +4374,15 @@ export default function GtxWorldViewport({
               uSunAngularRadius: Loc("uSunAngularRadius"),
               uSkyRadiance: Loc("uSkyRadiance"),
               uSkyViewTex: Loc("uSkyViewTex"),
+              uSkyCfg: Loc("uSkyCfg"),
+              uAtmoEnabled: Loc("uAtmoEnabled"),
+              uMediumCfg0: Loc("uMediumCfg0"),
+              uMediumCfg1: Loc("uMediumCfg1"),
+              uSolarCfgA: Loc("uSolarCfgA"),
+              uSolarCfgB: Loc("uSolarCfgB"),
+              uSolarOrbital: Loc("uSolarOrbital"),
+              uSolarTint: Loc("uSolarTint"),
+              uSolarTransmittance: Loc("uSolarTransmittance"),
               uMoonAtlasTex: Loc("uMoonAtlasTex"),
               uAtmoCfg0: Loc("uAtmoCfg0"),
               uAtmoCfg1: Loc("uAtmoCfg1"),
@@ -4507,6 +4809,11 @@ export default function GtxWorldViewport({
             Gl.bindTexture(Gl.TEXTURE_2D, CurState.SkyViewTex);
           }
           Gl.uniform1i(U.uSkyViewTex, 7);
+          // SkyRadiance = TieredWorldRenderSequence::SynchronizeWorldAtmosphere overhead LUT sample (floored)
+          const OverheadProbe = SampleSkyViewDirection(0.0, 0.0, 1.0);
+          const OverheadSkyRadiance = ((ActiveScene.IsOrbitalView)
+            ? [Math.max(0.001, OverheadProbe[0]), Math.max(0.001, OverheadProbe[1]), Math.max(0.002, OverheadProbe[2])]
+            : [Math.max(0.015, OverheadProbe[0]), Math.max(0.02, OverheadProbe[1]), Math.max(0.032, OverheadProbe[2])]);
           const MoonSnap = GetMoonAtlasSnapshot();
           Gl.activeTexture(Gl.TEXTURE8);
           Gl.bindTexture(Gl.TEXTURE_2D, CurState.MoonAtlasTex);
@@ -4596,7 +4903,51 @@ export default function GtxWorldViewport({
           Gl.uniform3fv(U.uSunDir, ActiveScene.SunDir);
           Gl.uniform3fv(U.uSunIrradiance, ActiveScene.SunIrradiance);
           Gl.uniform1f(U.uSunAngularRadius, ActiveScene.SunAngularRadiusRad);
-          Gl.uniform3fv(U.uSkyRadiance, ActiveScene.SkyRadiance);
+          Gl.uniform3fv(U.uSkyRadiance, OverheadSkyRadiance);
+
+          // AtmosphereSkySequence parity uniforms (medium + geometric limb + solar photosphere/corona)
+          const MediumUniform = ResolveAtmosphericMedium(Atmo);
+          const SolarCfg = ActiveScene.SolarConfig || {};
+          const PixelAngularSizeRad = (2.0 * Math.tan(ActiveScene.VerticalFovRad * 0.5)) / Math.max(1, Height);
+          Gl.uniform4f(
+            U.uSkyCfg,
+            SKY_VIEW_WIDTH,
+            SKY_VIEW_HEIGHT,
+            SKY_VIEW_HEIGHT / 2,
+            SkyViewState.LimbAngle,
+          );
+          Gl.uniform1f(U.uAtmoEnabled, MediumUniform.AtmosphereEnabled ? 1.0 : 0.0);
+          Gl.uniform4f(
+            U.uMediumCfg0,
+            MediumUniform.RayleighStrength,
+            MediumUniform.MieStrength,
+            MediumUniform.OzoneStrength,
+            MediumUniform.PlanetRadiusMeters,
+          );
+          Gl.uniform4f(
+            U.uMediumCfg1,
+            MediumUniform.RayleighScaleHeightMeters,
+            MediumUniform.MieScaleHeightMeters,
+            MediumUniform.AtmosphereThicknessMeters,
+            MediumUniform.ObserverAltitudeMeters,
+          );
+          Gl.uniform4f(
+            U.uSolarCfgA,
+            SolarCfg.SolarEnabled === false ? 0.0 : (SolarCfg.SolarIntensityMultiplier ?? 22.0),
+            MediumUniform.SkyBrightnessMultiplier,
+            SolarCfg.AngularDiameterDegrees ?? 0.533,
+            SolarCfg.SunGlareStrength ?? 0.25,
+          );
+          Gl.uniform4f(
+            U.uSolarCfgB,
+            SolarCfg.AppearanceMode === 0 ? 0.0 : 1.0,
+            PixelAngularSizeRad,
+            MediumUniform.PlanetRadiusMeters,
+            MediumUniform.ObserverAltitudeMeters,
+          );
+          Gl.uniform1f(U.uSolarOrbital, ActiveScene.IsOrbitalView ? 1.0 : 0.0);
+          Gl.uniform3fv(U.uSolarTint, ActiveScene.EffectiveSolarTint || [1, 1, 1]);
+          Gl.uniform3fv(U.uSolarTransmittance, ActiveScene.SolarTransmittance || [1, 1, 1]);
 
           Gl.uniform1i(U.uLightCount, CurState.LastLightCount);
           Gl.uniform1i(U.uPrimCount, CurState.LastPrimCount);

@@ -216,9 +216,11 @@ export function RenderAnalyticalThumbnailRgba({
     post: { "EV Compensation": 0.28 },
     sun: {
       Direction: [-0.48, -0.62, 0.62],
-      SolarIrradiance: [5.2, 4.95, 4.55],
-      "Angular Diameter": 2.2,
-      SkyRadiance: [0.30, 0.35, 0.44],
+      Intensity: 22.0,
+      Direct: 2.5,
+      "Angular Diameter": 0.533,
+      "Colour source": 0,
+      "Sun Tint": "#ffffff",
     },
     "key-light": {
       Position: [0.65, -0.75, 2.2],

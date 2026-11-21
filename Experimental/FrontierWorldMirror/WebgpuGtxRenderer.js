@@ -25,8 +25,10 @@ import {
   BuildSkyViewLut,
   GetSkyViewCacheKey,
   PackSkyViewRgba16f,
+  ResolveAtmosphericMedium,
   SKY_VIEW_HEIGHT,
   SKY_VIEW_WIDTH,
+  SkyViewState,
 } from "./AtmosphereSky.js";
 import {
   GetMoonAtlasSnapshot,
@@ -85,6 +87,14 @@ struct SceneUniforms {
   uAreaShadowCfg   : vec4f, // xyz=areaEye, w=areaPerspTan
   uShadowDepthRng  : vec4f, // x=sunNear, y=sunFar, z=areaNear, w=areaFar
   uAreaShadowFwd   : vec4f, // xyz=areaForward, w=0
+  uSkyCfg          : vec4f, // x=SkyView W, y=SkyView H, z=HalfH, w=geometric limb polar angle [rad]
+  uMediumCfg0      : vec4f, // x=RayleighStrength, y=MieStrength, z=OzoneStrength, w=PlanetRadius [m]
+  uMediumCfg1      : vec4f, // x=RayleighScaleHeight [m], y=MieScaleHeight [m], z=AtmosphereThickness [m], w=ObserverAltitude [m]
+  uSolarCfgA       : vec4f, // x=SolarIntensityMultiplier, y=SkyBrightness, z=AngularDiameter [deg], w=SunGlareStrength
+  uSolarCfgB       : vec4f, // x=AppearanceMode, y=PixelAngularSize [rad], z=PlanetRadius [m], w=ObserverAltitude [m]
+  uSolarCfgC       : vec4f, // x=orbitalView, y=atmosphereEnabled, z,w=reserved
+  uSolarTint       : vec4f, // xyz=EffectiveSolarTint
+  uSolarTrans      : vec4f, // xyz=ComputeSolarTransmittance toward the Sun
 };
 
 @group(0) @binding(0) var<uniform> U : SceneUniforms;
@@ -963,12 +973,284 @@ fn traceLightQuad(ro : vec3f, rd : vec3f, tMax : f32) -> LightHit {
   return res;
 }
 
-fn projectSkyViewUV(dir : vec3f) -> vec2f {
-  let az = atan2(dir.y, dir.x);
-  let el = asin(clamp(dir.z, -1.0, 1.0));
-  let u = az * (0.5 / PI) + 0.5;
-  let v = 0.5 - 0.5 * sign(el) * sqrt(abs(el) / (PI * 0.5));
-  return vec2f(u, clamp(v, 0.0, 1.0));
+const SKY_TAU : f32 = 6.283185307179586;
+const SOLAR_DEG2RAD : f32 = 0.017453292519943295;
+const SOLAR_RAD2DEG : f32 = 57.2957795130823208768;
+
+fn fetchSkyTexel(x : i32, y : i32) -> vec3f {
+  return textureLoad(uSkyViewTex, vec2i(x, y), 0).rgb;
+}
+
+// AtmosphericSkySequence::SampleSkyViewDirection (geometric-limb bank split + Catmull-Rom rows)
+fn sampleSkyViewDirection(dir : vec3f) -> vec3f {
+  let w = i32(round(U.uSkyCfg.x));
+  let halfH = i32(round(U.uSkyCfg.z));
+  let limb = U.uSkyCfg.w;
+
+  let azimuth = atan2(dir.y, dir.x);
+  let polar = acos(clamp(dir.z, -1.0, 1.0));
+
+  var u = azimuth / SKY_TAU + 0.5;
+  u = u - floor(u);
+
+  let lowerBank = polar > limb;
+  var coordY = 0.0;
+  if (!lowerBank) {
+    let q = sqrt(clamp(1.0 - polar / max(1.0e-4, limb), 0.0, 1.0));
+    coordY = q * f32(halfH - 1);
+  } else {
+    let q = sqrt(clamp((polar - limb) / max(1.0e-4, PI - limb), 0.0, 1.0));
+    coordY = f32(halfH) + q * f32(halfH - 1);
+  }
+
+  let bankMin = select(0, halfH, lowerBank);
+  let bankMax = select(halfH - 1, halfH * 2 - 1, lowerBank);
+
+  let fx = u * f32(w) - 0.5;
+  let floorX = i32(floor(fx));
+  let ix0 = ((floorX % w) + w) % w;
+  let ix1 = (ix0 + 1) % w;
+  let tx = fx - floor(fx);
+  let sx = tx * tx * (3.0 - 2.0 * tx);
+
+  let iy1 = clamp(i32(floor(coordY)), bankMin, bankMax);
+  let iy0 = clamp(iy1 - 1, bankMin, bankMax);
+  let iy2 = clamp(iy1 + 1, bankMin, bankMax);
+  let iy3 = clamp(iy1 + 2, bankMin, bankMax);
+  let ty = clamp(coordY - f32(iy1), 0.0, 1.0);
+
+  let sxx = vec3f(sx);
+  let r0 = mix(fetchSkyTexel(ix0, iy0), fetchSkyTexel(ix1, iy0), sxx);
+  let r1 = mix(fetchSkyTexel(ix0, iy1), fetchSkyTexel(ix1, iy1), sxx);
+  let r2 = mix(fetchSkyTexel(ix0, iy2), fetchSkyTexel(ix1, iy2), sxx);
+  let r3 = mix(fetchSkyTexel(ix0, iy3), fetchSkyTexel(ix1, iy3), sxx);
+
+  let t2 = ty * ty;
+  let t3 = t2 * ty;
+  let catmull = 0.5 * ((2.0 * r1) + (-r0 + r2) * ty + (2.0 * r0 - 5.0 * r1 + 4.0 * r2 - r3) * t2 +
+                       (-r0 + 3.0 * r1 - 3.0 * r2 + r3) * t3);
+  return max(catmull, vec3f(0.0));
+}
+
+fn solarErfOf(x : f32) -> f32 {
+  let v = 1.0 / (1.0 + 0.3275911 * abs(x));
+  let poly = ((((1.061405429 * v - 1.453152027) * v + 1.421413741) * v - 0.284496736) * v + 0.254829592) * v;
+  let res = 1.0 - poly * exp(-x * x);
+  return select(res, -res, x < 0.0);
+}
+
+fn neckelLabsLimbDarkening(muIn : f32) -> vec3f {
+  let mu = clamp(muIn, 0.0, 1.0);
+  let mu2 = mu * mu;
+  let mu3 = mu2 * mu;
+  let mu4 = mu2 * mu2;
+  let mu5 = mu4 * mu;
+  let limbR = 0.34685 + 1.37539 * mu - 2.04425 * mu2 + 2.70493 * mu3 - 1.94290 * mu4 + 0.55999 * mu5;
+  let limbG = 0.23698 + 1.37916 * mu - 1.83226 * mu2 + 2.34540 * mu3 - 1.65319 * mu4 + 0.52391 * mu5;
+  let limbB = 0.11903 + 1.24089 * mu - 1.19977 * mu2 + 1.33936 * mu3 - 0.98690 * mu4 + 0.48739 * mu5;
+  return clamp(vec3f(limbR, limbG, limbB), vec3f(0.0), vec3f(1.05));
+}
+
+fn solarGlareSpread(separation : f32, discRadius : f32) -> f32 {
+  let reach = 30.0 * SOLAR_DEG2RAD;
+  if (separation >= reach) {
+    return 0.0;
+  }
+  let sepDeg = separation * SOLAR_RAD2DEG;
+  let discDeg = discRadius * SOLAR_RAD2DEG;
+  let effective = sqrt(sepDeg * sepDeg + discDeg * discDeg);
+  let windowTerm = 1.0 - separation / reach;
+  let bloom = 1.50 / ((effective + 0.02) * (effective + 0.02));
+  let aureoleRatio = effective / 6.0;
+  let aureole = 0.25 / (1.0 + aureoleRatio * aureoleRatio);
+  return (bloom + aureole) * windowTerm * windowTerm;
+}
+
+fn mediumAtAltitudeKm(altKm : f32) -> vec3f {
+  let altM = max(0.0, altKm * 1000.0);
+  let rayH = max(500.0, U.uMediumCfg1.x);
+  let mieH = max(200.0, U.uMediumCfg1.y);
+  let denR = exp(-altM / rayH) * max(0.0, U.uMediumCfg0.x);
+  let denM = exp(-altM / mieH) * max(0.0, U.uMediumCfg0.y);
+  let denO = max(0.0, 1.0 - abs(altM - 25000.0) / 15000.0) * max(0.0, U.uMediumCfg0.z);
+  let rayScatter = vec3f(5.802e-6, 13.558e-6, 33.1e-6) * 1000.0 * denR;
+  let mieExt = 4.40e-6 * 1000.0 * denM;
+  let ozone = vec3f(0.650e-6, 1.881e-6, 0.085e-6) * 1000.0 * denO;
+  return rayScatter + vec3f(mieExt) + ozone;
+}
+
+fn intersectUpperSphereKm(radiusKm : f32, cosPolar : f32, topKm : f32) -> f32 {
+  let disc = max(0.0, radiusKm * radiusKm * cosPolar * cosPolar + (topKm - radiusKm) * (topKm + radiusKm));
+  return max(0.0, -radiusKm * cosPolar + sqrt(disc));
+}
+
+// AtmosphericSkySequence::ComputeSolarTransmittance (64 quadratic Fraction^2 steps)
+fn computeSolarTransmittanceDirection(sunDir : vec3f) -> vec3f {
+  let groundKm = max(500.0, U.uMediumCfg0.w * 0.001);
+  let thicknessKm = max(10.0, U.uMediumCfg1.z * 0.001);
+  let topKm = groundKm + thicknessKm;
+  let altKm = max(0.001, U.uMediumCfg1.w * 0.001);
+  if (altKm >= thicknessKm) {
+    return vec3f(1.0);
+  }
+  let sunMag = length(sunDir);
+  let cosPolar = select(1.0, clamp(sunDir.z / sunMag, -1.0, 1.0), sunMag > 1.0e-6);
+  let radiusKm = groundKm + altKm;
+
+  if (cosPolar < 0.0) {
+    let blockDisc = radiusKm * radiusKm * cosPolar * cosPolar - (radiusKm - groundKm) * (radiusKm + groundKm);
+    if (blockDisc >= 0.0 && radiusKm > groundKm + 1.0e-4) {
+      return vec3f(0.0);
+    }
+  }
+  let distTopKm = intersectUpperSphereKm(radiusKm, cosPolar, topKm);
+  if (distTopKm <= 1.0e-5) {
+    return vec3f(1.0);
+  }
+
+  var opticalDepth = vec3f(0.0);
+  for (var s : i32 = 0; s < 64; s = s + 1) {
+    let f0 = f32(s) / 64.0;
+    let f1 = f32(s + 1) / 64.0;
+    let t0 = distTopKm * f0 * f0;
+    let t1 = distTopKm * f1 * f1;
+    let t = 0.5 * (t0 + t1);
+    let stepKm = max(1.0e-5, t1 - t0);
+    let rk = sqrt(max(groundKm * groundKm, radiusKm * radiusKm + 2.0 * radiusKm * cosPolar * t + t * t));
+    opticalDepth = opticalDepth + mediumAtAltitudeKm(rk - groundKm) * stepKm;
+  }
+  return exp(-opticalDepth);
+}
+
+// AtmosphericSkySequence::EvaluateSolarCoronaRadiance
+fn evaluateSolarCoronaRadiance(rayDirection : vec3f) -> vec3f {
+  if (U.uSolarCfgA.x <= 0.0 || U.uSolarCfgA.y <= 0.0) {
+    return vec3f(0.0);
+  }
+
+  let unitRay = normalize(rayDirection);
+  let unitSun = normalize(U.uSunDir.xyz);
+  let halfChord = 0.5 * length(unitRay - unitSun);
+  let separation = 2.0 * asin(clamp(halfChord, 0.0, 1.0));
+  let halfRad = max(0.0008, U.uSolarCfgA.z * 0.5 * SOLAR_DEG2RAD);
+
+  let skyBrightness = max(0.0, U.uSolarCfgA.y);
+  let discIntensity = max(0.0, U.uSolarCfgA.x) * skyBrightness * 2.1;
+  if (discIntensity <= 0.0) {
+    return vec3f(0.0);
+  }
+
+  let orbitalView = U.uSolarCfgC.x > 0.5;
+  let planetR = max(500000.0, U.uSolarCfgB.z);
+  let obsAlt = max(5.0, U.uSolarCfgB.w);
+  let viewerR = planetR + obsAlt;
+  let ratio = clamp(planetR / viewerR, 0.0, 1.0);
+  let limbZ = -sqrt(max(0.0, 1.0 - ratio * ratio));
+
+  let pixelSizeRad = max(0.0, U.uSolarCfgB.y);
+  let maxDiscCoronaR = max(halfRad * 48.0, pixelSizeRad * 8.0);
+  let horizonBand = max(0.00035, 0.65 * max(pixelSizeRad, 1.0e-4));
+  let horizonVis = select(
+    smoothstep(limbZ - horizonBand, limbZ + horizonBand, unitRay.z),
+    1.0,
+    orbitalView
+  );
+
+  var outRadiance = vec3f(0.0);
+  if (separation <= maxDiscCoronaR && horizonVis > 1.0e-5) {
+    var lineTransmittance = U.uSolarTrans.xyz;
+    if (!orbitalView) {
+      lineTransmittance = computeSolarTransmittanceDirection(vec3f(unitRay.xy, max(unitRay.z, limbZ + 1.0e-4)));
+    }
+
+    if (dot(lineTransmittance, vec3f(1.0)) > 1.0e-6) {
+      let normalizedRadius = separation / halfRad;
+
+      var smallWeight = 0.0;
+      if (pixelSizeRad > 1.0e-6) {
+        let radiusPixels = halfRad / pixelSizeRad;
+        let blend = clamp((6.0 - radiusPixels) / 3.0, 0.0, 1.0);
+        smallWeight = blend * blend * (3.0 - 2.0 * blend);
+      }
+
+      var resolvedPhotosphere = vec3f(0.0);
+      if (smallWeight < 1.0 && normalizedRadius < 1.32) {
+        let clampedR = min(1.0, normalizedRadius);
+        let muSun = sqrt(max(0.0, 1.0 - clampedR * clampedR));
+        let limbDark = neckelLabsLimbDarkening(muSun);
+        let edgeErfc = 0.5 * (1.0 - solarErfOf((normalizedRadius - 0.997) / 0.012));
+        resolvedPhotosphere = limbDark * (edgeErfc * discIntensity);
+      }
+
+      var subPixelPhotosphere = vec3f(0.0);
+      if (smallWeight > 0.0 && dot(unitRay, unitSun) > 0.0) {
+        var refAxis = vec3f(0.0, 0.0, 1.0);
+        if (abs(unitSun.z) >= 0.98) {
+          refAxis = vec3f(1.0, 0.0, 0.0);
+        }
+        let tangentT = normalize(cross(refAxis, unitSun));
+        let tangentB = normalize(cross(unitSun, tangentT));
+        let deltaX = dot(unitRay, tangentT);
+        let deltaY = dot(unitRay, tangentB);
+        let smallSigma = sqrt(0.25 * halfRad * halfRad + 0.20 * pixelSizeRad * pixelSizeRad);
+        let invSqrt2Sigma = 1.0 / (1.4142135623730951 * max(1.0e-6, smallSigma));
+        let lowX = (deltaX - 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        let highX = (deltaX + 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        let lowY = (deltaY - 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        let highY = (deltaY + 0.5 * pixelSizeRad) * invSqrt2Sigma;
+        let xMass = max(0.0, 0.5 * (solarErfOf(highX) - solarErfOf(lowX)));
+        let yMass = max(0.0, 0.5 * (solarErfOf(highY) - solarErfOf(lowY)));
+        let sinHalf = sin(0.5 * halfRad);
+        let solidAngle = 4.0 * PI * sinHalf * sinHalf;
+        let pixelArea = max(1.0e-12, pixelSizeRad * pixelSizeRad);
+        let subGain = (solidAngle / pixelArea) * xMass * yMass * discIntensity;
+        subPixelPhotosphere = vec3f(0.83276, 0.77447, 0.69061) * subGain;
+      }
+
+      let photosphere = mix(resolvedPhotosphere, subPixelPhotosphere, vec3f(smallWeight));
+
+      var coronaColour = vec3f(0.0);
+      let coronaBlurAngle = 0.30 * pixelSizeRad * smallWeight;
+      let coronaNormR = sqrt(separation * separation + coronaBlurAngle * coronaBlurAngle) / halfRad;
+      if (coronaNormR < 48.0) {
+        let r1 = coronaNormR / 1.18;
+        let r2 = coronaNormR / 3.40;
+        let r3 = coronaNormR / 11.5;
+        let innerTerm = 1.0 / pow(1.0 + r1 * r1, 1.85);
+        let middleTerm = 1.0 / pow(1.0 + r2 * r2, 1.38);
+        let outerTerm = 1.0 / pow(1.0 + r3 * r3, 1.22);
+        let scatterFactor = select(
+          clamp(0.55 + 0.85 * (1.0 - lineTransmittance.b), 0.55, 1.35),
+          0.38,
+          orbitalView
+        );
+        let coronaProfile = discIntensity *
+          (0.042 * innerTerm + 0.0085 * scatterFactor * middleTerm + 0.0014 * scatterFactor * outerTerm);
+        let windowFade = clamp(1.0 - coronaNormR / 48.0, 0.0, 1.0);
+        let smoothWindow = windowFade * windowFade;
+        coronaColour = coronaProfile * smoothWindow * vec3f(1.04, 0.99, 0.91);
+      }
+
+      outRadiance = outRadiance + (photosphere + coronaColour) * lineTransmittance * U.uSolarTint.xyz * horizonVis;
+    }
+  }
+
+  if (U.uSolarCfgB.x > 0.5 && U.uSolarCfgA.w > 0.0) {
+    let spread = solarGlareSpread(separation, halfRad);
+    if (spread > 0.0) {
+      let sunAxisHorizonVis = select(
+        smoothstep(limbZ - max(0.001, halfRad), limbZ + max(0.001, halfRad), unitSun.z),
+        1.0,
+        orbitalView
+      );
+      if (sunAxisHorizonVis > 1.0e-4) {
+        let glareScale = max(0.0, U.uSolarCfgA.w) * spread * (0.045 * discIntensity) * sunAxisHorizonVis;
+        outRadiance = outRadiance + U.uSolarTint.xyz * U.uSolarTrans.xyz * glareScale * vec3f(1.02, 1.00, 0.96);
+      }
+    }
+  }
+
+  return outRadiance;
 }
 
 fn hash31(p : vec3f) -> f32 {
@@ -1197,25 +1479,25 @@ fn evalMoonIrradiance() -> vec3f {
   return U.uMoonTint.xyz * max(0.0, U.uMoonCfg1.y) * 0.085 * mPhaseGain * mFade;
 }
 
+fn evalSkyDome(dir : vec3f) -> vec3f {
+  if (U.uSolarCfgC.y < 0.5) {
+    let up = clamp(dir.z * 0.5 + 0.5, 0.0, 1.0);
+    return U.uSkyRadiance.xyz * (0.65 + 0.70 * up);
+  }
+  return sampleSkyViewDirection(dir);
+}
+
 fn evalSky(dir : vec3f) -> vec3f {
-  let skyCol = textureSampleLevel(uSkyViewTex, uSkySampler, projectSkyViewUV(dir), 0.0).rgb;
+  let skyCol = evalSkyDome(dir);
   let cel = evalMoonAndStars(dir);
   let cl = evalVolumetricClouds(dir, skyCol, 0.5, 5);
   return (skyCol + cel) * cl.w + cl.rgb;
 }
 
 fn evalSkyPrimary(dir : vec3f, fragPx : vec2f) -> vec3f {
-  let skyCol = textureSampleLevel(uSkyViewTex, uSkySampler, projectSkyViewUV(dir), 0.0).rgb;
+  let skyCol = evalSkyDome(dir);
   let cel = evalMoonAndStars(dir);
-  let sunDir = U.uSunDir.xyz;
-  let sunIrr = U.uSunIrradiance.xyz;
-  let sunAng = max(0.002, U.uCamForward.w);
-  let cosSun = dot(dir, sunDir);
-  let sunEdge = smoothstep(cos(sunAng * 1.25), cos(sunAng * 0.65), cosSun);
-  let muDisc = clamp((cosSun - cos(sunAng)) / max(1e-5, 1.0 - cos(sunAng)), 0.0, 1.0);
-  let limb = 0.65 + 0.35 * pow(muDisc, 0.45);
-  let sunAureole = pow(max(0.0, cosSun), 160.0) * 0.25;
-  let sunVisual = sunIrr * (sunEdge * limb * 4.2 + sunAureole) * select(0.0, 1.0, dir.z > -0.02);
+  let sunVisual = evaluateSolarCoronaRadiance(dir);
 
   let jitter = hash12(fragPx * 0.73 + vec2f(U.uAtmoCfg0.w * 11.3));
   let cl = evalVolumetricClouds(dir, skyCol, jitter, 18);
@@ -2983,7 +3265,7 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   });
 
   const SceneUniformBuf = Device.createBuffer({
-    size: 576,
+    size: 704,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   const SceneDataStorageBuf = Device.createBuffer({
@@ -3167,7 +3449,7 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
   let ForceTransBuf = null;
   let ForceTransCap = 0;
 
-  const SceneUniformScratch = new ArrayBuffer(576);
+  const SceneUniformScratch = new ArrayBuffer(704);
   const SceneUniformF32 = new Float32Array(SceneUniformScratch);
   const SceneUniformI32 = new Int32Array(SceneUniformScratch);
   const OutlineUniformI32 = new Int32Array(4);
@@ -3609,6 +3891,46 @@ export async function CreateWebgpuGtxRenderer(OnDeviceLost) {
         SceneUniformF32[141] = AreaInfo ? AreaInfo.forward[1] : 0.0;
         SceneUniformF32[142] = AreaInfo ? AreaInfo.forward[2] : -1.0;
         SceneUniformF32[143] = 0.0;
+
+        // AtmosphereSkySequence parity block: uSkyCfg, uMediumCfg0/1, uSolarCfgA/B/C, uSolarTint, uSolarTrans
+        const MediumU = ResolveAtmosphericMedium(Atmo);
+        const SolarCfgU = ActiveScene.SolarConfig || {};
+        SceneUniformF32[144] = SKY_VIEW_WIDTH;
+        SceneUniformF32[145] = SKY_VIEW_HEIGHT;
+        SceneUniformF32[146] = SKY_VIEW_HEIGHT / 2;
+        SceneUniformF32[147] = SkyViewState.LimbAngle;
+        SceneUniformF32[148] = MediumU.RayleighStrength;
+        SceneUniformF32[149] = MediumU.MieStrength;
+        SceneUniformF32[150] = MediumU.OzoneStrength;
+        SceneUniformF32[151] = MediumU.PlanetRadiusMeters;
+        SceneUniformF32[152] = MediumU.RayleighScaleHeightMeters;
+        SceneUniformF32[153] = MediumU.MieScaleHeightMeters;
+        SceneUniformF32[154] = MediumU.AtmosphereThicknessMeters;
+        SceneUniformF32[155] = MediumU.ObserverAltitudeMeters;
+        SceneUniformF32[156] = SolarCfgU.SolarEnabled === false
+          ? 0.0
+          : (SolarCfgU.SolarIntensityMultiplier ?? 22.0);
+        SceneUniformF32[157] = MediumU.SkyBrightnessMultiplier;
+        SceneUniformF32[158] = SolarCfgU.AngularDiameterDegrees ?? 0.533;
+        SceneUniformF32[159] = SolarCfgU.SunGlareStrength ?? 0.25;
+        SceneUniformF32[160] = SolarCfgU.AppearanceMode === 0 ? 0.0 : 1.0;
+        SceneUniformF32[161] = (2.0 * Math.tan(ActiveScene.VerticalFovRad * 0.5)) / Math.max(1, Height);
+        SceneUniformF32[162] = MediumU.PlanetRadiusMeters;
+        SceneUniformF32[163] = MediumU.ObserverAltitudeMeters;
+        SceneUniformF32[164] = ActiveScene.IsOrbitalView ? 1.0 : 0.0;
+        SceneUniformF32[165] = MediumU.AtmosphereEnabled ? 1.0 : 0.0;
+        SceneUniformF32[166] = 0.0;
+        SceneUniformF32[167] = 0.0;
+        const SolarTintU = ActiveScene.EffectiveSolarTint || [1, 1, 1];
+        SceneUniformF32[168] = SolarTintU[0];
+        SceneUniformF32[169] = SolarTintU[1];
+        SceneUniformF32[170] = SolarTintU[2];
+        SceneUniformF32[171] = 0.0;
+        const SolarTransU = ActiveScene.SolarTransmittance || [1, 1, 1];
+        SceneUniformF32[172] = SolarTransU[0];
+        SceneUniformF32[173] = SolarTransU[1];
+        SceneUniformF32[174] = SolarTransU[2];
+        SceneUniformF32[175] = 0.0;
 
         Device.queue.writeBuffer(SceneUniformBuf, 0, SceneUniformScratch);
 

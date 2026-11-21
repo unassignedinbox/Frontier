@@ -1218,7 +1218,7 @@ assert.ok(
 
   // Physical Sky-View LUT + rgba16float packing
   const Lut = BuildSkyViewLut(Compiled.SunDir, Compiled.Atmosphere);
-  assert.equal(Lut.length, SKY_VIEW_WIDTH * SKY_VIEW_HEIGHT * 4, "Sky-View LUT dimensions match 96x48x4");
+  assert.equal(Lut.length, SKY_VIEW_WIDTH * SKY_VIEW_HEIGHT * 4, "Sky-View LUT dimensions match the native 192x108x4 geometric-limb LUT");
   const Half = PackSkyViewRgba16f(Lut);
   assert.equal(Half.length, Lut.length, "PackSkyViewRgba16f packs all RGBA16F channels");
   const Zenith = SampleSkyViewLutCpu(Lut, 0, 0, 1);
@@ -1272,9 +1272,10 @@ assert.ok(
   };
   const NightScene = CompileLiveGtxScene(ShowcaseInitialRows, NightValues, {}, "PERSP");
   assert.ok(NightScene.SunDir[2] < -0.5, `Midnight SunDir.z is deeply below horizon (${NightScene.SunDir[2].toFixed(3)})`);
+  // TieredWorldRenderSequence::SynchronizeWorldAtmosphere floors the night sky at (0.015, 0.020, 0.032)
   assert.ok(
-    NightScene.SkyRadiance[0] < 0.02 && NightScene.SkyRadiance[1] < 0.02 && NightScene.SkyRadiance[2] < 0.03,
-    `Night SkyRadiance is truly dark (${NightScene.SkyRadiance.map((v) => v.toFixed(4)).join(",")})`,
+    NightScene.SkyRadiance[0] <= 0.0151 && NightScene.SkyRadiance[1] <= 0.0201 && NightScene.SkyRadiance[2] <= 0.0321,
+    `Night SkyRadiance sits on the native planetary haze floor (${NightScene.SkyRadiance.map((v) => v.toFixed(4)).join(",")})`,
   );
   const NightLut = BuildSkyViewLut(NightScene.SunDir, NightScene.Atmosphere);
   const NightZenith = SampleSkyViewLutCpu(NightLut, 0, 0, 1);

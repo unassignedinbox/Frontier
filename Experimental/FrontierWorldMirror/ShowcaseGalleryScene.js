@@ -29,8 +29,16 @@ import {
 import {
   ComputeSolarTransmittance,
   MOON_PRESET_TINTS,
+  ResolveAtmosphericMedium,
 } from "./AtmosphereSky.js";
-import { Solar } from "./Solar.mjs";
+import {
+  ConvertAzimuthElevationToWorldAxis,
+  ConvertWorldAxisToAzimuthElevation,
+  DEFAULT_SOLAR_CELESTIAL_CONFIGURATION,
+  SolarAppearanceMode,
+  SolarTintSource,
+  SolveSolarEphemeris,
+} from "./Solar.mjs";
 
 export const ConstructForceTemplates = FORCE_MODELS.map((Law) => ({
   Id: `template-force-${Law.Id.toLowerCase()}`,
@@ -675,16 +683,17 @@ export const ShowcaseInitialValues = {
   },
   sun: {
     Direction: [0.42, -0.55, 0.72],
-    SolarIrradiance: [5.4, 5.1, 4.65],
-    SkyRadiance: [0.16, 0.23, 0.36],
-    Intensity: 5.4,
-    "Angular Diameter": 2.06,
-    Temperature: 5650,
+    Intensity: 22.0,
+    Direct: 2.5,
+    "Angular Diameter": 0.533,
+    Temperature: 6500,
     "Colour source": 0,
     "Sun Tint": "#ffffff",
-    "Local Hours": 13.4,
-    "Day of Month": 4,
-    Month: 10,
+    "Local Hours": 15.5,
+    "Day of Month": 10,
+    Month: 9,
+    Year: 2026,
+    UtcOffset: 2,
     Latitude: -26.19,
     Longitude: 28.32,
     Animate: false,
@@ -861,117 +870,145 @@ export function CompileLiveGtxScene(
     OrthoHalfHeight = 1.95;
   }
 
-  // Atmosphere, Volumetric Clouds, Moon & Stars under World
+  // Atmosphere medium + Sun emitter (C++ AtmosphericMediumConfiguration / SolarCelestialConfiguration parity)
   const AtmoRow = Rows.find((Row) => Row.Panel === "atmosphere");
   const AtmoRec = (AtmoRow && Values?.[AtmoRow.Id]) || Values?.atmosphere || {};
   const AtmoEnabled = AtmoRow ? RowEffectivelyVisible(AtmoRow, Rows, Hidden) : true;
+  const SunRow = Rows.find((Row) => Row.Panel === "sun");
+  const SunRec = (SunRow && Values?.[SunRow.Id]) || Values?.sun || {};
+  const SunVisible =
+    (SunRow ? RowEffectivelyVisible(SunRow, Rows, Hidden) : true) && SunRec.Powered !== false;
+
+  const Num = (Raw, Fallback) => {
+    const Parsed = Number(Raw);
+    return Number.isFinite(Parsed) ? Parsed : Fallback;
+  };
+  const ClampRange = (Raw, Lo, Hi, Fallback) => Math.max(Lo, Math.min(Hi, Num(Raw, Fallback)));
+
+  const GroundAlbedoLinear =
+    typeof AtmoRec["Ground Albedo"] === "string"
+      ? HexToLinearRgb(AtmoRec["Ground Albedo"], [0.045, 0.088, 0.165])
+      : [0.045, 0.088, 0.165];
+
   const Atmosphere = {
     enabled: AtmoEnabled,
-    rayleigh: Math.max(0, Number(AtmoRec.Rayleigh ?? 1.0)),
-    mie: Math.max(0, Number(AtmoRec.Mie ?? 1.0)),
-    mieG: Math.max(0, Math.min(0.94, Number(AtmoRec["Mie Anisotropy"] ?? 0.78))),
-    ozone: Math.max(0, Number(AtmoRec.Ozone ?? 1.2)),
-    rayleighH: Math.max(500, Number(AtmoRec["Rayleigh Scale H"] ?? 8000)),
-    mieH: Math.max(200, Number(AtmoRec["Mie Scale H"] ?? 1200)),
-    atmoTop: Math.max(20000, Number(AtmoRec.Atmosphere ?? 60000)),
-    horizonGlow: Math.max(0, Number(AtmoRec["Horizon Glow"] ?? 1.0)),
-    skyTint: typeof AtmoRec["Sky Tint"] === "string" ? HexToLinearRgb(AtmoRec["Sky Tint"], [1, 1, 1]) : [1, 1, 1],
-    skyBrightness: Math.max(0, Number(AtmoRec["Sky Brightness"] ?? 1.0)),
-    groundAlbedo: typeof AtmoRec["Ground Albedo"] === "string"
-      ? HexToLinearRgb(AtmoRec["Ground Albedo"], [0.22, 0.19, 0.15])
-      : [0.22, 0.19, 0.15],
+    rayleigh: Math.max(0, Num(AtmoRec.Rayleigh, 1.0)),
+    mie: Math.max(0, Num(AtmoRec.Mie, 1.0)),
+    mieG: ClampRange(AtmoRec["Mie Anisotropy"], 0, 0.99, 0.78),
+    ozone: Math.max(0, Num(AtmoRec.Ozone, 1.2)),
+    rayleighH: Math.max(500, Num(AtmoRec["Rayleigh Scale H"], 8000)),
+    mieH: Math.max(200, Num(AtmoRec["Mie Scale H"], 1200)),
+    atmoTop: Math.max(10, Num(AtmoRec.Atmosphere, 60000)),
+    horizonGlow: Math.max(0, Num(AtmoRec["Horizon Glow"], 1.0)),
+    planetRadius: Math.max(500000, Num(AtmoRec["Planet Radius"], 6360000)),
+    observerAltitude: Num(AtmoRec["Observer Altitude"], 100),
+    orbital: Boolean(AtmoRec["Orbital View"]),
+    skyTint:
+      typeof AtmoRec["Sky Tint"] === "string"
+        ? HexToLinearRgb(AtmoRec["Sky Tint"], [1, 1, 1])
+        : [1, 1, 1],
+    skyBrightness: Math.max(0, Num(AtmoRec["Sky Brightness"], 1.0)),
+    groundAlbedo: GroundAlbedoLinear,
   };
+
+  // ---------------------------------------------------------------- Sun ----------------------------------------------------------------
+  // Authored Direction acts as SolarCelestialConfiguration::ManualDirectionOverride (compass bearing + altitude)
+  const AuthoredDirection = Array.isArray(SunRec.Direction) ? SunRec.Direction : null;
+  const ManualOverride = Boolean(AuthoredDirection) && SunRec.Ephemeris !== true;
+  const ManualAzEl = ManualOverride
+    ? ConvertWorldAxisToAzimuthElevation(AuthoredDirection)
+    : [Num(SunRec.Azimuth, 295.0), Num(SunRec.Elevation, 38.0)];
+
+  const SolarConfig = {
+    ...DEFAULT_SOLAR_CELESTIAL_CONFIGURATION,
+    SolarEnabled: SunVisible,
+    AngularDiameterDegrees: ClampRange(SunRec["Angular Diameter"], 0.1, 5.0, 0.533),
+    TintSource:
+      Num(SunRec["Colour source"], 0) === 1 ? SolarTintSource.KelvinTemperature : SolarTintSource.RgbTint,
+    ManualRgbTint:
+      typeof SunRec["Sun Tint"] === "string"
+        ? HexToLinearRgb(SunRec["Sun Tint"], [1, 1, 1])
+        : [1, 1, 1],
+    ColorTemperatureKelvin: ClampRange(SunRec.Temperature, 1000, 40000, 6500),
+    SolarIntensityMultiplier: ClampRange(SunRec.Intensity, 0, 60, 22.0),
+    DirectGainMultiplier: ClampRange(SunRec.Direct, 0, 5, 2.5),
+    LocalHours: Num(SunRec["Local Hours"], 15.5),
+    CycleAnimationEnabled: Boolean(SunRec.Animate),
+    CycleSpeedPreset: Math.round(ClampRange(SunRec.Speed, 0, 4, 1)),
+    DayDurationHours: ClampRange(SunRec["Day duration"], 0.01, 168, 3.0),
+    SiteLatitudeDegrees: ClampRange(SunRec.Latitude, -90, 90, -26.19),
+    SiteLongitudeDegrees: ClampRange(SunRec.Longitude, -180, 180, 28.32),
+    DayOfMonth: Math.round(ClampRange(SunRec["Day of Month"], 1, 31, 10)),
+    Month: Math.round(ClampRange(SunRec.Month, 1, 12, 9)),
+    Year: Math.round(ClampRange(SunRec.Year, 1000, 9999, 2026)),
+    UtcOffsetHours: ClampRange(SunRec.UtcOffset, -12, 14, 2.0),
+    ManualDirectionOverride: ManualOverride,
+    ManualAzimuthDegrees: ManualAzEl[0],
+    ManualElevationDegrees: ManualAzEl[1],
+    AppearanceMode:
+      Num(SunRec["Appearance mode"], SolarAppearanceMode.Radiant) === SolarAppearanceMode.Muted
+        ? SolarAppearanceMode.Muted
+        : SolarAppearanceMode.Radiant,
+    SunGlareStrength: ClampRange(SunRec.Glare, 0, 2, 0.25),
+  };
+
+  const SolarSolved = SolveSolarEphemeris(SolarConfig);
+  const SunDir = SolarSolved.WorldDirectionToSun;
+  const EffectiveSolarTint = SolarSolved.EffectiveSolarTint;
+
+  const MediumResolved = ResolveAtmosphericMedium(Atmosphere);
+  const SolarTransmittance = AtmoEnabled
+    ? ComputeSolarTransmittance(SunDir, Atmosphere, MediumResolved.ObserverAltitudeMeters)
+    : [1.0, 1.0, 1.0];
+  const IsOrbitalView =
+    MediumResolved.OrbitalViewEnabled ||
+    MediumResolved.ObserverAltitudeMeters > MediumResolved.AtmosphereThicknessMeters;
+  const SunVisibilityGain = IsOrbitalView
+    ? 1.0
+    : Math.max(0, Math.min(1, (SolarSolved.ElevationDegrees + 4.0) / 10.0));
+  const IrradianceScale =
+    SolarConfig.SolarIntensityMultiplier * SolarConfig.DirectGainMultiplier * 0.044 * SunVisibilityGain;
+  const SunIrradiance = SunVisible
+    ? [
+        EffectiveSolarTint[0] * SolarTransmittance[0] * IrradianceScale,
+        EffectiveSolarTint[1] * SolarTransmittance[1] * IrradianceScale,
+        EffectiveSolarTint[2] * SolarTransmittance[2] * IrradianceScale,
+      ]
+    : [0.0, 0.0, 0.0];
+  const SunAngularRadiusRad = Math.max(
+    0.002,
+    Math.min(0.25, SolarConfig.AngularDiameterDegrees * 0.5 * (Math.PI / 180.0)),
+  );
+
+  // SkyRadiance floor mirrors TieredWorldRenderSequence::SynchronizeWorldAtmosphere (LUT overhead sample replaces it per frame)
+  const SkyRadiance = IsOrbitalView ? [0.001, 0.001, 0.002] : [0.015, 0.02, 0.032];
+
+  Atmosphere.solarIntensity = SolarConfig.SolarIntensityMultiplier;
+  Atmosphere.solarEnabled = SolarConfig.SolarEnabled;
+  Atmosphere.fallbackSkyRadiance = SkyRadiance;
 
   const CloudRow = Rows.find((Row) => Row.Panel === "clouds");
   const CloudRec = (CloudRow && Values?.[CloudRow.Id]) || Values?.clouds || {};
   const CloudVisible = CloudRow ? RowEffectivelyVisible(CloudRow, Rows, Hidden) : true;
   const WindRow = Rows.find((Row) => Row.Panel === "wind");
   const WindRec = (WindRow && Values?.[WindRow.Id]) || Values?.wind || {};
-  const WindSpeed = Number(WindRec.Speed ?? 6.5);
-  const WindBearingRad = ((Number(WindRec.Bearing ?? 25) || 0) * Math.PI) / 180;
+  const WindSpeed = Num(WindRec.Speed, 6.5);
+  const WindBearingRad = ((Num(WindRec.Bearing, 25) || 0) * Math.PI) / 180;
   const FollowWind = CloudRec["Follow Wind"] !== false;
   const Clouds = {
     enabled: CloudVisible && CloudRec.Enabled !== false,
-    type: Math.max(0, Math.min(3, Math.round(Number(CloudRec.Type ?? 0)))),
-    coverage: Math.max(0, Math.min(1, Number(CloudRec.Coverage ?? 0.42))),
-    density: Math.max(0, Number(CloudRec.Density ?? 2.2)),
-    featureScale: Math.max(0.05, Number(CloudRec["Feature Scale"] ?? 0.4)),
-    baseM: Math.max(200, Number(CloudRec.Base ?? 1400)),
-    thicknessM: Math.max(150, Number(CloudRec.Thickness ?? 1100)),
-    anvil: Math.max(0, Math.min(1, Number(CloudRec.Anvil ?? 0.5))),
-    anisotropy: Math.max(-0.5, Math.min(0.92, Number(CloudRec.Anisotropy ?? 0.48))),
+    type: Math.max(0, Math.min(3, Math.round(Num(CloudRec.Type, 0)))),
+    coverage: Math.max(0, Math.min(1, Num(CloudRec.Coverage, 0.42))),
+    density: Math.max(0, Num(CloudRec.Density, 2.2)),
+    featureScale: Math.max(0.05, Num(CloudRec["Feature Scale"], 0.4)),
+    baseM: Math.max(200, Num(CloudRec.Base, 1400)),
+    thicknessM: Math.max(150, Num(CloudRec.Thickness, 1100)),
+    anvil: Math.max(0, Math.min(1, Num(CloudRec.Anvil, 0.5))),
+    anisotropy: Math.max(-0.5, Math.min(0.92, Num(CloudRec.Anisotropy, 0.48))),
     shadowEnabled: CloudRec["Shadow Enabled"] !== false,
     windX: FollowWind ? Math.sin(WindBearingRad) * WindSpeed : 0,
     windY: FollowWind ? Math.cos(WindBearingRad) * WindSpeed : 0,
   };
-
-  // Sun emitter (supports Visibility Eye, Outliner Power Toggle, & physical Solar Transmittance)
-  const SunRow = Rows.find((Row) => Row.Panel === "sun");
-  const SunRec = (SunRow && Values?.[SunRow.Id]) || Values?.sun || {};
-  const SunVisible =
-    (SunRow ? RowEffectivelyVisible(SunRow, Rows, Hidden) : true) &&
-    SunRec.Powered !== false;
-  let RawSunDir = Array.isArray(SunRec.Direction) ? SunRec.Direction : null;
-  if (!RawSunDir) {
-    const Ephem = Solar({
-      LocalHours: Number(SunRec["Local Hours"] ?? 13.4),
-      Month: Number(SunRec.Month ?? 10),
-      Day: Number(SunRec["Day of Month"] ?? 4),
-      Latitude: Number(SunRec.Latitude ?? -26.19),
-      Longitude: Number(SunRec.Longitude ?? 28.32),
-      UtcOffset: Number(SunRec.UtcOffset ?? 2),
-    });
-    const ElR = (Ephem.Elevation * Math.PI) / 180;
-    const AzR = (Ephem.Azimuth * Math.PI) / 180;
-    RawSunDir = [
-      Math.cos(ElR) * Math.sin(AzR),
-      Math.cos(ElR) * Math.cos(AzR),
-      Math.sin(ElR),
-    ];
-  }
-  const SunDir = NormalizeVec3(RawSunDir, [0.42, -0.55, 0.72]);
-  const SunIntensity = Math.max(0, Number(SunRec.Intensity ?? 5.4));
-  const GainScale = SunIntensity / 5.4;
-  const BaseSunIrr = Array.isArray(SunRec.SolarIrradiance)
-    ? SunRec.SolarIrradiance
-    : [5.4, 5.1, 4.65];
-  const SunTintRgb =
-    SunRec["Colour source"] === 1
-      ? (() => {
-          const K = Math.max(1800, Math.min(12000, Number(SunRec.Temperature ?? 6500))) / 100;
-          const r = K <= 66 ? 1 : Math.max(0, Math.min(1, 1.2929 * Math.pow(K - 60, -0.1332)));
-          const g = K <= 66
-            ? Math.max(0, Math.min(1, 0.39008 * Math.log(K) - 0.6318))
-            : Math.max(0, Math.min(1, 1.12989 * Math.pow(K - 60, -0.0755)));
-          const b = K >= 66 ? 1 : K <= 19 ? 0 : Math.max(0, Math.min(1, 0.5432 * Math.log(K - 10) - 1.1962));
-          return [Math.pow(r, 2.2), Math.pow(g, 2.2), Math.pow(b, 2.2)];
-        })()
-      : typeof SunRec["Sun Tint"] === "string"
-        ? HexToLinearRgb(SunRec["Sun Tint"], [1, 1, 1])
-        : [1, 1, 1];
-  const SunElevDeg = (Math.asin(Math.max(-1, Math.min(1, SunDir[2]))) * 180) / Math.PI;
-  const SunHorizonFade = Math.max(0, Math.min(1, (SunElevDeg + 1.5) / 4.5));
-  const SunTrans = Atmosphere.enabled ? ComputeSolarTransmittance(SunDir, Atmosphere) : [1, 1, 1];
-  const RefNoonTrans = [0.82, 0.87, 0.92];
-  const SunIrradiance = SunVisible
-    ? [
-        BaseSunIrr[0] * GainScale * SunTintRgb[0] * (SunTrans[0] / RefNoonTrans[0]) * SunHorizonFade,
-        BaseSunIrr[1] * GainScale * SunTintRgb[1] * (SunTrans[1] / RefNoonTrans[1]) * SunHorizonFade,
-        BaseSunIrr[2] * GainScale * SunTintRgb[2] * (SunTrans[2] / RefNoonTrans[2]) * SunHorizonFade,
-      ]
-    : [0, 0, 0];
-  const AngularDiamDeg = Math.max(0.1, Number(SunRec["Angular Diameter"] ?? 2.06));
-  const SunAngularRadiusRad = Math.max(0.002, (AngularDiamDeg * 0.5 * Math.PI) / 180);
-  const SkyDayVis = Math.max(0, Math.min(1, (SunElevDeg + 6.0) / 14.0));
-  const BaseSkyRad = Array.isArray(SunRec.SkyRadiance)
-    ? SunRec.SkyRadiance
-    : [0.16, 0.23, 0.36];
-  const SkyScale = 0.008 + 0.992 * SkyDayVis * SkyDayVis;
-  const SkyRadiance = [
-    BaseSkyRad[0] * SkyScale,
-    BaseSkyRad[1] * SkyScale,
-    BaseSkyRad[2] * SkyScale,
-  ];
 
   const MoonRow = Rows.find((Row) => Row.Panel === "moon");
   const MoonRec = (MoonRow && Values?.[MoonRow.Id]) || Values?.moon || {};
@@ -981,18 +1018,10 @@ export function CompileLiveGtxScene(
   const MoonFollowSky = Boolean(MoonRec["moon0:Follow Sky"] ?? MoonRec["Follow Sky"]);
   const MoonAzDeg = Number(MoonRec["moon0:Azimuth"] ?? MoonRec.Azimuth ?? 300);
   const MoonElDeg = Number(MoonRec["moon0:Elevation"] ?? MoonRec.Elevation ?? 28);
-  const MoonAzRad = (MoonAzDeg * Math.PI) / 180;
-  const MoonElRad = (MoonElDeg * Math.PI) / 180;
+  // LunarStarfieldSequence::ResolveMoonWorldDirection (FollowSkyOppositeSun) + compass-axis conversion
   const MoonDir = MoonFollowSky
-    ? NormalizeVec3([-SunDir[0], -SunDir[1], Math.max(0.18, -SunDir[2] * 0.65 + 0.35)], [0, 0, 1])
-    : NormalizeVec3(
-        [
-          Math.cos(MoonElRad) * Math.sin(MoonAzRad),
-          Math.cos(MoonElRad) * Math.cos(MoonAzRad),
-          Math.sin(MoonElRad),
-        ],
-        [-0.5, 0.4, 0.45],
-      );
+    ? NormalizeVec3([-SunDir[0], -SunDir[1], -SunDir[2]], [0, 0, 1])
+    : ConvertAzimuthElevationToWorldAxis(MoonAzDeg, MoonElDeg);
   const MoonPreset = Math.max(0, Math.min(5, Math.round(Number(MoonRec["moon0:Preset"] ?? MoonRec.Preset ?? 0))));
   const Moon = {
     visible: MoonVis,
@@ -1351,6 +1380,12 @@ export function CompileLiveGtxScene(
     SunIrradiance,
     SunAngularRadiusRad,
     SkyRadiance,
+    SolarConfig,
+    EffectiveSolarTint,
+    SolarTransmittance,
+    SolarSolved,
+    Medium: MediumResolved,
+    IsOrbitalView,
     Atmosphere,
     Clouds,
     Moon,

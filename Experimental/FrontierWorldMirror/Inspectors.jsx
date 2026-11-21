@@ -41,7 +41,11 @@ import {
 import { LunarSphere } from "../FrontierEditor/moon-controls.jsx";
 import Native from "./NativePanels.json";
 import { InspectorCarousel } from "./InspectorCarousel.jsx";
-import { Solar } from "./Solar.mjs";
+import {
+  ConvertAzimuthElevationToWorldAxis,
+  ConvertWorldAxisToAzimuthElevation,
+  Solar,
+} from "./Solar.mjs";
 import { SensorField } from "./OpticalGraphic.jsx";
 import { FACE_KEYS, FACE_LABELS, HasActiveFaceColors } from "./WorldPropLibrary.js";
 
@@ -594,13 +598,9 @@ export function Inspector({
         Longitude: Name === "Longitude" ? Next : V("Longitude"),
       };
       const Solved = Solar(Params);
-      const El = (Solved.Elevation * Math.PI) / 180;
-      const Az = (Solved.Azimuth * Math.PI) / 180;
-      Change("Direction", [
-        Number((Math.cos(El) * Math.sin(Az)).toFixed(4)),
-        Number((Math.cos(El) * Math.cos(Az)).toFixed(4)),
-        Number(Math.sin(El).toFixed(4)),
-      ]);
+      // CelestialEphemerisSolver::ConvertAzimuthElevationToWorldAxis (+X North, -Y East, +Z Up)
+      const Axis = ConvertAzimuthElevationToWorldAxis(Solved.Azimuth, Solved.Elevation);
+      Change("Direction", Axis.map((Component) => Number(Component.toFixed(4))));
     }
     if (Subject.Panel === "moon" && Name === "Preset")
       Change(Prefix + "Size", [0.52, 1.6, 1.2, 1.1, 2.4, 0.6][Next]);
@@ -626,13 +626,8 @@ export function Inspector({
         Latitude: Latest.current.Latitude ?? -26.19,
         Longitude: Latest.current.Longitude ?? 28.32,
       });
-      const El = (Solved.Elevation * Math.PI) / 180;
-      const Az = (Solved.Azimuth * Math.PI) / 180;
-      Change("Direction", [
-        Number((Math.cos(El) * Math.sin(Az)).toFixed(4)),
-        Number((Math.cos(El) * Math.cos(Az)).toFixed(4)),
-        Number(Math.sin(El).toFixed(4)),
-      ]);
+      const Axis = ConvertAzimuthElevationToWorldAxis(Solved.Azimuth, Solved.Elevation);
+      Change("Direction", Axis.map((Component) => Number(Component.toFixed(4))));
       Before = Now;
     }, 100);
     return () => clearInterval(Timer);
@@ -1189,13 +1184,23 @@ export function Inspector({
   let Content;
   if (Subject.Panel === "sun") {
     const Time = V("Local Hours");
-    const Solved = Solar({
+    const Ephemeris = Solar({
       LocalHours: Time,
       Month: V("Month"),
       Day: V("Day of Month"),
       Latitude: V("Latitude"),
       Longitude: V("Longitude"),
     });
+    const AuthoredDirection = Array.isArray(Values?.Direction) ? Values.Direction : null;
+    const SolvedAzEl = AuthoredDirection
+      ? ConvertWorldAxisToAzimuthElevation(AuthoredDirection)
+      : [Ephemeris.Azimuth, Ephemeris.Elevation];
+    const Solved = {
+      Elevation: SolvedAzEl[1],
+      Azimuth: SolvedAzEl[0],
+      Declination: Ephemeris.Declination,
+      EquationOfTime: Ephemeris.EquationOfTime,
+    };
     // C++ parity (SunInspectorPanel @ 9864969): Sun Disk · Sunlight gain ·
     // Day cycle · Observer / date · Solved direction — schema-driven controls.
     const SunDirectionNode = (

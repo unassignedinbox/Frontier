@@ -1,19 +1,41 @@
 //==========================================================================================================================================
 //                                                      ATMOSPHERESKY.JS
 //==========================================================================================================================================
-// Physical Bruneton/Hillaire Rayleigh + Mie + Ozone Sky-View LUT, Solar Transmittance,
-// Volumetric 3D Cloud Raymarcher (CPU parity), Moon Phase/Albedos, and Deterministic Starfield.
+// 1:1 JavaScript port of Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.cpp
+// (Bruneton/Hillaire Rayleigh + Mie + Ozone Transmittance LUT + infinite-order Multi-Scatter LUT +
+//  192x108 geometric-limb SkyView LUT + Neckel & Labs solar photosphere + K/F corona + optical glare)
+// plus the volumetric 3D cloud raymarcher (CPU parity), moon phase/albedos, and deterministic starfield.
 
-export const SKY_VIEW_WIDTH = 96;
-export const SKY_VIEW_HEIGHT = 48;
+export const SKY_VIEW_WIDTH = 192;
+export const SKY_VIEW_HEIGHT = 108;
+export const TRANS_W = 256;
+export const TRANS_H = 64;
+export const MS_W = 32;
+export const MS_H = 32;
 
 const EARTH_RADIUS_M = 6360000.0;
-const BASE_ATMO_TOP_M = 60000.0;
-const BASE_RAYLEIGH_SCATTER = [5.802e-6, 13.558e-6, 33.1e-6];
-const BASE_MIE_SCATTER = 3.996e-6;
-const BASE_MIE_EXTINCTION = 4.40e-6;
-const BASE_OZONE_ABS = [0.650e-6, 1.881e-6, 0.085e-6];
+const DEFAULT_THICKNESS_M = 60000.0;
 const OBSERVER_ALT_M = 100.0;
+
+const TAU = Math.PI * 2.0;
+const DEG_TO_RAD = Math.PI / 180.0;
+const RAD_TO_DEG = 180.0 / Math.PI;
+const PI_F = Math.PI;
+const INV_FOUR_PI = 1.0 / (4.0 * Math.PI);
+
+// AtmosphericSkySequence.cpp anon-namespace sea-level coefficients [m^-1]
+const SeaLevelRayleighScatter = [5.802e-6, 13.558e-6, 33.1e-6];
+const SeaLevelMieScatter = 3.996e-6;
+const SeaLevelMieExtinction = 4.40e-6;
+const PeakOzoneAbs = [0.650e-6, 1.881e-6, 0.085e-6];
+
+const TRANS_STEPS = 64;
+const MS_DIRS = 32;
+const MS_STEPS = 24;
+const GOLDEN_RATIO = 1.6180339887498948482;
+const SKY_STEPS = 40;
+const GND_STEPS = 28;
+const HALF_H = SKY_VIEW_HEIGHT >> 1; // 54
 
 export const MOON_PRESET_TINTS = [
   [0.94, 0.93, 0.90], // 0: Luna
@@ -25,7 +47,11 @@ export const MOON_PRESET_TINTS = [
 ];
 
 function Clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+function ClampUnit(v) {
+  return Clamp(v, -1.0, 1.0);
 }
 
 function IntersectSphereDist(originZ, dirZ, radius) {
@@ -37,352 +63,1115 @@ function IntersectSphereDist(originZ, dirZ, radius) {
   return [-b - root, -b + root];
 }
 
-function IntersectSphereVec(ox, oy, oz, dx, dy, dz, radius) {
-  const b = ox * dx + oy * dy + oz * dz;
-  const c = ox * ox + oy * oy + oz * oz - radius * radius;
-  const disc = b * b - c;
-  if (disc < 0.0) return [-1.0, -1.0];
-  const root = Math.sqrt(disc);
-  return [-b - root, -b + root];
+//==========================================================================================================================================
+//                                        ATMOSPHERIC MEDIUM CONFIGURATION (C++ STRUCT PARITY)
+//==========================================================================================================================================
+
+export const DEFAULT_ATMOSPHERIC_MEDIUM = {
+  AtmosphereEnabled: false,
+  RayleighStrength: 1.0,
+  MieStrength: 1.0,
+  MieAnisotropy: 0.78,
+  OzoneStrength: 1.2,
+  RayleighScaleHeightMeters: 8000.0,
+  MieScaleHeightMeters: 1200.0,
+  AtmosphereThicknessMeters: DEFAULT_THICKNESS_M,
+  PlanetRadiusMeters: EARTH_RADIUS_M,
+  LimbGlowIntensity: 1.0,
+  SkyBrightnessMultiplier: 1.0,
+  SkyTint: [1.0, 1.0, 1.0],
+  GroundAlbedo: [0.045, 0.088, 0.165],
+  OrbitalViewEnabled: false,
+  ObserverAltitudeMeters: OBSERVER_ALT_M,
+  SolarIntensityMultiplier: 22.0,
+};
+
+// Maps the inspector atmosphere record (or an already-resolved C++ medium) onto AtmosphericMediumConfiguration
+export function ResolveAtmosphericMedium(atmo = null) {
+  const Src = atmo || {};
+  const Num = (Raw, Fallback) => {
+    const N = Number(Raw);
+    return Number.isFinite(N) ? N : Fallback;
+  };
+  const Rgb = (Raw, Fallback) =>
+    Array.isArray(Raw) && Raw.length >= 3
+      ? [Number(Raw[0]) || 0, Number(Raw[1]) || 0, Number(Raw[2]) || 0]
+      : Fallback.slice();
+  const D = DEFAULT_ATMOSPHERIC_MEDIUM;
+  return {
+    AtmosphereEnabled: Src.AtmosphereEnabled ?? Src.enabled ?? D.AtmosphereEnabled,
+    RayleighStrength: Math.max(0, Num(Src.RayleighStrength ?? Src.rayleigh, D.RayleighStrength)),
+    MieStrength: Math.max(0, Num(Src.MieStrength ?? Src.mie, D.MieStrength)),
+    MieAnisotropy: Math.max(0, Math.min(0.99, Num(Src.MieAnisotropy ?? Src.mieG, D.MieAnisotropy))),
+    OzoneStrength: Math.max(0, Num(Src.OzoneStrength ?? Src.ozone, D.OzoneStrength)),
+    RayleighScaleHeightMeters: Math.max(500, Num(Src.RayleighScaleHeightMeters ?? Src.rayleighH, D.RayleighScaleHeightMeters)),
+    MieScaleHeightMeters: Math.max(200, Num(Src.MieScaleHeightMeters ?? Src.mieH, D.MieScaleHeightMeters)),
+    AtmosphereThicknessMeters: Math.max(10, Num(Src.AtmosphereThicknessMeters ?? Src.atmoTop, D.AtmosphereThicknessMeters)),
+    PlanetRadiusMeters: Math.max(500000, Num(Src.PlanetRadiusMeters ?? Src.planetRadius, D.PlanetRadiusMeters)),
+    LimbGlowIntensity: Math.max(0, Num(Src.LimbGlowIntensity ?? Src.horizonGlow, D.LimbGlowIntensity)),
+    SkyBrightnessMultiplier: Math.max(0, Num(Src.SkyBrightnessMultiplier ?? Src.skyBrightness, D.SkyBrightnessMultiplier)),
+    SkyTint: Rgb(Src.SkyTint ?? Src.skyTint, D.SkyTint),
+    GroundAlbedo: Rgb(Src.GroundAlbedo ?? Src.groundAlbedo, D.GroundAlbedo),
+    OrbitalViewEnabled: Boolean(Src.OrbitalViewEnabled ?? Src.orbital),
+    ObserverAltitudeMeters: Num(Src.ObserverAltitudeMeters ?? Src.observerAltitude, D.ObserverAltitudeMeters),
+    SolarIntensityMultiplier: Math.max(0, Num(Src.SolarIntensityMultiplier ?? Src.solarIntensity ?? Src.solarIntensityScale, D.SolarIntensityMultiplier)),
+  };
 }
 
-export function ReconstructSkyViewDirection(u, v) {
-  const azimuth = (u - 0.5) * 2.0 * Math.PI;
-  const signed = (0.5 - v) * 2.0;
-  const elevation = Math.sign(signed) * signed * signed * (Math.PI * 0.5);
-  const cosE = Math.cos(elevation);
-  return [cosE * Math.cos(azimuth), cosE * Math.sin(azimuth), Math.sin(elevation)];
+//==========================================================================================================================================
+//                                        SPHERICAL GEOMETRY (AtmosphericSkySequence.cpp anon namespace)
+//==========================================================================================================================================
+
+function ComputeHorizonDistanceKm(BottomRadiusKm, TopRadiusKm) {
+  return Math.sqrt(Math.max(0.0, (TopRadiusKm - BottomRadiusKm) * (TopRadiusKm + BottomRadiusKm)));
 }
 
-export function ProjectSkyViewCoordinates(dx, dy, dz) {
-  const azimuth = Math.atan2(dy, dx);
-  const elevation = Math.asin(Clamp(dz, -1.0, 1.0));
-  const u = azimuth / (2.0 * Math.PI) + 0.5;
-  const v = 0.5 - 0.5 * Math.sign(elevation) * Math.sqrt(Math.abs(elevation) / (Math.PI * 0.5));
-  return [u, v];
+function QuerySphereBlockedKm(RadiusKm, CosinePolar, TargetRadiusKm) {
+  if (CosinePolar >= 0.0) return false;
+  const Disc =
+    RadiusKm * RadiusKm * CosinePolar * CosinePolar -
+    (RadiusKm - TargetRadiusKm) * (RadiusKm + TargetRadiusKm);
+  return Disc >= 0.0 && RadiusKm > TargetRadiusKm + 1.0e-4;
 }
 
-export function ComputeSolarTransmittance(sunDir, atmo = {}) {
-  const rayleighMul = Math.max(0.0, Number(atmo.rayleigh ?? 1.0));
-  const mieMul = Math.max(0.0, Number(atmo.mie ?? 1.0));
-  const ozoneMul = Math.max(0.0, Number(atmo.ozone ?? 1.2));
-  const rayleighH = Math.max(500.0, Number(atmo.rayleighH ?? 8000.0));
-  const mieH = Math.max(200.0, Number(atmo.mieH ?? 1200.0));
-  const atmoTop = Math.max(20000.0, Number(atmo.atmoTop ?? BASE_ATMO_TOP_M));
-  const atmoR = EARTH_RADIUS_M + atmoTop;
+function IntersectUpperSphereDistanceKm(RadiusKm, CosinePolar, TopRadiusKm) {
+  const Disc = Math.max(
+    0.0,
+    RadiusKm * RadiusKm * CosinePolar * CosinePolar +
+      (TopRadiusKm - RadiusKm) * (TopRadiusKm + RadiusKm),
+  );
+  return Math.max(0.0, -RadiusKm * CosinePolar + Math.sqrt(Disc));
+}
 
-  const origZ = EARTH_RADIUS_M + OBSERVER_ALT_M;
-  const [gNear] = IntersectSphereDist(origZ, sunDir[2], EARTH_RADIUS_M);
-  if (gNear > 0.0) return [0.0, 0.0, 0.0];
-  const [, exit] = IntersectSphereDist(origZ, sunDir[2], atmoR);
-  if (exit <= 0.0) return [1.0, 1.0, 1.0];
-
-  const samples = 48;
-  const step = exit / samples;
-  let dR = 0.0, dG = 0.0, dB = 0.0;
-  for (let i = 0; i < samples; ++i) {
-    const t = (i + 0.5) * step;
-    const px = sunDir[0] * t;
-    const py = sunDir[1] * t;
-    const pz = origZ + sunDir[2] * t;
-    const alt = Math.max(0.0, Math.hypot(px, py, pz) - EARTH_RADIUS_M);
-    const denR = Math.exp(-alt / rayleighH) * rayleighMul;
-    const denM = Math.exp(-alt / mieH) * mieMul;
-    const denO = Math.max(0.0, 1.0 - Math.abs(alt - 25000.0) / 15000.0) * ozoneMul;
-    const mieE = BASE_MIE_EXTINCTION * denM;
-    dR += (BASE_RAYLEIGH_SCATTER[0] * denR + mieE + BASE_OZONE_ABS[0] * denO) * step;
-    dG += (BASE_RAYLEIGH_SCATTER[1] * denR + mieE + BASE_OZONE_ABS[1] * denO) * step;
-    dB += (BASE_RAYLEIGH_SCATTER[2] * denR + mieE + BASE_OZONE_ABS[2] * denO) * step;
+function IntersectLowerSphereDistanceKm(RadiusKm, CosinePolar, BottomRadiusKm) {
+  const Disc =
+    RadiusKm * RadiusKm * CosinePolar * CosinePolar -
+    (RadiusKm - BottomRadiusKm) * (RadiusKm + BottomRadiusKm);
+  if (CosinePolar < 0.0 && Disc >= 0.0) {
+    const Hit = -RadiusKm * CosinePolar - Math.sqrt(Disc);
+    if (Hit > 0.0) return { Hits: true, DistanceKm: Hit };
   }
-  return [Math.exp(-dR), Math.exp(-dG), Math.exp(-dB)];
+  return { Hits: false, DistanceKm: 0.0 };
+}
+
+function ComputeLimbPolarAngle(ViewerRadiusKm, BottomRadiusKm) {
+  const SafeR = Math.max(BottomRadiusKm + 1.0e-4, ViewerRadiusKm);
+  const TangentHeight = Math.sqrt(
+    Math.max(0.0, (SafeR - BottomRadiusKm) * (SafeR + BottomRadiusKm)),
+  );
+  return Math.acos(ClampUnit(-TangentHeight / SafeR));
+}
+
+const MediumScratch = {
+  RayScatterR: 0,
+  RayScatterG: 0,
+  RayScatterB: 0,
+  MieScatter: 0,
+  ExtinctionR: 0,
+  ExtinctionG: 0,
+  ExtinctionB: 0,
+};
+
+// Allocation-free variant used by every quadrature (millions of samples per bake)
+function EvaluateMediumInto(AltitudeKm, Medium, Out) {
+  const AltM = AltitudeKm > 0.0 ? AltitudeKm * 1000.0 : 0.0;
+  const RayH = Medium.RayleighScaleHeightMeters > 500.0 ? Medium.RayleighScaleHeightMeters : 500.0;
+  const MieH = Medium.MieScaleHeightMeters > 200.0 ? Medium.MieScaleHeightMeters : 200.0;
+  const RayMul = Medium.RayleighStrength;
+  const MieMul = Medium.MieStrength;
+  const OzoneMul = Medium.OzoneStrength;
+
+  const DenR = Math.exp(-AltM / RayH) * RayMul;
+  const DenM = Math.exp(-AltM / MieH) * MieMul;
+  const OzoneBand = 1.0 - Math.abs(AltM - 25000.0) / 15000.0;
+  const DenO = (OzoneBand > 0.0 ? OzoneBand : 0.0) * OzoneMul;
+
+  const RayScatterR = SeaLevelRayleighScatter[0] * 1000.0 * DenR;
+  const RayScatterG = SeaLevelRayleighScatter[1] * 1000.0 * DenR;
+  const RayScatterB = SeaLevelRayleighScatter[2] * 1000.0 * DenR;
+  const MieScatter = SeaLevelMieScatter * 1000.0 * DenM;
+  const MieExt = SeaLevelMieExtinction * 1000.0 * DenM;
+
+  Out.RayScatterR = RayScatterR;
+  Out.RayScatterG = RayScatterG;
+  Out.RayScatterB = RayScatterB;
+  Out.MieScatter = MieScatter;
+  Out.ExtinctionR = RayScatterR + MieExt + PeakOzoneAbs[0] * 1000.0 * DenO;
+  Out.ExtinctionG = RayScatterG + MieExt + PeakOzoneAbs[1] * 1000.0 * DenO;
+  Out.ExtinctionB = RayScatterB + MieExt + PeakOzoneAbs[2] * 1000.0 * DenO;
+  return Out;
+}
+
+function EvaluateMediumAtAltitudeKm(AltitudeKm, Medium) {
+  const C = EvaluateMediumInto(AltitudeKm, Medium, {
+    RayScatterR: 0,
+    RayScatterG: 0,
+    RayScatterB: 0,
+    MieScatter: 0,
+    ExtinctionR: 0,
+    ExtinctionG: 0,
+    ExtinctionB: 0,
+  });
+  return C;
+}
+
+function SampleLut2DBilinearRgb(Lut, Width, Height, U, V, Out) {
+  const FX = Clamp(U, 0.0, 1.0) * (Width - 1);
+  const FY = Clamp(V, 0.0, 1.0) * (Height - 1);
+  const X0 = Math.min(Width - 2, Math.floor(FX));
+  const Y0 = Math.min(Height - 2, Math.floor(FY));
+  const TX = FX - X0;
+  const TY = FY - Y0;
+
+  const I00 = (Y0 * Width + X0) * 3;
+  const I10 = I00 + 3;
+  const I01 = I00 + Width * 3;
+  const I11 = I01 + 3;
+  const Mix = (A, B, T) => A + (B - A) * T;
+  Out[0] = Mix(Mix(Lut[I00], Lut[I10], TX), Mix(Lut[I01], Lut[I11], TX), TY);
+  Out[1] = Mix(Mix(Lut[I00 + 1], Lut[I10 + 1], TX), Mix(Lut[I01 + 1], Lut[I11 + 1], TX), TY);
+  Out[2] = Mix(Mix(Lut[I00 + 2], Lut[I10 + 2], TX), Mix(Lut[I01 + 2], Lut[I11 + 2], TX), TY);
+  return Out;
+}
+
+function SampleTransmittanceSphericalLut(Lut, RadiusKm, CosPolar, BottomRadiusKm, TopRadiusKm, Out) {
+  if (QuerySphereBlockedKm(RadiusKm, CosPolar, BottomRadiusKm)) {
+    Out[0] = 0.0;
+    Out[1] = 0.0;
+    Out[2] = 0.0;
+    return Out;
+  }
+  const ClampedR = Clamp(RadiusKm, BottomRadiusKm, TopRadiusKm);
+  const HorizonKm = ComputeHorizonDistanceKm(BottomRadiusKm, TopRadiusKm);
+  const RhoKm = Math.sqrt(Math.max(0.0, (ClampedR - BottomRadiusKm) * (ClampedR + BottomRadiusKm)));
+  const DistTopKm = IntersectUpperSphereDistanceKm(ClampedR, ClampUnit(CosPolar), TopRadiusKm);
+  const DMinKm = Math.max(0.0, TopRadiusKm - ClampedR);
+  const DMaxKm = RhoKm + HorizonKm;
+  const U = Clamp((DistTopKm - DMinKm) / Math.max(1.0e-5, DMaxKm - DMinKm), 0.0, 1.0);
+  const V = Clamp(RhoKm / Math.max(1.0e-5, HorizonKm), 0.0, 1.0);
+  return SampleLut2DBilinearRgb(Lut, TRANS_W, TRANS_H, U, V, Out);
+}
+
+function SampleMultiScatterGridLut(Lut, AltitudeKm, SolarCosine, ThicknessKm, Out) {
+  const U = Clamp(0.5 * (SolarCosine + 1.0), 0.0, 1.0);
+  const V = Math.sqrt(Clamp(AltitudeKm / Math.max(1.0e-3, ThicknessKm), 0.0, 1.0));
+  return SampleLut2DBilinearRgb(Lut, MS_W, MS_H, U, V, Out);
+}
+
+//==========================================================================================================================================
+//                                     CACHED 256x64 TRANSMITTANCE + 32x32 MULTI-SCATTER FOUNDATION LUTS
+//==========================================================================================================================================
+
+const Scratch3 = [0, 0, 0];
+
+const Foundation = {
+  Trans: null,
+  Multi: null,
+  BottomKm: -1,
+  TopKm: -1,
+  RayStrength: -1,
+  MieStrength: -1,
+  OzoneStrength: -1,
+  RayScaleH: -1,
+  MieScaleH: -1,
+  GroundAlbedoHash: -1,
+};
+
+export function GetTransmittanceLut() {
+  return Foundation.Trans;
+}
+
+export function GetMultiScatterLut() {
+  return Foundation.Multi;
+}
+
+function EnsureFoundationLuts(Medium) {
+  const GroundKm = Math.max(500.0, Medium.PlanetRadiusMeters * 0.001);
+  const ThicknessKm = Math.max(10.0, Medium.AtmosphereThicknessMeters * 0.001);
+  const TopKm = GroundKm + ThicknessKm;
+  const RayMul = Math.max(0.0, Medium.RayleighStrength);
+  const MieMul = Math.max(0.0, Medium.MieStrength);
+  const OzoneMul = Math.max(0.0, Medium.OzoneStrength);
+  const RayH = Math.max(500.0, Medium.RayleighScaleHeightMeters);
+  const MieH = Math.max(200.0, Medium.MieScaleHeightMeters);
+  const AlbHash =
+    Medium.GroundAlbedo[0] + 7.1 * Medium.GroundAlbedo[1] + 31.3 * Medium.GroundAlbedo[2];
+
+  const MediumChanged =
+    !Foundation.Trans ||
+    !Foundation.Multi ||
+    Math.abs(Foundation.BottomKm - GroundKm) > 1.0e-4 ||
+    Math.abs(Foundation.TopKm - TopKm) > 1.0e-4 ||
+    Math.abs(Foundation.RayStrength - RayMul) > 1.0e-5 ||
+    Math.abs(Foundation.MieStrength - MieMul) > 1.0e-5 ||
+    Math.abs(Foundation.OzoneStrength - OzoneMul) > 1.0e-5 ||
+    Math.abs(Foundation.RayScaleH - RayH) > 1.0e-2 ||
+    Math.abs(Foundation.MieScaleH - MieH) > 1.0e-2 ||
+    Math.abs(Foundation.GroundAlbedoHash - AlbHash) > 1.0e-5;
+
+  if (!MediumChanged) {
+    return { GroundKm, TopKm, ThicknessKm };
+  }
+
+  Foundation.BottomKm = GroundKm;
+  Foundation.TopKm = TopKm;
+  Foundation.RayStrength = RayMul;
+  Foundation.MieStrength = MieMul;
+  Foundation.OzoneStrength = OzoneMul;
+  Foundation.RayScaleH = RayH;
+  Foundation.MieScaleH = MieH;
+  Foundation.GroundAlbedoHash = AlbHash;
+
+  // Pass 1: 256x64 Bruneton/Hillaire spherical-horizon Transmittance LUT (64 quadratic Fraction^2 steps)
+  const Trans = new Float32Array(TRANS_W * TRANS_H * 3);
+  const HorizonKm = ComputeHorizonDistanceKm(GroundKm, TopKm);
+  for (let Y = 0; Y < TRANS_H; ++Y) {
+    const V = Y / (TRANS_H - 1);
+    const RhoKm = V * HorizonKm;
+    const RadiusKm = Math.sqrt(RhoKm * RhoKm + GroundKm * GroundKm);
+    const DMinKm = Math.max(0.0, TopKm - RadiusKm);
+    const DMaxKm = RhoKm + HorizonKm;
+    for (let X = 0; X < TRANS_W; ++X) {
+      const U = X / (TRANS_W - 1);
+      const DistTopKm = DMinKm + U * (DMaxKm - DMinKm);
+      const CosPolar =
+        DistTopKm <= 1.0e-5
+          ? 1.0
+          : ClampUnit(
+              (HorizonKm * HorizonKm - RhoKm * RhoKm - DistTopKm * DistTopKm) /
+                (2.0 * RadiusKm * DistTopKm),
+            );
+
+      let OptR = 0.0;
+      let OptG = 0.0;
+      let OptB = 0.0;
+      for (let S = 0; S < TRANS_STEPS; ++S) {
+        const F0 = S / TRANS_STEPS;
+        const F1 = (S + 1) / TRANS_STEPS;
+        const T0 = DistTopKm * F0 * F0;
+        const T1 = DistTopKm * F1 * F1;
+        const T = 0.5 * (T0 + T1);
+        const Step = Math.max(1.0e-5, T1 - T0);
+        const RK = Math.sqrt(
+          Math.max(
+            GroundKm * GroundKm,
+            RadiusKm * RadiusKm + 2.0 * RadiusKm * CosPolar * T + T * T,
+          ),
+        );
+        const C = EvaluateMediumInto(RK - GroundKm, Medium, MediumScratch);
+        OptR += C.ExtinctionR * Step;
+        OptG += C.ExtinctionG * Step;
+        OptB += C.ExtinctionB * Step;
+      }
+      const Idx = (Y * TRANS_W + X) * 3;
+      Trans[Idx] = Math.exp(-OptR);
+      Trans[Idx + 1] = Math.exp(-OptG);
+      Trans[Idx + 2] = Math.exp(-OptB);
+    }
+  }
+  Foundation.Trans = Trans;
+
+  // Pass 2: 32x32 isotropic infinite-order Multi-Scatter LUT (Hillaire 2020 Fibonacci 32 dirs x 24 steps)
+  const Multi = new Float32Array(MS_W * MS_H * 3);
+  const InvDirs = 1.0 / MS_DIRS;
+  for (let Y = 0; Y < MS_H; ++Y) {
+    const V = Y / (MS_H - 1);
+    const AltKm = Clamp(V * V * ThicknessKm, 0.01, Math.max(0.02, ThicknessKm - 0.01));
+    const RadiusKm = GroundKm + AltKm;
+
+    for (let X = 0; X < MS_W; ++X) {
+      const U = X / (MS_W - 1);
+      const SunCos = ClampUnit(2.0 * U - 1.0);
+      const SunSin = Math.sqrt(Math.max(0.0, 1.0 - SunCos * SunCos));
+
+      let Lum2R = 0.0;
+      let Lum2G = 0.0;
+      let Lum2B = 0.0;
+      let FmsR = 0.0;
+      let FmsG = 0.0;
+      let FmsB = 0.0;
+
+      for (let D = 0; D < MS_DIRS; ++D) {
+        const CosPhi = 1.0 - 2.0 * (D + 0.5) * InvDirs;
+        const SinPhi = Math.sqrt(Math.max(0.0, 1.0 - CosPhi * CosPhi));
+        const Theta = (TAU * (D + 0.5)) / GOLDEN_RATIO;
+        const DirX = SinPhi * Math.cos(Theta);
+        const DirZ = CosPhi;
+        const RaySunCos = ClampUnit(DirX * SunSin + DirZ * SunCos);
+
+        const GroundHit = IntersectLowerSphereDistanceKm(RadiusKm, DirZ, GroundKm);
+        const MaxD = GroundHit.Hits
+          ? GroundHit.DistanceKm
+          : IntersectUpperSphereDistanceKm(RadiusKm, DirZ, TopKm);
+        if (MaxD <= 1.0e-5) {
+          continue;
+        }
+        const Step = MaxD / MS_STEPS;
+
+        let TR = 1.0;
+        let TG = 1.0;
+        let TB = 1.0;
+        let RayL2R = 0.0;
+        let RayL2G = 0.0;
+        let RayL2B = 0.0;
+        let RayFmsR = 0.0;
+        let RayFmsG = 0.0;
+        let RayFmsB = 0.0;
+
+        for (let S = 0; S < MS_STEPS; ++S) {
+          const T = (S + 0.5) * Step;
+          const RK = Math.sqrt(
+            Math.max(GroundKm * GroundKm, RadiusKm * RadiusKm + 2.0 * RadiusKm * DirZ * T + T * T),
+          );
+          const C = EvaluateMediumInto(RK - GroundKm, Medium, MediumScratch);
+
+          const SafeER = Math.max(1.0e-7, C.ExtinctionR);
+          const SafeEG = Math.max(1.0e-7, C.ExtinctionG);
+          const SafeEB = Math.max(1.0e-7, C.ExtinctionB);
+          const SegTR = Math.exp(-SafeER * Step);
+          const SegTG = Math.exp(-SafeEG * Step);
+          const SegTB = Math.exp(-SafeEB * Step);
+          const IntR = (1.0 - SegTR) / SafeER;
+          const IntG = (1.0 - SegTG) / SafeEG;
+          const IntB = (1.0 - SegTB) / SafeEB;
+
+          const ScatR = C.RayScatterR + C.MieScatter;
+          const ScatG = C.RayScatterG + C.MieScatter;
+          const ScatB = C.RayScatterB + C.MieScatter;
+
+          const SampleSunCos = ClampUnit((RadiusKm * SunCos + T * RaySunCos) / RK);
+          const SunT = SampleTransmittanceSphericalLut(Trans, RK, SampleSunCos, GroundKm, TopKm, Scratch3);
+
+          RayL2R += TR * ScatR * INV_FOUR_PI * SunT[0] * IntR;
+          RayL2G += TG * ScatG * INV_FOUR_PI * SunT[1] * IntG;
+          RayL2B += TB * ScatB * INV_FOUR_PI * SunT[2] * IntB;
+
+          RayFmsR += TR * ScatR * IntR;
+          RayFmsG += TG * ScatG * IntG;
+          RayFmsB += TB * ScatB * IntB;
+
+          TR *= SegTR;
+          TG *= SegTG;
+          TB *= SegTB;
+        }
+
+        if (GroundHit.Hits) {
+          const HitSunCos = ClampUnit((RadiusKm * SunCos + MaxD * RaySunCos) / GroundKm);
+          if (HitSunCos > 0.0) {
+            const GroundSunT = SampleTransmittanceSphericalLut(
+              Trans,
+              GroundKm,
+              HitSunCos,
+              GroundKm,
+              TopKm,
+              Scratch3,
+            );
+            const DiffFactor = HitSunCos / PI_F;
+            RayL2R += TR * Medium.GroundAlbedo[0] * GroundSunT[0] * DiffFactor;
+            RayL2G += TG * Medium.GroundAlbedo[1] * GroundSunT[1] * DiffFactor;
+            RayL2B += TB * Medium.GroundAlbedo[2] * GroundSunT[2] * DiffFactor;
+          }
+        }
+
+        // 4*pi / MsDirs * (1/(4*pi)) == 1 / MsDirs for isotropic multi-scatter spherical integration
+        Lum2R += RayL2R * InvDirs;
+        Lum2G += RayL2G * InvDirs;
+        Lum2B += RayL2B * InvDirs;
+        FmsR += RayFmsR * InvDirs;
+        FmsG += RayFmsG * InvDirs;
+        FmsB += RayFmsB * InvDirs;
+      }
+
+      const Idx = (Y * MS_W + X) * 3;
+      Multi[Idx] = Lum2R / Math.max(1.0e-3, 1.0 - Math.min(0.95, FmsR));
+      Multi[Idx + 1] = Lum2G / Math.max(1.0e-3, 1.0 - Math.min(0.95, FmsG));
+      Multi[Idx + 2] = Lum2B / Math.max(1.0e-3, 1.0 - Math.min(0.95, FmsB));
+    }
+  }
+  Foundation.Multi = Multi;
+  return { GroundKm, TopKm, ThicknessKm };
+}
+
+//==========================================================================================================================================
+//                                        ComputeSolarTransmittance (C++ public static)
+//==========================================================================================================================================
+
+export function ComputeSolarTransmittance(SunDirection, atmo = {}, ObserverAltitudeMeters = null) {
+  const Medium = ResolveAtmosphericMedium(atmo);
+  const AltObs = ObserverAltitudeMeters === null || ObserverAltitudeMeters === undefined
+    ? Medium.ObserverAltitudeMeters
+    : Number(ObserverAltitudeMeters);
+
+  const GroundKm = Math.max(500.0, Medium.PlanetRadiusMeters * 0.001);
+  const ThicknessKm = Math.max(10.0, Medium.AtmosphereThicknessMeters * 0.001);
+  const TopKm = GroundKm + ThicknessKm;
+  const AltKm = Math.max(0.001, AltObs * 0.001);
+  if (AltKm >= ThicknessKm) {
+    return [1.0, 1.0, 1.0];
+  }
+
+  const SunMag = Math.sqrt(SunDirection[0] * SunDirection[0] + SunDirection[1] * SunDirection[1] + SunDirection[2] * SunDirection[2]);
+  const CosPolar = SunMag > 1.0e-6 ? ClampUnit(SunDirection[2] / SunMag) : 1.0;
+  const RadiusKm = GroundKm + AltKm;
+
+  if (QuerySphereBlockedKm(RadiusKm, CosPolar, GroundKm)) {
+    return [0.0, 0.0, 0.0];
+  }
+  const DistTopKm = IntersectUpperSphereDistanceKm(RadiusKm, CosPolar, TopKm);
+  if (DistTopKm <= 1.0e-5) {
+    return [1.0, 1.0, 1.0];
+  }
+
+  let OptR = 0.0;
+  let OptG = 0.0;
+  let OptB = 0.0;
+  for (let S = 0; S < TRANS_STEPS; ++S) {
+    const F0 = S / TRANS_STEPS;
+    const F1 = (S + 1) / TRANS_STEPS;
+    const T0 = DistTopKm * F0 * F0;
+    const T1 = DistTopKm * F1 * F1;
+    const T = 0.5 * (T0 + T1);
+    const Step = Math.max(1.0e-5, T1 - T0);
+    const RK = Math.sqrt(
+      Math.max(GroundKm * GroundKm, RadiusKm * RadiusKm + 2.0 * RadiusKm * CosPolar * T + T * T),
+    );
+    const C = EvaluateMediumInto(RK - GroundKm, Medium, MediumScratch);
+    OptR += C.ExtinctionR * Step;
+    OptG += C.ExtinctionG * Step;
+    OptB += C.ExtinctionB * Step;
+  }
+  return [Math.exp(-OptR), Math.exp(-OptG), Math.exp(-OptB)];
+}
+
+//==========================================================================================================================================
+//                                        Transmittance / Multi-Scatter LUT sampling (C++ public)
+//==========================================================================================================================================
+
+export function SampleTransmittanceLutDirection(atmo, AltitudeMeters, PolarCosine) {
+  const Medium = ResolveAtmosphericMedium(atmo);
+  if (!Foundation.Trans || !Foundation.Multi) {
+    const Sin = Math.sqrt(Math.max(0.0, 1.0 - PolarCosine * PolarCosine));
+    return ComputeSolarTransmittance([Sin, 0.0, PolarCosine], Medium, AltitudeMeters);
+  }
+  const RadiusKm = Foundation.BottomKm + Math.max(0.0, AltitudeMeters * 0.001);
+  const Out = SampleTransmittanceSphericalLut(
+    Foundation.Trans,
+    RadiusKm,
+    PolarCosine,
+    Foundation.BottomKm,
+    Foundation.TopKm,
+    [0, 0, 0],
+  );
+  return [Out[0], Out[1], Out[2]];
+}
+
+export function SampleMultiScatterLut(atmo, AltitudeMeters, SolarCosine) {
+  const Medium = ResolveAtmosphericMedium(atmo);
+  if (!Foundation.Trans || !Foundation.Multi) {
+    return [0.0, 0.0, 0.0];
+  }
+  const ThicknessKm = Math.max(10.0, Medium.AtmosphereThicknessMeters * 0.001);
+  const Out = SampleMultiScatterGridLut(
+    Foundation.Multi,
+    Math.max(0.0, AltitudeMeters * 0.001),
+    SolarCosine,
+    ThicknessKm,
+    [0, 0, 0],
+  );
+  return [Out[0], Out[1], Out[2]];
+}
+
+//==========================================================================================================================================
+//                                        SkyView LUT direction reconstruction / projection
+//==========================================================================================================================================
+
+// Reconstructs the SkyView LUT ray for texel-space coordinates (u in [0,1), v in [0,1] over rows 0..107)
+export function ReconstructSkyViewDirection(u, v, LimbAngle = SkyViewState.LimbAngle) {
+  const Limb = Math.max(1.0e-5, LimbAngle || 0.0);
+  const Y = v * (SKY_VIEW_HEIGHT - 1);
+  const LowerBank = Y >= HALF_H;
+  const LocalV = LowerBank
+    ? (Y - HALF_H) / (HALF_H - 1)
+    : Y / (HALF_H - 1);
+  const PolarAngle = LowerBank
+    ? Math.min(PI_F - 1.0e-5, Limb + (PI_F - Limb) * LocalV * LocalV + 1.5e-4)
+    : Math.max(0.0, Limb * (1.0 - LocalV * LocalV) - 1.5e-4);
+  const CosPolar = Math.cos(PolarAngle);
+  const SinPolar = Math.sqrt(Math.max(0.0, 1.0 - CosPolar * CosPolar));
+  const Azimuth = (u - 0.5) * TAU;
+  return [SinPolar * Math.cos(Azimuth), SinPolar * Math.sin(Azimuth), CosPolar];
+}
+
+// Projects a world direction onto SkyView LUT [u,v] using the C++ geometric-limb split
+export function ProjectSkyViewCoordinates(dx, dy, dz, LimbAngle = SkyViewState.LimbAngle) {
+  const Limb = Math.max(1.0e-5, LimbAngle || 0.0);
+  const Azimuth = Math.atan2(dy, dx);
+  const PolarAngle = Math.acos(ClampUnit(dz));
+
+  let U = Azimuth / TAU + 0.5;
+  U -= Math.floor(U);
+
+  const LowerBank = PolarAngle > Limb;
+  let CoordY;
+  if (!LowerBank) {
+    const Q = Math.sqrt(Clamp(1.0 - PolarAngle / Math.max(1.0e-4, Limb), 0.0, 1.0));
+    CoordY = Q * (HALF_H - 1);
+  } else {
+    const Q = Math.sqrt(
+      Clamp((PolarAngle - Limb) / Math.max(1.0e-4, PI_F - Limb), 0.0, 1.0),
+    );
+    CoordY = HALF_H + Q * (HALF_H - 1);
+  }
+  return [U, CoordY / (SKY_VIEW_HEIGHT - 1)];
+}
+
+//==========================================================================================================================================
+//                                        BuildSkyViewLut (192x108 geometric-limb-centered)
+//==========================================================================================================================================
+
+export const SkyViewState = {
+  Data: null,
+  LimbAngle: 0.0,
+  StartRadiusKm: EARTH_RADIUS_M * 0.001 + OBSERVER_ALT_M * 0.001,
+  BottomKm: EARTH_RADIUS_M * 0.001,
+  TopKm: EARTH_RADIUS_M * 0.001 + DEFAULT_THICKNESS_M * 0.001,
+};
+
+export function BuildSkyViewLut(sunDir, atmo = {}, outBuf = null, ObserverAltitudeMeters = null) {
+  const Medium = ResolveAtmosphericMedium(atmo);
+  const W = SKY_VIEW_WIDTH;
+  const H = SKY_VIEW_HEIGHT;
+  const data = outBuf && outBuf.length === W * H * 4 ? outBuf : new Float32Array(W * H * 4);
+
+  const SunMag = Math.sqrt(sunDir[0] * sunDir[0] + sunDir[1] * sunDir[1] + sunDir[2] * sunDir[2]);
+  const UnitSun = SunMag > 1.0e-6
+    ? [sunDir[0] / SunMag, sunDir[1] / SunMag, sunDir[2] / SunMag]
+    : [0.0, 0.0, 1.0];
+
+  const GroundKm = Math.max(500.0, Medium.PlanetRadiusMeters * 0.001);
+  const ThicknessKm = Math.max(10.0, Medium.AtmosphereThicknessMeters * 0.001);
+  const TopKm = GroundKm + ThicknessKm;
+  const MieG = Clamp(Medium.MieAnisotropy, 0.0, 0.99);
+
+  const ObsAlt = ObserverAltitudeMeters === null || ObserverAltitudeMeters === undefined
+    ? Medium.ObserverAltitudeMeters
+    : Number(ObserverAltitudeMeters);
+  const EffectiveAltM = Clamp(
+    ObsAlt > 0.0 ? ObsAlt : OBSERVER_ALT_M,
+    5.0,
+    Math.max(100.0, (ThicknessKm - 0.05) * 1000.0),
+  );
+  const StartRadiusKm = GroundKm + EffectiveAltM * 0.001;
+
+  // Poisson-free deterministic bake: foundation LUTs are rebuilt only when the medium changes
+  EnsureFoundationLuts(Medium);
+  const Trans = Foundation.Trans;
+  const Multi = Foundation.Multi;
+
+  if (!Medium.AtmosphereEnabled) {
+    // Engine fallback: EvaluateSkyDome() shades the plain SkyRadiance dome when atmosphere is disabled
+    const Base = Array.isArray(atmo?.fallbackSkyRadiance) ? atmo.fallbackSkyRadiance : [0.16, 0.23, 0.36];
+    for (let Y = 0; Y < H; ++Y) {
+      const [Dx, Dy, Dz] = ReconstructSkyViewDirection(0.5, Y / (H - 1), Math.PI * 0.5);
+      const Up = Clamp(Dz * 0.5 + 0.5, 0.0, 1.0);
+      const Scale = 0.65 + 0.70 * Up;
+      for (let X = 0; X < W; ++X) {
+        const Idx = (Y * W + X) * 4;
+        data[Idx] = Math.max(0.0, Base[0] * Scale);
+        data[Idx + 1] = Math.max(0.0, Base[1] * Scale);
+        data[Idx + 2] = Math.max(0.0, Base[2] * Scale);
+        data[Idx + 3] = 1.0;
+      }
+    }
+    SkyViewState.Data = data;
+    SkyViewState.LimbAngle = ComputeLimbPolarAngle(StartRadiusKm, GroundKm);
+    SkyViewState.StartRadiusKm = StartRadiusKm;
+    SkyViewState.BottomKm = GroundKm;
+    SkyViewState.TopKm = TopKm;
+    return data;
+  }
+
+  const LimbAngle = ComputeLimbPolarAngle(StartRadiusKm, GroundKm);
+  const SunElevRad = Math.asin(ClampUnit(UnitSun[2]));
+  const DayVis = Clamp((SunElevRad * RAD_TO_DEG + 6.0) / 14.0, 0.0, 1.0);
+  const SolarScale = Math.max(0.0, Medium.SolarIntensityMultiplier) * 0.24;
+  const G2 = MieG * MieG;
+  const SkyTint = Medium.SkyTint;
+  const SkyBrightness = Medium.SkyBrightnessMultiplier;
+  const SunT = [0, 0, 0];
+  const MultiSample = [0, 0, 0];
+
+  for (let Y = 0; Y < H; ++Y) {
+    const LowerBank = Y >= HALF_H;
+    const LocalV = LowerBank
+      ? (Y - HALF_H) / (HALF_H - 1)
+      : Y / (HALF_H - 1);
+    const PolarAngle = LowerBank
+      ? Math.min(PI_F - 1.0e-5, LimbAngle + (PI_F - LimbAngle) * LocalV * LocalV + 1.5e-4)
+      : Math.max(0.0, LimbAngle * (1.0 - LocalV * LocalV) - 1.5e-4);
+    const CosPolar = Math.cos(PolarAngle);
+    const SinPolar = Math.sqrt(Math.max(0.0, 1.0 - CosPolar * CosPolar));
+    const LimbFactor = Math.exp(-Math.max(0.0, CosPolar) * 7.5);
+    const GlowScale = 1.0 + (Medium.LimbGlowIntensity - 1.0) * LimbFactor * 0.55;
+
+    const GroundHit = LowerBank
+      ? IntersectLowerSphereDistanceKm(StartRadiusKm, CosPolar, GroundKm)
+      : { Hits: false, DistanceKm: 0.0 };
+    const MaxDistKm =
+      LowerBank && GroundHit.Hits
+        ? Math.max(0.005, GroundHit.DistanceKm)
+        : IntersectUpperSphereDistanceKm(StartRadiusKm, CosPolar, TopKm);
+
+    const Steps = LowerBank ? GND_STEPS : SKY_STEPS;
+    const RowBase = Y * W * 4;
+
+    for (let X = 0; X < W; ++X) {
+      const U = (X + 0.5) / W;
+      const Azimuth = (U - 0.5) * TAU;
+      const RdX = SinPolar * Math.cos(Azimuth);
+      const RdY = SinPolar * Math.sin(Azimuth);
+      const RdZ = CosPolar;
+
+      const CosTheta = RdX * UnitSun[0] + RdY * UnitSun[1] + RdZ * UnitSun[2];
+      const PhaseR = (3.0 / (16.0 * PI_F)) * (1.0 + CosTheta * CosTheta);
+      const Denom = Math.max(1.0e-3, 1.0 + G2 - 2.0 * MieG * CosTheta);
+      const PhaseM =
+        (3.0 / (8.0 * PI_F)) *
+        (((1.0 - G2) * (1.0 + CosTheta * CosTheta)) / ((2.0 + G2) * Math.pow(Denom, 1.5)));
+
+      let TR = 1.0;
+      let TG = 1.0;
+      let TB = 1.0;
+      let RadR = 0.0;
+      let RadG = 0.0;
+      let RadB = 0.0;
+
+      for (let S = 0; S < Steps; ++S) {
+        const F0 = S / Steps;
+        const F1 = (S + 1) / Steps;
+        const T0 = MaxDistKm * F0 * F0;
+        const T1 = MaxDistKm * F1 * F1;
+        const T = 0.5 * (T0 + T1);
+        const Step = Math.max(1.0e-5, T1 - T0);
+
+        const RK = Math.sqrt(
+          Math.max(
+            GroundKm * GroundKm,
+            StartRadiusKm * StartRadiusKm + 2.0 * StartRadiusKm * RdZ * T + T * T,
+          ),
+        );
+        const AltKm = Math.max(0.0, RK - GroundKm);
+        const C = EvaluateMediumInto(AltKm, Medium, MediumScratch);
+
+        const SafeER = Math.max(1.0e-7, C.ExtinctionR);
+        const SafeEG = Math.max(1.0e-7, C.ExtinctionG);
+        const SafeEB = Math.max(1.0e-7, C.ExtinctionB);
+        const SegTR = Math.exp(-SafeER * Step);
+        const SegTG = Math.exp(-SafeEG * Step);
+        const SegTB = Math.exp(-SafeEB * Step);
+        const IntR = (1.0 - SegTR) / SafeER;
+        const IntG = (1.0 - SegTG) / SafeEG;
+        const IntB = (1.0 - SegTB) / SafeEB;
+
+        const SampleSunCos = ClampUnit((StartRadiusKm * UnitSun[2] + T * CosTheta) / RK);
+        SampleTransmittanceSphericalLut(Trans, RK, SampleSunCos, GroundKm, TopKm, SunT);
+        SampleMultiScatterGridLut(Multi, AltKm, SampleSunCos, ThicknessKm, MultiSample);
+
+        const ScR = C.RayScatterR * PhaseR + C.MieScatter * PhaseM;
+        const ScG = C.RayScatterG * PhaseR + C.MieScatter * PhaseM;
+        const ScB = C.RayScatterB * PhaseR + C.MieScatter * PhaseM;
+        const MsR = C.RayScatterR + C.MieScatter;
+        const MsG = C.RayScatterG + C.MieScatter;
+        const MsB = C.RayScatterB + C.MieScatter;
+
+        RadR += TR * (ScR * SunT[0] + MsR * MultiSample[0]) * IntR;
+        RadG += TG * (ScG * SunT[1] + MsG * MultiSample[1]) * IntG;
+        RadB += TB * (ScB * SunT[2] + MsB * MultiSample[2]) * IntB;
+
+        TR *= SegTR;
+        TG *= SegTG;
+        TB *= SegTB;
+      }
+
+      if (LowerBank && GroundHit.Hits) {
+        const HitSunCos = ClampUnit((StartRadiusKm * UnitSun[2] + MaxDistKm * CosTheta) / GroundKm);
+        if (HitSunCos > 0.0) {
+          SampleTransmittanceSphericalLut(Trans, GroundKm, HitSunCos, GroundKm, TopKm, SunT);
+        } else {
+          SunT[0] = 0.0;
+          SunT[1] = 0.0;
+          SunT[2] = 0.0;
+        }
+        SampleMultiScatterGridLut(Multi, 0.0, HitSunCos, ThicknessKm, MultiSample);
+        const SunTerm = Math.max(0.0, HitSunCos) / PI_F;
+        RadR += TR * Medium.GroundAlbedo[0] * (SunT[0] * SunTerm + MultiSample[0] * 0.70);
+        RadG += TG * Medium.GroundAlbedo[1] * (SunT[1] * SunTerm + MultiSample[1] * 0.70);
+        RadB += TB * Medium.GroundAlbedo[2] * (SunT[2] * SunTerm + MultiSample[2] * 0.70);
+      }
+
+      const NightR = 0.00018 + 0.00022 * LimbFactor;
+      const NightG = 0.00028 + 0.00032 * LimbFactor;
+      const NightB = 0.00062 + 0.00058 * LimbFactor;
+
+      let OutR = (RadR * SolarScale * GlowScale + NightR * (1.0 - DayVis * 0.9)) * SkyTint[0] * SkyBrightness;
+      let OutG = (RadG * SolarScale * GlowScale + NightG * (1.0 - DayVis * 0.9)) * SkyTint[1] * SkyBrightness;
+      let OutB = (RadB * SolarScale * GlowScale + NightB * (1.0 - DayVis * 0.9)) * SkyTint[2] * SkyBrightness;
+
+      if (LowerBank) {
+        // True grazing Schlick Fresnel reflection near the lower limb blended cleanly against upper-limb row 0
+        const LimbIdx = RowBase + X * 4;
+        const Grazing = Math.pow(1.0 - Clamp(-CosPolar, 0.0, 1.0), 5.0);
+        const Fresnel = 0.02 + 0.98 * Grazing;
+        OutR = OutR * (1.0 - Fresnel) + data[LimbIdx] * Fresnel;
+        OutG = OutG * (1.0 - Fresnel) + data[LimbIdx + 1] * Fresnel;
+        OutB = OutB * (1.0 - Fresnel) + data[LimbIdx + 2] * Fresnel;
+      }
+
+      const Idx = RowBase + X * 4;
+      data[Idx] = Math.max(0.0, OutR);
+      data[Idx + 1] = Math.max(0.0, OutG);
+      data[Idx + 2] = Math.max(0.0, OutB);
+      data[Idx + 3] = 1.0;
+    }
+  }
+
+  SkyViewState.Data = data;
+  SkyViewState.LimbAngle = LimbAngle;
+  SkyViewState.StartRadiusKm = StartRadiusKm;
+  SkyViewState.BottomKm = GroundKm;
+  SkyViewState.TopKm = TopKm;
+  return data;
+}
+
+//==========================================================================================================================================
+//                                        SampleSkyViewDirection (bank split + Catmull-Rom, zero horizon bleed)
+//==========================================================================================================================================
+
+export function SampleSkyViewLutCpu(lut, dx, dy, dz, LimbAngle = SkyViewState.LimbAngle) {
+  if (!lut || lut.length < SKY_VIEW_WIDTH * SKY_VIEW_HEIGHT * 4) return [0.35, 0.45, 0.65];
+  const W = SKY_VIEW_WIDTH;
+  const Limb = Math.max(1.0e-5, LimbAngle || 0.0);
+
+  const Azimuth = Math.atan2(dy, dx);
+  const PolarAngle = Math.acos(ClampUnit(dz));
+
+  let U = Azimuth / TAU + 0.5;
+  U -= Math.floor(U);
+
+  const LowerBank = PolarAngle > Limb;
+  let CoordY;
+  if (!LowerBank) {
+    const Q = Math.sqrt(Clamp(1.0 - PolarAngle / Math.max(1.0e-4, Limb), 0.0, 1.0));
+    CoordY = Q * (HALF_H - 1);
+  } else {
+    const Q = Math.sqrt(Clamp((PolarAngle - Limb) / Math.max(1.0e-4, PI_F - Limb), 0.0, 1.0));
+    CoordY = HALF_H + Q * (HALF_H - 1);
+  }
+
+  const BankMin = LowerBank ? HALF_H : 0;
+  const BankMax = LowerBank ? HALF_H * 2 - 1 : HALF_H - 1;
+
+  const FX = U * W - 0.5;
+  const FloorX = Math.floor(FX);
+  const IX0 = ((FloorX % W) + W) % W;
+  const IX1 = (IX0 + 1) % W;
+  const TX = FX - FloorX;
+  const SX = TX * TX * (3.0 - 2.0 * TX);
+
+  const IY1 = Clamp(Math.floor(CoordY), BankMin, BankMax);
+  const IY0 = Clamp(IY1 - 1, BankMin, BankMax);
+  const IY2 = Clamp(IY1 + 1, BankMin, BankMax);
+  const IY3 = Clamp(IY1 + 2, BankMin, BankMax);
+  const TY = Clamp(CoordY - IY1, 0.0, 1.0);
+
+  const Fetch = (X, Y) => (Y * W + X) * 4;
+  const MixC = (A, B, T) => A + (B - A) * T;
+  const CatmullRom = (P0, P1, P2, P3, T) => {
+    const T2 = T * T;
+    const T3 = T2 * T;
+    return 0.5 * ((2.0 * P1) + (-P0 + P2) * T + (2.0 * P0 - 5.0 * P1 + 4.0 * P2 - P3) * T2 +
+      (-P0 + 3.0 * P1 - 3.0 * P2 + P3) * T3);
+  };
+
+  const Out = [0, 0, 0];
+  for (let C = 0; C < 3; ++C) {
+    const R0 = MixC(lut[Fetch(IX0, IY0) + C], lut[Fetch(IX1, IY0) + C], SX);
+    const R1 = MixC(lut[Fetch(IX0, IY1) + C], lut[Fetch(IX1, IY1) + C], SX);
+    const R2 = MixC(lut[Fetch(IX0, IY2) + C], lut[Fetch(IX1, IY2) + C], SX);
+    const R3 = MixC(lut[Fetch(IX0, IY3) + C], lut[Fetch(IX1, IY3) + C], SX);
+    Out[C] = Math.max(0.0, CatmullRom(R0, R1, R2, R3, TY));
+  }
+  return Out;
+}
+
+export function SampleSkyViewDirection(dx, dy, dz) {
+  return SampleSkyViewLutCpu(SkyViewState.Data, dx, dy, dz, SkyViewState.LimbAngle);
 }
 
 export function GetSkyViewCacheKey(sunDir, atmo = {}) {
+  const M = ResolveAtmosphericMedium(atmo);
   return [
     sunDir[0].toFixed(4),
     sunDir[1].toFixed(4),
     sunDir[2].toFixed(4),
-    Number(atmo.rayleigh ?? 1.0).toFixed(3),
-    Number(atmo.mie ?? 1.0).toFixed(3),
-    Number(atmo.mieG ?? 0.78).toFixed(3),
-    Number(atmo.ozone ?? 1.2).toFixed(3),
-    Math.round(atmo.rayleighH ?? 8000),
-    Math.round(atmo.mieH ?? 1200),
-    Math.round(atmo.atmoTop ?? BASE_ATMO_TOP_M),
-    Number(atmo.horizonGlow ?? 1.0).toFixed(2),
-    Number(atmo.skyBrightness ?? 1.0).toFixed(2),
-    (atmo.skyTint || [1, 1, 1]).map((c) => c.toFixed(2)).join(","),
-    (atmo.groundAlbedo || [0.22, 0.19, 0.15]).map((c) => c.toFixed(2)).join(","),
-    atmo.enabled === false ? "0" : "1",
+    M.RayleighStrength.toFixed(3),
+    M.MieStrength.toFixed(3),
+    M.MieAnisotropy.toFixed(3),
+    M.OzoneStrength.toFixed(3),
+    Math.round(M.RayleighScaleHeightMeters),
+    Math.round(M.MieScaleHeightMeters),
+    Math.round(M.AtmosphereThicknessMeters),
+    Math.round(M.PlanetRadiusMeters),
+    M.LimbGlowIntensity.toFixed(2),
+    M.SkyBrightnessMultiplier.toFixed(2),
+    M.SolarIntensityMultiplier.toFixed(2),
+    Math.round(M.ObserverAltitudeMeters),
+    M.SkyTint.map((c) => c.toFixed(2)).join(","),
+    M.GroundAlbedo.map((c) => c.toFixed(3)).join(","),
+    M.AtmosphereEnabled ? "1" : "0",
   ].join("|");
 }
 
-const TRANS_W = 128;
-const TRANS_H = 32;
+//==========================================================================================================================================
+//                                        Solar photosphere: erf PSF, Neckel & Labs limb darkening, K/F corona, glare
+//==========================================================================================================================================
 
-function SampleTransmittanceLut(tLut, alt, cosZ, atmoTop) {
-  const u = Clamp(0.5 + 0.5 * Math.sign(cosZ) * Math.pow(Math.abs(cosZ), 0.35), 0.0, 1.0);
-  const v = Clamp(alt / atmoTop, 0.0, 1.0);
-  const fx = u * (TRANS_W - 1);
-  const fy = v * (TRANS_H - 1);
-  const x0 = Math.min(TRANS_W - 2, Math.floor(fx));
-  const y0 = Math.min(TRANS_H - 2, Math.floor(fy));
-  const tx = fx - x0;
-  const ty = fy - y0;
-  const i00 = (y0 * TRANS_W + x0) * 3;
-  const i10 = i00 + 3;
-  const i01 = i00 + TRANS_W * 3;
-  const i11 = i01 + 3;
-  const lerp = (a, b, t) => a + (b - a) * t;
+export function EvaluateSolarErf(Argument) {
+  const Variable = 1.0 / (1.0 + 0.3275911 * Math.abs(Argument));
+  const Polynomial =
+    ((((1.061405429 * Variable - 1.453152027) * Variable + 1.421413741) * Variable -
+      0.284496736) *
+      Variable +
+      0.254829592) *
+    Variable;
+  const Result = 1.0 - Polynomial * Math.exp(-Argument * Argument);
+  return Argument < 0.0 ? -Result : Result;
+}
+
+export function EvaluateNeckelLabsLimbDarkening(MuPhotosphere) {
+  const Mu = Clamp(MuPhotosphere, 0.0, 1.0);
+  const Mu2 = Mu * Mu;
+  const Mu3 = Mu2 * Mu;
+  const Mu4 = Mu2 * Mu2;
+  const Mu5 = Mu4 * Mu;
+
+  // Exact published Neckel & Labs (1994, Solar Physics 153) polynomial coefficients at 650/550/450 nm
+  const LimbRed = 0.34685 + 1.37539 * Mu - 2.04425 * Mu2 + 2.70493 * Mu3 - 1.9429 * Mu4 + 0.55999 * Mu5;
+  const LimbGreen = 0.23698 + 1.37916 * Mu - 1.83226 * Mu2 + 2.3454 * Mu3 - 1.65319 * Mu4 + 0.52391 * Mu5;
+  const LimbBlue = 0.11903 + 1.24089 * Mu - 1.19977 * Mu2 + 1.33936 * Mu3 - 0.9869 * Mu4 + 0.48739 * Mu5;
+
   return [
-    lerp(lerp(tLut[i00], tLut[i10], tx), lerp(tLut[i01], tLut[i11], tx), ty),
-    lerp(lerp(tLut[i00 + 1], tLut[i10 + 1], tx), lerp(tLut[i01 + 1], tLut[i11 + 1], tx), ty),
-    lerp(lerp(tLut[i00 + 2], tLut[i10 + 2], tx), lerp(tLut[i01 + 2], tLut[i11 + 2], tx), ty),
+    Clamp(LimbRed, 0.0, 1.05),
+    Clamp(LimbGreen, 0.0, 1.05),
+    Clamp(LimbBlue, 0.0, 1.05),
   ];
 }
 
-function BuildTransmittanceLut(rayleighMul, mieMul, ozoneMul, rayleighH, mieH, atmoTop) {
-  const lut = new Float32Array(TRANS_W * TRANS_H * 3);
-  const atmoR = EARTH_RADIUS_M + atmoTop;
-  const steps = 16;
-  for (let y = 0; y < TRANS_H; ++y) {
-    const v = y / (TRANS_H - 1);
-    const alt = v * atmoTop;
-    const r = EARTH_RADIUS_M + alt;
-    for (let x = 0; x < TRANS_W; ++x) {
-      const u = x / (TRANS_W - 1);
-      const signed = (u - 0.5) * 2.0;
-      const cosZ = Math.sign(signed) * Math.pow(Math.abs(signed), 1.0 / 0.35);
-      const sinZ = Math.sqrt(Math.max(0.0, 1.0 - cosZ * cosZ));
-      const [gNear] = IntersectSphereVec(0.0, 0.0, r, sinZ, 0.0, cosZ, EARTH_RADIUS_M);
-      const idx = (y * TRANS_W + x) * 3;
-      if (gNear > 1e-2) {
-        lut[idx] = 0.0; lut[idx + 1] = 0.0; lut[idx + 2] = 0.0;
-        continue;
-      }
-      const [, exit] = IntersectSphereVec(0.0, 0.0, r, sinZ, 0.0, cosZ, atmoR);
-      const step = Math.max(0.0, exit) / steps;
-      let dR = 0.0, dG = 0.0, dB = 0.0;
-      for (let s = 0; s < steps; ++s) {
-        const lt = (s + 0.5) * step;
-        const lx = sinZ * lt;
-        const lz = r + cosZ * lt;
-        const pAlt = Math.max(0.0, Math.hypot(lx, lz) - EARTH_RADIUS_M);
-        const denR = Math.exp(-pAlt / rayleighH) * rayleighMul;
-        const denM = Math.exp(-pAlt / mieH) * mieMul;
-        const denO = Math.max(0.0, 1.0 - Math.abs(pAlt - 25000.0) / 15000.0) * ozoneMul;
-        const mieE = BASE_MIE_EXTINCTION * denM;
-        dR += (BASE_RAYLEIGH_SCATTER[0] * denR + mieE + BASE_OZONE_ABS[0] * denO) * step;
-        dG += (BASE_RAYLEIGH_SCATTER[1] * denR + mieE + BASE_OZONE_ABS[1] * denO) * step;
-        dB += (BASE_RAYLEIGH_SCATTER[2] * denR + mieE + BASE_OZONE_ABS[2] * denO) * step;
-      }
-      lut[idx] = Math.exp(-dR);
-      lut[idx + 1] = Math.exp(-dG);
-      lut[idx + 2] = Math.exp(-dB);
-    }
-  }
-  return lut;
+export function EvaluateSolarGlareSpread(SeparationRadians, DiscRadiusRadians) {
+  const SolarGlareReachRadians = 30.0 * DEG_TO_RAD;
+  const SolarGlareBloomWeight = 1.5;
+  const SolarGlareAureoleWeight = 0.25;
+  const SolarGlareAureoleDegrees = 6.0;
+
+  if (SeparationRadians >= SolarGlareReachRadians) return 0.0;
+
+  const SepDegrees = SeparationRadians * RAD_TO_DEG;
+  const DiscDegrees = DiscRadiusRadians * RAD_TO_DEG;
+  const Effective = Math.sqrt(SepDegrees * SepDegrees + DiscDegrees * DiscDegrees);
+  const Window = 1.0 - SeparationRadians / SolarGlareReachRadians;
+  const Bloom = SolarGlareBloomWeight / ((Effective + 0.02) * (Effective + 0.02));
+  const AureoleRatio = Effective / SolarGlareAureoleDegrees;
+  const Aureole = SolarGlareAureoleWeight / (1.0 + AureoleRatio * AureoleRatio);
+  return (Bloom + Aureole) * Window * Window;
 }
 
-// Computes Hillaire/Bruneton Sky-View LUT (192x108 RGBA32F) with Rayleigh + Mie + Ozone + Multi-Scatter
-export function BuildSkyViewLut(sunDir, atmo = {}, outBuf = null) {
-  const w = SKY_VIEW_WIDTH;
-  const h = SKY_VIEW_HEIGHT;
-  const data = outBuf && outBuf.length === w * h * 4 ? outBuf : new Float32Array(w * h * 4);
+export const DEFAULT_SOLAR_CONFIG = {
+  SolarEnabled: true,
+  AngularDiameterDegrees: 0.533,
+  SolarIntensityMultiplier: 22.0,
+  AppearanceMode: 1, // 0 = Muted, 1 = Radiant
+  SunGlareStrength: 0.25,
+};
 
-  const rayleighMul = Math.max(0.0, Number(atmo.rayleigh ?? 1.0));
-  const mieMul = Math.max(0.0, Number(atmo.mie ?? 1.0));
-  const mieG = Clamp(Number(atmo.mieG ?? 0.78), 0.0, 0.94);
-  const ozoneMul = Math.max(0.0, Number(atmo.ozone ?? 1.2));
-  const rayleighH = Math.max(500.0, Number(atmo.rayleighH ?? 8000.0));
-  const mieH = Math.max(200.0, Number(atmo.mieH ?? 1200.0));
-  const atmoTop = Math.max(20000.0, Number(atmo.atmoTop ?? BASE_ATMO_TOP_M));
-  const atmoR = EARTH_RADIUS_M + atmoTop;
-  const horizonGlow = Math.max(0.0, Number(atmo.horizonGlow ?? 1.0));
-  const skyBright = Math.max(0.0, Number(atmo.skyBrightness ?? 1.0));
-  const skyTint = atmo.skyTint || [1.0, 1.0, 1.0];
-  const groundAlb = atmo.groundAlbedo || [0.22, 0.19, 0.15];
-  const atmoEnabled = atmo.enabled !== false;
+export function EvaluateSolarCoronaRadiance(
+  RayDirection,
+  SunDirection,
+  SolarConfig = DEFAULT_SOLAR_CONFIG,
+  SolarTransmittance = [1, 1, 1],
+  EffectiveSolarTint = [1, 1, 1],
+  AllowBelowHorizon = false,
+  Medium = null,
+  PixelAngularSizeRad = 0.0,
+  ForegroundOcclusion = [1, 1, 1],
+  GlareEclipseVis = 1.0,
+) {
+  const Cfg = { ...DEFAULT_SOLAR_CONFIG, ...(SolarConfig || {}) };
+  if (!Cfg.SolarEnabled || Cfg.SolarIntensityMultiplier <= 0.0) return [0.0, 0.0, 0.0];
 
-  const origZ = EARTH_RADIUS_M + OBSERVER_ALT_M;
-  const g2 = mieG * mieG;
-  const viewSteps = 14;
+  const RayMag = Math.hypot(RayDirection[0], RayDirection[1], RayDirection[2]) || 1.0;
+  const UnitRay = [RayDirection[0] / RayMag, RayDirection[1] / RayMag, RayDirection[2] / RayMag];
+  const SunMag = Math.hypot(SunDirection[0], SunDirection[1], SunDirection[2]) || 1.0;
+  const UnitSun = [SunDirection[0] / SunMag, SunDirection[1] / SunMag, SunDirection[2] / SunMag];
 
-  // Sun elevation factor for twilight / night sky floor
-  const sunElev = Math.asin(Clamp(sunDir[2], -1.0, 1.0));
-  const sunZenithT = ComputeSolarTransmittance(sunDir, atmo);
-  const transLut = BuildTransmittanceLut(rayleighMul, mieMul, ozoneMul, rayleighH, mieH, atmoTop);
-  const solarIrrScale = 14.5; // physical radiance scale matching FrontierWorldMirror ACES exposure
+  const HalfChord = 0.5 * Math.hypot(UnitRay[0] - UnitSun[0], UnitRay[1] - UnitSun[1], UnitRay[2] - UnitSun[2]);
+  const Separation = 2.0 * Math.asin(Clamp(HalfChord, 0.0, 1.0));
+  const HalfRad = Math.max(0.0008, Cfg.AngularDiameterDegrees * 0.5 * DEG_TO_RAD);
 
-  const sunTransmittanceAtPoint = (px, py, pz) => {
-    const r = Math.hypot(px, py, pz);
-    const cosZ = (px * sunDir[0] + py * sunDir[1] + pz * sunDir[2]) / Math.max(1.0, r);
-    const alt = Math.max(0.0, r - EARTH_RADIUS_M);
-    const u = Clamp(0.5 + 0.5 * Math.sign(cosZ) * Math.pow(Math.abs(cosZ), 0.35), 0.0, 1.0);
-    const v = Clamp(alt / atmoTop, 0.0, 1.0);
-    const fx = u * (TRANS_W - 1);
-    const fy = v * (TRANS_H - 1);
-    const x0 = Math.min(TRANS_W - 2, Math.floor(fx));
-    const y0 = Math.min(TRANS_H - 2, Math.floor(fy));
-    const tx = fx - x0;
-    const ty = fy - y0;
-    const i00 = (y0 * TRANS_W + x0) * 3;
-    const i10 = i00 + 3;
-    const i01 = i00 + TRANS_W * 3;
-    const i11 = i01 + 3;
-    stOutR = (transLut[i00] + (transLut[i10] - transLut[i00]) * tx) * (1 - ty) + (transLut[i01] + (transLut[i11] - transLut[i01]) * tx) * ty;
-    stOutG = (transLut[i00 + 1] + (transLut[i10 + 1] - transLut[i00 + 1]) * tx) * (1 - ty) + (transLut[i01 + 1] + (transLut[i11 + 1] - transLut[i01 + 1]) * tx) * ty;
-    stOutB = (transLut[i00 + 2] + (transLut[i10 + 2] - transLut[i00 + 2]) * tx) * (1 - ty) + (transLut[i01 + 2] + (transLut[i11 + 2] - transLut[i01 + 2]) * tx) * ty;
+  const SkyBrightness = Medium ? Math.max(0.0, Medium.SkyBrightnessMultiplier ?? 1.0) : 1.0;
+  const DiscIntensity = Math.max(0.0, Cfg.SolarIntensityMultiplier) * SkyBrightness * 2.1;
+  if (DiscIntensity <= 0.0) return [0.0, 0.0, 0.0];
+
+  const OrbitalView =
+    AllowBelowHorizon ||
+    (Medium !== null &&
+      (Medium.OrbitalViewEnabled ||
+        Medium.ObserverAltitudeMeters > Medium.AtmosphereThicknessMeters));
+  const PlanetR = Medium ? Math.max(500000.0, Medium.PlanetRadiusMeters) : 6360000.0;
+  const ObsAlt = Medium ? Math.max(5.0, Medium.ObserverAltitudeMeters) : 100.0;
+  const ViewerR = PlanetR + ObsAlt;
+  const Ratio = Clamp(PlanetR / ViewerR, 0.0, 1.0);
+  const LimbZ = -Math.sqrt(Math.max(0.0, 1.0 - Ratio * Ratio));
+  const SmoothStepSky = (E0, E1, X) => {
+    const T = Clamp((X - E0) / Math.max(1.0e-6, E1 - E0), 0.0, 1.0);
+    return T * T * (3.0 - 2.0 * T);
   };
-  let stOutR = 1.0, stOutG = 1.0, stOutB = 1.0;
 
-  for (let y = 0; y < h; ++y) {
-    const vCoord = (y + 0.5) / h;
-    for (let x = 0; x < w; ++x) {
-      const uCoord = (x + 0.5) / w;
-      const [dx, dy, rawDz] = ReconstructSkyViewDirection(uCoord, vCoord);
-      const isGroundRay = rawDz < 0.0;
-      const dz = Math.max(rawDz, 0.0);
-      const dLen = Math.hypot(dx, dy, dz) || 1.0;
-      const rdx = dx / dLen, rdy = dy / dLen, rdz = Math.max(dz / dLen, 1e-4);
+  const PixelSizeRad = Math.max(0.0, PixelAngularSizeRad);
+  const MaxDiscCoronaR = Math.max(HalfRad * 48.0, PixelSizeRad * 8.0);
+  const HorizonBand = Math.max(0.00035, 0.65 * Math.max(PixelSizeRad, 1.0e-4));
+  const HorizonVis = OrbitalView ? 1.0 : SmoothStepSky(LimbZ - HorizonBand, LimbZ + HorizonBand, UnitRay[2]);
 
-      if (!atmoEnabled) {
-        const idx = (y * w + x) * 4;
-        data[idx + 0] = 0.008;
-        data[idx + 1] = 0.010;
-        data[idx + 2] = 0.016;
-        data[idx + 3] = 1.0;
-        continue;
+  const Out = [0.0, 0.0, 0.0];
+  const OcclusionSum = ForegroundOcclusion[0] + ForegroundOcclusion[1] + ForegroundOcclusion[2];
+  if (Separation <= MaxDiscCoronaR && HorizonVis > 1.0e-5 && OcclusionSum > 1.0e-5) {
+    const LineTransmittance =
+      !OrbitalView && Medium
+        ? ComputeSolarTransmittance(
+            [UnitRay[0], UnitRay[1], Math.max(UnitRay[2], LimbZ + 1.0e-4)],
+            Medium,
+            ObsAlt,
+          )
+        : SolarTransmittance;
+
+    if (LineTransmittance[0] + LineTransmittance[1] + LineTransmittance[2] > 1.0e-6) {
+      const NormalizedRadius = Separation / HalfRad;
+
+      let SmallWeight = 0.0;
+      if (PixelSizeRad > 1.0e-6) {
+        const RadiusPixels = HalfRad / PixelSizeRad;
+        const Blend = Clamp((6.0 - RadiusPixels) / 3.0, 0.0, 1.0);
+        SmallWeight = Blend * Blend * (3.0 - 2.0 * Blend);
       }
 
-      const [gNear] = IntersectSphereDist(origZ, rdz, EARTH_RADIUS_M);
-      let [, travel] = IntersectSphereDist(origZ, rdz, atmoR);
-      if (gNear > 0.0 && gNear < travel) travel = gNear;
-
-      const step = travel / viewSteps;
-      const cosTheta = rdx * sunDir[0] + rdy * sunDir[1] + rdz * sunDir[2];
-      const phaseR = (3.0 / (16.0 * Math.PI)) * (1.0 + cosTheta * cosTheta);
-      const phaseM =
-        (3.0 / (8.0 * Math.PI)) *
-        (((1.0 - g2) * (1.0 + cosTheta * cosTheta)) /
-          ((2.0 + g2) * Math.pow(Math.max(1e-4, 1.0 + g2 - 2.0 * mieG * cosTheta), 1.5)));
-
-      let tR = 1.0, tG = 1.0, tB = 1.0;
-      let radR = 0.0, radG = 0.0, radB = 0.0;
-      let msR = 0.0, msG = 0.0, msB = 0.0;
-
-      for (let s = 0; s < viewSteps; ++s) {
-        const dist = (s + 0.5) * step;
-        const px = rdx * dist;
-        const py = rdy * dist;
-        const pz = origZ + rdz * dist;
-        const alt = Math.max(0.0, Math.hypot(px, py, pz) - EARTH_RADIUS_M);
-
-        const denR = Math.exp(-alt / rayleighH) * rayleighMul;
-        const denM = Math.exp(-alt / mieH) * mieMul;
-        const denO = Math.max(0.0, 1.0 - Math.abs(alt - 25000.0) / 15000.0) * ozoneMul;
-
-        const sRayR = BASE_RAYLEIGH_SCATTER[0] * denR;
-        const sRayG = BASE_RAYLEIGH_SCATTER[1] * denR;
-        const sRayB = BASE_RAYLEIGH_SCATTER[2] * denR;
-        const sMie = BASE_MIE_SCATTER * denM;
-        const eMie = BASE_MIE_EXTINCTION * denM;
-
-        const extR = Math.max(1e-12, sRayR + eMie + BASE_OZONE_ABS[0] * denO);
-        const extG = Math.max(1e-12, sRayG + eMie + BASE_OZONE_ABS[1] * denO);
-        const extB = Math.max(1e-12, sRayB + eMie + BASE_OZONE_ABS[2] * denO);
-
-        const segTR = Math.exp(-extR * step);
-        const segTG = Math.exp(-extG * step);
-        const segTB = Math.exp(-extB * step);
-
-        const intR = (1.0 - segTR) / extR;
-        const intG = (1.0 - segTG) / extG;
-        const intB = (1.0 - segTB) / extB;
-
-        sunTransmittanceAtPoint(px, py, pz);
-
-        const scR = sRayR * phaseR + sMie * phaseM;
-        const scG = sRayG * phaseR + sMie * phaseM;
-        const scB = sRayB * phaseR + sMie * phaseM;
-
-        radR += tR * scR * stOutR * intR;
-        radG += tG * scG * stOutG * intG;
-        radB += tB * scB * stOutB * intB;
-
-        // Hillaire multiple-scattering isotropic contribution + ground bounce
-        const isoScatter = 1.0 / (4.0 * Math.PI);
-        const msBounce = 0.24 + 0.18 * (groundAlb[0] + groundAlb[1] + groundAlb[2]) * 0.333;
-        msR += tR * (sRayR + sMie) * isoScatter * (stOutR * 0.65 + sunZenithT[0] * 0.35) * msBounce * intR;
-        msG += tG * (sRayG + sMie) * isoScatter * (stOutG * 0.65 + sunZenithT[1] * 0.35) * msBounce * intG;
-        msB += tB * (sRayB + sMie) * isoScatter * (stOutB * 0.65 + sunZenithT[2] * 0.35) * msBounce * intB;
-
-        tR *= segTR;
-        tG *= segTG;
-        tB *= segTB;
+      let ResolvedR = 0.0;
+      let ResolvedG = 0.0;
+      let ResolvedB = 0.0;
+      if (SmallWeight < 1.0 && NormalizedRadius < 1.32) {
+        const ClampedR = Math.min(1.0, NormalizedRadius);
+        const MuSun = Math.sqrt(Math.max(0.0, 1.0 - ClampedR * ClampedR));
+        const LimbDark = EvaluateNeckelLabsLimbDarkening(MuSun);
+        const EdgeErfc = 0.5 * (1.0 - EvaluateSolarErf((NormalizedRadius - 0.997) / 0.012));
+        const PhotoMag = EdgeErfc * DiscIntensity;
+        ResolvedR = LimbDark[0] * PhotoMag;
+        ResolvedG = LimbDark[1] * PhotoMag;
+        ResolvedB = LimbDark[2] * PhotoMag;
       }
 
-      // Horizon glow enhancement & twilight/night airglow floor (physically dark night sky)
-      const horizFactor = Math.exp(-Math.max(0.0, rdz) * 7.5);
-      const glowScale = 1.0 + (horizonGlow - 1.0) * horizFactor * 0.55;
-      const dayVis = Clamp((sunElev * 180.0 / Math.PI + 6.0) / 14.0, 0.0, 1.0);
-      const nightR = 0.0007 + 0.0009 * horizFactor;
-      const nightG = 0.0010 + 0.0013 * horizFactor;
-      const nightB = 0.0022 + 0.0024 * horizFactor;
+      let SubR = 0.0;
+      let SubG = 0.0;
+      let SubB = 0.0;
+      const SunDotRay = UnitRay[0] * UnitSun[0] + UnitRay[1] * UnitSun[1] + UnitRay[2] * UnitSun[2];
+      if (SmallWeight > 0.0 && SunDotRay > 0.0) {
+        const RefAxis = Math.abs(UnitSun[2]) < 0.98 ? [0.0, 0.0, 1.0] : [1.0, 0.0, 0.0];
+        let TanT = [
+          RefAxis[1] * UnitSun[2] - RefAxis[2] * UnitSun[1],
+          RefAxis[2] * UnitSun[0] - RefAxis[0] * UnitSun[2],
+          RefAxis[0] * UnitSun[1] - RefAxis[1] * UnitSun[0],
+        ];
+        let TanTLen = Math.hypot(TanT[0], TanT[1], TanT[2]) || 1.0;
+        TanT = [TanT[0] / TanTLen, TanT[1] / TanTLen, TanT[2] / TanTLen];
+        let TanB = [
+          UnitSun[1] * TanT[2] - UnitSun[2] * TanT[1],
+          UnitSun[2] * TanT[0] - UnitSun[0] * TanT[2],
+          UnitSun[0] * TanT[1] - UnitSun[1] * TanT[0],
+        ];
+        const TanBLen = Math.hypot(TanB[0], TanB[1], TanB[2]) || 1.0;
+        TanB = [TanB[0] / TanBLen, TanB[1] / TanBLen, TanB[2] / TanBLen];
 
-      let outR = ((radR + msR) * solarIrrScale * glowScale + nightR * (1.0 - dayVis * 0.9)) * skyTint[0] * skyBright;
-      let outG = ((radG + msG) * solarIrrScale * glowScale + nightG * (1.0 - dayVis * 0.9)) * skyTint[1] * skyBright;
-      let outB = ((radB + msB) * solarIrrScale * glowScale + nightB * (1.0 - dayVis * 0.9)) * skyTint[2] * skyBright;
-
-      // Below-horizon ground bounce for reflections & lower hemisphere ambient
-      if (isGroundRay) {
-        const sunUp = Math.max(0.0, sunDir[2]);
-        const groundBounce = 0.24 * sunUp;
-        const gR = groundAlb[0] * (sunZenithT[0] * sunUp * 0.8 + outR * 0.35 + groundBounce * 0.08 + 0.0005);
-        const gG = groundAlb[1] * (sunZenithT[1] * sunUp * 0.8 + outG * 0.35 + groundBounce * 0.08 + 0.0006);
-        const gB = groundAlb[2] * (sunZenithT[2] * sunUp * 0.8 + outB * 0.35 + groundBounce * 0.08 + 0.0010);
-        const blend = Clamp(-rawDz * 3.5, 0.0, 1.0);
-        outR = outR * (1.0 - blend) + gR * blend;
-        outG = outG * (1.0 - blend) + gG * blend;
-        outB = outB * (1.0 - blend) + gB * blend;
+        const DeltaX = UnitRay[0] * TanT[0] + UnitRay[1] * TanT[1] + UnitRay[2] * TanT[2];
+        const DeltaY = UnitRay[0] * TanB[0] + UnitRay[1] * TanB[1] + UnitRay[2] * TanB[2];
+        const SmallSigma = Math.sqrt(0.25 * HalfRad * HalfRad + 0.2 * PixelSizeRad * PixelSizeRad);
+        const InvSqrt2Sigma = 1.0 / (1.4142135623730951 * Math.max(1.0e-6, SmallSigma));
+        const LowX = (DeltaX - 0.5 * PixelSizeRad) * InvSqrt2Sigma;
+        const HighX = (DeltaX + 0.5 * PixelSizeRad) * InvSqrt2Sigma;
+        const LowY = (DeltaY - 0.5 * PixelSizeRad) * InvSqrt2Sigma;
+        const HighY = (DeltaY + 0.5 * PixelSizeRad) * InvSqrt2Sigma;
+        const XMass = Math.max(0.0, 0.5 * (EvaluateSolarErf(HighX) - EvaluateSolarErf(LowX)));
+        const YMass = Math.max(0.0, 0.5 * (EvaluateSolarErf(HighY) - EvaluateSolarErf(LowY)));
+        const SinHalf = Math.sin(0.5 * HalfRad);
+        const SolidAngle = 4.0 * PI_F * SinHalf * SinHalf;
+        const PixelArea = Math.max(1.0e-12, PixelSizeRad * PixelSizeRad);
+        const SubGain = (SolidAngle / PixelArea) * XMass * YMass * DiscIntensity;
+        SubR = 0.83276 * SubGain;
+        SubG = 0.77447 * SubGain;
+        SubB = 0.69061 * SubGain;
       }
 
-      const idx = (y * w + x) * 4;
-      data[idx + 0] = Math.max(0.0, outR);
-      data[idx + 1] = Math.max(0.0, outG);
-      data[idx + 2] = Math.max(0.0, outB);
-      data[idx + 3] = 1.0;
+      const PhotoR = ResolvedR + (SubR - ResolvedR) * SmallWeight;
+      const PhotoG = ResolvedG + (SubG - ResolvedG) * SmallWeight;
+      const PhotoB = ResolvedB + (SubB - ResolvedB) * SmallWeight;
+
+      let CoronaR = 0.0;
+      let CoronaG = 0.0;
+      let CoronaB = 0.0;
+      const CoronaBlurAngle = 0.3 * PixelSizeRad * SmallWeight;
+      const CoronaNormR =
+        Math.sqrt(Separation * Separation + CoronaBlurAngle * CoronaBlurAngle) / HalfRad;
+      if (CoronaNormR < 48.0) {
+        const R1 = CoronaNormR / 1.18;
+        const R2 = CoronaNormR / 3.4;
+        const R3 = CoronaNormR / 11.5;
+        const InnerTerm = 1.0 / Math.pow(1.0 + R1 * R1, 1.85);
+        const MiddleTerm = 1.0 / Math.pow(1.0 + R2 * R2, 1.38);
+        const OuterTerm = 1.0 / Math.pow(1.0 + R3 * R3, 1.22);
+
+        const ScatterFactor = OrbitalView
+          ? 0.38
+          : Clamp(0.55 + 0.85 * (1.0 - LineTransmittance[2]), 0.55, 1.35);
+        const CoronaProfile =
+          DiscIntensity *
+          (0.042 * InnerTerm + 0.0085 * ScatterFactor * MiddleTerm + 0.0014 * ScatterFactor * OuterTerm);
+        const WindowFade = Clamp(1.0 - CoronaNormR / 48.0, 0.0, 1.0);
+        const SmoothWindow = WindowFade * WindowFade;
+        CoronaR = CoronaProfile * SmoothWindow * 1.04;
+        CoronaG = CoronaProfile * SmoothWindow * 0.99;
+        CoronaB = CoronaProfile * SmoothWindow * 0.91;
+      }
+
+      Out[0] += ForegroundOcclusion[0] * (PhotoR + CoronaR) * LineTransmittance[0] * EffectiveSolarTint[0] * HorizonVis;
+      Out[1] += ForegroundOcclusion[1] * (PhotoG + CoronaG) * LineTransmittance[1] * EffectiveSolarTint[1] * HorizonVis;
+      Out[2] += ForegroundOcclusion[2] * (PhotoB + CoronaB) * LineTransmittance[2] * EffectiveSolarTint[2] * HorizonVis;
     }
   }
 
-  return data;
-}
+  // Optical glare veil (Radiant vs Muted): bounded 30 deg spread tinted by solar-axis transmittance + eclipse visibility
+  if (Cfg.AppearanceMode === 1 && Cfg.SunGlareStrength > 0.0 && GlareEclipseVis > 1.0e-4) {
+    const Spread = EvaluateSolarGlareSpread(Separation, HalfRad);
+    if (Spread > 0.0) {
+      const SunAxisHorizonVis = OrbitalView
+        ? 1.0
+        : SmoothStepSky(LimbZ - Math.max(0.001, HalfRad), LimbZ + Math.max(0.001, HalfRad), UnitSun[2]);
+      if (SunAxisHorizonVis > 1.0e-4) {
+        const GlareScale =
+          Math.max(0.0, Cfg.SunGlareStrength) * Spread * (0.045 * DiscIntensity) * SunAxisHorizonVis * GlareEclipseVis;
+        Out[0] += EffectiveSolarTint[0] * SolarTransmittance[0] * GlareScale * 1.02;
+        Out[1] += EffectiveSolarTint[1] * SolarTransmittance[1] * GlareScale * 1.0;
+        Out[2] += EffectiveSolarTint[2] * SolarTransmittance[2] * GlareScale * 0.96;
+      }
+    }
+  }
 
-export function SampleSkyViewLutCpu(lut, dx, dy, dz) {
-  if (!lut) return [0.35, 0.45, 0.65];
-  const [u0, v0] = ProjectSkyViewCoordinates(dx, dy, dz);
-  const u = ((u0 % 1.0) + 1.0) % 1.0;
-  const v = Clamp(v0, 0.0, 1.0);
-  const fx = u * SKY_VIEW_WIDTH - 0.5;
-  const fy = v * SKY_VIEW_HEIGHT - 0.5;
-  const x0 = ((Math.floor(fx) % SKY_VIEW_WIDTH) + SKY_VIEW_WIDTH) % SKY_VIEW_WIDTH;
-  const x1 = (x0 + 1) % SKY_VIEW_WIDTH;
-  const y0 = Clamp(Math.floor(fy), 0, SKY_VIEW_HEIGHT - 1);
-  const y1 = Clamp(y0 + 1, 0, SKY_VIEW_HEIGHT - 1);
-  const tx = fx - Math.floor(fx);
-  const ty = fy - Math.floor(fy);
-
-  const i00 = (y0 * SKY_VIEW_WIDTH + x0) * 4;
-  const i10 = (y0 * SKY_VIEW_WIDTH + x1) * 4;
-  const i01 = (y1 * SKY_VIEW_WIDTH + x0) * 4;
-  const i11 = (y1 * SKY_VIEW_WIDTH + x1) * 4;
-
-  const mix0 = (a, b, t) => a + (b - a) * t;
-  return [
-    mix0(mix0(lut[i00], lut[i10], tx), mix0(lut[i01], lut[i11], tx), ty),
-    mix0(mix0(lut[i00 + 1], lut[i10 + 1], tx), mix0(lut[i01 + 1], lut[i11 + 1], tx), ty),
-    mix0(mix0(lut[i00 + 2], lut[i10 + 2], tx), mix0(lut[i01 + 2], lut[i11 + 2], tx), ty),
-  ];
+  return Out;
 }
 
 // CPU 3D Value-Noise FBM for volumetric cloud parity in CpuGtxFallbackRenderer
