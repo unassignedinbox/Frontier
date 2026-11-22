@@ -274,10 +274,13 @@ int main()
     auto [FarClusterOk, FarClusterRgba]   = RenderFrom(FarOrigin, true, 18u);
     auto [NearMatOk, NearMatRgba] = RenderFrom(NearOrigin, true, 6u);
     auto [FarMatOk, FarMatRgba]   = RenderFrom(FarOrigin, true, 6u);
+    const Mathematics::Axis3D Beyond120mOrigin = VehicleCenter + Mathematics::Axis3D{ 160.0f, -240.0f, 90.0f };
+    auto [Beyond120mOk, Beyond120mRgba] = RenderFrom(Beyond120mOrigin, false, 18u);
 
-    const bool RendersOk = NearOk && FarOk && FarOffOk && NearLevelOk && FarLevelOk && NearClusterOk && FarClusterOk && NearMatOk && FarMatOk &&
+    const bool RendersOk = NearOk && FarOk && FarOffOk && NearLevelOk && FarLevelOk && NearClusterOk && FarClusterOk && NearMatOk && FarMatOk && Beyond120mOk &&
         NearRgba.size() == ProofW * ProofH * 4u && FarRgba.size() == ProofW * ProofH * 4u && FarOffRgba.size() == ProofW * ProofH * 4u &&
-        NearLevelRgba.size() == ProofW * ProofH * 4u && FarClusterRgba.size() == ProofW * ProofH * 4u;
+        NearLevelRgba.size() == ProofW * ProofH * 4u && FarClusterRgba.size() == ProofW * ProofH * 4u &&
+        Beyond120mRgba.size() == ProofW * ProofH * 4u;
     if (!VerifyCheck(RendersOk, "GPU viewport rendered near/far/LOD-off frames"))
     {
         GpuSeq.TeardownSequence();
@@ -307,6 +310,7 @@ int main()
     const HueCounts NearHue    = AnalyzeDebugImage(NearLevelRgba);
     const HueCounts FarHue     = AnalyzeDebugImage(FarLevelRgba);
     const HueCounts FarCluster = AnalyzeDebugImage(FarClusterRgba);
+    const HueCounts Beyond120mClusters = AnalyzeDebugImage(Beyond120mRgba);
     std::printf(
         "[NaniteViewportVehicleValidation] LOD-level colours: near green %u yellow %u orange %u | far green %u yellow %u orange %u | far cluster distinct colours %u\n",
         NearHue.GreenDominant, NearHue.YellowDominant, NearHue.OrangeDominant,
@@ -316,6 +320,9 @@ int main()
     Pass = VerifyCheck(FarHue.OrangeDominant + FarHue.YellowDominant > 300u, "far LOD-level view shows coarser L1/L2 colours") && Pass;
     Pass = VerifyCheck(FarHue.GreenDominant < NearHue.GreenDominant, "far view has less L0 green than near") && Pass;
     Pass = VerifyCheck(FarCluster.DistinctColors > 60u, "far cluster view shows many distinct cluster colours") && Pass;
+    Pass = VerifyCheck(
+        Beyond120mClusters.DistinctColors > 1u,
+        "viewport still hits visible scene geometry beyond the former 120 m trace cutoff") && Pass;
     const HueCounts FarMat = AnalyzeDebugImage(FarMatRgba);
     std::printf("[NaniteViewportVehicleValidation] Far filled-face-material view distinct colours: %u (one fill per material slot)\n", FarMat.DistinctColors);
     Pass = VerifyCheck(FarMat.DistinctColors >= 12u, "far material view keeps distinct filled face materials") && Pass;
@@ -327,6 +334,9 @@ int main()
     Pass = VerifyCheck(WritePngRgba8(OutDir / "VehicleFarLodLevels.png", ProofW, ProofH, FarLevelRgba.data()), "wrote far LOD-level PNG") && Pass;
     Pass = VerifyCheck(WritePngRgba8(OutDir / "VehicleNearClusters.png", ProofW, ProofH, NearClusterRgba.data()), "wrote near cluster PNG") && Pass;
     Pass = VerifyCheck(WritePngRgba8(OutDir / "VehicleFarClusters.png", ProofW, ProofH, FarClusterRgba.data()), "wrote far cluster PNG") && Pass;
+    Pass = VerifyCheck(
+        WritePngRgba8(OutDir / "VehicleBeyond120mClusters.png", ProofW, ProofH, Beyond120mRgba.data()),
+        "wrote beyond-120-metre viewport proof PNG") && Pass;
 
     Pass = VerifyCheck(WritePngRgba8(OutDir / "VehicleNearFaceMaterials.png", ProofW, ProofH, NearMatRgba.data()), "wrote near face-material PNG") && Pass;
     Pass = VerifyCheck(WritePngRgba8(OutDir / "VehicleFarFaceMaterials.png", ProofW, ProofH, FarMatRgba.data()), "wrote far face-material PNG") && Pass;

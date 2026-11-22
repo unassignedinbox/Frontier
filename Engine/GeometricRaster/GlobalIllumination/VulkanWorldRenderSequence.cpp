@@ -181,7 +181,7 @@ struct WorldViewportUniformBlockStd140
     float                        SunCascadeCenterSpan[4]    {};
     float                        SunCascadeRightRes[4]      {};
     float                        SunCascadeUpDepth[4]       {};
-    float                        SunCascadeForwardPad[4]    {};
+    float                        SunCascadeForwardPad[4]    {}; // xyz=LightForward, w=SceneBoundsRadiusMeters
     float                        FineCascadeCenterSpan[4]   {};
     float                        FineCascadeParams[4]       {};
     uint32_t                     DenoiseStepParams[4]       {};
@@ -641,7 +641,8 @@ void VulkanWorldRenderSequence::TeardownSequence() noexcept
     FrameSequenceIndex              = 0u;
     BoundDevice                     = nullptr;
     SceneUploadedOnce               = false;
-    GlobalDistanceFieldReady        = false;
+    GlobalDistanceFieldReady           = false;
+    GlobalDistanceFieldGeometryCurrent = false;
     SkyViewLutValid                 = false;
     LastSkyViewUniformSnapshot.fill(0u);
     LastRadiosityLightingSignature  = 0ull;
@@ -821,6 +822,7 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
     }
 
     const bool AtmoActive = Scene.Atmosphere.Medium.AtmosphereEnabled || Scene.Atmosphere.Medium.OrbitalViewEnabled;
+    bool       BakedGlobalDistanceField = false;
     const auto SolarSolved = CelestialEphemerisSolver::SolveSolarEphemeris(Scene.Atmosphere.Solar);
     const Mathematics::Axis3D SunDir = AtmoActive
         ? SolarSolved.WorldDirectionToSun
@@ -974,7 +976,8 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
 
     std::memcpy(Uniforms.GlobalDistanceFineCenterSpan, CachedFineGdfCenterSpan, sizeof(CachedFineGdfCenterSpan));
     std::memcpy(Uniforms.GlobalDistanceCoarseCenterSpan, CachedCoarseGdfCenterSpan, sizeof(CachedCoarseGdfCenterSpan));
-    Uniforms.GlobalDistanceBakeControl[2] = 1u;
+    Uniforms.GlobalDistanceBakeControl[2] =
+        (GlobalDistanceFieldReady && GlobalDistanceFieldGeometryCurrent) ? 1u : 0u;
 
     constexpr uint64_t UniformStrideBytes = 8192ull;
     EnsureBufferCapacity(UniformBuffer, UniformStrideBytes * 12ull, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -1052,7 +1055,8 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
         vkCmdFillBuffer(Cmd, SolarShadowDepthBuffer.BufferHandle, 0ull, ShadowDepthBytes, 0x49742400u); // 1.0e6f
         vkCmdFillBuffer(Cmd, GlobalRadiosityFieldBuffer.BufferHandle, 0ull, VK_WHOLE_SIZE, 0u);
         vkCmdFillBuffer(Cmd, GlobalSurfaceShellBuffer.BufferHandle, 0ull, VK_WHOLE_SIZE, 0u);
-        GlobalDistanceFieldReady = false;
+        GlobalDistanceFieldReady           = false;
+        GlobalDistanceFieldGeometryCurrent = false;
     }
     else
     {
@@ -1066,6 +1070,7 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
         const bool DoBakeGdf =
             (RebuildGeometryFields || !GlobalDistanceFieldReady) &&
             (GlobalDistanceBakeProgramHandle != UINT32_MAX);
+        BakedGlobalDistanceField = DoBakeGdf;
         if (DoBakeGdf)
         {
             for (uint32_t CascadeIdx = 0u; CascadeIdx < 2u; ++CascadeIdx)
@@ -1096,7 +1101,8 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
                 WorldViewportUniformBlockStd140 RadUni = Uniforms;
                 RadUni.GlobalDistanceBakeControl[0] = Phase;
                 RadUni.GlobalDistanceBakeControl[1] = 0u;
-                RadUni.GlobalDistanceBakeControl[2] = 1u;
+                RadUni.GlobalDistanceBakeControl[2] =
+                    (BakedGlobalDistanceField || (GlobalDistanceFieldReady && GlobalDistanceFieldGeometryCurrent)) ? 1u : 0u;
                 std::memcpy(UniformHostBytes + UniOffs, &RadUni, sizeof(RadUni));
 
                 const uint32_t Groups   = PhaseGroupCounts[Phase];
@@ -1108,11 +1114,6 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
                 }
                 InsertPrecomputeBarrier();
             }
-            GlobalDistanceFieldReady = true;
-        }
-        else if (DoBakeGdf)
-        {
-            GlobalDistanceFieldReady = true;
         }
     }
 
@@ -1135,6 +1136,11 @@ bool VulkanWorldRenderSequence::DispatchGpuScenePrecompute(const WorldSceneSpeci
     const uint64_t SyncPoint = BoundDevice->DispatchCommandBufferAsync(Cmd);
     const bool Ok = BoundDevice->AwaitTimelineTick(SyncPoint, 60000000000ull);
     BoundDevice->FreeCommandBuffer(Cmd);
+    if (Ok && BakedGlobalDistanceField)
+    {
+        GlobalDistanceFieldReady           = true;
+        GlobalDistanceFieldGeometryCurrent = true;
+    }
     return Ok;
 }
 
@@ -1176,6 +1182,10 @@ void VulkanWorldRenderSequence::SynchronizeSceneResources(
     {
         return;
     }
+    // Scene geometry is being replaced. Never expose the old voxel field against new BVH triangles.
+    // Fast interactions deliberately defer the expensive field bake; shader queries then fall back
+    // to current BVH visibility until a committed scene sync has rebuilt the field.
+    GlobalDistanceFieldGeometryCurrent = false;
     const auto SyncStart = std::chrono::steady_clock::now();
 
     // 1. Upload 128-byte 4-Wide BVH4 entries into DEVICE_LOCAL VRAM
@@ -2170,6 +2180,10 @@ bool VulkanWorldRenderSequence::ExecuteWorldRenderDispatch(
     Uniforms.SunCascadeForwardPad[0] = CachedSunCascade.LightForwardAxis.X;
     Uniforms.SunCascadeForwardPad[1] = CachedSunCascade.LightForwardAxis.Y;
     Uniforms.SunCascadeForwardPad[2] = CachedSunCascade.LightForwardAxis.Z;
+    const Mathematics::Axis3D SceneHalfExtent =
+        (Scene.SceneTree.RootBoundsMax - Scene.SceneTree.RootBoundsMin) * 0.5f;
+    const float SceneRadius = std::sqrt(Mathematics::EvaluateDot(SceneHalfExtent, SceneHalfExtent));
+    Uniforms.SunCascadeForwardPad[3] = std::max(1.0f, SceneRadius);
 
     Uniforms.FineCascadeCenterSpan[0] = CachedFineSunCascade.CenterWorld.X;
     Uniforms.FineCascadeCenterSpan[1] = CachedFineSunCascade.CenterWorld.Y;
@@ -2543,6 +2557,7 @@ bool VulkanWorldRenderSequence::ExecuteWorldRenderDispatch(
 
         if (Config.Engine != WorldRenderEngine::MatCap &&
             GlobalDistanceFieldReady &&
+            GlobalDistanceFieldGeometryCurrent &&
             UploadedBvhCount > 0u &&
             LastRadiosityLightingSignature != 0ull &&
             LightingSig != LastRadiosityLightingSignature)
@@ -2560,7 +2575,8 @@ bool VulkanWorldRenderSequence::ExecuteWorldRenderDispatch(
     std::memcpy(Uniforms.GlobalDistanceCoarseCenterSpan, CachedCoarseGdfCenterSpan, sizeof(CachedCoarseGdfCenterSpan));
     Uniforms.GlobalDistanceBakeControl[0] = 0u;
     Uniforms.GlobalDistanceBakeControl[1] = 0u;
-    Uniforms.GlobalDistanceBakeControl[2] = GlobalDistanceFieldReady ? 1u : 0u;
+    Uniforms.GlobalDistanceBakeControl[2] =
+        (GlobalDistanceFieldReady && GlobalDistanceFieldGeometryCurrent) ? 1u : 0u;
     // w: bit0 = XeGTAO enabled, bits 8..15 = XeGTAO strength x255/2 (0..2 range)
     Uniforms.GlobalDistanceBakeControl[3] =
         (Config.XeGtaoEnabled ? 1u : 0u) |

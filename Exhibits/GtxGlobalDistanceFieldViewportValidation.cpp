@@ -277,6 +277,8 @@ int main()
     std::array<std::vector<uint8_t>, 6u> EngineTiles {};
     std::vector<uint8_t> SingleSamplePtTile {};
     std::vector<uint8_t> RelitGdfTile {};
+    std::vector<uint8_t> XeGtaoDirectTile {};
+    std::vector<uint8_t> LiveEditGdfTile {};
 
     VulkanInterchange GpuDevice {};
     const bool DeviceOk = GpuDevice.InitializeInterchange(RepoRoot);
@@ -293,6 +295,7 @@ int main()
         if (SeqOk)
         {
             GpuSeq.SynchronizeSceneResources(Showcase.Scene, true);
+            Score.Verify(GpuSeq.QueryGlobalDistanceFieldGeometryCurrent(), "initial GDF bake matches uploaded scene geometry");
 
             // Tile 0: MatCap
             {
@@ -304,14 +307,25 @@ int main()
                     "Rendered Tile 0: MatCap");
             }
 
-            // Tile 1: OpenPBR Direct (ContactPcss + SDF Penumbra)
+            // Tile 1: OpenPBR Direct (ContactPcss, zero SDF; XeGTAO remains optional)
             {
                 WorldRenderConfiguration Cfg {};
                 Cfg.Engine          = WorldRenderEngine::OpenPbrDirect;
                 Cfg.ShadowAlgorithm = SolarShadowAlgorithm::ContactPcss;
                 Score.Verify(
                     GpuSeq.RenderWorldViewportWithEngine(Cfg, 2u, Showcase.EditorCamera, Showcase.Scene, EngineTiles[1]),
-                    "Rendered Tile 1: OpenPBR Direct (ContactPcss + GDF Penumbra)");
+                    "Rendered Tile 1: OpenPBR Direct (ContactPcss, zero SDF)");
+            }
+
+            // Toggleable direct-PBR XeGTAO path (no GDF AO or GI contribution).
+            {
+                WorldRenderConfiguration Cfg {};
+                Cfg.Engine = WorldRenderEngine::OpenPbrDirect;
+                Cfg.XeGtaoEnabled = true;
+                Cfg.XeGtaoStrength = 1.0f;
+                Score.Verify(
+                    GpuSeq.RenderWorldViewportWithEngine(Cfg, 3u, Showcase.EditorCamera, Showcase.Scene, XeGtaoDirectTile),
+                    "Rendered OpenPBR Direct with optional XeGTAO (zero SDF, zero GI)");
             }
 
             // Tile 2: GTX GDF GI (2-Bounce Global Distance Field + Radiosity Cone GI, SDF Penumbra)
@@ -371,6 +385,20 @@ int main()
                     GpuSeq.RenderWorldViewportWithEngine(Cfg, 2u, Showcase.EditorCamera, Showcase.Scene, RelitGdfTile),
                     "Dynamic LightingSig Radiosity refresh executed without BVH/GDF geometry rebuild");
             }
+
+            // During transform dragging the geometry BVH is current, but the expensive fixed
+            // GDF bake is deferred. The renderer must stop sampling that stale field and use
+            // current BVH fallbacks, then restore GDF sampling only after the committed rebuild.
+            GpuSeq.SynchronizeSceneResources(Showcase.Scene, false);
+            Score.Verify(!GpuSeq.QueryGlobalDistanceFieldGeometryCurrent(), "deferred interaction sync invalidates old GDF geometry");
+            WorldRenderConfiguration LiveEditConfig {};
+            LiveEditConfig.Engine = WorldRenderEngine::RealTimeGiGtxLowEnd;
+            Score.Verify(
+                GpuSeq.RenderWorldViewportWithEngine(
+                    LiveEditConfig, 8u, Showcase.EditorCamera, Showcase.Scene, LiveEditGdfTile),
+                "GTX viewport renders with stale GDF gated during interaction sync");
+            GpuSeq.SynchronizeSceneResources(Showcase.Scene, true);
+            Score.Verify(GpuSeq.QueryGlobalDistanceFieldGeometryCurrent(), "committed scene sync restores the current GDF");
 
             GpuSeq.TeardownSequence();
         }

@@ -19,6 +19,8 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -540,6 +542,33 @@ int main()
         // Release RMB cleanly
         StepRmbFly(ImVec2(960.0f, 420.0f), false, ImGuiKey_None, false, 1.0 / 60.0);
 
+        if (EditorSession.InspectEditorCameraLag().InspectSettings().RotationLagEnabled)
+        {
+            std::fprintf(stderr, "[FAIL] Editor camera rotation lag is enabled; RMB look must not trail input.\n");
+            EditorSession.Finalize();
+            ImGui::DestroyContext(Ctx);
+            return 1;
+        }
+
+        const Mathematics::Axis3D LookBefore = Mathematics::NormalizeAxis(
+            LiveBundle->EditorCamera.TargetPoint - LiveBundle->EditorCamera.CameraOrigin,
+            { 0.0f, 1.0f, 0.0f });
+        StepRmbFly(ImVec2(960.0f, 420.0f), true, ImGuiKey_None, true, 1.0 / 60.0);
+        StepRmbFly(ImVec2(960.0f, 420.0f), true, ImGuiKey_None, true, 1.0 / 60.0);
+        StepRmbFly(ImVec2(1020.0f, 420.0f), true, ImGuiKey_None, true, 1.0 / 60.0);
+        const Mathematics::Axis3D LookAfter = Mathematics::NormalizeAxis(
+            LiveBundle->EditorCamera.TargetPoint - LiveBundle->EditorCamera.CameraOrigin,
+            { 0.0f, 1.0f, 0.0f });
+        const float ShiftLookRadians = std::acos(std::clamp(Mathematics::EvaluateDot(LookBefore, LookAfter), -1.0f, 1.0f));
+        StepRmbFly(ImVec2(1020.0f, 420.0f), false, ImGuiKey_None, false, 1.0 / 60.0);
+        if (ShiftLookRadians < 0.30f)
+        {
+            std::fprintf(stderr, "[FAIL] Shift+RMB mouse-look was too slow (60 px yielded %.3f radians).\n", ShiftLookRadians);
+            EditorSession.Finalize();
+            ImGui::DestroyContext(Ctx);
+            return 1;
+        }
+
         // Wheel must adjust Fly Speed (never Dolly-Zoom), with and without RMB held
         auto StepWheel = [&](bool RmbDown, float WheelNotches)
         {
@@ -568,7 +597,7 @@ int main()
             TargetAfterWheel - TargetBeforeWheel,
             TargetAfterWheel - TargetBeforeWheel);
 
-        // First-frame steps are damped by the editor camera lag component; sprint ratio must still hold.
+        // Translation still uses camera lag; viewport rotation must remain immediate even with Shift held.
         if (NormalStepDist < 0.08f ||
             SprintStepDist < NormalStepDist * 2.5f ||
             (ZAfterE - ZBeforeE) < 0.08f ||

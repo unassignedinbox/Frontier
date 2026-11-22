@@ -48,6 +48,10 @@ public:
     [[nodiscard]] float                      QueryLastDispatchMilliseconds() const noexcept { return LastDispatchMilliseconds; }
     [[nodiscard]] float                      QueryLastSceneSyncMilliseconds() const noexcept { return LastSceneSyncMilliseconds; }
     [[nodiscard]] uint32_t                   QueryProgressiveSampleCount() const noexcept { return ProgressiveSampleCount; }
+    [[nodiscard]] bool                       QueryGlobalDistanceFieldGeometryCurrent() const noexcept
+    {
+        return GlobalDistanceFieldReady && GlobalDistanceFieldGeometryCurrent;
+    }
     void                                       ResetProgressiveAccumulation() noexcept { ProgressiveSampleCount = 0u; }
 
     // Live Nanite-like cluster LOD state of the geometry the viewport actually traced last frame.
@@ -193,7 +197,8 @@ private:
     OrthographicShadowCascade CachedSunCascade             {};
     float                  CachedFineGdfCenterSpan[4]      { 0.0f, 0.0f, 0.0f, 3.4f };
     float                  CachedCoarseGdfCenterSpan[4]    { 0.0f, 0.0f, 0.0f, 10.2f };
-    bool                   GlobalDistanceFieldReady        = false;
+    bool                   GlobalDistanceFieldReady           = false;
+    bool                   GlobalDistanceFieldGeometryCurrent = false;
     bool                   SkyViewLutValid                 = false;
     std::array<uint8_t, 128u> LastSkyViewUniformSnapshot   {};
     uint64_t               LastRadiosityLightingSignature  = 0ull;

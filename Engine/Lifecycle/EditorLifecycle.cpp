@@ -367,6 +367,9 @@ void EditorLifecycle::PopulateWorldSceneSession(uint32_t RenderWidthPx, uint32_t
     {
         ShowcaseRenderer->PrepareWorldScene(ShowcaseBundle->Scene);
     }
+    // Viewport look/orbit input must be immediate; position lag remains available for fly translation.
+    // The generic camera component still supports rotation lag for gameplay and cinematic cameras.
+    EditorCameraLag.AccessSettings().RotationLagEnabled = false;
     EditorCameraLag.SnapTo(ShowcaseBundle->EditorCamera.CameraOrigin, ShowcaseBundle->EditorCamera.TargetPoint);
     DesiredCameraOrigin = ShowcaseBundle->EditorCamera.CameraOrigin;
     DesiredCameraTarget = ShowcaseBundle->EditorCamera.TargetPoint;
@@ -881,9 +884,9 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
             {
                 const Mathematics::Axis3D ToTarget = Cam.TargetPoint - Cam.CameraOrigin;
                 const float Dist  = std::max(0.35f, std::sqrt(Mathematics::EvaluateDot(ToTarget, ToTarget)));
-                const float Yaw   = std::atan2(Fwd.X, Fwd.Y) + NavDeltaX * 0.0042f;
+                const float Yaw   = std::atan2(Fwd.X, Fwd.Y) + NavDeltaX * 0.0075f;
                 const float Pitch = std::clamp(
-                    std::asin(std::clamp(Fwd.Z, -0.995f, 0.995f)) - NavDeltaY * 0.0042f,
+                    std::asin(std::clamp(Fwd.Z, -0.995f, 0.995f)) - NavDeltaY * 0.0075f,
                     -1.52f,
                     1.52f);
                 const float CosP = std::cos(Pitch);

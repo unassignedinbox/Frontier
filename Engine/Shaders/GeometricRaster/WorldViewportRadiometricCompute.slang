@@ -41,7 +41,7 @@ struct WorldViewportUniformBlock
     float4 SunCascadeCenterSpan;     // xyz = CenterWorld,  w = HalfSpanMeters
     float4 SunCascadeRightRes;       // xyz = LightRight,   w = ResolutionTexels
     float4 SunCascadeUpDepth;        // xyz = LightUp,      w = DepthExtentMeters
-    float4 SunCascadeForwardPad;     // xyz = LightForward, w = Reserved
+    float4 SunCascadeForwardPad;     // xyz = LightForward, w = SceneBoundsRadiusMeters
     float4 FineCascadeCenterSpan;    // xyz = FineCenter,   w = FineHalfSpanMeters
     float4 FineCascadeParams;        // x = FineRes, y = FineDepthExtent, z = CoarseOffsetTexels, w = Reserved
     uint4  DenoiseStepParams;        // x = StridePx, y = Flags (bit0=FinalComposite, bit1=SpatialDenoise), z = Reserved, w = FrameSequence
@@ -703,6 +703,16 @@ RayHitReading TraceSceneClosest(float3 Origin, float3 Dir, float MinT, float Max
     return Res;
 }
 
+// Scene traversal must not stop at the former 120 m editor cutoff. The coarse clip bounds are
+// centered on the scene root and conservatively cover its extent; this limit therefore scales
+// with both camera distance and scene size, while retaining 120 m as a minimum.
+float QuerySceneTraceLimit(float3 RayOrigin)
+{
+    float3 SceneCenter = WorldUniforms.GlobalDistanceCoarseCenterSpan.xyz;
+    float  SceneRadius = max(1.0, WorldUniforms.SunCascadeForwardPad.w);
+    return min(1.0e7, max(120.0, length(RayOrigin - SceneCenter) + SceneRadius + 1.0));
+}
+
 bool TraceSceneAnyHit(float3 Origin, float3 Dir, float MinT, float MaxT)
 {
     uint EntryCount = uint(WorldUniforms.SkyRadianceBvhCount.w + 0.5);
@@ -1334,7 +1344,7 @@ float3 EvaluateAreaQuadLightGdfFast(GpuAreaQuadLight Quad, float3 Pos, float3 Ge
     if (dot(N, DirL) <= -0.15) return float3(0.0);
 
     float VisFactor = 1.0;
-    if (IsGlobalDistanceFieldReady())
+    if (WorldUniforms.EngineShadowReflPad.x == 2u && IsGlobalDistanceFieldReady())
     {
         float Radius = max(0.04, 0.65 * (Quad.CenterHalfWidth.w + Quad.RightHalfHeight.w));
         VisFactor    = TraceGlobalDistanceConeVisibility(Pos, GeomN, DirL, Dist, Radius / Dist, false, 6u);
@@ -1363,7 +1373,7 @@ float3 EvaluateAreaQuadLight(GpuAreaQuadLight Quad, float3 Pos, float3 GeomN, fl
     float3 HalfV        = UpB * Quad.RightHalfHeight.w;
     uint   EngineMode   = WorldUniforms.EngineShadowReflPad.x;
     uint   PenumbraMode = (WorldUniforms.AtmosphereMaskPad.w >> 16u) & 0x7u;
-    bool   UseGdf       = (EngineMode <= 2u) && IsGlobalDistanceFieldReady();
+    bool   UseGdf       = (EngineMode == 2u) && IsGlobalDistanceFieldReady();
     float  VisFactor    = 0.0;
 
     float3 ToCenter   = Center - Pos;
@@ -1639,7 +1649,7 @@ float SampleCascadedSunShadowFast(float3 WorldPos, float3 GeomN, float3 N, float
         float Bias       = TexelM * (1.35 + 0.90 * SlopeScale);
         return SampleShadowVisBilinear(CenterTXY, RecD, Bias, Res, BufOffs);
     }
-    if (IsGlobalDistanceFieldReady())
+    if (WorldUniforms.EngineShadowReflPad.x == 2u && IsGlobalDistanceFieldReady())
     {
         return TraceGlobalDistanceConeVisibility(WorldPos, GeomN, SunDir, 12.0, max(0.01, WorldUniforms.SunDirConeTan.w), false, 8u);
     }
@@ -1680,7 +1690,7 @@ float EvaluateSolarShadow(RayHitReading Hit, float3 SunDir, uint2 PixelXY, out f
     // Algorithm 4: WideTreeRayQuery (GDF-accelerated solar corridor cull + 3 rotated BVH4 solar disc rays)
     if (ShadowAlg == 4u)
     {
-        if (EngineMode <= 2u && IsGlobalDistanceFieldReady())
+        if (EngineMode == 2u && IsGlobalDistanceFieldReady())
         {
             float GdfVis = TraceGlobalDistanceConeVisibility(Hit.Position, Hit.GeomNormal, SunDir, 12.0, TanSun * 2.0, false, 8u);
             if (GdfVis >= 0.99)
@@ -1721,7 +1731,7 @@ float EvaluateSolarShadow(RayHitReading Hit, float3 SunDir, uint2 PixelXY, out f
     float3 BiasedPos = Hit.Position + Hit.GeomNormal * 0.004 + Hit.ShadingNormal * 0.004;
     if (!ProjectBestSunCascade(BiasedPos, CenterTXY, RecD, TexelM, Res, BufOffs))
     {
-        if (EngineMode <= 2u && IsGlobalDistanceFieldReady())
+        if (EngineMode == 2u && IsGlobalDistanceFieldReady())
         {
             return TraceGlobalDistanceConeVisibility(Hit.Position, Hit.GeomNormal, SunDir, 14.0, TanSun, false, 8u);
         }
@@ -1850,7 +1860,7 @@ float EvaluateSolarShadow(RayHitReading Hit, float3 SunDir, uint2 PixelXY, out f
 
     if (ShadowAlg == 0u)
     {
-        if (EngineMode <= 2u && IsGlobalDistanceFieldReady())
+        if (EngineMode == 2u && IsGlobalDistanceFieldReady())
         {
             float GdfGate = TraceGlobalDistanceConeVisibility(Hit.Position, Hit.GeomNormal, SunDir, 0.34, TanSun * 1.25, false, 4u);
             Vis = min(Vis, lerp(0.03, 1.0, GdfGate));
@@ -1919,7 +1929,7 @@ float3 ShadeSecondaryBounce(float3 RayOrigin, float3 RayDir)
     }
 
     float3 Albedo = Mat.DiffuseAlbedoRoughness.xyz * (1.0 - saturate(Mat.SpecParams.y)) * (1.0 - saturate(Mat.CoatRoughnessOptics.y));
-    if (IsGlobalDistanceFieldReady())
+    if (WorldUniforms.EngineShadowReflPad.x == 2u && IsGlobalDistanceFieldReady())
     {
         float  Vox0     = QueryFineGdfVoxelSize();
         bool   InRad    = false;
@@ -2066,11 +2076,17 @@ void ShadePrimarySurfaceDemod(
         }
     }
 
-    // 3. Ambient Occlusion: 0-ray Global Distance Field Cone AO on GTX (Engines 1..2), 3-ray BVH4 on HighEnd (Engine 3)
+    // 3. Ambient Occlusion: Direct PBR uses optional XeGTAO only; GTX GI uses GDF cone AO; HighEnd uses BVH4 AO.
     float2 R2P = PixelR2(PixelXY);
     float3 BasisT, BasisB;
     ConstructOrthonormalBasis(N, BasisT, BasisB);
-    if (EngineMode <= 2u && IsGlobalDistanceFieldReady())
+    if (EngineMode == 1u)
+    {
+        // Standalone OpenPBR intentionally excludes coarse voxel AO. XeGTAO is applied later in
+        // the composite only when its explicit setting is enabled.
+        OutDiffAo = 1.0;
+    }
+    else if (EngineMode == 2u && IsGlobalDistanceFieldReady())
     {
         OutDiffAo = EvaluateGlobalDistanceAmbientOcclusion(Hit.Position, N, Hit.GeomNormal);
     }
@@ -2109,7 +2125,7 @@ void ShadePrimarySurfaceDemod(
         float3 EnvRad  = float3(0.0);
         bool   SharpSpecular = (OutSpecRough < 0.18) || (CoatW > 0.20 && Mat.CoatRoughnessOptics.x < 0.16);
 
-        if ((EngineMode == 1u || EngineMode == 2u || (EngineMode == 3u && OutSpecRough >= 0.18)) && !SharpSpecular && IsGlobalDistanceFieldReady())
+        if ((EngineMode == 2u || (EngineMode == 3u && OutSpecRough >= 0.18)) && !SharpSpecular && IsGlobalDistanceFieldReady())
         {
             EnvRad = EvaluateGdfGlossyCone(Hit.Position, Hit.GeomNormal, ReflDir, OutSpecRough);
         }
@@ -2400,8 +2416,9 @@ float3 EvaluateProgressiveViewportPath(float3 CamOrigin, float3 PrimaryDir, uint
         : float2(0.0, 0.0);
 
     // Primary intersection handled outside bounce loop to avoid duplicating sky/cloud/glass raymarchers
-    RayHitReading CurHit = TraceSceneClosest(CamOrigin, PrimaryDir, 0.08, 120.0);
-    float         TriT0  = CurHit.Hit ? CurHit.Distance : 120.0;
+    float         PrimaryTraceLimit = QuerySceneTraceLimit(CamOrigin);
+    RayHitReading CurHit = TraceSceneClosest(CamOrigin, PrimaryDir, 0.08, PrimaryTraceLimit);
+    float         TriT0  = CurHit.Hit ? CurHit.Distance : PrimaryTraceLimit;
     float         GlsT0  = TriT0;
     int           GlsId0 = FindClosestGlassSphere(CamOrigin, PrimaryDir, 0.08, TriT0, GlsT0);
     if (GlsId0 >= 0)
@@ -2427,7 +2444,7 @@ float3 EvaluateProgressiveViewportPath(float3 CamOrigin, float3 PrimaryDir, uint
     {
         if (Bounce > 0u)
         {
-            CurHit = TraceSceneClosest(RayO, RayD, 0.003, 120.0);
+            CurHit = TraceSceneClosest(RayO, RayD, 0.003, QuerySceneTraceLimit(RayO));
             if (!CurHit.Hit)
             {
                 Radiance += Throughput * EvaluateSkyDome(RayD);
@@ -2605,9 +2622,10 @@ void ComputeEntry(uint3 DispatchThreadID : SV_DispatchThreadID)
         WorldUniforms.CameraRightTanY.xyz * (NdcX * WorldUniforms.CameraOriginTanX.w) +
         WorldUniforms.CameraUpWidth.xyz   * (NdcY * WorldUniforms.CameraRightTanY.w));
 
-    RayHitReading PrimaryHit = TraceSceneClosest(CamOrigin, RayDir, 0.08, 120.0);
+    float         PrimaryTraceLimit = QuerySceneTraceLimit(CamOrigin);
+    RayHitReading PrimaryHit = TraceSceneClosest(CamOrigin, RayDir, 0.08, PrimaryTraceLimit);
 
-    float TriHitT      = PrimaryHit.Hit ? PrimaryHit.Distance : 120.0;
+    float TriHitT      = PrimaryHit.Hit ? PrimaryHit.Distance : PrimaryTraceLimit;
     float BestGlassT   = TriHitT;
     int   BestGlassIdx = -1;
     if (EngineMode != 0u)
